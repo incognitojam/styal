@@ -200,6 +200,7 @@ function ConfiguredSettingsNotificationsRouteScreen() {
   };
 
   useEffect(() => {
+    // oxlint-disable-next-line react/set-state-in-effect -- Reads native notification permission on mount and on every foreground.
     void refreshNotifications();
     const subscription = AppState.addEventListener("change", (state) => {
       if (state === "active") void refreshNotifications();
@@ -209,6 +210,7 @@ function ConfiguredSettingsNotificationsRouteScreen() {
 
   useEffect(() => {
     if (!isLoaded) {
+      // oxlint-disable-next-line react/set-state-in-effect -- Live Activity status shows checking until stored preferences load.
       setLiveActivityStatus("checking");
       return;
     }
