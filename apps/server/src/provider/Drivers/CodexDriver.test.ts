@@ -467,9 +467,6 @@ it.layer(layerTest)("CodexDriver", (it) => {
     );
   }
 
-  for (const {} of ["direct", "wrapper"] as const) {
-  }
-
   it.effect.each([
     {
       name: "conventional shim",
