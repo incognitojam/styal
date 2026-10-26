@@ -3786,7 +3786,7 @@ features:
   - id: pull-request-bypass-merge
     title: Merge past GitHub requirements for viewers allowed to bypass them
     status: maintained
-    prs: [1088]
+    prs: [1088, 1089]
     invariants:
       - A blocked GitHub pull request offers Bypass rules and merge only when GitHub reports viewerCanMergeAsAdmin, the viewer can write, and the repository has no merge queue.
       - The bypassing merge is the ordinary direct merge with its head guard; nothing else changes on the server.
@@ -4235,7 +4235,7 @@ features:
   - id: pull-request-required-checks
     title: Separate pull request checks and show merge readiness
     status: maintained
-    prs: [138, 151, 159, 185, 209, 495, 984, 1088]
+    prs: [138, 151, 159, 185, 209, 495, 984, 1088, 1089]
     invariants:
       - Pull request checks have a dedicated tab that distinguishes host-required checks from optional jobs and represents required checks that have not reported yet.
       - Check rows share one set of columns, so the Required badge, status and link mark line up whatever each row's status says or whether it has a link.
