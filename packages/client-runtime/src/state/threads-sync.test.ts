@@ -1521,9 +1521,7 @@ describe("EnvironmentThreads", () => {
         });
 
         const warm = yield* makeHarness(
-          cacheKind === "retained"
-            ? { resumeCache }
-            : { loadCached: Effect.succeed(Option.some(saved!)) },
+          cacheKind === "retained" ? { resumeCache } : { loadCached: Effect.succeedSome(saved!) },
         );
         yield* Queue.offer(warm.inputs, titleUpdated("Grown while closed", 200));
         yield* awaitThreadState(

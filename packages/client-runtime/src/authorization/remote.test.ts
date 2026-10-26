@@ -331,13 +331,13 @@ describe("remote environment authorization", () => {
           Effect.provideService(
             ClientCapabilities.CloudSession,
             ClientCapabilities.CloudSession.of({
-              identity: Effect.succeed(Option.some({ accountId: "user_connect" })),
+              identity: Effect.succeedSome({ accountId: "user_connect" }),
               missingSession: Effect.never,
               clerkToken: Effect.succeed("clerk-token"),
             }),
           ),
           Effect.provideService(ClientCapabilities.AnalyticsDevice, {
-            id: Effect.succeed(Option.some("device-1")),
+            id: Effect.succeedSome("device-1"),
           }),
         ),
       );

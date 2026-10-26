@@ -340,12 +340,10 @@ describe("Grok launch permission mode", () => {
             Layer.provide(
               Layer.mock(ProjectStore.ProjectStoreV2)({
                 get: () =>
-                  Effect.succeed(
-                    Option.some({
-                      workspaceRoot: process.cwd(),
-                      additionalInstructions: null,
-                    } as never),
-                  ),
+                  Effect.succeedSome({
+                    workspaceRoot: process.cwd(),
+                    additionalInstructions: null,
+                  } as never),
               }),
             ),
             Layer.provide(

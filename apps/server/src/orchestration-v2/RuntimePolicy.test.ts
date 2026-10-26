@@ -88,27 +88,25 @@ const layerTest = RuntimePolicy.layerFromProjectStore.pipe(
     Layer.mock(ProjectStore.ProjectStoreV2)({
       get: (id) =>
         id === ProjectId.make("missing-project")
-          ? Effect.succeed(Option.none())
-          : Effect.succeed(
-              Option.some({
-                projectId,
-                title: "Project",
-                workspaceRoot: "/project-root",
-                defaultModelSelection: null,
-                defaultThreadEnvMode: null,
-                autoPull: false,
-                faviconPath: null,
-                additionalInstructions: "Use the synthetic project conventions.",
-                projectIcon: null,
-                scripts: [],
-                pinnedAt: null,
-                pinOrderKey: null,
-                archivedAt: null,
-                createdAt: "2026-06-21T00:00:00.000Z",
-                updatedAt: "2026-06-21T00:00:00.000Z",
-                deletedAt: null,
-              }),
-            ),
+          ? Effect.succeedNone
+          : Effect.succeedSome({
+              projectId,
+              title: "Project",
+              workspaceRoot: "/project-root",
+              defaultModelSelection: null,
+              defaultThreadEnvMode: null,
+              autoPull: false,
+              faviconPath: null,
+              additionalInstructions: "Use the synthetic project conventions.",
+              projectIcon: null,
+              scripts: [],
+              pinnedAt: null,
+              pinOrderKey: null,
+              archivedAt: null,
+              createdAt: "2026-06-21T00:00:00.000Z",
+              updatedAt: "2026-06-21T00:00:00.000Z",
+              deletedAt: null,
+            }),
     }),
   ),
 );

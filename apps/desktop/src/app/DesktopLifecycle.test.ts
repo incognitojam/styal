@@ -116,7 +116,7 @@ const makeLifecycleLayer = (
       Layer.succeed(DesktopUpdates.DesktopUpdates, {
         getState: Effect.die("unexpected update state read"),
         emitState: Effect.void,
-        disabledReason: Effect.succeed(Option.none()),
+        disabledReason: Effect.succeedNone,
         configure: Effect.void,
         setChannel: () => Effect.die("unexpected channel change"),
         check: () => Effect.die("unexpected update check"),

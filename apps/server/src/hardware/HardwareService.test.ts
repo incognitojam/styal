@@ -204,7 +204,7 @@ const makeHarnessWith = (
     } as unknown as ThreadManagementService.ThreadManagementService["Service"];
 
     const projects = {
-      getById: () => Effect.succeed(Option.some({ workspaceRoot: "/repo/tree" })),
+      getById: () => Effect.succeedSome({ workspaceRoot: "/repo/tree" }),
     } as unknown as ProjectService.ProjectService["Service"];
 
     /** When true, every secret read fails. */

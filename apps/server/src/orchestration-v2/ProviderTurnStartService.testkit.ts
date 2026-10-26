@@ -12,7 +12,7 @@ export const layer = Layer.mergeAll(
     createWorktree: () => Effect.succeed({} as never),
   }),
   Layer.mock(ProjectService.ProjectService)({
-    getById: () => Effect.succeed(Option.none()),
+    getById: () => Effect.succeedNone,
   }),
   Layer.mock(ProviderInstallGate.ProviderInstallGate)({ installing: Effect.succeed(false) }),
 );

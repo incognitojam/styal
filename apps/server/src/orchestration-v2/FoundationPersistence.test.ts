@@ -1964,17 +1964,15 @@ it.layer(layerTest)("orchestration V2 foundation persistence", (it) => {
       };
       const executionCount = yield* Ref.make(0);
       const layerOutbox = Layer.mock(EffectOutbox.EffectOutboxV2)({
-        claimNext: () => Effect.succeed(Option.some(claimedEffect)),
+        claimNext: () => Effect.succeedSome(claimedEffect),
         get: () =>
-          Effect.succeed(
-            Option.some({
-              ...claimedEffect,
-              status: "cancelled" as const,
-              leaseOwner: null,
-              leaseExpiresAt: null,
-              completedAt: now,
-            }),
-          ),
+          Effect.succeedSome({
+            ...claimedEffect,
+            status: "cancelled" as const,
+            leaseOwner: null,
+            leaseExpiresAt: null,
+            completedAt: now,
+          }),
         clearCancellation: () => Effect.void,
         awaitCancellation: () => Effect.never,
       });
@@ -2967,7 +2965,7 @@ it.layer(layerTest)("orchestration V2 foundation persistence", (it) => {
             awaitWork: Effect.void,
             runRecoveryOnce: Effect.succeed(false),
             runOnce: Effect.succeed(false),
-            nextClaimableAt: Effect.succeed(Option.none()),
+            nextClaimableAt: Effect.succeedNone,
             drain: () => Effect.succeed(0),
           }),
         ),
@@ -3184,7 +3182,7 @@ it.layer(layerTest)("orchestration V2 foundation persistence", (it) => {
             awaitWork: Effect.void,
             runRecoveryOnce: Effect.succeed(false),
             runOnce: Effect.succeed(false),
-            nextClaimableAt: Effect.succeed(Option.none()),
+            nextClaimableAt: Effect.succeedNone,
             drain: () => Effect.succeed(0),
           }),
         ),
