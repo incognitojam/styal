@@ -68,7 +68,7 @@ Read [CONTRIBUTING.md](./CONTRIBUTING.md) before reporting a bug or opening a pu
 
 ## Documentation
 
-Documentation lives in [docs/](./docs). Start with the [architecture overview](./docs/internals/overview.md) when working on the repository. Some inherited documentation still describes T3 Code while the styal equivalents are being established.
+Documentation lives in [docs/](./docs). Common questions are answered in the [FAQ](./docs/user/faq.md). Start with the [architecture overview](./docs/internals/overview.md) when working on the repository. Some inherited documentation still describes T3 Code while the styal equivalents are being established.
 
 ## License
 
