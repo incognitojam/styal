@@ -14,7 +14,8 @@ const harness = Effect.gen(function* () {
   const sent = yield* Deferred.make<DesktopShutdownConfirmationRequest>();
   const nextSent = yield* Deferred.make<DesktopShutdownConfirmationRequest>();
   let count = 0;
-  const send = Effect.runSync;
+  // oxlint-disable-next-line t3code/no-manual-effect-runtime-in-tests -- Electron invokes this synchronous callback outside Effect.
+  const send = Effect.runSyncWith(yield* Effect.context<never>());
   const webContents = Object.assign(new NodeEvents.EventEmitter(), {
     isDestroyed: () => false,
     send: (channel: string, request: DesktopShutdownConfirmationRequest) => {
