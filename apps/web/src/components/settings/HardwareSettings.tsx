@@ -1,3 +1,4 @@
+import { useNowSecond } from "../../hooks/useNowSecond";
 import { useAtomValue } from "@effect/atom-react";
 /**
  * Mounting the device list subscribes to hardware state, which makes the server probe device
@@ -75,12 +76,9 @@ import {
   SettingsPageContainer,
   SettingsRow,
   SettingsSection,
-  useRelativeTimeTick,
 } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
-
-const RELATIVE_TICK_MS = 30_000;
 
 const HEALTH_DOT_CLASS: Readonly<Record<HardwareDeviceState["health"]["status"], string>> = {
   online: "bg-success",
@@ -197,7 +195,7 @@ function EnvironmentHardwareDevices({
   const update = useAtomCommand(serverEnvironment.updateSettings, { reportFailure: false });
   const [editing, setEditing] = useState<{ original: HardwareDeviceConfig | null } | null>(null);
   const [busy, setBusy] = useState(false);
-  const nowMs = useRelativeTimeTick(RELATIVE_TICK_MS);
+  const nowMs = useNowSecond();
   const shown = devices.filter(visible);
 
   const save = async (
