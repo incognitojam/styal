@@ -1650,10 +1650,11 @@ export const make = Effect.gen(function* () {
   // User controls
 
   const requireDevice = (deviceId: HardwareDeviceId) =>
-    Effect.flatMap(findDevice(deviceId), (device) =>
-      device === undefined
-        ? Effect.fail(new HardwareError({ reason: `No hardware device "${deviceId}".` }))
-        : Effect.succeed(device),
+    findDevice(deviceId).pipe(
+      Effect.filterOrFail(
+        (device) => device !== undefined,
+        () => new HardwareError({ reason: `No hardware device "${deviceId}".` }),
+      ),
     );
 
   const userStoreFailure = () =>
