@@ -18,7 +18,6 @@ import {
   runAtomCommand,
   squashAtomCommandFailure,
   type AtomCommand,
-  type AtomCommandResult,
 } from "./runtime.ts";
 
 /** Checks the complete message before uploads or transferring draft ownership. */
@@ -71,7 +70,7 @@ export function isAssetAttachmentNotFoundFailure(error: unknown): boolean {
  * generic "All fibers interrupted without error", which callers cannot tell apart from a real
  * failure, so report it as the disconnect it is.
  */
-function attachmentRpcFailure(result: AtomCommandResult<unknown, unknown>): unknown {
+function attachmentRpcFailure(result: AsyncResult.Failure<unknown, unknown>): unknown {
   return isAtomCommandInterrupted(result)
     ? new Error("The environment is not connected.")
     : squashAtomCommandFailure(result);
