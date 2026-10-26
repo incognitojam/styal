@@ -12,12 +12,14 @@ import {
   getSettingsSearchTargetScope,
   getThreadAutoSettlementSearchAvailability,
   isSettingsSearchScopeAvailable,
+  movedSettingsPath,
   searchSettings,
   SETTINGS_SEARCH_ITEMS,
   sourceControlHostSearchItems,
   sourceControlHostSettingsSearchId,
   type SettingsSearchItem,
   searchableSetting,
+  SETTINGS_NAV_GROUPS,
 } from "./settingsSearch";
 
 const ITEMS: ReadonlyArray<SettingsSearchItem> = [
@@ -30,7 +32,7 @@ const ITEMS: ReadonlyArray<SettingsSearchItem> = [
   {
     id: "network-access",
     title: "Network access",
-    to: "/settings/connections",
+    to: "/settings/access",
     searchTerms: ["remote pairing backend"],
   },
   {
@@ -55,7 +57,7 @@ describe("searchSettings", () => {
   it("matches titles, sections, and remembered setting details", () => {
     expect(searchSettings("word", ITEMS).map((item) => item.id)).toEqual(["word-wrap"]);
     expect(searchSettings("network", ITEMS).map((item) => item.id)).toEqual(["network-access"]);
-    expect(searchSettings("connections", ITEMS).map((item) => item.id)).toEqual(["network-access"]);
+    expect(searchSettings("sharing", ITEMS).map((item) => item.id)).toEqual(["network-access"]);
     expect(searchSettings("claude", ITEMS).map((item) => item.id)).toEqual(["providers"]);
     expect(searchSettings("long lines", ITEMS).map((item) => item.id)).toEqual(["word-wrap"]);
   });
@@ -196,31 +198,57 @@ describe("searchSettings", () => {
     });
   });
 
-  it("routes browser recording quality to integrations", () => {
-    const result = searchSettings("recording frame rate")[0];
-    expect(result).toMatchObject({
+  it("routes browser recording quality to the browser page", () => {
+    expect(searchSettings("recording frame rate")[0]).toMatchObject({
       id: "browser-recording-frame-rate",
-      to: "/settings/integrations",
+      to: "/settings/browser",
     });
-    expect(result).toHaveProperty("targetId", "browser");
   });
 
   it("opens browser preferences for search engine results", () => {
     expect(searchSettings("search engine")[0]).toMatchObject({
       id: "browser-search-engine",
-      to: "/settings/integrations",
-      targetId: "browser",
+      to: "/settings/browser",
     });
   });
 
   it("finds the default browser profile action in the profiles list", () => {
     expect(searchSettings("default profile")[0]).toMatchObject({
       id: "browser-default-profile",
-      to: "/settings/integrations",
-      targetId: "browser",
+      to: "/settings/browser",
+      targetId: "browser-profiles",
     });
   });
+
+  it("opens each environment's agent and device access on its page", () => {
+    expect(searchableSettingItem("agent-browser-access")).toMatchObject({
+      to: "/settings/browser",
+      targetId: "browser-agent-access",
+    });
+    for (const id of [
+      "environment-device-hosts",
+      "simulator-memory",
+      "physical-android-screen-off",
+    ]) {
+      expect(searchableSettingItem(id)).toMatchObject({
+        to: "/settings/devices",
+        targetId: "devices",
+      });
+    }
+  });
+
+  it("lists fork settings pages in the sidebar and fork rows on their concern's page", () => {
+    const navPaths = SETTINGS_NAV_GROUPS.flatMap((group) => group.paths);
+    expect(navPaths).toContain("/settings/hardware");
+    expect(navPaths).toContain("/settings/import");
+    expect(searchableSettingItem("turn-usage")?.to).toBe("/settings/chat");
+    expect(searchableSettingItem("provider-auto-updates")?.to).toBe("/settings/maintenance");
+  });
 });
+
+function searchableSettingItem(id: string) {
+  return SETTINGS_SEARCH_ITEMS.find((item) => item.id === id);
+}
 
 describe("settings search targets", () => {
   it("requires an environment for the resolved telemetry export destination", () => {
@@ -281,6 +309,7 @@ describe("auto-settlement search availability", () => {
       "auto-settle-inactive-threads",
       "auto-settle-merged-threads",
       "days-before-auto-settle",
+      "keep-threads-with-pull-requests",
     ]);
   });
 
@@ -356,5 +385,32 @@ describe("source control host search items", () => {
     expect(searchSettings("ghes").map((item) => item.id)).toContain(
       sourceControlHostSettingsSearchId("github"),
     );
+  });
+});
+
+describe("movedSettingsPath", () => {
+  it("sends old links to the page their row moved to", () => {
+    expect(movedSettingsPath("/settings/general", "text-generation-model")).toBe(
+      "/settings/threads",
+    );
+    expect(movedSettingsPath("/settings/connections", "authorized-clients")).toBe(
+      "/settings/access",
+    );
+    expect(movedSettingsPath("/settings/source-control", "worktree-branch-naming")).toBe(
+      "/settings/worktrees",
+    );
+    expect(movedSettingsPath("/settings/appearance", "diff-color-scheme")).toBe("/settings/diffs");
+    expect(movedSettingsPath("/settings/connections", "network-access")).toBe("/settings/access");
+    expect(movedSettingsPath("/settings/storage", "storage-worktrees")).toBe("/settings/worktrees");
+    expect(movedSettingsPath("/settings/storage", "")).toBe("/settings/maintenance");
+    expect(movedSettingsPath("/settings/integrations", "devices")).toBe("/settings/devices");
+    expect(movedSettingsPath("/settings/beta", "")).toBe("/settings/labs");
+  });
+
+  it("leaves current pages alone", () => {
+    expect(movedSettingsPath("/settings/general", "time-format")).toBeNull();
+    expect(movedSettingsPath("/settings/projects", "project-defaults")).toBeNull();
+    expect(movedSettingsPath("/settings/connections", "remote-environments")).toBeNull();
+    expect(movedSettingsPath("/settings/appearance", "theme")).toBeNull();
   });
 });

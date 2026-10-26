@@ -40,7 +40,7 @@ describe("dispatch follow-ups", () => {
     it(`${behavior} is the default and mod+Enter dispatches the opposite action`, async () => {
       const { page } = app;
       const conversationUrl = page.url();
-      await page.goto(`${environment.origin}/settings/general`);
+      await page.goto(`${environment.origin}/settings/chat`);
       await page.getByRole("combobox", { name: "Follow-up behavior" }).click();
       await page.getByRole("option", { name: behavior, exact: true }).click();
       await page.goto(conversationUrl);

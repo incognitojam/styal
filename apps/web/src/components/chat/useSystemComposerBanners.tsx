@@ -186,7 +186,7 @@ export function useSystemComposerBanners(input: SystemComposerBannersInput) {
           size="xs"
           variant="ghost"
           disabled={disconnectingEnvironment}
-          title="Hide this environment's threads. Switch it on again in Connections."
+          title="Hide this environment's threads. Switch it on again in Environments."
           onClick={() =>
             void handleDisconnectActiveEnvironmentStable(
               activeEnvironmentUnavailableState.environmentId,

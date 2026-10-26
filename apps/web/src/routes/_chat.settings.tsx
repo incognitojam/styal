@@ -28,6 +28,7 @@ import {
   getSettingsSearchTargetScope,
   getThreadAutoSettlementSearchAvailability,
   isSettingsSearchScopeAvailable,
+  movedSettingsPath,
 } from "../components/settings/settingsSearch";
 
 function RestoreDeviceDefaultsButton({ onRestored }: { onRestored: () => void }) {
@@ -176,7 +177,7 @@ function SettingsRouteLayout() {
   const pathname = useLocation({ select: (location) => location.pathname });
   return (
     <SettingsScopeProvider
-      search={pathname === "/settings/integrations" ? {} : rawSearch}
+      search={pathname === "/settings/browser" || pathname === "/settings/devices" ? {} : rawSearch}
       singleEnvironment={pathname === "/settings/providers"}
       onChange={(next) => {
         // Send every axis so retain middleware recognizes "all" as an explicit target.
@@ -204,6 +205,8 @@ export const Route = createFileRoute("/_chat/settings")({
     if (location.pathname === "/settings") {
       throw redirect({ to: "/settings/general", replace: true });
     }
+    const moved = movedSettingsPath(location.pathname, location.hash);
+    if (moved) throw redirect({ to: moved, search: true, hash: true, replace: true });
   },
   component: SettingsRouteLayout,
 });

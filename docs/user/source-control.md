@@ -223,7 +223,7 @@ The pull request panel names these as awaiting approval and offers **Approve wor
 Auto-merge does not start them. A watched pull request wakes its agent when runs wait for
 approval; the agent asks you to approve them unless you told it to.
 
-Pull request sharing is off by default. In Settings → Connections → Pull request sharing (Pull
+Pull request sharing is off by default. In Settings → Environments → Pull request sharing (Pull
 request routing under Environments on mobile), choose **Read PRs** or **Read and act** for each
 environment you trust to share its source control access.
 Enable both the original environment and the environment answering its requests on this client.
@@ -307,13 +307,13 @@ For GitHub pull requests:
   [default repository](#choose-the-default-repository).
 
 Changed files in a pull request's Code tab and a thread's diff panel start collapsed. To open them
-expanded, set **Default diff file state** to Expanded in **Settings → General**. Generated files,
+expanded, set **Default diff file state** to Expanded in **Settings → Diffs & pull requests**. Generated files,
 such as lockfiles and files the repository marks `linguist-generated`, still start collapsed until
 you open them.
 
 **Proactive panels** is on by default: a newly linked review opens automatically, and agent work
 that changes files switches to its diff when the turn completes. Turn it off in
-**Settings → General**.
+**Settings → Diffs & pull requests**.
 
 ## Troubleshooting
 

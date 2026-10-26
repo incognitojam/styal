@@ -22,7 +22,7 @@ Choose **Float device over chat** in the toolbar to keep watching the device in 
 small window while the right panel shows something else. The floating window is
 view-only: drag it from anywhere, resize it from any edge, and double-click it or
 use **Open in right panel** to tap and type on the device again.
-In **Settings → Integrations**, turn off the device hub on its environment to stop the
+In **Settings → Devices**, turn off the device hub on its environment to stop the
 helper processes; simulators and emulators keep running until you power them
 off.
 
@@ -56,7 +56,7 @@ thread holds the phone, its screen comes back on and it sleeps on its own
 schedule again. A phone on wireless debugging only stays awake while it is
 charging. To keep the screen on while the phone is held, turn off **Turn off
 physical Android screens** in the environment’s **Device maintenance** section
-in **Settings → Integrations**, or **Settings → Devices** in the mobile app; the
+in **Settings → Devices** on web, desktop, or mobile; the
 phone still stays awake. Press the phone's power button twice to light the
 screen while styal holds it.
 
@@ -87,7 +87,7 @@ back from the device after a change.
 
 ## Simulator memory
 
-Choose **Simulator memory** in **Settings → Integrations → Devices** on web or desktop, or **Settings → Devices** on mobile. To save a project's preference, select the project in **Settings → Projects** and use **Devices**. **Standard** is the default; **Low memory** reduces background services while keeping push notifications, purchases, universal links, iCloud, keychain sync, photos, contacts, and calendar. Use Standard when testing other OS integrations.
+Choose **Simulator memory** in **Settings → Devices** on web or desktop, or **Settings → Devices** on mobile. To save a project's preference, select the project in **Settings → Projects** and use **Devices**. **Standard** is the default; **Low memory** reduces background services while keeping push notifications, purchases, universal links, iCloud, keychain sync, photos, contacts, and calendar. Use Standard when testing other OS integrations.
 
 styal applies the preference before starting a stopped iOS simulator that no thread holds. Opening an already running or claimed device leaves its mode unchanged. Agents inherit the preference automatically. Low memory requires an Apple Silicon Mac and iOS 18.5 or newer; its first use downloads a verified helper onto the simulator's Mac. When a Mac, runtime, or connected environment cannot use Low memory, the simulator starts normally and styal shows a warning. Local, SSH, and connected-environment hosts use the same preset. Android emulators are unchanged.
 
@@ -97,7 +97,7 @@ The applied mode persists across simulator boots, including boots outside styal.
 
 When an agent opens a device, it floats over the chat in web and desktop clients
 connected to the thread, the same way an agent-driven browser does. Turn off
-**Auto-show floating preview** in **Settings → Integrations → Browser preferences** to switch the
+**Auto-show floating preview** in **Settings → Browser** to switch the
 right panel to it instead. Either way, every device the thread has open keeps a tab
 in the right panel unless you close that tab. In the mobile app, open the agent's thread and tap the
 device button above the composer to watch the live screen and control it.
@@ -119,12 +119,12 @@ once per server. Restart an existing agent session after granting access so it
 receives the device CLI environment.
 
 To keep agents away from simulators, turn off **Agent device access** in
-**Settings → Integrations** on its environment. This hides the device tools from agents
+**Settings → Devices** on its environment. This hides the device tools from agents
 started from then on; your own Device panel is unaffected.
 
 ## Idle devices
 
-Agents hand a device back when they finish testing, so other threads can use it; it stays booted. A device held by a thread that is not working is handed to the next agent that needs one, so agents only take turns when devices run short; hand-over happens within an environment, not across connected environments. Archiving or deleting a thread releases its devices. Simulators and emulators styal started shut down once no working thread holds them and nobody has watched them for 10 minutes, even if one is still open in a Device panel tab; devices you started yourself keep running. Change the period or choose **Never** under **Shut down idle devices** in the environment’s **Device maintenance** section in **Settings → Integrations**, or **Settings → Devices** in the mobile app.
+Agents hand a device back when they finish testing, so other threads can use it; it stays booted. A device held by a thread that is not working is handed to the next agent that needs one, so agents only take turns when devices run short; hand-over happens within an environment, not across connected environments. Archiving or deleting a thread releases its devices. Simulators and emulators styal started shut down once no working thread holds them and nobody has watched them for 10 minutes, even if one is still open in a Device panel tab; devices you started yourself keep running. Change the period or choose **Never** under **Shut down idle devices** in the environment’s **Device maintenance** section in **Settings → Devices** on web, desktop, or mobile.
 
 ## Remote connections
 
@@ -143,19 +143,19 @@ connection.
 
 ## Devices from another environment
 
-If the machine with your simulators already runs styal, connect both environments to your client. In **Settings → Integrations**, under the environment that has the simulators, turn on **Share with** for the environment whose agents should use them. In the native mobile app, use **Settings → Devices**. Both environment servers need a version that supports sharing.
+If the machine with your simulators already runs styal, connect both environments to your client. In **Settings → Devices**, under the environment that has the simulators, turn on **Share with** for the environment whose agents should use them. In the native mobile app, use **Settings → Devices**. Both environment servers need a version that supports sharing.
 
 This enables device hub and agent access on both environments and grants the agent environment access to the other machine’s local devices. Access stays available after you close the browser or mobile app; it does not grant access to projects, files, or terminals. Turning off device hub or agent device access on either environment pauses sharing until it is turned back on. The device machine still needs Xcode for iOS or an Android SDK for Android. As with SSH hosts, a simulator on the device machine cannot reach Metro through the agent environment's localhost.
 
-The agent environment tries the available addresses automatically, including your client's connection address, the LAN and Tailscale addresses the device environment's server is listening on, and its styal Link address when known. You do not need to choose an address. If the active address becomes unreachable, it tries the other saved addresses. For the desktop app’s own server, enable network access, Tailscale, or styal Link in **Settings → Connections**. A command-line server lists its LAN addresses only when started with a network `--host`, as in [Pair over a LAN or private network](./remote-access.md#pair-over-a-lan-or-private-network). Sharing is unavailable when the device environment is only reachable through an SSH tunnel.
+The agent environment tries the available addresses automatically, including your client's connection address, the LAN and Tailscale addresses the device environment's server is listening on, and its styal Link address when known. You do not need to choose an address. If the active address becomes unreachable, it tries the other saved addresses. For the desktop app’s own server, enable network access, Tailscale, or styal Link in **Settings → Sharing & access**. A command-line server lists its LAN addresses only when started with a network `--host`, as in [Pair over a LAN or private network](./remote-access.md#pair-over-a-lan-or-private-network). Sharing is unavailable when the device environment is only reachable through an SSH tunnel.
 
-Turn the switch off to revoke access, even after device hub or agent access has been disabled. Saved shares stay removable while the agent environment is connected, including when the device environment is offline or has been removed from your client. If the device environment is offline during removal, revoke the matching **Devices for…** session in its Connections settings when it comes back online. Access expires after a year; turn sharing off and on to renew it. Enabling sharing again also picks up newly added addresses; existing single-address shares keep working.
+Turn the switch off to revoke access, even after device hub or agent access has been disabled. Saved shares stay removable while the agent environment is connected, including when the device environment is offline or has been removed from your client. If the device environment is offline during removal, revoke the matching **Devices for…** session in its **Settings → Sharing & access** when it comes back online. Access expires after a year; turn sharing off and on to renew it. Enabling sharing again also picks up newly added addresses; existing single-address shares keep working.
 
 Shared inventory includes devices open in other environments’ threads. Use a separate simulator or emulator for each agent working in parallel.
 
 ## Existing SSH device hosts
 
-Previously configured SSH device hosts keep working. In **Settings → Integrations**,
+Previously configured SSH device hosts keep working. In **Settings → Devices**,
 find its environment and expand **Existing SSH device hosts** to test, edit, or remove them. For new remote
 device access, [connect and share the device environment](#devices-from-another-environment).
 
@@ -183,6 +183,6 @@ localhost without forwarding or another reachable address.
 
 ## Device tool updates
 
-The connected T3 server manages the device hub and agent tools on its own machine and configured SSH hosts. Required versions install automatically the next time those tools are used. Use the version controls in Settings → Integrations on the relevant environment to read installed versions without installing tools or starting devices.
+The connected T3 server manages the device hub and agent tools on its own machine and configured SSH hosts. Required versions install automatically the next time those tools are used. Use the version controls in Settings → Devices on the relevant environment to read installed versions without installing tools or starting devices.
 
 To receive newer tool versions on a remote environment, update that environment's T3 server. Updating only the browser or mobile app does not update the remote server. An offline host keeps its installed files, but an update needs network access before device support can start; T3 does not fall back to an older version. Reconnect the host and use Retry if installation fails. Existing device and agent-access settings are preserved.

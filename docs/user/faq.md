@@ -28,7 +28,7 @@ The mobile app is a work in progress. On Android, install the newest **styal for
 
 ## Why does styal Link keep disconnecting?
 
-styal Link is the built-in alternative to Tailscale for remote connections. If it keeps dropping, open **Settings > Connections**, find the machine, and select **Details**. The first part marked as failed is the cause. Tailscale works well as a fallback. [styal Link troubleshooting](./t3-connect-troubleshooting.md)
+styal Link is the built-in alternative to Tailscale for remote connections. If it keeps dropping, open **Settings > Environments**, find the machine, and select **Details**. The first part marked as failed is the cause. Tailscale works well as a fallback. [styal Link troubleshooting](./t3-connect-troubleshooting.md)
 
 ## Can I add a bunch of accounts for one provider?
 

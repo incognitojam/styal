@@ -54,7 +54,7 @@ vi.mock(import("./SettingsScopeContext"), async (original) => ({
   useOptionalSettingsScope: () => null,
 }));
 
-import { IntegrationsSettingsPanel } from "./IntegrationsSettings";
+import { BrowserSettingsPanel, DevicesSettingsPanel } from "./IntegrationsSettings";
 
 let environments: EnvironmentPresentation[];
 
@@ -63,27 +63,26 @@ function setup() {
   environments = [];
 }
 
-async function openSettings() {
+async function openSettings(panel: "browser" | "devices") {
   await using stack = new AsyncDisposableStack();
   const screen = stack.use(
     await render(
       <StrictMode>
-        <IntegrationsSettingsPanel />
+        {panel === "browser" ? <BrowserSettingsPanel /> : <DevicesSettingsPanel />}
       </StrictMode>,
     ),
   );
-  await vi.waitFor(() => expect(screen.container.querySelector("section#browser")).not.toBeNull());
+  await vi.waitFor(() => expect(screen.container.querySelector(`section#${panel}`)).not.toBeNull());
   stack.move();
   return screen;
 }
 
-describe("Integrations browser discovery", () => {
-  it("keeps client browser preferences, including search engine, in one folded section", async () => {
+describe("Browser settings discovery", () => {
+  it("keeps client browser preferences, including search engine, in one section", async () => {
     setup();
-    await using screen = await openSettings();
+    await using screen = await openSettings("browser");
 
     expect(screen.container.querySelectorAll("section#browser")).toHaveLength(1);
-    await page.getByRole("button", { name: /Browser preferences/ }).click();
     const searchEngine = page.getByRole("combobox", { name: "Search engine", exact: true });
     await expect.element(searchEngine).toBeVisible();
     expect(searchEngine.element().closest("section")).toBe(
@@ -115,7 +114,7 @@ it("distinguishes a saved connection from an offline environment and links to co
       serverConfig: null,
     } satisfies EnvironmentPresentation;
   });
-  await using screen = await openSettings();
+  await using screen = await openSettings("devices");
   const { container } = screen;
 
   const saved = container.querySelector("#integration-environment-available")!;

@@ -78,7 +78,7 @@ export function AutoSettleNotice() {
     const openSettings = () => {
       dismiss();
       void navigate({
-        to: "/settings/general",
+        to: "/settings/threads",
         hash:
           notice.kind === "single" && notice.reason.kind === "inactivity"
             ? "auto-settle-inactive-threads"

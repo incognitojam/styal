@@ -44,15 +44,22 @@ import {
 
 /**
  * Pages whose every row is saved on this client, plus the import page, which
- * picks its own destination environment. Integrations lists its environments
+ * picks its own destination environment. Browser and Devices list their environments
  * explicitly. These pages have no scope to pick.
  */
 export const SETTINGS_DEVICE_ONLY_PATHS: ReadonlySet<string> = new Set([
+  "/settings/general",
   "/settings/appearance",
+  "/settings/chat",
+  "/settings/diffs",
   "/settings/snap-shot",
   "/settings/connections",
   "/settings/import",
-  "/settings/integrations",
+  "/settings/browser",
+  "/settings/devices",
+  // Network access and authorized clients belong to the environment serving this app.
+  "/settings/access",
+  "/settings/about",
 ]);
 
 interface SettingsScopeMenuProps {

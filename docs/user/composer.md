@@ -57,7 +57,7 @@ See [images and videos](#images-and-videos-in-messages) for previewing and savin
 Follow-ups steer the running turn by default. On web and desktop, providers that
 steer by restarting interrupt the current turn and start it again with your
 follow-up. Choose
-**Settings → General → Follow-up behavior** to queue new messages for a later turn
+**Settings → Chat → Follow-up behavior** to queue new messages for a later turn
 instead. The setting applies to this client; already queued messages keep their
 place. Queued messages are saved on the server and can be edited, reordered, or
 removed above the composer.
@@ -233,8 +233,8 @@ Type `/` for commands or `$` to add a skill from the selected environment and
 provider. On mobile, both are also available before starting a thread on
 **New task**.
 
-The slash menu also includes skills unless you turn off **Settings → General →
-Show skills in slash menu**. Only skills enabled for the provider are listed.
+The slash menu also includes skills unless you turn off **Settings → Chat →
+Show skills in slash menu**, under Advanced. Only skills enabled for the provider are listed.
 
 After you add or change skills, plugins, or MCP servers, use **Restart agent
 session** in the command palette on web and desktop. The conversation continues,

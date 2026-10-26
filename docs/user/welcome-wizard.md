@@ -156,5 +156,5 @@ their own when their pull request merges, and after a few days without activity.
 are on by default; turn both off to settle threads only by hand. **Finish** applies
 your choice to every selected computer and completes setup.
 
-Change these later in **Settings → General**. See
+Change these later in **Settings → Threads**. See
 [Settle finished work](./thread-sidebar.md#settle-finished-work).

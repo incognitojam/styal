@@ -13,7 +13,7 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 
 - **Save a simulator memory mode per project.** Low memory prepares unused iOS simulators with a fixed preset before starting them; Standard restores managed services on the next unused start. Web, desktop, mobile, and agents inherit the same project preference. T3 Code has no simulator memory modes as of [revision 725ada6](https://github.com/pingdotgg/t3code/tree/725ada6eaa32d4a32c361ee42a1717a3e65568d1), checked October 25, 2026. [Simulator memory](./devices.md#simulator-memory).
 
-- **Integration setup names every environment.** Web and desktop Integrations show each environment's browser and device access together, including disconnected environments, with no project or environment filter. Controls change the environment they appear under; browser preferences apply to the client, and project access overrides live in Projects. T3 Code uses shared scope filters and representative device status as of [revision 5b35402](https://github.com/pingdotgg/t3code/tree/5b35402623d7d1d88eaa472807272a6c2e78012a). [Settings and project overrides](./project-settings.md).
+- **Integration setup names every environment.** On web and desktop, the Browser and Devices settings pages list every environment, including disconnected ones, with its own agent browser access or device setup and no project or environment filter. Controls change the environment they appear under; browser preferences apply to the client, and project access overrides live in Projects. T3 Code uses shared scope filters and representative device status as of [revision 9db433f](https://github.com/pingdotgg/t3code/tree/9db433f4bab5dcc923672ef2e6f31f377d39705e). [Settings and project overrides](./project-settings.md).
 
 - **Share devices between connected environments.** Share one styal environment's simulators with another from web, desktop, or mobile settings without configuring SSH or choosing an IP address. styal selects a reachable address and tries saved alternatives when needed. Device access persists after the client closes and can be revoked. New remote device setup uses environment sharing; saved SSH hosts remain manageable in a collapsed section. T3 Code connects remote machines through SSH as of [revision 5b35402](https://github.com/pingdotgg/t3code/tree/5b35402623d7d1d88eaa472807272a6c2e78012a). [Use devices from another environment](./devices.md#devices-from-another-environment).
 
@@ -408,7 +408,7 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   and Windows, and native Codex and OpenCode 2 on macOS and Linux. WinGet and unrecognized native
   install locations are excluded. For native Claude Code and Codex, styal manages updates in
   place of the provider's own updater. Turn this off in
-  **Settings → General**. T3 Code
+  **Settings → Maintenance**. T3 Code
   updates providers only when you choose to, as of
   [revision d0b9e9d](https://github.com/pingdotgg/t3code/tree/d0b9e9d3c72b83bb92670fc1fa3afac5bf60e4e8);
   automatic installs exist there only as an open pull request

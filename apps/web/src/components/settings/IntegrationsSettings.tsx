@@ -48,7 +48,7 @@ import {
 import { isValidSearchUrlTemplate } from "@t3tools/shared/preview";
 import { PREVIEW_VIEWPORT_PRESETS } from "@t3tools/shared/previewViewport";
 import { MoreVertical, Plus as PlusIcon } from "lucide-react";
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 
 import { ScreenRotationIcon } from "~/browser/ScreenRotationIcon";
@@ -130,6 +130,7 @@ import {
   SettingsSection,
 } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
+import { AdvancedSettings } from "./AdvancedSettings";
 import { SettingsEnvironmentScope } from "./SettingsScopeContext";
 import { AgentBrowserAccessSetting } from "./AgentAccessSettings";
 import { EnvironmentRow, environmentTransportLabel } from "./EnvironmentRow";
@@ -778,7 +779,7 @@ function BrowserSearchEngineSetting() {
   );
 }
 
-function PullRequestLinksOpenInAppSetting() {
+export function PullRequestLinksOpenInAppSetting() {
   const openInApp = useClientSettings((settings) => settings.pullRequestLinksOpenInApp);
   const updateSettings = useUpdatePrimarySettings();
 
@@ -1526,134 +1527,177 @@ function BrowserProfilesSetting({ disabled }: { readonly disabled: boolean }) {
   );
 }
 
-export function IntegrationsSettingsPanel() {
-  const { environments } = useEnvironments();
-  const previewDefaultsDisabled = !isElectron;
-  const previewDefaults = (
-    <>
-      <BrowserProfilesSetting disabled={previewDefaultsDisabled} />
-      <BrowserViewportSetting disabled={previewDefaultsDisabled} />
-      <BrowserZoomSetting disabled={previewDefaultsDisabled} />
-      <BrowserAppearanceSetting disabled={previewDefaultsDisabled} />
-      <BrowserRecordingFrameRateSetting disabled={previewDefaultsDisabled} />
-      <BrowserRecordingInputSettings disabled={previewDefaultsDisabled} />
-      <BrowserLinkTargetSetting disabled={previewDefaultsDisabled} />
-      <BrowserAutoShowFloatingPreviewSetting disabled={previewDefaultsDisabled} />
-    </>
-  );
+export function BrowserSettingsPanel() {
+  const desktopOnly = !isElectron;
+  const desktopOnlyMessage = desktopOnly ? "Only available in the desktop app." : undefined;
 
   return (
     <SettingsPageContainer>
-      <FoldedSettingsSection
-        id="browser"
-        title={
-          <>
-            <span>Browser preferences</span>
-            <span className="text-xs text-muted-foreground">This client</span>
-          </>
-        }
-        headerPlacement="outside"
-      >
-        {previewDefaultsDisabled ? (
-          <SettingsUnavailableGroup message="Only available in the desktop app.">
-            {previewDefaults}
-          </SettingsUnavailableGroup>
-        ) : (
-          previewDefaults
+      <EnvironmentIntegrationsSection
+        id="browser-agent-access"
+        title="Agent access"
+        renderControls={(environment) => (
+          <EnvironmentSettingsScope environment={environment}>
+            <AgentBrowserAccessSetting id={`agent-browser-access-${environment.environmentId}`} />
+          </EnvironmentSettingsScope>
         )}
+      />
+      <SettingsSection id="browser" title="Browsing">
+        <SettingsUnavailableGroup message={desktopOnlyMessage}>
+          <BrowserProfilesSetting disabled={desktopOnly} />
+          <BrowserLinkTargetSetting disabled={desktopOnly} />
+          <BrowserAutoShowFloatingPreviewSetting disabled={desktopOnly} />
+        </SettingsUnavailableGroup>
         {/* Not desktop-only: web clients search from server-run browser tabs too. */}
         <BrowserSearchEngineSetting />
-        <PullRequestLinksOpenInAppSetting />
-      </FoldedSettingsSection>
-      <SettingsSection id="devices" title="Environments" variant="plain">
-        <div className="space-y-3">
-          {environments.length === 0 ? (
-            <SettingsRow
-              title="Connect an environment"
-              description="Connect an environment to set up agent browser and device access."
-              control={
-                <Button variant="outline" size="sm" render={<Link to="/settings/connections" />}>
-                  Connections
-                </Button>
-              }
-            />
-          ) : null}
-          {environments.map((environment) => {
-            const connected =
-              environment.connection.phase === "connected" && environment.serverConfig !== null;
-            const loading =
-              environment.connection.phase === "connecting" ||
-              environment.connection.phase === "reconnecting" ||
-              environment.connection.phase === "connected";
-            const connectionLabel = connected
-              ? "Connected"
-              : loading
-                ? "Connecting"
-                : environment.connection.phase === "error" ||
-                    environment.connection.phase === "unsupported"
-                  ? "Needs attention"
-                  : environment.connection.phase === "available"
-                    ? "Not connected"
-                    : "Offline";
-            const labels = settingsScopeEnvironmentLabels(environment, environments);
-            return (
-              <section
-                key={environment.environmentId}
-                id={`integration-environment-${environment.environmentId}`}
-                aria-label={`${labels.primary} integrations`}
-              >
-                <SettingsGroup>
-                  <EnvironmentRow
-                    kind={resolveEnvironmentMachineKind(environment.serverConfig)}
-                    label={labels.primary}
-                    subtitle={labels.secondary || environmentTransportLabel(environment)}
-                    className="rounded-t-xl bg-muted/30"
-                  >
-                    <Badge variant={connected ? "success" : "secondary"}>{connectionLabel}</Badge>
-                  </EnvironmentRow>
-                  {connected ? (
-                    <EnvironmentIntegrationControls environment={environment} />
-                  ) : (
-                    <SettingsRow
-                      title={
-                        loading
-                          ? "Waiting for environment settings"
-                          : environment.connection.phase === "available"
-                            ? "Environment not connected"
-                            : "Environment disconnected"
-                      }
-                      description={
-                        loading
-                          ? "Settings will appear when this environment is ready."
-                          : environment.connection.phase === "available"
-                            ? "Connect this environment to inspect and change its integration settings."
-                            : "Reconnect this environment to inspect and change its integration settings."
-                      }
-                      control={
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          render={<Link to="/settings/connections" />}
-                        >
-                          Manage connection
-                        </Button>
-                      }
-                    />
-                  )}
-                </SettingsGroup>
-              </section>
-            );
-          })}
-        </div>
+        <AdvancedSettings
+          targetIds={[
+            searchableSetting("browser-default-viewport").id,
+            searchableSetting("browser-default-zoom").id,
+            searchableSetting("browser-default-appearance").id,
+          ]}
+        >
+          <SettingsUnavailableGroup message={desktopOnlyMessage}>
+            <BrowserViewportSetting disabled={desktopOnly} />
+            <BrowserZoomSetting disabled={desktopOnly} />
+            <BrowserAppearanceSetting disabled={desktopOnly} />
+          </SettingsUnavailableGroup>
+        </AdvancedSettings>
+      </SettingsSection>
+      <SettingsSection id="browser-recordings" title="Recordings">
+        <SettingsUnavailableGroup message={desktopOnlyMessage}>
+          <BrowserRecordingFrameRateSetting disabled={desktopOnly} />
+          <BrowserRecordingInputSettings disabled={desktopOnly} />
+        </SettingsUnavailableGroup>
       </SettingsSection>
     </SettingsPageContainer>
   );
 }
 
-function EnvironmentIntegrationControls({
+export function DevicesSettingsPanel() {
+  return (
+    <SettingsPageContainer>
+      <EnvironmentIntegrationsSection
+        id="devices"
+        title="Environments"
+        renderControls={(environment) => (
+          <EnvironmentSettingsScope environment={environment}>
+            <DeviceIntegrationControls
+              environmentId={environment.environmentId}
+              enabled={environment.serverConfig?.settings.enableDeviceSupport ?? false}
+              agentAccessEnabled={
+                environment.serverConfig?.settings.enableAgentDeviceAccess ?? false
+              }
+            />
+          </EnvironmentSettingsScope>
+        )}
+      />
+    </SettingsPageContainer>
+  );
+}
+
+/** Lists every known environment, each with its own controls, rather than a page-wide scope. */
+function EnvironmentIntegrationsSection({
+  id,
+  title,
+  renderControls,
+}: {
+  readonly id: string;
+  readonly title: string;
+  readonly renderControls: (environment: EnvironmentPresentation) => ReactNode;
+}) {
+  const { environments } = useEnvironments();
+  return (
+    <SettingsSection id={id} title={title} variant="plain">
+      <div className="space-y-3">
+        {environments.length === 0 ? (
+          <SettingsRow
+            title="Connect an environment"
+            description="Connect an environment to set up agent browser and device access."
+            control={
+              <Button variant="outline" size="sm" render={<Link to="/settings/connections" />}>
+                Connections
+              </Button>
+            }
+          />
+        ) : null}
+        {environments.map((environment) => {
+          const connected =
+            environment.connection.phase === "connected" && environment.serverConfig !== null;
+          const loading =
+            environment.connection.phase === "connecting" ||
+            environment.connection.phase === "reconnecting" ||
+            environment.connection.phase === "connected";
+          const connectionLabel = connected
+            ? "Connected"
+            : loading
+              ? "Connecting"
+              : environment.connection.phase === "error" ||
+                  environment.connection.phase === "unsupported"
+                ? "Needs attention"
+                : environment.connection.phase === "available"
+                  ? "Not connected"
+                  : "Offline";
+          const labels = settingsScopeEnvironmentLabels(environment, environments);
+          return (
+            <section
+              key={environment.environmentId}
+              id={`integration-environment-${environment.environmentId}`}
+              aria-label={`${labels.primary} integrations`}
+            >
+              <SettingsGroup>
+                <EnvironmentRow
+                  kind={resolveEnvironmentMachineKind(environment.serverConfig)}
+                  label={labels.primary}
+                  subtitle={labels.secondary || environmentTransportLabel(environment)}
+                  className="rounded-t-xl bg-muted/30"
+                >
+                  <Badge variant={connected ? "success" : "secondary"}>{connectionLabel}</Badge>
+                </EnvironmentRow>
+                {connected ? (
+                  renderControls(environment)
+                ) : (
+                  <SettingsRow
+                    title={
+                      loading
+                        ? "Waiting for environment settings"
+                        : environment.connection.phase === "available"
+                          ? "Environment not connected"
+                          : "Environment disconnected"
+                    }
+                    description={
+                      loading
+                        ? "Settings will appear when this environment is ready."
+                        : environment.connection.phase === "available"
+                          ? "Connect this environment to inspect and change its integration settings."
+                          : "Reconnect this environment to inspect and change its integration settings."
+                    }
+                    control={
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        render={<Link to="/settings/connections" />}
+                      >
+                        Manage connection
+                      </Button>
+                    }
+                  />
+                )}
+              </SettingsGroup>
+            </section>
+          );
+        })}
+      </div>
+    </SettingsSection>
+  );
+}
+
+function EnvironmentSettingsScope({
   environment,
+  children,
 }: {
   readonly environment: EnvironmentPresentation;
+  readonly children: ReactNode;
 }) {
   const navigate = useNavigate();
   return (
@@ -1663,12 +1707,7 @@ function EnvironmentIntegrationControls({
         void navigate({ to: "/settings/projects", search: () => search });
       }}
     >
-      <AgentBrowserAccessSetting id={`agent-browser-access-${environment.environmentId}`} />
-      <DeviceIntegrationControls
-        environmentId={environment.environmentId}
-        enabled={environment.serverConfig?.settings.enableDeviceSupport ?? false}
-        agentAccessEnabled={environment.serverConfig?.settings.enableAgentDeviceAccess ?? false}
-      />
+      {children}
     </SettingsEnvironmentScope>
   );
 }

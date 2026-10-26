@@ -7,12 +7,12 @@ A styal Link connection goes through four parts, in this order:
 3. **The host's tunnel** (cloudflared on the host) carries the request to the host.
 4. **styal on the host** answers.
 
-When a connection fails, open **Settings > Connections**, find the environment,
+When a connection fails, open **Settings > Environments**, find the environment,
 and select **Details**. The first part marked as failed is the cause. Find its
 section below.
 
 To see the host's side, run `styal link status` on the host, or open
-**Settings > Connections** on the host. Both check the host's styal Link
+**Settings > Sharing & access** on the host. Both check the host's styal Link
 address from the host, and say why it fails. `styal link` runs the same check
 when it finishes setup. This check cannot test another device's network. For a
 problem on one device, use **Details** on that device.
@@ -105,7 +105,7 @@ styal Link does not have an active link between your account and the host.
   account on this device and on the host. On the host, run `styal link logout`,
   then `styal link`.
 - **styal Link is off on the host, or the host only publishes agent activity.**
-  On the host, open **Settings > Connections** and turn **styal Link** on, or
+  On the host, open **Settings > Sharing & access** and turn **styal Link** on, or
   run `styal link`.
 - **The host was linked, but the server did not apply the link yet.** Run
   `styal service restart` on the host, or restart `styal serve`.

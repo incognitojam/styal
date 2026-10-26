@@ -3,7 +3,7 @@
 Use a new thread for a separate task. New threads start in a new worktree, with
 their own branch and working directory. To work in the project's checkout instead,
 change the thread's workspace mode before sending, or change the default in
-**Settings → General → New threads**.
+**Settings → Threads → New threads**.
 
 A repository with no commits runs its first threads in **Current checkout**, even if the default is
 **New worktree**. After the first commit, the worktree default takes effect again.
@@ -130,8 +130,8 @@ To generate a fresh title from the conversation, open a thread's menu and choose
 **Regenerate title**. The action is unavailable while title generation is in progress
 or when the connected environment needs a server update.
 
-To change how titles are written, add **Thread title instructions** in **Settings → General →
-Text generation**, such as a length limit or an identifier to put first. They apply to new and
+To change how titles are written, add **Thread title instructions** in **Settings → Threads →
+Text generation**, under Advanced, such as a length limit or an identifier to put first. They apply to new and
 regenerated titles. Select a project to give it its own instructions.
 
 Agents connected through T3 Code can use the same server-owned metadata workflow to
@@ -149,7 +149,7 @@ there. A thread returns to the top of the active list when it finishes, fails, o
 answer. The Working section lists the thread you last sent work to first. Pinned threads stay in
 the pinned section.
 
-This is on by default. Turn it off with **Settings → Beta → Working section** on web and desktop,
+This is on by default. Turn it off with **Settings → General → Working section** on web and desktop,
 or **Settings → Thread behavior → Working section** on iOS and Android. Each device keeps its own
 choice.
 
@@ -165,7 +165,7 @@ project when no thread is open. Choose **All projects** to clear the filter.
 
 ## Group threads by project
 
-On web and desktop, turn on **Settings → General → Organization → Group threads by
+On web and desktop, turn on **Settings → General → Sidebar → Group threads by
 project** to list active threads under a header for each project. Matching repositories
 across environments share one header. The Working section groups its threads the same way,
 keeping projects in a fixed order and the thread you last sent work to first within each
@@ -220,7 +220,7 @@ threads whose pull request merged. A closed pull request can also settle an idle
 thread. An empty thread's inactivity counts from when it was created.
 Work in progress, pending questions or approvals, and background work the agent
 is waiting on prevent automatic settlement. An open pull request does not prevent inactivity
-settlement unless you turn on **Keep threads with a PR** in **Settings → General**,
+settlement unless you turn on **Keep threads with a PR** in **Settings → Threads**,
 but an old closed or merged pull request does not settle work you
 resumed after it closed. Only your own messages count as resuming. A turn that
 finished background work or a pull request watch starts on its own does not.
@@ -236,7 +236,7 @@ choose **Auto-settle behavior**, and pick **Disabled**. The current option is ch
 **Enabled** to return to the usual rules. Manual settle, snooze, and archive still work while it
 is disabled.
 
-Change these rules in **Settings → General** on web and desktop, or **Settings → Thread behavior** on mobile.
+Change these rules in **Settings → Threads** on web and desktop, or **Settings → Thread behavior** on mobile.
 They continue to run when your apps are closed. On web and desktop, choose an environment at the
 top to change only its rules, or **All environments** to update connected environments together.
 Mixed values show where the selected environments disagree. Mobile applies these
@@ -292,7 +292,7 @@ the continuation finishes. If the queue was held by a restart, resume it then.
 
 When the provider reports a reset time, choose **Resume at reset** to schedule a
 continuation. You can cancel it from the thread. Enable **Resume after
-usage limits** in **Settings → General** on web and desktop, or **Settings → Thread
+usage limits** in **Settings → Threads** on web and desktop, or **Settings → Thread
 behavior** on mobile, to schedule limit stops by default.
 The environment must be running when the reset arrives; it resumes overdue
 continuations after a restart. Stopping the thread, sending a new message,

@@ -3,7 +3,7 @@
 Permission modes control when an agent needs your approval to act. Choose a mode in the message
 composer; it applies to that thread.
 
-Set the default for new threads in **Settings → General → New threads → Permissions**.
+Set the default for new threads in **Settings → Threads → New threads → Permissions**.
 Projects can override the environment default. New threads use this setting rather than the
 mode of the thread you were viewing. The initial default is **Full access**. With **Auto** as the
 default, new threads on a provider without automatic review, such as OpenCode or Antigravity,

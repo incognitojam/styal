@@ -94,11 +94,11 @@ turn finishes. When some turns reported no usage, such as Cursor or Grok turns, 
 how many turns it includes, and likewise when only some turns have a cost. The thread's total also
 shows when you hover a thread in the sidebar.
 
-To lead with the estimated cost instead of tokens, set **Settings → General → Show usage as** to
+To lead with the estimated cost instead of tokens, set **Settings → Chat → Show usage as** to
 **Est. API cost**, or turn on **Show cost** in **Settings → Thread behavior** on mobile. Turns
 without a cost keep showing tokens.
 
-To hide the figures, turn off **Settings → General → Turn usage**. On mobile, the setting is in
+To hide the figures, turn off **Settings → Chat → Turn usage**. On mobile, the setting is in
 **Settings → Thread behavior** and applies to that device.
 
 ## Set custom model prices

@@ -71,10 +71,10 @@ function showPermissionNotice(
       if (isOpen()) persistDismissal();
     },
     actionProps: {
-      children: "Open Connections",
+      children: "Open Sharing & access",
       onClick: () => {
         dismiss();
-        void router.navigate({ to: "/settings/connections" });
+        void router.navigate({ to: "/settings/access" });
       },
     },
     data: {

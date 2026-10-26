@@ -2,7 +2,7 @@
 
 The app you use and the server running your agents can be on different machines.
 When a server is behind your web or desktop app, an update notice appears in the
-conversation and **Settings → Connections**. Update the machine named in that
+conversation and **Settings → Environments**. Update the machine named in that
 notice.
 
 ## Update everything at once
@@ -25,7 +25,7 @@ restarts.
 Server updates appear only after that version is published to npm. Remote
 desktop apps do not wait for npm. The confirmation lists each machine it skips
 and why, such as a machine that is offline or needs a manual update. Use the
-notice or **Settings → Connections** for those.
+notice or **Settings → Environments** for those.
 The final update summary also names skipped machines and their reasons, including
 after the desktop app restarts.
 
@@ -58,7 +58,7 @@ WSL. The confirmation lists threads from the environment you connected to and
 counts other hosted work without revealing its thread or project names. If part
 of the desktop app cannot be checked, the confirmation says so.
 
-**Settings → General → Continue threads after restarts** is on by default.
+**Settings → Maintenance → Continue threads after restarts** is on by default.
 It resumes supported active threads after an update, crash, or machine
 restart. Changes are saved to connected environments that support this setting;
 update older servers first. If a supported environment was offline or has a
@@ -203,8 +203,8 @@ it does not show an update prompt for providers it manages. **Settings →
 Providers** says when the newest release has not been tested yet, and you can
 still install it yourself.
 
-Managed updates are on by default. Turn them on or off in **Settings → General**
-(**Settings → Maintenance** on mobile); they need provider update checks on.
+Managed updates are on by default. Turn them on or off in **Settings → Maintenance**;
+they need provider update checks on.
 They cover providers installed with npm, Bun, pnpm, Yarn, Vite+, or Volta, and
 Claude Code installed with its own installer on macOS, Linux, and Windows.
 Codex and OpenCode 2 native installs are covered on macOS and Linux.

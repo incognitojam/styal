@@ -23,7 +23,7 @@ describe("browse normalized prompt history", () => {
   async function setRichText(enabled: boolean) {
     const { page, composer } = app;
     const conversationUrl = page.url();
-    await page.goto(`${environment.origin}/settings/general`);
+    await page.goto(`${environment.origin}/settings/chat`);
     const toggle = page.getByRole("switch", { name: "Rich text composer", exact: true });
     if ((await toggle.getAttribute("aria-checked")) !== String(enabled)) await toggle.click();
     await page.goto(conversationUrl);
