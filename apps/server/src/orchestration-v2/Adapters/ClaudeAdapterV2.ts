@@ -53,6 +53,8 @@ import {
   type SDKRateLimitInfo,
   type SDKResultMessage,
   type SDKUserMessage,
+  type SpawnedProcess,
+  type SpawnOptions,
 } from "@anthropic-ai/claude-agent-sdk";
 import type {
   AskUserQuestionInput,
@@ -531,6 +533,15 @@ export class ClaudeAgentSdkQueryRunnerError extends Schema.TaggedError<ClaudeAge
   }
 }
 
+class ClaudeMcpRegistrationTimeoutError extends Schema.TaggedError<ClaudeMcpRegistrationTimeoutError>()(
+  "ClaudeMcpRegistrationTimeoutError",
+  {},
+) {
+  override get message(): string {
+    return "Claude timed out while registering its MCP tools. Retry the turn; if it keeps failing, check Claude and the server logs.";
+  }
+}
+
 export class ClaudeBackgroundWorkBlocksQueryReplacementError extends Schema.TaggedError<ClaudeBackgroundWorkBlocksQueryReplacementError>()(
   "ClaudeBackgroundWorkBlocksQueryReplacementError",
   {},
@@ -579,6 +590,7 @@ export interface ClaudeAgentSdkSubagentLookupInput {
 }
 
 const isClaudeAgentSdkQueryRunnerError = Schema.is(ClaudeAgentSdkQueryRunnerError);
+const isClaudeMcpRegistrationTimeoutError = Schema.is(ClaudeMcpRegistrationTimeoutError);
 const isProviderAdapterRuntimeRequestResponseError = Schema.is(
   ProviderAdapter.ProviderAdapterRuntimeRequestResponseError,
 );
@@ -919,270 +931,323 @@ export const layerQueryRunner: Layer.Layer<
       allocateSessionId: crypto
         .randomUUIDv4()
         .pipe(Effect.mapError((cause) => queryRunnerError(cause, "allocateSessionId"))),
-      open: Effect.fn("ClaudeAgentSdkQueryRunner.open")(function* (
-        input: ClaudeAgentSdkQueryOpenInput,
-      ) {
-        const protocolLogger = makeClaudeAgentSdkProtocolLogger({
-          nativeEventLogger,
-          threadId: input.threadId,
-          providerSessionId: input.providerSessionId,
-        });
-        const logProtocolEvent = (event: ClaudeAgentSdkProtocolLogEvent) =>
-          protocolLogger === undefined ? Effect.void : protocolLogger(event);
-        const promptQueue = yield* Queue.unbounded<SDKUserMessage>();
-        const prompt = Stream.fromQueue(promptQueue).pipe(
-          Stream.catchCause((cause) =>
-            Cause.hasInterruptsOnly(cause) ? Stream.empty : Stream.failCause(cause),
-          ),
-          Stream.toAsyncIterable,
-        );
-        const runtimeContext = yield* Effect.context<never>();
-        const runFork = Effect.runForkWith(runtimeContext);
-        const claudeProcess = makeClaudeProcessSpawner({
-          // Windows has no process groups.
-          processGroup: platform !== "win32",
-          observer: {
-            onSpawn: ({ pid }) => {
-              runFork(Effect.logInfo("claude.cli.spawned", { threadId: input.threadId, pid }));
+      open: Effect.fn("ClaudeAgentSdkQueryRunner.open")(
+        function* (input: ClaudeAgentSdkQueryOpenInput) {
+          const protocolLogger = makeClaudeAgentSdkProtocolLogger({
+            nativeEventLogger,
+            threadId: input.threadId,
+            providerSessionId: input.providerSessionId,
+          });
+          const logProtocolEvent = (event: ClaudeAgentSdkProtocolLogEvent) =>
+            protocolLogger === undefined ? Effect.void : protocolLogger(event);
+          // A failed open shuts down its queue before retrying, so the old CLI cannot take the prompt.
+          const promptQueue = yield* Queue.unbounded<SDKUserMessage>();
+          const prompt = Stream.fromQueue(promptQueue).pipe(
+            Stream.catchCause((cause) =>
+              Cause.hasInterruptsOnly(cause) ? Stream.empty : Stream.failCause(cause),
+            ),
+            Stream.toAsyncIterable,
+          );
+          const runtimeContext = yield* Effect.context<never>();
+          const runFork = Effect.runForkWith(runtimeContext);
+          const claudeProcess = makeClaudeProcessSpawner({
+            // Windows has no process groups.
+            processGroup: platform !== "win32",
+            observer: {
+              onSpawn: ({ pid }) => {
+                runFork(Effect.logInfo("claude.cli.spawned", { threadId: input.threadId, pid }));
+              },
+              onStderr: (text) => {
+                runFork(Effect.logDebug("claude.cli.stderr", { threadId: input.threadId, text }));
+              },
+              onExit: ({ pid, code, signal, stderrTail }) => {
+                runFork(
+                  Effect.logInfo("claude.cli.exited", {
+                    threadId: input.threadId,
+                    pid,
+                    code,
+                    signal,
+                    ...(stderrTail.length > 0 && (code !== 0 || signal !== null)
+                      ? { stderrTail }
+                      : {}),
+                  }),
+                );
+              },
             },
-            onStderr: (text) => {
-              runFork(Effect.logDebug("claude.cli.stderr", { threadId: input.threadId, text }));
-            },
-            onExit: ({ pid, code, signal, stderrTail }) => {
-              runFork(
-                Effect.logInfo("claude.cli.exited", {
+          });
+          // The SDK would pass `mcpServers` as an inline `--mcp-config` argument,
+          // which every local user can read. They go over the CLI's stdin control
+          // channel instead, so header credentials stay out of its argv and out
+          // of the environment every command the agent runs inherits.
+          const { mcpServers, ...queryOptions } = input.options;
+          // The SDK spawns a native binary as `path ...executableArgs ...sdkArgs`,
+          // which lets the agent scope wrapper go in front of the CLI. The SDK
+          // runs a script entry through node instead, so those launch unwrapped.
+          const binaryPath = queryOptions.pathToClaudeCodeExecutable;
+          const launch =
+            binaryPath === undefined ||
+            CLAUDE_SCRIPT_EXTENSIONS.some((ext) => binaryPath.endsWith(ext))
+              ? undefined
+              : yield* agentScope.wrap({
+                  command: binaryPath,
+                  args: [],
+                  name: "claude",
                   threadId: input.threadId,
-                  pid,
-                  code,
-                  signal,
-                  ...(stderrTail.length > 0 && (code !== 0 || signal !== null)
-                    ? { stderrTail }
-                    : {}),
+                  env: queryOptions.env,
+                });
+          const options =
+            launch === undefined || launch.args.length === 0
+              ? queryOptions
+              : {
+                  ...queryOptions,
+                  pathToClaudeCodeExecutable: launch.command,
+                  executableArgs: [...launch.args, ...(queryOptions.executableArgs ?? [])],
+                };
+          // A caller-supplied spawner (tests use a fake CLI) replaces the observed one.
+          const spawnProcess =
+            options.spawnClaudeCodeProcess ?? claudeProcess.spawnClaudeCodeProcess;
+          let spawnedProcess: SpawnedProcess | undefined;
+          let processExited = false;
+          let processExit: Promise<void> | undefined;
+          const spawnClaudeCodeProcess = (spawnOptions: SpawnOptions) => {
+            const child = spawnProcess(spawnOptions);
+            spawnedProcess = child;
+            processExited = child.exitCode !== null || child.signalCode != null;
+            processExit = new Promise<void>((resolve) => {
+              if (processExited) resolve();
+              else
+                child.once("exit", () => {
+                  processExited = true;
+                  resolve();
+                });
+            });
+            return child;
+          };
+          const queryRuntime = yield* Effect.uninterruptibleMask((restore) =>
+            Effect.try({
+              try: () =>
+                query({
+                  prompt,
+                  options: { ...options, spawnClaudeCodeProcess },
                 }),
-              );
-            },
-          },
-        });
-        // The SDK would pass `mcpServers` as an inline `--mcp-config` argument,
-        // which every local user can read. They go over the CLI's stdin control
-        // channel instead, so header credentials stay out of its argv and out
-        // of the environment every command the agent runs inherits.
-        const { mcpServers, ...queryOptions } = input.options;
-        // The SDK spawns a native binary as `path ...executableArgs ...sdkArgs`,
-        // which lets the agent scope wrapper go in front of the CLI. The SDK
-        // runs a script entry through node instead, so those launch unwrapped.
-        const binaryPath = queryOptions.pathToClaudeCodeExecutable;
-        const launch =
-          binaryPath === undefined ||
-          CLAUDE_SCRIPT_EXTENSIONS.some((ext) => binaryPath.endsWith(ext))
-            ? undefined
-            : yield* agentScope.wrap({
-                command: binaryPath,
-                args: [],
-                name: "claude",
-                threadId: input.threadId,
-                env: queryOptions.env,
-              });
-        const options =
-          launch === undefined || launch.args.length === 0
-            ? queryOptions
-            : {
-                ...queryOptions,
-                pathToClaudeCodeExecutable: launch.command,
-                executableArgs: [...launch.args, ...(queryOptions.executableArgs ?? [])],
-              };
-        const queryRuntime = yield* Effect.uninterruptibleMask((restore) =>
-          Effect.try({
-            try: () =>
-              query({
-                prompt,
-                options: {
-                  ...options,
-                  // A caller-supplied spawner (tests use a fake CLI) replaces the observed one.
-                  spawnClaudeCodeProcess:
-                    options.spawnClaudeCodeProcess ?? claudeProcess.spawnClaudeCodeProcess,
-                },
-              }),
-            catch: (cause) => queryRunnerError(cause, "query"),
-          }).pipe(
-            Effect.tap((queryRuntime) =>
-              restore(
-                Effect.gen(function* () {
-                  if (mcpServers !== undefined) {
-                    // Error texts and the CLI's mcp_status response can echo the headers, so
-                    // only server names are logged.
-                    const failed = yield* Effect.tryPromise(() =>
-                      queryRuntime.setMcpServers(mcpServers),
-                    ).pipe(
-                      Effect.map((result) => Object.keys(result.errors)),
-                      Effect.orElseSucceed(() => Object.keys(mcpServers)),
-                      Effect.timeoutOrElse({
-                        duration: CLAUDE_MCP_REGISTRATION_TIMEOUT,
-                        orElse: () =>
-                          Effect.fail(
-                            queryRunnerError(
-                              "Claude Code did not answer the MCP server registration.",
-                              "setMcpServers",
+              catch: (cause) => queryRunnerError(cause, "query"),
+            }).pipe(
+              Effect.tap((queryRuntime) =>
+                restore(
+                  Effect.gen(function* () {
+                    if (mcpServers !== undefined) {
+                      // Error texts and the CLI's mcp_status response can echo the headers, so
+                      // only server names are logged.
+                      const failed = yield* Effect.tryPromise(() =>
+                        queryRuntime.setMcpServers(mcpServers),
+                      ).pipe(
+                        Effect.map((result) => Object.keys(result.errors)),
+                        Effect.orElseSucceed(() => Object.keys(mcpServers)),
+                        Effect.timeoutOrElse({
+                          duration: CLAUDE_MCP_REGISTRATION_TIMEOUT,
+                          orElse: () =>
+                            Effect.logWarning("orchestration-v2.claude-mcp-registration-timeout", {
+                              threadId: input.threadId,
+                              providerSessionId: input.providerSessionId,
+                            }).pipe(
+                              Effect.andThen(
+                                Effect.fail(
+                                  queryRunnerError(
+                                    new ClaudeMcpRegistrationTimeoutError(),
+                                    "setMcpServers",
+                                  ),
+                                ),
+                              ),
                             ),
-                          ),
-                      }),
-                    );
-                    if (failed.length > 0) {
-                      yield* Effect.logWarning("orchestration-v2.claude-mcp-servers-unavailable", {
-                        threadId: input.threadId,
-                        servers: failed,
-                      });
+                        }),
+                      );
+                      if (failed.length > 0) {
+                        yield* Effect.logWarning(
+                          "orchestration-v2.claude-mcp-servers-unavailable",
+                          {
+                            threadId: input.threadId,
+                            servers: failed,
+                          },
+                        );
+                      }
                     }
-                  }
-                  yield* logProtocolEvent({
-                    direction: "outgoing",
-                    stage: "decoded",
-                    payload: {
-                      type: "query.open",
-                      options: loggedClaudeQueryOptions(input.options),
-                    },
-                  });
-                }),
-              ).pipe(
-                Effect.onError(() =>
-                  Queue.shutdown(promptQueue).pipe(
-                    Effect.andThen(closeClaudeQuery(queryRuntime, claudeProcess.handle)),
-                    Effect.ignore,
+                    yield* logProtocolEvent({
+                      direction: "outgoing",
+                      stage: "decoded",
+                      payload: {
+                        type: "query.open",
+                        options: loggedClaudeQueryOptions(input.options),
+                      },
+                    });
+                  }),
+                ).pipe(
+                  Effect.onError(() =>
+                    Queue.shutdown(promptQueue).pipe(
+                      // SDK disposal can return before process exit; await the owned child's exit before retrying.
+                      Effect.andThen(
+                        Effect.tryPromise({
+                          try: async () => {
+                            if (spawnedProcess !== undefined && !processExited) {
+                              spawnedProcess.kill("SIGKILL");
+                            }
+                            await processExit;
+                          },
+                          catch: (cause) => queryRunnerError(cause, "close"),
+                        }).pipe(Effect.timeout("10 seconds")),
+                      ),
+                      Effect.ensuring(
+                        Effect.tryPromise({
+                          try: () => queryRuntime[Symbol.asyncDispose](),
+                          catch: (cause) => queryRunnerError(cause, "close"),
+                        }).pipe(Effect.orDie),
+                      ),
+                      Effect.orDie,
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-        );
+          );
 
-        return {
-          messages: Stream.fromAsyncIterable(claudeQueryMessages(queryRuntime), (cause) =>
-            queryRunnerError(cause, "fromAsyncIterable"),
-          ).pipe(
-            Stream.tap((message) =>
-              logProtocolEvent({
-                direction: "incoming",
-                stage: "decoded",
-                payload: message,
-              }),
+          return {
+            messages: Stream.fromAsyncIterable(claudeQueryMessages(queryRuntime), (cause) =>
+              queryRunnerError(cause, "fromAsyncIterable"),
+            ).pipe(
+              Stream.tap((message) =>
+                logProtocolEvent({
+                  direction: "incoming",
+                  stage: "decoded",
+                  payload: message,
+                }),
+              ),
             ),
+            offer: (message) =>
+              Queue.offer(promptQueue, message).pipe(
+                Effect.asVoid,
+                Effect.tap(() =>
+                  logProtocolEvent({
+                    direction: "outgoing",
+                    stage: "decoded",
+                    payload: {
+                      type: "prompt.offer",
+                      message,
+                    },
+                  }),
+                ),
+              ),
+            setModel: (model) =>
+              Effect.tryPromise({
+                try: () => queryRuntime.setModel(model),
+                catch: (cause) => queryRunnerError(cause, "setModel"),
+              }).pipe(
+                Effect.tap(() =>
+                  logProtocolEvent({
+                    direction: "outgoing",
+                    stage: "decoded",
+                    payload: {
+                      type: "query.set_model",
+                      model,
+                    },
+                  }),
+                ),
+              ),
+            applyFlagSettings: (settings) =>
+              Effect.tryPromise({
+                try: () => queryRuntime.applyFlagSettings(settings),
+                catch: (cause) => queryRunnerError(cause, "applyFlagSettings"),
+              }).pipe(
+                Effect.tap(() =>
+                  logProtocolEvent({
+                    direction: "outgoing",
+                    stage: "decoded",
+                    payload: {
+                      type: "query.apply_flag_settings",
+                      settings,
+                    },
+                  }),
+                ),
+              ),
+            setPermissionMode: (mode) =>
+              Effect.tryPromise({
+                try: () => queryRuntime.setPermissionMode(mode),
+                catch: (cause) => queryRunnerError(cause, "setPermissionMode"),
+              }).pipe(
+                Effect.tap(() =>
+                  logProtocolEvent({
+                    direction: "outgoing",
+                    stage: "decoded",
+                    payload: {
+                      type: "query.set_permission_mode",
+                      mode,
+                    },
+                  }),
+                ),
+              ),
+            stopTask: (taskId) =>
+              Effect.tryPromise({
+                try: () => queryRuntime.stopTask(taskId),
+                catch: (cause) => queryRunnerError(cause, "stopTask"),
+              }).pipe(
+                Effect.tap(() =>
+                  logProtocolEvent({
+                    direction: "outgoing",
+                    stage: "decoded",
+                    payload: { type: "query.stop_task", taskId },
+                  }),
+                ),
+              ),
+            backgroundTasks: (toolUseId) =>
+              Effect.tryPromise({
+                try: () => queryRuntime.backgroundTasks(toolUseId),
+                catch: (cause) => queryRunnerError(cause, "backgroundTasks"),
+              }).pipe(
+                Effect.tap(() =>
+                  logProtocolEvent({
+                    direction: "outgoing",
+                    stage: "decoded",
+                    payload: { type: "query.background_tasks", toolUseId },
+                  }),
+                ),
+              ),
+            interrupt: Effect.tryPromise({
+              try: () => queryRuntime.interrupt(),
+              catch: (cause) => queryRunnerError(cause, "interrupt"),
+            }).pipe(
+              Effect.tap(() =>
+                logProtocolEvent({
+                  direction: "outgoing",
+                  stage: "decoded",
+                  payload: {
+                    type: "query.interrupt",
+                  },
+                }),
+              ),
+            ),
+            close: Queue.shutdown(promptQueue).pipe(
+              Effect.andThen(closeClaudeQuery(queryRuntime, claudeProcess.handle)),
+              Effect.tap(() =>
+                logProtocolEvent({
+                  direction: "outgoing",
+                  stage: "decoded",
+                  payload: {
+                    type: "query.close",
+                  },
+                }),
+              ),
+            ),
+          } satisfies ClaudeAgentSdkQuerySession;
+        },
+        // Fresh IDs may already have a metadata-only transcript; only resumed opens can reuse their ID.
+        (effect, input) =>
+          effect.pipe(
+            Effect.retry({
+              times: 1,
+              while: (error) =>
+                input.options.resume !== undefined &&
+                isClaudeMcpRegistrationTimeoutError(error.cause),
+            }),
           ),
-          offer: (message) =>
-            Queue.offer(promptQueue, message).pipe(
-              Effect.asVoid,
-              Effect.tap(() =>
-                logProtocolEvent({
-                  direction: "outgoing",
-                  stage: "decoded",
-                  payload: {
-                    type: "prompt.offer",
-                    message,
-                  },
-                }),
-              ),
-            ),
-          setModel: (model) =>
-            Effect.tryPromise({
-              try: () => queryRuntime.setModel(model),
-              catch: (cause) => queryRunnerError(cause, "setModel"),
-            }).pipe(
-              Effect.tap(() =>
-                logProtocolEvent({
-                  direction: "outgoing",
-                  stage: "decoded",
-                  payload: {
-                    type: "query.set_model",
-                    model,
-                  },
-                }),
-              ),
-            ),
-          applyFlagSettings: (settings) =>
-            Effect.tryPromise({
-              try: () => queryRuntime.applyFlagSettings(settings),
-              catch: (cause) => queryRunnerError(cause, "applyFlagSettings"),
-            }).pipe(
-              Effect.tap(() =>
-                logProtocolEvent({
-                  direction: "outgoing",
-                  stage: "decoded",
-                  payload: {
-                    type: "query.apply_flag_settings",
-                    settings,
-                  },
-                }),
-              ),
-            ),
-          setPermissionMode: (mode) =>
-            Effect.tryPromise({
-              try: () => queryRuntime.setPermissionMode(mode),
-              catch: (cause) => queryRunnerError(cause, "setPermissionMode"),
-            }).pipe(
-              Effect.tap(() =>
-                logProtocolEvent({
-                  direction: "outgoing",
-                  stage: "decoded",
-                  payload: {
-                    type: "query.set_permission_mode",
-                    mode,
-                  },
-                }),
-              ),
-            ),
-          stopTask: (taskId) =>
-            Effect.tryPromise({
-              try: () => queryRuntime.stopTask(taskId),
-              catch: (cause) => queryRunnerError(cause, "stopTask"),
-            }).pipe(
-              Effect.tap(() =>
-                logProtocolEvent({
-                  direction: "outgoing",
-                  stage: "decoded",
-                  payload: { type: "query.stop_task", taskId },
-                }),
-              ),
-            ),
-          backgroundTasks: (toolUseId) =>
-            Effect.tryPromise({
-              try: () => queryRuntime.backgroundTasks(toolUseId),
-              catch: (cause) => queryRunnerError(cause, "backgroundTasks"),
-            }).pipe(
-              Effect.tap(() =>
-                logProtocolEvent({
-                  direction: "outgoing",
-                  stage: "decoded",
-                  payload: { type: "query.background_tasks", toolUseId },
-                }),
-              ),
-            ),
-          interrupt: Effect.tryPromise({
-            try: () => queryRuntime.interrupt(),
-            catch: (cause) => queryRunnerError(cause, "interrupt"),
-          }).pipe(
-            Effect.tap(() =>
-              logProtocolEvent({
-                direction: "outgoing",
-                stage: "decoded",
-                payload: {
-                  type: "query.interrupt",
-                },
-              }),
-            ),
-          ),
-          close: Queue.shutdown(promptQueue).pipe(
-            Effect.andThen(closeClaudeQuery(queryRuntime, claudeProcess.handle)),
-            Effect.tap(() =>
-              logProtocolEvent({
-                direction: "outgoing",
-                stage: "decoded",
-                payload: {
-                  type: "query.close",
-                },
-              }),
-            ),
-          ),
-        } satisfies ClaudeAgentSdkQuerySession;
-      }),
+      ),
       readSessionHistory: (input) =>
         Effect.tryPromise({
           try: async () =>

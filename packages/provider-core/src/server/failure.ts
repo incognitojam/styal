@@ -74,6 +74,7 @@ function causeMessage(cause: unknown): string | undefined {
         case "ContextHandoffBudgetError":
           return new ContextHandoffBudgetError().message;
         case "ClaudeBackgroundWorkBlocksQueryReplacementError":
+        case "ClaudeMcpRegistrationTimeoutError":
         case "CursorModelUnavailableError":
           return stringField(cause, "message");
         case "ContextHandoffDeliveryUncertainError":
