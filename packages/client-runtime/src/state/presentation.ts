@@ -88,10 +88,13 @@ export function createEnvironmentPresentationAtoms<E>(input: {
         () => AVAILABLE_CONNECTION_STATE,
       );
       const previous = Option.getOrNull(get.self<EnvironmentPresentation | null>());
+      // The supervisor never publishes this placeholder; an enabled one starts out connecting.
       const connection: EnvironmentConnectionPresentation =
-        entry.unsupportedReason === undefined
-          ? presentEnvironmentConnection(state, entry)
-          : { phase: "unsupported", error: entry.unsupportedReason, traceId: null };
+        entry.unsupportedReason !== undefined
+          ? { phase: "unsupported", error: entry.unsupportedReason, traceId: null }
+          : state === AVAILABLE_CONNECTION_STATE && entry.enabled
+            ? { phase: "connecting", error: null, traceId: null }
+            : presentEnvironmentConnection(state, entry);
       const next = {
         entry,
         connection:
