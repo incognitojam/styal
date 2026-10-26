@@ -2957,7 +2957,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                         )
                       : Effect.void,
                   ),
-                  Effect.catch(() => Effect.void),
+                  Effect.ignore,
                   Effect.forkIn(scope),
                 );
             }
