@@ -17,8 +17,11 @@ import * as Clock from "effect/Clock";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
@@ -235,6 +238,14 @@ const makeSessionHarness = Effect.fn(function* (
   );
   return { registry, atom, permissions, prepared, read, nextCheck };
 });
+
+// Resolves "settled" instead of hanging when the load finishes without sending another request.
+function nextRequestOrSettled(requests: Queue.Queue<number>, load: Fiber.Fiber<unknown, unknown>) {
+  return Effect.raceFirst(
+    Queue.take(requests).pipe(Effect.as("sent" as const)),
+    Fiber.await(load).pipe(Effect.as("settled" as const)),
+  );
+}
 
 type HttpInput = ReturnType<typeof makeHarness>["input"];
 const LOADERS: ReadonlyArray<{
@@ -587,6 +598,69 @@ describe("authenticated environment HTTP requests", () => {
     }),
   );
 
+  it.effect(
+    "waits longer for session permissions after the environment is too slow to answer",
+    () =>
+      Effect.gen(function* () {
+        const requests = yield* Queue.unbounded<number>();
+        let answer: () => void = () => {};
+        const answered = new Promise<void>((resolve) => {
+          answer = resolve;
+        });
+        const harness = makeHarness((requestNumber) => {
+          Queue.offerUnsafe(requests, requestNumber);
+          return requestNumber === 1
+            ? new Promise<Response>(() => {})
+            : answered.then(() => Response.json(SESSION));
+        });
+        const load = yield* fetchEnvironmentSessionState({
+          prepared: { ...PREPARED, httpAuthorization: { _tag: "Bearer", token: "bearer-token" } },
+          signer: Option.none(),
+          timeoutMs: 1_000,
+        }).pipe(Effect.provide(harness.httpLayer), Effect.forkChild({ startImmediately: true }));
+
+        yield* Queue.take(requests);
+        yield* TestClock.adjust("1 second");
+        expect(yield* nextRequestOrSettled(requests, load)).toBe("sent");
+        yield* TestClock.adjust("1500 millis");
+        answer();
+
+        expect(yield* Fiber.await(load)).toStrictEqual(Exit.succeed(SESSION));
+        expect(harness.calls).toHaveLength(2);
+      }),
+  );
+
+  it.effect("gives up on session permissions once a 60 second wait also times out", () =>
+    Effect.gen(function* () {
+      const requests = yield* Queue.unbounded<number>();
+      const harness = makeHarness((requestNumber) => {
+        Queue.offerUnsafe(requests, requestNumber);
+        return new Promise<Response>(() => {});
+      });
+      const load = yield* fetchEnvironmentSessionState({
+        prepared: { ...PREPARED, httpAuthorization: { _tag: "Bearer", token: "bearer-token" } },
+        signer: Option.none(),
+        timeoutMs: 15_000,
+      }).pipe(Effect.provide(harness.httpLayer), Effect.forkChild({ startImmediately: true }));
+
+      yield* Queue.take(requests);
+      yield* TestClock.adjust("15 seconds");
+      expect(yield* nextRequestOrSettled(requests, load)).toBe("sent");
+      yield* TestClock.adjust("30 seconds");
+      expect(yield* nextRequestOrSettled(requests, load)).toBe("sent");
+      yield* TestClock.adjust("60 seconds");
+      const exit = yield* Fiber.await(load);
+
+      expect(exit).toMatchObject({
+        _tag: "Failure",
+        cause: {
+          reasons: [{ error: { _tag: "RemoteEnvironmentAuthTimeoutError", timeoutMs: 60_000 } }],
+        },
+      });
+      expect(harness.calls).toHaveLength(3);
+    }),
+  );
+
   it.effect("reports persistent session rejection instead of showing missing permissions", () =>
     Effect.gen(function* () {
       const harness = makeHarness(() => Response.json(UNAUTHENTICATED_SESSION));
@@ -677,16 +751,24 @@ describe("session refresh permissions", () => {
     "keeps confirmed permissions through a $0 and recovers on retry",
     (failure) =>
       Effect.gen(function* () {
-        const refreshing = Promise.withResolvers<void>();
+        // A slow session check waits longer on each timeout before it fails.
+        const timeoutSteps = [
+          "6 seconds",
+          "12 seconds",
+          "24 seconds",
+          "48 seconds",
+          "60 seconds",
+        ] as const;
+        const failedAttempts = failure === "timeout" ? timeoutSteps.length : 1;
+        const requests = yield* Queue.unbounded<number>();
         const failedResponse = Promise.withResolvers<Response>();
         const recovering = Promise.withResolvers<void>();
         const recoveredResponse = Promise.withResolvers<Response>();
         const http = makeHarness((requestNumber) => {
-          if (requestNumber === 2) {
-            refreshing.resolve();
-            return failedResponse.promise;
-          }
-          if (requestNumber === 3) {
+          Queue.offerUnsafe(requests, requestNumber);
+          if (requestNumber === 1) return Response.json(SESSION);
+          if (requestNumber <= 1 + failedAttempts) return failedResponse.promise;
+          if (requestNumber === 2 + failedAttempts) {
             recovering.resolve();
             return recoveredResponse.promise;
           }
@@ -694,17 +776,21 @@ describe("session refresh permissions", () => {
         });
         const { registry, atom, permissions, read, nextCheck } = yield* makeSessionHarness(http);
         expect(yield* read).toEqual(SESSION);
+        yield* Queue.take(requests);
         const observed: Array<boolean> = [];
         registry.subscribe(permissions.permissionAtom(TARGET.environmentId), (allowed) =>
           observed.push(allowed),
         );
         const checked = nextCheck();
         registry.refresh(atom);
-        yield* Effect.promise(() => refreshing.promise);
+        yield* Queue.take(requests);
         if (failure === "network failure") {
           failedResponse.reject(new TypeError("Failed to fetch"));
         } else {
-          yield* TestClock.adjust("6 seconds");
+          for (const [index, step] of timeoutSteps.entries()) {
+            yield* TestClock.adjust(step);
+            if (index < timeoutSteps.length - 1) yield* Queue.take(requests);
+          }
         }
 
         yield* checked;
@@ -717,7 +803,7 @@ describe("session refresh permissions", () => {
         expect(yield* read).toMatchObject({ scopes: ["orchestration:read"] });
         expect(registry.get(permissions.permissionAtom(TARGET.environmentId))).toBe(false);
         expect(observed.slice(0, -1)).not.toContain(false);
-        expect(http.calls).toHaveLength(3);
+        expect(http.calls).toHaveLength(2 + failedAttempts);
       }).pipe(Effect.scoped),
   );
 
