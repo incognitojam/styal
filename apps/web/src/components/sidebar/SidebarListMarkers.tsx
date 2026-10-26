@@ -105,7 +105,7 @@ export function SidebarDragBoundary(props: {
 export function SidebarSectionHeader(props: {
   marker: "working-header" | "snoozed-header" | "settled-header";
   label: string;
-  /** Shown as a muted trailing count while the shelf is collapsed. */
+  /** A muted trailing count; classic shows it only while the shelf is collapsed. */
   count: number;
   className?: string;
   dragging?: boolean;
@@ -120,6 +120,7 @@ export function SidebarSectionHeader(props: {
         : "settled";
   const redesign = useClientSettings((s) => s.redesignEnabled);
   const collapsedCount = props.toggle.expanded ? null : props.count;
+  const count = redesign ? props.count : collapsedCount;
   return (
     <SortableSidebarMarker
       marker={props.marker}
@@ -132,8 +133,8 @@ export function SidebarSectionHeader(props: {
         tone={props.isDropTarget ? "accent" : props.dragging ? "emphasized" : "muted"}
         data-testid={`sidebar-${shelf}-shelf-toggle`}
         accessory={
-          redesign && collapsedCount !== null ? (
-            <span className="font-normal tabular-nums">{collapsedCount}</span>
+          redesign && count !== null ? (
+            <span className="font-normal tabular-nums">{count}</span>
           ) : null
         }
       >
@@ -161,7 +162,6 @@ export function SidebarProjectGroupHeader(props: {
     disabled: { draggable: !props.draggable },
     animateLayoutChanges: animateSidebarLayoutChanges,
   });
-  const projectIconColors = useClientSettings((s) => s.sidebarProjectIconColors);
   return (
     <li
       ref={setNodeRef}
@@ -200,14 +200,7 @@ export function SidebarProjectGroupHeader(props: {
         )}
       >
         {props.project ? (
-          <ProjectFavicon
-            project={props.project}
-            className={cn(
-              "size-4 shrink-0",
-              !projectIconColors &&
-                "redesign:opacity-60 redesign:grayscale redesign:group-focus-visible/sidebar-project-header:opacity-100 redesign:group-focus-visible/sidebar-project-header:grayscale-0 redesign:group-any-hover/sidebar-project-header:opacity-100 redesign:group-any-hover/sidebar-project-header:grayscale-0",
-            )}
-          />
+          <ProjectFavicon project={props.project} className="size-4 shrink-0" />
         ) : null}
         <span className="min-w-0 truncate">{props.label}</span>
         {props.pinned ? (

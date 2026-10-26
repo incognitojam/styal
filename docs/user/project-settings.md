@@ -50,7 +50,7 @@ and other phone-only settings ignore the filter.
 
 ## Worktree branch names
 
-In **Settings → Source Control → Worktree branch naming**, choose a static prefix,
+In **Settings → Source control → Worktree branch naming**, choose a static prefix,
 a model-selected semantic prefix such as `feat/` or `fix/`, or custom instructions
 for the complete name. The static prefix defaults to `styal/`; a trailing slash is
 optional, and an empty prefix adds nothing. Invalid characters in a static prefix
@@ -149,9 +149,9 @@ than** on the task.
 ## Defaults and inheritance
 
 General contains the model and workspace for new threads. Integrations controls browser and device
-access separately for each environment; its browser preferences apply to this client. Source Control
+access separately for each environment; its browser preferences apply to this client. Source control
 contains automatic pull, the default pull request merge method and text generation. General and
-Source Control edit environment defaults or project overrides depending on the project crumb.
+Source control edit environment defaults or project overrides depending on the project crumb.
 
 To override browser or device access for a project, select it in **Settings → Projects** and use
 **Agent access**; its simulator memory mode is under **Devices**. Reset an override to follow the environment again. Existing overrides keep their values.
@@ -269,7 +269,7 @@ sessions.
 
 ## Keep the default branch current
 
-In Source Control, enable **Automatically pull** to keep the default-branch checkout up to date
+In Source control, enable **Automatically pull** to keep the default-branch checkout up to date
 with its configured upstream. Choose an environment to set the default or a project to override it.
 On mobile, use **Settings → Source control** to change selected environment defaults or project overrides.
 

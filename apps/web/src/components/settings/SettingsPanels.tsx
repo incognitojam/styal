@@ -424,9 +424,6 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(settings.mathRenderingEnabled !== DEFAULT_UNIFIED_SETTINGS.mathRenderingEnabled
       ? ["Render math"]
       : []),
-    ...(settings.sidebarProjectIconColors !== DEFAULT_UNIFIED_SETTINGS.sidebarProjectIconColors
-      ? ["Colored project icons"]
-      : []),
     ...(settings.redesignEnabled !== DEFAULT_UNIFIED_SETTINGS.redesignEnabled
       ? ["New design"]
       : []),
@@ -625,7 +622,6 @@ export function useSettingsRestore(onRestored?: () => void) {
       diffColorScheme: DEFAULT_UNIFIED_SETTINGS.diffColorScheme,
       chatWidth: DEFAULT_UNIFIED_SETTINGS.chatWidth,
       mathRenderingEnabled: DEFAULT_UNIFIED_SETTINGS.mathRenderingEnabled,
-      sidebarProjectIconColors: DEFAULT_UNIFIED_SETTINGS.sidebarProjectIconColors,
       redesignEnabled: DEFAULT_UNIFIED_SETTINGS.redesignEnabled,
       timestampFormat: DEFAULT_UNIFIED_SETTINGS.timestampFormat,
       sidebarThreadTimestampMode: DEFAULT_UNIFIED_SETTINGS.sidebarThreadTimestampMode,

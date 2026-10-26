@@ -232,7 +232,7 @@ function SidebarProviderStack(props: {
       acpRegistryIconUrl={currentEntry.acpRegistryIconUrl}
       showBadge={showInstanceBadge}
       size="compact"
-      iconClassName="opacity-60 redesign:opacity-50 redesign:grayscale"
+      iconClassName="opacity-60"
     />
   );
   if (stack.length === 1) {
@@ -706,7 +706,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     lastVisitedAt,
     settled: thread.settledOverride === "settled",
   });
-  const projectIconColors = useClientSettings((s) => s.sidebarProjectIconColors);
   // Background work always recedes when it is not selected: an unread parent
   // completion must not pull a still-working thread back into the foreground.
   // Ready rows keep their unread and wake prominence; action-required rows
@@ -926,9 +925,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     "group/sidebar-row relative w-full cursor-pointer overflow-hidden rounded-md text-left outline-none select-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
     variantAction === "unsettle" &&
       !props.isActive &&
-      "[&:not(:hover):not(:focus-within)_*]:text-secondary-label/70",
+      "[&:not(:hover):not(:focus-within)_*]:text-secondary-label/70 redesign:[&:not(:hover):not(:focus-within)_*]:text-secondary-label",
     props.isActive
-      ? "bg-sidebar-row-active text-sidebar-foreground light:shadow-xs light:ring-1 light:ring-inset light:ring-sidebar-border/70"
+      ? "bg-sidebar-row-active text-sidebar-foreground light:shadow-xs light:ring-1 light:ring-inset light:ring-sidebar-border/70 redesign:light:shadow-none"
       : isSelected || props.sweepAction !== null
         ? "bg-sidebar-row-selected text-sidebar-foreground light:ring-1 light:ring-inset light:ring-sidebar-border/70"
         : hasUnsentDraft
@@ -1018,7 +1017,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
             : cn(
                 "truncate group-focus-within/sidebar-row:text-foreground group-hover/sidebar-row:text-foreground",
                 shouldRecede
-                  ? "text-secondary-label/70"
+                  ? "text-secondary-label/70 redesign:text-secondary-label"
                   : props.isActive || isWoke || status === "input" || status === "request"
                     ? "text-foreground"
                     : isUnread
@@ -1182,7 +1181,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               </span>
             ) : null}
             {settleReasonTag}
-            {prBadge}
+            {/* Shelf rows are one line; the New design gives the title the room a PR number takes. */}
+            {prBadge ? <span className="contents redesign:hidden">{prBadge}</span> : null}
             {sortable?.isDragging ? (
               dragDestination
             ) : (
@@ -1199,7 +1199,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                   )}
                 >
                   {variantAction === "unsnooze" && props.snoozeWakeLabelText !== null ? (
-                    <span className="text-xs text-info-foreground tabular-nums">
+                    <span className="inline-flex items-center gap-1 text-xs text-info-foreground tabular-nums">
+                      {/* The clock tells a wake time from an age at a glance. */}
+                      <AlarmClockIcon aria-hidden className="hidden size-3 redesign:block" />
                       {props.snoozeWakeLabelText}
                     </span>
                   ) : isWoke ? (
@@ -1317,7 +1319,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
             accentColor={providerEntry?.accentColor}
             showBadge={showInstanceBadge}
             // Glyph dims, badge stays saturated; offset matches the composer trigger.
-            iconClassName="size-3.5 opacity-60 redesign:opacity-50 redesign:grayscale"
+            iconClassName="size-3.5 opacity-60"
             badgeClassName="right-[-0.1875rem] bottom-[-0.1875rem] h-3 min-w-3 px-0.5 text-5xs"
           />
         </span>
@@ -1329,6 +1331,17 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
       Regenerating title
     </span>
   ) : null;
+  // Only the provider icon would remain; the New design drops the line instead of leaving it blank.
+  // Grouped and compact rows keep their fixed heights.
+  const metaLineEmpty =
+    !props.compact &&
+    !props.grouped &&
+    !thread.branch &&
+    !showsScratchMachine &&
+    prBadge === null &&
+    diff === null &&
+    !isRemote &&
+    runningTerminalIds.length === 0;
 
   return (
     <li
@@ -1343,6 +1356,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
           : props.grouped
             ? "[contain-intrinsic-size:auto_56px]"
             : "[contain-intrinsic-size:auto_78px]",
+        metaLineEmpty && "redesign:[contain-intrinsic-size:auto_58px]",
         sortable?.isDragging && "relative z-20",
       )}
     >
@@ -1370,21 +1384,13 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
             className={cn(
               "relative z-10 px-(--sidebar-row-content-inset) py-(--sidebar-content-inset)",
               props.compact ? "h-9" : props.grouped ? "h-[3.5rem]" : "h-[4.875rem]",
+              metaLineEmpty && "redesign:h-auto",
             )}
           >
             <div className="flex h-5 min-w-0 items-center gap-1.5">
               {draftIndicator}
               {props.grouped ? null : props.project ? (
-                <ProjectFavicon
-                  project={props.project}
-                  className={cn(
-                    "size-4 shrink-0",
-                    // Repeated brand colors outshout titles; color returns on the row in focus.
-                    !props.isActive &&
-                      !projectIconColors &&
-                      "redesign:opacity-60 redesign:grayscale redesign:group-focus-visible/sidebar-row:opacity-100 redesign:group-focus-visible/sidebar-row:grayscale-0 redesign:group-any-hover/sidebar-row:opacity-100 redesign:group-any-hover/sidebar-row:grayscale-0",
-                  )}
-                />
+                <ProjectFavicon project={props.project} className="size-4 shrink-0" />
               ) : null}
               {/* Left of the status slot, the pin would slide when hover swaps the
                 label for the wider row controls. */}
@@ -1555,9 +1561,17 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               {props.sweepAction !== null ? dragDestination : null}
             </div>
             {props.grouped ? null : (
-              <div className="mt-1 flex min-w-0">
+              <div className="mt-1 flex min-w-0 items-center gap-1.5">
                 {title}
                 {regeneratingTitleStatus}
+                {metaLineEmpty ? (
+                  <span aria-hidden className="hidden shrink-0 redesign:inline-flex">
+                    <SidebarProviderStack
+                      thread={thread}
+                      providerEntryByInstanceId={props.providerEntryByInstanceId}
+                    />
+                  </span>
+                ) : null}
               </div>
             )}
             {props.compact ? null : (
@@ -1565,6 +1579,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                 className={cn(
                   "flex min-w-0 items-center gap-1.5 text-secondary-label text-xs",
                   props.grouped ? "mt-1" : "mt-0.5",
+                  metaLineEmpty && "redesign:hidden",
                 )}
               >
                 {thread.branch ? (
