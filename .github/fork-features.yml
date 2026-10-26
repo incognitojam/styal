@@ -762,7 +762,7 @@ features:
       - packages/contracts/src/settings.ts
     tests:
       - apps/desktop/src/settings/DesktopClientSettings.test.ts
-      - apps/web/src/components/ThreadNotificationSounds.browser.test.tsx
+      - apps/web/src/components/ThreadNotificationSounds.browser.test.ts
       - apps/web/src/threadNotifications.test.ts
       - packages/contracts/src/settings.test.ts
     upstream:
@@ -1137,7 +1137,7 @@ features:
     tests:
       - apps/desktop/src/electron/ElectronShell.test.ts
       - apps/desktop/src/ipc/methods/systemNotifications.test.ts
-      - apps/web/src/components/ThreadNotificationCoordinator.browser.test.tsx
+      - apps/web/src/components/ThreadNotificationCoordinator.browser.test.ts
     upstream:
       status: unassessed
       tracking: []
@@ -4837,19 +4837,19 @@ features:
     rationale: Upstream keeps recorded grants unchanged across the permission split (pingdotgg/t3code#10298). A pairing next to a Link route only shadows Link's current grant on the LAN, and Link learns the same LAN address with its own credential.
     implementation_paths:
       - apps/mobile/src/features/connection/permissionUpdateNotice.ts
-      - apps/web/src/components/PermissionUpdateNotice.tsx
+      - apps/web/src/components/PermissionUpdateNotice.ts
       - packages/client-runtime/src/connection/legacyPairing.ts
       - packages/client-runtime/src/connection/registry.ts
       - packages/client-runtime/src/connection/routes.ts
       - packages/client-runtime/src/state/connections.ts
     upstream_paths:
       - apps/mobile/src/features/connection/permissionUpdateNotice.ts
-      - apps/web/src/components/PermissionUpdateNotice.tsx
+      - apps/web/src/components/PermissionUpdateNotice.ts
       - packages/client-runtime/src/connection/registry.ts
       - packages/client-runtime/src/connection/routes.ts
       - packages/client-runtime/src/state/connections.ts
     tests:
-      - apps/web/src/components/PermissionUpdateNotice.browser.test.tsx
+      - apps/web/src/components/PermissionUpdateNotice.browser.test.ts
       - packages/client-runtime/src/connection/registry.test.ts
       - packages/client-runtime/src/connection/routes.test.ts
     upstream:

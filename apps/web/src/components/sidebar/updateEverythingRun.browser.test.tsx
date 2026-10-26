@@ -1,15 +1,13 @@
 import { expect, it, vi } from "vite-plus/test";
 
-import { render } from "../../../test/render";
 import { APP_VERSION } from "~/branding";
-import { AppAtomRegistryProvider } from "~/rpc/atomRegistry";
 import { toastManager } from "../ui/toast";
 import { collectUpdateEverythingResult } from "./updateEverything.logic";
 import {
   clearSavedUpdateEverythingResult,
-  DesktopUpdateLaunchNotice,
   saveUpdateEverythingResult,
   setUpdateEverythingRun,
+  startDesktopUpdateLaunchNotice,
 } from "./updateEverythingRun";
 
 function setup(): Disposable {
@@ -21,11 +19,9 @@ function setup(): Disposable {
   };
 }
 
-const notice = () => (
-  <AppAtomRegistryProvider>
-    <DesktopUpdateLaunchNotice />
-  </AppAtomRegistryProvider>
-);
+function launch(): Disposable {
+  return { [Symbol.dispose]: startDesktopUpdateLaunchNotice() };
+}
 
 it("restores skipped reasons once after relaunching, including older results without them", async () => {
   using _setup = setup();
@@ -51,7 +47,7 @@ it("restores skipped reasons once after relaunching, including older results wit
 
   // Relaunch loses the in-memory run; only the saved schema can restore the notice.
   setUpdateEverythingRun(() => null);
-  await using screen = await render(notice());
+  const first = launch();
   expect(toast).toHaveBeenCalledExactlyOnceWith(
     expect.objectContaining({
       type: "warning",
@@ -61,11 +57,10 @@ it("restores skipped reasons once after relaunching, including older results wit
   );
   expect(window.localStorage.getItem(savedKey)).toBeNull();
 
-  await screen.rerender(null);
-  await screen.rerender(notice());
+  first[Symbol.dispose]();
+  launch()[Symbol.dispose]();
   expect(toast).toHaveBeenCalledTimes(1);
 
-  await screen.rerender(null);
   window.localStorage.setItem(
     savedKey,
     JSON.stringify({
@@ -76,7 +71,7 @@ it("restores skipped reasons once after relaunching, including older results wit
       failures: [],
     }),
   );
-  await screen.rerender(notice());
+  using _relaunch = launch();
   expect(toast).toHaveBeenCalledTimes(2);
   expect(toast).toHaveBeenLastCalledWith(
     expect.objectContaining({ type: "success", title: "Updated this app" }),

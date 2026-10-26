@@ -9,36 +9,51 @@ import {
 import { WORKING_EXIT_GRACE_MS } from "@t3tools/client-runtime/state/thread-inbox";
 import * as Option from "effect/Option";
 import * as DateTime from "effect/DateTime";
+import { AtomRegistry } from "effect/reactivity";
 import { makeThreadProjectionFixture } from "../test-fixtures";
 import { expect, it, vi } from "vite-plus/test";
 import { EMPTY_SHELL_STATE, type EnvironmentShellState } from "@t3tools/client-runtime/state/shell";
 
-import { fakeTimers, render, stubGlobal, type Screen } from "../../test/render";
+import { fakeTimers, stubGlobal } from "../../test/render";
 
 const state = vi.hoisted(() => ({
   shell: {} as EnvironmentShellState,
   settings: {} as typeof DEFAULT_CLIENT_SETTINGS,
   play: vi.fn(),
   navigate: vi.fn(),
+  settingsListeners: new Set<() => void>(),
 }));
-vi.mock(import("@effect/atom-react"), async (original) => ({
-  ...(await original()),
-  useAtomValue: (() => state.shell) as never,
-}));
-vi.mock(import("@tanstack/react-router"), async (original) => ({
-  ...(await original()),
-  useNavigate: (() => state.navigate) as never,
-  useParams: (() => ({})) as never,
-}));
+const atoms = await vi.hoisted(async () => {
+  const { Atom } = await import("effect/reactivity");
+  return {
+    shell: Atom.make<unknown>(null),
+    environmentIds: Atom.make<ReadonlyArray<string>>(["test-environment"]),
+  };
+});
+vi.mock(import("../state/shell"), async (original) => {
+  const actual = await original();
+  return {
+    ...actual,
+    environmentShell: { ...actual.environmentShell, stateValueAtom: (() => atoms.shell) as never },
+  };
+});
+vi.mock(import("../state/presentation"), async (original) => {
+  const actual = await original();
+  return {
+    ...actual,
+    environmentSummaries: {
+      ...actual.environmentSummaries,
+      environmentIdsAtom: atoms.environmentIds as never,
+    },
+  };
+});
 vi.mock(import("../hooks/useSettings"), async (original) => ({
   ...(await original()),
   getClientSettings: (() => state.settings) as never,
-  useClientSettings: ((select: (settings: typeof DEFAULT_CLIENT_SETTINGS) => unknown) =>
-    select(state.settings)) as never,
-}));
-vi.mock(import("../state/environments"), async (original) => ({
-  ...(await original()),
-  useEnvironmentIds: (() => [EnvironmentId.make("test-environment")]) as never,
+  subscribeClientSettings: ((listener: () => void) => {
+    state.settingsListeners.add(listener);
+    return () => state.settingsListeners.delete(listener);
+  }) as never,
 }));
 vi.mock(import("../threadNotifications"), async (original) => ({
   ...(await original()),
@@ -47,7 +62,7 @@ vi.mock(import("../threadNotifications"), async (original) => ({
   setNotificationBadge: vi.fn(),
 }));
 
-import { ThreadNotificationCoordinator } from "./ThreadNotificationCoordinator";
+import { startThreadNotifications } from "./ThreadNotificationCoordinator";
 
 const notifications: {
   title: string;
@@ -107,8 +122,11 @@ function setup() {
   state.shell = snapshot(false);
   state.play.mockReset();
   state.navigate.mockReset();
+  state.settingsListeners.clear();
   notifications.length = 0;
   const stack = new AsyncDisposableStack();
+  const registry = AtomRegistry.make();
+  stack.defer(() => registry.dispose());
   // System notifications are only shown while the app is in the background.
   stack.use(vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden"));
   stack.use(vi.spyOn(document, "hasFocus").mockReturnValue(false));
@@ -131,11 +149,17 @@ function setup() {
       },
     ),
   );
-  let screen: Screen | undefined;
+  let started = false;
   return {
     render: async () => {
-      if (screen) await screen.rerender(<ThreadNotificationCoordinator />);
-      else screen = stack.use(await render(<ThreadNotificationCoordinator />));
+      registry.set(atoms.shell, state.shell);
+      if (started) {
+        for (const listener of state.settingsListeners) listener();
+        return;
+      }
+      started = true;
+      const router = { state: { matches: [] }, navigate: state.navigate };
+      stack.defer(startThreadNotifications(registry, router as never));
     },
     [Symbol.asyncDispose]: () => stack.disposeAsync(),
   };
