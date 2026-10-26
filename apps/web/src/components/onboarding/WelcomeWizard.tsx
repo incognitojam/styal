@@ -1260,8 +1260,6 @@ function AgentInstallTerminal({
             onSessionExited={() => onClose(true)}
             autoFocus
             visible
-            resizeEpoch={0}
-            drawerHeight={256}
             keybindings={keybindings}
           />
         ) : null}
