@@ -1993,11 +1993,7 @@ export const make = Effect.gen(function* () {
     yield* Ref.update(credentialPresent, (map) => new Map(map).set(device.id, present));
   }
 
-  yield* forkParked(
-    Effect.gen(function* () {
-      yield* tick.pipe(Effect.repeat(Schedule.spaced(TICK_INTERVAL)));
-    }),
-  );
+  yield* forkParked(tick.pipe(Effect.repeat(Schedule.spaced(TICK_INTERVAL))));
   yield* forkParked(
     settingsService.streamChanges.pipe(
       Stream.map((settings) => encodeJson(settings.hardwareDevices)),
