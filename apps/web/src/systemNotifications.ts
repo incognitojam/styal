@@ -11,6 +11,7 @@ interface SystemNotificationOptions {
   readonly title: string;
   readonly body: string;
   readonly tag: string;
+  readonly requireInteraction?: boolean;
   readonly onClick?: () => void;
 }
 
@@ -71,6 +72,7 @@ export function showSystemNotification({
   body,
   tag,
   onClick,
+  requireInteraction = false,
 }: SystemNotificationOptions): SystemNotificationHandle | null {
   const bridge = window.desktopBridge;
   if (bridge?.showSystemNotification) {
@@ -97,7 +99,7 @@ export function showSystemNotification({
   }
   if (typeof Notification === "undefined" || Notification.permission !== "granted") return null;
   try {
-    const notification = new Notification(title, { body, tag, silent: true });
+    const notification = new Notification(title, { body, tag, silent: true, requireInteraction });
     notification.addEventListener("click", () => {
       notification.close();
       window.focus();

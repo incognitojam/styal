@@ -17,6 +17,7 @@ import {
 import { useEffect, useEffectEvent, useRef } from "react";
 
 import { getClientSettings, useClientSettings } from "../hooks/useSettings";
+import { isWindowsPlatform } from "../lib/utils";
 import { useEnvironmentIds } from "../state/environments";
 import { environmentShell } from "../state/shell";
 import {
@@ -219,6 +220,7 @@ function EnvironmentNotifications({
       title,
       body: thread.title,
       tag,
+      requireInteraction: kind === "completion" && isWindowsPlatform(navigator.platform),
       onClick: () =>
         void navigate({
           to: "/$environmentId/$threadId",
