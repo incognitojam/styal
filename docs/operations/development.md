@@ -17,7 +17,7 @@ Prefer a container? See [Dev container](../internals/devcontainer.md) for VS Cod
 
 ## Upstream GitCafe mirror
 
-Upstream T3 Code also uses a GitCafe mirror. This fork uses GitHub `incognitojam/styal` for branches, pull requests, checks, and merging; keep `origin` pointed at the fork. Upstream instructions to push and track pull requests through GitCafe apply only to checkouts whose origin is git.cafe, not to this fork.
+Upstream T3 Code also uses a GitCafe mirror. This fork uses GitHub `incognitojam/styal` for branches, pull requests, checks, and merging; keep `origin` pointed at the fork. Upstream instructions to push and track pull requests through GitCafe apply only to checkouts whose origin is git.cafe, not to this fork. In those checkouts, cafe 0.11 or newer can read GitHub Actions logs with `cafe ci logs <run>` (run ids from `cafe ci list --pr <n>`) and rerun a workflow with `cafe ci rerun <run>`.
 
 ## Choosing a dev process
 
