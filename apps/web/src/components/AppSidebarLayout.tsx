@@ -28,10 +28,9 @@ import {
 } from "../panelAnimations";
 import { BackgroundThreadAnnouncer } from "./BackgroundThreadAnnouncer";
 import LegacyThreadSidebar from "./LegacySidebar";
-import { useThreadVisitedMigration } from "../hooks/useThreadVisitedMigration";
 import ThreadSidebar from "./Sidebar";
 import { SidebarBrandWidthProbe } from "./sidebar/SidebarChrome";
-import { isAppModalPage, MainAppLocationTracker } from "./sidebar/mainAppLocation";
+import { isAppModalPage } from "./sidebar/mainAppLocation";
 import { registerThreadUndoCommands } from "./sidebar/ThreadUndoShortcut";
 import type { SidebarRouteReveal } from "./sidebar/routeReveal";
 import { useSidebarStageBackdropVariant } from "./SidebarStageBackdrop";
@@ -161,6 +160,28 @@ export function registerNavigationHistoryCommands(router: AnyRouter): () => void
   );
 }
 
+// Escape leaves the pull requests page when no scope (a selection, a dialog,
+// a drag) claimed it, so it observes after every other scope.
+function registerPullRequestsEscapeCommand(router: AnyRouter): () => void {
+  return registerCommands(
+    {},
+    {
+      observe: (event, consumed) => {
+        if (consumed || event.repeat || event.isComposing || event.key !== "Escape") return;
+        if (router.state.location.pathname !== "/pull-requests") return;
+        event.preventDefault();
+        const activeElement = document.activeElement;
+        if (activeElement instanceof HTMLElement) activeElement.blur();
+        if (router.state.location.state.__TSR_index !== 0) {
+          window.history.back();
+          return;
+        }
+        void router.navigate({ to: "/" });
+      },
+    },
+  );
+}
+
 /** Keyboard and menu commands that live as long as the app shell. */
 function registerAppShellCommands(router: AnyRouter, shellElement: Element): () => void {
   // The provider mirrors the visibility it renders onto its wrapper, so the
@@ -175,6 +196,7 @@ function registerAppShellCommands(router: AnyRouter, shellElement: Element): () 
       routeContext: () => readRoutePanelsOpen(router),
     }),
     registerNavigationHistoryCommands(router),
+    registerPullRequestsEscapeCommand(router),
     registerMenuAction("open-settings", () => {
       if (!/^\/settings(\/|$)/.test(router.state.location.pathname))
         void router.navigate({ to: "/settings" });
@@ -283,7 +305,6 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
   }));
   const { active: panelAnimationsActive, durationMs: panelAnimationDurationMs } =
     usePanelAnimationSettings();
-  useThreadVisitedMigration();
   const pathname = useLocation({ select: (location) => location.pathname });
   const panelAnimationsSuppressed = usePanelNavigationSuppression(pathname);
   const routePanelAnimationsActive = panelAnimationsActive && !panelAnimationsSuppressed;
@@ -357,7 +378,6 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
         {children}
         <BackgroundThreadAnnouncer />
         <SidebarControl />
-        <MainAppLocationTracker />
       </SidebarProvider>
     </PanelAnimationSuppressionProvider>
   );

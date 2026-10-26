@@ -4,10 +4,9 @@ import {
   acknowledgeConfirmDialogPresentation,
   completeConfirmDialogClose,
   readConfirmDialogState,
-  registerConfirmDialogHost,
   requestConfirmDialog,
   respondToConfirmDialog,
-  subscribeConfirmDialog,
+  subscribeConfirmDialogHost,
 } from "../confirmDialog";
 import {
   AlertDialog,
@@ -56,12 +55,10 @@ function resolveConfirmDialogCopy(message: string): ConfirmationCopy {
 
 export function ConfirmDialogHost() {
   const state = useSyncExternalStore(
-    subscribeConfirmDialog,
+    subscribeConfirmDialogHost,
     readConfirmDialogState,
     readConfirmDialogState,
   );
-
-  useEffect(() => registerConfirmDialogHost(), []);
 
   useEffect(() => {
     acknowledgeConfirmDialogPresentation(state);

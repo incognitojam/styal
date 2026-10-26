@@ -83,8 +83,7 @@ vi.mock(import("../ui/toast"), async (original) => {
 
 import {
   readConfirmDialogState,
-  subscribeConfirmDialog,
-  registerConfirmDialogHost,
+  subscribeConfirmDialogHost,
   resetConfirmDialogForTests,
   respondToConfirmDialog,
   completeConfirmDialogClose,
@@ -319,7 +318,7 @@ function setup() {
     } as unknown as DesktopBridge),
   );
   resetConfirmDialogForTests();
-  registerConfirmDialogHost();
+  subscribeConfirmDialogHost(() => {});
   stack.defer(() => {
     setUpdateEverythingRun(() => null);
     appAtomRegistry.reset();
@@ -340,7 +339,9 @@ describe("combined sidebar update", () => {
     testState.updateProvider.mockReturnValue(providers.promise);
     testState.localActivity.mockResolvedValue(safeLocalChecks);
     const presentations: Array<ReturnType<typeof readConfirmDialogState>> = [];
-    const unsubscribe = subscribeConfirmDialog(() => presentations.push(readConfirmDialogState()));
+    const unsubscribe = subscribeConfirmDialogHost(() =>
+      presentations.push(readConfirmDialogState()),
+    );
     try {
       await using screen = await renderPill();
       await click(screen.container.querySelector<HTMLButtonElement>("button")!);

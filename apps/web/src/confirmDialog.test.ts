@@ -5,12 +5,14 @@ import {
   acknowledgeConfirmDialogPresentation,
   completeConfirmDialogClose,
   readConfirmDialogState,
-  registerConfirmDialogHost,
   requestConfirmDialog,
   resetConfirmDialogForTests,
   respondToConfirmDialog,
   isConfirmDialogActive,
+  subscribeConfirmDialogHost,
 } from "./confirmDialog";
+
+const mountHost = () => subscribeConfirmDialogHost(() => {});
 
 function requireConfirmation(confirmation: Promise<boolean> | undefined): Promise<boolean> {
   if (!confirmation) {
@@ -25,7 +27,7 @@ describe("confirm dialog coordinator", () => {
   });
 
   it("resolves a displayed confirmation and waits for its close transition", async () => {
-    const unregister = registerConfirmDialogHost();
+    const unregister = mountHost();
     const confirmation = requireConfirmation(
       requestConfirmDialog("Delete this thread?", {
         variant: "destructive",
@@ -57,7 +59,7 @@ describe("confirm dialog coordinator", () => {
   });
 
   it("serializes concurrent confirmations", async () => {
-    const unregister = registerConfirmDialogHost();
+    const unregister = mountHost();
     const first = requireConfirmation(requestConfirmDialog("Delete the project?"));
     const second = requireConfirmation(requestConfirmDialog("Delete the worktree too?"));
 
@@ -86,7 +88,7 @@ describe("confirm dialog coordinator", () => {
   });
 
   it("keeps queued thread details with their dialog through dismissal, then clears them", async () => {
-    const unregister = registerConfirmDialogHost();
+    const unregister = mountHost();
     const first = requireConfirmation(requestConfirmDialog("Delete the project?"));
     const threadActivity: ReadonlyArray<ConfirmDialogThreadActivity> = [
       {
@@ -118,7 +120,7 @@ describe("confirm dialog coordinator", () => {
   });
 
   it("cancels active and queued confirmations if the last host unmounts", async () => {
-    const unregister = registerConfirmDialogHost();
+    const unregister = mountHost();
     const active = requireConfirmation(requestConfirmDialog("Delete the thread?"));
     const queued = requireConfirmation(requestConfirmDialog("Delete the worktree too?"));
 
@@ -128,8 +130,16 @@ describe("confirm dialog coordinator", () => {
     expect(readConfirmDialogState()).toEqual({ status: "idle" });
   });
 
+  it("has no host until one subscribes", () => {
+    expect(requestConfirmDialog("Continue?")).toBeUndefined();
+    const unsubscribe = mountHost();
+    expect(requestConfirmDialog("Continue?")).toBeDefined();
+    unsubscribe();
+    expect(requestConfirmDialog("Continue?")).toBeUndefined();
+  });
+
   it("ignores responses after the active dialog has been closed", () => {
-    const unregister = registerConfirmDialogHost();
+    const unregister = mountHost();
     const confirmation = requireConfirmation(requestConfirmDialog("Continue?"));
 
     respondToConfirmDialog(true);
@@ -144,7 +154,7 @@ describe("confirm dialog coordinator", () => {
 
 it("acknowledges only the committed active confirmation, never a queued request", async () => {
   resetConfirmDialogForTests();
-  const unregister = registerConfirmDialogHost();
+  const unregister = mountHost();
   let presented = 0;
   const first = requireConfirmation(requestConfirmDialog("Unrelated action?"));
   const second = requireConfirmation(
@@ -171,7 +181,7 @@ it("acknowledges only the committed active confirmation, never a queued request"
 
 it("removes expired queued shutdown requests without dismissing another dialog", async () => {
   resetConfirmDialogForTests();
-  const unregister = registerConfirmDialogHost();
+  const unregister = mountHost();
   const controller = new AbortController();
   let presented = false;
   const first = requireConfirmation(requestConfirmDialog("Unrelated action?"));
@@ -199,7 +209,7 @@ it("removes expired queued shutdown requests without dismissing another dialog",
 
 it("dismisses an expired active request and ignores a stale presentation effect", async () => {
   resetConfirmDialogForTests();
-  const unregister = registerConfirmDialogHost();
+  const unregister = mountHost();
   const controller = new AbortController();
   let presented = false;
   const request = requireConfirmation(

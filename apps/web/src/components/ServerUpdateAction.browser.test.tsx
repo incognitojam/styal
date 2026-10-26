@@ -57,7 +57,7 @@ vi.mock(import("./ui/toast"), async (original) => {
 import {
   resetConfirmDialogForTests,
   readConfirmDialogState,
-  registerConfirmDialogHost,
+  subscribeConfirmDialogHost,
   respondToConfirmDialog,
 } from "~/confirmDialog";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
@@ -161,7 +161,7 @@ describe("ServerUpdateAction", () => {
     "updates resumable work on a %s host without an affirmative confirmation",
     async (selfUpdate) => {
       using _state = setup();
-      registerConfirmDialogHost();
+      subscribeConfirmDialogHost(() => {});
       const result = AsyncResult.success({
         ...idleActivity,
         activeSessions: 1,
@@ -219,7 +219,7 @@ describe("ServerUpdateAction", () => {
     },
   ])("requires consent for $name alongside resumable work", async ({ blocker, warning }) => {
     using _state = setup();
-    registerConfirmDialogHost();
+    subscribeConfirmDialogHost(() => {});
     testState.hostActivity.mockResolvedValue(
       AsyncResult.success({
         ...idleActivity,
@@ -312,7 +312,7 @@ describe("ServerUpdateAction", () => {
 
   it("updates an idle server without asking", async () => {
     using _state = setup();
-    registerConfirmDialogHost();
+    subscribeConfirmDialogHost(() => {});
     testState.updateServer.mockResolvedValue(success());
 
     await using screen = await renderAction();
@@ -340,7 +340,7 @@ describe("ServerUpdateAction", () => {
 
   it("shows the check on the button and opens a dialog only once work is found", async () => {
     using _state = setup();
-    registerConfirmDialogHost();
+    subscribeConfirmDialogHost(() => {});
     const result = AsyncResult.success({ ...idleActivity, activeSessions: 1 });
     const activity = deferred<typeof result>();
     testState.hostActivity.mockReturnValue(activity.promise);
@@ -369,7 +369,7 @@ describe("ServerUpdateAction", () => {
     testState.hostActivity.mockResolvedValue(
       AsyncResult.success({ ...idleActivity, activeSessions: 1 }),
     );
-    registerConfirmDialogHost();
+    subscribeConfirmDialogHost(() => {});
 
     await using screen = await renderAction();
     await click(screen, "Update");
@@ -387,7 +387,7 @@ describe("ServerUpdateAction", () => {
     testState.hostActivity.mockResolvedValue(
       AsyncResult.success({ ...idleActivity, terminalsRequiringConfirmation: 2 }),
     );
-    registerConfirmDialogHost();
+    subscribeConfirmDialogHost(() => {});
     testState.updateServer.mockResolvedValue(success());
 
     await using screen = await renderAction();
@@ -403,7 +403,7 @@ describe("ServerUpdateAction", () => {
   it("asks before updating when activity cannot be checked", async () => {
     using _state = setup();
     testState.hostActivity.mockResolvedValue(AsyncResult.failure(Cause.fail("unavailable")));
-    registerConfirmDialogHost();
+    subscribeConfirmDialogHost(() => {});
 
     await using screen = await renderAction();
     await click(screen, "Update");
@@ -516,7 +516,7 @@ describe("ServerUpdatesAction", () => {
         { ...idleActivity, isRequestingEnvironment: false, terminalsRequiringConfirmation: 1 },
       ]),
     );
-    registerConfirmDialogHost();
+    subscribeConfirmDialogHost(() => {});
     await using screen = await mount(
       targets.map((target, index) =>
         index < 2 ? { ...target, selfUpdate: "desktop-managed", desktopAppUpdate: true } : target,
@@ -543,7 +543,7 @@ describe("ServerUpdatesAction", () => {
     testState.hostActivity
       .mockResolvedValueOnce(AsyncResult.success(idleActivity))
       .mockResolvedValueOnce(AsyncResult.success({ ...idleActivity, activeSessions: 2 }));
-    registerConfirmDialogHost();
+    subscribeConfirmDialogHost(() => {});
     testState.updateServer.mockResolvedValue(success());
     await using screen = await mount();
     await click(screen, "Update all");
@@ -564,7 +564,7 @@ describe("OutdatedServerUpdateAction", () => {
     "requires explicit consent for unavailable activity (%s)",
     async (consent) => {
       using _state = setup();
-      registerConfirmDialogHost();
+      subscribeConfirmDialogHost(() => {});
       testState.updateServer.mockResolvedValue(success());
       await using screen = await renderUpdate(
         <OutdatedServerUpdateAction
