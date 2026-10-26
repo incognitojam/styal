@@ -47,6 +47,8 @@ describe("browse normalized prompt history", () => {
     await page.getByText("Fake Codex reply to: - [X] done", { exact: true }).waitFor();
     await page.getByRole("button", { name: "Stop generation" }).waitFor({ state: "hidden" });
     await setRichText(true);
+    // History comes from the thread timeline, which can finish syncing after the reload.
+    await page.getByText("Fake Codex reply to: - [X] done", { exact: true }).waitFor();
     await composer.click();
 
     await page.keyboard.press("ArrowUp");
