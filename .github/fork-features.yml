@@ -4836,14 +4836,14 @@ features:
       - Each new connection is checked again, so a second old pairing or a Link route added later is handled in the same launch; checks queued behind a running one collapse to the newest connection, a result about an older connection never raises the notice, and the notice shows at most once per environment per launch and closes on web once a later check drops the pairing.
     rationale: Upstream keeps recorded grants unchanged across the permission split (pingdotgg/t3code#10298). A pairing next to a Link route only shadows Link's current grant on the LAN, and Link learns the same LAN address with its own credential.
     implementation_paths:
-      - apps/mobile/src/features/connection/PermissionUpdateNotice.tsx
+      - apps/mobile/src/features/connection/permissionUpdateNotice.ts
       - apps/web/src/components/PermissionUpdateNotice.tsx
       - packages/client-runtime/src/connection/legacyPairing.ts
       - packages/client-runtime/src/connection/registry.ts
       - packages/client-runtime/src/connection/routes.ts
       - packages/client-runtime/src/state/connections.ts
     upstream_paths:
-      - apps/mobile/src/features/connection/PermissionUpdateNotice.tsx
+      - apps/mobile/src/features/connection/permissionUpdateNotice.ts
       - apps/web/src/components/PermissionUpdateNotice.tsx
       - packages/client-runtime/src/connection/registry.ts
       - packages/client-runtime/src/connection/routes.ts

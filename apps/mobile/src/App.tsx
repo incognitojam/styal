@@ -1,4 +1,4 @@
-import { PermissionUpdateNotice } from "./features/connection/PermissionUpdateNotice";
+import { installPermissionUpdateNotice } from "./features/connection/permissionUpdateNotice";
 import * as Linking from "expo-linking";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect } from "react";
@@ -32,6 +32,12 @@ import { environmentShell } from "./state/shell";
 import { OverlayPortalHost } from "./components/ui/OverlayPortal";
 import { shouldHandleAppLink, restoreDraftLinkState } from "./lib/appLinking";
 import { takeUpdateRestartPath } from "./features/updates/update-restart-location";
+import { hasCloudPublicConfig } from "./features/cloud/publicConfig";
+import { takeScheduledTaskNewLink } from "./features/settings/scheduled-task-editor-state";
+import {
+  disposeOnFoundationReplace,
+  type FoundationHotModule,
+} from "./lib/foundation-fast-refresh";
 import { useMobileNavigationTheme } from "./lib/useMobileNavigationTheme";
 import { useUiRuntimeMemoryWarningGc } from "./lib/useUiRuntimeMemoryWarningGc";
 import { SubscriptionUsageCoordinator } from "./widgets/SubscriptionUsageCoordinator";
@@ -60,7 +66,7 @@ void hydrateWorkspaceSelections();
 const appLinking = {
   prefixes: [Linking.createURL("/"), "styal://", "styal-dev://", "styal-preview://"],
   config: { initialRouteName: "Home" },
-  filter: shouldHandleAppLink,
+  filter: (url: string) => shouldHandleAppLink(url, hasCloudPublicConfig()),
   async getInitialURL() {
     const restorePath = await takeUpdateRestartPath().catch((error: unknown) => {
       console.warn("[app-updates] could not read the update restart location", error);
@@ -82,14 +88,24 @@ const appLinking = {
     (workspaceDetailLinkAction(state) as ReturnType<typeof getActionFromState>) ??
     getActionFromState(state, options),
   getStateFromPath: (path: string, options: Parameters<typeof getStateFromPath>[1]) =>
-    restoreSettingsLinkState(
-      restoreDraftLinkState(getStateFromPath(path, options), path),
-      settingsLinkPage(),
+    takeScheduledTaskNewLink(
+      restoreSettingsLinkState(
+        restoreDraftLinkState(getStateFromPath(path, options), path),
+        settingsLinkPage(),
+      ),
     ),
 };
 
 const Navigation = createStaticNavigation(RootStack);
 const navigationRef = createNavigationContainerRef();
+
+declare const module: { readonly hot?: FoundationHotModule } | undefined;
+
+const disposePermissionUpdateNotice = installPermissionUpdateNotice();
+disposeOnFoundationReplace(
+  typeof module === "undefined" ? undefined : module.hot,
+  disposePermissionUpdateNotice,
+);
 
 function SplashScreenCoordinator() {
   const { isReady } = useAppearancePreferences();
@@ -134,7 +150,6 @@ function AppContent() {
       <SplashScreenCoordinator />
       <SubscriptionUsageCoordinator />
       <MobileSettingsSnapshotReporter />
-      <PermissionUpdateNotice />
       <GestureHandlerRootView className="flex-1">
         <KeyboardProvider statusBarTranslucent>
           <SafeAreaProvider>

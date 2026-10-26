@@ -18,7 +18,7 @@ import {
 } from "@t3tools/client-runtime/state/project-organization";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { useNavigation } from "@react-navigation/native";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { Platform, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -66,15 +66,17 @@ export function SettingsProjectOverviewRouteScreen() {
     setIsRemoving(false);
   };
   const navigation = useNavigation();
-  const { availableTargets, selectedTargets, projectGroups, selectedProjectKey, selectProject } =
-    useSettingsEnvironmentFilter();
-  const latestProjectKey = useRef(selectedProjectKey);
-  useEffect(() => {
-    latestProjectKey.current = selectedProjectKey;
-  }, [selectedProjectKey]);
+  const {
+    availableTargets,
+    selectedTargets,
+    projectGroups,
+    selectedProjectKey,
+    selectProject,
+    getSelectedProjectKey,
+  } = useSettingsEnvironmentFilter();
   // The filter can move to another project while a removal is still running.
   const finishProjectRemoval = (projectKey: string | null) => {
-    if (latestProjectKey.current !== projectKey) return;
+    if (getSelectedProjectKey() !== projectKey) return;
     if (navigation.isFocused())
       leaveSettingsPage(navigation, workspaceHasColumns(), DEFAULT_SETTINGS_PAGE);
     // Otherwise the filter keeps pointing at the removed project as an unavailable one.
