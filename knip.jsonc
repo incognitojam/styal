@@ -77,6 +77,8 @@
         "src/mac-permission-preload.ts!",
         "src/preview/Annotation.css!",
         "scripts/preview-calibration/main.mjs!",
+        "scripts/measure-lifecycle.mjs",
+        "scripts/lifecycle/app.cjs",
       ],
       // The injected runtime resolves Playwright by string; release tooling runs
       // electron-builder from this workspace, outside its package scripts.
