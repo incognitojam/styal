@@ -239,6 +239,11 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   /* One roll of a changed digit, like a meter wheel; it never repeats. */
   --animate-meter-in: meter-in 450ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
   --animate-meter-out: meter-out 450ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  /* Stash pulses hold a highlight for 1.2s; the row then eases back over 200ms, the count snaps.
+     The row alternates two identical keyframes so each stash restarts it without a remount. */
+  --animate-stash-pulse-row: stash-pulse-row 1400ms;
+  --animate-stash-pulse-row-alt: stash-pulse-row-alt 1400ms;
+  --animate-stash-pulse-count: stash-pulse-count 1400ms step-start;
   --color-warning-foreground: var(--warning-foreground);
   --color-warning: var(--warning);
   --color-warning-surface: var(--warning-surface);
@@ -342,6 +347,24 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     }
     to {
       transform: translateY(-100%);
+    }
+  }
+  @keyframes stash-pulse-row {
+    from,
+    85.7% {
+      color: var(--color-foreground);
+    }
+  }
+  @keyframes stash-pulse-row-alt {
+    from,
+    85.7% {
+      color: var(--color-foreground);
+    }
+  }
+  @keyframes stash-pulse-count {
+    from,
+    85.7% {
+      color: var(--color-primary);
     }
   }
   @keyframes status-pulse {
