@@ -31,7 +31,7 @@ describe("clientSettingsSnapshot", () => {
       sidebarProjectSortOrder: "updated_at",
       sidebarManualProjectOrderSaved: false,
       sidebarThreadSortOrder: "updated_at",
-      sidebarWorkingShelfEnabled: false,
+      sidebarWorkingShelfEnabled: true,
       fontFamilyCodeCustomized: false,
       browserDefaultViewport: "fill",
       browserProfileCount: 0,
