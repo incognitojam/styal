@@ -1641,11 +1641,13 @@ features:
       - apps/web/src/keybindings.ts
       - apps/web/src/lib/rightPanelFocus.ts
       - apps/web/src/rightPanelStore.ts
+      - apps/web/src/shortcuts/chatRouteCommands.ts
     upstream_paths:
       - apps/web/src/components/ChatView.tsx
       - apps/web/src/components/RightPanelTabs.tsx
       - apps/web/src/keybindings.ts
       - apps/web/src/rightPanelStore.ts
+      - apps/web/src/shortcuts/chatRouteCommands.ts
       - packages/contracts/src/keybindings.ts
     tests:
       - apps/desktop/src/window/DesktopApplicationMenu.test.ts
@@ -3936,6 +3938,7 @@ features:
       - apps/web/src/components/CommandPalette.tsx
       - apps/web/src/components/Sidebar.tsx
       - apps/web/src/lib/chatThreadActions.ts
+      - apps/web/src/shortcuts/chatRouteCommands.ts
       - apps/web/src/sidebarProjectFilterUsage.ts
       - apps/web/src/sidebarProjectScopeStore.ts
       - apps/web/src/uiStateStore.ts
@@ -3944,6 +3947,7 @@ features:
       - apps/web/src/components/AppSidebarLayout.tsx
       - apps/web/src/components/CommandPalette.tsx
       - apps/web/src/components/Sidebar.tsx
+      - apps/web/src/shortcuts/chatRouteCommands.ts
       - apps/web/src/uiStateStore.ts
     tests:
       - apps/server/src/telemetry/ClientFeatureUsage.test.ts

@@ -3,8 +3,8 @@
  * the mobile sheet, and the command palette mounts above the sidebar.
  */
 
-import { useClientSettings } from "./hooks/useSettings";
-import { selectProjectGroupingSettings } from "./logicalProject";
+import { getClientSettings, useClientSettings } from "./hooks/useSettings";
+import { selectProjectGroupingSettings, type ProjectGroupingSettings } from "./logicalProject";
 import {
   resolveSidebarProjectScopeKey,
   type SidebarProjectSnapshot,
@@ -22,6 +22,25 @@ export function useScopedProjectGroup<T extends SidebarProjectSnapshot>(
 ): T | null {
   const storedKey = useUiStateStore((state) => state.sidebarProjectScopeKey);
   const settings = useClientSettings(selectProjectGroupingSettings);
+  return resolveScopedProjectGroup(groups, storedKey, settings);
+}
+
+/** {@link useScopedProjectGroup} read at call time, for handlers outside React. */
+export function readScopedProjectGroup<T extends SidebarProjectSnapshot>(
+  groups: readonly T[],
+): T | null {
+  return resolveScopedProjectGroup(
+    groups,
+    useUiStateStore.getState().sidebarProjectScopeKey,
+    selectProjectGroupingSettings(getClientSettings()),
+  );
+}
+
+function resolveScopedProjectGroup<T extends SidebarProjectSnapshot>(
+  groups: readonly T[],
+  storedKey: string | null,
+  settings: ProjectGroupingSettings,
+): T | null {
   const projectScopeKey = resolveSidebarProjectScopeKey({ groups, key: storedKey, settings });
   return projectScopeKey === null
     ? null

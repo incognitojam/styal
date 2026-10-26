@@ -1,60 +1,28 @@
-import { AuthPreviewOperateScope } from "@t3tools/contracts";
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { Outlet, createFileRoute, redirect, useMatches } from "@tanstack/react-router";
-import { useAtomValue } from "@effect/atom-react";
-import { useEffect, useState } from "react";
+import { useEffect, useEffectEvent, useState } from "react";
 
-import { isCommandPaletteOpen } from "../commandPaletteBus";
 import { ThreadRouteView } from "../components/ThreadRouteView";
 import { isAppModalPage } from "../components/sidebar/mainAppLocation";
 import { SidebarInset } from "../components/ui/sidebar";
 import { resolveThreadRouteTarget, type ThreadRouteTarget } from "../threadRoutes";
 import { retainThreadFindForRoute } from "../components/chat/threadFindStore";
 import { ThreadLinkPrompt } from "../components/promptLinks/ThreadLinkPrompt";
-import { useClientSettings, useLegacySidebarEnabled } from "../hooks/useSettings";
-import { openCommandPalette } from "../commandPaletteBus";
-import { useProjects } from "../state/entities";
-import { isPreviewAvailableFor } from "../browser/previewRuntime";
-import { usePrimaryEnvironmentId } from "../state/environments";
-import { useEnvironmentScope } from "../state/session";
-import { selectProjectGroupingSettings } from "../logicalProject";
-import { buildSidebarProjectSnapshots } from "../sidebarProjectGrouping";
-import { useScopedProjectGroup } from "../sidebarProjectScopeStore";
-import { dispatchPreviewAction } from "../components/preview/previewActionBus";
-import { useHandleNewThread } from "../hooks/useHandleNewThread";
-import { useScratchProject } from "../hooks/useScratchProject";
-import { startNewThreadFromContext } from "../lib/chatThreadActions";
-import { isPreviewFocused } from "../lib/previewFocus";
-import { isRightPanelFocused } from "../lib/rightPanelFocus";
-import { isTerminalFocused } from "../lib/terminalFocus";
-import { isEditableFocused } from "../lib/editableFocus";
-import { isModelPickerOpen } from "../modelPickerVisibility";
-import { resolveShortcutCommand } from "../keybindings";
-import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
-import { selectActiveRightPanel, useRightPanelStore } from "../rightPanelStore";
-import { useThreadSelectionStore } from "../threadSelectionStore";
-import { stackedThreadToast, toastManager } from "~/components/ui/toast";
-import { primaryServerKeybindingsAtom } from "~/state/server";
+import { useThreadRouteTarget } from "../hooks/useThreadRouteTarget";
+import { isCommandPaletteOpen } from "../commandPaletteBus";
+import { readThreadShortcutContext } from "../shortcuts/chatRouteCommands";
+import { registerCommands } from "../shortcuts/dispatcher";
+import { useProjects, useQuietThreadShell } from "../state/entities";
 import { useEnvironmentQuery } from "~/state/query";
 import { vcsEnvironment } from "~/state/vcs";
-import { useFocusPullRequestTab, createViewPullRequest } from "~/lib/viewPullRequest";
-import { useThreadRouteTarget } from "../hooks/useThreadRouteTarget";
+import { createViewPullRequest, useFocusPullRequestTab } from "~/lib/viewPullRequest";
 
-function ChatRouteGlobalShortcuts() {
-  const clearSelection = useThreadSelectionStore((state) => state.clearSelection);
-  const selectedThreadKeysSize = useThreadSelectionStore((state) => state.selectedThreadKeys.size);
-  const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread, routeThreadRef } =
-    useHandleNewThread();
-  const canOperatePreview = useEnvironmentScope(
-    routeThreadRef?.environmentId ?? null,
-    AuthPreviewOperateScope,
-  );
-  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
-  const legacySidebarEnabled = useLegacySidebarEnabled();
-  const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
+/** Opens the shown thread's pull request; mounted to keep its branch status subscribed. */
+function ChatRoutePullRequestShortcuts() {
+  const routeTarget = useThreadRouteTarget();
+  const routeThreadRef = routeTarget?.kind === "server" ? routeTarget.threadRef : null;
+  const activeThread = useQuietThreadShell(routeThreadRef);
   const projects = useProjects();
-  const primaryEnvironmentId = usePrimaryEnvironmentId();
-  const { scratchEnvironmentId, startScratchThread } = useScratchProject();
   const activeProject = activeThread
     ? (projects.find(
         (project) =>
@@ -73,179 +41,28 @@ function ChatRouteGlobalShortcuts() {
   );
   const { viewPullRequest } = createViewPullRequest(gitStatusQuery.data, routeThreadRef);
   const { focusPullRequestTab } = useFocusPullRequestTab(gitStatusQuery.data, routeThreadRef);
-  const projectGroups = buildSidebarProjectSnapshots({
-    projects,
-    settings: projectGroupingSettings,
-    primaryEnvironmentId,
-    resolveEnvironmentLabel: () => null,
-  }).filter((group) => group.archivedAt == null);
-  // These commands start a thread beside your current work, so the thread you
-  // are viewing outranks the sidebar's filter. The filter still beats the
-  // fallback default, so with nothing open they land in the project on screen
-  // rather than the top of the project list.
-  const scopedProjectGroup = useScopedProjectGroup(projectGroups);
-  const projectGroupCount = projectGroups.length;
-  const terminalOpen = useTerminalUiStateStore((state) =>
-    routeThreadRef
-      ? selectThreadTerminalUiState(state.terminalUiStateByThreadKey, routeThreadRef).terminalOpen
-      : false,
-  );
-  // This flag is store-only; dispatch the action bus to reuse ChatView's URL-aware arbitration.
-  const previewOpen = useRightPanelStore((state) =>
-    routeThreadRef
-      ? selectActiveRightPanel(state.byThreadKey, routeThreadRef) === "preview"
-      : false,
-  );
-  useEffect(() => {
-    const onWindowKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented) return;
-      const command = resolveShortcutCommand(event, keybindings, {
-        context: {
-          terminalFocus: isTerminalFocused(),
-          terminalOpen,
-          rightPanelFocus: isRightPanelFocused(),
-          previewFocus: isPreviewFocused(),
-          previewOpen,
-          editableFocus: isEditableFocused(event.target),
-          modelPickerOpen: isModelPickerOpen(),
+  const readContext = useEffectEvent(() => readThreadShortcutContext(routeThreadRef));
+  const runViewPullRequest = useEffectEvent(() => void viewPullRequest());
+  const runFocusPullRequestTab = useEffectEvent(() => void focusPullRequestTab());
+  useEffect(
+    () =>
+      registerCommands(
+        {
+          "sourceControl.viewPullRequest": (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            runViewPullRequest();
+          },
+          "sourceControl.focusPullRequestTab": (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            runFocusPullRequestTab();
+          },
         },
-      });
-
-      if (isCommandPaletteOpen()) {
-        return;
-      }
-
-      if (event.key === "Escape" && selectedThreadKeysSize > 0) {
-        event.preventDefault();
-        clearSelection();
-        return;
-      }
-
-      if (command === "chat.newLocal") {
-        event.preventDefault();
-        event.stopPropagation();
-        void startNewThreadFromContext({
-          activeDraftThread,
-          activeThread: activeThread ?? undefined,
-          defaultProjectRef,
-          handleNewThread,
-          scopedProjectGroup,
-        });
-        return;
-      }
-
-      if (command === "chat.newWithoutProject") {
-        const environmentId = scratchEnvironmentId(
-          activeThread?.environmentId ?? activeDraftThread?.environmentId ?? primaryEnvironmentId,
-        );
-        if (environmentId === null) return;
-        event.preventDefault();
-        event.stopPropagation();
-        void startScratchThread(environmentId);
-        return;
-      }
-
-      if (command === "chat.new") {
-        event.preventDefault();
-        event.stopPropagation();
-        // A project filter does not suppress the chooser: chat.newLocal already creates in the
-        // current project, so collapsing the two would leave no way to deliberately pick.
-        if (!legacySidebarEnabled && projectGroupCount > 1) {
-          openCommandPalette({ open: "new-thread-in" });
-          return;
-        }
-        void startNewThreadFromContext({
-          activeDraftThread,
-          activeThread: activeThread ?? undefined,
-          defaultProjectRef,
-          handleNewThread,
-          scopedProjectGroup,
-        });
-        return;
-      }
-
-      if (command === "sourceControl.viewPullRequest") {
-        event.preventDefault();
-        event.stopPropagation();
-        void viewPullRequest();
-        return;
-      }
-
-      if (command === "sourceControl.focusPullRequestTab") {
-        event.preventDefault();
-        event.stopPropagation();
-        void focusPullRequestTab();
-        return;
-      }
-
-      if (command === "preview.toggle") {
-        event.preventDefault();
-        event.stopPropagation();
-        if (!routeThreadRef || (!canOperatePreview && !previewOpen)) return;
-        if (!isPreviewAvailableFor(routeThreadRef.environmentId)) {
-          toastManager.add(
-            stackedThreadToast({
-              type: "info",
-              title: "Preview is desktop-only",
-              description: "Open styal in the desktop app to use the in-app preview.",
-            }),
-          );
-          return;
-        }
-        dispatchPreviewAction("toggle-panel");
-        return;
-      }
-
-      if (
-        command === "preview.refresh" ||
-        command === "preview.focusUrl" ||
-        command === "preview.zoomIn" ||
-        command === "preview.zoomOut" ||
-        command === "preview.resetZoom"
-      ) {
-        event.preventDefault();
-        event.stopPropagation();
-        if (!canOperatePreview) return;
-        const action =
-          command === "preview.refresh"
-            ? "refresh"
-            : command === "preview.focusUrl"
-              ? "focus-url"
-              : command === "preview.zoomIn"
-                ? "zoom-in"
-                : command === "preview.zoomOut"
-                  ? "zoom-out"
-                  : "reset-zoom";
-        dispatchPreviewAction(action);
-      }
-    };
-
-    window.addEventListener("keydown", onWindowKeyDown);
-    return () => {
-      window.removeEventListener("keydown", onWindowKeyDown);
-    };
-  }, [
-    activeDraftThread,
-    activeThread,
-    clearSelection,
-    canOperatePreview,
-    handleNewThread,
-    keybindings,
-    defaultProjectRef,
-    previewOpen,
-    primaryEnvironmentId,
-    projectGroupCount,
-    routeThreadRef,
-    scopedProjectGroup,
-    scratchEnvironmentId,
-    selectedThreadKeysSize,
-    startScratchThread,
-    legacySidebarEnabled,
-    terminalOpen,
-    viewPullRequest,
-    focusPullRequestTab,
-  ]);
-
+        { when: () => !isCommandPaletteOpen(), context: () => readContext() },
+      ),
+    [],
+  );
   return null;
 }
 
@@ -269,7 +86,6 @@ function ChatRouteLayout() {
   const shownTarget = modalOpen ? backgroundTarget : threadTarget;
   return (
     <>
-      {modalOpen ? null : <ChatRouteGlobalShortcuts />}
       {shownTarget?.kind === "server" && !modalOpen ? (
         <ThreadLinkPrompt threadRef={shownTarget.threadRef} />
       ) : null}
@@ -281,6 +97,7 @@ function ChatRouteLayout() {
         <Outlet />
       )}
       {modalOpen ? <Outlet /> : null}
+      {modalOpen ? null : <ChatRoutePullRequestShortcuts />}
     </>
   );
 }
