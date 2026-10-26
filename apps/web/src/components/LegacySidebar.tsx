@@ -3655,7 +3655,7 @@ export default function LegacySidebar({ routeReveal }: { routeReveal: SidebarRou
         attachProjectListAutoAnimateRef={attachProjectListAutoAnimateRef}
         projectsLength={projectsLength}
       />
-      <SidebarChromeFooter />
+      <SidebarChromeFooter showUndoNotice />
     </RevealActiveRowContext>
   );
 }
