@@ -874,7 +874,6 @@ export function omitRetriedFindingsReports<T extends WorkLogPresentationEntry>(
     kept.push(entry);
   }
   // Hermes lacks toReversed; this array is local, so reversing it cannot mutate the input.
-  // oxlint-disable-next-line unicorn/no-array-reverse
   return kept.reverse();
 }
 
