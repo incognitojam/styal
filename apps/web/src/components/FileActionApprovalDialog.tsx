@@ -31,6 +31,7 @@ export interface FileActionApprovalTarget {
 
 /** Text with `backticked` spans rendered as code. */
 function WithCode({ text }: { text: string }) {
+  // oxlint-disable react/no-array-index-key -- Text segments are stateless positions within this fixed string.
   return text.split("`").map((part, index) =>
     index % 2 === 1 ? (
       <code key={index} className="font-mono">
@@ -40,6 +41,7 @@ function WithCode({ text }: { text: string }) {
       <Fragment key={index}>{part}</Fragment>
     ),
   );
+  // oxlint-enable react/no-array-index-key
 }
 
 /**
