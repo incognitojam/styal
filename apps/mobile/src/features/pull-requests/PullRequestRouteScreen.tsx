@@ -410,7 +410,7 @@ export function PullRequestRouteScreen({ route }: StaticScreenProps<PullRequestP
       currentScrollOffset.current = scrollOffsets.current.overview ?? -barInsets.top;
       setSection("overview");
     }
-  }, [guidesEnabled, section, barInsets.top]);
+  }, [guidesEnabled, section, barInsets.top, currentScrollOffset, requestedSection, scrollOffsets]);
   const tabContent = activityContent;
   const filesY = useRef(0);
   const descriptionY = useRef(0);
