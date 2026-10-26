@@ -5866,6 +5866,8 @@ layer("GitHubPullRequestApi.layer", (it) => {
                           pullRequest: {
                             viewerCanEnableAutoMerge: false,
                             viewerCanDisableAutoMerge: true,
+                            viewerCanMergeAsAdmin: true,
+                            isMergeQueueEnabled: false,
                           },
                         },
                       },
@@ -5897,7 +5899,12 @@ layer("GitHubPullRequestApi.layer", (it) => {
             repository: "acme/web",
             number: 7,
           }),
-        ).toMatchObject({ canWrite: true, canEnableAutoMerge: false, canDisableAutoMerge: true });
+        ).toMatchObject({
+          canWrite: true,
+          canEnableAutoMerge: false,
+          canDisableAutoMerge: true,
+          canMergeAsAdmin: true,
+        });
         expect(variablesOf("ViewerPermissions")).toHaveLength(1);
         expect(variablesOf("AutoMergePermissions")).toHaveLength(1);
       }),

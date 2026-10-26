@@ -176,7 +176,6 @@ import {
   readPullRequestDetailSnapshot,
   resolvePullRequestReferenceHost,
   resolveDisplayedPullRequestDetail,
-  resolvePullRequestPrimaryControl,
   allowsSinglePullRequestMerge,
   canDeletePullRequestBranch,
   resolveBaseFreshness,
@@ -187,6 +186,11 @@ import {
   stripPullRequestHandoffReferences,
   writePullRequestDetailSnapshot,
 } from "./pullRequestDetail.logic";
+import {
+  resolvePullRequestMergeNow,
+  resolvePullRequestPrimaryControl,
+} from "@t3tools/shared/pullRequestMergeControl";
+import { reportForkClientUsage } from "../../forkClientUsage";
 import { canEditPullRequestChangeRequest } from "./pullRequestEditing.logic";
 import {
   resolvePickableEnvironments,
@@ -1528,8 +1532,8 @@ function PullRequestDetailPanelBody({
       ? "pending"
       : latestChecksState;
   const checksStale = checksState !== detailChecksState;
-  const primaryAction = detail
-    ? resolvePullRequestPrimaryControl({
+  const mergeControlInput = detail
+    ? {
         state: detail.state,
         isDraft: detail.isDraft,
         mergeability: detail.mergeability,
@@ -1540,8 +1544,32 @@ function PullRequestDetailPanelBody({
         canMerge: canMergeSinglePullRequest && can("merge"),
         canMarkReady: can("ready"),
         canEnableAutoMerge: canMergeSinglePullRequest && can("enable-auto-merge"),
-      })
+      }
     : null;
+  const primaryAction = mergeControlInput
+    ? resolvePullRequestPrimaryControl(mergeControlInput)
+    : null;
+  const mergeNow =
+    mergeControlInput && detail
+      ? resolvePullRequestMergeNow({
+          ...mergeControlInput,
+          canBypassRequirements: detail.viewerPermissions.bypassMergeRequirements === true,
+        })
+      : null;
+  const mergeNowLabel = mergeNow === "bypass" ? "Bypass rules and merge" : "Merge now";
+  const mergeNowPressed = async () => {
+    const bypass = mergeNow === "bypass";
+    const merged = await perform("merge", selectedMergeMethod);
+    if (bypass) {
+      void reportForkClientUsage(environmentId, {
+        feature: "pull-request-bypass-merge",
+        action: "merge",
+        outcome: merged ? "success" : "failure",
+      });
+    }
+  };
+  const mergeNowConfirmLabel =
+    mergeNow === "bypass" ? "Confirm bypass and merge?" : "Confirm merge?";
   const showsDraftToggle =
     detail?.state === "open" &&
     can(detail.isDraft ? "ready" : "draft") &&
@@ -1556,14 +1584,7 @@ function PullRequestDetailPanelBody({
         !conflicting &&
         can("enable-auto-merge") &&
         allowedMergeMethods.length > 0));
-  const showsMergeNow =
-    canMergeSinglePullRequest &&
-    detail?.state === "open" &&
-    (primaryAction === "enable-auto-merge" || primaryAction === "auto-merge-armed") &&
-    can("merge") &&
-    !detail.isDraft &&
-    !conflicting &&
-    allowedMergeMethods.length > 0;
+  const showsMergeNow = mergeNow !== null;
   const showsMergeMethods =
     detail?.state === "open" &&
     can("merge") &&
@@ -2302,16 +2323,13 @@ function PullRequestDetailPanelBody({
                         <MenuItem
                           closeOnClick={inlineConfirm.isArmed("merge")}
                           aria-label={
-                            inlineConfirm.isArmed("merge") ? "Confirm merge?" : "Merge now"
+                            inlineConfirm.isArmed("merge") ? mergeNowConfirmLabel : mergeNowLabel
                           }
                           disabled={actionPending}
-                          {...inlineConfirm.props(
-                            "merge",
-                            () => void perform("merge", selectedMergeMethod),
-                          )}
+                          {...inlineConfirm.props("merge", () => void mergeNowPressed())}
                         >
                           <PullRequestGlyph.merged className="size-3.5" />
-                          {inlineConfirm.isArmed("merge") ? "Confirm merge?" : "Merge now"}
+                          {inlineConfirm.isArmed("merge") ? mergeNowConfirmLabel : mergeNowLabel}
                         </MenuItem>
                       ) : null}
                       {autoMergeArmed && can("disable-auto-merge") ? (

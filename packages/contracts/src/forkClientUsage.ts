@@ -31,7 +31,7 @@ import {
 } from "./settings.ts";
 
 /** Bump when extending the vocabulary; clients require the complete version before reporting. */
-export const FORK_CLIENT_USAGE_VERSION = 11;
+export const FORK_CLIENT_USAGE_VERSION = 12;
 
 /**
  * One device's client preferences, reported daily so we can see which defaults
@@ -189,6 +189,11 @@ export const ForkClientUsageInput = Schema.Union([
     actionSource: Schema.Literals(["local", "file", "override"]),
     /** The project file in effect at the project root, so adoption of styal.json and t3.json shows. */
     projectFile: Schema.Literals(["styal.json", "t3.json", "none"]),
+  }),
+  Schema.Struct({
+    feature: Schema.Literal("pull-request-bypass-merge"),
+    action: Schema.Literal("merge"),
+    outcome: Schema.Literals(["success", "failure"]),
   }),
   ClientSettingsSnapshot,
 ]);

@@ -161,6 +161,12 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   update methods. [Code review](./source-control.md#review-and-merge).
   Compared with [T3 Code revision a493946](https://github.com/pingdotgg/t3code/tree/a493946bb42ab16e1d18285dac3e9e4603651330),
   checked September 23, 2026.
+- **Bypass merge for repository administrators.** When GitHub lets you bypass a repository's rules,
+  a pull request blocked on checks or reviews offers **Bypass rules and merge** beside auto-merge.
+  Anyone else sees only auto-merge, since GitHub would refuse their merge.
+  [Review and merge](./source-control.md#review-and-merge).
+  Compared with [T3 Code revision b424c6e](https://github.com/pingdotgg/t3code/tree/b424c6e429f189067897de45d7445d900feadc6a),
+  checked October 26, 2026, which offers Merge now on blocked pull requests to everyone.
 - **Workflows waiting for approval on release pull requests.** T3 Code shows and approves fork
   workflows waiting for a maintainer. styal also finds runs GitHub holds on pull requests a
   workflow opened with `GITHUB_TOKEN`, such as Changesets release pull requests, offers

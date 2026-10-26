@@ -1656,6 +1656,8 @@ describe("viewer permission decoding", () => {
             pullRequest: {
               viewerCanEnableAutoMerge: false,
               viewerCanDisableAutoMerge: true,
+              viewerCanMergeAsAdmin: false,
+              isMergeQueueEnabled: false,
             },
           }),
         ),
@@ -1663,7 +1665,26 @@ describe("viewer permission decoding", () => {
     ).toEqual({
       canEnableAutoMerge: false,
       canDisableAutoMerge: true,
+      canMergeAsAdmin: false,
     });
+  });
+
+  it("withholds an administrator merge where it would join the merge queue", () => {
+    const decode = (isMergeQueueEnabled: boolean) =>
+      expectSuccess(
+        decodeAutoMergePermissionsJson(
+          viewerJson({
+            pullRequest: {
+              viewerCanEnableAutoMerge: true,
+              viewerCanDisableAutoMerge: false,
+              viewerCanMergeAsAdmin: true,
+              isMergeQueueEnabled,
+            },
+          }),
+        ),
+      ).canMergeAsAdmin;
+    expect(decode(false)).toBe(true);
+    expect(decode(true)).toBe(false);
   });
 
   it("says no to a passer-by on a repository they can only read", () => {

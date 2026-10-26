@@ -281,6 +281,10 @@
       "types": "./src/threadPullRequests.ts",
       "import": "./src/threadPullRequests.ts"
     },
+    "./pullRequestMergeControl": {
+      "types": "./src/pullRequestMergeControl.ts",
+      "import": "./src/pullRequestMergeControl.ts"
+    },
     "./changeRequestUrl": {
       "types": "./src/changeRequestUrl.ts",
       "import": "./src/changeRequestUrl.ts"

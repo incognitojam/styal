@@ -310,6 +310,8 @@ export const PullRequestViewerPermissions = Schema.Struct({
   updateMethods: Schema.optional(ForwardCompatibleArray(PullRequestUpdateMethod)),
   labels: Schema.optional(Schema.Boolean),
   editChangeRequest: Schema.optional(Schema.Boolean),
+  /** A merge would go through now even while the host reports unmet merge requirements. */
+  bypassMergeRequirements: Schema.optional(Schema.Boolean),
 });
 export type PullRequestViewerPermissions = typeof PullRequestViewerPermissions.Type;
 

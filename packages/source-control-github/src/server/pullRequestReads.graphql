@@ -63,6 +63,8 @@ query PullRequestCore(
       mergeStateStatus
       viewerCanEnableAutoMerge @include(if: $required)
       viewerCanDisableAutoMerge @include(if: $required)
+      viewerCanMergeAsAdmin @include(if: $required)
+      isMergeQueueEnabled @include(if: $required)
       number
       title
       url
@@ -199,6 +201,8 @@ query PullRequestCoreWithoutDeployments(
       mergeStateStatus
       viewerCanEnableAutoMerge @include(if: $required)
       viewerCanDisableAutoMerge @include(if: $required)
+      viewerCanMergeAsAdmin @include(if: $required)
+      isMergeQueueEnabled @include(if: $required)
       number
       title
       url
@@ -939,6 +943,8 @@ query AutoMergePermissions($owner: String!, $name: String!, $number: Int!) {
     pullRequest(number: $number) {
       viewerCanEnableAutoMerge
       viewerCanDisableAutoMerge
+      viewerCanMergeAsAdmin
+      isMergeQueueEnabled
     }
   }
 }

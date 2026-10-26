@@ -142,6 +142,13 @@ it.effect("records allowlisted client interactions with socket attribution and n
         event: "feature.used",
         source: "user",
       },
+      {
+        feature: "pull-request-bypass-merge",
+        action: "merge",
+        outcome: "success",
+        event: "feature.used",
+        source: "user",
+      },
     ]) {
       yield* report(yield* decode({ ...input, content: "Synthetic content", path: "/private" }));
       expect(events.at(-1)).toEqual({ event, properties: { ...input, ...properties, source } });
@@ -161,8 +168,8 @@ it.effect("records allowlisted client interactions with socket attribution and n
       yield* otherReport({ feature: "web-build-update-notice", action: "refresh_requested" });
       yield* otherReport({ feature: "mentioned-time-chips", action: "details_opened" });
     }
-    expect(events).toHaveLength(11);
-    expect(events[10]).toEqual({
+    expect(events).toHaveLength(12);
+    expect(events[11]).toEqual({
       event: "feature.used",
       properties: {
         feature: "mentioned-time-chips",
