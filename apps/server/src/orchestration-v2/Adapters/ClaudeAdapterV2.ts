@@ -7969,7 +7969,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             typeof message.output_file === "string"
               ? yield* fileSystem
                   .readFileString(message.output_file)
-                  .pipe(Effect.catch(() => Effect.succeed(message.summary)))
+                  .pipe(Effect.orElseSucceed(() => message.summary))
               : message.summary;
           const nativeItemRef = {
             driver: CLAUDE_PROVIDER,
