@@ -206,7 +206,6 @@ features:
       - apps/web/src/components/chat/useComposerSend.ts
       - apps/web/src/components/chat/useComposerStash.ts
       - apps/web/src/components/contextChipParts.tsx
-      - apps/web/src/components/files/AttachmentFilePreview.tsx
       - apps/web/src/composerDraftStore.ts
       - packages/contracts/src/orchestrationV2.ts
       - packages/provider-core/src/server/attachmentPrompt.ts

@@ -131,7 +131,10 @@ const browserTestProject = {
       "@betteroffice/xlsx/headless",
       "fast-xml-parser",
       "dompurify",
+      "heic-to/next",
       "jszip",
+      "sql.js",
+      "tiff",
     ],
   },
   test: {
@@ -374,6 +377,20 @@ export default defineConfig(() => {
       emptyOutDir: true,
       manifest: true,
       sourcemap: buildSourcemap,
+      rolldownOptions: {
+        output: {
+          codeSplitting: {
+            // Preview imports must not fold shared file icons back into main.
+            groups: [
+              {
+                name: "icons",
+                test: /\/(?:components\/chat\/PierreEntryIcon\.tsx|pierre-icons\.ts|mediaPreview\.ts)$/,
+                includeDependenciesRecursively: false,
+              },
+            ],
+          },
+        },
+      },
     },
     worker: { format: "es" },
     test: {

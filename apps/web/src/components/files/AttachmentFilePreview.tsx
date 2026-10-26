@@ -16,7 +16,6 @@ import { lazy, Suspense, useEffect, useRef, useState } from "react";
 
 import { useAssetUrlRefresh } from "~/assets/assetUrls";
 import ChatMarkdown from "~/components/ChatMarkdown";
-import { AttachmentImage } from "~/components/media/AttachmentImage";
 import { MorphIcon } from "~/components/MorphIcon";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { toastManager } from "~/components/ui/toast";
@@ -24,6 +23,8 @@ import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { useClientSettings, updateClientSettings } from "~/hooks/useSettings";
 import { cn } from "~/lib/utils";
 
+import { BinaryFilePreview } from "./BinaryFilePreview";
+import { PreviewImage } from "./PreviewImage";
 import { AudioPreview } from "./AudioPreview";
 import { BrowserDocumentFrame } from "./BrowserDocumentFrame";
 import { DelimitedTablePreview } from "./DelimitedTablePreview";
@@ -285,6 +286,14 @@ export function AttachmentFilePreview(props: {
     ) : (
       <ReadOnlySourcePreview name={props.name} text={content.text} />
     )
+  ) : kind === "archive" || kind === "sqlite" ? (
+    <BinaryFilePreview
+      key={revision}
+      src={url}
+      name={props.name}
+      kind={kind}
+      onRetry={() => setRevision((value) => value + 1)}
+    />
   ) : kind === "font" ? (
     <Suspense fallback={<FileSurfaceLoading />}>
       <FontFilePreview src={url} name={props.name} />
@@ -320,17 +329,13 @@ export function AttachmentFilePreview(props: {
       />
     </div>
   ) : kind === "image" ? (
-    // oxlint-disable-next-line t3code/require-centered-scroll-gutter -- The image is capped at max-h-full max-w-full, so this never scrolls.
-    <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto p-4">
-      <AttachmentImage
-        name={props.name}
-        mimeType={props.mimeType}
-        src={url}
-        alt={props.name}
-        className="max-h-full max-w-full object-contain"
-        onError={() => setError("Unable to load image.")}
-      />
-    </div>
+    <PreviewImage
+      key={url}
+      src={url}
+      name={props.name}
+      mimeType={props.mimeType}
+      onError={() => setError("Unable to load image.")}
+    />
   ) : (
     <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1 px-6 text-center">
       <p className="text-sm font-medium">No preview for this file</p>
