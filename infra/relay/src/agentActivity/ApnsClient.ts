@@ -375,7 +375,11 @@ export const layerDisabled = Layer.succeed(
   ApnsClient.of({
     makeLiveActivityRequest,
     makePushNotificationRequest,
-    sendLiveActivityRequest: () => Effect.succeed(disabledDeliveryResult),
-    sendPushNotificationRequest: () => Effect.succeed(disabledDeliveryResult),
+    sendLiveActivityRequest: Effect.fn("ApnsClient.sendLiveActivityRequest")(function () {
+      return Effect.succeed(disabledDeliveryResult);
+    }),
+    sendPushNotificationRequest: Effect.fn("ApnsClient.sendPushNotificationRequest")(function () {
+      return Effect.succeed(disabledDeliveryResult);
+    }),
   }),
 );

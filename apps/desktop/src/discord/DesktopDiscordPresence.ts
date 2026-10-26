@@ -239,7 +239,9 @@ const make = Effect.fn("desktop.discordPresence.make")(function* (
     (controller) => Effect.promise(() => controller.dispose()),
   );
   return DesktopDiscordPresence.of({
-    setActivity: (activity) => Effect.promise(() => controller.setActivity(activity)),
+    setActivity: Effect.fn("DesktopDiscordPresence.setActivity")(function (activity) {
+      return Effect.promise(() => controller.setActivity(activity));
+    }),
     status: Effect.sync(() => controller.status),
   });
 });

@@ -98,25 +98,25 @@ export const validateStyalBaseVersion = (version: string) => {
  * patch after the newest stable tag, so they always sort above that release
  * and promoting one never collides with an existing tag.
  */
-export const resolveUnreleasedBaseVersion = (
+export const resolveUnreleasedBaseVersion = Effect.fn("resolveUnreleasedBaseVersion")(function* (
   declaredVersion: string,
   latestStableTag: string | undefined,
-) => {
-  if (latestStableTag === undefined) return Effect.succeed(declaredVersion);
+) {
+  if (latestStableTag === undefined) return declaredVersion;
   const latest = /^v(\d+)\.(\d+)\.(\d+)$/.exec(latestStableTag);
   const declared = /^(\d+)\.(\d+)\.(\d+)$/.exec(declaredVersion);
-  if (!latest) return Effect.fail(new InvalidStyalVersionError({ version: latestStableTag }));
-  if (!declared) return Effect.fail(new InvalidStyalVersionError({ version: declaredVersion }));
+  if (!latest) return yield* new InvalidStyalVersionError({ version: latestStableTag });
+  if (!declared) return yield* new InvalidStyalVersionError({ version: declaredVersion });
 
   const latestParts = latest.slice(1).map(Number);
   const declaredParts = declared.slice(1).map(Number);
   const comparison =
     declaredParts.map((part, index) => part - latestParts[index]!).find((diff) => diff !== 0) ?? 0;
-  if (comparison > 0) return Effect.succeed(declaredVersion);
+  if (comparison > 0) return declaredVersion;
 
   const [major, minor, patch] = latestParts;
-  return Effect.succeed(`${major}.${minor}.${patch! + 1}`);
-};
+  return `${major}.${minor}.${patch! + 1}`;
+});
 
 export const resolveNightlyReleaseMetadata = (
   baseVersion: string,

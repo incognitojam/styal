@@ -29,7 +29,9 @@ export class RemoteEnvironmentAuthFetchError extends Data.TaggedError(
   readonly cause: unknown;
 }> {}
 
-class RemoteEnvironmentAuthInvalidJsonError extends Data.TaggedError(
+// Exported so apps/web declaration checks can name it in its session atom types.
+/** @public */
+export class RemoteEnvironmentAuthInvalidJsonError extends Data.TaggedError(
   "RemoteEnvironmentAuthInvalidJsonError",
 )<{
   readonly message: string;

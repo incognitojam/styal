@@ -388,15 +388,18 @@ export const make = Effect.fn("EnvironmentDeviceHost.make")(function* (
       Effect.map(() => summary),
       Effect.mapError(hostError),
     ),
-    platformAvailability: (platform) =>
-      Effect.succeed(
-        summary.platforms.find((entry) => entry.platform === platform) ?? {
-          platform,
-          available: true,
-        },
-      ),
-    ensureReady: () =>
-      Effect.suspend(() => {
+    platformAvailability: Effect.fn("EnvironmentDeviceHost.platformAvailability")(
+      function (platform) {
+        return Effect.succeed(
+          summary.platforms.find((entry) => entry.platform === platform) ?? {
+            platform,
+            available: true,
+          },
+        );
+      },
+    ),
+    ensureReady: Effect.fn("EnvironmentDeviceHost.ensureReady")(function () {
+      return Effect.suspend(() => {
         if (current) return Effect.succeed(current);
         const started = generation;
         return client.info("inspect").pipe(
@@ -408,9 +411,10 @@ export const make = Effect.fn("EnvironmentDeviceHost.make")(function* (
           }),
           Effect.mapError(hostError),
         );
-      }),
-    ensureAgentReady: () =>
-      Effect.suspend(() => {
+      });
+    }),
+    ensureAgentReady: Effect.fn("EnvironmentDeviceHost.ensureAgentReady")(function () {
+      return Effect.suspend(() => {
         const started = generation;
         return cancelPendingStop.pipe(
           Effect.andThen(client.request({ operation: "agent" }, DevicePeerAgent)),
@@ -428,7 +432,8 @@ export const make = Effect.fn("EnvironmentDeviceHost.make")(function* (
           }),
           Effect.mapError(hostError),
         );
-      }),
+      });
+    }),
     current: Effect.sync(() => current),
     // Drops the agent credential on the device environment. The agent-device config
     // keeps the old token, but the proxy no longer accepts it.

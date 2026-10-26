@@ -1332,15 +1332,18 @@ export const layerQueryRunner: Layer.Layer<
             }),
           ),
       ),
-      readSessionHistory: (input) =>
-        Effect.tryPromise({
-          try: async () =>
-            input.environment?.CLAUDE_CONFIG_DIR === undefined ||
-            input.environment.CLAUDE_CONFIG_DIR === process.env.CLAUDE_CONFIG_DIR
-              ? readClaudeSessionHistory(input.sessionId, input.options)
-              : decodeClaudeHistory(await runScopedClaudeHistory(input, "readSessionHistory")),
-          catch: (cause) => queryRunnerError(cause, "readSessionHistory"),
-        }),
+      readSessionHistory: Effect.fn("ClaudeAgentSdkQueryRunner.readSessionHistory")(
+        function (input) {
+          return Effect.tryPromise({
+            try: async () =>
+              input.environment?.CLAUDE_CONFIG_DIR === undefined ||
+              input.environment.CLAUDE_CONFIG_DIR === process.env.CLAUDE_CONFIG_DIR
+                ? readClaudeSessionHistory(input.sessionId, input.options)
+                : decodeClaudeHistory(await runScopedClaudeHistory(input, "readSessionHistory")),
+            catch: (cause) => queryRunnerError(cause, "readSessionHistory"),
+          });
+        },
+      ),
       forkSession: Effect.fn("ClaudeAgentSdkQueryRunner.forkSession")(function* (
         input: ClaudeAgentSdkSessionForkInput,
       ) {
@@ -4505,8 +4508,12 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
   return ProviderAdapter.ProviderAdapterV2.of({
     instanceId: adapterOptions.instanceId,
     driver: CLAUDE_PROVIDER,
-    getCapabilities: () => Effect.succeed(ClaudeProviderCapabilitiesV2),
-    planSelectionTransition: () => Effect.succeed(turnScopedSelectionTransition()),
+    getCapabilities: Effect.fn("ClaudeAdapterV2.getCapabilities")(function () {
+      return Effect.succeed(ClaudeProviderCapabilitiesV2);
+    }),
+    planSelectionTransition: Effect.fn("ClaudeAdapterV2.planSelectionTransition")(function () {
+      return Effect.succeed(turnScopedSelectionTransition());
+    }),
     openSession: Effect.fn("ClaudeAdapterV2.openSession")(
       function* (input: ProviderAdapter.ProviderAdapterV2OpenSessionInput) {
         const sessionScope = yield* Effect.scope;

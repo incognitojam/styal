@@ -51,18 +51,20 @@ const make = Effect.gen(function* () {
       quitOverride = false;
       return true;
     }),
-    acknowledge: (requestId) =>
-      Effect.sync(() => {
+    acknowledge: Effect.fn("DesktopShutdownConfirmation.acknowledge")(function (requestId) {
+      return Effect.sync(() => {
         if (pending?.request.requestId !== requestId || pending.expired) return;
         pending.presented = true;
         quitOverride = false;
-      }),
-    resolve: (requestId, confirmed) =>
-      Effect.sync(() => {
+      });
+    }),
+    resolve: Effect.fn("DesktopShutdownConfirmation.resolve")(function (requestId, confirmed) {
+      return Effect.sync(() => {
         if (pending?.request.requestId === requestId && pending.presented && !pending.expired) {
           pending.resolve(confirmed);
         }
-      }),
+      });
+    }),
     request: Effect.fn("desktop.shutdown.requestConfirmation")(
       function* (message, confirmLabel, threadActivity) {
         if (pending) return false;

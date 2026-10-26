@@ -435,9 +435,17 @@ export const make = Effect.fn("desktop.telemetryPublisher.make")(function* () {
     handleControlForSource,
     removeControlSource,
     publishUpdateReport,
-    publishUpdateActivity: (report) => PubSub.publish(activityReports, report).pipe(Effect.asVoid),
+    publishUpdateActivity: Effect.fn("DesktopTelemetryPublisher.publishUpdateActivity")(
+      function (report) {
+        return PubSub.publish(activityReports, report).pipe(Effect.asVoid);
+      },
+    ),
     updateActivityRequests: Stream.fromQueue(activityRequests),
-    publishFeatureUsage: (report) => Queue.offer(featureUsageQueue, report).pipe(Effect.asVoid),
+    publishFeatureUsage: Effect.fn("DesktopTelemetryPublisher.publishFeatureUsage")(
+      function (report) {
+        return Queue.offer(featureUsageQueue, report).pipe(Effect.asVoid);
+      },
+    ),
     updateRequests: Stream.fromQueue(updateRequestQueue),
     updateCommits: Stream.fromQueue(updateCommitQueue),
     updateCancellations: Stream.fromQueue(updateCancellationQueue),

@@ -105,26 +105,43 @@ export const make = Effect.gen(function* () {
     }
   });
   return TextGeneration.of({
-    generateCommitMessage: (input) =>
-      generate("generateCommitMessage", input.modelSelection, (textGeneration, modelSelection) =>
-        textGeneration.generateCommitMessage({ ...input, modelSelection }),
-      ),
-    generatePrContent: (input) =>
-      generate("generatePrContent", input.modelSelection, (textGeneration, modelSelection) =>
+    generateCommitMessage: Effect.fn("TextGeneration.generateCommitMessage")(function (input) {
+      return generate(
+        "generateCommitMessage",
+        input.modelSelection,
+        (textGeneration, modelSelection) =>
+          textGeneration.generateCommitMessage({ ...input, modelSelection }),
+      );
+    }),
+    generatePrContent: Effect.fn("TextGeneration.generatePrContent")(function (input) {
+      return generate("generatePrContent", input.modelSelection, (textGeneration, modelSelection) =>
         textGeneration.generatePrContent({ ...input, modelSelection }),
-      ),
-    generateBranchName: (input) =>
-      generate("generateBranchName", input.modelSelection, (textGeneration, modelSelection) =>
-        textGeneration.generateBranchName({ ...input, modelSelection }),
-      ),
-    generateReviewGuide: (input) =>
-      generate("generateReviewGuide", input.modelSelection, (textGeneration, modelSelection) =>
-        textGeneration.generateReviewGuide({ ...input, modelSelection }),
-      ),
-    checkMentionedTimes: (input) =>
-      generate("checkMentionedTimes", input.modelSelection, (textGeneration, modelSelection) =>
-        textGeneration.checkMentionedTimes({ ...input, modelSelection }),
-      ),
+      );
+    }),
+    generateBranchName: Effect.fn("TextGeneration.generateBranchName")(function (input) {
+      return generate(
+        "generateBranchName",
+        input.modelSelection,
+        (textGeneration, modelSelection) =>
+          textGeneration.generateBranchName({ ...input, modelSelection }),
+      );
+    }),
+    generateReviewGuide: Effect.fn("TextGeneration.generateReviewGuide")(function (input) {
+      return generate(
+        "generateReviewGuide",
+        input.modelSelection,
+        (textGeneration, modelSelection) =>
+          textGeneration.generateReviewGuide({ ...input, modelSelection }),
+      );
+    }),
+    checkMentionedTimes: Effect.fn("TextGeneration.checkMentionedTimes")(function (input) {
+      return generate(
+        "checkMentionedTimes",
+        input.modelSelection,
+        (textGeneration, modelSelection) =>
+          textGeneration.checkMentionedTimes({ ...input, modelSelection }),
+      );
+    }),
     generateThreadTitle: Effect.fn("TextGeneration.generateThreadTitle")(function* (input) {
       const linkedContext =
         input.linkedContext ??

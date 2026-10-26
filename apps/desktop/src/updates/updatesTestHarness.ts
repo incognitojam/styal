@@ -280,7 +280,9 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
   const layer = DesktopUpdates.layer.pipe(
     Layer.provideMerge(
       Layer.succeed(DesktopShutdownGuard.DesktopShutdownGuard, {
-        confirm: () => options.confirmShutdown ?? Effect.succeed(true),
+        confirm: Effect.fn("DesktopShutdownGuard.confirm")(function () {
+          return options.confirmShutdown ?? Effect.succeed(true);
+        }),
         inspect: nativeFakes.inspect,
       }),
     ),

@@ -222,10 +222,12 @@ export const layerCloudflareQueues = (
       Layer.succeed(
         ApnsDeliveryQueueSender,
         ApnsDeliveryQueueSender.of({
-          send: (body, options) =>
-            sender
-              .send(body, queueSendOptions(options))
-              .pipe(Effect.provideService(Alchemy.RuntimeContext, alchemyRuntimeContext)),
+          send: Effect.fn("ApnsDeliveryQueueSender.send")(
+            function* (body, options) {
+              return yield* sender.send(body, queueSendOptions(options));
+            },
+            Effect.provideService(Alchemy.RuntimeContext, alchemyRuntimeContext),
+          ),
         }),
       ),
     ),

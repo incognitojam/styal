@@ -98,7 +98,7 @@ export const layerExecutor: Layer.Layer<
     const threads = yield* ThreadManagementService.ThreadManagementService;
     const settings = yield* ServerSettings.ServerSettingsService;
     return OrchestrationEffectExecutorV2.of({
-      execute: (effect, options) => {
+      execute: Effect.fn("OrchestrationEffectExecutorV2.execute")(function (effect, options) {
         const willRetry = options?.willRetry ?? false;
         switch (effect.request.type) {
           case "provider-runtime.continue": {
@@ -584,7 +584,7 @@ export const layerExecutor: Layer.Layer<
                 ),
               );
         }
-      },
+      }),
     });
   }),
 );

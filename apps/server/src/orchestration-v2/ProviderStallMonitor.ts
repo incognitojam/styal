@@ -205,7 +205,9 @@ const make = Effect.gen(function* () {
 
   return ProviderStallMonitor.of({
     sweep,
-    start: () => forkParked(Effect.forever(sweep.pipe(Effect.andThen(Effect.sleep(SWEEP_MS))))),
+    start: Effect.fn("ProviderStallMonitor.start")(function () {
+      return forkParked(Effect.forever(sweep.pipe(Effect.andThen(Effect.sleep(SWEEP_MS)))));
+    }),
   });
 });
 

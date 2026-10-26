@@ -93,8 +93,8 @@ export const make = Effect.fn("desktop.launchTiming.make")(function* (options?: 
       Effect.flatMap((now) => Deferred.succeed(windowShownAt, now)),
       Effect.asVoid,
     ),
-    recordUpdateRestart: (input) =>
-      Clock.currentTimeMillis.pipe(
+    recordUpdateRestart: Effect.fn("DesktopLaunchTiming.recordUpdateRestart")(function (input) {
+      return Clock.currentTimeMillis.pipe(
         Effect.flatMap((handedOffAt) => encodeUpdateRestartTiming({ ...input, handedOffAt })),
         Effect.flatMap((text) =>
           fileSystem
@@ -102,7 +102,8 @@ export const make = Effect.fn("desktop.launchTiming.make")(function* (options?: 
             .pipe(Effect.andThen(fileSystem.writeFileString(timingPath, text))),
         ),
         Effect.ignore,
-      ),
+      );
+    }),
     report: Effect.gen(function* () {
       const shownAt = yield* Deferred.await(windowShownAt);
       const backendAt = yield* Ref.get(backendReadyAt);
@@ -151,7 +152,9 @@ export const layerNoop = Layer.succeed(
   DesktopLaunchTiming.of({
     markBackendReady: Effect.void,
     markWindowShown: Effect.void,
-    recordUpdateRestart: () => Effect.void,
+    recordUpdateRestart: Effect.fn("DesktopLaunchTiming.recordUpdateRestart")(function () {
+      return Effect.void;
+    }),
     report: Effect.never,
   }),
 );

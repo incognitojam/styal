@@ -293,43 +293,45 @@ export const make = Effect.gen(function* () {
    * pull request needs it only when a workflow's GITHUB_TOKEN pushed the head, so a credential
    * without Actions access says nothing rather than marking every pull request.
    */
-  const readWorkflowApprovals = (
-    input: ProviderRepositoryRef & { readonly number: number },
-    pullRequest: Pick<
-      GitHubPullRequestDetail,
-      "state" | "isCrossRepository" | "headSha" | "headBranch" | "headRepositoryOwner"
-    >,
-  ) => {
-    const none = {
-      runs: [] as ReadonlyArray<GitHubWorkflowRunApproval>,
-      unavailable: false,
-      known: true,
-    };
-    const unread = { ...none, unavailable: pullRequest.isCrossRepository === true, known: false };
-    const isCrossRepository = pullRequest.isCrossRepository === true;
-    if (pullRequest.state !== "open") return Effect.succeed(none);
-    if (pullRequest.headSha == null || pullRequest.headRepositoryOwner == null) {
-      return Effect.succeed(unread);
-    }
-    return cli
-      .listWorkflowRunsRequiringApproval({
-        ...input,
-        headSha: pullRequest.headSha,
-        headBranch: pullRequest.headBranch,
-        headRepositoryOwner: pullRequest.headRepositoryOwner,
-        isCrossRepository,
-      })
-      .pipe(
-        Effect.matchEffect({
-          onFailure: (error) =>
-            error._tag === "GitHubApiRateLimitError" ||
-            error._tag === "SourceControlRateLimitPausedError"
-              ? Effect.fail(error)
-              : Effect.succeed(unread),
-          onSuccess: (runs) => Effect.succeed({ ...none, runs }),
-        }),
-      );
-  };
+  const readWorkflowApprovals = Effect.fn("GitHubPullRequestProvider.readWorkflowApprovals")(
+    function (
+      input: ProviderRepositoryRef & { readonly number: number },
+      pullRequest: Pick<
+        GitHubPullRequestDetail,
+        "state" | "isCrossRepository" | "headSha" | "headBranch" | "headRepositoryOwner"
+      >,
+    ) {
+      const none = {
+        runs: [] as ReadonlyArray<GitHubWorkflowRunApproval>,
+        unavailable: false,
+        known: true,
+      };
+      const unread = { ...none, unavailable: pullRequest.isCrossRepository === true, known: false };
+      const isCrossRepository = pullRequest.isCrossRepository === true;
+      if (pullRequest.state !== "open") return Effect.succeed(none);
+      if (pullRequest.headSha == null || pullRequest.headRepositoryOwner == null) {
+        return Effect.succeed(unread);
+      }
+      return cli
+        .listWorkflowRunsRequiringApproval({
+          ...input,
+          headSha: pullRequest.headSha,
+          headBranch: pullRequest.headBranch,
+          headRepositoryOwner: pullRequest.headRepositoryOwner,
+          isCrossRepository,
+        })
+        .pipe(
+          Effect.matchEffect({
+            onFailure: (error) =>
+              error._tag === "GitHubApiRateLimitError" ||
+              error._tag === "SourceControlRateLimitPausedError"
+                ? Effect.fail(error)
+                : Effect.succeed(unread),
+            onSuccess: (runs) => Effect.succeed({ ...none, runs }),
+          }),
+        );
+    },
+  );
 
   const readChecks = (input: ProviderRepositoryRef & { readonly number: number }) =>
     cli.getPullRequestDetail(input).pipe(

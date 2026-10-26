@@ -1311,8 +1311,11 @@ export const make = Effect.gen(function* () {
     install: installWithExpectedVersion().pipe(
       Effect.map(({ accepted, completed, state }) => ({ accepted, completed, state })),
     ),
-    installPrepared: (expectedVersion, consent) =>
-      installWithExpectedVersion(expectedVersion, consent),
+    installPrepared: Effect.fn("DesktopUpdates.installPrepared")(
+      function (expectedVersion, consent) {
+        return installWithExpectedVersion(expectedVersion, consent);
+      },
+    ),
   });
 });
 

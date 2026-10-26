@@ -84,10 +84,11 @@ export const devices = Effect.fnUntraced(function* (client: FeatureUsage.ClientD
     hostId === undefined || hostId === LOCAL_DEVICE_HOST_ID
       ? ("local" as const)
       : ("remote" as const);
+  // Forwarders retain the underlying operation spans.
   return DeviceService.DeviceService.of({
     ...service,
-    open: (input, context) =>
-      observe(
+    open: Effect.fnUntraced(function* (input, context) {
+      return yield* observe(
         {
           feature: "devices",
           action: "open",
@@ -96,9 +97,10 @@ export const devices = Effect.fnUntraced(function* (client: FeatureUsage.ClientD
           deviceLocation: location(input.hostId),
         },
         service.open(input, context),
-      ),
-    close: (input) =>
-      observe(
+      );
+    }),
+    close: Effect.fnUntraced(function* (input) {
+      return yield* observe(
         {
           feature: "devices",
           action: "close",
@@ -106,9 +108,10 @@ export const devices = Effect.fnUntraced(function* (client: FeatureUsage.ClientD
           ...(input.hostId === undefined ? {} : { deviceLocation: location(input.hostId) }),
         },
         service.close(input),
-      ),
-    shutdown: (input) =>
-      observe(
+      );
+    }),
+    shutdown: Effect.fnUntraced(function* (input) {
+      return yield* observe(
         {
           feature: "devices",
           action: "shutdown",
@@ -117,9 +120,10 @@ export const devices = Effect.fnUntraced(function* (client: FeatureUsage.ClientD
           deviceLocation: location(input.hostId),
         },
         service.shutdown(input),
-      ),
-    action: (input) =>
-      observe(
+      );
+    }),
+    action: Effect.fnUntraced(function* (input) {
+      return yield* observe(
         {
           feature: "devices",
           action: input.type,
@@ -127,7 +131,8 @@ export const devices = Effect.fnUntraced(function* (client: FeatureUsage.ClientD
           deviceLocation: location(input.hostId),
         },
         service.action(input),
-      ),
+      );
+    }),
   });
 });
 
@@ -143,10 +148,11 @@ export const hardware = Effect.fnUntraced(function* (client: FeatureUsage.Client
     FeatureUsage.observe({ feature: "hardware", action, source: "user" }, effect, client).pipe(
       Effect.provideService(AnalyticsService.AnalyticsService, analytics),
     );
+  // Forwarders retain the underlying operation spans.
   return HardwareService.HardwareService.of({
     ...service,
-    control: (input) =>
-      observe(
+    control: Effect.fnUntraced(function* (input) {
+      return yield* observe(
         input.type === "revoke"
           ? "revoke"
           : input.type === "set-keep"
@@ -155,12 +161,14 @@ export const hardware = Effect.fnUntraced(function* (client: FeatureUsage.Client
               ? "pause"
               : "resume",
         service.control(input),
-      ),
-    configure: (input) =>
-      observe(
+      );
+    }),
+    configure: Effect.fnUntraced(function* (input) {
+      return yield* observe(
         input.type === "accept-definition" ? "accept_definition" : "set_credential",
         service.configure(input),
-      ),
+      );
+    }),
   });
 });
 
@@ -183,11 +191,15 @@ export const projectFileApprovals = Effect.fnUntraced(function* (
       effect,
       client,
     ).pipe(Effect.provideService(AnalyticsService.AnalyticsService, analytics));
+  // Forwarders retain the underlying operation spans.
   return ProjectFileActionApprovals.ProjectFileActionApprovals.of({
     ...service,
-    review: (input) => observe("review", service.review(input)),
-    setApproved: (input) =>
-      observe(input.approved ? "approve" : "revoke", service.setApproved(input)),
+    review: Effect.fnUntraced(function* (input) {
+      return yield* observe("review", service.review(input));
+    }),
+    setApproved: Effect.fnUntraced(function* (input) {
+      return yield* observe(input.approved ? "approve" : "revoke", service.setApproved(input));
+    }),
   });
 });
 

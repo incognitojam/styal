@@ -72,7 +72,7 @@ function applyLabelEdit(labels: PullRequestDetail["labels"], edit: PendingLabelE
     : labels.filter((label) => !names.has(label.name));
 }
 
-interface RepositoryLabelCatalogue {
+export interface RepositoryLabelCatalogue {
   readonly candidates: ReadonlyArray<Omit<PullRequestLabelCandidate, "isApplied">>;
   readonly truncated: boolean;
 }

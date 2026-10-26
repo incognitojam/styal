@@ -456,12 +456,18 @@ export function layerWithRegistry<Error>(
   const layerThreadTitleRegenerationTest = Layer.succeed(
     ThreadTitleRegenerationService.ThreadTitleRegenerationService,
     ThreadTitleRegenerationService.ThreadTitleRegenerationService.of({
-      execute: () => Effect.void,
+      execute: Effect.fn("ThreadTitleRegenerationService.execute")(function () {
+        return Effect.void;
+      }),
     }),
   );
   const layerMentionedTimesCheckTest = Layer.succeed(
     MentionedTimesCheckService.MentionedTimesCheckService,
-    MentionedTimesCheckService.MentionedTimesCheckService.of({ execute: () => Effect.void }),
+    MentionedTimesCheckService.MentionedTimesCheckService.of({
+      execute: Effect.fn("MentionedTimesCheckService.execute")(function () {
+        return Effect.void;
+      }),
+    }),
   );
   const layerOrchestratorProvided = Orchestrator.layer.pipe(
     Layer.provide(

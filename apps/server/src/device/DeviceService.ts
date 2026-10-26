@@ -956,9 +956,11 @@ process.exitCode = result.error ? 1 : (result.status ?? 1);`,
   return {
     ...DeviceService.of({
       testHost,
-      listHost: (hostId) => readiness(hostId).pipe(Effect.flatMap(refresh)),
-      updateTool: (tool) =>
-        lifecycleLock.withPermit(
+      listHost: Effect.fn("DeviceService.listHost")(function (hostId) {
+        return readiness(hostId).pipe(Effect.flatMap(refresh));
+      }),
+      updateTool: Effect.fn("DeviceService.updateTool")(function (tool) {
+        return lifecycleLock.withPermit(
           Effect.gen(function* () {
             if (!installTool)
               return yield* new DeviceOperationError({
@@ -969,15 +971,17 @@ process.exitCode = result.error ? 1 : (result.status ?? 1);`,
             yield* installTool(tool);
             return yield* inspect;
           }),
-        ),
+        );
+      }),
       retryHost,
       inspect,
-      easAccount: () =>
-        Effect.fail(
+      easAccount: Effect.fn("DeviceService.easAccount")(function () {
+        return Effect.fail(
           new DeviceEasAccountError({
             reason: "EAS accounts are unavailable in this device service.",
           }),
-        ),
+        );
+      }),
       agentCli: Effect.fail(
         new DeviceHostUnavailableError({
           hostId: LOCAL_DEVICE_HOST_ID,
@@ -1054,10 +1058,11 @@ process.exitCode = result.error ? 1 : (result.status ?? 1);`,
       readinessIfSupported,
       agentReadinessIfSupported,
       currentReadiness,
-      currentAgentEndpoint: (hostId) =>
-        Effect.suspend(
+      currentAgentEndpoint: Effect.fn("DeviceService.currentAgentEndpoint")(function (hostId) {
+        return Effect.suspend(
           () => hosts.get(hostId ?? LOCAL_DEVICE_HOST_ID)?.currentAgent ?? Effect.succeed(null),
-        ),
+        );
+      }),
       sessionsForThread,
     }),
     setHostStatus,
