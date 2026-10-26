@@ -146,6 +146,93 @@ function harness(
 }
 
 describe("DesktopShutdownGuard", () => {
+  it.effect("restarts resumable work without consent but still lets the user cancel Quit", () => {
+    const h = harness({
+      activity: () =>
+        Effect.succeed({
+          ...idle,
+          activeSessions: 1,
+          continuableSessions: 1,
+          threads: [
+            {
+              threadId: ThreadId.make("release"),
+              title: "Prepare release",
+              reasons: ["running"],
+              continuable: true,
+            },
+          ],
+        }),
+    });
+    return Effect.gen(function* () {
+      const guard = yield* Guard.DesktopShutdownGuard;
+      assert.isTrue(yield* guard.confirm("restart"));
+      assert.equal(h.checks(), 2);
+      assert.isEmpty(h.messages);
+
+      assert.isFalse(yield* guard.confirm("quit"));
+      assert.equal(h.checks(), 4);
+      assert.lengthOf(h.messages, 1);
+      assert.include(h.messages[0]!, "Quit with running work?");
+      assert.include(h.messages[0]!, "2 threads will continue when styal next starts.");
+      assert.deepEqual(
+        h.details[0]?.map((item) => item.continuesAfterRestart),
+        [true, true],
+      );
+
+      assert.isTrue(yield* guard.confirm("restart"));
+      assert.equal(h.checks(), 6);
+      assert.lengthOf(h.messages, 1);
+
+      assert.isFalse(yield* guard.confirm("restart", { continueThreads: false }));
+      assert.lengthOf(h.messages, 2);
+      assert.include(h.messages[1]!, "2 threads will be interrupted.");
+    }).pipe(Effect.provide(h.layer));
+  });
+
+  it.effect.each([
+    { name: "waiting requests or secrets", blocker: { waitingSessions: 1 } },
+    { name: "non-continuable turns", blocker: { activeSessions: 2 } },
+    { name: "terminal commands", blocker: { terminalsRequiringConfirmation: 1 } },
+    {
+      name: "unknown terminal activity",
+      blocker: { terminalsRequiringConfirmation: 1, terminalsWithUnknownActivity: 1 },
+    },
+    { name: "provider installs", blocker: { providerInstalls: 1 } },
+    { name: "shared devices", blocker: { environmentsUsingDevices: 1 } },
+  ])("asks before restarting resumable turns alongside $name", ({ blocker }) => {
+    const h = harness({
+      activity: (port) =>
+        Effect.succeed({
+          ...idle,
+          activeSessions: 1,
+          continuableSessions: 1,
+          ...(port === "3774" ? blocker : {}),
+        }),
+    });
+    return Effect.gen(function* () {
+      const guard = yield* Guard.DesktopShutdownGuard;
+      assert.isFalse(yield* guard.confirm("restart"));
+      assert.equal(h.checks(), 2);
+      assert.lengthOf(h.messages, 1);
+      assert.include(h.messages[0]!, "Make sure you're ready before continuing.");
+    }).pipe(Effect.provide(h.layer));
+  });
+
+  it.effect("does not infer a safe restart from the hosts that answered successfully", () => {
+    const h = harness({
+      activity: (port) =>
+        Effect.succeed(
+          port === "3773" ? { ...idle, activeSessions: 1, continuableSessions: 1 } : {},
+        ),
+    });
+    return Effect.gen(function* () {
+      const guard = yield* Guard.DesktopShutdownGuard;
+      assert.isFalse(yield* guard.confirm("restart"));
+      assert.include(h.messages[0]!, "Could not check every local environment");
+      assert.equal(h.checks(), 2);
+    }).pipe(Effect.provide(h.layer));
+  });
+
   it.effect("names affected threads from each owned backend and preserves cancellation", () => {
     const h = harness({
       activity: (port) =>
@@ -358,7 +445,7 @@ describe("shutdown confirmation copy", () => {
       [true, false],
     );
   });
-  it("drops the warning when every thread continues, and says when for quit", () => {
+  it("skips restart confirmation when every thread continues, and says when for quit", () => {
     const check = {
       ...idle,
       activeSessions: 1,
@@ -368,10 +455,7 @@ describe("shutdown confirmation copy", () => {
     const quit = Guard.shutdownConfirmation([check], "quit");
     assert.strictEqual(quit?.message, "Quit with running work?");
     assert.strictEqual(quit?.detail, "1 thread will continue when styal next starts.");
-    assert.strictEqual(
-      Guard.shutdownConfirmation([check], "restart")?.detail,
-      "1 thread will continue after the restart.",
-    );
+    assert.isNull(Guard.shutdownConfirmation([check], "restart"));
   });
   it("keeps the warning when a continuing thread shares the restart with a waiting one", () => {
     const confirmation = Guard.shutdownConfirmation(

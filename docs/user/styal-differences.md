@@ -337,7 +337,9 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 - **Confirm only when quitting may interrupt work.** Desktop quits and restarts check agents and
   terminal work across the environments hosted by the app, including work started from other devices
   and agents in other environments using its shared devices.
-  Idle hosts proceed without a dialog; active work or an unavailable check requires an in-app confirmation.
+  Local restarts proceed without a dialog when all active threads will resume and no other work
+  would be interrupted. Quit still asks about active work. Terminal commands, other interruptions,
+  and an unavailable check require confirmation.
   The **Update server** action checks the connected server the same way before it restarts.
   Compared with [T3 Code revision d4d5d12](https://github.com/pingdotgg/t3code/tree/d4d5d12e8ba086cfbf79ca3adeb4156b46ead665),
   whose desktop lifecycle does not check host activity before quitting, and
