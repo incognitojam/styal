@@ -260,7 +260,7 @@ export const makeLegacyHistoryWriter = Effect.gen(function* () {
       const payload =
         event.type === "thread.turn-prompt-linked"
           ? event.payload
-          : yield* Schema.decodeUnknownEffect(ThreadMessageSentPayload)(event.payload);
+          : yield* Schema.decodeEffect(ThreadMessageSentPayload)(event.payload);
       const projection = yield* projections.getThreadProjection(payload.threadId);
       const message = projection.messages.find((message) => message.id === payload.messageId);
       if (message !== undefined)

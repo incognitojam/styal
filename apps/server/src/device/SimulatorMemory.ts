@@ -55,7 +55,7 @@ const command = Effect.fn("SimulatorMemory.command")(function* (
 });
 
 const decode = <S extends Schema.Top>(schema: S, output: string) =>
-  Schema.decodeUnknownEffect(Schema.fromJsonString(schema))(output).pipe(
+  Schema.decodeEffect(Schema.fromJsonString(schema))(output).pipe(
     Effect.mapError(
       (cause) =>
         new DeviceOperationError({

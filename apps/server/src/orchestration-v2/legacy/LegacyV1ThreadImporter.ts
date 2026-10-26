@@ -373,7 +373,7 @@ const make = Effect.gen(function* () {
     `;
     const row = rows[0];
     if (row === undefined || row.resume_cursor_json === null) return null;
-    const driver = Schema.decodeUnknownOption(ProviderDriverKind)(row.provider_name);
+    const driver = Schema.decodeOption(ProviderDriverKind)(row.provider_name);
     if (Option.isNone(driver)) return null;
     const instanceId =
       row.provider_instance_id === null

@@ -240,7 +240,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
   it.effect("an older client's on/off switch sets the mode and still decodes the result", () =>
     Effect.gen(function* () {
       const service = yield* ServerSettingsModule.ServerSettingsService;
-      const patch = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(ServerSettingsPatch))(
+      const patch = yield* Schema.decodeEffect(Schema.fromJsonString(ServerSettingsPatch))(
         `{ "compactIdleThreads": true }`,
       );
       const settings = yield* service.updateSettings(patch);
@@ -252,7 +252,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         compactIdleThreads: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
       });
       const encoded = yield* Schema.encodeEffect(Schema.toCodecJson(ServerSettings))(settings);
-      const olderClientView = yield* Schema.decodeUnknownEffect(
+      const olderClientView = yield* Schema.decodeEffect(
         Schema.toCodecJson(OlderClientServerSettings),
       )(encoded);
       assert.strictEqual(olderClientView.compactIdleThreads, true);

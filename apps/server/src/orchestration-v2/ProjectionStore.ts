@@ -3737,7 +3737,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
         const legacyTurnUsage =
           legacyUsageRows[0] === undefined
             ? undefined
-            : yield* Schema.decodeUnknownEffect(Schema.fromJsonString(LegacyTurnUsage))(
+            : yield* Schema.decodeEffect(Schema.fromJsonString(LegacyTurnUsage))(
                 legacyUsageRows[0].payload_json,
               );
         const projection = {

@@ -99,7 +99,7 @@ function validatePath(
 }
 
 export function decodeForkFeatureLedger(contents: string): ForkFeatureLedger {
-  return Schema.decodeUnknownSync(ledgerSchema)(contents);
+  return Schema.decodeSync(ledgerSchema)(contents);
 }
 
 export function validateForkFeatureLedger(

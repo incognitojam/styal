@@ -302,7 +302,7 @@ export const make = Effect.gen(function* () {
     const previous =
       rows[0] === undefined
         ? undefined
-        : yield* Schema.decodeUnknownEffect(Schema.fromJsonString(OrchestrationV2TurnItemJson))(
+        : yield* Schema.decodeEffect(Schema.fromJsonString(OrchestrationV2TurnItemJson))(
             rows[0].payload_json,
           );
     const finished =
@@ -506,7 +506,7 @@ export const make = Effect.gen(function* () {
           AND json_type(payload_json, '$.setupScript') = 'object'
       `;
       const items = yield* Effect.forEach(rows, (row) =>
-        Schema.decodeUnknownEffect(Schema.fromJsonString(OrchestrationV2TurnItemJson))(
+        Schema.decodeEffect(Schema.fromJsonString(OrchestrationV2TurnItemJson))(
           row.payload_json,
         ).pipe(Effect.map((item) => ({ row, item }))),
       );
