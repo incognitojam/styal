@@ -1562,10 +1562,9 @@ export const makeXAiPromptCompletionRuntime = Effect.fn("makeXAiPromptCompletion
           .pipe(Effect.forkChild);
         return yield* Effect.raceAllFirst([
           Fiber.join(promptRpcFiber).pipe(
-            Effect.catchCause((cause) =>
-              Cause.hasInterruptsOnly(cause)
-                ? Effect.succeed(cancelledResponse)
-                : Effect.failCause(cause),
+            Effect.catchCauseIf(
+              (cause) => Cause.hasInterruptsOnly(cause),
+              (_cause) => Effect.succeed(cancelledResponse),
             ),
           ),
           Deferred.await(fallback.deferred).pipe(Effect.tap(() => waitForReplyIdle)),
