@@ -17,6 +17,7 @@ import type { ServerUpdateState } from "@t3tools/client-runtime/state/server";
 import * as Cause from "effect/Cause";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { describe, expect, it, vi } from "vite-plus/test";
+import { userEvent } from "vite-plus/test/browser";
 
 import { act, fakeTimers, render, stubGlobal, type Screen } from "../../../test/render";
 
@@ -760,5 +761,45 @@ describe("combined sidebar update", () => {
     await click(button("Cancel", dialog()!));
     expect(testState.updateServer).not.toHaveBeenCalled();
     expect(testState.install).not.toHaveBeenCalled();
+  });
+});
+
+function nightlyUpdate(releaseNotes: DesktopUpdateState["releaseNotes"]): DesktopUpdateState {
+  return { ...downloaded, channel: "nightly", releaseNotes };
+}
+
+const RELEASE_NOTES: DesktopUpdateState["releaseNotes"] = [
+  { version: localVersion, items: ["Faster sidebar."], totalItems: 1 },
+];
+
+function publishDesktopUpdate(state: DesktopUpdateState) {
+  return act(() => {
+    for (const listener of desktopListeners) listener(state);
+  });
+}
+
+const releaseNotes = () => document.querySelector('[aria-label="Nightly update release notes"]');
+
+describe("SidebarUpdatePill release notes", () => {
+  it("closes when the release notes stop applying", async () => {
+    using _setup = setup();
+    await using _screen = await renderPill();
+    await publishDesktopUpdate(nightlyUpdate(RELEASE_NOTES));
+    await userEvent.tab();
+    await vi.waitFor(() => expect(releaseNotes()).not.toBeNull());
+
+    await publishDesktopUpdate(nightlyUpdate([]));
+    await vi.waitFor(() => expect(releaseNotes()).toBeNull());
+  });
+
+  it("opens when release notes arrive while the trigger has keyboard focus", async () => {
+    using _setup = setup();
+    await using _screen = await renderPill();
+    await publishDesktopUpdate(nightlyUpdate([]));
+    await userEvent.tab();
+    expect(releaseNotes()).toBeNull();
+
+    await publishDesktopUpdate(nightlyUpdate(RELEASE_NOTES));
+    await vi.waitFor(() => expect(releaseNotes()).not.toBeNull());
   });
 });
