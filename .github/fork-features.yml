@@ -268,6 +268,43 @@ features:
         - https://github.com/pingdotgg/t3code/pull/15818
       retire_when: Upstream offers an equivalent Reply action above the full assistant text selection, with fallback placement near the top edge.
 
+  - id: backend-startup-latency
+    title: Avoid unused provider work before backend readiness
+    status: maintained
+    prs: []
+    invariants:
+      - Constructing the Cursor runtime, text generator, authentication controller, and catalog does not load the disk-backed SDK or its SQLite helper; actual SDK operations load them on demand while preserving the process-scoped shell spawn guard and per-session worker environments.
+      - Desktop HTTP readiness retries unsuccessful probes every 25ms while retaining the overall timeout, per-request timeout, and successful-response requirement.
+    implementation_paths:
+      - apps/desktop/src/backend/DesktopBackendManager.ts
+      - packages/provider-cursor/src/server/CursorAgentSdk.ts
+      - packages/provider-cursor/src/server/CursorSdk.ts
+      - packages/provider-cursor/src/server/CursorSdkCatalog.ts
+      - packages/provider-cursor/src/server/auth.ts
+      - packages/provider-cursor/src/server/sdk.ts
+      - packages/provider-cursor/src/server/textGeneration.ts
+    upstream_paths:
+      - apps/desktop/src/backend/DesktopBackendManager.ts
+      - packages/provider-cursor/src/server/CursorAgentSdk.ts
+      - packages/provider-cursor/src/server/CursorSdk.ts
+      - packages/provider-cursor/src/server/CursorSdkCatalog.ts
+      - packages/provider-cursor/src/server/auth.ts
+      - packages/provider-cursor/src/server/sdk.ts
+      - packages/provider-cursor/src/server/textGeneration.ts
+    tests:
+      - apps/desktop/src/backend/DesktopBackendManager.test.ts
+      - packages/provider-cursor/src/server/CursorAgentSdk.test.ts
+      - packages/provider-cursor/src/server/CursorSdk.test.ts
+      - packages/provider-cursor/src/server/auth.test.ts
+      - packages/provider-cursor/src/server/driver.test.ts
+      - packages/provider-cursor/src/server/textGeneration.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/blob/main/apps/desktop/src/backend/DesktopBackendManager.ts
+        - https://github.com/pingdotgg/t3code/blob/main/packages/provider-cursor/src/server/sdk.ts
+      retire_when: Upstream avoids loading unused Cursor SDK entry points before server readiness and uses equally prompt bounded desktop readiness probes.
+
   - id: background-task-endings
     title: Show background task endings on the call that started them and in the turn they wake
     status: maintained
