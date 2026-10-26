@@ -5337,7 +5337,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           if (options?.cancelCommands === true) {
             // The SDK can publish an empty roster before closing; original tool
             // rows still need a terminal update when the process is killed.
-            for (const command of [...backgroundCommandsByToolUseId.values()]) {
+            for (const command of Array.from(backgroundCommandsByToolUseId.values())) {
               if (command.providerThreadId !== remembered?.id) continue;
               yield* completeBackgroundCommand(nativeThreadId, {
                 task_id: command.nativeItemId,
