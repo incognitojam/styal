@@ -2718,8 +2718,8 @@ features:
       - apps/desktop/src/preview/BrowserSession.ts
       - apps/server/src/preview/TerminalBrowserOpen.ts
       - apps/web/src/components/chat/loopbackLinkPreview.ts
+      - apps/web/src/components/preview/agentOpenedPreviews.ts
       - apps/web/src/components/preview/openTerminalLinkInPreview.ts
-      - apps/web/src/components/preview/useAgentOpenedPreviews.ts
       - apps/web/src/terminal/ghostty/surface.ts
     upstream_paths:
       - apps/desktop/src/preview/Manager.ts
@@ -2734,6 +2734,7 @@ features:
       - apps/desktop/src/preview/BrowserSession.test.ts
       - apps/server/src/preview/TerminalBrowserOpen.test.ts
       - apps/web/src/components/chat/loopbackLinkPreview.test.ts
+      - apps/web/src/components/preview/agentOpenedPreviews.test.ts
       - apps/web/src/components/preview/openTerminalLinkInPreview.test.ts
       - apps/web/src/terminal/ghostty/surface.test.ts
     upstream:
