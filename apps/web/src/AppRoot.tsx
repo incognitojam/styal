@@ -6,7 +6,6 @@ import { subscribeComposerDraftModelReconciliation } from "./composerDraftStore"
 import { environmentThreadShells } from "./state/threads";
 import { environmentShell } from "./state/shell";
 
-import { BrowserProfileReporter } from "./browser/BrowserProfileReporter";
 import { ElectronBrowserHost } from "./browser/ElectronBrowserHost";
 import { ClientSettingsSnapshotReporter } from "./components/ClientSettingsSnapshotReporter";
 import { ThreadVisitBaselineObserver } from "./components/ThreadVisitBaselineObserver";
@@ -34,7 +33,6 @@ export function AppRoot({ router }: { readonly router: AppRouter }) {
         <RouterProvider router={router} />
         <ThreadVisitBaselineObserver />
         <ElectronBrowserHost />
-        <BrowserProfileReporter />
         <ClientSettingsSnapshotReporter />
         <QuitHoldOverlay />
         <ConfirmDialogHost />
