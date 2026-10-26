@@ -528,8 +528,8 @@ const ClientSettingsFields = Schema.Struct({
   // Opt-in TeX typesetting in rendered Markdown. Off keeps math parsing and
   // KaTeX out of the render path entirely.
   mathRenderingEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
-  // Beta: the quieter sidebar, composer and panel design. Off keeps the current look.
-  redesignEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  // The quieter sidebar, composer and panel design. Off keeps the classic look.
+  redesignEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
 });
 // Read the original fields before defaults erase the distinction between a fresh
 // install and an existing sound preference. Explicit notification modes always win.

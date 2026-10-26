@@ -31,6 +31,9 @@ describe("settle a thread", () => {
     const { page } = app;
     const sidebar = page.getByRole("navigation", { name: "Threads" });
     const settledHeader = sidebar.getByTestId("sidebar-settled-header");
+    // The New design shows the count beside the label rather than in it, so match state, not text.
+    const collapsedShelf = settledHeader.locator('button[aria-expanded="false"]', { hasText: "1" });
+    const expandedShelf = settledHeader.locator('button[aria-expanded="true"]');
     const settledThread = sidebar.getByRole("button", { name: "Fake Codex thread, second-app" });
     // The empty thread the server starts with in its bootstrap project.
     const otherThread = sidebar.getByRole("button", { name: "New thread, demo-app" });
@@ -43,13 +46,13 @@ describe("settle a thread", () => {
     await settledThread.getByRole("button", { name: "Settle thread" }).click();
     // Settling the open thread moves on to the next one and leaves the shelf collapsed.
     await page.getByRole("button", { name: "New thread in demo-app" }).waitFor();
-    await settledHeader.getByRole("button", { name: "Settled (1)" }).waitFor();
+    await collapsedShelf.waitFor();
     await settledThread.waitFor({ state: "hidden" });
 
     // Settlement is server state, so it survives a reload.
     await page.reload();
-    await settledHeader.getByRole("button", { name: "Settled (1)" }).click();
-    await settledHeader.getByRole("button", { name: "Settled", exact: true }).waitFor();
+    await collapsedShelf.click();
+    await expandedShelf.waitFor();
     await settledThread.getByRole("button", { name: "Un-settle thread" }).waitFor();
     expect(await isAbove(settledThread, settledHeader)).toBe(false);
 
@@ -57,17 +60,17 @@ describe("settle a thread", () => {
     // opening a thread outside it closes the shelf.
     await settledThread.click();
     await page.getByRole("button", { name: "New thread in second-app" }).waitFor();
-    await settledHeader.getByRole("button", { name: "Settled", exact: true }).waitFor();
+    await expandedShelf.waitFor();
     await otherThread.click();
-    await settledHeader.getByRole("button", { name: "Settled (1)" }).waitFor();
+    await collapsedShelf.waitFor();
     await settledThread.waitFor({ state: "hidden" });
 
     // Un-settling keeps the shelf open and returns the thread to the active list.
-    await settledHeader.getByRole("button", { name: "Settled (1)" }).click();
+    await collapsedShelf.click();
     await settledThread.hover();
     await settledThread.getByRole("button", { name: "Un-settle thread" }).click();
     await settledThread.getByRole("button", { name: "Settle thread" }).waitFor();
-    await settledHeader.getByRole("button", { name: "Settled", exact: true }).waitFor();
+    await expandedShelf.waitFor();
     expect(await isAbove(settledThread, settledHeader)).toBe(true);
   });
 });
