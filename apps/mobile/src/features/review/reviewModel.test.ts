@@ -8,6 +8,8 @@ import {
   buildReviewParsedDiff,
   buildReviewSectionItems,
   getDefaultReviewSectionId,
+  resolveReviewSelectedSectionId,
+  type ReviewSectionItem,
   getReviewSectionIdForCheckpoint,
 } from "./reviewModel";
 
@@ -71,9 +73,6 @@ describe("buildReviewSectionItems", () => {
           generatedPaths: ["loaded.generated.ts"],
         },
       },
-      loadingTurnIds: {
-        [getReviewSectionIdForCheckpoint(checkpoints[1]!)]: true,
-      },
       loadingGitSections: false,
     });
 
@@ -83,13 +82,38 @@ describe("buildReviewSectionItems", () => {
       "git:working-tree",
       "git:branch-range",
     ]);
-    expect(items[0]).toMatchObject({ isLoading: true, diff: null });
+    expect(items[0]).toMatchObject({ isLoading: false, diff: null });
     expect(items[1]).toMatchObject({
       isLoading: false,
       diff: expect.stringContaining("loaded.ts"),
       generatedPaths: ["loaded.generated.ts"],
     });
     expect(getDefaultReviewSectionId(items)).toBe("git:branch-range");
+  });
+});
+function makeSection(id: string): ReviewSectionItem {
+  return {
+    id,
+    kind: id.startsWith("turn:") ? "turn" : "branch-range",
+    title: id,
+    subtitle: null,
+    diff: null,
+    isLoading: false,
+    generatedPaths: [],
+  };
+}
+
+describe("resolveReviewSelectedSectionId", () => {
+  const turn = makeSection("turn:2");
+  const changes = makeSection("git:branch-range");
+
+  it("shows Changes before anything is picked, not the first section", () => {
+    expect(resolveReviewSelectedSectionId([turn, changes], null)).toBe("git:branch-range");
+  });
+
+  it("shows the default while the picked section loads and returns to the pick once it does", () => {
+    expect(resolveReviewSelectedSectionId([changes], "turn:2")).toBe("git:branch-range");
+    expect(resolveReviewSelectedSectionId([turn, changes], "turn:2")).toBe("turn:2");
   });
 });
 

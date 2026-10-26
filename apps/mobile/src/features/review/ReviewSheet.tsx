@@ -479,7 +479,6 @@ export function ReviewSheet(props: ReviewSheetProps) {
     refreshSelectedSection,
     selectSection,
     isSelectedSectionPending,
-    diffPreviewRevision,
   } = useReviewSections({
     enabled: isEnvironmentReady,
     environmentId,
@@ -504,7 +503,6 @@ export function ReviewSheet(props: ReviewSheetProps) {
     sortByRelevance: diffSort.sortByRelevance,
     cwd: selectedThreadCwd,
     selectedSection,
-    revision: diffPreviewRevision,
     draftMessage,
   });
   // Expo may return null before registration or in older binaries; use the fallback.

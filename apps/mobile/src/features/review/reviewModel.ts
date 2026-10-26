@@ -507,11 +507,22 @@ export function getReadyReviewCheckpoints(
   );
 }
 
+export function reviewTurnDiffsBySectionId(
+  checkpoints: ReadonlyArray<Pick<ThreadCheckpointSummary, "checkpointTurnCount">>,
+  diffByTurnCount: Readonly<Record<number, ReviewTurnDiffEntry | undefined>>,
+): Readonly<Record<string, ReviewTurnDiffEntry | undefined>> {
+  return Object.fromEntries(
+    checkpoints.map((checkpoint) => [
+      getReviewSectionIdForCheckpoint(checkpoint),
+      diffByTurnCount[checkpoint.checkpointTurnCount],
+    ]),
+  );
+}
+
 export function buildReviewSectionItems(input: {
   readonly checkpoints: ReadonlyArray<ThreadCheckpointSummary>;
   readonly gitSections: ReadonlyArray<ReviewDiffPreviewSource>;
   readonly turnDiffById: Readonly<Record<string, ReviewTurnDiffEntry | undefined>>;
-  readonly loadingTurnIds: Readonly<Record<string, boolean | undefined>>;
   readonly loadingGitSections: boolean;
 }): ReadonlyArray<ReviewSectionItem> {
   const turnItems = getReadyReviewCheckpoints(input.checkpoints).map<ReviewSectionItem>(
@@ -524,7 +535,7 @@ export function buildReviewSectionItems(input: {
         title: checkpointTitle(checkpoint),
         subtitle: checkpointSubtitle(checkpoint),
         diff: turnDiff?.diff ?? null,
-        isLoading: input.loadingTurnIds[id] === true,
+        isLoading: false,
         generatedPaths: turnDiff?.generatedPaths ?? [],
       };
     },
@@ -572,6 +583,20 @@ const REVIEW_FILE_ORDER_ACCESSORS = {
   path: (file: ReviewRenderableFile) => file.path,
   changedLines: (file: ReviewRenderableFile) => [...file.additionLines, ...file.deletionLines],
 };
+
+/**
+ * The store holds only the user's pick. While that section is missing (still loading, or the
+ * working tree went clean) the default shows, and the pick returns once the section does: the
+ * thread-feed entry relies on this, as it selects a section before the sections have loaded.
+ */
+export function resolveReviewSelectedSectionId(
+  sections: ReadonlyArray<ReviewSectionItem>,
+  storedSectionId: string | null,
+): string | null {
+  return storedSectionId !== null && sections.some((section) => section.id === storedSectionId)
+    ? storedSectionId
+    : getDefaultReviewSectionId(sections);
+}
 
 export function buildReviewParsedDiff(
   diff: string | null | undefined,
