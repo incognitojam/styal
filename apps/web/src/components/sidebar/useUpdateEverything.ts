@@ -261,6 +261,7 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
             localFailures,
             servers: finished,
             providers: outcome.providers,
+            skipped,
           });
         if (outcome.localReady && installLocal) {
           if (await waitForUpdateRestart(UPDATE_RESTART_DELAY_MS)) {

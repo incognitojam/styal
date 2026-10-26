@@ -27,6 +27,8 @@ Server updates appear only after that version is published to npm. Remote
 desktop apps do not wait for npm. The confirmation lists each machine it skips
 and why, such as a machine that is offline or needs a manual update. Use the
 notice or **Settings → Connections** for those.
+The final update summary also names skipped machines and their reasons, including
+after the desktop app restarts.
 
 If a desktop app restarts on its old version, styal tells you the update did
 not apply. It does not install that version again on its own, on quit or when

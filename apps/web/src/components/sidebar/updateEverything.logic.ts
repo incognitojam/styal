@@ -296,6 +296,7 @@ export interface UpdateEverythingResult {
   readonly updatedProviders: number;
   readonly failures: ReadonlyArray<string>;
   readonly restarting: ReadonlyArray<string>;
+  readonly skipped?: ReadonlyArray<string>;
 }
 
 export function collectUpdateEverythingResult(input: {
@@ -309,12 +310,20 @@ export function collectUpdateEverythingResult(input: {
     | { readonly status: "interrupted" | "updated" }
     | { readonly status: "failed"; readonly line: string }
   >;
+  readonly skipped?: ReadonlyArray<Pick<SkippedMachine, "label" | "reason">>;
 }): UpdateEverythingResult {
+  const skipped = [
+    ...(input.skipped ?? []).map(({ label, reason }) => `Skipped ${label}: ${reason}.`),
+    ...input.servers.flatMap(({ label, outcome }) =>
+      outcome.status === "skipped" ? [`Skipped ${label}: update did not start.`] : [],
+    ),
+  ];
   return {
     localVersion: input.localVersion,
     updatedServers: input.servers.filter(({ outcome }) => outcome.status === "updated").length,
     updatedProviders: input.providers.filter((outcome) => outcome.status === "updated").length,
     restarting: [],
+    ...(skipped.length > 0 ? { skipped } : {}),
     failures: [
       ...input.localFailures.map((failure) => `This app: ${failure}`),
       ...input.servers.flatMap(({ label, outcome }) =>
@@ -329,7 +338,7 @@ export function getUpdateEverythingToastView(
   result: UpdateEverythingResult,
   appVersion: string,
 ): {
-  readonly type: "success" | "error";
+  readonly type: "success" | "warning" | "error";
   readonly title: string;
   readonly description?: string;
 } | null {
@@ -344,18 +353,19 @@ export function getUpdateEverythingToastView(
       : [
           `${joinList(result.restarting)} ${result.restarting.length === 1 ? "is" : "are"} still restarting.`,
         ];
+  const notices = [...(result.skipped ?? []), ...restarting];
   if (result.failures.length === 0) {
-    if (parts.length === 0) return null;
+    if (parts.length === 0 && !result.skipped?.length) return null;
     return {
-      type: "success",
-      title: `Updated ${joinList(parts)}`,
-      ...(restarting.length === 0 ? {} : { description: restarting.join("\n") }),
+      type: result.skipped?.length ? "warning" : "success",
+      title: parts.length > 0 ? `Updated ${joinList(parts)}` : "No updates completed",
+      ...(notices.length === 0 ? {} : { description: notices.join("\n") }),
     };
   }
   return {
     type: "error",
     title: parts.length === 0 ? "Update failed" : `Updated ${joinList(parts)}`,
-    description: [...result.failures, ...restarting].join("\n"),
+    description: [...result.failures, ...notices].join("\n"),
   };
 }
 
