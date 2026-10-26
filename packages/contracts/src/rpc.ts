@@ -325,7 +325,6 @@ import {
   HardwareError,
   HardwareServiceState,
 } from "./hardware.ts";
-import {} from "./previewAutomation.ts";
 import {
   ServerConfigStreamEvent,
   DesktopUpdateCommitInput,
