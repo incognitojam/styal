@@ -7,6 +7,7 @@ import {
   Node,
   wrappingInputRule,
   type JSONContent,
+  type TiptapEditorHTMLElement,
 } from "@tiptap/core";
 import { ReactNodeViewRenderer, NodeViewWrapper, type NodeViewProps } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
@@ -977,36 +978,15 @@ function ComposerPromptEditorTiptapInner(
   const expandEditorCursor = (text: string, position: number) =>
     literalText ? position : expandCollapsedComposerCursor(text, position);
 
-  const onChangeRef = useRef(onChange);
-  const onVisibleSelectionChangeRef = useRef(onVisibleSelectionChange);
-  const onCommandKeyDownRef = useRef(onCommandKeyDown);
-  const isPathQueryActiveRef = useRef(isPathQueryActive);
-  const buildFragmentRef = useRef(buildContextClipboardFragment);
-  const importFragmentRef = useRef(importContextFragment);
   const latestValueRef = useRef(value);
-  const editorHolder = useRef<TiptapEditor | null>(null);
-
-  useEffect(() => {
-    onChangeRef.current = onChange;
-  }, [onChange]);
-  useEffect(() => {
-    onVisibleSelectionChangeRef.current = onVisibleSelectionChange;
-  }, [onVisibleSelectionChange]);
-  useEffect(() => {
-    onCommandKeyDownRef.current = onCommandKeyDown;
-  }, [onCommandKeyDown]);
-  useEffect(() => {
-    isPathQueryActiveRef.current = isPathQueryActive;
-  }, [isPathQueryActive]);
-  useEffect(() => {
-    buildFragmentRef.current = buildContextClipboardFragment;
-  }, [buildContextClipboardFragment]);
-  useEffect(() => {
-    importFragmentRef.current = importContextFragment;
-  }, [importContextFragment]);
-  useLayoutEffect(() => {
-    latestValueRef.current = value;
-  }, [value]);
+  // The editor config is built once, so its handlers reach the current callbacks through here.
+  const readCallbacks = useStableCallback(() => ({
+    onChange,
+    onVisibleSelectionChange,
+    onCommandKeyDown,
+    isPathQueryActive,
+    importContextFragment,
+  }));
 
   // Stable so a skills refresh does not rerun the controlled-value effect.
   const skillLabelFor = useStableCallback((name: string) => composerSkillMeta(skills, name));
@@ -1075,7 +1055,7 @@ function ComposerPromptEditorTiptapInner(
     if (isApplyingControlledUpdateRef.current) return;
     if (!snapshotChanged) {
       if (didComposerSelectionChangeVisibly(previousSelectionRange, nextSelectionRange)) {
-        onVisibleSelectionChangeRef.current?.();
+        readCallbacks().onVisibleSelectionChange?.();
       }
       return;
     }
@@ -1097,7 +1077,13 @@ function ComposerPromptEditorTiptapInner(
       [updated.state.selection.$from.nodeBefore, updated.state.selection.$from.nodeAfter].some(
         (node) => node?.isInline && node.isAtom && !node.isText && node.type.name !== "hardBreak",
       );
-    onChangeRef.current(nextValue, nextCursor, nextExpandedCursor, suppressTrigger, contextIds);
+    readCallbacks().onChange(
+      nextValue,
+      nextCursor,
+      nextExpandedCursor,
+      suppressTrigger,
+      contextIds,
+    );
   };
 
   const editorAttributes = {
@@ -1302,9 +1288,9 @@ function ComposerPromptEditorTiptapInner(
               return true;
             }
           }
-          const handler = onCommandKeyDownRef.current;
+          const handler = readCallbacks().onCommandKeyDown;
           if (event.key === "Enter") {
-            const instance = editorHolder.current;
+            const instance = (view.dom as TiptapEditorHTMLElement).editor;
             const isTaskItem = richText && (instance?.isActive("taskItem") ?? false);
             const isListItem = richText && (instance?.isActive("listItem") ?? false);
             const handled = handler?.("Enter", event, isTaskItem || isListItem) ?? false;
@@ -1391,7 +1377,7 @@ function ComposerPromptEditorTiptapInner(
             );
             return true;
           }
-          const importFragment = importFragmentRef.current;
+          const importFragment = readCallbacks().importContextFragment;
           let text =
             !literalText && importFragment
               ? importPastedComposerText(clipboardData, importFragment)
@@ -1413,8 +1399,8 @@ function ComposerPromptEditorTiptapInner(
           const lineBefore = $from.parent.textBetween(0, $from.parentOffset, undefined, "\uFFFC");
           const literalLength = literalText
             ? 0
-            : pastedPathQueryLength(lineBefore, text, isPathQueryActiveRef.current?.());
-          const editorInstance = editorHolder.current;
+            : pastedPathQueryLength(lineBefore, text, readCallbacks().isPathQueryActive?.());
+          const editorInstance = (view.dom as TiptapEditorHTMLElement).editor;
           if (editorInstance) {
             const $paste = view.state.selection.$from;
             const nested = ["listItem", "taskItem", "blockquote"].some((name) =>
@@ -1477,10 +1463,6 @@ function ComposerPromptEditorTiptapInner(
     editor?.setEditable(!disabled);
   }, [disabled, editor]);
 
-  useEffect(() => {
-    editorHolder.current = editor;
-  }, [editor]);
-
   // Push attributes before layout measurements; Tiptap updates them later in a passive effect.
   useLayoutEffect(() => {
     if (!editor?.isInitialized) return;
@@ -1540,7 +1522,10 @@ function ComposerPromptEditorTiptapInner(
     onCitationDraftSave(replacedValue, serializeEditorDoc(current.state.doc).value);
   });
 
+  // The one place the controlled value reaches the editor. Imperative handlers compare against
+  // the committed value, so it is recorded here even before the editor exists.
   useLayoutEffect(() => {
+    latestValueRef.current = value;
     if (!editor) return;
     const initialSelection = !hasAppliedControlledSelectionRef.current;
     hasAppliedControlledSelectionRef.current = true;
@@ -1672,7 +1657,7 @@ function ComposerPromptEditorTiptapInner(
       start: snapshotRef.current.expandedCursor,
       end: snapshotRef.current.expandedCursor,
     };
-    onChangeRef.current(
+    readCallbacks().onChange(
       snapshotRef.current.value,
       boundedCursor,
       snapshotRef.current.expandedCursor,
@@ -1770,7 +1755,7 @@ function ComposerPromptEditorTiptapInner(
   );
 
   const handleCopyCut = (event: React.ClipboardEvent, cut: boolean) => {
-    const build = buildFragmentRef.current;
+    const build = buildContextClipboardFragment;
     if (!editor || (cut && !editor.isEditable)) return;
     const clipboardData = event.clipboardData;
     const { from, to } = editor.state.selection;
