@@ -13,6 +13,7 @@ import * as Schema from "effect/Schema";
 import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as ServerConfig from "../config.ts";
+import * as DocumentText from "../provider/DocumentText.ts";
 import * as ServerRuntimeStartup from "../serverRuntimeStartup.ts";
 import * as ThreadMessageIntake from "./ThreadMessageIntake.ts";
 
@@ -69,6 +70,7 @@ export const layer = HttpApiBuilder.group(
       | ThreadManagementService.ThreadManagementService
       | FileSystem.FileSystem
       | ServerConfig.ServerConfig
+      | DocumentText.DocumentText
     >();
     const applicationEvents = yield* OrchestrationEventStore.OrchestrationEventStore;
     const projectStore = yield* ProjectStore.ProjectStoreV2;

@@ -2220,7 +2220,7 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
           }
           const agentForInstructions = yield* Ref.get(liveAgent);
           const userText = t3OrchestrationPromptForFirstRun({
-            prompt: providerMessageTextWithAttachmentPaths({
+            prompt: yield* providerMessageTextWithAttachmentPaths({
               text:
                 (agentForInstructions?.additionalInstructionsPending !== undefined
                   ? `<additional_instructions>\n${agentForInstructions.additionalInstructionsPending}\n</additional_instructions>\n\n`
@@ -2230,6 +2230,7 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
                   : rewriteCursorSkillMentions(rawText, cursorSkillNames)),
               attachments: turnInput.message.attachments,
               resolveAttachmentPath: host.resolveAttachmentPath,
+              resolveExtractedTextPath: host.resolveExtractedTextPath,
             }),
             runOrdinal: agentForInstructions?.instructionsPending ? 1 : 2,
             hasT3Mcp: mcpServers !== undefined,

@@ -41,6 +41,7 @@ import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
 import * as OrchestrationHttp from "../orchestration-v2/http.ts";
+import * as DocumentText from "../provider/DocumentText.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
@@ -217,6 +218,7 @@ it.effect(
       let operate = false;
       const routes = HttpApiBuilder.layer(TestApi).pipe(
         Layer.provide(OrchestrationHttp.layer),
+        Layer.provide(Layer.mock(DocumentText.DocumentText)({ ensure: () => Effect.undefined })),
         Layer.provide(
           Layer.succeed(ServerEnvironment.ServerEnvironmentIdentity, {
             getEnvironmentId: Effect.succeed(EnvironmentId.make("synthetic-drive-environment")),

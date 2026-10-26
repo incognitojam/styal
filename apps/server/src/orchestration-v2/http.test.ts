@@ -40,6 +40,7 @@ import * as ServerSettings from "../serverSettings.ts";
 import * as OrchestrationEventStore from "../persistence/OrchestrationEventStore.ts";
 import { ProjectEnrichmentService } from "../project/ProjectEnrichmentService.ts";
 import * as OrchestrationHttp from "./http.ts";
+import * as DocumentText from "../provider/DocumentText.ts";
 import { EventSinkV2 } from "./EventSink.ts";
 import * as ProjectStore from "./ProjectStore.ts";
 import * as CommandReceiptStore from "./CommandReceiptStore.ts";
@@ -136,6 +137,7 @@ const serveOrchestrationHttp = (allowed: () => boolean) =>
     });
     const routes = HttpApiBuilder.layer(TranscriptTestApi).pipe(
       Layer.provide(OrchestrationHttp.layer),
+      Layer.provide(Layer.mock(DocumentText.DocumentText)({ ensure: () => Effect.undefined })),
       Layer.provide(
         Layer.succeed(ServerEnvironment.ServerEnvironmentIdentity, {
           getEnvironmentId: Effect.succeed(environmentId),
@@ -271,6 +273,7 @@ it.effect(
       const makeRoutes = (operate: boolean) =>
         HttpApiBuilder.layer(TestApi).pipe(
           Layer.provide(OrchestrationHttp.layer),
+          Layer.provide(Layer.mock(DocumentText.DocumentText)({ ensure: () => Effect.undefined })),
           Layer.provide(
             Layer.succeed(EnvironmentAuthenticatedAuth, (effect) =>
               effect.pipe(
