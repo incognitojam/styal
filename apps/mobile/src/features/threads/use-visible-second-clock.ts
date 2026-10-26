@@ -1,27 +1,34 @@
 import { useIsFocused } from "@react-navigation/native";
-import { useEffect, useLayoutEffect, useState } from "react";
-import { AppState } from "react-native";
+import { minuteTick, secondTick, type ClockStore } from "@t3tools/client-runtime/clock";
+import { useSyncExternalStore } from "react";
 
-/** Hidden retained routes stay mounted; gate intervals to avoid background re-renders. */
-export function useVisibleSecondClock(enabled: boolean, intervalMs = 1_000): number {
+import { useAppActive } from "../../lib/appState";
+import { minuteTickToEpochMs } from "../../lib/clock";
+
+const subscribeNever = () => () => undefined;
+
+const minuteEpochTick: ClockStore<number> = {
+  subscribe: minuteTick.subscribe,
+  getSnapshot: () => minuteTickToEpochMs(minuteTick.getSnapshot()),
+};
+
+/**
+ * Retained routes stay mounted when hidden, so an ungated tick would keep
+ * re-rendering them. Every visible label shares one module-level tick.
+ */
+export function useVisibleSecondClock(
+  enabled: boolean,
+  intervalMs: 1_000 | 60_000 = 1_000,
+): number {
   const focused = useIsFocused();
-  const [appActive, setAppActive] = useState(() => AppState.currentState === "active");
-  const [nowMs, setNowMs] = useState(() => Date.now());
-  useEffect(() => {
-    const subscription = AppState.addEventListener("change", (state) =>
-      setAppActive(state === "active"),
-    );
-    // oxlint-disable-next-line react/set-state-in-effect -- Syncs state the listener missed.
-    setAppActive(AppState.currentState === "active");
-    return () => subscription.remove();
-  }, []);
+  const appActive = useAppActive();
   const ticking = enabled && focused && appActive;
-  useLayoutEffect(() => {
-    if (!ticking) return;
-    // oxlint-disable-next-line react/set-state-in-effect -- Resuming reads the clock that stood still.
-    setNowMs(Date.now());
-    const intervalId = setInterval(() => setNowMs(Date.now()), intervalMs);
-    return () => clearInterval(intervalId);
-  }, [ticking, intervalMs]);
-  return nowMs;
+  const tick = intervalMs === 60_000 ? minuteEpochTick : secondTick;
+  // While paused the snapshot still reads the shared tick, so resuming shows
+  // the current second rather than the one the clock stopped on.
+  return useSyncExternalStore(
+    ticking ? tick.subscribe : subscribeNever,
+    tick.getSnapshot,
+    tick.getSnapshot,
+  );
 }
