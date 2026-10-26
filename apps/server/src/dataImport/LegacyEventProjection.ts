@@ -1,5 +1,4 @@
 /** Frozen V1 event folding for imports; never used by live orchestration. */
-import { WORKTREE_SETUP_ACTIVITY_KIND } from "@t3tools/contracts";
 import type {
   OrchestrationEvent,
   OrchestrationProject,

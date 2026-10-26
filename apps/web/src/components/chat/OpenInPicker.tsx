@@ -24,7 +24,6 @@ import {
   FolderClosedIcon,
   SquareArrowOutUpRightIcon,
 } from "lucide-react";
-import { Button } from "../ui/button";
 
 import { Group, GroupSeparator } from "../ui/group";
 import {

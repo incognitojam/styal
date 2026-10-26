@@ -83,7 +83,6 @@ import {
 } from "../../lib/composerImages";
 import {
   buildModelOptions,
-  normalizeModelSelection,
   groupByProvider,
   isModelSelectionUnavailable,
 } from "../../lib/modelOptions";

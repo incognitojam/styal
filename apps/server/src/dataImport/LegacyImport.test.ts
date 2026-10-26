@@ -4,42 +4,24 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeSqlite from "node:sqlite";
 
-import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
   EventId,
   MessageId,
-  type OrchestrationProjectShell,
   type ProviderDriverKind,
   ProviderInstanceId,
-  ProjectId,
   ThreadId,
   TurnId,
 } from "@t3tools/contracts";
-import {
-  type OrchestrationEvent,
-  type OrchestrationReadModel,
-  type OrchestrationShellSnapshot,
-} from "@t3tools/contracts/legacy-orchestration";
 import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
-import * as Stream from "effect/Stream";
-import * as SqlClient from "effect/sql/SqlClient";
 
 import { ServerConfig } from "../config.ts";
 import { importLayer } from "./LegacyImport.testkit.ts";
 import * as EventSink from "../orchestration-v2/EventSink.ts";
-import * as EventStore from "../orchestration-v2/EventStore.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
-import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as ProjectionMaintenance from "../orchestration-v2/ProjectionMaintenance.ts";
-import * as ProjectService from "../project/ProjectService.ts";
-import { layerMemory } from "../persistence/Sqlite.ts";
-import { makeLegacyHistoryWriter } from "./LegacyHistoryWriter.ts";
-import { ServerSettingsService, layerTest as serverSettingsLayerTest } from "../serverSettings.ts";
+import { ServerSettingsService } from "../serverSettings.ts";
 import { makeLegacyImportService, readLegacySourceSnapshot } from "./LegacyImport.ts";
-import { legacyContinuationKey } from "./LegacyImportPreview.ts";
 
 export const stopNoActiveProviderSession = (_threadId: ThreadId) => Effect.void;
 
@@ -446,19 +428,6 @@ function addLegacyAttachment(databasePath: string): void {
     "event-message-two",
   );
   database.close();
-}
-
-function importedProjectShell(): OrchestrationProjectShell {
-  return {
-    id: ProjectId.make("project-import"),
-    title: "Imported project",
-    workspaceRoot: "/work/import",
-    repositoryIdentity: null,
-    defaultModelSelection: null,
-    scripts: [],
-    createdAt: "2026-01-01T00:00:00.000Z",
-    updatedAt: "2026-01-01T00:00:00.000Z",
-  };
 }
 
 it.effect("reads durable history without carrying live provider state", () => {

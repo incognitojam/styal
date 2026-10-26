@@ -22,7 +22,6 @@ import {
   DeviceEasAccountError,
   type DeviceEasAccountInput,
   type DeviceHostConfig,
-  type EasDeviceHostConfig,
   type SshDeviceHostConfig,
   type EnvironmentDeviceHostConfig,
   type ServerSettings as ServerSettingsValue,

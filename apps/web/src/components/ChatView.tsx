@@ -170,7 +170,6 @@ import { isPreviewSupportedInRuntime, useThreadPreviewState } from "../previewSt
 import { previewRuntimeTabId } from "../browser/previewRuntimeTabId";
 import { ThreadPreviewMiniPlayer } from "./preview/ThreadPreviewMiniPlayer";
 import { usePreviewSession } from "./preview/usePreviewSession";
-import { getConfiguredPreviewUrls } from "./preview/previewEmptyStateLogic";
 
 import {
   previewMiniPlayerSourceKey,

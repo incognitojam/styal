@@ -13,7 +13,6 @@ import { getComposerProviderState } from "./components/chat/composerProviderStat
 import { deriveProviderInstanceEntries, NO_PROVIDER_MODEL_SELECTION } from "./providerInstances";
 import {
   getAppModelOptionsForInstance,
-  normalizeAppModelSelection,
   resolveAppModelSelectionForInstance,
   resolveAppModelSelectionState,
   resolveEffectiveDefaultModelSelection,

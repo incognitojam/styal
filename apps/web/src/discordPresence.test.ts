@@ -1,4 +1,4 @@
-import { EnvironmentId, ProjectId, ThreadId, ProviderInstanceId } from "@t3tools/contracts";
+import { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import { describe, expect, it } from "vite-plus/test";
 import { makeThreadFixture } from "./test-fixtures";

@@ -22,7 +22,6 @@ import * as DesktopShutdown from "./DesktopShutdown.ts";
 import * as DesktopState from "./DesktopState.ts";
 import * as DesktopWindow from "../window/DesktopWindow.ts";
 import * as DesktopUpdates from "../updates/DesktopUpdates.ts";
-import * as Option from "effect/Option";
 
 const makeElectronApp = (
   overrides: Partial<ElectronApp.ElectronApp["Service"]> = {},

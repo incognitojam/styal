@@ -373,10 +373,6 @@ function asRecord(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
-function nonEmptyString(value: unknown): string | null {
-  return typeof value === "string" && value.trim().length > 0 ? value : null;
-}
-
 function workLogEntryIsToolLike(entry: WorkLogPresentationEntry): boolean {
   if (entry.tone === "tool" || entry.tone === "thinking" || entry.tone === "error") return true;
   if (entry.command !== undefined && entry.command.trim().length > 0) return true;
@@ -433,7 +429,7 @@ export function workEntryDisplayIndicatesToolFailure(entry: WorkLogPresentationE
  * A tool call that ended without finishing, such as a command a server restart
  * killed. Clients show it as stopped rather than hiding it as still running.
  */
-export function workEntryIsStoppedToolCall(entry: WorkLogPresentationEntry): boolean {
+function workEntryIsStoppedToolCall(entry: WorkLogPresentationEntry): boolean {
   return workLogEntryIsToolLike(entry) && entry.toolLifecycleStatus === "stopped";
 }
 

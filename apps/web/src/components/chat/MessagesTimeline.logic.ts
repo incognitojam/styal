@@ -29,7 +29,6 @@ import {
   toolGroupAction,
   toolGroupSummaryKind,
   workEntryReviewFindings,
-  workEntryIsStoppedToolCall,
   memoryRowLabel,
   workEntryReadsMemoryFile,
   workEntryMemoryFileKind,

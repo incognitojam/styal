@@ -2,7 +2,6 @@ import {
   EnvironmentId,
   type RelayClientInstallProgressEvent,
   type ServerLifecycleStreamEvent,
-  type ServerConfigStreamEvent,
   WS_METHODS,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";

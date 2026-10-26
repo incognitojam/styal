@@ -2,7 +2,6 @@ import { ProjectScriptIcon } from "@t3tools/contracts";
 import { type ToolFileChangeLineStat } from "@t3tools/shared/toolActivity";
 import { workEntryReviewFindings } from "@t3tools/client-runtime/work-log/presentation";
 import type { ReviewFindingsReport } from "@t3tools/shared/reviewFindings";
-import * as Schema from "effect/Schema";
 import {
   setupScriptActivityLabel,
   setupScriptAwaitingApproval,
@@ -185,8 +184,6 @@ export interface LocalThreadMessage {
   readonly createdAt: string;
   readonly updatedAt: string;
 }
-
-const isProjectScriptIcon = Schema.is(ProjectScriptIcon);
 
 /**
  * Configured project actions keep their editor identity in the work log: the

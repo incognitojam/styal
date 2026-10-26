@@ -113,14 +113,6 @@ export function buildMarkdownFileLinkParentSuffixes(
   return suffixByPath;
 }
 
-function safeDecode(value: string): string {
-  try {
-    return decodeURIComponent(value);
-  } catch {
-    return value;
-  }
-}
-
 export function rewriteMarkdownFileUriHref(href: string | undefined): string | null {
   if (!href) return null;
   const target = parseFileUrlHref(normalizeMarkdownLinkDestination(href));

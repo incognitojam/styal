@@ -12,7 +12,6 @@ import {
   RunId,
   ThreadId,
 } from "@t3tools/contracts";
-import * as Cause from "effect/Cause";
 import { CursorSettings } from "../settings.ts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";

@@ -7,7 +7,6 @@ import {
 } from "../features/workspace/android-workspace-tabs";
 import {
   androidWorkspaceBackReturnsToPage,
-  androidWorkspaceNavigationState,
   linkedThreadStep,
   parentThreadIsBelow,
   resetAndroidWorkspace,

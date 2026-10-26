@@ -1,5 +1,4 @@
 import { continuedResponseWorkStartedAt } from "@t3tools/client-runtime/work-log/presentation";
-import { attachmentBatchLimitError } from "@t3tools/client-runtime/state/attachments";
 import { useComposerAttachmentActions } from "./use-composer-attachment-actions";
 import * as Dialog from "../components/ui/Dialog";
 import { AuthOrchestrationOperateScope } from "@t3tools/contracts";

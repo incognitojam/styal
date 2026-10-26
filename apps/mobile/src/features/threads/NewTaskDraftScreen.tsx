@@ -1,4 +1,3 @@
-import { resolveProviderInteractionMode } from "../../state/legacy-plan-mode";
 import { DraftEnvironmentControl } from "./DraftEnvironmentControl";
 import { NativeScrollEdgeEffectsContext } from "../../native/NativeScrollViewMarker";
 import { DraftThreadHeader } from "./DraftThreadHeader";
@@ -30,7 +29,6 @@ import { Platform, Pressable, View } from "react-native";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { KeyboardController } from "react-native-keyboard-controller";
 
-import { isAtomCommandInterrupted } from "@t3tools/client-runtime/state/runtime";
 import {
   AuthOrchestrationOperateScope,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
@@ -842,16 +840,6 @@ export function NewTaskDraftScreen(props: {
       isGitRepo: flow.isGitRepo,
     });
     const selectedBranchName = workspaceSelection.branch;
-    const selectedWorktreePath = workspaceSelection.worktreePath;
-    const startFromOrigin =
-      flow.isGitRepo && (draft.workspaceSelection?.startFromOrigin ?? flow.startFromOrigin);
-    const runtimeMode = draft.runtimeMode ?? flow.runtimeMode;
-    const interactionMode = resolveProviderInteractionMode(
-      selectedEnvironmentServerConfig?.providers.find(
-        (provider) => provider.instanceId === modelSelection?.instanceId,
-      ),
-      flow.planModeEnabled ? (draft.interactionMode ?? flow.interactionMode) : "default",
-    );
     const initialMessageText = draft.text.trim();
 
     if (

@@ -27,7 +27,6 @@ import { useRef, useState, type ReactNode } from "react";
 import { pullRequestEnvironment } from "~/state/pullRequests";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
 import { cn } from "~/lib/utils";
-import { useOpenLink } from "~/browser/useOpenLink";
 import { RelativeTime } from "~/components/RelativeTime";
 
 import { Button } from "../ui/button";
@@ -469,14 +468,6 @@ export function PullRequestSummaryTab({
         stale: entry.stale,
       })),
   ];
-
-  const openLink = useOpenLink(threadRef);
-  const openCheck = (url: string) => {
-    void openLink(url).catch((error: unknown) => {
-      console.error(error);
-      toastManager.add({ type: "error", title: "Unable to open check details" });
-    });
-  };
 
   const update = useAtomCommand(pullRequestEnvironment.update, { reportFailure: false });
   const updateComment = useAtomCommand(pullRequestEnvironment.updateComment, {

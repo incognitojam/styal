@@ -6,7 +6,6 @@ import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
 import { StyalWordmark } from "../StyalWordmark";
-import { useEnvironments } from "../../state/environments";
 import { usePullRequestsSupported } from "../../state/environments";
 import {
   resolveSidebarStageBackdropVariant,

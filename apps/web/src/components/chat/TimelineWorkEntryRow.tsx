@@ -49,7 +49,6 @@ import { useAssetUrls } from "../../assets/assetUrls";
 import { useThreadShell } from "../../state/entities";
 import {
   fileActionReviewRequestOf,
-  normalizeCompactToolLabel,
   threadReadLabelPrefix,
   threadReadTargetId,
   threadReadTargetTitle,
@@ -130,28 +129,6 @@ export function ThreadReadLabel({
 
 const toolCallExpandedBodyClassName =
   "max-h-64 cursor-text overflow-auto whitespace-pre-wrap break-words font-mono text-secondary-label text-(length:--font-size-code,var(--text-2xs)) leading-relaxed select-text";
-
-function capitalizePhrase(value: string): string {
-  const trimmed = value.trim();
-  if (trimmed.length === 0) {
-    return value;
-  }
-  return `${trimmed.charAt(0).toUpperCase()}${trimmed.slice(1)}`;
-}
-
-function toolWorkEntryHeading(workEntry: TimelineWorkEntry): string {
-  if (workEntry.sourceActivityKind?.startsWith("setup-script.")) {
-    return capitalizePhrase(workEntry.label);
-  }
-  const presentation = toolRowPresentationFor(workEntry);
-  if (presentation) {
-    return presentation.heading;
-  }
-  if (!workEntry.toolTitle) {
-    return capitalizePhrase(normalizeCompactToolLabel(workEntry.label));
-  }
-  return capitalizePhrase(normalizeCompactToolLabel(workEntry.toolTitle));
-}
 
 const CommandOutputExpandedBody = memo(function CommandOutputExpandedBody(props: {
   workEntry: TimelineWorkEntry;

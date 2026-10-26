@@ -131,29 +131,6 @@ function formatToolFilePath(path: string, workspaceRoot: string | undefined): st
   return formatWorkspaceRelativePath(path, workspaceRoot, { includeWorkspaceLabel: false });
 }
 
-function workEntryPreview(
-  workEntry: Pick<TimelineWorkEntry, "detail" | "command" | "changedFiles" | "itemType">,
-  workspaceRoot: string | undefined,
-) {
-  if (workEntry.command) return workEntry.command;
-  if (workEntry.itemType === "file_change" && (workEntry.changedFiles?.length ?? 0) > 0) {
-    const [firstPath] = workEntry.changedFiles ?? [];
-    if (!firstPath) return null;
-    const displayPath = formatToolFilePath(firstPath, workspaceRoot);
-    return workEntry.changedFiles!.length === 1
-      ? displayPath
-      : `${displayPath} +${workEntry.changedFiles!.length - 1} more`;
-  }
-  if (workEntry.detail) return workEntry.detail;
-  if ((workEntry.changedFiles?.length ?? 0) === 0) return null;
-  const [firstPath] = workEntry.changedFiles ?? [];
-  if (!firstPath) return null;
-  const displayPath = formatToolFilePath(firstPath, workspaceRoot);
-  return workEntry.changedFiles!.length === 1
-    ? displayPath
-    : `${displayPath} +${workEntry.changedFiles!.length - 1} more`;
-}
-
 export function workEntryRawCommand(
   workEntry: Pick<TimelineWorkEntry, "command" | "rawCommand">,
 ): string | null {
