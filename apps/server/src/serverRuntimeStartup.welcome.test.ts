@@ -118,7 +118,7 @@ it.effect.each(["success", "retry"] as const)(
           }),
           Layer.mock(Relay.AgentAwarenessRelay)({ start: () => Effect.void }),
           Layer.mock(ProviderInstances.ProviderInstanceRegistry)({
-            getInstance: () => Effect.succeed(undefined),
+            getInstance: () => Effect.sync(() => undefined),
           }),
           Layer.mock(Projects.ProjectService)({
             bootstrap: () =>
@@ -142,7 +142,7 @@ it.effect.each(["success", "retry"] as const)(
           }),
           Layer.mock(Launcher.ServiceLauncherClient)({
             managed: false,
-            prepareTrial: Effect.succeed(undefined),
+            prepareTrial: Effect.sync(() => undefined),
           }),
           Layer.mock(Analytics.AnalyticsService)({ record: () => Effect.void }),
           Layer.mock(Git.GitVcsDriver)({}),
@@ -263,7 +263,7 @@ it.effect("starts the bootstrap thread on Codex when the environment turned Clau
         Layer.mock(Sessions.ProviderSessionManagerV2)({ shutdown: Effect.void }),
         Layer.mock(Relay.AgentAwarenessRelay)({ start: () => Effect.void }),
         Layer.mock(ProviderInstances.ProviderInstanceRegistry)({
-          getInstance: () => Effect.succeed(undefined),
+          getInstance: () => Effect.sync(() => undefined),
         }),
         Layer.mock(Projects.ProjectService)({
           bootstrap: () => Effect.succeed({ project: { id: projectId } } as never),
@@ -285,7 +285,7 @@ it.effect("starts the bootstrap thread on Codex when the environment turned Clau
         }),
         Layer.mock(Launcher.ServiceLauncherClient)({
           managed: false,
-          prepareTrial: Effect.succeed(undefined),
+          prepareTrial: Effect.sync(() => undefined),
         }),
         Layer.mock(Analytics.AnalyticsService)({ record: () => Effect.void }),
         Layer.mock(Git.GitVcsDriver)({}),

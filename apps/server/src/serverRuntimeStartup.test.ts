@@ -180,7 +180,7 @@ it.effect.each([
         Layer.mock(ProjectStore.ProjectStoreV2)({}),
         Layer.mock(EventSink.EventSinkV2)({}),
         Layer.mock(ProviderInstanceRegistry.ProviderInstanceRegistry)({
-          getInstance: () => Effect.succeed(undefined),
+          getInstance: () => Effect.sync(() => undefined),
         }),
         Layer.mock(ProjectService.ProjectService)({
           bootstrap: () =>
@@ -236,6 +236,7 @@ it.effect.each([
         }),
         Layer.mock(ServiceLauncherClient.ServiceLauncherClient)({
           managed: false,
+          // @effect-diagnostics-next-line effectSucceedWithVoid:off - This optional result requires undefined, not the wider void type.
           prepareTrial: Effect.succeed(undefined),
         }),
         Layer.mock(GitVcsDriver.GitVcsDriver)({}),

@@ -7,7 +7,7 @@ export const ClaudeSessionHistoryMessage = Schema.Struct({
   type: Schema.Literals(["user", "assistant", "system"]),
   uuid: Schema.String,
   // Saved transcript entries can omit these; default them to the shape the SDK reader returns.
-  message: Schema.Unknown.pipe(Schema.withDecodingDefault(Effect.succeed(undefined))),
+  message: Schema.Unknown.pipe(Schema.withDecodingDefault(Effect.void)),
   parent_tool_use_id: Schema.NullOr(Schema.String).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),

@@ -1393,7 +1393,8 @@ describe("EnvironmentRegistry", () => {
       const harness = yield* makeHarness([], [], [], {
         beforePrepareRoute: (target) =>
           target._tag !== "BearerConnectionTarget" || storedCredentials === undefined
-            ? Effect.succeed(undefined)
+            ? // @effect-diagnostics-next-line effectSucceedWithVoid:off - Admission checks return an optional blocker, so absence must be undefined.
+              Effect.succeed(undefined)
             : Ref.get(storedCredentials).pipe(
                 Effect.map((current) =>
                   current.get(target.connectionId)?.token === "old-bearer"
@@ -1477,7 +1478,8 @@ describe("EnvironmentRegistry", () => {
       const harness = yield* makeHarness([], [], [], {
         beforePrepareRoute: (target) =>
           target._tag !== "BearerConnectionTarget"
-            ? Effect.succeed(undefined)
+            ? // @effect-diagnostics-next-line effectSucceedWithVoid:off - Admission checks return an optional blocker, so absence must be undefined.
+              Effect.succeed(undefined)
             : Ref.updateAndGet(attempts, (count) => count + 1).pipe(
                 Effect.flatMap((count) =>
                   count === 1
@@ -1490,7 +1492,8 @@ describe("EnvironmentRegistry", () => {
                           }),
                         ),
                       )
-                    : Effect.succeed(undefined),
+                    : // @effect-diagnostics-next-line effectSucceedWithVoid:off - Admission checks return an optional blocker, so absence must be undefined.
+                      Effect.succeed(undefined),
                 ),
               ),
       });

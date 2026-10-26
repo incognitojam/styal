@@ -1641,6 +1641,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
 ) {
   const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
   const readMcpSession = (threadId: ThreadId | null) =>
+    // @effect-diagnostics-next-line effectSucceedWithVoid:off - This optional result requires undefined, not the wider void type.
     threadId === null ? Effect.succeed(undefined) : mcpSessions.read(threadId);
   const { clientFactory, crypto, fileSystem, idAllocator, serverConfig } = adapterOptions;
   const continuationRequests = adapterOptions.continuationRequests;
@@ -6321,7 +6322,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               undefined
                 ? yield* (
                     adapterOptions.defaultReasoningEffort?.(turnInput.modelSelection.model) ??
-                      Effect.succeed(undefined)
+                      Effect.sync(() => undefined)
                   )
                 : undefined;
             const turnStartParams = yield* buildCodexTurnStartParams({
