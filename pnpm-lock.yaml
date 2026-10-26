@@ -1161,6 +1161,9 @@ importers:
       emojilib:
         specifier: ^4.0.3
         version: 4.0.3
+      fast-xml-parser:
+        specifier: 5.7.3
+        version: 5.7.3
       hast-util-to-html:
         specifier: ^9.0.5
         version: 9.0.5
@@ -15735,8 +15738,7 @@ snapshots:
 
   '@noble/hashes@1.8.0': {}
 
-  '@nodable/entities@2.1.1':
-    optional: true
+  '@nodable/entities@2.1.1': {}
 
   '@nornagon/put@0.0.8': {}
 
@@ -18346,8 +18348,7 @@ snapshots:
       normalize-path: 3.0.0
       picomatch: 2.3.2
 
-  anynum@1.0.1:
-    optional: true
+  anynum@1.0.1: {}
 
   app-builder-lib@26.16.1(patch_hash=a28c2dfcfc2b90d6c6247e199e6537391db9ecd941854c650910d607442512d3)(dmg-builder@26.16.1)(electron-builder-squirrel-windows@26.16.1)(supports-color@8.1.1):
     dependencies:
@@ -20235,7 +20236,6 @@ snapshots:
     dependencies:
       path-expression-matcher: 1.6.2
       xml-naming: 0.1.0
-    optional: true
 
   fast-xml-parser@5.7.3:
     dependencies:
@@ -20243,7 +20243,6 @@ snapshots:
       fast-xml-builder: 1.2.0
       path-expression-matcher: 1.6.2
       strnum: 2.4.2
-    optional: true
 
   fastest-levenshtein@1.0.16: {}
 
@@ -22336,8 +22335,7 @@ snapshots:
 
   path-exists@3.0.0: {}
 
-  path-expression-matcher@1.6.2:
-    optional: true
+  path-expression-matcher@1.6.2: {}
 
   path-is-absolute@1.0.1: {}
 
@@ -23543,7 +23541,6 @@ snapshots:
   strnum@2.4.2:
     dependencies:
       anynum: 1.0.1
-    optional: true
 
   structured-headers@0.4.1: {}
 
@@ -24533,8 +24530,7 @@ snapshots:
 
   xml-name-validator@5.0.0: {}
 
-  xml-naming@0.1.0:
-    optional: true
+  xml-naming@0.1.0: {}
 
   xml2js@0.4.23:
     dependencies:

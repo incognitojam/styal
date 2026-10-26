@@ -226,7 +226,7 @@ export const assetFileResponse = Effect.fn("assetFileResponse")(function* (
   let status = 200;
   let offset = 0n;
   let bytesToRead: bigint | undefined;
-  if (isMedia) {
+  {
     headers["Accept-Ranges"] = "bytes";
     if (method === "GET" && rangeHeader && (!asset.file || ifRangeHeader === undefined)) {
       const fs = yield* FileSystem.FileSystem;
