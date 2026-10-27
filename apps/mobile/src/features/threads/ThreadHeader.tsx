@@ -32,6 +32,14 @@ export function ThreadHeader(
         onPress: props.onReturnToThread,
       });
     }
+    // Phones show one header action inline and the rest under the overflow menu, so the
+    // first action is the one users see. Git leads because it carries the branch and
+    // pull request state that Files and Terminal do not.
+    actions.push({
+      accessibilityLabel: "Open git controls",
+      icon: "point.topleft.down.curvedto.point.bottomright.up",
+      onPress: props.onOpenGitInspector,
+    });
     if (props.hasThreadCwd) {
       const filesVisible = props.inspectorMode === "files" && panes.auxiliaryPaneVisible;
       actions.push({
@@ -48,11 +56,6 @@ export function ThreadHeader(
         onPress: () => onOpenTerminal(null),
       });
     }
-    actions.push({
-      accessibilityLabel: "Open git controls",
-      icon: "point.topleft.down.curvedto.point.bottomright.up",
-      onPress: props.onOpenGitInspector,
-    });
     if (onMergeBack) {
       actions.push({
         accessibilityLabel: "Merge back to source",
