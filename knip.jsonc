@@ -19,7 +19,8 @@
     "scripts": {
       // Knip loads its preprocessor through a CLI option; native verification and
       // worktree setup (from t3.json) run directly. CI uses the reporter and CLI check.
-      // electron-builder loads the macOS signer by path.
+      // electron-builder loads the macOS signer by path, and the desktop launch check
+      // runs against packaged builds by path.
       "entry": [
         // These fixture scripts are injected into a browser page by path.
         "fixtures/*/*.js",
@@ -28,6 +29,7 @@
         "setup-worktree.ts",
         "verify-cli-package.mjs",
         "sign-macos.ts",
+        "smoke-desktop-app.ts",
         "vitest-ci-exit-reporter.ts",
       ],
       // esbuild stays in scripts/package.json as in upstream, whose deleted release

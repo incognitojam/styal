@@ -8,7 +8,6 @@
     "ensure:electron": "node scripts/ensure-electron-runtime.mjs",
     "start": "node scripts/start-electron.mjs",
     "test": "vp test run --passWithNoTests",
-    "smoke-test": "node scripts/smoke-test.mjs",
     "test:preview-calibration": "node scripts/test-preview-calibration.mjs"
   },
   "dependencies": {
