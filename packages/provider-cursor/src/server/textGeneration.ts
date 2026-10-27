@@ -54,7 +54,7 @@ export const makeCursorTextGeneration = Effect.fn("makeCursorTextGeneration")(fu
   withAccess?: CursorAuth["withAccess"],
 ) {
   const fs = yield* FileSystem.FileSystem;
-  const { Agent, SqliteLocalAgentStore } = yield* CursorSdk.CursorSdk;
+  const cursorSdk = yield* CursorSdk.CursorSdk;
   const resolvedEnvironment = environment ?? process.env;
 
   const resolveCursorApiKey = (operation: TextGenerationOperations.Operation) =>
@@ -83,6 +83,7 @@ export const makeCursorTextGeneration = Effect.fn("makeCursorTextGeneration")(fu
     const { operation, prompt, modelSelection } = input;
     return Effect.gen(function* () {
       const apiKey = yield* resolveCursorApiKey(operation);
+      const { Agent, SqliteLocalAgentStore } = cursorSdk;
       // The SDK loads sandbox.json independently of settingSources and lets it
       // expand the writable paths. Its public API cannot override that policy.
       if (yield* fs.exists(`${yield* HostProcess.HomeDirectory}/.cursor/sandbox.json`)) {

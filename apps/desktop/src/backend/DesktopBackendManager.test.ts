@@ -275,6 +275,32 @@ describe("DesktopBackendManager", () => {
     ),
   );
 
+  it.effect("retries backend readiness after 25ms without accepting an unsuccessful response", () =>
+    Effect.gen(function* () {
+      const firstRequest = yield* Deferred.make<void>();
+      let attempts = 0;
+      const http = layerHttpClient((request) =>
+        Effect.gen(function* () {
+          attempts += 1;
+          if (attempts === 1) yield* Deferred.succeed(firstRequest, undefined);
+          return responseForRequest(request, attempts === 1 ? 503 : 200);
+        }),
+      );
+      yield* Effect.gen(function* () {
+        const readiness = yield* DesktopBackendManager.waitForHttpReady({
+          ...baseConfig,
+          timeout: Duration.seconds(1),
+        }).pipe(Effect.forkChild);
+        yield* Deferred.await(firstRequest);
+        yield* TestClock.adjust(Duration.millis(24));
+        assert.equal(attempts, 1);
+        yield* TestClock.adjust(Duration.millis(1));
+        yield* Fiber.join(readiness);
+        assert.equal(attempts, 2);
+      }).pipe(Effect.provide(Layer.merge(TestClock.layer(), http)));
+    }),
+  );
+
   it.effect("preserves the readiness timeout cause and process context", () =>
     Effect.gen(function* () {
       const requested = yield* Deferred.make<HttpClientRequest.HttpClientRequest>();
@@ -808,10 +834,6 @@ describe("DesktopBackendManager", () => {
 
           yield* TestClock.adjust(Duration.millis(50));
           assert.equal(readinessTimeoutCount, 1);
-          assert.equal(readyCount, 0);
-
-          yield* TestClock.adjust(Duration.millis(100));
-          assert.equal(readinessTimeoutCount, 2);
           assert.equal(readyCount, 1);
           assert.equal(requestUrls.length, 3);
 
