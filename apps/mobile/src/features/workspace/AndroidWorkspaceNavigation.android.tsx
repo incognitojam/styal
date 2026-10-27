@@ -121,7 +121,9 @@ export function AndroidWorkspaceNavigation(props: {
           if (root) {
             navigateInstantly(() =>
               navigation.dispatch({
-                ...CommonActions.reset(androidWorkspaceTabNavigationState(root.getState(), tab)),
+                ...CommonActions.reset(
+                  androidWorkspaceTabNavigationState(root.getState(), tab, rail),
+                ),
                 target: root.key,
               }),
             );
