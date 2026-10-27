@@ -134,7 +134,7 @@ import { ProjectFavicon, type ProjectFaviconProject } from "../ProjectFavicon";
 import { ThreadSearchMatchExcerpt } from "../ThreadSearchMatch";
 import { makeWorkspaceFileDropHandlers } from "../chat/workspaceFileDrop";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
-import { getTriggerDisplayModelLabel } from "../chat/providerIconUtils";
+import { getTriggerDisplayModelName } from "../chat/providerIconUtils";
 import { shouldShowInstanceBadge, type ProviderInstanceEntry } from "../../providerInstances";
 import { useThreadRunningTerminalIds } from "../../state/terminalSessions";
 
@@ -801,7 +801,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     (model) => model.slug === thread.modelSelection.model,
   );
   const modelLabel = selectedModel
-    ? getTriggerDisplayModelLabel(selectedModel)
+    ? getTriggerDisplayModelName(selectedModel, providerEntry?.driverKind)
     : thread.modelSelection.model;
 
   const isRemote = thread.environmentId !== props.currentEnvironmentId;
@@ -1718,7 +1718,7 @@ export const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props
     (model) => model.slug === thread.modelSelection.model,
   );
   const modelLabel = selectedModel
-    ? getTriggerDisplayModelLabel(selectedModel)
+    ? getTriggerDisplayModelName(selectedModel, providerEntry?.driverKind)
     : thread.modelSelection.model;
   const runningTerminalIds = useThreadRunningTerminalIds({
     environmentId: thread.environmentId,

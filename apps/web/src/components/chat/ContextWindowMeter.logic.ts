@@ -14,7 +14,7 @@ import {
   resolveSelectableProviderInstanceEntry,
   type ProviderInstanceEntry,
 } from "../../providerInstances";
-import { getTriggerDisplayModelName, type ModelEsque } from "./providerIconUtils";
+import { getDisplayModelName, type ModelEsque } from "./providerIconUtils";
 
 // Fallback TTL: Claude Code's one-hour subscription cache. Claude Code's own prompt waits 70
 // minutes; the banner offers compaction as soon as the cache has expired.
@@ -171,7 +171,7 @@ export function resolveContextWindowModelDisplayName(
     .get(selection.instanceId)
     ?.find((model) => model.slug === selection.model);
 
-  return selectedModel ? getTriggerDisplayModelName(selectedModel) : selection.model;
+  return selectedModel ? getDisplayModelName(selectedModel) : selection.model;
 }
 
 export function formatContextWindowCompactionMessage(
