@@ -41,6 +41,7 @@ import {
   type ScopedThreadRef,
   type IssueContextRecord,
   type ThreadContextRecord,
+  type EnvironmentContextRecord,
   type ThreadId,
   type ThreadLinkedPullRequest,
   type RunId,
@@ -788,6 +789,7 @@ export function deriveComposerSendState(options: {
   reviewComments: ReadonlyArray<unknown>;
   threadContexts: ReadonlyArray<unknown>;
   issueContexts: ReadonlyArray<unknown>;
+  environmentContexts: ReadonlyArray<unknown>;
 }): {
   trimmedPrompt: string;
   sendableTerminalContexts: TerminalContextDraft[];
@@ -802,7 +804,8 @@ export function deriveComposerSendState(options: {
     options.previewAnnotations.length +
     options.reviewComments.length +
     options.threadContexts.length +
-    options.issueContexts.length;
+    options.issueContexts.length +
+    options.environmentContexts.length;
   return {
     trimmedPrompt,
     sendableTerminalContexts,
@@ -1232,6 +1235,7 @@ export interface PlanFollowUpComposerSnapshot {
   readonly reviewComments: ReadonlyArray<ReviewCommentContext>;
   readonly previewAnnotations: ReadonlyArray<PreviewAnnotationPayload>;
   readonly threadContexts: ReadonlyArray<ThreadContextRecord>;
+  readonly environmentContexts: ReadonlyArray<EnvironmentContextRecord>;
 }
 
 export function restorePlanFollowUpComposer(input: {
@@ -1241,6 +1245,7 @@ export function restorePlanFollowUpComposer(input: {
   readonly writeReviewComments: (comments: ReadonlyArray<ReviewCommentContext>) => void;
   readonly writePreviewAnnotations: (annotations: ReadonlyArray<PreviewAnnotationPayload>) => void;
   readonly writeThreadContexts: (records: ReadonlyArray<ThreadContextRecord>) => void;
+  readonly writeEnvironmentContexts: (records: ReadonlyArray<EnvironmentContextRecord>) => void;
   readonly resetCursor: (options: {
     cursor: number;
     prompt: string;
@@ -1252,6 +1257,7 @@ export function restorePlanFollowUpComposer(input: {
   input.writeReviewComments(input.snapshot.reviewComments);
   input.writePreviewAnnotations(input.snapshot.previewAnnotations);
   input.writeThreadContexts(input.snapshot.threadContexts);
+  input.writeEnvironmentContexts(input.snapshot.environmentContexts);
   input.resetCursor({
     cursor: collapseExpandedComposerCursor(input.snapshot.prompt, input.snapshot.prompt.length),
     prompt: input.snapshot.prompt,
@@ -1412,6 +1418,7 @@ export interface ComposerSendContents {
   readonly reviewComments: ReadonlyArray<ReviewCommentContext>;
   readonly threadContexts: ReadonlyArray<ThreadContextRecord>;
   readonly issueContexts: ReadonlyArray<IssueContextRecord>;
+  readonly environmentContexts: ReadonlyArray<EnvironmentContextRecord>;
 }
 
 /**
@@ -1432,6 +1439,7 @@ export function snapshotComposerSend(contents: ComposerSendContents) {
     reviewComments: [...contents.reviewComments],
     threadContexts: [...contents.threadContexts],
     issueContexts: [...contents.issueContexts],
+    environmentContexts: [...contents.environmentContexts],
     messageText: contents.terminalContexts
       .filter((context) => !terminalContexts.includes(context))
       .reduce(

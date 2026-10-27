@@ -128,6 +128,7 @@ describe("deriveComposerSendState", () => {
       reviewComments: [],
       threadContexts: [],
       issueContexts: [],
+      environmentContexts: [],
     });
 
     expect(state.trimmedPrompt).toBe("yoo  waddup");
@@ -144,6 +145,7 @@ describe("deriveComposerSendState", () => {
       reviewComments: [],
       threadContexts: [],
       issueContexts: [{ contextId: "ctx-issue" }],
+      environmentContexts: [],
     });
 
     expect(state.trimmedPrompt).toBe("");
@@ -1113,6 +1115,7 @@ describe("snapshotComposerSend", () => {
       reviewComments: [],
       threadContexts: [],
       issueContexts: [],
+      environmentContexts: [],
     });
 
     expect(snapshot.terminalContexts).toEqual([live]);

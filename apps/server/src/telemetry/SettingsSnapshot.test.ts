@@ -28,6 +28,7 @@ const defaultSnapshot = {
   snoozeLimitedThreads: false,
   autoResumeLimitedThreads: false,
   guestSharingEnabled: false,
+  linkedEnvironmentsEnabled: false,
   idleCompaction: "onReturn",
   branchNamingMode: "static",
   branchNamePrefixCustomized: false,

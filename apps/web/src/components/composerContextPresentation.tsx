@@ -2,6 +2,7 @@ import ChatMarkdown from "./ChatMarkdown";
 import { isSvgAttachment } from "@t3tools/shared/image";
 import { ReadOnlySourcePreview } from "./files/AttachmentFilePreview";
 import type {
+  EnvironmentContextRecord,
   IssueContextRecord,
   PreviewAnnotationPayload,
   ThreadContextRecord,
@@ -36,6 +37,7 @@ import {
 import type { TerminalContextDraft } from "~/lib/terminalContext";
 import type { ReviewCommentContext } from "~/reviewCommentContext";
 import { ComposerPendingTerminalContextChip } from "./chat/ComposerPendingTerminalContexts";
+import { EnvironmentContextChip } from "./EnvironmentContextChip";
 import { ThreadContextChip } from "./ThreadContextChip";
 import { IssueContextChip } from "./IssueContextChip";
 import {
@@ -65,7 +67,8 @@ export type ComposerDraftContextRecord =
   | { kind: "image"; record: ComposerImageAttachment; upload?: AttachmentUploadState | undefined }
   | { kind: "file"; record: ComposerFileAttachment; upload?: AttachmentUploadState | undefined }
   | { kind: "thread"; record: ThreadContextRecord }
-  | { kind: "issue"; record: IssueContextRecord };
+  | { kind: "issue"; record: IssueContextRecord }
+  | { kind: "environment"; record: EnvironmentContextRecord };
 
 export interface ComposerContextActions {
   environmentId: EnvironmentId | null;
@@ -107,6 +110,7 @@ export function composerContextRecordsFromDraft(input: {
   previewAnnotations?: ReadonlyArray<PreviewAnnotationPayload>;
   threadContexts?: ReadonlyArray<ThreadContextRecord>;
   issueContexts?: ReadonlyArray<IssueContextRecord>;
+  environmentContexts?: ReadonlyArray<EnvironmentContextRecord>;
   images?: ReadonlyArray<ComposerImageAttachment>;
   files?: ReadonlyArray<ComposerFileAttachment>;
   uploadsByImageId?: Readonly<Record<string, AttachmentUploadState>>;
@@ -145,6 +149,9 @@ export function composerContextRecordsFromDraft(input: {
   }
   for (const record of input.issueContexts ?? []) {
     records.set(record.contextId, { kind: "issue", record });
+  }
+  for (const record of input.environmentContexts ?? []) {
+    records.set(record.contextId, { kind: "environment", record });
   }
   return records;
 }
@@ -382,6 +389,7 @@ const composerContextPresentationRegistry = createContextPresentationRegistry<
     "preview-annotation",
     "thread",
     "issue",
+    "environment",
   ],
   handlers: [
     {
@@ -484,6 +492,16 @@ const composerContextPresentationRegistry = createContextPresentationRegistry<
       render: (entry, context) =>
         entry.kind === "issue" ? (
           <IssueContextChip record={entry.record} />
+        ) : (
+          <UnresolvedContextChip label={context.label} />
+        ),
+    },
+    {
+      kind: "environment",
+      canRender: (entry) => entry.kind === "environment",
+      render: (entry, context) =>
+        entry.kind === "environment" ? (
+          <EnvironmentContextChip record={entry.record} />
         ) : (
           <UnresolvedContextChip label={context.label} />
         ),

@@ -7,6 +7,7 @@ import type { ThreadStructure } from "@t3tools/client-runtime/state/shell";
 import {
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   type ChatAttachment,
+  type EnvironmentContextRecord,
   type EnvironmentId,
   type IssueContextRecord,
   type MessageId,
@@ -78,6 +79,7 @@ export interface QueuedRunEditContent {
   readonly previewAnnotations: ReadonlyArray<PreviewAnnotationPayload>;
   readonly threadContexts: ReadonlyArray<ThreadContextRecord>;
   readonly issueContexts: ReadonlyArray<IssueContextRecord>;
+  readonly environmentContexts: ReadonlyArray<EnvironmentContextRecord>;
 }
 
 function queuedEditDraftTarget(routeThreadRef: ScopedThreadRef, runId: RunId) {
@@ -136,6 +138,7 @@ async function submitQueuedRunEdit(input: {
         previewAnnotations: content.previewAnnotations,
         threadContexts: content.threadContexts,
         issueContexts: content.issueContexts,
+        environmentContexts: content.environmentContexts,
         attachments: newAttachments.map((attachment, index) => ({
           attachment,
           attachmentId: uploads[editing.existingAttachments.length + index]?.id ?? attachment.id,

@@ -126,6 +126,12 @@ const knownRecords: Record<(typeof COMPOSER_CONTEXT_KINDS)[number], Record<strin
     body: "Crashes on submit.",
     comments: [{ author: "octocat", body: "Seen on Safari too." }],
   },
+  environment: {
+    ...base,
+    kind: "environment",
+    label: "vps",
+    environmentId: "environment-vps",
+  },
 };
 
 describe("ComposerContextRecord", () => {

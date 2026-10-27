@@ -52,6 +52,7 @@ function settingsSnapshotProperties(settings: ServerSettings) {
     snoozeLimitedThreads: settings.snoozeLimitedThreads,
     autoResumeLimitedThreads: settings.autoResumeLimitedThreads,
     guestSharingEnabled: settings.guestSharingEnabled,
+    linkedEnvironmentsEnabled: settings.linkedEnvironmentsEnabled,
     idleCompaction: globalIdleCompaction(settings),
     // Source control writing
     branchNamingMode: settings.branchNamingMode,
