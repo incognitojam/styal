@@ -207,13 +207,13 @@ describe("ChatMarkdown table wrap toggle", () => {
     expect(buttonsLabelled(host, "Expand table cells")).toHaveLength(1);
   });
 
-  it("hides the toggle when the table fits", async () => {
+  it("keeps the toggle available when the table fits", async () => {
     setup();
     await using screen = await renderTable("short");
     const host = screen.container;
 
     expect(buttonsLabelled(host, "Expand table cells")).toHaveLength(0);
-    expect(buttonsLabelled(host, "Collapse table cells")).toHaveLength(0);
+    expect(buttonsLabelled(host, "Collapse table cells")).toHaveLength(1);
   });
 });
 
