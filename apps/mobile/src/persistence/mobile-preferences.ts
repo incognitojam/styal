@@ -13,6 +13,7 @@ import {
   type ProviderInstanceId,
   type PullRequestMergeMethod,
   type SidebarProjectGroupingMode,
+  type SidebarThreadGrouping,
 } from "@t3tools/contracts";
 import type { ComposerEnterBehavior } from "../lib/composerEnterBehavior";
 import type { FollowUpBehavior } from "../lib/followUpBehavior";
@@ -75,6 +76,8 @@ export interface Preferences {
   readonly microphones?: ReadonlyArray<MicrophoneEntry>;
   readonly projectGroupingEnabled?: boolean;
   readonly projectGroupingMode?: SidebarProjectGroupingMode;
+  /** Device-local counterpart of desktop's `sidebarThreadGrouping`; unset means none. */
+  readonly threadGrouping?: SidebarThreadGrouping;
   readonly confirmThreadUnpin?: boolean;
   readonly threadTimestampMode?: "last_prompted" | "last_message";
   readonly planModeEnabled?: boolean;
@@ -156,6 +159,7 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     microphones?: ReadonlyArray<MicrophoneEntry>;
     projectGroupingEnabled?: boolean;
     projectGroupingMode?: SidebarProjectGroupingMode;
+    threadGrouping?: SidebarThreadGrouping;
     confirmThreadUnpin?: boolean;
     threadTimestampMode?: "last_prompted" | "last_message";
     planModeEnabled?: boolean;
@@ -265,6 +269,9 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     parsed.projectGroupingMode === "separate"
   ) {
     preferences.projectGroupingMode = parsed.projectGroupingMode;
+  }
+  if (parsed.threadGrouping === "none" || parsed.threadGrouping === "project") {
+    preferences.threadGrouping = parsed.threadGrouping;
   }
   if (typeof parsed.confirmThreadUnpin === "boolean") {
     preferences.confirmThreadUnpin = parsed.confirmThreadUnpin;

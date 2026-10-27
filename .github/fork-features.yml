@@ -4932,6 +4932,7 @@ features:
     prs: [533, 546, 585, 745]
     invariants:
       - Settings → General → Organization → Group threads by project is off by default; when off, active threads stay one flat list.
+      - On mobile, Settings → Organization → Group threads by project is a per-device preference, off by default. The phone list and the tablet sidebar group active and Working threads under headers with the project icon, name and a pin icon for pinned projects, using the same project order rules as web. Move up and Move down step past the neighbouring thread in the same project. Mobile headers are not interactive, and the Arrange threads sheet stays one list.
       - With grouping on, active threads sit under one header per logical project, so matching repositories across environments share a header. Cards under a header omit the project icon and name, while pinned, snoozed, and settled threads keep their existing layout.
       - With grouping and the Working section on, Working threads sit under non-draggable headers per logical project, ordered by the saved project order and then the project list, so sending work never reorders projects. Within a project they keep newest-send-first order.
       - On web and desktop, a project group whose threads in that section all lack branches uses 36px one-line rows; if any of them has a branch, every row in that group keeps the two-line layout. Active and Working groups decide this separately. Turning grouping off restores the flat list layout.
@@ -4943,6 +4944,12 @@ features:
       - Header reorders, pins, unpins, pin reorders and archives emit bounded `sidebar-project-groups` client-usage events with the entry point (header drag or header menu) through the primary environment, after the write succeeds, never with project names or keys.
     rationale: With several projects active, a flat list makes the user read each card's project label to see which threads belong together. The fork retains thread details under opt-in project headers, omitting the empty branch line when an entire group is branchless, whereas upstream's closed proposal collapsed groups into title-only lists.
     implementation_paths:
+      - apps/mobile/src/features/home/HomeScreen.tsx
+      - apps/mobile/src/features/home/homeThreadList.ts
+      - apps/mobile/src/features/settings/SettingsProjectGroupingRouteScreen.tsx
+      - apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx
+      - apps/mobile/src/features/threads/thread-list-v2-items.tsx
+      - apps/mobile/src/features/threads/threadListV2.ts
       - apps/web/src/components/Sidebar.drag.ts
       - apps/web/src/components/Sidebar.logic.ts
       - apps/web/src/components/Sidebar.tsx
@@ -4950,6 +4957,7 @@ features:
       - apps/web/src/components/settings/settingsSearch.ts
       - apps/web/src/hooks/useSidebarProjectGroups.ts
       - apps/web/src/sidebarProjectGroupUsage.ts
+      - packages/client-runtime/src/state/threadProjectGroups.ts
       - packages/contracts/src/forkClientUsage.ts
       - packages/contracts/src/settings.ts
     upstream_paths:
@@ -4961,10 +4969,12 @@ features:
       - apps/web/src/hooks/useSidebarProjectGroups.ts
       - packages/contracts/src/settings.ts
     tests:
+      - apps/mobile/src/features/threads/threadListV2.test.ts
       - apps/server/src/telemetry/ClientFeatureUsage.test.ts
       - apps/web/src/components/Sidebar.drag.test.ts
       - apps/web/src/components/Sidebar.logic.test.ts
       - e2e/tests/sidebar-project-groups.e2e.ts
+      - packages/client-runtime/src/state/threadProjectGroups.test.ts
     upstream:
       status: tracking
       tracking:

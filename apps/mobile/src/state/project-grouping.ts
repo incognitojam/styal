@@ -15,3 +15,10 @@ export function useMobileProjectGroupingSettings() {
     ? resolveMobileProjectGroupingSettings(preferencesResult.value)
     : DEFAULT_MOBILE_PROJECT_GROUPING_SETTINGS;
 }
+
+export function useMobileThreadGroupingByProject() {
+  const preferencesResult = useAtomValue(mobilePreferencesAtom);
+  return (
+    AsyncResult.isSuccess(preferencesResult) && preferencesResult.value.threadGrouping === "project"
+  );
+}

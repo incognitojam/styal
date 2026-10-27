@@ -10,7 +10,10 @@ import {
   type PendingThreadOrder,
   type ThreadMoveAvailability,
 } from "./threadOrder";
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
+import type {
+  EnvironmentProject,
+  EnvironmentThreadShell,
+} from "@t3tools/client-runtime/state/shell";
 import type { SidebarThreadTimestampMode } from "@t3tools/contracts/settings";
 import { threadSearchMatchKey } from "@t3tools/client-runtime/state/thread-search";
 import { resolveSnoozePresets } from "@t3tools/client-runtime/state/thread-settled";
@@ -33,6 +36,7 @@ import {
   buildThreadListV2ListItems,
   getThreadListV2OrderedSection,
   isThreadListV2ListItem,
+  resolveGroupedActiveThreadMoves,
   resolveThreadListV2SnoozeMenuSelection,
   resolveThreadListV2SnoozeGateExpiryMs,
   resolveThreadListV2Status,
@@ -41,6 +45,7 @@ import {
   threadListV2ListItemsAreEqual,
   threadHasUnseenCompletion,
   type ThreadListV2ListItem,
+  type ThreadListV2ProjectGrouping,
 } from "./threadListV2";
 
 const environmentId = EnvironmentId.make("environment-1");
@@ -2468,5 +2473,157 @@ describe("Working section beta", () => {
       "v2-settled-shelf",
       "settled",
     ]);
+  });
+});
+
+describe("threads grouped by project", () => {
+  const projectA = ProjectId.make("project-a");
+  const projectA2 = ProjectId.make("project-a-checkout");
+  const projectB = ProjectId.make("project-b");
+  const threads = [
+    makeThread({
+      id: ThreadId.make("a1"),
+      title: "A1",
+      projectId: projectA,
+      createdAt: "2026-06-01T10:03:00.000Z",
+    }),
+    makeThread({
+      id: ThreadId.make("b1"),
+      title: "B1",
+      projectId: projectB,
+      createdAt: "2026-06-01T10:02:00.000Z",
+    }),
+    makeThread({
+      id: ThreadId.make("a2"),
+      title: "A2",
+      projectId: projectA2,
+      createdAt: "2026-06-01T10:01:00.000Z",
+    }),
+    makeThread({
+      id: ThreadId.make("pinned"),
+      title: "Pinned",
+      projectId: projectA,
+      createdAt: "2026-06-01T10:04:00.000Z",
+      pinnedAt: "2026-06-01T11:00:00.000Z",
+    }),
+  ];
+  const grouping = (pinnedGroupKeys: readonly string[] = []): ThreadListV2ProjectGrouping => ({
+    // Two checkouts of the same repository share project "A".
+    groupByProjectKey: new Map([
+      [`${environmentId}:${projectA}`, "A"],
+      [`${environmentId}:${projectA2}`, "A"],
+      [`${environmentId}:${projectB}`, "B"],
+    ]),
+    headerByGroup: new Map(),
+    pinnedGroupKeys,
+    groupKeys: ["A", "B"],
+  });
+  const layoutOf = (
+    rows: readonly EnvironmentThreadShell[],
+    projectGrouping: ThreadListV2ProjectGrouping,
+  ) =>
+    buildThreadListV2Items({
+      threads: rows,
+      environmentId: null,
+      searchQuery: "",
+      now: NOW,
+      projectGrouping,
+    });
+  const ids = (layout: ReturnType<typeof buildThreadListV2Items>) =>
+    layout.items.map((item) => item.thread.id);
+
+  it("clusters active threads by project, leaving pinned threads in place", () => {
+    const layout = layoutOf(threads, grouping());
+
+    expect(ids(layout)).toEqual(["pinned", "a1", "a2", "b1"]);
+    expect(layout.items.map((item) => item.projectGroup)).toEqual([undefined, "A", "A", "B"]);
+  });
+
+  it("leads with pinned projects", () => {
+    expect(ids(layoutOf(threads, grouping(["B"])))).toEqual(["pinned", "b1", "a1", "a2"]);
+  });
+
+  it("opens each project's rows with a header", () => {
+    const listItems = buildThreadListV2ListItems({
+      items: layoutOf(threads, grouping(["B"])).items,
+      pendingTasks: [],
+      // Headers pass the project through for its icon; its fields are not read here.
+      projectHeaders: new Map([
+        ["B", { title: "Project B", project: {} as EnvironmentProject, pinned: true }],
+        ["A", { title: "Project A", project: {} as EnvironmentProject, pinned: false }],
+      ]),
+    });
+
+    expect(
+      listItems.map((item) =>
+        item.type === "v2-project-header"
+          ? `header:${item.title}:${item.pinned ? "pinned" : "unpinned"}`
+          : item.type === "v2-thread"
+            ? item.item.thread.id
+            : item.type,
+      ),
+    ).toEqual(["pinned", "header:Project B:pinned", "b1", "header:Project A:unpinned", "a1", "a2"]);
+    const rows = listItems.filter((item) => item.type === "v2-thread");
+    // A header separates projects, so the last row of a project has no divider.
+    expect(rows.map((item) => item.showTrailingDivider)).toEqual([false, false, true, false]);
+  });
+
+  it("moves a thread past its neighbour in the same project", () => {
+    const layout = layoutOf(threads, grouping());
+    const moves = resolveGroupedActiveThreadMoves({
+      items: layout.items,
+      reorderableEnvironmentIds: new Set([environmentId]),
+    });
+    const a2Key = `${environmentId}:a2`;
+
+    expect(moves.get(`${environmentId}:a1`)).toEqual({
+      canMoveUp: false,
+      canMoveDown: true,
+      downTargetId: a2Key,
+    });
+    expect(moves.get(`${environmentId}:b1`)).toEqual({ canMoveUp: false, canMoveDown: false });
+    expect(moves.has(`${environmentId}:pinned`)).toBe(false);
+
+    // b1 sits between a1 and a2 in the flat order; the move still lands a2
+    // directly above a1 within project A.
+    const ordered = getThreadListV2OrderedSection({ threads, section: "active", now: NOW });
+    expect(ordered.map((thread) => thread.id)).toEqual(["a1", "b1", "a2"]);
+    const assignments = createThreadMovePlanner({
+      ordered,
+      allThreads: threads,
+      section: "active",
+      reorderableEnvironmentIds: new Set([environmentId]),
+    })(a2Key, { targetId: moves.get(a2Key)!.upTargetId!, placement: "before" });
+    const keys = new Map(assignments!.map(({ id, orderKey }) => [id, orderKey]));
+    const moved = threads.map((thread) => ({
+      ...thread,
+      activeOrderKey: keys.get(`${environmentId}:${thread.id}`) ?? thread.activeOrderKey,
+    }));
+
+    expect(ids(layoutOf(moved, grouping()))).toEqual(["pinned", "a2", "a1", "b1"]);
+  });
+
+  it("offers no moves on servers that cannot reorder or while a move is pending", () => {
+    const items = layoutOf(threads, grouping()).items;
+    const pendingOrder = createPendingThreadOrder({
+      section: "active",
+      ordered: getThreadListV2OrderedSection({ threads, section: "active", now: NOW }),
+      movedId: `${environmentId}:b1`,
+      direction: "up",
+      assignments: [],
+    });
+
+    expect(
+      resolveGroupedActiveThreadMoves({ items, reorderableEnvironmentIds: new Set() }).get(
+        `${environmentId}:a1`,
+      ),
+    ).toEqual({ canMoveUp: false, canMoveDown: false });
+    expect(
+      resolveGroupedActiveThreadMoves({
+        items,
+        reorderableEnvironmentIds: new Set([environmentId]),
+        pendingOrder,
+      }).size,
+    ).toBe(0);
   });
 });

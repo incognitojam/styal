@@ -110,6 +110,9 @@ export function createThreadMovePlanner(input: {
 export interface ThreadMoveAvailability {
   readonly canMoveUp: boolean;
   readonly canMoveDown: boolean;
+  /** Row ids to move before or after instead of the adjacent row. */
+  readonly upTargetId?: string;
+  readonly downTargetId?: string;
 }
 
 /**

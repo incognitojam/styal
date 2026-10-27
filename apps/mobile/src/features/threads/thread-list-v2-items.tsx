@@ -270,6 +270,52 @@ export const ThreadListV2SettledShelfHeader = memo(function ThreadListV2SettledS
   return <ThreadListV2ShelfHeader {...props} kind="settled" />;
 });
 
+export const ThreadListV2ProjectHeaderRow = memo(function ThreadListV2ProjectHeaderRow(props: {
+  readonly title: string;
+  readonly project: EnvironmentProject | null;
+  readonly pinned: boolean;
+  readonly pane?: "screen" | "sidebar";
+}) {
+  const sidebarPane = props.pane === "sidebar";
+  return (
+    <View
+      accessibilityRole="header"
+      accessibilityLabel={props.pinned ? `${props.title}, pinned project` : props.title}
+      className={cn("mb-1 mt-3 flex-row items-center gap-1.5", sidebarPane ? "px-3" : "px-5")}
+    >
+      {props.project ? (
+        <ProjectFavicon
+          environmentId={props.project.environmentId}
+          faviconPath={props.project.faviconPath}
+          projectIcon={props.project.projectIcon}
+          size={15}
+          projectTitle={props.project.title}
+          workspaceRoot={props.project.workspaceRoot}
+        />
+      ) : null}
+      <Text
+        className={cn(
+          "flex-1 text-sm font-t3-medium",
+          sidebarPane ? "text-drawer-foreground-muted" : "text-foreground-secondary",
+        )}
+        numberOfLines={1}
+      >
+        {props.title}
+      </Text>
+      {props.pinned ? (
+        <SymbolView
+          name="pin"
+          size={11}
+          tintColorClassName={
+            sidebarPane ? "accent-drawer-foreground-muted" : "accent-foreground-muted"
+          }
+          type="monochrome"
+        />
+      ) : null}
+    </View>
+  );
+});
+
 export const ThreadListV2ShowMoreRow = memo(function ThreadListV2ShowMoreRow(props: {
   readonly pane?: "screen" | "sidebar";
   readonly hiddenCount: number;
@@ -532,6 +578,8 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   readonly snoozePresetMinute: string;
   readonly project: EnvironmentProject | null;
   readonly projectTitle?: string;
+  /** False under a project header, which already names the project. */
+  readonly showProject?: boolean;
   readonly providers: ReadonlyArray<ThreadListProvider> | undefined;
   readonly providerInstance: ThreadRowProviderInstance | null;
   readonly environmentLabel: string | null;
@@ -569,6 +617,8 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   ) => void;
   readonly canMoveUp?: boolean;
   readonly canMoveDown?: boolean;
+  readonly moveUpTargetId?: string | null;
+  readonly moveDownTargetId?: string | null;
   readonly onSwipeableWillOpen: (methods: SwipeableMethods) => void;
   readonly onSwipeableClose: (methods: SwipeableMethods) => void;
   readonly activationKey?: string;
@@ -595,8 +645,11 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     onUnpinThread,
     onSetThreadAutoSettle,
     onMoveThread,
+    moveUpTargetId,
+    moveDownTargetId,
   } = props;
   const snoozedRow = props.snoozed === true;
+  const showProject = props.showProject !== false;
   const pinnedRow = props.pinned === true;
   const dormant = useSwipeRowDormant(props.activationKey);
 
@@ -672,8 +725,22 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     (enabled: boolean) => onSetThreadAutoSettle(thread, enabled),
     [onSetThreadAutoSettle, thread],
   );
-  const handleMoveUp = useCallback(() => onMoveThread?.(thread, "up"), [onMoveThread, thread]);
-  const handleMoveDown = useCallback(() => onMoveThread?.(thread, "down"), [onMoveThread, thread]);
+  const handleMoveUp = useCallback(
+    () =>
+      onMoveThread?.(
+        thread,
+        moveUpTargetId ? { targetId: moveUpTargetId, placement: "before" } : "up",
+      ),
+    [onMoveThread, thread, moveUpTargetId],
+  );
+  const handleMoveDown = useCallback(
+    () =>
+      onMoveThread?.(
+        thread,
+        moveDownTargetId ? { targetId: moveDownTargetId, placement: "after" } : "down",
+      ),
+    [onMoveThread, thread, moveDownTargetId],
+  );
   const handleArchive = useCallback(() => onArchiveThread(thread), [onArchiveThread, thread]);
 
   const canUnsettle = variant === "slim";
@@ -973,85 +1040,112 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     .filter(Boolean)
     .join(", ");
 
-  const cardContent = (
+  // Grouped cards sit under a project header, so the status and time move up
+  // beside the title instead of keeping a line of their own.
+  const cardMeta = (
     <>
-      <View className="flex-row items-center gap-1.5">
-        {props.project ? (
-          <ProjectFavicon
-            environmentId={thread.environmentId}
-            faviconPath={props.project.faviconPath}
-            projectIcon={props.project.projectIcon}
-            size={15}
-            projectTitle={props.project.title}
-            workspaceRoot={props.project.workspaceRoot}
-          />
-        ) : null}
-        <Text
-          className={cn(
-            "flex-1 text-sm font-t3-medium",
-            selected
-              ? selectedThreadRowColors.mutedForegroundClassName
-              : rowAppearance.mutedForegroundClassName,
-          )}
-          numberOfLines={1}
-        >
-          {props.projectTitle ?? props.project?.title ?? ""}
-        </Text>
-        {showDraftIcon ? <UnsentDraftIcon /> : null}
-        {props.hasQueuedMessages ? <QueuedMessageIcon selected={selected} /> : null}
-        {pinnedRow ? (
+      {showDraftIcon ? <UnsentDraftIcon /> : null}
+      {props.hasQueuedMessages ? <QueuedMessageIcon selected={selected} /> : null}
+      {pinnedRow ? (
+        <SymbolView
+          name="pin"
+          size={11}
+          tintColorClassName={rowAppearance.mutedIconTintClassName}
+          type="monochrome"
+        />
+      ) : null}
+      {statusLabel ? (
+        <View className="flex-row items-center gap-1">
           <SymbolView
-            name="pin"
-            size={11}
-            tintColorClassName={rowAppearance.mutedIconTintClassName}
+            name={statusLabel.icon}
+            size={13}
+            tintColorClassName={
+              selected ? selectedThreadRowColors.iconTintClassName : statusLabel.iconTintClassName
+            }
             type="monochrome"
+            weight="semibold"
           />
-        ) : null}
-        {statusLabel ? (
-          <View className="flex-row items-center gap-1">
-            <SymbolView
-              name={statusLabel.icon}
-              size={13}
-              tintColorClassName={
-                selected ? selectedThreadRowColors.iconTintClassName : statusLabel.iconTintClassName
-              }
-              type="monochrome"
-              weight="semibold"
-            />
-            <Text
-              className={cn(
-                "text-xs font-t3-bold",
-                selected ? selectedThreadRowColors.foregroundClassName : statusLabel.className,
-              )}
-            >
-              {statusLabel.label}
-            </Text>
-          </View>
-        ) : (
           <Text
             className={cn(
-              "text-xs tabular-nums",
-              selected
-                ? selectedThreadRowColors.foregroundClassName
-                : rowAppearance.tertiaryForegroundClassName,
+              "text-xs font-t3-bold",
+              selected ? selectedThreadRowColors.foregroundClassName : statusLabel.className,
             )}
           >
-            {timeLabel}
+            {statusLabel.label}
           </Text>
-        )}
-      </View>
-      <Text
-        className={cn(
-          "mt-1 text-base",
-          !recede && "font-t3-medium",
-          selected
-            ? selectedThreadRowColors.foregroundClassName
-            : rowAppearance.foregroundClassName,
-        )}
-        numberOfLines={2}
-      >
-        {thread.title}
-      </Text>
+        </View>
+      ) : (
+        <Text
+          className={cn(
+            "text-xs tabular-nums",
+            selected
+              ? selectedThreadRowColors.foregroundClassName
+              : rowAppearance.tertiaryForegroundClassName,
+          )}
+        >
+          {timeLabel}
+        </Text>
+      )}
+    </>
+  );
+  const cardContent = (
+    <>
+      {showProject ? (
+        <>
+          <View className="flex-row items-center gap-1.5">
+            {props.project ? (
+              <ProjectFavicon
+                environmentId={thread.environmentId}
+                faviconPath={props.project.faviconPath}
+                projectIcon={props.project.projectIcon}
+                size={15}
+                projectTitle={props.project.title}
+                workspaceRoot={props.project.workspaceRoot}
+              />
+            ) : null}
+            <Text
+              className={cn(
+                "flex-1 text-sm font-t3-medium",
+                selected
+                  ? selectedThreadRowColors.mutedForegroundClassName
+                  : rowAppearance.mutedForegroundClassName,
+              )}
+              numberOfLines={1}
+            >
+              {props.projectTitle ?? props.project?.title ?? ""}
+            </Text>
+            {cardMeta}
+          </View>
+          <Text
+            className={cn(
+              "mt-1 text-base",
+              !recede && "font-t3-medium",
+              selected
+                ? selectedThreadRowColors.foregroundClassName
+                : rowAppearance.foregroundClassName,
+            )}
+            numberOfLines={2}
+          >
+            {thread.title}
+          </Text>
+        </>
+      ) : (
+        <View className="flex-row items-start gap-1.5">
+          <Text
+            className={cn(
+              "min-w-0 flex-1 text-base",
+              !recede && "font-t3-medium",
+              selected
+                ? selectedThreadRowColors.foregroundClassName
+                : rowAppearance.foregroundClassName,
+            )}
+            numberOfLines={2}
+          >
+            {thread.title}
+          </Text>
+          <View className="mt-1 flex-row items-center gap-1.5">{cardMeta}</View>
+        </View>
+      )}
       {props.searchMatch ? (
         <View className="mt-1">
           <ThreadSearchMatchExcerpt

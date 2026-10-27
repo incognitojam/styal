@@ -32,6 +32,7 @@ import { scopedProjectKey, scopedThreadKey } from "../../lib/scopedEntities";
 import { useProjects, useNavigationThreadShells } from "../../state/entities";
 import { useThreadSearch } from "../../state/queries";
 import { mobilePreferencesAtom } from "../../state/preferences";
+import { useMobileThreadGroupingByProject } from "../../state/project-grouping";
 import { useThreadListV2ShelfPreferences } from "./use-thread-list-v2-shelf-preferences";
 import { usePendingThreadOrder } from "../../state/thread-order";
 import { threadListEnvironmentsAtom } from "../../state/server";
@@ -47,6 +48,7 @@ import { buildHomeListFilterMenu } from "../home/home-list-filter-menu";
 import {
   archivedProjectRefKeys,
   buildHomeProjectScopes,
+  buildHomeThreadProjectGrouping,
   homeProjectFilterOptions,
 } from "../home/homeThreadList";
 import { SwipeableScrollGateProvider, useSwipeableScrollGate } from "../home/thread-swipe-actions";
@@ -65,6 +67,7 @@ import { createSidebarHeaderItems } from "./sidebar-native-header-items";
 import { SidebarNavigationShell } from "./sidebar-navigation-shell";
 import {
   ThreadListV2PendingRow,
+  ThreadListV2ProjectHeaderRow,
   ThreadListV2Row,
   ThreadListV2SettledShelfHeader,
   ThreadListV2ShowMoreRow,
@@ -78,6 +81,7 @@ import {
   getThreadListV2OrderedSection,
   buildThreadListV2ListItems,
   isThreadListV2ListItem,
+  resolveGroupedActiveThreadMoves,
   threadListV2ListItemsAreEqual,
   threadListInboxReturns,
   THREAD_LIST_V2_SETTLED_INITIAL_COUNT,
@@ -224,6 +228,9 @@ function ThreadNavigationSidebarPane(
     [projects, options.selectedEnvironmentId, options.projectGroupingMode],
   );
   const projectFilterOptions = homeProjectFilterOptions(projectScopes);
+  const projectGrouping = useMobileThreadGroupingByProject()
+    ? buildHomeThreadProjectGrouping(projectScopes)
+    : null;
   const archivedProjectKeys = archivedProjectRefKeys(projectScopes);
   const projectTitleByProjectKey = useMemo(
     () =>
@@ -305,32 +312,6 @@ function ThreadNavigationSidebarPane(
   } = listEnvironments;
   const resolveProviderInstance = useThreadRowProviderInstanceResolver(providersByEnvironmentId);
   const pendingOrder = usePendingThreadOrder(nowMinute, snoozeWakeTick);
-  // Up/down menu availability for every card, computed once per section per
-  // rebuild (see computeThreadMoveAvailability): per-thread planner calls made
-  // list construction quadratic, and this list rebuilds on every minute tick.
-  const threadMoveAvailability = (() => {
-    const sectionAvailability = (section: "pinned" | "active") =>
-      computeThreadMoveAvailability({
-        allThreads: threads,
-        section,
-        pendingOrder,
-        reorderableEnvironmentIds:
-          section === "pinned" ? pinReorderEnvironmentIds : activeReorderEnvironmentIds,
-        ordered: getThreadListV2OrderedSection({
-          threads,
-          section,
-          pendingOrder,
-          now,
-          settlementEnvironmentIds,
-          snoozeEnvironmentIds,
-          queuedThreadKeys,
-        }),
-      });
-    return new Map([
-      ...sectionAvailability("pinned"),
-      ...(workingShelfEnabled ? [] : sectionAvailability("active")),
-    ]);
-  })();
   const threadListV2Layout = (() => {
     threadListInboxReturns.observe(workingShelfEnabled ? threads : null);
     return buildThreadListV2Items({
@@ -355,7 +336,42 @@ function ThreadNavigationSidebarPane(
       snoozedShelfExpanded,
       settledShelfExpanded,
       selectedThreadKey: props.selectedThreadKey ?? null,
+      projectGrouping,
     });
+  })();
+  // Up/down menu availability for every card, computed once per section per
+  // rebuild (see computeThreadMoveAvailability): per-thread planner calls made
+  // list construction quadratic, and this list rebuilds on every minute tick.
+  const threadMoveAvailability = (() => {
+    const sectionAvailability = (section: "pinned" | "active") =>
+      computeThreadMoveAvailability({
+        allThreads: threads,
+        section,
+        pendingOrder,
+        reorderableEnvironmentIds:
+          section === "pinned" ? pinReorderEnvironmentIds : activeReorderEnvironmentIds,
+        ordered: getThreadListV2OrderedSection({
+          threads,
+          section,
+          pendingOrder,
+          now,
+          settlementEnvironmentIds,
+          snoozeEnvironmentIds,
+          queuedThreadKeys,
+        }),
+      });
+    return new Map([
+      ...sectionAvailability("pinned"),
+      ...(workingShelfEnabled
+        ? []
+        : projectGrouping !== null
+          ? resolveGroupedActiveThreadMoves({
+              items: threadListV2Layout.items,
+              reorderableEnvironmentIds: activeReorderEnvironmentIds,
+              pendingOrder,
+            })
+          : sectionAvailability("active")),
+    ]);
   })();
   const nextSnoozeWakeAt = threadListV2Layout.nextSnoozeWakeAt;
   useEffect(() => {
@@ -407,6 +423,7 @@ function ThreadNavigationSidebarPane(
       shelfPreferencesLoading: !shelfPreferencesLoaded,
       draftThreadKeys,
       timestampMode,
+      ...(projectGrouping === null ? {} : { projectHeaders: projectGrouping.headerByGroup }),
     });
     if (settledShelfExpanded && threadListV2Layout.hiddenSettledCount > 0) {
       items.push({
@@ -609,6 +626,15 @@ function ThreadNavigationSidebarPane(
           />
         );
       }
+      case "v2-project-header":
+        return (
+          <ThreadListV2ProjectHeaderRow
+            title={item.title}
+            project={item.project}
+            pinned={item.pinned}
+            pane="sidebar"
+          />
+        );
       case "v2-thread": {
         const thread = item.item.thread;
         const scopeKey = scopedProjectKey(thread.environmentId, thread.projectId);
@@ -626,6 +652,7 @@ function ThreadNavigationSidebarPane(
             timeLabel={item.timeLabel}
             project={projectByKey.get(scopeKey) ?? null}
             projectTitle={projectTitleByProjectKey.get(scopeKey)}
+            showProject={item.item.projectGroup === undefined}
             providerInstance={resolveProviderInstance(thread)}
             providers={providersByEnvironmentId.get(thread.environmentId)}
             environmentLabel={
@@ -663,6 +690,8 @@ function ThreadNavigationSidebarPane(
             }
             canMoveUp={item.canMoveUp}
             canMoveDown={item.canMoveDown}
+            moveUpTargetId={item.moveUpTargetId}
+            moveDownTargetId={item.moveDownTargetId}
             onSnoozeThread={snoozeThread}
             onUnsnoozeThread={unsnoozeThread}
             onUnsettleThread={unsettleThread}
