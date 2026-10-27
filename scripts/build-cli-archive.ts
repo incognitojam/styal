@@ -44,6 +44,7 @@ import {
   resolveWebAssetBrandForPackageVersion,
   resolveWebIconOverrides,
 } from "./lib/brand-assets.ts";
+import { assertLinuxArm64PageCompatibility } from "./lib/linux-arm64-sea.ts";
 import { selectCliRuntimeExternalDependencies } from "./lib/cli-external-packages.ts";
 import { signWithJsign } from "./lib/windows-jsign.ts";
 import { windowsSystemTar } from "./lib/windows-tar.ts";
@@ -494,6 +495,11 @@ const buildCliArchive = Effect.fn("buildCliArchive")(function* (input: {
     path.join(webClient, "index.html"),
     "Run `vp run --filter ./apps/server build` first.",
   );
+  // TEMPORARY one-time Node fix. Remove when fixed: https://github.com/nodejs/node/issues/67048
+  if (input.platform === "linux" && input.arch === "arm64") {
+    const bytes = yield* fs.readFile(builtExecutable);
+    yield* Effect.try(() => assertLinuxArm64PageCompatibility(bytes));
+  }
   yield* requireInput(
     resourceMonitorDir,
     "Build the resource monitor or pass --resource-monitor-dir.",

@@ -10,7 +10,9 @@ import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import { DEVELOPMENT_ICON_OVERRIDES } from "../../../scripts/lib/brand-assets.ts";
 import { findEsmImportsOfExternalPackages } from "../../../scripts/lib/cli-executable-imports.ts";
+import { injectLinuxArm64Sea } from "../../../scripts/lib/linux-arm64-sea.ts";
 import rootPackageJson from "../../../package.json" with { type: "json" };
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import {
   ServerCliCommandExitError,
@@ -111,11 +113,14 @@ const buildExeCmd = Command.make(
       const serverDir = path.join(repoRoot, "apps/server");
 
       yield* Effect.log("[cli] Building single-executable...");
+      // TEMPORARY one-time Node fix. Remove when fixed: https://github.com/nodejs/node/issues/67048
+      const linuxArm64 =
+        (yield* HostProcess.Platform) === "linux" && (yield* HostProcess.Architecture) === "arm64";
       const spawnCommand = yield* resolveSpawnCommand("vp", ["pack"]);
       yield* runCommand(
         ChildProcess.make(spawnCommand.command, spawnCommand.args, {
           cwd: serverDir,
-          env: { ...process.env, STYAL_PACK_EXE: "1" },
+          env: { ...process.env, STYAL_PACK_EXE: linuxArm64 ? "bundle" : "1" },
           stdout: config.verbose ? "inherit" : "ignore",
           stderr: "inherit",
           shell: spawnCommand.shell,
@@ -130,13 +135,22 @@ const buildExeCmd = Command.make(
       if (specifiers.length > 0) {
         return yield* new ServerCliExecutableImportError({ bundlePath, specifiers });
       }
+      // TEMPORARY one-time Node fix. Remove when fixed: https://github.com/nodejs/node/issues/67048
+      if (linuxArm64) {
+        yield* injectLinuxArm64Sea({
+          bundlePath,
+          outputPath: path.join(serverDir, "dist-exe/styal"),
+          nodeVersion: rootPackageJson.engines.node,
+          verbose: config.verbose,
+        });
+      }
       yield* Effect.log(
         "[cli] Built dist-exe/styal (expects client/, resource-monitor/, and the runtime-external node_modules beside it; scripts/build-cli-archive.ts assembles that tree)",
       );
     }),
 ).pipe(
   Command.withDescription(
-    `Build the server as a Node single-executable. Native builds require Node ${rootPackageJson.engines.node}; explicit cross-target builds need a Node 25.7+ host for --build-sea. The binary still resolves native packages from a node_modules tree beside it.`,
+    `Build the server as a Node single-executable. Native builds require Node ${rootPackageJson.engines.node}. Linux ARM64 builds only on a Linux ARM64 host. The binary still resolves native packages from a node_modules tree beside it.`,
   ),
 );
 

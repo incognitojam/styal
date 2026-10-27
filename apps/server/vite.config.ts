@@ -29,7 +29,10 @@ if (!TELEMETRY_CHANNELS.includes(telemetryChannel)) {
   );
 }
 
-const packExecutable = process.env.STYAL_PACK_EXE === "1";
+// TEMPORARY one-time Node fix. Remove when fixed: https://github.com/nodejs/node/issues/67048
+// "bundle" leaves bin.mjs for native Linux ARM64 injection with postject.
+const packMode = process.env.STYAL_PACK_EXE;
+const packExecutable = packMode === "1" || packMode === "bundle";
 const cliNodeVersion = rootPackageJson.engines.node;
 if (packExecutable && process.versions.node !== cliNodeVersion) {
   throw new Error(
@@ -61,7 +64,9 @@ export default mergeConfig(
         version: packageJson.version,
         executable: packExecutable,
       }),
-      ...(packExecutable
+      // SEA can only resolve built-ins; keep dynamic imports inside its one module.
+      ...(packExecutable ? { outputOptions: { codeSplitting: false } } : {}),
+      ...(packMode === "1"
         ? { exe: { fileName: "styal", outDir: "dist-exe", seaConfig: { useCodeCache: false } } }
         : {}),
       clean: true,
