@@ -41,6 +41,7 @@ const EVERY_PREFERENCE: Required<Preferences> = {
   lightThemeId: "t3-code",
   darkThemeId: "material-you",
   themeMode: "dark",
+  androidNavigationStyle: "one-ui",
   baseFontSize: 18,
   terminalFontSize: 12,
   markdownFontSize: 16,
@@ -112,6 +113,7 @@ describe("mobileSettingsSnapshot", () => {
       themeMode: "system",
       lightThemeId: "t3-code",
       darkThemeId: "t3-code",
+      androidNavigationStyle: null,
       terminalFontSize: null,
       codeFontSize: null,
       diffSortMode: "relevance",
@@ -120,7 +122,10 @@ describe("mobileSettingsSnapshot", () => {
   });
 
   it("reports changed choices without names, accounts or project keys", () => {
-    const snapshot = mobileSettingsSnapshot(EVERY_PREFERENCE, { notificationsEnabled: true });
+    const snapshot = mobileSettingsSnapshot(EVERY_PREFERENCE, {
+      notificationsEnabled: true,
+      android: { manufacturer: "Google", previewEnabled: false },
+    });
     expect(isSnapshot(snapshot)).toBe(true);
     expect(snapshot).toMatchObject({
       notificationsEnabled: true,
@@ -133,11 +138,22 @@ describe("mobileSettingsSnapshot", () => {
       modelFavoriteCount: 1,
       // A remembered headset alone is not a reordering; bluetooth above wired is.
       microphoneOrderCustomized: true,
+      androidNavigationStyle: "one-ui",
       baseFontSize: 18,
       terminalFontSize: 12,
       pullRequestMergeMethod: "rebase",
     });
     expect(JSON.stringify(snapshot)).not.toMatch(/synthetic/i);
+  });
+
+  it("reports the Android navigation style an unset preference resolves to on this phone", () => {
+    const report = (manufacturer: string) =>
+      mobileSettingsSnapshot(
+        {},
+        { notificationsEnabled: true, android: { manufacturer, previewEnabled: false } },
+      ).androidNavigationStyle;
+    expect(report("samsung")).toBe("one-ui");
+    expect(report("Google")).toBe("material");
   });
 
   it("does not count a remembered headset as a reordered microphone list", () => {

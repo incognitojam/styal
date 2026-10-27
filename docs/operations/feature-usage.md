@@ -124,7 +124,7 @@ The mobile app sends `client.settings.snapshot` with `surface = mobile` once a d
 
 - Notifications: `notificationsEnabled` (the OS lets styal show alerts), `liveActivitiesEnabled` (Live Activities on iOS, the ongoing activity card on Android), `notifyOnApproval`, `notifyOnInput`, `notifyOnCompletion`, `notifyOnFailure`, `attendedAlertDelaySeconds` (`0` is Immediately).
 - Composer and threads: `composerEnterBehavior`, `followUpBehavior`, `planModeEnabled`, `turnUsageEnabled`, `turnUsageFigure`, `confirmThreadUnpin`, `threadTimestampMode`, `threadGrouping`, `projectGroupingMode`, `workingShelfEnabled`, `useLastProjectForNewThreads`, `threadList{Working,Settled,Snoozed}ShelfExpanded`, `modelFavoriteCount`, `microphoneOrderCustomized`.
-- Appearance: `themeMode`, `lightThemeId`, `darkThemeId`, `baseFontSize`, `terminalFontSize` and `codeFontSize` (`null` follows the base size), `codeWordBreak`, `mathRenderingEnabled`.
+- Appearance: `themeMode`, `lightThemeId`, `darkThemeId`, `androidNavigationStyle` (the style the phone uses, `null` on iOS), `baseFontSize`, `terminalFontSize` and `codeFontSize` (`null` follows the base size), `codeWordBreak`, `mathRenderingEnabled`.
 - Review and pull requests: `diffSortMode`, `pullRequestHideTestFiles`, `pullRequestMergeMethod`.
 
 Account IDs, project keys, list filters and microphone names are never sent. When adding a mobile preference, report it or list it with a reason in `NOT_REPORTED` in `apps/mobile/src/features/settings/mobileSettingsSnapshot.test.ts`.

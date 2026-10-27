@@ -658,6 +658,7 @@ const mobileSnapshot = {
   themeMode: "system",
   lightThemeId: "t3-code",
   darkThemeId: "material-you",
+  androidNavigationStyle: "material",
   baseFontSize: 15,
   terminalFontSize: null,
   codeFontSize: 12,

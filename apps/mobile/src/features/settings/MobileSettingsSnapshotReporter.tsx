@@ -1,8 +1,10 @@
 import { useAtomValue } from "@effect/atom-react";
 import { startSettingsSnapshotReports } from "@t3tools/client-runtime/settings-snapshot";
+import { manufacturer } from "expo-device";
 import * as Notifications from "expo-notifications";
 import * as SecureStore from "expo-secure-store";
 import { useEffect } from "react";
+import { Platform } from "react-native";
 
 import { loadPreferences } from "../../persistence/imperative";
 import { reportForkClientUsage, supportsForkClientUsage } from "../../state/forkClientUsage";
@@ -46,6 +48,14 @@ export function MobileSettingsSnapshotReporter() {
           environmentId,
           mobileSettingsSnapshot(await loadPreferences(), {
             notificationsEnabled: await notificationsEnabled(),
+            ...(Platform.OS === "android"
+              ? {
+                  android: {
+                    manufacturer,
+                    previewEnabled: process.env.EXPO_PUBLIC_T3_FLOATING_TABS === "1",
+                  },
+                }
+              : {}),
           }),
         ),
     });

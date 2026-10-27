@@ -1,6 +1,7 @@
 import type { MobileSettingsSnapshot } from "@t3tools/contracts";
 
 import { resolveAppearancePreferences } from "../../lib/appearancePreferences";
+import { resolveAndroidNavigationStyle } from "../../lib/androidNavigationStyle";
 import { DEFAULT_COMPOSER_ENTER_BEHAVIOR } from "../../lib/composerEnterBehavior";
 import { DEFAULT_FOLLOW_UP_BEHAVIOR } from "../../lib/followUpBehavior";
 import { MICROPHONE_KINDS, microphoneOrder } from "../../lib/microphonePriority";
@@ -28,9 +29,13 @@ function microphoneOrderCustomized(saved: Preferences["microphones"]): boolean {
  */
 export function mobileSettingsSnapshot(
   preferences: Preferences,
-  device: { readonly notificationsEnabled: boolean },
+  device: {
+    readonly notificationsEnabled: boolean;
+    readonly android?: { readonly manufacturer: string | null; readonly previewEnabled: boolean };
+  },
 ): MobileSettingsSnapshot {
   const appearance = resolveAppearancePreferences(preferences);
+  const androidNavigationPreference = preferences.androidNavigationStyle;
   const themeIds = resolveMobileThemeIds(preferences);
   return {
     feature: "mobile-settings",
@@ -63,6 +68,13 @@ export function mobileSettingsSnapshot(
     themeMode: normalizeMobileThemeMode(preferences.themeMode),
     lightThemeId: themeIds.light,
     darkThemeId: themeIds.dark,
+    androidNavigationStyle: device.android
+      ? resolveAndroidNavigationStyle(
+          androidNavigationPreference,
+          device.android.manufacturer,
+          device.android.previewEnabled,
+        )
+      : null,
     baseFontSize: appearance.baseFontSize,
     terminalFontSize: appearance.terminalFontSize,
     codeFontSize: appearance.codeFontSize,

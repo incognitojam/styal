@@ -33,7 +33,7 @@ import {
 } from "./settings.ts";
 
 /** Bump when extending the vocabulary; clients require the complete version before reporting. */
-export const FORK_CLIENT_USAGE_VERSION = 22;
+export const FORK_CLIENT_USAGE_VERSION = 23;
 
 /**
  * One device's client preferences, reported daily so we can see which defaults
@@ -175,6 +175,8 @@ export const MobileSettingsSnapshot = Schema.Struct({
   themeMode: Schema.Literals(["system", "light", "dark"]),
   lightThemeId: MobileThemeId,
   darkThemeId: MobileThemeId,
+  /** Null on iOS, which has no Android navigation choice. */
+  androidNavigationStyle: Schema.NullOr(Schema.Literals(["one-ui", "material"])),
   baseFontSize: Schema.Number,
   /** Null follows the base font size. */
   terminalFontSize: Schema.NullOr(Schema.Number),
