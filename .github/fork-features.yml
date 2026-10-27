@@ -4862,7 +4862,7 @@ features:
       - apps/web/src/components/settings/settingsSearch.ts
       - apps/web/src/hooks/useSidebarProjectGroups.ts
       - apps/web/src/sidebarProjectGroupUsage.ts
-      - packages/client-runtime/src/state/threadSort.ts
+      - packages/client-runtime/src/state/threadProjectGroups.ts
       - packages/contracts/src/forkClientUsage.ts
       - packages/contracts/src/settings.ts
     upstream_paths:
@@ -4879,7 +4879,7 @@ features:
       - apps/web/src/components/Sidebar.drag.test.ts
       - apps/web/src/components/Sidebar.logic.test.ts
       - e2e/tests/sidebar-project-groups.e2e.ts
-      - packages/client-runtime/src/state/threadSort.test.ts
+      - packages/client-runtime/src/state/threadProjectGroups.test.ts
     upstream:
       status: tracking
       tracking:

@@ -12,7 +12,8 @@ import type { ContextMenuItem, EnvironmentId, ThreadId } from "@t3tools/contract
 import type { SidebarProjectSortOrder, SidebarThreadSortOrder } from "@t3tools/contracts/settings";
 import type { AsyncResult } from "effect/reactivity";
 import { sortPinnedProjectsFirst } from "@t3tools/client-runtime/state/project-organization";
-import { clusterByGroup, planPinnedReorder } from "@t3tools/client-runtime/state/thread-sort";
+import { clusterByGroup } from "@t3tools/client-runtime/state/thread-project-groups";
+import { planPinnedReorder } from "@t3tools/client-runtime/state/thread-sort";
 import {
   effectiveSnoozed,
   type ThreadSnoozeShell,

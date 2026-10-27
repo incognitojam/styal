@@ -23,6 +23,8 @@ import {
 import {
   groupActiveThreadsByProject,
   groupWorkingThreadsByProject,
+} from "@t3tools/client-runtime/state/thread-project-groups";
+import {
   sortActiveThreadsByOrderKey,
   resolveSettledThreadTimestamp,
   sortPinnedThreadsByOrderKey,

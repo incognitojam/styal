@@ -50,6 +50,8 @@ import { formatDiffCount } from "@t3tools/client-runtime/diff-count";
 import {
   groupActiveThreadsByProject,
   groupWorkingThreadsByProject,
+} from "@t3tools/client-runtime/state/thread-project-groups";
+import {
   resolveSettledThreadTimestamp,
   sortSettledThreads,
 } from "@t3tools/client-runtime/state/thread-sort";

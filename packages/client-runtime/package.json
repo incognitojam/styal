@@ -307,6 +307,10 @@
       "types": "./src/state/setupScriptActivity.ts",
       "default": "./src/state/setupScriptActivity.ts"
     },
+    "./state/thread-project-groups": {
+      "types": "./src/state/threadProjectGroups.ts",
+      "default": "./src/state/threadProjectGroups.ts"
+    },
     "./state/thread-sort": {
       "types": "./src/state/threadSort.ts",
       "default": "./src/state/threadSort.ts"
