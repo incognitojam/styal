@@ -4958,6 +4958,7 @@ features:
       - apps/server/src/device/DeviceSharing.ts
       - apps/server/src/device/EnvironmentDeviceHost.ts
       - apps/server/src/device/LocalDeviceHost.ts
+      - apps/server/src/mcp/toolkits/device/handlers.ts
       - apps/web/src/components/device/DevicePanel.tsx
       - packages/contracts/src/device.ts
       - packages/contracts/src/settings.ts
