@@ -453,17 +453,20 @@ export const withCodexAppServerClient = Effect.fn("withCodexAppServerClient")(fu
     ...codexAppServerEnvironment(input.environment),
     ...(resolvedHomePath ? { CODEX_HOME: resolvedHomePath } : {}),
   };
+  // A provided environment is complete and already filtered; extending it
+  // would merge the server's own variables back in.
+  const extendEnv = input.environment === undefined;
   const spawnCommand = yield* resolveSpawnCommand(
     input.binaryPath,
     codexAppServerArgs(input.launchArgs),
-    { env: environment, extendEnv: true },
+    { env: environment, extendEnv },
   );
   const child = yield* spawner
     .spawn(
       ChildProcess.make(spawnCommand.command, spawnCommand.args, {
         cwd: input.cwd,
         env: environment,
-        extendEnv: true,
+        extendEnv,
         forceKillAfter: CODEX_APP_SERVER_PROBE_FORCE_KILL_AFTER,
         shell: spawnCommand.shell,
       }),

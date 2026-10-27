@@ -3676,14 +3676,20 @@ features:
   - id: provider-server-settings-isolation
     title: Keep the server's own settings out of agent processes
     status: maintained
-    prs: [365]
+    prs: [365, 1094]
     invariants:
-      - Provider processes do not inherit the server's settings, service launcher variables, or dev web build variables, so a styal server started by an agent does not use the running server's port, state directory, or Tailscale Serve mapping.
+      - Agent processes and provider status probes do not inherit the server's settings, service launcher variables, or dev web build variables, so a styal server started by an agent does not use the running server's port, state directory, or Tailscale Serve mapping.
+      - A provider process given a complete environment is spawned without re-extending it from the server's own environment.
       - Provider processes still receive per-session workspace ports, the provider instance's configured environment, and the Codex launch args override.
       - Terminals and provider processes use the same rule for which inherited variables are removed.
+      - Provider update commands and the package-manager probes behind update checks are not covered; they still run with the server's full environment.
     implementation_paths:
+      - apps/server/src/provider/CodexProvider.ts
       - apps/server/src/terminal/Manager.ts
+      - packages/provider-acp-registry/src/server/AcpRegistrySupport.ts
+      - packages/provider-acp/src/server/AcpSessionRuntime.ts
       - packages/provider-core/src/server/instanceEnvironment.ts
+      - packages/provider-grok/src/server/acpSupport.ts
       - packages/shared/src/serverOwnedEnvironment.ts
     upstream_paths:
       - apps/server/src/terminal/Manager.ts
@@ -3691,7 +3697,9 @@ features:
     tests:
       - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.test.ts
       - apps/server/src/terminal/Manager.test.ts
+      - packages/provider-acp-registry/src/server/AcpRegistrySupport.test.ts
       - packages/provider-core/src/server/instanceEnvironment.test.ts
+      - packages/provider-grok/src/server/acpSupport.test.ts
     upstream:
       status: unassessed
       tracking: []
