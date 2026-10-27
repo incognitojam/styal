@@ -18,7 +18,7 @@ import {
   mergeComposerDraftContent,
   scheduleUnusedComposerAttachmentCleanup,
 } from "../../state/use-composer-drafts";
-import { useIncomingShare } from "./IncomingShareProvider";
+import { consumeShare } from "./IncomingShareProvider";
 import type { IncomingShareDraft } from "./incoming-share-model";
 import {
   importIncomingShareIntoThread,
@@ -36,7 +36,6 @@ export function ShareToThreadSection(props: {
   readonly showNewThreadHeading: boolean;
 }) {
   const navigation = useNavigation();
-  const { consumeShare } = useIncomingShare();
   const threads = useThreadShells();
   const projects = useProjects();
   const [isAdding, setIsAdding] = useState(false);
