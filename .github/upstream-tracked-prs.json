@@ -97,6 +97,14 @@
       "reason": "Imported early from its unmerged commit: Android code block copy buttons showed no icon because they passed an iOS-only symbol name. When it merges, the queue takes it and must reconcile with that import, which applied unchanged. #16979 (Enriched Markdown migration) deletes the patched module; if it merges first, take its version."
     },
     {
+      "pr": 17075,
+      "reason": "Imported provisionally as one snapshot, unchanged: a failed or timed-out session refresh on a slow or lossy network no longer makes a connection that the server already confirmed report that it cannot change threads or projects. Confirmed grants are kept while transient refresh failures retry with backoff, are bound to the supervisor, route, bearer credential and DPoP cloud session, and end on a permanent authorization rejection. When it merges, compare the frozen base-to-head diff with the final upstream change, reconcile amendments, rerun the session HTTP-auth and thread-action permission tests, check Send and thread actions through a relay connection with failing session refreshes and after revoking the client, then clear the snapshot marker with that intake. If it closes without merging, review whether to remove the change or retain it as maintained fork behavior and record that decision before clearing the marker.",
+      "snapshot": {
+        "base": "ab6be13d438abeace7617e8d789d59cf2e880f42",
+        "head": "ed6d5d4cb36a403d633392123e619523c3e70b96"
+      }
+    },
+    {
       "pr": 17118,
       "reason": "A thread snoozed during its own run, such as an agent snoozing its thread through `t3_thread_organize` before its final reply, wakes as soon as that run completes. The fix only wakes for runs requested after the snooze. Not imported early: it builds on #16782 (`isSnoozed`), which conflicts with a chain of pending MCP changes. Take it at chronological intake; #15135 (an agent archiving its own thread fails its turn) is a related open issue it does not cover."
     },
