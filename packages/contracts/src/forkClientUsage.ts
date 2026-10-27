@@ -187,6 +187,8 @@ export const MobileSettingsSnapshot = Schema.Struct({
   diffSortMode: Schema.Literals(["relevance", "alphabetical"]),
   pullRequestHideTestFiles: Schema.Boolean,
   pullRequestMergeMethod: PullRequestMergeMethod,
+  // Diagnostics
+  crashReportsEnabled: Schema.Boolean,
 });
 export type MobileSettingsSnapshot = typeof MobileSettingsSnapshot.Type;
 

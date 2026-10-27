@@ -29,6 +29,7 @@ const NOT_REPORTED: Record<string, string> = {
 // Every preference set, so a new one fails to compile here until it is added.
 const EVERY_PREFERENCE: Required<Preferences> = {
   pullRequestHideTestFiles: true,
+  crashReportsEnabled: false,
   diffSortMode: "alphabetical",
   pullRequestMergeMethod: "rebase",
   liveActivitiesEnabled: false,
@@ -118,6 +119,7 @@ describe("mobileSettingsSnapshot", () => {
       codeFontSize: null,
       diffSortMode: "relevance",
       pullRequestMergeMethod: "squash",
+      crashReportsEnabled: true,
     });
   });
 
@@ -142,6 +144,7 @@ describe("mobileSettingsSnapshot", () => {
       baseFontSize: 18,
       terminalFontSize: 12,
       pullRequestMergeMethod: "rebase",
+      crashReportsEnabled: false,
     });
     expect(JSON.stringify(snapshot)).not.toMatch(/synthetic/i);
   });

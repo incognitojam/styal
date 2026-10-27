@@ -83,5 +83,6 @@ export function mobileSettingsSnapshot(
     diffSortMode: preferences.diffSortMode === "alphabetical" ? "alphabetical" : "relevance",
     pullRequestHideTestFiles: preferences.pullRequestHideTestFiles === true,
     pullRequestMergeMethod: preferences.pullRequestMergeMethod ?? "squash",
+    crashReportsEnabled: preferences.crashReportsEnabled !== false,
   };
 }
