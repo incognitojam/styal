@@ -1105,7 +1105,8 @@ export const layerMcpTransport = McpServer.layerHttp({
   allowSessionTermination: true,
 }).pipe(Layer.provide(layerMcpAuthMiddleware));
 
-export const layer = Layer.mergeAll(
+/** Every tool the T3 MCP server advertises. AgentContextBudget.test.ts measures this set. */
+export const layerTools = Layer.mergeAll(
   layerPreviewToolkit,
   layerOrchestratorToolkit,
   layerThreadToolkit,
@@ -1118,4 +1119,6 @@ export const layer = Layer.mergeAll(
   layerDeviceToolkit,
   layerHardwareToolkit,
   layerHtmlToolkit,
-).pipe(Layer.provideMerge(layerMcpTransport));
+);
+
+export const layer = layerTools.pipe(Layer.provideMerge(layerMcpTransport));
