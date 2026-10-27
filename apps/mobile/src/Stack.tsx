@@ -141,7 +141,7 @@ import {
   isWorkspaceOverlayRoute,
   registerPresentedRoutes,
 } from "./features/layout/workspace-overlay-routes";
-import { ShowcaseCaptureCoordinator } from "./features/showcase/ShowcaseCaptureCoordinator";
+import { ShowcaseReadyMarker } from "./features/showcase/ShowcaseCaptureCoordinator";
 import {
   SettingsLegalDocumentCloseHeaderButton,
   SettingsLegalDocumentExternalHeaderButton,
@@ -512,12 +512,16 @@ export function workspaceLocationFromState(state: NavigationState) {
   };
 }
 
+export function rootPathnameFromState(state: NavigationState): string {
+  const path = getPathFromState(state, navigationPathConfig);
+  return path.startsWith("/") ? path : `/${path}`;
+}
+
 function RootStackLayout(props: {
   readonly children: React.ReactNode;
   readonly state: NavigationState;
 }) {
-  const path = getPathFromState(props.state, navigationPathConfig);
-  const pathname = path.startsWith("/") ? path : `/${path}`;
+  const pathname = rootPathnameFromState(props.state);
   const workspaceLocation = workspaceLocationFromState(props.state);
   useEffect(
     () => setCurrentWorkspacePath(workspaceLocation.pathname),
@@ -548,7 +552,7 @@ function RootStackLayout(props: {
       routeDraftId={routeDraftId}
     >
       <HardwareKeyboardCommandProvider pathname={pathname}>
-        <ShowcaseCaptureCoordinator pathname={pathname} />
+        <ShowcaseReadyMarker />
         <SettingsEnvironmentFilterProvider open={settingsOpen}>
           <WorkspaceConnectionStatusProvider>
             <AndroidWorkspaceTabsProvider state={props.state}>
