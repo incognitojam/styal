@@ -86,6 +86,22 @@ describe("mergeProviderInstanceEnvironment", () => {
     }),
   );
 
+  it.effect("removes server-owned variables from the default host environment", () =>
+    Effect.gen(function* () {
+      expect(
+        yield* mergeProviderInstanceEnvironment([
+          { name: "CUSTOM_VALUE", value: "configured", sensitive: false },
+        ]),
+      ).toEqual({ PATH: "/bin", CUSTOM_VALUE: "configured" });
+    }).pipe(
+      Effect.provideService(HostProcess.Environment, {
+        PATH: "/bin",
+        T3CODE_PORT: "3773",
+        STYAL_HOME: "/home/example/.styal",
+      }),
+    ),
+  );
+
   it.effect("does not filter an explicit base or instance-configured variables", () =>
     Effect.gen(function* () {
       expect(

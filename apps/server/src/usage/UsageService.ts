@@ -13,7 +13,6 @@ import {
   type UsageSummaryInput,
   UsageReadError,
 } from "@t3tools/contracts";
-import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -208,7 +207,6 @@ export const make = Effect.gen(function* () {
   const config = yield* ServerConfig.ServerConfig;
   const settingsService = yield* ServerSettings.ServerSettingsService;
   const httpClient = yield* HttpClient.HttpClient;
-  const hostEnvironment = yield* HostProcess.Environment;
   const readerContext = yield* Effect.context<BuiltInUsageReadersEnv>();
 
   const fileCache: ScanCache = new Map();
@@ -334,10 +332,7 @@ export const make = Effect.gen(function* () {
         const instanceConfig: ProviderUsageInstance<Config> = {
           instanceId,
           config: Option.getOrUndefined(decodeConfig(instance.config ?? {})),
-          environment: yield* mergeProviderInstanceEnvironment(
-            instance.environment,
-            hostEnvironment,
-          ),
+          environment: yield* mergeProviderInstanceEnvironment(instance.environment),
           configured,
         };
         return instanceConfig;

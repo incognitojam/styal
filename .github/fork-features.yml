@@ -3689,6 +3689,7 @@ features:
       - apps/server/src/terminal/Manager.ts
       - packages/provider-core/src/server/instanceEnvironment.ts
     tests:
+      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.test.ts
       - apps/server/src/terminal/Manager.test.ts
       - packages/provider-core/src/server/instanceEnvironment.test.ts
     upstream:

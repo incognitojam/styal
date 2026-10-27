@@ -10443,12 +10443,11 @@ export const createClaudeAdapterV2 = Effect.fn("ClaudeAdapterV2Driver.create")(
   ) {
     const { instanceId, environment, enabled, config } = input;
     const fileSystem = yield* FileSystem.FileSystem;
-    const hostEnvironment = yield* HostProcess.Environment;
     const idAllocator = yield* IdAllocator.IdAllocatorV2;
     const queryRunner = yield* ClaudeAgentSdkQueryRunner;
     const serverConfig = yield* ServerConfig.ServerConfig;
     const continuationRequests = yield* ProviderContinuationRequests.ProviderContinuationRequests;
-    const baseEnvironment = yield* mergeProviderInstanceEnvironment(environment, hostEnvironment);
+    const baseEnvironment = yield* mergeProviderInstanceEnvironment(environment);
     const claudeEnvironment = yield* makeClaudeEnvironment(config, baseEnvironment);
     const path = yield* Path.Path;
     const crypto = yield* Crypto.Crypto;
