@@ -535,6 +535,7 @@ function ThreadRouteContent(
     selectedThreadProject?.title ?? null,
     selectedEnvironmentConnection?.environmentLabel ?? null,
     threadUsageText,
+    selectedThread?.linkOrigin ? `From ${selectedThread.linkOrigin.label}` : null,
   ]
     .filter(Boolean)
     .join(" · ");

@@ -147,6 +147,7 @@ export interface EnvironmentThreadShell {
   readonly worktreePath: string | null;
   readonly lineage: OrchestrationV2ThreadShell["lineage"];
   readonly forkedFrom: OrchestrationV2ThreadShell["forkedFrom"];
+  readonly linkOrigin: OrchestrationV2ThreadShell["linkOrigin"] | null;
   readonly activeProviderThreadId: OrchestrationV2ThreadShell["activeProviderThreadId"];
   readonly tokenUsage?: OrchestrationV2ThreadShell["tokenUsage"];
   readonly latestRun: ThreadRunSummary | null;
@@ -305,6 +306,7 @@ export function presentThreadShell(
     branchPullRequest: thread.branchPullRequest ?? null,
     lineage: thread.lineage,
     forkedFrom: thread.forkedFrom,
+    linkOrigin: thread.linkOrigin ?? null,
     activeProviderThreadId: thread.activeProviderThreadId,
     ...(thread.tokenUsage === undefined ? {} : { tokenUsage: thread.tokenUsage }),
     latestRun,
