@@ -22,10 +22,12 @@ export function WorkspaceFileDropOverlay() {
 
 /**
  * Sits `bottom` pixels up, clear of the composer and its attached banners. Children share its
- * row, and ChatView's clearance measurement covers every button in the row.
+ * row, and ChatView's clearance measurement covers every button in the row. The summary names
+ * what waits at the end of the timeline, which is out of view while it shows.
  */
 export function ScrollToEndButton(props: {
   readonly bottom: number;
+  readonly summary: string | null;
   readonly onScrollToEnd: () => void;
   readonly children?: ReactNode;
 }) {
@@ -36,7 +38,7 @@ export function ScrollToEndButton(props: {
       style={{ bottom: props.bottom }}
     >
       <Button
-        aria-label="Scroll to end"
+        data-scroll-to-end="true"
         onPointerDown={(event) => event.preventDefault()}
         onClick={props.onScrollToEnd}
         className="pointer-events-auto"
@@ -45,6 +47,12 @@ export function ScrollToEndButton(props: {
       >
         <ChevronDownIcon className="size-3.5" />
         Scroll to end
+        {props.summary === null ? null : (
+          <span className="text-muted-foreground">
+            <span aria-hidden>· </span>
+            {props.summary}
+          </span>
+        )}
       </Button>
       {props.children}
     </div>

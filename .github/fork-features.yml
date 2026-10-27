@@ -5241,7 +5241,7 @@ features:
     status: maintained
     prs: [351, 623]
     invariants:
-      - Normal managed services retain the direct in-app Update action in chat and Connections settings.
+      - Normal managed services retain the direct in-app Update action in the sidebar update controls and Environments settings.
       - Manual update instructions reserve service update for detected legacy services; absent update capability is treated as an unknown installation, with serve qualified for terminal launches and service or container users directed to their existing deployment method.
       - Foreground start commands are labeled as starts and preserve guidance to reuse the existing data directory and startup options rather than implying that launching another process updates a running server.
       - A foreground server that proves it runs from a global npm install of `@styal/cli` (the prefix's `bin/styal` resolves to the running launcher, and the platform executable matches the launcher version) advertises that prefix, and its instructions copy `npm install --global --prefix '<prefix>' @styal/cli@<version>`; servers started by npx, pnpm dlx, or bunx get `serve` through the same runner, and unproven installs, including Windows, keep the npx `serve` start command. The service migration command does not change with the installation.

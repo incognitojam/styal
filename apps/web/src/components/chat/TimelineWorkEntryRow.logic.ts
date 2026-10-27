@@ -320,6 +320,7 @@ export function workEntryIconName(workEntry: TimelineWorkEntry): WorkEntryIconNa
   // The product-native browser family reads as a web surface, not a wrench.
   if (workEntry.toolName && isPreviewToolName(workEntry.toolName)) return "globe";
 
+  if (workEntry.itemType === "todo_list") return "list-todo";
   if (workEntry.toolSurface) return workEntry.toolSurface;
   // The tool's own name beats itemType where the adapters' substring
   // classification gets it wrong (TaskCreate reads as a file write).
