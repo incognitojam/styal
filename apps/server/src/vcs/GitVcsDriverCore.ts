@@ -2026,7 +2026,13 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     }
 
     if (statusResult.exitCode !== 0) {
-      if (isNonRepositoryGitStderr(statusResult.stderr)) {
+      // Unless the index lookup also found no repository, a non-repository
+      // message from status may refer to a nested one, such as a broken submodule.
+      if (
+        indexResult.exitCode !== 0 &&
+        isNonRepositoryGitStderr(indexResult.stderr) &&
+        isNonRepositoryGitStderr(statusResult.stderr)
+      ) {
         return NON_REPOSITORY_STATUS_DETAILS;
       }
       return yield* new GitCommandError({

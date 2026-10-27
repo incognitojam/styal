@@ -343,6 +343,34 @@ it.effect.each([
   }).pipe(Effect.provide(layer));
 });
 
+it.effect("reports a broken submodule as a status failure, not a missing repository", () =>
+  Effect.gen(function* () {
+    const driver = yield* GitVcsDriver.GitVcsDriver;
+    const fs = yield* FileSystem.FileSystem;
+    const pathService = yield* Path.Path;
+    const submoduleRepo = yield* makeTmpDir("git-submodule-");
+    yield* initRepoWithCommit(submoduleRepo);
+    const cwd = yield* makeTmpDir();
+    yield* initRepoWithCommit(cwd);
+    // Git refuses `file:` submodule transports by default (CVE-2022-39253).
+    yield* git(cwd, [
+      "-c",
+      "protocol.file.allow=always",
+      "submodule",
+      "add",
+      submoduleRepo,
+      "child",
+    ]);
+    yield* git(cwd, ["commit", "-m", "add submodule"]);
+    const modules = pathService.join(cwd, ".git", "modules");
+    yield* fs.rename(pathService.join(modules, "child"), pathService.join(modules, "moved"));
+    yield* writeTextFile(cwd, "README.md", "# changed\n");
+
+    const result = yield* driver.statusDetailsLocal(cwd).pipe(Effect.result);
+    assert.isTrue(Result.isFailure(result));
+  }).pipe(Effect.provide(layerTest)),
+);
+
 it.effect("invalidates origin remote cache when a driver mutation adds origin", () =>
   Effect.gen(function* () {
     const driver = yield* GitVcsDriver.GitVcsDriver;
