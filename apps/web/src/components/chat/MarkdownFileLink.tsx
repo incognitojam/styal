@@ -5,19 +5,14 @@ import {
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
-import {
-  memo,
-  type CSSProperties,
-  type MouseEvent as ReactMouseEvent,
-  type ReactNode,
-} from "react";
+import { memo, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 
 import { writeResolvedTextToClipboard } from "../../hooks/useCopyToClipboard";
 import { readLocalApi } from "../../localApi";
 import { cn } from "../../lib/utils";
 import { shouldOpenMarkdownFileLinkInEditor } from "../../markdown-links";
 import type { markdownFileCopyPaths } from "../../markdownFileHostPath";
-import { documentIconColorForFileName } from "../../pierre-icons";
+import { documentChipKindForFileName } from "../../pierre-icons";
 import { ContextChip } from "../ContextChip";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -321,8 +316,7 @@ export const MarkdownFileLink = memo(function MarkdownFileLink({
     canOpenInBrowser,
     canOpenInPanel,
   });
-  const accent = documentIconColorForFileName(iconPath);
-  const chipStyle = accent ? ({ "--context-chip-accent": accent } as CSSProperties) : undefined;
+  const chipKind = documentChipKindForFileName(iconPath) ?? "mention";
 
   const linkClassName = children === undefined ? undefined : "chat-markdown-file-text";
   const content = children ?? (
@@ -370,11 +364,10 @@ export const MarkdownFileLink = memo(function MarkdownFileLink({
         render={
           children === undefined ? (
             <ContextChip
-              kind="mention"
+              kind={chipKind}
               dir="ltr"
               render={link}
               className={MARKDOWN_FILE_LINK_CLASS_NAME}
-              style={chipStyle}
             />
           ) : (
             link
