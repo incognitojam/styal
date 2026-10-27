@@ -15,7 +15,7 @@ import {
   createNativeStackScreen,
   type NativeStackNavigationOptions,
 } from "@react-navigation/native-stack";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Platform, Pressable, ScrollView, StyleSheet, useWindowDimensions } from "react-native";
 import { useResolveClassNames } from "uniwind";
 
@@ -143,22 +143,13 @@ import {
   SettingsLegalDocumentExternalHeaderButton,
 } from "./features/settings/components/SettingsLegalDocumentRouteScreen";
 import { useAppShortcuts } from "./features/shortcuts/useAppShortcuts";
-import { useIncomingShare } from "./features/sharing/IncomingShareProvider";
-import {
-  EMPTY_INCOMING_SHARE_PRESENTATION_STATE,
-  incomingShareIdOfNewTaskRoutes,
-  transitionIncomingSharePresentation,
-} from "./features/sharing/incoming-share-presentation";
 import { NATIVE_LIQUID_GLASS_SUPPORTED } from "./native/native-glass";
 import { deriveLayout } from "./lib/layout";
 import { useNativeLayoutMetrics } from "./native/native-layout-metrics";
 import { nativeHeaderScrollEdgeEffects } from "./native/StackHeader";
 import { HORIZONTAL_FORM_SHEET_OPTIONS, formSheetDetents } from "./native/sheet-surface";
 import { setCurrentWorkspacePath } from "./features/updates/update-restart-location";
-import {
-  selectWorkspaceDetail,
-  workspaceDetailRouter,
-} from "./features/workspace/workspace-detail-selection";
+import { workspaceDetailRouter } from "./features/workspace/workspace-detail-selection";
 
 const HEADER_SCROLL_EDGE_EFFECTS = nativeHeaderScrollEdgeEffects(Platform.OS, Platform.Version);
 
@@ -518,18 +509,7 @@ function workspaceLocationFromState(state: NavigationState) {
 function RootStackLayout(props: {
   readonly children: React.ReactNode;
   readonly state: NavigationState;
-  // The navigator's own helpers, not useNavigation(): the layout renders
-  // outside the helpers context, so useNavigation() falls back to the container
-  // ref, whose actions are dropped until the navigator's focus listener
-  // registers. Its effect runs after this one on the first commit.
-  readonly navigation: {
-    readonly dispatch: (action: ReturnType<typeof selectWorkspaceDetail>) => void;
-  };
 }) {
-  const { navigation } = props;
-  const { pendingShare, discardShare } = useIncomingShare();
-  const sharePresentationRef = useRef(EMPTY_INCOMING_SHARE_PRESENTATION_STATE);
-  const [sharePresentationRetry, setSharePresentationRetry] = useState(0);
   const path = getPathFromState(props.state, navigationPathConfig);
   const pathname = path.startsWith("/") ? path : `/${path}`;
   const workspaceLocation = workspaceLocationFromState(props.state);
@@ -553,42 +533,6 @@ function RootStackLayout(props: {
   // Presents the styal Link onboarding sheet after an in-session sign-in.
   useConnectOnboardingNavigation();
   useAppShortcuts(props.state);
-  useEffect(() => {
-    const sheet = incomingShareIdOfNewTaskRoutes(props.state);
-    const transition = transitionIncomingSharePresentation(sharePresentationRef.current, {
-      isSheetPresented: sheet.isSheetPresented,
-      sheetShareId: sheet.shareId,
-      pendingShareId: pendingShare?.id ?? null,
-    });
-    sharePresentationRef.current = transition.state;
-    if (transition.shareIdToDiscard) {
-      const shareId = transition.shareIdToDiscard;
-      discardShare(shareId).catch((error: unknown) => {
-        console.warn("[incoming-share] could not discard dismissed share", error);
-        // Drop the latch so the share is presented again instead of sitting
-        // in the inbox unreachable until the next foreground refresh.
-        if (sharePresentationRef.current.discardedShareId === shareId) {
-          // Only the latch: a newer share may already be presented.
-          sharePresentationRef.current = {
-            ...sharePresentationRef.current,
-            discardedShareId: null,
-          };
-          setSharePresentationRetry((attempt) => attempt + 1);
-        }
-      });
-    }
-    if (!transition.shareIdToPresent) {
-      return;
-    }
-    navigation.dispatch(
-      selectWorkspaceDetail({
-        name: "Thread",
-        params: { draft: { incomingShareId: transition.shareIdToPresent } },
-      }),
-    );
-    // Retry after a failed discard even when the inbox and routes are unchanged.
-    // eslint-disable-next-line react/exhaustive-effect-dependencies
-  }, [discardShare, navigation, pendingShare, props.state, sharePresentationRetry]);
 
   return (
     <NewTaskFlowProvider active={isDraftThreadRoute(draftRoute)} routeDraftId={routeDraftId}>
