@@ -82,6 +82,9 @@ export function gitHubViewerPermissions(access: GitHubViewerAccess): PullRequest
     verdicts: access.didAuthor ? (["comment"] as const) : CAPABILITIES.review.verdicts,
     requestReviewers: access.canWrite,
     ...(access.canUpdateBranch === true ? { updateMethods: CAPABILITIES.updateMethods } : {}),
+    ...(access.canWrite && access.canMergeAsAdmin === true
+      ? { bypassMergeRequirements: true }
+      : {}),
     labels: access.canTriage,
   };
 }

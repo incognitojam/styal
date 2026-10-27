@@ -10,12 +10,10 @@ import {
   type PullRequestActor,
   type PullRequestBaseComparison,
   type PullRequestCheck,
-  type PullRequestChecksState as ContractPullRequestChecksState,
   type PullRequestComment,
   type PullRequestCommit,
   type PullRequestContextMetadata,
   type PullRequestDetailView,
-  type PullRequestMergeReadiness,
   type PullRequestMergeability,
   type PullRequestReaction,
   type PullRequestMergeMethod,
@@ -72,52 +70,6 @@ export function resolvePullRequestMergeMethod(
     if (method && allowed.includes(method)) return method;
   }
   return allowed[0] ?? "merge";
-}
-
-export type PullRequestPrimaryControl =
-  | "resolve"
-  | "ready"
-  | "merge"
-  | "enable-auto-merge"
-  | "auto-merge-armed"
-  | "merged"
-  | "closed"
-  | null;
-
-export function resolvePullRequestPrimaryControl(input: {
-  readonly state: PullRequestState;
-  readonly isDraft: boolean;
-  readonly mergeability: PullRequestMergeability;
-  readonly checksState: ContractPullRequestChecksState | null;
-  readonly mergeReadiness?: PullRequestMergeReadiness | undefined;
-  readonly autoMergeEnabled: boolean | undefined;
-  readonly hasMergeMethod: boolean;
-  readonly canMerge: boolean;
-  readonly canMarkReady: boolean;
-  readonly canEnableAutoMerge: boolean;
-}): PullRequestPrimaryControl {
-  if (input.state === "merged") return "merged";
-  if (input.state === "closed") return "closed";
-  if (input.mergeability === "conflicting") return "resolve";
-  if (input.isDraft) return input.canMarkReady ? "ready" : null;
-  if (input.autoMergeEnabled) return "auto-merge-armed";
-  if (!input.hasMergeMethod) return null;
-  // Where the host reports merge readiness, its requirements decide between Merge and Auto-merge,
-  // and check health stays context: a blocked pull request offers no Merge press the host would
-  // refuse.
-  if (input.mergeReadiness === "blocked") {
-    return input.canEnableAutoMerge ? "enable-auto-merge" : null;
-  }
-  if (
-    input.mergeReadiness === undefined &&
-    input.autoMergeEnabled === false &&
-    input.checksState !== null &&
-    input.checksState !== "passing" &&
-    input.canEnableAutoMerge
-  ) {
-    return "enable-auto-merge";
-  }
-  return input.canMerge ? "merge" : null;
 }
 
 export function pullRequestCheckoutCommand(

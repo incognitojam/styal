@@ -55,7 +55,6 @@ import {
   readPullRequestDetailSnapshot,
   resolveDisplayedPullRequestDetail,
   resolvePullRequestReferenceHost,
-  resolvePullRequestPrimaryControl,
   allowsSinglePullRequestMerge,
   shouldRefreshPullRequestActivity,
   resolveBaseFreshness,
@@ -279,91 +278,6 @@ describe("review thread comment pages", () => {
 describe("pull request action menu", () => {
   it("keeps the group divider when auto-merge is the only action", () => {
     expect(pullRequestActionMenuHasGroup(false, true, false)).toBe(true);
-  });
-});
-
-describe("pull request primary control", () => {
-  const open = {
-    state: "open" as const,
-    isDraft: false,
-    mergeability: "mergeable" as const,
-    checksState: "passing" as const,
-    mergeReadiness: "ready" as const,
-    autoMergeEnabled: false,
-    hasMergeMethod: true,
-    canMerge: true,
-    canMarkReady: true,
-    canEnableAutoMerge: true,
-  };
-
-  it("moves repository policy blockers to auto-merge while leaving check health as context", () => {
-    expect(resolvePullRequestPrimaryControl({ ...open, mergeReadiness: "blocked" })).toBe(
-      "enable-auto-merge",
-    );
-    expect(resolvePullRequestPrimaryControl({ ...open, checksState: "failing" })).toBe("merge");
-  });
-
-  it("shows auto-merge for pending requirements when GitHub permits it", () => {
-    const waiting = {
-      ...open,
-      checksState: "pending" as const,
-      mergeReadiness: "blocked" as const,
-    };
-    expect(resolvePullRequestPrimaryControl(waiting)).toBe("enable-auto-merge");
-    expect(resolvePullRequestPrimaryControl({ ...waiting, canEnableAutoMerge: false })).toBeNull();
-  });
-
-  it("moves pending and failing checks to auto-merge where the host reports no merge readiness", () => {
-    const withoutReadiness = { ...open, mergeReadiness: undefined };
-    expect(resolvePullRequestPrimaryControl({ ...withoutReadiness, checksState: "pending" })).toBe(
-      "enable-auto-merge",
-    );
-    expect(resolvePullRequestPrimaryControl({ ...withoutReadiness, checksState: "failing" })).toBe(
-      "enable-auto-merge",
-    );
-  });
-
-  it("does not offer auto-merge while the host state is unknown", () => {
-    expect(
-      resolvePullRequestPrimaryControl({
-        ...open,
-        checksState: "pending",
-        mergeReadiness: undefined,
-        autoMergeEnabled: undefined,
-      }),
-    ).toBe("merge");
-  });
-
-  it("keeps armed and terminal states in the merge button slot", () => {
-    expect(resolvePullRequestPrimaryControl({ ...open, autoMergeEnabled: true })).toBe(
-      "auto-merge-armed",
-    );
-    expect(resolvePullRequestPrimaryControl({ ...open, state: "merged" })).toBe("merged");
-    expect(resolvePullRequestPrimaryControl({ ...open, state: "closed" })).toBe("closed");
-  });
-
-  it("keeps conflicts and drafts actionable before merge", () => {
-    expect(resolvePullRequestPrimaryControl({ ...open, mergeability: "conflicting" })).toBe(
-      "resolve",
-    );
-    expect(resolvePullRequestPrimaryControl({ ...open, isDraft: true })).toBe("ready");
-  });
-
-  it("offers conflict resolution to a reader who cannot merge", () => {
-    expect(
-      resolvePullRequestPrimaryControl({
-        ...open,
-        mergeability: "conflicting",
-        canMerge: false,
-        canEnableAutoMerge: false,
-      }),
-    ).toBe("resolve");
-  });
-
-  it("offers no merge for a draft the reader cannot mark ready", () => {
-    expect(resolvePullRequestPrimaryControl({ ...open, isDraft: true, canMarkReady: false })).toBe(
-      null,
-    );
   });
 });
 

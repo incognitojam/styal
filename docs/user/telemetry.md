@@ -71,6 +71,8 @@ On macOS, the desktop app records how long after an update was ready the compute
 
 Each time the desktop app starts, it records how long its local server and window took to become ready. After an update restart it also records how long the old version took to close and the new one to start, so we can tell whether update restarts are quick enough to go unnoticed. These durations are the only details recorded.
 
+Bypassing a repository's rules to merge a pull request records whether the merge succeeded. The repository and pull request are not collected.
+
 Pull request deployment controls record whether someone opens an environment, opens deployment logs, or expands the environment list, and whether the action succeeded. Environment names, URLs, repositories, pull request numbers, and commit hashes are not collected.
 
 Usage events do not include prompts, responses, file contents, authentication tokens, conversation

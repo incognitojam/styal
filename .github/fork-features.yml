@@ -3783,6 +3783,40 @@ features:
         - https://github.com/pingdotgg/t3code/pull/9125
       retire_when: Upstream's repository identity honours `gh repo set-default` before `upstream` and `origin`, and upstream keeps pull request association correct across forks and branch pruning.
 
+  - id: pull-request-bypass-merge
+    title: Merge past GitHub requirements for viewers allowed to bypass them
+    status: maintained
+    prs: [1088]
+    invariants:
+      - A blocked GitHub pull request offers Bypass rules and merge only when GitHub reports viewerCanMergeAsAdmin, the viewer can write, and the repository has no merge queue.
+      - The bypassing merge is the ordinary direct merge with its head guard; nothing else changes on the server.
+      - Web reports each bypass merge with its outcome through the owning environment; reporting never blocks the merge.
+    rationale: Upstream closed its administrator merge proposal (https://github.com/pingdotgg/t3code/pull/17281) pending product approval, so blocked pull requests offer no merge to administrators who could bypass the rules.
+    implementation_paths:
+      - apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx
+      - packages/contracts/src/forkClientUsage.ts
+      - packages/contracts/src/pullRequest.ts
+      - packages/shared/src/pullRequestMergeControl.ts
+      - packages/source-control-github/src/server/GitHubPullRequestProvider.ts
+      - packages/source-control-github/src/server/gitHubPullRequestJson.ts
+      - packages/source-control-github/src/server/pullRequestReads.graphql
+      - packages/source-control-github/src/server/pullRequestReads.graphql.ts
+    upstream_paths:
+      - apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx
+      - packages/contracts/src/pullRequest.ts
+      - packages/source-control-github/src/server/GitHubPullRequestProvider.ts
+    tests:
+      - apps/server/src/telemetry/ClientFeatureUsage.test.ts
+      - packages/shared/src/pullRequestMergeControl.test.ts
+      - packages/source-control-github/src/server/GitHubPullRequestApi.test.ts
+      - packages/source-control-github/src/server/GitHubPullRequestProvider.test.ts
+      - packages/source-control-github/src/server/gitHubPullRequestJson.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/17281
+      retire_when: Upstream offers a merge past unmet GitHub requirements to viewers GitHub lets bypass them.
+
   - id: pull-request-chip-context-menu
     title: Give pull request chips the chat link menu
     status: maintained
@@ -4200,12 +4234,14 @@ features:
   - id: pull-request-required-checks
     title: Separate pull request checks and show merge readiness
     status: maintained
-    prs: [138, 151, 159, 185, 209, 495, 984]
+    prs: [138, 151, 159, 185, 209, 495, 984, 1088]
     invariants:
       - Pull request checks have a dedicated tab that distinguishes host-required checks from optional jobs and represents required checks that have not reported yet.
       - Check rows share one set of columns, so the Required badge, status and link mark line up whatever each row's status says or whether it has a link.
       - A watched pull request reports its required checks as passed only once each has finished green; a required check that has not reported yet holds the news back.
       - The summary and primary action lead with GitHub merge readiness, offering auto-merge when requirements block an otherwise mergeable pull request, including when its branch is behind the base, if GitHub permits it. Check health remains supporting context.
+      - While GitHub has not computed merge readiness yet, pending or failing checks lead to auto-merge, as on hosts that report no readiness.
+      - Merge now is offered beside auto-merge only when the host would accept it; a blocked pull request offers it only to a viewer GitHub lets bypass its rules.
       - When effective GitHub rules require a behind branch to be updated, the Checks tab explains that auto-merge will wait and offers the update methods the viewer may use; an unavailable policy read does not claim the update is optional.
       - Turning on auto-merge is offered to any viewer who may merge, and afterwards the server reads the pull request back as it does after a merge, because GitHub merges an already mergeable pull request at once; a resulting merge is published so linked threads settle.
     implementation_paths:
@@ -4214,6 +4250,7 @@ features:
       - apps/web/src/components/pullRequest/PullRequestChecksTab.tsx
       - apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx
       - apps/web/src/components/pullRequest/pullRequestDetail.logic.ts
+      - packages/shared/src/pullRequestMergeControl.ts
       - packages/source-control-github/src/server/GitHubPullRequestApi.ts
       - packages/source-control-github/src/server/GitHubPullRequestProvider.ts
       - packages/source-control-github/src/server/gitHubPullRequestJson.ts
@@ -4235,6 +4272,7 @@ features:
       - apps/server/src/pullRequest/PullRequestService.test.ts
       - apps/web/src/components/pullRequest/PullRequestChecksTab.test.tsx
       - apps/web/src/components/pullRequest/pullRequestDetail.logic.test.ts
+      - packages/shared/src/pullRequestMergeControl.test.ts
       - packages/source-control-github/src/server/GitHubPullRequestApi.test.ts
       - packages/source-control-github/src/server/GitHubPullRequestProvider.test.ts
       - packages/source-control-github/src/server/gitHubPullRequestJson.test.ts

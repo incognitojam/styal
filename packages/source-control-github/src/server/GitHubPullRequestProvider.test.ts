@@ -335,6 +335,20 @@ describe("gitHubViewerPermissions", () => {
     });
   });
 
+  it("lets only a writer GitHub allows to merge as an administrator bypass requirements", () => {
+    const access = { canTriage: true, canUpdate: true, didAuthor: false, canMergeAsAdmin: true };
+    expect(gitHubViewerPermissions({ ...access, canWrite: true }).bypassMergeRequirements).toBe(
+      true,
+    );
+    expect(gitHubViewerPermissions({ ...access, canWrite: false }).bypassMergeRequirements).toBe(
+      undefined,
+    );
+    expect(
+      gitHubViewerPermissions({ ...access, canWrite: true, canMergeAsAdmin: false })
+        .bypassMergeRequirements,
+    ).toBe(undefined);
+  });
+
   it("uses GitHub's per-pull-request auto-merge permissions instead of repository write access", () => {
     expect(
       gitHubViewerPermissions({

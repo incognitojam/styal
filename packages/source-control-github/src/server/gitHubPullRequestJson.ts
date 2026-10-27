@@ -1467,6 +1467,7 @@ export function toPullRequestCore(result: PullRequestCore.Result): GitHubPullReq
       ...(pr.viewerCanDisableAutoMerge === undefined
         ? {}
         : { canDisableAutoMerge: pr.viewerCanDisableAutoMerge }),
+      ...toMergeAsAdmin(pr),
       mergeCapabilities: {
         merge: repository.mergeCommitAllowed,
         squash: repository.squashMergeAllowed,
@@ -2000,6 +2001,11 @@ export interface GitHubViewerAccess {
   readonly canEnableAutoMerge?: boolean;
   readonly canDisableAutoMerge?: boolean;
   /**
+   * GitHub's `viewerCanMergeAsAdmin`: a direct merge goes through while requirements are unmet.
+   * False on a merge queue, where a merge here joins the queue instead of bypassing it.
+   */
+  readonly canMergeAsAdmin?: boolean;
+  /**
    * GitHub's own `viewerCanUpdateBranch`, read with the base comparison rather than here: it is
    * false for a branch that is already current, so it answers "may update, and there is
    * something to update" at once. Absent where the comparison was not read.
@@ -2029,7 +2035,7 @@ export function toViewerPermissions(
 /** Optional on older hosts; queried separately so unsupported fields cannot break viewer access. */
 export function toAutoMergePermissions(
   result: AutoMergePermissions.Result,
-): Pick<GitHubViewerAccess, "canEnableAutoMerge" | "canDisableAutoMerge"> {
+): Pick<GitHubViewerAccess, "canEnableAutoMerge" | "canDisableAutoMerge" | "canMergeAsAdmin"> {
   const pullRequest = result.repository?.pullRequest;
   return {
     ...(pullRequest?.viewerCanEnableAutoMerge === undefined
@@ -2038,7 +2044,25 @@ export function toAutoMergePermissions(
     ...(pullRequest?.viewerCanDisableAutoMerge === undefined
       ? {}
       : { canDisableAutoMerge: pullRequest.viewerCanDisableAutoMerge }),
+    ...toMergeAsAdmin(pullRequest),
   };
+}
+
+function toMergeAsAdmin(
+  pullRequest:
+    | {
+        readonly viewerCanMergeAsAdmin?: boolean | undefined;
+        readonly isMergeQueueEnabled?: boolean | undefined;
+      }
+    | null
+    | undefined,
+): Pick<GitHubViewerAccess, "canMergeAsAdmin"> {
+  return pullRequest?.viewerCanMergeAsAdmin === undefined
+    ? {}
+    : {
+        canMergeAsAdmin:
+          pullRequest.viewerCanMergeAsAdmin && pullRequest.isMergeQueueEnabled !== true,
+      };
 }
 
 /** Classic branch protection and rulesets have independent availability on Enterprise hosts. */
