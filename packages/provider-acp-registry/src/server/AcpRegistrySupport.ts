@@ -1808,7 +1808,7 @@ export const makeAcpRegistryCatalog = Effect.fn("AcpRegistryCatalog.make")(funct
         yield* validateLocalExecutable(command);
         return {
           distribution: "local",
-          spawn: { command, args: settings.commandArgs, cwd, env, shell: false },
+          spawn: { command, args: settings.commandArgs, cwd, env, extendEnv: false, shell: false },
         } satisfies ResolvedAcpRegistryAgent;
       }
       const agentId = settings.agentId.trim();
@@ -1876,6 +1876,7 @@ export const makeAcpRegistryCatalog = Effect.fn("AcpRegistryCatalog.make")(funct
           args,
           cwd,
           env: spawnEnvironment,
+          extendEnv: false,
         },
       } satisfies ResolvedAcpRegistryAgent;
     },

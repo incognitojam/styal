@@ -1,7 +1,11 @@
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as EffectAcpErrors from "effect-acp/errors";
+import * as AcpSessionRuntime from "@t3tools/provider-acp/server/AcpSessionRuntime";
+import { mergeProviderInstanceEnvironment } from "@t3tools/provider-core/server/instanceEnvironment";
 
 import {
   applyGrokAcpModelSelection,
@@ -87,8 +91,61 @@ describe("buildGrokAcpSpawnInput", () => {
         XAI_API_KEY: "secret",
         GROK_OAUTH2_REFERRER: "t3code",
       },
+      extendEnv: false,
     });
   });
+
+  it.effect("does not hand the server's own variables to the Grok process", () =>
+    Effect.gen(function* () {
+      yield* Effect.acquireRelease(
+        Effect.sync(() => {
+          const previous = {
+            T3CODE_PORT: process.env.T3CODE_PORT,
+            GROK_TEST_INHERITED: process.env.GROK_TEST_INHERITED,
+          };
+          process.env.T3CODE_PORT = "3773";
+          process.env.GROK_TEST_INHERITED = "kept";
+          return previous;
+        }),
+        (previous) =>
+          Effect.sync(() => {
+            for (const [name, value] of Object.entries(previous)) {
+              if (value === undefined) delete process.env[name];
+              else process.env[name] = value;
+            }
+          }),
+      );
+      const fileSystem = yield* FileSystem.FileSystem;
+      const directory = yield* fileSystem.makeTempDirectoryScoped();
+      const output = `${directory}/environment.json`;
+      const environment = yield* mergeProviderInstanceEnvironment([
+        { name: "XAI_API_KEY", value: "configured", sensitive: false },
+      ]);
+      // The child records its environment and exits, so initialize fails once it has run.
+      const runtime = yield* AcpSessionRuntime.make({
+        spawn: {
+          ...buildGrokAcpSpawnInput({ binaryPath: process.execPath }, directory, environment),
+          args: [
+            "-e",
+            "require('node:fs').writeFileSync(process.argv[1], JSON.stringify(process.env))",
+            output,
+          ],
+        },
+        cwd: directory,
+        clientInfo: { name: "t3-test", version: "0.0.0" },
+        authMethodId: "test",
+      });
+      yield* Effect.exit(runtime.initialize());
+
+      const childEnvironment: NodeJS.ProcessEnv = JSON.parse(
+        yield* fileSystem.readFileString(output),
+      );
+      expect(childEnvironment.T3CODE_PORT).toBeUndefined();
+      expect(childEnvironment.PATH).toBe(process.env.PATH);
+      expect(childEnvironment.GROK_TEST_INHERITED).toBe("kept");
+      expect(childEnvironment.XAI_API_KEY).toBe("configured");
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
 
   it("puts Supervised on the Grok argv so config always-approve cannot win", () => {
     const spawn = buildGrokAcpSpawnInput(

@@ -1391,12 +1391,17 @@ export const make = Effect.fn("AcpSessionRuntime.make")(function* (
       ),
     );
 
+  const extendEnv = options.spawn.extendEnv ?? true;
+  // The environment the child actually sees, so command lookup matches it.
+  const childEnvironment = extendEnv
+    ? { ...process.env, ...options.spawn.env }
+    : { ...options.spawn.env };
   const spawnCommand =
     options.spawn.shell === false
       ? { command: options.spawn.command, args: options.spawn.args, shell: false }
       : yield* resolveSpawnCommand(options.spawn.command, options.spawn.args, {
           ...(options.spawn.env ? { env: options.spawn.env } : {}),
-          extendEnv: options.spawn.extendEnv ?? true,
+          extendEnv,
         });
   const linuxCgroupLease =
     options.ownDescendantProcessGroups === true && options.processGroupPlatform === "linux"
@@ -1426,7 +1431,7 @@ export const make = Effect.fn("AcpSessionRuntime.make")(function* (
           const resolved = resolveLinuxCgroupTargetCommand(
             spawnCommand.command,
             options.spawn.cwd ?? options.cwd,
-            { ...process.env, ...options.spawn.env },
+            childEnvironment,
           );
           if (resolved !== undefined) return resolved;
           return yield* new EffectAcpErrors.AcpSpawnError({
@@ -1443,7 +1448,7 @@ export const make = Effect.fn("AcpSessionRuntime.make")(function* (
             args: spawnCommand.args,
             name: "acp",
             threadId: yield* AgentScopeThreadId,
-            env: { ...process.env, ...options.spawn.env },
+            env: childEnvironment,
           })),
           shell: false,
         };
@@ -1467,7 +1472,7 @@ export const make = Effect.fn("AcpSessionRuntime.make")(function* (
       ChildProcess.make(containedSpawnCommand.command, containedSpawnCommand.args, {
         ...(options.spawn.cwd ? { cwd: options.spawn.cwd } : {}),
         ...(spawnEnvironment ? { env: spawnEnvironment } : {}),
-        extendEnv: options.spawn.extendEnv ?? true,
+        extendEnv,
         ...(options.ownDetachedProcessGroup === undefined
           ? {}
           : { detached: options.ownDetachedProcessGroup }),
