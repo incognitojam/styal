@@ -10212,6 +10212,13 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                   cause: "Claude fork history did not preserve the retained turn boundaries.",
                 });
               yield* closeLiveQueryForNativeThread(nativeThreadId);
+              // The retained attempts still name the source session, so the next turn
+              // would otherwise create the fork's id and Claude rejects it as in use.
+              yield* Ref.update(openedNativeThreads, (current) => {
+                const updated = new Set(current);
+                updated.add(fork.sessionId);
+                return updated;
+              });
               return {
                 providerThread: {
                   ...rollbackInput.providerThread,
