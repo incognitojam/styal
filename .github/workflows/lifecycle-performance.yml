@@ -1,0 +1,129 @@
+name: Lifecycle Performance
+
+on:
+  workflow_dispatch:
+    inputs:
+      samples:
+        description: "Measured launches per scenario (1–50), excluding initialization"
+        type: string
+        required: true
+        default: "5"
+
+permissions:
+  contents: read
+
+jobs:
+  measure:
+    name: Measure desktop lifecycle (Linux)
+    if: github.repository == 'incognitojam/styal' || github.repository == 'incognitojam/t3code'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup cached dependencies
+        uses: ./.github/actions/setup-deps
+
+      - name: Ensure Electron runtime is installed
+        run: vp run --filter @t3tools/desktop ensure:electron
+
+      - name: Install Electron build and display dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb xauth libgtk-3-0 libnss3 libasound2t64 libgbm1 libsecret-1-dev pkg-config
+
+      - name: Build desktop pipeline
+        run: vp run build:desktop
+
+      - name: Ignore measurement artifacts
+        run: echo '.scratch/' >> .git/info/exclude
+
+      - name: Measure connected readiness and graceful exit
+        env:
+          LIFECYCLE_SAMPLES: ${{ inputs.samples }}
+        run: xvfb-run -a node apps/desktop/scripts/measure-lifecycle.mjs --samples "$LIFECYCLE_SAMPLES"
+
+      - name: Summarize measurements
+        if: always()
+        run: |
+          node --input-type=module <<'JS'
+          import { appendFile, readFile, readdir } from 'node:fs/promises';
+          import path from 'node:path';
+
+          const directories = await readdir('.scratch', { withFileTypes: true }).catch(() => []);
+          const summaries = [];
+          const milliseconds = (value) => `${value.toFixed(1)} ms`;
+          const range = (values) => {
+            const ordered = values.toSorted((a, b) => a - b);
+            const middle = Math.floor(ordered.length / 2);
+            const median = ordered.length % 2 === 0
+              ? (ordered[middle - 1] + ordered[middle]) / 2
+              : ordered[middle];
+            return [median, ordered[0], ordered.at(-1)].map(milliseconds);
+          };
+          const table = (groups) => [
+            '| Scenario | Samples | Ready median | Ready min | Ready max | Quit median | Quit min | Quit max |',
+            '| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |',
+            ...groups.map(([scenario, rows]) => `| ${scenario} | ${rows.length} | ${[
+              ...range(rows.map((row) => row.readyMs)),
+              ...range(rows.map((row) => row.quitToExitMs)),
+            ].join(' | ')} |`),
+          ].join('\n');
+
+          for (const directory of directories) {
+            if (!directory.isDirectory() || !directory.name.startsWith('lifecycle-')) continue;
+            const file = path.join('.scratch', directory.name, 'measurements.json');
+            const measurements = await readFile(file, 'utf8').then(JSON.parse).catch(() => null);
+            if (!measurements) continue;
+            const groups = Object.entries(Object.groupBy(measurements.results, (row) => row.scenario));
+            const measured = groups.filter(([scenario]) => !scenario.endsWith('-initialize'));
+            const initialization = groups.filter(([scenario]) => scenario.endsWith('-initialize'));
+            summaries.push([
+              `### ${directory.name}`,
+              '',
+              `Revision: \`${measurements.revision}\`. Platform: ${measurements.platform}/${measurements.arch}.`,
+              '',
+              `Fixture: ${measurements.fixture}.`,
+              '',
+              'Ready means connected client configuration and shell delivery; quit measures the request through process exit. Timings are diagnostic and have no regression threshold.',
+              '',
+              '#### Repeated launches',
+              '',
+              measured.length > 0 ? table(measured) : 'No repeated launch completed.',
+              '',
+              '#### Initialization launches',
+              '',
+              'These launches create the database before the populated fixture is seeded. They are excluded from the repeated-launch statistics.',
+              '',
+              initialization.length > 0 ? table(initialization) : 'No initialization launch completed.',
+            ].join('\n'));
+          }
+          await appendFile(process.env.GITHUB_STEP_SUMMARY, [
+            '## Desktop lifecycle measurements',
+            '',
+            summaries.length > 0 ? summaries.join('\n\n') : 'No measurements were collected.',
+            '',
+          ].join('\n'));
+          JS
+
+      - name: Upload measurement reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: lifecycle-performance-linux
+          include-hidden-files: true
+          path: |
+            .scratch/lifecycle-*/measurements.json
+            .scratch/lifecycle-*/*/result.json
+            .scratch/lifecycle-*/*/events.json
+            .scratch/lifecycle-*/*/diagnostics.json
+            .scratch/lifecycle-*/*/error-events.json
+          if-no-files-found: ignore
+          retention-days: 14

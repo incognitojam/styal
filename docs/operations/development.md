@@ -99,6 +99,26 @@ for the security model.
 
 ## Checks
 
+### Desktop lifecycle measurements
+
+On Linux, with Xvfb installed, measure startup and quit of the built desktop app:
+
+```sh
+vp run build:desktop
+vp run --filter @t3tools/desktop ensure:electron
+xvfb-run -a node apps/desktop/scripts/measure-lifecycle.mjs --samples 5
+```
+
+Each run writes reports, logs, and traces to a new `.scratch/lifecycle-*` directory, using isolated state and synthetic history (an empty scenario and one with 200 threads). Ready means the client has connected and received server configuration and its first shell snapshot. A sample fails if the backend is force-killed, leaves children running, or keeps its port. The **Lifecycle Performance** workflow runs the same measurement when dispatched manually; it reports timings but does not enforce limits.
+
+Things to keep in mind when comparing builds:
+
+- Compare runs on the same host, alternating builds. Provider checks use the host's installed tools and network.
+- Ready fires before the renderer finishes drawing history, so an immediate quit includes that rendering. Pass `--settle-ms 1000` to measure quit on its own.
+- The history is seeded as projections, so event replay and active provider recovery are not measured. Neither are packaged installers, macOS, or Windows.
+
+### Focused checks
+
 Run checks for the files and packages you changed:
 
 ```sh
