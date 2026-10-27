@@ -265,7 +265,7 @@ describe("plannedTestRuns", () => {
     ["apps/marketing", "astro check && vitest"],
   ]);
 
-  it("runs related tests through each package's own test configuration", () => {
+  it("runs related tests through each package's own test configuration, server files in parallel first", () => {
     assert.deepStrictEqual(
       plannedTestRuns({
         mode: "related",
@@ -279,8 +279,8 @@ describe("plannedTestRuns", () => {
         ],
       }).map(({ name, command, args }) => [name, command, ...args].join(" ")),
       [
+        "tests apps/server (2 related files) vp test run --fileParallelism --maxWorkers=3 src/a.test.ts src/b.test.ts",
         "tests apps/marketing (1 related file) pnpm run test",
-        "tests apps/server (2 related files) vp test run src/a.test.ts src/b.test.ts",
         "tests packages/shared (1 related file) vp test run --config ../../vite.config.ts --dir . src/git.test.ts",
       ],
     );
@@ -290,11 +290,14 @@ describe("plannedTestRuns", () => {
     assert.deepStrictEqual(
       plannedTestRuns({
         mode: "all",
-        touchedPackages: ["apps/server", "packages/no-tests"],
+        touchedPackages: ["packages/shared", "apps/server", "packages/no-tests"],
         testScripts,
         relatedTests: [],
       }).map(({ directory, command, args }) => [directory, command, ...args].join(" ")),
-      ["apps/server pnpm run test"],
+      [
+        "apps/server pnpm run test --fileParallelism --maxWorkers=3",
+        "packages/shared pnpm run test",
+      ],
     );
   });
 });

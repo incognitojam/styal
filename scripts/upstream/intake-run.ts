@@ -74,6 +74,60 @@ function run(
   return { status: result.status ?? 1, stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
 }
 
+/** `run` without blocking, so independent checks can share the machine. */
+function runAsync(
+  cwd: string,
+  command: string,
+  args: ReadonlyArray<string>,
+  env: NodeJS.ProcessEnv,
+): Promise<Run> {
+  return new Promise((resolve) => {
+    let stdout = "";
+    let stderr = "";
+    let overflowed = false;
+    try {
+      const child = NodeChildProcess.spawn(command, args, {
+        cwd,
+        env: { ...env, GIT_EDITOR: "true" },
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      // The same bound `run` gives spawnSync: a runaway step fails instead of exhausting memory.
+      const capture = (chunk: string, append: (text: string) => void) => {
+        if (overflowed) return;
+        if (stdout.length + stderr.length + chunk.length > 256 * 1024 * 1024) {
+          overflowed = true;
+          child.kill();
+          return;
+        }
+        append(chunk);
+      };
+      child.stdout
+        .setEncoding("utf8")
+        .on("data", (chunk: string) => capture(chunk, (text) => (stdout += text)));
+      child.stderr
+        .setEncoding("utf8")
+        .on("data", (chunk: string) => capture(chunk, (text) => (stderr += text)));
+      child.on("error", (error) =>
+        resolve({ status: 1, stdout, stderr: `${stderr}${error.message}` }),
+      );
+      child.on("close", (status) =>
+        resolve(
+          overflowed
+            ? { status: 1, stdout, stderr: `${stderr}\nOutput exceeded 256 MiB; stopped.` }
+            : { status: status ?? 1, stdout, stderr },
+        ),
+      );
+    } catch (error) {
+      // An argument list over the system limit throws here rather than emitting `error`.
+      resolve({
+        status: 1,
+        stdout,
+        stderr: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+}
+
 function git(cwd: string, args: ReadonlyArray<string>, input?: string): string {
   let result = run(cwd, "git", args, input);
   // A styal server polling this checkout's status can hold the index lock for a moment.
@@ -1098,7 +1152,7 @@ const forkRepository = () => process.env.GH_REPO ?? "incognitojam/styal";
  * that needs a person ends the batch before it; when it is the first, it stays staged for
  * `continue`, as `apply` leaves a stop.
  */
-function autoBatch(
+async function autoBatch(
   cwd: string,
   options: {
     readonly branch: string;
@@ -1106,7 +1160,7 @@ function autoBatch(
     readonly push: boolean;
     readonly rerere: boolean;
   },
-): boolean {
+): Promise<boolean> {
   requireCleanIndex(cwd);
   git(cwd, ["switch", "-q", "-c", options.branch, "--no-track", "origin/main"]);
   const queue = queueEntries(cwd, { count: options.max + 20 });
@@ -1184,7 +1238,7 @@ function autoBatch(
     return false;
   }
   process.stdout.write("\n");
-  if (!verify(cwd, "origin/main")) return false;
+  if (!(await verify(cwd, "origin/main"))) return false;
   if (!options.push) {
     process.stdout.write(`\nVerified. Push it with intake-run.ts push.\n`);
     return true;
@@ -1665,10 +1719,19 @@ export interface PlannedTestRun {
 }
 
 /**
- * The test commands verify runs. `all` runs the `test` script of every package the batch touches,
- * as Fork CI does. `related` runs only the given test files through the owning package's
- * `vp test run` script, so its config and flags still apply; a package whose test script is
- * anything else runs that script whole.
+ * Packages whose config runs test files one at a time, and the parallelism Fork CI runs them with
+ * instead (`fork-ci.yml` runs each server shard with these flags). One file at a time leaves most
+ * of a local machine idle for the longest step of verify.
+ */
+const PARALLEL_TEST_ARGS: ReadonlyMap<string, ReadonlyArray<string>> = new Map([
+  ["apps/server", ["--fileParallelism", "--maxWorkers=3"]],
+]);
+
+/**
+ * The test commands verify runs, those with `PARALLEL_TEST_ARGS` first because they take longest.
+ * `all` runs the `test` script of every package the batch touches, as Fork CI does. `related` runs
+ * only the given test files through the owning package's `vp test run` script, so its config and
+ * flags still apply; a package whose test script is anything else runs that script whole.
  */
 export function plannedTestRuns(input: {
   readonly mode: "related" | "all";
@@ -1676,15 +1739,29 @@ export function plannedTestRuns(input: {
   readonly testScripts: ReadonlyMap<string, string>;
   readonly relatedTests: ReadonlyArray<string>;
 }): ReadonlyArray<PlannedTestRun> {
+  const longestFirst = (runs: ReadonlyArray<PlannedTestRun>) =>
+    runs.toSorted(
+      (left, right) =>
+        Number(PARALLEL_TEST_ARGS.has(right.directory)) -
+        Number(PARALLEL_TEST_ARGS.has(left.directory)),
+    );
   if (input.mode === "all") {
-    return input.touchedPackages
-      .filter((directory) => input.testScripts.has(directory))
-      .map((directory) => ({
-        name: `tests ${directory}`,
-        directory,
-        command: "pnpm",
-        args: ["run", "test"],
-      }));
+    return longestFirst(
+      input.touchedPackages
+        .filter((directory) => input.testScripts.has(directory))
+        .map((directory) => ({
+          name: `tests ${directory}`,
+          directory,
+          command: "pnpm",
+          args: [
+            "run",
+            "test",
+            ...(input.testScripts.get(directory)?.trim().startsWith("vp test run")
+              ? (PARALLEL_TEST_ARGS.get(directory) ?? [])
+              : []),
+          ],
+        })),
+    );
   }
   const byPackage = new Map<string, Array<string>>();
   for (const path of input.relatedTests) {
@@ -1694,16 +1771,19 @@ export function plannedTestRuns(input: {
     if (directory === undefined) continue;
     byPackage.set(directory, [...(byPackage.get(directory) ?? []), path]);
   }
-  return [...byPackage]
-    .toSorted(([left], [right]) => left.localeCompare(right))
-    .map(([directory, paths]) => {
-      const tests = paths.map((path) => path.slice(directory.length + 1));
-      const script = (input.testScripts.get(directory) ?? "").trim().split(/\s+/u);
-      const name = `tests ${directory} (${tests.length} related file${tests.length === 1 ? "" : "s"})`;
-      return script.slice(0, 3).join(" ") === "vp test run"
-        ? { name, directory, command: "vp", args: [...script.slice(1), ...tests] }
-        : { name, directory, command: "pnpm", args: ["run", "test"] };
-    });
+  return longestFirst(
+    [...byPackage]
+      .toSorted(([left], [right]) => left.localeCompare(right))
+      .map(([directory, paths]) => {
+        const tests = paths.map((path) => path.slice(directory.length + 1));
+        const script = (input.testScripts.get(directory) ?? "").trim().split(/\s+/u);
+        const name = `tests ${directory} (${tests.length} related file${tests.length === 1 ? "" : "s"})`;
+        const parallel = PARALLEL_TEST_ARGS.get(directory) ?? [];
+        return script.slice(0, 3).join(" ") === "vp test run"
+          ? { name, directory, command: "vp", args: [...script.slice(1), ...parallel, ...tests] }
+          : { name, directory, command: "pnpm", args: ["run", "test"] };
+      }),
+  );
 }
 
 /** The test commands for a batch's changed files, reading the workspace from `cwd`. */
@@ -1749,40 +1829,93 @@ function verifyTestRuns(
 }
 
 /**
+ * How many verify steps run at once after install: the server tests, which take longest, and the
+ * other steps one after another beside them. Running more at once saturates an 11-core machine
+ * and times out browser tests.
+ */
+const VERIFY_CONCURRENCY = 2;
+
+/**
  * Installs once, then typechecks every package the batch touches, lints its changed files, runs
  * the tests related to the batch (the whole suite of every touched package with `allTests`),
- * checks formatting, and checks the ledger. Prints one line per step and the failures in full.
+ * checks formatting, and checks the ledger. Steps after install only read the tree, so they run
+ * side by side, longest first. Prints one line per step as it finishes, with its wall time, and
+ * the failing lines of each failed step.
  * Whole suites run in Fork CI, which every candidate must pass before promotion.
  */
-function verify(cwd: string, base: string, options: { readonly allTests?: boolean } = {}): boolean {
+async function verify(
+  cwd: string,
+  base: string,
+  options: { readonly allTests?: boolean } = {},
+): Promise<boolean> {
   const changed = lines(git(cwd, ["diff", "--name-only", "--no-renames", `${base}...HEAD`])).filter(
     (path) => !path.startsWith(".repos/") && NodeFS.existsSync(NodePath.join(cwd, path)),
   );
   const packages = owningPackages(cwd, changed).filter((directory) =>
     /"typecheck"\s*:/u.test(readIfExists(NodePath.join(cwd, directory, "package.json"))),
   );
-  const steps: Array<{ name: string; ok: boolean; output: string }> = [];
   const env = verificationEnvironment(process.env);
-  const step = (name: string, command: string, args: ReadonlyArray<string>, directory = cwd) => {
-    const result = run(directory, command, args, undefined, env);
-    steps.push({ name, ok: result.status === 0, output: `${result.stdout}\n${result.stderr}` });
-    process.stdout.write(`${result.status === 0 ? "ok  " : "FAIL"} ${name}\n`);
+  const started = performance.now();
+  const elapsed = (since: number) => `${((performance.now() - since) / 1000).toFixed(1)}s`;
+  const runStep = async (step: VerifyStep) => {
+    const stepStarted = performance.now();
+    const result = await runAsync(step.directory, step.command, step.args, env);
+    process.stdout.write(
+      `${result.status === 0 ? "ok  " : "FAIL"} ${step.name} (${elapsed(stepStarted)})\n`,
+    );
+    return {
+      name: step.name,
+      ok: result.status === 0,
+      output: `${result.stdout}\n${result.stderr}`,
+    };
   };
-  step("install", "vp", ["i"]);
-  for (const directory of packages) {
-    step(`typecheck ${directory}`, "pnpm", ["run", "typecheck"], NodePath.join(cwd, directory));
-  }
-  const sources = changed.filter((path) => /\.(ts|tsx|mts|mjs|js)$/u.test(path));
-  if (sources.length > 0)
-    step("lint changed files", "vp", ["lint", "--report-unused-disable-directives", ...sources]);
+  const install = await runStep({ name: "install", directory: cwd, command: "vp", args: ["i"] });
   const testRuns = verifyTestRuns(cwd, changed, options.allTests ? "all" : "related");
   if (testRuns.length === 0) process.stdout.write("--   no tests related to the batch\n");
-  for (const test of testRuns) {
-    step(test.name, test.command, test.args, NodePath.join(cwd, test.directory));
-  }
-  // Renames and moved imports can leave lines the formatter would wrap differently.
-  step("formatting", "vp", ["fmt", "--check", "--no-error-on-unmatched-pattern", ...changed]);
-  step("ledger", "vp", ["run", "--filter", "@t3tools/scripts", "ledger:check"]);
+  const sources = changed.filter((path) => /\.(ts|tsx|mts|mjs|js)$/u.test(path));
+  const queue: Array<VerifyStep> = [
+    ...testRuns.map((test) => ({ ...test, directory: NodePath.join(cwd, test.directory) })),
+    ...packages.map((directory) => ({
+      name: `typecheck ${directory}`,
+      directory: NodePath.join(cwd, directory),
+      command: "pnpm",
+      args: ["run", "typecheck"],
+    })),
+    ...(sources.length > 0
+      ? [
+          {
+            name: "lint changed files",
+            directory: cwd,
+            command: "vp",
+            args: ["lint", "--report-unused-disable-directives", ...sources],
+          },
+        ]
+      : []),
+    // Renames and moved imports can leave lines the formatter would wrap differently.
+    {
+      name: "formatting",
+      directory: cwd,
+      command: "vp",
+      args: ["fmt", "--check", "--no-error-on-unmatched-pattern", ...changed],
+    },
+    {
+      name: "ledger",
+      directory: cwd,
+      command: "vp",
+      args: ["run", "--filter", "@t3tools/scripts", "ledger:check"],
+    },
+  ];
+  const results: Array<Awaited<ReturnType<typeof runStep>>> = [];
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: VERIFY_CONCURRENCY }, async () => {
+      while (next < queue.length) {
+        const index = next++;
+        results[index] = await runStep(queue[index]!);
+      }
+    }),
+  );
+  const steps = [install, ...results];
   for (const failed of steps.filter((entry) => !entry.ok)) {
     const relevant = failed.output
       .split("\n")
@@ -1791,7 +1924,15 @@ function verify(cwd: string, base: string, options: { readonly allTests?: boolea
       .join("\n");
     process.stdout.write(`\n--- ${failed.name}\n${relevant || failed.output.slice(-4000)}\n`);
   }
+  process.stdout.write(`\nverify took ${elapsed(started)}\n`);
   return steps.every((entry) => entry.ok);
+}
+
+interface VerifyStep {
+  readonly name: string;
+  readonly directory: string;
+  readonly command: string;
+  readonly args: ReadonlyArray<string>;
 }
 
 /**
@@ -2234,7 +2375,7 @@ function flag(name: string): string | undefined {
   return index === -1 ? undefined : process.argv[index + 1];
 }
 
-function main() {
+async function main() {
   const [command, ...rest] = process.argv.slice(2).filter((argument) => argument !== "--");
   const cwd = repoRoot;
   switch (command) {
@@ -2320,12 +2461,12 @@ function main() {
       if (!branch) throw new Error("auto needs --branch.");
       const max = Number(flag("--max") ?? DEFAULT_AUTO_MAX);
       if (!Number.isInteger(max) || max < 1) throw new Error("--max must be a positive integer.");
-      process.exitCode = autoBatch(cwd, {
+      process.exitCode = (await autoBatch(cwd, {
         branch,
         max,
         push: process.argv.includes("--push"),
         rerere: !process.argv.includes("--no-rerere"),
-      })
+      }))
         ? 0
         : 2;
       return;
@@ -2382,9 +2523,9 @@ function main() {
       return;
     }
     case "verify": {
-      process.exitCode = verify(cwd, flag("--base") ?? "origin/main", {
+      process.exitCode = (await verify(cwd, flag("--base") ?? "origin/main", {
         allTests: process.argv.includes("--all-tests"),
-      })
+      }))
         ? 0
         : 1;
       return;
@@ -2442,7 +2583,7 @@ function main() {
 
 if (import.meta.url === NodeURL.pathToFileURL(process.argv[1] ?? "").href) {
   try {
-    main();
+    await main();
   } catch (error) {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
     process.exitCode = 1;
