@@ -6,6 +6,7 @@ import { useEffect } from "react";
 import {
   CLIENT_SETTINGS_SNAPSHOT_STORAGE_KEY,
   clientSettingsSnapshot,
+  clientSettingsSnapshotRetryDelayMs,
   isClientSettingsSnapshotDue,
 } from "../clientSettingsSnapshot";
 import { reportForkClientUsage, supportsForkClientUsage } from "../forkClientUsage";
@@ -53,8 +54,13 @@ export function ClientSettingsSnapshotReporter() {
   useEffect(() => {
     if (!hydrated || !environmentId) return;
     let pending = false;
+    let failures = 0;
+    let retryAt = 0;
     const reportIfDue = () => {
-      if (pending || !isClientSettingsSnapshotDue(readLastReportedAt(), Date.now())) return;
+      const now = Date.now();
+      if (pending || now < retryAt || !isClientSettingsSnapshotDue(readLastReportedAt(), now)) {
+        return;
+      }
       const report = reportForkClientUsage(
         environmentId,
         clientSettingsSnapshot(getClientSettings(), useUiStateStore.getState()),
@@ -63,7 +69,12 @@ export function ClientSettingsSnapshotReporter() {
       pending = true;
       void report.then((accepted) => {
         pending = false;
-        if (!accepted) return;
+        if (!accepted) {
+          failures += 1;
+          retryAt = Date.now() + clientSettingsSnapshotRetryDelayMs(failures);
+          return;
+        }
+        failures = 0;
         try {
           localStorage.setItem(CLIENT_SETTINGS_SNAPSHOT_STORAGE_KEY, new Date().toISOString());
         } catch {

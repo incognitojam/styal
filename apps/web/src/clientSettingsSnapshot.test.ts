@@ -5,6 +5,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   CLIENT_SETTINGS_SNAPSHOT_INTERVAL_MS,
   clientSettingsSnapshot,
+  clientSettingsSnapshotRetryDelayMs,
   isClientSettingsSnapshotDue,
 } from "./clientSettingsSnapshot";
 
@@ -23,6 +24,9 @@ describe("clientSettingsSnapshot", () => {
   it("reports shipped defaults on a fresh device", () => {
     const snapshot = clientSettingsSnapshot(DEFAULT_CLIENT_SETTINGS, { projectOrder: [] });
     expect(isSnapshot(snapshot)).toBe(true);
+    // Servers accept a snapshot missing settings; the client must still send all of them.
+    const { mathRenderingEnabled: _mathRenderingEnabled, ...incomplete } = snapshot;
+    expect(isSnapshot(incomplete)).toBe(false);
     expect(snapshot).toMatchObject({
       sendShortcut: "enter",
       followUpBehavior: "steer",
@@ -105,5 +109,13 @@ describe("isClientSettingsSnapshotDue", () => {
   it("reports again after an unreadable or future timestamp instead of never", () => {
     expect(isClientSettingsSnapshotDue("not a date", now)).toBe(true);
     expect(isClientSettingsSnapshotDue(new Date(now + 60_000).toISOString(), now)).toBe(true);
+  });
+});
+
+describe("clientSettingsSnapshotRetryDelayMs", () => {
+  it("retries a rejected report after a minute, then backs off to hourly", () => {
+    expect(
+      [1, 2, 3, 4, 5, 6, 7, 20].map((failures) => clientSettingsSnapshotRetryDelayMs(failures)),
+    ).toEqual([1, 2, 4, 8, 16, 32, 60, 60].map((minutes) => minutes * 60_000));
   });
 });
