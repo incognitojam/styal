@@ -98,6 +98,12 @@ export function composerAttachmentsStillUploading(input: {
   });
 }
 
+/**
+ * A connection that drops and recovers before the worker sees it disconnect never removes the
+ * request, so the queue must retry a connection failure itself instead of waiting for a tap.
+ */
+const CONNECTION_RETRY_DELAYS_MS = [1_000, 2_000, 4_000];
+
 export function createComposerAttachmentUploadQueue(options: {
   readonly upload: (
     request: ComposerAttachmentUploadRequest,
@@ -105,11 +111,17 @@ export function createComposerAttachmentUploadQueue(options: {
     onProgress: (progress: number) => void,
   ) => Promise<boolean>;
   readonly onChange: (states: Readonly<Record<string, ComposerAttachmentUploadState>>) => void;
+  readonly isConnectionFailure: (error: unknown) => boolean;
 }) {
   const jobs = new Map<
     string,
     { readonly controller: AbortController; readonly done: Promise<void> }
   >();
+  type ConnectionRetry = {
+    readonly attempt: number;
+    timer: ReturnType<typeof setTimeout> | null;
+  };
+  const connectionRetries = new Map<string, ConnectionRetry>();
   let desired = new Map<string, ComposerAttachmentUploadRequest>();
   let states: Readonly<Record<string, ComposerAttachmentUploadState>> = {};
   let disposed = false;
@@ -130,11 +142,22 @@ export function createComposerAttachmentUploadQueue(options: {
     options.onChange(states);
   }
 
+  function clearConnectionRetry(key: string) {
+    const retry = connectionRetries.get(key);
+    if (retry?.timer) clearTimeout(retry.timer);
+    connectionRetries.delete(key);
+  }
+
   function pump() {
     if (disposed) return;
     for (const [key, request] of desired) {
       if (jobs.size >= 3) break;
-      if (jobs.has(key) || states[key]?.status === "ready" || states[key]?.status === "failed")
+      if (
+        jobs.has(key) ||
+        connectionRetries.get(key)?.timer ||
+        states[key]?.status === "ready" ||
+        states[key]?.status === "failed"
+      )
         continue;
       const controller = new AbortController();
       setState(key, { status: "uploading", progress: 0 });
@@ -151,12 +174,28 @@ export function createComposerAttachmentUploadQueue(options: {
         )
         .then((persisted) => {
           if (!controller.signal.aborted && desired.has(key)) {
+            clearConnectionRetry(key);
             if (!persisted) desired.delete(key);
             setState(key, persisted ? { status: "ready" } : undefined);
           }
         })
         .catch((error: unknown) => {
           if (!controller.signal.aborted && desired.has(key)) {
+            const attempt = connectionRetries.get(key)?.attempt ?? 0;
+            const delay = CONNECTION_RETRY_DELAYS_MS[attempt];
+            if (delay !== undefined && options.isConnectionFailure(error)) {
+              const retry: ConnectionRetry = {
+                attempt: attempt + 1,
+                timer: setTimeout(() => {
+                  retry.timer = null;
+                  pump();
+                }, delay),
+              };
+              connectionRetries.set(key, retry);
+              setState(key, { status: "uploading", progress: 0 });
+              return;
+            }
+            clearConnectionRetry(key);
             setState(key, {
               status: "failed",
               reason: error instanceof Error ? error.message : "Upload failed. Tap to retry.",
@@ -183,6 +222,9 @@ export function createComposerAttachmentUploadQueue(options: {
       for (const [key, job] of jobs) {
         if (!desired.has(key)) job.controller.abort();
       }
+      for (const key of connectionRetries.keys()) {
+        if (!desired.has(key)) clearConnectionRetry(key);
+      }
       for (const key of Object.keys(states)) {
         if (!desired.has(key)) setState(key, undefined);
       }
@@ -203,6 +245,7 @@ export function createComposerAttachmentUploadQueue(options: {
     dispose() {
       disposed = true;
       desired.clear();
+      for (const key of connectionRetries.keys()) clearConnectionRetry(key);
       for (const job of jobs.values()) job.controller.abort();
       states = {};
       options.onChange(states);
