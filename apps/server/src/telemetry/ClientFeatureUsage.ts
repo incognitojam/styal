@@ -15,7 +15,12 @@ import * as FeatureUsage from "./FeatureUsage.ts";
 export const reporter = Effect.fnUntraced(function* (client: FeatureUsage.ClientDimensions) {
   const analytics = yield* AnalyticsService.AnalyticsService;
   return (input: ForkClientUsageInput) => {
-    if (client.surface !== "web" && client.surface !== "desktop") return Effect.void;
+    // Mobile reports only the vocabulary its own controls emit; the rest is web and desktop UI.
+    const reported =
+      client.surface === "web" ||
+      client.surface === "desktop" ||
+      (client.surface === "mobile" && input.feature === "diff-file-review-order");
+    if (!reported) return Effect.void;
     if (input.feature === "web-build-update-notice" && client.surface !== "web") {
       return Effect.void;
     }

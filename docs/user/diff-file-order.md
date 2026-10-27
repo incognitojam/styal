@@ -13,8 +13,8 @@ the filename so you can see at a glance which part of the diff you are in. Gener
 start collapsed, on top of respecting your repository's own `.gitattributes` — any path marked
 `linguist-generated` is treated as generated even when its name gives nothing away.
 
-This ordering applies to turn diffs, working-tree and branch diffs, and pull request review on web
-and desktop, and to the review sheet on mobile. The changed-files card in the chat timeline also
+This ordering applies to turn diffs, working-tree and branch diffs, and pull request review on web,
+desktop, and mobile. The changed-files card in the chat timeline also
 uses it when picking which files to show in its collapsed preview, so a turn is fronted by the
 source it changed rather than a test or a lockfile.
 
@@ -24,6 +24,10 @@ Prefer a predictable A-to-Z list? The diff panel and the pull request Code tab e
 toggle in their toolbar, next to the stacked/split view control. Turn it off to sort files
 alphabetically by path and hide the tier tags; turn it on to return to relevance ordering. One
 choice covers both views and is remembered on that device.
+
+On mobile, **Sort by relevance** is in the review sheet's diff menu and in the pull request file
+menus. Turn it off to list files by path; the pull request Changed files sheet then groups them by
+directory. The choice covers every mobile diff view and is remembered on that device.
 
 ## Live workspace changes
 

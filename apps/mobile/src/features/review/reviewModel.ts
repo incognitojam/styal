@@ -548,6 +548,22 @@ export function buildReviewParsedDiff(
   }
 }
 
+const comparePaths = (left: { readonly path: string }, right: { readonly path: string }) =>
+  left.path.localeCompare(right.path, undefined, { numeric: true, sensitivity: "base" });
+
+/** The path order a reader can pick instead of relevance; it matches web's alphabetical sort. */
+export function sortReviewFilesByPath<T extends { readonly path: string }>(
+  files: ReadonlyArray<T>,
+): ReadonlyArray<T> {
+  return [...files].sort(comparePaths);
+}
+
+export function sortReviewParsedDiffByPath(parsed: ReviewParsedDiff): ReviewParsedDiff {
+  return parsed.kind === "files"
+    ? { ...parsed, files: sortReviewFilesByPath(parsed.files) }
+    : parsed;
+}
+
 export function applyReviewDiffMetadata(
   previewDiff: ReviewParsedDiff,
   selectedSection: Pick<ReviewSectionItem, "files" | "truncated"> | null,

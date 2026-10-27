@@ -51,6 +51,8 @@ behavior, sidebar grouping and sorting, sounds, font sizes and browser defaults.
 profile names, and your projects are not collected; the app reports only whether you changed a font,
 how many browser profiles you added, and whether you have dragged projects into your own order.
 
+The mobile app records when you turn diff relevance sorting on or off.
+
 Web and desktop clients also record explicit diff-order selections, when you open a
 mentioned time's explanation, which automatic settling rules you keep when finishing setup, when
 you change the sidebar's project filter or start a thread while it is applied, when you reorder,

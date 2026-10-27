@@ -52,6 +52,8 @@ const isPullRequestListPreferences = Schema.is(PullRequestListPreferences);
 
 export interface Preferences {
   readonly pullRequestHideTestFiles?: boolean;
+  /** Changed-file order in thread review and pull request diffs; unset means relevance. */
+  readonly diffSortMode?: "relevance" | "alphabetical";
   readonly pullRequestMergeMethod?: PullRequestMergeMethod;
   readonly liveActivitiesEnabled?: boolean;
   readonly themeId?: MobileThemeId;
@@ -134,6 +136,7 @@ export class MobilePreferencesStore extends Context.Service<
 function sanitizePreferences(parsed: Preferences): Preferences {
   const preferences: {
     pullRequestHideTestFiles?: boolean;
+    diffSortMode?: "relevance" | "alphabetical";
     pullRequestMergeMethod?: PullRequestMergeMethod;
     liveActivitiesEnabled?: boolean;
     themeId?: MobileThemeId;
@@ -170,6 +173,10 @@ function sanitizePreferences(parsed: Preferences): Preferences {
 
   if (typeof parsed.pullRequestHideTestFiles === "boolean") {
     preferences.pullRequestHideTestFiles = parsed.pullRequestHideTestFiles;
+  }
+
+  if (parsed.diffSortMode === "relevance" || parsed.diffSortMode === "alphabetical") {
+    preferences.diffSortMode = parsed.diffSortMode;
   }
 
   if (

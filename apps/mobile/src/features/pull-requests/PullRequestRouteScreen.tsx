@@ -793,6 +793,7 @@ export function PullRequestFileRouteScreen({
   const result = usePullRequestDiff(route.params);
   const filter = usePullRequestFileFilter(
     result.parsed,
+    route.params.environmentId,
     route.params.focus ? route.params.path : undefined,
   );
   const detail = useEnvironmentQuery(composerPullRequests.detail(requestTarget(route.params)));
@@ -901,6 +902,17 @@ export function PullRequestFileRouteScreen({
       jumpStarted.current = false;
     }
   }, [filter.hideTestFiles, result.parsed]);
+  // Android decodes a reordered payload off the main thread and its draw events carry no row
+  // count, so one can still describe the old order. Its visible-file report after decoding is the
+  // first event that describes the new order.
+  const awaitingReorder = useRef(false);
+  const appliedSort = useRef(filter.sortByRelevance);
+  useEffect(() => {
+    if (appliedSort.current === filter.sortByRelevance) return;
+    appliedSort.current = filter.sortByRelevance;
+    jumpStarted.current = false;
+    awaitingReorder.current = Platform.OS === "android";
+  }, [filter.sortByRelevance]);
   const { nativeReviewDiffStyle } = useAppearanceCodeSurface();
   const { themeAppearance, appearance, setCodeWordBreak } = useAppearancePreferences();
   const bridge = useNativeReviewDiffBridge({
@@ -934,19 +946,32 @@ export function PullRequestFileRouteScreen({
     if (
       targetFile &&
       !jumpStarted.current &&
+      !awaitingReorder.current &&
       nativeView.current &&
       (Platform.OS !== "ios" || decoded)
     ) {
-      jumpStarted.current = true;
-      if (focusIndex >= 0) return;
-      void nativeView.current.scrollToFile(targetFile.id, false).catch(() => {
-        jumpStarted.current = false;
-      });
+      jumpToTarget();
       return;
     }
     if (!drawn) return;
     const lastRow = event.nativeEvent.lastRowIndex;
     if (typeof lastRow === "number" && lastRow >= data.rows.length - 40) loadMore();
+  };
+  const jumpToTarget = () => {
+    if (!targetFile || !nativeView.current) return;
+    jumpStarted.current = true;
+    if (focusIndex >= 0) return;
+    void nativeView.current.scrollToFile(targetFile.id, false).catch(() => {
+      jumpStarted.current = false;
+    });
+  };
+  const onVisibleFileChange: NonNullable<NativeReviewDiffViewProps["onVisibleFileChange"]> = (
+    event,
+  ) => {
+    setVisibleFileId(event.nativeEvent.fileId ?? null);
+    if (!awaitingReorder.current) return;
+    awaitingReorder.current = false;
+    if (!jumpStarted.current) jumpToTarget();
   };
   const onToggleFile: NonNullable<NativeReviewDiffViewProps["onToggleFile"]> = (event) => {
     const id = event.nativeEvent.fileId;
@@ -960,6 +985,11 @@ export function PullRequestFileRouteScreen({
     setJumpPath(visibleFile?.path ?? route.params.path);
     setSelectedRowId(null);
     filter.toggle();
+  };
+  const toggleSort = () => {
+    setJumpPath(visibleFile?.path ?? route.params.path);
+    setSelectedRowId(null);
+    filter.toggleSort();
   };
   const title = commit ? "Commit changes" : "Changes";
   const seekingFile = !targetFile && result.nextCursor !== null;
@@ -987,6 +1017,12 @@ export function PullRequestFileRouteScreen({
                   state: appearance.codeWordBreak ? "on" : "off",
                 },
                 {
+                  id: "sort-relevance",
+                  title: "Sort by relevance",
+                  image: "list.number",
+                  state: filter.sortByRelevance ? "on" : "off",
+                },
+                {
                   id: "hide-tests",
                   title: "Hide test files",
                   image: "line.3.horizontal.decrease",
@@ -1007,6 +1043,7 @@ export function PullRequestFileRouteScreen({
               ]}
               onPressAction={({ nativeEvent }) => {
                 if (nativeEvent.event === "word-wrap") setCodeWordBreak(!appearance.codeWordBreak);
+                else if (nativeEvent.event === "sort-relevance") toggleSort();
                 else if (nativeEvent.event === "hide-tests") toggleTestFiles();
                 else if (
                   nativeEvent.event === "submit-review" ||
@@ -1055,6 +1092,9 @@ export function PullRequestFileRouteScreen({
             onPress={() => setCodeWordBreak(!appearance.codeWordBreak)}
           >
             <Toolbar.Label>Word wrap</Toolbar.Label>
+          </Toolbar.MenuAction>
+          <Toolbar.MenuAction icon="list.number" isOn={filter.sortByRelevance} onPress={toggleSort}>
+            <Toolbar.Label>Sort by relevance</Toolbar.Label>
           </Toolbar.MenuAction>
           <Toolbar.MenuAction
             icon="line.3.horizontal.decrease"
@@ -1186,7 +1226,7 @@ export function PullRequestFileRouteScreen({
                 }
               }}
               onToggleFile={onToggleFile}
-              onVisibleFileChange={(event) => setVisibleFileId(event.nativeEvent.fileId ?? null)}
+              onVisibleFileChange={onVisibleFileChange}
               appearanceScheme={themeAppearance}
               rowHeight={nativeReviewDiffStyle.rowHeight}
               contentWidth={NATIVE_REVIEW_DIFF_CONTENT_WIDTH}

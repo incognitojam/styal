@@ -169,6 +169,26 @@ it.effect("records allowlisted client interactions with socket attribution and n
       yield* otherReport({ feature: "mentioned-time-chips", action: "details_opened" });
     }
     expect(events).toHaveLength(12);
+    const mobile = yield* ClientFeatureUsage.reporter({ surface: "mobile" }).pipe(
+      Effect.provideService(AnalyticsService.AnalyticsService, analytics),
+    );
+    yield* mobile({
+      feature: "diff-file-review-order",
+      action: "alphabetical_selected",
+      view: "pull_request",
+    });
+    expect(events).toHaveLength(13);
+    expect(events.at(-1)).toEqual({
+      event: "feature.used",
+      properties: {
+        feature: "diff-file-review-order",
+        action: "alphabetical_selected",
+        view: "pull_request",
+        source: "user",
+        forkClientUsageVersion: FORK_CLIENT_USAGE_VERSION,
+        surface: "mobile",
+      },
+    });
     expect(events[11]).toEqual({
       event: "feature.used",
       properties: {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import type { PullRequestDiffResult } from "@t3tools/contracts";
-import type { ReviewParsedDiff } from "../review/reviewModel";
+import { sortReviewParsedDiffByPath, type ReviewParsedDiff } from "../review/reviewModel";
 import { combinePullRequestDiffPages, retainPullRequestDiffPage } from "./pullRequestDiffPages";
 
 function diff(path: string): PullRequestDiffResult {
@@ -21,6 +21,30 @@ function withheldDiff(): PullRequestDiffResult {
 }
 
 describe("paged mobile pull request diffs", () => {
+  it("lists repository-attributed generated files after source and tests", () => {
+    const paths = ["schema/client.ts", "src/app.test.ts", "src/app.ts"];
+    const result: PullRequestDiffResult = {
+      patch: paths.map((path) => diff(path).patch).join(""),
+      truncated: false,
+      nextCursor: null,
+      generatedPaths: ["schema/client.ts"],
+    };
+    const parsed = combinePullRequestDiffPages(
+      [{ cursor: null, result }],
+      new WeakMap(),
+      "pr-generated",
+    );
+    if (parsed.kind !== "files") throw new Error("Expected structured diff");
+    expect(parsed.files.map((file) => file.path)).toEqual([
+      "src/app.ts",
+      "src/app.test.ts",
+      "schema/client.ts",
+    ]);
+    expect(sortReviewParsedDiffByPath(parsed)).toMatchObject({
+      files: [{ path: "schema/client.ts" }, { path: "src/app.test.ts" }, { path: "src/app.ts" }],
+    });
+  });
+
   it("withheld PR hunks must retain provider line counts", () => {
     const result = withheldDiff();
     const cache = new WeakMap<PullRequestDiffResult, ReviewParsedDiff>();
