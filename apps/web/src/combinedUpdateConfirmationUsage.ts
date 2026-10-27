@@ -9,6 +9,7 @@ export function useCombinedUpdateConfirmationUsage(open: boolean) {
   const environmentId = useForkUsageEnvironmentId();
   const exposure = useRef<{ environmentId: EnvironmentId; decided: boolean } | null>(null);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- reports update confirmation exposure to the environment usage service while the dialog is open
   useEffect(() => {
     if (!open) {
       exposure.current = null;

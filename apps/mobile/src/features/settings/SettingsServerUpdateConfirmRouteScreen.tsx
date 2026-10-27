@@ -122,6 +122,7 @@ export function SettingsServerUpdateConfirmRouteScreen({
   );
 
   // Swiping the sheet away, or any other close, cancels the update.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- releases the pending server update confirmation registry entry when its route unmounts
   useEffect(() => () => releaseServerUpdateConfirmation(requestId), [requestId]);
 
   const close = (confirmed: boolean) => {

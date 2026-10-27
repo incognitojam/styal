@@ -9,6 +9,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 export function SidebarWebUpdatePill() {
   const { available, noticeShown, refresh } = useWebBuildUpdate();
   const trigger = useRef<HTMLButtonElement>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- observes the update button DOM visibility to report that a web build notice was seen
   useEffect(() => {
     if (available && trigger.current) {
       return observeWebBuildUpdateNotice(trigger.current, noticeShown);

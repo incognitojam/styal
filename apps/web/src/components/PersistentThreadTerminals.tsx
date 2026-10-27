@@ -149,6 +149,7 @@ export const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerm
   // Ids the server has reported at least once. Anything else the client holds is an open still in
   // flight and must outlive a reconcile; once acknowledged, a later server drop removes it.
   const acknowledgedTerminalIdsRef = useRef<Set<string>>(new Set());
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- reconciles the terminal UI store's ids with the server's terminal list when they diverge
   useEffect(() => {
     for (const terminalId of serverOrderedTerminalIds) {
       acknowledgedTerminalIdsRef.current.add(terminalId);

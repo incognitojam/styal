@@ -103,6 +103,7 @@ function ProjectIconPickerBody({
   const [emojiKeywords, setEmojiKeywords] = useState<EmojiKeywords | "loading" | "failed">(
     "loading",
   );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- loads the emoji keyword resource when emoji search becomes active and ignores stale results
   useEffect(() => {
     if (mode !== "emoji" || emojiKeywords !== "loading") return;
     let cancelled = false;

@@ -63,10 +63,12 @@ export function ConfirmDialogHost() {
     readConfirmDialogState,
   );
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- acknowledges dialog presentation to the imperative confirmation request registry
   useEffect(() => {
     acknowledgeConfirmDialogPresentation(state);
   }, [state]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to desktop shutdown confirmation IPC and releases pending requests on unmount
   useEffect(() => {
     const bridge = window.desktopBridge;
     if (!bridge?.onShutdownConfirmation) return;

@@ -2485,7 +2485,7 @@ export const ThreadFeed = memo(function ThreadFeed({
     props.threadId,
     props.contentPresentation.kind,
   ]);
-  // oxlint-disable-next-line react/exhaustive-effect-dependencies -- A scope change (thread or presentation) aborts the pending link lookup opened from the old scope.
+  // oxlint-disable-next-line react/exhaustive-effect-dependencies, t3code/no-unreasoned-state-sync -- A scope change (thread or presentation) aborts the pending link lookup opened from the old scope.
   useLayoutEffect(() => () => markdownLinkRequest.current?.abort(), [markdownLinkScope]);
   const [preview, setPreview] = useState<{
     readonly scope: string;
@@ -3060,6 +3060,7 @@ export const ThreadFeed = memo(function ThreadFeed({
   // Z: a native list scroll after the commit that rendered its target row. The
   // row is often already measured, so no LegendList callback fires for that
   // commit, and setEndFollow notifies the parent, so it can't run during render.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- scrolls the native list to the jump target after the commit that rendered its row
   useEffect(() => {
     if (jumpIndex !== null) landJump(jumpIndex);
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Jumping to a different message whose row index is unchanged must still land the jump.
@@ -3168,6 +3169,7 @@ export const ThreadFeed = memo(function ThreadFeed({
   }
 
   // Timers and frames the feed schedules die with it.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- clears the feed's scroll, reflow and copy timers and disclosure animation frames on unmount
   useEffect(
     () => () => {
       if (userScrollSettleTimerRef.current !== null) clearTimeout(userScrollSettleTimerRef.current);
@@ -3343,6 +3345,7 @@ export const ThreadFeed = memo(function ThreadFeed({
   const { textSizeKey } = workRowSizing;
   const hasHtmlRenders = presentedFeed.some((entry) => entry.type === "html-render");
   const previousRowGeometry = useRef({ textSizeKey, contentWidth });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- clears LegendList size caches and starts a reflow after the commit that brings new row geometry
   useLayoutEffect(() => {
     const previous = previousRowGeometry.current;
     if (previous.textSizeKey === textSizeKey && previous.contentWidth === contentWidth) return;

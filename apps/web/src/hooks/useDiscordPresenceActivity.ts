@@ -18,6 +18,7 @@ export function useDiscordPresenceActivity() {
     now,
   });
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- arms a clock timer to recompute Discord activity when its next expiry is reached
   useEffect(() => {
     if (nextWakeAt === null) return;
     const timer = window.setTimeout(

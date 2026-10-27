@@ -58,6 +58,7 @@ export function LegacyImportComputer({
   const preferenceChanges = legacy.changes.length;
   // A disconnected computer cannot answer; waiting on it would lock every way out of setup.
   const previewPending = connected && legacy.preview === null && legacy.query.error === null;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- reports import selection and discovery readiness to the parent setup summary
   useEffect(
     () =>
       onSummary(environmentId, {
@@ -205,6 +206,7 @@ export function HistoryImportComputer({
   const selectedHistoryKeys = new Set(history.selected.map((project) => project.key));
   const projects = history.selected.length;
   const threads = history.selected.reduce((total, project) => total + project.threadCount, 0);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- reports history import selection totals to the parent setup summary
   useEffect(
     () => onSummary(environmentId, { projects, threads, preferences: 0 }),
     [environmentId, onSummary, projects, threads],

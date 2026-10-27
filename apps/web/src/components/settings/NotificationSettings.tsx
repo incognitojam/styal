@@ -51,6 +51,7 @@ export function NotificationSettings() {
   const blocked = useSystemNotificationsBlocked() && hasDesktopNotifications(mode);
 
   // Check again when the user comes back from System Settings.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- listens for window focus to recheck notification permission after system settings changes
   useEffect(() => {
     if (!blocked) return;
     const recheck = () => void testSystemNotificationBlocked();

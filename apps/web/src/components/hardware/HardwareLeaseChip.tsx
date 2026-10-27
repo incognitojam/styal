@@ -84,6 +84,7 @@ function HeldHardwareChips({
 function LeaseStateLabel({ lease }: { lease: HardwareLeaseSummary }) {
   const idle = !lease.keepUntilReleased && lease.idleExpiresAt !== null;
   const [nowMs, setNowMs] = useState(() => Date.now());
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- advances the idle hardware lease countdown with a timer while the lease can expire
   useEffect(() => {
     if (!idle) return;
     const id = setInterval(() => setNowMs(Date.now()), IDLE_TICK_MS);

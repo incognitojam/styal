@@ -1039,12 +1039,14 @@ function PullRequestFileRouteContent({ route }: PullRequestFileRouteProps) {
   });
   // Subscribed for the whole screen, so a pick made while the diff is still loading is kept for
   // the first draw.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to pull request file jump requests for the screen's lifetime
   useEffect(() => subscribePullRequestFileJump(jumpScope, (path) => jumpToFile(path)), [jumpScope]);
   // Android decodes a reordered payload off the main thread and its draw events carry no row
   // count, so one can still describe the old order. Its visible-file report after decoding is the
   // first event that describes the new order.
   const awaitingReorder = useRef(false);
   const appliedSort = useRef(filter.sortByRelevance);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- resets native diff scroll bookkeeping when the review sort order changes
   useEffect(() => {
     if (appliedSort.current === filter.sortByRelevance) return;
     appliedSort.current = filter.sortByRelevance;
@@ -1064,6 +1066,7 @@ function PullRequestFileRouteContent({ route }: PullRequestFileRouteProps) {
     canHighlight: true,
   });
   const [NativeDiffView] = useState(() => resolveNativeReviewDiffView());
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- requests the next page of the paged diff query until the jump target file has loaded
   useEffect(() => {
     if (!targetFile) loadMore();
   }, [targetFile, loadMore]);

@@ -461,6 +461,7 @@ function MiniPlayerShell({
   const [pillOpen, setPillOpen] = useState(false);
   const handleTappedRef = useRef(false);
   const handleRef = useRef<HTMLDivElement | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- document pointerdown listener closes the open pill on an outside press
   useEffect(() => {
     if (!pillOpen) return;
     const dismiss = (event: PointerEvent) => {
@@ -475,6 +476,7 @@ function MiniPlayerShell({
   const sourceKey = previewMiniPlayerSourceKey(miniPlayer.source);
   const draggedKey = streamedSourceKey(threadRef, sourceKey);
   // A player that unmounts mid-drag never sees its pointerup.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- clears the global drag registry when a player unmounts before pointerup
   useEffect(
     () => () => {
       if (useDraggedMiniPlayer.getState() === draggedKey) useDraggedMiniPlayer.setState(null, true);

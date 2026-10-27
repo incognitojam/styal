@@ -128,6 +128,7 @@ function useDefaultRepository(checkout: SidebarProjectGroupMember) {
   });
   const { environmentId, workspaceRoot } = checkout;
   const checkoutRootRef = useRef(workspaceRoot);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- loads the checkout default repository from the environment RPC and ignores responses after checkout changes
   useEffect(() => {
     let cancelled = false;
     checkoutRootRef.current = workspaceRoot;

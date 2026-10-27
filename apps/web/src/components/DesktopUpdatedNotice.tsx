@@ -70,6 +70,7 @@ export function DesktopUpdatedNotice() {
   const [shown, setShown] = useState(false);
   const exposureReported = useRef(false);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- starts the desktop update notice using persisted version storage and window attention listeners
   useEffect(() => {
     if (!currentVersion) return;
     return startDesktopUpdatedNotice({
@@ -84,6 +85,7 @@ export function DesktopUpdatedNotice() {
   }, [currentVersion]);
 
   // The notice can show before the local server connects; report it once support is known.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- reports the displayed desktop update notice to the environment once usage reporting is supported
   useEffect(() => {
     if (!shown || !environmentId || !supported || exposureReported.current) return;
     exposureReported.current = true;

@@ -37,6 +37,7 @@ export function MobileSettingsSnapshotReporter() {
         supportsForkClientUsage(configs.get(environment.environmentId)),
     )?.environmentId ?? null;
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- starts periodic settings reports to the environment and persists report times in native secure storage
   useEffect(() => {
     if (!environmentId) return;
     return startSettingsSnapshotReports({

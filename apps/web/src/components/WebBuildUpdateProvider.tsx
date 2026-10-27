@@ -30,6 +30,7 @@ export function WebBuildUpdateProvider({ children }: { readonly children: ReactN
             action,
           })
       : undefined;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- watches the deployed web build for updates until this provider unmounts
   useEffect(() => {
     if (import.meta.env.DEV || isElectron) return;
     return watchWebBuildUpdates(import.meta.env.APP_BUILD_ID, setAvailableBuildId);

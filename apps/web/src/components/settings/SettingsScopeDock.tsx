@@ -37,6 +37,7 @@ export function SettingsScopeDockProvider({
     typeof document === "undefined" ? null : document.createElement("div"),
   );
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- reparents the picker DOM host between page and toolbar while preserving focus and cancelling its animation
   useLayoutEffect(() => {
     const target = docked ? toolbar : source;
     if (!host || !target) return;
@@ -61,6 +62,7 @@ export function SettingsScopeDockProvider({
     return () => animation.cancel();
   }, [docked, host, source, toolbar]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- observes DOM size and scroll events to dock the settings pickers at the page boundary
   useLayoutEffect(() => {
     const scroll = source?.closest<HTMLElement>("[data-settings-page-scroll]");
     if (!source || !scroll) return;

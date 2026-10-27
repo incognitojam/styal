@@ -762,6 +762,7 @@ function HardwareActivity({
   ].join("|");
   const { refresh } = query;
   const seenKey = useRef(activityKey);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refreshes the environment hardware audit query when hardware activity changes
   useEffect(() => {
     if (seenKey.current === activityKey) return;
     seenKey.current = activityKey;

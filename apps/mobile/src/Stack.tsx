@@ -523,6 +523,7 @@ function RootStackLayout(props: {
 }) {
   const pathname = rootPathnameFromState(props.state);
   const workspaceLocation = workspaceLocationFromState(props.state);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- publishes the committed native navigation path to the shared workspace path registry
   useEffect(
     () => setCurrentWorkspacePath(workspaceLocation.pathname),
     [workspaceLocation.pathname],
@@ -1099,7 +1100,7 @@ export const RootStack = RootStackConfig.with(function AdaptiveRootStack({ Navig
     (navigate: () => void) => setInstantNavigation(() => navigate),
     [],
   );
-  // oxlint-disable-next-line t3code/react-effect-budget -- `animation: "none"` must reach the native stack before the navigation removes the screen whose animation it plays.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- `animation: "none"` must reach the native stack before the navigation removes the screen whose animation it plays.
   useEffect(() => {
     if (!instantNavigation) return;
     instantNavigation();

@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 export function useDiscordPresenceStatus() {
   const [status, setStatus] = useState<DesktopDiscordPresenceStatus | null>(null);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- reads and subscribes to Discord presence status from the Electron bridge
   useEffect(() => {
     const bridge = window.desktopBridge;
     if (!bridge?.getDiscordPresenceStatus || !bridge.onDiscordPresenceStatus) return;

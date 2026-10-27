@@ -3505,6 +3505,7 @@ export default function LegacySidebar({ routeReveal }: { routeReveal: SidebarRou
     event.stopPropagation();
     navigateToThread(scopeThreadRef(targetThread.environmentId, targetThread.id));
   });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to window keydown for thread navigation shortcuts for the sidebar's lifetime
   useEffect(() => {
     const handleWindowKeyDown = (event: globalThis.KeyboardEvent) => onWindowKeyDown(event);
     window.addEventListener("keydown", handleWindowKeyDown);
@@ -3513,6 +3514,7 @@ export default function LegacySidebar({ routeReveal }: { routeReveal: SidebarRou
     };
   }, []);
   // A window listener whose lifetime is the sidebar's: no element owns outside clicks.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- window mousedown listener that clears thread selection on outside clicks for the sidebar's lifetime
   useEffect(() => {
     window.addEventListener("mousedown", clearThreadSelectionOnOutsideMouseDown);
     return () => window.removeEventListener("mousedown", clearThreadSelectionOnOutsideMouseDown);

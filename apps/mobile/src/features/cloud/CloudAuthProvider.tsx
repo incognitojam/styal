@@ -33,6 +33,7 @@ if (publishableKey) {
 
 function ClerkLoadRecovery() {
   const clerk = useClerk();
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to native app activation to retry failed Clerk runtime loads
   useEffect(
     () =>
       retryFailedClerkLoads(

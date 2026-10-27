@@ -64,6 +64,7 @@ export function useHistoryImport(environmentId: EnvironmentId, busy = false) {
   const importGenerationRef = useRef(0);
 
   // Ignore command completions after leaving the import step.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- invalidates pending history import command completions when this import step unmounts
   useEffect(() => {
     importGenerationRef.current += 1;
     return () => {

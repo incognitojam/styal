@@ -83,6 +83,7 @@ export function WizardSteps({
     items: Map<string, { left: number; width: number }>;
   } | null>(null);
   const layoutKey = JSON.stringify([steps, currentStep]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- measures and animates the wizard step DOM geometry before paint
   useLayoutEffect(() => {
     const list = stepsRef.current;
     if (!list) return;

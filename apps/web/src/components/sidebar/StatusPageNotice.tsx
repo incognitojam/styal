@@ -184,6 +184,7 @@ export function StatusPageNotice({
 }: StatusPageNoticeProps) {
   const [notice, setNotice] = useState<StatusPageNoticeView | null>(null);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- polls the external service status endpoints and cancels requests and timers on unmount
   useEffect(() => {
     if (!enabled) return;
 

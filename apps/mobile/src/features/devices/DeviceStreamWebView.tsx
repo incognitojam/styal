@@ -116,6 +116,7 @@ function DeviceStreamDocumentView({
     bootstrapTimer.current = null;
   };
   const summary = useRef<StreamSummary | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- updates the device stream WebView statistics overlay through its injected JavaScript API
   useEffect(() => {
     if (status === "streaming")
       webView.current?.injectJavaScript(
@@ -140,6 +141,7 @@ function DeviceStreamDocumentView({
     summary.current = null;
   });
   // The stream lives exactly as long as this view.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- starts the bootstrap timeout and stops the WebView device stream when this view unmounts
   useLayoutEffect(() => {
     active.current = true;
     resetInput();

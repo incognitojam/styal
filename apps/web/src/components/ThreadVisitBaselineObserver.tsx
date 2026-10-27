@@ -11,6 +11,7 @@ export function ThreadVisitBaselineObserver() {
   );
   const resolveThreadVisitBaseline = useUiStateStore((state) => state.resolveThreadVisitBaseline);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- resolves persisted visit baselines in the UI store when server thread run timestamps arrive
   useEffect(() => {
     if (pendingThreadVisitBaselineKeys.length === 0) return;
     const pendingKeys = new Set(pendingThreadVisitBaselineKeys);

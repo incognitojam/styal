@@ -19,6 +19,7 @@ export function ClientSettingsSnapshotReporter() {
   const hydrated = useClientSettingsHydrated();
   const environmentId = useForkUsageEnvironmentId();
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- starts periodic environment settings reports and persists report times in localStorage
   useEffect(() => {
     if (!hydrated || !environmentId) return;
     return startSettingsSnapshotReports({

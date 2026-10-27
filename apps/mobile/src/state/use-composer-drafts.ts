@@ -2013,6 +2013,7 @@ export function useComposerDraftSettings(draftKey: string | null): ComposerDraft
   const settings = useAtomValue(
     draftKey ? composerDraftSettingsAtom(draftKey) : EMPTY_DRAFT_SETTINGS_ATOM,
   );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- starts loading persisted composer drafts from native storage on first use
   useEffect(() => {
     ensureComposerDraftsLoaded();
   }, []);
@@ -2021,6 +2022,7 @@ export function useComposerDraftSettings(draftKey: string | null): ComposerDraft
 
 export function useComposerDraft(draftKey: string | null): ComposerDraft {
   const draft = useAtomValue(draftKey ? composerDraftAtom(draftKey) : EMPTY_DRAFT_ATOM);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- starts loading persisted composer drafts from native storage on first use
   useEffect(() => {
     ensureComposerDraftsLoaded();
   }, []);
@@ -2052,6 +2054,7 @@ export const draftThreadKeysAtom = Atom.make((get): ReadonlySet<string> => {
 
 export function useDraftThreadKeys(): ReadonlySet<string> {
   const keys = useAtomValue(draftThreadKeysAtom);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- loads persisted composer drafts from native storage when the draft keys are first consumed
   useEffect(() => {
     ensureComposerDraftsLoaded();
   }, []);
@@ -2060,6 +2063,7 @@ export function useDraftThreadKeys(): ReadonlySet<string> {
 
 export function useStickyComposerModelSelection(): ModelSelection | null {
   const selection = useAtomValue(stickyComposerModelSelectionAtom);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- starts loading persisted composer drafts from native storage on first use
   useEffect(() => {
     ensureComposerDraftsLoaded();
   }, []);

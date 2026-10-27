@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 export function DeviceStreamStatsOverlay(props: { readonly read: () => DeviceStreamStats | null }) {
   const { read } = props;
   const [stats, setStats] = useState(read);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- samples the device stream statistics reader on a timer while the overlay is mounted
   useEffect(() => {
     const timer = setInterval(() => setStats(read()), 1_000);
     return () => clearInterval(timer);

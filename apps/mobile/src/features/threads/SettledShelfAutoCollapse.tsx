@@ -29,6 +29,7 @@ export function SettledShelfAutoCollapse(props: { readonly thread: EnvironmentTh
   const settled = props.thread.settledOverride === "settled";
   const latestUserMessageAt = props.thread.latestUserMessageAt;
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- updates the shared settled shelf preference when the focused native route changes
   useEffect(() => {
     if (!isFocused) return;
     const { focus, collapse } = advanceSettledShelfFocus(settledShelfFocus, {

@@ -62,6 +62,7 @@ export function AutoSettleNotice() {
         ? `single:${notice.thread.environmentId}:${notice.thread.id}`
         : `combined:${notice.threads.map((thread) => `${thread.environmentId}:${thread.id}`).join(",")}`;
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- keeps the imperative toast manager aligned with the current auto-settle notice
   useEffect(() => {
     if (active.current?.key === noticeKey) return;
     if (active.current !== null) {
@@ -151,6 +152,7 @@ export function AutoSettleNotice() {
     active.current = { key: noticeKey, id };
   }, [navigate, notice, noticeKey, openPrLink, setDismissed, setSettledShelfExpanded]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- closes the imperative auto-settle toast when its owner unmounts
   useEffect(
     () => () => {
       if (active.current === null) return;

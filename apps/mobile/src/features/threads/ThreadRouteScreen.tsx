@@ -229,7 +229,7 @@ function UnavailableThreadDraftRedirect(props: { readonly environmentId: Environ
       }),
     );
   });
-  // oxlint-disable-next-line t3code/react-effect-budget -- replaces this route in the navigator
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- replaces this route with a new draft thread route for the environment's project on mount
   useEffect(() => {
     openDraft();
   }, []);
@@ -492,6 +492,7 @@ function ThreadRouteContent(
           : chosenInspectorMode;
     return mode === "files" && selectedThreadCwd === null ? null : mode;
   })();
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- closes the workspace navigator's auxiliary pane when the thread has no cwd for the file inspector
   useEffect(() => {
     if (
       props.inspectorPresentation === undefined &&
@@ -512,6 +513,7 @@ function ThreadRouteContent(
   ]);
 
   const revealPreview = useEffectEvent(() => showAuxiliaryPane("inspector"));
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- opens the workspace navigator's inspector pane when route params bring a preview target
   useEffect(() => {
     if (previewTarget) revealPreview();
   }, [previewTarget]);

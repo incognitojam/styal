@@ -77,6 +77,7 @@ export function DataImportPanel({
   );
   // Setup only leads on to Preferences once discovery found values that differ.
   const nextStep = !!onDone && stage === "projects" && preferencesAvailable;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- reports discovered preference availability to the parent setup flow
   useEffect(() => {
     onPreferencesAvailable?.(preferencesAvailable);
   }, [onPreferencesAvailable, preferencesAvailable]);
@@ -99,6 +100,7 @@ export function DataImportPanel({
   const pending =
     useAtomValue(legacyImportPendingCount) + useAtomValue(dataImportBatchPendingCount);
   const mounted = useRef(true);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- marks pending import completions stale when the import panel unmounts
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -115,9 +117,11 @@ export function DataImportPanel({
   const [skipped, setSkipped] = useState(false);
   const importing = progress !== null || (awaitingCompletion && !skipped);
   const busy = running || pending > 0 || awaitingCompletion || finishing;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- reports import busy state to the parent setup navigation
   useEffect(() => {
     onBusyChange?.(busy);
   }, [busy, onBusyChange]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- releases the parent setup navigation busy state when the import panel unmounts
   useEffect(() => () => onBusyChange?.(false), [onBusyChange]);
   const finishSetup = async (landingRef: ScopedProjectRef | undefined) => {
     if (!onDone) return;
@@ -191,6 +195,7 @@ export function DataImportPanel({
   const view = source === null && stage === "projects" ? "sources" : stage;
   const focusedView = useRef<string | null>(null);
   const provisionalFocus = useRef<HTMLElement | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- focuses the appropriate import step DOM control when the active setup view changes
   useEffect(() => {
     if (!active || !onDone) {
       focusedView.current = null;

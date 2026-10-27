@@ -476,6 +476,7 @@ function PullRequestDetailPanelBody({
     scroller: HTMLDivElement;
     target: number;
   } | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- restores the scroller's scrollTop before paint after the header condenses
   useLayoutEffect(() => {
     const compensation = compensationRef.current;
     if (compensation === null) return;
@@ -528,6 +529,7 @@ function PullRequestDetailPanelBody({
     event.stopPropagation();
     if (!event.repeat) copyReference(`#${reference.number}`, `${terminology.shortLabel} number`);
   });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- window keydown capture listener for the copy-number shortcut
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => copyFromShortcut(event);
     window.addEventListener("keydown", onKeyDown, true);
@@ -620,6 +622,7 @@ function PullRequestDetailPanelBody({
     }
   }
   const revalidateActivity = useEffectEvent(() => activityQuery.refresh());
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refreshes the activity query after commit when render counts a new detail revision
   useEffect(() => {
     if (activityRevalidations > 0) revalidateActivity();
   }, [activityRevalidations]);
@@ -652,12 +655,14 @@ function PullRequestDetailPanelBody({
   // action still shows them as not reported. One more host read a little later shows them
   // started instead of leaving it to the next live refresh, which can be minutes away.
   const [approvalFollowUp, setApprovalFollowUp] = useState(0);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- schedules a host pull request refresh after approval so newly started checks become visible
   useEffect(() => {
     if (approvalFollowUp === 0) return;
     const timer = setTimeout(() => refreshFromHostOnRequest(), APPROVAL_FOLLOW_UP_MS);
     return () => clearTimeout(timer);
   }, [approvalFollowUp]);
   const appliedForcedToken = useRef(forcedRefreshToken);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- a new forced refresh token invalidates the host cache and refetches
   useEffect(() => {
     if (appliedForcedToken.current === forcedRefreshToken) return;
     appliedForcedToken.current = forcedRefreshToken;

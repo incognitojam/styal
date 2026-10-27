@@ -53,6 +53,7 @@ export function GitDefaultRepositorySheet(_props: GitDefaultRepositorySheetProps
   });
 
   const environmentId = selectedThread?.environmentId ?? null;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- loads the selected checkout default repository from the environment RPC and ignores stale responses
   useEffect(() => {
     if (environmentId === null || selectedThreadCwd === null) return;
     let cancelled = false;

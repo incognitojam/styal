@@ -1226,6 +1226,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   // scope. Route changes arrive from history, links and the palette, and only this
   // component holds the project groups that decide a widening, so no single
   // navigation handler can make the write.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- writes a route reveal's widened project scope back to the persisted sidebar scope and clears selection
   useEffect(() => {
     if (!revealWidensScope) return;
     clearSelection();
@@ -1551,6 +1552,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     messageThreadKey: routeThreadKey,
     latestUserMessageAt: routeThreadLatestUserMessageAt,
   });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- updates the persisted settled shelf preference when the active route thread changes
   useEffect(() => {
     const { focus, collapse } = advanceSettledShelfFocus(settledShelfFocusRef.current, {
       threadKey: routeRowThreadKey,
@@ -1782,6 +1784,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       }
     })();
   };
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- registers this sidebar's settle handler in the module-level settleAndAdvance registry
   useEffect(() => registerSettleAndAdvance(attemptSettle), [attemptSettle]);
   const settleThreads = (threadKeys: readonly string[]) => {
     const coSettlingKeys = new Set(threadKeys);
@@ -1908,6 +1911,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   };
   const dndSensors = useSensors(useSensor(SidebarPointerSensor, pointerSensorOptions));
   const sectionByThreadKeyRef = useRef(sectionByThreadKey);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- publishes committed list data to refs read by stable drag and sweep callbacks
   useLayoutEffect(() => {
     projectGroupsRef.current = projectGroups;
     orderedThreadKeysRef.current = orderedThreadKeys;
@@ -2161,6 +2165,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
         event.activatorEvent instanceof PointerEvent ? event.activatorEvent.clientY : null,
     });
   };
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- cancels the dnd-kit drag sensor when the dragged row leaves the list
   useEffect(() => {
     if (
       dragState !== null &&
@@ -2181,6 +2186,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     sidebarListItems.length + visibleDraftSessionCount > 0;
   // Cache on both fields so layout-key changes trigger the effect even when animate is unchanged.
   const listMotionPass = { layoutKey: listMotionLayoutKey, animate: listMotionAnimate };
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- tells the list motion controller to animate or not after each layout-affecting commit
   useLayoutEffect(() => {
     listMotionRef.current?.update(listMotionPass.animate);
   }, [listMotionPass]);
@@ -3136,11 +3142,13 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     (candidate) => candidate.attention !== null && candidate.key !== routeThreadKey,
   ).length;
   const nextUnreadAttention = nextUnread?.attention ?? null;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- publishes unread thread counts to the shared command palette summary registry
   useEffect(() => {
     publishNextUnreadSummary(
       nextUnreadAttention === null ? null : { count: unreadCount, attention: nextUnreadAttention },
     );
   }, [nextUnreadAttention, unreadCount]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- clears the shared unread summary registry when the sidebar unmounts
   useEffect(() => () => publishNextUnreadSummary(null), []);
 
   const openNextUnreadThread = useStableCallback((entryPoint: NextUnreadEntryPoint) => {
@@ -3162,6 +3170,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       entryPoint,
     });
   });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to unread navigation requests from the command palette and other entry points
   useEffect(
     () => subscribeNextUnreadThread((entryPoint) => openNextUnreadThread(entryPoint)),
     [openNextUnreadThread],
@@ -3172,6 +3181,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       ? selectThreadTerminalUiState(state.terminalUiStateByThreadKey, routeThreadRef).terminalOpen
       : false,
   );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to window keydown for thread navigation shortcuts using the current thread list
   useEffect(() => {
     const onWindowKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.repeat || isCommandPaletteOpen() || isModelPickerOpen()) {

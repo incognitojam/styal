@@ -29,6 +29,7 @@ function markManagedRelayAuthLoaded(): void {
 
 /** Mounted by Clerk only after its runtime failed to load, which it does not retry. */
 function ManagedRelayAuthLoadFailed() {
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- publishes the Clerk runtime load failure to the shared authentication registry
   useEffect(() => {
     appAtomRegistry.set(managedRelayAuthLoadAtom, "failed");
   }, []);
@@ -80,6 +81,7 @@ export function ManagedRelayAuthProvider({ children }: { readonly children: Reac
   // ClerkProvider creates the Clerk instance and owns its lifetime, so the
   // account service observes it for as long as this provider is mounted.
   const clerk = useClerk();
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- attaches the Clerk instance to the managed relay account service for the provider's lifetime
   useEffect(() => managedRelayAccountService.attach(clerk), [clerk]);
   return (
     <>

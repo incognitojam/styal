@@ -37,6 +37,7 @@ export interface LegacyImportProgress {
 
 export function useLegacyImport(environmentId: EnvironmentId, busy: boolean) {
   const mounted = useRef(true);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- marks pending environment import command responses stale when this hook unmounts
   useEffect(() => {
     mounted.current = true;
     return () => {

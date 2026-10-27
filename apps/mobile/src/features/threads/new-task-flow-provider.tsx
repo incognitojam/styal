@@ -393,6 +393,7 @@ export function NewTaskFlowProvider(
   })();
 
   const selectedProjectDraftKey = selectedProject ? activeDraftKey : null;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- creates the persistent draft in the new-task flow store once a project is selected, before the composer mounts
   useEffect(() => {
     // Child effects may already have bound a draft since this render.
     if (
