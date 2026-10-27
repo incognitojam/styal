@@ -813,8 +813,14 @@ describe("server updates from the environment selector", () => {
     desktopAppUpdate: true,
   } satisfies ServerUpdateTarget & { serverVersion: string };
 
-  it("confirms a locked chip update and honors cancellation before updating", async () => {
+  it("confirms a locked chip update that interrupts remote work and honors cancellation", async () => {
     registerConfirmDialogHost();
+    testState.desktopActivity.mockResolvedValue(
+      AsyncResult.success([
+        { ...idleActivity, isRequestingEnvironment: true },
+        { ...idleActivity, isRequestingEnvironment: false, terminalsRequiringConfirmation: 1 },
+      ]),
+    );
     testState.updateServer.mockResolvedValue(success("desktop-app"));
     await render(
       <BranchToolbarEnvironmentSelector
@@ -840,7 +846,7 @@ describe("server updates from the environment selector", () => {
     await act(async () => respondToConfirmDialog(true));
     expect(testState.updateServer).toHaveBeenCalledExactlyOnceWith({
       environmentId: localId,
-      input: { targetVersion: "0.0.31" },
+      input: { targetVersion: "0.0.31", confirmed: true },
     });
   });
 
