@@ -41,7 +41,7 @@ import { useProjectGroupActions } from "../../hooks/useProjectGroupActions";
 import { normalizeSearchText } from "../../lib/utils";
 import type { SidebarProjectSnapshot } from "../../sidebarProjectGrouping";
 import { useEnvironmentMachines, useEnvironments } from "../../state/environments";
-import { useThreadShells } from "../../state/entities";
+import { useDelegatedUnderParent, useThreadShells } from "../../state/entities";
 import { olderSettledThreads } from "../../state/threads";
 import { RelativeTime } from "../RelativeTime";
 import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../../uiStateStore";
@@ -129,7 +129,8 @@ export function ProjectsList() {
       JSON.stringify(environments.map((environment) => environment.environmentId).toSorted()),
     ),
   );
-  const visibleThreads = filterSidebarV2VisibleThreads(threads, null);
+  const delegatedUnderParent = useDelegatedUnderParent();
+  const visibleThreads = filterSidebarV2VisibleThreads(threads, null, delegatedUnderParent);
   const activity = new Map<string, { threadCount: number; lastThreadMs: number }>();
   for (const group of projectGroups) {
     const environmentIds = [...new Set(group.memberProjectRefs.map((ref) => ref.environmentId))];
