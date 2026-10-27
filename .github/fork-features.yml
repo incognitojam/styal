@@ -1703,6 +1703,7 @@ features:
       - Pull request preview builds install beside stable and nightly with their own app id, URL scheme, credential namespace, development artwork, and styal home, which the desktop passes to its local server, so testing a preview never opens or migrates the stable install's database.
       - A `preview:mac` label on a pull request from a branch in this repository builds an unsigned Apple Silicon preview on every push without signing credentials; only releases are signed, through the fork's own desktop build workflow.
       - A `preview:android` label on a pull request from a branch in this repository builds an arm64 `styal Preview` APK on every push with OTA updates disabled; the job that runs PR code holds no secrets, and a separate job re-signs the APK with a dedicated preview key and publishes it to the `mobile-preview` prerelease, whose tag stays outside the `android-` namespace that production releases and the in-app updater read.
+      - Android preview and production CI reuse input-validated Gradle task outputs and C++ compilations across clean builds; preview builds can populate output caches independently of main's dependency cache, and JavaScript-only pushes reuse the same snapshot.
       - Standalone CLI archives carry the styal executable, release artwork, license, and native resource monitor, and run with isolated styal state without requiring a host Node installation.
       - npm, service updates, SSH, and WSL select styal release archives and isolated styal homes; protocol 4 prevents older npm launchers from switching into the executable layout remotely.
       - The styal executables are hosted only as GitHub Release archives. npm carries only the dependency-free `@styal/cli` launcher, which downloads its exact version's archive from the styal GitHub Release into `<styal home>/runtime/styal-executable/versions/<version>`, runs it only after the download matches the release's SHA256SUMS, and keeps the legacy `dist/bin.mjs` entry for older service updaters.
@@ -1735,6 +1736,7 @@ features:
       - Settings that exist only in styal show the monochrome styal mark beside their title, limited to ledger features that are still maintained or under review; fork refinements of upstream settings stay unmarked.
       - The desktop app's CLI launcher and its Settings install are named `styal`, so they never take over or remove an upstream `t3` command.
     implementation_paths:
+      - .github/actions/cache-android-build/action.yml
       - .github/scripts/publish-android-release.sh
       - .github/scripts/release-changelog.sh
       - .github/workflows/desktop-macos-preview.yml

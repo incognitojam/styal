@@ -74,17 +74,23 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      # Restore only: main's production builds save this cache, and saving
-      # a PR-scoped copy of it on every preview would crowd out the
-      # repository's cache quota.
+      # Restore dependencies only: main saves this large cache. Compiled
+      # outputs have their own smaller cache that previews can populate.
       - name: Restore Gradle cache
         uses: actions/cache/restore@v6
         with:
           path: |
-            ~/.gradle/caches
+            ~/.gradle/caches/*
             ~/.gradle/wrapper
-          key: gradle-android-${{ hashFiles('pnpm-lock.yaml') }}
-          restore-keys: gradle-android-
+            !~/.gradle/caches/build-cache-1
+          key: gradle-android-deps-v2-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: gradle-android-deps-v2-
+
+      - id: android-cache
+        name: Cache Android build outputs
+        uses: ./.github/actions/cache-android-build
+        with:
+          variant: preview
 
       # The version code is this workflow's run number, so a newer preview
       # installs over an older one from any PR.
@@ -114,10 +120,22 @@ jobs:
       - name: Build the APK
         working-directory: apps/mobile/android
         run: |
-          ./gradlew :app:assembleRelease \
+          ./gradlew :app:assembleRelease --build-cache --profile \
             -PreactNativeArchitectures=arm64-v8a \
             -Pexpo.useLegacyPackaging=true
           df -h /
+
+      - name: Report compiler cache usage
+        if: always() && steps.android-cache.outcome == 'success'
+        run: ccache --show-stats
+
+      - name: Upload Gradle timing report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-preview-build-profile
+          path: apps/mobile/android/build/reports/profile/
+          retention-days: 7
 
       - name: Name the APK
         env:
