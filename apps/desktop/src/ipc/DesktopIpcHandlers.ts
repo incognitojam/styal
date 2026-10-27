@@ -9,6 +9,7 @@ import {
   resolveShutdownConfirmation,
 } from "./methods/shutdownConfirmation.ts";
 import { installNotificationBadge } from "./methods/notificationBadge.ts";
+import { installSystemNotifications } from "./methods/systemNotifications.ts";
 import { getClientSettings, setClientSettings } from "./methods/clientSettings.ts";
 import { getDiscordPresenceStatus, setDiscordPresence } from "./methods/discordPresence.ts";
 import {
@@ -93,6 +94,7 @@ import {
 export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers")(function* () {
   const ipc = yield* DesktopIpc.DesktopIpc;
   yield* installNotificationBadge();
+  yield* installSystemNotifications();
   yield* PreviewIpc.installPreviewEventForwarding();
 
   yield* ipc.handle(AppActivationIpc.setReady);

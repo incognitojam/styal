@@ -27,6 +27,7 @@ import {
   threadNotificationTag,
   unlockNotificationAudio,
 } from "../threadNotifications";
+import { type SystemNotificationHandle, showSystemNotification } from "../systemNotifications";
 import { resolveSidebarThreadStatus } from "./Sidebar.logic";
 import { toastManager } from "./ui/toast";
 
@@ -37,11 +38,15 @@ export function ThreadNotificationCoordinator() {
     (settings) => settings.inAppNotificationsEnabled,
   );
   const pending = useRef(
-    new Map<string, { environmentId: EnvironmentId; notification: Notification }>(),
+    new Map<string, { environmentId: EnvironmentId; notification: SystemNotificationHandle }>(),
   );
-  const onNotification = (environmentId: EnvironmentId, notification: Notification) => {
-    pending.current.get(notification.tag)?.notification.close();
-    pending.current.set(notification.tag, { environmentId, notification });
+  const onNotification = (
+    environmentId: EnvironmentId,
+    tag: string,
+    notification: SystemNotificationHandle,
+  ) => {
+    pending.current.get(tag)?.notification.close();
+    pending.current.set(tag, { environmentId, notification });
     setNotificationBadge(pending.current.size);
   };
 
@@ -106,7 +111,11 @@ function EnvironmentNotifications({
   onNotification,
 }: {
   environmentId: EnvironmentId;
-  onNotification: (environmentId: EnvironmentId, notification: Notification) => void;
+  onNotification: (
+    environmentId: EnvironmentId,
+    tag: string,
+    notification: SystemNotificationHandle,
+  ) => void;
 }) {
   const shell = useAtomValue(environmentShell.stateValueAtom(environmentId));
   const threads =
@@ -218,30 +227,21 @@ function EnvironmentNotifications({
       }
       if (
         !hasDesktopNotifications(mode) ||
-        (document.visibilityState === "visible" && document.hasFocus()) ||
-        typeof Notification === "undefined" ||
-        Notification.permission !== "granted"
+        (document.visibilityState === "visible" && document.hasFocus())
       )
         continue;
-      try {
-        const notification = new Notification(title, {
-          body: thread.title,
-          tag: threadNotificationTag(environmentId, thread.id),
-          silent: true,
-        });
-        onNotification(environmentId, notification);
-        notification.addEventListener("click", () => {
-          notification.close();
-          window.focus();
-          void window.desktopBridge?.revealWindow?.().catch(() => undefined);
+      const tag = threadNotificationTag(environmentId, thread.id);
+      const notification = showSystemNotification({
+        title,
+        body: thread.title,
+        tag,
+        onClick: () =>
           void navigate({
             to: "/$environmentId/$threadId",
             params: { environmentId, threadId: thread.id },
-          });
-        });
-      } catch {
-        // Some browsers expose Notification but reject desktop presentation.
-      }
+          }),
+      });
+      if (notification) onNotification(environmentId, tag, notification);
     }
     previous.current = next;
   }, [

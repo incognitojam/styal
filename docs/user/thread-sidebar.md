@@ -308,7 +308,10 @@ Turn on **System notifications**, **In-app notifications**, or both, and turn on
 open; system notifications and sounds also work while it is in the background,
 and in-app notifications appear only while it has focus. Browser notifications
 need permission and HTTPS (or localhost); use **Allow notifications** if
-prompted.
+prompted. On macOS, the desktop app sends a test notification when you turn on
+**System notifications**. If macOS is blocking styal, the setting says so and
+**Open System Settings** takes you to the Notifications pane, where you can turn
+on **Allow notifications** for styal.
 
 With **Notification sounds** on, choose a sound independently for
 **Completion**, **Input**, and **Approval**: **T3 completion**, **T3

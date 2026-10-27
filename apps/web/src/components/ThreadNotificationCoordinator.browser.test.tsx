@@ -379,4 +379,45 @@ describe("thread notifications", () => {
       params: { environmentId: "env-1", threadId: "thread-1" },
     });
   });
+
+  it("sends macOS desktop alerts through the main process and warns once when macOS blocks them", async () => {
+    let click: ((tag: string) => void) | undefined;
+    const bridge = {
+      showSystemNotification: vi.fn(
+        async (_notification: { title: string; body: string; tag: string }) => "blocked" as const,
+      ),
+      closeSystemNotification: vi.fn(async () => undefined),
+      onSystemNotificationClick: vi.fn((listener: (tag: string) => void) => {
+        click = listener;
+        return () => undefined;
+      }),
+    };
+    vi.stubGlobal("desktopBridge", bridge);
+    state.mode = "notifications";
+    state.focused = false;
+    await render();
+    await complete();
+    state.completedAt = "2026-09-13T11:00:00.000Z";
+    await render();
+    await act(() => Promise.resolve());
+
+    expect(state.notification).not.toHaveBeenCalled();
+    expect(bridge.showSystemNotification).toHaveBeenCalledTimes(2);
+    expect(bridge.showSystemNotification).toHaveBeenLastCalledWith({
+      title: "Thread completed",
+      body: "Fix the login form",
+      tag: expect.any(String),
+    });
+    expect(state.add).toHaveBeenCalledTimes(1);
+    expect(state.add).toHaveBeenLastCalledWith(
+      expect.objectContaining({ title: "macOS is blocking styal notifications" }),
+    );
+
+    const { tag } = bridge.showSystemNotification.mock.lastCall![0];
+    click?.(tag);
+    expect(state.navigate).toHaveBeenCalledWith({
+      to: "/$environmentId/$threadId",
+      params: { environmentId: "env-1", threadId: "thread-1" },
+    });
+  });
 });

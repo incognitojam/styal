@@ -1059,8 +1059,18 @@ export const DesktopShutdownConfirmationRequestSchema = Schema.Struct({
 export type DesktopShutdownConfirmationRequest =
   typeof DesktopShutdownConfirmationRequestSchema.Type;
 
-export const SystemSettingsPaneSchema = Schema.Literals(["full-disk-access"]);
+export const SystemSettingsPaneSchema = Schema.Literals(["full-disk-access", "notifications"]);
 export type SystemSettingsPane = typeof SystemSettingsPaneSchema.Type;
+
+export const DesktopSystemNotificationSchema = Schema.Struct({
+  title: Schema.String.check(Schema.isMaxLength(1_000)),
+  body: Schema.String.check(Schema.isMaxLength(4_000)),
+  tag: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200)),
+});
+export type DesktopSystemNotification = typeof DesktopSystemNotificationSchema.Type;
+
+export const DesktopSystemNotificationResultSchema = Schema.Literals(["shown", "blocked"]);
+export type DesktopSystemNotificationResult = typeof DesktopSystemNotificationResultSchema.Type;
 
 export interface DesktopBridge {
   acknowledgeShutdownConfirmation: (requestId: number) => Promise<void>;
@@ -1076,6 +1086,15 @@ export interface DesktopBridge {
   getClientPlatform?: () => string;
   setNotificationBadge?: (badge: { count: number; image: string | null }) => Promise<void>;
   onNotificationBadgeClear?: (listener: () => void) => () => void;
+  /**
+   * macOS only. Chromium notifications report `granted` and fail silently when
+   * macOS blocks the app, so the main process presents them and reports the result.
+   */
+  showSystemNotification?: (
+    notification: DesktopSystemNotification,
+  ) => Promise<DesktopSystemNotificationResult>;
+  closeSystemNotification?: (tag: string) => Promise<void>;
+  onSystemNotificationClick?: (listener: (tag: string) => void) => () => void;
   onTrackpadScrollEnd?: (listener: () => void) => () => void;
   /**
    * Renderer `window.focus()` cannot raise an Electron window, and on Wayland

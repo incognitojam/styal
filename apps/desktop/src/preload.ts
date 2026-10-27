@@ -112,6 +112,22 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     ipcRenderer.on(IpcChannels.SET_NOTIFICATION_BADGE_CHANNEL, handler);
     return () => ipcRenderer.removeListener(IpcChannels.SET_NOTIFICATION_BADGE_CHANNEL, handler);
   },
+  ...(clientPlatform === "darwin"
+    ? {
+        showSystemNotification: (notification) =>
+          ipcRenderer.invoke(IpcChannels.SHOW_SYSTEM_NOTIFICATION_CHANNEL, notification),
+        closeSystemNotification: (tag) =>
+          ipcRenderer.invoke(IpcChannels.CLOSE_SYSTEM_NOTIFICATION_CHANNEL, tag),
+        onSystemNotificationClick: (listener) => {
+          const handler = (_event: Electron.IpcRendererEvent, tag: unknown) => {
+            if (typeof tag === "string") listener(tag);
+          };
+          ipcRenderer.on(IpcChannels.SYSTEM_NOTIFICATION_CLICK_CHANNEL, handler);
+          return () =>
+            ipcRenderer.removeListener(IpcChannels.SYSTEM_NOTIFICATION_CLICK_CHANNEL, handler);
+        },
+      }
+    : {}),
   onTrackpadScrollEnd: (listener) => {
     const handler = () => listener();
     ipcRenderer.on(IpcChannels.TRACKPAD_SCROLL_END_CHANNEL, handler);
