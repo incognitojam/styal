@@ -154,9 +154,6 @@ export const make = Effect.gen(function* () {
     const zoomClick = (direction: DesktopWindow.MainWindowZoomDirection) => () => {
       runMenuEffect(`zoom-${direction}`, zoomMainWindow(direction));
     };
-    const closeWindowClick: Electron.MenuItemConstructorOptions["click"] = (_menuItem, window) => {
-      window?.close();
-    };
     const mainContentsClick = (command: DesktopWindow.MainWindowContentsCommand) => () => {
       runMenuEffect(command, runMainContentsCommand(command));
     };
@@ -203,8 +200,9 @@ export const make = Effect.gen(function* () {
                 },
                 { type: "separator" as const },
               ]),
+          // Cmd/Ctrl+W belongs to the renderer's tab close; it must never close the window.
           environment.platform === "darwin"
-            ? { label: "Close Window", click: closeWindowClick }
+            ? { label: "Close Window", click: (_item, window) => window?.close() }
             : { role: "quit" },
         ],
       },
@@ -295,13 +293,13 @@ export const make = Effect.gen(function* () {
         ],
       },
       {
+        // Electron's default Window submenu adds a Ctrl+W close role off macOS.
         role: "windowMenu",
-        label: "Window",
         submenu: [
           { role: "minimize" },
           { role: "zoom" },
           ...(environment.platform === "darwin"
-            ? ([{ type: "separator" }, { role: "front" }] as const)
+            ? [{ type: "separator" as const }, { role: "front" as const }]
             : []),
         ],
       },
