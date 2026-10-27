@@ -19,9 +19,11 @@ import { cn } from "~/lib/utils";
 import { deviceEnvironment, useDeviceState } from "~/state/device";
 import { formatEnvironmentQueryError } from "~/state/query";
 import { useAtomCommand } from "~/state/use-atom-command";
+import { useComposerDraftStore } from "~/composerDraftStore";
 import { DeviceLoadingView } from "./DeviceLoadingView";
 import { DeviceSetup, deviceHubReadiness } from "./DeviceSetup";
 import { DeviceWorkspace } from "./DeviceWorkspace";
+import { toastManager } from "../ui/toast";
 import { PreviewPanelShell, type PreviewPanelMode } from "../preview/PreviewPanelShell";
 
 const platformLabel = (platform: DevicePlatform) =>
@@ -92,10 +94,14 @@ export function DevicePanel(props: {
     const device = state.devices.find((candidate) => deviceKey(candidate) === value);
     if (!device) return;
     const settleOperation = startOperation(device);
+    const projectId = useComposerDraftStore
+      .getState()
+      .getDraftThreadByRef(props.threadRef)?.projectId;
     const result = await open({
       environmentId,
       input: {
         threadId,
+        ...(projectId === undefined ? {} : { projectId }),
         hostId: device.hostId,
         deviceId: device.id,
         platform: device.platform,
@@ -110,6 +116,12 @@ export function DevicePanel(props: {
         platform: device.platform,
         name: device.name,
       });
+      if (result.value.notice)
+        toastManager.add({
+          type: "warning",
+          title: "Low memory unavailable",
+          description: result.value.notice,
+        });
       settleOperation(null);
     }
   };

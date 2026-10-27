@@ -291,6 +291,7 @@ const handlers = {
         device,
         agentDevice: { command, targetArgs },
         quickStart: [
+          ...(session.notice ? [session.notice] : []),
           ...(stillInUse.length > 0
             ? [
                 `Thread ${stillInUse.map((ref) => ref.threadId).join(", ")} also has this device open, and its agent may be driving it. Coordinate with the user before changing apps or state.`,

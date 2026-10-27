@@ -62,6 +62,7 @@ const PEER_USE_WINDOW_MS = 5 * 60_000;
 const PEER_USE_OPERATIONS = new Set<DevicePeerCommand["operation"]>([
   "agent",
   "open",
+  "open-low-memory",
   "detail",
   "action",
   "screenshot",
@@ -376,11 +377,15 @@ const make = Effect.gen(function* () {
         return { token };
       }
       case "open":
-        return yield* devices.open({
-          ...input.input,
-          hostId: LOCAL_DEVICE_HOST_ID,
-          threadId: thread(input.input.threadId),
-        });
+      case "open-low-memory":
+        return yield* devices.open(
+          {
+            ...input.input,
+            hostId: LOCAL_DEVICE_HOST_ID,
+            threadId: thread(input.input.threadId),
+          },
+          input.operation === "open-low-memory" ? "low-memory" : "standard",
+        );
       case "close":
         yield* devices.close({
           ...input.input,

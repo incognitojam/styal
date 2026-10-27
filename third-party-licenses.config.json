@@ -13,6 +13,15 @@
       ]
     },
     {
+      "bundles": ["device-tools"],
+      "includeInBundles": ["mobile", "web"],
+      "license": "MIT",
+      "name": "simslim",
+      "version": "0.12.2",
+      "sourceUrl": "https://github.com/MobAI-App/simslim",
+      "generatedNotices": [{ "licenseId": "MIT", "copyrights": ["Copyright (c) 2026 Interlap"] }]
+    },
+    {
       "bundles": ["assets", "desktop", "web"],
       "license": "CC0-1.0",
       "name": "Notification Sound 1 by deadrobotmusic",

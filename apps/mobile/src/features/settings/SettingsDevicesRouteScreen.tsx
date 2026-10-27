@@ -32,6 +32,7 @@ import {
   SettingsEnvironmentFilterHeader,
 } from "./components/SettingsEnvironmentFilterHeader";
 import { useSettingsEnvironmentFilter } from "./settings-environment-filter";
+import { SimulatorMemorySettings } from "./SimulatorMemorySettings";
 
 type SharingEnvironment = ReturnType<
   typeof useSettingsEnvironmentFilter
@@ -59,6 +60,7 @@ export function SettingsDevicesRouteScreen() {
               Select All projects to change environment device access.
             </AppText>
           ) : null}
+          <SimulatorMemorySettings />
           {offlineShares.map(({ agent, host }) => (
             <OfflineShare
               key={`${agent.environmentId}:${host.id}`}

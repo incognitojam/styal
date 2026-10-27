@@ -88,6 +88,10 @@ function settingsSnapshotProperties(settings: ServerSettings) {
     enableDeviceSupport: settings.enableDeviceSupport,
     // null keeps devices running.
     deviceIdleShutdownMinutes: settings.deviceIdleShutdownMinutes,
+    simulatorMemoryMode: settings.simulatorMemoryMode,
+    projectsWithLowMemoryMode: Object.values(settings.projectSettingsOverrides).filter(
+      (override) => override.simulatorMemoryMode === "low-memory",
+    ).length,
     cursorKeychainUsageEnabled: settings.cursorKeychainUsageEnabled,
     backgroundActivityProfile: settings.backgroundActivity.profile,
   };

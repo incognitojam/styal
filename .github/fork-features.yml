@@ -4981,6 +4981,47 @@ features:
         - https://github.com/pingdotgg/t3code/pull/13815
       retire_when: Upstream groups active sidebar threads under project headers, keeps two-line cards in groups with branches and one-line rows with equivalent details and actions in branchless groups, limits thread drags to their own project, and reorders projects by dragging their headers.
 
+  - id: simulator-memory-profiles
+    title: Apply project memory modes at simulator startup
+    status: maintained
+    prs: [1056]
+    invariants:
+      - Standard is the default, with an optional Low memory preference per project. Clients and agents inherit the same preference when opening a device; Android is unchanged.
+      - Only stopped, unclaimed iOS simulators are prepared, under the owning host's lifecycle lock and before a stream or usable session is attached. Running or claimed simulators keep their existing mode; a device booted by an external tool during setup keeps its external ownership.
+      - Low memory uses one fixed preset preserving push notifications, StoreKit, universal links, iCloud, keychain sync, photos, contacts, and calendar. Startup verifies actual service state and every required capability, and rejects failed, timed-out, empty, or incomplete results once SimSlim starts changing the simulator.
+      - Setup installs only checksum-pinned SimSlim on an Apple Silicon Mac. Standard never installs a helper on a stock host and restores managed services on hosts where styal installed it.
+      - A Mac, runtime, helper download, or older connected environment that cannot use Low memory starts the simulator unchanged and returns a notice to the client or agent; failures before SimSlim changes anything never block opening. Connected environments prepare the device on its owning host.
+      - A failed mutation does not publish a usable session and attempts to return the simulator to shutdown. Persistent overrides survive simulator reboots; changing the project preference takes effect on its next unused start through styal.
+      - Settings snapshots report the environment mode and the count of projects explicitly choosing Low memory, without project identifiers or app data. The owning environment reports each cold start's memory result and preparation time; device failures report timeouts separately.
+    rationale: A saved project default reduces memory use for parallel simulators without live reconfiguration or per-use agent decisions.
+    implementation_paths:
+      - apps/mobile/src/features/settings/SimulatorMemorySettings.tsx
+      - apps/server/src/device/DeviceIdle.ts
+      - apps/server/src/device/SimulatorMemory.ts
+      - apps/server/src/device/simslimHostScript.ts
+      - apps/web/src/components/settings/SimulatorMemorySetting.tsx
+    upstream_paths:
+      - apps/server/src/device/DeviceService.ts
+      - apps/server/src/device/DeviceSharing.ts
+      - apps/server/src/device/EnvironmentDeviceHost.ts
+      - apps/server/src/mcp/toolkits/device/handlers.ts
+      - apps/web/src/components/device/DevicePanel.tsx
+      - packages/contracts/src/device.ts
+      - packages/contracts/src/settings.ts
+    tests:
+      - apps/server/src/device/DeviceSharing.test.ts
+      - apps/server/src/device/EnvironmentDeviceHost.test.ts
+      - apps/server/src/device/SimulatorMemory.test.ts
+      - apps/server/src/device/SimulatorStartup.test.ts
+      - apps/server/src/telemetry/FeatureUsage.test.ts
+      - apps/server/src/telemetry/SettingsSnapshot.test.ts
+      - packages/shared/src/projectSettings.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/commit/725ada6eaa32d4a32c361ee42a1717a3e65568d1
+      retire_when: Upstream applies reversible, verified project memory modes before starting unused simulators across clients and agents.
+
   - id: slow-network-route-stability
     title: Keep slow networks from bouncing a connection between routes
     status: maintained

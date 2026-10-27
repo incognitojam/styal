@@ -12,6 +12,7 @@ import {
   DeviceNotFoundError,
   DeviceOperationError,
   type DeviceOpenInput,
+  type SimulatorMemoryMode,
   type DevicePlatform,
   DevicePlatformUnavailableError,
   type DeviceServiceState,
@@ -41,6 +42,7 @@ import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as Layer from "effect/Layer";
 import * as PubSub from "effect/PubSub";
 import * as Schema from "effect/Schema";
@@ -51,9 +53,12 @@ import * as SynchronizedRef from "effect/SynchronizedRef";
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
 
 import * as ServerSettings from "../serverSettings.ts";
+import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
+import * as FeatureUsage from "../telemetry/FeatureUsage.ts";
 import { isLocalSshDeviceHost, remoteSshDeviceHosts } from "./localSshDeviceHost.ts";
 
 import { readDeviceDetail, runDeviceAction } from "./DeviceActions.ts";
+import { prepareSimulatorMemory, simulatorMemoryNotice } from "./SimulatorMemory.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import * as DeviceHost from "./DeviceHost.ts";
 import * as SshDeviceHost from "./SshDeviceHost.ts";
@@ -144,7 +149,10 @@ export class DeviceService extends Context.Service<
     readonly updateTool: (tool: "hub" | "agent") => Effect.Effect<DeviceServiceState, DeviceError>;
     readonly inspect: Effect.Effect<DeviceServiceState>;
     readonly retryHost: (hostId: DeviceHostId) => Effect.Effect<DeviceServiceState, DeviceError>;
-    readonly open: (input: DeviceOpenInput) => Effect.Effect<DeviceSession, DeviceError>;
+    readonly open: (
+      input: DeviceOpenInput,
+      memoryMode?: SimulatorMemoryMode,
+    ) => Effect.Effect<DeviceSession, DeviceError>;
     readonly close: (input: DeviceCloseInput) => Effect.Effect<void, DeviceError>;
     readonly shutdown: (input: DeviceShutdownInput) => Effect.Effect<void, DeviceError>;
     readonly detail: (input: DeviceDetailInput) => Effect.Effect<DeviceDetail, DeviceError>;
@@ -198,6 +206,7 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
   installTool?: (tool: "hub" | "agent") => Effect.Effect<unknown, DeviceError>,
 ) {
   const settings = yield* ServerSettings.ServerSettingsService;
+  const analytics = yield* Effect.serviceOption(AnalyticsService.AnalyticsService);
   const crypto = yield* Crypto.Crypto;
   const lifecycleLock = yield* Semaphore.make(1);
   const readDeviceSettings = settings.getSettings.pipe(
@@ -727,7 +736,10 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
     return result.serial ?? result.id ?? device.id;
   });
 
-  const open: DeviceService["Service"]["open"] = Effect.fn("DeviceService.open")(function* (input) {
+  const open: DeviceService["Service"]["open"] = Effect.fn("DeviceService.open")(function* (
+    input,
+    memoryMode = "standard",
+  ) {
     const host = yield* resolveHost(input.hostId);
     yield* ensurePlatform(host, input.platform);
     const ready = yield* readiness(host.id);
@@ -763,15 +775,20 @@ process.exitCode = result.error ? 1 : (result.status ?? 1);`,
         });
       }
     }
+    let notice: string | undefined;
     if (ready.remote) {
-      const opened = yield* ready.remote.open(input);
+      const opened = yield* ready.remote.open(
+        input,
+        device.platform === "ios" ? memoryMode : "standard",
+      );
+      notice = opened.notice;
       state = yield* refresh(ready);
       device = findDevice(state, host.id, opened.deviceId);
       if (!device)
         return yield* new DeviceNotFoundError({ hostId: host.id, deviceId: opened.deviceId });
     } else if (!device.booted && input.boot !== false) {
       const booting = { ...device, threadId: input.threadId };
-      yield* publish((current) => ({
+      const markBooting = publish((current) => ({
         ...current,
         bootingDevices: [
           ...(current.bootingDevices ?? []).filter(
@@ -779,8 +796,48 @@ process.exitCode = result.error ? 1 : (result.status ?? 1);`,
           ),
           booting,
         ],
-      }));
-      const bootedId = yield* boot(ready, device).pipe(
+      })).pipe(Effect.asVoid);
+      const bootedId = yield* Effect.gen(function* () {
+        // DeviceIdle serializes every lifecycle operation on this host/device.
+        const unclaimedAndStopped = refresh(ready).pipe(
+          Effect.map(
+            (current) =>
+              current.devices.some(
+                (value) => value.id === booting.id && value.hostId === host.id && !value.booted,
+              ) &&
+              !current.sessions.some(
+                (session) => session.hostId === host.id && session.deviceId === booting.id,
+              ),
+          ),
+        );
+        if (booting.platform === "ios" && (yield* unclaimedAndStopped)) {
+          const prepare = prepareSimulatorMemory(ready, booting, memoryMode, {
+            stillStopped: unclaimedAndStopped,
+            onMutationStart: markBooting,
+            onMutationError: shutdownDevice(host.id, booting.id, booting.platform).pipe(
+              Effect.ignore,
+            ),
+          });
+          const result = yield* Option.isSome(analytics)
+            ? FeatureUsage.observe(
+                { feature: "simulator-memory", action: "prepare", source: "system", memoryMode },
+                prepare,
+                {},
+                (memoryResult) => ({ memoryResult }),
+              ).pipe(Effect.provideService(AnalyticsService.AnalyticsService, analytics.value))
+            : prepare;
+          notice = simulatorMemoryNotice(result);
+        }
+        // A tool outside styal can start the simulator during helper setup.
+        // Only claim idle-shutdown ownership when styal actually starts it.
+        if (
+          (yield* refresh(ready)).devices.some(
+            (value) => value.id === booting.id && value.hostId === host.id && !value.booted,
+          )
+        )
+          yield* markBooting;
+        return yield* boot(ready, booting);
+      }).pipe(
         Effect.ensuring(
           publish((current) => ({
             ...current,
@@ -845,7 +902,7 @@ process.exitCode = result.error ? 1 : (result.status ?? 1);`,
         }));
       }),
     );
-    return session;
+    return notice === undefined ? session : { ...session, notice };
   });
 
   const shutdownDevice = Effect.fn("DeviceService.shutdownDevice")(function* (

@@ -574,7 +574,12 @@ it.effect.each(["shutdown", "close"] as const)(
         nodePath: process.execPath,
         hub: { origin: "http://device.test" },
         helpers: { serveSimAxSettings: null, serveSimCli: null },
-        run: () => Effect.succeed({ code: 0, stdout: "", stderr: "" }),
+        run: () =>
+          Effect.succeed({
+            code: 0,
+            stdout: JSON.stringify({ supported: true, installed: false, executable: "/simslim" }),
+            stderr: "",
+          }),
       };
       const host: DeviceHost.DeviceHost["Service"] = {
         id: LOCAL_DEVICE_HOST_ID,

@@ -13,10 +13,21 @@
 import { Schema } from "effect";
 import * as SchemaTransformation from "effect/SchemaTransformation";
 
-import { AuthSessionId, EnvironmentId, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import {
+  AuthSessionId,
+  EnvironmentId,
+  ProjectId,
+  ThreadId,
+  TrimmedNonEmptyString,
+} from "./baseSchemas.ts";
 
 export const DevicePlatform = Schema.Literals(["ios", "android"]);
 export type DevicePlatform = typeof DevicePlatform.Type;
+
+export const SimulatorMemoryMode = Schema.Literals(["standard", "low-memory"]);
+export type SimulatorMemoryMode = typeof SimulatorMemoryMode.Type;
+export const SIMULATOR_MEMORY_DESCRIPTION =
+  "Applies when styal starts a stopped iOS simulator that no thread holds. Low memory keeps push, purchases, iCloud, and links working.";
 
 export const DeviceHostId = TrimmedNonEmptyString.check(Schema.isMaxLength(128));
 export type DeviceHostId = typeof DeviceHostId.Type;
@@ -180,6 +191,8 @@ export const DeviceSession = Schema.Struct({
   deviceId: DeviceId,
   platform: DevicePlatform,
   openedAt: Schema.String,
+  /** Set only on an open's result, such as when Low memory fell back to Standard. */
+  notice: Schema.optional(Schema.String),
 });
 export type DeviceSession = typeof DeviceSession.Type;
 
@@ -227,6 +240,7 @@ export const DeviceConfigureInput = Schema.Struct({
 export type DeviceConfigureInput = typeof DeviceConfigureInput.Type;
 
 export const DeviceOpenInput = Schema.Struct({
+  projectId: Schema.optional(ProjectId),
   threadId: ThreadId,
   hostId: Schema.optional(DeviceHostId),
   deviceId: DeviceId,
@@ -433,6 +447,7 @@ export const DevicePeerCommand = Schema.Union([
     ]),
   }),
   Schema.Struct({ operation: Schema.Literal("open"), input: DeviceOpenInput }),
+  Schema.Struct({ operation: Schema.Literal("open-low-memory"), input: DeviceOpenInput }),
   Schema.Struct({ operation: Schema.Literal("close"), input: DeviceCloseInput }),
   Schema.Struct({ operation: Schema.Literal("shutdown"), input: DeviceShutdownInput }),
   Schema.Struct({ operation: Schema.Literal("detail"), input: DeviceDetailInput }),

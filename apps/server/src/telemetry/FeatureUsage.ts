@@ -10,6 +10,7 @@ import type {
   DevicePlatform,
   HardwareTier,
   PreviewAutomationOperation,
+  SimulatorMemoryMode,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
@@ -138,6 +139,12 @@ type ObservedUsage =
       readonly deviceLocation?: "local" | "remote" | undefined;
     }
   | {
+      readonly feature: "simulator-memory";
+      readonly action: "prepare";
+      readonly source: "system";
+      readonly memoryMode: SimulatorMemoryMode;
+    }
+  | {
       readonly feature: "hardware";
       readonly action:
         | "list"
@@ -202,15 +209,30 @@ export interface ClientDimensions {
   readonly clientAppVersion?: string | undefined;
 }
 
+/** Boot limits, killed helper commands and peers that stop answering. */
+function isDeviceTimeout(error: object) {
+  if (!("_tag" in error)) return false;
+  const cause = "cause" in error ? error.cause : undefined;
+  switch (error._tag) {
+    case "DeviceBootError":
+      return "reason" in error && error.reason === "timeout";
+    case "DeviceOperationError":
+      return ("exitCode" in error && error.exitCode === 124) || Cause.isTimeoutError(cause);
+    case "DeviceHostUnavailableError":
+      return typeof cause === "object" && cause !== null && "timedOut" in cause;
+    default:
+      return false;
+  }
+}
+
 function deviceFailureReason(cause: Cause.Cause<unknown>) {
   const error = Cause.findErrorOption(cause);
-  const tag =
-    Option.isSome(error) &&
-    typeof error.value === "object" &&
-    error.value !== null &&
-    "_tag" in error.value
-      ? error.value._tag
+  const failure =
+    Option.isSome(error) && typeof error.value === "object" && error.value !== null
+      ? error.value
       : undefined;
+  if (failure !== undefined && isDeviceTimeout(failure)) return "timeout";
+  const tag = failure !== undefined && "_tag" in failure ? failure._tag : undefined;
   switch (tag) {
     case "DeviceToolUnavailableError":
     case "DeviceHostUnavailableError":
@@ -306,13 +328,13 @@ function workflowRunWatchFailureReason(cause: Cause.Cause<unknown>) {
 
 /**
  * Observe one public operation, preserving its result, failure and interruption.
- * `watchResult` reads the category of a successful workflow run watch call from its result.
+ * `resultProperties` reads bounded categories from a successful result.
  */
 export const observe = <A, E, R>(
   usage: ObservedUsage,
   effect: Effect.Effect<A, E, R>,
   client: ClientDimensions = {},
-  watchResult?: (value: A) => WorkflowRunWatchResult,
+  resultProperties?: (value: A) => Readonly<Record<string, string>>,
 ) =>
   Effect.gen(function* () {
     const analytics = yield* AnalyticsService.AnalyticsService;
@@ -325,7 +347,7 @@ export const observe = <A, E, R>(
             feature: usage.feature,
             action: usage.action,
             source: usage.source,
-            ...(usage.feature === "devices" &&
+            ...((usage.feature === "devices" || usage.feature === "simulator-memory") &&
             Exit.isFailure(exit) &&
             !Cause.hasInterruptsOnly(exit.cause)
               ? { failureReason: deviceFailureReason(exit.cause) }
@@ -351,9 +373,10 @@ export const observe = <A, E, R>(
             ...(usage.feature === "workflow-run-watch" && usage.action === "review"
               ? { reviewState: usage.reviewState }
               : {}),
-            ...(watchResult !== undefined && Exit.isSuccess(exit)
-              ? { watchResult: watchResult(exit.value) }
+            ...(resultProperties !== undefined && Exit.isSuccess(exit)
+              ? resultProperties(exit.value)
               : {}),
+            ...(usage.feature === "simulator-memory" ? { memoryMode: usage.memoryMode } : {}),
             ...(usage.feature === "devices"
               ? {
                   ...(usage.devicePlatform ? { devicePlatform: usage.devicePlatform } : {}),
