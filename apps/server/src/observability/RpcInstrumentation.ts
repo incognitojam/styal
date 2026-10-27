@@ -222,6 +222,7 @@ const RPC_AGGREGATES = {
   [WS_METHODS.previewReportStatus]: "preview",
   [WS_METHODS.subscribePreviewEvents]: "preview",
   [WS_METHODS.subscribeDiscoveredLocalServers]: "preview",
+  [WS_METHODS.previewStopLocalServer]: "preview",
   [WS_METHODS.deviceConfigure]: "device",
   [WS_METHODS.deviceCreateHostGrant]: "device",
   [WS_METHODS.deviceRevokeHostGrant]: "device",

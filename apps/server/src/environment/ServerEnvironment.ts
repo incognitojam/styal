@@ -269,6 +269,7 @@ export const make = Effect.gen(function* () {
       forkClientUsageVersion: FORK_CLIENT_USAGE_VERSION,
       serverResolvedCommandContext: true,
       threadStop: true,
+      ...(hostPlatform === "win32" ? {} : { localServerStop: true }),
       environmentIcon: true,
       projectCloneTracking: true,
       projectOrganization: true,

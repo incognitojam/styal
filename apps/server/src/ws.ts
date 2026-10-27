@@ -3158,6 +3158,7 @@ export const layerWsRpc = (
         [WS_METHODS.hardwareAuditList]: (input) => hardware.auditList(input),
         [WS_METHODS.subscribeHardwareState]: (input) =>
           hardware.stateStream({ probeHealth: input.probeHealth === true }),
+        [WS_METHODS.previewStopLocalServer]: (input) => portDiscovery.stopServer(input),
         [WS_METHODS.subscribeDiscoveredLocalServers]: (input) =>
           Stream.callback<DiscoveredLocalServerList>((queue) =>
             Effect.gen(function* () {
