@@ -6,9 +6,11 @@ import {
   type AttachmentCreateUploadUrlResult,
   type AttachmentDeleteInput,
 } from "@t3tools/contracts";
+import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
 
+import { isTransportConnectionErrorMessage } from "../errors/transport.ts";
 import type { AtomCommand } from "./runtime.ts";
 import {
   attachmentBatchLimitError,
@@ -123,6 +125,28 @@ describe("runAttachmentUploadCycle", () => {
     });
     expect(removeCalls).toEqual([]);
   });
+
+  it("reports an interrupted upload URL request as not connected", async () => {
+    const result = await runAttachmentUploadCycle({
+      registry,
+      createUploadUrl: {
+        label: "test:create-upload-url",
+        run: async () => AsyncResult.failure(Cause.interrupt()),
+      },
+      remove,
+      environmentId,
+      upload: uploadInput,
+      resolveUploadUrl: () => "https://environment.test/upload",
+      transport: () => {
+        throw new Error("transport must not run without a mint");
+      },
+    });
+
+    expect(result).toMatchObject({ status: "failed", step: "mint", attachmentId: null });
+    const error = result.status === "failed" ? result.error : undefined;
+    expect(error).toBeInstanceOf(Error);
+    expect(isTransportConnectionErrorMessage((error as Error).message)).toBe(true);
+  });
 });
 
 describe("verifyPersistedAttachmentUpload", () => {
@@ -154,6 +178,20 @@ describe("verifyPersistedAttachmentUpload", () => {
     const second = await verify();
     expect(second).toEqual({ status: "verified" });
     expect(lookups).toBe(2);
+  });
+
+  it("reports an interrupted upload lookup as not connected", async () => {
+    const result = await verifyPersistedAttachmentUpload({
+      registry: AtomRegistry.make(),
+      createAssetUrl: () => Atom.make(Effect.interrupt),
+      environmentId,
+      attachmentId: "pending-1",
+    });
+
+    expect(result).toMatchObject({ status: "failed" });
+    const error = result.status === "failed" ? result.error : undefined;
+    expect(error).toBeInstanceOf(Error);
+    expect(isTransportConnectionErrorMessage((error as Error).message)).toBe(true);
   });
 });
 
