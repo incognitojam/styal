@@ -1092,10 +1092,14 @@ features:
       - apps/web/src/systemNotifications.ts
     upstream_paths:
       - apps/desktop/src/ipc/DesktopIpcHandlers.ts
+      - apps/desktop/src/ipc/channels.ts
+      - apps/desktop/src/ipc/methods/window.ts
+      - apps/desktop/src/permissions/MacPermission.ts
       - apps/desktop/src/preload.ts
       - apps/web/src/components/ThreadNotificationCoordinator.tsx
       - apps/web/src/components/pullRequest/guide/PullRequestGuideRunCoordinator.tsx
       - apps/web/src/components/settings/NotificationSettings.tsx
+      - packages/contracts/src/ipc.ts
     tests:
       - apps/desktop/src/ipc/methods/systemNotifications.test.ts
       - apps/web/src/components/ThreadNotificationCoordinator.browser.test.tsx
