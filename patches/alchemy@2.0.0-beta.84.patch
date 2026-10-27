@@ -1,5 +1,5 @@
 diff --git a/lib/Test/Vitest.js b/lib/Test/Vitest.js
-index 75d3132f92..a9ff9a440b 100644
+index 48cce71..ae67044 100644
 --- a/lib/Test/Vitest.js
 +++ b/lib/Test/Vitest.js
 @@ -3,7 +3,7 @@ import { it } from "@effect/vitest";
@@ -11,16 +11,3 @@ index 75d3132f92..a9ff9a440b 100644
  import * as Core from "./Core.js";
  export { executeWhenReady, getWhenReady, guardContentType, guardedFetchLayer, rpcClientLayer, WorkerNotReady, } from "./Http.js";
  export const defaultStage = Core.defaultStage;
-diff --git a/src/Test/Vitest.ts b/src/Test/Vitest.ts
-index d8a7d9662d..469fa8bb30 100644
---- a/src/Test/Vitest.ts
-+++ b/src/Test/Vitest.ts
-@@ -8,7 +8,7 @@ import {
-   afterEach as vitestAfterEach,
-   beforeAll as vitestBeforeAll,
-   beforeEach as vitestBeforeEach,
--} from "vitest";
-+} from "vite-plus/test";
- import type { AlchemyContext } from "../AlchemyContext.ts";
- import type { CompiledStack } from "../Stack.ts";
- import type { Stage } from "../Stage.ts";

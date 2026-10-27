@@ -1,12 +1,12 @@
 // @effect-diagnostics anyUnknownInErrorContext:off layerMergeAllWithDependencies:off - Alchemy provider helpers expose framework-owned any requirements.
 import * as Alchemy from "alchemy";
 import * as Output from "alchemy/Output";
-import * as Axiom from "alchemy/Axiom";
-import * as Cloudflare from "alchemy/Cloudflare";
-import * as Drizzle from "alchemy/Drizzle";
+import * as Axiom from "@alchemy.run/axiom";
+import * as Cloudflare from "@alchemy.run/cloudflare";
+import * as Drizzle from "@alchemy.run/drizzle";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Neon from "alchemy/Neon";
+import * as Neon from "@alchemy.run/neon";
 
 import { PublishClientConfig, tokenDigest } from "./src/clientConfig.ts";
 import * as RelayDb from "./src/db.ts";

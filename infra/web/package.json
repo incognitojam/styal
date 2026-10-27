@@ -8,7 +8,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "alchemy": "2.0.0-beta.83",
+    "@alchemy.run/cloudflare": "catalog:",
+    "alchemy": "catalog:",
     "effect": "catalog:"
   },
   "devDependencies": {
