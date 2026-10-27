@@ -19,7 +19,8 @@ stops after a quick npm and GitHub lookup. For Codex,
 Claude Code, and OpenCode it finds npm releases that the current stable and
 nightly styal builds may not install yet, installs
 each one into an isolated prefix, and runs real turns against that build's
-server, checked out from its release tag: a tool turn, its checkpoint, a
+server, checked out from its release tag: a tool turn, a shell command that
+must not see the server's own `T3CODE_PORT`, the tool turn's checkpoint, a
 resumed follow-up, an interrupt, an approval round trip, a routine write in
 Auto that must not ask for approval (on providers that report an Auto reviewer),
 a rewind after which the provider must forget the rewound turn but remember the

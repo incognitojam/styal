@@ -55,6 +55,7 @@ import {
 const SCENARIOS = [
   "provider",
   "tool-turn",
+  "server-env",
   "checkpoint",
   "resume",
   "interrupt",
@@ -233,6 +234,9 @@ function serverEnvironment(): NodeJS.ProcessEnv {
   // the browser sandbox (Ubuntu 23.10+ runners) logs a warning on every start,
   // which the clean projection check reports.
   env.T3CODE_SERVER_BROWSER_SANDBOX = "0";
+  // Set like a desktop-launched server has it, so the server-env scenario can
+  // check that agent shells do not inherit it.
+  env.T3CODE_PORT = String(port);
   return env;
 }
 
@@ -791,6 +795,34 @@ try {
             );
           scenario("resume").detail =
             `run ${run.ordinal} recalled the token on the same provider thread`;
+        }),
+      );
+    }
+
+    // An agent shell that inherits T3CODE_PORT starts styal dev servers and CLIs
+    // on this server's port.
+    if (selected("server-env")) {
+      yield* attempt(
+        "server-env",
+        Effect.gen(function* () {
+          const logOffset = logSize();
+          const envFile = `env-${NodeCrypto.randomBytes(4).toString("hex")}.txt`;
+          const { threadId, messageId } = yield* launch(
+            "Provider environment verification",
+            `This is an automated provider check. Run this exact shell command: printenv T3CODE_PORT > ${envFile}; true\nThen reply with DONE.`,
+          );
+          const { projection, run } = yield* waitForRunEnd(
+            threadId,
+            messageId,
+            "the environment turn",
+          );
+          inspect("server-env", projection, logOffset);
+          if (run.status !== "completed") fail(`Run ended ${run.status}`);
+          const path = NodePath.join(project, envFile);
+          if (!NodeFS.existsSync(path)) fail(`${envFile} was not created`);
+          const value = NodeFS.readFileSync(path, "utf8").trim();
+          if (value !== "") fail(`The agent's shell inherited T3CODE_PORT=${value}`);
+          scenario("server-env").detail = "the agent's shell did not inherit T3CODE_PORT";
         }),
       );
     }
