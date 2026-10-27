@@ -66,9 +66,9 @@ export function isAssetAttachmentNotFoundFailure(error: unknown): boolean {
 }
 
 /**
- * An RPC is interrupted when its connection closes mid-request. Squashing that cause yields a
- * generic "All fibers interrupted without error", which callers cannot tell apart from a real
- * failure, so report it as the disconnect it is.
+ * The RPC client interrupts in-flight requests when its session closes, as on a dropped or replaced
+ * connection. Squashing that cause yields a generic "All fibers interrupted without error" that
+ * callers treat as a permanent failure, so report it as not connected, which they retry.
  */
 function attachmentRpcFailure(result: AsyncResult.Failure<unknown, unknown>): unknown {
   return isAtomCommandInterrupted(result)

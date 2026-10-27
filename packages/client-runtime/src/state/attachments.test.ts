@@ -126,7 +126,7 @@ describe("runAttachmentUploadCycle", () => {
     expect(removeCalls).toEqual([]);
   });
 
-  it("reports a mint interrupted by a closing connection as a disconnect", async () => {
+  it("reports an interrupted upload URL request as not connected", async () => {
     const result = await runAttachmentUploadCycle({
       registry,
       createUploadUrl: {
@@ -180,7 +180,7 @@ describe("verifyPersistedAttachmentUpload", () => {
     expect(lookups).toBe(2);
   });
 
-  it("reports a lookup interrupted by a closing connection as a disconnect", async () => {
+  it("reports an interrupted upload lookup as not connected", async () => {
     const result = await verifyPersistedAttachmentUpload({
       registry: AtomRegistry.make(),
       createAssetUrl: () => Atom.make(Effect.interrupt),
