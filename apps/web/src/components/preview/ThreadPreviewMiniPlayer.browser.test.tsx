@@ -44,7 +44,7 @@ vi.mock(import("~/state/device"), async (original) => ({
   ...(await original()),
   useDeviceState: (() => ({ state: { devices: [], hosts: [] } })) as never,
 }));
-import { ThreadPreviewMiniPlayer } from "./ThreadPreviewMiniPlayer";
+import { ThreadPreviewMiniPlayer, useThreadPreviewCanvasSource } from "./ThreadPreviewMiniPlayer";
 
 const threadRef = {
   environmentId: EnvironmentId.make("preview-test"),
@@ -81,16 +81,24 @@ function Player() {
           container,
           preview: { ...miniPlayer, key, source: sourceSizes[miniPlayer.source.kind] },
         }),
-        reportPreview: () => {},
-        clearPreview: () => {},
         registerTimeline: () => {},
-        reportDetailsCard: () => {},
+        measureDetailsCard: () => {},
         detailsCardTopInset: 0,
+        preferredDetailsCard: null,
+        detailsCardPlacement: null,
       }}
     >
       <ThreadPreviewMiniPlayer threadRef={threadRef} miniPlayer={miniPlayer} />
     </ChatCanvasContext>
   );
+}
+
+function DraggingProbe() {
+  const miniPlayer = usePreviewMiniPlayerStore((state) =>
+    selectThreadPreviewMiniPlayer(state.byThreadKey, threadRef),
+  );
+  const preview = useThreadPreviewCanvasSource(threadRef, miniPlayer);
+  return <output data-dragging={String(preview?.dragging)} />;
 }
 
 async function mount(source = browserSource) {
@@ -205,6 +213,33 @@ describe("floating device preview", () => {
     expect(player.frame()).toEqual({ ...start, x: start.x - 30, y: start.y - 20 });
     await player.pointer(surface, "pointerup", start.x + 10, start.y + 60);
     expect(player.captured.size).toBe(0);
+  });
+
+  it("forgets a drag when the player unmounts before the pointer is released", async () => {
+    usePreviewMiniPlayerStore.setState({ byThreadKey: {} });
+    usePreviewMiniPlayerStore.getState().open(threadRef, deviceSource);
+    await using screen = await render(
+      <>
+        <Player />
+        <DraggingProbe />
+      </>,
+    );
+    const surface = screen.container.querySelector<HTMLElement>(
+      "section > div[aria-hidden='true']",
+    )!;
+    Object.assign(surface, { setPointerCapture: () => {} });
+    const dispatch = (type: string, x: number, y: number) =>
+      act(() => {
+        const event = new MouseEvent(type, { bubbles: true, button: 0, clientX: x, clientY: y });
+        Object.defineProperty(event, "pointerId", { value: 1 });
+        surface.dispatchEvent(event);
+      });
+    const probe = () => screen.container.querySelector("output")!.dataset.dragging;
+    await dispatch("pointerdown", 500, 400);
+    await dispatch("pointermove", 450, 350);
+    expect(probe()).toBe("true");
+    await screen.rerender(<DraggingProbe />);
+    expect(probe()).toBe("false");
   });
 
   it("opens the device in the right panel on double-click", async () => {
