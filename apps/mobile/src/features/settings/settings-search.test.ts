@@ -47,7 +47,7 @@ describe("filterSettingsSections", () => {
     { query: "appear", expected: [["Interface", ["Appearance"]]] },
     { query: "KEYBOARD", expected: [["Interface", ["Keyboard"]]] },
     { query: "dark mode", expected: [["Interface", ["Appearance"]]] },
-    { query: "branch naming", expected: [["Server settings", ["Source control"]]] },
+    { query: "agent credits", expected: [["Server settings", ["Source control"]]] },
     {
       query: "server settings",
       expected: [["Server settings", ["Provider accounts", "Source control"]]],
@@ -65,13 +65,13 @@ describe("filterSettingsSections", () => {
   it("finds the fork's settings by the options on their pages", () => {
     const sections = [
       {
-        title: "Server settings",
         rows: [
-          { id: "SettingsDevices", label: "Devices" },
-          { id: "SettingsEnvironmentMaintenance", label: "Maintenance" },
+          { id: "SettingsOrganization", label: "General" },
+          { id: "SettingsFollowUp", label: "Chat" },
         ],
       },
-      { title: "Projects & threads", rows: [{ id: "SettingsThreads", label: "Thread behavior" }] },
+      { title: "Agents", rows: [{ id: "SettingsDevices", label: "Devices" }] },
+      { rows: [{ id: "SettingsEnvironmentMaintenance", label: "Maintenance" }] },
     ];
     const labels = (query: string) =>
       filterSettingsSections(sections, query).flatMap((section) =>
@@ -79,7 +79,9 @@ describe("filterSettingsSections", () => {
       );
     expect(labels("device hub")).toEqual(["Devices"]);
     expect(labels("managed updates")).toEqual(["Maintenance"]);
-    expect(labels("turn usage")).toEqual(["Thread behavior"]);
+    expect(labels("turn usage")).toEqual(["Chat"]);
+    expect(labels("unpin confirmation")).toEqual(["General"]);
+    expect(labels("last message time")).toEqual(["General"]);
   });
 
   it("drops sections that start empty", () => {

@@ -128,10 +128,10 @@ On a 64-bit ARM Android device running Android 7.0 or newer, open the newest
 [releases page](https://github.com/incognitojam/styal/releases) and download its
 APK on your phone. Chrome may warn that the file might be harmful; choose
 **Download anyway**. Android asks you to allow installs from your browser the
-first time. When styal offers an update, download it from **Settings → About styal**.
+first time. When styal offers an update, download it from **Settings → About**.
 You can cancel the download or retry if it fails. Once downloaded, styal opens
 Android's installer; allow installs from styal if asked, then confirm the update.
-If you dismiss the installer, return to About styal to install the downloaded APK.
+If you dismiss the installer, return to **Settings → About** to install the downloaded APK.
 Your saved environments are kept. You can still install a newer release from
 the releases page. To have an app such as Obtainium track releases for you,
 filter release titles by `Android`.

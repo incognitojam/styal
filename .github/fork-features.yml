@@ -5569,7 +5569,8 @@ features:
     rationale: V2 derives the optional latestMessageAt field from retained message timestamps in both SQL shells and full projections; this supersedes the V1 timestamp column and backfill. Migrated historical messages participate without reading their bodies, and deleting reverted messages recalculates the timestamp immediately.
     implementation_paths:
       - apps/mobile/src/features/home/HomeScreen.tsx
-      - apps/mobile/src/features/settings/SettingsThreadsRouteScreen.tsx
+      - apps/mobile/src/features/settings/SettingsProjectGroupingRouteScreen.tsx
+      - apps/mobile/src/features/settings/ThreadSettingsSections.tsx
       - apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx
       - apps/mobile/src/features/threads/thread-list-v2-items.tsx
       - apps/mobile/src/features/threads/threadListV2.ts
@@ -6172,12 +6173,13 @@ features:
     prs: [672]
     invariants:
       - Unpinning a thread asks for confirmation by default on mobile until mobile offers Undo.
-      - Mobile has its own device-local switch under Settings, Thread behavior, and an explicit opt-out survives later preference writes.
+      - Mobile has its own device-local switch under Settings, General, and an explicit opt-out survives later preference writes.
       - Mobile asks before unpinning from both the home list and the thread sidebar.
     rationale: The fork's default-on web and desktop confirmation was retired in favor of upstream's opt-in confirmation and Undo (upstream #10744 and #12848). Mobile still has no Undo, so its default-on confirmation remains to guard accidental unpinning. Compared with upstream revision a6ec88f7a716fc421bd22c2484881c44110f9375 on October 8, 2026. The original confirmation was added by fork commit 75082f7ea3 and the fork's import of #7313, without a fork pull request.
     implementation_paths:
       - apps/mobile/src/features/home/useThreadListActions.ts
-      - apps/mobile/src/features/settings/SettingsThreadsRouteScreen.tsx
+      - apps/mobile/src/features/settings/SettingsProjectGroupingRouteScreen.tsx
+      - apps/mobile/src/features/settings/ThreadSettingsSections.tsx
     upstream_paths:
       - apps/mobile/src/features/home/useThreadListActions.ts
       - apps/mobile/src/persistence/mobile-preferences.ts
@@ -6228,7 +6230,8 @@ features:
       - packages/contracts/src/legacyTurnUsage.ts
       - packages/shared/src/turnUsage.ts
     upstream_paths:
-      - apps/mobile/src/features/settings/SettingsThreadsRouteScreen.tsx
+      - apps/mobile/src/features/settings/SettingsFollowUpRouteScreen.tsx
+      - apps/mobile/src/features/settings/ThreadSettingsSections.tsx
       - apps/mobile/src/features/threads/ThreadComposer.tsx
       - apps/mobile/src/features/threads/ThreadFeed.tsx
       - apps/mobile/src/features/threads/ThreadRouteScreen.tsx

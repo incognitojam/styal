@@ -95,11 +95,11 @@ how many turns it includes, and likewise when only some turns have a cost. The t
 shows when you hover a thread in the sidebar.
 
 To lead with the estimated cost instead of tokens, set **Settings → Chat → Show usage as** to
-**Est. API cost**, or turn on **Show cost** in **Settings → Thread behavior** on mobile. Turns
+**Est. API cost**, or turn on **Show cost** in **Settings → Chat** on mobile. Turns
 without a cost keep showing tokens.
 
 To hide the figures, turn off **Settings → Chat → Turn usage**. On mobile, the setting is in
-**Settings → Thread behavior** and applies to that device.
+**Settings → Chat** and applies to that device.
 
 ## Set custom model prices
 

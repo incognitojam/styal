@@ -25,7 +25,7 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 
 ## Mobile
 
-- **Android updates inside the app.** styal offers APK updates in **Settings → About styal**,
+- **Android updates inside the app.** styal offers APK updates in **Settings → About**,
   downloads them with progress and cancellation, then opens Android's installer. T3 Code has
   over-the-air updates but no in-app APK installer as of
   [revision 454b94a](https://github.com/pingdotgg/t3code/tree/454b94a13aea918f27bb060d8d054d4cfb791bc2).
@@ -46,7 +46,7 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   immediately as of
   [revision a42bdd4](https://github.com/pingdotgg/t3code/tree/a42bdd4e516433a16650b9401ab3c066544ca5cd).
   [Mobile notifications](./mobile-notifications.md).
-- **Every provider in Provider accounts.** Mobile **Settings → Provider accounts** lists each
+- **Every provider in Providers.** Mobile **Settings → Providers** lists each
   provider with its icon and sign-in status, including Claude and Codex, which sign in through
   their own CLI. T3 Code lists only providers that sign in inside the app as of
   [revision 7ac952c](https://github.com/pingdotgg/t3code/tree/7ac952c630ef8a60d14ca8f6a0c7adce33db4bae).
@@ -257,7 +257,7 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   [revision 67c0fc0](https://github.com/pingdotgg/t3code/tree/67c0fc0cdaf963b103518862dd7b68a9c758ecf2),
   checked October 20, 2026. [Settle finished work](./thread-sidebar.md#settle-finished-work).
 - **Confirm unpinning on mobile.** Mobile asks before removing a thread from the pinned
-  section, with a device-local opt-out in **Settings → Thread behavior**. T3 Code mobile
+  section, with a device-local opt-out in **Settings → General**. T3 Code mobile
   unpins immediately and has no Undo as of
   [revision a6ec88f](https://github.com/pingdotgg/t3code/tree/a6ec88f7a716fc421bd22c2484881c44110f9375),
   checked October 8, 2026. Web and desktop follow T3 Code's opt-in confirmation and Undo.

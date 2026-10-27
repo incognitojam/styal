@@ -13,6 +13,7 @@ import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/
 import { SettingsChoiceRow } from "./components/SettingsChoiceRow";
 import { SettingsSection } from "./components/SettingsSection";
 import { SettingsSwitchRow } from "./components/SettingsSwitchRow";
+import { ThreadListDeviceSettingsRows, WorkingSectionSettings } from "./ThreadSettingsSections";
 
 const GROUPING_OPTIONS: ReadonlyArray<{
   readonly mode: SidebarProjectGroupingMode;
@@ -49,7 +50,7 @@ export function SettingsProjectGroupingRouteScreen() {
     preferencesResult.value.threadGrouping === "project";
 
   return (
-    <SettingsScreen title="Organization">
+    <SettingsScreen title="General">
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
         showsVerticalScrollIndicator={false}
@@ -81,7 +82,9 @@ export function SettingsProjectGroupingRouteScreen() {
               savePreferences({ threadGrouping: value ? "project" : "none" })
             }
           />
+          <ThreadListDeviceSettingsRows />
         </SettingsSection>
+        <WorkingSectionSettings />
       </ScrollView>
     </SettingsScreen>
   );

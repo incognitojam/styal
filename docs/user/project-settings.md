@@ -40,10 +40,10 @@ machine's setting. Every other provider setting stays per machine.
 
 On mobile, open **Settings** and use the filter in its header to choose connected environments
 and a project. The filter stays available in server-setting pages. With **All projects** selected,
-the **Server settings** categories and auto-settle controls in **Thread behavior** edit the
-selected environments' defaults. Choosing a project edits its overrides on the selected
+the server-setting pages, such as Threads, Source control and Worktrees, edit the selected
+environments' defaults. Choosing a project edits its overrides on the selected
 environments. Use **Use defaults** in a page to remove that page's project overrides.
-Open **Settings → Projects & threads → Overview** to rename the project across its selected
+Open **Settings → Projects** to rename the project across its selected
 connected checkouts and see where those checkouts live.
 Settings that are environment-wide stay read-only while a project is selected. When selected
 targets disagree, a control shows **Mixed** until you choose one value. Appearance, keyboard,
@@ -247,7 +247,7 @@ sidebar and the command palette, and its pull requests leave the **Pull requests
 **Archived** in **Settings → Projects** and choose **Unarchive** to bring everything back.
 
 Pin and archive apply to the project on every machine, so every machine with the project must
-be connected. On mobile, use **Organize** in **Settings → Projects & threads → Overview**.
+be connected. On mobile, use **Organize** in **Settings → Projects**.
 
 ## Project icons
 

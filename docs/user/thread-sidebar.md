@@ -55,7 +55,7 @@ Pin a thread from its menu to keep it above your active work.
 On web and desktop, unpinning proceeds immediately by default. To ask first, enable
 **Settings → General → Unpin confirmation**. Your saved choice is preserved.
 Mobile still asks for confirmation by default because it does not offer Undo;
-turn this off in **Settings → Thread behavior**. The preference is saved separately
+turn this off in **Settings → General**. The preference is saved separately
 on each device.
 
 On web and desktop, unpinning, settling, snoozing, and archiving a thread each show
@@ -118,7 +118,7 @@ continues to use settlement time.
 
 Thread times show when you last prompted the agent by default. To include agent replies, choose
 **Last message** in **Settings → General → Thread timestamp** on web or desktop, or enable
-**Show last message time** in **Settings → Thread behavior** on mobile. This changes the displayed time, not the order.
+**Show last message time** in **Settings → General** on mobile. This changes the displayed time, not the order.
 For an older connected server, **Last message** uses the latest thread activity time until that
 server is updated; other activity can make this an approximation of the last reply.
 
@@ -150,7 +150,7 @@ answer. The Working section lists the thread you last sent work to first. Pinned
 the pinned section.
 
 This is on by default. Turn it off with **Settings → General → Working section** on web and desktop,
-or **Settings → Thread behavior → Working section** on iOS and Android. Each device keeps its own
+or **Settings → General → Working section** on iOS and Android. Each device keeps its own
 choice.
 
 While this is on, the active list is ordered by when each thread last came back to you, so you
@@ -236,7 +236,7 @@ choose **Auto-settle behavior**, and pick **Disabled**. The current option is ch
 **Enabled** to return to the usual rules. Manual settle, snooze, and archive still work while it
 is disabled.
 
-Change these rules in **Settings → Threads** on web and desktop, or **Settings → Thread behavior** on mobile.
+Change these rules in **Settings → Threads**.
 They continue to run when your apps are closed. On web and desktop, choose an environment at the
 top to change only its rules, or **All environments** to update connected environments together.
 Mixed values show where the selected environments disagree. Mobile applies these
@@ -292,8 +292,7 @@ the continuation finishes. If the queue was held by a restart, resume it then.
 
 When the provider reports a reset time, choose **Resume at reset** to schedule a
 continuation. You can cancel it from the thread. Enable **Resume after
-usage limits** in **Settings → Threads** on web and desktop, or **Settings → Thread
-behavior** on mobile, to schedule limit stops by default.
+usage limits** in **Settings → Threads** to schedule limit stops by default.
 The environment must be running when the reset arrives; it resumes overdue
 continuations after a restart. Stopping the thread, sending a new message,
 archiving, or settling it prevents a pending continuation from starting.
