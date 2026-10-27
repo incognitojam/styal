@@ -205,8 +205,8 @@ after auto-merge is on are merged too, unless the host turns auto-merge off. Git
 approving waiting workflows and opening a revert pull request for a merged change.
 
 While checks or reviews block a GitHub pull request, the merge button turns on auto-merge instead.
-If GitHub lets you bypass the repository's rules, the actions menu also offers
-**Bypass rules and merge**, which merges at once without waiting for them.
+If GitHub lets you bypass the repository's rules, the actions menu (the merge options menu on
+mobile) also offers **Bypass rules and merge**, which merges at once without waiting for them.
 
 GitHub holds some workflow runs until someone with write access approves them: runs from fork
 pull requests, depending on the repository's settings, and runs on a pull request that a workflow
