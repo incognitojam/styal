@@ -49,7 +49,7 @@ The reel is the same in every channel; the ground behind it tells the channels a
 
 - **Production:** plain light, `#F2EEE6`.
 - **Nightly:** `#0A2B34` under the starry night sky carried over from upstream's nightly icon.
-- **Development:** `#1D5A55` with a cutting-mat grid, the sewing-table take on a blueprint.
+- **Development:** `#1D5A55` with a cutting-mat grid, the sewing-table take on a blueprint. Pull request previews on desktop and mobile use it too.
 
 Icon Composer turns each ground into an automatic gradient; Android's adaptive icons and the
 favicons use the flat colour.

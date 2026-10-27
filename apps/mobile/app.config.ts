@@ -51,17 +51,6 @@ const DEVELOPMENT_ASSETS = {
   androidNotificationColor: "#1D5A55",
 } as const;
 
-const PREVIEW_ASSETS = {
-  appIcon: fromRepoRoot(BRAND_ASSET_PATHS.nightlyIosIconPng),
-  iosIcon: fromRepoRoot(BRAND_ASSET_PATHS.nightlyIconComposerProject),
-  splashIcon: fromRepoRoot(BRAND_ASSET_PATHS.nightlyIosIconPng),
-  androidAdaptiveForeground,
-  androidAdaptiveBackgroundColor: "#0A2B34",
-  androidMonochromeIcon: "./assets/android-icon-mark.png",
-  androidNotificationIcon: "./assets/android-notification-icon.png",
-  androidNotificationColor: "#0A2B34",
-} as const;
-
 const RELEASE_ASSETS = {
   appIcon: fromRepoRoot(BRAND_ASSET_PATHS.productionIosIconPng),
   iosIcon: fromRepoRoot(BRAND_ASSET_PATHS.productionIconComposerProject),
@@ -86,7 +75,8 @@ export const VARIANT_CONFIG = {
     scheme: "styal-preview",
     iosBundleIdentifier: "build.styal.app.preview",
     androidPackage: "build.styal.app.preview",
-    assets: PREVIEW_ASSETS,
+    // Previews carry the development artwork so they are not mistaken for a release.
+    assets: DEVELOPMENT_ASSETS,
   },
   production: {
     appName: "styal",
