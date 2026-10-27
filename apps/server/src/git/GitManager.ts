@@ -196,10 +196,6 @@ type StripProgressContext<T> = T extends any ? Omit<T, "actionId" | "cwd" | "act
 type GitActionProgressPayload = StripProgressContext<GitActionProgressEvent>;
 type GitActionProgressEmitter = (event: GitActionProgressPayload) => Effect.Effect<void, never>;
 
-function isNotGitRepositoryError(error: GitCommandError): boolean {
-  return error.message.toLowerCase().includes("not a git repository");
-}
-
 interface OpenPrInfo {
   number: number;
   title: string;
@@ -1076,26 +1072,11 @@ export const make = Effect.gen(function* () {
   const canonicalizeExistingPath = (value: string) =>
     fileSystem.realPath(value).pipe(Effect.orElseSucceed(() => value));
   const normalizeStatusCacheKey = canonicalizeExistingPath;
-  const nonRepositoryStatusDetails: GitVcsDriver.GitStatusDetails = {
-    isRepo: false,
-    hasOriginRemote: false,
-    isDefaultBranch: false,
-    branch: null,
-    upstreamRef: null,
-    hasWorkingTreeChanges: false,
-    workingTree: { files: [], insertions: 0, deletions: 0 },
-    hasUpstream: false,
-    aheadCount: 0,
-    behindCount: 0,
-    aheadOfDefaultCount: 0,
-    hasHeadCommit: false,
-  };
   const readLocalStatus = Effect.fn("readLocalStatus")(function* (cwd: string) {
-    const details = yield* gitCore
-      .statusDetailsLocal(cwd, { includeDivergence: false, includeBranchChanges: true })
-      .pipe(
-        Effect.catchIf(isNotGitRepositoryError, () => Effect.succeed(nonRepositoryStatusDetails)),
-      );
+    const details = yield* gitCore.statusDetailsLocal(cwd, {
+      includeDivergence: false,
+      includeBranchChanges: true,
+    });
     const hostingProvider = details.isRepo
       ? yield* resolveHostingProvider(cwd, details.branch)
       : null;
@@ -1358,10 +1339,8 @@ export const make = Effect.gen(function* () {
     cwd: string,
     options?: GitRemoteStatusOptions,
   ) {
-    const details = yield* gitCore
-      .statusDetailsRemote(cwd, options)
-      .pipe(Effect.catchIf(isNotGitRepositoryError, () => Effect.succeed(null)));
-    if (details === null || !details.isRepo) {
+    const details = yield* gitCore.statusDetailsRemote(cwd, options);
+    if (!details.isRepo) {
       return null;
     }
 
