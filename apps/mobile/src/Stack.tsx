@@ -502,9 +502,12 @@ export function workspaceLocationFromState(state: NavigationState) {
       ? ({ ...state, routes, index: routes.length - 1 } as NavigationState)
       : state;
   const path = getPathFromState(effectiveState, navigationPathConfig);
+  const route = effectiveState.routes[effectiveState.index];
   return {
     pathname: path.startsWith("/") ? path : `/${path}`,
-    routeKey: effectiveState.routes[effectiveState.index]?.key,
+    routeKey: route?.key,
+    routeName: route?.name,
+    routeKeys: effectiveState.routes.map((stackRoute) => stackRoute.key),
   };
 }
 
@@ -542,6 +545,8 @@ function RootStackLayout(props: {
               <AdaptiveWorkspaceLayout
                 pathname={workspaceLocation.pathname}
                 workspaceRouteKey={workspaceLocation.routeKey}
+                workspaceRouteName={workspaceLocation.routeName}
+                workspaceRouteKeys={workspaceLocation.routeKeys}
                 selectedPullRequestKey={selectedPullRequestKey(props.state)}
               >
                 {props.children}
