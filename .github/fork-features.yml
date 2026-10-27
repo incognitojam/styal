@@ -5904,6 +5904,7 @@ features:
       - apps/mobile/src/features/projects/useProjectRootConfig.ts
       - apps/mobile/src/features/threads/ThreadRouteScreen.tsx
       - apps/mobile/src/features/threads/new-task-flow-provider.tsx
+      - apps/mobile/src/features/threads/use-new-task-project-defaults.ts
       - apps/mobile/src/lib/threadActivity.ts
       - apps/server/src/project/ProjectConfigLoader.ts
       - apps/server/src/project/ProjectFileActionApprovals.ts
