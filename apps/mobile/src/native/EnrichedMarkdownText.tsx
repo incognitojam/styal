@@ -343,6 +343,7 @@ export function MobileEnrichedMarkdownText(props: SelectableMarkdownTextProps) {
             latexMath: mathRenderingEnabled,
             hardSoftBreaks: props.preserveSoftBreaks ?? false,
             admonitions: true,
+            preserveWindowsPaths: true,
           }}
           enableTaskListItemToggle={false}
           enableCodeBlockWrapToggle
