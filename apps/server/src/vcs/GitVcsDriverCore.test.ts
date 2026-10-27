@@ -32,6 +32,7 @@ import {
 import * as ServerConfig from "../config.ts";
 import { gitCommandDuration } from "../observability/Metrics.ts";
 import {
+  isNonRepositoryGitStderr,
   makeGitVcsDriverCore,
   parseGitCheckoutProgressLine,
   splitNullSeparatedGitStdoutPaths,
@@ -299,6 +300,16 @@ it.effect.each(["root", "nested", "worktree"] as const)(
       assert.include(yield* fs.readFileString(runsPath), "clean");
     }).pipe(Effect.provide(layerTest)),
 );
+
+it("treats a missing gitfile target as no repository on every Git version", () => {
+  assert.isTrue(isNonRepositoryGitStderr("fatal: not a git repository: /work/.git/worktrees/a"));
+  assert.isTrue(
+    isNonRepositoryGitStderr(
+      "fatal: gitfile does not point to a valid repository: /work/feature/.git",
+    ),
+  );
+  assert.isFalse(isNonRepositoryGitStderr("fatal: Unable to create '/work/.git/index.lock'"));
+});
 
 it.effect("uses stable diagnostics for every parsed non-repository command", () => {
   const commands: Array<{ readonly args: ReadonlyArray<string>; readonly lcAll?: string }> = [];
