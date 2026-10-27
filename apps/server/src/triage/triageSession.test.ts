@@ -9,14 +9,14 @@ import {
   makePersistedServerRuntimeState,
   persistServerRuntimeState,
 } from "../serverRuntimeState.ts";
-import { describeServerProcess } from "./triage.ts";
+import { describeServerProcess } from "./triageSession.ts";
 
 it.effect("reports the version the running server recorded, not the CLI's", () =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const statePath = path.join(
-      yield* fs.makeTempDirectoryScoped({ prefix: "t3-triage-" }),
+      yield* fs.makeTempDirectoryScoped({ prefix: "styal-triage-" }),
       "server-runtime.json",
     );
     const state = yield* makePersistedServerRuntimeState({

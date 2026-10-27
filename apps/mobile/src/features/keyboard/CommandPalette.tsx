@@ -1,3 +1,4 @@
+import { useAtomValue } from "@effect/atom-react";
 import { uuidv4 } from "../../lib/uuid";
 import { useNavigation } from "@react-navigation/native";
 import {
@@ -41,17 +42,27 @@ import { deriveBottomControlInsets } from "../../lib/reserved-regions";
 import { scopedProjectKey, scopedThreadKey } from "../../lib/scopedEntities";
 import { useNativeLayoutMetrics } from "../../native/native-layout-metrics";
 import { T3KeyboardCommands } from "../../native/T3KeyboardCommands";
-import { useProjects, useThreadShell, useThreadShells } from "../../state/entities";
+import {
+  useProjects,
+  useServerConfigs,
+  useThreadShell,
+  useThreadShells,
+} from "../../state/entities";
 import { useMobileProjectGroupingSettings } from "../../state/project-grouping";
 import { organizeProjectRecords } from "@t3tools/client-runtime/state/project-organization";
 import { useThreadSearch } from "../../state/queries";
 import { requestThreadMessageJump } from "../threads/threadMessageJump";
 import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { serverEnvironment } from "../../state/server";
 import { useWorkspaceEnvironments } from "../../state/workspace";
 import { useSavedRemoteConnections } from "../../state/use-remote-environment-registry";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { ThreadSearchMatchExcerpt } from "../threads/thread-search-match";
+import { pickTriageEnvironment } from "../triage/triageTarget";
+import { useStartTriage } from "../triage/useStartTriage";
+import { useNewTaskFlow } from "../threads/new-task-flow-provider";
+import { useActiveNewTask } from "../../state/active-new-task";
 import {
   filterCommandPaletteItems,
   nextPaletteIndex,
@@ -274,6 +285,22 @@ export function CommandPalette(props: {
     query.startsWith(">") ? "" : query,
     environmentLabels === undefined ? {} : { environmentLabels },
   );
+  const serverConfigs = useServerConfigs();
+  const startTriage = useStartTriage();
+  const newTaskFlow = useNewTaskFlow();
+  const draftEnvironmentId =
+    useActiveNewTask() === null ? null : (newTaskFlow.selectedProject?.environmentId ?? null);
+  const triageEnvironmentId = pickTriageEnvironment({
+    // The route names the machine even before the thread shell loads.
+    onScreen: activeThreadRef?.environmentId ?? draftEnvironmentId,
+    connected: searchEnvironmentIds,
+    supportsTriage: (environmentId) =>
+      serverConfigs.get(environmentId)?.environment.capabilities.triage === true,
+  });
+  const canTriage =
+    useAtomValue(serverEnvironment.prepareTriage.permissionAtom(triageEnvironmentId)) &&
+    triageEnvironmentId !== null &&
+    serverConfigs.get(triageEnvironmentId)?.environment.capabilities.triage === true;
   const contentMatchByKey = useMemo(
     () =>
       new Map(
@@ -342,6 +369,17 @@ export function CommandPalette(props: {
         run: () => openSettings(navigation, "SettingsArchive"),
       },
     ];
+    if (canTriage) {
+      actions.push({
+        key: "triage",
+        kind: "action",
+        title: "Triage an issue",
+        // Mobile has no triage hero, so name the machine before it starts.
+        detail: `On ${savedConnectionsById[triageEnvironmentId]?.environmentLabel ?? "this machine"}`,
+        searchTerms: ["triage", "bug", "issue", "report", "broken", "debug", "help", "support"],
+        run: () => void startTriage(triageEnvironmentId),
+      });
+    }
     // Every record, so the current thread's project resolves even when archived.
     const projectByKey = new Map(
       allProjects.map((project) => [scopedProjectKey(project.environmentId, project.id), project]),
@@ -453,12 +491,15 @@ export function CommandPalette(props: {
     allProjects,
     archivedProjectKeys,
     environments.length,
+    canTriage,
     navigation,
     projects,
     runCommand,
     savedConnectionsById,
     selectDetail,
+    startTriage,
     threads,
+    triageEnvironmentId,
   ]);
   const rankedMessageKeys = useMemo(() => {
     const subjectByKey = new Map(
