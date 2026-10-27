@@ -6,10 +6,10 @@ import {
 } from "@t3tools/shared/composerContextReferences";
 import {
   markdownForNativeRendering,
+  markdownForLiteralNativeParsing,
   markdownForLiteralNativeRendering,
   markdownWithFileEmbeds,
-  markdownWithHtml,
-  markdownWithLiteralHtml,
+  markdownForNativeParsing,
   markdownWithInlineFileLinks,
   markdownWithTableBreaks,
 } from "../lib/markdownDocument";
@@ -171,7 +171,7 @@ export function MobileEnrichedMarkdownText(props: SelectableMarkdownTextProps) {
       };
     }
     const content = markdownWithInlineFileLinks(
-      (parseRawHtml ? markdownWithHtml : markdownWithLiteralHtml)(props.markdown),
+      (parseRawHtml ? markdownForNativeParsing : markdownForLiteralNativeParsing)(props.markdown),
       ENRICHED_INLINE_FILE_LINK_REGEX,
     );
     const files = markdownWithFileEmbeds(content, fileEmbedLabel);
