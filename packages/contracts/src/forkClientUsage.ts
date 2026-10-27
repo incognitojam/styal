@@ -33,7 +33,7 @@ import {
 } from "./settings.ts";
 
 /** Bump when extending the vocabulary; clients require the complete version before reporting. */
-export const FORK_CLIENT_USAGE_VERSION = 21;
+export const FORK_CLIENT_USAGE_VERSION = 22;
 
 /**
  * One device's client preferences, reported daily so we can see which defaults
@@ -61,7 +61,6 @@ export const ClientSettingsSnapshot = Schema.Struct({
   timestampFormat: TimestampFormat,
   loadBalancingEnabled: Schema.Boolean,
   legacySidebarEnabled: Schema.Boolean,
-  redesignEnabled: Schema.Boolean,
   sidebarWorkingShelfEnabled: Schema.Boolean,
   sidebarThreadGrouping: SidebarThreadGrouping,
   sidebarProjectGroupingMode: SidebarProjectGroupingMode,

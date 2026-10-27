@@ -304,7 +304,7 @@ function PullRequestBadge({
             Icon={presentation.Icon}
             mergeIntent={presentation.mergeIntent}
           />
-          <span className="redesign:text-secondary-label">{presentation.text}</span>
+          <span className="text-secondary-label">{presentation.text}</span>
         </span>
       </TooltipTrigger>
       <TooltipPopup

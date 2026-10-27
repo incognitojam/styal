@@ -1906,7 +1906,6 @@ export default function ChatView(props: ChatViewProps) {
   const threadPanelInlineOpen = useRightPanelStore((state) =>
     selectThreadPanelOpen(state.threadPanelVisibilityByThreadKey, activeThreadRef, "inline"),
   );
-  const centerChatBesideDetails = useClientSettings((s) => s.redesignEnabled);
   // Selects only the mode, so canvas resizes rerender the chat view only when the
   // card switches presentation.
   const threadPanelPresentation = useStore(
@@ -1918,7 +1917,6 @@ export default function ChatView(props: ChatViewProps) {
         threadRef: activeThreadRef,
         preview: canvasPreview,
         detailsCardInlineOpen: threadPanelInlineOpen,
-        centerBesideDetails: centerChatBesideDetails,
       }).detailsCardMode,
   );
   const threadPanelOpen = useRightPanelStore((state) =>
