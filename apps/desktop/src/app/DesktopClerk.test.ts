@@ -184,6 +184,7 @@ describe("DesktopClerk", () => {
         `setPath:userData:${userData}`,
         "requestSingleInstanceLock",
         "on:second-instance",
+        "on:open-url",
         "createClerkBridge",
       ]);
     },
@@ -227,6 +228,57 @@ describe("DesktopClerk", () => {
       );
     },
   );
+
+  it.effect("delivers each queued startup link once, before later links", () => {
+    storageMock.mockReturnValue(storageAdapter);
+    createClerkBridgeMock.mockReturnValue({ cleanup: vi.fn(), isPrimaryInstance: true });
+    const listeners = new Map<string, (...args: unknown[]) => void>();
+    const received: string[] = [];
+    const first = "styal://new?prompt=first";
+    const second = "styal://threads/env-1/thread-1";
+    const later = "styal://new?prompt=later";
+    const launchPair = "styal://pair?pairingUrl=https%3A%2F%2Fvps.example.com%2F%23token%3Dabc";
+    const delivered = Promise.withResolvers<void>();
+    const electronApp = {
+      on: (name: string, listener: (...args: unknown[]) => void) =>
+        Effect.sync(() => {
+          listeners.set(name, listener);
+        }),
+    } as unknown as ElectronApp.ElectronApp["Service"];
+
+    return Effect.gen(function* () {
+      const clerk = yield* DesktopClerk.DesktopClerk;
+      listeners.get("second-instance")?.({}, ["t3", first]);
+      listeners.get("second-instance")?.({}, ["t3", second]);
+      listeners.get("open-url")?.({ preventDefault: () => undefined }, launchPair);
+      assert.deepEqual(received, []);
+
+      yield* clerk.configure;
+      listeners.get("second-instance")!({}, ["t3", later]);
+      yield* Effect.promise(() => delivered.promise);
+
+      assert.deepEqual(received, [launchPair, first, second, later]);
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(layerDesktopClerk(true, [], "darwin", undefined, undefined, listeners)),
+      Effect.provideService(ElectronApp.ElectronApp, electronApp),
+      Effect.provideService(
+        ElectronWindow.ElectronWindow,
+        {} as ElectronWindow.ElectronWindow["Service"],
+      ),
+      Effect.provideService(
+        DesktopWebLinks.DesktopWebLinks,
+        DesktopWebLinks.DesktopWebLinks.of({
+          receive: (url) =>
+            Effect.sync(() => {
+              received.push(url);
+              if (url === later) delivered.resolve();
+            }),
+          setRendererReady: () => Effect.void,
+        }),
+      ),
+    );
+  });
 
   it.effect.each(["darwin", "win32", "linux"] as const)(
     "quits a second launch before initializing Clerk or the application runtime on %s",
@@ -404,6 +456,7 @@ it.effect("hands web and app links to the renderer and leaves other links alone"
         }),
     } as unknown as ElectronApp.ElectronApp["Service"];
     const received: Array<string> = [];
+    const pairLink = "styal://pair?pairingUrl=https%3A%2F%2Fvps.example.com%2F%23token%3Dabc";
     yield* Effect.gen(function* () {
       const clerk = yield* DesktopClerk.DesktopClerk;
       yield* clerk.configure;
@@ -416,6 +469,8 @@ it.effect("hands web and app links to the renderer and leaves other links alone"
       assert.strictEqual(open("http://localhost:3000/"), 1);
       assert.strictEqual(open("styal://new?prompt=hi"), 1);
       assert.strictEqual(open("styal://threads/env-1/thread-1"), 1);
+      assert.strictEqual(open(pairLink), 1);
+      assert.strictEqual(open("styal://pair"), 0);
       assert.strictEqual(open("mailto:hello@example.com"), 0);
       assert.strictEqual(open("styal://somewhere-else"), 0);
       yield* Effect.yieldNow;
@@ -424,6 +479,7 @@ it.effect("hands web and app links to the renderer and leaves other links alone"
         "http://localhost:3000/",
         "styal://new?prompt=hi",
         "styal://threads/env-1/thread-1",
+        pairLink,
       ]);
     }).pipe(
       Effect.provide(layerDesktopClerk(true, [], "darwin", undefined, undefined, listeners)),
