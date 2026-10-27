@@ -1652,7 +1652,6 @@ features:
       - .github/scripts/publish-android-release.sh
       - .github/scripts/release-changelog.sh
       - .github/workflows/desktop-macos-preview.yml
-      - .github/workflows/mobile-android-preview.yml
       - .github/workflows/fork-cli-archives.yml
       - .github/workflows/fork-cli-build.yml
       - .github/workflows/fork-desktop-build-dispatch.yml
@@ -1661,6 +1660,7 @@ features:
       - .github/workflows/fork-nightly.yml
       - .github/workflows/fork-release.yml
       - .github/workflows/mobile-android-build.yml
+      - .github/workflows/mobile-android-preview.yml
       - .github/workflows/mobile-eas-production.yml
       - .github/workflows/mobile-ios-build.yml
       - apps/desktop/gnome-extension/bundle.json
