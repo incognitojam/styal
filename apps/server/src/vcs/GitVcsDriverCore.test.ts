@@ -50,7 +50,7 @@ const layerTest = GitVcsDriver.layer.pipe(
   Layer.provideMerge(NodeServices.layer),
 );
 
-const makeNonRepositoryHandle = () =>
+const makeNonRepositoryHandle = (stderr = "fatal: not a git repository") =>
   ChildProcessSpawner.makeHandle({
     pid: ChildProcessSpawner.ProcessId(1),
     exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(128)),
@@ -59,7 +59,7 @@ const makeNonRepositoryHandle = () =>
     unref: Effect.succeed(Effect.void),
     stdin: Sink.drain,
     stdout: Stream.empty,
-    stderr: Stream.encodeText(Stream.make("fatal: not a git repository")),
+    stderr: Stream.encodeText(Stream.make(stderr)),
     all: Stream.empty,
     getInputFd: () => Sink.drain,
     getOutputFd: () => Stream.empty,
@@ -300,7 +300,10 @@ it.effect.each(["root", "nested", "worktree"] as const)(
     }).pipe(Effect.provide(layerTest)),
 );
 
-it.effect("uses stable diagnostics for every parsed non-repository command", () => {
+it.effect.each([
+  "fatal: not a git repository (or any of the parent directories): .git",
+  "fatal: gitfile does not point to a valid repository: /repo/.git",
+])("uses stable diagnostics for every parsed non-repository command: %s", (stderr) => {
   const commands: Array<{ readonly args: ReadonlyArray<string>; readonly lcAll?: string }> = [];
   const spawner = ChildProcessSpawner.make((command) =>
     Effect.sync(() => {
@@ -311,7 +314,7 @@ it.effect("uses stable diagnostics for every parsed non-repository command", () 
         args: command.args,
         ...(command.options.env?.LC_ALL ? { lcAll: command.options.env.LC_ALL } : {}),
       });
-      return makeNonRepositoryHandle();
+      return makeNonRepositoryHandle(stderr);
     }),
   );
   const layerNodeServices = Layer.merge(

@@ -535,7 +535,12 @@ function isMissingGitCwdError(error: GitCommandError): boolean {
 }
 
 function isNonRepositoryGitStderr(stderr: string): boolean {
-  return stderr.toLowerCase().includes("not a git repository");
+  const normalized = stderr.toLowerCase();
+  // Git 2.56 reports a .git file whose target is missing or invalid with its own message.
+  return (
+    normalized.includes("not a git repository") ||
+    normalized.includes("gitfile does not point to a valid repository")
+  );
 }
 function isUnbornHeadStderr(stderr: string): boolean {
   const normalized = stderr.toLowerCase();
