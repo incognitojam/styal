@@ -85,7 +85,7 @@ function layerRegistry(options?: {
         subscribeServerConfig: (input) => client.subscribeServerConfig(input),
         ready: Effect.void,
         probe: Effect.void,
-        receivedFrames: Effect.succeed(0),
+        inboundFrames: Effect.succeed(0),
         closed: Effect.never,
       };
       const target = new PrimaryConnectionTarget({

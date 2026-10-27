@@ -5,7 +5,7 @@ import type * as Stream from "effect/Stream";
 export type ConnectionWakeup =
   | "application-active"
   | "application-active-probe"
-  | "application-active-reconnect"
+  | "application-active-long"
   // The app came back from an inactive state, such as Control Center or Face
   // ID, without a background visit. Inactive apps keep running, so the socket
   // was never suspended, but a pending retry should still run now.
@@ -17,7 +17,7 @@ function isApplicationActiveWakeup(reason: ConnectionWakeup): boolean {
   return (
     reason === "application-active" ||
     reason === "application-active-probe" ||
-    reason === "application-active-reconnect" ||
+    reason === "application-active-long" ||
     reason === "application-refocused"
   );
 }
@@ -26,10 +26,9 @@ export function resetsRetryBackoff(reason: ConnectionWakeup): boolean {
   return isApplicationActiveWakeup(reason) || reason === "network-changed";
 }
 
-// A long resume replaces the session, and the new session subscribes on its own.
 // A refocus never suspended the socket, so its streams are still live.
 export function shouldResubscribeAfterWakeup(reason: ConnectionWakeup): boolean {
-  return reason === "application-active" || reason === "application-active-probe";
+  return isApplicationActiveWakeup(reason) && reason !== "application-refocused";
 }
 
 export class ConnectionWakeups extends Context.Service<

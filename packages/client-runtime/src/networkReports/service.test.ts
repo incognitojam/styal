@@ -63,7 +63,7 @@ const makeHarness = Effect.fn("NetworkReportsTest.makeHarness")(function* (optio
     subscribeServerConfig: () => Stream.empty,
     ready: Effect.void,
     probe: Effect.void,
-    receivedFrames: Effect.succeed(0),
+    inboundFrames: Effect.succeed(0),
     closed: Effect.never,
   } satisfies RpcSession;
   const state = yield* SubscriptionRef.make<SupervisorConnectionState>(CONNECTED);

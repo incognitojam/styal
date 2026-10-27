@@ -61,7 +61,7 @@ function session(client: WsRpcProtocolClient): RpcSession.RpcSession {
     subscribeServerConfig: (input) => client.subscribeServerConfig(input),
     ready: Effect.void,
     probe: Effect.void,
-    receivedFrames: Effect.succeed(0),
+    inboundFrames: Effect.succeed(0),
     closed: Effect.never,
   };
 }
@@ -226,7 +226,6 @@ describe("environment shell synchronization", () => {
       expect(yield* SubscriptionRef.get(capturedAfterSequences)).toEqual([10, 40, 40]);
 
       yield* Queue.offer(wakeups, "application-refocused");
-      yield* Queue.offer(wakeups, "application-active-reconnect");
       for (let attempt = 0; attempt < 10; attempt += 1) {
         yield* Effect.yieldNow;
       }
