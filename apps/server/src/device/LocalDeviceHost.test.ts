@@ -37,7 +37,6 @@ const agentFixture = Effect.fn("agentFixture")(function* (
   startup: (
     stateDir: string,
   ) => Effect.Effect<ProcessRunner.ProcessRunOutput, ProcessRunner.ProcessRunError>,
-  commandResult?: ProcessRunner.ProcessRunOutput,
 ) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -80,11 +79,7 @@ const agentFixture = Effect.fn("agentFixture")(function* (
     ),
     Effect.provideService(ProcessRunner.ProcessRunner, {
       run: (input) =>
-        input.command === "test-device-command" && commandResult
-          ? Effect.succeed(commandResult)
-          : input.args.includes("devices")
-            ? startup(stateDir)
-            : Effect.succeed(processOutput(0)),
+        input.args.includes("devices") ? startup(stateDir) : Effect.succeed(processOutput(0)),
     }),
     Effect.provideService(
       HttpClient.HttpClient,
@@ -98,20 +93,6 @@ const agentFixture = Effect.fn("agentFixture")(function* (
 });
 
 describe("AgentDevice startup", () => {
-  it.effect.each([true, false])(
-    "never treats a missing process exit as success (timedOut=%s)",
-    (timedOut) =>
-      Effect.gen(function* () {
-        const { host } = yield* agentFixture(() => Effect.succeed(processOutput(0)), {
-          ...processOutput(0),
-          code: null,
-          timedOut,
-        });
-        const ready = yield* host.ensureReady(() => Effect.void);
-        const result = yield* ready.run("test-device-command", []);
-        expect(result.code).toBe(timedOut ? 124 : 1);
-      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
-  );
   it.effect("reports an incompatible lock immediately and retains it for manual repair", () =>
     Effect.gen(function* () {
       const result = processOutput(

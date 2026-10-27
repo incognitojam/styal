@@ -4957,7 +4957,6 @@ features:
       - apps/server/src/device/DeviceService.ts
       - apps/server/src/device/DeviceSharing.ts
       - apps/server/src/device/EnvironmentDeviceHost.ts
-      - apps/server/src/device/LocalDeviceHost.ts
       - apps/server/src/mcp/toolkits/device/handlers.ts
       - apps/web/src/components/device/DevicePanel.tsx
       - packages/contracts/src/device.ts
@@ -4965,7 +4964,6 @@ features:
     tests:
       - apps/server/src/device/DeviceSharing.test.ts
       - apps/server/src/device/EnvironmentDeviceHost.test.ts
-      - apps/server/src/device/LocalDeviceHost.test.ts
       - apps/server/src/device/SimulatorMemory.test.ts
       - apps/server/src/device/SimulatorStartup.test.ts
       - apps/server/src/telemetry/FeatureUsage.test.ts
