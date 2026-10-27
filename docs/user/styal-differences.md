@@ -136,8 +136,9 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 
 ## GitHub and code review
 
-- **PR deployments at a glance.** The pull request Summary shows each environment's latest
-  deployment status, with links to open the environment and inspect deployment logs. Compared with
+- **PR deployments at a glance.** The pull request Summary, and the pull request screen on mobile,
+  show each environment's latest deployment status, with links to open the environment and inspect
+  deployment logs. Compared with
   [T3 Code revision e3b35d1](https://github.com/pingdotgg/t3code/tree/e3b35d1b2440b104f0bc2e357377c348121234dd),
   checked October 16, 2026, which does not show deployments in the pull request panel.
 - **Immediate label feedback.** Adding or removing a pull request label updates the view immediately;

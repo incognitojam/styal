@@ -18,4 +18,10 @@ describe("relativeTime", () => {
     expect(relativeTime("2025-04-13T12:00:00.000Z")).toBe("11mo");
     expect(relativeTime("2025-04-12T12:00:00.000Z")).toBe("1y");
   });
+
+  it("measures from the clock reading it is given", () => {
+    const updatedAt = "2026-04-07T11:59:00.000Z";
+    expect(relativeTime(updatedAt)).toBe("1m");
+    expect(relativeTime(updatedAt, Date.parse("2026-04-07T12:59:00.000Z"))).toBe("1h");
+  });
 });

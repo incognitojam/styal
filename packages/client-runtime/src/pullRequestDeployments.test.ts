@@ -3,8 +3,9 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   orderPullRequestDeployments,
+  pullRequestDeploymentCommit,
   pullRequestDeploymentsTitle,
-} from "./pullRequestDeployments.logic";
+} from "./pullRequestDeployments.ts";
 
 const deployment = (
   environment: string,
@@ -54,5 +55,29 @@ describe("pullRequestDeploymentsTitle", () => {
       pullRequestDeploymentsTitle([deployment("web", "pending"), deployment("docs", "success")]),
     ).toBe("Deployments (2) · 1 deploying");
     expect(pullRequestDeploymentsTitle([deployment("web", "success")])).toBe("Deployments (1)");
+  });
+});
+
+describe("pullRequestDeploymentCommit", () => {
+  const head = "a".repeat(40);
+  const older = { ...deployment("web", "success"), commitSha: "b".repeat(40) };
+
+  it("hides the commit when the deployment is of the PR head", () => {
+    expect(pullRequestDeploymentCommit(deployment("web", "success"), head)).toBeNull();
+  });
+
+  it("marks a commit other than the head as older", () => {
+    expect(pullRequestDeploymentCommit(older, head)).toEqual({
+      sha: "b".repeat(40),
+      shortSha: "bbbbbbb",
+      older: true,
+    });
+  });
+
+  it("shows the commit without calling it older when the head is unknown", () => {
+    expect(pullRequestDeploymentCommit(older, undefined)).toMatchObject({
+      shortSha: "bbbbbbb",
+      older: false,
+    });
   });
 });

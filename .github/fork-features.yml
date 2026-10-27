@@ -3928,19 +3928,21 @@ features:
     status: maintained
     prs: [883]
     invariants:
-      - Web and desktop deployment ages keep counting without waiting for a pull request detail refresh.
-      - The web and desktop pull request Summary shows the latest deployment attempt per GitHub environment, including status, commit, environment URL, and logs where available.
+      - Web, desktop, and mobile deployment ages keep counting without waiting for a pull request detail refresh.
+      - The web and desktop pull request Summary and the mobile pull request overview show the latest deployment attempt per GitHub environment, including status, commit, environment URL, and logs where available.
       - Deployment history remains visible when the PR head advances, and pending head deployments supersede earlier attempts in the same environment.
-      - Failed environments list first, then running, deployed, and inactive ones, in name order within each status. Rows show a commit only when it differs from the PR head, and they show failure reasons without hover.
+      - Failed environments list first, then running, deployed, and inactive ones, in name order within each status. Rows show a commit only when it differs from the PR head, and they show failure reasons without hover. Web and mobile share the ordering, heading, status label, and commit rules.
       - The section names failed or running deployments in its heading and shows five rows before Show all.
       - Inactive deployments do not offer an environment link; only HTTP and HTTPS deployment URLs are exposed.
       - Deployment reads are bounded within the existing detail query, report potentially missing environments, and refresh with PR detail. If GitHub refuses the extended query, one retry without deployment fields preserves access to the PR; authentication and quota errors propagate without retry.
       - Explicit Open, Logs and Show all actions report bounded usage through the owning environment; older reporting servers and telemetry failures never block those actions.
     implementation_paths:
+      - apps/mobile/src/features/pull-requests/PullRequestDeployments.tsx
+      - apps/mobile/src/features/pull-requests/PullRequestRouteScreen.tsx
       - apps/server/src/pullRequest/PullRequestService.ts
       - apps/web/src/components/pullRequest/PullRequestDeployments.tsx
       - apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx
-      - apps/web/src/components/pullRequest/pullRequestDeployments.logic.ts
+      - packages/client-runtime/src/pullRequestDeployments.ts
       - packages/contracts/src/forkClientUsage.ts
       - packages/contracts/src/pullRequest.ts
       - packages/source-control-core/src/server/PullRequestProvider.ts
@@ -3955,7 +3957,7 @@ features:
       - apps/server/src/pullRequest/PullRequestService.test.ts
       - apps/server/src/telemetry/ClientFeatureUsage.test.ts
       - apps/web/src/components/pullRequest/PullRequestDeployments.browser.test.tsx
-      - apps/web/src/components/pullRequest/pullRequestDeployments.logic.test.ts
+      - packages/client-runtime/src/pullRequestDeployments.test.ts
       - packages/source-control-github/src/server/GitHubPullRequestApi.test.ts
     upstream:
       status: tracking
