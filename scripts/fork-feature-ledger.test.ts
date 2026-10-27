@@ -163,6 +163,10 @@ features: []
           id: "completion-sounds",
           paths: ["apps/web/src/components/ThreadNotificationCoordinator.tsx"],
         },
+        {
+          id: "desktop-notification-delivery",
+          paths: ["apps/web/src/components/ThreadNotificationCoordinator.tsx"],
+        },
         { id: "first-turn-unread-state", paths: ["apps/web/src/AppRoot.tsx"] },
         {
           id: "github-outage-status",
