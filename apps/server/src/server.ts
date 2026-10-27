@@ -76,6 +76,8 @@ import * as TerminalManager from "./terminal/Manager.ts";
 import * as NodePtyAdapter from "./terminal/NodePtyAdapter.ts";
 import { hostActivityHttpApiLayer, inspectHostActivity } from "./environment/HostActivity.ts";
 import * as McpHttpServer from "./mcp/McpHttpServer.ts";
+import * as PeerLinks from "./peer/PeerLinks.ts";
+import * as PeerMcpClient from "./peer/PeerMcpClient.ts";
 import * as McpSessionRegistry from "./mcp/McpSessionRegistry.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
 import * as DeviceService from "./device/DeviceService.ts";
@@ -833,6 +835,8 @@ const layerMakeRoutes = Layer.mergeAll(
     ),
   ),
   Layer.provide(PreviewBrowser.layer),
+  // Links to other environments, shared by Settings (WebSocket) and agents (/mcp).
+  Layer.provide(PeerMcpClient.layer.pipe(Layer.provideMerge(PeerLinks.layer))),
   Layer.provide(layerPreviewAutomationBroker),
   Layer.provide(ServerSelfUpdate.layer(inspectHostActivity)),
   Layer.provide(layerDesktopAppUpdate),
