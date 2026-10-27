@@ -50,7 +50,8 @@ export function UpdateEverythingDialog({
         onOpenChange(nextOpen);
       }}
     >
-      <AlertDialogPopup>
+      {/* Refocusing the trigger after a pointer close shows its focus ring and opens its tooltip. */}
+      <AlertDialogPopup finalFocus={(closeType) => closeType === "keyboard"}>
         <div
           className={
             hasThreads ? "max-h-[40dvh] shrink-0 overflow-y-auto" : "min-h-0 overflow-y-auto"

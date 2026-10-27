@@ -17,8 +17,9 @@ import type { ServerUpdateState } from "@t3tools/client-runtime/state/server";
 import * as Cause from "effect/Cause";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { describe, expect, it, vi } from "vite-plus/test";
-import { userEvent } from "vite-plus/test/browser";
+import { page, userEvent } from "vite-plus/test/browser";
 
+import "~/index.css";
 import { act, fakeTimers, render, stubGlobal, type Screen } from "../../../test/render";
 
 const testState = vi.hoisted(() => ({
@@ -861,5 +862,31 @@ describe("SidebarUpdatePill release notes", () => {
 
     await publishDesktopUpdate(nightlyUpdate(RELEASE_NOTES));
     await vi.waitFor(() => expect(releaseNotes()).not.toBeNull());
+  });
+});
+
+describe("SidebarUpdatePill update everything", () => {
+  it("does not refocus the update button after a pointer cancel", async () => {
+    using _setup = setup();
+    await using screen = await renderPill();
+    const trigger = screen.container.querySelector<HTMLButtonElement>("button")!;
+    await userEvent.click(trigger);
+    const cancel = page.getByRole("button", { name: "Cancel" });
+    await expect.element(cancel).toBeVisible();
+
+    await userEvent.click(cancel);
+    await vi.waitFor(() => expect(document.querySelector('[role="alertdialog"]')).toBeNull());
+    expect(document.activeElement).not.toBe(trigger);
+  });
+
+  it("returns focus to the update button after Escape", async () => {
+    using _setup = setup();
+    await using screen = await renderPill();
+    const trigger = screen.container.querySelector<HTMLButtonElement>("button")!;
+    await userEvent.click(trigger);
+    await expect.element(page.getByRole("button", { name: "Cancel" })).toBeVisible();
+
+    await userEvent.keyboard("{Escape}");
+    await vi.waitFor(() => expect(document.activeElement).toBe(trigger));
   });
 });
