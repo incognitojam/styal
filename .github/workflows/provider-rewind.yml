@@ -9,7 +9,8 @@ name: Provider rewind
 #
 # scripts/provider-canary.ts (`rewind-plan`) decides which providers to run.
 # It is not a required check: a model can skip a requested step, so a failure
-# is retried once and a second failure needs a look at the evidence.
+# is retried once and a second failure needs a look at the evidence. A pass on
+# the retry comments on the pull request, so repeated flakes get noticed.
 on:
   pull_request:
     paths:
@@ -80,6 +81,9 @@ jobs:
     if: needs.plan.outputs.has_work == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: write
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
@@ -129,7 +133,8 @@ jobs:
           echo "$prefix/bin" >> "$GITHUB_PATH"
           "$prefix/bin/$BINARY" --version
 
-      - name: Rewind a real conversation
+      - id: rewind
+        name: Rewind a real conversation
         if: steps.secret.outputs.present == 'true'
         env:
           PROVIDER: ${{ matrix.provider }}
@@ -153,15 +158,41 @@ jobs:
             if [[ -n "$evidence" && -f "$evidence/result.json" ]]; then
               jq -r --arg attempt "$1" '"### \(.provider) \(.version) (\(.model)), attempt \($attempt)\n\n| Scenario | Status | Seconds | Detail |\n| --- | --- | --- | --- |", (.scenarios[] | select(.status != "skipped" or .detail != "not selected") | "| \(.name) | \(.status) | \(.seconds // "") | \(.detail) |")' \
                 "$evidence/result.json" >> "$GITHUB_STEP_SUMMARY"
+              detail="$(jq -r '[.scenarios[] | select(.status == "failed") | "\(.name): \(.detail)"] | join("; ")' "$evidence/result.json" | cut -c1-500)"
+            else
+              detail="the verifier did not finish"
             fi
+            [[ -n "$detail" ]] || detail="the verifier exited with status $status"
             return "$status"
           }
-          run_verifier 1 || run_verifier 2
+          run_verifier 1 && exit 0
+          first_detail="$detail"
+          run_verifier 2 || exit 1
+          echo "flaky=true" >> "$GITHUB_OUTPUT"
+          echo "first_detail=$first_detail" >> "$GITHUB_OUTPUT"
+          echo "::warning title=$PROVIDER rewind passed only on the retry::$first_detail"
+
+      - name: Comment on a pass that needed the retry
+        if: steps.rewind.outputs.flaky == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          PROVIDER: ${{ matrix.provider }}
+          PACKAGE: ${{ matrix.packageName }}@${{ matrix.version }}
+          MODEL: ${{ matrix.model }}
+          DETAIL: ${{ steps.rewind.outputs.first_detail }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh pr comment "$PR" --body "$(printf '%s\n\n%s\n\n%s\n' \
+            "**Provider rewind:** $PROVIDER ($PACKAGE, $MODEL) passed only on the retry." \
+            "First attempt: $DETAIL" \
+            "[Run and evidence]($RUN_URL)")"
 
       # Evidence holds the server log, thread projections and events, not the
-      # provider's own home directory or credentials.
+      # provider's own home directory or credentials. Both attempts are kept.
       - name: Upload evidence
-        if: failure() && steps.secret.outputs.present == 'true'
+        if: steps.secret.outputs.present == 'true' && (failure() || steps.rewind.outputs.flaky == 'true')
         uses: actions/upload-artifact@v7
         with:
           name: rewind-evidence-${{ matrix.provider }}-${{ matrix.version }}

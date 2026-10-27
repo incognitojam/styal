@@ -83,8 +83,9 @@ provider's adapter runs that provider, and shared rollback code runs all three.
 It uses the pull request's own server, the provider's newest release recorded
 in `autoUpdates`, and the canary's model, with the same secrets. Pull requests
 from forks get no secrets, so the job skips with a notice. It is not a required
-check; a failure is retried once, and the evidence artifact holds the server
-log and thread projections. `scripts/provider-canary.ts` lists the paths in
+check; a failure is retried once, a pass on the retry comments on the pull
+request with the first attempt's failure, and the evidence artifact holds the
+server log and thread projections. `scripts/provider-canary.ts` lists the paths in
 `rewind-plan`; the workflow's `paths` filter must cover them.
 
 ## Setup
