@@ -9,6 +9,7 @@ import {
   autoMergeBlocker,
   collectRun,
   planProvider,
+  planRewind,
   reconcileStatusIssue,
   recordVersions,
   statusFailures,
@@ -187,6 +188,60 @@ describe("provider canary plan", () => {
     // OpenRouter names Claude versions with dots: claude-haiku-5.5 is claude-haiku-5-5.
     const claudeModel = opencode.model.replace(/^openrouter\/anthropic\//, "").replaceAll(".", "-");
     expect(bundled.currentModels.claudeAgent).toContain(claudeModel);
+  });
+});
+
+describe("provider rewind plan", () => {
+  const manifest = {
+    compatibility: [
+      {
+        driver: "claudeAgent",
+        t3CodeRange: ">=0.0.42",
+        ranges: [],
+        autoUpdates: [
+          { version: "2.1.311", package: "@anthropic-ai/claude-code", styal: LATER_NIGHTLY },
+          { version: "2.1.310", package: "@anthropic-ai/claude-code", styal: NIGHTLY },
+        ],
+      },
+      {
+        driver: "opencode",
+        t3CodeRange: ">=0.1.1",
+        ranges: [],
+        autoUpdates: [
+          { version: "1.40.0", package: "opencode-ai", styal: NIGHTLY },
+          { version: "2.1.4", package: "@opencode/cli", styal: LATER_NIGHTLY },
+        ],
+      },
+    ],
+  };
+
+  it("runs only the provider whose adapter changed, on its newest verified release", () => {
+    expect(
+      planRewind(manifest, ["apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts"]),
+    ).toEqual([
+      {
+        provider: "claudeAgent",
+        packageName: "@anthropic-ai/claude-code",
+        binary: "claude",
+        version: "2.1.311",
+        model: "claude-haiku-5-5",
+        secret: "ANTHROPIC_API_KEY",
+      },
+    ]);
+  });
+
+  it("runs every provider with a verified release when shared rollback code changed", () => {
+    const planned = planRewind(manifest, [
+      "apps/server/src/orchestration-v2/CheckpointRollbackService.ts",
+    ]);
+    // Codex has no verified release in this manifest, so it is left out.
+    expect(
+      planned.map((entry) => `${entry.provider} ${entry.packageName}@${entry.version}`),
+    ).toEqual(["claudeAgent @anthropic-ai/claude-code@2.1.311", "opencode @opencode/cli@2.1.4"]);
+  });
+
+  it("runs nothing when no rollback code changed", () => {
+    expect(planRewind(manifest, ["apps/web/src/components/ChatView.tsx"])).toEqual([]);
   });
 });
 

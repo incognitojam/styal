@@ -11,12 +11,15 @@
  *   node scripts/provider-canary.ts report --run-url <url> [--plan <json>] [--outcomes <dir>]
  *     [--plan-result <result>] [--record-result <result>] [--dry-run]
  *   node scripts/provider-canary.ts merge-guard --base <manifest> --head <manifest>
+ *   node scripts/provider-canary.ts rewind-plan --changed <file list> [--json <path>]
  *
  * It verifies published styal builds, not main: each verification checks out
  * a release tag, so a recorded entry names the exact build it passed on.
  *
  * The workflow in .github/workflows/provider-canary.yml runs them around
- * apps/server/scripts/verify-provider-live.ts.
+ * apps/server/scripts/verify-provider-live.ts. `rewind-plan` is the exception:
+ * .github/workflows/provider-rewind.yml uses it to rewind real conversations
+ * with the pull request's own code.
  */
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
@@ -41,6 +44,8 @@ export interface CanaryProvider {
   readonly model: string;
   /** Repository secret holding the API key the provider authenticates with. */
   readonly secret: string;
+  /** Path prefixes of the provider's own rollback code. */
+  readonly rollbackPaths: ReadonlyArray<string>;
 }
 
 export const CANARY_PROVIDERS: ReadonlyArray<CanaryProvider> = [
@@ -50,6 +55,7 @@ export const CANARY_PROVIDERS: ReadonlyArray<CanaryProvider> = [
     binary: "codex",
     model: "gpt-6-luna",
     secret: "OPENAI_API_KEY",
+    rollbackPaths: ["apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts"],
   },
   {
     provider: "claudeAgent",
@@ -57,6 +63,10 @@ export const CANARY_PROVIDERS: ReadonlyArray<CanaryProvider> = [
     binary: "claude",
     model: "claude-haiku-5-5",
     secret: "ANTHROPIC_API_KEY",
+    rollbackPaths: [
+      "apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts",
+      "apps/server/src/orchestration-v2/Adapters/ClaudeHistoryRewind.ts",
+    ],
   },
   {
     provider: "opencode",
@@ -65,8 +75,66 @@ export const CANARY_PROVIDERS: ReadonlyArray<CanaryProvider> = [
     // A separate OpenRouter workspace key with its own spending limit.
     model: "openrouter/anthropic/claude-haiku-5.5",
     secret: "OPENROUTER_API_KEY",
+    rollbackPaths: ["packages/provider-opencode/src/server/"],
   },
 ];
+
+/** Path prefixes of rollback code every provider goes through. */
+const SHARED_ROLLBACK_PATHS = [
+  "apps/server/src/orchestration-v2/CheckpointRollbackService.ts",
+  "apps/server/src/orchestration-v2/CheckpointRestoreSafety.ts",
+  "apps/server/src/orchestration-v2/ProviderTurnStartService.ts",
+  "packages/provider-core/src/server/ProviderAdapter.ts",
+  "apps/server/scripts/verify-provider-live.ts",
+  "scripts/provider-canary.ts",
+  ".github/workflows/provider-rewind.yml",
+];
+
+export interface RewindEntry {
+  readonly provider: string;
+  readonly packageName: string;
+  readonly binary: string;
+  readonly version: string;
+  readonly model: string;
+  readonly secret: string;
+}
+
+/**
+ * Providers a pull request's changed files can break rollback for, each with
+ * the release most recently verified on a published build. A pull request
+ * builds on main, which contains every published build.
+ */
+export function planRewind(
+  manifest: Manifest,
+  changed: ReadonlyArray<string>,
+): ReadonlyArray<RewindEntry> {
+  const touches = (prefixes: ReadonlyArray<string>) =>
+    changed.some((file) => prefixes.some((prefix) => file.startsWith(prefix)));
+  const shared = touches(SHARED_ROLLBACK_PATHS);
+  return CANARY_PROVIDERS.flatMap((canary) => {
+    if (!shared && !touches(canary.rollbackPaths)) return [];
+    const newest = (manifest.compatibility ?? [])
+      .filter((policy) => policy.driver === canary.provider)
+      .flatMap((policy) => policy.autoUpdates ?? [])
+      .filter((entry) => canary.packageNames.includes(entry.package))
+      .toSorted(
+        (left, right) =>
+          compareSemverVersions(right.styal, left.styal) ||
+          compareSemverVersions(right.version, left.version),
+      )[0];
+    if (!newest) return [];
+    return [
+      {
+        provider: canary.provider,
+        packageName: newest.package,
+        binary: canary.binary,
+        version: newest.version,
+        model: canary.model,
+        secret: canary.secret,
+      },
+    ];
+  });
+}
 
 export interface AutoUpdateEntry {
   readonly version: string;
@@ -981,12 +1049,28 @@ async function report(args: ReadonlyArray<string>) {
   }
 }
 
+function rewindPlan(args: ReadonlyArray<string>) {
+  const { values } = NodeUtil.parseArgs({
+    args: [...args],
+    options: { changed: { type: "string" }, json: { type: "string" } },
+  });
+  if (!values.changed) throw new Error("rewind-plan needs --changed <file list>.");
+  const changed = NodeFS.readFileSync(values.changed, "utf8").split("\n").filter(Boolean);
+  const manifest = readJson<Manifest>(MANIFEST_PATH)!;
+  const matrix = planRewind(manifest, changed);
+  for (const entry of matrix)
+    console.log(`${entry.provider}: ${entry.packageName}@${entry.version} with ${entry.model}`);
+  if (matrix.length === 0) console.log("No provider's rollback code changed.");
+  if (values.json) NodeFS.writeFileSync(values.json, JSON.stringify({ include: matrix }));
+}
+
 if (import.meta.main) {
   const [command, ...rest] = process.argv.slice(2);
   if (command === "plan") await plan(rest);
   else if (command === "record") record(rest);
   else if (command === "report") await report(rest);
   else if (command === "merge-guard") mergeGuard(rest);
+  else if (command === "rewind-plan") rewindPlan(rest);
   else {
     console.error("Usage: see the comment at the top of scripts/provider-canary.ts.");
     process.exit(2);
