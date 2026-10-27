@@ -80,9 +80,12 @@ export const makeClient = Effect.fn("EnvironmentDeviceHost.makeClient")(function
     isDeviceError(cause)
       ? cause
       : Cause.isTimeoutError(cause)
-        ? unavailable(
-            "The device environment did not respond in time. Check that it is online and retry.",
-          )
+        ? new DeviceHostUnavailableError({
+            hostId: config.id,
+            reason:
+              "The device environment did not respond in time. Check that it is online and retry.",
+            cause: { timedOut: true },
+          })
         : HttpClientError.isHttpClientError(cause)
           ? unavailable(
               "Cannot reach the device environment at any shared address. Check that it is online and reachable from this machine, for example over Tailscale.",

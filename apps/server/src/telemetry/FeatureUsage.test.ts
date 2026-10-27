@@ -1,7 +1,10 @@
 import { expect, it } from "@effect/vitest";
 import {
   CommandId,
+  DeviceBootError,
   DeviceHeldError,
+  DeviceHostUnavailableError,
+  DeviceOperationError,
   DeviceHostId,
   DeviceId,
   HardwareToolError,
@@ -92,6 +95,44 @@ it.effect("analytics defects cannot turn a successful operation into a failure",
       }),
     );
     expect(result).toBe("operation result");
+  }),
+);
+
+it.effect.each([
+  [
+    "a boot that ran out of time",
+    new DeviceBootError({
+      hostId: DeviceHostId.make("local"),
+      deviceId: DeviceId.make("simulator"),
+      reason: "timeout",
+      cause: null,
+    }),
+  ],
+  [
+    "a killed helper command",
+    new DeviceOperationError({
+      operation: "prepare",
+      reason: "command_failed",
+      exitCode: 124,
+      cause: null,
+    }),
+  ],
+  [
+    "a device environment that stopped answering",
+    new DeviceHostUnavailableError({
+      hostId: DeviceHostId.make("peer"),
+      reason: "No response.",
+      cause: { timedOut: true },
+    }),
+  ],
+] as const)("reports %s as a timeout", ([, failure]) =>
+  Effect.gen(function* () {
+    const events: Array<{ properties: Record<string, unknown> }> = [];
+    yield* FeatureUsage.observe(
+      { feature: "devices", action: "open", source: "agent" },
+      Effect.fail(failure),
+    ).pipe(Effect.provideService(AnalyticsService.AnalyticsService, capture(events)), Effect.exit);
+    expect(events[0]?.properties.failureReason).toBe("timeout");
   }),
 );
 

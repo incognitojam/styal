@@ -74,12 +74,29 @@ const supportsPersistentOverrides = (version: string) => {
   return major > 18 || (major === 18 && Number(match[2] ?? 0) >= 5);
 };
 
+/** What startup did with the memory mode; bounded so telemetry can report it. */
+export type SimulatorMemoryResult =
+  | "applied"
+  | "unchanged"
+  | "fallback_runtime"
+  | "fallback_host"
+  | "fallback_helper"
+  | "fallback_check";
+
 const STANDARD_FALLBACK = "The simulator started with standard memory.";
+const NOTICES: Partial<Record<SimulatorMemoryResult, string>> = {
+  fallback_runtime: `Low memory needs iOS 18.5 or newer. ${STANDARD_FALLBACK}`,
+  fallback_host: `Low memory needs an Apple Silicon Mac. ${STANDARD_FALLBACK}`,
+  fallback_helper: `Could not install the low memory helper. ${STANDARD_FALLBACK}`,
+  fallback_check:
+    "Could not check the simulator memory helper. The simulator started with its current memory mode.",
+};
+export const simulatorMemoryNotice = (result: SimulatorMemoryResult) => NOTICES[result];
 
 /**
  * Runs before boot/stream attachment, under the owning host's device lock.
  * Low memory saves RAM but nothing depends on it, so a host or runtime that
- * cannot use it starts normally and returns a notice instead of failing.
+ * cannot use it starts normally and returns a fallback result instead of failing.
  */
 export const prepareSimulatorMemory = Effect.fn("SimulatorMemory.prepare")(function* (
   ready: DeviceHostReady,
@@ -92,7 +109,7 @@ export const prepareSimulatorMemory = Effect.fn("SimulatorMemory.prepare")(funct
   },
 ) {
   if (mode === "low-memory" && !supportsPersistentOverrides(device.version))
-    return `Low memory needs iOS 18.5 or newer. ${STANDARD_FALLBACK}`;
+    return "fallback_runtime" as const;
   const helper = yield* command(
     ready,
     ready.nodePath,
@@ -113,15 +130,11 @@ export const prepareSimulatorMemory = Effect.fn("SimulatorMemory.prepare")(funct
     ),
   );
   if (!helper)
-    return mode === "low-memory"
-      ? `Could not install the low memory helper. ${STANDARD_FALLBACK}`
-      : "Could not check the simulator memory helper. The simulator started with its current memory mode.";
+    return mode === "low-memory" ? ("fallback_helper" as const) : ("fallback_check" as const);
   if (!helper.supported || !helper.installed) {
     // Standard must not install a helper on a stock simulator host.
-    if (mode === "standard") return undefined;
-    return helper.supported
-      ? `Could not install the low memory helper. ${STANDARD_FALLBACK}`
-      : `Low memory needs an Apple Silicon Mac. ${STANDARD_FALLBACK}`;
+    if (mode === "standard") return "unchanged" as const;
+    return helper.supported ? ("fallback_helper" as const) : ("fallback_host" as const);
   }
   let labels: ReadonlyArray<string> = [];
   if (mode === "low-memory") {
@@ -145,7 +158,7 @@ export const prepareSimulatorMemory = Effect.fn("SimulatorMemory.prepare")(funct
   }
   // SimSlim prepares and boots a stopped device itself. There is no viewer yet.
   // Setup can take long enough for an external tool to boot the simulator.
-  if (!(yield* options?.stillStopped ?? Effect.succeed(true))) return undefined;
+  if (!(yield* options?.stillStopped ?? Effect.succeed(true))) return "unchanged" as const;
   yield* options?.onMutationStart ?? Effect.void;
   yield* Effect.gen(function* () {
     yield* command(
@@ -199,5 +212,5 @@ export const prepareSimulatorMemory = Effect.fn("SimulatorMemory.prepare")(funct
         });
     }
   }).pipe(Effect.onError(() => options?.onMutationError ?? Effect.void));
-  return undefined;
+  return "applied" as const;
 });

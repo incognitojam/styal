@@ -4945,7 +4945,7 @@ features:
       - Setup installs only checksum-pinned SimSlim on an Apple Silicon Mac. Standard never installs a helper on a stock host and restores managed services on hosts where styal installed it.
       - A Mac, runtime, helper download, or older connected environment that cannot use Low memory starts the simulator unchanged and returns a notice to the client or agent; failures before SimSlim changes anything never block opening. Connected environments prepare the device on its owning host.
       - A failed mutation does not publish a usable session and attempts to return the simulator to shutdown. Persistent overrides survive simulator reboots; changing the project preference takes effect on its next unused start through styal.
-      - Settings snapshots report the environment mode and the count of projects explicitly choosing Low memory, without project identifiers or app data.
+      - Settings snapshots report the environment mode and the count of projects explicitly choosing Low memory, without project identifiers or app data. The owning environment reports each cold start's memory result and preparation time; device failures report timeouts separately.
     rationale: A saved project default reduces memory use for parallel simulators without live reconfiguration or per-use agent decisions.
     implementation_paths:
       - apps/mobile/src/features/settings/SimulatorMemorySettings.tsx
@@ -4968,6 +4968,7 @@ features:
       - apps/server/src/device/LocalDeviceHost.test.ts
       - apps/server/src/device/SimulatorMemory.test.ts
       - apps/server/src/device/SimulatorStartup.test.ts
+      - apps/server/src/telemetry/FeatureUsage.test.ts
       - apps/server/src/telemetry/SettingsSnapshot.test.ts
       - packages/shared/src/projectSettings.test.ts
     upstream:

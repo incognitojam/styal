@@ -42,6 +42,7 @@ import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as Layer from "effect/Layer";
 import * as PubSub from "effect/PubSub";
 import * as Schema from "effect/Schema";
@@ -52,10 +53,12 @@ import * as SynchronizedRef from "effect/SynchronizedRef";
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
 
 import * as ServerSettings from "../serverSettings.ts";
+import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
+import * as FeatureUsage from "../telemetry/FeatureUsage.ts";
 import { isLocalSshDeviceHost, remoteSshDeviceHosts } from "./localSshDeviceHost.ts";
 
 import { readDeviceDetail, runDeviceAction } from "./DeviceActions.ts";
-import { prepareSimulatorMemory } from "./SimulatorMemory.ts";
+import { prepareSimulatorMemory, simulatorMemoryNotice } from "./SimulatorMemory.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import * as DeviceHost from "./DeviceHost.ts";
 import * as SshDeviceHost from "./SshDeviceHost.ts";
@@ -203,6 +206,7 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
   installTool?: (tool: "hub" | "agent") => Effect.Effect<unknown, DeviceError>,
 ) {
   const settings = yield* ServerSettings.ServerSettingsService;
+  const analytics = yield* Effect.serviceOption(AnalyticsService.AnalyticsService);
   const crypto = yield* Crypto.Crypto;
   const lifecycleLock = yield* Semaphore.make(1);
   const readDeviceSettings = settings.getSettings.pipe(
@@ -806,14 +810,24 @@ process.exitCode = result.error ? 1 : (result.status ?? 1);`,
               ),
           ),
         );
-        if (booting.platform === "ios" && (yield* unclaimedAndStopped))
-          notice = yield* prepareSimulatorMemory(ready, booting, memoryMode, {
+        if (booting.platform === "ios" && (yield* unclaimedAndStopped)) {
+          const prepare = prepareSimulatorMemory(ready, booting, memoryMode, {
             stillStopped: unclaimedAndStopped,
             onMutationStart: markBooting,
             onMutationError: shutdownDevice(host.id, booting.id, booting.platform).pipe(
               Effect.ignore,
             ),
           });
+          const result = yield* Option.isSome(analytics)
+            ? FeatureUsage.observe(
+                { feature: "simulator-memory", action: "prepare", source: "system", memoryMode },
+                prepare,
+                {},
+                (memoryResult) => ({ memoryResult }),
+              ).pipe(Effect.provideService(AnalyticsService.AnalyticsService, analytics.value))
+            : prepare;
+          notice = simulatorMemoryNotice(result);
+        }
         // A tool outside styal can start the simulator during helper setup.
         // Only claim idle-shutdown ownership when styal actually starts it.
         if (

@@ -1,7 +1,7 @@
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import type { DeviceHostReady } from "./DeviceHost.ts";
-import { prepareSimulatorMemory } from "./SimulatorMemory.ts";
+import { prepareSimulatorMemory, simulatorMemoryNotice } from "./SimulatorMemory.ts";
 
 const capabilities = [
   "push",
@@ -141,10 +141,10 @@ it.effect("does not reconfigure a device booted or claimed during helper setup",
 );
 
 it.effect.each([
-  ["an older runtime", { version: "18.4" }, "Low memory needs iOS 18.5 or newer."],
-  ["an Intel Mac", { supported: false }, "Low memory needs an Apple Silicon Mac."],
-  ["a failed helper download", { installFails: true }, "Could not install the low memory helper."],
-] as const)("starts normally with a notice on %s", ([, setup, notice]) =>
+  ["an older runtime", { version: "18.4" }, "fallback_runtime", "iOS 18.5 or newer"],
+  ["an Intel Mac", { supported: false }, "fallback_host", "Apple Silicon Mac"],
+  ["a failed helper download", { installFails: true }, "fallback_helper", "install the low memory"],
+] as const)("starts normally with a notice on %s", ([, setup, expected, notice]) =>
   Effect.gen(function* () {
     const f = fixture(false, !("supported" in setup));
     if ("installFails" in setup) f.state.installFails = true;
@@ -153,7 +153,8 @@ it.effect.each([
       { ...simulator, ...("version" in setup ? { version: setup.version } : {}) },
       "low-memory",
     );
-    expect(result).toContain(notice);
+    expect(result).toBe(expected);
+    expect(simulatorMemoryNotice(result)).toContain(notice);
     expect(f.calls.some((call) => call.args.includes("on") || call.args.includes("off"))).toBe(
       false,
     );

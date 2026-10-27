@@ -10,6 +10,7 @@ import { HttpClient, HttpClientResponse } from "effect/http";
 import * as DeviceHost from "./DeviceHost.ts";
 import * as DeviceIdle from "./DeviceIdle.ts";
 import * as DeviceService from "./DeviceService.ts";
+import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
 import * as ServerSettings from "../serverSettings.ts";
 
 const deviceId = DeviceId.make("11111111-1111-1111-1111-111111111111");
@@ -33,6 +34,7 @@ const fixture = Effect.fn("simulatorStartupFixture")(function* (
     started?: Deferred.Deferred<void>;
     setupFailureAfterExternalBoot?: boolean;
     externalBootDuringSetup?: boolean;
+    events?: Array<{ event: string; properties: Record<string, unknown> }>;
   } = {},
 ) {
   const state = {
@@ -130,6 +132,18 @@ const fixture = Effect.fn("simulatorStartupFixture")(function* (
   const inner = yield* DeviceService.makeWithHosts(new Map([[host.id, host]])).pipe(
     Effect.provideService(HttpClient.HttpClient, http),
     Effect.provide(NodeCrypto.layer),
+    options.events === undefined
+      ? (effect) => effect
+      : Effect.provideService(
+          AnalyticsService.AnalyticsService,
+          AnalyticsService.AnalyticsService.of({
+            record: (event, properties) =>
+              Effect.sync(() => {
+                options.events?.push({ event, properties: { ...properties } });
+              }),
+            flush: Effect.void,
+          }),
+        ),
   );
   const { service, sweep } = yield* DeviceIdle.make(inner, {
     ledger: { load: Effect.succeed([]), save: () => Effect.void },
@@ -240,4 +254,38 @@ it.effect(
       expect(f.calls.filter((call) => call === "on" || call === "off")).toEqual(["on"]);
       expect((yield* f.service.state).sessions).toHaveLength(2);
     }).pipe(Effect.provide(ServerSettings.layerTest({ enableDeviceSupport: true })), Effect.scoped),
+);
+
+it.effect("reports what each cold start did with the memory mode", () =>
+  Effect.gen(function* () {
+    const events: Array<{ event: string; properties: Record<string, unknown> }> = [];
+    const f = yield* fixture({ events });
+    yield* f.service.open(input);
+    yield* f.service.close({ threadId, deviceId, shutdown: true });
+    f.state.code = 124;
+    yield* f.service.open(input).pipe(Effect.flip);
+    expect(
+      events
+        .filter((entry) => entry.properties.feature === "simulator-memory")
+        .map(({ properties }) => ({
+          memoryMode: properties.memoryMode,
+          memoryResult: properties.memoryResult,
+          outcome: properties.outcome,
+          failureReason: properties.failureReason,
+        })),
+    ).toEqual([
+      {
+        memoryMode: "low-memory",
+        memoryResult: "applied",
+        outcome: "success",
+        failureReason: undefined,
+      },
+      {
+        memoryMode: "low-memory",
+        memoryResult: undefined,
+        outcome: "failure",
+        failureReason: "timeout",
+      },
+    ]);
+  }).pipe(Effect.provide(ServerSettings.layerTest({ enableDeviceSupport: true })), Effect.scoped),
 );

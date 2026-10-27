@@ -32,7 +32,7 @@ export const observeHandlers = Effect.fnUntraced(function* (handlers: Handlers) 
       { feature: "workflow-run-watch", action, source: "agent" },
       effect,
       {},
-      watchResult,
+      (result) => ({ watchResult: watchResult(result) }),
     ).pipe(Effect.provideService(AnalyticsService.AnalyticsService, analytics));
   return {
     ...handlers,
