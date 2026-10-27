@@ -10,8 +10,11 @@ describe("SidebarStageBackdrop", () => {
     expect(resolveSidebarStageBackdropVariant("Dev")).toBe("dev");
     expect(resolveSidebarStageBackdropVariant("Nightly")).toBe("nightly");
     expect(resolveSidebarStageBackdropVariant("Preview")).toBe("dev");
-    expect(resolveSidebarStageBackdropVariant("Dev", false)).toBeNull();
+    expect(resolveSidebarStageBackdropVariant("Dev", "none")).toBeNull();
+    expect(resolveSidebarStageBackdropVariant("Dev", "pill")).toBeNull();
     expect(resolveSidebarStageBackdropVariant("Stable")).toBeNull();
+    expect(resolveSidebarStageBackdropVariant("Stable", "nightly-artwork")).toBe("nightly");
+    expect(resolveSidebarStageBackdropVariant("Nightly", "dev-artwork")).toBe("dev");
   });
 
   it("resolves supported environment pill labels", () => {
