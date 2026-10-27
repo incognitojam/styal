@@ -1225,6 +1225,25 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
     }),
   );
 
+  it.effect("status reports a folder whose .git file points nowhere as not a repository", () =>
+    Effect.gen(function* () {
+      const rootDir = yield* makeTempDir("t3code-git-manager-broken-gitfile-");
+      const cwd = NodePath.join(rootDir, "worktree");
+      yield* makeDirectory(cwd);
+      NodeFS.writeFileSync(
+        NodePath.join(cwd, ".git"),
+        `gitdir: ${NodePath.join(rootDir, "missing", ".git", "worktrees", "worktree")}\n`,
+      );
+      const { manager } = yield* makeManager();
+
+      const local = yield* manager.localStatus({ cwd });
+      const remote = yield* manager.remoteStatus({ cwd }, { refreshUpstream: false });
+
+      expect(local.isRepo).toBe(false);
+      expect(remote).toBeNull();
+    }),
+  );
+
   it.effect("status briefly caches repeated lookups for the same cwd", () =>
     Effect.gen(function* () {
       const repoDir = yield* makeTempDir("t3code-git-manager-");
