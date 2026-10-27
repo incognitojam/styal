@@ -3023,6 +3023,8 @@ export default function ChatView(props: ChatViewProps) {
           })}
           onEditQueuedRun={queuedRunEdit.beginEdit}
           onCancelEdit={queuedRunEdit.cancelEdit}
+          timestampFormat={timestampFormat}
+          onOpenThread={onOpenRelatedThreadStable}
         />
       </>
     ) : null;
