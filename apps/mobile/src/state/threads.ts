@@ -14,8 +14,14 @@ import { AsyncResult, Atom } from "effect/reactivity";
 
 import { environmentCatalog } from "../connection/catalog";
 import { connectionAtomRuntime } from "../connection/runtime";
+import { scopedThreadKey } from "../lib/scopedEntities";
 import { appAtomRegistry } from "./atom-registry";
+import {
+  pendingThreadCreationOutcomesAtom,
+  selectThreadCreationDetail,
+} from "./pending-thread-creation";
 import { environmentShell } from "./shell";
+import { threadOutboxManager } from "./thread-outbox";
 
 export const threadFamilies = createThreadFamilyAtoms(
   connectionAtomRuntime,
@@ -42,6 +48,17 @@ const OPENING_THREAD_HOLD_MS = 3_000;
  * otherwise waits for navigation to commit.
  */
 export function startOpeningEnvironmentThread(environmentId: EnvironmentId, threadId: ThreadId) {
+  // A thread whose creation is still queued would load as not found and stay deleted;
+  // the opened screen loads it once creation is delivered.
+  const { detailRef } = selectThreadCreationDetail({
+    threadRef: { environmentId, threadId },
+    threadKey: scopedThreadKey(environmentId, threadId),
+    queuedMessagesByThreadKey: appAtomRegistry.get(
+      threadOutboxManager.queuedMessagesByThreadKeyAtom,
+    ),
+    outcomes: appAtomRegistry.get(pendingThreadCreationOutcomesAtom),
+  });
+  if (detailRef === null) return;
   const release = appAtomRegistry.mount(environmentThreads.stateAtom(environmentId, threadId));
   setTimeout(release, OPENING_THREAD_HOLD_MS);
 }
