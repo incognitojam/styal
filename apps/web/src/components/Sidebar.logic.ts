@@ -12,10 +12,7 @@ import type { ContextMenuItem, EnvironmentId, ThreadId } from "@t3tools/contract
 import type { SidebarProjectSortOrder, SidebarThreadSortOrder } from "@t3tools/contracts/settings";
 import type { AsyncResult } from "effect/reactivity";
 import { sortPinnedProjectsFirst } from "@t3tools/client-runtime/state/project-organization";
-import {
-  planPinnedReorder,
-  sortActiveThreadsByOrderKey,
-} from "@t3tools/client-runtime/state/thread-sort";
+import { clusterByGroup, planPinnedReorder } from "@t3tools/client-runtime/state/thread-sort";
 import {
   effectiveSnoozed,
   type ThreadSnoozeShell,
@@ -176,74 +173,6 @@ export function sidebarListItemId(item: SidebarListItem): string {
   return `${SIDEBAR_MARKER_PREFIX}${prefix}-${encodeURIComponent(item.group)}`;
 }
 
-/** Stable-cluster `items` by group, keeping their relative order within a
-    group. Groups missing from `groupOrder` lead, in order of their first
-    item; the rest follow `groupOrder`. */
-function clusterSidebarItemsByGroup<T>(
-  items: readonly T[],
-  groupOf: (item: T) => string,
-  groupOrder: readonly string[] = [],
-): T[] {
-  const clusters = new Map<string, T[]>();
-  for (const item of items) {
-    const group = groupOf(item);
-    const cluster = clusters.get(group);
-    if (cluster) cluster.push(item);
-    else clusters.set(group, [item]);
-  }
-  const ordered = new Set(groupOrder);
-  return [
-    ...[...clusters].flatMap(([group, cluster]) => (ordered.has(group) ? [] : cluster)),
-    ...groupOrder.flatMap((group) => clusters.get(group) ?? []),
-  ];
-}
-
-/** Group placement follows new/reopened threads or the saved project order,
- * after pinned projects in their pin order. Manual thread keys only affect
- * rows within a project, including during an optimistic drop before those
- * keys have arrived from the server. */
-export function groupActiveThreadsForSidebar<
-  T extends Parameters<typeof sortActiveThreadsByOrderKey>[0][number],
->(
-  orderedThreads: readonly T[],
-  groupOf: (thread: T) => string,
-  savedGroupOrder: readonly string[] = [],
-  pinnedGroupOrder: readonly string[] = [],
-): T[] {
-  const recentGroups = sortActiveThreadsByOrderKey(
-    orderedThreads.map((thread) => ({
-      id: thread.id,
-      environmentId: thread.environmentId,
-      createdAt: thread.createdAt,
-      unsettledAt: thread.unsettledAt,
-      group: groupOf(thread),
-    })),
-  );
-  const pinnedGroups = new Set(pinnedGroupOrder);
-  const savedGroups = new Set(savedGroupOrder);
-  const groupOrder = [
-    ...pinnedGroupOrder,
-    ...new Set(
-      recentGroups
-        .map((thread) => thread.group)
-        .filter((group) => !savedGroups.has(group) && !pinnedGroups.has(group)),
-    ),
-    ...savedGroupOrder.filter((group) => !pinnedGroups.has(group)),
-  ];
-  return clusterSidebarItemsByGroup(orderedThreads, groupOf, groupOrder);
-}
-
-/** Cluster Working shelf threads by project in `projectOrder`, keeping the
- * newest-send order within each project. Sending to a thread moves it only
- * within its project, so headers never trade places as runs start. */
-export function groupWorkingThreadsForSidebar<T>(
-  sortedThreads: readonly T[],
-  groupOf: (thread: T) => string,
-  projectOrder: readonly string[],
-): T[] {
-  return clusterSidebarItemsByGroup(sortedThreads, groupOf, [...new Set(projectOrder)]);
-}
-
 /** Project groups in the order their headers render. */
 function sidebarProjectGroupOrder(items: readonly SidebarListItem[]): string[] {
   return items.flatMap((item) => (item.kind === "project-header" ? [item.group] : []));
@@ -315,7 +244,7 @@ export function resolveSidebarDropTarget(
   }
   // Projects keep their order: a row dropped among another project's rows
   // joins its own project at the matching position.
-  const clustered = clusterSidebarItemsByGroup(activeRows, (row) => row.group ?? "", groupOrder);
+  const clustered = clusterByGroup(activeRows, (row) => row.group ?? "", groupOrder);
   const movedGroup = activeRows.find((row) => row.key === activeKey)?.group;
   return {
     section,

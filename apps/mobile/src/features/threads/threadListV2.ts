@@ -8,7 +8,10 @@ import {
   snoozeWakeLabel,
 } from "@t3tools/client-runtime/state/thread-settled";
 import type { SnoozePreset } from "@t3tools/client-runtime/state/thread-settled";
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
+import type {
+  EnvironmentProject,
+  EnvironmentThreadShell,
+} from "@t3tools/client-runtime/state/shell";
 import { resolveThreadProviderStack } from "@t3tools/client-runtime/state/models";
 import { threadSearchMatchKey } from "@t3tools/client-runtime/state/thread-search";
 import {
@@ -18,6 +21,8 @@ import {
   sortWorkingThreadsBySend,
 } from "@t3tools/client-runtime/state/thread-inbox";
 import {
+  groupActiveThreadsByProject,
+  groupWorkingThreadsByProject,
   sortActiveThreadsByOrderKey,
   resolveSettledThreadTimestamp,
   sortPinnedThreadsByOrderKey,
@@ -242,6 +247,61 @@ export interface ThreadListV2Item {
   readonly snoozed: boolean;
   readonly pinned: boolean;
   readonly isLast: boolean;
+  /** Set on active and Working rows while threads are grouped under project headers. */
+  readonly projectGroup?: string;
+}
+
+export interface ThreadListV2ProjectHeader {
+  readonly title: string;
+  readonly project: EnvironmentProject;
+  readonly pinned: boolean;
+}
+
+export interface ThreadListV2ProjectGrouping {
+  /** Logical project key for each `environmentId:projectId`. */
+  readonly groupByProjectKey: ReadonlyMap<string, string>;
+  readonly headerByGroup: ReadonlyMap<string, ThreadListV2ProjectHeader>;
+  /** Pinned projects in their pin order; they lead the grouped lists. */
+  readonly pinnedGroupKeys: readonly string[];
+  /** Every project in list order. Working groups follow it so a send never reorders headers. */
+  readonly groupKeys: readonly string[];
+}
+
+/**
+ * With project grouping, Move up and Move down step past the neighbouring
+ * thread in the same project, which can sit anywhere in the flat active order.
+ * Callers skip this while the Working section is on, because active threads
+ * are then ordered by time and cannot move.
+ */
+export function resolveGroupedActiveThreadMoves(input: {
+  readonly items: readonly ThreadListV2Item[];
+  readonly reorderableEnvironmentIds: ReadonlySet<EnvironmentId>;
+  readonly pendingOrder?: PendingThreadOrder | null;
+}): Map<string, ThreadMoveAvailability> {
+  const result = new Map<string, ThreadMoveAvailability>();
+  if (input.pendingOrder != null) return result;
+  const rowsByGroup = new Map<string, ThreadListV2Item[]>();
+  for (const item of input.items) {
+    if (item.pinned || item.projectGroup === undefined) continue;
+    const rows = rowsByGroup.get(item.projectGroup);
+    if (rows) rows.push(item);
+    else rowsByGroup.set(item.projectGroup, [item]);
+  }
+  const rowId = (item: ThreadListV2Item) => `${item.thread.environmentId}:${item.thread.id}`;
+  for (const rows of rowsByGroup.values()) {
+    rows.forEach((item, index) => {
+      const writable = input.reorderableEnvironmentIds.has(item.thread.environmentId);
+      const previous = writable ? rows[index - 1] : undefined;
+      const next = writable ? rows[index + 1] : undefined;
+      result.set(rowId(item), {
+        canMoveUp: previous !== undefined,
+        canMoveDown: next !== undefined,
+        ...(previous === undefined ? {} : { upTargetId: rowId(previous) }),
+        ...(next === undefined ? {} : { downTargetId: rowId(next) }),
+      });
+    });
+  }
+  return result;
 }
 
 export interface ThreadListV2Layout {
@@ -278,6 +338,17 @@ export interface ThreadListV2ThreadListItem {
   readonly hasUnsentDraft: boolean;
   readonly canMoveUp: boolean;
   readonly canMoveDown: boolean;
+  /** Grouped rows move past the neighbouring thread in their project, not the flat list. */
+  readonly moveUpTargetId: string | null;
+  readonly moveDownTargetId: string | null;
+}
+
+export interface ThreadListV2ProjectHeaderListItem {
+  readonly type: "v2-project-header";
+  readonly key: string;
+  readonly title: string;
+  readonly project: EnvironmentProject | null;
+  readonly pinned: boolean;
 }
 
 export interface ThreadListV2PendingListItem {
@@ -319,6 +390,7 @@ export interface ThreadListV2SettledShelfListItem {
 
 export type ThreadListV2ListItem =
   | ThreadListV2ThreadListItem
+  | ThreadListV2ProjectHeaderListItem
   | ThreadListV2PendingListItem
   | ThreadListV2WorkingShelfListItem
   | ThreadListV2SnoozedShelfListItem
@@ -329,6 +401,7 @@ export function isThreadListV2ListItem(value: {
 }): value is ThreadListV2ListItem {
   return (
     value.type === "v2-thread" ||
+    value.type === "v2-project-header" ||
     value.type === "v2-pending" ||
     value.type === "v2-working-shelf" ||
     value.type === "v2-snoozed-shelf" ||
@@ -354,6 +427,7 @@ export function threadListV2ListItemsAreEqual(
         previous.item.variant === item.item.variant &&
         previous.item.snoozed === item.item.snoozed &&
         previous.item.pinned === item.item.pinned &&
+        previous.item.projectGroup === item.item.projectGroup &&
         previous.snoozeWakeLabelText === item.snoozeWakeLabelText &&
         previous.timeLabel === item.timeLabel &&
         previous.snoozePresetMinute === item.snoozePresetMinute &&
@@ -361,7 +435,17 @@ export function threadListV2ListItemsAreEqual(
         previous.hasQueuedMessages === item.hasQueuedMessages &&
         previous.hasUnsentDraft === item.hasUnsentDraft &&
         previous.canMoveUp === item.canMoveUp &&
-        previous.canMoveDown === item.canMoveDown
+        previous.canMoveDown === item.canMoveDown &&
+        previous.moveUpTargetId === item.moveUpTargetId &&
+        previous.moveDownTargetId === item.moveDownTargetId
+      );
+    case "v2-project-header":
+      return (
+        previous.type === "v2-project-header" &&
+        previous.key === item.key &&
+        previous.title === item.title &&
+        previous.project === item.project &&
+        previous.pinned === item.pinned
       );
     case "v2-pending":
       return (
@@ -431,6 +515,7 @@ export function buildThreadListV2ListItems(input: {
   readonly timestampMode?: SidebarThreadTimestampMode;
   readonly moveAvailability?: ReadonlyMap<string, ThreadMoveAvailability>;
   readonly shelfPreferencesLoading?: boolean;
+  readonly projectHeaders?: ReadonlyMap<string, ThreadListV2ProjectHeader>;
 }): ThreadListV2ListItem[] {
   const queuedThreadKeys = input.queuedThreadKeys?.size ? input.queuedThreadKeys : undefined;
   const threadItems = input.items.map((item): ThreadListV2ListItem => {
@@ -470,8 +555,36 @@ export function buildThreadListV2ListItems(input: {
         input.draftThreadKeys?.has(`${item.thread.environmentId}:${item.thread.id}`) === true,
       canMoveUp: move?.canMoveUp === true,
       canMoveDown: move?.canMoveDown === true,
+      moveUpTargetId: move?.upTargetId ?? null,
+      moveDownTargetId: move?.downTargetId ?? null,
     };
   });
+  // A header opens each run of one project's rows. Keys carry the section
+  // because a project can head both the active rows and the Working shelf.
+  const withProjectHeaders = (
+    rows: readonly ThreadListV2ListItem[],
+    section: "active" | "working",
+  ): ThreadListV2ListItem[] => {
+    if (input.projectHeaders === undefined) return [...rows];
+    const result: ThreadListV2ListItem[] = [];
+    let currentGroup: string | undefined;
+    for (const row of rows) {
+      const group = row.type === "v2-thread" ? row.item.projectGroup : undefined;
+      if (group !== undefined && group !== currentGroup) {
+        const header = input.projectHeaders.get(group);
+        result.push({
+          type: "v2-project-header",
+          key: `v2-project-header:${section}:${group}`,
+          title: header?.title ?? "",
+          project: header?.project ?? null,
+          pinned: header?.pinned === true,
+        });
+      }
+      currentGroup = group;
+      result.push(row);
+    }
+    return result;
+  };
   const pendingItems = input.pendingTasks.map((pendingTask, index): ThreadListV2ListItem => ({
     type: "v2-pending",
     key: `v2-${pendingTask.key}`,
@@ -488,7 +601,10 @@ export function buildThreadListV2ListItems(input: {
   const snoozedEnd = settledShelfHeaderIndex ?? threadItems.length;
   const workingEnd = snoozedShelfHeaderIndex ?? snoozedEnd;
   const activeEnd = workingShelfHeaderIndex ?? workingEnd;
-  const result: ThreadListV2ListItem[] = [...pendingItems, ...threadItems.slice(0, activeEnd)];
+  const result: ThreadListV2ListItem[] = [
+    ...pendingItems,
+    ...withProjectHeaders(threadItems.slice(0, activeEnd), "active"),
+  ];
   const shelfDisabled = input.shelfPreferencesLoading === true;
   if (workingShelfHeaderIndex !== null && workingCount > 0) {
     result.push({
@@ -498,7 +614,9 @@ export function buildThreadListV2ListItems(input: {
       expanded: input.workingShelfExpanded === true,
       disabled: shelfDisabled,
     });
-    result.push(...threadItems.slice(workingShelfHeaderIndex, workingEnd));
+    result.push(
+      ...withProjectHeaders(threadItems.slice(workingShelfHeaderIndex, workingEnd), "working"),
+    );
   }
   if (snoozedShelfHeaderIndex !== null && snoozedCount > 0) {
     result.push({
@@ -575,6 +693,7 @@ export function buildThreadListV2Items(input: {
   readonly settledShelfExpanded?: boolean;
   readonly selectedThreadKey?: string | null;
   readonly queuedThreadKeys?: ReadonlySet<string>;
+  readonly projectGrouping?: ThreadListV2ProjectGrouping | null;
 }): ThreadListV2Layout {
   const now = input.now;
   const pending =
@@ -648,10 +767,27 @@ export function buildThreadListV2Items(input: {
     }
   }
 
-  const orderedActive = workingShelfEnabled
+  const grouping = input.projectGrouping ?? null;
+  const projectGroupOf = (thread: EnvironmentThreadShell) => {
+    const key = `${thread.environmentId}:${thread.projectId}`;
+    return grouping?.groupByProjectKey.get(key) ?? key;
+  };
+  const flatActive = workingShelfEnabled
     ? sortInboxThreadsByReturn(active, input.inboxReturnAt)
     : applyPendingThreadOrder(sortThreadsForListV2(active), "active", pending);
-  const orderedWorking = sortWorkingThreadsBySend(working);
+  const orderedActive =
+    grouping === null
+      ? flatActive
+      : groupActiveThreadsByProject(flatActive, projectGroupOf, [], grouping.pinnedGroupKeys);
+  const orderedWorking =
+    grouping === null
+      ? sortWorkingThreadsBySend(working)
+      : groupWorkingThreadsByProject(sortWorkingThreadsBySend(working), projectGroupOf, [
+          ...grouping.pinnedGroupKeys,
+          ...grouping.groupKeys,
+        ]);
+  const groupedFields = (thread: EnvironmentThreadShell) =>
+    grouping === null ? {} : { projectGroup: projectGroupOf(thread) };
   const orderedSnoozed = [...snoozed].sort(
     (left, right) =>
       parseTimestampMs(left.snoozedUntil ?? "") - parseTimestampMs(right.snoozedUntil ?? ""),
@@ -709,6 +845,7 @@ export function buildThreadListV2Items(input: {
       snoozed: false,
       pinned: false,
       isLast: false,
+      ...groupedFields(thread),
     });
   }
   const workingShelfHeaderIndex = orderedWorking.length > 0 ? items.length : null;
@@ -719,6 +856,7 @@ export function buildThreadListV2Items(input: {
       snoozed: false,
       pinned: false,
       isLast: false,
+      ...groupedFields(thread),
     });
   }
   const snoozedShelfHeaderIndex = orderedSnoozed.length > 0 ? items.length : null;

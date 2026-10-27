@@ -48,6 +48,8 @@ import { settleReasonLabel } from "@t3tools/client-runtime/state/thread-settle-r
 import { createInboxReturnTracker } from "@t3tools/client-runtime/state/thread-inbox";
 import { formatDiffCount } from "@t3tools/client-runtime/diff-count";
 import {
+  groupActiveThreadsByProject,
+  groupWorkingThreadsByProject,
   resolveSettledThreadTimestamp,
   sortSettledThreads,
 } from "@t3tools/client-runtime/state/thread-sort";
@@ -238,8 +240,6 @@ import {
   shouldNavigateAfterThreadPark,
   shouldRecedeSidebarThread,
   resolveWorkingStartedAt,
-  groupActiveThreadsForSidebar,
-  groupWorkingThreadsForSidebar,
   resolveSidebarProjectDrop,
   sidebarListItemId,
   sidebarMarkerId,
@@ -755,7 +755,7 @@ function partitionSidebarThreads(input: SidebarThreadPartitionInput) {
     // Grouping clusters rows without changing their order within a
     // project, so jump shortcuts and range select follow what renders.
     activeThreads: projectGrouping
-      ? groupActiveThreadsForSidebar(
+      ? groupActiveThreadsByProject(
           optimisticActive,
           groupOf,
           projectGrouping.orderedProjectGroupKeys,
@@ -766,7 +766,7 @@ function partitionSidebarThreads(input: SidebarThreadPartitionInput) {
     // Grouped projects follow the saved order, then the project list, so
     // a send never reorders the headers.
     workingThreads: projectGrouping
-      ? groupWorkingThreadsForSidebar(sortWorkingThreadsBySend(working), groupOf, [
+      ? groupWorkingThreadsByProject(sortWorkingThreadsBySend(working), groupOf, [
           ...projectGrouping.pinnedProjectGroupKeys,
           ...projectGrouping.orderedProjectGroupKeys,
           ...projectGrouping.projectGroupKeys,

@@ -53,12 +53,14 @@ import { useThreadSearch } from "../../state/queries";
 import { useThreadJumpShortcuts } from "../keyboard/threadKeyboardShortcuts";
 import { usePendingThreadOrder } from "../../state/thread-order";
 import { mobilePreferencesAtom } from "../../state/preferences";
+import { useMobileThreadGroupingByProject } from "../../state/project-grouping";
 import { threadListEnvironmentsAtom } from "../../state/server";
 import type { PendingNewTask } from "../../state/use-pending-new-tasks";
 import { useDraftThreadKeys } from "../../state/use-composer-drafts";
 import { useQueuedThreadKeys } from "../../state/use-thread-outbox";
 import {
   ThreadListV2PendingRow,
+  ThreadListV2ProjectHeaderRow,
   ThreadListV2Row,
   ThreadListV2SettledShelfHeader,
   ThreadListV2ShowMoreRow,
@@ -72,6 +74,7 @@ import {
   buildThreadListV2Items,
   getThreadListV2OrderedSection,
   buildThreadListV2ListItems,
+  resolveGroupedActiveThreadMoves,
   threadListV2ListItemsAreEqual,
   threadListInboxReturns,
   THREAD_LIST_V2_SETTLED_INITIAL_COUNT,
@@ -83,6 +86,7 @@ import type { HomeListFilterMenuEnvironment } from "./home-list-filter-menu";
 import {
   archivedProjectRefKeys,
   buildHomeProjectScopes,
+  buildHomeThreadProjectGrouping,
   findHomeProjectScope,
   type HomeProjectSortOrder,
 } from "./homeThreadList";
@@ -396,6 +400,9 @@ export function HomeScreen(props: HomeScreenProps) {
     environmentId: props.selectedEnvironmentId,
     projectGroupingMode: props.projectGroupingMode,
   });
+  const projectGrouping = useMobileThreadGroupingByProject()
+    ? buildHomeThreadProjectGrouping(projectScopes)
+    : null;
   const hasSearchQuery = props.searchQuery.trim().length > 0;
   const projectByKey = (() => {
     const map = new Map<string, EnvironmentProject>();
@@ -482,32 +489,6 @@ export function HomeScreen(props: HomeScreenProps) {
   } = listEnvironments;
   const resolveProviderInstance = useThreadRowProviderInstanceResolver(providersByEnvironmentId);
   const pendingOrder = usePendingThreadOrder(nowMinute, snoozeWakeTick);
-  // Up/down menu availability for every card, computed once per section per
-  // rebuild (see computeThreadMoveAvailability): per-thread planner calls made
-  // list construction quadratic, and this list rebuilds on every minute tick.
-  const threadMoveAvailability = (() => {
-    const sectionAvailability = (section: "pinned" | "active") =>
-      computeThreadMoveAvailability({
-        allThreads: props.threads,
-        section,
-        pendingOrder,
-        reorderableEnvironmentIds:
-          section === "pinned" ? pinReorderEnvironmentIds : activeReorderEnvironmentIds,
-        ordered: getThreadListV2OrderedSection({
-          threads: props.threads,
-          section,
-          pendingOrder,
-          now,
-          settlementEnvironmentIds,
-          snoozeEnvironmentIds,
-          queuedThreadKeys,
-        }),
-      });
-    return new Map([
-      ...sectionAvailability("pinned"),
-      ...(workingShelfEnabled ? [] : sectionAvailability("active")),
-    ]);
-  })();
   const threadListV2Layout = (() => {
     threadListInboxReturns.observe(workingShelfEnabled ? props.threads : null);
     return buildThreadListV2Items({
@@ -532,7 +513,42 @@ export function HomeScreen(props: HomeScreenProps) {
       snoozedShelfExpanded,
       settledShelfExpanded,
       selectedThreadKey,
+      projectGrouping,
     });
+  })();
+  // Up/down menu availability for every card, computed once per section per
+  // rebuild (see computeThreadMoveAvailability): per-thread planner calls made
+  // list construction quadratic, and this list rebuilds on every minute tick.
+  const threadMoveAvailability = (() => {
+    const sectionAvailability = (section: "pinned" | "active") =>
+      computeThreadMoveAvailability({
+        allThreads: props.threads,
+        section,
+        pendingOrder,
+        reorderableEnvironmentIds:
+          section === "pinned" ? pinReorderEnvironmentIds : activeReorderEnvironmentIds,
+        ordered: getThreadListV2OrderedSection({
+          threads: props.threads,
+          section,
+          pendingOrder,
+          now,
+          settlementEnvironmentIds,
+          snoozeEnvironmentIds,
+          queuedThreadKeys,
+        }),
+      });
+    return new Map([
+      ...sectionAvailability("pinned"),
+      ...(workingShelfEnabled
+        ? []
+        : projectGrouping !== null
+          ? resolveGroupedActiveThreadMoves({
+              items: threadListV2Layout.items,
+              reorderableEnvironmentIds: activeReorderEnvironmentIds,
+              pendingOrder,
+            })
+          : sectionAvailability("active")),
+    ]);
   })();
   const nextSnoozeWakeAt = threadListV2Layout.nextSnoozeWakeAt;
   useEffect(() => {
@@ -582,6 +598,7 @@ export function HomeScreen(props: HomeScreenProps) {
     shelfPreferencesLoading: !shelfPreferencesLoaded,
     draftThreadKeys,
     timestampMode,
+    ...(projectGrouping === null ? {} : { projectHeaders: projectGrouping.headerByGroup }),
   });
 
   useThreadJumpShortcuts(threadListV2Items, props.onSelectThread);
@@ -613,6 +630,16 @@ export function HomeScreen(props: HomeScreenProps) {
           onDeletePendingTask={props.onDeletePendingTask}
           onSwipeableClose={handleSwipeableClose}
           onSwipeableWillOpen={handleSwipeableWillOpen}
+        />
+      );
+    }
+    if (item.type === "v2-project-header") {
+      return (
+        <ThreadListV2ProjectHeaderRow
+          title={item.title}
+          project={item.project}
+          pinned={item.pinned}
+          pane={primaryColumn ? "sidebar" : "screen"}
         />
       );
     }
@@ -667,6 +694,7 @@ export function HomeScreen(props: HomeScreenProps) {
         projectTitle={v2ProjectTitleByProjectKey.get(
           scopedProjectKey(thread.environmentId, thread.projectId),
         )}
+        showProject={item.item.projectGroup === undefined}
         providerInstance={resolveProviderInstance(thread)}
         providers={providersByEnvironmentId.get(thread.environmentId)}
         environmentLabel={
@@ -701,6 +729,8 @@ export function HomeScreen(props: HomeScreenProps) {
         }
         canMoveUp={item.canMoveUp}
         canMoveDown={item.canMoveDown}
+        moveUpTargetId={item.moveUpTargetId}
+        moveDownTargetId={item.moveDownTargetId}
         onSnoozeThread={handleSnoozeThread}
         onUnsnoozeThread={handleUnsnoozeThread}
         onUnsettleThread={handleUnsettleThread}

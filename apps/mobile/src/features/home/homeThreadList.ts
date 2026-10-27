@@ -22,6 +22,7 @@ import * as Arr from "effect/Array";
 import * as Order from "effect/Order";
 
 import { scopedProjectKey } from "../../lib/scopedEntities";
+import type { ThreadListV2ProjectGrouping } from "../threads/threadListV2";
 import type { PendingNewTask } from "../../state/use-pending-new-tasks";
 
 export type HomeProjectSortOrder = Exclude<SidebarProjectSortOrder, "manual">;
@@ -122,6 +123,39 @@ export function archivedProjectRefKeys(scopes: ReadonlyArray<HomeProjectScope>):
           ),
     ),
   );
+}
+
+/** Project headers for the thread list, from the same scopes as the project filter. */
+export function buildHomeThreadProjectGrouping(
+  scopes: ReadonlyArray<HomeProjectScope>,
+): ThreadListV2ProjectGrouping {
+  return {
+    groupByProjectKey: new Map(
+      scopes.flatMap((scope) =>
+        scope.projectRefs.map(
+          (projectRef) =>
+            [scopedProjectKey(projectRef.environmentId, projectRef.projectId), scope.key] as const,
+        ),
+      ),
+    ),
+    headerByGroup: new Map(
+      scopes.map(
+        (scope) =>
+          [
+            scope.key,
+            {
+              title: scope.title,
+              project: scope.representative,
+              pinned: scope.pinnedAt !== null,
+            },
+          ] as const,
+      ),
+    ),
+    pinnedGroupKeys: sortPinnedProjectsFirst(scopes).flatMap((scope) =>
+      scope.pinnedAt === null ? [] : [scope.key],
+    ),
+    groupKeys: scopes.map((scope) => scope.key),
+  };
 }
 
 export function sortHomeProjectScopes(input: {

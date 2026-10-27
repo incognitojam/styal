@@ -161,6 +161,11 @@ across environments share one header. The Working section groups its threads the
 keeping projects in a fixed order and the thread you last sent work to first within each
 project. Pinned, snoozed, and settled threads are not grouped.
 
+On mobile, turn on **Settings → Organization → Group threads by project**. Each device keeps
+its own setting. **Move up** and **Move down** move a thread within its project, and pinned
+projects come first. Mobile headers cannot be dragged or opened for project actions, and
+**Arrange threads** still shows one list.
+
 While grouping is on, dragging a thread reorders it only within its own project. Drag a
 project's header to move the project and all its threads. The project order is saved on
 this device and does not sync to your other devices.
