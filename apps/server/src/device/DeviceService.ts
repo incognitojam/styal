@@ -771,11 +771,13 @@ process.exitCode = result.error ? 1 : (result.status ?? 1);`,
         });
       }
     }
+    let notice: string | undefined;
     if (ready.remote) {
       const opened = yield* ready.remote.open(
         input,
         device.platform === "ios" ? memoryMode : "standard",
       );
+      notice = opened.notice;
       state = yield* refresh(ready);
       device = findDevice(state, host.id, opened.deviceId);
       if (!device)
@@ -805,7 +807,7 @@ process.exitCode = result.error ? 1 : (result.status ?? 1);`,
           ),
         );
         if (booting.platform === "ios" && (yield* unclaimedAndStopped))
-          yield* prepareSimulatorMemory(ready, booting.id, memoryMode, {
+          notice = yield* prepareSimulatorMemory(ready, booting, memoryMode, {
             stillStopped: unclaimedAndStopped,
             onMutationStart: markBooting,
             onMutationError: shutdownDevice(host.id, booting.id, booting.platform).pipe(
@@ -886,7 +888,7 @@ process.exitCode = result.error ? 1 : (result.status ?? 1);`,
         }));
       }),
     );
-    return session;
+    return notice === undefined ? session : { ...session, notice };
   });
 
   const shutdownDevice = Effect.fn("DeviceService.shutdownDevice")(function* (

@@ -322,13 +322,15 @@ const fixture = Effect.gen(function* () {
     nodePath: process.execPath,
     hub: { origin: "http://hub.test" },
     helpers: { serveSimCli: null, serveSimAxSettings: null },
-    run: (command, args) =>
+    run: (command, commandArgs) =>
       Effect.sync(() => {
         const json = (value: unknown) => ({ code: 0, stdout: JSON.stringify(value), stderr: "" });
         if (!memoryDevice)
           return { stdout: command === "emulator" ? "" : " V....D libx264", stderr: "", code: 0 };
         if (command === process.execPath)
           return json({ supported: true, installed: true, executable: "/simslim" });
+        // Mutations pass SimSlim's global boot limit first.
+        const args = commandArgs[0] === "--boot-timeout" ? commandArgs.slice(2) : commandArgs;
         if (command !== "/simslim") return { stdout: "", stderr: "", code: 0 };
         if (args[0] === "status")
           return json({ persistent: true, managedDisabled: memoryDisabled });
@@ -519,26 +521,24 @@ it.effect("prepares and restores a cold iOS simulator on the owning environment"
   }).pipe(Effect.scoped),
 );
 
-it.effect("refuses unsupported peer memory preparation without falling back to a stock boot", () =>
+it.effect("opens normally with a notice when an older peer rejects Low memory", () =>
   Effect.gen(function* () {
     const f = yield* fixture;
     f.useMemoryDevice();
     f.rejectMemoryOpen();
     yield* f.connect;
     const ready = yield* (yield* f.host).ensureReady(() => Effect.void);
-    const error = yield* ready
-      .remote!.open(
-        { threadId: ThreadId.make("memory-project"), deviceId: "emulator-5554", platform: "ios" },
-        "low-memory",
-      )
-      .pipe(Effect.flip);
-    expect(error._tag).toBe("DeviceHostUnavailableError");
-    expect(f.memoryCommands).toEqual([]);
+    const session = yield* ready.remote!.open(
+      { threadId: ThreadId.make("memory-project"), deviceId: "emulator-5554", platform: "ios" },
+      "low-memory",
+    );
+    expect(session.notice).toContain("older styal without Low memory");
+    expect(f.memoryCommands).not.toContain("on");
     expect(
       f.peerRequests
         .filter((request) => request.operation.startsWith("open"))
         .map((request) => request.operation),
-    ).toEqual(["open-low-memory"]);
+    ).toEqual(["open-low-memory", "open"]);
   }).pipe(Effect.scoped),
 );
 

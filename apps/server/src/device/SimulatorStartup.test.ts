@@ -47,7 +47,7 @@ const fixture = Effect.fn("simulatorStartupFixture")(function* (
     nodePath: "/node",
     hub: { origin: "http://simulator.test" },
     helpers: { serveSimAxSettings: null, serveSimCli: null },
-    run: (command, args) =>
+    run: (command, commandArgs) =>
       Effect.gen(function* () {
         const json = (value: unknown) => ({ code: 0, stdout: JSON.stringify(value), stderr: "" });
         if (command === "/node" && options.setupFailureAfterExternalBoot) {
@@ -58,6 +58,8 @@ const fixture = Effect.fn("simulatorStartupFixture")(function* (
           if (options.externalBootDuringSetup) state.booted = true;
           return json({ supported: true, installed: true, executable: "/simslim" });
         }
+        // Mutations pass SimSlim's global boot limit first.
+        const args = commandArgs[0] === "--boot-timeout" ? commandArgs.slice(2) : commandArgs;
         if (command !== "/simslim") return { code: 0, stdout: "", stderr: "" };
         if (args.includes("--list"))
           return json(capabilities.map((id) => ({ id, labels: [`com.apple.test.${id}`] })));
@@ -176,15 +178,21 @@ it.effect("does not reconfigure a stopped simulator another thread still holds",
   }).pipe(Effect.provide(ServerSettings.layerTest({ enableDeviceSupport: true })), Effect.scoped),
 );
 
-it.effect("leaves an externally started simulator running when helper setup fails", () =>
-  Effect.gen(function* () {
-    const f = yield* fixture({ setupFailureAfterExternalBoot: true });
-    yield* f.service.open(input).pipe(Effect.flip);
-    expect(f.state.booted).toBe(true);
-    expect(f.calls).toEqual([]);
-    expect((yield* f.service.state).sessions).toEqual([]);
-    expect((yield* f.service.state).bootingDevices).toEqual([]);
-  }).pipe(Effect.provide(ServerSettings.layerTest({ enableDeviceSupport: true })), Effect.scoped),
+it.effect(
+  "starts with a notice and leaves an externally started simulator running when helper setup fails",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture({ setupFailureAfterExternalBoot: true });
+      const session = yield* f.service.open(input);
+      expect(session.notice).toContain("Could not install the low memory helper.");
+      expect(f.state.booted).toBe(true);
+      expect(f.calls.filter((call) => call === "on" || call === "off")).toEqual([]);
+      expect((yield* f.service.state).sessions.map((entry) => entry.notice)).toEqual([undefined]);
+      yield* f.service.close({ threadId, deviceId });
+      yield* TestClock.adjust(Duration.minutes(10));
+      yield* f.sweep({ shutdownAfter: Duration.minutes(1), agentAccess: false });
+      expect(f.state.booted).toBe(true);
+    }).pipe(Effect.provide(ServerSettings.layerTest({ enableDeviceSupport: true })), Effect.scoped),
 );
 
 it.effect("does not acquire idle-shutdown ownership when another tool boots during setup", () =>

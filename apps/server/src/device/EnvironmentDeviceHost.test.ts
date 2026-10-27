@@ -10,7 +10,7 @@ import * as EnvironmentDeviceHost from "./EnvironmentDeviceHost.ts";
 
 const environmentId = EnvironmentId.make("simulator-host");
 it.effect.each(["open", "open-low-memory"] as const)(
-  "allows %s to finish preparation and boot after 800 seconds",
+  "allows %s to finish preparation and boot after nine minutes",
   (operation) =>
     Effect.gen(function* () {
       const started = yield* Deferred.make<void>();
@@ -37,7 +37,7 @@ it.effect.each(["open", "open-low-memory"] as const)(
               }),
             );
           yield* Deferred.succeed(started, undefined);
-          yield* Effect.sleep("800 seconds");
+          yield* Effect.sleep("540 seconds");
           return HttpClientResponse.fromWeb(request, Response.json(null));
         }),
       );
@@ -58,7 +58,7 @@ it.effect.each(["open", "open-low-memory"] as const)(
       };
       const request = yield* client.request(command, Schema.Null).pipe(Effect.forkChild);
       yield* Deferred.await(started);
-      yield* TestClock.adjust("800 seconds");
+      yield* TestClock.adjust("540 seconds");
       expect(yield* Fiber.join(request)).toBeNull();
     }).pipe(Effect.scoped),
 );

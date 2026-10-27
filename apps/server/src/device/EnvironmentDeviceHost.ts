@@ -38,15 +38,22 @@ export const devicePeerThreadPrefix = (environmentId: string) =>
 const isDeviceError = Schema.is(DeviceError);
 const decodeDeviceError = Schema.decodeUnknownOption(DeviceError);
 const isHostUnavailable = Schema.is(DeviceHostUnavailableError);
+/** Older environments answer a command they cannot decode with a bare 400. */
+const isRejectedCommand = (cause: unknown) =>
+  isHostUnavailable(cause) &&
+  typeof cause.cause === "object" &&
+  cause.cause !== null &&
+  "httpStatus" in cause.cause &&
+  cause.cause.httpStatus === 400;
 
 /**
- * Opening a cold simulator on the device machine can wait on hub startup, a boot,
- * and stream attachment in turn. Startup memory preparation/restoration also
- * waits for SimSlim's service update (up to eleven minutes).
+ * Opening a cold simulator on the device machine can wait on hub startup, memory
+ * preparation, a boot, and stream attachment in turn. Starting agent-device can
+ * install it first.
  */
 const commandTimeout = (operation: DevicePeerCommand["operation"]): Duration.Input =>
   operation === "open" || operation === "open-low-memory"
-    ? "30 minutes"
+    ? "10 minutes"
     : operation === "agent"
       ? "5 minutes"
       : "1 minute";
@@ -136,15 +143,7 @@ export const makeClient = Effect.fn("EnvironmentDeviceHost.makeClient")(function
   // Older peers reject identify, so they are checked with inspect instead.
   const identifyAt = (url: string) =>
     send(url, { operation: "identify" }, DeviceEnvironmentIdentity, "3 seconds").pipe(
-      Effect.catchIf(
-        (cause) =>
-          isHostUnavailable(cause) &&
-          typeof cause.cause === "object" &&
-          cause.cause !== null &&
-          "httpStatus" in cause.cause &&
-          cause.cause.httpStatus === 400,
-        () => inspectAt(url),
-      ),
+      Effect.catchIf(isRejectedCommand, () => inspectAt(url)),
       Effect.flatMap(checkIdentity),
     );
   /** Uses the first address, starting with the current one, where both identities match. */
@@ -262,10 +261,19 @@ export const make = Effect.fn("EnvironmentDeviceHost.make")(function* (
   const remote: NonNullable<DeviceHost.DeviceHostReady["remote"]> = {
     list: client.info("list").pipe(Effect.map(update)),
     open: (input, mode) =>
-      client.request(
-        { operation: mode === "low-memory" ? "open-low-memory" : "open", input },
-        DeviceSession,
-      ),
+      mode === "low-memory"
+        ? client.request({ operation: "open-low-memory", input }, DeviceSession).pipe(
+            Effect.catchIf(isRejectedCommand, () =>
+              client.request({ operation: "open", input }, DeviceSession).pipe(
+                Effect.map((session) => ({
+                  ...session,
+                  notice:
+                    "The device's environment runs an older styal without Low memory. The simulator started with its current memory mode.",
+                })),
+              ),
+            ),
+          )
+        : client.request({ operation: "open", input }, DeviceSession),
     close: (input) =>
       client.request({ operation: "close", input }, Schema.Null).pipe(Effect.asVoid),
     shutdown: (input) =>

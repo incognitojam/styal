@@ -23,6 +23,7 @@ import { useComposerDraftStore } from "~/composerDraftStore";
 import { DeviceLoadingView } from "./DeviceLoadingView";
 import { DeviceSetup, deviceHubReadiness } from "./DeviceSetup";
 import { DeviceWorkspace } from "./DeviceWorkspace";
+import { toastManager } from "../ui/toast";
 import { PreviewPanelShell, type PreviewPanelMode } from "../preview/PreviewPanelShell";
 
 const platformLabel = (platform: DevicePlatform) =>
@@ -115,6 +116,12 @@ export function DevicePanel(props: {
         platform: device.platform,
         name: device.name,
       });
+      if (result.value.notice)
+        toastManager.add({
+          type: "warning",
+          title: "Low memory unavailable",
+          description: result.value.notice,
+        });
       settleOperation(null);
     }
   };

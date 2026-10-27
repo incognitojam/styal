@@ -13,7 +13,8 @@ const capabilities = [
   "contacts",
   "calendar",
 ];
-const fixture = (installed = true) => {
+const simulator = { id: "simulator", version: "26.5" };
+const fixture = (installed = true, supported = true) => {
   const calls: { command: string; args: readonly string[] }[] = [];
   const state = {
     installed,
@@ -22,6 +23,7 @@ const fixture = (installed = true) => {
     doctorCode: 0,
     doctor: JSON.stringify({ features: capabilities.map((id) => ({ id, ok: true })) }),
     applyChanges: true,
+    installFails: false,
   };
   const ready: DeviceHostReady = {
     nodePath: "/node",
@@ -32,9 +34,11 @@ const fixture = (installed = true) => {
         calls.push({ command, args });
         const json = (value: unknown) => ({ code: 0, stdout: JSON.stringify(value), stderr: "" });
         if (command === "/node") {
-          if (args.at(-1) === "install") state.installed = true;
-          return json({ supported: true, installed: state.installed, executable: "/simslim" });
+          if (state.installFails) return { code: 1, stdout: "", stderr: "download failed" };
+          if (supported && args.at(-1) === "install") state.installed = true;
+          return json({ supported, installed: state.installed, executable: "/simslim" });
         }
+        if (args[0] === "--boot-timeout") args = args.slice(2);
         if (args[0] === "status")
           return json({ persistent: true, managedDisabled: state.disabled });
         if (args.includes("--list"))
@@ -52,7 +56,7 @@ const fixture = (installed = true) => {
 it.effect("leaves stock Standard hosts untouched without installing a helper", () =>
   Effect.gen(function* () {
     const f = fixture(false);
-    yield* prepareSimulatorMemory(f.ready, "simulator", "standard");
+    yield* prepareSimulatorMemory(f.ready, simulator, "standard");
     expect(f.state.installed).toBe(false);
     expect(f.calls.map((call) => call.args.at(-1))).toEqual(["probe"]);
   }),
@@ -61,9 +65,11 @@ it.effect("leaves stock Standard hosts untouched without installing a helper", (
 it.effect("preserves the fixed capabilities, checks readback, and restores Standard", () =>
   Effect.gen(function* () {
     const f = fixture(false);
-    yield* prepareSimulatorMemory(f.ready, "simulator", "low-memory");
-    const apply = f.calls.find((call) => call.args[0] === "on")!;
+    yield* prepareSimulatorMemory(f.ready, simulator, "low-memory");
+    const apply = f.calls.find((call) => call.args.includes("on"))!;
     expect(apply.args).toEqual([
+      "--boot-timeout",
+      "3m",
       "on",
       "simulator",
       "--keep",
@@ -76,7 +82,7 @@ it.effect("preserves the fixed capabilities, checks readback, and restores Stand
       capabilities.join(","),
       "--json",
     ]);
-    yield* prepareSimulatorMemory(f.ready, "simulator", "standard");
+    yield* prepareSimulatorMemory(f.ready, simulator, "standard");
     expect(f.state.disabled).toBe(0);
     expect(f.calls.at(-1)?.args).toEqual(["status", "simulator", "--json"]);
   }),
@@ -86,7 +92,7 @@ it.effect.each(["standard", "low-memory"] as const)("refuses a timed-out %s comm
   Effect.gen(function* () {
     const f = fixture();
     f.state.mutationCode = 124;
-    const error = yield* prepareSimulatorMemory(f.ready, "simulator", mode).pipe(Effect.flip);
+    const error = yield* prepareSimulatorMemory(f.ready, simulator, mode).pipe(Effect.flip);
     expect(error).toMatchObject({
       _tag: "DeviceOperationError",
       reason: "command_failed",
@@ -104,9 +110,7 @@ it.effect.each([
   Effect.gen(function* () {
     const f = fixture();
     f.state.doctor = doctor;
-    const error = yield* prepareSimulatorMemory(f.ready, "simulator", "low-memory").pipe(
-      Effect.flip,
-    );
+    const error = yield* prepareSimulatorMemory(f.ready, simulator, "low-memory").pipe(Effect.flip);
     expect(error).toMatchObject({ _tag: "DeviceOperationError", reason: "settings_failed" });
   }),
 );
@@ -118,7 +122,7 @@ it.effect.each(["standard", "low-memory"] as const)(
       const f = fixture();
       f.state.applyChanges = false;
       f.state.disabled = mode === "standard" ? 153 : 0;
-      const error = yield* prepareSimulatorMemory(f.ready, "simulator", mode).pipe(Effect.flip);
+      const error = yield* prepareSimulatorMemory(f.ready, simulator, mode).pipe(Effect.flip);
       expect(error).toMatchObject({ _tag: "DeviceOperationError", reason: "settings_failed" });
     }),
 );
@@ -126,10 +130,32 @@ it.effect.each(["standard", "low-memory"] as const)(
 it.effect("does not reconfigure a device booted or claimed during helper setup", () =>
   Effect.gen(function* () {
     const f = fixture(false);
-    yield* prepareSimulatorMemory(f.ready, "simulator", "low-memory", {
+    yield* prepareSimulatorMemory(f.ready, simulator, "low-memory", {
       stillStopped: Effect.succeed(false),
       onMutationError: Effect.void,
     });
-    expect(f.calls.some((call) => call.args[0] === "on" || call.args[0] === "off")).toBe(false);
+    expect(f.calls.some((call) => call.args.includes("on") || call.args.includes("off"))).toBe(
+      false,
+    );
+  }),
+);
+
+it.effect.each([
+  ["an older runtime", { version: "18.4" }, "Low memory needs iOS 18.5 or newer."],
+  ["an Intel Mac", { supported: false }, "Low memory needs an Apple Silicon Mac."],
+  ["a failed helper download", { installFails: true }, "Could not install the low memory helper."],
+] as const)("starts normally with a notice on %s", ([, setup, notice]) =>
+  Effect.gen(function* () {
+    const f = fixture(false, !("supported" in setup));
+    if ("installFails" in setup) f.state.installFails = true;
+    const result = yield* prepareSimulatorMemory(
+      f.ready,
+      { ...simulator, ...("version" in setup ? { version: setup.version } : {}) },
+      "low-memory",
+    );
+    expect(result).toContain(notice);
+    expect(f.calls.some((call) => call.args.includes("on") || call.args.includes("off"))).toBe(
+      false,
+    );
   }),
 );

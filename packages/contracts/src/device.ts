@@ -27,7 +27,7 @@ export type DevicePlatform = typeof DevicePlatform.Type;
 export const SimulatorMemoryMode = Schema.Literals(["standard", "low-memory"]);
 export type SimulatorMemoryMode = typeof SimulatorMemoryMode.Type;
 export const SIMULATOR_MEMORY_DESCRIPTION =
-  "Applies when styal starts a stopped iOS simulator that no thread holds. Running simulators keep their current mode. Low memory keeps push notifications, purchases, universal links, iCloud, keychain sync, photos, contacts, and calendar. Use Standard for other OS integrations.";
+  "Applies when styal starts a stopped iOS simulator that no thread holds. Low memory keeps push, purchases, iCloud, and links working.";
 
 export const DeviceHostId = TrimmedNonEmptyString.check(Schema.isMaxLength(128));
 export type DeviceHostId = typeof DeviceHostId.Type;
@@ -191,6 +191,8 @@ export const DeviceSession = Schema.Struct({
   deviceId: DeviceId,
   platform: DevicePlatform,
   openedAt: Schema.String,
+  /** Set only on an open's result, such as when Low memory fell back to Standard. */
+  notice: Schema.optional(Schema.String),
 });
 export type DeviceSession = typeof DeviceSession.Type;
 
@@ -518,7 +520,6 @@ export class DeviceOperationError extends Schema.TaggedError<DeviceOperationErro
     operation: Schema.String,
     reason: Schema.Literals([
       "command_failed",
-      "unsupported_runtime",
       "request_failed",
       "invalid_payload",
       "settings_failed",
@@ -531,7 +532,6 @@ export class DeviceOperationError extends Schema.TaggedError<DeviceOperationErro
   override get message(): string {
     const explanation = {
       command_failed: `The device command failed${this.exitCode === undefined ? "" : ` (exit code ${this.exitCode})`}.`,
-      unsupported_runtime: "The simulator does not support this memory mode.",
       request_failed: "Could not communicate with device support. Try refreshing devices.",
       invalid_payload: "The device request could not be encoded.",
       settings_failed: "Could not read or save device settings.",
