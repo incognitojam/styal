@@ -1,0 +1,388 @@
+name: Mobile Android Preview
+
+on:
+  pull_request:
+    types: [labeled, unlabeled, synchronize, reopened, closed]
+
+permissions:
+  contents: read
+
+# Build events and cleanup events use separate groups, as in Desktop macOS
+# Preview: a push cancels a stale in-flight build but never a cleanup run.
+concurrency:
+  group: mobile-android-preview-${{ github.event.pull_request.number }}-${{ contains(fromJSON('["closed", "unlabeled"]'), github.event.action) && 'cleanup' || 'build' }}
+  # Keep in sync with the build job's condition.
+  cancel-in-progress: >-
+    ${{ github.event.action != 'closed' &&
+    github.event.action != 'unlabeled' &&
+    github.event.pull_request.head.repo.full_name == github.repository &&
+    contains(github.event.pull_request.labels.*.name, 'preview:android') &&
+    (github.event.action != 'labeled' || github.event.label.name == 'preview:android') }}
+
+jobs:
+  # Builds run PR code, so this job has a read-only token and no secrets. The
+  # APK leaves it signed with the prebuild template's debug key; the publish
+  # job, which never checks out PR code, re-signs it with the preview key.
+  build:
+    name: Build Android preview APK
+    if: >-
+      github.event.action != 'closed' &&
+      github.event.action != 'unlabeled' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      contains(github.event.pull_request.labels.*.name, 'preview:android') &&
+      (github.event.action != 'labeled' || github.event.label.name == 'preview:android')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      # Installs beside the production app as "styal Preview".
+      APP_VARIANT: preview
+      # Each preview runs exactly the JavaScript it was built with. An OTA on
+      # the shared preview channel would replace one PR's code with another's.
+      T3CODE_MOBILE_UPDATES_ENABLED: "0"
+      EXPO_OWNER: ${{ vars.EXPO_OWNER }}
+      EXPO_PROJECT_ID: ${{ vars.EXPO_PROJECT_ID }}
+      T3CODE_CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY }}
+      T3CODE_CLERK_JWT_TEMPLATE: ${{ vars.CLERK_JWT_TEMPLATE }}
+      T3CODE_RELAY_URL: ${{ vars.RELAY_URL }}
+      NODE_OPTIONS: --max-old-space-size=8192
+      EXPO_NO_GIT_STATUS: "1"
+    outputs:
+      apk_name: ${{ steps.version.outputs.apk_name }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: |
+            args:
+              - --filter=@t3tools/mobile...
+
+      - name: Setup Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      # Restore only: main's production builds save this cache, and saving
+      # a PR-scoped copy of it on every preview would crowd out the
+      # repository's cache quota.
+      - name: Restore Gradle cache
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-android-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: gradle-android-
+
+      # The version code is this workflow's run number, so a newer preview
+      # installs over an older one from any PR.
+      - id: version
+        name: Set preview version
+        working-directory: apps/mobile
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          base_version="$(npx expo config --json --type public | jq -er '.version')"
+          version="${base_version}-pr.${PR_NUMBER}.${GITHUB_RUN_NUMBER}"
+          {
+            echo "T3CODE_MOBILE_VERSION=$version"
+            echo "T3CODE_ANDROID_VERSION_CODE=$GITHUB_RUN_NUMBER"
+          } >> "$GITHUB_ENV"
+          {
+            echo "version=$version"
+            echo "apk_name=styal-preview-${version}.apk"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Generate the native project
+        working-directory: apps/mobile
+        run: npx expo prebuild --platform android --clean --no-install
+
+      # Same packaging as the production APK: arm64 only, compressed native
+      # libraries.
+      - name: Build the APK
+        working-directory: apps/mobile/android
+        run: |
+          ./gradlew :app:assembleRelease \
+            -PreactNativeArchitectures=arm64-v8a \
+            -Pexpo.useLegacyPackaging=true
+          df -h /
+
+      - name: Name the APK
+        env:
+          APK_NAME: ${{ steps.version.outputs.apk_name }}
+        run: |
+          mkdir -p release
+          mv apps/mobile/android/app/build/outputs/apk/release/app-release.apk "release/$APK_NAME"
+
+      # archive: false uploads the file as its own artifact named after the
+      # file, so the publish job downloads by *.apk pattern, not by name.
+      - name: Upload the APK
+        uses: actions/upload-artifact@v7
+        with:
+          path: release/*.apk
+          if-no-files-found: error
+          archive: false
+          overwrite: true
+          retention-days: 7
+
+  # Release assets download without a GitHub account, unlike workflow
+  # artifacts, so the APK installs straight from a phone's browser. Every
+  # preview APK lives on one rolling prerelease tagged "mobile-preview". The
+  # tag must not start with "android-": the in-app updater and production
+  # version codes read those tags.
+  publish:
+    name: Sign and publish the APK
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: android-preview
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Download the APK
+        uses: actions/download-artifact@v8
+        with:
+          pattern: "*.apk"
+          merge-multiple: true
+          path: release
+
+      - id: upload
+        name: Sign and upload the APK to the rolling preview release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          ANDROID_PREVIEW_KEYSTORE_BASE64: ${{ secrets.ANDROID_PREVIEW_KEYSTORE_BASE64 }}
+          ANDROID_PREVIEW_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_PREVIEW_KEYSTORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          tag="mobile-preview"
+
+          preview_eligible() {
+            [[ "$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" \
+              --json state,labels \
+              --jq '.state + " " + (.labels | map(.name) | contains(["preview:android"]) | tostring)')" == "OPEN true" ]]
+          }
+
+          # A cleanup that ran during the build must not be undone.
+          if ! preview_eligible; then
+            echo "PR closed or preview label removed while building. Skipping publish."
+            exit 0
+          fi
+
+          apk_path="$(find release -type f -name '*.apk' -print -quit)"
+          if [[ -z "$apk_path" ]]; then
+            echo "No APK found in the downloaded artifact." >&2
+            exit 1
+          fi
+          apk_name="$(basename "$apk_path")"
+
+          # The filename comes out of the build, which runs PR code. Requiring
+          # this PR's marker keeps a build from replacing another PR's asset.
+          if [[ "$apk_name" != *"-pr.${PR_NUMBER}."* ]]; then
+            echo "APK name '$apk_name' does not carry this PR's -pr.${PR_NUMBER}. marker. Refusing to publish." >&2
+            exit 1
+          fi
+
+          # Every preview carries the same signer, so Android installs each
+          # one over the last instead of asking to uninstall first.
+          build_tools="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
+          keystore="$RUNNER_TEMP/preview.jks"
+          base64 -d <<<"$ANDROID_PREVIEW_KEYSTORE_BASE64" > "$keystore"
+          signed="$RUNNER_TEMP/$apk_name"
+          "$build_tools/apksigner" sign \
+            --ks "$keystore" \
+            --ks-pass env:ANDROID_PREVIEW_KEYSTORE_PASSWORD \
+            --out "$signed" \
+            "$apk_path"
+          rm -f "$keystore"
+          "$build_tools/apksigner" verify --print-certs "$signed"
+
+          if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            # "|| true" tolerates a concurrent publish job creating the
+            # release between the check and the create.
+            gh release create "$tag" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$DEFAULT_BRANCH" \
+              --prerelease \
+              --title "Mobile preview builds" \
+              --notes "Rolling Android builds from pull requests with the preview:android label. They install as styal Preview, beside the styal app. Each download is removed when its pull request closes or loses the label." \
+              || true
+          fi
+
+          # Keep one APK per PR. The trailing dot keeps -pr.12. from matching
+          # -pr.123. builds.
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' \
+            | { grep -F -- "-pr.${PR_NUMBER}." || true; } \
+            | while read -r asset; do
+                gh release delete-asset "$tag" "$asset" --repo "$GITHUB_REPOSITORY" --yes \
+                  || echo "Asset $asset was already removed by a concurrent run."
+              done
+
+          gh release upload "$tag" "$signed" --repo "$GITHUB_REPOSITORY" --clobber
+
+          # Whichever writer acts last sees the final PR state; if the preview
+          # became ineligible during the upload, delete what was just uploaded.
+          if ! preview_eligible; then
+            gh release delete-asset "$tag" "$apk_name" --repo "$GITHUB_REPOSITORY" --yes \
+              || echo "Asset was already removed by a concurrent run."
+            echo "PR closed or preview label removed during upload. Removed the download."
+            exit 0
+          fi
+
+          echo "download_url=https://github.com/${GITHUB_REPOSITORY}/releases/download/${tag}/${apk_name}" >> "$GITHUB_OUTPUT"
+
+      - name: Comment download link
+        if: steps.upload.outputs.download_url != ''
+        uses: actions/github-script@v9
+        env:
+          DOWNLOAD_URL: ${{ steps.upload.outputs.download_url }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PREVIEW_VERSION: ${{ needs.build.outputs.version }}
+        with:
+          script: |
+            const { data: pullRequest } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number,
+            });
+            if (
+              pullRequest.head.sha !== process.env.HEAD_SHA ||
+              pullRequest.state !== "open" ||
+              !pullRequest.labels.some((label) => label.name === "preview:android")
+            ) {
+              core.info("Skipping the outdated Android preview comment.");
+              return;
+            }
+
+            const marker = "<!-- mobile-android-preview -->";
+            const body = [
+              marker,
+              "### Android preview",
+              "",
+              `[Download APK](${process.env.DOWNLOAD_URL})`,
+              "",
+              `Version: ${process.env.PREVIEW_VERSION}`,
+              `Commit: ${process.env.HEAD_SHA.slice(0, 7)}`,
+              "",
+              "Installs as **styal Preview**, beside the styal app, on arm64 phones. Android will not install an older preview over a newer one, so uninstall styal Preview first when switching back to an earlier build. Push notifications are not set up in preview builds.",
+              "",
+              "No GitHub sign-in is needed. The download stays available until this PR closes or the preview label is removed.",
+            ].join("\n");
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              per_page: 100,
+            });
+            const existing = comments.find((comment) => comment.body?.includes(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.pull_request.number,
+                body,
+              });
+            }
+
+  # The way out: closing the PR or removing the label deletes its APK from the
+  # rolling release and updates the PR comment to say so.
+  cleanup:
+    name: Remove preview download
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      ((github.event.action == 'closed' && contains(github.event.pull_request.labels.*.name, 'preview:android')) ||
+      (github.event.action == 'unlabeled' && github.event.label.name == 'preview:android'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - id: delete
+        name: Delete this PR's preview assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+
+          tag="mobile-preview"
+
+          # A stale cleanup must not delete a download that became valid
+          # again; the next publish replaces this PR's assets itself.
+          if [[ "$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" \
+            --json state,labels \
+            --jq '.state + " " + (.labels | map(.name) | contains(["preview:android"]) | tostring)')" == "OPEN true" ]]; then
+            echo "PR is open and labeled again. Skipping cleanup."
+            echo "removed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "removed=true" >> "$GITHUB_OUTPUT"
+
+          if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "No preview release exists. Nothing to clean up."
+            exit 0
+          fi
+
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' \
+            | { grep -F -- "-pr.${PR_NUMBER}." || true; } \
+            | while read -r asset; do
+                gh release delete-asset "$tag" "$asset" --repo "$GITHUB_REPOSITORY" --yes \
+                  || echo "Asset $asset was already removed by a concurrent run."
+              done
+
+      - name: Mark the preview comment as removed
+        if: steps.delete.outputs.removed == 'true'
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const marker = "<!-- mobile-android-preview -->";
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              per_page: 100,
+            });
+            const existing = comments.find((comment) => comment.body?.includes(marker));
+            if (!existing) {
+              return;
+            }
+
+            await github.rest.issues.updateComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: existing.id,
+              body: [
+                marker,
+                "### Android preview",
+                "",
+                "The preview download was removed because this PR closed or the preview label was removed.",
+              ].join("\n"),
+            });
