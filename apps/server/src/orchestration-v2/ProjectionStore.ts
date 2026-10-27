@@ -1764,6 +1764,9 @@ export function threadShellFromProjection(
       ? {}
       : { historyOrigin: projection.thread.historyOrigin }),
     ...(tokenUsage === undefined ? {} : { tokenUsage }),
+    ...(projection.thread.linkOrigin === undefined
+      ? {}
+      : { linkOrigin: projection.thread.linkOrigin }),
     latestRunId: latestRun?.id ?? null,
     latestRunRequestedAt: latestRun?.requestedAt ?? null,
     latestRunStartedAt: latestRun?.startedAt ?? null,
@@ -2058,6 +2061,9 @@ function shellFromState(input: {
       ? {}
       : { historyOrigin: input.state.thread.historyOrigin }),
     ...(input.state.tokenUsage === undefined ? {} : { tokenUsage: input.state.tokenUsage }),
+    ...(input.state.thread.linkOrigin === undefined
+      ? {}
+      : { linkOrigin: input.state.thread.linkOrigin }),
     latestRunId: input.state.latestRunId,
     latestRunRequestedAt: input.state.latestRunRequestedAt,
     latestRunStartedAt: input.state.latestRunStartedAt,

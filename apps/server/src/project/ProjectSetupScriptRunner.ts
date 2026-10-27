@@ -1,5 +1,6 @@
 import {
   EventId,
+  linkOriginIsFenced,
   ProjectId,
   ProjectScriptIcon,
   ThreadId,
@@ -39,6 +40,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 import * as ProjectFileActionApprovals from "./ProjectFileActionApprovals.ts";
 import * as ProjectService from "./ProjectService.ts";
 import { forkParked } from "../serverActivation.ts";
+import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
 
@@ -178,11 +180,21 @@ export interface ProjectSetupScriptRunnerResultAwaitingApproval {
   readonly scriptName: string;
 }
 
+/**
+ * A thread a link below full access started does not run this project's setup
+ * script: the script is the user's own code, and such a link only grants T3's
+ * tools (see `mcp/linkOrigin.ts`).
+ */
+export interface ProjectSetupScriptRunnerResultSkippedForLink {
+  readonly status: "skipped-for-link";
+}
+
 export type ProjectSetupScriptRunnerResult =
   | ProjectSetupScriptRunnerResultNoScript
   | ProjectSetupScriptRunnerResultAwaitingApproval
   | ProjectSetupScriptRunnerResultNotAWorktree
   | ProjectSetupScriptRunnerResultAlreadyRunning
+  | ProjectSetupScriptRunnerResultSkippedForLink
   | ProjectSetupScriptRunnerResultStarted;
 
 export interface ProjectSetupScriptRunnerInput {
@@ -214,7 +226,7 @@ export class ProjectSetupScriptOperationError extends Schema.TaggedError<Project
     projectId: Schema.optional(Schema.String),
     projectCwd: Schema.optional(Schema.String),
     worktreePath: Schema.String,
-    operation: Schema.Literals(["resolveProject", "readSettings", "openTerminal"]),
+    operation: Schema.Literals(["readThread", "resolveProject", "readSettings", "openTerminal"]),
     cause: Schema.Defect(),
   },
 ) {
@@ -267,6 +279,7 @@ function stripTerminalControl(text: string): string {
 /** @public */
 export const make = Effect.gen(function* () {
   const projects = yield* ProjectService.ProjectService;
+  const threads = yield* ProjectionStore.ProjectionStoreV2;
   const terminalManager = yield* TerminalManager.TerminalManager;
   const eventSink = yield* EventSink.EventSinkV2;
   const positions = yield* TurnItemPositions.TurnItemPositionStoreV2;
@@ -614,6 +627,19 @@ export const make = Effect.gen(function* () {
       ...(input.projectId === undefined ? {} : { projectId: input.projectId }),
       ...(input.projectCwd === undefined ? {} : { projectCwd: input.projectCwd }),
     };
+    // A thread whose origin cannot be read might be a link's: run nothing.
+    const thread = yield* threads.getThreadShell(ThreadId.make(input.threadId)).pipe(
+      Effect.mapError(
+        (cause) =>
+          new ProjectSetupScriptOperationError({
+            ...errorContext,
+            operation: "readThread",
+            cause,
+          }),
+      ),
+    );
+    if (thread?.linkOrigin !== undefined && linkOriginIsFenced(thread.linkOrigin))
+      return { status: "skipped-for-link" } as const;
     const projectById =
       input.project ??
       (input.projectId

@@ -277,6 +277,8 @@ export const layerProjectSetupScriptRunner = ProjectSetupScriptRunner.layer.pipe
   Layer.provide(layerProjectService),
   Layer.provide(layerEventSinkProvided),
   Layer.provide(TurnItemPositionStore.layer),
+  // Whether a thread came from a linked environment, which skips setup.
+  Layer.provide(ProjectionStore.layer),
 );
 const layerManagedProjectFoldersProvided = ManagedProjectFolders.layer.pipe(
   Layer.provide(layerProjectService),
