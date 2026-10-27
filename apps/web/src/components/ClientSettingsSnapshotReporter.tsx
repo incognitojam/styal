@@ -71,7 +71,8 @@ export function ClientSettingsSnapshotReporter() {
         pending = false;
         if (!accepted) {
           failures += 1;
-          retryAt = Date.now() + clientSettingsSnapshotRetryDelayMs(failures);
+          // From the attempt, not the reply, so the next check on the interval qualifies.
+          retryAt = now + clientSettingsSnapshotRetryDelayMs(failures);
           return;
         }
         failures = 0;
