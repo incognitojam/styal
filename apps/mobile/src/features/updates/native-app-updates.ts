@@ -181,16 +181,16 @@ function runSharedNativeAppUpdateCheck(): Promise<void> {
   return nativeAppUpdateCheckInFlight;
 }
 
-let nativeAppUpdateChecksStarted = false;
-
 /** Checks at launch and again when the app returns after a long background. */
-export function startNativeAppUpdateChecks(): void {
-  if (nativeAppUpdateChecksStarted || !defaultNativeAppUpdateEnvironment.isSupported()) return;
-  nativeAppUpdateChecksStarted = true;
+export function installNativeAppUpdateChecks(): () => void {
+  if (!defaultNativeAppUpdateEnvironment.isSupported()) return () => undefined;
+  let disposed = false;
+  let removeListener: (() => void) | undefined;
   void runSharedNativeAppUpdateCheck();
   void import("react-native").then(({ AppState }) => {
+    if (disposed) return;
     let backgroundedAtMs: number | null = null;
-    AppState.addEventListener("change", (state) => {
+    const subscription = AppState.addEventListener("change", (state) => {
       if (state === "background") {
         backgroundedAtMs = Date.now();
         return;
@@ -200,7 +200,12 @@ export function startNativeAppUpdateChecks(): void {
       backgroundedAtMs = null;
       if (shouldCheck) void runSharedNativeAppUpdateCheck();
     });
+    removeListener = () => subscription.remove();
   });
+  return () => {
+    disposed = true;
+    removeListener?.();
+  };
 }
 
 export function useAvailableNativeAppUpdate(): NativeAppUpdate | undefined {
