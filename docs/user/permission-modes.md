@@ -23,9 +23,9 @@ not prevent the agent from asking questions about the task.
 ## Provider differences
 
 Providers enforce permissions differently. Some read-only actions can proceed in **Supervised**.
-**Auto** uses automatic review on Codex, Claude, Cursor, and Grok; providers without an equivalent,
+**Auto** uses automatic review on Codex, Claude, Cursor, Grok, and fx; providers without an equivalent,
 including OpenCode and Antigravity, fall back to asking. On Grok, commands its review blocks come
-to you for approval.
+to you for approval. On fx, prompts it still sends also come to you.
 
 On Claude, actions its review blocks are not run, and the agent carries on without them. The
 conversation marks each one **Blocked by Auto mode** with Claude's reason. Ask the agent to try
@@ -33,6 +33,9 @@ again in another mode if you want that action to run.
 
 Muse Code offers only **Supervised** and **Full access**. A Muse thread already set to another mode
 runs in **Supervised**.
+
+styal offers no **Auto-accept edits** or **Full access** for fx. An fx thread already set to either runs in
+**Supervised**.
 
 Grok offers no **Auto-accept edits**. A Grok thread already set to it runs in **Supervised**. Grok
 file-change approvals offer **Allow all edits this session**. Its command approvals have no
