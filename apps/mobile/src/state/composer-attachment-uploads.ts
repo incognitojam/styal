@@ -17,6 +17,7 @@ import {
 import { appAtomRegistry } from "./atom-registry";
 import { useServerConfigs } from "./entities";
 import { flattenQueuedThreadMessages, threadOutboxManager } from "./thread-outbox";
+import { shouldRetryThreadOutboxDelivery } from "./thread-outbox-model";
 import { useThreadOutboxMessages } from "./use-thread-outbox";
 import {
   ComposerDraftPersistenceError,
@@ -71,6 +72,7 @@ export function useComposerAttachmentUploadWorker() {
     ensureComposerDraftsLoaded();
     const queue = createComposerAttachmentUploadQueue({
       onChange: (states) => appAtomRegistry.set(composerAttachmentUploadsAtom, states),
+      isConnectionFailure: shouldRetryThreadOutboxDelivery,
       upload: async ({ environmentId, attachment }, signal, onProgress) => {
         const release = isFileBackedComposerAttachment(attachment)
           ? retainComposerAttachmentFileForPreview(attachment)

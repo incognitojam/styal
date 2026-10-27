@@ -17,6 +17,8 @@ import {
 } from "./composerAttachmentUploadQueue";
 
 const environmentId = EnvironmentId.make("environment-1");
+const notConnected = new Error("The environment is not connected.");
+const isConnectionFailure = (error: unknown) => error === notConnected;
 function request(id: string, environment = environmentId): ComposerAttachmentUploadRequest {
   return {
     environmentId: environment,
@@ -51,7 +53,11 @@ describe("composer attachment upload queue", () => {
         active -= 1;
       }
     });
-    const queue = createComposerAttachmentUploadQueue({ upload, onChange: () => {} });
+    const queue = createComposerAttachmentUploadQueue({
+      upload,
+      onChange: () => {},
+      isConnectionFailure,
+    });
     const requests = [request("one"), request("two"), request("three"), request("four")];
     queue.sync(requests);
     queue.sync(requests);
@@ -83,6 +89,7 @@ describe("composer attachment upload queue", () => {
     );
     const queue = createComposerAttachmentUploadQueue({
       upload,
+      isConnectionFailure,
       onChange: (next) => {
         states = next;
       },
@@ -110,6 +117,7 @@ describe("composer attachment upload queue", () => {
     const upload = vi.fn().mockRejectedValueOnce(new Error("Disconnected")).mockResolvedValue(true);
     const queue = createComposerAttachmentUploadQueue({
       upload,
+      isConnectionFailure,
       onChange: (next) => {
         states = next;
       },
@@ -140,6 +148,7 @@ describe("composer attachment upload queue", () => {
     });
     const queue = createComposerAttachmentUploadQueue({
       upload,
+      isConnectionFailure,
       onChange: (next) => {
         states = next;
       },
@@ -175,6 +184,7 @@ describe("composer attachment upload queue", () => {
     });
     const queue = createComposerAttachmentUploadQueue({
       upload,
+      isConnectionFailure,
       onChange: (next) => {
         states = next;
       },
@@ -197,6 +207,81 @@ describe("composer attachment upload queue", () => {
     queue.dispose();
   });
 
+  it("retries a connection failure without waiting for the request to be resynced", async () => {
+    vi.useFakeTimers();
+    try {
+      let states: Readonly<Record<string, ComposerAttachmentUploadState>> = {};
+      const upload = vi.fn().mockRejectedValueOnce(notConnected).mockResolvedValue(true);
+      const queue = createComposerAttachmentUploadQueue({
+        upload,
+        isConnectionFailure,
+        onChange: (next) => {
+          states = next;
+        },
+      });
+      const key = composerAttachmentUploadKey(environmentId, "flaky");
+      queue.sync([request("flaky")]);
+      await queue.settled();
+      expect(states[key]).toEqual({ status: "uploading", progress: 0 });
+      await vi.advanceTimersByTimeAsync(1_000);
+      await queue.settled();
+      expect(upload).toHaveBeenCalledTimes(2);
+      expect(states[key]).toEqual({ status: "ready" });
+      queue.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("marks a connection failure failed once its retries run out", async () => {
+    vi.useFakeTimers();
+    try {
+      let states: Readonly<Record<string, ComposerAttachmentUploadState>> = {};
+      const upload = vi.fn().mockRejectedValue(notConnected);
+      const queue = createComposerAttachmentUploadQueue({
+        upload,
+        isConnectionFailure,
+        onChange: (next) => {
+          states = next;
+        },
+      });
+      queue.sync([request("offline")]);
+      await queue.settled();
+      await vi.advanceTimersByTimeAsync(1_000 + 2_000 + 4_000);
+      await queue.settled();
+      expect(upload).toHaveBeenCalledTimes(4);
+      expect(states[composerAttachmentUploadKey(environmentId, "offline")]).toEqual({
+        status: "failed",
+        reason: notConnected.message,
+      });
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(upload).toHaveBeenCalledTimes(4);
+      queue.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("drops a pending connection retry when its draft no longer needs the upload", async () => {
+    vi.useFakeTimers();
+    try {
+      const upload = vi.fn().mockRejectedValueOnce(notConnected).mockResolvedValue(true);
+      const queue = createComposerAttachmentUploadQueue({
+        upload,
+        isConnectionFailure,
+        onChange: () => {},
+      });
+      queue.sync([request("removed")]);
+      await queue.settled();
+      queue.sync([]);
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(upload).toHaveBeenCalledOnce();
+      queue.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("keeps failures stable until retry and reports bounded progress", async () => {
     let states: Readonly<Record<string, ComposerAttachmentUploadState>> = {};
     const progress: number[] = [];
@@ -214,6 +299,7 @@ describe("composer attachment upload queue", () => {
     );
     const queue = createComposerAttachmentUploadQueue({
       upload,
+      isConnectionFailure,
       onChange: (next) => {
         states = next;
         const state = next[composerAttachmentUploadKey(environmentId, "file")];
@@ -238,7 +324,11 @@ describe("composer attachment upload queue", () => {
 
   it("does not spin when an upload's draft was abandoned before persistence", async () => {
     const upload = vi.fn(async () => false);
-    const queue = createComposerAttachmentUploadQueue({ upload, onChange: () => {} });
+    const queue = createComposerAttachmentUploadQueue({
+      upload,
+      onChange: () => {},
+      isConnectionFailure,
+    });
     queue.sync([request("discarded")]);
     await queue.settled();
     expect(upload).toHaveBeenCalledOnce();
