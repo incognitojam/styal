@@ -50,7 +50,7 @@ const layerTest = GitVcsDriver.layer.pipe(
   Layer.provideMerge(NodeServices.layer),
 );
 
-const makeNonRepositoryHandle = () =>
+const makeNonRepositoryHandle = (stderr = "fatal: not a git repository") =>
   ChildProcessSpawner.makeHandle({
     pid: ChildProcessSpawner.ProcessId(1),
     exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(128)),
@@ -59,7 +59,7 @@ const makeNonRepositoryHandle = () =>
     unref: Effect.succeed(Effect.void),
     stdin: Sink.drain,
     stdout: Stream.empty,
-    stderr: Stream.encodeText(Stream.make("fatal: not a git repository")),
+    stderr: Stream.encodeText(Stream.make(stderr)),
     all: Stream.empty,
     getInputFd: () => Sink.drain,
     getOutputFd: () => Stream.empty,
@@ -300,7 +300,10 @@ it.effect.each(["root", "nested", "worktree"] as const)(
     }).pipe(Effect.provide(layerTest)),
 );
 
-it.effect("uses stable diagnostics for every parsed non-repository command", () => {
+it.effect.each([
+  "fatal: not a git repository (or any of the parent directories): .git",
+  "fatal: gitfile does not point to a valid repository: /repo/.git",
+])("uses stable diagnostics for every parsed non-repository command: %s", (stderr) => {
   const commands: Array<{ readonly args: ReadonlyArray<string>; readonly lcAll?: string }> = [];
   const spawner = ChildProcessSpawner.make((command) =>
     Effect.sync(() => {
@@ -311,7 +314,7 @@ it.effect("uses stable diagnostics for every parsed non-repository command", () 
         args: command.args,
         ...(command.options.env?.LC_ALL ? { lcAll: command.options.env.LC_ALL } : {}),
       });
-      return makeNonRepositoryHandle();
+      return makeNonRepositoryHandle(stderr);
     }),
   );
   const layerNodeServices = Layer.merge(
@@ -339,6 +342,34 @@ it.effect("uses stable diagnostics for every parsed non-repository command", () 
     ]);
   }).pipe(Effect.provide(layer));
 });
+
+it.effect("reports a broken submodule as a status failure, not a missing repository", () =>
+  Effect.gen(function* () {
+    const driver = yield* GitVcsDriver.GitVcsDriver;
+    const fs = yield* FileSystem.FileSystem;
+    const pathService = yield* Path.Path;
+    const submoduleRepo = yield* makeTmpDir("git-submodule-");
+    yield* initRepoWithCommit(submoduleRepo);
+    const cwd = yield* makeTmpDir();
+    yield* initRepoWithCommit(cwd);
+    // Git refuses `file:` submodule transports by default (CVE-2022-39253).
+    yield* git(cwd, [
+      "-c",
+      "protocol.file.allow=always",
+      "submodule",
+      "add",
+      submoduleRepo,
+      "child",
+    ]);
+    yield* git(cwd, ["commit", "-m", "add submodule"]);
+    const modules = pathService.join(cwd, ".git", "modules");
+    yield* fs.rename(pathService.join(modules, "child"), pathService.join(modules, "moved"));
+    yield* writeTextFile(cwd, "README.md", "# changed\n");
+
+    const result = yield* driver.statusDetailsLocal(cwd).pipe(Effect.result);
+    assert.isTrue(Result.isFailure(result));
+  }).pipe(Effect.provide(layerTest)),
+);
 
 it.effect("invalidates origin remote cache when a driver mutation adds origin", () =>
   Effect.gen(function* () {

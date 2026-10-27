@@ -535,7 +535,12 @@ function isMissingGitCwdError(error: GitCommandError): boolean {
 }
 
 function isNonRepositoryGitStderr(stderr: string): boolean {
-  return stderr.toLowerCase().includes("not a git repository");
+  const normalized = stderr.toLowerCase();
+  // Git 2.56 reports a .git file whose target is missing or invalid with its own message.
+  return (
+    normalized.includes("not a git repository") ||
+    normalized.includes("gitfile does not point to a valid repository")
+  );
 }
 function isUnbornHeadStderr(stderr: string): boolean {
   const normalized = stderr.toLowerCase();
@@ -2021,7 +2026,13 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     }
 
     if (statusResult.exitCode !== 0) {
-      if (isNonRepositoryGitStderr(statusResult.stderr)) {
+      // Unless the index lookup also found no repository, a non-repository
+      // message from status may refer to a nested one, such as a broken submodule.
+      if (
+        indexResult.exitCode !== 0 &&
+        isNonRepositoryGitStderr(indexResult.stderr) &&
+        isNonRepositoryGitStderr(statusResult.stderr)
+      ) {
         return NON_REPOSITORY_STATUS_DETAILS;
       }
       return yield* new GitCommandError({
