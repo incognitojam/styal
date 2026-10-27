@@ -54,6 +54,7 @@ export function mobileSettingsSnapshot(
     projectGroupingMode:
       resolveMobileProjectGroupingSettings(preferences).sidebarProjectGroupingMode,
     workingShelfEnabled: preferences.workingShelfEnabled === true,
+    useLastProjectForNewThreads: preferences.useLastProjectForNewThreads !== false,
     threadListWorkingShelfExpanded: preferences.threadListWorkingShelfExpanded === true,
     threadListSettledShelfExpanded: preferences.threadListSettledShelfExpanded === true,
     threadListSnoozedShelfExpanded: preferences.threadListSnoozedShelfExpanded === true,

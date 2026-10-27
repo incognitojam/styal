@@ -165,6 +165,7 @@ export const MobileSettingsSnapshot = Schema.Struct({
   threadGrouping: SidebarThreadGrouping,
   projectGroupingMode: SidebarProjectGroupingMode,
   workingShelfEnabled: Schema.Boolean,
+  useLastProjectForNewThreads: Schema.Boolean,
   threadListWorkingShelfExpanded: Schema.Boolean,
   threadListSettledShelfExpanded: Schema.Boolean,
   threadListSnoozedShelfExpanded: Schema.Boolean,

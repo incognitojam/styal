@@ -59,6 +59,8 @@ const SETTINGS_SEARCH_TERMS = {
     "working section",
     "last message time",
     "unpin confirmation",
+    "new threads",
+    "last project",
   ],
   SettingsThreads: [
     "new threads",

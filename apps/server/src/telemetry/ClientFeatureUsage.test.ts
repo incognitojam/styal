@@ -649,6 +649,7 @@ const mobileSnapshot = {
   threadGrouping: "none",
   projectGroupingMode: "repository",
   workingShelfEnabled: false,
+  useLastProjectForNewThreads: true,
   threadListWorkingShelfExpanded: false,
   threadListSettledShelfExpanded: true,
   threadListSnoozedShelfExpanded: false,
