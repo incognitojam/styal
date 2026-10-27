@@ -8,6 +8,8 @@ import { getCachedReviewParsedDiff } from "./reviewState";
 import {
   applyReviewDiffMetadata,
   buildReviewParsedDiff,
+  sortReviewFilesByPath,
+  sortReviewParsedDiffByPath,
   type ReviewParsedDiff,
   type ReviewRenderableFile,
   type ReviewSectionItem,
@@ -129,8 +131,9 @@ export function useReviewDiffData(input: {
   readonly selectedSection: ReviewSectionItem | null;
   readonly revision: string | undefined;
   readonly draftMessage: string;
+  readonly sortByRelevance: boolean;
 }) {
-  const { draftMessage, selectedSection, threadKey } = input;
+  const { draftMessage, selectedSection, sortByRelevance, threadKey } = input;
   const selectedSectionId = selectedSection?.id ?? null;
   const source = selectedSection?.source;
   const lazySource = source?.truncated && source.files ? source : null;
@@ -138,8 +141,12 @@ export function useReviewDiffData(input: {
   // Files that load one by one load in reading order; their import lines are not known yet.
   const lazyFiles = useMemo(
     () =>
-      lazySource?.files ? orderUnloadedDiffFiles(lazySource.files, lazySource.generatedPaths) : [],
-    [lazySource],
+      !lazySource?.files
+        ? []
+        : sortByRelevance
+          ? orderUnloadedDiffFiles(lazySource.files, lazySource.generatedPaths)
+          : sortReviewFilesByPath(lazySource.files),
+    [lazySource, sortByRelevance],
   );
   const previewDiff = useMemo<ReviewParsedDiff>(
     () =>
@@ -245,7 +252,10 @@ export function useReviewDiffData(input: {
     [lazyFiles, scope, patches, queries, registry],
   );
   const parsedDiff = useMemo<ReviewParsedDiff>(() => {
-    if (!lazySource?.files) return applyReviewDiffMetadata(previewDiff, selectedSection);
+    if (!lazySource?.files) {
+      const parsed = applyReviewDiffMetadata(previewDiff, selectedSection);
+      return sortByRelevance ? parsed : sortReviewParsedDiffByPath(parsed);
+    }
     const files = lazyFiles.map((stat, index) =>
       getCachedReviewFile(stat, lazySource.diffHash, patches[index]),
     );
@@ -257,7 +267,7 @@ export function useReviewDiffData(input: {
       deletions: files.reduce((total, file) => total + file.deletions, 0),
       notice: null,
     };
-  }, [lazySource, lazyFiles, previewDiff, selectedSection, patches]);
+  }, [lazySource, lazyFiles, previewDiff, selectedSection, patches, sortByRelevance]);
   const headerDiffSummary = useMemo(
     () => formatHeaderDiffSummary(parsedDiff, selectedSection?.files),
     [parsedDiff, selectedSection?.files],

@@ -37,7 +37,9 @@ export function usePullRequestFilesContent(props: {
   const result = usePullRequestDiff(props.params);
   const detail = useEnvironmentQuery(composerPullRequests.detail(requestTarget(props.params)));
   const viewed = usePullRequestFilesViewed(props.params, props.params.commit ? null : detail.data);
-  const filter = usePullRequestFileFilter(result.parsed);
+  const filter = usePullRequestFileFilter(result.parsed, props.params.environmentId);
+  // Directory groups follow path order; relevance order lists files flat with their directory.
+  const groupByDirectory = props.groupByDirectory === true && !filter.sortByRelevance;
   const parsed = filter.parsed;
   const loading = result.isPending && parsed.kind === "empty" && !result.error;
   const fileCount = props.params.commit ? undefined : detail.data?.changedFiles;
@@ -46,7 +48,7 @@ export function usePullRequestFilesContent(props: {
     () => new Set(),
   );
   const files = parsed.kind === "files" ? parsed.files : [];
-  const orderedFiles = props.groupByDirectory
+  const orderedFiles = groupByDirectory
     ? [...files].sort(
         (a, b) =>
           fileDirectory(a.path).localeCompare(fileDirectory(b.path)) ||
@@ -56,9 +58,8 @@ export function usePullRequestFilesContent(props: {
   const rows = orderedFiles.map((file, index) => {
     const directory = fileDirectory(file.path);
     const previousDirectory = fileDirectory(orderedFiles[index - 1]?.path ?? "");
-    const showDirectory =
-      props.groupByDirectory && (index === 0 || directory !== previousDirectory);
-    const collapsed = props.groupByDirectory && collapsedDirectories.has(directory);
+    const showDirectory = groupByDirectory && (index === 0 || directory !== previousDirectory);
+    const collapsed = groupByDirectory && collapsedDirectories.has(directory);
     if (collapsed && !showDirectory) return null;
     return {
       key: file.id,
@@ -109,7 +110,7 @@ export function usePullRequestFilesContent(props: {
                 <Text className="text-sm font-t3-medium text-foreground" numberOfLines={2}>
                   {file.path.split("/").at(-1)}
                 </Text>
-                {directory && !props.groupByDirectory ? (
+                {directory && !groupByDirectory ? (
                   <Text className="mt-0.5 text-2xs text-foreground-muted" numberOfLines={1}>
                     {directory}
                   </Text>
@@ -219,18 +220,27 @@ export function usePullRequestFilesContent(props: {
                 title="Review files"
                 actions={[
                   {
+                    id: "sort-relevance",
+                    title: "Sort by relevance",
+                    image: "list.number",
+                    state: filter.sortByRelevance ? "on" : "off",
+                  },
+                  {
                     id: "hide-tests",
                     title: "Hide test files",
                     image: "line.3.horizontal.decrease",
                     state: filter.hideTestFiles ? "on" : "off",
                   },
                 ]}
-                onPressAction={filter.toggle}
+                onPressAction={({ nativeEvent }) => {
+                  if (nativeEvent.event === "sort-relevance") filter.toggleSort();
+                  else filter.toggle();
+                }}
               >
                 <View pointerEvents="none">
                   <IconButton
                     icon="line.3.horizontal.decrease"
-                    accessibilityLabel="Filter review files"
+                    accessibilityLabel="Sort and filter review files"
                     selected={filter.hideTestFiles}
                   />
                 </View>

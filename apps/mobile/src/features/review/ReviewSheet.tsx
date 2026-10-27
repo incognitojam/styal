@@ -58,6 +58,7 @@ import {
 } from "../diffs/nativeReviewDiffSurface";
 import { NATIVE_REVIEW_DIFF_CONTENT_WIDTH } from "./nativeReviewDiffAdapter";
 import { useAppearanceCodeSurface } from "../settings/appearance/useAppearanceCodeSurface";
+import { useDiffSortMode } from "./useDiffSortMode";
 import { useReviewDiffData } from "./useReviewDiffData";
 import { useReviewDiffPrewarming } from "./useReviewDiffPrewarming";
 import { useReviewFileVisibility } from "./reviewFileVisibility";
@@ -75,6 +76,8 @@ function ReviewHeader(
     readonly sectionMenu: ReturnType<typeof buildReviewSectionMenu>;
     readonly showSectionToolbar: boolean;
     readonly showChangedFilesToggle: boolean;
+    readonly sortByRelevance: boolean;
+    readonly onToggleSort: () => void;
     readonly onSelectSection: (sectionId: string) => void;
     readonly onReturnToThread: () => void;
   },
@@ -144,6 +147,19 @@ function ReviewHeader(
                         },
                       ]
                     : []),
+                  {
+                    id: "file-order",
+                    inline: true,
+                    items: [
+                      {
+                        id: "sort-relevance",
+                        title: "Sort by relevance",
+                        icon: "list.number",
+                        selected: props.sortByRelevance,
+                        onPress: props.onToggleSort,
+                      },
+                    ],
+                  },
                   ...(presentation.refreshAction ? [presentation.refreshAction] : []),
                 ],
               },
@@ -451,6 +467,7 @@ export function ReviewSheet(props: ReviewSheetProps) {
   const isEnvironmentReady = environment.presentation?.connection.phase === "connected";
   const { draftMessage } = useThreadDraftForThread({ environmentId, threadId });
   const reviewCache = useReviewCacheForThread({ environmentId, threadId });
+  const diffSort = useDiffSortMode({ view: "changes", environmentId });
   const { selectedThreadCwd } = useSelectedThreadWorktree();
   const columnMetrics = useNativeColumnLayoutMetrics();
   const safeArea = columnMetrics?.safeArea ?? insets;
@@ -490,6 +507,7 @@ export function ReviewSheet(props: ReviewSheetProps) {
   } = useReviewDiffData({
     threadKey: reviewCache.threadKey,
     environmentId,
+    sortByRelevance: diffSort.sortByRelevance,
     cwd: selectedThreadCwd,
     selectedSection,
     revision: diffPreviewRevision,
@@ -697,6 +715,8 @@ export function ReviewSheet(props: ReviewSheetProps) {
         selectedSection={selectedSection}
         showSectionToolbar={showSectionToolbar}
         showChangedFilesToggle={showChangedFilesToggle}
+        sortByRelevance={diffSort.sortByRelevance}
+        onToggleSort={diffSort.toggle}
         onRefresh={handlePullToRefresh}
         onSelectSection={selectSection}
         onReturnToThread={handleReturnToThread}

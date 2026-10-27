@@ -1242,14 +1242,22 @@ features:
     invariants:
       - Turn, working-tree, branch, and pull request diffs order source dependencies first, their tests next, and repository-attributed or recognized generated output last across web, desktop, and mobile review surfaces. A working-tree or branch diff too large to load at once loads its files in that tier order, by path within each tier, since their import lines are not known until they load.
       - Test and generated tiers remain visible, generated files start collapsed, and explicit reader fold choices take precedence over automatic classification.
-      - One persisted web preference switches the diff panel and pull request Code tab between relevance and alphabetical order.
-      - Explicit web and desktop sort choices emit bounded client-usage events for the owning environment; default rendering is not counted as a choice and file paths are never reported.
+      - One persisted web preference switches the diff panel and pull request Code tab between relevance and alphabetical order; one persisted mobile preference does the same for the review sheet and pull request file list, Changed files sheet, and file diff, and the Changed files sheet groups by directory only in alphabetical order.
+      - Explicit web, desktop, and mobile sort choices emit bounded client-usage events for the owning environment; default rendering is not counted as a choice and file paths are never reported.
     rationale: Upstream orders files by relevance only in the web pull request Code tab, by name patterns alone, without tier labels, collapsed generated files, or a way back to alphabetical order (upstream #6039). The fork moved that ordering into shared code so turn, working-tree, and branch diffs and mobile review read the same way, and lets repository `linguist-generated` attributes mark generated files.
     implementation_paths:
       - .gitattributes
+      - apps/mobile/src/features/pull-requests/PullRequestFiles.tsx
+      - apps/mobile/src/features/pull-requests/PullRequestRouteScreen.tsx
+      - apps/mobile/src/features/pull-requests/pullRequestDiffPages.ts
+      - apps/mobile/src/features/pull-requests/usePullRequestFileFilter.ts
+      - apps/mobile/src/features/review/ReviewSheet.tsx
       - apps/mobile/src/features/review/reviewFileVisibility.ts
       - apps/mobile/src/features/review/reviewModel.ts
+      - apps/mobile/src/features/review/useDiffSortMode.ts
       - apps/mobile/src/features/review/useReviewDiffData.ts
+      - apps/mobile/src/persistence/mobile-preferences.ts
+      - apps/mobile/src/state/forkClientUsage.ts
       - apps/server/src/checkpointing/CheckpointDiffQuery.ts
       - apps/server/src/pullRequest/PullRequestService.ts
       - apps/server/src/vcs/GitVcsDriverCore.ts
@@ -1263,8 +1271,14 @@ features:
       - packages/shared/src/generatedFiles.ts
     upstream_paths:
       - .gitattributes
+      - apps/mobile/src/features/pull-requests/PullRequestFiles.tsx
+      - apps/mobile/src/features/pull-requests/PullRequestRouteScreen.tsx
+      - apps/mobile/src/features/pull-requests/pullRequestDiffPages.ts
+      - apps/mobile/src/features/pull-requests/usePullRequestFileFilter.ts
+      - apps/mobile/src/features/review/ReviewSheet.tsx
       - apps/mobile/src/features/review/reviewModel.ts
       - apps/mobile/src/features/review/useReviewDiffData.ts
+      - apps/mobile/src/persistence/mobile-preferences.ts
       - apps/server/src/checkpointing/CheckpointDiffQuery.ts
       - apps/server/src/pullRequest/PullRequestService.ts
       - apps/server/src/vcs/GitVcsDriverCore.ts
@@ -1275,10 +1289,12 @@ features:
       - packages/contracts/src/orchestrationV2.ts
       - packages/contracts/src/pullRequest.ts
     tests:
+      - apps/mobile/src/features/pull-requests/pullRequestDiffPages.test.ts
       - apps/mobile/src/features/review/reviewFileVisibility.test.ts
       - apps/mobile/src/features/review/reviewModel.test.ts
       - apps/server/src/checkpointing/CheckpointDiffQuery.test.ts
       - apps/server/src/pullRequest/PullRequestService.test.ts
+      - apps/server/src/telemetry/ClientFeatureUsage.test.ts
       - apps/server/src/vcs/GitVcsDriverCore.test.ts
       - apps/web/src/components/pullRequest/pullRequestDiff.logic.test.ts
       - apps/web/src/diffPanelStore.test.ts
