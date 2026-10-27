@@ -15,6 +15,7 @@ export const STYAL_PREVIEW_TOOL_LABELS: Readonly<Record<string, ToolLabels>> = {
   preview_resize: ["Resize", "Resizing", "Resized", "preview"],
   preview_set_appearance: ["Set", "Setting", "Set", "preview appearance"],
   preview_snapshot: ["Inspect", "Inspecting", "Inspected", "page"],
+  preview_act: ["Use", "Using", "Used", "preview browser"],
   preview_click: ["Click", "Clicking", "Clicked", ""],
   preview_type: ["Type", "Typing", "Typed", ""],
   preview_press: ["Press", "Pressing", "Pressed", ""],

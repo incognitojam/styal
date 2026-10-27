@@ -292,10 +292,10 @@ export const STYAL_PREVIEW_TOOL_ARGUMENTS: Readonly<
   preview_wait_for: previewWaitForArgument,
 };
 
-function productToolDefinition(value: string) {
+function productToolDefinition(value: string, input?: Record<string, unknown>) {
   const parts = mcpToolNameParts(value.trim());
   return parts && PRODUCT_MCP_SERVERS.has(parts.server.toLowerCase())
-    ? resolveT3McpToolDefinition(value)
+    ? resolveT3McpToolDefinition(value, input)
     : null;
 }
 
@@ -680,11 +680,13 @@ function deriveBaseToolRowPresentation(
     argumentForItemType(itemType, { command, detail, changedFiles, filePath, toolName });
 
   if (rawToolName) {
-    const definition = productToolDefinition(rawToolName);
+    const definition = productToolDefinition(rawToolName, toolInput);
     if (definition) {
       const name = mcpToolNameParts(rawToolName)?.tool;
-      const previewArgument = name
-        ? STYAL_PREVIEW_TOOL_ARGUMENTS[name]?.(toolInput ?? {})
+      const action = asTrimmedString(toolInput?.action);
+      const argumentToolName = name === "preview_act" && action ? `preview_${action}` : name;
+      const previewArgument = argumentToolName
+        ? STYAL_PREVIEW_TOOL_ARGUMENTS[argumentToolName]?.(toolInput ?? {})
         : undefined;
       const toolArgument = definition.icon === "browser" ? previewArgument : mcpArgument(toolInput);
       return {

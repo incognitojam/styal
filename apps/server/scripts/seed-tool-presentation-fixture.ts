@@ -51,16 +51,10 @@ const sampleInput = (tool: string) => {
     case "preview_open":
     case "preview_navigate":
       return { url: "https://example.com/demo" };
-    case "preview_click":
-      return { locator: "role=button[name='Save']" };
-    case "preview_type":
-      return { text: "Synthetic example" };
-    case "preview_press":
-      return { key: "Enter" };
+    case "preview_act":
+      return { action: "click", locator: "role=button[name='Save']" };
     case "preview_resize":
       return { mode: "freeform", width: 1024, height: 768 };
-    case "preview_scroll":
-      return { deltaY: 300 };
     case "preview_wait_for":
       return { text: "Ready" };
     case "preview_evaluate":
@@ -200,7 +194,7 @@ try {
       });
     }
     for (const status of ["running", "failed", "cancelled"] as const) {
-      const preview = tools.find(({ tool }) => tool === "preview_click");
+      const preview = tools.find(({ tool }) => tool === "preview_act");
       if (preview)
         add({
           type: "dynamic_tool",

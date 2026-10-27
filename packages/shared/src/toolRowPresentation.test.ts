@@ -378,6 +378,21 @@ describe("deriveToolRowPresentation", () => {
       ).toEqual({ kind: "text", value: "https://t3.chat/settings" });
     });
 
+    it("presents a preview_act call as its action", () => {
+      expect(preview("preview_act", { action: "click", locator: "text=Send" })).toEqual({
+        heading: "Clicked",
+        argument: { kind: "text", value: "text=Send" },
+      });
+      expect(preview("preview_act", { action: "press", key: "Enter" })).toEqual({
+        heading: "Pressed",
+        argument: { kind: "text", value: "Enter" },
+      });
+      expect(preview("preview_act", { action: "upload", paths: ["a.png"] })?.heading).toBe(
+        "Uploaded files",
+      );
+      expect(preview("preview_act")?.heading).toBe("Used preview browser");
+    });
+
     it("shows the interaction target, not session noise", () => {
       expect(
         preview("preview_click", {

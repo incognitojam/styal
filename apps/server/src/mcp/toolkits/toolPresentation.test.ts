@@ -1,4 +1,5 @@
 import { expect, it } from "@effect/vitest";
+import { PreviewAutomationActInputs } from "@t3tools/contracts";
 import { resolveT3McpToolDefinition } from "@t3tools/shared/t3McpToolPresentation";
 import { STYAL_PREVIEW_TOOL_LABELS } from "@t3tools/shared/styalToolWording";
 import {
@@ -63,10 +64,15 @@ it("requires review of new preview tools and rejects retired fork customizations
     if (name.startsWith("preview_"))
       expect(Object.hasOwn(STYAL_PREVIEW_TOOL_LABELS, name), name).toBe(true);
   }
+  // A `preview_act` call presents as the tool its action replaced.
+  const reachable = new Set([
+    ...names,
+    ...Object.keys(PreviewAutomationActInputs).map((action) => `preview_${action}`),
+  ]);
   for (const name of [
     ...Object.keys(STYAL_PREVIEW_TOOL_LABELS),
     ...Object.keys(STYAL_PREVIEW_TOOL_ARGUMENTS),
   ]) {
-    expect(names.has(name), `${name} customization is no longer published`).toBe(true);
+    expect(reachable.has(name), `${name} customization is no longer published`).toBe(true);
   }
 });

@@ -155,7 +155,7 @@ it.effect("records one browser usage event per tool, excluding internal status r
       expect((yield* callSnapshot({})).isError).toBe(true);
       const inputs = yield* serveSnapshots("usage-client", snapshotResult);
       const clicked = yield* server
-        .callTool({ name: "preview_click", arguments: { locator: "button" } })
+        .callTool({ name: "preview_act", arguments: { action: "click", locator: "button" } })
         .pipe(
           Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
           Effect.provideService(McpSchema.McpServerClient, client),
