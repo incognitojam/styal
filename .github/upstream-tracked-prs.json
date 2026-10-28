@@ -161,6 +161,10 @@
       "reason": "Fixes the confirmed Claude continuation stall where a queued user prompt answers an already-open native wake, leaving its continuation waiting for a consumed result. Track for normal upstream intake with its adapter dependencies; the snapshot does not apply cleanly to the fork adapter. Preserve buffered wake output and later native wakes when reconciling. The fork provider-stall detector records and warns about these incidents independently; this tracking entry does not import or duplicate the upstream fix."
     },
     {
+      "pr": 23886,
+      "reason": "Fork #1116 ported this Stop fix by hand, without an Upstream-PR trailer, because it depends on 23 earlier upstream commits the fork had not taken in. When chronological intake reaches it, its cherry-pick should change no code, because the code is already in place; check that rather than assume it. Keep fork #1116's correction to the Stop paragraph in docs/orchestration-v2/feature-lifecycles.md, which upstream still describes as sending run.interrupt with holdQueue."
+    },
+    {
       "pr": 24144,
       "reason": "Adds agent prompt actions: an action can send a saved prompt, optionally with its own model and reasoning level, to the current thread from the actions menu or its shortcut. styal users want this. It is unvouched and has no maintainer approval, and earlier attempts at this feature closed unmerged, so watch for it closing. If it merges, take it at chronological intake after #23063 and #23467, then add a fork commit that lets styal.json declare prompt actions (type and prompt, no modelSelection, no setup or settle roles, no approval for a manual run) and update the styal-project-file ledger entry and docs. If it closes without merging, raise it with the maintainer before deciding whether the fork builds the feature itself with the same type: \"prompt\" contract shape."
     }
