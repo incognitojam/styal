@@ -1083,7 +1083,7 @@ features:
     prs: []
     invariants:
       - On macOS, the desktop app presents thread and review-guide notifications from the main process and reports whether macOS showed or rejected each one.
-      - Turning on System notifications in the desktop app on macOS sends a confirmation notification; if macOS rejects it, the setting stays on and the row says macOS is blocking notifications, with a button that opens the Notifications pane of System Settings.
+      - Turning on System notifications in the desktop app on macOS sends a confirmation notification; if macOS rejects it, the setting stays on and the row says macOS is blocking notifications, with a button that opens the app's own page under Notifications in System Settings.
       - The first rejected thread notification in a session shows an in-app warning toast with the same System Settings action.
       - Clicking a main-process notification brings its window to the front and opens the thread or guide it was about.
     rationale: Electron reports the Chromium notification permission as granted on macOS and drops notifications that macOS blocks without an error, so upstream's settings show notifications as on while none arrive.
@@ -1091,6 +1091,7 @@ features:
       - apps/desktop/src/ipc/methods/systemNotifications.ts
       - apps/web/src/systemNotifications.ts
     upstream_paths:
+      - apps/desktop/src/electron/ElectronShell.ts
       - apps/desktop/src/ipc/DesktopIpcHandlers.ts
       - apps/desktop/src/ipc/channels.ts
       - apps/desktop/src/ipc/methods/window.ts
@@ -1101,6 +1102,7 @@ features:
       - apps/web/src/components/settings/NotificationSettings.tsx
       - packages/contracts/src/ipc.ts
     tests:
+      - apps/desktop/src/electron/ElectronShell.test.ts
       - apps/desktop/src/ipc/methods/systemNotifications.test.ts
       - apps/web/src/components/ThreadNotificationCoordinator.browser.test.tsx
     upstream:
