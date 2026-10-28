@@ -437,7 +437,15 @@ describe("ledgerFeaturesByPath", () => {
 describe("summarizeSurvey", () => {
   it("counts each status and lists only the commits that need a person", () => {
     const summary = summarizeSurvey([
-      { sha: "a".repeat(40), pr: 1, title: "fix: one", status: "clean", reasons: [], features: [] },
+      {
+        sha: "a".repeat(40),
+        pr: 1,
+        title: "fix: one",
+        status: "clean",
+        reasons: [],
+        features: [],
+        laterFixes: [],
+      },
       {
         sha: "b".repeat(40),
         pr: 2,
@@ -445,6 +453,7 @@ describe("summarizeSurvey", () => {
         status: "needs-person",
         reasons: ["unresolved conflict: apps/web/src/a.ts"],
         features: ["first"],
+        laterFixes: [],
       },
     ]);
     assert.strictEqual(
@@ -455,6 +464,45 @@ describe("summarizeSurvey", () => {
         "bbbbbbbbbb #2 feat: two",
         "    unresolved conflict: apps/web/src/a.ts",
         "    fork features: first",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  it("lists later fixes under the commit they name, with the evidence and any tracking", () => {
+    const summary = summarizeSurvey([
+      {
+        sha: "a".repeat(40),
+        pr: 1,
+        title: "fix: one",
+        status: "clean",
+        reasons: [],
+        features: [],
+        laterFixes: [
+          { sha: "c".repeat(40), pr: 3, title: "fix: one again (#3)", evidence: "Since #1, x." },
+          {
+            sha: "d".repeat(40),
+            pr: 4,
+            title: "fix: more (#4)",
+            evidence: "After #1, y.",
+            tracked: "Ported by fork #9.",
+          },
+        ],
+      },
+    ]);
+    assert.strictEqual(
+      summary,
+      [
+        "Surveyed 1 commits: 1 clean, 0 resolved, 0 need a person.",
+        "",
+        "Later upstream fixes name these commits; extend the batch, import the fix early, or port it before landing:",
+        "",
+        "aaaaaaaaaa #1 fix: one",
+        "    cccccccccc #3 fix: one again (#3)",
+        '        "Since #1, x."',
+        "    dddddddddd #4 fix: more (#4)",
+        '        "After #1, y."',
+        "        tracked: Ported by fork #9.",
         "",
       ].join("\n"),
     );
