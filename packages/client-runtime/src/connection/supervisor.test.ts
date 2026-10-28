@@ -394,6 +394,9 @@ const makeRelayAuthorization = Effect.fn("TestRelayAuthorization.make")(function
     createEnvironmentLinkChallenge: unused,
     linkEnvironment: unused,
     unlinkEnvironment: unused,
+    getT3ChatLink: unused,
+    createT3ChatLinkRequest: unused,
+    unlinkT3Chat: unused,
     getEnvironmentStatus: unused,
     connectEnvironment: () =>
       Ref.update(bootstrapCalls, (count) => count + 1).pipe(

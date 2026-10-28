@@ -43,7 +43,7 @@ export interface ManagedRelaySnapshotState<A> {
 }
 
 export interface ManagedRelayQueryEvent {
-  readonly operation: "environments" | "devices";
+  readonly operation: "environments" | "devices" | "t3chat-link";
   readonly stage: "clerk-token" | "relay-request";
   readonly phase: "start" | "success" | "failure";
   readonly accountId: string;
@@ -215,19 +215,32 @@ function readSessionClerkToken(
   );
 }
 
+function requireSessionClerkToken(
+  registry: AtomRegistry.AtomRegistry,
+  accountId: string,
+  action: string,
+): Effect.Effect<string, ManagedRelaySessionError> {
+  const session = registry.get(managedRelaySessionAtom);
+  if (!session || session.accountId !== accountId) {
+    return Effect.fail(
+      new ManagedRelaySessionError({ message: `Sign in to styal Link before ${action}.` }),
+    );
+  }
+  return readSessionClerkToken(session);
+}
+
 export const deregisterManagedRelayEnvironment = Effect.fn(
   "clientRuntime.managedRelaySession.deregisterEnvironment",
 )(function* (
   registry: AtomRegistry.AtomRegistry,
   input: { readonly accountId: string; readonly environmentId: EnvironmentId },
 ) {
-  const session = registry.get(managedRelaySessionAtom);
-  if (!session || session.accountId !== input.accountId) {
-    return yield* new ManagedRelaySessionError({
-      message: "Sign in to styal Link before deregistering an environment.",
-    });
-  }
-  const clerkToken = yield* readSessionClerkToken(session);
+  const clerkToken = yield* requireSessionClerkToken(
+    registry,
+    input.accountId,
+    "deregistering an environment",
+  );
+
   const relay = yield* ManagedRelay.ManagedRelayClient;
   yield* relay.unlinkEnvironment({ clerkToken, environmentId: input.environmentId });
 });
@@ -370,14 +383,41 @@ export function createManagedRelayQueryManager(
       ),
   );
 
+  const t3ChatLinkAtom = Atom.family((accountId: string) =>
+    runtime
+      .atom((get) =>
+        Effect.gen(function* () {
+          const base = { operation: "t3chat-link" as const, accountId };
+          const clerkToken = yield* observe(
+            { ...base, stage: "clerk-token" },
+            requireClerkToken(get, accountId),
+          );
+          const relay = yield* ManagedRelay.ManagedRelayClient;
+          return yield* observe(
+            { ...base, stage: "relay-request" },
+            relay.getT3ChatLink({ clerkToken }),
+          );
+        }),
+      )
+      .pipe(
+        Atom.swr({ staleTime, revalidateOnMount: true }),
+        Atom.setIdleTTL(idleTtl),
+        Atom.withLabel(`managed-relay:t3chat-link:${accountId}`),
+      ),
+  );
+
   return {
     environmentsAtom,
     devicesAtom,
+    t3ChatLinkAtom,
     refreshEnvironments(registry: AtomRegistry.AtomRegistry, accountId: string): void {
       registry.refresh(environmentsAtom(accountId));
     },
     refreshDevices(registry: AtomRegistry.AtomRegistry, accountId: string): void {
       registry.refresh(devicesAtom(accountId));
+    },
+    refreshT3ChatLink(registry: AtomRegistry.AtomRegistry, accountId: string): void {
+      registry.refresh(t3ChatLinkAtom(accountId));
     },
   };
 }

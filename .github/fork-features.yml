@@ -5184,6 +5184,31 @@ features:
         - https://github.com/pingdotgg/t3code/pull/19093
       retire_when: styal adopts Axiom again, or upstream removes Axiom from its relay and mobile app.
 
+  - id: relay-no-t3-chat
+    title: styal Link does not offer T3 Chat account linking
+    status: maintained
+    prs: []
+    invariants:
+      - Account pages expose no T3 Chat linking page or client-only linking commands.
+      - Tunnel limit errors offer unlinking an environment without advertising T3 Chat plans.
+      - Fork relay deployment workflows do not set T3CHAT_LINK_SECRET, leaving upstream account linking disabled.
+    rationale: styal operates an independent relay and has no T3 Chat integration. Keep upstream relay and shared protocol support dormant to simplify future intake without offering an unavailable product.
+    implementation_paths:
+      - .github/workflows/deploy-relay.yml
+      - .github/workflows/relay-preview.yml
+      - apps/web/src/cloud/managedRelayState.ts
+      - apps/web/src/components/clerk/T3ConnectAccountPages.tsx
+      - packages/client-runtime/src/relay/errorPresentation.ts
+    upstream_paths:
+      - apps/web/src/components/clerk/T3ConnectAccountPages.tsx
+    tests:
+      - infra/relay/src/environments/ManagedTunnelLimits.test.ts
+      - infra/relay/src/t3chat/T3ChatAccounts.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: styal offers an account linking integration compatible with the upstream product.
+
   - id: restart-stopped-tool-calls
     title: Show tool calls a server restart killed as stopped
     status: review-needed
