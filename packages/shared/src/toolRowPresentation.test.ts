@@ -562,6 +562,7 @@ describe("deriveToolRowPresentation", () => {
 
   it("derives a verb from a tool name alone for the agents panel", () => {
     expect(deriveToolRowPresentation({ toolName: "Bash" })?.heading).toBe("Ran command");
+    expect(deriveToolRowPresentation({ toolName: "PowerShell" })?.heading).toBe("Ran command");
     expect(deriveToolRowPresentation({ toolName: "Edit" })?.heading).toBe("Edited file");
     expect(deriveToolRowPresentation({ toolName: "Monitor" })?.heading).toBe("Monitor");
   });

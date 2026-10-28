@@ -17711,3 +17711,11 @@ describe("ClaudeAdapterV2 complete history rewind", () => {
       ),
   );
 });
+
+describe("ClaudeAdapterV2 tool classification", () => {
+  it("runs Claude's Windows PowerShell tool as a command like Bash", () => {
+    const powershell = ClaudeAdapterV2.classifyClaudeNativeTool("PowerShell");
+    assert.equal(powershell.itemType, "command_execution");
+    assert.equal(powershell.requestKind, "command");
+  });
+});
