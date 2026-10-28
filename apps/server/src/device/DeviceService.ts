@@ -1232,29 +1232,27 @@ export const make = Effect.gen(function* () {
             configured.set(host.id, { config: host, scope: hostScope });
             continue;
           }
-          const instance = yield* (
-            "environmentId" in host
-              ? EnvironmentDeviceHost.make(host)
-              : SshDeviceHost.make(
-                  host,
-                  (ready) =>
-                    configureAgent(host.id, ready.agentDevice!).pipe(
-                      Effect.asVoid,
-                      Effect.mapError(
-                        (error) =>
-                          new DeviceHost.DeviceHostError({
-                            hostId: host.id,
-                            step: "configuring agent access",
-                            cause: error,
-                          }),
-                      ),
+          const instance = yield* "environmentId" in host
+            ? EnvironmentDeviceHost.make(host).pipe(Effect.provideService(Scope.Scope, hostScope))
+            : SshDeviceHost.make(
+                host,
+                (ready) =>
+                  configureAgent(host.id, ready.agentDevice!).pipe(
+                    Effect.asVoid,
+                    Effect.mapError(
+                      (error) =>
+                        new DeviceHost.DeviceHostError({
+                          hostId: host.id,
+                          step: "configuring agent access",
+                          cause: error,
+                        }),
                     ),
-                  (status, detail) =>
-                    service
-                      .setHostStatus(host.id, { status, ...(detail ? { detail } : {}) })
-                      .pipe(Effect.asVoid),
-                ).pipe(Effect.provide(hostContext))
-          ).pipe(Effect.provideService(Scope.Scope, hostScope));
+                  ),
+                (status, detail) =>
+                  service
+                    .setHostStatus(host.id, { status, ...(detail ? { detail } : {}) })
+                    .pipe(Effect.asVoid),
+              ).pipe(Effect.provide(hostContext), Effect.provideService(Scope.Scope, hostScope));
           hosts.set(host.id, instance);
           configured.set(host.id, { config: host, scope: hostScope });
         }
