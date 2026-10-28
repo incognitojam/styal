@@ -419,7 +419,7 @@ features:
   - id: claude-mcp-registration-timeout-hint
     title: Point a Claude startup timeout at hanging hooks
     status: maintained
-    prs: []
+    prs: [1128]
     invariants:
       - When Claude Code does not answer T3 Code's MCP server registration in time, the turn's error says Claude Code took too long to start and names a hook that hangs at startup as a likely cause.
     rationale: Claude Code answers the registration only after its SessionStart hooks finish, so a slow or broken hook, such as one that starts a Docker container, surfaces as this timeout. Upstream's message points at MCP tools and the server logs instead.
