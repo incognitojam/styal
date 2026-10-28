@@ -118,6 +118,7 @@ import {
 } from "./PullRequestStatusRows";
 import { PullRequestMergeControls } from "./PullRequestMergeControls";
 import { PullRequestStackCard } from "./PullRequestStackCard";
+import { PullRequestDeployments } from "./PullRequestDeployments";
 import { usePullRequestStack, type PullRequestStackState } from "./usePullRequestStack";
 import { usePullRequestEnvironmentFallback } from "./usePullRequestEnvironmentFallback";
 
@@ -265,6 +266,14 @@ function PullRequestOverview(props: {
           <PullRequestMergeControls pr={pr} params={props.params} stack={props.stack} />
         </Animated.View>
       </PullRequestCardGroup>
+      {pr.deployments?.length ? (
+        <PullRequestDeployments
+          deployments={pr.deployments}
+          truncated={pr.deploymentsTruncated === true}
+          headSha={pr.headSha}
+          environmentId={props.params.environmentId}
+        />
+      ) : null}
       {pr.labels.length ? (
         <Animated.View layout={PR_ROW_LAYOUT} className="flex-row flex-wrap gap-2">
           {pr.labels.map((label) => (

@@ -1,4 +1,5 @@
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
+import { pullRequestDeploymentsTitle } from "@t3tools/client-runtime/pull-request-deployments";
 import { useAtomCommand } from "~/state/use-atom-command";
 import type {
   EnvironmentId,
@@ -29,7 +30,6 @@ import { RelativeTime } from "~/components/RelativeTime";
 import { Button } from "../ui/button";
 import { PullRequestEditButton } from "./PullRequestEditButton";
 import { PullRequestDeployments } from "./PullRequestDeployments";
-import { pullRequestDeploymentsTitle } from "./pullRequestDeployments.logic";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 import {
   Menu,

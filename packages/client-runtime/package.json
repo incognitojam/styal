@@ -474,6 +474,10 @@
     "./pull-request-query": {
       "types": "./src/pullRequestQuery.ts",
       "default": "./src/pullRequestQuery.ts"
+    },
+    "./pull-request-deployments": {
+      "types": "./src/pullRequestDeployments.ts",
+      "default": "./src/pullRequestDeployments.ts"
     }
   },
   "scripts": {

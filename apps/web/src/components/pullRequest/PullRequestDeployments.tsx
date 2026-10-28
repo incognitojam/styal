@@ -1,3 +1,10 @@
+import {
+  PULL_REQUEST_DEPLOYMENT_PAGE,
+  PULL_REQUEST_DEPLOYMENT_STATUS_LABELS,
+  isFailedPullRequestDeployment,
+  orderPullRequestDeployments,
+  pullRequestDeploymentCommit,
+} from "@t3tools/client-runtime/pull-request-deployments";
 import type { EnvironmentId, PullRequestDeployment, ScopedThreadRef } from "@t3tools/contracts";
 import {
   ArrowUpRightIcon,
@@ -17,28 +24,19 @@ import { RelativeTime } from "~/components/RelativeTime";
 import { Button } from "../ui/button";
 import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import {
-  PULL_REQUEST_DEPLOYMENT_PAGE,
-  isFailedPullRequestDeployment,
-  orderPullRequestDeployments,
-} from "./pullRequestDeployments.logic";
 
 const RUNNING_TONE = "text-amber-600 dark:text-amber-400/90";
 
 const STATUS = {
-  success: {
-    label: "Deployed",
-    Icon: CircleCheckIcon,
-    tone: "text-emerald-600 dark:text-emerald-300/90",
-  },
-  failure: { label: "Failed", Icon: CircleXIcon, tone: "text-destructive" },
-  error: { label: "Error", Icon: CircleXIcon, tone: "text-destructive" },
-  "in-progress": { label: "Deploying", Icon: Clock3Icon, tone: RUNNING_TONE },
-  queued: { label: "Queued", Icon: Clock3Icon, tone: RUNNING_TONE },
-  pending: { label: "Pending", Icon: Clock3Icon, tone: RUNNING_TONE },
-  waiting: { label: "Waiting", Icon: Clock3Icon, tone: RUNNING_TONE },
-  inactive: { label: "Inactive", Icon: CircleMinusIcon, tone: "text-muted-foreground" },
-  unknown: { label: "Unknown", Icon: CircleHelpIcon, tone: "text-muted-foreground" },
+  success: { Icon: CircleCheckIcon, tone: "text-emerald-600 dark:text-emerald-300/90" },
+  failure: { Icon: CircleXIcon, tone: "text-destructive" },
+  error: { Icon: CircleXIcon, tone: "text-destructive" },
+  "in-progress": { Icon: Clock3Icon, tone: RUNNING_TONE },
+  queued: { Icon: Clock3Icon, tone: RUNNING_TONE },
+  pending: { Icon: Clock3Icon, tone: RUNNING_TONE },
+  waiting: { Icon: Clock3Icon, tone: RUNNING_TONE },
+  inactive: { Icon: CircleMinusIcon, tone: "text-muted-foreground" },
+  unknown: { Icon: CircleHelpIcon, tone: "text-muted-foreground" },
 } as const;
 
 export function PullRequestDeployments({
@@ -85,13 +83,12 @@ export function PullRequestDeployments({
     <div className="rounded-lg border border-border/60">
       <ul className="divide-y divide-border/60 px-3">
         {visible.map((deployment) => {
-          const { label, Icon, tone } = STATUS[deployment.status];
+          const { Icon, tone } = STATUS[deployment.status];
+          const label = PULL_REQUEST_DEPLOYMENT_STATUS_LABELS[deployment.status];
           const inactive = deployment.status === "inactive";
           const environmentUrl = inactive ? null : deployment.environmentUrl;
           const logUrl = deployment.logUrl;
-          // The hash is only news when this is not the head the PR is showing.
-          const olderCommit = headSha !== undefined && deployment.commitSha !== headSha;
-          const showCommit = headSha === undefined || olderCommit;
+          const commit = pullRequestDeploymentCommit(deployment, headSha);
           return (
             <li key={deployment.id} className="flex items-start gap-x-3 py-2">
               <Icon aria-hidden className={cn("mt-px size-4 shrink-0", tone)} />
@@ -113,15 +110,15 @@ export function PullRequestDeployments({
                 </Tooltip>
                 <div className="mt-0.5 flex flex-wrap items-baseline gap-x-1.5 text-2xs text-muted-foreground">
                   <span>{label}</span>
-                  {showCommit ? (
+                  {commit ? (
                     <>
                       <span aria-hidden>·</span>
                       <Tooltip>
                         <TooltipTrigger render={<span className="font-mono" />}>
-                          {deployment.commitSha.slice(0, 7)}
+                          {commit.shortSha}
                         </TooltipTrigger>
                         <TooltipPopup>
-                          {olderCommit ? "Older commit" : "Commit"} {deployment.commitSha}
+                          {commit.older ? "Older commit" : "Commit"} {commit.sha}
                         </TooltipPopup>
                       </Tooltip>
                     </>

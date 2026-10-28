@@ -21,7 +21,7 @@ export function orderPullRequestDeployments(
 ): PullRequestDeployment[] {
   return deployments
     .map((deployment, index) => ({ deployment, index }))
-    .toSorted(
+    .sort(
       (a, b) =>
         STATUS_RANK[a.deployment.status] - STATUS_RANK[b.deployment.status] || a.index - b.index,
     )
@@ -37,7 +37,39 @@ export function pullRequestDeploymentsTitle(
   deployments: ReadonlyArray<PullRequestDeployment>,
 ): string {
   const failed = deployments.filter(isFailedPullRequestDeployment).length;
-  const running = deployments.filter((deployment) => STATUS_RANK[deployment.status] === 1).length;
+  const running = deployments.filter(isRunningPullRequestDeployment).length;
   const detail = failed > 0 ? ` · ${failed} failed` : running > 0 ? ` · ${running} deploying` : "";
   return `Deployments (${deployments.length})${detail}`;
+}
+
+export const PULL_REQUEST_DEPLOYMENT_STATUS_LABELS: Record<PullRequestDeploymentStatus, string> = {
+  success: "Deployed",
+  failure: "Failed",
+  error: "Error",
+  "in-progress": "Deploying",
+  queued: "Queued",
+  pending: "Pending",
+  waiting: "Waiting",
+  inactive: "Inactive",
+  unknown: "Unknown",
+};
+
+function isRunningPullRequestDeployment(deployment: PullRequestDeployment): boolean {
+  return STATUS_RANK[deployment.status] === 1;
+}
+
+/**
+ * The commit worth showing on a row, or null when it is the head the PR is showing. `older` is
+ * false when the host did not report a head, so the commit cannot be compared.
+ */
+export function pullRequestDeploymentCommit(
+  deployment: PullRequestDeployment,
+  headSha: string | undefined,
+): { readonly sha: string; readonly shortSha: string; readonly older: boolean } | null {
+  if (deployment.commitSha === headSha) return null;
+  return {
+    sha: deployment.commitSha,
+    shortSha: deployment.commitSha.slice(0, 7),
+    older: headSha !== undefined,
+  };
 }
