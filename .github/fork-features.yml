@@ -2183,7 +2183,7 @@ features:
   - id: git-index-copy-without-block-clone
     title: Copy server files without a filesystem block clone
     status: maintained
-    prs: [1011]
+    prs: [1011, 1122]
     invariants:
       - Checkpoint capture, commit-context preparation and the working-tree review diff copy `.git/index` into their private index by reading and writing its bytes, so a turn never waits on a filesystem sync before the provider starts.
       - Claiming a pending attachment for a thread, recovering the environment ID, and staging imported legacy attachments stream the file's bytes instead of calling `copyFile`, so sending an attachment or starting the server never waits on a filesystem sync.
