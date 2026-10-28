@@ -60,6 +60,7 @@ vi.mock("../device/DeviceToolVersions", () => ({
   DeviceToolVersions: ({ action }: { action?: ReactNode }) => action ?? null,
 }));
 vi.mock("./DeviceHostsSettings", () => ({ DeviceHostsSettings: () => null }));
+vi.mock("./DeviceSourcesSettings", () => ({ DeviceSourcesSettings: () => null }));
 vi.mock("./EnvironmentDeviceHostsSettings", () => ({ EnvironmentDeviceHostsSettings: () => null }));
 
 import { DeviceIntegrationControls } from "./IntegrationsSettings";

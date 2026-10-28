@@ -33,16 +33,28 @@ export function agentDeviceQuickStart(
   device: DeviceSummary,
   targetArgs = agentDeviceTargetArgs(device),
   command = "agent-device",
-  cloud = false,
+  host?:
+    | { readonly kind: "eas" }
+    | { readonly kind: "simlock"; readonly installDirectory?: string },
 ): string {
   const executable = shellWord(command);
   const target = targetArgs.map(shellWord).join(" ");
   const run = (args: string) => [executable, args, target].filter(Boolean).join(" ");
-  const platformNotes = cloud
-    ? "This is an EAS Simulator session in the cloud. It bills the Expo account per minute until it stops, so call device_close with shutdown: true when you are done. It starts with no apps installed: install-from-source <url> installs a build from a URL (iOS needs a .tar.gz containing a .app), and install uploads one from this machine."
-    : device.platform === "ios"
-      ? "First use builds an XCTest runner and can take a couple of minutes; later commands are fast."
-      : "The Android snapshot helper installs itself on first use.";
+  const platformNotes =
+    host?.kind === "simlock"
+      ? [
+          "This device is leased from a Simlock pool (alpha in styal). The lease returns it to the pool, wiped, when it ends, so call device_close with shutdown: true when you are done. It starts with no apps installed. This is unrelated to hardware_* leases: hardware_release does not end it.",
+          host.installDirectory
+            ? `agent-device accepts install for this lease only when run from ${host.installDirectory}.`
+            : "",
+        ]
+          .filter(Boolean)
+          .join(" ")
+      : host?.kind === "eas"
+        ? "This is an EAS Simulator session in the cloud. It bills the Expo account per minute until it stops, so call device_close with shutdown: true when you are done. It starts with no apps installed: install-from-source <url> installs a build from a URL (iOS needs a .tar.gz containing a .app), and install uploads one from this machine."
+        : device.platform === "ios"
+          ? "First use builds an XCTest runner and can take a couple of minutes; later commands are fast."
+          : "The Android snapshot helper installs itself on first use.";
   return [
     `The user is watching ${device.name} (${device.version}) in the Device panel.`,
     target === ""
@@ -286,7 +298,9 @@ const handlers = {
             "Agent device access requires enabled device support, agent access, and an available simulator platform on this host.",
         });
       }
-      if (!state.hosts.some((host) => host.id === target.hostId && host.kind === "eas"))
+      // EAS and Simlock devices have no agent target until the open starts a session or lease.
+      const targetHostKind = state.hosts.find((host) => host.id === target.hostId)?.kind;
+      if (targetHostKind !== "eas" && targetHostKind !== "simlock")
         yield* devices.agentTarget({
           threadId: scope.thread.threadId,
           hostId: target.hostId,
@@ -323,9 +337,11 @@ const handlers = {
         deviceId: session.deviceId,
       };
       const agent = yield* devices.agentTarget(opened);
-      const cloud = after.hosts.some((host) => host.id === device.hostId && host.kind === "eas");
+      const hostKind = after.hosts.find((host) => host.id === device.hostId)?.kind;
       const targetArgs = [
-        ...agentDeviceTargetArgs({ ...device, id: agent.agentDeviceId }),
+        ...(agent.agentDeviceId === null
+          ? []
+          : agentDeviceTargetArgs({ ...device, id: agent.agentDeviceId })),
         ...agent.args,
       ];
       const launcher = yield* devices.agentLauncher({ ...opened, targetArgs });
@@ -346,7 +362,19 @@ const handlers = {
                 `Thread ${stillInUse.map((ref) => ref.threadId).join(", ")} also has this device open, and its agent may be driving it. Coordinate with the user before changing apps or state.`,
               ]
             : []),
-          agentDeviceQuickStart(device, [], command, cloud),
+          agentDeviceQuickStart(
+            device,
+            [],
+            command,
+            hostKind === "simlock"
+              ? {
+                  kind: "simlock",
+                  ...(agent.installDirectory ? { installDirectory: agent.installDirectory } : {}),
+                }
+              : hostKind === "eas"
+                ? { kind: "eas" }
+                : undefined,
+          ),
         ].join("\n"),
       };
     }).pipe(Effect.mapError(toolError)),

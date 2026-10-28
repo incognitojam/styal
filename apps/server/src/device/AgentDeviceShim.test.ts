@@ -49,6 +49,42 @@ describe("agent-device launcher", () => {
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 
+  it.effect("refuses one thread's launcher on a host session while another keeps it", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const dir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-device-shim-" });
+      const entryPath = path.join(dir, "cli.mjs");
+      yield* fs.writeFileString(entryPath, `console.log("ran");`);
+      const bind = (session: string) =>
+        bindAgentDeviceLauncher({
+          entryPath,
+          stateDir: dir,
+          session,
+          targetArgs: ["--config", path.join(dir, "config.json"), "--session", "t3-lease"],
+        });
+      const run = (launcher: string, command: string) =>
+        exec(process.execPath, [
+          path.join(path.dirname(launcher), "agent-device-launcher.mjs"),
+          command,
+        ]);
+      const handedBack = yield* bind("t3-thread-a");
+      const holder = yield* bind("t3-thread-b");
+      const released = releasedAgentSessionsPath(dir, path);
+      yield* fs.makeDirectory(path.dirname(released), { recursive: true });
+      yield* fs.writeFileString(released, encodeNames(["t3-thread-a"]));
+
+      yield* Effect.promise(() =>
+        expect(run(handedBack, "snapshot")).rejects.toThrow("Call device_open again"),
+      );
+      // Closing the shared session would end the lease for the thread that holds it now.
+      yield* Effect.promise(() =>
+        expect(run(handedBack, "close")).rejects.toThrow("Call device_open again"),
+      );
+      expect((yield* Effect.promise(() => run(holder, "snapshot"))).stdout.trim()).toBe("ran");
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
   it.effect("refuses a released bound session, keeps its launcher, and lets close through", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

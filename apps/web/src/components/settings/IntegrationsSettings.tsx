@@ -3,6 +3,7 @@ import { DeviceToolVersions } from "../device/DeviceToolVersions";
 import { reportForkClientUsage } from "~/forkClientUsage";
 import { ScopedSwitch } from "./ScopedSwitch";
 import { DeviceHostsSettings } from "./DeviceHostsSettings";
+import { DeviceSourcesSettings } from "./DeviceSourcesSettings";
 import { EnvironmentDeviceHostsSettings } from "./EnvironmentDeviceHostsSettings";
 import { DeviceIdleShutdownSetting } from "./DeviceIdleShutdownSetting";
 import { PhysicalScreenOffSetting } from "./PhysicalScreenOffSetting";
@@ -12,7 +13,6 @@ import { SimulatorMemorySetting } from "./SimulatorMemorySetting";
  *
  * @module IntegrationsSettings
  */
-import { EasDeviceHostsSettings } from "./EasDeviceHostsSettings";
 import {
   AuthSettingsWriteScope,
   resolveEnvironmentMachineKind,
@@ -917,14 +917,18 @@ export function DeviceIntegrationControls({
         id={`device-hub-${environmentId}`}
         serverScoped
         settingKeys={["enableDeviceSupport"]}
-        description="Open local and shared simulators and emulators on this environment."
-        control={
+        description={
           <>
+            Open local and shared simulators and emulators on this environment. Hub:{" "}
             <DeviceToolVersions
               action={versionActions("hub")}
               kind="hub"
               tools={state.hosts.find((host) => host.kind === "local")?.tools}
             />
+          </>
+        }
+        control={
+          <>
             {pending === "hub" ? <DeviceHubSetupStatus state={state} pending compact /> : null}
             <ScopedSwitch
               settingKeys={["enableDeviceSupport"]}
@@ -988,14 +992,18 @@ export function DeviceIntegrationControls({
         id={`agent-device-access-${environmentId}`}
         serverScoped
         settingKeys={["enableAgentDeviceAccess"]}
-        description="Allow agents on this environment to start and control devices."
-        control={
+        description={
           <>
+            Allow agents on this environment to start and control devices. agent-device:{" "}
             <DeviceToolVersions
               action={versionActions("agent")}
               kind="agent"
               tools={state.hosts.find((host) => host.kind === "local")?.tools}
             />
+          </>
+        }
+        control={
+          <>
             {pending === "agent" ? <AgentDeviceSetupStatus state={state} pending compact /> : null}
             <ScopedSwitch
               settingKeys={["enableAgentDeviceAccess"]}
@@ -1026,7 +1034,13 @@ export function DeviceIntegrationControls({
         <SimulatorMemorySetting />
       </FoldedSettingsSection>
       <DeviceHostsSettings environmentId={environmentId} />
-      {state.supportsEasHosts ? <EasDeviceHostsSettings environmentId={environmentId} /> : null}
+      {state.supportsEasHosts || state.supportsSimlockHosts ? (
+        <DeviceSourcesSettings
+          environmentId={environmentId}
+          supportsEas={state.supportsEasHosts === true}
+          supportsSimlock={state.supportsSimlockHosts === true}
+        />
+      ) : null}
     </>
   );
 }

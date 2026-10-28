@@ -469,6 +469,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["beta linked environments another machine vps peer agents work there delegate"],
   },
   {
+    id: "simlock-hosts",
+    title: "Simlock device hosts (alpha)",
+    to: "/settings/labs",
+    scope: "environment",
+    searchTerms: ["beta alpha simlock callstack simulator emulator ios android pool lease gateway"],
+  },
+  {
     id: "auto-settle-inactive-threads",
     title: "Auto-settle inactive threads",
     to: "/settings/threads",
@@ -932,6 +939,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     ],
   },
   {
+    id: "device-sources",
+    title: "Device sources",
+    to: "/settings/devices",
+    targetId: "devices",
+    searchTerms: ["eas expo cloud simlock pool gateway simulator emulator"],
+  },
+  {
     id: "project-agent-access",
     title: "Project agent access",
     to: "/settings/projects",
@@ -947,17 +961,17 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "agent-device-access",
-    title: "Agent device access",
+    title: "Agents can use devices",
     to: "/settings/devices",
     targetId: "devices",
     searchTerms: ["allow simulator emulator ios android drive tools sessions"],
   },
   {
     id: "device-hub",
-    title: "Device hub",
+    title: "Use devices",
     to: "/settings/devices",
     targetId: "devices",
-    searchTerms: ["simulator emulator ios android install start"],
+    searchTerms: ["device hub simulator emulator ios android install start version"],
   },
   {
     id: "simulator-memory",
@@ -976,10 +990,10 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "device-platform-support",
-    title: "Simulator support",
+    title: "Local simulators",
     to: "/settings/devices",
     targetId: "devices",
-    searchTerms: ["xcode android studio sdk avd runtime"],
+    searchTerms: ["simulator support xcode android studio sdk avd runtime"],
   },
   {
     id: "agent-hardware-access",

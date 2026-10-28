@@ -146,13 +146,14 @@ const devices = `# Devices: iOS simulators, Android emulators and phones
 The Device panel shows a live simulator, emulator or connected Android phone next to a thread.
 Agents use \`device_list\`, \`device_open\`, \`device_screenshot\` and \`device_close\`, and drive the
 device with the \`agent-device\` command line, which styal installs. The tools are always listed, but
-calls fail with an error until the user turns on **Agent device access**.
+calls fail with an error until the user turns on **Agents can use devices**.
 
 ## Helping the user set up
 
 Local devices run on the machine that hosts the environment server. Devices can also come from
-another connected environment that shares them, an existing SSH device host, or EAS cloud
-simulators.
+another connected environment that shares them, an existing SSH device host, EAS cloud simulators,
+or a Simlock pool (alpha, turned on in Settings → Labs). A Simlock lease is a device from that pool
+and has nothing to do with the \`hardware_*\` tools.
 
 - **iOS**: macOS with Xcode and at least one simulator runtime.
 - **Android**: SDK Platform-Tools, Android Emulator and Command-line Tools (latest), plus a
@@ -167,7 +168,7 @@ simulators.
 
 Then the user opens a project thread and chooses **Device** in the right panel. On first use it
 walks through three setup steps: device hub, simulator support and agent access. After that,
-**Agent device access** is in Settings → Devices, and a project can override it in Settings →
+**Agents can use devices** is in Settings → Devices, and a project can override it in Settings →
 Projects. An agent session started before access was granted keeps getting refused until it
 restarts.
 

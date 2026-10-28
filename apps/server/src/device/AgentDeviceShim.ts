@@ -163,12 +163,14 @@ const launcherSource = (
   entryPath: string,
   boundArgs: ReadonlyArray<string>,
   releasedPath: string,
+  ownSession?: string,
 ) =>
   `import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { connect } from "node:net";
 const entry = ${JSON.stringify(entryPath)};
 const bound = ${JSON.stringify(boundArgs)};
+const own = ${JSON.stringify(ownSession ?? null)};
 const refused = new Map([["cdp", ["--platform", "--udid", "--config", "--session"]], ["connection", ["--platform", "--udid"]]]);
 const managed = ["connect", "disconnect", "auth", "daemon"];
 const args = process.argv.slice(2);
@@ -190,6 +192,11 @@ if (!informational && managed.includes(name)) {
 const valueOf = flag => { const inline = options.find(arg => arg.startsWith(flag + "=")); if (inline) return inline.slice(flag.length + 1); const index = options.indexOf(flag); return index >= 0 ? options[index + 1] : undefined; };
 let released = [];
 try { released = JSON.parse(readFileSync(${JSON.stringify(releasedPath)}, "utf8")); } catch {}
+const sharesHostSession = own !== null && own !== bound[bound.indexOf("--session") + 1];
+if (!informational && sharesHostSession && released.includes(own)) {
+  console.error("This device was handed back or to another thread. Call device_open again to keep using a device.");
+  process.exit(1);
+}
 if (!informational && name !== "close" && released.includes(valueOf("--session") ?? bound[bound.indexOf("--session") + 1])) {
   console.error("This device was handed back or to another thread. Call device_open again to keep using a device.");
   process.exit(1);
@@ -243,6 +250,7 @@ const writeLauncher = Effect.fn("AgentDeviceShim.writeLauncher")(function* (inpu
   readonly stateDir: string;
   readonly entryPath: string;
   readonly boundArgs: ReadonlyArray<string>;
+  readonly ownSession?: string;
 }) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -258,6 +266,7 @@ const writeLauncher = Effect.fn("AgentDeviceShim.writeLauncher")(function* (inpu
       input.entryPath,
       input.boundArgs,
       releasedAgentSessionsPath(input.stateDir, path),
+      input.ownSession,
     ),
   );
   if (platform === "win32") {
@@ -305,6 +314,7 @@ export const bindAgentDeviceLauncher = Effect.fn("AgentDeviceShim.bind")(functio
     stateDir: input.stateDir,
     entryPath: input.entryPath,
     boundArgs: input.targetArgs,
+    ownSession: input.session,
   });
 });
 

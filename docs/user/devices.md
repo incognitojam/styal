@@ -22,7 +22,7 @@ Choose **Float device over chat** in the toolbar to keep watching the device in 
 small window while the right panel shows something else. The floating window is
 view-only: drag it from anywhere, resize it from any edge, and double-click it or
 use **Open in right panel** to tap and type on the device again.
-In **Settings → Devices**, turn off the device hub on its environment to stop the
+In **Settings → Devices**, turn off **Use devices** on its environment to stop the
 helper processes; simulators and emulators keep running until you power them
 off.
 
@@ -113,12 +113,12 @@ tell it to take the device over, so for parallel work start another simulator or
 emulator. Opening a device in your own Device panel never takes it from an agent.
 
 Agents drive the device through the `agent-device` command line. styal
-installs and starts it only after **Agent device access** is enabled. iOS
+installs and starts it only after **Agents can use devices** is on. iOS
 taps build a small test runner on first use, which takes a couple of minutes
 once per server. Restart an existing agent session after granting access so it
 receives the device CLI environment.
 
-To keep agents away from simulators, turn off **Agent device access** in
+To keep agents away from simulators, turn off **Agents can use devices** in
 **Settings → Devices** on its environment. Agents started from then on are refused when
 they call the device tools; your own Device panel is unaffected.
 
@@ -148,7 +148,7 @@ machine reaching the other. See [your machines](./remote-access.md#your-machines
 
 If the machine with your simulators already runs styal, connect both environments to your client. In **Settings → Devices**, under the environment that has the simulators, turn on **Share with** for the environment whose agents should use them. In the native mobile app, use **Settings → Devices**. Both environment servers need a version that supports sharing.
 
-This enables device hub and agent access on both environments and grants the agent environment access to the other machine’s local devices. Access stays available after you close the browser or mobile app; it does not grant access to projects, files, or terminals. Turning off device hub or agent device access on either environment pauses sharing until it is turned back on. The device machine still needs Xcode for iOS or an Android SDK for Android. As with SSH hosts, a simulator on the device machine cannot reach Metro through the agent environment's localhost.
+This enables device hub and agent access on both environments and grants the agent environment access to the other machine’s local devices. Access stays available after you close the browser or mobile app; it does not grant access to projects, files, or terminals. Turning off **Use devices** or **Agents can use devices** on either environment pauses sharing until it is turned back on. The device machine still needs Xcode for iOS or an Android SDK for Android. As with SSH hosts, a simulator on the device machine cannot reach Metro through the agent environment's localhost.
 
 The agent environment tries the available addresses automatically, including your client's connection address, the LAN and Tailscale addresses the device environment's server is listening on, and its styal Link address when known. You do not need to choose an address. If the active address becomes unreachable, it tries the other saved addresses. For the desktop app’s own server, enable network access, Tailscale, or styal Link in **Settings → Sharing & access**. A command-line server lists its LAN addresses only when started with a network `--host`, as in [Pair over a LAN or private network](./remote-access.md#pair-over-a-lan-or-private-network). Sharing is unavailable when the device environment is only reachable through an SSH tunnel.
 
@@ -183,6 +183,43 @@ styal provides discovery, streaming, and control. Arrange app builds,
 installation, and connectivity to development servers such as Metro separately.
 A simulator on another machine cannot reach Metro through your environment's
 localhost without forwarding or another reachable address.
+
+## Simlock hosts (alpha)
+
+[Simlock](https://incubator.callstack.com/simlock/) pools iOS simulators and
+Android emulators across machines. If you run a Simlock gateway, styal can lease
+devices from it. Simlock is new and unreleased, so this integration is an
+alpha: it may change or stop working with a newer Simlock. styal does not install
+or manage Simlock; set up the gateway and its workers yourself. It needs a
+gateway and workers built from Simlock's `main` at
+[6316e10](https://github.com/callstackincubator/simlock/commit/6316e10) or
+later, the first with a lease holder's screen and input.
+
+Turn on **Settings → Labs → Simlock device hosts (alpha)** and **Use devices**
+in Settings → Devices, then choose **Add source → Simlock pool** with an **agent token**
+(`simlock --gateway token create --role agent`). Give each styal server its own
+token: Simlock counts every lease made with one token against the same
+requester, and allows one at a time unless the gateway's
+`lease.maxPerRequester` is raised to the host's **Devices at once**. The token
+leases devices and reaches only its own leases, but commands on a leased device
+run on its worker, so treat it like shell access to your workers. styal sends it
+with every request, so use an HTTPS gateway URL, or plain HTTP only over an
+encrypted network such as Tailscale. The gateway
+and workers need `capabilities.stream.enabled` and `capabilities.input.enabled`
+for the live screen and for input.
+
+The picker lists the models your workers can make. Opening one takes a lease;
+closing it with **Return device to the pool**, or removing the host, returns it
+wiped. The panel keeps a watched device leased up to the host's lease limit.
+You can tap, swipe, type, and press Home, and Back and Recents on Android.
+Rotation, appearance, text size, device tools, and screenshots are not offered
+for Simlock devices; agents can still do them through `device_open`. On iOS 27
+simulators, typing on your keyboard does nothing; tap the on-screen keyboard
+instead. Workers must run the same agent-device
+version as styal (see Device tool updates), and agent-device accepts app installs
+for a lease only from the folder it was opened from, which `device_open`
+names. A device cannot reach development servers on your machine through
+localhost; use an address its worker can reach.
 
 ## Device tool updates
 

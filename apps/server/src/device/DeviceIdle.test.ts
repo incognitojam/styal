@@ -46,6 +46,8 @@ const decodeRpcBody = Schema.decodeUnknownSync(
  * One local Android host whose hub boots the Pixel_API_35 AVD as emulator-5554,
  * and an agent-device daemon that records the sessions it is asked to close.
  */
+const SIMLOCK_LEASE_SESSION = "t3-lease";
+
 const fixture = Effect.fn("fixture")(function* (
   saved: Ref.Ref<BootRecords>,
   options: {
@@ -53,6 +55,7 @@ const fixture = Effect.fn("fixture")(function* (
     readonly saveGate?: Deferred.Deferred<void>;
     /** Runs an agent-device daemon per device, like EAS, whose endpoints are saved here. */
     readonly perDeviceDaemonDir?: string;
+    readonly simlockLease?: boolean;
   } = {},
 ) {
   for (const [thread, hostId] of [
@@ -97,7 +100,11 @@ const fixture = Effect.fn("fixture")(function* (
         : {
             ...operations,
             agentEndpoint: (deviceId: string) =>
-              Effect.succeed({ ...agentDevice, agentDeviceId: deviceId }),
+              Effect.succeed(
+                options.simlockLease === true
+                  ? { ...agentDevice, agentDeviceId: null, session: SIMLOCK_LEASE_SESSION }
+                  : { ...agentDevice, agentDeviceId: deviceId },
+              ),
           };
     },
     nodePath: process.execPath,
@@ -116,7 +123,7 @@ const fixture = Effect.fn("fixture")(function* (
     label: "Test host",
     summary: Effect.succeed({
       id: LOCAL_DEVICE_HOST_ID,
-      kind: "local",
+      kind: options.simlockLease === true ? "simlock" : "local",
       label: "Test server",
       platforms: [{ platform: "android", available: true }],
       hubInstalled: true,
@@ -338,6 +345,32 @@ const threads = (service: DeviceService.DeviceService["Service"]) =>
   service.state.pipe(Effect.map((state) => state.sessions.map((session) => session.threadId)));
 
 describe("hand-back", () => {
+  it.effect("a Simlock lease stays open when a thread hands it back or over", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const dir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-device-idle-" });
+      const { service, calls, releasedNames } = yield* fixture(yield* Ref.make<BootRecords>([]), {
+        perDeviceDaemonDir: dir,
+        simlockLease: true,
+      });
+      yield* service.configure({ enabled: true });
+      const opened = yield* deviceOpenTool(service, { targetFirst: false });
+      const target = { threadId, hostId: opened.hostId, deviceId: opened.deviceId };
+      const agent = yield* service.agentTarget(target);
+      expect(agent.session).toBe(SIMLOCK_LEASE_SESSION);
+
+      yield* agentOpen(service, thread2, opened.deviceId);
+      expect(calls.filter((call) => call.startsWith("release"))).toEqual([]);
+      expect(yield* threads(service)).toEqual([thread2]);
+      expect(yield* Ref.get(releasedNames)).toContain(agent.launcherSession);
+      expect(yield* Ref.get(releasedNames)).not.toContain(SIMLOCK_LEASE_SESSION);
+
+      yield* service.close({ threadId: thread2 });
+      expect(calls.filter((call) => call.startsWith("release"))).toEqual([]);
+      expect(yield* Ref.get(releasedNames)).not.toContain(SIMLOCK_LEASE_SESSION);
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
   it.effect(
     "device_close releases the session device_open handed out, even after an AVD boots",
     () =>

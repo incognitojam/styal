@@ -1401,6 +1401,7 @@ features:
     invariants:
       - The device_open quick start and the device guide tell an agent that the message it writes after device_close is the one the user reads, so that message reports what happened, including anything it could not finish and why.
       - device_close releases every agent-device session device_open handed the thread for that device, recorded when each was handed out (so an Android AVD that boots under a new id still releases), and leaves the device booted. Unconfirmed releases are retried per session name on the next hand-over or power-off without blocking cleanup of other names; a missing session after failed cleanup remains uncertain across reopen until a successful release or stopped daemon confirms it.
+      - Every thread on a Simlock lease shares the lease's one agent-device session, so a hand-back or hand-over never closes it. It refuses that thread's launcher by the launcher's own name, including `close`, and leaves the other threads' launchers working. Only powering the device off ends the lease.
       - When an agent opens a device nobody is watching, other local threads' holds on it are released if their thread is not working. Connected environments' holds are not reclaimed. device_open prefers a free device and takes an idle-held one only when none is free. An agent open of a device that a working thread holds, someone watches, or another environment holds fails with DeviceHeldError naming those threads unless it passes takeOver, which releases every local holder's hold and shares the device with connected environments' holders. Opening a device from the Device panel never takes it from an agent or is refused, and holds are never released on a timer.
       - The sweep closes sessions of archived threads, and agent holds of deleted threads. A Device panel session from a thread the projections do not know stays, since it may be a draft's.
       - A session handed back or over is refused by the agent-device launcher, with a message to call device_open, until device_open hands it out again; agent-device itself does not stop a released session driving the device by its selector.
@@ -5721,6 +5722,7 @@ features:
       - apps/web/src/components/settings/AgentAccessSettings.tsx
       - apps/web/src/components/settings/DeviceHostsSettings.tsx
       - apps/web/src/components/settings/DeviceIdleShutdownSetting.tsx
+      - apps/web/src/components/settings/DeviceSourcesSettings.tsx
       - apps/web/src/components/settings/EnvironmentDeviceHostsSettings.tsx
       - apps/web/src/components/settings/IntegrationsSettings.tsx
       - apps/web/src/components/settings/ProjectDefaultsSettings.tsx

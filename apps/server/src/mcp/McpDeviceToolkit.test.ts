@@ -58,8 +58,25 @@ const device = {
   booted: true,
   physical: false,
 };
+const poolDevice = {
+  hostId: "pool",
+  id: "simlock:ios:iPhone 17",
+  platform: "ios" as const,
+  name: "iPhone 17",
+  version: "iOS 27.0",
+  booted: false,
+  physical: false,
+};
 const state = {
   hosts: [
+    {
+      id: "pool",
+      kind: "simlock" as const,
+      label: "Simlock pool",
+      platforms: [{ platform: "ios" as const, available: true }],
+      hubInstalled: true,
+      agentDeviceInstalled: true,
+    },
     {
       id: "local",
       kind: "local" as const,
@@ -74,7 +91,7 @@ const state = {
   ],
   hostStatus: "ready" as const,
   hostStatuses: { local: { status: "ready" as const } },
-  devices: [device],
+  devices: [device, poolDevice],
   sessions: [],
   onboardingCompleted: true,
   agentAccessEnabled: true,
@@ -119,11 +136,13 @@ const layerDeviceServiceMock = Layer.mock(DeviceService.DeviceService)({
   state: Effect.succeed(state),
   list: Effect.succeed(state),
   agentReadinessIfSupported: () => Effect.succeed(readiness),
+  locateDevice: (input) =>
+    Effect.succeed(input.deviceId === poolDevice.id ? Option.some(poolDevice) : Option.none()),
   open: (input) =>
     Effect.succeed({
       threadId: input.threadId,
-      hostId: "local",
-      deviceId: input.deviceId,
+      hostId: input.hostId ?? "local",
+      deviceId: input.hostId === "pool" ? DeviceId.make("lease-1") : input.deviceId,
       platform: input.platform,
       openedAt: "2026-09-08T00:00:00.000Z",
     }),
@@ -139,12 +158,23 @@ const layerDeviceServiceMock = Layer.mock(DeviceService.DeviceService)({
   close: () => Effect.void,
   testHost: () => Effect.die("not used"),
   // As for an EAS device, agent-device knows the device by a different id than T3.
-  agentTarget: () =>
-    Effect.succeed({
-      agentDeviceId: "SIM-UDID",
-      session: "thread-device",
-      args: ["--config", "/host.json", "--session", "thread-device"],
-    }),
+  agentTarget: (input) =>
+    input.hostId === "pool"
+      ? input.deviceId === "lease-1"
+        ? Effect.succeed({
+            agentDeviceId: null,
+            session: "t3-lease",
+            args: ["--config", "/lease.json", "--session", "t3-lease"],
+            launcherSession: "t3-own",
+          })
+        : Effect.fail(
+            new DeviceHostUnavailableError({ hostId: "pool", reason: "This lease has ended." }),
+          )
+      : Effect.succeed({
+          agentDeviceId: "SIM-UDID",
+          session: "thread-device",
+          args: ["--config", "/host.json", "--session", "thread-device"],
+        }),
   agentLauncher: ({ targetArgs }) =>
     Effect.succeedSome(`/state/device/targets/thread-device/${targetArgs.join("_")}/agent-device`),
 });
@@ -157,6 +187,36 @@ const layerTest = McpHttpServer.layerDeviceToolkit.pipe(
   Layer.provide(layerProjectsMock),
   Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-mcp-device-toolkit-test-" })),
   Layer.provide(NodeServices.layer),
+);
+
+it.effect("device_open leases a Simlock catalog device before targeting it", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const server = yield* McpServer.McpServer;
+      const opened = yield* server
+        .callTool({
+          name: "device_open",
+          arguments: { hostId: "pool", deviceId: poolDevice.id },
+        })
+        .pipe(
+          Effect.provideService(McpInvocationContext.McpInvocationContext, invocation(["device"])),
+          Effect.provideService(McpSchema.McpServerClient, client),
+        );
+      expect(opened.isError).toBe(false);
+      const content = opened.structuredContent as {
+        agentDevice: { targetArgs: ReadonlyArray<string>; session: string };
+        quickStart: string;
+      };
+      // The session alone picks a leased device; selector flags would be refused.
+      expect(content.agentDevice.targetArgs).toEqual([
+        "--config",
+        "/lease.json",
+        "--session",
+        "t3-lease",
+      ]);
+      expect(content.quickStart).toContain("leased from a Simlock pool");
+    }),
+  ).pipe(Effect.provide(layerTest)),
 );
 
 it.effect("registers the device tools and returns the screenshot as image content", () =>

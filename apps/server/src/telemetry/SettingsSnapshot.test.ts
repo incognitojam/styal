@@ -226,6 +226,8 @@ const NOT_REPORTED: Record<string, string> = {
   deviceHosts: "host addresses",
   environmentDeviceHosts: "host addresses",
   easDeviceHosts: "host records",
+  simlockDeviceHosts: "host records",
+  simlockDeviceHostsEnabled: "upstream alpha in Labs, not a fork feature to measure",
   hardwareDevices: "device records",
   automaticGitFetchInterval: "legacy, read through backgroundActivity",
   providerHealthRefreshInterval: "legacy, read through backgroundActivity",

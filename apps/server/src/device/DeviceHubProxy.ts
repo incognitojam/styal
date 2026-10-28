@@ -2,6 +2,7 @@
 // Proxy with environment read scope for streams and operate scope for input and tuning.
 import { AuthOrchestrationReadScope, AuthOrchestrationOperateScope } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import {
   HttpClient,
@@ -79,6 +80,20 @@ const forwardHeaders = (request: HttpServerRequest.HttpServerRequest, origin: st
   return headers;
 };
 
+// Effect drops its listeners before closing a socket that is still connecting, and `ws` then
+// emits an `error` nobody handles, which exits the server.
+export const upstreamWebSocketConstructor = Layer.effect(
+  Socket.WebSocketConstructor,
+  Effect.gen(function* () {
+    const make = yield* Socket.WebSocketConstructor;
+    return (url, options) => {
+      const socket = make(url, options);
+      socket.addEventListener("error", () => undefined);
+      return socket;
+    };
+  }),
+).pipe(Layer.provide(NodeSocket.layerWebSocketConstructor));
+
 export const proxyDeviceWebSocket = Effect.fn("DeviceHubProxy.proxyWebSocket")(function* (
   request: HttpServerRequest.HttpServerRequest,
   upstreamUrl: string,
@@ -113,7 +128,7 @@ export const proxyDeviceWebSocket = Effect.fn("DeviceHubProxy.proxyWebSocket")(f
     }),
   ).pipe(Effect.ignoreCause);
   return HttpServerResponse.empty();
-}, Effect.provide(NodeSocket.layerWebSocketConstructor));
+}, Effect.provide(upstreamWebSocketConstructor));
 
 const pumpFrames =
   /* Frame pumping runs continuously; a span per frame stream adds no diagnostic value. */
@@ -230,7 +245,7 @@ const handler = Effect.gen(function* () {
     return yield* proxyDeviceWebSocket(
       request,
       upstreamUrl.replace(/^http/, "ws"),
-      ready.hub.headers,
+      routed?.headers ?? ready.hub.headers,
       routed?.protocols,
     ).pipe(whileStreaming(ready.hostId, hubPath, upstreamSearch));
   }

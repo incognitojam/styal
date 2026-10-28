@@ -50,6 +50,16 @@ describe("device tool helpers", () => {
     expect(text).toContain("If it is missing, call device_open again.");
   });
 
+  it("tells an agent a Simlock lease is not a hardware lease and where installs must run", () => {
+    const text = agentDeviceQuickStart(device, [], "agent-device", {
+      kind: "simlock",
+      installDirectory: "/work/app",
+    });
+    expect(text).toContain("hardware_release does not end it");
+    expect(text).toContain("only when run from /work/app");
+    expect(agentDeviceQuickStart(device, [], "agent-device")).not.toContain("hardware_release");
+  });
+
   it("opens the app before snapshots, CLI screenshots or input, looks with device_screenshot, and records the device screen", () => {
     const command = "/state/device/targets/t3-a/agent-device";
     const text = agentDeviceQuickStart(device, [], command);

@@ -337,6 +337,10 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
     hold: Hold,
     uncertain: ReadonlySet<string>,
   ) {
+    // A Simlock session belongs to its lease and every thread shares it, so closing it would
+    // end the lease. Only powering the device off through the host ends it.
+    const hostKind = (yield* inner.state).hosts.find((host) => host.id === hold.hostId)?.kind;
+    if (hostKind === "simlock") return [];
     // Peer sessions run on this environment's own daemon.
     const endpoint = yield* options.agentEndpoint(
       hold.threadId.startsWith(PEER_THREAD_PREFIX) ? LOCAL_DEVICE_HOST_ID : hold.hostId,
@@ -456,8 +460,8 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
 
   const agentTarget: DeviceService.DeviceService["Service"]["agentTarget"] = (input) =>
     inner.agentTarget(input).pipe(
-      Effect.tap(({ args }) => {
-        const name = args[args.indexOf("--session") + 1];
+      Effect.tap(({ args, launcherSession }) => {
+        const name = launcherSession ?? args[args.indexOf("--session") + 1];
         if (!name) return Effect.void;
         const key = holdKey(input.threadId, input.hostId, input.deviceId);
         targeted.set(key, name);
