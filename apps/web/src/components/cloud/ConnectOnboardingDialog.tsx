@@ -20,6 +20,7 @@ import {
 } from "~/state/environments";
 import { environmentSession, readEnvironmentScope, useEnvironmentScope } from "~/state/session";
 import { CloudEnvironmentConnectRows } from "./CloudEnvironmentConnectList";
+import { TunnelLimitAlert } from "./TunnelUsage";
 import { Button } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
 import { Dialog } from "../ui/dialog";
@@ -227,6 +228,7 @@ function ConfiguredConnectOnboardingDialog() {
               publishAgentActivity={publishAgentActivity}
               disabled={isApplying || !canManageRelay || linkStateData === null}
               operationError={controller.operationError ?? controller.linkState.error}
+              tunnelLimit={controller.tunnelLimit}
               onExposeEnvironmentChange={(enabled) => {
                 if (
                   primaryEnvironmentId !== null &&
@@ -292,6 +294,7 @@ function PublishStep({
   publishAgentActivity,
   disabled,
   operationError,
+  tunnelLimit,
   onExposeEnvironmentChange,
   onPublishAgentActivityChange,
 }: {
@@ -299,6 +302,7 @@ function PublishStep({
   readonly publishAgentActivity: boolean;
   readonly disabled: boolean;
   readonly operationError: string | null;
+  readonly tunnelLimit: number | null;
   readonly onExposeEnvironmentChange: (enabled: boolean) => void;
   readonly onPublishAgentActivityChange: (enabled: boolean) => void;
 }) {
@@ -321,6 +325,7 @@ function PublishStep({
         />
       </div>
       {operationError ? <p className="text-xs text-destructive">{operationError}</p> : null}
+      {tunnelLimit !== null ? <TunnelLimitAlert /> : null}
     </div>
   );
 }

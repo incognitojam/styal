@@ -1238,7 +1238,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "styal Link",
     to: "/settings/access",
     targetId: "connections-environment",
-    searchTerms: ["styal Link managed tunnel cloud other devices remote"],
+    searchTerms: ["styal Link managed tunnel cloud other devices remote tunnels limit"],
     desktopOnly: true,
     cloudOnly: true,
   },

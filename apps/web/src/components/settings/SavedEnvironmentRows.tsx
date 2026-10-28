@@ -49,6 +49,8 @@ import {
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
 import { isElectron } from "~/env";
 import { useCloudLinkController } from "~/cloud/useCloudLinkController";
+import { useManagedTunnelUsage } from "~/cloud/managedRelayState";
+import { TunnelLimitAlert, TunnelUsageMeter } from "../cloud/TunnelUsage";
 import { environmentCatalog } from "~/connection/catalog";
 import { readEnvironmentScope } from "~/state/session";
 import {
@@ -471,6 +473,36 @@ function CloudLinkSwitch({
   );
 }
 
+function T3ConnectTunnelUsage({ tunnelLimit }: { readonly tunnelLimit: number | null }) {
+  const usage = useManagedTunnelUsage();
+  // Usage when the relay refused. The relay also counts tunnels still being set up, so only
+  // a freed tunnel or a higher cap clears the alert, not a meter that merely shows room.
+  const [usedAtRefusal, setUsedAtRefusal] = useState<number | null>(null);
+  if (tunnelLimit === null) {
+    if (usedAtRefusal !== null) setUsedAtRefusal(null);
+  } else if (usedAtRefusal === null && usage.used !== null) {
+    setUsedAtRefusal(usage.used);
+  }
+  const showLimitAlert =
+    tunnelLimit !== null &&
+    !(usedAtRefusal !== null && usage.used !== null && usage.used < usedAtRefusal) &&
+    !(usage.limit !== null && usage.limit > tunnelLimit);
+  const meter =
+    usage.used !== null && usage.limit !== null ? (
+      <TunnelUsageMeter used={usage.used} limit={usage.limit} />
+    ) : null;
+  return (
+    <>
+      {meter || showLimitAlert ? (
+        <div className="flex flex-col gap-3 pb-3">
+          {meter}
+          {showLimitAlert ? <TunnelLimitAlert /> : null}
+        </div>
+      ) : null}
+    </>
+  );
+}
+
 function ConfiguredCloudLinkRow({ canManageRelay }: { readonly canManageRelay: boolean }) {
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const {
@@ -482,6 +514,7 @@ function ConfiguredCloudLinkRow({ canManageRelay }: { readonly canManageRelay: b
     publishAgentActivity,
     holdWebhooksWhileOffline,
     operationError,
+    tunnelLimit,
     reconcileCloudState,
   } = useCloudLinkController();
   const { openAuthPrompt } = useT3ConnectAuthPrompt();
@@ -633,7 +666,9 @@ function ConfiguredCloudLinkRow({ canManageRelay }: { readonly canManageRelay: b
               />
             )
           }
-        />
+        >
+          {signedOut ? null : <T3ConnectTunnelUsage tunnelLimit={tunnelLimit} />}
+        </SettingsRow>
       ) : linkRevoked ? (
         <SettingsRow
           title={searchableSetting("t3-connect").title}

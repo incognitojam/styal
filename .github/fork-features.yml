@@ -5245,7 +5245,12 @@ features:
       - .github/workflows/deploy-relay.yml
       - .github/workflows/relay-preview.yml
       - apps/web/src/cloud/managedRelayState.ts
+      - apps/web/src/cloud/useCloudLinkController.ts
       - apps/web/src/components/clerk/T3ConnectAccountPages.tsx
+      - apps/web/src/components/clerk/T3ConnectUserProfilePage.tsx
+      - apps/web/src/components/cloud/ConnectOnboardingDialog.tsx
+      - apps/web/src/components/cloud/TunnelUsage.tsx
+      - apps/web/src/components/settings/SavedEnvironmentRows.tsx
       - packages/client-runtime/src/relay/errorPresentation.ts
     upstream_paths:
       - apps/web/src/components/clerk/T3ConnectAccountPages.tsx

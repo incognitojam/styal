@@ -10,9 +10,10 @@ import {
   createAtomCommandScheduler,
   createRuntimeCommand,
 } from "@t3tools/client-runtime/state/runtime";
-import type {
-  RelayClientDeviceRecord,
-  RelayClientEnvironmentRecord,
+import {
+  DEFAULT_MANAGED_TUNNEL_LIMIT,
+  type RelayClientDeviceRecord,
+  type RelayClientEnvironmentRecord,
 } from "@t3tools/contracts/relay";
 import type { EnvironmentId } from "@t3tools/contracts";
 import * as Context from "effect/Context";
@@ -95,5 +96,27 @@ export function useManagedRelayDevices() {
     ...snapshot,
     accountId,
     refresh,
+  };
+}
+
+export function refreshManagedTunnelUsage() {
+  const accountId = appAtomRegistry.get(managedRelaySessionAtom)?.accountId;
+  if (!accountId) return;
+  managedRelayQueryManager.refreshEnvironments(appAtomRegistry, accountId);
+}
+
+/** Managed tunnels on this account and its cap. Null fields are still loading or failed. */
+export function useManagedTunnelUsage() {
+  const environments = useManagedRelayEnvironments();
+  const used =
+    environments.accountId === null
+      ? null
+      : (environments.data?.filter(
+          (environment) => environment.endpoint.providerKind === "cloudflare_tunnel",
+        ).length ?? null);
+  return {
+    used,
+    limit: DEFAULT_MANAGED_TUNNEL_LIMIT,
+    refresh: refreshManagedTunnelUsage,
   };
 }
