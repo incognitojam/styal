@@ -83,6 +83,7 @@ export async function startFakeGitHubApi(
     baseRefName: "main",
     headRefOid: pr.headSha,
     isCrossRepository: false,
+    maintainerCanModify: false,
     headRepositoryOwner: { __typename: "Organization", login: "e2e-org" },
     headRepository: { nameWithOwner: "e2e-org/demo-app", viewerPermission: "WRITE" },
     headRef: { id: `REF_${pr.number}` },

@@ -92,6 +92,7 @@ query PullRequestCore(
       headRefName
       baseRefName
       headRefOid
+      maintainerCanModify
       isCrossRepository
       headRepositoryOwner {
         login
@@ -232,6 +233,7 @@ query PullRequestCoreWithoutDeployments(
       headRefName
       baseRefName
       headRefOid
+      maintainerCanModify
       isCrossRepository
       headRepositoryOwner {
         login
@@ -347,6 +349,7 @@ query PullRequestCoreEnterprise(
       headRefName
       baseRefName
       headRefOid
+      maintainerCanModify
       isCrossRepository
       headRepositoryOwner {
         login
@@ -481,6 +484,7 @@ query PullRequestCoreEnterpriseWithoutDeployments(
       headRefName
       baseRefName
       headRefOid
+      maintainerCanModify
       isCrossRepository
       headRepositoryOwner {
         login
