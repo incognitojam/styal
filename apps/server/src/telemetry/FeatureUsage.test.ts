@@ -291,6 +291,14 @@ it("names user commands with their closed-enum variant and nothing else", () => 
   ).toEqual({ feature: "thread.runtime_mode.set", variant: "full-access" });
 });
 
+it("counts stopping a thread as the same interrupt as stopping its run", () => {
+  const interrupt = { feature: "run.interrupt" };
+  expect(
+    featureUsage(dispatch, { type: "run.interrupt", commandId, threadId, runId: "run-private" }),
+  ).toEqual(interrupt);
+  expect(featureUsage(dispatch, { type: "thread.stop", commandId, threadId })).toEqual(interrupt);
+});
+
 it("ignores messages, housekeeping commands, and untracked RPCs", () => {
   expect(featureUsage(dispatch, { type: "message.dispatch", text: "secret prompt" })).toBe(
     undefined,
