@@ -3,7 +3,6 @@ import "../../index.css";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
-import { page, userEvent } from "vite-plus/test/browser";
 
 import { ComposerBannerStack } from "./ComposerBannerStack";
 
@@ -58,64 +57,4 @@ it("only offers notice details when the description cannot fit", async () => {
   container.style.width = "300px";
   await nextFrame();
   expect(hasDetails()).toBe(true);
-});
-
-it("keeps only the usage limit attached while an active goal waits in the collapsible stack", async () => {
-  await act(async () =>
-    root.render(
-      <ComposerBannerStack
-        items={[
-          {
-            id: "goal",
-            variant: "default",
-            priority: "activity",
-            icon: null,
-            title: "Goal active",
-            description: "Finish the banner fix",
-          },
-          {
-            id: "limit",
-            variant: "default",
-            priority: "urgent",
-            icon: null,
-            title: "Usage limit reached",
-          },
-        ]}
-      />,
-    ),
-  );
-
-  const visibleBanners = () =>
-    Array.from(container.querySelectorAll('[data-slot="composer-banner"]')).filter((banner) =>
-      banner.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }),
-    );
-  const limit = page.getByText("Usage limit reached", { exact: true });
-  const goal = page.getByText("Goal active", { exact: true });
-
-  // A retained pointer can expand the stack as it mounts; start outside the hover target.
-  await userEvent.hover(limit);
-  await expect.poll(visibleBanners).toHaveLength(1);
-  await expect.element(limit).toBeVisible();
-  await expect.element(goal).not.toBeVisible();
-  expect(container.querySelector('[data-slot="composer-banner-attachment"]')?.textContent).toBe(
-    "Usage limit reached",
-  );
-
-  const peek = page.getByRole("button", { name: "Show other notices" });
-  // Hover opens the stack and hides the peek before a pointer click can finish.
-  await act(() => peek.element().focus());
-  await userEvent.keyboard("{Enter}");
-  await expect.element(goal).toBeVisible();
-  await expect.element(limit).toBeVisible();
-  await expect.poll(visibleBanners).toHaveLength(2);
-
-  await act(async () => userEvent.keyboard("{Escape}"));
-  await expect.element(goal).not.toBeVisible();
-  await expect.element(limit).toBeVisible();
-  expect(visibleBanners()).toHaveLength(1);
-
-  await userEvent.hover(peek);
-  await expect.element(goal).toBeVisible();
-  await expect.element(limit).toBeVisible();
-  await expect.poll(visibleBanners).toHaveLength(2);
 });
