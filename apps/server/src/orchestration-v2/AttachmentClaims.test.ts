@@ -11,6 +11,8 @@ import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as PlatformError from "effect/PlatformError";
+import * as Sink from "effect/Sink";
 
 import {
   createPendingAttachmentId,
@@ -218,6 +220,50 @@ describe("AttachmentClaims", () => {
     }).pipe(Effect.provide(layerTest)),
   );
 
+  it.effect("removes a copy that fails partway", () =>
+    Effect.gen(function* () {
+      const pending = yield* stagePendingUpload({
+        name: "partial.png",
+        bytes: new Uint8Array([5, 5, 5]),
+        mimeType: "image/png",
+      });
+      const config = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const failedTarget = yield* Deferred.make<string>();
+      const failingFileSystem = Object.create(fileSystem, {
+        sink: {
+          value: (to: string) =>
+            Sink.unwrap(
+              fileSystem.writeFile(to, new Uint8Array([5])).pipe(
+                Effect.andThen(Deferred.succeed(failedTarget, to)),
+                Effect.andThen(
+                  Effect.fail(
+                    PlatformError.systemError({
+                      _tag: "Unknown",
+                      module: "FileSystem",
+                      method: "write",
+                      description: "no space left on device",
+                    }),
+                  ),
+                ),
+              ),
+            ),
+        },
+      }) as FileSystem.FileSystem;
+
+      const exit = yield* claimPendingAttachments({
+        threadId: "thread-claims-partial",
+        attachments: [pending],
+      }).pipe(Effect.provideService(FileSystem.FileSystem, failingFileSystem), Effect.exit);
+
+      expect(Exit.isFailure(exit)).toBe(true);
+      expect(NodeFS.existsSync(yield* Deferred.await(failedTarget))).toBe(false);
+      expect(
+        NodeFS.readdirSync(config.attachmentsDir).filter((entry) => entry.startsWith("pending-")),
+      ).toHaveLength(1);
+    }).pipe(Effect.provide(layerTest)),
+  );
+
   it.effect("rolls back a copy that finishes after the claim is interrupted", () =>
     Effect.gen(function* () {
       const pending = yield* stagePendingUpload({
@@ -228,16 +274,19 @@ describe("AttachmentClaims", () => {
       const config = yield* ServerConfig.ServerConfig;
       const fileSystem = yield* FileSystem.FileSystem;
 
-      const copyArgs = yield* Deferred.make<readonly [string, string]>();
+      const copyTarget = yield* Deferred.make<string>();
       const copyDone = yield* Deferred.make<void>();
-      // fs.copyFile cannot be cancelled: the write runs on a separate fiber
-      // while the claim's copyFile only observes its completion, so the file
+      // A file write cannot be cancelled: the write runs on a separate fiber
+      // while the claim's sink only observes its completion, so the file
       // still lands after the awaiting effect is interrupted.
       const gatedFileSystem = Object.create(fileSystem, {
-        copyFile: {
-          value: (from: string, to: string) =>
-            Deferred.succeed(copyArgs, [from, to] as const).pipe(
-              Effect.andThen(Deferred.await(copyDone)),
+        sink: {
+          value: (to: string) =>
+            Sink.unwrap(
+              Deferred.succeed(copyTarget, to).pipe(
+                Effect.andThen(Deferred.await(copyDone)),
+                Effect.as(Sink.drain),
+              ),
             ),
         },
       }) as FileSystem.FileSystem;
@@ -247,10 +296,10 @@ describe("AttachmentClaims", () => {
         attachments: [pending],
       }).pipe(Effect.provideService(FileSystem.FileSystem, gatedFileSystem), Effect.forkChild);
 
-      const [sourcePath, claimedPath] = yield* Deferred.await(copyArgs);
+      const claimedPath = yield* Deferred.await(copyTarget);
       claimFiber.interruptUnsafe();
       const writer = yield* fileSystem
-        .copyFile(sourcePath, claimedPath)
+        .writeFile(claimedPath, new Uint8Array([7, 7, 7]))
         .pipe(Effect.ensuring(Deferred.succeed(copyDone, undefined)), Effect.forkChild);
 
       const exit = yield* Fiber.await(claimFiber);
@@ -259,7 +308,6 @@ describe("AttachmentClaims", () => {
 
       expect(Exit.hasInterrupts(exit)).toBe(true);
       expect(NodeFS.existsSync(claimedPath)).toBe(false);
-      expect(NodeFS.existsSync(sourcePath)).toBe(true);
       expect(
         NodeFS.readdirSync(config.attachmentsDir).filter((entry) => entry.startsWith("pending-")),
       ).toHaveLength(1);

@@ -9,6 +9,7 @@ import * as NodePath from "node:path";
 import * as NodeUtil from "node:util";
 import { quoteRemoteArg, remoteDeviceEnvironment, remoteDeviceScript } from "./sshDeviceScript.ts";
 import { AGENT_DEVICE_VERSION, DEVICE_HUB_VERSION } from "./DeviceToolchain.ts";
+import { copyFileBytesPromise } from "../fileCopy.ts";
 
 const exec = NodeUtil.promisify(NodeChildProcess.execFile);
 
@@ -91,7 +92,7 @@ else if(args[0]==='serve') { const server=http.createServer((req,res)=>{res.stat
 else { const child=spawn(process.execPath,[path.join(path.dirname(process.argv[1]),'daemon.mjs'),'serve'],{detached:true,stdio:['ignore','ignore','ignore','ipc'],env:process.env});await new Promise((resolve,reject)=>{child.once('message',resolve);child.once('error',reject);});child.unref(); }
 `,
         );
-        await NodeFSP.copyFile(agent, NodePath.join(NodePath.dirname(agent), "daemon.mjs"));
+        await copyFileBytesPromise(agent, NodePath.join(NodePath.dirname(agent), "daemon.mjs"));
         const nextHubVersion = DEVICE_HUB_VERSION + "-upgrade";
         const nextAgentVersion = AGENT_DEVICE_VERSION + "-upgrade";
         // Each owner stands in for a host on a different platform.

@@ -9,7 +9,6 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
-import * as Stream from "effect/Stream";
 import { ChildProcessSpawner } from "effect/process";
 
 import {
@@ -45,6 +44,7 @@ import {
 } from "./GitVcsDriverCore.ts";
 import * as VcsDriver from "./VcsDriver.ts";
 import * as VcsProcess from "./VcsProcess.ts";
+import { copyFileBytes } from "../fileCopy.ts";
 
 export interface ExecuteGitInput {
   readonly operation: string;
@@ -434,19 +434,6 @@ const WORKSPACE_GIT_HARDENED_CONFIG_ARGS = [
   "-c",
   "core.untrackedCache=false",
 ] as const;
-
-/**
- * Copies a Git index into a private index file by reading and writing its bytes.
- *
- * `fs.copyFile` uses `copy_file_range`, which OpenZFS turns into a block clone. With
- * `zfs_bclone_wait_dirty` set, cloning an index Git just rewrote waits for the next transaction
- * group sync, which can take minutes on a busy pool. A turn waits on its baseline checkpoint.
- */
-export const copyGitIndexFile = (
-  fileSystem: FileSystem.FileSystem,
-  fromPath: string,
-  toPath: string,
-) => fileSystem.stream(fromPath).pipe(Stream.run(fileSystem.sink(toPath)));
 
 const nowFreshness = Effect.fn("GitVcsDriver.nowFreshness")(function* () {
   const now = yield* DateTime.now;
@@ -892,7 +879,7 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
             // Stay below the source timestamp even if Date rounded up, preserving Git's racy check.
             const indexTime = Math.floor((mtime.value.getTime() - 1) / 1000);
             if (indexTime <= 0) return false;
-            yield* copyGitIndexFile(fileSystem, indexPath.stdout.trim(), tempIndexPath);
+            yield* copyFileBytes(fileSystem, indexPath.stdout.trim(), tempIndexPath);
             yield* execute({
               operation,
               cwd: input.cwd,
