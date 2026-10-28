@@ -103,7 +103,7 @@ export function showSystemNotification({
     notification.addEventListener("click", () => {
       notification.close();
       window.focus();
-      void window.desktopBridge?.revealWindow?.().catch(() => undefined);
+      void window.desktopBridge?.revealWindow().catch(() => undefined);
       onClick?.();
     });
     return notification;

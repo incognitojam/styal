@@ -8,7 +8,7 @@ import { AppText as Text } from "../../components/ui/AppText";
 import { environmentCatalog } from "../../connection/catalog";
 import { networkReports } from "../../state/network-reports";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { SettingsActionRow } from "../settings/components/SettingsActionRow";
+import { ListActionRow as SettingsActionRow } from "../../components/ui/ListActionRow";
 import { SettingsSection } from "../settings/components/SettingsSection";
 import {
   describeNetworkReport,

@@ -10,12 +10,9 @@ import type { AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
 
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/reactivity";
+
+import { resolveBrowserDefaults } from "~/browser/browserDefaults";
 import { BrowserSettingsReadError } from "~/browser/openFileInPreview";
-import {
-  browserDefaultOpenProfileId,
-  browserDefaultOpenViewport,
-  resolveBrowserDefaults,
-} from "~/browser/browserDefaults";
 import { previewRuntimeFor } from "~/browser/previewRuntime";
 import { applyPreviewServerSnapshot, rememberPreviewUrl } from "~/previewStateStore";
 
@@ -45,8 +42,8 @@ export async function openPreviewSession<E>(
     input: {
       threadId: input.threadRef.threadId,
       ...(input.url === undefined ? {} : { url: input.url }),
-      viewport: input.viewport ?? browserDefaultOpenViewport(defaults),
-      profileId: input.profileId ?? browserDefaultOpenProfileId(defaults),
+      viewport: input.viewport ?? defaults.viewport,
+      profileId: input.profileId ?? defaults.profileId,
       ...(runtime === undefined || runtime === "desktop" ? {} : { runtime }),
     },
   });

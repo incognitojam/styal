@@ -1,7 +1,9 @@
 import type { Root, RootContent } from "mdast";
 import {
+  normalizeCompactToolLabel,
   resolveWorkEntryToolPresentation,
   resolveWorkEntryToolRowPresentation,
+  toolGroupAction,
 } from "@t3tools/client-runtime/work-log/presentation";
 import { type OrchestrationGetCommandOutputResult } from "@t3tools/contracts";
 import {
@@ -12,7 +14,6 @@ import {
   type ToolRowPresentation,
 } from "@t3tools/shared/toolRowPresentation";
 import { isJavaScriptReplTool } from "@t3tools/shared/toolActivity";
-import { normalizeCompactToolLabel, toolGroupAction } from "./MessagesTimeline.logic";
 import { formatWorkspaceRelativePath } from "../../filePathDisplay";
 import { type TimelineWorkEntry, type TimelineRow } from "./timelineRowContext";
 import { SETUP_ACTION_ICON_NAME, type WorkEntryIconName } from "./TimelineToolActivityIcon";

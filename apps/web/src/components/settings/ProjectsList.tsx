@@ -36,7 +36,7 @@ import { type ReactNode, useState } from "react";
 
 import { openCommandPalette } from "../../commandPaletteBus";
 import { useClientSettings } from "../../hooks/useSettings";
-import { getProjectOrderKey } from "../../logicalProject";
+import { getProjectOrderKey } from "@t3tools/client-runtime/state/project-grouping";
 import { useProjectGroupActions } from "../../hooks/useProjectGroupActions";
 import { normalizeSearchText } from "../../lib/utils";
 import type { SidebarProjectSnapshot } from "../../sidebarProjectGrouping";

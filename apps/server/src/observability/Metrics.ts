@@ -95,10 +95,6 @@ export const terminalSessionsTotal = Metric.counter("t3_terminal_sessions_total"
   description: "Total terminal sessions started.",
 });
 
-export const terminalRestartsTotal = Metric.counter("t3_terminal_restarts_total", {
-  description: "Total terminal restart requests handled.",
-});
-
 export const setupScriptRunsTotal = Metric.counter("t3_setup_script_runs_total", {
   description: "Total setup and settle script runs by trigger and terminal outcome.",
 });

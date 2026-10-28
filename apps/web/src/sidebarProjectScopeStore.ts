@@ -4,7 +4,10 @@
  */
 
 import { getClientSettings, useClientSettings } from "./hooks/useSettings";
-import { selectProjectGroupingSettings, type ProjectGroupingSettings } from "./logicalProject";
+import {
+  selectProjectGroupingSettings,
+  type ProjectGroupingSettings,
+} from "@t3tools/client-runtime/state/project-grouping";
 import {
   resolveSidebarProjectScopeKeys,
   type SidebarProjectSnapshot,

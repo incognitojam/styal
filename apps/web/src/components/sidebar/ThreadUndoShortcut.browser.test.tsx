@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 
 import { act, fakeTimers } from "../../../test/render";
 import { showThreadUndoNotice } from "../../hooks/showThreadUndoNotice";
-import * as ThreadUndo from "../../hooks/threadUndo";
+import * as ThreadUndo from "@t3tools/client-runtime/state/thread-undo";
 import { registerThreadUndoCommands } from "./ThreadUndoShortcut";
 
 vi.mock(import("../../state/server"), async (original) => {

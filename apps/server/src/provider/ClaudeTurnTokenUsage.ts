@@ -1,7 +1,7 @@
 import type { ModelUsage, SDKResultMessage } from "@anthropic-ai/claude-agent-sdk";
 import type {
   ModelTokenUsage,
-  ProviderRuntimeTurnStatus,
+  RuntimeTurnState,
   SubagentTokenUsage,
   TurnTokenUsage,
 } from "@t3tools/contracts";
@@ -166,7 +166,7 @@ function withEarlierSegmentUsage(
 export function normalizeClaudeTurnTokenUsage(
   result: { readonly subtype: SDKResultMessage["subtype"]; readonly usage?: unknown } | undefined,
   hasSubagents: boolean,
-  terminalStatus: ProviderRuntimeTurnStatus,
+  terminalStatus: RuntimeTurnState,
   turnModelUsage?: ClaudeModelUsageCounts,
   earlierSegmentUsage: ReadonlyArray<unknown> = [],
 ): TurnTokenUsage {

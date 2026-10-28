@@ -278,6 +278,7 @@ describe("thread notifications", () => {
         click = listener;
         return () => undefined;
       }),
+      onNotificationBadgeClear: vi.fn(() => () => undefined),
     };
     using _bridge = stubGlobal("desktopBridge", bridge);
     state.mode = "notifications";

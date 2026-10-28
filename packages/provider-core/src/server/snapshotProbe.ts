@@ -88,7 +88,6 @@ export interface ServerProviderPresentation {
   readonly reportsContextWindow?: boolean;
   readonly supportedRuntimeModes?: ReadonlyArray<RuntimeMode>;
   readonly reviewsAutoMode?: boolean;
-  readonly requiresNewThreadForModelChange?: boolean;
   readonly supportsConversationRollback?: boolean;
 }
 
@@ -256,9 +255,6 @@ export function buildServerProvider(input: {
       ? {}
       : { supportedRuntimeModes: [...input.presentation.supportedRuntimeModes] }),
     ...(input.presentation.reviewsAutoMode === true ? { reviewsAutoMode: true } : {}),
-    ...(typeof input.presentation.requiresNewThreadForModelChange === "boolean"
-      ? { requiresNewThreadForModelChange: input.presentation.requiresNewThreadForModelChange }
-      : {}),
     enabled: input.enabled,
     installed: input.probe.installed,
     version: input.probe.version,

@@ -61,7 +61,7 @@ export function usePullRequestPreviewTarget(environmentId: EnvironmentId | null,
   return resolvePullRequestPreviewTarget({
     environmentId,
     projects,
-    pullRequestsEnabled: serverConfig?.environment.capabilities.pullRequests === true,
+    pullRequestsEnabled: serverConfig !== null,
     url,
   });
 }
@@ -86,7 +86,7 @@ function readChangeRequestLinkTarget(input: {
   return resolveChangeRequestLinkTarget({
     ...input,
     projects: readProjects(),
-    capabilities: (environmentId) => serverConfigs.get(environmentId)?.environment.capabilities,
+    configLoaded: (environmentId) => serverConfigs.has(environmentId),
   });
 }
 

@@ -9,10 +9,10 @@ import {
 import { useWorkspaceTabs } from "./WorkspaceTabsContext";
 import type { WorkspaceTab } from "./workspace-tabs-state";
 
-export function useWorkspaceListNavigation(tab: WorkspaceTab) {
+function useWorkspaceListNavigation(tab: WorkspaceTab) {
   const navigation = useNavigation();
   const dispatch = useWorkspaceTabs()?.dispatch;
-  return useCallback(() => {
+  return () => {
     if (Platform.OS === "android") {
       const state = navigation.getState();
       if (state && androidWorkspaceBackReturnsToPage(state)) {
@@ -23,18 +23,18 @@ export function useWorkspaceListNavigation(tab: WorkspaceTab) {
       resetAndroidWorkspace(navigation);
     } else if (navigation.canGoBack()) navigation.goBack();
     else navigation.dispatch(StackActions.replace("Home"));
-  }, [navigation, dispatch, tab]);
+  };
 }
 
 export function useWorkspaceBackNavigation(tab: WorkspaceTab) {
   const navigation = useNavigation();
   const dispatch = useWorkspaceTabs()?.dispatch;
   const returnToList = useWorkspaceListNavigation(tab);
-  return useCallback(() => {
+  return () => {
     if (Platform.OS === "android") {
       returnToAndroidWorkspaceList(navigation, () => dispatch?.({ type: "select", tab }));
     } else returnToList();
-  }, [navigation, dispatch, tab, returnToList]);
+  };
 }
 
 export function useAndroidWorkspaceBack(tab: WorkspaceTab) {

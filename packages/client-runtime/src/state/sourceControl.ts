@@ -43,15 +43,6 @@ export function createSourceControlEnvironmentAtoms<R, E>(
       label: "environment-data:source-control:references",
       tag: WS_METHODS.sourceControlResolveReferences,
     }),
-    cloneRepository: createEnvironmentRpcCommand(runtime, {
-      label: "environment-data:source-control:clone-repository",
-      tag: WS_METHODS.sourceControlCloneRepository,
-      scheduler: commandScheduler,
-      concurrency: {
-        mode: "serial",
-        key: ({ environmentId }) => environmentId,
-      },
-    }),
     setDefaultRepository: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:source-control:set-default-repository",
       tag: WS_METHODS.sourceControlSetDefaultRepository,

@@ -20,7 +20,7 @@ export class RelayUrlUnavailableError extends Schema.TaggedError<RelayUrlUnavail
   }
 }
 
-export const relayClientConfigEnv = (config: RelayClientConfig & { readonly url: string }) =>
+const relayClientConfigEnv = (config: RelayClientConfig & { readonly url: string }) =>
   ({
     T3CODE_RELAY_URL: config.url,
   }) as const;

@@ -17,7 +17,7 @@ import type { PreparedConnection } from "../connection/model.ts";
 import type { EnvironmentRegistry } from "../connection/registry.ts";
 import { EnvironmentSupervisor } from "../connection/supervisor.ts";
 import * as ManagedRelay from "../relay/managedRelay.ts";
-import { layerRemoteHttpClient, type RemoteEnvironmentRequestError } from "../rpc/http.ts";
+import { layerRemoteHttpClient } from "../rpc/http.ts";
 import {
   executeAuthenticatedEnvironmentHttpRequest,
   withOrchestrationProtocolHeader,
@@ -78,7 +78,7 @@ export type ThreadSnapshotLoadResult =
   | { readonly _tag: "missing" }
   | { readonly _tag: "unavailable" };
 
-export const fetchEnvironmentThreadSnapshot = Effect.fn(
+const fetchEnvironmentThreadSnapshot = Effect.fn(
   "clientRuntime.state.fetchEnvironmentThreadSnapshot",
 )(function* (input: {
   readonly prepared: PreparedConnection;
@@ -102,8 +102,6 @@ export const fetchEnvironmentThreadSnapshot = Effect.fn(
       }),
   });
 });
-
-export type FetchEnvironmentThreadSnapshotError = RemoteEnvironmentRequestError;
 
 export class ThreadSnapshotLoader extends Context.Service<
   ThreadSnapshotLoader,

@@ -8,7 +8,7 @@ import { FolderGit2Icon, FolderIcon, LinkIcon } from "lucide-react";
 import { type ReactNode, useState } from "react";
 
 import { sourceControlIcon } from "~/sourceControlPresentation";
-import { inferProjectTitleFromPath } from "../lib/projectPaths";
+import { inferProjectTitleFromPath } from "@t3tools/client-runtime/state/projects";
 import { type AddProjectCloneFlow, ITEM_ICON_CLASS } from "./CommandPalette.logic";
 import { CommandPaletteTitleIcon } from "./CommandPaletteResults";
 import { Button } from "./ui/button";

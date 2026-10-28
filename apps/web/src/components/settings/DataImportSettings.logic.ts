@@ -92,7 +92,6 @@ function activityComparisonValue(
     Duration.toMillis(resolved.providerHealthRefreshInterval),
     Duration.toMillis(resolved.hostPowerMonitorActiveInterval),
     Duration.toMillis(resolved.hostPowerMonitorIdleInterval),
-    Duration.toMillis(resolved.idleClientTtl),
     resolved.pauseWhenHostLocked,
     resolved.pauseWhenHostLowPower,
     resolved.pauseWhenClientLowPower,
@@ -148,12 +147,6 @@ function buildPreferenceRows(values: LegacyImportPreferencesValue): readonly Pre
       label: "Idle host monitor",
       value: formatIntervalValue(resolved.hostPowerMonitorIdleInterval),
       comparisonValue: Duration.toMillis(resolved.hostPowerMonitorIdleInterval),
-    },
-    {
-      id: "idle-client-timeout",
-      label: "Idle client timeout",
-      value: formatDurationValue(resolved.idleClientTtl),
-      comparisonValue: Duration.toMillis(resolved.idleClientTtl),
     },
     {
       id: "pause-host-locked",

@@ -57,10 +57,6 @@ export class ConnectionDriver extends Context.Service<
       reportProgress: (progress: ConnectionDriverProgress) => Effect.Effect<void>,
       reportRouteFailure?: (failure: ConnectionRouteFailure) => Effect.Effect<void>,
     ) => Effect.Effect<EnvironmentConnectionLease, ConnectionAttemptError, Scope.Scope>;
-    readonly checkRoute: (
-      entry: ConnectionCatalogEntry,
-      route: ConnectionRoute,
-    ) => Effect.Effect<RouteCheck>;
     readonly preflight: (
       entry: ConnectionCatalogEntry,
       route: ConnectionRoute,
@@ -237,7 +233,7 @@ export const make = Effect.gen(function* () {
       Effect.withSpan("ConnectionDriver.preflight"),
     );
 
-  return ConnectionDriver.of({ connect, checkRoute, preflight, checkHost });
+  return ConnectionDriver.of({ connect, preflight, checkHost });
 });
 
 export const layer = Layer.effect(ConnectionDriver, make);

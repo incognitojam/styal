@@ -186,11 +186,9 @@ export function WelcomeWizard({
     setSetupIds(ids);
     setStep("agents");
   };
-  // The workflow step only offers settlement today, so older servers without it skip the step.
   const settlementEnvironments = environments.filter(
     (environment) =>
-      setupIds.includes(environment.environmentId) &&
-      environment.serverConfig?.environment.capabilities.threadAutoSettlement === true,
+      setupIds.includes(environment.environmentId) && environment.serverConfig !== null,
   );
   const importStep = step === "projects" || step === "preferences";
   const stageSteps: readonly WizardStep[] = [

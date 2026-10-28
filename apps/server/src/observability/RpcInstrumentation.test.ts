@@ -1,8 +1,10 @@
 import { assert, describe, it } from "@effect/vitest";
 import {
+  AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
   type AuthEnvironmentScope,
   ScheduledTaskError,
+  ScheduledTaskId,
   WS_METHODS,
   WsRpcGroup,
 } from "@t3tools/contracts";
@@ -28,7 +30,10 @@ const groupOf = <const Tags extends ReadonlyArray<WsRpcMethod>>(...tags: Tags) =
 
 const connectionMiddleware = (scopes: ReadonlyArray<AuthEnvironmentScope>) =>
   Layer.merge(RpcAuthorization.layer(scopes), rpcInstrumentationLayer);
-const readOnlyConnection = connectionMiddleware([AuthOrchestrationReadScope]);
+const connection = connectionMiddleware([
+  AuthOrchestrationReadScope,
+  AuthOrchestrationOperateScope,
+]);
 
 describe("WS RPC instrumentation middleware", () => {
   it.effect("logs handler defects as errors, but not expected failures", () =>
@@ -42,27 +47,29 @@ describe("WS RPC instrumentation middleware", () => {
       });
 
       const group = groupOf(
-        WS_METHODS.scheduledTasksList,
-        WS_METHODS.serverGetSettings,
+        WS_METHODS.scheduledTasksDelete,
+        WS_METHODS.serverGetConfig,
         WS_METHODS.pullRequestsSubscribeRefreshes,
       );
       yield* Effect.gen(function* () {
         const client = yield* RpcTest.makeClient(group).pipe(
           Effect.provide(
             Layer.mergeAll(
-              group.toLayerHandler(WS_METHODS.scheduledTasksList, () =>
-                Effect.fail(new ScheduledTaskError({ message: "List failed." })),
+              group.toLayerHandler(WS_METHODS.scheduledTasksDelete, () =>
+                Effect.fail(new ScheduledTaskError({ message: "Delete failed." })),
               ),
-              group.toLayerHandler(WS_METHODS.serverGetSettings, () => Effect.die("bug")),
+              group.toLayerHandler(WS_METHODS.serverGetConfig, () => Effect.die("bug")),
               group.toLayerHandler(WS_METHODS.pullRequestsSubscribeRefreshes, () =>
                 Stream.die("stream bug"),
               ),
-              readOnlyConnection,
+              connection,
             ),
           ),
         );
-        yield* Effect.exit(client[WS_METHODS.scheduledTasksList]({}));
-        yield* Effect.exit(client[WS_METHODS.serverGetSettings]({}));
+        yield* Effect.exit(
+          client[WS_METHODS.scheduledTasksDelete]({ id: ScheduledTaskId.make("task") }),
+        );
+        yield* Effect.exit(client[WS_METHODS.serverGetConfig]({}));
         yield* Effect.exit(Stream.runDrain(client[WS_METHODS.pullRequestsSubscribeRefreshes]({})));
       }).pipe(Effect.scoped, Effect.provide(Logger.layer([logger])));
 

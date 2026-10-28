@@ -69,7 +69,6 @@ type Entry = TimelineProps["timelineEntries"][number];
 function baseProps(): Omit<TimelineProps, "timelineEntries"> {
   return {
     isWorking: false,
-    activeTurnInProgress: false,
     listRef: createRef<LegendListRef | null>(),
     latestRun: null,
     turnDiffSummaries: [],
@@ -78,7 +77,6 @@ function baseProps(): Omit<TimelineProps, "timelineEntries"> {
     onOpenTurnDiff: () => {},
     onOpenThread: () => {},
     onForkFromRun: async () => {},
-    onRollbackCheckpoint: () => {},
     supportsConversationRollback: false,
     onRevertToTurnCount: () => {},
     isRevertingCheckpoint: false,
@@ -987,7 +985,6 @@ it("renders automatic compaction as one live divider that finishes with its reas
       timelineEntries={entries(completed)}
       isWorking={!completed}
       isCompacting={!completed}
-      activeTurnInProgress={!completed}
       activeTurnStartedAt={fixture.time(5)}
       latestRun={{
         runId: fixture.runId,

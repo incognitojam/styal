@@ -59,7 +59,6 @@ import { previewBridge } from "./previewBridge";
 import { showPreviewPopup } from "./showPreviewPopup";
 import {
   clampPreviewMiniPlayerPosition,
-  NO_PREVIEW_MINI_PLAYER_OBSTACLES,
   PREVIEW_MINI_PLAYER_WEBVIEW_Z_INDEX,
   type PreviewMiniPlayerFrame,
   resizePreviewMiniPlayer,
@@ -472,7 +471,6 @@ function MiniPlayerShell({
     return () => document.removeEventListener("pointerdown", dismiss, true);
   }, [pillOpen]);
   const container = canvas?.container ?? null;
-  const obstacles = NO_PREVIEW_MINI_PLAYER_OBSTACLES;
   const sourceKey = previewMiniPlayerSourceKey(miniPlayer.source);
   const draggedKey = streamedSourceKey(threadRef, sourceKey);
   // A player that unmounts mid-drag never sees its pointerup.
@@ -527,7 +525,6 @@ function MiniPlayerShell({
           { x: gesture.frame.x + delta.x, y: gesture.frame.y + delta.y },
           container,
           gesture.frame,
-          obstacles,
         ),
       );
       return;
@@ -538,7 +535,7 @@ function MiniPlayerShell({
       delta,
       source: sourceSize,
       container,
-      obstacles: canvas?.layout.resizeObstacles ?? obstacles,
+      ...(canvas ? { obstacles: canvas.layout.resizeObstacles } : {}),
     });
     store.resize(threadRef, sourceKey, next.width, { x: next.x, y: next.y });
   };

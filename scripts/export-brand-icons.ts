@@ -268,18 +268,6 @@ const ICON_VARIANTS = [
   },
 ] as const satisfies ReadonlyArray<IconVariant>;
 
-const MACOS_EXPORT_STEPS = [
-  "In Icon Composer's toolbar, select the ⊘ rendering (no Liquid Glass), then export each source with Platform: macOS pre-Tahoe, Appearance: Default, Size: Customize… 824pt, Scale: 1×, saving over the tracked PNG:",
-  ...ICON_VARIANTS.map((variant) => `- ${variant.source} -> ${variant.outputs.macos}`),
-  "Then run `vp run icons:export` again to add the macOS margin and shadow.",
-];
-
-const MACOS_EXPORT_CODEX_PROMPT = [
-  "Use [@Computer](plugin://computer-use@openai-bundled) and the Icon Composer app to export the three macOS app icons in this repository.",
-  ...MACOS_EXPORT_STEPS,
-  `Verify every result is ${MACOS_ICON_CANVAS_SIZE}×${MACOS_ICON_CANVAS_SIZE} and has the classic macOS safe area: an ${MACOS_ICON_BODY_SIZE}×${MACOS_ICON_BODY_SIZE} opaque body inset 100px on every side, with only the drop shadow extending beyond it.`,
-];
-
 const RepositoryRoot = Effect.service(Path.Path).pipe(
   Effect.flatMap((path) => path.fromFileUrl(new URL("..", import.meta.url))),
   Effect.mapError(
@@ -632,23 +620,6 @@ const renderVariant = Effect.fn("iconExport.renderVariant")(function* (
   ]);
 });
 
-const logManualMacOsExportInstructions = Effect.fn("iconExport.logManualMacOsExportInstructions")(
-  function* () {
-    yield* Console.warn(
-      [
-        "macOS icon bodies need Icon Composer's GUI and are not rendered by this script.",
-        ...MACOS_EXPORT_STEPS,
-        "See assets/README.md for the complete workflow.",
-        "",
-        "Copy/paste this prompt into Codex to perform the native exports:",
-        "---",
-        ...MACOS_EXPORT_CODEX_PROMPT,
-        "---",
-      ].join("\n"),
-    );
-  },
-);
-
 /**
  * Finishes a macOS icon that is still a raw 824pt Icon Composer export by adding the
  * classic margin and shadow. Returns nothing for an icon that is already finished.
@@ -849,7 +820,6 @@ export const exportBrandIcons = Effect.fn("exportBrandIcons")(function* (checkOn
       });
     }
     yield* Console.log(`All ${generated.size} generated icon assets are current.`);
-    yield* logManualMacOsExportInstructions();
     return;
   }
 
@@ -859,7 +829,6 @@ export const exportBrandIcons = Effect.fn("exportBrandIcons")(function* (checkOn
     { concurrency: 1, discard: true },
   );
   yield* Console.log(`Updated ${generated.size} generated icon assets.`);
-  yield* logManualMacOsExportInstructions();
 });
 
 export const exportBrandIconsCommand = Command.make(

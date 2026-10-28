@@ -74,11 +74,8 @@ export class RelayConfiguration extends Context.Service<
   }
 >()("t3code-relay/Config/RelayConfiguration") {}
 
-export const make = (configuration: RelayConfiguration["Service"]) =>
-  RelayConfiguration.of(configuration);
-
 export const layer = (configuration: RelayConfiguration["Service"]) =>
-  Layer.succeed(RelayConfiguration, make(configuration));
+  Layer.succeed(RelayConfiguration, RelayConfiguration.of(configuration));
 
 /**
  * Inert stand-in used where a `null` `apns` config still has to satisfy the
