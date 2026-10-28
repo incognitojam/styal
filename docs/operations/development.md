@@ -283,6 +283,13 @@ comment: the DMG is unsigned and macOS will not open it until the quarantine att
   [styal Link](./styal-link.md#github-actions-configuration). The preview installs as a separate
   app, `styal (Preview)`, with its own empty state in `~/.styal/preview`, so it never reads or
   migrates a stable or nightly install's data.
+- `preview:android` builds an arm64 APK and attaches it to the rolling `mobile-preview`
+  prerelease, so it installs straight from a phone's browser. It installs as `styal Preview`
+  beside the styal app, without push notifications or OTA updates. Every preview is signed with
+  one preview key, so a newer build installs over an older one from any PR. One-time setup: an
+  `android-preview` environment with no branch restriction holding
+  `ANDROID_PREVIEW_KEYSTORE_BASE64` (a PKCS12 keystore with one key) and
+  `ANDROID_PREVIEW_KEYSTORE_PASSWORD`. It must not be the production signing key.
 - `preview:web` deploys the hosted web app to its own Cloudflare Worker at
   `https://styal-web-pr-<number>.<subdomain>.workers.dev`, without styal Link, so pair a server
   manually. Use an installed server or `styal serve`: a `vp run dev` server only accepts
