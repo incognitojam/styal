@@ -1549,11 +1549,22 @@ export const OrchestrationV2UserMessageInputIntent = Schema.Literals([
 export type OrchestrationV2UserMessageInputIntent =
   typeof OrchestrationV2UserMessageInputIntent.Type;
 
+/** Lets a collapsed turn summarize tool categories without loading the deferred items. */
+export const DeferredWorkTypeCounts = Schema.Struct({
+  command_execution: NonNegativeInt,
+  file_change: NonNegativeInt,
+  file_search: NonNegativeInt,
+  web_search: NonNegativeInt,
+  dynamic_tool: NonNegativeInt,
+});
+export type DeferredWorkTypeCounts = typeof DeferredWorkTypeCounts.Type;
+
 /**
  * The V1 activity a converted item came from; canonical item fields drive V2 behavior.
  * Current imports keep only this reference. Items imported earlier carry payloads until
  * a one-time server pass strips them from persisted history.
  */
+
 export const OrchestrationV2LegacyActivity = Schema.Struct({
   id: EventId,
   tone: Schema.Literals(["info", "tool", "approval", "error"]),
@@ -1577,6 +1588,15 @@ const ProviderStallIncident = Schema.Struct({
 const OrchestrationV2TurnItemBaseFields = {
   legacyTurnId: Schema.optional(Schema.String),
   legacyActivities: Schema.optional(Schema.Array(OrchestrationV2LegacyActivity)),
+  /** Wire-only cursor for collapsed work; persisted items keep their complete history. */
+  deferredWork: Schema.optionalKey(
+    Schema.Struct({
+      cursor: TrimmedNonEmptyString,
+      itemCount: PositiveInt,
+      lastOrdinal: NonNegativeInt,
+      typeCounts: Schema.optionalKey(DeferredWorkTypeCounts),
+    }),
+  ),
   toolNonExecutionKind: Schema.optional(Schema.String),
   /** Set when the provider refused the tool call without asking, such as an Auto mode block. */
   toolDenial: Schema.optional(
@@ -3974,6 +3994,7 @@ export const OrchestrationV2SubscribeThreadInput = Schema.Struct({
   afterSequence: Schema.optionalKey(NonNegativeInt),
   requestCompletionMarker: Schema.optionalKey(Schema.Boolean),
   acceptBoundedSnapshot: Schema.optionalKey(Schema.Boolean),
+  acceptDeferredWork: Schema.optionalKey(Schema.Boolean),
   acceptCompactTurnItems: Schema.optionalKey(Schema.Boolean),
   /** The client restores `*Omitted` bodies from records it already holds. */
   acceptDedupedBodies: Schema.optionalKey(Schema.Boolean),

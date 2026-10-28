@@ -8,6 +8,7 @@ import {
   assistantCitationLabel,
   collectAssistantCitations,
 } from "@t3tools/shared/assistantCitations";
+import type { DeferredWorkTypeCounts } from "@t3tools/contracts";
 import { shallow } from "zustand/vanilla/shallow";
 import { claudeResumeCompactionAge } from "@t3tools/shared/claudeCompaction";
 import {
@@ -600,6 +601,7 @@ type MessagesTimelineRowContent =
   | {
       kind: "turn-fold";
       activitySummary: ReadonlyArray<TurnFoldActivitySummary>;
+      deferredWorkItemIds?: ReadonlyArray<string>;
       id: string;
       createdAt: string;
       runId: RunId;
@@ -608,6 +610,7 @@ type MessagesTimelineRowContent =
     }
   | {
       kind: "attempt-fold";
+      deferredWorkItemIds?: ReadonlyArray<string>;
       id: string;
       createdAt: string;
       runId: RunId;
@@ -837,12 +840,29 @@ function turnFoldActivityKind(entry: WorkLogEntry): TurnFoldActivityKind | null 
   return null;
 }
 
+const DEFERRED_WORK_ACTIVITY_KINDS = {
+  command_execution: "terminal",
+  file_change: "file-change",
+  file_search: "tool",
+  web_search: "web",
+  dynamic_tool: "tool",
+} as const satisfies Record<keyof DeferredWorkTypeCounts, TurnFoldActivityKind>;
+
 function summarizeTurnFoldActivity(entries: ReadonlyArray<TimelineEntry>) {
   const counts = new Map<TurnFoldActivityKind, number>();
+  const deferredCounts = new Map<TurnFoldActivityKind, number>();
   const memoryPaths = new Set<string>();
   let hasMemoryIndex = false;
   for (const entry of entries) {
     if (entry.kind !== "work") continue;
+    const typeCounts = entry.entry.projectedItem?.item.deferredWork?.typeCounts;
+    if (typeCounts) {
+      for (const [type, kind] of Object.entries(DEFERRED_WORK_ACTIVITY_KINDS)) {
+        const count = typeCounts[type as keyof DeferredWorkTypeCounts];
+        deferredCounts.set(kind, (deferredCounts.get(kind) ?? 0) + count);
+      }
+      continue;
+    }
     const kind = turnFoldActivityKind(entry.entry);
     if (kind === "memory") {
       const path = workEntryMemoryFilePath(entry.entry);
@@ -860,6 +880,10 @@ function summarizeTurnFoldActivity(entries: ReadonlyArray<TimelineEntry>) {
   if (memoryPaths.size > 0 || hasMemoryIndex) {
     counts.set("memory", memoryPaths.size || 1);
   }
+  // Pages already loaded from a partly expanded anchor are also in its totals.
+  for (const [kind, count] of deferredCounts) {
+    counts.set(kind, Math.max(counts.get(kind) ?? 0, count));
+  }
   return TURN_FOLD_ACTIVITY_ORDER.flatMap((kind) => {
     const count = counts.get(kind);
     return count ? [{ kind, count }] : [];
@@ -867,6 +891,7 @@ function summarizeTurnFoldActivity(entries: ReadonlyArray<TimelineEntry>) {
 }
 
 interface SupersededAttemptFold {
+  readonly deferredWorkItemIds: ReadonlyArray<string>;
   readonly runId: RunId;
   readonly attemptId: RunAttemptId;
   readonly anchorEntryId: string;
@@ -889,6 +914,18 @@ function completeSupersededReplyEntryIds(
     ) {
       continue;
     }
+    const previous = lastOutputByAttemptId.get(entry.attempt.id);
+    const deferredEnd =
+      previous?.kind === "work"
+        ? previous.entry.projectedItem?.item.deferredWork?.lastOrdinal
+        : undefined;
+    const ordinal =
+      entry.kind === "work"
+        ? entry.entry.projectedItem?.item.ordinal
+        : entry.kind === "message"
+          ? entry.projectedItem?.item.ordinal
+          : undefined;
+    if (deferredEnd !== undefined && ordinal !== undefined && deferredEnd > ordinal) continue;
     lastOutputByAttemptId.set(entry.attempt.id, entry);
   }
   const replyEntryIds = new Set<string>();
@@ -948,6 +985,11 @@ function deriveSupersededAttemptFolds(
     const attempt = firstEntry?.attempt;
     if (firstEntry === undefined || attempt === undefined) continue;
     foldsByAnchorEntryId.set(firstEntry.id, {
+      deferredWorkItemIds: entries.flatMap((entry) =>
+        entry.kind === "work" && entry.entry.projectedItem?.item.deferredWork
+          ? [String(entry.entry.projectedItem.sourceItemId)]
+          : [],
+      ),
       runId: attempt.runId,
       attemptId: attempt.id,
       anchorEntryId: firstEntry.id,
@@ -1632,6 +1674,9 @@ export function deriveMessagesTimelineRows(input: {
     liveSubagentEntryIds,
     completeSupersededReplyIds,
   );
+  const supersededWorkItemIds = new Set(
+    [...supersededFoldsByAnchorEntryId.values()].flatMap((fold) => fold.deferredWorkItemIds),
+  );
   const activeVisualResponseRunIds = deriveActiveVisualResponseRunIds({
     timelineEntries: timelineEntries,
     unsettledRunId,
@@ -1897,9 +1942,18 @@ export function deriveMessagesTimelineRows(input: {
 
     const turnFold = foldsByAnchorEntryId.get(timelineEntry.id);
     if (turnFold) {
+      const deferredWorkItemIds = timelineEntries.flatMap((entry) =>
+        turnFold.entryIds.has(entry.id) &&
+        entry.kind === "work" &&
+        entry.entry.projectedItem?.item.deferredWork &&
+        !supersededWorkItemIds.has(String(entry.entry.projectedItem.sourceItemId))
+          ? [String(entry.entry.projectedItem.sourceItemId)]
+          : [],
+      );
       nextRows.push({
         kind: "turn-fold",
         id: `turn-fold:${turnFold.runId}`,
+        ...(deferredWorkItemIds.length > 0 ? { deferredWorkItemIds } : {}),
         createdAt: turnFold.createdAt,
         runId: turnFold.runId,
         label: turnFold.label,
@@ -1916,6 +1970,7 @@ export function deriveMessagesTimelineRows(input: {
     if (supersededFold) {
       nextRows.push({
         kind: "attempt-fold",
+        deferredWorkItemIds: supersededFold.deferredWorkItemIds,
         id: `attempt-fold:${supersededFold.attemptId}`,
         createdAt: supersededFold.createdAt,
         runId: supersededFold.runId,
@@ -2614,14 +2669,18 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
       );
     }
 
+    case "attempt-fold":
     case "turn-fold": {
       const bf = b as typeof a;
-      return a.createdAt === bf.createdAt && a.label === bf.label && a.expanded === bf.expanded;
-    }
-
-    case "attempt-fold": {
-      const bf = b as typeof a;
-      return a.createdAt === bf.createdAt && a.label === bf.label && a.expanded === bf.expanded;
+      const anchors = a.deferredWorkItemIds ?? [];
+      const nextAnchors = bf.deferredWorkItemIds ?? [];
+      return (
+        a.createdAt === bf.createdAt &&
+        a.label === bf.label &&
+        a.expanded === bf.expanded &&
+        anchors.length === nextAnchors.length &&
+        anchors.every((id, index) => id === nextAnchors[index])
+      );
     }
 
     case "standalone-activity": {
