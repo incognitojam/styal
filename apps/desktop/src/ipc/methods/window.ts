@@ -299,8 +299,14 @@ export const openSystemSettings = DesktopIpc.makeIpcMethod({
     const environment = yield* DesktopEnvironment.DesktopEnvironment;
     if (environment.platform !== "darwin") return false;
     const owner = Electron.BrowserWindow.getFocusedWindow();
-    const opened = yield* shell.openSystemSettings(pane);
-    if (opened && environment.isPackaged) {
+    // Packaged builds use the install's app user model ID as their bundle ID. Development runs
+    // inside Electron's own bundle, so they open the pane without selecting an app.
+    const opened = yield* shell.openSystemSettings(
+      pane,
+      environment.isPackaged ? environment.appUserModelId : undefined,
+    );
+    // The helper explains adding the app to a privacy list; styal is already listed under Notifications.
+    if (opened && environment.isPackaged && pane !== "notifications") {
       const permissions = yield* MacPermissions.MacPermissions;
       const isGranted = yield* safariPermissionCheck;
       yield* permissions.showHelper(pane, owner, isGranted);
@@ -413,9 +419,9 @@ export const checkSystemPermission = DesktopIpc.makeIpcMethod({
   channel: IpcChannels.CHECK_SYSTEM_PERMISSION_CHANNEL,
   payload: SystemSettingsPaneSchema,
   result: Schema.Boolean,
-  handler: Effect.fn("desktop.ipc.window.checkSystemPermission")(function* () {
+  handler: Effect.fn("desktop.ipc.window.checkSystemPermission")(function* (pane) {
     const environment = yield* DesktopEnvironment.DesktopEnvironment;
-    if (environment.platform !== "darwin") return false;
+    if (environment.platform !== "darwin" || pane !== "full-disk-access") return false;
     const check = yield* safariPermissionCheck;
     return yield* Effect.promise(check);
   }),

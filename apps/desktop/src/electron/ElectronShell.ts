@@ -70,7 +70,11 @@ export class ElectronShell extends Context.Service<
   ElectronShell,
   {
     readonly openExternal: (rawUrl: unknown) => Effect.Effect<boolean>;
-    readonly openSystemSettings: (pane: SystemSettingsPane) => Effect.Effect<boolean>;
+    /** `bundleId` opens that app's own page where the pane has one. */
+    readonly openSystemSettings: (
+      pane: SystemSettingsPane,
+      bundleId?: string,
+    ) => Effect.Effect<boolean>;
     readonly copyText: (text: string) => Effect.Effect<void>;
   }
 >()("@t3tools/desktop/electron/ElectronShell") {}
@@ -88,12 +92,18 @@ export const make = ElectronShell.of({
           ),
         ),
     }),
-  openSystemSettings: (pane) =>
+  openSystemSettings: (pane, bundleId) =>
     Effect.promise(() =>
-      Electron.shell.openExternal(MAC_PERMISSION_SETTINGS_URLS[pane]).then(
-        () => true,
-        () => false,
-      ),
+      Electron.shell
+        .openExternal(
+          pane === "notifications" && bundleId
+            ? `${MAC_PERMISSION_SETTINGS_URLS[pane]}?id=${encodeURIComponent(bundleId)}`
+            : MAC_PERMISSION_SETTINGS_URLS[pane],
+        )
+        .then(
+          () => true,
+          () => false,
+        ),
     ),
   copyText: (text) =>
     Effect.promise(() => Electron.clipboard.writeText(text).catch(() => undefined)),

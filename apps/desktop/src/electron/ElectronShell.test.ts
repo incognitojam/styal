@@ -91,6 +91,21 @@ describe("ElectronShell", () => {
     }).pipe(Effect.provide(ElectronShell.layer)),
   );
 
+  it.effect("opens the app's own page in Notifications settings", () =>
+    Effect.gen(function* () {
+      openExternalMock.mockResolvedValue(undefined);
+
+      const electronShell = yield* ElectronShell.ElectronShell;
+      yield* electronShell.openSystemSettings("notifications", "build.styal.app");
+      yield* electronShell.openSystemSettings("notifications");
+
+      assert.deepEqual(openExternalMock.mock.calls, [
+        ["x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=build.styal.app"],
+        ["x-apple.systempreferences:com.apple.Notifications-Settings.extension"],
+      ]);
+    }).pipe(Effect.provide(ElectronShell.layer)),
+  );
+
   it.effect("opens remote SSH editor URLs", () =>
     Effect.gen(function* () {
       openExternalMock.mockResolvedValue(undefined);

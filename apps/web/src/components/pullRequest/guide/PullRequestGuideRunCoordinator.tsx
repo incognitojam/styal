@@ -10,6 +10,7 @@ import {
   hasNotificationSound,
   playNotificationSound,
 } from "~/threadNotifications";
+import { showSystemNotification } from "~/systemNotifications";
 
 import { toastManager } from "../../ui/toast";
 import { readPullRequestListPreferences } from "../pullRequestListPreferences";
@@ -110,22 +111,8 @@ function GuideRunWatcher({ runKey, watch }: { runKey: string; watch: GuideRunWat
       });
       return;
     }
-    if (
-      !hasDesktopNotifications(mode) ||
-      typeof Notification === "undefined" ||
-      Notification.permission !== "granted"
-    )
-      return;
-    try {
-      const notification = new Notification(title, { body, tag: `guide:${runKey}`, silent: true });
-      notification.addEventListener("click", () => {
-        notification.close();
-        window.focus();
-        open();
-      });
-    } catch {
-      // Some browsers expose Notification but reject desktop presentation.
-    }
+    if (!hasDesktopNotifications(mode)) return;
+    showSystemNotification({ title, body, tag: `guide:${runKey}`, onClick: open });
   }, [data, navigate, runKey, watch]);
 
   return null;

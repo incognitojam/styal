@@ -1,6 +1,6 @@
 import { Volume2Icon } from "lucide-react";
 import { settlePromise } from "@t3tools/client-runtime/state/runtime";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   type ClientSettings,
   DEFAULT_CLIENT_SETTINGS,
@@ -15,6 +15,11 @@ import {
   playNotificationSound,
   unlockNotificationAudio,
 } from "../../threadNotifications";
+import {
+  openNotificationSystemSettings,
+  testSystemNotificationBlocked,
+  useSystemNotificationsBlocked,
+} from "../../systemNotifications";
 import { Button } from "../ui/button";
 import { Switch } from "../ui/switch";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
@@ -43,6 +48,15 @@ export function NotificationSettings() {
   const needsPermission =
     hasDesktopNotifications(mode) &&
     (typeof Notification === "undefined" || Notification.permission !== "granted");
+  const blocked = useSystemNotificationsBlocked() && hasDesktopNotifications(mode);
+
+  // Check again when the user comes back from System Settings.
+  useEffect(() => {
+    if (!blocked) return;
+    const recheck = () => void testSystemNotificationBlocked();
+    window.addEventListener("focus", recheck);
+    return () => window.removeEventListener("focus", recheck);
+  }, [blocked]);
 
   async function changeMode(value: ClientSettings["notificationMode"]) {
     setPermissionMessage(null);
@@ -65,6 +79,7 @@ export function NotificationSettings() {
         );
         return;
       }
+      if (!hasDesktopNotifications(mode)) void testSystemNotificationBlocked();
     }
     updateSettings({ notificationMode: value });
   }
@@ -83,7 +98,9 @@ export function NotificationSettings() {
               permissionMessage ??
               (needsPermission
                 ? "Needs permission on this device."
-                : "Shown while styal is open, including in the background.")
+                : blocked
+                  ? "macOS is blocking notifications from styal. Allow them in System Settings."
+                  : "Shown while styal is open, including in the background.")
             }
             control={
               <>
@@ -95,6 +112,14 @@ export function NotificationSettings() {
                     onClick={() => void changeMode(mode)}
                   >
                     Allow notifications
+                  </Button>
+                ) : blocked ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void openNotificationSystemSettings()}
+                  >
+                    Open System Settings
                   </Button>
                 ) : null}
                 <Switch
