@@ -812,9 +812,24 @@ describe("orphan worktree reports", () => {
           const measuring = yield* Deferred.make<void>();
           let orphan = "";
           let walks = 0;
+          // Allocation can lag or shrink under compression (ZFS reports new blocks only after its
+          // next transaction group), so orphan files report one block per byte.
+          const sized: FileSystem.FileSystem = {
+            ...fs,
+            stat: (file) =>
+              fs
+                .stat(file)
+                .pipe(
+                  Effect.map((stat) =>
+                    orphan !== "" && file.startsWith(`${orphan}/`) && stat.type === "File"
+                      ? { ...stat, blocks: Option.some(stat.size) }
+                      : stat,
+                  ),
+                ),
+          };
           const fixture = yield* cleanupFixture().pipe(
             Effect.provideService(FileSystem.FileSystem, {
-              ...fs,
+              ...sized,
               readDirectory: (directory, options) =>
                 Effect.gen(function* () {
                   if (directory.endsWith("/repository") && walks === 0)
@@ -834,7 +849,7 @@ describe("orphan worktree reports", () => {
           orphan = `${fixture.config.worktreesDir}/repository/orphan`;
           yield* fs.makeDirectory(orphan, { recursive: true });
           yield* fs.writeFileString(`${orphan}/file`, "x");
-          const bytes = yield* allocatedBytes(fs, `${orphan}/file`);
+          const bytes = yield* allocatedBytes(sized, `${orphan}/file`);
           yield* fs.utimes(orphan, 1, 1);
           const later = `${fixture.config.worktreesDir}/repository/z-later`;
           yield* fs.makeDirectory(later);
@@ -856,7 +871,7 @@ describe("orphan worktree reports", () => {
           expect(orphanEntry(nextReport)?.bytes).toBe(limit === "walk-timeout" ? null : bytes);
           expect(nextReport.entries.find((entry) => entry.path === later)?.bytes).toBe(0);
           yield* fs.writeFileString(`${orphan}/file`, "changed".repeat(10_000));
-          const changedBytes = yield* allocatedBytes(fs, `${orphan}/file`);
+          const changedBytes = yield* allocatedBytes(sized, `${orphan}/file`);
           expect(changedBytes).not.toBe(bytes);
           expect(orphanEntry(yield* fixture.service.runNow)?.bytes).toBe(
             limit === "walk-timeout" ? null : bytes,
