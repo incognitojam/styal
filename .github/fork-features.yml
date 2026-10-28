@@ -3000,10 +3000,11 @@ features:
       - packages/contracts/src/settings.test.ts
     upstream:
       status: partial
-      # PR 8868 exposes scrollbars only. At upstream 9bd1d8009a,
-      # expansion still locks column widths and collapsed cells truncate.
+      # PR 8868 exposes scrollbars only. PR 26449 always wraps cells at a 24rem cap and
+      # removes the Expand and Collapse controls and the Word wrap preference for tables.
       tracking:
         - https://github.com/pingdotgg/t3code/pull/13443
+        - https://github.com/pingdotgg/t3code/pull/26449
         - https://github.com/pingdotgg/t3code/pull/8868
       retire_when: Upstream provides equivalent width-fitting wrapped tables, reversible untruncated horizontal scrolling without locked column widths, and discoverable overflow across shared web and desktop Markdown surfaces while preserving the Word wrap preference.
 
