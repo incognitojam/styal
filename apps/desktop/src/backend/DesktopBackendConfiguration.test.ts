@@ -331,6 +331,31 @@ describe("DesktopBackendConfiguration", () => {
     ),
   );
 
+  it.effect("resolveWsl gives a pull request preview WSL server its own home", () =>
+    withHarness(
+      Effect.gen(function* () {
+        const configuration = yield* DesktopBackendConfiguration.DesktopBackendConfiguration;
+
+        const wsl = yield* configuration.resolveWsl({ port: 5000, distro: null });
+
+        assert.equal(wsl.bootstrap.t3Home, "~/.styal/preview");
+      }),
+      { appVersion: "1.2.3-pr.456.437" },
+    ),
+  );
+
+  it.effect("resolveWsl leaves stable and nightly WSL servers on the distro's default home", () =>
+    withHarness(
+      Effect.gen(function* () {
+        const configuration = yield* DesktopBackendConfiguration.DesktopBackendConfiguration;
+
+        const wsl = yield* configuration.resolveWsl({ port: 5000, distro: null });
+
+        assert.isUndefined(wsl.bootstrap.t3Home);
+      }),
+    ),
+  );
+
   it.effect("resolvePrimary starts from server.asar without materializing the WSL tree", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;

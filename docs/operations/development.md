@@ -285,8 +285,8 @@ comment: the DMG is unsigned and macOS will not open it until the quarantine att
   migrates a stable or nightly install's data.
 - `preview:windows` builds an unsigned Windows x64 installer, including the WSL runtime, and
   attaches it to the same `desktop-preview` prerelease. It installs as `styal (Preview)` with its
-  own state in `%USERPROFILE%\.styal\preview`, like the macOS preview. SmartScreen warns about
-  the unsigned installer; choose **More info**, then **Run anyway**.
+  own state in `%USERPROFILE%\.styal\preview`, and in `~/.styal/preview` inside WSL. SmartScreen
+  warns about the unsigned installer; choose **More info**, then **Run anyway**.
 - `preview:android` builds an arm64 APK and attaches it to the rolling `mobile-preview`
   prerelease, so it installs straight from a phone's browser. It installs as `styal Preview`
   beside the styal app, without push notifications or OTA updates. Every preview is signed with

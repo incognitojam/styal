@@ -103,24 +103,27 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           set -euo pipefail
 
           tag="desktop-preview"
 
-          # True while the PR is open and still carries the preview label.
+          # True while the PR is open, still carries the preview label, and
+          # still points at the commit this run built. A re-run of an older
+          # run must not replace the current download with a stale build.
           preview_eligible() {
             [[ "$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" \
-              --json state,labels \
-              --jq '.state + " " + (.labels | map(.name) | contains(["preview:windows"]) | tostring)')" == "OPEN true" ]]
+              --json state,labels,headRefOid \
+              --jq '.state + " " + (.labels | map(.name) | contains(["preview:windows"]) | tostring) + " " + .headRefOid')" == "OPEN true $HEAD_SHA" ]]
           }
 
           # The build ran for many minutes. If the PR closed or lost the label
           # meanwhile, cleanup already ran in its own concurrency group, so
           # publishing now would resurrect a deleted download.
           if ! preview_eligible; then
-            echo "PR closed or preview label removed while building. Skipping publish."
+            echo "PR closed, preview label removed, or a newer commit pushed while building. Skipping publish."
             exit 0
           fi
 
@@ -169,7 +172,7 @@ jobs:
           if ! preview_eligible; then
             gh release delete-asset "$tag" "$(basename "$installer_path")" --repo "$GITHUB_REPOSITORY" --yes \
               || echo "Asset was already removed by a concurrent run."
-            echo "PR closed or preview label removed during upload. Removed the download."
+            echo "PR closed, preview label removed, or a newer commit pushed during upload. Removed the download."
             exit 0
           fi
 
