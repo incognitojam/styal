@@ -60,6 +60,8 @@ const COMMAND_FEATURES: Partial<
   "thread.interaction-mode.set": (command) =>
     use("thread.interaction_mode.set", literal(command, "interactionMode")),
   "run.interrupt": () => ({ feature: "run.interrupt" }),
+  // Clients stop a thread without naming a run once the server supports it; count it as the same Stop.
+  "thread.stop": () => ({ feature: "run.interrupt" }),
   "queued-message.promote-to-steer": () => ({ feature: "queue.steer" }),
   "queued-run.edit": () => ({ feature: "queue.edit" }),
 };
