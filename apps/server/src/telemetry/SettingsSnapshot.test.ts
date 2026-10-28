@@ -26,6 +26,7 @@ const defaultSnapshot = {
   sidebarAutoSettleAfterDays: 3,
   sidebarAutoSettleKeepPullRequests: false,
   snoozeLimitedThreads: false,
+  snoozePresetsCustomized: false,
   autoResumeLimitedThreads: false,
   guestSharingEnabled: false,
   linkedEnvironmentsEnabled: false,

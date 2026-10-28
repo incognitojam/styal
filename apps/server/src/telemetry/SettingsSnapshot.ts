@@ -50,6 +50,10 @@ function settingsSnapshotProperties(settings: ServerSettings) {
         : Math.round(settings.sidebarAutoSettleAfterDays),
     sidebarAutoSettleKeepPullRequests: settings.sidebarAutoSettleKeepPullRequests,
     snoozeLimitedThreads: settings.snoozeLimitedThreads,
+    snoozePresetsCustomized: !Equal.equals(
+      settings.snoozePresets,
+      DEFAULT_SERVER_SETTINGS.snoozePresets,
+    ),
     autoResumeLimitedThreads: settings.autoResumeLimitedThreads,
     guestSharingEnabled: settings.guestSharingEnabled,
     linkedEnvironmentsEnabled: settings.linkedEnvironmentsEnabled,
