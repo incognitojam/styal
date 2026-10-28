@@ -528,6 +528,7 @@ const snapshot = {
   timestampFormat: "locale",
   loadBalancingEnabled: false,
   boringSidebarEnabled: false,
+  boringSidebarMultilineRows: false,
   legacySidebarEnabled: false,
   sidebarWorkingShelfEnabled: true,
   sidebarThreadGrouping: "project",

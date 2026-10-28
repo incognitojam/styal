@@ -61,6 +61,7 @@ export const ClientSettingsSnapshot = Schema.Struct({
   timestampFormat: TimestampFormat,
   loadBalancingEnabled: Schema.Boolean,
   boringSidebarEnabled: Schema.Boolean,
+  boringSidebarMultilineRows: Schema.Boolean,
   legacySidebarEnabled: Schema.Boolean,
   sidebarWorkingShelfEnabled: Schema.Boolean,
   sidebarThreadGrouping: SidebarThreadGrouping,

@@ -203,8 +203,9 @@ pick it in the project filter. Click a folder to open or close it. A closed fold
 many threads it holds, and a dot when one of them needs you. Use the pen button on a folder, or
 right-click it, to start a thread in that project. Pinned threads stay above the folders, and
 Snoozed and Settled stay below them. In this mode you cannot drag threads, and the Working section
-is off. Folders take the place of project headers while this is on. Each device keeps its own
-choice.
+is off. Folders take the place of project headers while this is on. **Two-line folder rows** in
+the same section adds the branch, pull request, and agent under each title. Each device keeps its
+own choice.
 
 ## Settle finished work
 
