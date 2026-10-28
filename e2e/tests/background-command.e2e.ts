@@ -35,7 +35,7 @@ describe("native background commands", () => {
   it("keeps a command visible after its turn ends and stops it through the provider", async () => {
     const { page } = app;
     await sendMessage(app, "Start the server", "Server started in the background.");
-    const running = page.getByText(/^Running:.*fixture-server/);
+    const running = page.getByText(/^Running .*fixture-server/);
     await running.waitFor();
     const originalTurn = environment.codexTurns()[0]!;
 
@@ -70,7 +70,8 @@ describe("native background commands", () => {
 
     await page.reload();
     await commandHistory.waitFor();
-    expect(await running.count()).toBe(0);
+    // The running line also names the command, and the cached thread can show it until the server's state arrives.
+    await running.waitFor({ state: "hidden" });
     await sendMessage(app, "List the files");
     expect(environment.codexTurns().map((turn) => turn.threadId)).toEqual([
       originalTurn.threadId,
