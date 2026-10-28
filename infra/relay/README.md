@@ -1,7 +1,7 @@
 # styal Link Relay
 
 > [!NOTE]
-> Sign in to styal Link from the app under Settings > Connections.
+> Sign in to styal Link from the app under Settings > Sharing & access.
 
 The relay is the hosted control plane for styal Link. It helps clients discover and connect to
 remote environments, manages the cloud-side records needed for those connections, and delivers

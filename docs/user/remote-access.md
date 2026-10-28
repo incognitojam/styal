@@ -282,7 +282,7 @@ questions, and manage its queues, projects and scheduled tasks.
 
 ### Let two machines work together
 
-If this app is connected to both machines, open **Settings → Connections → Work
+If this app is connected to both machines, open **Settings → Environments → Work
 together**, on web, desktop or mobile, and choose **Work together** for the pair. You
 pick what agents may do, and styal does the rest in both directions: it turns on
 **Work with your other machines**, creates a pairing code and adds each machine to the
@@ -293,7 +293,7 @@ Your session on each machine must be able to manage access there. A session pair
 with narrower access, or a machine you've only found on your styal Link account and
 not connected to yet, needs pairing or connecting first. The other machine also has to
 be reachable from this one. If it isn't, that step says so; turn on styal Link or
-network access on that machine in **Connections**, then choose **Try again**.
+network access on that machine in **Sharing & access**, then choose **Try again**.
 
 If a step fails, the steps that worked stay done, and running it again only does what's
 left. If a machine isn't connected, for example because it's asleep, steps that need it
@@ -320,12 +320,12 @@ While it is off on either machine, agents there start nothing on the other. A
 task already running on the other machine still finishes, and if that machine
 has it off, its result arrives once it is back on.
 
-On the machine you will work from, open **Settings → Connections → Your machines**,
+On the machine you will work from, open **Settings → Environments → Your machines**,
 choose **Add machine**, and pick the other machine or enter its address. The list
 holds the machines this app knows and those on your styal Link account. If this
 app is connected to that machine with a session that manages access there, it
 makes the pairing code itself; otherwise paste one from that machine's
-**Settings → Connections**. From a terminal, use
+**Settings → Sharing & access**. From a terminal, use
 `styal environment link <address> --pairing-code <code> --access <mode>`.
 
 You can also ask an agent to use a machine by name, such as "delegate this to
@@ -349,7 +349,7 @@ these three, and the older values still work.
   do through styal, not what a shell on this machine can do, so don't add a
   machine you want to protect from agents here.
 - Threads started this way are marked **From** and this machine's name there.
-- The connection shows up in that machine's **Settings → Connections** like any
+- The connection shows up in that machine's **Settings → Sharing & access** like any
   outside agent. Revoke it there to end it. **Forget** on this machine only
   removes it here.
 - It lasts 30 days. Add the machine again with a new pairing code to renew it.
