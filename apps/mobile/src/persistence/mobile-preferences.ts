@@ -57,6 +57,11 @@ export interface Preferences {
   readonly diffSortMode?: "relevance" | "alphabetical";
   readonly pullRequestMergeMethod?: PullRequestMergeMethod;
   readonly liveActivitiesEnabled?: boolean;
+  /** Which agent alerts the relay may push to this device; unset means on. */
+  readonly notifyOnApproval?: boolean;
+  readonly notifyOnInput?: boolean;
+  readonly notifyOnCompletion?: boolean;
+  readonly notifyOnFailure?: boolean;
   readonly themeId?: MobileThemeId;
   readonly lightThemeId?: MobileThemeId;
   readonly darkThemeId?: MobileThemeId;
@@ -143,6 +148,10 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     diffSortMode?: "relevance" | "alphabetical";
     pullRequestMergeMethod?: PullRequestMergeMethod;
     liveActivitiesEnabled?: boolean;
+    notifyOnApproval?: boolean;
+    notifyOnInput?: boolean;
+    notifyOnCompletion?: boolean;
+    notifyOnFailure?: boolean;
     themeId?: MobileThemeId;
     lightThemeId?: MobileThemeId;
     darkThemeId?: MobileThemeId;
@@ -195,6 +204,16 @@ function sanitizePreferences(parsed: Preferences): Preferences {
 
   if (typeof parsed.liveActivitiesEnabled === "boolean") {
     preferences.liveActivitiesEnabled = parsed.liveActivitiesEnabled;
+  }
+  if (typeof parsed.notifyOnApproval === "boolean") {
+    preferences.notifyOnApproval = parsed.notifyOnApproval;
+  }
+  if (typeof parsed.notifyOnInput === "boolean") preferences.notifyOnInput = parsed.notifyOnInput;
+  if (typeof parsed.notifyOnCompletion === "boolean") {
+    preferences.notifyOnCompletion = parsed.notifyOnCompletion;
+  }
+  if (typeof parsed.notifyOnFailure === "boolean") {
+    preferences.notifyOnFailure = parsed.notifyOnFailure;
   }
   if (
     typeof parsed.themeId === "string" &&

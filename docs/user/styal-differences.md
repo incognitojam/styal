@@ -31,6 +31,11 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   data used, kept for 7 days. T3 Code has no client-side connection measurement as of
   [revision cfafb4b](https://github.com/pingdotgg/t3code/tree/cfafb4bb54d244e4612f5681aad3832ea64cb0fb).
   [Check how connections held up](./remote-access.md#check-how-connections-held-up).
+- **Choose which agent alerts reach your phone.** Mobile **Settings → Notifications** has a
+  switch for each alert type: needs approval, needs input, finished, and failed. T3 Code sends
+  every type to every registered phone as of
+  [revision 9826dbb](https://github.com/pingdotgg/t3code/tree/9826dbb9904b2591bfbf60d1317486b59132f56b).
+  [Mobile notifications](./mobile-notifications.md).
 - **Every provider in Provider accounts.** Mobile **Settings → Provider accounts** lists each
   provider with its icon and sign-in status, including Claude and Codex, which sign in through
   their own CLI. T3 Code lists only providers that sign in inside the app as of

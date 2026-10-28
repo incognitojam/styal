@@ -109,6 +109,10 @@ Font names, profile names and IDs, project keys, grouping overrides, load-balanc
 
 When adding a client setting, either report it here or list it with a reason in `NOT_REPORTED` in `apps/web/src/clientSettingsSnapshot.test.ts`; that test fails until you choose.
 
+## Mobile alert types
+
+Mobile alert type switches are not reported to PostHog. Each device's current choice is in the relay's `relay_mobile_devices.preferences_json` (`notifyOnApproval`, `notifyOnInput`, `notifyOnCompletion`, `notifyOnFailure`). To measure use, count devices with any of them `false` among devices with an `app_version` that has the switches. Count devices only; do not read labels or tokens.
+
 ## Provider stall detection
 
 Provider stall detection emits `provider.turn.stall` with `outcome = detected | activity | waiting |
