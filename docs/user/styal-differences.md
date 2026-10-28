@@ -32,7 +32,7 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   [revision cfafb4b](https://github.com/pingdotgg/t3code/tree/cfafb4bb54d244e4612f5681aad3832ea64cb0fb).
   [Check how connections held up](./remote-access.md#check-how-connections-held-up).
 - **Choose which agent alerts reach your phone.** Mobile **Settings → Notifications** has a
-  switch for each alert type: needs approval, needs input, finished, and failed. T3 Code sends
+  switch for each alert type: needs approval, needs input, done, and failed. T3 Code sends
   every type to every registered phone as of
   [revision 9826dbb](https://github.com/pingdotgg/t3code/tree/9826dbb9904b2591bfbf60d1317486b59132f56b).
   [Mobile notifications](./mobile-notifications.md).

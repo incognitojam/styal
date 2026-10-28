@@ -76,7 +76,7 @@ const ALERT_TYPES: ReadonlyArray<{
 }> = [
   { preference: "notifyOnApproval", label: "Needs approval", icon: "exclamationmark.shield" },
   { preference: "notifyOnInput", label: "Needs input", icon: "questionmark.bubble" },
-  { preference: "notifyOnCompletion", label: "Finished", icon: "checkmark.circle" },
+  { preference: "notifyOnCompletion", label: "Done", icon: "checkmark.circle" },
   { preference: "notifyOnFailure", label: "Failed", icon: "exclamationmark.triangle" },
 ];
 
