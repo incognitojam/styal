@@ -416,6 +416,24 @@ features:
         - https://github.com/pingdotgg/t3code/pull/2829
       retire_when: Upstream rewind keeps the turn boundaries of human prompts and assistant records that getSessionMessages omits through repeated rewinds, and rewinds at a known recent boundary when older boundaries are unknown.
 
+  - id: claude-mcp-registration-timeout-hint
+    title: Point a Claude startup timeout at hanging hooks
+    status: maintained
+    prs: []
+    invariants:
+      - When Claude Code does not answer T3 Code's MCP server registration in time, the turn's error says Claude Code took too long to start and names a hook that hangs at startup as a likely cause.
+    rationale: Claude Code answers the registration only after its SessionStart hooks finish, so a slow or broken hook, such as one that starts a Docker container, surfaces as this timeout. Upstream's message points at MCP tools and the server logs instead.
+    implementation_paths:
+      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
+    upstream_paths:
+      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
+    tests:
+      - apps/server/src/orchestration-v2/Adapters/ClaudeAgentSdkQueryRunner.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream's MCP registration timeout message names hooks as a cause.
+
   - id: claude-model-manifest-policy
     title: Source Claude models from the styal manifest
     status: review-needed

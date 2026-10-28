@@ -538,7 +538,7 @@ class ClaudeMcpRegistrationTimeoutError extends Schema.TaggedError<ClaudeMcpRegi
   {},
 ) {
   override get message(): string {
-    return "Claude timed out while registering its MCP tools. Retry the turn; if it keeps failing, check Claude and the server logs.";
+    return "Claude Code took too long to start. A hook that hangs at startup, such as a SessionStart hook in your Claude Code settings, can cause this. Check your hooks, then retry the turn.";
   }
 }
 

@@ -384,7 +384,7 @@ it.effect("stops retrying MCP registration after two timeouts and reports the ca
         makeProviderFailure({
           cause: { _tag: "ProviderAdapterTurnStartError", cause: result.failure },
         }).message,
-        "Claude timed out while registering its MCP tools. Retry the turn; if it keeps failing, check Claude and the server logs.",
+        "Claude Code took too long to start. A hook that hangs at startup, such as a SessionStart hook in your Claude Code settings, can cause this. Check your hooks, then retry the turn.",
       );
     }).pipe(Effect.provide(realQueryRunner)),
   ),
