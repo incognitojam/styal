@@ -34,21 +34,21 @@ export async function reportSidebarUsage(
 
 /** Apply a filter choice the user made and count it. Automatic clears go straight to the store. */
 export function setSidebarProjectFilterFromUser(
-  projectKey: string | null,
+  projectKeys: readonly string[],
   entryPoint: FilterEntryPoint,
 ) {
   const store = useUiStateStore.getState();
-  if (store.sidebarProjectScopeKey === projectKey) return;
-  store.setSidebarProjectScopeKey(projectKey);
+  store.setSidebarProjectScopeKeys(projectKeys);
+  if (useUiStateStore.getState().sidebarProjectScopeKeys === store.sidebarProjectScopeKeys) return;
   return reportSidebarUsage({
     feature: "sidebar-project-filter",
-    action: projectKey === null ? "filter_cleared" : "filter_set",
+    action: projectKeys.length === 0 ? "filter_cleared" : "filter_set",
     entryPoint,
   });
 }
 
 /** Count a new-thread action taken while the filter is on. */
 export function reportNewThreadWhileFiltered() {
-  if (useUiStateStore.getState().sidebarProjectScopeKey === null) return;
+  if (useUiStateStore.getState().sidebarProjectScopeKeys.length === 0) return;
   return reportSidebarUsage({ feature: "sidebar-project-filter", action: "thread_started" });
 }

@@ -4069,7 +4069,7 @@ features:
     prs: [83, 162, 954]
     invariants:
       - Reopening the sidebar does not discard the user's project filter.
-      - New-thread actions follow the visible project scope without unexpectedly switching the active thread's project.
+      - New-thread actions follow the visible project scope without unexpectedly switching the active thread's project. With several filtered projects, a thread on screen in any of them keeps its project, the first filtered project in list order replaces the fallback default, and the sidebar button opens the project picker instead of creating directly.
       - Explicit filter changes and new-thread actions taken while filtered emit bounded client-usage events through the primary environment, with the entry point but never project names or keys; clearing a vanished project's filter is not counted.
     implementation_paths:
       - apps/web/src/components/CommandPalette.tsx

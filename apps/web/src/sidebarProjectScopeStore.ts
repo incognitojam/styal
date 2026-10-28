@@ -6,43 +6,41 @@
 import { getClientSettings, useClientSettings } from "./hooks/useSettings";
 import { selectProjectGroupingSettings, type ProjectGroupingSettings } from "./logicalProject";
 import {
-  resolveSidebarProjectScopeKey,
+  resolveSidebarProjectScopeKeys,
   type SidebarProjectSnapshot,
 } from "./sidebarProjectGrouping";
 import { useUiStateStore } from "./uiStateStore";
 
 /**
- * The project group the filter points at, or null when the filter is off or
- * names a group that no longer exists (an unreachable scope must not silently
- * capture new threads). Resolves the stored key the way the sidebar does,
- * since the sidebar no longer writes the resolved key back.
+ * The project groups the filter points at, in list order: empty when the filter is
+ * off or names only groups that no longer exist (an unreachable scope must not
+ * silently capture new threads). Resolves the stored keys the way the sidebar does,
+ * since the sidebar no longer writes the resolved keys back.
  */
-export function useScopedProjectGroup<T extends SidebarProjectSnapshot>(
+export function useScopedProjectGroups<T extends SidebarProjectSnapshot>(
   groups: readonly T[],
-): T | null {
-  const storedKey = useUiStateStore((state) => state.sidebarProjectScopeKey);
+): readonly T[] {
+  const storedKeys = useUiStateStore((state) => state.sidebarProjectScopeKeys);
   const settings = useClientSettings(selectProjectGroupingSettings);
-  return resolveScopedProjectGroup(groups, storedKey, settings);
+  return resolveScopedProjectGroups(groups, storedKeys, settings);
 }
 
-/** {@link useScopedProjectGroup} read at call time, for handlers outside React. */
-export function readScopedProjectGroup<T extends SidebarProjectSnapshot>(
+/** {@link useScopedProjectGroups} read at call time, for handlers outside React. */
+export function readScopedProjectGroups<T extends SidebarProjectSnapshot>(
   groups: readonly T[],
-): T | null {
-  return resolveScopedProjectGroup(
+): readonly T[] {
+  return resolveScopedProjectGroups(
     groups,
-    useUiStateStore.getState().sidebarProjectScopeKey,
+    useUiStateStore.getState().sidebarProjectScopeKeys,
     selectProjectGroupingSettings(getClientSettings()),
   );
 }
 
-function resolveScopedProjectGroup<T extends SidebarProjectSnapshot>(
+function resolveScopedProjectGroups<T extends SidebarProjectSnapshot>(
   groups: readonly T[],
-  storedKey: string | null,
+  storedKeys: readonly string[],
   settings: ProjectGroupingSettings,
-): T | null {
-  const projectScopeKey = resolveSidebarProjectScopeKey({ groups, key: storedKey, settings });
-  return projectScopeKey === null
-    ? null
-    : (groups.find((group) => group.projectKey === projectScopeKey) ?? null);
+): readonly T[] {
+  const projectScopeKeys = resolveSidebarProjectScopeKeys({ groups, keys: storedKeys, settings });
+  return groups.filter((group) => projectScopeKeys.includes(group.projectKey));
 }

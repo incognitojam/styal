@@ -43,7 +43,7 @@ export interface ChatThreadActionContext {
   readonly defaultProjectRef: ScopedProjectRef | null;
   readonly handleNewThread: NewThreadHandler;
   /** The sidebar's project filter, when one is applied. */
-  readonly scopedProjectGroup?: ProjectScopeGroupLike | null;
+  readonly scopedProjectGroups?: readonly ProjectScopeGroupLike[];
 }
 
 export function resolveNewDraftStartFromOrigin(input: {
@@ -98,23 +98,25 @@ function resolveContextualProjectRef(context: ChatThreadActionContext): ScopedPr
   return null;
 }
 
-/** The filtered project, holding the member you are already in when the group
-    spans environments so the same project local and remote does not snap back
-    to its representative. */
+/** The filtered project, holding the member you are already in when it belongs to
+    a filtered group, so the same project local and remote does not snap back to its
+    representative and a second filtered project does not snap back to the first. */
 function resolveScopedProjectRef(context: ChatThreadActionContext): ScopedProjectRef | null {
-  const scopedProjectGroup = context.scopedProjectGroup ?? null;
-  if (scopedProjectGroup === null) return null;
+  const firstScopedGroup = context.scopedProjectGroups?.[0];
+  if (firstScopedGroup === undefined) return null;
   const contextualProjectRef = resolveContextualProjectRef(context);
   const isContextualRefInScope =
     contextualProjectRef !== null &&
-    scopedProjectGroup.memberProjectRefs.some(
-      (projectRef) =>
-        projectRef.environmentId === contextualProjectRef.environmentId &&
-        projectRef.projectId === contextualProjectRef.projectId,
+    context.scopedProjectGroups?.some((group) =>
+      group.memberProjectRefs.some(
+        (projectRef) =>
+          projectRef.environmentId === contextualProjectRef.environmentId &&
+          projectRef.projectId === contextualProjectRef.projectId,
+      ),
     );
   return isContextualRefInScope
     ? contextualProjectRef
-    : scopeProjectRef(scopedProjectGroup.environmentId, scopedProjectGroup.id);
+    : scopeProjectRef(firstScopedGroup.environmentId, firstScopedGroup.id);
 }
 
 export function resolveThreadActionProjectRef(

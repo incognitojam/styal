@@ -247,7 +247,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { ComposerHandleContext, useComposerHandleContext } from "../composerHandleContext";
 import type { ChatComposerHandle } from "./chat/ChatComposer";
 import { buildSidebarProjectPickerEntries } from "../sidebarProjectGrouping";
-import { useScopedProjectGroup } from "../sidebarProjectScopeStore";
+import { useScopedProjectGroups } from "../sidebarProjectScopeStore";
 import { focusPullRequestTab, threadPullRequestUrl } from "../lib/viewPullRequest";
 import { useSupportsMultiplePullRequests } from "../hooks/useSupportsMultiplePullRequests";
 import {
@@ -647,14 +647,14 @@ function OpenCommandPaletteDialog(props: {
   const projectGroups = allProjectGroups.filter((group) => group.archivedAt == null);
   // The sidebar's project filter feeds this, so the palette's "New thread in
   // X" action names — and creates in — the project the sidebar is showing.
-  const scopedProjectGroup = useScopedProjectGroup(projectGroups);
+  const scopedProjectGroups = useScopedProjectGroups(projectGroups);
   const { canOrganize: canOrganizeProject, setPinned: setProjectPinned } = useProjectGroupActions();
   const contextualProjectRef = resolveThreadActionProjectRef({
     activeDraftThread,
     activeThread: activeThread ?? undefined,
     defaultProjectRef,
     handleNewThread,
-    scopedProjectGroup,
+    scopedProjectGroups,
   });
   const projectPickerEntries = buildSidebarProjectPickerEntries({
     groups: allProjectGroups,
@@ -1499,7 +1499,7 @@ function OpenCommandPaletteDialog(props: {
             activeThread: activeThread ?? undefined,
             defaultProjectRef,
             handleNewThread,
-            scopedProjectGroup,
+            scopedProjectGroups,
           });
         },
       });

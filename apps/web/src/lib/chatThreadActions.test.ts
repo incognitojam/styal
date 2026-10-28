@@ -27,6 +27,12 @@ const SCOPED_PROJECT_GROUP = {
     scopeProjectRef(REMOTE_ENVIRONMENT_ID, SCOPED_PROJECT_ID),
   ],
 };
+const SECOND_SCOPED_PROJECT_ID = ProjectId.make("project-4");
+const SECOND_SCOPED_PROJECT_GROUP = {
+  environmentId: ENVIRONMENT_ID,
+  id: SECOND_SCOPED_PROJECT_ID,
+  memberProjectRefs: [scopeProjectRef(ENVIRONMENT_ID, SECOND_SCOPED_PROJECT_ID)],
+};
 const PROJECT_DEFAULT_SELECTION: ModelSelection = {
   instanceId: ProviderInstanceId.make("codex"),
   model: "project-default",
@@ -76,7 +82,7 @@ describe("chatThreadActions", () => {
           environmentId: ENVIRONMENT_ID,
           projectId: PROJECT_ID,
         },
-        scopedProjectGroup: SCOPED_PROJECT_GROUP,
+        scopedProjectGroups: [SCOPED_PROJECT_GROUP],
       }),
       "sidebar",
     );
@@ -91,7 +97,7 @@ describe("chatThreadActions", () => {
           environmentId: ENVIRONMENT_ID,
           projectId: PROJECT_ID,
         },
-        scopedProjectGroup: SCOPED_PROJECT_GROUP,
+        scopedProjectGroups: [SCOPED_PROJECT_GROUP],
       }),
       "contextual",
     );
@@ -102,7 +108,7 @@ describe("chatThreadActions", () => {
   it("lets the filter beat the fallback default for contextual commands", () => {
     const projectRef = resolveThreadActionProjectRef(
       createContext({
-        scopedProjectGroup: SCOPED_PROJECT_GROUP,
+        scopedProjectGroups: [SCOPED_PROJECT_GROUP],
       }),
       "contextual",
     );
@@ -117,7 +123,7 @@ describe("chatThreadActions", () => {
           environmentId: REMOTE_ENVIRONMENT_ID,
           projectId: SCOPED_PROJECT_ID,
         },
-        scopedProjectGroup: SCOPED_PROJECT_GROUP,
+        scopedProjectGroups: [SCOPED_PROJECT_GROUP],
       }),
       "sidebar",
     );
@@ -125,11 +131,41 @@ describe("chatThreadActions", () => {
     expect(projectRef).toEqual(scopeProjectRef(REMOTE_ENVIRONMENT_ID, SCOPED_PROJECT_ID));
   });
 
+  it("stays on the active thread's project when it is the second of several filtered projects", () => {
+    const projectRef = resolveThreadActionProjectRef(
+      createContext({
+        activeThread: {
+          environmentId: ENVIRONMENT_ID,
+          projectId: SECOND_SCOPED_PROJECT_ID,
+        },
+        scopedProjectGroups: [SCOPED_PROJECT_GROUP, SECOND_SCOPED_PROJECT_GROUP],
+      }),
+      "sidebar",
+    );
+
+    expect(projectRef).toEqual(scopeProjectRef(ENVIRONMENT_ID, SECOND_SCOPED_PROJECT_ID));
+  });
+
+  it("uses the first of several filtered projects when the active thread is outside them", () => {
+    const scopedProjectGroups = [SCOPED_PROJECT_GROUP, SECOND_SCOPED_PROJECT_GROUP];
+    const activeThread = { environmentId: ENVIRONMENT_ID, projectId: PROJECT_ID };
+
+    expect(
+      resolveThreadActionProjectRef(
+        createContext({ activeThread, scopedProjectGroups }),
+        "sidebar",
+      ),
+    ).toEqual(scopeProjectRef(ENVIRONMENT_ID, SCOPED_PROJECT_ID));
+    expect(resolveThreadActionProjectRef(createContext({ scopedProjectGroups }))).toEqual(
+      scopeProjectRef(ENVIRONMENT_ID, SCOPED_PROJECT_ID),
+    );
+  });
+
   it("uses the filtered project when there is no thread context at all", () => {
     const projectRef = resolveThreadActionProjectRef(
       createContext({
         defaultProjectRef: null,
-        scopedProjectGroup: SCOPED_PROJECT_GROUP,
+        scopedProjectGroups: [SCOPED_PROJECT_GROUP],
       }),
       "sidebar",
     );

@@ -17,7 +17,7 @@ import { selectProjectGroupingSettings } from "../logicalProject";
 import { selectActiveRightPanel, useRightPanelStore } from "../rightPanelStore";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { buildSidebarProjectSnapshots } from "../sidebarProjectGrouping";
-import { readScopedProjectGroup } from "../sidebarProjectScopeStore";
+import { readScopedProjectGroups } from "../sidebarProjectScopeStore";
 import { readProjects, readThreadShell } from "../state/entities";
 import { environmentPresentations } from "../state/presentation";
 import { primaryEnvironmentIdAtom } from "../state/primaryEnvironment";
@@ -87,7 +87,7 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
       // are viewing outranks the sidebar's filter. The filter still beats the
       // fallback default, so with nothing open they land in the project on screen
       // rather than the top of the project list.
-      scopedProjectGroup: readScopedProjectGroup(readProjectGroups()),
+      scopedProjectGroups: readScopedProjectGroups(readProjectGroups()),
     };
   };
   const canOperatePreview = (environmentId: EnvironmentId) =>

@@ -165,10 +165,12 @@ cannot drag or move threads within it. Your saved order returns when you turn it
 
 ## Filter by project
 
-Use the menu below the sidebar search to show a single project. While a project is
-selected, **New thread** creates the thread there without asking. The **new thread
-in current project** shortcut uses the open thread's project, or the selected
-project when no thread is open. Choose **All projects** to clear the filter.
+Use the menu below the sidebar search to show a single project. Shift+click a project,
+or press Shift+Enter on it, to add it to the filter or remove it. While one project is
+selected, **New thread** creates the thread there without asking; with several selected,
+it asks which project to use. The **new thread in current project** shortcut uses the
+open thread's project, or the first selected project when no thread is open. Choose
+**All projects** to clear the filter.
 
 ## Group threads by project
 
