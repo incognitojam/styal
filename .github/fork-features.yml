@@ -3547,7 +3547,7 @@ features:
       - The open thread is skipped, so repeating the command moves to the next waiting thread. Snoozed and settled threads are not candidates.
       - A usage limit or failed run counts only until the thread is opened after that run ended; the row keeps its status but recedes like a read thread, and a later failure counts again.
       - With nothing waiting, it opens nothing and shows a "No unread threads" toast.
-      - While a pinned, active or Working thread other than the open one is waiting, a button above the composer, beside Scroll to end when that shows, shows how many are waiting, the status icon of the one it would open, and the shortcut, and opening from it does the same. It is hidden on a new draft's empty state, during thread find, and with the legacy sidebar.
+      - While a pinned, active or Working thread other than the open one is waiting, a button above the composer, beside Scroll to end when that shows, shows how many are waiting, the status icon of the one it would open, and the shortcut, and opening from it does the same. It is hidden on a new draft's empty state and during thread find.
       - On narrow web layouts the thread sidebar stays mounted while its sheet is closed, so the button, the palette entry and the thread shortcuts keep working without opening the sidebar.
       - Each use emits a bounded `next-unread-thread` client-usage event through the primary environment with the entry point (shortcut, command palette or chip) and, when a thread opened, the attention kind, never with thread names or keys.
     rationale: Working through many threads means finding the next one that needs a decision. The flat inbox puts them in the list, but reaching each one takes the mouse or counting rows for a jump shortcut.
@@ -5886,7 +5886,6 @@ features:
       - apps/server/src/persistence/ForkMigrations/004_ProjectionThreadLatestMessageAt.ts
       - apps/web/src/components/CommandPalette.logic.ts
       - apps/web/src/components/CommandPaletteThreadItems.tsx
-      - apps/web/src/components/LegacySidebar.tsx
       - apps/web/src/components/Sidebar.tsx
       - apps/web/src/components/settings/SettingsPanels.tsx
       - apps/web/src/components/sidebar/SidebarThreadRow.tsx
@@ -5899,7 +5898,6 @@ features:
       - apps/mobile/src/features/threads/threadListV2.ts
       - apps/server/src/orchestration-v2/ProjectionStore.ts
       - apps/web/src/components/CommandPalette.logic.ts
-      - apps/web/src/components/LegacySidebar.tsx
       - apps/web/src/components/Sidebar.tsx
       - packages/contracts/src/orchestrationV2.ts
     tests:
@@ -5922,6 +5920,7 @@ features:
     prs: [533, 546, 585, 745]
     invariants:
       - Settings → General → Sidebar → Group threads by project is off by default; when off, active threads stay one flat list.
+      - With the boring sidebar (Settings → Labs) on, its project folders take the place of these headers on web and desktop; the setting keeps its value and applies again when the boring sidebar is off.
       - On mobile, Settings → Organization → Group threads by project is a per-device preference, off by default. The phone list and the tablet sidebar group active and Working threads under headers with the project icon, name and a pin icon for pinned projects, using the same project order rules as web. Move up and Move down step past the neighbouring thread in the same project. Mobile headers are not interactive, and the Arrange threads sheet stays one list.
       - With grouping on, active threads sit under one header per logical project, so matching repositories across environments share a header. Cards under a header omit the project icon and name, while pinned, snoozed, and settled threads keep their existing layout.
       - With grouping and the Working section on, Working threads sit under non-draggable headers per logical project, ordered by the saved project order and then the project list, so sending work never reorders projects. Within a project they keep newest-send-first order.

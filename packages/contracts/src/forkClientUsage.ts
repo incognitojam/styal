@@ -24,7 +24,6 @@ import {
   SidebarProjectGroupingMode,
   SidebarProjectSortOrder,
   SidebarThreadGrouping,
-  SidebarThreadPreviewCount,
   SidebarThreadSortOrder,
   SidebarThreadTimestampMode,
   SnapShotSound,
@@ -33,7 +32,7 @@ import {
 } from "./settings.ts";
 
 /** Bump when extending the vocabulary; clients require the complete version before reporting. */
-export const FORK_CLIENT_USAGE_VERSION = 25;
+export const FORK_CLIENT_USAGE_VERSION = 26;
 
 /**
  * One device's client preferences, reported daily so we can see which defaults
@@ -60,6 +59,7 @@ export const ClientSettingsSnapshot = Schema.Struct({
   mathRenderingEnabled: Schema.Boolean,
   timestampFormat: TimestampFormat,
   loadBalancingEnabled: Schema.Boolean,
+  boringSidebarEnabled: Schema.Boolean,
   legacySidebarEnabled: Schema.Boolean,
   sidebarWorkingShelfEnabled: Schema.Boolean,
   sidebarThreadGrouping: SidebarThreadGrouping,
@@ -70,7 +70,6 @@ export const ClientSettingsSnapshot = Schema.Struct({
   sidebarManualProjectOrderSaved: Schema.Boolean,
   sidebarThreadSortOrder: SidebarThreadSortOrder,
   sidebarThreadTimestampMode: SidebarThreadTimestampMode,
-  sidebarThreadPreviewCount: SidebarThreadPreviewCount,
   confirmThreadArchive: Schema.Boolean,
   confirmThreadDelete: Schema.Boolean,
   confirmThreadUnpin: Schema.Boolean,

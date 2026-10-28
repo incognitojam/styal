@@ -108,7 +108,7 @@ import { useDesktopLocalBootstraps } from "../connection/useDesktopLocalBootstra
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { useProjectGroupActions } from "../hooks/useProjectGroupActions";
 import { useOpenPanelPullRequestUrl } from "../hooks/useOpenPanelPullRequestUrl";
-import { useClientSettings, useLegacySidebarEnabled } from "../hooks/useSettings";
+import { useBoringSidebarEnabled, useClientSettings } from "../hooks/useSettings";
 import { copyThreadReference } from "../lib/copyThreadReference";
 import {
   queueWorkspaceFocusFromPalette,
@@ -529,7 +529,7 @@ function OpenCommandPaletteDialog(props: {
     setHighlightedItemValue(null);
   }
   const clientSettings = useClientSettings(selectCommandPaletteClientSettings);
-  const legacySidebarEnabled = useLegacySidebarEnabled();
+  const boringSidebarEnabled = useBoringSidebarEnabled();
   const createProject = useAtomCommand(projectEnvironment.create, {
     reportFailure: false,
   });
@@ -1465,10 +1465,10 @@ function OpenCommandPaletteDialog(props: {
     const activeProjectTitle =
       projectPickerEntries.find((entry) => entry.isPreferred)?.group.displayName ??
       (currentProjectId ? (projectTitleById.get(currentProjectId) ?? null) : null);
-    // Mirrors the chat route: with the default sidebar and several projects chat.new opens this
+    // Mirrors the chat route: outside boring mode and with several projects chat.new opens this
     // picker, so it labels the submenu and chat.newLocal labels the named item. Otherwise chat.new
     // creates directly and labels the named item.
-    const picksProject = !legacySidebarEnabled && projectGroups.length > 1;
+    const picksProject = !boringSidebarEnabled && projectGroups.length > 1;
 
     if (activeProjectTitle) {
       actionItems.push({
@@ -1529,19 +1529,17 @@ function OpenCommandPaletteDialog(props: {
     });
   }
 
-  if (!legacySidebarEnabled) {
-    actionItems.push({
-      kind: "action",
-      value: "action:next-unread-thread",
-      title: "Go to next unread thread",
-      searchTerms: ["next", "unread", "attention", "approval", "input", "inbox", "triage"],
-      icon: <InboxIcon className={ITEM_ICON_CLASS} />,
-      shortcutCommand: "thread.nextUnread",
-      run: async () => {
-        requestNextUnreadThread("command_palette");
-      },
-    });
-  }
+  actionItems.push({
+    kind: "action",
+    value: "action:next-unread-thread",
+    title: "Go to next unread thread",
+    searchTerms: ["next", "unread", "attention", "approval", "input", "inbox", "triage"],
+    icon: <InboxIcon className={ITEM_ICON_CLASS} />,
+    shortcutCommand: "thread.nextUnread",
+    run: async () => {
+      requestNextUnreadThread("command_palette");
+    },
+  });
 
   if (triageEnvironmentId !== null && canTriage) {
     actionItems.push({

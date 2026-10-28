@@ -125,10 +125,12 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
         void scratch.startScratchThread(environmentId);
       },
       "chat.new": (event) => {
-        // Pre-hydration settings are the defaults, where the legacy sidebar is off. A project
-        // filter does not suppress the chooser: chat.newLocal already creates in the current
-        // project, so collapsing the two would leave no way to deliberately pick.
-        if (!getClientSettings().legacySidebarEnabled && readProjectGroups().length > 1) {
+        // The boring sidebar's folders already show the context, so it starts in the current
+        // project like the legacy sidebar did. A project filter does not suppress the chooser:
+        // chat.newLocal already creates in the current project, so collapsing the two would
+        // leave no way to deliberately pick.
+        const { boringSidebarEnabled, legacySidebarEnabled } = getClientSettings();
+        if (!boringSidebarEnabled && !legacySidebarEnabled && readProjectGroups().length > 1) {
           claim(event);
           openCommandPalette({ open: "new-thread-in" });
           return;

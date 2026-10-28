@@ -195,6 +195,16 @@ Right-click a project header for **New thread**, project filtering, **Pin projec
 **Archive project**, **Copy project path**, and **Project settings**. If a project spans several checkouts, choose
 which path to copy. **Show all projects** clears an active project filter.
 
+### Project folders (beta)
+
+Turn on **Settings → Labs → Boring sidebar (group by project)** on web and desktop to put active
+threads in a folder for each project. Click a folder to open or close it. A closed folder shows how
+many threads it holds, and a dot when one of them needs you. Use the pen button on a folder, or
+right-click it, to start a thread in that project. Pinned threads stay above the folders, and
+Snoozed and Settled stay below them. In this mode you cannot drag threads, and the Working section
+is off. Folders take the place of project headers while this is on. Each device keeps its own
+choice.
+
 ## Settle finished work
 
 Choose **Settle thread** from its menu to move finished work out of the active list
