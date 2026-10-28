@@ -151,6 +151,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.sourceControlListIssues]: AuthOrchestrationReadScope,
   [WS_METHODS.sourceControlGetIssue]: AuthOrchestrationReadScope,
   [WS_METHODS.sourceControlResolveReferences]: AuthOrchestrationReadScope,
+  [WS_METHODS.sourceControlAppAccess]: AuthOrchestrationReadScope,
   [WS_METHODS.subscribeProjectClones]: AuthOrchestrationReadScope,
   [WS_METHODS.projectsListEntries]: AuthFilesystemReadScope,
   [WS_METHODS.projectsListIgnoredFiles]: AuthFilesystemReadScope,

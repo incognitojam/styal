@@ -95,6 +95,7 @@ import { sourceControlClients } from "@t3tools/client-runtime/source-control-cli
 import { ThemedSwitch } from "../../components/ui/ThemedSwitch";
 import { uuidv4 } from "../../lib/uuid";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { suggestAppAccessForRemote } from "./suggestAppAccess";
 import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
 import {
   useRemoteConnectionStatus,
@@ -1111,6 +1112,10 @@ export function AddProjectNewScreen(props: { readonly environmentId?: string | s
   );
   const environment = resolveAddProjectEnvironment(environmentOptions, selectedEnvironmentId);
   const createNew = useAtomCommand(projectEnvironment.createNew, { reportFailure: false });
+  const checkPublishedAppAccess = useAtomCommand(sourceControlEnvironment.checkAppAccess, {
+    reportFailure: false,
+    reportDefect: false,
+  });
   const publishRepository = useAtomCommand(sourceControlEnvironment.publishRepository, {
     reportFailure: false,
   });
@@ -1208,6 +1213,12 @@ export function AddProjectNewScreen(props: { readonly environmentId?: string | s
           Dialog.alert(
             `Could not create the ${publishTarget.definition.label} repository`,
             errorMessage(Cause.squash(publishResult.cause)),
+          );
+        } else {
+          void suggestAppAccessForRemote(
+            checkPublishedAppAccess,
+            environment.environmentId,
+            publishResult.value.remoteUrl,
           );
         }
       });
@@ -1538,6 +1549,10 @@ export function AddProjectDestinationScreen(props: {
   const startProjectClone = useAtomCommand(sourceControlEnvironment.startProjectClone, {
     reportFailure: false,
   });
+  const checkAppAccess = useAtomCommand(sourceControlEnvironment.checkAppAccess, {
+    reportFailure: false,
+    reportDefect: false,
+  });
   const navigation = useNavigation();
   const environment = useEnvironmentFromParam(props.environmentId);
   const canWriteSourceControl = useEnvironmentScope(
@@ -1615,6 +1630,7 @@ export function AddProjectDestinationScreen(props: {
       const detail = isSourceControlRepositoryError(error) ? error.detail : errorMessage(error);
       setError(`Clone failed on ${environment.label}. ${detail}`);
     } else {
+      void suggestAppAccessForRemote(checkAppAccess, environment.environmentId, remoteUrl);
       // Wait for the create event; the client store otherwise falls back to the project picker and loses clone controls.
       const project = await waitForProject(
         { environmentId: environment.environmentId, projectId },

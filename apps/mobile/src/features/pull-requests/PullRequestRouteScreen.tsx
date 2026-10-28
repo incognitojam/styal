@@ -83,6 +83,7 @@ import { pullRequestLabelColor } from "./pullRequestList";
 import { PullRequestReactions } from "./PullRequestReactions";
 import { composerPullRequests } from "../../state/pull-requests";
 import { useEnvironmentQuery } from "../../state/query";
+import { SourceControlAppAccessNotice } from "./SourceControlAppAccessNotice";
 import { usePullToRefresh } from "../../state/use-pull-to-refresh";
 import {
   resolveNativeReviewDiffView,
@@ -738,6 +739,12 @@ export function PullRequestRouteScreen({ route }: StaticScreenProps<PullRequestP
                         <View>
                           {tab === "overview" && identity ? (
                             <View>
+                              <SourceControlAppAccessNotice
+                                environmentId={params.environmentId}
+                                provider={identity.provider}
+                                host={params.host}
+                                repository={params.repository}
+                              />
                               {pr ? (
                                 <PullRequestOverview
                                   pr={pr}

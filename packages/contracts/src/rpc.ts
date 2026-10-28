@@ -421,6 +421,12 @@ import {
   SourceControlRepositoryInfo,
   SourceControlRepositoryLookupInput,
   SourceControlSetDefaultRepositoryInput,
+  SourceControlAppAccess,
+  SourceControlAppAccessInput,
+  SourceControlSignInError,
+  SourceControlSignInInput,
+  SourceControlSignInPrompt,
+  SourceControlSignInResult,
 } from "./sourceControl.ts";
 import { VcsError } from "./vcs.ts";
 import { Project, ProjectMutation, ProjectMutationError } from "./project.ts";
@@ -636,6 +642,10 @@ export const WS_METHODS = {
   sourceControlListIssues: "sourceControl.listIssues",
   sourceControlGetIssue: "sourceControl.getIssue",
   sourceControlResolveReferences: "sourceControl.resolveReferences",
+  sourceControlSignInStart: "sourceControl.signInStart",
+  sourceControlSignInWait: "sourceControl.signInWait",
+  sourceControlSignInCancel: "sourceControl.signInCancel",
+  sourceControlAppAccess: "sourceControl.appAccess",
   projectCloneStart: "projectClone.start",
   projectCloneCancel: "projectClone.cancel",
   projectCloneRetry: "projectClone.retry",
@@ -1294,6 +1304,33 @@ const WsSourceControlCloneRepositoryRpc = Rpc.make(WS_METHODS.sourceControlClone
   payload: SourceControlCloneRepositoryInput,
   success: SourceControlCloneRepositoryResult,
   error: Schema.Union([SourceControlRepositoryError, EnvironmentAuthorizationError]),
+});
+
+// Starts a device-flow sign-in the server finishes on its own, so a client can leave meanwhile.
+const WsSourceControlSignInStartRpc = Rpc.make(WS_METHODS.sourceControlSignInStart, {
+  payload: SourceControlSignInInput,
+  success: SourceControlSignInPrompt,
+  error: Schema.Union([SourceControlSignInError, EnvironmentAuthorizationError]),
+});
+
+// Resolves when the sign-in `signInStart` began ends, however long the user takes.
+const WsSourceControlSignInWaitRpc = Rpc.make(WS_METHODS.sourceControlSignInWait, {
+  payload: SourceControlSignInInput,
+  success: SourceControlSignInResult,
+  error: Schema.Union([SourceControlSignInError, EnvironmentAuthorizationError]),
+});
+
+// Ends the sign-in `signInStart` began, so approving the code afterwards signs nothing in.
+const WsSourceControlSignInCancelRpc = Rpc.make(WS_METHODS.sourceControlSignInCancel, {
+  payload: SourceControlSignInInput,
+  success: Schema.Void,
+  error: Schema.Union([SourceControlSignInError, EnvironmentAuthorizationError]),
+});
+
+const WsSourceControlAppAccessRpc = Rpc.make(WS_METHODS.sourceControlAppAccess, {
+  payload: SourceControlAppAccessInput,
+  success: SourceControlAppAccess,
+  error: EnvironmentAuthorizationError,
 });
 
 // Returns when the project exists and cloning starts; progress uses the subscription.
@@ -2217,6 +2254,10 @@ export const WsRpcGroup = RpcGroup.make(
   WsSourceControlListIssuesRpc,
   WsSourceControlGetIssueRpc,
   WsSourceControlResolveReferencesRpc,
+  WsSourceControlSignInStartRpc,
+  WsSourceControlSignInWaitRpc,
+  WsSourceControlSignInCancelRpc,
+  WsSourceControlAppAccessRpc,
   WsProjectCloneStartRpc,
   WsProjectCloneCancelRpc,
   WsProjectCloneRetryRpc,

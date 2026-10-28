@@ -32,6 +32,10 @@ const UPSTREAM_NAMING_EXCEPTIONS: ReadonlyArray<{
   readonly renderedAsStyal?: true;
 }> = [
   {
+    path: "packages/source-control-github/src/shared/definition.ts",
+    reason: "Names upstream's real GitHub app, which is off in the fork without a client ID.",
+  },
+  {
     path: "apps/server/src/dataImport/",
     reason: "Import messages name the upstream T3 Code install being imported.",
   },
