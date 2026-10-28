@@ -21,6 +21,7 @@ import { readAgentActivityPublishingActive } from "../cloud/config.ts";
 import { resolveServerSelfUpdateCapability } from "../cloud/selfUpdate.ts";
 import { resolveServiceLauncherMode } from "../cloud/serviceLauncherClient.ts";
 import * as ServerConfig from "../config.ts";
+import { copyFileBytes } from "../fileCopy.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import { resolveServerEnvironmentLabel } from "./ServerEnvironmentLabel.ts";
 import { detectServerEnvironmentMachineKind } from "./ServerEnvironmentMachine.ts";
@@ -144,7 +145,7 @@ const makeIdentity = Effect.gen(function* () {
       if (mode === "recover") {
         // Keep the recovery ID so delayed initializers also publish the same winner.
         yield* fileSystem.remove(tempPath);
-        yield* fileSystem.copyFile(destinationPath, tempPath);
+        yield* copyFileBytes(fileSystem, destinationPath, tempPath);
         yield* fileSystem.rename(tempPath, serverConfig.environmentIdPath);
       }
     },

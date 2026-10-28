@@ -27,6 +27,7 @@ import type { BrowserContext, Page } from "playwright-core";
 import { beforeEach, expect, vi } from "vite-plus/test";
 
 import * as ServerConfig from "../config.ts";
+import { copyFileBytesPromise } from "../fileCopy.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as Broker from "../mcp/PreviewAutomationBroker.ts";
 import * as DesktopChannel from "./DesktopBrowserChannel.ts";
@@ -1372,7 +1373,7 @@ it.live.each([false, true])(
               released.resolve();
             }
           },
-          saveAs: (path: string) => NodeFSP.copyFile(original, path),
+          saveAs: (path: string) => copyFileBytesPromise(original, path),
           suggestedFilename: () => "report.csv",
           url: () => "blob:http://localhost:5173/1",
         });
@@ -1429,7 +1430,7 @@ it.live.each(["save failed", "oversized"])(
           },
           saveAs: async (path: string) => {
             savedPath = path;
-            await NodeFSP.copyFile(original, path);
+            await copyFileBytesPromise(original, path);
             if (outcome === "save failed") throw new Error("save interrupted");
             // A sparse file exercises the size limit without writing a GiB of data.
             await NodeFSP.truncate(path, 1024 ** 3 + 1);

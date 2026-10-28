@@ -14,6 +14,7 @@ import {
   resolveAttachmentPath,
 } from "../attachmentStore.ts";
 import * as ServerConfig from "../config.ts";
+import { copyFileBytes } from "../fileCopy.ts";
 
 export class AttachmentClaimError extends Schema.TaggedError<AttachmentClaimError>()(
   "AttachmentClaimError",
@@ -121,11 +122,12 @@ export const claimPendingAttachments = Effect.fn("AttachmentClaims.claimPendingA
             });
           }
           // A copy, not a hard link: an agent editing the delivered file in
-          // place must not mutate the retry source. fs.copyFile cannot be
-          // cancelled, so the copy and its rollback registration stay in one
-          // uninterruptible region: an interrupt landing mid-copy still waits
-          // for the write to settle and records the path before cleanup runs.
-          yield* fileSystem.copyFile(claim.currentPath, claim.finalPath).pipe(
+          // place must not mutate the retry source. The path is registered for
+          // rollback before the copy so a write that fails partway is removed,
+          // and a file write cannot be cancelled, so an interrupt landing
+          // mid-copy waits for the write to settle before cleanup runs.
+          yield* Effect.sync(() => claimedPaths.push(claim.finalPath)).pipe(
+            Effect.andThen(copyFileBytes(fileSystem, claim.currentPath, claim.finalPath)),
             Effect.mapError(
               (cause) =>
                 new AttachmentClaimError({
@@ -133,7 +135,6 @@ export const claimPendingAttachments = Effect.fn("AttachmentClaims.claimPendingA
                   cause,
                 }),
             ),
-            Effect.andThen(Effect.sync(() => claimedPaths.push(claim.finalPath))),
             Effect.uninterruptible,
           );
           return normalized;

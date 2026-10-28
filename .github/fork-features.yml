@@ -2181,26 +2181,35 @@ features:
       retire_when: The fork stops managing its own upstream intake or adopts another process that preserves explicit reconciliation of provisional imports.
 
   - id: git-index-copy-without-block-clone
-    title: Copy the Git index without a filesystem block clone
+    title: Copy server files without a filesystem block clone
     status: maintained
-    prs: []
+    prs: [1011]
     invariants:
       - Checkpoint capture, commit-context preparation and the working-tree review diff copy `.git/index` into their private index by reading and writing its bytes, so a turn never waits on a filesystem sync before the provider starts.
-    rationale: Node's `fs.copyFile` uses `copy_file_range`, which OpenZFS 2.2+ turns into a block clone. With `zfs_bclone_wait_dirty=1`, cloning an index Git just rewrote waits for the next transaction group sync, which took from seconds to minutes on a busy pool, and V2 runs wait for the baseline checkpoint before starting the provider. Upstream still copies with `copyFile`. Compared with upstream revision bb7783e295 on October 24, 2026.
+      - Claiming a pending attachment for a thread, recovering the environment ID, and staging imported legacy attachments stream the file's bytes instead of calling `copyFile`, so sending an attachment or starting the server never waits on a filesystem sync.
+    rationale: Node's `fs.copyFile` uses `copy_file_range`, which OpenZFS 2.2+ turns into a block clone, and Node's clone flags take the same path. With `zfs_bclone_wait_dirty=1`, cloning a file written since the last transaction group sync waits for that sync. On a busy pool that took from 0.3 seconds to minutes even for a 4-byte file, and V2 runs wait for the baseline checkpoint before starting the provider. The fork copies through `copyFileBytes` in `apps/server/src/fileCopy.ts`; new upstream `copyFile` calls on freshly written files, such as the document sidecar copy in upstream `AttachmentClaims.ts`, should use it at intake. Upstream still copies with `copyFile`. Compared with upstream revision 9826dbb990 on October 28, 2026.
     implementation_paths:
+      - apps/server/src/dataImport/LegacyImport.ts
+      - apps/server/src/environment/ServerEnvironment.ts
+      - apps/server/src/fileCopy.ts
+      - apps/server/src/orchestration-v2/AttachmentClaims.ts
       - apps/server/src/vcs/GitVcsDriver.ts
       - apps/server/src/vcs/GitVcsDriverCore.ts
     upstream_paths:
+      - apps/server/src/environment/ServerEnvironment.ts
+      - apps/server/src/orchestration-v2/AttachmentClaims.ts
       - apps/server/src/vcs/GitVcsDriver.ts
       - apps/server/src/vcs/GitVcsDriverCore.ts
     tests:
+      - apps/server/src/fileCopy.test.ts
+      - apps/server/src/orchestration-v2/AttachmentClaims.test.ts
       - apps/server/src/orchestration-v2/CheckpointCaptureService.test.ts
       - apps/server/src/vcs/GitVcsDriver.test.ts
       - e2e/tests/chat-smoke.e2e.ts
     upstream:
       status: unassessed
       tracking: []
-      retire_when: Upstream copies the Git index without `copyFile`, or OpenZFS stops waiting for a sync when cloning dirty blocks.
+      retire_when: Upstream copies these files without `copyFile`, or OpenZFS stops waiting for a sync when cloning dirty blocks.
 
   - id: github-issue-thread-context
     title: Start a thread from a GitHub issue

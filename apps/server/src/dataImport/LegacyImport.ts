@@ -37,6 +37,7 @@ import { makeV2HistoryWriter, readV2SourceProjection } from "./V2HistoryImport.t
 import type { OrchestrationV2ThreadProjection } from "@t3tools/contracts";
 import { attachmentRelativePath } from "../attachmentStore.ts";
 import { ServerConfig } from "../config.ts";
+import { copyFileBytesPromise } from "../fileCopy.ts";
 import {
   makeLegacyHistoryWriter,
   type HistoricalProviderContinuation,
@@ -771,7 +772,7 @@ const copyThreadAttachments = Effect.fn("LegacyImport.copyThreadAttachments")(fu
           continue;
         }
 
-        await NodeFS.promises.copyFile(sourcePath, stagedPath, NodeFS.constants.COPYFILE_EXCL);
+        await copyFileBytesPromise(sourcePath, stagedPath, { flags: "wx" });
         const stagedStat = await NodeFS.promises.stat(stagedPath);
         if (!stagedStat.isFile() || stagedStat.size !== sourceStat.size) {
           throw sourceFailure("read-failed", "A thread attachment could not be copied safely.");

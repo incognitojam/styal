@@ -42,6 +42,7 @@ import { gitCommandDuration, gitCommandsTotal, withMetrics } from "../observabil
 import * as GitVcsDriver from "./GitVcsDriver.ts";
 import { removeEmptyDirectory } from "./removeEmptyDirectory.ts";
 import { explicitBareRepositoryEnv, gitConfigEnv } from "./VcsProcess.ts";
+import { copyFileBytes } from "../fileCopy.ts";
 import { resolveWorktreesDirectory } from "../worktreesDirectory.ts";
 import {
   parseRemoteNames,
@@ -2354,7 +2355,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
           ];
           if (yield* fileSystem.exists(indexPath)) {
             const { mtime } = yield* fileSystem.stat(indexPath);
-            yield* GitVcsDriver.copyGitIndexFile(fileSystem, indexPath, tempIndexPath);
+            yield* copyFileBytes(fileSystem, indexPath, tempIndexPath);
             const indexTime = Option.isSome(mtime)
               ? Math.max(0, Math.floor(mtime.value.getTime() / 1000))
               : 0;
@@ -2796,7 +2797,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     const indexExists = yield* fileSystem.exists(indexPath);
     if (indexExists) {
       const { mtime } = yield* fileSystem.stat(indexPath);
-      yield* GitVcsDriver.copyGitIndexFile(fileSystem, indexPath, tempIndexPath);
+      yield* copyFileBytes(fileSystem, indexPath, tempIndexPath);
       // Node FileSystem.stat truncates bigint timestamps to milliseconds before creating its Date.
       // Flooring preserves the source second without making preceding-second files racy.
       const indexTime = Option.isSome(mtime)
