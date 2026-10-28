@@ -92,6 +92,17 @@ jobs:
         with:
           variant: preview
 
+      # Metro keys each transform by file content and config, so an older
+      # snapshot is safe to restore. A key per commit saves the newest
+      # transforms instead of keeping the first push's.
+      - name: Cache Metro transforms
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/metro/metro-cache
+          key: metro-android-v1-${{ runner.os }}-${{ runner.arch }}-preview-${{ hashFiles('pnpm-lock.yaml', 'patches/**', 'apps/mobile/metro.config.*', 'apps/mobile/babel.config.*') }}-${{ github.event.pull_request.head.sha }}
+          restore-keys: |
+            metro-android-v1-${{ runner.os }}-${{ runner.arch }}-preview-${{ hashFiles('pnpm-lock.yaml', 'patches/**', 'apps/mobile/metro.config.*', 'apps/mobile/babel.config.*') }}-
+
       # The version code is this workflow's run number, so a newer preview
       # installs over an older one from any PR.
       - id: version
@@ -119,7 +130,12 @@ jobs:
       # libraries.
       - name: Build the APK
         working-directory: apps/mobile/android
+        env:
+          # Uniwind replaces Expo's Metro cache store with its own under the
+          # temp directory, so TMPDIR is what places it in the cached path.
+          TMPDIR: ${{ runner.temp }}/metro
         run: |
+          mkdir -p "$TMPDIR"
           ./gradlew :app:assembleRelease --build-cache --profile \
             -PreactNativeArchitectures=arm64-v8a \
             -Pexpo.useLegacyPackaging=true
