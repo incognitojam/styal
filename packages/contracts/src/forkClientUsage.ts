@@ -1,4 +1,5 @@
 import * as Schema from "effect/Schema";
+import * as Struct from "effect/Struct";
 
 import { NonNegativeInt } from "./baseSchemas.ts";
 import { PreviewAppearancePreference, PreviewZoomFactor } from "./preview.ts";
@@ -123,6 +124,16 @@ export const ClientSettingsSnapshot = Schema.Struct({
 });
 export type ClientSettingsSnapshot = typeof ClientSettingsSnapshot.Type;
 
+/**
+ * What a server accepts as a snapshot. Every setting is optional because the
+ * version gate only stops newer clients: a client that predates a setting
+ * still reports, and the setting is recorded as absent rather than as a choice.
+ * Clients build the strict `ClientSettingsSnapshot`.
+ */
+export const ReportedClientSettingsSnapshot = ClientSettingsSnapshot.mapFields(
+  Struct.mapOmit(["feature", "action"], Schema.optionalKey),
+);
+
 export const WebBuildUpdateUsageAction = Schema.Literals(["notice_shown", "refresh_requested"]);
 export type WebBuildUpdateUsageAction = typeof WebBuildUpdateUsageAction.Type;
 
@@ -196,6 +207,6 @@ export const ForkClientUsageInput = Schema.Union([
     action: Schema.Literal("merge"),
     outcome: Schema.Literals(["success", "failure"]),
   }),
-  ClientSettingsSnapshot,
+  ReportedClientSettingsSnapshot,
 ]);
 export type ForkClientUsageInput = typeof ForkClientUsageInput.Type;
