@@ -35,6 +35,7 @@ import {
   renderConflictFile,
   resolveHunk,
 } from "./lib/conflicts.ts";
+import { type LaterCommit, type LaterFix, laterFixesByBatchCommit } from "./lib/later-fixes.ts";
 import { parseUpstreamProvenance } from "./lib/provenance.ts";
 import {
   namespaceAlias,
@@ -44,6 +45,7 @@ import {
   useNamespaceImport,
 } from "./lib/references.ts";
 import { applyIdentifierRenames, deriveIdentifierRenames } from "./lib/renames.ts";
+import { decodeTrackedPRs } from "./lib/tracked-prs.ts";
 import { holdForPushedCandidate } from "./landing-hold.ts";
 
 const repoRoot = NodePath.resolve(
@@ -1271,6 +1273,8 @@ export interface SurveyEntry {
   readonly reasons: ReadonlyArray<string>;
   /** Fork features whose ledger paths the upstream commit changes. */
   readonly features: ReadonlyArray<string>;
+  /** Later upstream fixes, beyond the surveyed commits, that name this commit. */
+  readonly laterFixes: ReadonlyArray<LaterFix>;
 }
 
 /** Ledger feature ids by the implementation and upstream paths each entry lists. */
@@ -1294,6 +1298,106 @@ export function ledgerFeaturesByPath(ledger: string): ReadonlyMap<string, Readon
     if (path && id) byPath.set(path, [...(byPath.get(path) ?? []), id]);
   }
   return byPath;
+}
+
+/** First-parent upstream commits after `after`, each with its PR description. */
+function laterUpstreamCommits(
+  cwd: string,
+  after: string,
+  repository: string,
+): ReadonlyArray<LaterCommit> {
+  const commits = git(cwd, [
+    "log",
+    "--first-parent",
+    "--format=%H%x00%B%x01",
+    `${after}..upstream/main`,
+  ])
+    .split("\x01")
+    .map((record) => record.replace(/^\n/u, ""))
+    .filter((record) => record.length > 0)
+    .map((record) => {
+      const [sha = "", message = ""] = record.split("\0");
+      const subject = message.split("\n", 1)[0]!.trim();
+      const pr = /\(#(\d+)\)$|^Merge pull request #(\d+) /u.exec(subject);
+      return { sha, pr: pr ? Number(pr[1] ?? pr[2]) : null, subject, message };
+    });
+  const [owner, name] = repository.split("/");
+  const numbers = commits.flatMap((commit) => (commit.pr === null ? [] : [commit.pr]));
+  const pullRequests = new Map<number, { readonly title: string; readonly body: string }>();
+  for (let start = 0; start < numbers.length; start += 100) {
+    const chunk = numbers.slice(start, start + 100);
+    const query = `query { repository(owner:${JSON.stringify(owner)}, name:${JSON.stringify(name)}) { ${chunk.map((number) => `p${number}: pullRequest(number:${number}) { title body }`).join("\n")} } }`;
+    const result = run(cwd, "gh", ["api", "graphql", "-f", `query=${query}`]);
+    if (result.status !== 0)
+      throw new Error(`Could not read upstream PR descriptions: ${result.stderr.trim()}`);
+    const data = (
+      JSON.parse(result.stdout) as {
+        data?: { repository?: Record<string, { title: string; body: string } | null> };
+      }
+    ).data?.repository;
+    if (!data) throw new Error("Could not read upstream PR descriptions.");
+    for (const number of chunk) {
+      const pullRequest = data[`p${number}`];
+      if (pullRequest) pullRequests.set(number, pullRequest);
+    }
+  }
+  return commits.map((commit) => {
+    const pullRequest = commit.pr === null ? undefined : pullRequests.get(commit.pr);
+    return {
+      sha: commit.sha,
+      pr: commit.pr,
+      title: pullRequest?.title ?? commit.subject,
+      text: pullRequest ? `${commit.message}\n${pullRequest.body}` : commit.message,
+    };
+  });
+}
+
+/**
+ * Later upstream fixes to `batch` commits that `base` has not imported, with the fork's tracking
+ * reason when it tracks one.
+ */
+function laterFixes(
+  cwd: string,
+  base: string,
+  batch: ReadonlyArray<QueueEntry>,
+): ReadonlyMap<string, ReadonlyArray<LaterFix>> {
+  if (batch.length === 0) return new Map();
+  const repository =
+    (
+      JSON.parse(readIfExists(NodePath.join(cwd, ".github/upstream-intake.json")) || "{}") as {
+        upstreamRepository?: string;
+      }
+    ).upstreamRepository ?? "pingdotgg/t3code";
+  const found = laterFixesByBatchCommit(
+    batch,
+    laterUpstreamCommits(cwd, batch.at(-1)!.sha, repository),
+    repository,
+  );
+  const imported = parseUpstreamProvenance(
+    git(cwd, ["log", "--format=%B%x01", "-E", "--grep=^Upstream-(PR|Commit):", base]).split("\x01"),
+  );
+  const importedPrs = new Set(imported.pullRequestNumbers);
+  const importedShas = new Set(imported.commitShas);
+  const trackedFile = run(cwd, "git", ["show", `${base}:.github/upstream-tracked-prs.json`]);
+  const tracked = new Map(
+    (trackedFile.status === 0 ? decodeTrackedPRs(trackedFile.stdout) : []).map((entry) => [
+      entry.number,
+      entry.reason,
+    ]),
+  );
+  return new Map(
+    [...found].map(([sha, fixes]) => [
+      sha,
+      fixes
+        .filter(
+          (fix) => !importedShas.has(fix.sha) && (fix.pr === null || !importedPrs.has(fix.pr)),
+        )
+        .map((fix) => {
+          const reason = fix.pr === null ? undefined : tracked.get(fix.pr);
+          return reason === undefined ? fix : { ...fix, tracked: reason };
+        }),
+    ]),
+  );
 }
 
 /**
@@ -1320,6 +1424,7 @@ function survey(
       forkRef: options.base,
       ...(options.through === undefined ? {} : { through: options.through }),
     });
+    const fixesByCommit = laterFixes(cwd, options.base, entries);
     for (const entry of entries) {
       const changedPaths = lines(
         git(cwd, [
@@ -1366,13 +1471,24 @@ function survey(
         ];
         status = "needs-person";
       }
-      results.push({ sha: entry.sha, pr: entry.pr, title: entry.title, status, reasons, features });
+      results.push({
+        sha: entry.sha,
+        pr: entry.pr,
+        title: entry.title,
+        status,
+        reasons,
+        features,
+        laterFixes: fixesByCommit.get(entry.sha) ?? [],
+      });
     }
   } finally {
     run(cwd, "git", ["worktree", "remove", "--force", directory]);
   }
   return results;
 }
+
+const describeCommit = (sha: string, pr: number | null, title: string) =>
+  `${sha.slice(0, 10)} ${pr === null ? "direct" : `#${pr}`} ${title}`;
 
 /** One line per commit that needs a person, with its reasons and the fork features it touches. */
 export function summarizeSurvey(entries: ReadonlyArray<SurveyEntry>): string {
@@ -1382,11 +1498,25 @@ export function summarizeSurvey(entries: ReadonlyArray<SurveyEntry>): string {
     `Surveyed ${entries.length} commits: ${count("clean")} clean, ${count("resolved")} resolved, ${count("needs-person")} need a person.`,
   ];
   for (const entry of entries.filter((candidate) => candidate.status === "needs-person")) {
-    parts.push(
-      `\n${entry.sha.slice(0, 10)} ${entry.pr === null ? "direct" : `#${entry.pr}`} ${entry.title}`,
-    );
+    parts.push(`\n${describeCommit(entry.sha, entry.pr, entry.title)}`);
     for (const reason of entry.reasons) parts.push(`    ${reason}`);
     if (entry.features.length > 0) parts.push(`    fork features: ${entry.features.join(", ")}`);
+  }
+  const fixed = entries.filter((entry) => entry.laterFixes.length > 0);
+  if (fixed.length > 0) {
+    parts.push(
+      "\nLater upstream fixes name these commits; extend the batch, import the fix early, or port it before landing:",
+    );
+    for (const entry of fixed) {
+      parts.push(`\n${describeCommit(entry.sha, entry.pr, entry.title)}`);
+      for (const fix of entry.laterFixes) {
+        parts.push(
+          `    ${describeCommit(fix.sha, fix.pr, fix.title)}`,
+          `        "${fix.evidence}"`,
+        );
+        if (fix.tracked !== undefined) parts.push(`        tracked: ${fix.tracked}`);
+      }
+    }
   }
   return `${parts.join("\n")}\n`;
 }
