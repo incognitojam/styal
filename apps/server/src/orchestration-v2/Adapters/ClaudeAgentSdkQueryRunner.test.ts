@@ -277,76 +277,89 @@ it.effect("reopens a stalled MCP registration before delivering the resumed prom
   ),
 );
 
-it.effect.each([true, false])("only retries after confirmed process exit: %s", (exits) =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      const registrationStarted = Promise.withResolvers<void>();
-      const cleanupProgress = Promise.withResolvers<"kill" | "retry">();
-      const events = new NodeEvents.EventEmitter();
-      const stdin = new NodeStream.PassThrough();
-      const stdout = new NodeStream.PassThrough();
-      const child = {
-        stdin,
-        stdout,
-        killed: false,
-        exitCode: null,
-        kill: vi.fn(() => {
-          cleanupProgress.resolve("kill");
-          return true;
-        }),
-        on: events.on.bind(events),
-        once: events.once.bind(events),
-        off: events.off.bind(events),
-      } satisfies ClaudeSdk.SpawnedProcess;
-      const signal = yield* Effect.abortSignal;
-      const disposed = vi.fn(async () => {});
-      const querySpy = vi.spyOn(ClaudeSdk, "query").mockImplementation(({ options }) => {
-        const first = querySpy.mock.calls.length === 1;
-        if (first) {
-          options?.spawnClaudeCodeProcess?.({ command: "claude", args: [], env: {}, signal });
-        } else {
-          cleanupProgress.resolve("retry");
-        }
-        return {
-          setMcpServers: () => {
-            registrationStarted.resolve();
-            return first
-              ? new Promise<ClaudeSdk.McpSetServersResult>(() => {})
-              : Promise.resolve({ added: ["t3-code"], removed: [], errors: {} });
-          },
-          close: vi.fn(),
-          [Symbol.asyncDispose]: disposed,
-        } as unknown as ClaudeSdk.Query;
-      });
-      yield* Effect.addFinalizer(() =>
-        Effect.sync(() => {
-          querySpy.mockRestore();
-          stdin.destroy();
-          stdout.destroy();
-        }),
-      );
-      const runner = yield* ClaudeAgentSdkQueryRunner;
-      const opening = yield* runner
-        .open({
-          ...resumedMcpQueryInput,
-          options: { ...resumedMcpQueryInput.options, spawnClaudeCodeProcess: () => child },
-        })
-        .pipe(Effect.exit, Effect.forkChild);
-      yield* Effect.promise(() => registrationStarted.promise);
-      yield* TestClock.adjust("90 seconds");
+it.effect.each(["closed", "killed", "stuck"] as const)(
+  "only retries after confirmed process exit: %s",
+  (outcome) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const registrationStarted = Promise.withResolvers<void>();
+        const closeStarted = Promise.withResolvers<void>();
+        const killed = Promise.withResolvers<void>();
+        const events = new NodeEvents.EventEmitter();
+        const stdin = new NodeStream.PassThrough();
+        const stdout = new NodeStream.PassThrough();
+        const child = {
+          stdin,
+          stdout,
+          killed: false,
+          exitCode: null,
+          kill: vi.fn(() => {
+            killed.resolve();
+            return true;
+          }),
+          on: events.on.bind(events),
+          once: events.once.bind(events),
+          off: events.off.bind(events),
+        } satisfies ClaudeSdk.SpawnedProcess;
+        const signal = yield* Effect.abortSignal;
+        const disposed = vi.fn(async () => {});
+        const close = vi.fn(() => {
+          closeStarted.resolve();
+          // A CLI that is closed stops its hooks and exits by itself.
+          if (outcome === "closed") events.emit("exit", 0, null);
+        });
+        const querySpy = vi.spyOn(ClaudeSdk, "query").mockImplementation(({ options }) => {
+          const first = querySpy.mock.calls.length === 1;
+          if (first) {
+            options?.spawnClaudeCodeProcess?.({ command: "claude", args: [], env: {}, signal });
+          }
+          return {
+            setMcpServers: () => {
+              registrationStarted.resolve();
+              return first
+                ? new Promise<ClaudeSdk.McpSetServersResult>(() => {})
+                : Promise.resolve({ added: ["t3-code"], removed: [], errors: {} });
+            },
+            close: first ? close : vi.fn(),
+            [Symbol.asyncDispose]: disposed,
+          } as unknown as ClaudeSdk.Query;
+        });
+        yield* Effect.addFinalizer(() =>
+          Effect.sync(() => {
+            querySpy.mockRestore();
+            stdin.destroy();
+            stdout.destroy();
+          }),
+        );
+        const runner = yield* ClaudeAgentSdkQueryRunner;
+        const opening = yield* runner
+          .open({
+            ...resumedMcpQueryInput,
+            options: { ...resumedMcpQueryInput.options, spawnClaudeCodeProcess: () => child },
+          })
+          .pipe(Effect.exit, Effect.forkChild);
+        yield* Effect.promise(() => registrationStarted.promise);
+        yield* TestClock.adjust("90 seconds");
+        yield* Effect.promise(() => closeStarted.promise);
 
-      assert.equal(yield* Effect.promise(() => cleanupProgress.promise), "kill");
-      assert.equal(querySpy.mock.calls.length, 1);
-      assert.deepEqual(child.kill.mock.calls, [["SIGKILL"]]);
-      if (exits) events.emit("exit", null, "SIGKILL");
-      else yield* TestClock.adjust("10 seconds");
-      const result = yield* Fiber.join(opening);
-      assert.equal(Exit.isSuccess(result), exits);
-      if (Exit.isSuccess(result)) yield* result.value.close;
-      assert.equal(querySpy.mock.calls.length, exits ? 2 : 1);
-      assert.equal(disposed.mock.calls.length, 1);
-    }).pipe(Effect.provide(realQueryRunner)),
-  ),
+        if (outcome !== "closed") {
+          yield* Effect.yieldNow;
+          yield* TestClock.adjust("3500 millis");
+          yield* Effect.promise(() => killed.promise);
+          assert.equal(querySpy.mock.calls.length, 1);
+          assert.deepEqual(child.kill.mock.calls, [["SIGKILL"]]);
+          if (outcome === "killed") events.emit("exit", null, "SIGKILL");
+          else yield* TestClock.adjust("10 seconds");
+        }
+        const result = yield* Fiber.join(opening);
+        const retried = outcome !== "stuck";
+        assert.equal(Exit.isSuccess(result), retried);
+        if (Exit.isSuccess(result)) yield* result.value.close;
+        if (outcome === "closed") assert.equal(child.kill.mock.calls.length, 0);
+        assert.equal(querySpy.mock.calls.length, retried ? 2 : 1);
+        assert.equal(disposed.mock.calls.length, 1);
+      }).pipe(Effect.provide(realQueryRunner)),
+    ),
 );
 
 it.effect("stops retrying MCP registration after two timeouts and reports the cause", () =>
