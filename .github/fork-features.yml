@@ -1585,7 +1585,7 @@ features:
     prs: [790]
     invariants:
       - The composer effort button's tooltip reads "Effort and options" with the user's bound shortcut, because the button already shows the selected values.
-      - When the button collapses to its icon, the tooltip shows the selected values with the shortcut instead; an unbound command shows no shortcut.
+      - When the button collapses to its icon or shows effort as bars, the tooltip shows the selected values with the shortcut instead; an unbound command shows no shortcut.
       - Effort pickers outside the composer, such as Settings and project defaults, keep their existing tooltip.
     rationale: Upstream's tooltip repeats the values already shown on the button and does not say what the menu holds or how to open it.
     implementation_paths:

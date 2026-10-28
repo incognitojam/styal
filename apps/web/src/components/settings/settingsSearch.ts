@@ -327,6 +327,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["wide full width column layout messages composer monitor"],
   },
   {
+    id: "effort-display",
+    title: "Effort display",
+    to: "/settings/appearance",
+    searchTerms: ["reasoning effort thinking bars graph word label level composer"],
+  },
+  {
     id: "math-rendering",
     title: "Render math",
     to: "/settings/appearance",
@@ -616,12 +622,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "completion-sound",
     title: "Completion sound",
     to: "/settings/general",
-  },
-  {
-    id: "composer-collapse",
-    title: "Collapse composer on scroll",
-    to: "/settings/chat",
-    searchTerms: ["composer rest resting scroll wheel conversation timeline shrink minimize"],
   },
   {
     id: "send-shortcut",

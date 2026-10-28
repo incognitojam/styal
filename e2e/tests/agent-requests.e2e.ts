@@ -70,8 +70,9 @@ describe("respond to the agent", () => {
     it(`${approve ? "approves" : "declines"} a command in Supervised mode`, async () => {
       const { page } = app;
       await startNewThread(app);
-      await page.getByRole("combobox", { name: "Runtime mode" }).click();
-      await page.getByRole("option", { name: /Supervised/ }).click();
+      await page.getByRole("button", { name: /· Permissions:/ }).click();
+      await page.getByRole("menuitemradio", { name: /Supervised/ }).click();
+      await page.keyboard.press("Escape");
       await submit("Run a command");
       await page.getByRole("group", { name: "Command approval", exact: true }).waitFor();
       await page
