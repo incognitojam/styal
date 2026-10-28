@@ -17,20 +17,30 @@ import * as Path from "effect/Path";
 
 /** How often the file is checked while its command runs. */
 const CLAUDE_TASK_OUTPUT_POLL_MS = 250;
-/** Give up looking for a file Claude Code never wrote (a newer layout, or Windows). */
+/** Give up looking for a file Claude Code never wrote (a newer layout). */
 const MAX_LOCATE_ATTEMPTS = 40;
 /** Bytes read per poll. A faster writer skips ahead: only the tail is shown anyway. */
 const MAX_READ_BYTES = 256 * 1024;
 
-/** Claude Code's per-user temp root, or none where it has no uid (Windows). */
+/** Claude Code's per-user temp root, read from the environment it is launched with. */
 export function claudeTaskOutputRoot(
   environment: Readonly<Record<string, string | undefined>> | undefined,
   path: Path.Path,
 ): string | undefined {
+  const configured = environment?.CLAUDE_CODE_TMPDIR?.trim();
   const uid = process.getuid?.();
-  if (uid === undefined) return undefined;
-  const base = environment?.CLAUDE_CODE_TMPDIR?.trim() || "/tmp";
-  return path.join(base, `claude-${uid}`);
+  if (uid === undefined) {
+    // Windows has no uid: Claude Code names the folder `claude-0` and falls
+    // back to `os.tmpdir()`, which reads TEMP, then TMP, then the system temp.
+    const systemRoot = environment?.SystemRoot || environment?.windir;
+    const base =
+      configured ||
+      environment?.TEMP ||
+      environment?.TMP ||
+      (systemRoot === undefined ? undefined : path.join(systemRoot, "temp"));
+    return base === undefined ? undefined : path.join(base, "claude-0");
+  }
+  return path.join(configured || "/tmp", `claude-${uid}`);
 }
 
 const locate = Effect.fn("ClaudeTaskOutputTail.locate")(function* (input: {

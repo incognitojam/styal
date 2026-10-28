@@ -573,6 +573,32 @@ features:
         - https://github.com/pingdotgg/t3code/pull/14540
       retire_when: Upstream's Claude adapter keeps a resumed subagent as the owner of the tasks it starts, and upstream clients place nested agents in their owner's spawn card.
 
+  - id: claude-windows-shell-commands
+    title: Show Claude's Windows shell commands as commands
+    status: maintained
+    prs: [1123]
+    invariants:
+      - Claude Code's Windows `PowerShell` tool shows as a command row with its command and stdout/stderr output, like `Bash`, on every client.
+      - Claude commands running on Windows stream live output from Claude Code's task output files under `CLAUDE_CODE_TMPDIR`, else TEMP, TMP, or the system temp folder, in its `claude-0` folder.
+    rationale: Upstream's Claude adapter only knows the Bash tool name and turns the live output tail off where the host has no uid, so Windows commands show a generic tool row with raw JSON and no output until they finish.
+    implementation_paths:
+      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
+      - apps/server/src/orchestration-v2/Adapters/ClaudeTaskOutputTail.ts
+      - packages/shared/src/toolRowPresentation.ts
+    upstream_paths:
+      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
+      - apps/server/src/orchestration-v2/Adapters/ClaudeTaskOutputTail.ts
+      - packages/shared/src/toolRowPresentation.ts
+    tests:
+      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.test.ts
+      - apps/server/src/orchestration-v2/Adapters/ClaudeTaskOutputTail.test.ts
+      - packages/shared/src/toolRowPresentation.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/24176
+      retire_when: Upstream classifies Claude's PowerShell tool as a command and finds Claude Code's task output files on Windows.
+
   - id: clone-failure-guidance
     title: Explain clone authentication and rate-limit failures
     status: maintained
