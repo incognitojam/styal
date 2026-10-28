@@ -142,6 +142,8 @@ import { readUnloadedThreadCount } from "../state/olderSettledShelf";
 import { useEnvironment, useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
 import { buildThreadRouteParams, resolveActiveThreadRouteRef } from "../threadRoutes";
 import { stackedThreadToast, toastManager } from "./ui/toast";
+import { copyThreadReference } from "../lib/copyThreadReference";
+import { threadChipCopyTarget } from "@t3tools/client-runtime/thread-reference";
 import { RelativeTime } from "./RelativeTime";
 import { Kbd } from "./ui/kbd";
 import {
@@ -2183,6 +2185,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
             : []),
           { id: "mark-unread", label: "Mark unread" },
           { id: "copy-path", label: "Copy Path" },
+          { id: "copy-thread", label: "Copy Thread" },
           { id: "copy-thread-id", label: "Copy Thread ID" },
           { id: "project-settings", label: "Project settings" },
           {
@@ -2252,6 +2255,10 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
           return;
         }
         copyPathToClipboard(threadWorkspacePath, { path: threadWorkspacePath });
+        return;
+      }
+      if (clicked === "copy-thread") {
+        void copyThreadReference(threadChipCopyTarget(threadRef, thread.title));
         return;
       }
       if (clicked === "copy-thread-id") {
