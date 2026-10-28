@@ -58,6 +58,7 @@ import * as FeatureUsage from "../telemetry/FeatureUsage.ts";
 import { isLocalSshDeviceHost, remoteSshDeviceHosts } from "./localSshDeviceHost.ts";
 
 import { readDeviceDetail, runDeviceAction } from "./DeviceActions.ts";
+import * as PhysicalScreenOff from "./PhysicalScreenOff.ts";
 import { prepareSimulatorMemory, simulatorMemoryNotice } from "./SimulatorMemory.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import * as DeviceHost from "./DeviceHost.ts";
@@ -1381,8 +1382,14 @@ export const make = Effect.gen(function* () {
     );
   });
   const changes = yield* settings.subscribeChanges;
-  yield* reconcile(yield* settings.getSettings);
+  const currentSettings = yield* settings.getSettings;
+  yield* reconcile(currentSettings);
   yield* changes.pipe(Stream.runForEach(reconcile), Effect.forkIn(scope));
+  yield* PhysicalScreenOff.keepScreensOff({
+    host: localHost,
+    settings: Stream.concat(Stream.make(currentSettings), yield* settings.subscribeChanges),
+    states: stateStream(service),
+  }).pipe(Effect.forkIn(scope));
   yield* Effect.addFinalizer(() =>
     Effect.forEach(configured.values(), (value) => Scope.close(value.scope, Exit.void), {
       discard: true,

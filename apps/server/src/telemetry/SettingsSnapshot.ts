@@ -88,6 +88,7 @@ function settingsSnapshotProperties(settings: ServerSettings) {
     enableDeviceSupport: settings.enableDeviceSupport,
     // null keeps devices running.
     deviceIdleShutdownMinutes: settings.deviceIdleShutdownMinutes,
+    keepPhysicalAndroidScreensOff: settings.keepPhysicalAndroidScreensOff,
     simulatorMemoryMode: settings.simulatorMemoryMode,
     projectsWithLowMemoryMode: Object.values(settings.projectSettingsOverrides).filter(
       (override) => override.simulatorMemoryMode === "low-memory",

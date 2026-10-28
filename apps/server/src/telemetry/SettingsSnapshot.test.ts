@@ -50,6 +50,7 @@ const defaultSnapshot = {
   enableAgentHardwareAccess: false,
   enableDeviceSupport: false,
   deviceIdleShutdownMinutes: 10,
+  keepPhysicalAndroidScreensOff: true,
   simulatorMemoryMode: "standard",
   projectsWithLowMemoryMode: 0,
   cursorKeychainUsageEnabled: false,
@@ -112,6 +113,7 @@ const customizedSettings = {
   reviewGuideInstructions: "synthetic marker guide instructions",
   storageCleanup: { worktreeAfterDays: 14, worktreeOnMerge: true, logsAfterDays: 30 },
   deviceIdleShutdownMinutes: null,
+  keepPhysicalAndroidScreensOff: false,
   simulatorMemoryMode: "low-memory",
   usagePriceOverrides: {
     "synthetic-marker-priced-model": {
@@ -183,6 +185,7 @@ it.effect("reports changed values without names, paths, ids or record contents",
           worktreeCleanupOnMerge: true,
           logsCleanupAfterDays: 30,
           deviceIdleShutdownMinutes: null,
+          keepPhysicalAndroidScreensOff: false,
           simulatorMemoryMode: "low-memory",
           projectsWithLowMemoryMode: 1,
         },

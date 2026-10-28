@@ -810,6 +810,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["low standard memory ram simulator ios startup project"],
   },
   {
+    id: "physical-android-screen-off",
+    title: "Turn off physical Android screens",
+    to: "/settings/integrations",
+    targetId: "devices",
+    searchTerms: ["phone screen display off dark stay awake usb device lock"],
+  },
+  {
     id: "device-platform-support",
     title: "Simulator support",
     to: "/settings/integrations",

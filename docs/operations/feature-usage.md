@@ -72,7 +72,7 @@ Servers with `settingsSnapshotUsageVersion = 1` send one `settings.snapshot` eve
 - Thread settlement: `sidebarAutoSettleOnMerge`, `sidebarAutoSettleAfterDays` (null when off), `sidebarAutoSettleKeepPullRequests`, `snoozeLimitedThreads`, `autoResumeLimitedThreads`.
 - Source control writing: `branchNamingMode`, `branchNamePrefixCustomized`, `textGenerationModelCustomized`, `sourceControlWriterModelSet`, `sourceControlWritingStyleMode`, `followChangeRequestTemplates`, `removeAgentCreditsOnMerge`, `pullRequestMergeMethod` (null reuses the device's last choice), `reviewGuidesEnabled`, `reviewGuideModelSet`, `reviewGuideInstructionsCustomized`.
 - Storage cleanup, environment-wide: `worktreeCleanupKeepWhen`, `worktreeCleanupAfterDays`, `worktreeCleanupOnMerge`, `worktreeCleanupOnDelete`, `worktreeCleanupUnchanged`, `browserArtifactsCleanupAfterDays`, `logsCleanupAfterDays` (day counts are null when off).
-- Agent access and devices: `enableAgentBrowserAccess`, `enableAgentDeviceAccess`, `enableAgentHardwareAccess`, `enableDeviceSupport`, `deviceIdleShutdownMinutes` (null keeps devices running).
+- Agent access and devices: `enableAgentBrowserAccess`, `enableAgentDeviceAccess`, `enableAgentHardwareAccess`, `enableDeviceSupport`, `deviceIdleShutdownMinutes` (null keeps devices running), `keepPhysicalAndroidScreensOff`.
 - Usage: `cursorKeychainUsageEnabled`.
 - `backgroundActivityProfile` (`balanced`, `performance`, `battery-saver`, `custom`).
 

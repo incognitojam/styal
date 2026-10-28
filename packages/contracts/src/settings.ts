@@ -1264,6 +1264,10 @@ export const ServerSettings = Schema.Struct({
   enableDeviceSupport: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   deviceOnboardingCompleted: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   deviceIdleShutdownMinutes: DeviceIdleShutdownSetting,
+  /** Physical Android screens go dark while a styal session has them open; streaming and input continue. */
+  keepPhysicalAndroidScreensOff: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(true)),
+  ),
   simulatorMemoryMode: SimulatorMemoryMode.pipe(
     Schema.withDecodingDefault(Effect.succeed("standard")),
   ),
@@ -1610,6 +1614,7 @@ export const ServerSettingsPatch = Schema.Struct({
   enableDeviceSupport: Schema.optionalKey(Schema.Boolean),
   deviceOnboardingCompleted: Schema.optionalKey(Schema.Boolean),
   deviceIdleShutdownMinutes: Schema.optionalKey(Schema.NullOr(DeviceIdleShutdownMinutes)),
+  keepPhysicalAndroidScreensOff: Schema.optionalKey(Schema.Boolean),
   simulatorMemoryMode: Schema.optionalKey(SimulatorMemoryMode),
   deviceHosts: Schema.optionalKey(SshDeviceHostConfigs),
   environmentDeviceHosts: Schema.optionalKey(EnvironmentDeviceHostConfigs),

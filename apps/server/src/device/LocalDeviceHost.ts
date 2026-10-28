@@ -40,6 +40,7 @@ import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
 import * as ServerConfig from "../config.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import * as DeviceHost from "./DeviceHost.ts";
+import * as PhysicalScreenOff from "./PhysicalScreenOff.ts";
 import {
   agentDeviceStateDir,
   type DeviceToolPaths,
@@ -103,6 +104,7 @@ interface RunningHost {
   readonly hub: HubProcess;
   readonly agentDevice: DeviceHost.AgentDeviceEndpoint | null;
   readonly helpers: DeviceHost.DeviceHostReady["helpers"];
+  readonly scrcpyServer: PhysicalScreenOff.DisplayPowerTools["server"] | null;
 }
 
 const platformReason = Effect.fn("LocalDeviceHost.platformReason")(function* (
@@ -705,10 +707,15 @@ export const make = Effect.fn("LocalDeviceHost.make")(function* () {
         Effect.ignore,
       );
       const candidate = helperPaths(hubTool);
-      const [axExists, cliExists] = yield* Effect.all([
+      const [axExists, cliExists, emuVendorFiles] = yield* Effect.all([
         fs.exists(candidate.serveSimAxSettings).pipe(Effect.orElseSucceed(() => false)),
         fs.exists(candidate.serveSimCli).pipe(Effect.orElseSucceed(() => false)),
+        fs.readDirectory(candidate.serveEmuVendor).pipe(Effect.orElseSucceed(() => [])),
       ]);
+      const scrcpyServer = emuVendorFiles.flatMap((name) => {
+        const version = PhysicalScreenOff.scrcpyServerVersion(name);
+        return version ? [{ path: path.join(candidate.serveEmuVendor, name), version }] : [];
+      })[0];
       const next: RunningHost = {
         hub,
         agentDevice: null,
@@ -716,6 +723,7 @@ export const make = Effect.fn("LocalDeviceHost.make")(function* () {
           serveSimAxSettings: axExists ? candidate.serveSimAxSettings : null,
           serveSimCli: cliExists ? candidate.serveSimCli : null,
         },
+        scrcpyServer: scrcpyServer ?? null,
       };
       yield* Ref.set(runningRef, next);
       return next;
@@ -792,6 +800,14 @@ export const make = Effect.fn("LocalDeviceHost.make")(function* () {
     return {
       serveSimAxSettings: path.join(serveSimDist, "simax", "serve-sim-ax-settings"),
       serveSimCli: path.join(serveSimDist, "serve-sim.js"),
+      serveEmuVendor: path.join(
+        hubTool.installDir,
+        "node_modules",
+        "expo-device-hub",
+        "vendor",
+        "serve-emu",
+        "vendor",
+      ),
     };
   };
 
@@ -822,12 +838,28 @@ export const make = Effect.fn("LocalDeviceHost.make")(function* () {
         Effect.catch((cause) => Effect.succeed({ stdout: "", stderr: String(cause), code: 127 })),
       );
 
-  const toReady = (running: RunningHost): DeviceHost.DeviceHostReady => ({
-    hub: { origin: running.hub.origin } satisfies DeviceHost.DeviceHubEndpoint,
-    nodePath: running.hub.nodePath,
-    run,
-    helpers: running.helpers,
-  });
+  const adbPath =
+    sdk.adb && sdk.root
+      ? path.join(sdk.root, "platform-tools", hostPlatform === "win32" ? "adb.exe" : "adb")
+      : null;
+  const toReady = (running: RunningHost): DeviceHost.DeviceHostReady => {
+    const scrcpyServer = running.scrcpyServer;
+    return {
+      hub: { origin: running.hub.origin } satisfies DeviceHost.DeviceHubEndpoint,
+      nodePath: running.hub.nodePath,
+      run,
+      helpers: running.helpers,
+      ...(adbPath && scrcpyServer
+        ? {
+            holdDisplayOff: (serial: string) =>
+              PhysicalScreenOff.holdDisplayOff(
+                { hostId, adb: adbPath, env: hostEnvironment, server: scrcpyServer, run },
+                serial,
+              ).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner)),
+          }
+        : {}),
+    };
+  };
 
   const current: DeviceHost.DeviceHost["Service"]["current"] = Ref.get(runningRef).pipe(
     Effect.map((running) => (running ? toReady(running) : null)),

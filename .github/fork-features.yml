@@ -3205,6 +3205,34 @@ features:
       tracking: []
       retire_when: Upstream records and shows a failure reason per route and stops naming a single route when every route fails.
 
+  - id: physical-android-screen-off
+    title: Turn off physical Android screens while a thread holds them
+    status: maintained
+    prs: []
+    invariants:
+      - While `keepPhysicalAndroidScreensOff` and device support are on, every local physical Android device with at least one styal device session (opened from the Device panel or by an agent; closing a panel tab does not end it) has its display powered off through a control-only scrcpy server, with `stay_awake` set so the device does not sleep. Mirroring and input continue.
+      - When the device has no session left, or either setting turns off, the scrcpy server exits and scrcpy's cleanup turns the display back on and restores the previous stay-awake value. The same cleanup runs if styal exits, because the control socket closes.
+      - A hold that ends while the device is still a target, such as on a replug, is retried every 15 seconds. Emulators, SSH hosts, and connected-environment devices are never held; a shared device is held by the environment that owns it.
+      - The scrcpy-server jar and its version come from the installed device hub, so no second copy is downloaded.
+      - "`keepPhysicalAndroidScreensOff` defaults to true; web and mobile settings edit it per environment."
+    rationale: A phone plugged into an environment server stays lit for as long as an agent holds it, which wears the screen and battery. expo-device-hub mirrors physical devices with scrcpy but never uses scrcpy's display power control, and it is installed from npm at runtime, so styal runs its own control-only scrcpy session beside the hub's instead of patching it.
+    implementation_paths:
+      - apps/mobile/src/features/settings/SettingsDevicesRouteScreen.tsx
+      - apps/server/src/device/PhysicalScreenOff.ts
+      - apps/web/src/components/settings/PhysicalScreenOffSetting.tsx
+    upstream_paths:
+      - apps/server/src/device/DeviceHost.ts
+      - apps/server/src/device/DeviceService.ts
+      - apps/server/src/device/LocalDeviceHost.ts
+      - apps/web/src/components/settings/IntegrationsSettings.tsx
+      - packages/contracts/src/settings.ts
+    tests:
+      - apps/server/src/device/PhysicalScreenOff.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream or expo-device-hub keeps physical Android displays off while mirroring them.
+
   - id: pinned-thread-auto-settlement
     title: Keep pinned threads active until unpinned or manually settled
     status: retiring

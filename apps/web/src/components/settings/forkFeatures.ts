@@ -8,6 +8,7 @@ export const SETTINGS_FORK_FEATURES = [
   "desktop-discord-rich-presence",
   "device-environment-hosts",
   "device-idle-shutdown",
+  "physical-android-screen-off",
   "simulator-memory-profiles",
   "github-outage-status",
   "project-agent-instructions",

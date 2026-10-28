@@ -16,6 +16,7 @@ import type {
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+import type * as Scope from "effect/Scope";
 import type { NodeRuntimeUnavailableError } from "@t3tools/shared/nodeRuntime";
 import type { DeviceService } from "./DeviceService.ts";
 import type { DeviceEnvironmentInfo, DeviceError } from "@t3tools/contracts";
@@ -105,6 +106,11 @@ export interface DeviceHostReady {
     readonly serveSimAxSettings: string | null;
     readonly serveSimCli: string | null;
   };
+  /**
+   * Keeps a physical Android device's display off for the scope's lifetime while
+   * mirroring and input continue. Completes if the device disconnects. Local hosts only.
+   */
+  readonly holdDisplayOff?: (serial: string) => Effect.Effect<void, DeviceHostError, Scope.Scope>;
 }
 
 export interface DeviceHostAgentReady extends DeviceHostReady {
