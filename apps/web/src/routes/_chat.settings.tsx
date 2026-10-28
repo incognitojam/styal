@@ -1,3 +1,4 @@
+import { workspaceAreaProps } from "../lib/workspaceFocus";
 import { Outlet, createFileRoute, redirect, useLocation } from "@tanstack/react-router";
 import { useState, type ReactNode } from "react";
 import { RotateCcwIcon } from "lucide-react";
@@ -137,6 +138,7 @@ function SettingsToolbar({ pathname, onRestored }: { pathname: string; onRestore
 }
 
 function SettingsContentLayout() {
+  const contentArea = workspaceAreaProps("settings", 1, "Settings content");
   const location = useLocation();
   const { search, environment } = useSettingsScope();
   const contentScopeKey =
@@ -150,7 +152,7 @@ function SettingsContentLayout() {
     <AppRouteModal label="Settings">
       <div className="relative flex min-h-0 flex-1">
         <SettingsSidebarNav pathname={location.pathname} />
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div {...contentArea} className="flex min-h-0 min-w-0 flex-1 flex-col">
           <SettingsScopeDockProvider
             key={`${location.pathname}:${contentScopeKey}:${restoreSignal}`}
             enabled={hasScope}

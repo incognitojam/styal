@@ -578,6 +578,7 @@ type SidebarThreadRowProps = {
   compact: boolean;
   // Slim rows are either settled (action: un-settle) or merely quiet
   // (seen Ready threads — action: settle).
+  navigationParent?: string | undefined;
   variantAction: SidebarSweepAction;
   settlementSupported: boolean;
   snoozeSupported: boolean;
@@ -843,6 +844,15 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
   };
   const handleKeyDown = (event: ReactKeyboardEvent) => {
     if (event.target !== event.currentTarget) return;
+    if (
+      event.key === "F2" &&
+      !isRenaming &&
+      readEnvironmentScope(threadRef.environmentId, AuthOrchestrationOperateScope)
+    ) {
+      event.preventDefault();
+      onStartRename(threadRef, thread.title);
+      return;
+    }
     if (event.key !== "Enter" && event.key !== " ") return;
     event.preventDefault();
     onThreadActivate(threadRef);
@@ -1157,8 +1167,10 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
             render={
               <div
                 ref={rowRef}
-                role="button"
-                tabIndex={0}
+                role="treeitem"
+                tabIndex={-1}
+                data-sidebar-row={threadKey}
+                data-sidebar-parent={props.navigationParent}
                 aria-label={accessibility.label}
                 aria-current={accessibility.current}
                 data-testid="sidebar-row-slim"
@@ -1373,8 +1385,10 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
           render={
             <div
               ref={rowRef}
-              role="button"
-              tabIndex={0}
+              role="treeitem"
+              tabIndex={-1}
+              data-sidebar-row={threadKey}
+              data-sidebar-parent={props.navigationParent}
               aria-label={accessibility.label}
               aria-current={accessibility.current}
               data-testid="sidebar-row-card"

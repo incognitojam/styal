@@ -36,7 +36,7 @@ describe("group sidebar threads by project", () => {
     };
     const headerMenu = async (name: string, item: string) => {
       await header(name).click({ button: "right" });
-      await page.getByRole("button", { name: item, exact: true }).click();
+      await page.getByRole("menuitem", { name: item, exact: true }).click();
     };
 
     // These checks need no checkpoints, so the second project is a plain folder.

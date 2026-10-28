@@ -49,7 +49,7 @@ describe("move between threads", () => {
 
     // Next unread opens the thread marked unread from another thread.
     await alphaThread.click({ button: "right" });
-    await page.getByRole("button", { name: "Mark unread", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Mark unread", exact: true }).click();
     await sidebar.getByText("Done", { exact: true }).waitFor();
     await page.keyboard.press("ControlOrMeta+Shift+U");
     await expectConversation(page, "Alpha task", "Beta task");

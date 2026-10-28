@@ -12,6 +12,7 @@ import {
   type SidebarSweepAction,
 } from "./sidebar/SidebarThreadRow";
 
+import { attachSidebarTree, SIDEBAR_TREE_PROPS } from "../lib/sidebarTree";
 import { type EnvironmentId, type ScopedProjectRef } from "@t3tools/contracts";
 import type { EnvironmentServerConfig } from "@t3tools/client-runtime/connection";
 
@@ -1872,6 +1873,15 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     };
   };
 
+  const attachTreeRef = (node: HTMLUListElement) => {
+    const detachMotion = attachListMotionRef(node);
+    const detachTree = attachSidebarTree(node);
+    return () => {
+      detachTree?.();
+      detachMotion();
+    };
+  };
+
   const isContextDrag = dragState?.contextDrag === true || dragState?.activeSection === "working";
   const dragTargetSection = isContextDrag ? null : (dragState?.targetSection ?? null);
   const finishThreadDrag = (started: boolean) => {
@@ -3661,10 +3671,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
               >
                 <SortableContext items={sortableIds} strategy={sidebarSortingStrategy}>
                   <ul
-                    ref={attachListMotionRef}
-                    // Presentation flattens VoiceOver's list interaction boundary while preserving descendant
-                    // controls.
-                    role="presentation"
+                    {...SIDEBAR_TREE_PROPS}
+                    ref={attachTreeRef}
                     className={cn(
                       "relative flex flex-col gap-px",
                       sidebarListItems.length > 0 && "flex-1",
@@ -3704,6 +3712,13 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             variant={rowVariant}
                             grouped={grouped}
                             compact={compact}
+                            navigationParent={
+                              section === "working" ||
+                              section === "snoozed" ||
+                              section === "settled"
+                                ? `shelf:${section}`
+                                : undefined
+                            }
                             variantAction={
                               section === "snoozed"
                                 ? "unsnooze"
@@ -3825,6 +3840,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             <SidebarProjectGroupHeader
                               key={sidebarListItemId(item)}
                               id={sidebarListItemId(item)}
+                              navigationParent={
+                                item.kind === "working-project-header" ? "shelf:working" : undefined
+                              }
                               group={item.group}
                               project={group ?? null}
                               label={group?.displayName ?? "Unknown project"}
@@ -3970,6 +3988,10 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                       <li className="list-none">
                         <button
                           type="button"
+                          role="treeitem"
+                          tabIndex={-1}
+                          data-sidebar-row="settled:more"
+                          data-sidebar-parent="shelf:settled"
                           disabled={olderSettledShelf.loading}
                           onClick={() => {
                             olderSettledShelf.retry();

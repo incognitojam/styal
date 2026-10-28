@@ -40,6 +40,8 @@ vi.mock(import("../../assets/assetUrls"), async (importOriginal) => ({
     resources.map((resource) => `https://assets.test/${resource.attachmentId}`)) as never,
 }));
 
+import "~/index.css";
+
 import { render as renderUi } from "../../../test/render";
 import { QueuedRunsControl } from "./QueuedRunsControl";
 
@@ -108,6 +110,36 @@ it("previews assistant quotes as readable text and preserves the citation when e
   expect(onEditQueuedRun).toHaveBeenCalledExactlyOnceWith(
     expect.objectContaining({ text: quoteAndText }),
   );
+});
+
+it("stays inside the timeline scroller instead of growing the chat column", async () => {
+  setup();
+  state.projection = { projection: { messages: [] } };
+  state.workflow = {
+    activeRun: { id: "run:active" },
+    canPromoteToSteer: true,
+    queuedRuns: [
+      {
+        run: { id: "run:queued", userMessageId: "message:queued" },
+        text: "Later",
+        attachments: [],
+      },
+    ],
+  };
+  // Mirrors ChatView: a scrollable column, a positioned wrapper, then a non-positioned scroller.
+  await using screen = await renderUi(
+    <div data-testid="column" style={{ height: 200, overflowY: "auto" }}>
+      <div style={{ position: "relative", height: "100%" }}>
+        <div style={{ height: "100%", overflowY: "auto" }}>
+          <div style={{ height: 1000 }} />
+          <QueuedRunsControl {...baseProps} />
+        </div>
+      </div>
+    </div>,
+  );
+  await expect.element(page.getByText("Later", { exact: true })).toBeInTheDocument();
+  const column = screen.getByTestId("column").element();
+  expect(column.scrollHeight).toBe(column.clientHeight);
 });
 
 it("shows who sent a queued message and folds automation and agent prompts", async () => {
