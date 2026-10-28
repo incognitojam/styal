@@ -53,7 +53,11 @@ import { shouldHandleAppLink, restoreDraftLinkState } from "./lib/appLinking";
 import { takeUpdateRestartPath } from "./features/updates/update-restart-location";
 import { hasCloudPublicConfig } from "./features/cloud/publicConfig";
 import { takeScheduledTaskNewLink } from "./features/settings/scheduled-task-editor-state";
-import { pairingFormLinkAction, startDevAutoConnect } from "./features/connection/devAutoConnect";
+import {
+  pairingFormLinkAction,
+  startDevAutoConnect,
+  withoutPairingTarget,
+} from "./features/connection/devAutoConnect";
 import {
   resolvePendingNewTaskPromptLink,
   takeNewTaskPromptLink,
@@ -109,11 +113,13 @@ const linkingConfig = {
 function getAppStateFromPath(path: string, options: Parameters<typeof getStateFromPath>[1]) {
   return takeScheduledTaskNewLink(
     startDevAutoConnect(
-      takeNewTaskPromptLink(
-        takeThreadPromptLink(
-          restoreSettingsLinkState(
-            restoreDraftLinkState(getStateFromPath(path, options), path),
-            settingsLinkPage(),
+      withoutPairingTarget(
+        takeNewTaskPromptLink(
+          takeThreadPromptLink(
+            restoreSettingsLinkState(
+              restoreDraftLinkState(getStateFromPath(path, options), path),
+              settingsLinkPage(),
+            ),
           ),
         ),
       ),
