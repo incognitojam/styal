@@ -153,6 +153,10 @@
       }
     },
     {
+      "pr": 22187,
+      "reason": "Upstream #22912 was imported early without it. That PR's new test, apps/web/src/components/sidebar/SidebarProviderUpdatePill.browser.test.tsx, uses the disposable test/render helper this PR adds, so the fork's copy mounts with createRoot and act instead. When chronological intake reaches this PR, take upstream's version of that test file."
+    },
+    {
       "pr": 22513,
       "reason": "Fixes the confirmed Claude continuation stall where a queued user prompt answers an already-open native wake, leaving its continuation waiting for a consumed result. Track for normal upstream intake with its adapter dependencies; the snapshot does not apply cleanly to the fork adapter. Preserve buffered wake output and later native wakes when reconciling. The fork provider-stall detector records and warns about these incidents independently; this tracking entry does not import or duplicate the upstream fix."
     },
