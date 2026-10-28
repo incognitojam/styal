@@ -279,7 +279,7 @@ describe("plannedTestRuns", () => {
         ],
       }).map(({ name, command, args }) => [name, command, ...args].join(" ")),
       [
-        "tests apps/server (2 related files) vp test run --fileParallelism --maxWorkers=3 src/a.test.ts src/b.test.ts",
+        "tests apps/server (2 related files) vp test run --fileParallelism --maxWorkers=5 src/a.test.ts src/b.test.ts",
         "tests apps/marketing (1 related file) pnpm run test",
         "tests packages/shared (1 related file) vp test run --config ../../vite.config.ts --dir . src/git.test.ts",
       ],
@@ -295,7 +295,7 @@ describe("plannedTestRuns", () => {
         relatedTests: [],
       }).map(({ directory, command, args }) => [directory, command, ...args].join(" ")),
       [
-        "apps/server pnpm run test --fileParallelism --maxWorkers=3",
+        "apps/server pnpm run test --fileParallelism --maxWorkers=5",
         "packages/shared pnpm run test",
       ],
     );
