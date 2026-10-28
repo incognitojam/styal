@@ -1140,7 +1140,9 @@ const ConversationTimeline = memo(function ConversationTimeline({
 
   const canvas = useChatCanvas();
   const registerTimeline = canvas?.registerTimeline;
-  const setTimelineList = (list: LegendListRef | null) => {
+  // Stable so the list attaches once per mount. A re-attach reports no overflow for a frame,
+  // which flips the resting composer, resizes it, and re-renders this list again.
+  const setTimelineList = useStableCallback((list: LegendListRef | null) => {
     listRef.current = list;
     const scrollNode: HTMLElement | null = list?.getScrollableNode() ?? null;
     registerTimeline?.(scrollNode);
@@ -1186,7 +1188,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
       listRef.current = null;
       registerTimeline?.(null);
     };
-  };
+  });
 
   useThreadFindPositionReader({
     threadKey: listIdentityKey,
