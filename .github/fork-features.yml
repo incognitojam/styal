@@ -576,7 +576,7 @@ features:
   - id: claude-windows-shell-commands
     title: Show Claude's Windows shell commands as commands
     status: maintained
-    prs: [1123]
+    prs: [1123, 1131]
     invariants:
       - Claude Code's Windows `PowerShell` tool shows as a command row with its command and stdout/stderr output, like `Bash`, on every client.
       - Claude commands running on Windows stream live output from Claude Code's task output files under `CLAUDE_CODE_TMPDIR`, else TEMP, TMP, or the system temp folder, in its `claude-0` folder.
