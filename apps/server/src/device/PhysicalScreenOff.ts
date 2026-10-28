@@ -197,29 +197,33 @@ export const keepScreensOff = Effect.fn("PhysicalScreenOff.keepScreensOff")(func
   readonly states: Stream.Stream<DeviceServiceState>;
 }) {
   const holds = new Map<string, Fiber.Fiber<unknown, unknown>>();
-  const hold = (serial: string) =>
-    Effect.gen(function* () {
+  const hold = Effect.fn("PhysicalScreenOff.hold")(
+    function* (serial: string) {
       const ready = yield* input.host.current;
       if (!ready?.holdDisplayOff) return yield* Effect.fail("device hub not running" as const);
       yield* Effect.scoped(ready.holdDisplayOff(serial));
       return yield* Effect.fail("device disconnected" as const);
-    }).pipe(
-      Effect.tapError((cause) =>
-        Effect.logDebug("Could not keep a physical Android screen off", { serial, cause }),
+    },
+    (effect, serial) =>
+      effect.pipe(
+        Effect.tapError((cause) =>
+          Effect.logDebug("Could not keep a physical Android screen off", { serial, cause }),
+        ),
+        Effect.retry(Schedule.spaced(RETRY_INTERVAL)),
       ),
-      Effect.retry(Schedule.spaced(RETRY_INTERVAL)),
-    );
-  const reconcile = (targets: ReadonlySet<string>) =>
-    Effect.gen(function* () {
-      for (const [serial, fiber] of holds) {
-        if (targets.has(serial)) continue;
-        holds.delete(serial);
-        yield* Fiber.interrupt(fiber);
-      }
-      for (const serial of targets) {
-        if (!holds.has(serial)) holds.set(serial, yield* Effect.forkChild(hold(serial)));
-      }
-    });
+  );
+  const reconcile = Effect.fn("PhysicalScreenOff.reconcile")(function* (
+    targets: ReadonlySet<string>,
+  ) {
+    for (const [serial, fiber] of holds) {
+      if (targets.has(serial)) continue;
+      holds.delete(serial);
+      yield* Fiber.interrupt(fiber);
+    }
+    for (const serial of targets) {
+      if (!holds.has(serial)) holds.set(serial, yield* Effect.forkChild(hold(serial)));
+    }
+  });
   yield* Stream.zipLatest(input.settings, input.states).pipe(
     Stream.map(([settings, state]) => screenOffTargets(settings, state)),
     Stream.runForEach(reconcile),
