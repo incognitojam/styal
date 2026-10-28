@@ -137,12 +137,26 @@ jobs:
           path: apps/mobile/android/build/reports/profile/
           retention-days: 7
 
+      # Gradle builds previews with a fixed version and aapt2 writes the real
+      # one into the manifest (withAndroidPreviewApkVersion), so check that the
+      # APK installs over older previews.
       - name: Name the APK
         env:
           APK_NAME: ${{ steps.version.outputs.apk_name }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
+          apk=apps/mobile/android/app/build/outputs/apk/release/app-release.apk
+          build_tools="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
+          # Read the whole dump: under pipefail, `| head` can fail aapt2 with SIGPIPE.
+          badging="$("$build_tools/aapt2" dump badging "$apk")"
+          badging="${badging%%$'\n'*}"
+          echo "$badging"
+          if [[ "$badging" != *"versionCode='${GITHUB_RUN_NUMBER}' versionName='${VERSION}'"* ]]; then
+            echo "The APK does not carry version ${VERSION} (${GITHUB_RUN_NUMBER})." >&2
+            exit 1
+          fi
           mkdir -p release
-          mv apps/mobile/android/app/build/outputs/apk/release/app-release.apk "release/$APK_NAME"
+          mv "$apk" "release/$APK_NAME"
 
       # archive: false uploads the file as its own artifact named after the
       # file, so the publish job downloads by *.apk pattern, not by name.
