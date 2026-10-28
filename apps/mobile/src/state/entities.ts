@@ -25,7 +25,6 @@ import {
   threadLinkRefs,
   type ThreadLink,
 } from "@t3tools/shared/threadLinks";
-import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { AsyncResult, Atom } from "effect/reactivity";
 
@@ -118,7 +117,7 @@ const threadProjectChipIconAtom = Atom.family((key: string) => {
     if (!icon) return null;
     const tile = projectChipTile(icon);
     if (!tile) return icon.kind === "favicon" ? icon.uri : null;
-    return Option.getOrNull(AsyncResult.value(get(projectGlyphImageAtom(projectGlyphKey(tile)))));
+    return AsyncResult.getOrElse(get(projectGlyphImageAtom(projectGlyphKey(tile))), () => null);
   }).pipe(Atom.withLabel(`mobile-thread-project-chip-icon:${key}`));
 });
 

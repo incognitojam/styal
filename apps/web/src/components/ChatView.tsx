@@ -199,11 +199,9 @@ import { useProjectRootConfig } from "../hooks/useProjectConfig";
 import { projectScriptIdFromCommand } from "~/projectScripts";
 import { newMessageId } from "~/lib/utils";
 import {
-  applyProviderInstanceSettings,
-  deriveProviderInstanceEntries,
   NO_PROVIDER_MODEL_SELECTION,
+  providerInstanceEntriesFor,
   shouldShowInstanceBadge,
-  sortProviderInstanceEntries,
 } from "../providerInstances";
 import {
   useClientSettings,
@@ -1272,12 +1270,10 @@ export default function ChatView(props: ChatViewProps) {
     automaticEnvironment,
     autoUpdateEnvironments,
   });
-  const providerInstanceEntries = sortProviderInstanceEntries(
-    applyProviderInstanceSettings(
-      deriveProviderInstanceEntries(providerStatuses),
-      settings,
-      activeProject?.id ?? null,
-    ),
+  const providerInstanceEntries = providerInstanceEntriesFor(
+    providerStatuses,
+    settings,
+    activeProject?.id ?? null,
   );
   const activeThreadModelInstanceId = activeThread?.modelSelection.instanceId;
   const { selectedProviderEntry, requestedDriverKind } = resolveComposerProviderSelection({

@@ -6,7 +6,6 @@ import {
 } from "@t3tools/contracts";
 import { resolveProjectConfig } from "@t3tools/shared/projectFile";
 import { useAtomValue } from "@effect/atom-react";
-import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { createContext, type ReactNode, useContext } from "react";
 
@@ -38,7 +37,7 @@ const memberProjectFilesAtom = Atom.family((membersKey: string) => {
       if (result.waiting) return undefined;
       const data =
         get(optimisticFileAtom(environmentId, workspaceRoot, relativePath))?.data ??
-        Option.getOrNull(AsyncResult.value(result));
+        AsyncResult.getOrElse(result, () => null);
       return data === null || data.exists === false || data.truncated ? null : data.contents;
     };
     const files = new Map<string, ProjectConfig | null>();
