@@ -163,7 +163,8 @@ jobs:
   # Release assets download without a GitHub account, unlike workflow
   # artifacts. All preview DMGs live on one rolling prerelease tagged
   # "desktop-preview" (release.yml only matches v*.*.* tags), so publishing a
-  # build never notifies release watchers. This job holds the write token and
+  # build never notifies release watchers. The Windows preview shares it, so
+  # this workflow only deletes DMGs. This job holds the write token and
   # only handles the artifact the build job produced; it never runs PR code.
   publish:
     name: Publish anonymous download
@@ -238,6 +239,7 @@ jobs:
           # trailing dot keeps -pr.12. from matching -pr.123. builds.
           gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' \
             | { grep -F -- "-pr.${PR_NUMBER}." || true; } \
+            | { grep -E -- '\.dmg$' || true; } \
             | while read -r asset; do
                 gh release delete-asset "$tag" "$asset" --repo "$GITHUB_REPOSITORY" --yes \
                   || echo "Asset $asset was already removed by a concurrent run."
@@ -369,6 +371,7 @@ jobs:
 
           gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' \
             | { grep -F -- "-pr.${PR_NUMBER}." || true; } \
+            | { grep -E -- '\.dmg$' || true; } \
             | while read -r asset; do
                 gh release delete-asset "$tag" "$asset" --repo "$GITHUB_REPOSITORY" --yes \
                   || echo "Asset $asset was already removed by a concurrent run."

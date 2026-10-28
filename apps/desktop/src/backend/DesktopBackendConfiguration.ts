@@ -600,9 +600,11 @@ const resolveWslStartConfig = Effect.fn("desktop.backendConfiguration.resolveWsl
     mode: "desktop" as const,
     noBrowser: true,
     port: input.port,
-    // Omit t3Home so the Linux backend uses its own home dir instead of
-    // the Windows-side baseDir (which would be a /mnt/c path and share
-    // the SQLite file with the primary).
+    // The Linux backend uses a home inside the distro, never the Windows-side
+    // baseDir (a /mnt/c path would share the SQLite file with the primary).
+    // A preview still needs its own: the distro's default ~/.styal belongs to
+    // the stable install's WSL backend. The server expands `~` itself.
+    ...(environment.installVariant === "preview" ? { t3Home: "~/.styal/preview" } : {}),
     host: wslBindHost,
     desktopBootstrapToken: input.bootstrapToken,
     desktopBootstrapSecret: input.bootstrapSecret,

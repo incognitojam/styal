@@ -16,11 +16,14 @@ Var IsPowerShellAvailable
   # The styal install has completed and registered its new GUID. Remove the
   # earlier fork and pre-fix styal registrations without running either old
   # uninstaller: their directory-wide process check can stop upstream T3 Code.
+  # Pull request previews install beside those registrations and must leave them.
   # TODO(2026-10-08): Remove this migration after the two-month compatibility window.
-  DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\0122c0ea-801f-5352-a48e-ce98c31bc2d9"
-  DeleteRegKey HKCU "Software\0122c0ea-801f-5352-a48e-ce98c31bc2d9"
-  DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\48e3dbfe-4d90-524c-acdc-304cac9a97b1"
-  DeleteRegKey HKCU "Software\48e3dbfe-4d90-524c-acdc-304cac9a97b1"
+  ${If} "${APP_ID}" == "build.styal.app"
+    DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\0122c0ea-801f-5352-a48e-ce98c31bc2d9"
+    DeleteRegKey HKCU "Software\0122c0ea-801f-5352-a48e-ce98c31bc2d9"
+    DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\48e3dbfe-4d90-524c-acdc-304cac9a97b1"
+    DeleteRegKey HKCU "Software\48e3dbfe-4d90-524c-acdc-304cac9a97b1"
+  ${EndIf}
 
   !ifndef DO_NOT_CREATE_START_MENU_SHORTCUT
     ${IfNot} ${FileExists} "$newStartMenuLink"
