@@ -84,6 +84,7 @@ const KNOWN_TOOL_NAMES: Readonly<Record<string, string>> = {
   grep: "Grep",
   killshell: "KillShell",
   notebookedit: "NotebookEdit",
+  powershell: "PowerShell",
   read: "Read",
   sendmessage: "SendMessage",
   taskcreate: "TaskCreate",
@@ -484,6 +485,7 @@ const ITEM_TYPE_BY_TOOL_NAME: Readonly<Record<string, ToolLifecycleItemType>> = 
   Bash: "command_execution",
   BashOutput: "command_execution",
   KillShell: "command_execution",
+  PowerShell: "command_execution",
   Edit: "file_change",
   Write: "file_change",
   NotebookEdit: "file_change",
@@ -536,6 +538,7 @@ function argumentForToolName(
   switch (toolName) {
     case "Bash":
     case "BashOutput":
+    case "PowerShell":
       return context.command ? { kind: "command", value: context.command } : undefined;
     case "Read":
     case "NotebookEdit":

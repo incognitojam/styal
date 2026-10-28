@@ -2141,6 +2141,8 @@ const CLAUDE_KNOWN_TOOL_CLASSIFICATIONS: Record<
   monitor: { itemType: "dynamic_tool", requestKind: "command" },
   multiedit: { itemType: "file_change", requestKind: "file-change" },
   notebookedit: { itemType: "file_change", requestKind: "file-change" },
+  // Claude Code's Windows shell tool, with Bash's input and result shape.
+  powershell: { itemType: "command_execution", requestKind: "command" },
   read: { itemType: "dynamic_tool", requestKind: "file-read" },
   sendmessage: { itemType: "dynamic_tool", requestKind: "command" },
   task: { itemType: "dynamic_tool", requestKind: "command" },
