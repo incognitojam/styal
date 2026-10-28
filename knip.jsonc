@@ -20,11 +20,12 @@
       // Knip loads its preprocessor through a CLI option; native verification and
       // worktree setup (from t3.json) run directly. CI uses the reporter and CLI check.
       // electron-builder loads the macOS signer by path, and the desktop launch check
-      // runs against packaged builds by path.
+      // runs against packaged builds by path. mobile-behavior.ts spawns its runner by path.
       "entry": [
         // These fixture scripts are injected into a browser page by path.
         "fixtures/*/*.js",
         "knip-schemas.ts",
+        "mobile-behavior/run.ts",
         "mobile-native-client.ts",
         "setup-worktree.ts",
         "verify-cli-package.mjs",
