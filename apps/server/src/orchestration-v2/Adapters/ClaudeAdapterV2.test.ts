@@ -4218,6 +4218,80 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       ),
   );
 
+  it.effect("resumes the forked session on the turn after a rollback", () =>
+    Effect.gen(function* () {
+      const assistantUuid = "00000000-0000-4000-8000-000000000651";
+      const history = makeRollbackHistory(assistantUuid);
+      const harness = yield* makeWakeHarnessWithOptions({
+        close: (sdkMessages) => Queue.shutdown(sdkMessages),
+        freshQueueOnReopen: true,
+        ...history,
+      });
+      const now = yield* DateTime.now;
+      yield* harness.runtime.startTurn(
+        makeClaudeTestTurnInput({
+          threadId: harness.threadId,
+          providerThread: harness.providerThread,
+          now,
+          attemptId: RunAttemptId.make("attempt-claude-before-rollback"),
+          text: "Remember this.",
+          attachments: [],
+        }),
+      );
+      yield* Queue.offerAll(harness.sdkMessages, [
+        makeAssistantTextFrame({ uuid: assistantUuid, text: "Noted." }),
+        makeResultFrame({ uuid: "00000000-0000-4000-8000-000000000652", result: "Noted." }),
+      ]);
+      yield* Queue.take(harness.terminalReceipts);
+
+      const providerTurn = lastProviderTurn(harness.events);
+      history.setPromptUuid(harness.promptUuid(0));
+      const rolledBack = yield* harness.runtime.rollbackThread({
+        providerThread: harness.providerThread,
+        target: {
+          type: "provider_turn",
+          checkpointId: CheckpointId.make("checkpoint-claude-before-rollback"),
+          appRunOrdinal: 1,
+          providerTurn,
+        },
+        providerThreadTurns: [
+          providerTurn,
+          {
+            ...providerTurn,
+            id: ProviderTurnId.make("provider-turn-claude-rolled-back"),
+            nativePromptRef: {
+              driver: ClaudeAdapterV2.CLAUDE_PROVIDER,
+              nativeId: "prompt-removed",
+              strength: "strong",
+            },
+            ordinal: 2,
+          },
+        ],
+      });
+
+      // The retained attempt names the source session, so turn start reports no
+      // turns on the fork's native thread.
+      yield* harness.runtime.startTurn(
+        makeClaudeTestTurnInput({
+          threadId: harness.threadId,
+          providerThread: rolledBack.providerThread,
+          now,
+          attemptId: RunAttemptId.make("attempt-claude-after-rollback"),
+          text: "What did I ask you to remember?",
+          attachments: [],
+          providerTurnOrdinal: 2,
+          nativeThreadHasTurns: false,
+        }),
+      );
+      assert.equal(harness.getOpenedOptions()?.resume, "forked");
+      assert.isUndefined(harness.getOpenedOptions()?.sessionId);
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+      ),
+    ),
+  );
+
   it.effect("never records a subagent uuid for a turn with no main-thread assistant message", () =>
     Effect.gen(function* () {
       // The continuation turn reopens the query, and rollback shut the first queue down.

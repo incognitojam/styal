@@ -22,8 +22,9 @@ each one into an isolated prefix, and runs real turns against that build's
 server, checked out from its release tag: a tool turn, its checkpoint, a
 resumed follow-up, an interrupt, an approval round trip, a routine write in
 Auto that must not ask for approval (on providers that report an Auto reviewer),
-a rewind, a native subagent, and follow-ups after a server restart. It fails on error items or
-server warnings any of them leave behind. A failed run is retried once; a pass
+a rewind after which the provider must forget the rewound turn but remember the
+one before it, a native subagent, and follow-ups after a server restart. It
+fails on error items or server warnings any of them leave behind. A failed run is retried once; a pass
 on the retry is still recorded and is listed in the status issue. Versions that
 pass are recorded in one pull request from `automation/provider-canary`, which
 also keeps that pull request's earlier additions. Builds whose tag predates the
@@ -74,6 +75,19 @@ Do not revert the commit that added it: servers ignore a manifest whose
 `updatedAt` is older than the one they hold. Servers that already installed the
 version keep it.
 
+## Pull requests
+
+The [Provider rewind](../../.github/workflows/provider-rewind.yml) workflow
+runs the rewind scenario on a pull request that changes rollback code: a
+provider's adapter runs that provider, and shared rollback code runs all three.
+It uses the pull request's own server, the provider's newest release recorded
+in `autoUpdates`, and the canary's model, with the same secrets. Pull requests
+from forks get no secrets, so the job skips with a notice. It is not a required
+check; a failure is retried once, a pass on the retry comments on the pull
+request with the first attempt's failure, and the evidence artifact holds the
+server log and thread projections. `scripts/provider-canary.ts` lists the paths in
+`rewind-plan`; the workflow's `paths` filter must cover them.
+
 ## Setup
 
 The workflow needs:
@@ -91,6 +105,7 @@ These use model usage and a fresh temporary T3 home:
 ```sh
 node apps/server/scripts/verify-provider-live.ts --provider claudeAgent --model claude-haiku-5-5
 node apps/server/scripts/verify-provider-live.ts --provider claudeAgent --model claude-haiku-5-5 --scenario approval
+node apps/server/scripts/verify-provider-live.ts --provider codex --model gpt-6-luna --scenario rewind
 node scripts/provider-canary.ts plan
 node scripts/provider-canary.ts record --provider codex --package @openai/codex \
   --version 0.162.1 --styal 0.1.1-nightly.20261015.730

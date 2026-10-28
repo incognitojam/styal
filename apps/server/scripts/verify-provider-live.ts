@@ -16,7 +16,9 @@
  * failures that only show after a server restart, native subagent items the
  * adapter could not read, extra or missing turn results that left threads
  * working, unhandled approval requests, removed rollback methods, and an Auto
- * mode that asks about routine work or is no longer accepted.
+ * mode that asks about routine work or is no longer accepted. The rewind
+ * scenario also runs on pull requests that change rollback code, since a
+ * rollback can be accepted while the provider keeps the rewound turn.
  */
 import * as NodeAssert from "node:assert/strict";
 import * as NodeChildProcess from "node:child_process";
@@ -692,7 +694,7 @@ try {
   // Phase 1: every first turn, on one server process.
   const firstPhase = Effect.gen(function* () {
     const helpers = makeHelpers(yield* makeClient(), projectId, instanceId);
-    const { client, waitFor, waitForRunEnd, launch, askForToken } = helpers;
+    const { client, waitFor, waitForRunEnd, send, launch, askForToken } = helpers;
 
     const snapshot = yield* attempt(
       "provider",
@@ -989,7 +991,8 @@ try {
       }
     }
 
-    // Rewind: restore the checkpoint from before a turn, as the UI's rewind does.
+    // Rewind: restore the checkpoint after the first turn, as the UI's rewind does, and
+    // check the provider's conversation lost the second turn but kept the first.
     if (selected("rewind")) {
       if (snapshot.supportsConversationRollback === false) {
         skip("rewind", "skipped: the provider does not support conversation rollback");
@@ -998,10 +1001,12 @@ try {
           "rewind",
           Effect.gen(function* () {
             const logOffset = logSize();
+            const keptWord = randomToken("KEPT");
+            const rewoundWord = randomToken("REWOUND");
             const rewindFile = `rewind-${NodeCrypto.randomBytes(4).toString("hex")}.txt`;
             const { threadId, messageId } = yield* launch(
               "Provider rewind verification",
-              `This is an automated provider check. Run this exact shell command: echo rewind > ${rewindFile}\nThen reply with DONE.`,
+              `This is an automated provider check. Your first code word is ${keptWord}. Without using any tools, reply with exactly OK.`,
               "full-access",
               // File restore is refused in a checkout other threads share, so use a worktree.
               // A named branch skips the model-generated rename, which is not under test.
@@ -1011,52 +1016,72 @@ try {
                 branch: `canary/rewind-${NodeCrypto.randomUUID().slice(0, 8)}`,
               },
             );
-            const turn = yield* waitForRunEnd(threadId, messageId, "the turn to rewind");
-            if (turn.run.status !== "completed") fail(`Run ended ${turn.run.status}`);
-            const worktree = turn.projection.thread.worktreePath;
+            const kept = yield* waitForRunEnd(threadId, messageId, "the turn to keep");
+            if (kept.run.status !== "completed") fail(`The kept run ended ${kept.run.status}`);
+            const keptCheckpoint = yield* waitFor(
+              threadId,
+              "the kept turn's checkpoint",
+              (projection) => {
+                const run = projection.runs.find((candidate) => candidate.id === kept.run.id);
+                return projection.checkpoints.find(
+                  (entry) => entry.id === run?.checkpointId && entry.status === "ready",
+                );
+              },
+            );
+            const rewound = yield* waitForRunEnd(
+              threadId,
+              yield* send(
+                threadId,
+                `Your second code word is ${rewoundWord}. Run this exact shell command: echo rewind > ${rewindFile}\nThen reply with DONE.`,
+              ),
+              "the turn to rewind",
+            );
+            if (rewound.run.status !== "completed")
+              fail(`The rewound run ended ${rewound.run.status}`);
+            const worktree = rewound.projection.thread.worktreePath;
             if (!worktree) fail("The rewind thread has no worktree");
             const rewindPath = NodePath.join(worktree, rewindFile);
             if (!NodeFS.existsSync(rewindPath))
               fail(`${rewindFile} was not created in ${worktree}`);
-            const baseline = yield* waitFor(threadId, "the turn checkpoint", (projection) => {
-              const run = projection.runs.find((candidate) => candidate.id === turn.run.id);
-              const checkpoint = projection.checkpoints.find(
+            yield* waitFor(threadId, "the rewound turn's checkpoint", (projection) => {
+              const run = projection.runs.find((candidate) => candidate.id === rewound.run.id);
+              return projection.checkpoints.find(
                 (entry) => entry.id === run?.checkpointId && entry.status === "ready",
               );
-              return checkpoint
-                ? projection.checkpoints.find(
-                    (entry) =>
-                      entry.scopeId === checkpoint.scopeId &&
-                      entry.ordinalWithinScope === 0 &&
-                      entry.appRunOrdinal === null &&
-                      entry.status === "ready",
-                  )
-                : undefined;
             });
             const commandId = CommandId.make(NodeCrypto.randomUUID());
             yield* client["orchestration.dispatchCommand"]({
               type: "checkpoint.rollback",
               commandId,
               threadId,
-              scopeId: baseline.scopeId,
-              checkpointId: baseline.id,
+              scopeId: keptCheckpoint.scopeId,
+              checkpointId: keptCheckpoint.id,
             });
-            yield* waitFor(threadId, "the rollback", (projection) => {
+            const rolledBack = yield* waitFor(threadId, "the rollback", (projection) => {
               if (projection.thread.rollbackFailure?.requestId === commandId)
                 fail(`Rollback failed: ${projection.thread.rollbackFailure.message}`);
-              const run = projection.runs.find((candidate) => candidate.id === turn.run.id);
-              return run?.status === "rolled_back" ? run : undefined;
+              const run = projection.runs.find((candidate) => candidate.id === rewound.run.id);
+              return run?.status === "rolled_back" ? projection : undefined;
             });
+            const keptAfter = rolledBack.runs.find((candidate) => candidate.id === kept.run.id);
+            if (keptAfter?.status !== "completed")
+              fail(`The kept run is ${keptAfter?.status} after the rewind`);
             if (NodeFS.existsSync(rewindPath)) fail(`${rewindFile} still exists after the rewind`);
-            const afterToken = randomToken("REWOUND");
-            const after = yield* askForToken(
+            const recallMessageId = yield* send(
               threadId,
-              `Without using any tools, reply with exactly ${afterToken} and nothing else.`,
-              afterToken,
-              "turn after the rewind",
+              "Without using any tools, reply with every code word given to you earlier in this conversation, or NONE if there are none.",
             );
-            inspect("rewind", after.projection, logOffset);
-            scenario("rewind").detail = "file removed, turn rolled back, follow-up completed";
+            const recall = yield* waitForRunEnd(threadId, recallMessageId, "turn after the rewind");
+            if (recall.run.status !== "completed")
+              fail(`The turn after the rewind ended ${recall.run.status}`);
+            const reply = assistantText(recall.projection, recall.run);
+            if (reply.includes(rewoundWord))
+              fail(`The provider still recalled ${rewoundWord} from the rewound turn`);
+            if (!reply.includes(keptWord))
+              fail(`The provider no longer recalled ${keptWord} from the kept turn`);
+            inspect("rewind", recall.projection, logOffset);
+            scenario("rewind").detail =
+              "file removed, second turn rolled back, provider recalled only the first turn's code word";
           }),
         );
       }

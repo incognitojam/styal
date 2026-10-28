@@ -1,0 +1,203 @@
+name: Provider rewind
+
+# Rewinds a real conversation with each provider whose rollback code a pull
+# request changes, using the pull request's own server, the provider's newest
+# release the canary verified, and its cheap canary model. It checks that the
+# rewound turn's files are restored and that the provider no longer remembers
+# that turn but still remembers the one before it. Replay fixtures cannot catch
+# that: they replay what a provider answered when they were recorded.
+#
+# scripts/provider-canary.ts (`rewind-plan`) decides which providers to run.
+# It is not a required check: a model can skip a requested step, so a failure
+# is retried once and a second failure needs a look at the evidence. A pass on
+# the retry comments on the pull request, so repeated flakes get noticed.
+on:
+  pull_request:
+    paths:
+      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
+      - apps/server/src/orchestration-v2/Adapters/ClaudeHistoryRewind.ts
+      - apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts
+      - packages/provider-opencode/src/server/**
+      - apps/server/src/orchestration-v2/CheckpointRollbackService.ts
+      - apps/server/src/orchestration-v2/CheckpointRestoreSafety.ts
+      - apps/server/src/orchestration-v2/ProviderTurnStartService.ts
+      - packages/provider-core/src/server/ProviderAdapter.ts
+      - apps/server/scripts/verify-provider-live.ts
+      - scripts/provider-canary.ts
+      - .github/workflows/provider-rewind.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: provider-rewind-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  plan:
+    name: Plan
+    if: github.repository == 'incognitojam/styal'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      has_work: ${{ steps.plan.outputs.has_work }}
+    steps:
+      # GitHub's merge commit, whose first parent is the base branch.
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: false
+          run-install: |
+            args:
+              - --filter=@t3tools/scripts...
+
+      - id: plan
+        name: Find providers whose rollback code changed
+        run: |
+          git diff --name-only --no-renames HEAD^1 HEAD > "$RUNNER_TEMP/changed.txt"
+          node scripts/provider-canary.ts rewind-plan \
+            --changed "$RUNNER_TEMP/changed.txt" --json "$RUNNER_TEMP/matrix.json"
+          echo "matrix=$(cat "$RUNNER_TEMP/matrix.json")" >> "$GITHUB_OUTPUT"
+          if [[ "$(jq '.include | length' "$RUNNER_TEMP/matrix.json")" == 0 ]]; then
+            echo "has_work=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_work=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  rewind:
+    name: Rewind ${{ matrix.provider }} ${{ matrix.version }}
+    needs: plan
+    if: needs.plan.outputs.has_work == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: write
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    env:
+      API_KEY: ${{ secrets[matrix.secret] }}
+    steps:
+      # Pull requests from forks get no secrets.
+      - id: secret
+        name: Check provider credentials
+        env:
+          PROVIDER: ${{ matrix.provider }}
+          SECRET_NAME: ${{ matrix.secret }}
+        run: |
+          if [[ -z "$API_KEY" ]]; then
+            echo "::notice title=$PROVIDER not rewound::The $SECRET_NAME secret is not available to this pull request."
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout
+        if: steps.secret.outputs.present == 'true'
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup dependencies
+        if: steps.secret.outputs.present == 'true'
+        uses: ./.github/actions/setup-deps
+        with:
+          filters: |
+            @styal/cli...
+
+      # An isolated prefix keeps the installed release first on PATH and away
+      # from any provider CLI preinstalled on the runner.
+      - name: Install ${{ matrix.packageName }}@${{ matrix.version }}
+        if: steps.secret.outputs.present == 'true'
+        env:
+          PACKAGE: ${{ matrix.packageName }}@${{ matrix.version }}
+          BINARY: ${{ matrix.binary }}
+        run: |
+          prefix="$RUNNER_TEMP/provider-cli"
+          npm install --global --prefix "$prefix" "$PACKAGE"
+          echo "$prefix/bin" >> "$GITHUB_PATH"
+          "$prefix/bin/$BINARY" --version
+
+      - id: rewind
+        name: Rewind a real conversation
+        if: steps.secret.outputs.present == 'true'
+        env:
+          PROVIDER: ${{ matrix.provider }}
+          MODEL: ${{ matrix.model }}
+          VERSION: ${{ matrix.version }}
+          SECRET_NAME: ${{ matrix.secret }}
+          TMPDIR: ${{ runner.temp }}
+        run: |
+          export "$SECRET_NAME=$API_KEY"
+          if [[ "$PROVIDER" == "codex" ]]; then
+            printenv OPENAI_API_KEY | codex login --with-api-key
+          fi
+          run_verifier() {
+            local log="$RUNNER_TEMP/verify-$1.log"
+            node apps/server/scripts/verify-provider-live.ts \
+              --provider "$PROVIDER" --model "$MODEL" --expect-version "$VERSION" \
+              --scenario rewind,clean-projection 2>&1 | tee "$log"
+            local status=${PIPESTATUS[0]}
+            local evidence
+            evidence="$(sed -n 's/^Evidence: //p' "$log" | head -n 1)"
+            if [[ -n "$evidence" && -f "$evidence/result.json" ]]; then
+              jq -r --arg attempt "$1" '"### \(.provider) \(.version) (\(.model)), attempt \($attempt)\n\n| Scenario | Status | Seconds | Detail |\n| --- | --- | --- | --- |", (.scenarios[] | select(.status != "skipped" or .detail != "not selected") | "| \(.name) | \(.status) | \(.seconds // "") | \(.detail) |")' \
+                "$evidence/result.json" >> "$GITHUB_STEP_SUMMARY"
+              detail="$(jq -r '[.scenarios[] | select(.status == "failed") | "\(.name): \(.detail)"] | join("; ")' "$evidence/result.json" | cut -c1-500)"
+            else
+              detail="the verifier did not finish"
+            fi
+            [[ -n "$detail" ]] || detail="the verifier exited with status $status"
+            return "$status"
+          }
+          run_verifier 1 && exit 0
+          first_detail="$detail"
+          run_verifier 2 || exit 1
+          echo "flaky=true" >> "$GITHUB_OUTPUT"
+          echo "first_detail=$first_detail" >> "$GITHUB_OUTPUT"
+          echo "::warning title=$PROVIDER rewind passed only on the retry::$first_detail"
+
+      - name: Comment on a pass that needed the retry
+        if: steps.rewind.outputs.flaky == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          PROVIDER: ${{ matrix.provider }}
+          PACKAGE: ${{ matrix.packageName }}@${{ matrix.version }}
+          MODEL: ${{ matrix.model }}
+          DETAIL: ${{ steps.rewind.outputs.first_detail }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh pr comment "$PR" --body "$(printf '%s\n\n%s\n\n%s\n' \
+            "**Provider rewind:** $PROVIDER ($PACKAGE, $MODEL) passed only on the retry." \
+            "First attempt: $DETAIL" \
+            "[Run and evidence]($RUN_URL)")"
+
+      # Evidence holds the server log, thread projections and events, not the
+      # provider's own home directory or credentials. Both attempts are kept.
+      - name: Upload evidence
+        if: steps.secret.outputs.present == 'true' && (failure() || steps.rewind.outputs.flaky == 'true')
+        uses: actions/upload-artifact@v7
+        with:
+          name: rewind-evidence-${{ matrix.provider }}-${{ matrix.version }}
+          path: |
+            ${{ runner.temp }}/styal-provider-live-*/*.json
+            ${{ runner.temp }}/styal-provider-live-*/*.ndjson
+            ${{ runner.temp }}/styal-provider-live-*/server.log
+          retention-days: 14
