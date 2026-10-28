@@ -347,6 +347,7 @@ const CLAUDE_SCRIPT_EXTENSIONS = [".js", ".mjs", ".tsx", ".ts", ".jsx"];
 // The SDK puts no deadline on control requests. The CLI answers
 // mcp_set_servers once each server connected or hit its own 30 s timeout.
 const CLAUDE_MCP_REGISTRATION_TIMEOUT = "90 seconds";
+const CLAUDE_CLI_CLOSE_GRACE_MS = 3_500;
 // Claude Code flushes transcript writes every 100 ms, so a workflow member's
 // reply can land after the progress frame that settles it. Its transcript
 // stays the source of its answer this long after it settles.
@@ -538,7 +539,7 @@ class ClaudeMcpRegistrationTimeoutError extends Schema.TaggedError<ClaudeMcpRegi
   {},
 ) {
   override get message(): string {
-    return "Claude timed out while registering its MCP tools. Retry the turn; if it keeps failing, check Claude and the server logs.";
+    return "Claude Code took too long to start. A hook that hangs at startup, such as a SessionStart hook in your Claude Code settings, can cause this. Check your hooks, then retry the turn.";
   }
 }
 
@@ -607,7 +608,7 @@ function queryRunnerError(cause: unknown, method: string): ClaudeAgentSdkQueryRu
 export const closeClaudeQuery = Effect.fn("closeClaudeQuery")(function* (
   queryRuntime: Pick<ClaudeQuery, "close">,
   process?: ClaudeProcessHandle,
-  graceMs = 3_500,
+  graceMs = CLAUDE_CLI_CLOSE_GRACE_MS,
 ) {
   const closeStartedAt = yield* Clock.currentTimeMillis;
   yield* Effect.try({
@@ -1085,15 +1086,23 @@ export const layerQueryRunner: Layer.Layer<
                     Queue.shutdown(promptQueue).pipe(
                       // SDK disposal can return before process exit; await the owned child's exit before retrying.
                       Effect.andThen(
-                        Effect.tryPromise({
-                          try: async () => {
-                            if (spawnedProcess !== undefined && !processExited) {
-                              spawnedProcess.kill("SIGKILL");
-                            }
-                            await processExit;
-                          },
-                          catch: (cause) => queryRunnerError(cause, "close"),
-                        }).pipe(Effect.timeout("10 seconds")),
+                        Effect.gen(function* () {
+                          const child = spawnedProcess;
+                          const exit = processExit;
+                          if (child === undefined || exit === undefined) return;
+                          if (!processExited) {
+                            // Hooks run in their own sessions, so only a CLI that is closed rather than killed stops them.
+                            yield* Effect.try({
+                              try: () => queryRuntime.close(),
+                              catch: (cause) => queryRunnerError(cause, "close"),
+                            }).pipe(Effect.ignore);
+                            const exited = yield* Effect.promise(() => exit).pipe(
+                              Effect.timeoutOption(Duration.millis(CLAUDE_CLI_CLOSE_GRACE_MS)),
+                            );
+                            if (Option.isNone(exited) && !processExited) child.kill("SIGKILL");
+                          }
+                          yield* Effect.promise(() => exit).pipe(Effect.timeout("10 seconds"));
+                        }),
                       ),
                       Effect.ensuring(
                         Effect.tryPromise({

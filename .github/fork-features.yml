@@ -416,6 +416,24 @@ features:
         - https://github.com/pingdotgg/t3code/pull/2829
       retire_when: Upstream rewind keeps the turn boundaries of human prompts and assistant records that getSessionMessages omits through repeated rewinds, and rewinds at a known recent boundary when older boundaries are unknown.
 
+  - id: claude-mcp-registration-timeout-hint
+    title: Point a Claude startup timeout at hanging hooks
+    status: maintained
+    prs: [1128]
+    invariants:
+      - When Claude Code does not answer T3 Code's MCP server registration in time, the turn's error says Claude Code took too long to start and names a hook that hangs at startup as a likely cause.
+    rationale: Claude Code answers the registration only after its SessionStart hooks finish, so a slow or broken hook, such as one that starts a Docker container, surfaces as this timeout. Upstream's message points at MCP tools and the server logs instead.
+    implementation_paths:
+      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
+    upstream_paths:
+      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
+    tests:
+      - apps/server/src/orchestration-v2/Adapters/ClaudeAgentSdkQueryRunner.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream's MCP registration timeout message names hooks as a cause.
+
   - id: claude-model-manifest-policy
     title: Source Claude models from the styal manifest
     status: review-needed
@@ -508,10 +526,11 @@ features:
   - id: claude-stop-waits-for-cli-exit
     title: Stop a Claude session only once its CLI has exited
     status: maintained
-    prs: [620, 621]
+    prs: [620, 621, 1128]
     invariants:
       - Stopping a Claude session waits for its CLI process to exit, up to a grace measured from the SDK close, then kills the process itself; the session's exit event follows the process, not the close call.
       - Every Claude CLI logs its pid at spawn and its exit code or signal at exit, with the end of its stderr when the exit was not clean.
+      - When a Claude session fails to start, T3 Code closes the CLI and waits the same grace before killing it, so hooks the CLI started, which run in their own sessions, stop with it.
     rationale: A server update resumes a running session in a new server process as soon as the old server exits, and the SDK's close returns before the CLI does, so without the wait two CLIs can hold the same session and transcript.
     implementation_paths:
       - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
@@ -520,6 +539,7 @@ features:
       - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
     tests:
       - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.test.ts
+      - apps/server/src/orchestration-v2/Adapters/ClaudeAgentSdkQueryRunner.test.ts
       - apps/server/src/provider/ClaudeProcess.test.ts
     upstream:
       status: partial
@@ -1113,7 +1133,7 @@ features:
   - id: desktop-update-notice
     title: Name the version the desktop app updated to
     status: maintained
-    prs: []
+    prs: [1128]
     invariants:
       - After the desktop app starts on a newer version than the window last recorded, one toast names that version and links to its styal release notes; it shows once per version, whichever update path installed it.
       - The toast waits until the window is visible and focused, and the version is recorded only when it shows, so a window that stays hidden until quit announces the update on the next launch.
@@ -2113,7 +2133,7 @@ features:
   - id: fork-server-error-reporting
     title: Report server errors to PostHog error tracking
     status: maintained
-    prs: []
+    prs: [1128]
     invariants:
       - Release server builds report every Error or Fatal log entry, and every RPC handler defect, as a PostHog `$exception` event through the analytics delivery path, sharing its identity and opt-out.
       - Reports carry only the thrown value and log message, scrubbed of home directories, user names, emails, URL credentials and queries, and token-like strings; log annotations are never sent.
@@ -2413,7 +2433,7 @@ features:
   - id: hardware-leases
     title: Lease network hardware to one thread at a time, with approvals and cleanup
     status: maintained
-    prs: []
+    prs: [1128]
     invariants:
       - Web and desktop hardware settings keep offline last-seen and recent-activity ages counting without device state changes.
       - A hardware device's definition (actions, tiers, health probe, lifecycle hooks) is read from `.styal/hardware/<file>` on the project's remote default branch, never from a working tree. Anything looser than the definition the user accepted (a new or reshaped action, a lowered tier, changed hooks or health probe) runs at `approve` until the user accepts it; removals and raised tiers apply at once. Only accepted hooks and health probes run.
@@ -2477,7 +2497,7 @@ features:
   - id: historical-checkpoint-review
     title: Keep migrated checkpoint changes available for review
     status: maintained
-    prs: []
+    prs: [1128]
     invariants:
       - Migrated V1 checkpoints retain their original refs, assistant-message association, files, and exact checkpoint count including zero, without synthetic native runs.
       - Web, desktop, and mobile review select the preserved checkpoint scope explicitly, so historical turn one and a new native run one cannot select each other's changes.
@@ -5241,7 +5261,7 @@ features:
   - id: styal-project-file
     title: Read project configuration and shared actions from styal.json
     status: maintained
-    prs: []
+    prs: [1128]
     rationale: styal owns its checked-in project file so its schema can drop T3 Code fields the fork removed and add stable action ids, while repositories that only have a t3.json keep their settings.
     invariants:
       - styal.json at the project root is the project file; a t3.json is read only when there is no styal.json, including when styal.json is invalid.
