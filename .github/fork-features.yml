@@ -2792,7 +2792,7 @@ features:
   - id: mobile-notification-types
     title: Choose which agent alerts reach the phone
     status: maintained
-    prs: []
+    prs: [1126]
     invariants:
       - Mobile Notifications settings has a switch for each alert type the relay filters (needs approval, needs input, finished, failed); unset preferences mean on.
       - The device registration sends the stored switches, so the relay stops pushing a switched-off type to that device without an environment or relay change, and a failed update is retried by the next registration.
