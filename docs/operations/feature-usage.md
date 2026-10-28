@@ -12,7 +12,7 @@ Upstream's `mcp.tool.invoked` records one event per agent MCP tool call with `to
 
 Additional measured operations are:
 
-- `integration-settings`, `source = user`: `change_requested` records an explicit request to change `browser_access`, `device_support`, `device_access`, `device_idle_shutdown`, or `device_sharing`, with `settingScope = environment | project`. This measures UI requests, not successful writes. Reports require client vocabulary version 12 and contain no setting values, environment or project identifiers, names, or addresses.
+- `integration-settings`, `source = user`: `change_requested` records an explicit request to change `browser_access`, `device_support`, `device_access`, `device_idle_shutdown`, or `device_sharing`, with `settingScope = environment | project`. This measures UI requests, not successful writes. Reports require client vocabulary version 14 and contain no setting values, environment or project identifiers, names, or addresses.
 
 - `pull-request-deployments`, `source = user`: `open_environment`, `open_logs`, and `show_all` record explicit deployment panel actions with `outcome = success | failure`. Link success means the browser accepted the handoff, not that the destination loaded. Display, polling, rerenders and Show less do not emit events. Reports require client vocabulary version 2 and go to the PR's environment without names, URLs, repositories, PR numbers or commit hashes.
 

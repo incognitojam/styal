@@ -781,6 +781,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["browser device access overrides permissions inheritance"],
   },
   {
+    id: "project-simulator-memory",
+    title: "Project simulator memory",
+    to: "/settings/projects",
+    scope: "project",
+    searchTerms: ["low standard memory ram simulator ios startup override"],
+  },
+  {
     id: "agent-device-access",
     title: "Agent device access",
     to: "/settings/integrations",

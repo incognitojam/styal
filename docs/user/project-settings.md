@@ -131,7 +131,7 @@ contains automatic pull, the default pull request merge method and text generati
 Source Control edit environment defaults or project overrides depending on the project crumb.
 
 To override browser or device access for a project, select it in **Settings → Projects** and use
-**Agent access**. Reset an override to follow the environment again. Existing overrides keep their values.
+**Agent access**; its simulator memory mode is under **Devices**. Reset an override to follow the environment again. Existing overrides keep their values.
 
 The Project category, shown while a project is selected, holds the project's name, icon,
 additional instructions, actions, checkouts and removal. Actions belong to a project: editing them

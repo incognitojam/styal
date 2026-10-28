@@ -1,6 +1,6 @@
 import { SIMULATOR_MEMORY_DESCRIPTION } from "@t3tools/contracts";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
-import { SettingsRow } from "./settingsLayout";
+import { SettingsRow, SettingsSection } from "./settingsLayout";
 import {
   useScopedSettings,
   useScopedSettingsMixed,
@@ -38,5 +38,13 @@ export function SimulatorMemorySetting() {
         </Select>
       }
     />
+  );
+}
+
+export function ProjectSimulatorMemorySettings() {
+  return (
+    <SettingsSection id="project-simulator-memory" title="Devices">
+      <SimulatorMemorySetting />
+    </SettingsSection>
   );
 }

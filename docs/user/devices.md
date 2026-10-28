@@ -68,7 +68,7 @@ back from the device after a change.
 
 ## Simulator memory
 
-Choose **Simulator memory** in **Settings → Integrations → Devices** on web or desktop, or **Settings → Devices** on mobile. Select a project in the settings scope to save its preference. **Standard** is the default; **Low memory** reduces background services while keeping push notifications, purchases, universal links, iCloud, keychain sync, photos, contacts, and calendar. Use Standard when testing other OS integrations.
+Choose **Simulator memory** in **Settings → Integrations → Devices** on web or desktop, or **Settings → Devices** on mobile. To save a project's preference, select the project in **Settings → Projects** and use **Devices**. **Standard** is the default; **Low memory** reduces background services while keeping push notifications, purchases, universal links, iCloud, keychain sync, photos, contacts, and calendar. Use Standard when testing other OS integrations.
 
 styal applies the preference before starting a stopped iOS simulator that no thread holds. Opening an already running or claimed device leaves its mode unchanged. Agents inherit the preference automatically. Low memory requires an Apple Silicon Mac and iOS 18.5 or newer; its first use downloads a verified helper onto the simulator's Mac. When a Mac, runtime, or connected environment cannot use Low memory, the simulator starts normally and styal shows a warning. Local, SSH, and connected-environment hosts use the same preset. Android emulators are unchanged.
 
