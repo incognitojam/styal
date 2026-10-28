@@ -164,10 +164,12 @@ const devProxyTarget = resolveDevProxyTarget(process.env.T3CODE_PORT, configured
 
 // Brotli quality 5 keeps encode time in the hundreds of ms; the default
 // (quality 11) would trade the transfer stall for an equally long encode stall.
+// Browser tests fetch every module from this server over localhost, where
+// compressing them took more than half the CPU time of a browser test run.
 function devCompressionPlugin(): Plugin {
   return {
     name: "t3code:dev-compression",
-    apply: "serve",
+    apply: (_config, env) => env.command === "serve" && process.env.VITEST === undefined,
     configureServer(server) {
       server.middlewares.use(
         compression({
