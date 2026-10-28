@@ -1,7 +1,9 @@
 import { DeviceHostId, DeviceId, ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import { describe, expect, it } from "@effect/vitest";
 
+import * as DeviceService from "../../../device/DeviceService.ts";
 import {
   agentDeviceQuickStart,
   devicesOpenInOtherThreads,
@@ -31,6 +33,34 @@ describe("device tool helpers", () => {
     );
     expect(text).not.toContain("  agent-device ");
     expect(text).not.toContain("is on PATH");
+  });
+
+  it("shows a bound launcher's commands without flags and keeps device actions off simctl and ssh", () => {
+    const command = "/state/device/targets/t3-a/agent-device";
+    const text = agentDeviceQuickStart(device, [], command);
+    const examples = text.split("\n").filter((line) => line.trimStart().startsWith(command));
+    expect(examples).toContain(`  ${command} snapshot -i  # accessibility tree with @eN refs`);
+    expect(examples.find((line) => line.includes(" screenshot "))).toContain("--pixel-density <n>");
+    expect(agentDeviceQuickStart({ ...device, platform: "android" }, [], command)).not.toContain(
+      "--pixel-density",
+    );
+    expect(examples.join("\n")).not.toMatch(/--(?:platform|udid|serial|config|session)\b/);
+    expect(text).not.toContain("remain available");
+    expect(text).toContain("Do not use simctl, idb, adb or ssh for those actions.");
+    expect(text).toContain("If it is missing, call device_open again.");
+  });
+
+  it("opens the app before snapshots, CLI screenshots or input, looks with device_screenshot, and records the device screen", () => {
+    const command = "/state/device/targets/t3-a/agent-device";
+    const text = agentDeviceQuickStart(device, [], command);
+    // device_open starts no agent-device session, and an iOS snapshot needs one with an app.
+    expect(text).toContain(
+      "Run open <bundle-or-package-id> (apps lists them) before snapshots, CLI screenshots or input; it starts the session they need. Use device_screenshot just to look.",
+    );
+    // App-scoped recording needs an app opened in the session; device scope does not.
+    expect(text).toContain(
+      `  ${command} record start --scope device /tmp/run.mp4  # then record stop`,
+    );
   });
 
   it("reads PNG dimensions from the IHDR chunk", () => {
@@ -83,11 +113,11 @@ describe("choosing a device", () => {
   it.effect("opens a running device no other thread has open", () =>
     Effect.gen(function* () {
       const picked = yield* pickDevice(
-        [emulator("emulator-5554", true), emulator("emulator-5556", true)],
+        { hosts: [], devices: [emulator("emulator-5554", true), emulator("emulator-5556", true)] },
         [{ hostId: local, deviceId: DeviceId.make("emulator-5554") }],
         { platform: "android" },
       );
       expect(picked.id).toBe("emulator-5556");
-    }),
+    }).pipe(Effect.provide(Layer.mock(DeviceService.DeviceService)({}))),
   );
 });

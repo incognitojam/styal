@@ -8,7 +8,12 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 
-import { ensureAgentDeviceShim, releasedAgentSessionsPath } from "./AgentDeviceShim.ts";
+import {
+  bindAgentDeviceLauncher,
+  ensureAgentDeviceShim,
+  pruneAgentDeviceLaunchers,
+  releasedAgentSessionsPath,
+} from "./AgentDeviceShim.ts";
 
 const exec = NodeUtil.promisify(NodeChildProcess.execFile);
 const encodeNames = Schema.encodeSync(Schema.fromJsonString(Schema.Array(Schema.String)));
@@ -41,6 +46,41 @@ describe("agent-device launcher", () => {
       expect((yield* Effect.promise(() => run("t3-current"))).stdout.trim()).toBe("ran");
       yield* fs.writeFileString(released, encodeNames([]));
       expect((yield* Effect.promise(() => run("t3-released"))).stdout.trim()).toBe("ran");
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("refuses a released bound session, keeps its launcher, and lets close through", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const dir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-device-shim-" });
+      const entryPath = path.join(dir, "cli.mjs");
+      yield* fs.writeFileString(entryPath, `console.log("ran");`);
+      const bind = (session: string) =>
+        bindAgentDeviceLauncher({
+          entryPath,
+          stateDir: dir,
+          session,
+          targetArgs: ["--config", path.join(dir, "config.json"), "--session", session],
+        });
+      const launcher = yield* bind("t3-released");
+      const closed = yield* bind("t3-closed");
+      const run = (command: string) =>
+        exec(process.execPath, [
+          path.join(path.dirname(launcher), "agent-device-launcher.mjs"),
+          command,
+        ]);
+      const released = releasedAgentSessionsPath(dir, path);
+      yield* fs.writeFileString(released, encodeNames(["t3-released"]));
+
+      yield* Effect.promise(() =>
+        expect(run("snapshot")).rejects.toThrow("Call device_open again"),
+      );
+      expect((yield* Effect.promise(() => run("close"))).stdout.trim()).toBe("ran");
+
+      yield* pruneAgentDeviceLaunchers({ stateDir: dir, live: new Set() });
+      expect(yield* fs.exists(launcher)).toBe(true);
+      expect(yield* fs.exists(closed)).toBe(false);
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 });

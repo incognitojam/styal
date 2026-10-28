@@ -42,6 +42,7 @@ import {
   type ForkSessionResult,
   getSessionMessages,
   getSubagentMessages,
+  type HookCallback,
   query,
   resolveSettings as resolveClaudeSettings,
   type Options as ClaudeQueryOptions,
@@ -186,7 +187,11 @@ import {
 } from "../../provider/claudeUsageLimits.ts";
 import type { ManagedServerProvider } from "@t3tools/provider-core/server/snapshot";
 import { mergeProviderInstanceEnvironment } from "@t3tools/provider-core/server/instanceEnvironment";
-import { t3OrchestrationSystemPrompt } from "@t3tools/provider-core/server/orchestrationInstructions";
+import {
+  renderProviderToolInstructions,
+  T3_CODE_DEVICE_TOOL_INSTRUCTIONS_WITH_TOOL_SEARCH,
+  t3OrchestrationSystemPrompt,
+} from "@t3tools/provider-core/server/orchestrationInstructions";
 import { buildRuntimeInstructions } from "@t3tools/provider-core/server/runtimeInstructions";
 import {
   mcpToolPresentation,
@@ -1555,6 +1560,20 @@ const CLAUDE_BACKGROUND_WAIT_INSTRUCTIONS = `
 To wait for a background command or Monitor you started (tests, a build), call \`t3_background_wait\` with its task ID before you end your turn. Do not mark work you leave running, or PRs. styal MCP tools are deferred: load one with ToolSearch before you call it.
 `;
 
+// Native subagents start from their task, not this session's system prompt.
+const subagentDeviceInstructions =
+  (serverName: McpProviderSession.McpServerName): HookCallback =>
+  () =>
+    Promise.resolve({
+      hookSpecificOutput: {
+        hookEventName: "SubagentStart",
+        additionalContext: renderProviderToolInstructions(
+          T3_CODE_DEVICE_TOOL_INSTRUCTIONS_WITH_TOOL_SEARCH,
+          serverName,
+        ),
+      },
+    });
+
 export function makeClaudeQueryOptions(input: {
   readonly modelSelection: ModelSelection;
   readonly nativeThreadId: string;
@@ -1567,6 +1586,8 @@ export function makeClaudeQueryOptions(input: {
   readonly environment?: NodeJS.ProcessEnv;
   readonly additionalInstructions?: string;
   readonly mcpServers?: ClaudeQueryOptions["mcpServers"];
+  /** The thread's T3 MCP session holds the `device` capability. */
+  readonly deviceToolsAvailable?: boolean;
   readonly tools?: ClaudeAgentSdkQueryTools;
   readonly allowedTools?: ReadonlyArray<string>;
   readonly disallowedTools?: ReadonlyArray<string>;
@@ -1631,6 +1652,12 @@ export function makeClaudeQueryOptions(input: {
           ...compactQuerySettings,
           env: { ...compactQuerySettings?.env, ENABLE_TOOL_SEARCH: input.toolSearchOverride },
         } as ClaudeSdkSettings);
+  const deviceInstructions = input.mcpServers !== undefined && input.deviceToolsAvailable === true;
+  // Sessions resumed from before the styal rename keep their `t3-code` server.
+  const mcpServerName =
+    input.mcpServers !== undefined && McpProviderSession.LEGACY_MCP_SERVER_NAME in input.mcpServers
+      ? McpProviderSession.LEGACY_MCP_SERVER_NAME
+      : McpProviderSession.ACTIVE_MCP_SERVER_NAME;
   const options: ClaudeAgentSdkQueryOptions = {
     model: compiledSelection.apiModelId,
     tools: claudeAgentSdkQueryToolsForSdk(selectedTools),
@@ -1681,19 +1708,21 @@ export function makeClaudeQueryOptions(input: {
       preset: "claude_code" as const,
       append: [
         buildRuntimeInstructions({ harness: "Claude Code" }) +
-          (t3OrchestrationSystemPrompt(
-            input.mcpServers !== undefined,
-            // Sessions resumed from before the styal rename keep their `t3-code` server.
-            input.mcpServers !== undefined &&
-              McpProviderSession.LEGACY_MCP_SERVER_NAME in input.mcpServers
-              ? McpProviderSession.LEGACY_MCP_SERVER_NAME
-              : McpProviderSession.ACTIVE_MCP_SERVER_NAME,
-          ) ?? "") +
-          (input.mcpServers === undefined ? "" : CLAUDE_BACKGROUND_WAIT_INSTRUCTIONS) +
+          (t3OrchestrationSystemPrompt(input.mcpServers !== undefined, false, mcpServerName) ??
+            "") +
+          (input.mcpServers === undefined
+            ? ""
+            : CLAUDE_BACKGROUND_WAIT_INSTRUCTIONS +
+              (deviceInstructions
+                ? `\n${renderProviderToolInstructions(T3_CODE_DEVICE_TOOL_INSTRUCTIONS_WITH_TOOL_SEARCH, mcpServerName)}\n`
+                : "")) +
           (input.additionalInstructions === undefined ? "" : `\n\n${input.additionalInstructions}`),
         ...launchAppendSystemPrompt,
       ].join("\n\n"),
     },
+    ...(deviceInstructions
+      ? { hooks: { SubagentStart: [{ hooks: [subagentDeviceInstructions(mcpServerName)] }] } }
+      : {}),
     ...(Object.keys(extraArgs).length === 0 ? {} : { extraArgs }),
   };
   const additionalDirectories = [
@@ -10328,6 +10357,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             ...(mcpOverrides.mcpServers === undefined
               ? {}
               : { mcpServers: mcpOverrides.mcpServers }),
+            deviceToolsAvailable: mcpSession?.capabilities?.has("device") === true,
             permissionMode: queryPolicy.permissionMode,
             ...(queryPolicy.allowDangerouslySkipPermissions === undefined
               ? {}

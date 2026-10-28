@@ -656,7 +656,7 @@ it.effect("denies every device tool with T3's own error when agent device access
       );
     }
     // T3 drops its device text for a thread without the capability, on refs that have it.
-    assert.notInclude(t3SystemAppend(model, false), "## T3 Code devices");
+    assert.notInclude(t3SystemAppend(model, false), "## styal devices");
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
 

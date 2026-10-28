@@ -953,6 +953,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
         const hasT3Mcp = mcpSession !== undefined && !connection.external;
         const orchestrationSystemPrompt = t3OrchestrationSystemPrompt(
           hasT3Mcp,
+          mcpSession?.capabilities?.has("device") === true,
           mcpSession?.mcpServerName,
         );
         if (hasT3Mcp) {

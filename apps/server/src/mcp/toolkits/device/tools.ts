@@ -29,7 +29,7 @@ const DeviceToolFailure = Schema.Union([DeviceToolError, OrchestratorMcpFailure]
 
 const DeviceListTool = Tool.make("device_list", {
   description:
-    "List iOS Simulators and Android Emulators here, what each host can run, what is open in this thread's Device panel, and which thread holds each device other threads have open. Call before `device_open` when you do not know a device id. Prefer a device no other thread holds.",
+    "List iOS Simulators and Android Emulators on every device host, what each host can run, what is open in this thread's Device panel, and which thread holds each device other threads have open. Call before `device_open` when you do not know a device id. Prefer a device no other thread holds.",
   // An empty struct serializes as `anyOf [object, array]`, which some
   // providers reject and then drop every tool on the server with it.
   parameters: Schema.Struct({
@@ -49,7 +49,7 @@ const DeviceListTool = Tool.make("device_list", {
 
 const DeviceOpenTool = Tool.make("device_open", {
   description:
-    "Open a simulator or emulator for this thread. Boots it if needed and shows it in the user's Device panel. Returns the `agent-device` CLI call pinned to that device. Drive the device with that CLI. An idle device another thread holds is handed over. One in use fails with `DeviceHeldError` naming that thread, unless `takeOver`.",
+    "Open a simulator or emulator for this thread. Pass `deviceId` and `hostId` from `device_list`. Boots it if needed and shows it in the user's Device panel. Returns the `agent-device` CLI call pinned to that device. Drive the device with that CLI. An idle device another thread holds is handed over. One in use fails with `DeviceHeldError` naming that thread, unless `takeOver`.",
   parameters: DeviceToolOpenInput,
   success: DeviceToolOpenResult,
   failure: DeviceToolFailure,
