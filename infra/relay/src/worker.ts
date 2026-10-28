@@ -421,6 +421,14 @@ export const layer = Api.make(
                   : Effect.logWarning("Failed to prune expired relay state", { cause }),
               ),
             ),
+            DeliveryAttempts.DeliveryAttempts.pipe(
+              Effect.flatMap((attempts) => attempts.pruneExpired),
+              Effect.catchCause((cause) =>
+                Cause.hasInterrupts(cause)
+                  ? Effect.interrupt
+                  : Effect.logWarning("Failed to prune expired delivery attempts", { cause }),
+              ),
+            ),
             ManagedEndpointReaper.ManagedEndpointReaper.pipe(
               Effect.flatMap((reaper) => reaper.sweep.pipe(Effect.timeout("2 minutes"))),
               Effect.tap((result) =>
