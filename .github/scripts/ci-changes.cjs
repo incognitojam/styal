@@ -21,10 +21,10 @@ const INERT = [
   /^LICENSE$/,
 ];
 
-// Run everything: the root vite.config.ts loads the first as setup for every
-// package's tests, and the vendored mobile tarballs are installed dependencies.
+// Run everything: the root vite.config.ts loads the testing files as setup for
+// every package's tests, and the vendored mobile tarballs are installed dependencies.
 const RUNS_EVERYTHING = [
-  /^packages\/shared\/src\/(HostProcess|testing\/longTempDir)\.ts$/,
+  /^packages\/shared\/src\/(HostProcess|testing\/(longTempDir|compileCache))\.ts$/,
   /^apps\/mobile\/deps\//,
 ];
 
