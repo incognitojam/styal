@@ -2221,6 +2221,7 @@ const make = Effect.gen(function* () {
               type: "thread.stop",
               commandId,
               threadId: current.childThreadId,
+              stopDelegatedTasks: false,
               ...(reason === undefined ? {} : { reason }),
             })
             .pipe(

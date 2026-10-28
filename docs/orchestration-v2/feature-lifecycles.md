@@ -251,13 +251,13 @@ If the provider does not support interruption:
 - best case: stop provider session and mark run interrupted or cancelled by policy.
 - worst case: mark interrupt unsupported and leave run active until provider exits.
 
-The Stop button sends `run.interrupt` with `holdQueue`. A Stop also holds the queue,
-ends the thread's pull request watches, and drops wakes its delegated tasks still
-owe, so nothing automatic restarts the thread. It then stops every delegated task
-under the thread: a `delegated-tasks.stop` effect sends the internal `thread.stop`
-command to each child thread, depth first. This runs after commit, not inside the
-parent's command, because a command holds only its own thread's lock. `task_cancel`
-sends the same `thread.stop` to its child.
+The Stop button sends `thread.stop`, or `run.interrupt` with `holdQueue` to a server
+without the `threadStop` capability. A Stop also holds the queue, ends the thread's
+pull request watches, and drops wakes its delegated tasks still owe, so nothing
+automatic restarts the thread. It then stops every delegated task under the thread: a
+`delegated-tasks.stop` effect sends `thread.stop` to each child thread, depth first.
+This runs after commit, not inside the parent's command, because a command holds only
+its own thread's lock. `task_cancel` sends the same `thread.stop` to its child.
 
 ## Resumption
 
