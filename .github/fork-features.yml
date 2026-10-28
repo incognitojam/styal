@@ -2834,6 +2834,7 @@ features:
       - apps/server/src/orchestration-v2/legacy/LegacyV1ThreadImporter.ts
       - apps/server/src/persistence/ForkMigrations.ts
       - apps/web/src/components/chat/MessagesTimeline.logic.ts
+      - apps/web/src/components/chat/TimelinePendingApprovalRow.tsx
       - apps/web/src/components/chat/TimelineWorkEntryRow.logic.ts
       - apps/web/src/components/chat/TimelineWorkEntryRow.tsx
       - apps/web/src/components/chat/TimelineWorkGroupRows.tsx
