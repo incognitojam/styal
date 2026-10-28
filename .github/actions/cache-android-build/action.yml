@@ -1,0 +1,48 @@
+name: Cache Android build outputs
+description: Reuse Gradle task outputs and React Native C++ compilations across clean CI builds.
+inputs:
+  variant:
+    description: Keep preview and production app outputs in separate cache snapshots.
+    required: true
+runs:
+  using: composite
+  steps:
+    # React Native's application CMake file automatically uses ccache when
+    # installed. Gradle's build cache does not cache these C++ compilations.
+    - name: Install ccache
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends ccache
+        {
+          echo "CCACHE_DIR=$HOME/.cache/styal-android-ccache"
+          echo "CCACHE_MAXSIZE=512M"
+          # Fresh NDK installations can have different compiler timestamps.
+          echo "CCACHE_COMPILERCHECK=content"
+        } >> "$GITHUB_ENV"
+
+    # Resolve before Gradle writes build outputs inside the native modules.
+    - id: key
+      shell: bash
+      env:
+        CACHE_KEY: android-outputs-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ inputs.variant }}-${{ hashFiles('apps/mobile/modules/**', 'apps/mobile/plugins/**', 'apps/mobile/app.config.ts', '.github/actions/cache-android-build/action.yml') }}
+      run: echo "value=$CACHE_KEY" >> "$GITHUB_OUTPUT"
+
+    # Save outputs on previews too: a PR must be able to warm its next build
+    # even when main's dependency cache has been evicted. Reuse one snapshot
+    # across JS-only pushes instead of saving another copy on every commit.
+    # Gradle and ccache still validate each output against its actual inputs.
+    - name: Cache compiled outputs
+      uses: actions/cache@v6
+      with:
+        path: |
+          ~/.gradle/caches/build-cache-1
+          ~/.cache/styal-android-ccache
+        key: ${{ steps.key.outputs.value }}
+        restore-keys: |
+          android-outputs-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ inputs.variant }}-
+          android-outputs-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}-
+
+    - name: Reset compiler cache statistics
+      shell: bash
+      run: ccache --zero-stats
