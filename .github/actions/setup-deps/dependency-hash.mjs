@@ -1,5 +1,5 @@
-import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
+import * as NodeChildProcess from "node:child_process";
+import * as NodeCrypto from "node:crypto";
 
 // Hash the index so filesystem traversal order, symlink support, and checkout
 // line endings cannot change the generation between runners and cleanup.
@@ -20,7 +20,11 @@ export function dependencyHash(cwd = process.cwd()) {
     "scripts/clean-tsgo-backups.mjs",
     ":(glob).github/actions/setup-deps/**",
   ];
-  const entries = execFileSync("git", ["ls-files", "--stage", "-z", "--", ...paths], { cwd });
+  const entries = NodeChildProcess.execFileSync(
+    "git",
+    ["ls-files", "--stage", "-z", "--", ...paths],
+    { cwd },
+  );
   if (entries.length === 0) throw new Error("No dependency inputs found in the Git index");
-  return createHash("sha256").update(entries).digest("hex");
+  return NodeCrypto.createHash("sha256").update(entries).digest("hex");
 }
