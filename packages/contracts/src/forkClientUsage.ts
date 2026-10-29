@@ -92,6 +92,7 @@ export const ClientSettingsSnapshot = Schema.Struct({
   fontSizePrompt: PromptFontSize,
   fontSizeCode: CodeFontSize,
   fontSizeTerminal: TerminalFontSize,
+  threadDetailsItemsCustomized: Schema.Boolean,
   fontFamilySansCustomized: Schema.Boolean,
   fontFamilyComposerCustomized: Schema.Boolean,
   fontFamilyCodeCustomized: Schema.Boolean,

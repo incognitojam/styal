@@ -23,6 +23,8 @@ describe("clientSettingsSnapshot", () => {
     const { mathRenderingEnabled: _mathRenderingEnabled, ...incomplete } = snapshot;
     expect(isSnapshot(incomplete)).toBe(false);
     expect(snapshot).toMatchObject({
+      threadDetailsItemsCustomized: false,
+      threadDetailsUsageEnabled: false,
       sendShortcut: "enter",
       followUpBehavior: "steer",
       sidebarThreadGrouping: "none",

@@ -71,6 +71,7 @@ export function clientSettingsSnapshot(
     fontSizePrompt: settings.fontSizePrompt,
     fontSizeCode: settings.fontSizeCode,
     fontSizeTerminal: settings.fontSizeTerminal,
+    threadDetailsItemsCustomized: Object.keys(settings.threadDetailsItems).length > 0,
     fontFamilySansCustomized: settings.fontFamilySans !== "",
     fontFamilyComposerCustomized: settings.fontFamilyComposer !== "",
     fontFamilyCodeCustomized: settings.fontFamilyCode !== "",

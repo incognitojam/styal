@@ -380,6 +380,11 @@ preferences become T3 completion, and Avanti stays Avanti, with notifications an
 sound enabled. An existing None preference stays off. Any previously saved
 notification mode takes precedence over this migration.
 
+To choose what the thread details card shows, right-click the card or open
+**Settings → Appearance → Thread details**. Hidden rows keep their keyboard
+shortcuts, such as Open in editor and project scripts. **Reset to default** brings
+back the standard rows.
+
 ## Snooze until later
 
 To change the choices in the snooze menu, open **Settings → Threads → Snooze options**.
