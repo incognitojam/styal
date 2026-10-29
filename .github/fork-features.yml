@@ -931,7 +931,7 @@ features:
   - id: delegated-wake-all
     title: Wake a parent once when a group of delegated tasks has finished
     status: maintained
-    prs: []
+    prs: [1142]
     invariants:
       - delegate_task defaults to wake=each, unchanged. With wake=all, a finished task's completion wake waits until every wake=all task delegated by the same parent run is terminal, then one wake carries every held result.
       - A wake=all task that fails or is interrupted wakes the parent at once, carrying the group's finished results that were still held; the rest of the group keeps holding. Cancelled tasks count as finished and do not wake early.
