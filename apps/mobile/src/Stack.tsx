@@ -154,6 +154,7 @@ import { useNativeLayoutMetrics } from "./native/native-layout-metrics";
 import { nativeHeaderScrollEdgeEffects } from "./native/StackHeader";
 import { FORM_SHEET_PRESENTATION_OPTIONS } from "./native/sheet-surface";
 import { useThreadOutboxDrain } from "./state/use-thread-outbox-drain";
+import { setCurrentWorkspacePath } from "./features/updates/update-restart-location";
 import { useComposerAttachmentUploadWorker } from "./state/composer-attachment-uploads";
 
 const HEADER_SCROLL_EDGE_EFFECTS = nativeHeaderScrollEdgeEffects(Platform.OS, Platform.Version);
@@ -632,6 +633,10 @@ function RootStackLayout(props: {
   const path = getPathFromState(props.state, navigationPathConfig);
   const pathname = path.startsWith("/") ? path : `/${path}`;
   const workspaceLocation = workspaceLocationFromState(props.state);
+  useEffect(
+    () => setCurrentWorkspacePath(workspaceLocation.pathname),
+    [workspaceLocation.pathname],
+  );
   useAgentNotificationNavigation(workspaceLocation.pathname);
   // Presents the styal Link onboarding sheet after an in-session sign-in.
   useConnectOnboardingNavigation();

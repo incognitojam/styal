@@ -22,6 +22,7 @@ import { RootStack } from "./Stack";
 import { appAtomRegistry } from "./state/atom-registry";
 import { OverlayPortalHost } from "./components/ui/OverlayPortal";
 import { shouldHandleAppLink } from "./lib/appLinking";
+import { takeUpdateRestartPath } from "./features/updates/update-restart-location";
 import { useMobileNavigationTheme } from "./lib/useMobileNavigationTheme";
 import { useUiRuntimeMemoryWarningGc } from "./lib/useUiRuntimeMemoryWarningGc";
 import { SubscriptionUsageCoordinator } from "./widgets/SubscriptionUsageCoordinator";
@@ -41,6 +42,18 @@ const appLinking = {
   prefixes: [Linking.createURL("/"), "styal://", "styal-dev://", "styal-preview://"],
   config: { initialRouteName: "Home" },
   filter: shouldHandleAppLink,
+  async getInitialURL() {
+    const restorePath = await takeUpdateRestartPath().catch((error: unknown) => {
+      console.warn("[app-updates] could not read the update restart location", error);
+      return null;
+    });
+    if (restorePath !== null) return Linking.createURL(restorePath);
+    // React Navigation's default: Android can leave getInitialURL unresolved.
+    return Promise.race([
+      Linking.getInitialURL(),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 150)),
+    ]);
+  },
 };
 
 const Navigation = createStaticNavigation(RootStack);

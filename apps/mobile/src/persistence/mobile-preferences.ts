@@ -48,7 +48,14 @@ const PullRequestListPreferences = Schema.Struct({
 });
 export type PullRequestListPreferences = typeof PullRequestListPreferences.Type;
 
+const UpdateRestartLocation = Schema.Struct({
+  path: Schema.String,
+  fromUpdateId: Schema.NullOr(Schema.String),
+});
+type UpdateRestartLocation = typeof UpdateRestartLocation.Type;
+
 const isThreadListFilters = Schema.is(ThreadListFilters);
+const isUpdateRestartLocation = Schema.is(UpdateRestartLocation);
 const isPullRequestListPreferences = Schema.is(PullRequestListPreferences);
 
 export interface Preferences {
@@ -103,6 +110,8 @@ export interface Preferences {
   readonly threadListWorkingShelfExpanded?: boolean;
   readonly threadListFilters?: ThreadListFilters;
   readonly pullRequestListFilters?: PullRequestListPreferences;
+  /** Where the user was when an update restart began; read once on the next launch. */
+  readonly updateRestartLocation?: UpdateRestartLocation | undefined;
 }
 
 export class MobilePreferencesLoadError extends Schema.TaggedError<MobilePreferencesLoadError>()(
@@ -184,6 +193,7 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     threadListWorkingShelfExpanded?: boolean;
     threadListFilters?: ThreadListFilters;
     pullRequestListFilters?: PullRequestListPreferences;
+    updateRestartLocation?: UpdateRestartLocation;
   } = {};
 
   if (typeof parsed.pullRequestHideTestFiles === "boolean") {
@@ -345,6 +355,9 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   }
   if (isPullRequestListPreferences(parsed.pullRequestListFilters)) {
     preferences.pullRequestListFilters = parsed.pullRequestListFilters;
+  }
+  if (isUpdateRestartLocation(parsed.updateRestartLocation)) {
+    preferences.updateRestartLocation = parsed.updateRestartLocation;
   }
   return preferences;
 }
