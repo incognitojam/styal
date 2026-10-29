@@ -2986,8 +2986,8 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     buildConfig.deb = {
       // FPM runs outside the staged app directory, so source paths must be absolute.
       fpm: [
-        `${path.join(repoRoot, "apps/desktop/resources/linux/com.t3tools.t3code.metainfo.xml")}=/usr/share/metainfo/com.t3tools.t3code.metainfo.xml`,
-        `${path.join(repoRoot, "LICENSE")}=/usr/share/doc/t3code/copyright`,
+        `${path.join(repoRoot, "apps/desktop/resources/linux/build.styal.Styal.metainfo.xml")}=/usr/share/metainfo/build.styal.Styal.metainfo.xml`,
+        `${path.join(repoRoot, "LICENSE")}=/usr/share/doc/${packageIdentity.packageName}/copyright`,
       ],
       // Debian 13 and Ubuntu 24.04 renamed some for 64-bit time; the old name
       // is the fallback for older releases.
