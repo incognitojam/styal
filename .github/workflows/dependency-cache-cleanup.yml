@@ -36,6 +36,12 @@ jobs:
         with:
           ref: main
           persist-credentials: false
+          # .repos/ holds nested submodule paths that checkout's credential
+          # cleanup cannot resolve. The hashed files are all outside it.
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
       - name: Delete superseded main dependency caches
         continue-on-error: true
         env:
