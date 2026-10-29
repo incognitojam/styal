@@ -2967,6 +2967,32 @@ features:
         - https://github.com/pingdotgg/t3code/commit/86534db4d3525a070589a234d660a3e0373a42ea
       retire_when: Upstream floating status icons resolve their tint from the active theme foreground using a valid accent color utility.
 
+  - id: mobile-update-restart-location
+    title: Mobile update restarts reopen the page the user was on
+    status: maintained
+    prs: [1146]
+    invariants:
+      - An OTA update restart, deferred to the next background or started with Install Now, reopens the workspace page that was on screen (without sheets) instead of Home.
+      - The saved location is read once on the next launch and applies only when that launch runs a different update, so a failed reload never moves a later ordinary launch.
+    implementation_paths:
+      - apps/mobile/src/App.tsx
+      - apps/mobile/src/Stack.tsx
+      - apps/mobile/src/features/updates/app-updates.ts
+      - apps/mobile/src/features/updates/update-restart-location.ts
+      - apps/mobile/src/persistence/mobile-preferences.ts
+    upstream_paths:
+      - apps/mobile/src/App.tsx
+      - apps/mobile/src/Stack.tsx
+      - apps/mobile/src/features/updates/app-updates.ts
+      - apps/mobile/src/persistence/mobile-preferences.ts
+    tests:
+      - apps/mobile/src/features/updates/update-restart-location.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/25794
+      retire_when: Upstream reopens the remembered page after an update restart on both Android and iOS, compact and split layouts.
+
   - id: network-condition-reports
     title: Report how connections behave on each network
     status: maintained
