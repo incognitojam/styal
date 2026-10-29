@@ -566,7 +566,7 @@ it.effect("reports a tagged error when the screenshot cannot be saved", () =>
   ).pipe(Effect.provide(layerTest)),
 );
 
-it.effect("advertises tool descriptions under the styal name", () =>
+it.effect("advertises tool descriptions and titles under the styal name", () =>
   Effect.gen(function* () {
     const BrandToolkit = Toolkit.make(
       Tool.make("brand_probe", {
@@ -575,7 +575,7 @@ it.effect("advertises tool descriptions under the styal name", () =>
         success: Schema.Struct({ ok: Schema.Boolean }),
         failure: OrchestratorMcpFailure,
         failureMode: "return",
-      }),
+      }).annotate(Tool.Title, "Read a T3 thread"),
     );
     const server = yield* McpServer.McpServer.pipe(
       Effect.provide(
@@ -587,7 +587,9 @@ it.effect("advertises tool descriptions under the styal name", () =>
         ).pipe(Layer.provideMerge(McpServer.McpServer.layer)),
       ),
     );
-    expect(server.tools.find(({ tool }) => tool.name === "brand_probe")?.tool.description).toBe(
+    const advertised = server.tools.find(({ tool }) => tool.name === "brand_probe")?.tool;
+    expect(advertised?.annotations?.title).toBe("Read a styal thread");
+    expect(advertised?.description).toBe(
       "Needs an agent running inside a styal thread. Delegate to a styal-owned child; styal shows the thread's title in styal's sidebar. Reads T3_MCP_URL and t3_thread_read.",
     );
   }),

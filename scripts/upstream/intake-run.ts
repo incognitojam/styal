@@ -2343,6 +2343,12 @@ async function verify(
       command: "vp",
       args: ["run", "--filter", "@t3tools/scripts", "ledger:check"],
     },
+    {
+      name: "upstream product names",
+      directory: cwd,
+      command: "vp",
+      args: ["run", "--filter", "@t3tools/scripts", "naming:check"],
+    },
   ];
   const results: Array<Awaited<ReturnType<typeof runStep>>> = [];
   let next = 0;
