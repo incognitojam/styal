@@ -225,6 +225,14 @@ jobs:
             !/.repos/
           sparse-checkout-cone-mode: false
 
+      - name: Reject repository-owned PR assets
+        run: |
+          files="$(git ls-files .github/pr-assets)"
+          if test -n "$files"; then
+            printf 'PR evidence must be uploaded to GitHub, not committed:\n%s\n' "$files" >&2
+            exit 1
+          fi
+
       - name: Setup cached dependencies
         uses: ./.github/actions/setup-deps
 
@@ -253,6 +261,9 @@ jobs:
       # Files/dependencies are repo-wide; export checks cover clean workspaces only.
       - name: Check unused code
         run: vp run knip:check
+
+      - name: Check generated GitHub GraphQL operations
+        run: vp run --filter @t3tools/source-control-github generate --check
 
       - name: Check
         run: vp check
@@ -523,6 +534,15 @@ jobs:
         run: |
           test '${{ needs.test_server.result }}' = success
           test '${{ needs.test_device_windows.result }}' = success
+
+      # thread-transfer-report.yml reads this artifact after CI, so a run whose
+      # server tests passed must have produced it.
+      - name: Require transfer measurements
+        if: needs.test_server.result == 'success'
+        uses: actions/download-artifact@v8
+        with:
+          name: thread-transfer-results
+          path: ${{ runner.temp }}/thread-transfer
 
   test_workspace:
     name: Fork Test (Workspace ${{ matrix.suite }})
