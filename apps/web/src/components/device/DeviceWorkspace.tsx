@@ -22,6 +22,7 @@ export function DeviceWorkspace(props: {
 }) {
   const [handle, setHandle] = useState<DeviceStreamHandle | null>(null);
   const [toolsOpen, setToolsOpen] = useState(false);
+  const [statsOpen, setStatsOpen] = useState(false);
   const [axOverlay, setAxOverlay] = useState(false);
   const [screenshotPending, setScreenshotPending] = useState(false);
   const [screenshotError, setScreenshotError] = useState<string | null>(null);
@@ -93,6 +94,7 @@ export function DeviceWorkspace(props: {
             hostId={props.device.hostId}
             visible={props.visible}
             axOverlay={axOverlay}
+            showStats={statsOpen}
             allowPhoneView
             onHandle={setHandle}
             renderControls={(view) => (
@@ -105,6 +107,8 @@ export function DeviceWorkspace(props: {
                 onScreenshot={() => void saveScreenshot()}
                 toolsOpen={toolsOpen}
                 onTools={() => setToolsOpen(!toolsOpen)}
+                statsOpen={statsOpen}
+                onStatsChange={setStatsOpen}
                 onFloat={props.onFloat}
                 onClose={props.onClose}
                 onPowerOff={props.onPowerOff}

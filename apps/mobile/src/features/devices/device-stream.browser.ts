@@ -2,6 +2,10 @@ import {
   createDeviceStreamClient,
   type DeviceScreenSize,
 } from "@t3tools/client-runtime/device/stream";
+import {
+  deviceStreamStatsRows,
+  deviceStreamUsageSummary,
+} from "@t3tools/client-runtime/device/stream-stats";
 
 import type { DeviceStreamConfiguration } from "./device-stream-document";
 
@@ -12,10 +16,18 @@ declare global {
 }
 
 let activeClient: ReturnType<typeof createDeviceStreamClient> | null = null;
+let statsView: { readonly show: (visible: boolean) => void; readonly stop: () => void } | null =
+  null;
 
 export function stop() {
+  statsView?.stop();
+  statsView = null;
   activeClient?.stop();
   activeClient = null;
+}
+
+export function setStats(visible: boolean) {
+  statsView?.show(visible);
 }
 
 export function command(button: "home" | "back" | "appSwitcher" | "rotate") {
@@ -80,9 +92,30 @@ export function start(configuration: DeviceStreamConfiguration) {
     color: colors.muted,
     background: colors.background,
   });
+  const statsPanel = document.createElement("dl");
+  statsPanel.setAttribute("aria-label", "Stream stats");
+  Object.assign(statsPanel.style, {
+    // Native device controls cover the top of the screen.
+    position: "fixed",
+    bottom: "40px",
+    right: "8px",
+    margin: "0",
+    padding: "6px 10px",
+    display: "none",
+    gridTemplateColumns: "auto auto",
+    columnGap: "12px",
+    rowGap: "2px",
+    fontSize: "12px",
+    fontVariantNumeric: "tabular-nums",
+    pointerEvents: "none",
+    borderRadius: "8px",
+    color: colors.foreground,
+    background: colors.background,
+    opacity: "0.92",
+  });
   frame.append(canvas, image);
   container.append(frame);
-  document.body.replaceChildren(container, inputStatus);
+  document.body.replaceChildren(container, inputStatus, statsPanel);
 
   let pointerId: number | null = null;
   let inputConnected = false;
@@ -150,6 +183,43 @@ export function start(configuration: DeviceStreamConfiguration) {
   );
   activeClient = client;
   client.setMjpegImage(image);
+  const renderStats = () => {
+    statsPanel.replaceChildren(
+      ...deviceStreamStatsRows(client.stats()).flatMap(([label, value]) => {
+        const term = document.createElement("dt");
+        term.textContent = label;
+        term.style.color = colors.muted;
+        const detail = document.createElement("dd");
+        detail.textContent = value;
+        Object.assign(detail.style, { margin: "0", textAlign: "right" });
+        return [term, detail];
+      }),
+    );
+  };
+  // Native code reports the latest summary when the viewer closes; the page
+  // cannot post once native code has torn it down.
+  const postSummary = () => {
+    const summary = deviceStreamUsageSummary(client.stats(), platform, configuration.access.wsBase);
+    if (summary && activeClient === client) post({ type: "summary", summary });
+  };
+  const summaryTimer = setInterval(postSummary, 10_000);
+  let statsTimer: ReturnType<typeof setInterval> | null = null;
+  statsView = {
+    show: (visible) => {
+      if (statsTimer !== null) clearInterval(statsTimer);
+      statsTimer = null;
+      statsPanel.style.display = visible ? "grid" : "none";
+      if (!visible) return;
+      renderStats();
+      statsTimer = setInterval(renderStats, 1_000);
+    },
+    stop: () => {
+      postSummary();
+      clearInterval(summaryTimer);
+      if (statsTimer !== null) clearInterval(statsTimer);
+      statsTimer = null;
+    },
+  };
   const touch = (event: PointerEvent, phase: "begin" | "move" | "end") => {
     const rect = frame.getBoundingClientRect();
     client.sendTouch(

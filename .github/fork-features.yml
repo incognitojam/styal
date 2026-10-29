@@ -1371,6 +1371,35 @@ features:
       tracking: []
       retire_when: Upstream keeps a panel tab for every live device session, including floating ones.
 
+  - id: device-stream-stats
+    title: Stream stats for device viewers
+    status: maintained
+    prs: []
+    invariants:
+      - Web, desktop and mobile device viewers offer **Show stream stats**, which shows the stream's frame rate, received data rate, delay growth behind the device, decoder resets, reconnects and pauses, refreshed once a second only while shown.
+      - Delay growth is measured from Android frame capture timestamps against the smallest lag seen since the stream or encoder session started, using the least-delayed frame of each second with at least five frames, so a still screen reports no delay; iOS streams report no delay or pauses because a still iOS screen sends no video.
+      - When a stream that showed video for at least five seconds closes or restarts, the viewer reports a `device.stream.summary` event with counts and rounded measures only, never device names, identifiers or addresses.
+    rationale: Remote viewers saw lag and dropouts with nothing to tell a slow connection from a slow decoder or a stalled stream; the device hub's own health numbers describe its connection to the styal server, not to the viewer.
+    implementation_paths:
+      - apps/web/src/components/device/DeviceStreamStatsOverlay.tsx
+      - packages/client-runtime/src/device/streamStats.ts
+    upstream_paths:
+      - apps/mobile/src/features/devices/DevicePreviewRouteScreen.tsx
+      - apps/mobile/src/features/devices/DeviceStreamWebView.tsx
+      - apps/mobile/src/features/devices/device-stream-document.ts
+      - apps/mobile/src/features/devices/device-stream.browser.ts
+      - apps/web/src/components/device/DeviceControlsRail.tsx
+      - apps/web/src/components/device/DeviceStreamView.tsx
+      - apps/web/src/components/device/DeviceWorkspace.tsx
+      - packages/client-runtime/src/device/stream.ts
+    tests:
+      - apps/server/src/telemetry/ClientFeatureUsage.test.ts
+      - packages/client-runtime/src/device/streamStats.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream device viewers show stream health and report it.
+
   - id: device-tool-thread-awareness
     title: Agents see devices other threads have open
     status: maintained

@@ -702,3 +702,42 @@ it.effect("records a mobile settings snapshot only from mobile, as the client se
     expect(isUsage({ ...mobileSnapshot, darkThemeId: "Synthetic Theme Name" })).toBe(false);
   }),
 );
+
+it.effect("records stream quality summaries from web and mobile as their own event", () =>
+  Effect.gen(function* () {
+    const events: Array<unknown> = [];
+    const analytics = {
+      record: (event: string, properties: Record<string, unknown> | undefined) =>
+        Effect.sync(() => {
+          events.push({ event, properties });
+        }),
+      flush: Effect.void,
+    };
+    const summary = {
+      feature: "device-stream-health",
+      action: "session_ended",
+      platform: "android",
+      transport: "h264",
+      connection: "network",
+      durationSeconds: 95,
+      averageFps: 41,
+      decoderResets: 3,
+      reconnects: 1,
+      stalls: 2,
+      longestGapMs: 1_800,
+      maxAddedDelayMs: 4_200,
+    } as const;
+    for (const surface of ["mobile", "web"] as const) {
+      const report = yield* ClientFeatureUsage.reporter({ surface }).pipe(
+        Effect.provideService(AnalyticsService.AnalyticsService, analytics),
+      );
+      yield* report(yield* decode({ ...summary, deviceId: "emulator-5554" }));
+      const { feature: _feature, action: _action, ...measures } = summary;
+      expect(events.at(-1)).toEqual({
+        event: "device.stream.summary",
+        properties: { ...measures, surface, forkClientUsageVersion: FORK_CLIENT_USAGE_VERSION },
+      });
+    }
+    expect(isUsage({ ...summary, decoderResets: -1 })).toBe(false);
+  }),
+);

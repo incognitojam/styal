@@ -28,6 +28,7 @@ import {
 } from "../../components/ui/headerMenu.android";
 import type { AppBarMenuItem } from "../../components/ui/AppBar.types";
 import { deviceEnvironment, refreshDeviceHubAccess, useDeviceHubAccess } from "../../state/device";
+import { reportForkClientUsage } from "../../state/forkClientUsage";
 import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
@@ -81,6 +82,7 @@ function DevicePreviewScreen({
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [inputConnected, setInputConnected] = useState(false);
   const [streamAttempt, setStreamAttempt] = useState(0);
+  const [statsVisible, setStatsVisible] = useState(false);
   const [shuttingDown, setShuttingDown] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
   const retryHost = useAtomCommand(deviceEnvironment.list);
@@ -188,6 +190,13 @@ function DevicePreviewScreen({
         ),
     },
     {
+      id: "stream-stats",
+      title: statsVisible ? "Hide stream stats" : "Show stream stats",
+      icon: "chart.bar.xaxis",
+      disabled: !preview,
+      onPress: () => setStatsVisible((visible) => !visible),
+    },
+    {
       id: "reload",
       title: "Reload stream",
       icon: "arrow.clockwise" as const,
@@ -263,6 +272,7 @@ function DevicePreviewScreen({
           environmentId={environmentId}
           preview={preview}
           streamRef={streamRef}
+          showStats={statsVisible}
           onInputConnected={onInputConnected}
         />
       ) : (
@@ -354,11 +364,13 @@ function OpenDevicePreview({
   environmentId,
   preview,
   streamRef,
+  showStats,
   onInputConnected,
 }: {
   readonly environmentId: EnvironmentId;
   readonly preview: ThreadDevicePreview;
   readonly streamRef: RefObject<DeviceStreamRef | null>;
+  readonly showStats: boolean;
   readonly onInputConnected: (connected: boolean) => Promise<void>;
 }) {
   const { session } = preview;
@@ -383,8 +395,10 @@ function OpenDevicePreview({
         buttonForeground: themeVariables["--color-secondary-foreground"],
         buttonBorder: themeVariables["--color-secondary-border"],
       }}
+      showStats={showStats}
       onUnauthorized={onUnauthorized}
       onInputConnected={onInputConnected}
+      onStreamSummary={(summary) => reportForkClientUsage(environmentId, summary)}
     />
   ) : (
     <View className="flex-1 items-center justify-center gap-4 px-6">
