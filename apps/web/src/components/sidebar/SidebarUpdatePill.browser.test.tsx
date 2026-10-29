@@ -403,14 +403,13 @@ describe("combined sidebar update", () => {
         environmentId === "remote-a" ? remoteA.promise : remoteB.promise,
       );
       await render();
-      await openConfirmation();
-      expect(button("Update", dialog()!).disabled).toBe(true);
+      await click(container.querySelector<HTMLButtonElement>("button")!);
 
       await act(async () => {
         if (first === "local") local.resolve(safeLocalChecks);
         else remote.resolve(AsyncResult.success(resumableActivity));
       });
-      expect(button("Update", dialog()!).disabled).toBe(true);
+      expect(dialog()).toBeNull();
       expect(testState.updateServer).not.toHaveBeenCalled();
       expect(testState.install).not.toHaveBeenCalled();
 
@@ -532,31 +531,28 @@ describe("combined sidebar update", () => {
       testState.localActivity.mockReturnValue(local.promise);
       testState.hostActivity.mockReturnValue(remote.promise);
       await render();
-      await openConfirmation();
+      const pill = container.querySelector<HTMLButtonElement>("button")!;
+      await click(pill);
 
       expect(testState.localActivity).toHaveBeenCalledTimes(1);
       expect(testState.hostActivity.mock.calls.map(([target]) => target.environmentId)).toEqual([
         "remote-a",
         "remote-b",
       ]);
-      expect(dialog()!.textContent).toContain("Checking for running work…");
-      expect(button("Update", dialog()!).disabled).toBe(true);
-      await click(button("Update", dialog()!));
-      expect(testState.updateServer).not.toHaveBeenCalled();
+      expect(dialog()).toBeNull();
+      expect(pill.getAttribute("aria-disabled")).toBe("true");
 
       await act(async () => {
         if (first === "local") local.resolve(localChecks);
         else remote.resolve(AsyncResult.success(remoteActivity));
       });
-      expect(button("Update", dialog()!).disabled).toBe(true);
-      expect(dialog()!.querySelector('[aria-label="Affected threads"]')).toBeNull();
+      expect(dialog()).toBeNull();
 
       await act(async () => {
         local.resolve(localChecks);
         remote.resolve(AsyncResult.success(remoteActivity));
       });
       expect(button("Update", dialog()!).disabled).toBe(false);
-      expect(dialog()!.textContent).not.toContain("Checking for running work…");
       const hosts = [...dialog()!.querySelector('[aria-label="Affected threads"]')!.children];
       expect(hosts.map((host) => host.querySelector("h3")?.textContent)).toEqual([
         "Local Linux",
@@ -638,25 +634,6 @@ describe("combined sidebar update", () => {
     },
   );
 
-  it("ignores late safe results from canceled and superseded checks without restarting", async () => {
-    const stale = deferred<ReadonlyArray<DesktopHostActivity | null>>();
-    const current = deferred<ReadonlyArray<DesktopHostActivity | null>>();
-    testState.localActivity.mockReturnValueOnce(stale.promise).mockReturnValueOnce(current.promise);
-    await render();
-    await openConfirmation();
-    await click(button("Cancel", dialog()!));
-    expect(dialog()).toBeNull();
-    await openConfirmation();
-    await act(async () => stale.resolve(safeLocalChecks));
-    expect(button("Update", dialog()!).disabled).toBe(true);
-    expect(dialog()!.textContent).not.toContain("Prepare release");
-    await click(button("Cancel", dialog()!));
-    await act(async () => current.resolve(safeLocalChecks));
-    expect(dialog()).toBeNull();
-    expect(testState.updateServer).not.toHaveBeenCalled();
-    expect(testState.install).not.toHaveBeenCalled();
-  });
-
   it("finishes provider installation before restarting either remote server", async () => {
     const providers =
       deferred<AsyncResult.AsyncResult<{ providers: ReadonlyArray<ServerProvider> }>>();
@@ -726,7 +703,6 @@ describe("combined sidebar update", () => {
       await act(async () => providers.resolve(AsyncResult.success({ providers: [] })));
       const confirmation = readConfirmDialogState();
       expect(confirmation.status).toBe("confirming");
-      expect(confirmation.status !== "idle" && confirmation.loading).toBeFalsy();
       expect(confirmation.status !== "idle" && confirmation.message).toContain(
         blocker === "terminal" ? "terminal" : "Could not check",
       );

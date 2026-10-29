@@ -15,6 +15,7 @@ import {
   type ServerUpdateControl,
 } from "./ServerUpdateAction";
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
+import { Spinner } from "./ui/spinner";
 import { useComposerMenuProps } from "./chat/composerEventScope";
 import {
   Select,
@@ -92,7 +93,9 @@ function EnvironmentSelector({
           : (updateControl?.label ?? "Update")
       }`
     : null;
-  const environmentIcon = serverUpdate ? (
+  const environmentIcon = updateControl?.pending ? (
+    <Spinner aria-hidden="true" size="xs" className="shrink-0" />
+  ) : serverUpdate ? (
     <CircleArrowUpIcon aria-hidden="true" className="size-3 shrink-0" />
   ) : (
     <EnvironmentMachineIcon

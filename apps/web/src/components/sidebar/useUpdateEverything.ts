@@ -270,7 +270,6 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
             updateServers(servers, {
               quiet: true,
               confirmed,
-              showActivityCheck: false,
               onSettled: (server, serverOutcome) => {
                 settleUpdateRunMachine(
                   server.environmentId,

@@ -10,7 +10,6 @@ import {
 } from "../ui/alert-dialog";
 import { Button } from "../ui/button";
 import { HostActivityThreadList } from "../HostActivityThreadList";
-import { Spinner } from "../ui/spinner";
 import type { SkippedMachine, UpdateEverythingConfirmation } from "./updateEverything.logic";
 
 interface UpdateEverythingDialogProps {
@@ -19,7 +18,7 @@ interface UpdateEverythingDialogProps {
   readonly summary: string;
   readonly lines: ReadonlyArray<string>;
   readonly skipped: ReadonlyArray<SkippedMachine>;
-  readonly activity: UpdateEverythingConfirmation | null;
+  readonly activity: UpdateEverythingConfirmation;
   readonly onConfirm: () => void;
 }
 
@@ -32,8 +31,8 @@ export function UpdateEverythingDialog({
   activity,
   onConfirm,
 }: UpdateEverythingDialogProps) {
-  const reportDecision = useCombinedUpdateConfirmationUsage(open && activity !== null);
-  const hasThreads = (activity?.threadActivity.length ?? 0) > 0;
+  const reportDecision = useCombinedUpdateConfirmationUsage(open);
+  const hasThreads = activity.threadActivity.length > 0;
   return (
     <AlertDialog
       open={open}
@@ -53,12 +52,7 @@ export function UpdateEverythingDialog({
             <AlertDialogDescription className="whitespace-pre-line">
               {lines.join("\n")}
             </AlertDialogDescription>
-            {activity === null ? (
-              <div className="flex items-center gap-2 pt-2" role="status">
-                <Spinner size="sm" tone="muted" />
-                <p className="text-sm">Checking for running work…</p>
-              </div>
-            ) : activity.lines.length > 0 ? (
+            {activity.lines.length > 0 ? (
               <p className="whitespace-pre-line pt-2 text-sm">{activity.lines.join("\n")}</p>
             ) : null}
             {skipped.length > 0 ? (
@@ -68,11 +62,10 @@ export function UpdateEverythingDialog({
             ) : null}
           </AlertDialogHeader>
         </div>
-        {hasThreads ? <HostActivityThreadList activity={activity!.threadActivity} /> : null}
+        {hasThreads ? <HostActivityThreadList activity={activity.threadActivity} /> : null}
         <AlertDialogFooter>
           <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
           <Button
-            disabled={activity === null}
             onClick={() => {
               reportDecision("confirmed");
               onConfirm();

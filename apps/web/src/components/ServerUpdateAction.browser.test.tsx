@@ -211,7 +211,8 @@ describe("ServerUpdateAction", () => {
 
       await renderAction({ selfUpdate, desktopAppUpdate: true, threadContinuation: true });
       await click("Update");
-      expect(readConfirmDialogState()).toMatchObject({ status: "confirming", loading: true });
+      expect(readConfirmDialogState().status).toBe("idle");
+      expect(button("Update")!.disabled).toBe(true);
       expect(testState.updateServer).not.toHaveBeenCalled();
 
       await act(async () => activity.resolve(result));
@@ -251,26 +252,6 @@ describe("ServerUpdateAction", () => {
     });
     expect(testState.updateServer).not.toHaveBeenCalled();
     await act(async () => respondToConfirmDialog(false));
-    expect(testState.updateServer).not.toHaveBeenCalled();
-    expect(testState.toast).not.toHaveBeenCalled();
-    expect(button("Update")!.disabled).toBe(false);
-  });
-
-  it("never starts an update when a cancelled check later reports safe resumable work", async () => {
-    registerConfirmDialogHost();
-    const result = AsyncResult.success({
-      ...idleActivity,
-      activeSessions: 1,
-      continuableSessions: 1,
-    });
-    const activity = deferred<typeof result>();
-    testState.hostActivity.mockReturnValue(activity.promise);
-    await renderAction({ threadContinuation: true });
-    await click("Update");
-    await act(async () => respondToConfirmDialog(false));
-    completeConfirmDialogClose();
-    await act(async () => activity.resolve(result));
-    expect(readConfirmDialogState().status).toBe("idle");
     expect(testState.updateServer).not.toHaveBeenCalled();
     expect(testState.toast).not.toHaveBeenCalled();
     expect(button("Update")!.disabled).toBe(false);
@@ -430,7 +411,7 @@ describe("ServerUpdateAction", () => {
     },
   );
 
-  it("opens immediately and prevents updates until running work has been checked", async () => {
+  it("shows the check on the button and opens a dialog only once work is found", async () => {
     registerConfirmDialogHost();
     const result = AsyncResult.success({ ...idleActivity, activeSessions: 1 });
     const activity = deferred<typeof result>();
@@ -442,47 +423,17 @@ describe("ServerUpdateAction", () => {
       button("Update")!.click();
       button("Update")!.click();
     });
-    expect(readConfirmDialogState()).toMatchObject({
-      status: "confirming",
-      loading: true,
-      message: "Update the Test server?\nChecking for running work…",
-    });
+    expect(readConfirmDialogState().status).toBe("idle");
+    expect(button("Update")!.disabled).toBe(true);
     expect(testState.hostActivity).toHaveBeenCalledTimes(1);
-    await act(async () => respondToConfirmDialog(true));
-    expect(testState.updateServer).not.toHaveBeenCalled();
 
     await act(async () => activity.resolve(result));
     expect(readConfirmDialogState()).toMatchObject({
       status: "confirming",
       message: expect.stringContaining("1 thread will be interrupted."),
     });
-    expect(readConfirmDialogState()).not.toHaveProperty("loading");
     await act(async () => respondToConfirmDialog(true));
     expect(testState.updateServer).toHaveBeenCalledTimes(1);
-  });
-
-  it("cancels a pending check immediately and ignores its result after a retry", async () => {
-    registerConfirmDialogHost();
-    const result = AsyncResult.success(idleActivity);
-    const activity = deferred<typeof result>();
-    testState.hostActivity
-      .mockReturnValueOnce(activity.promise)
-      .mockResolvedValue(AsyncResult.success({ ...idleActivity, activeSessions: 2 }));
-
-    await renderAction();
-    await click("Update");
-    await act(async () => respondToConfirmDialog(false));
-    completeConfirmDialogClose();
-    expect(readConfirmDialogState().status).toBe("idle");
-
-    await click("Update");
-    await act(async () => activity.resolve(result));
-    expect(readConfirmDialogState()).toMatchObject({
-      status: "confirming",
-      message: expect.stringContaining("2 threads will be interrupted."),
-    });
-    expect(testState.updateServer).not.toHaveBeenCalled();
-    await act(async () => respondToConfirmDialog(false));
   });
 
   it("keeps running work when the user cancels the confirmation", async () => {
