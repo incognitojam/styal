@@ -520,8 +520,10 @@ jobs:
       - name: Setup test dependencies
         uses: ./.github/actions/setup-deps
         with:
+          # Keep this filter identical across CLI jobs to share one dependency cache.
           filters: |
             @styal/cli...
+            @t3tools/scripts...
 
       - name: Test device commands
         shell: pwsh

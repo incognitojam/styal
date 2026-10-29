@@ -195,8 +195,10 @@ jobs:
         if: hashFiles('.github/actions/setup-deps/action.yml') != ''
         uses: ./.github/actions/setup-deps
         with:
+          # Keep this filter identical across CLI jobs to share one dependency cache.
           filters: |
             @styal/cli...
+            @t3tools/scripts...
 
       # Older release candidates predate the local cache action.
       - name: Setup dependencies for older candidates

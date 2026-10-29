@@ -117,8 +117,10 @@ jobs:
         if: steps.secret.outputs.present == 'true'
         uses: ./.github/actions/setup-deps
         with:
+          # Keep this filter identical across CLI jobs to share one dependency cache.
           filters: |
             @styal/cli...
+            @t3tools/scripts...
 
       # An isolated prefix keeps the installed release first on PATH and away
       # from any provider CLI preinstalled on the runner.
