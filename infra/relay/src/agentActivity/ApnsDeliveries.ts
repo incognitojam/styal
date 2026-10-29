@@ -576,17 +576,19 @@ export const make = Effect.gen(function* () {
     );
   });
 
+  const currentAggregate = (userId: string, nowMs: number) =>
+    activityRows
+      .listForUser({ userId })
+      .pipe(
+        Effect.map((activeStates) =>
+          makeAggregateState({ activeStates, terminalState: null, nowMs }),
+        ),
+      );
+
   const userHasContentToShow = Effect.fnUntraced(function* (userId: string) {
     const now = yield* DateTime.now;
-    return yield* activityRows.listForUser({ userId }).pipe(
-      Effect.map(
-        (activeStates) =>
-          makeAggregateState({
-            activeStates,
-            terminalState: null,
-            nowMs: now.epochMilliseconds,
-          }) !== null,
-      ),
+    return yield* currentAggregate(userId, now.epochMilliseconds).pipe(
+      Effect.map((aggregate) => aggregate !== null),
       // Keep the card on persistence failures; a later sweep can retry.
       Effect.catch((error) =>
         Effect.logWarning("Content recheck failed; keeping the card", { error }).pipe(
@@ -894,17 +896,13 @@ export const make = Effect.gen(function* () {
     ) {
       return null;
     }
-    const activeStates = yield* activityRows.listForUser({ userId: input.target.user_id }).pipe(
+    const aggregate = yield* currentAggregate(input.target.user_id, input.nowMs).pipe(
       Effect.catchCause((cause) =>
         Effect.logWarning("delayed alert aggregate read failed; sending a banner", {
           cause,
         }).pipe(Effect.as(null)),
       ),
     );
-    const aggregate =
-      activeStates === null
-        ? null
-        : makeAggregateState({ activeStates, terminalState: null, nowMs: input.nowMs });
     const row = aggregate?.activities.find(
       (activity) =>
         activity.environmentId === input.notification.environmentId &&
