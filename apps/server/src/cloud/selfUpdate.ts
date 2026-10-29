@@ -172,6 +172,11 @@ export const withRunningThreadContinuation = Effect.fn(
   });
 });
 
+// Longer than the client's 5 second pre-update check: this read is the same one
+// that just passed there, and a slow read on a large database must not fail
+// every unconfirmed update. The update request is already long-running.
+const HANDOFF_ACTIVITY_TIMEOUT = Duration.seconds(15);
+
 const checkUpdateHandoffActivity = <E>(
   input: ServerSelfUpdateInput,
   inspect: Effect.Effect<HostActivity, E>,
@@ -179,8 +184,21 @@ const checkUpdateHandoffActivity = <E>(
   input.confirmed === true
     ? Effect.void
     : inspect.pipe(
-        Effect.timeout("4 seconds"),
-        Effect.catchCause(() => Effect.succeed(null)),
+        Effect.timeout(HANDOFF_ACTIVITY_TIMEOUT),
+        Effect.catchCause((cause) =>
+          Effect.logWarning("Could not recheck server activity before the update handoff.", {
+            cause,
+          }).pipe(
+            Effect.andThen(
+              Effect.fail(
+                new ServerSelfUpdateError({
+                  reason:
+                    "Could not check the server for running work before restarting. Try updating again. The downloaded update is ready to retry.",
+                }),
+              ),
+            ),
+          ),
+        ),
         Effect.flatMap((activity) =>
           describeHostActivity([activity], {
             uncheckedHostsLine: "Could not check the server for running work.",

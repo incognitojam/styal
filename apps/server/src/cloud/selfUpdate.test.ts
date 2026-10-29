@@ -10,6 +10,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Fiber from "effect/Fiber";
 import * as Path from "effect/Path";
 import * as Stream from "effect/Stream";
+import * as TestClock from "effect/testing/TestClock";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import * as ServerConfig from "../config.ts";
@@ -202,9 +203,47 @@ it.layer(NodeServices.layer)("server self update", (it) => {
       const { selfUpdate, order } = yield* makeHarness({
         activity: Effect.die("activity unavailable"),
       });
-      expect(
-        (yield* selfUpdate.update({ targetVersion: "1.1.0" }).pipe(Effect.flip)).reason,
-      ).toContain("review and confirm");
+      const reason = (yield* selfUpdate.update({ targetVersion: "1.1.0" }).pipe(Effect.flip))
+        .reason;
+      expect(reason).toContain("Could not check the server for running work");
+      expect(reason).not.toContain("Activity changed");
+      expect(order).not.toContain("accept");
+    }),
+  );
+
+  it.effect("waits for a slow final activity read longer than the client's check", () =>
+    Effect.gen(function* () {
+      const inspecting = yield* Deferred.make<void>();
+      const { selfUpdate, order } = yield* makeHarness({
+        activity: Deferred.succeed(inspecting, undefined).pipe(
+          Effect.andThen(Effect.sleep("6 seconds")),
+          Effect.as(idleActivity),
+        ),
+      });
+      const fiber = yield* selfUpdate.update({ targetVersion: "1.1.0" }).pipe(Effect.forkChild);
+      yield* Deferred.await(inspecting);
+      yield* Effect.yieldNow;
+      yield* TestClock.adjust("6 seconds");
+      expect((yield* Fiber.join(fiber)).updateId).toBe("launcher-id");
+      expect(order).toContain("accept");
+    }),
+  );
+
+  it.effect("fails closed when the final activity read never finishes", () =>
+    Effect.gen(function* () {
+      const inspecting = yield* Deferred.make<void>();
+      const { selfUpdate, order } = yield* makeHarness({
+        activity: Deferred.succeed(inspecting, undefined).pipe(Effect.andThen(Effect.never)),
+      });
+      const fiber = yield* selfUpdate
+        .update({ targetVersion: "1.1.0" })
+        .pipe(Effect.flip, Effect.forkChild);
+      yield* Deferred.await(inspecting);
+      yield* Effect.yieldNow;
+      yield* TestClock.adjust("1 minute");
+      expect((yield* Fiber.join(fiber)).reason).toContain(
+        "Could not check the server for running work",
+      );
       expect(order).not.toContain("accept");
     }),
   );
