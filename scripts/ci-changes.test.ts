@@ -1,7 +1,8 @@
+// @effect-diagnostics nodeBuiltinImport:off
 import * as NodeModule from "node:module";
 import * as NodeFS from "node:fs";
 import * as NodeChildProcess from "node:child_process";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { parse } from "yaml";
 
 const require = NodeModule.createRequire(import.meta.url);
@@ -96,7 +97,7 @@ describe("required CI aggregate checks", () => {
   const workflow = parse(NodeFS.readFileSync(".github/workflows/fork-ci.yml", "utf8"));
   it.each(["check", "test_server_required", "test_workspace_required", "release_smoke"])(
     "%s rejects cancellation, failure and unexplained skips",
-    (job) => {
+    (job: string) => {
       const definition = workflow.jobs[job];
       const script = definition.steps[0].run;
       const output = gates([]);
