@@ -885,6 +885,7 @@ describe("ClaudeAdapterV2 Auto-accept edits", () => {
             signal: new AbortController().signal,
             toolUseID: "tool-bash-accept-edits",
             requestId: "request-bash-accept-edits",
+            description: "Check the Node runtime",
           }),
         ).pipe(Effect.forkScoped);
         const first = yield* Effect.raceFirst(
@@ -903,6 +904,7 @@ describe("ClaudeAdapterV2 Auto-accept edits", () => {
         assert.equal(approvalItem?.requestId, event.value.runtimeRequest.id);
         assert.equal(approvalItem?.toolName, "Bash");
         assert.deepEqual(approvalItem?.toolInput, command);
+        assert.equal(approvalItem?.prompt, command.command);
 
         yield* runtime.respondToRuntimeRequest({
           requestId: event.value.runtimeRequest.id,
