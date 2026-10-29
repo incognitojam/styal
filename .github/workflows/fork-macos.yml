@@ -1,25 +1,19 @@
 name: Fork macOS
 
 # Jobs that need a GitHub-hosted macOS runner. The free tier allows only a few at
-# once and GitHub cancels a job no runner picks up, so these stay out of Fork CI:
-# its result gates merging, intake promotion, and the nightly. A failure here
-# shows on the pull request or commit without blocking any of them.
+# once and GitHub cancels a job no runner picks up, so these stay out of Fork CI,
+# whose result gates intake promotion and the nightly. Both jobs run only when
+# their inputs changed. Merging requires `Fork Mobile Native Lint`; browser
+# calibration shows on the pull request or commit without blocking anything.
+#
+# The workflow runs on every change rather than filtering paths in the trigger:
+# a required check must report even on a docs-only pull request.
 on:
   pull_request:
-    paths-ignore:
-      - "**.md"
-      - "docs/**"
-      - ".github/fork-features.yml"
-      - ".github/workflows/provider-canary.yml"
   push:
     branches:
       - main
       - "intake/**"
-    paths-ignore:
-      - "**.md"
-      - "docs/**"
-      - ".github/fork-features.yml"
-      - ".github/workflows/provider-canary.yml"
 
 permissions:
   contents: read
@@ -31,7 +25,8 @@ concurrency:
 jobs:
   preview_calibration:
     name: Fork Browser Calibration (macOS)
-    if: github.repository == 'incognitojam/t3code' || github.repository == 'incognitojam/styal'
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.result != 'skipped' && needs.changes.outputs.calibration != 'false' }}
     runs-on: macos-26
     timeout-minutes: 30
     steps:
@@ -65,12 +60,12 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
-  # The static analysis below needs a macOS runner, which GitHub allows only a
-  # few of at once, so gate it on the native sources it actually lints instead
-  # of running it on every push. Detection is API-only (no checkout) and fails open: if
-  # the diff cannot be resolved, the lint runs.
-  mobile_native_changes:
-    name: Fork Mobile Native Changes
+  # macOS runners are scarce, so each job runs only when its inputs changed:
+  # calibration for anything but docs, the static analysis for the native
+  # sources it lints. Detection is API-only (no checkout) and fails open: if the
+  # diff cannot be resolved, both run.
+  changes:
+    name: Fork macOS Changes
     if: github.repository == 'incognitojam/t3code' || github.repository == 'incognitojam/styal'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -78,9 +73,10 @@ jobs:
       contents: read
       pull-requests: read
     outputs:
-      changed: ${{ steps.detect.outputs.changed }}
+      calibration: ${{ steps.detect.outputs.calibration }}
+      mobile_native: ${{ steps.detect.outputs.mobile_native }}
     steps:
-      - name: Detect mobile native changes
+      - name: Detect affected jobs
         id: detect
         env:
           GH_TOKEN: ${{ github.token }}
@@ -90,8 +86,9 @@ jobs:
           set -uo pipefail
 
           fail_open() {
-            echo "$* Running native static analysis."
-            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "$* Running every macOS job."
+            echo "calibration=true" >> "$GITHUB_OUTPUT"
+            echo "mobile_native=true" >> "$GITHUB_OUTPUT"
             exit 0
           }
 
@@ -128,29 +125,37 @@ jobs:
             fi
           fi
 
-          paths=$(tr '\t' '\n' <<< "$rows")
+          paths=$(tr '\t' '\n' <<< "$rows" | grep . || true)
+
+          # Docs and the files only other workflows read cannot change browser rendering.
+          inert='^docs/|\.md$|^\.github/fork-features\.yml$|^\.github/workflows/provider-canary\.yml$'
+          if grep -qvE "$inert" <<< "$paths"; then
+            echo "calibration=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Only docs changed; skipping browser calibration."
+            echo "calibration=false" >> "$GITHUB_OUTPUT"
+          fi
 
           # Sources scripts/mobile-native-static-check.ts lints, plus the tool
           # and rule configuration that decides how it lints them, plus the
           # root package.json that defines the lint:mobile command.
-          pattern='^apps/mobile/.*\.(swift|kt|kts)$|^apps/mobile/(\.swiftlint\.yml|detekt\.yml|\.editorconfig|Brewfile)$|^scripts/mobile-native-static-check\.ts$|^package\.json$|^\.github/workflows/fork-macos\.yml$'
-
-          if grep -qE "$pattern" <<< "$paths"; then
+          native='^apps/mobile/.*\.(swift|kt|kts)$|^apps/mobile/(\.swiftlint\.yml|detekt\.yml|\.editorconfig|Brewfile)$|^scripts/mobile-native-static-check\.ts$|^package\.json$|^\.github/workflows/fork-macos\.yml$'
+          if grep -qE "$native" <<< "$paths"; then
             echo "Native sources or lint configuration changed:"
-            grep -E "$pattern" <<< "$paths"
-            echo "changed=true" >> "$GITHUB_OUTPUT"
+            grep -E "$native" <<< "$paths"
+            echo "mobile_native=true" >> "$GITHUB_OUTPUT"
           else
             echo "No mobile native sources or lint configuration changed."
-            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "mobile_native=false" >> "$GITHUB_OUTPUT"
           fi
 
   mobile_native_static_analysis:
     name: Fork Mobile Native Static Analysis
-    needs: mobile_native_changes
+    needs: changes
     # Skip only on an explicit "no": a gate job that failed or errored leaves the
     # output empty, and that must run the lint rather than silently skip it. A
     # skipped gate (outside this repository) skips the lint too.
-    if: ${{ !cancelled() && needs.mobile_native_changes.result != 'skipped' && needs.mobile_native_changes.outputs.changed != 'false' }}
+    if: ${{ !cancelled() && needs.changes.result != 'skipped' && needs.changes.outputs.mobile_native != 'false' }}
     runs-on: macos-26
     timeout-minutes: 10
     steps:
@@ -176,3 +181,19 @@ jobs:
 
       - name: Lint mobile native sources
         run: vp run lint:mobile
+
+  # Rulesets require this job by its name, `Fork Mobile Native Lint`.
+  mobile_native_lint:
+    name: Fork Mobile Native Lint
+    needs: [changes, mobile_native_static_analysis]
+    if: ${{ always() && needs.changes.result != 'skipped' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require native lint when needed
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          echo "$RESULTS" | jq -e '.changes.result == "success"
+            and (.mobile_native_static_analysis.result == "success"
+              or (.mobile_native_static_analysis.result == "skipped"
+                and .changes.outputs.mobile_native == "false"))' > /dev/null
