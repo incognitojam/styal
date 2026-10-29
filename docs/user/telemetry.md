@@ -11,7 +11,10 @@ Agent browser usage includes the operation name, whether it succeeded, failed, o
 and its duration. It does not include visited URLs, page content, screenshots, selectors, typed
 input, or evaluated code. Device panel actions and agent device tools record their operation and
 outcome, whether the device is local or remote when known, and its platform when reported. Device
-names, identifiers, screenshots and action arguments are not collected.
+names, identifiers, screenshots and action arguments are not collected. When a device stream that
+showed video for at least five seconds closes, web, desktop and mobile viewers report its platform,
+video format, whether the server was on the same machine, its length, average frame rate, and its
+counts of decoder resets, reconnects and pauses with the largest pause and delay.
 Web and desktop integration settings record requests to change browser access, device support,
 agent device access, idle shutdown, or sharing, and whether the control applies to an environment
 or project. These requests do not report whether a save succeeded. Environment and project names,

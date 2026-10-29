@@ -33,7 +33,7 @@ import {
 } from "./settings.ts";
 
 /** Bump when extending the vocabulary; clients require the complete version before reporting. */
-export const FORK_CLIENT_USAGE_VERSION = 17;
+export const FORK_CLIENT_USAGE_VERSION = 18;
 
 /**
  * One device's client preferences, reported daily so we can see which defaults
@@ -226,6 +226,20 @@ export const ForkClientUsageInput = Schema.Union([
     feature: Schema.Literal("diff-file-review-order"),
     action: Schema.Literals(["relevance_selected", "alphabetical_selected"]),
     view: Schema.Literals(["changes", "pull_request"]),
+  }),
+  Schema.Struct({
+    feature: Schema.Literal("device-stream-health"),
+    action: Schema.Literal("session_ended"),
+    platform: Schema.Literals(["android", "ios"]),
+    transport: Schema.Literals(["h264", "avcc", "mjpeg"]),
+    connection: Schema.Literals(["loopback", "network"]),
+    durationSeconds: NonNegativeInt,
+    averageFps: NonNegativeInt,
+    decoderResets: NonNegativeInt,
+    reconnects: NonNegativeInt,
+    stalls: Schema.NullOr(NonNegativeInt),
+    longestGapMs: Schema.NullOr(NonNegativeInt),
+    maxAddedDelayMs: Schema.NullOr(NonNegativeInt),
   }),
   Schema.Struct({
     feature: Schema.Literal("mentioned-time-chips"),

@@ -22,6 +22,7 @@ import { Button } from "~/components/ui/button";
 import { MorphIcon } from "~/components/MorphIcon";
 import {
   Menu,
+  MenuCheckboxItem,
   MenuItem,
   MenuPopup,
   MenuSeparator,
@@ -43,6 +44,8 @@ export function DeviceControlsRail(props: {
   onScreenshot: () => void;
   toolsOpen: boolean;
   onTools: () => void;
+  statsOpen: boolean;
+  onStatsChange: (open: boolean) => void;
   onFloat: () => void;
   onClose: () => void;
   onPowerOff: () => void;
@@ -208,6 +211,9 @@ export function DeviceControlsRail(props: {
             <MoreHorizontal />
           </MenuTrigger>
           <MenuPopup side={popupSide} align="end">
+            <MenuCheckboxItem checked={props.statsOpen} onCheckedChange={props.onStatsChange}>
+              Show stream stats
+            </MenuCheckboxItem>
             <MenuItem onClick={props.onFloat}>
               <PictureInPicture2 />
               Float device over chat

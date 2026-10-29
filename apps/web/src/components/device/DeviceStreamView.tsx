@@ -14,6 +14,9 @@ import { DeviceAndroidFoldControls } from "./DeviceAndroidFoldControls";
 import type { DuoControlState } from "@t3tools/client-runtime/device/duo-control";
 import { DevicePhoneViewport } from "./DevicePhoneViewport";
 import { DeviceLoadingView } from "./DeviceLoadingView";
+import { DeviceStreamStatsOverlay } from "./DeviceStreamStatsOverlay";
+import { deviceStreamUsageSummary } from "@t3tools/client-runtime/device/stream-stats";
+import { reportForkClientUsage } from "~/forkClientUsage";
 import { type DeviceAxElement, fetchDeviceAxTree } from "./deviceHubApi";
 import {
   createDeviceStreamClient,
@@ -85,6 +88,7 @@ export function DeviceStreamView(props: {
   readonly allowPhoneView?: boolean;
   readonly renderControls?: (view: DeviceViewControls) => ReactNode;
   readonly axOverlay?: boolean;
+  readonly showStats?: boolean;
   readonly onHandle?: (handle: DeviceStreamHandle | null) => void;
   readonly onScreen?: (screen: DeviceScreenSize | null) => void;
 }) {
@@ -133,6 +137,8 @@ export function DeviceStreamView(props: {
     connected: false,
   });
   const { onHandle, onScreen } = props;
+  // The overlay polls through this; a new identity per render would restart its timer.
+  const readStats = useStableCallback(() => clientRef.current?.stats() ?? null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -176,6 +182,7 @@ export function DeviceStreamView(props: {
       },
     );
     clientRef.current = client;
+    const wsBase = access.wsBase;
     setPhoneUnavailable(false);
     setHasFrame(false);
     setMjpegUrl(null);
@@ -185,6 +192,8 @@ export function DeviceStreamView(props: {
     return () => {
       cancelPhoneInput();
       client.stop();
+      const summary = deviceStreamUsageSummary(client.stats(), props.platform, wsBase);
+      if (summary) void reportForkClientUsage(props.environmentId, summary);
       clientRef.current = null;
       onHandle?.(null);
       onScreen?.(null);
@@ -527,6 +536,7 @@ export function DeviceStreamView(props: {
             </Button>
           </div>
         ) : null}
+        {props.showStats ? <DeviceStreamStatsOverlay read={readStats} /> : null}
         {status === "streaming" && !inputState.connected ? (
           <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center p-2">
             <span className="rounded-md bg-background/85 px-2 py-1 text-xs text-muted-foreground">

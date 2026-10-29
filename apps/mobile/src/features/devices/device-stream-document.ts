@@ -1,5 +1,7 @@
 import type { DeviceHubAccess } from "@t3tools/client-runtime/device/hub-access";
-import type { DevicePlatform } from "@t3tools/contracts";
+import { ForkClientUsageInput, type DevicePlatform } from "@t3tools/contracts";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import type { PlatformOSType } from "react-native";
 
 export interface DeviceStreamConfiguration {
@@ -36,12 +38,20 @@ export function deviceStreamDocument(configuration: string, script: string) {
   return `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"></head><body><script>window.addEventListener("error",function(){${failure}});window.addEventListener("unhandledrejection",function(){${failure}});\n${safeScript}\ntry{T3DeviceStream.start(${safeConfiguration});}catch{${failure}}</script></body></html>`;
 }
 
+const decodeUsage = Schema.decodeUnknownOption(ForkClientUsageInput);
+
 export function deviceStreamMessage(data: string) {
   try {
     const message: unknown = JSON.parse(data);
     if (typeof message !== "object" || message === null || !("type" in message)) return null;
     if (message.type === "unauthorized" || message.type === "retry") {
       return { type: message.type } as const;
+    }
+    if (message.type === "summary" && "summary" in message) {
+      const summary = decodeUsage(message.summary);
+      return Option.isSome(summary) && summary.value.feature === "device-stream-health"
+        ? ({ type: message.type, summary: summary.value } as const)
+        : null;
     }
     if (
       message.type === "input" &&

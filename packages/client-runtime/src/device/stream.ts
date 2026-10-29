@@ -11,6 +11,7 @@ import * as Schema from "effect/Schema";
 import * as Option from "effect/Option";
 import { createCanvasFrameSink, type DeviceFrameSink } from "./frame.ts";
 import { type DeviceHubAccess, withDeviceHubQuery } from "./hubAccess.ts";
+import { createDeviceStreamStatsTracker, type DeviceStreamStats } from "./streamStats.ts";
 import type { DevicePlatform } from "@t3tools/contracts";
 
 export type DeviceStreamStatus = "connecting" | "streaming" | "error";
@@ -264,6 +265,8 @@ export interface DeviceStreamClient {
   readonly controlDuo: (command: DuoCommand) => void;
   readonly setDuoPanels: (panels: DuoPanelSinks | null) => void;
   readonly sendRawTouch: (phase: "begin" | "move" | "end", x: number, y: number) => void;
+  /** Counters for this client's video since it was created, across restarts. */
+  readonly stats: () => DeviceStreamStats;
 }
 
 const HID_USAGE_BY_CODE: Readonly<Record<string, number>> = {
@@ -340,6 +343,10 @@ export function createDeviceStreamClient(
     withDeviceHubQuery(`${access.httpBase}${vendor}${path}`, access);
   const wsUrl = (path: string) => withDeviceHubQuery(`${access.wsBase}${vendor}${path}`, access);
   const useWebCodecs = isWebCodecsSupported() && !(platform === "ios" && target.preferMjpeg);
+  const statsTracker = createDeviceStreamStatsTracker(
+    platform === "android" ? "h264" : useWebCodecs ? "avcc" : "mjpeg",
+  );
+  let everStreamed = false;
 
   let stopped = true;
   let socket: WebSocket | null = null;
@@ -430,8 +437,10 @@ export function createDeviceStreamClient(
   };
 
   const frameReceived = () => {
+    statsTracker.frameShown();
     if (firstFrame) return;
     firstFrame = true;
+    everStreamed = true;
     clearFrameTimer();
     setStatus("streaming");
   };
@@ -480,6 +489,7 @@ export function createDeviceStreamClient(
   const fallBackToMjpeg = () => {
     if (stopped || mjpeg) return;
     mjpeg = true;
+    statsTracker.setTransport("mjpeg");
     controller?.abort();
     controller = null;
     closeDecoder();
@@ -513,6 +523,7 @@ export function createDeviceStreamClient(
   const recoverDecoder = () => {
     if (platform === "ios") fallBackToMjpeg();
     else {
+      statsTracker.decoderReset();
       closeDecoder();
       connecting("Video decoder restarted.");
       requestKeyframe();
@@ -583,6 +594,7 @@ export function createDeviceStreamClient(
       }
       // Native IDRs are spaced by frame count, so an idle simulator may take
       // minutes to produce one. A new AVCC subscription forces a fresh IDR.
+      statsTracker.decoderReset();
       controller?.abort();
       closeDecoder();
       return;
@@ -708,6 +720,7 @@ export function createDeviceStreamClient(
             }
             case "keyframe":
             case "delta":
+              statsTracker.videoReceived(chunk.payload.byteLength, null);
               decode(chunk.type === "keyframe", chunk.payload);
               break;
           }
@@ -723,6 +736,7 @@ export function createDeviceStreamClient(
       controller = null;
       videoController.abort();
       closeDecoder();
+      if (everStreamed) statsTracker.reconnected();
       connecting(retryDetail);
       scheduleRetry("video", () => void readIosVideo());
     }
@@ -882,6 +896,7 @@ export function createDeviceStreamClient(
     socket = ws;
     ws.onopen = () => {
       if (stopped || socket !== ws) return;
+      statsTracker.restartTiming();
       connecting();
       events.onInputConnected(true);
     };
@@ -891,6 +906,7 @@ export function createDeviceStreamClient(
         // The encoder restarts at a new size when the device rotates; the
         // next keyframe carries a fresh SPS, so the decoder is rebuilt from it.
         if (isVideoSessionMessage(event.data)) {
+          statsTracker.restartTiming();
           closeDecoder();
           configuring = false;
           connecting();
@@ -900,6 +916,7 @@ export function createDeviceStreamClient(
       }
       if (!(event.data instanceof ArrayBuffer)) return;
       const packet = parseSemuPacket(event.data);
+      statsTracker.videoReceived(event.data.byteLength, packet.timestamp);
       const needsScan =
         packet.isKey === null ||
         (packet.isKey && (!videoDecoder || videoDecoder.state !== "configured"));
@@ -939,6 +956,7 @@ export function createDeviceStreamClient(
       )
         return handleUnauthorized();
       configuring = false;
+      if (everStreamed) statsTracker.reconnected();
       connecting(event.reason || undefined);
       scheduleRetry("input", connectAndroid);
     };
@@ -1019,6 +1037,7 @@ export function createDeviceStreamClient(
   };
 
   return {
+    stats: statsTracker.snapshot,
     start,
     stop,
     setMjpegImage,

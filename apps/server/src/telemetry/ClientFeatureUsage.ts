@@ -19,7 +19,8 @@ export const reporter = Effect.fnUntraced(function* (client: FeatureUsage.Client
     const mobileFeature =
       input.feature === "diff-file-review-order" ||
       input.feature === "incoming-share-thread" ||
-      input.feature === "mobile-settings";
+      input.feature === "mobile-settings" ||
+      input.feature === "device-stream-health";
     const reported =
       ((client.surface === "web" || client.surface === "desktop") &&
         input.feature !== "mobile-settings") ||
@@ -37,6 +38,13 @@ export const reporter = Effect.fnUntraced(function* (client: FeatureUsage.Client
       ...(client.clientOs ? { clientOs: client.clientOs } : {}),
       ...(client.clientAppVersion ? { clientAppVersion: client.clientAppVersion } : {}),
     };
+    // Stream quality is not usage either; opening the viewer is already counted by `devices`.
+    if (input.feature === "device-stream-health") {
+      const { feature: _feature, action: _action, ...summary } = input;
+      return analytics
+        .record("device.stream.summary", { ...summary, ...attribution })
+        .pipe(Effect.ignoreCause);
+    }
     // A preference snapshot is not usage; keep it off feature.used dashboards.
     if (input.feature === "client-settings" || input.feature === "mobile-settings") {
       const { feature: _feature, action: _action, ...settings } = input;

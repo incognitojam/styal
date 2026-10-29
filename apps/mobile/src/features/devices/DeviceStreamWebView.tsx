@@ -12,6 +12,7 @@ import {
 import { Platform, View } from "react-native";
 import { WebView } from "react-native-webview";
 import type { DeviceStreamStatus } from "@t3tools/client-runtime/device/stream";
+import type { ForkClientUsageInput } from "@t3tools/contracts";
 
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { AppText } from "../../components/ui/AppText";
@@ -30,10 +31,15 @@ export interface DeviceStreamRef {
   rotate: () => void;
 }
 
+type StreamSummary = Extract<ForkClientUsageInput, { feature: "device-stream-health" }>;
+
 type NativeStreamBridge = {
   readonly ref?: Ref<DeviceStreamRef>;
+  readonly showStats: boolean;
   readonly onUnauthorized: () => Promise<void>;
   readonly onInputConnected: (connected: boolean) => Promise<void>;
+  /** The stream's quality summary, once the viewer closes or restarts. */
+  readonly onStreamSummary: (summary: StreamSummary) => void;
 };
 
 export function DeviceStreamWebView({
@@ -52,6 +58,8 @@ export function DeviceStreamWebView({
     <DeviceStreamDocumentView
       key={`${attempt}:${configuration}`}
       ref={ref}
+      showStats={props.showStats}
+      onStreamSummary={props.onStreamSummary}
       configuration={configuration}
       baseUrl={deviceStreamBaseUrl(Platform.OS, props.platform, props.access.httpBase)}
       background={props.colors.background}
@@ -78,6 +86,8 @@ export function DeviceStreamWebView({
 
 function DeviceStreamDocumentView({
   ref,
+  showStats,
+  onStreamSummary,
   configuration,
   baseUrl,
   background,
@@ -100,6 +110,13 @@ function DeviceStreamDocumentView({
   const [status, setStatus] = useState<DeviceStreamStatus>("connecting");
   const [error, setError] = useState<string | null>(null);
   const [started, setStarted] = useState(false);
+  const summary = useRef<StreamSummary | null>(null);
+  useEffect(() => {
+    if (started)
+      webView.current?.injectJavaScript(
+        `window.T3DeviceStream?.setStats(${showStats ? "true" : "false"}); true;`,
+      );
+  }, [showStats, started]);
   const fail = (message: string) => {
     if (!active.current || failed.current) return;
     failed.current = true;
@@ -132,6 +149,10 @@ function DeviceStreamDocumentView({
     rotate: () => command("rotate"),
   }));
   const resetInput = useEffectEvent(() => void onInputConnected(false));
+  const reportSummary = useEffectEvent(() => {
+    if (summary.current) onStreamSummary(summary.current);
+    summary.current = null;
+  });
   useLayoutEffect(() => {
     active.current = true;
     resetInput();
@@ -139,6 +160,7 @@ function DeviceStreamDocumentView({
     return () => {
       active.current = false;
       view?.injectJavaScript("window.T3DeviceStream?.stop(); true;");
+      reportSummary();
     };
   }, []);
   const processTerminated = () => {
@@ -169,7 +191,8 @@ function DeviceStreamDocumentView({
         onMessage={(event) => {
           if (!active.current || failed.current) return;
           const message = deviceStreamMessage(event.nativeEvent.data);
-          if (message?.type === "unauthorized") void onUnauthorized();
+          if (message?.type === "summary") summary.current = message.summary;
+          else if (message?.type === "unauthorized") void onUnauthorized();
           else if (message?.type === "input") void onInputConnected(message.connected);
           else if (message?.type === "retry") onRetry();
           else if (message?.type === "status") {

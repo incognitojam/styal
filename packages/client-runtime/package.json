@@ -23,6 +23,10 @@
       "types": "./src/device/stream.ts",
       "default": "./src/device/stream.ts"
     },
+    "./device/stream-stats": {
+      "types": "./src/device/streamStats.ts",
+      "default": "./src/device/streamStats.ts"
+    },
     "./device/hub-access": {
       "types": "./src/device/hubAccess.ts",
       "default": "./src/device/hubAccess.ts"

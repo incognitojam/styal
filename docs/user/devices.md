@@ -127,9 +127,17 @@ Agents hand a device back when they finish testing, so other threads can use it;
 ## Remote connections
 
 The device stream goes through the environment server, so it works over the
-local network, Tailscale, and styal Link. Live video needs a secure page
-(HTTPS or localhost); on a plain-HTTP remote origin iOS falls back to a slower
-still-image stream and Android cannot show video.
+local network, Tailscale, and styal Link. In a browser, live video needs a
+secure page (HTTPS or localhost); on a plain-HTTP remote origin iOS falls back
+to a slower still-image stream and Android cannot show video. The mobile app
+shows live Android video on any connection.
+
+If the stream lags or drops out, choose **Show stream stats** from the Device
+panel's **More device actions** menu, or from the device options menu in the
+mobile app. A growing **Delay behind device** means video is arriving slower
+than the device sends it; frequent **Decoder resets** mean the viewer cannot
+decode it fast enough; **Reconnects** and **Pauses over 2 s** point at the
+connection.
 
 ## Devices from another environment
 
