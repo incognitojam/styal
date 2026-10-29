@@ -1815,6 +1815,7 @@ features:
       - Web, desktop, and mobile product tool icons and created-thread work-log rows use the canonical monochrome styal mark in their icon color, including historical calls using the `t3-code` namespace.
       - Android agent activity cards and status bar chips use the styal cotton reel, and shared client errors, accessibility labels, clipboard labels, and terminal previews identify styal.
       - Subscription usage widgets on iOS and Android name styal when they ask the user to open the app.
+      - Server, client, and agent-facing messages about the relay name styal Link rather than T3 Connect, and messages about this app name styal; messages about importing from an upstream T3 Code install keep that name.
       - Canonical brand asset paths and icon geometry stay shared across desktop, mobile configuration, web packaging, and export tooling so production and nightly artwork cannot silently diverge.
       - macOS desktop packages carry the channel's Icon Composer icon as a compiled asset catalog, so macOS 26 and later draw it without the legacy grey plate, and keep the safe-area `.icns` for earlier macOS releases.
       - The macOS installer backgrounds and the Dev and Nightly sidebar and send-button artwork use styal's channel grounds and sewing motifs (pinked linen, cutting mat, starry horizon) rather than upstream's T3 Code installer and stage artwork.
