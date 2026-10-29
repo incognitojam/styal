@@ -1,5 +1,6 @@
 import type { DevicePlatform } from "@t3tools/contracts";
 import {
+  Activity,
   Camera,
   ChevronLeft,
   Home,
@@ -22,7 +23,6 @@ import { Button } from "~/components/ui/button";
 import { MorphIcon } from "~/components/MorphIcon";
 import {
   Menu,
-  MenuCheckboxItem,
   MenuItem,
   MenuPopup,
   MenuSeparator,
@@ -211,9 +211,10 @@ export function DeviceControlsRail(props: {
             <MoreHorizontal />
           </MenuTrigger>
           <MenuPopup side={popupSide} align="end">
-            <MenuCheckboxItem checked={props.statsOpen} onCheckedChange={props.onStatsChange}>
-              Show stream stats
-            </MenuCheckboxItem>
+            <MenuItem onClick={() => props.onStatsChange(!props.statsOpen)}>
+              <Activity />
+              {props.statsOpen ? "Hide stream stats" : "Show stream stats"}
+            </MenuItem>
             <MenuItem onClick={props.onFloat}>
               <PictureInPicture2 />
               Float device over chat
