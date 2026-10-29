@@ -169,7 +169,7 @@ import {
 } from "../../provider/claudeUsageLimits.ts";
 import type { ManagedServerProvider } from "@t3tools/provider-core/server/snapshot";
 import { mergeProviderInstanceEnvironment } from "@t3tools/provider-core/server/instanceEnvironment";
-import { T3_CODE_ORCHESTRATION_INSTRUCTIONS } from "@t3tools/provider-core/server/orchestrationInstructions";
+import { t3OrchestrationSystemPrompt } from "@t3tools/provider-core/server/orchestrationInstructions";
 import { buildRuntimeInstructions } from "@t3tools/provider-core/server/runtimeInstructions";
 import {
   mcpToolPresentation,
@@ -1480,7 +1480,14 @@ export function makeClaudeQueryOptions(input: {
       preset: "claude_code" as const,
       append:
         buildRuntimeInstructions({ harness: "Claude Code" }) +
-        (input.mcpServers === undefined ? "" : T3_CODE_ORCHESTRATION_INSTRUCTIONS) +
+        (t3OrchestrationSystemPrompt(
+          input.mcpServers !== undefined,
+          // Sessions resumed from before the styal rename keep their `t3-code` server.
+          input.mcpServers !== undefined &&
+            McpProviderSession.LEGACY_MCP_SERVER_NAME in input.mcpServers
+            ? McpProviderSession.LEGACY_MCP_SERVER_NAME
+            : McpProviderSession.ACTIVE_MCP_SERVER_NAME,
+        ) ?? "") +
         (input.additionalInstructions === undefined ? "" : `\n\n${input.additionalInstructions}`),
     },
     ...(Object.keys(extraArgs).length === 0 ? {} : { extraArgs }),

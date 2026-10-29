@@ -1,15 +1,25 @@
 import type { ProviderInteractionMode } from "@t3tools/contracts";
 import { ACTIVE_MCP_SERVER_NAME, type McpServerName } from "./mcpSession.ts";
 
+/**
+ * Agent-facing text is shared with upstream, which calls the product "T3 Code"
+ * or "T3". Rewrite the prose at delivery so agents know they run in styal;
+ * identifiers such as `t3_thread_read` or `T3_MCP_URL` stay as they are.
+ */
+export function renderStyalProductName(value: string): string {
+  return value.replaceAll("T3 Code", "styal").replaceAll(/\bT3(?=[ '-])/g, "styal");
+}
+
 /** Render the actual namespace without changing durable provider tool identities. */
 export function renderProviderToolInstructions(
   value: string,
   serverName: McpServerName = ACTIVE_MCP_SERVER_NAME,
 ): string {
-  return value
-    .replaceAll("t3-code", serverName)
-    .replaceAll("mcp__t3_code__", `mcp__${serverName.replaceAll("-", "_")}__`)
-    .replaceAll("T3 Code", "styal");
+  return renderStyalProductName(
+    value
+      .replaceAll("t3-code", serverName)
+      .replaceAll("mcp__t3_code__", `mcp__${serverName.replaceAll("-", "_")}__`),
+  );
 }
 
 /**
@@ -104,9 +114,11 @@ export function t3AcpPromptWithInstructions(input: {
     return input.prompt;
   }
   const instructions = [
-    input.state.interactionMode === "plan"
-      ? T3_CODE_ACP_PLAN_MODE_INSTRUCTIONS
-      : T3_CODE_ACP_DEFAULT_MODE_INSTRUCTIONS,
+    renderStyalProductName(
+      input.state.interactionMode === "plan"
+        ? T3_CODE_ACP_PLAN_MODE_INSTRUCTIONS
+        : T3_CODE_ACP_DEFAULT_MODE_INSTRUCTIONS,
+    ),
     ...(input.state.hasT3Mcp
       ? [
           renderProviderToolInstructions(

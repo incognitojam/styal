@@ -56,6 +56,8 @@ describe("Pi orchestration prompt section", () => {
 
     assert.isUndefined(await hook(event, ctx));
     assert.include(sections.t3_code_orchestration, "orchestrator_capabilities");
+    assert.include(sections.t3_code_orchestration, "mcp__t3_code__orchestrator_capabilities");
+    assert.notInclude(sections.t3_code_orchestration, "T3 Code");
     assert.equal(event.systemPrompt, "base");
     assert.include(bridge.getActiveTools(), "mcp__t3-code__preview_snapshot");
 

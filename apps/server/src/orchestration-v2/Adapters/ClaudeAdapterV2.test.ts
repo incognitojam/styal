@@ -801,6 +801,26 @@ describe("ClaudeAdapterV2 MCP query overrides", () => {
 });
 
 describe("ClaudeAdapterV2 native protocol logging", () => {
+  it("names the styal MCP server in the orchestration instructions", () => {
+    const options = ClaudeAdapterV2.makeClaudeQueryOptions({
+      modelSelection: {
+        instanceId: ProviderInstanceId.make("claudeAgent"),
+        model: "claude-sonnet-4-6",
+      },
+      nativeThreadId: "native-thread-claude-styal-mcp",
+      resume: false,
+      cwd: "/workspace",
+      mcpServers: { styal: { type: "http", url: "http://127.0.0.1:43123/mcp" } },
+      environment: {},
+    });
+    const append = (options.systemPrompt as { readonly append?: string }).append ?? "";
+    assert.include(append, "The `styal` MCP server");
+    assert.include(append, "mcp__styal__orchestrator_capabilities");
+    assert.notInclude(append, "t3-code");
+    assert.notInclude(append, "mcp__t3_code__");
+    assert.notInclude(append, "T3 Code");
+  });
+
   it("injects thread-scoped MCP configuration without logging the credential", () => {
     const threadId = ThreadId.make("thread-claude-mcp");
     const mcpSession = {
@@ -854,6 +874,8 @@ describe("ClaudeAdapterV2 native protocol logging", () => {
     assert.equal(systemPrompt.type, "preset");
     assert.equal(systemPrompt.preset, "claude_code");
     assert.include(systemPrompt.append ?? "", "Use `delegate_task`");
+    assert.include(systemPrompt.append ?? "", "The `t3-code` MCP server");
+    assert.notInclude(systemPrompt.append ?? "", "T3 Code");
     const logged = ClaudeAdapterV2.loggedClaudeQueryOptions(options);
     assert.equal(logged.hasMcpServers, true);
     assert.notInclude(JSON.stringify(logged), "secret-claude-token");
