@@ -42,48 +42,19 @@ export function ShareToThreadSection(props: {
   const [isAdding, setIsAdding] = useState(false);
   const targets = shareThreadTargets({ threads, projects, searchText: props.searchText });
 
-  async function select(target: ShareThreadTarget): Promise<void> {
+  function select(target: ShareThreadTarget): void {
     if (isAdding) return;
-    const { environmentId, id: threadId } = target.thread;
     setIsAdding(true);
-    try {
-      const { warnings } = await importIncomingShareIntoThread(props.share, target.thread, {
-        serverConfig: appAtomRegistry.get(serverEnvironment.configValueAtom(environmentId)),
-        mergeDraft: mergeComposerDraftContent,
-        draftAttachmentIds: (draftKey) =>
-          new Set(
-            getComposerDraftSnapshot(draftKey).attachments.map((attachment) => attachment.id),
-          ),
-        consumeShare,
-        releaseUnusedAttachments: scheduleUnusedComposerAttachmentCleanup,
-      });
-      reportForkClientUsage(environmentId, {
-        feature: "incoming-share-thread",
-        action: "added",
-        outcome: "success",
-      });
+    void addShareToThread(props.share, target, consumeShare).then((added) => {
+      setIsAdding(false);
+      if (!added) return;
       navigation.dispatch(
         StackActions.replace("Thread", {
-          environmentId: String(environmentId),
-          threadId: String(threadId),
+          environmentId: String(target.thread.environmentId),
+          threadId: String(target.thread.id),
         }),
       );
-      if (warnings.length > 0) {
-        Dialog.alert("Some shared content was skipped", warnings.join("\n"));
-      }
-    } catch (error) {
-      reportForkClientUsage(environmentId, {
-        feature: "incoming-share-thread",
-        action: "added",
-        outcome: "failure",
-      });
-      Dialog.alert(
-        "Could not add to thread",
-        error instanceof Error ? error.message : "The shared content could not be saved.",
-      );
-    } finally {
-      setIsAdding(false);
-    }
+    });
   }
 
   return (
@@ -96,7 +67,7 @@ export function ShareToThreadSection(props: {
               target={target}
               first={index === 0}
               disabled={isAdding}
-              onPress={() => void select(target)}
+              onPress={() => select(target)}
             />
           ))}
         </ListSection>
@@ -114,6 +85,45 @@ export function ShareToThreadSection(props: {
       ) : null}
     </>
   );
+}
+
+// Outside the component: React Compiler cannot compile try/finally.
+async function addShareToThread(
+  share: IncomingShareDraft,
+  target: ShareThreadTarget,
+  consumeShare: (shareId: string) => Promise<void>,
+): Promise<boolean> {
+  const { environmentId } = target.thread;
+  try {
+    const { warnings } = await importIncomingShareIntoThread(share, target.thread, {
+      serverConfig: appAtomRegistry.get(serverEnvironment.configValueAtom(environmentId)),
+      mergeDraft: mergeComposerDraftContent,
+      draftAttachmentIds: (draftKey) =>
+        new Set(getComposerDraftSnapshot(draftKey).attachments.map((attachment) => attachment.id)),
+      consumeShare,
+      releaseUnusedAttachments: scheduleUnusedComposerAttachmentCleanup,
+    });
+    reportForkClientUsage(environmentId, {
+      feature: "incoming-share-thread",
+      action: "added",
+      outcome: "success",
+    });
+    if (warnings.length > 0) {
+      Dialog.alert("Some shared content was skipped", warnings.join("\n"));
+    }
+    return true;
+  } catch (error) {
+    reportForkClientUsage(environmentId, {
+      feature: "incoming-share-thread",
+      action: "added",
+      outcome: "failure",
+    });
+    Dialog.alert(
+      "Could not add to thread",
+      error instanceof Error ? error.message : "The shared content could not be saved.",
+    );
+    return false;
+  }
 }
 
 function ShareThreadRow(props: {
