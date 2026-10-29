@@ -7,9 +7,12 @@ import ts from "typescript-legacy";
 
 /**
  * Upstream product names that must not reach styal users or agents. Upstream
- * intake brings new messages that use them, and nothing else notices.
+ * intake brings new messages that use them, and nothing else notices. Bare
+ * "T3" counts when used as a name ("T3 server", "T3's browser", "T3-owned");
+ * "T3 home" is the glossary term for the data directory, and "T3 Chat" is a
+ * theme named after another product.
  */
-const UPSTREAM_NAME = /T3 Code|T3 Connect|t3\.codes/u;
+const UPSTREAM_NAME = /T3 Code|T3 Connect|t3\.codes|\bT3(?! home\b| Chat\b)(?=[ '’]|-[a-z])/u;
 
 /**
  * Files whose strings may keep an upstream name, each with the reason. A path
@@ -20,7 +23,7 @@ const UPSTREAM_NAMING_EXCEPTIONS: ReadonlyArray<{
   readonly reason: string;
 }> = [
   {
-    path: "apps/server/src/dataImport/LegacyImport.ts",
+    path: "apps/server/src/dataImport/",
     reason: "Import messages name the upstream T3 Code install being imported.",
   },
   {
@@ -42,6 +45,27 @@ const UPSTREAM_NAMING_EXCEPTIONS: ReadonlyArray<{
   {
     path: "packages/provider-core/src/server/orchestrationInstructions.ts",
     reason: "Instructions are delivered through renderStyalProductName.",
+  },
+  {
+    path: "packages/shared/src/htmlRender.ts",
+    reason:
+      "Its guides are part of MCP tool descriptions, advertised through renderStyalProductName.",
+  },
+  {
+    path: "packages/shared/src/t3McpToolPresentation.ts",
+    reason: "Tool labels are rewritten by styalToolDefinition before display.",
+  },
+  {
+    path: "apps/desktop/src/app/DesktopCliCommand.ts",
+    reason: "Embedded PowerShell uses T3 as a type namespace.",
+  },
+  {
+    path: "apps/server/src/device/deviceToolMaintenance.ts",
+    reason: "Embedded helper script comments.",
+  },
+  {
+    path: "packages/provider-pi/src/server/mcpExtensionSource.ts",
+    reason: "Embedded extension source comments.",
   },
   {
     path: "apps/server/src/provider/CodexDeveloperInstructions.ts",
@@ -72,11 +96,12 @@ const UPSTREAM_NAMING_EXCEPTIONS: ReadonlyArray<{
 const SCANNED_ROOTS = [
   ":(glob)apps/*/src/**",
   ":(glob)apps/mobile/modules/**",
+  ":(glob)apps/desktop/gnome-extension/**",
   ":(glob)packages/*/src/**",
 ];
 const SKIPPED_PATH =
   /^apps\/marketing\/|\.test\.|\.fixture\.|\.testkit\.|\/testkit\/|\/fixtures\/|\/__tests__\/|\.d\.ts$/u;
-const TYPESCRIPT_FILE = /\.(?:ts|tsx|mts)$/u;
+const SCRIPT_FILE = /\.(?:ts|tsx|mts|js|mjs|cjs)$/u;
 const NATIVE_FILE = /\.(?:kt|swift|java)$/u;
 
 interface UpstreamNameFinding {
@@ -122,7 +147,11 @@ export function findUpstreamNames(
     source,
     ts.ScriptTarget.Latest,
     true,
-    path.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+    path.endsWith(".tsx")
+      ? ts.ScriptKind.TSX
+      : /\.[mc]?js$/u.test(path)
+        ? ts.ScriptKind.JS
+        : ts.ScriptKind.TS,
   );
   const visit = (node: ts.Node) => {
     if (
@@ -152,7 +181,7 @@ export function findRepositoryUpstreamNames(repoRoot: string): ReadonlyArray<Ups
     .split("\0")
     .filter(
       (path) =>
-        (TYPESCRIPT_FILE.test(path) || NATIVE_FILE.test(path)) &&
+        (SCRIPT_FILE.test(path) || NATIVE_FILE.test(path)) &&
         !SKIPPED_PATH.test(path) &&
         !isException(path),
     );

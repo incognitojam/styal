@@ -111,7 +111,7 @@ void (async () => {
   try {
     const runtimeStatePath = process.env.${TERMINAL_BROWSER_OPEN_RUNTIME_STATE_ENV};
     const token = process.env.${TERMINAL_BROWSER_OPEN_TOKEN_ENV};
-    if (!runtimeStatePath || !token) throw new Error("T3 browser-open environment is unavailable");
+    if (!runtimeStatePath || !token) throw new Error("styal browser-open environment is unavailable");
 
     const { readFile } = await import("node:fs/promises");
     const runtimeState = JSON.parse(await readFile(runtimeStatePath, "utf8"));
@@ -132,7 +132,7 @@ void (async () => {
     } finally {
       clearTimeout(timeout);
     }
-    if (!response.ok) throw new Error("T3 browser-open request was rejected");
+    if (!response.ok) throw new Error("styal browser-open request was rejected");
   } catch {
     await fallbackToSystemBrowser();
   }

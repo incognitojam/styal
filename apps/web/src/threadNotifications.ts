@@ -6,8 +6,8 @@ import departuresUrl from "./assets/notification-departures.mp3";
 import inputUrl from "./assets/notification-input.mp3";
 
 export const NOTIFICATION_SOUND_LABELS = {
-  "t3-completion": "T3 completion",
-  "t3-input": "T3 attention",
+  "t3-completion": "styal completion",
+  "t3-input": "styal attention",
   avanti: "Avanti",
   departures: "Departures",
   none: "None",

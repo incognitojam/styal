@@ -21,6 +21,25 @@ describe("findUpstreamNames", () => {
     ]);
   });
 
+  it("finds bare T3 used as a name", () => {
+    const source = [
+      'const a = "T3 could not ask for approval here.";',
+      "const b = `Install Muse Code on this T3 server host.`;",
+      'const c = "Set up this Linux host for T3\'s browser.";',
+      'const d = "Delegate to a T3-owned child agent.";',
+    ].join("\n");
+    expect(names("apps/web/src/example.ts", source)).toEqual(["1:T3", "2:T3", "3:T3", "4:T3"]);
+  });
+
+  it("allows the T3 home term, the T3 Chat theme and T3 header names", () => {
+    const source = [
+      'const home = "New, nonexistent T3 home to populate.";',
+      'const theme = "T3 Chat";',
+      'const header = "T3-Mode-Limit must be <runtimeMode>/<interactionMode>.";',
+    ].join("\n");
+    expect(names("apps/server/src/example.ts", source)).toEqual([]);
+  });
+
   it("ignores comments, identifiers and other spellings", () => {
     const source = [
       "// T3 Code keeps this for upstream compatibility.",
