@@ -59,6 +59,14 @@ interface UpdateEverythingDialogProps {
   readonly checking: boolean;
   readonly contentUpdatedAt?: number | null;
   readonly onConfirm: () => void;
+  /** Overrides the "Update N machines?" title, for an update-track switch. */
+  readonly title?: string;
+  readonly confirmLabel?: string;
+  readonly notes?: ReadonlyArray<string>;
+  /** Shown in place of running-thread counts; disables the confirm button. */
+  readonly disabledReason?: string | null;
+  /** The confirmed work is starting; it cannot be cancelled from here. */
+  readonly busy?: boolean;
 }
 
 type UpdateEverythingDialogContentProps = Omit<
@@ -74,7 +82,8 @@ export function UpdateEverythingDialog({
   ...content
 }: UpdateEverythingDialogProps) {
   const cancelRef = useRef<HTMLButtonElement>(null);
-  const reportDecision = useCombinedUpdateConfirmationUsage(open);
+  // A track switch always asks, so it says nothing about how often updates need consent.
+  const reportDecision = useCombinedUpdateConfirmationUsage(open && content.title === undefined);
   return (
     <AlertDialog
       open={open}
@@ -123,6 +132,11 @@ function UpdateEverythingDialogContent({
   contentUpdatedAt = null,
   onConfirm,
   cancelRef,
+  title,
+  confirmLabel,
+  notes = [],
+  disabledReason = null,
+  busy = false,
 }: UpdateEverythingDialogContentProps) {
   const restarting = new Set(restarts.map((machine) => machine.environmentId));
   const updating = rows.filter((row) => row.app !== null || row.providers.length > 0);
@@ -132,7 +146,7 @@ function UpdateEverythingDialogContent({
     <>
       <AlertDialogHeader className="shrink-0">
         <AlertDialogTitle>
-          Update {updating.length} {updating.length === 1 ? "machine" : "machines"}?
+          {title ?? `Update ${updating.length} ${updating.length === 1 ? "machine" : "machines"}?`}
         </AlertDialogTitle>
         <AlertDialogDescription>
           {version !== null ? (
@@ -148,6 +162,11 @@ function UpdateEverythingDialogContent({
       </AlertDialogHeader>
       <ScrollArea scrollFade>
         <div className="flex flex-col gap-3 px-6 pb-4">
+          {notes.map((note) => (
+            <p key={note} className="text-muted-foreground text-sm">
+              {note}
+            </p>
+          ))}
           {/* Machine names truncate first. Provider lists wrap between names, never inside one. */}
           <div className="grid grid-cols-[minmax(4rem,max-content)_max-content_minmax(min-content,1fr)_max-content] gap-x-4 text-sm">
             <div className="col-span-full grid grid-cols-subgrid border-b pb-1.5 text-muted-foreground text-xs">
@@ -221,14 +240,21 @@ function UpdateEverythingDialogContent({
         ) : null}
       </ScrollArea>
       <AlertDialogFooter>
-        <AlertDialogClose ref={cancelRef} render={<Button variant="outline" />}>
+        {disabledReason !== null ? (
+          <p className="self-center text-sm max-sm:order-1 max-sm:text-center sm:mr-auto">
+            {disabledReason}
+          </p>
+        ) : null}
+        <AlertDialogClose ref={cancelRef} render={<Button variant="outline" disabled={busy} />}>
           Cancel
         </AlertDialogClose>
-        <Button onClick={onConfirm}>
-          <StableLabel
-            label={checking ? "Update anyway" : "Update"}
-            previous={contentUpdatedAt === null ? undefined : "Update anyway"}
-          />
+        <Button disabled={disabledReason !== null || busy} onClick={onConfirm}>
+          {confirmLabel ?? (
+            <StableLabel
+              label={checking ? "Update anyway" : "Update"}
+              previous={contentUpdatedAt === null ? undefined : "Update anyway"}
+            />
+          )}
         </Button>
       </AlertDialogFooter>
     </>

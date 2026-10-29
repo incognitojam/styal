@@ -16,7 +16,7 @@ import ForkMigration0011 from "./ForkMigrations/011_ProjectionProjectsOrganizati
 import ForkMigration0012 from "./ForkMigrations/012_DropComposerDrafts.ts";
 import { runMigrations } from "./Migrations.ts";
 
-const FORK_MIGRATIONS_TABLE = "yngatech_sql_migrations";
+export const FORK_MIGRATIONS_TABLE = "yngatech_sql_migrations";
 /**
  * Fork migrations have their own append-only history so upstream can keep its
  * numeric migration sequence unchanged across rebases.

@@ -1,4 +1,9 @@
 import packageJson from "../../package.json" with { type: "json" };
+import {
+  BUILD_FORK_MIGRATION_HEAD,
+  BUILD_MIGRATION_HEAD,
+  recordedMigrations,
+} from "../persistence/databaseMigrationHead.ts";
 import { SERVICE_LAUNCHER_PROTOCOL } from "./serviceProtocol.ts";
 
 export type ServicePreflightResult =
@@ -32,7 +37,38 @@ export function runServicePreflight(input: {
     };
   }
 
+  const newer = newerRecordedMigrations(input.databasePath);
+  if (newer === null) {
+    return {
+      status: "blocked",
+      version,
+      reason: `Could not read this database to confirm @styal/cli@${version} supports it.`,
+    };
+  }
+  if (newer.length > 0) {
+    return {
+      status: "blocked",
+      version,
+      reason: `This database has migrations that @styal/cli@${version} does not know: ${newer.join(", ")}. A newer build wrote them, and running @styal/cli@${version} on this database is not safe. Stay on the newer release, or wait for a release that includes these migrations.`,
+    };
+  }
+
   return { status: "ready", version, launcherProtocol: SERVICE_LAUNCHER_PROTOCOL };
+}
+
+/** Migrations a newer build recorded, or null when the database exists but cannot be read.
+ * Startup already handles renamed ids this build knows. */
+function newerRecordedMigrations(databasePath: string): ReadonlyArray<string> | null {
+  const recorded = recordedMigrations(databasePath);
+  if (recorded === null) return null;
+  const newer = (
+    migrations: ReadonlyArray<{ readonly id: number; readonly name: string }>,
+    head: number,
+  ) => migrations.filter(({ id }) => id > head).map(({ id, name }) => `${id}_${name}`);
+  return [
+    ...newer(recorded.upstream, BUILD_MIGRATION_HEAD),
+    ...newer(recorded.fork, BUILD_FORK_MIGRATION_HEAD),
+  ];
 }
 
 export function decodeServicePreflightResult(value: unknown): ServicePreflightResult | undefined {

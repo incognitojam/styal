@@ -4,6 +4,8 @@ import {
   cliArchiveTarCommand,
   cliReleaseVersionFromDistTags,
   parseChecksums,
+  cliReleaseChannelOf,
+  crossesReleaseTrack,
 } from "./cliRelease.ts";
 
 describe("cliRelease", () => {
@@ -31,6 +33,13 @@ describe("cliRelease", () => {
 });
 
 describe("npm release channels", () => {
+  it("treats a pull request preview as neither Stable nor Nightly", () => {
+    const preview = "1.2.4-pr.1292.5";
+    expect(cliReleaseChannelOf(preview)).toBe("preview");
+    expect(crossesReleaseTrack(preview, "1.2.4-nightly.20261011.9")).toBe(false);
+    expect(crossesReleaseTrack("1.2.3", "1.2.4-nightly.20261011.9")).toBe(true);
+  });
+
   const tags = {
     latest: "1.2.3",
     nightly: "1.2.4-nightly.20261011.9",

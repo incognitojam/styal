@@ -1,6 +1,9 @@
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+
 import { CLI_PACKAGE_NAME } from "./cliPackage.ts";
 import { parseCliReleaseVersion } from "./cliReleaseVersion.ts";
+import { compareSemverVersions } from "./semver.ts";
 
 const CLI_RELEASE_REPOSITORY = "incognitojam/styal";
 export const CLI_NPM_DIST_TAGS_URL = `https://registry.npmjs.org/-/package/${CLI_PACKAGE_NAME}/dist-tags`;
@@ -101,6 +104,45 @@ export function cliReleaseVersionFromDistTags(input: unknown, channel: CliReleas
 }
 
 export function cliReleaseChannelOf(version: string): CliReleaseChannel {
+  // Pull request previews are versioned `<base>-pr.<number>.<run>`.
+  if (/-pr\.\d+\.\d+$/.test(version)) return "preview";
   const channel = /^[^-+]+-(nightly|preview)\.\d{8}\.\d+$/.exec(version)?.[1];
   return channel === "nightly" || channel === "preview" ? channel : "stable";
+}
+
+/** Whether updating between these versions crosses Stable and Nightly. Preview builds cross nothing.
+ * Hosts refuse a crossing outside a track switch, which checks the database first. */
+export function crossesReleaseTrack(fromVersion: string, toVersion: string): boolean {
+  const from = cliReleaseChannelOf(fromVersion);
+  const to = cliReleaseChannelOf(toVersion);
+  return from !== to && from !== "preview" && to !== "preview";
+}
+
+/** The desktop update track a build belongs to. Preview builds have no feed and read as Stable. */
+export function desktopUpdateChannelOf(version: string): "latest" | "nightly" {
+  return cliReleaseChannelOf(version) === "nightly" ? "nightly" : "latest";
+}
+
+/** Whether a track switch may install `found` after its database check cleared `checked`: any build
+ * on the switch's track at least as new, since later releases only add migrations. */
+export function acceptsTrackSwitchRelease(
+  found: string,
+  channel: "latest" | "nightly",
+  checked: string,
+): boolean {
+  return (
+    cliReleaseChannelOf(found) === (channel === "nightly" ? "nightly" : "stable") &&
+    compareSemverVersions(found, checked) >= 0
+  );
+}
+
+const NpmReleaseMigrationManifest = Schema.Struct({
+  t3code: Schema.Struct({ databaseMigration: Schema.Int }),
+});
+const decodeNpmReleaseMigrationManifest = Schema.decodeUnknownOption(NpmReleaseMigrationManifest);
+
+/** Highest database migration a release's server knows, from its npm manifest. */
+export function npmReleaseDatabaseMigration(manifest: unknown): number | undefined {
+  return Option.getOrUndefined(decodeNpmReleaseMigrationManifest(manifest))?.t3code
+    .databaseMigration;
 }

@@ -214,7 +214,7 @@ describe("macOS background staging", () => {
     });
     return run(harness, (updates, quit) =>
       Effect.gen(function* () {
-        yield* updates.setChannel("nightly");
+        yield* updates.setChannel("nightly", { minimumVersion: nightly });
         harness.emit("update-downloaded", { version: nightly });
         yield* flushCallbacks;
         assert.isTrue(harness.squirrel.job);

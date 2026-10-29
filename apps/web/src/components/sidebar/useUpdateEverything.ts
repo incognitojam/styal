@@ -19,7 +19,9 @@ import {
   useServerUpdates,
 } from "../ServerUpdateAction";
 import {
+  type ChannelSwitchRelease,
   closeFinishedUpdateRun,
+  collectChannelSwitchTargets,
   collectRestartingMachines,
   collectServerUpdateTargets,
   collectUpdateEverythingResult,
@@ -39,6 +41,17 @@ import {
   waitForServerUpdateHandoff,
 } from "./updateEverythingRun";
 
+/** Servers this desktop app runs; they update with it. */
+export function isHostedByThisApp(
+  environment: ReturnType<typeof useEnvironments>["environments"][number],
+) {
+  return (
+    isElectron &&
+    (environment.entry.target._tag === "PrimaryConnectionTarget" ||
+      isDesktopLocalConnectionTarget(environment.entry.target))
+  );
+}
+
 export type ReportLocalUpdateError = (title: string, description: string) => void;
 
 /**
@@ -46,7 +59,11 @@ export type ReportLocalUpdateError = (title: string, description: string) => voi
  * restarts into its update; the summary toast waits for the relaunch, and servers still
  * restarting are followed after it.
  */
-export function useUpdateEverything(localUpdateVersion: string | null) {
+/** `channelSwitch` makes the run move the fleet to that release's track instead of updating it. */
+export function useUpdateEverything(
+  localUpdateVersion: string | null,
+  channelSwitch?: ChannelSwitchRelease,
+) {
   const targetVersion = localUpdateVersion ?? APP_VERSION;
   const { environments } = useEnvironments();
   const environmentIds = environmentIdsKey(environments.map(({ environmentId }) => environmentId));
@@ -57,23 +74,23 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
     label: environment.label,
     serverConfig: environment.serverConfig,
     connected: environment.connection.phase === "connected",
-    hostedByThisApp:
-      isElectron &&
-      (environment.entry.target._tag === "PrimaryConnectionTarget" ||
-        isDesktopLocalConnectionTarget(environment.entry.target)),
+    hostedByThisApp: isHostedByThisApp(environment),
     canMaintain: canUpdateServer(sessionStates[index]!),
     updateState: updateStates[index]!,
   }));
-  const { targets: behindServers, skipped: unreachable } = collectServerUpdateTargets(
-    machines,
-    targetVersion,
-  );
+  const { targets: behindServers, skipped: unreachable } = channelSwitch
+    ? collectChannelSwitchTargets(machines, channelSwitch)
+    : collectServerUpdateTargets(machines, targetVersion);
   // Desktop-managed servers use their app feed; only npm installs need to wait for publication.
-  const needsNpm = behindServers.some((server) => server.selfUpdate !== "desktop-managed");
+  // A track switch's target came from npm already.
+  const needsNpm =
+    channelSwitch === undefined &&
+    behindServers.some((server) => server.selfUpdate !== "desktop-managed");
   const published = useNpmReleasePublished(needsNpm ? targetVersion : null);
-  const servers = published
-    ? behindServers
-    : behindServers.filter((server) => server.selfUpdate === "desktop-managed");
+  const servers =
+    published || channelSwitch !== undefined
+      ? behindServers
+      : behindServers.filter((server) => server.selfUpdate === "desktop-managed");
   const skipped: ReadonlyArray<SkippedMachine> = [
     ...unreachable,
     ...behindServers
@@ -84,8 +101,12 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
         reason: `@styal/cli@${targetVersion} is not on npm yet`,
       })),
   ];
+  // Track-only hosts save a setting and restart nothing, so they are neither listed nor counted.
+  const moving = servers.filter((server) => server.trackOnly !== true);
   // Settings still offers a manual update for providers styal manages.
-  const providers = useProviderUpdates({ leaveManagedUpdates: true });
+  const providerUpdates = useProviderUpdates({ leaveManagedUpdates: true });
+  // A track switch moves app and servers only; provider updates stay a separate choice.
+  const providers = channelSwitch ? { machines: [], updateAll: async () => [] } : providerUpdates;
   // The fork checks each server for running work when the confirmation opens.
   // Without explicit consent, the server step checks again before restarting.
   const checkServers = useServerUpdateCheck();
@@ -94,7 +115,7 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
   const view = describeUpdateEverything({
     localVersion: localUpdateVersion,
     localMachines: machines.filter((machine) => machine.hostedByThisApp),
-    servers,
+    servers: moving,
     skipped,
     providerMachines: providers.machines.map((machine) => ({
       environmentId: machine.environmentId,
@@ -141,7 +162,7 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
   };
 
   const checkActivity = async (): Promise<UpdateEverythingConfirmation> => {
-    const [remote, local] = await Promise.all([checkServers(servers), checkLocalActivity()]);
+    const [remote, local] = await Promise.all([checkServers(moving), checkLocalActivity()]);
     return {
       lines: [...local.lines, ...remote.lines],
       threadActivity: [...local.threadActivity, ...remote.threadActivity],
@@ -155,7 +176,7 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
   const checkingActivity = (): UpdateEverythingConfirmation => {
     const checked = [
       ...(localUpdateVersion === null ? [] : ["this app"]),
-      ...servers.map((server) => server.serverLabel),
+      ...moving.map((server) => server.serverLabel),
     ];
     return {
       lines: [
@@ -172,7 +193,7 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
   return {
     hasUpdates: servers.length > 0 || providers.machines.length > 0,
     ...view,
-    restarts: collectRestartingMachines(machines, servers, localUpdateVersion !== null),
+    restarts: collectRestartingMachines(machines, moving, localUpdateVersion !== null),
     checkActivity,
     checkingActivity,
     skipped,
@@ -222,6 +243,7 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
       }
       const localVersion = installLocal ? localUpdateVersion : null;
       setUpdateEverythingRun(() => ({
+        ...(channelSwitch ? { trackSwitch: true } : {}),
         localVersion,
         phase: "providers",
         machines: Array.from(machinesById.values()),

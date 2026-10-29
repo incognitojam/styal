@@ -1042,6 +1042,9 @@ features:
       - Each desktop launch reports, once its main window first shows, the time from the process start to the local backend being ready and to the window showing. After an update restart, the launch of the installed version adds how long the old process took to stop its backends before the installer handoff, the time from that handoff to the new process starting, and on macOS whether the update was staged in the background; a launch that comes back on the old version reports as a normal launch.
       - Update summaries retain skipped environment reasons, including late skips and across desktop relaunch.
       - Combined update confirmations keep the machine table and affected threads in one scrolling body and retain remote host labels even when only one remote server is checked.
+      - A Stable and Nightly track switch compares the database with both migration histories, upstream's and `yngatech_sql_migrations`, through one combined number that `build-npm-launcher.ts` publishes in the `@styal/cli` manifest and servers report, and the service preflight blocks a migration from either history that the target build does not know.
+      - The switch dialog lists running work from the same activity check as the sidebar, clicking confirm is explicit consent, and it waits for the download the app starts by itself after a check. It records no combined update confirmation events.
+      - Pull request preview versions (`-pr.<number>.<run>`) count as the preview channel, so a switch skips them and a preview install is outside the refusal of cross-track and downgraded builds.
     implementation_paths:
       - apps/desktop/src/app/DesktopLifecycle.ts
       - apps/desktop/src/app/DesktopShutdownConfirmation.ts
@@ -1060,7 +1063,9 @@ features:
       - apps/desktop/src/updates/updateMachine.ts
       - apps/server/src/auth/EnvironmentAuth.ts
       - apps/server/src/auth/PairingGrantStore.ts
+      - apps/server/src/cloud/servicePreflight.ts
       - apps/server/src/environment/HostActivity.ts
+      - apps/server/src/persistence/databaseMigrationHead.ts
       - apps/server/src/resourceTelemetry/DesktopTelemetryReceiver.ts
       - apps/server/src/telemetry/DesktopFeatureUsage.ts
       - apps/web/src/AppRoot.tsx
@@ -1069,6 +1074,8 @@ features:
       - apps/web/src/components/ServerUpdateAction.logic.ts
       - apps/web/src/components/ServerUpdateAction.tsx
       - apps/web/src/components/desktopUpdate.logic.ts
+      - apps/web/src/components/settings/UpdateTrackSwitchDialog.tsx
+      - apps/web/src/components/settings/updateTrackSwitch.logic.ts
       - apps/web/src/components/sidebar/DesktopUpdateStatusIcon.tsx
       - apps/web/src/components/sidebar/SidebarUpdatePill.tsx
       - apps/web/src/components/sidebar/SidebarUpdateReleaseNotes.tsx
@@ -1077,7 +1084,9 @@ features:
       - packages/contracts/src/environmentHttp.ts
       - packages/contracts/src/ipc.ts
       - packages/contracts/src/resourceTelemetry.ts
+      - packages/shared/src/cliRelease.ts
       - packages/shared/src/hostActivity.ts
+      - scripts/build-npm-launcher.ts
     upstream_paths:
       - apps/desktop/src/updates/DesktopUpdates.ts
       - apps/desktop/src/updates/updateMachine.ts
@@ -1103,17 +1112,21 @@ features:
       - apps/desktop/src/window/DesktopWindow.test.ts
       - apps/server/src/auth/EnvironmentAuth.test.ts
       - apps/server/src/auth/PairingGrantStore.test.ts
+      - apps/server/src/cloud/servicePreflight.test.ts
       - apps/server/src/environment/HostActivity.test.ts
+      - apps/server/src/persistence/Migrations.test.ts
       - apps/server/src/telemetry/DesktopFeatureUsage.test.ts
       - apps/server/src/terminal/Manager.test.ts
       - apps/web/src/components/ServerUpdateAction.browser.test.tsx
       - apps/web/src/components/ServerUpdateAction.logic.test.ts
       - apps/web/src/components/desktopUpdate.logic.test.ts
+      - apps/web/src/components/settings/updateTrackSwitch.logic.test.ts
       - apps/web/src/components/sidebar/SidebarUpdatePill.browser.test.tsx
       - apps/web/src/confirmDialog.test.ts
       - apps/web/src/state/desktopUpdate.test.ts
       - packages/contracts/src/environmentHttp.test.ts
       - packages/contracts/src/ipc.test.ts
+      - packages/shared/src/cliRelease.test.ts
       - packages/shared/src/hostActivity.test.ts
     upstream:
       status: partial

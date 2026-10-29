@@ -49,6 +49,7 @@ export class DesktopAppUpdate extends Context.Service<
         stage: ServerSelfUpdateProgressStage,
       ) => Effect.Effect<void, ServerSelfUpdateError>,
       confirmed?: boolean,
+      trackSwitch?: DesktopTelemetryReceiver.DesktopTrackSwitch,
     ) => Effect.Effect<ServerSelfUpdateResult, ServerSelfUpdateError>;
     /** Success stops the server; returns only on installation failure or timeout. */
     readonly commit: (
@@ -77,6 +78,7 @@ export const make = Effect.fn("desktopUpdate.desktopAppUpdate.make")(function* (
     reportProgress: (
       stage: ServerSelfUpdateProgressStage,
     ) => Effect.Effect<void, ServerSelfUpdateError>,
+    trackSwitch: boolean,
   ) {
     const lastStage = yield* Ref.make<ServerSelfUpdateProgressStage | null>(null);
     const emitStage = (
@@ -128,6 +130,11 @@ export const make = Effect.fn("desktopUpdate.desktopAppUpdate.make")(function* (
       return { targetVersion, method: "desktop-app" as const, desktopUpdateToken: requestId };
     }
     if (report.outcome === "up-to-date") {
+      // A switch's host already on the newest build of its track only saved the track.
+      if (trackSwitch) {
+        yield* Ref.set(inFlight, false);
+        return { targetVersion: report.state.currentVersion, method: "desktop-app" as const };
+      }
       return yield* failWith(
         `The styal desktop app on this machine is already up to date on ${report.state.currentVersion}.`,
       );
@@ -138,7 +145,7 @@ export const make = Effect.fn("desktopUpdate.desktopAppUpdate.make")(function* (
   });
 
   const run: DesktopAppUpdate["Service"]["run"] = Effect.fn("desktopUpdate.desktopAppUpdate.run")(
-    function* (reportProgress, confirmed = false) {
+    function* (reportProgress, confirmed = false, trackSwitch) {
       if (!available) {
         return yield* failWith(
           "This server was not started by the styal desktop app, so it cannot drive a desktop update.",
@@ -160,13 +167,18 @@ export const make = Effect.fn("desktopUpdate.desktopAppUpdate.make")(function* (
           // Subscribe before requesting to catch fast reports.
           const { changes } = yield* receiver.desktopUpdates;
           yield* receiver
-            .requestDesktopUpdate(requestId, confirmed)
+            .requestDesktopUpdate(requestId, confirmed, trackSwitch)
             .pipe(
               Effect.mapError((error) =>
                 failWith("Could not reach the styal desktop app on this machine.", error),
               ),
             );
-          return yield* consumeReports(requestId, changes, reportProgress).pipe(
+          return yield* consumeReports(
+            requestId,
+            changes,
+            reportProgress,
+            trackSwitch !== undefined,
+          ).pipe(
             Effect.onInterrupt(() => receiver.cancelDesktopUpdate(requestId).pipe(Effect.ignore)),
           );
         }),

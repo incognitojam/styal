@@ -8,7 +8,11 @@ import {
 } from "./baseSchemas.ts";
 import { HostPowerSnapshot } from "./background.ts";
 import { HostActivity } from "./environmentHttp.ts";
-import { DesktopPreviewAppFailureReason, DesktopUpdateStateSchema } from "./ipc.ts";
+import {
+  DesktopPreviewAppFailureReason,
+  DesktopUpdateChannelSchema,
+  DesktopUpdateStateSchema,
+} from "./ipc.ts";
 
 export const RESOURCE_MONITOR_PROTOCOL_VERSION = 3 as const;
 
@@ -444,6 +448,9 @@ export const DesktopTelemetryRequestDesktopUpdate = Schema.Struct({
   requestId: TrimmedNonEmptyString,
   /** Omission by older servers requires a safe activity check at handoff. */
   confirmed: Schema.optionalKey(Schema.Boolean),
+  /** A track switch: move to this channel first, and install only `targetVersion`. */
+  channel: Schema.optionalKey(DesktopUpdateChannelSchema),
+  targetVersion: Schema.optionalKey(TrimmedNonEmptyString),
 });
 export type DesktopTelemetryRequestDesktopUpdate = typeof DesktopTelemetryRequestDesktopUpdate.Type;
 

@@ -154,6 +154,8 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   ignoredFileListing: Schema.optionalKey(Schema.Boolean),
   environmentIcon: Schema.optionalKey(Schema.Boolean),
   desktopAppUpdate: Schema.optionalKey(Schema.Boolean),
+  /** The desktop app switches update tracks when a server update request names one. */
+  desktopAppChannelSwitch: Schema.optionalKey(Schema.Boolean),
   /** Subscribe to command output only when advertised; older servers never send it. */
   commandOutputStreaming: Schema.optionalKey(Schema.Boolean),
   /** Hosts headless Chromium tabs streamed over /api/preview-stream for clients without a local runtime. */
@@ -183,6 +185,8 @@ export const ExecutionEnvironmentDescriptor = Schema.Struct({
   /** npm identity; absent on older servers whose updates may still install t3. */
   serverPackageName: Schema.optionalKey(TrimmedNonEmptyString),
   orchestrationProtocolVersion: Schema.optionalKey(Schema.Int),
+  /** This server's database position across its migration histories; absent on older servers. */
+  databaseMigration: Schema.optionalKey(Schema.Int),
   capabilities: ExecutionEnvironmentCapabilities,
 });
 export type ExecutionEnvironmentDescriptor = typeof ExecutionEnvironmentDescriptor.Type;

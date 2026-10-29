@@ -32,8 +32,8 @@ export class NpmLauncherCommandFailedError extends Schema.TaggedError<NpmLaunche
   }
 }
 
-/** engines requires import.meta.dirname and fetch. */
-export function npmLauncherPackageManifest(version: string) {
+/** engines requires import.meta.dirname and fetch. `t3code` is read back by npmReleaseDatabaseMigration. */
+export function npmLauncherPackageManifest(version: string, databaseMigration: number) {
   return {
     name: CLI_PACKAGE_NAME,
     version,
@@ -44,8 +44,28 @@ export function npmLauncherPackageManifest(version: string) {
     bin: { [CLI_COMMAND_NAME]: `./bin/${CLI_COMMAND_NAME}.mjs` },
     files: ["bin", "dist"],
     engines: { node: ">=20.11" },
+    t3code: { databaseMigration },
   };
 }
+
+/** Highest migration id in a directory of the `NNN_Name.ts` files the server registers. */
+const latestMigrationId = Effect.fn("latestMigrationId")(function* (directory: string) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const dir = yield* path.fromFileUrl(
+    new URL(`../apps/server/src/persistence/${directory}/`, import.meta.url),
+  );
+  const ids = (yield* fs.readDirectory(dir)).flatMap((name) => {
+    const id = /^(\d+)_\w+\.ts$/.exec(name)?.[1];
+    return id === undefined ? [] : [Number(id)];
+  });
+  return Math.max(0, ...ids);
+});
+
+/** The server's `combinedMigrationHead` for this checkout: upstream's history plus the fork's. */
+const latestServerMigrationHead = Effect.fn("latestServerMigrationHead")(function* () {
+  return (yield* latestMigrationId("Migrations")) + (yield* latestMigrationId("ForkMigrations"));
+});
 
 export const buildNpmLauncher = Effect.fn("buildNpmLauncher")(function* (input: {
   readonly version: string;
@@ -66,7 +86,9 @@ export const buildNpmLauncher = Effect.fn("buildNpmLauncher")(function* (input: 
   yield* fs.makeDirectory(path.join(stageDir, "dist"));
   yield* fs.writeFileString(
     path.join(stageDir, "package.json"),
-    `${yield* encodePackageJson(npmLauncherPackageManifest(input.version))}\n`,
+    `${yield* encodePackageJson(
+      npmLauncherPackageManifest(input.version, yield* latestServerMigrationHead()),
+    )}\n`,
   );
   const launcher = path.join(stageDir, "bin", `${CLI_COMMAND_NAME}.mjs`);
   yield* fs.copyFile(path.join(sourceDir, `${CLI_COMMAND_NAME}.mjs`), launcher);

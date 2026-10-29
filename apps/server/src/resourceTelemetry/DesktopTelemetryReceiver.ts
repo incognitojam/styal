@@ -9,6 +9,7 @@ import {
   type DesktopFeatureUsageReport,
   type DesktopHostTelemetrySnapshot,
   DesktopTelemetryControlMessage,
+  type DesktopUpdateChannel,
   type DesktopUpdateStatusReport,
   type DesktopUpdateActivityReport,
   type EnvironmentId,
@@ -153,6 +154,12 @@ export interface DesktopTelemetryReceiverHealth {
   readonly lastError: Option.Option<string>;
 }
 
+/** Moves the desktop app to `channel` and installs only `targetVersion`. */
+export interface DesktopTrackSwitch {
+  readonly channel: DesktopUpdateChannel;
+  readonly targetVersion: string;
+}
+
 export class DesktopTelemetryReceiver extends Context.Service<
   DesktopTelemetryReceiver,
   {
@@ -190,6 +197,7 @@ export class DesktopTelemetryReceiver extends Context.Service<
     readonly requestDesktopUpdate: (
       requestId: string,
       confirmed?: boolean,
+      trackSwitch?: DesktopTrackSwitch,
     ) => Effect.Effect<void, DesktopTelemetryControlError>;
     readonly commitDesktopUpdate: (
       requestId: string,
@@ -687,12 +695,14 @@ export const make = Effect.fn("resourceTelemetry.desktopTelemetryReceiver.make")
     requestDesktopUpdate: Effect.fn("DesktopTelemetryReceiver.requestDesktopUpdate")(function (
       requestId,
       confirmed = false,
+      trackSwitch,
     ) {
       return sendControlMessage({
         version: 1,
         type: "requestDesktopUpdate",
         requestId,
         confirmed,
+        ...trackSwitch,
       });
     }),
     commitDesktopUpdate: Effect.fn("DesktopTelemetryReceiver.commitDesktopUpdate")(
