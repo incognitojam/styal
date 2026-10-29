@@ -122,6 +122,12 @@ Mobile alert type switches are not reported to PostHog. Each device's current ch
 
 The delay choice is not reported to PostHog. Each device's choice is `attendedAlertDelaySeconds` in the relay's `relay_mobile_devices.preferences_json`; app versions with the setting always send it (600 by default). To measure use, count devices by value among devices that send the field, and treat `0` as opted out. Count devices only; do not read labels or tokens.
 
+How each delayed alert ended is the `apns_reason` of its `push_notification` row in `relay_delivery_attempts`: `Delayed alert was handled or seen.` when it was dropped, `Delayed alert sent on the Live Activity.` when it rang an iPhone's card, and no reason when it went out as a banner. A delayed banner has no reason, like any banner, so count delayed jobs from the `relay.apns_deliveries.send_push_notification` spans with `relay.delivery.delayed = true` instead. Count rows only.
+
+## Mobile notifications and Live Activities
+
+Whether a device allows alerts and Live Activities is `notificationsEnabled` and `liveActivitiesEnabled` in `relay_mobile_devices.preferences_json`; `platform` separates iOS and Android. A device with a running card has a non-null `activity_push_token` in `relay_live_activities`. Both tables hold current state only. Every delivery is a `relay_delivery_attempts` row with its `kind`. Live Activity delivery spans (`relay.apns_deliveries.send_live_activity`) carry `relay.delivery.alert`, which separates alerting updates from silent repaints. Count devices and rows only; never read labels, tokens or other users' rows.
+
 ## Provider stall detection
 
 Provider stall detection emits `provider.turn.stall` with `outcome = detected | activity | waiting |

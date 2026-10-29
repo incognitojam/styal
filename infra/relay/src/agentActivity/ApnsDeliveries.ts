@@ -815,6 +815,8 @@ export const make = Effect.gen(function* () {
       }
       return staleJobResult({ deviceId: input.target.device_id, kind: input.kind });
     }
+    // Silent card repaints and alerting updates share a kind; this separates them.
+    yield* Effect.annotateCurrentSpan({ "relay.delivery.alert": alert !== null });
     const { epochSeconds, iso, request } = makeLiveActivityDeliveryRequest(
       apns,
       { ...input, aggregate, alert } as SendLiveActivityDeliveryInput,
@@ -945,6 +947,7 @@ export const make = Effect.gen(function* () {
     yield* Effect.annotateCurrentSpan({
       "relay.environment_id": notification.environmentId,
       "relay.thread_id": notification.threadId,
+      "relay.delivery.delayed": notification.delayed === true,
     });
     const request = apns.makePushNotificationRequest({
       token: input.token,
