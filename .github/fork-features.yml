@@ -2969,7 +2969,7 @@ features:
   - id: mobile-update-restart-location
     title: Mobile update restarts reopen the page the user was on
     status: maintained
-    prs: []
+    prs: [1146]
     invariants:
       - An OTA update restart, deferred to the next background or started with Install Now, reopens the workspace page that was on screen (without sheets) instead of Home.
       - The saved location is read once on the next launch and applies only when that launch runs a different update, so a failed reload never moves a later ordinary launch.
