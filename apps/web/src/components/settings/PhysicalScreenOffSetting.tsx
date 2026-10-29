@@ -15,10 +15,10 @@ export function PhysicalScreenOffSetting({
     <SettingsRow
       id={id}
       title="Turn off physical Android screens"
-      forkFeature="physical-android-screen-off"
+      forkFeature="physical-android-device-hold"
       serverScoped
       settingKeys={["keepPhysicalAndroidScreensOff"]}
-      description="Turn off the screen of a phone connected to this environment while a thread holds it. Streaming and input keep working, and the screen comes back on when no thread holds it."
+      description="Turn off the screen of a phone connected to this environment while a thread holds it. Held phones stay awake either way, and streaming and input keep working."
       resetAction={
         !disabled && !enabled ? (
           <SettingResetButton

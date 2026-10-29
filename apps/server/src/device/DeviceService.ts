@@ -58,7 +58,7 @@ import * as FeatureUsage from "../telemetry/FeatureUsage.ts";
 import { isLocalSshDeviceHost, remoteSshDeviceHosts } from "./localSshDeviceHost.ts";
 
 import { readDeviceDetail, runDeviceAction } from "./DeviceActions.ts";
-import * as PhysicalScreenOff from "./PhysicalScreenOff.ts";
+import * as PhysicalAndroidHold from "./PhysicalAndroidHold.ts";
 import { prepareSimulatorMemory, simulatorMemoryNotice } from "./SimulatorMemory.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import * as DeviceHost from "./DeviceHost.ts";
@@ -1385,7 +1385,7 @@ export const make = Effect.gen(function* () {
   const currentSettings = yield* settings.getSettings;
   yield* reconcile(currentSettings);
   yield* changes.pipe(Stream.runForEach(reconcile), Effect.forkIn(scope));
-  yield* PhysicalScreenOff.keepScreensOff({
+  yield* PhysicalAndroidHold.holdHeldDevices({
     host: localHost,
     settings: Stream.concat(Stream.make(currentSettings), yield* settings.subscribeChanges),
     states: stateStream(service),

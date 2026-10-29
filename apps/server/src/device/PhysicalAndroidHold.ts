@@ -1,9 +1,12 @@
 /**
- * Keeps physical Android screens dark while styal has them open, so a phone
- * left plugged into an environment server is not lit for hours. Streaming and
- * input continue: the panel is powered off through scrcpy's display power
- * control, the same mechanism as `scrcpy --turn-screen-off`, while the display
- * keeps compositing for the hub's mirror.
+ * Keeps physical Android devices awake while a thread holds them, and
+ * optionally dark. A sleeping phone streams a black screen and ignores input,
+ * and the hub's own scrcpy session never asks the device to stay awake;
+ * simulators and emulators do not sleep, so only physical devices need this.
+ * With `keepPhysicalAndroidScreensOff`, the panel is also powered off through
+ * scrcpy's display power control, the same mechanism as
+ * `scrcpy --turn-screen-off`, while the display keeps compositing for the
+ * hub's mirror.
  *
  * Each device gets its own control-only scrcpy server alongside the hub's.
  * scrcpy restores the display and the stay-awake setting when that server
@@ -30,12 +33,12 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import * as DeviceHost from "./DeviceHost.ts";
 
-const DEVICE_JAR_PATH = "/data/local/tmp/styal-display-power-scrcpy-server.jar";
+const DEVICE_JAR_PATH = "/data/local/tmp/styal-device-hold-scrcpy-server.jar";
 /** scrcpy's `TYPE_SET_DISPLAY_POWER` followed by `on = false`. */
 const DISPLAY_POWER_OFF = Uint8Array.of(10, 0);
 const RETRY_INTERVAL = Duration.seconds(15);
 
-export interface DisplayPowerTools {
+export interface DeviceHoldTools {
   readonly hostId: string;
   readonly adb: string;
   readonly env: Record<string, string | undefined>;
@@ -83,13 +86,19 @@ const untilClosed = (socket: NodeNet.Socket) =>
     socket.once("close", () => resume(Effect.void));
   });
 
+export interface DeviceHoldOptions {
+  readonly screenOff: boolean;
+}
+
 /**
- * Powers the display of the device with adb serial `serial` off and keeps it
- * off until the scope closes. Completes if the device disconnects.
+ * Keeps the device with adb serial `serial` awake, and with `screenOff` its
+ * display powered off, until the scope closes. Completes if the device
+ * disconnects.
  */
-export const holdDisplayOff = Effect.fn("PhysicalScreenOff.holdDisplayOff")(function* (
-  tools: DisplayPowerTools,
+export const holdDevice = Effect.fn("PhysicalAndroidHold.holdDevice")(function* (
+  tools: DeviceHoldTools,
   serial: string,
+  options: DeviceHoldOptions,
 ): Effect.fn.Return<
   void,
   DeviceHost.DeviceHostError,
@@ -112,13 +121,13 @@ export const holdDisplayOff = Effect.fn("PhysicalScreenOff.holdDisplayOff")(func
         ),
       );
 
-  yield* adb(["push", tools.server.path, DEVICE_JAR_PATH], "copying the display power helper");
+  yield* adb(["push", tools.server.path, DEVICE_JAR_PATH], "copying the device hold helper");
   // scrcpy session ids are 31-bit hex.
   const scid = (yield* Random.nextIntBetween(1, 0x7fffffff)).toString(16).padStart(8, "0");
   const port = Number(
     yield* adb(
       ["forward", "tcp:0", `localabstract:scrcpy_${scid}`],
-      "forwarding the display power socket",
+      "forwarding the device hold socket",
     ),
   );
   yield* Effect.addFinalizer(() =>
@@ -153,21 +162,24 @@ export const holdDisplayOff = Effect.fn("PhysicalScreenOff.holdDisplayOff")(func
         { env: tools.env, extendEnv: false, stdin: "ignore", stdout: "ignore", stderr: "ignore" },
       ),
     ),
-  ).pipe(Effect.mapError(failure("starting the display power helper")));
+  ).pipe(Effect.mapError(failure("starting the device hold helper")));
   const socket = yield* Effect.acquireRelease(
-    connectControl(port).pipe(Effect.mapError(failure("connecting to the display power helper"))),
+    connectControl(port).pipe(Effect.mapError(failure("connecting to the device hold helper"))),
     (socket) => Effect.sync(() => socket.destroy()),
   );
-  yield* Effect.sync(() => socket.write(DISPLAY_POWER_OFF));
+  if (options.screenOff) yield* Effect.sync(() => socket.write(DISPLAY_POWER_OFF));
   yield* Effect.raceFirst(untilClosed(socket), Effect.ignore(server.exitCode));
 });
 
-/** Local physical Android devices with at least one styal session. */
-export const screenOffTargets = (
+/**
+ * Local physical Android devices with at least one styal device session, and
+ * whether each one's screen goes dark.
+ */
+export const heldDevices = (
   settings: Pick<ServerSettingsValue, "enableDeviceSupport" | "keepPhysicalAndroidScreensOff">,
   state: Pick<DeviceServiceState, "devices" | "sessions">,
-): ReadonlySet<string> => {
-  if (!settings.enableDeviceSupport || !settings.keepPhysicalAndroidScreensOff) return new Set();
+): ReadonlyMap<string, DeviceHoldOptions> => {
+  if (!settings.enableDeviceSupport) return new Map();
   const physical = new Set(
     state.devices
       .filter(
@@ -178,54 +190,60 @@ export const screenOffTargets = (
       )
       .map((device) => device.id),
   );
-  return new Set(
+  const options = { screenOff: settings.keepPhysicalAndroidScreensOff };
+  return new Map(
     state.sessions
       .filter(
         (session) => session.hostId === LOCAL_DEVICE_HOST_ID && physical.has(session.deviceId),
       )
-      .map((session) => session.deviceId),
+      .map((session) => [session.deviceId, options]),
   );
 };
 
 /**
- * Holds each target's display off until it stops being a target. A hold that
- * ends early, such as on a replug, is retried while the device stays a target.
+ * Holds each held device until it stops being held. Changing the screen-off
+ * setting restarts the hold with the new option. A hold that ends early, such
+ * as on a replug, is retried while the device stays held.
  */
-export const keepScreensOff = Effect.fn("PhysicalScreenOff.keepScreensOff")(function* (input: {
+export const holdHeldDevices = Effect.fn("PhysicalAndroidHold.holdHeldDevices")(function* (input: {
   readonly host: DeviceHost.DeviceHost["Service"];
   readonly settings: Stream.Stream<ServerSettingsValue>;
   readonly states: Stream.Stream<DeviceServiceState>;
 }) {
-  const holds = new Map<string, Fiber.Fiber<unknown, unknown>>();
-  const hold = Effect.fn("PhysicalScreenOff.hold")(
-    function* (serial: string) {
+  const holds = new Map<
+    string,
+    { readonly options: DeviceHoldOptions; readonly fiber: Fiber.Fiber<unknown, unknown> }
+  >();
+  const hold = Effect.fn("PhysicalAndroidHold.hold")(
+    function* (serial: string, options: DeviceHoldOptions) {
       const ready = yield* input.host.current;
-      if (!ready?.holdDisplayOff) return yield* Effect.fail("device hub not running" as const);
-      yield* Effect.scoped(ready.holdDisplayOff(serial));
+      if (!ready?.holdPhysicalDevice) return yield* Effect.fail("device hub not running" as const);
+      yield* Effect.scoped(ready.holdPhysicalDevice(serial, options));
       return yield* Effect.fail("device disconnected" as const);
     },
     (effect, serial) =>
       effect.pipe(
         Effect.tapError((cause) =>
-          Effect.logDebug("Could not keep a physical Android screen off", { serial, cause }),
+          Effect.logDebug("Could not hold a physical Android device", { serial, cause }),
         ),
         Effect.retry(Schedule.spaced(RETRY_INTERVAL)),
       ),
   );
-  const reconcile = Effect.fn("PhysicalScreenOff.reconcile")(function* (
-    targets: ReadonlySet<string>,
+  const reconcile = Effect.fn("PhysicalAndroidHold.reconcile")(function* (
+    targets: ReadonlyMap<string, DeviceHoldOptions>,
   ) {
-    for (const [serial, fiber] of holds) {
-      if (targets.has(serial)) continue;
+    for (const [serial, current] of holds) {
+      if (targets.get(serial)?.screenOff === current.options.screenOff) continue;
       holds.delete(serial);
-      yield* Fiber.interrupt(fiber);
+      yield* Fiber.interrupt(current.fiber);
     }
-    for (const serial of targets) {
-      if (!holds.has(serial)) holds.set(serial, yield* Effect.forkChild(hold(serial)));
+    for (const [serial, options] of targets) {
+      if (!holds.has(serial))
+        holds.set(serial, { options, fiber: yield* Effect.forkChild(hold(serial, options)) });
     }
   });
   yield* Stream.zipLatest(input.settings, input.states).pipe(
-    Stream.map(([settings, state]) => screenOffTargets(settings, state)),
+    Stream.map(([settings, state]) => heldDevices(settings, state)),
     Stream.runForEach(reconcile),
   );
 });

@@ -107,10 +107,14 @@ export interface DeviceHostReady {
     readonly serveSimCli: string | null;
   };
   /**
-   * Keeps a physical Android device's display off for the scope's lifetime while
-   * mirroring and input continue. Completes if the device disconnects. Local hosts only.
+   * Keeps a physical Android device awake, and optionally its display off, for the
+   * scope's lifetime while mirroring and input continue. Completes if the device
+   * disconnects. Local hosts only.
    */
-  readonly holdDisplayOff?: (serial: string) => Effect.Effect<void, DeviceHostError, Scope.Scope>;
+  readonly holdPhysicalDevice?: (
+    serial: string,
+    options: { readonly screenOff: boolean },
+  ) => Effect.Effect<void, DeviceHostError, Scope.Scope>;
 }
 
 export interface DeviceHostAgentReady extends DeviceHostReady {

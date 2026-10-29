@@ -40,7 +40,7 @@ import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
 import * as ServerConfig from "../config.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import * as DeviceHost from "./DeviceHost.ts";
-import * as PhysicalScreenOff from "./PhysicalScreenOff.ts";
+import * as PhysicalAndroidHold from "./PhysicalAndroidHold.ts";
 import {
   agentDeviceStateDir,
   type DeviceToolPaths,
@@ -104,7 +104,7 @@ interface RunningHost {
   readonly hub: HubProcess;
   readonly agentDevice: DeviceHost.AgentDeviceEndpoint | null;
   readonly helpers: DeviceHost.DeviceHostReady["helpers"];
-  readonly scrcpyServer: PhysicalScreenOff.DisplayPowerTools["server"] | null;
+  readonly scrcpyServer: PhysicalAndroidHold.DeviceHoldTools["server"] | null;
 }
 
 const platformReason = Effect.fn("LocalDeviceHost.platformReason")(function* (
@@ -713,7 +713,7 @@ export const make = Effect.fn("LocalDeviceHost.make")(function* () {
         fs.readDirectory(candidate.serveEmuVendor).pipe(Effect.orElseSucceed(() => [])),
       ]);
       const scrcpyServer = emuVendorFiles.flatMap((name) => {
-        const version = PhysicalScreenOff.scrcpyServerVersion(name);
+        const version = PhysicalAndroidHold.scrcpyServerVersion(name);
         return version ? [{ path: path.join(candidate.serveEmuVendor, name), version }] : [];
       })[0];
       const next: RunningHost = {
@@ -851,10 +851,11 @@ export const make = Effect.fn("LocalDeviceHost.make")(function* () {
       helpers: running.helpers,
       ...(adbPath && scrcpyServer
         ? {
-            holdDisplayOff: (serial: string) =>
-              PhysicalScreenOff.holdDisplayOff(
+            holdPhysicalDevice: (serial, options) =>
+              PhysicalAndroidHold.holdDevice(
                 { hostId, adb: adbPath, env: hostEnvironment, server: scrcpyServer, run },
                 serial,
+                options,
               ).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner)),
           }
         : {}),

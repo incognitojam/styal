@@ -48,16 +48,17 @@ in the device list next to emulators, as does one paired over wireless debugging
 Accept the debugging prompt on the phone and remove its screen lock: agents
 cannot unlock it.
 
-While a thread holds the phone, its screen stays dark and the phone stays
-awake. Streaming and input keep working. A thread holds a device from when it
-is opened in the Device panel or by an agent until the agent hands it back or
-the thread is archived; closing the Device panel tab does not release it. The
-screen comes back on when no thread holds the phone. A phone on wireless
-debugging only stays awake while it is charging. To keep the screen
-on, turn off **Turn off physical Android screens** in the environment’s
-**Device maintenance** section in **Settings → Integrations**, or **Settings →
-Devices** in the mobile app. Press the phone's
-power button twice to light the screen while styal holds it.
+While a thread holds the phone, it stays awake and its screen stays dark.
+Streaming and input keep working. A thread holds a device from when it is
+opened in the Device panel or by an agent until the agent hands it back or the
+thread is archived; closing the Device panel tab does not release it. When no
+thread holds the phone, its screen comes back on and it sleeps on its own
+schedule again. A phone on wireless debugging only stays awake while it is
+charging. To keep the screen on while the phone is held, turn off **Turn off
+physical Android screens** in the environment’s **Device maintenance** section
+in **Settings → Integrations**, or **Settings → Devices** in the mobile app; the
+phone still stays awake. Press the phone's power button twice to light the
+screen while styal holds it.
 
 The screen is interactive: click and drag to touch, type while the screen is
 focused, and use the toolbar for Home, Back, and Recents on Android, rotate on

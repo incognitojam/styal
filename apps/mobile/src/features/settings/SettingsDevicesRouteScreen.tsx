@@ -206,7 +206,7 @@ function EnvironmentDevices(props: {
         <SettingsSwitchRow
           icon={{ ios: "iphone.slash", android: "smartphone" }}
           label="Turn off physical Android screens"
-          subtitle="Phones go dark while a thread holds them. Streaming and input keep working."
+          subtitle="Held phones go dark and stay awake. Streaming and input keep working."
           value={device.serverConfig.settings.keepPhysicalAndroidScreensOff}
           disabled={busy || !device.serverConfig.settings.enableDeviceSupport}
           onValueChange={(keepPhysicalAndroidScreensOff) =>
