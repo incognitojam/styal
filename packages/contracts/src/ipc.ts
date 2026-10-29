@@ -1109,6 +1109,11 @@ export interface DesktopBridge {
    * regardless of OS settings.
    */
   getSystemLocale?: () => string | null;
+  /**
+   * Whether the OS saw keyboard or mouse input in any app recently. The renderer
+   * only sees input aimed at its own window.
+   */
+  getSystemActive?: () => Promise<boolean>;
   getLocalEnvironmentBootstraps: () => readonly DesktopEnvironmentBootstrap[];
   getLocalEnvironmentEnabled?: () => boolean;
   setLocalEnvironmentEnabled?: (enabled: boolean) => Promise<void>;

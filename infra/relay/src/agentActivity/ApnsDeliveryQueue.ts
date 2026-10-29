@@ -24,6 +24,7 @@ import {
   type SignedApnsDeliveryJob,
 } from "./apnsDeliveryJobs.ts";
 import * as RelayConfiguration from "../Config.ts";
+import { queueSendOptions } from "../queues.ts";
 
 export class ApnsDeliveryQueueSendError extends Schema.TaggedError<ApnsDeliveryQueueSendError>()(
   "ApnsDeliveryQueueSendError",
@@ -48,6 +49,7 @@ export class ApnsDeliveryQueueSender extends Context.Service<
   {
     readonly send: (
       body: SignedApnsDeliveryJob,
+      options?: { readonly delaySeconds?: number },
     ) => Effect.Effect<void, Cloudflare.Queues.SendError>;
   }
 >()("t3code-relay/agentActivity/ApnsDeliveryQueue/ApnsDeliveryQueueSender") {}
@@ -72,6 +74,7 @@ export class ApnsDeliveryQueue extends Context.Service<
       readonly bundleId?: string | null;
       readonly apsEnvironment?: "sandbox" | "production" | null;
       readonly notification: NonNullable<ApnsDeliveryJobPayload["notification"]>;
+      readonly delaySeconds?: number;
     }) => Effect.Effect<RelayDeliveryResult, ApnsDeliveryQueueError>;
   }
 >()("t3code-relay/agentActivity/ApnsDeliveryQueue") {}
@@ -147,6 +150,7 @@ export const make = Effect.gen(function* () {
           "relay.environment_id": input.notification.environmentId,
           "relay.thread_id": input.notification.threadId,
         });
+        const delaySeconds = input.delaySeconds ?? 0;
         const now = yield* DateTime.now;
         const jobId = yield* crypto.randomUUIDv4().pipe(
           Effect.mapError(
@@ -172,14 +176,15 @@ export const make = Effect.gen(function* () {
           aggregate: null,
           notification: sanitizeApnsNotificationPayload(input.notification),
           jobId,
-          createdAt: DateTime.formatIso(now),
-          expiresAt: expiresAtForJob(now.epochMilliseconds),
+          // A delayed job's validity window starts when the queue hands it over.
+          createdAt: DateTime.formatIso(DateTime.add(now, { seconds: delaySeconds })),
+          expiresAt: expiresAtForJob(now.epochMilliseconds + delaySeconds * 1_000),
         });
         const signed = signApnsDeliveryJob({
           secret: config.apnsDeliveryJobSigningSecret,
           payload,
         });
-        yield* sender.send(signed).pipe(
+        yield* sender.send(signed, delaySeconds > 0 ? { delaySeconds } : undefined).pipe(
           Effect.mapError(
             (cause) =>
               new ApnsDeliveryQueueSendError({
@@ -217,9 +222,9 @@ export const layerCloudflareQueues = (
       Layer.succeed(
         ApnsDeliveryQueueSender,
         ApnsDeliveryQueueSender.of({
-          send: (body) =>
+          send: (body, options) =>
             sender
-              .send(body)
+              .send(body, queueSendOptions(options))
               .pipe(Effect.provideService(Alchemy.RuntimeContext, alchemyRuntimeContext)),
         }),
       ),

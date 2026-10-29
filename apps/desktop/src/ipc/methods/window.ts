@@ -33,6 +33,7 @@ import * as DesktopWslEnvironment from "../../wsl/DesktopWslEnvironment.ts";
 import * as ElectronApp from "../../electron/ElectronApp.ts";
 import * as ElectronDialog from "../../electron/ElectronDialog.ts";
 import * as ElectronMenu from "../../electron/ElectronMenu.ts";
+import * as ElectronPowerMonitor from "../../electron/ElectronPowerMonitor.ts";
 import * as ElectronShell from "../../electron/ElectronShell.ts";
 import * as ElectronTheme from "../../electron/ElectronTheme.ts";
 import * as ElectronWindow from "../../electron/ElectronWindow.ts";
@@ -86,6 +87,19 @@ export const getSystemLocale = DesktopIpc.makeSyncIpcMethod({
   handler: Effect.fn("desktop.ipc.window.getSystemLocale")(function* () {
     const electronApp = yield* ElectronApp.ElectronApp;
     return yield* electronApp.systemLocale;
+  }),
+});
+
+// Long enough that reading agent output without touching anything still counts as at the desk.
+const SYSTEM_ACTIVE_IDLE_SECONDS = 300;
+
+export const getSystemActive = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.GET_SYSTEM_ACTIVE_CHANNEL,
+  payload: Schema.Void,
+  result: Schema.Boolean,
+  handler: Effect.fn("desktop.ipc.window.getSystemActive")(function* () {
+    const powerMonitor = yield* ElectronPowerMonitor.ElectronPowerMonitor;
+    return (yield* powerMonitor.getSystemIdleState(SYSTEM_ACTIVE_IDLE_SECONDS)) === "active";
   }),
 });
 

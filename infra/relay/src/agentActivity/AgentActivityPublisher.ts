@@ -6,18 +6,26 @@ export {
   makeAggregateState,
   TERMINAL_AGENT_ACTIVITY_DISPLAY_TTL_MS,
 } from "./agentActivityAggregate.ts";
-import type {
-  RelayAgentActivityState,
-  RelayDeliveryResult,
-  RelayPublishResponse,
+import {
+  RelayAgentAwarenessPreferences,
+  type RelayAgentActivityState,
+  type RelayDeliveryResult,
+  type RelayPublishResponse,
 } from "@t3tools/contracts/relay";
 import * as Arr from "effect/Array";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 
 import { isTerminalPhase } from "./agentActivityPayloads.ts";
+import {
+  alertAllowedForPhase,
+  attendedAlertDelaySeconds,
+  isAlertPhase,
+} from "./agentActivityAlerts.ts";
 
 export { isExpiredAgentActivityState } from "./agentActivityPayloads.ts";
 import * as AgentActivityRows from "./AgentActivityRows.ts";
@@ -25,6 +33,44 @@ import * as EnvironmentLinks from "../environments/EnvironmentLinks.ts";
 import * as LiveActivities from "./LiveActivities.ts";
 import * as ApnsDeliveries from "./ApnsDeliveries.ts";
 import * as FcmDeliveries from "./FcmDeliveries.ts";
+
+const decodePreferences = Schema.decodeUnknownOption(
+  Schema.fromJsonString(RelayAgentAwarenessPreferences),
+);
+
+function withoutReadState(state: RelayAgentActivityState) {
+  const { attended: _attended, lastVisitedAt: _lastVisitedAt, ...rest } = state;
+  return JSON.stringify(rest);
+}
+
+/**
+ * Opening a thread republishes its state with a new `lastVisitedAt`. Devices show neither
+ * that nor presence, so only the stored row changes. Identical republishes (server
+ * restarts) still deliver, as before.
+ */
+export function isReadStateOnlyChange(
+  previous: RelayAgentActivityState | null,
+  next: RelayAgentActivityState,
+): boolean {
+  return (
+    previous !== null &&
+    JSON.stringify(previous) !== JSON.stringify(next) &&
+    withoutReadState(previous) === withoutReadState(next)
+  );
+}
+
+/** A thread entering an alert phase while the user is at a computer gets a delayed alert. */
+export function delayedAlertTrigger(
+  previous: RelayAgentActivityState | null,
+  next: RelayAgentActivityState | null,
+): RelayAgentActivityState | null {
+  return next !== null &&
+    next.attended === true &&
+    isAlertPhase(next.phase) &&
+    previous?.phase !== next.phase
+    ? next
+    : null;
+}
 
 export type AgentActivityPublishError =
   | FcmDeliveries.FcmDeliveryError
@@ -65,6 +111,7 @@ export const make = Effect.gen(function* () {
   const publishForDeliveryUser = Effect.fnUntraced(function* (input: {
     readonly deliveryUser: EnvironmentLinks.AgentAwarenessDeliveryUserRecord;
     readonly state: RelayAgentActivityState | null;
+    readonly delayedAlert: RelayAgentActivityState | null;
     readonly nowMs: number;
   }) {
     const activeStates = input.deliveryUser.liveActivitiesEnabled
@@ -88,6 +135,30 @@ export const make = Effect.gen(function* () {
           })
         : null;
     const targets = yield* liveActivities.listTargets({ userId: input.deliveryUser.userId });
+    const delayedAlert = input.deliveryUser.notificationsEnabled ? input.delayedAlert : null;
+    const delayedDeliveries = yield* Effect.forEach(
+      delayedAlert === null ? [] : targets,
+      Effect.fnUntraced(function* (target) {
+        if (delayedAlert === null) return null;
+        const preferences = Option.getOrNull(decodePreferences(target.preferences_json));
+        const delaySeconds = attendedAlertDelaySeconds(preferences);
+        if (
+          delaySeconds === 0 ||
+          preferences?.notificationsEnabled !== true ||
+          !alertAllowedForPhase(preferences, delayedAlert.phase)
+        ) {
+          return null;
+        }
+        return target.platform === "android"
+          ? yield* fcmDeliveries.enqueue({ target, state: delayedAlert, delaySeconds })
+          : yield* apnsDeliveries.enqueueDelayedAlert({
+              target,
+              state: delayedAlert,
+              delaySeconds,
+            });
+      }),
+      { concurrency: 4 },
+    );
     const deliveriesByTarget = yield* Effect.forEach(
       targets,
       Effect.fnUntraced(function* (target) {
@@ -113,7 +184,7 @@ export const make = Effect.gen(function* () {
       }),
       { concurrency: 4 },
     );
-    return deliveriesByTarget.flat();
+    return [...deliveriesByTarget.flat(), ...delayedDeliveries];
   });
 
   return AgentActivityPublisher.of({
@@ -210,15 +281,19 @@ export const make = Effect.gen(function* () {
         "relay.thread_id": input.threadId,
         "relay.agent_activity.phase": input.state?.phase ?? "deleted",
       });
+      let previous: RelayAgentActivityState | null = null;
       if (input.state) {
         // Terminal states are persisted too (pruned by the cron after they
         // age out) so a thread that finishes while other agents are active
         // stays visible as Done/Failed in subsequent aggregates instead of
         // silently vanishing from the Live Activity.
-        yield* rows.upsert({
+        previous = yield* rows.upsert({
           environmentPublicKey: input.environmentPublicKey,
           state: input.state,
         });
+        if (isReadStateOnlyChange(previous, input.state)) {
+          return { ok: true, deliveries: [] };
+        }
       } else {
         yield* rows.remove({
           environmentId: input.environmentId,
@@ -238,6 +313,7 @@ export const make = Effect.gen(function* () {
           publishForDeliveryUser({
             deliveryUser,
             state: input.state,
+            delayedAlert: delayedAlertTrigger(previous, input.state),
             nowMs: now.epochMilliseconds,
           }),
         { concurrency: 4 },

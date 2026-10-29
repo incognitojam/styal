@@ -38,6 +38,12 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   every type to every registered phone as of
   [revision 9826dbb](https://github.com/pingdotgg/t3code/tree/9826dbb9904b2591bfbf60d1317486b59132f56b).
   [Mobile notifications](./mobile-notifications.md).
+- **Phone alerts wait while you're at a computer.** While you're using styal on a computer,
+  agent alerts reach your phone after a delay you choose (10 minutes by default), and are
+  skipped if you handle or open the thread on the computer first. T3 Code pushes every alert
+  immediately as of
+  [revision a42bdd4](https://github.com/pingdotgg/t3code/tree/a42bdd4e516433a16650b9401ab3c066544ca5cd).
+  [Mobile notifications](./mobile-notifications.md).
 - **Every provider in Provider accounts.** Mobile **Settings → Provider accounts** lists each
   provider with its icon and sign-in status, including Claude and Codex, which sign in through
   their own CLI. T3 Code lists only providers that sign in inside the app as of

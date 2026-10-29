@@ -4,9 +4,11 @@ Sign in to styal Link, link your environments, and enable **Device Notifications
 
 Use the switches under **Notify me when an agent** to choose which of those alerts reach this device, for example only approvals and input requests. Each device keeps its own choice.
 
+While you're using styal on a computer, alerts wait before reaching your phone, 10 minutes by default. If you answer, approve, or open the thread on the computer in that time, the phone alert is skipped. Choose a shorter wait, or **Immediately** to turn this off, under **While I'm using a computer**. The desktop app counts you as active while you use any app on that computer; a browser tab counts only while you use that tab. This needs a server and relay new enough to report computer activity; otherwise alerts arrive immediately.
+
 Enable **Ongoing agent activity** on Android or **Live Activity Updates** on iOS to follow work without opening the app. Finished results remain visible for up to 15 minutes. You can dismiss an Android activity card without disabling alerts; turn off ongoing activity in Settings to stop future cards.
 
-Ordinary alerts stay quiet while the mobile app is in the foreground. Ongoing activity continues to update. Viewing a thread on another device does not silence your phone's alerts.
+Ordinary alerts stay quiet while the mobile app is in the foreground. Ongoing activity continues to update. Apart from the computer wait above, viewing a thread on another device does not silence your phone's alerts.
 
 Android notifications require Android 7.0 or newer and Google Play services. Android 16 and newer can promote ongoing activity to a Live Update, subject to system settings and device support. Other devices show a regular ongoing notification. Android 7's battery-saving modes can delay removal of expired cards.
 

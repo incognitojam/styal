@@ -1,6 +1,8 @@
 import { assert, describe, it } from "@effect/vitest";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import {
+  AuthSessionId,
+  type ClientActivityLease,
   EnvironmentId,
   EventId,
   MessageId,
@@ -10,6 +12,7 @@ import {
   type OrchestrationV2TurnItem,
   ProjectId,
   ProviderInstanceId,
+  RpcClientId,
   RunId,
   RuntimeRequestId,
   ThreadId,
@@ -21,6 +24,7 @@ import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
@@ -31,6 +35,7 @@ import * as TestClock from "effect/testing/TestClock";
 import * as FetchHttpClient from "effect/http/FetchHttpClient";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
+import * as BackgroundPolicy from "../background/BackgroundPolicy.ts";
 import {
   PUBLISH_AGENT_ACTIVITY_SECRET,
   RELAY_ENVIRONMENT_CREDENTIAL_SECRET,
@@ -93,6 +98,22 @@ function shell(overrides: Partial<OrchestrationV2ThreadShell> = {}): Orchestrati
   };
 }
 
+function lease(overrides: Partial<ClientActivityLease> = {}): ClientActivityLease {
+  return {
+    sessionId: AuthSessionId.make("session"),
+    rpcClientId: RpcClientId.make(1),
+    clientId: "client",
+    clientKind: "web",
+    visible: false,
+    focused: false,
+    recentlyInteracted: false,
+    scopes: [],
+    updatedAt: DateTime.makeUnsafe(NOW),
+    expiresAt: DateTime.makeUnsafe("2026-09-04T12:00:45.000Z"),
+    ...overrides,
+  };
+}
+
 const PublishPayload = Schema.Struct({ state: Schema.NullOr(RelayAgentActivityState) });
 const decodePublishPayload = Schema.decodeUnknownSync(Schema.fromJsonString(PublishPayload));
 const unused = () => Effect.die("Unexpected test dependency call");
@@ -147,6 +168,7 @@ const makeTestRelay = Effect.fnUntraced(function* (
     readonly domainEvents?: Stream.Stream<OrchestrationV2DomainEvent>;
   } = {},
 ) {
+  const leases = yield* Ref.make<ReadonlyArray<ClientActivityLease>>([]);
   const values = new Map<string, Uint8Array>(
     options.linked === false
       ? []
@@ -284,9 +306,37 @@ const makeTestRelay = Effect.fnUntraced(function* (
         ),
     }),
     Effect.provideService(FetchHttpClient.Fetch, fetch),
-    Effect.provide(NodeCrypto.layer),
+    Effect.provide(
+      Layer.merge(
+        NodeCrypto.layer,
+        Layer.mock(BackgroundPolicy.BackgroundPolicy)({
+          snapshot: Effect.gen(function* () {
+            const now = yield* DateTime.now;
+            return {
+              hostPower: {
+                source: "unknown",
+                idle: "unknown",
+                idleSeconds: null,
+                locked: "unknown",
+                suspended: false,
+                onBattery: "unknown",
+                lowPowerMode: "unknown",
+                thermalState: "unknown",
+                stale: false,
+                updatedAt: now,
+              },
+              leases: yield* Ref.get(leases),
+              activeForegroundLeaseCount: 0,
+              activeScopeKeys: [],
+              shouldRunOpportunisticWork: false,
+              updatedAt: now,
+            };
+          }),
+        }),
+      ),
+    ),
   );
-  return { relay, secrets, secretReads, currentShell, shellReads, publications, catchUp };
+  return { relay, secrets, secretReads, currentShell, shellReads, publications, catchUp, leases };
 });
 
 describe("AgentAwarenessRelay", () => {
@@ -295,7 +345,6 @@ describe("AgentAwarenessRelay", () => {
       "message.updated",
       "turn-item.updated",
       "provider-turn.updated",
-      "thread.visited",
       "thread.pinned",
     ] as const) {
       assert.isFalse(AgentAwarenessRelay.shouldPublishAgentAwarenessEvent({ type }));
@@ -312,6 +361,8 @@ describe("AgentAwarenessRelay", () => {
       "thread.archived",
       "thread.unarchived",
       "thread.deleted",
+      "thread.visited",
+      "thread.marked-unread",
     ] as const) {
       assert.isTrue(AgentAwarenessRelay.shouldPublishAgentAwarenessEvent({ type }));
     }
@@ -413,6 +464,96 @@ describe("AgentAwarenessRelay", () => {
       yield* relay.publishThread(THREAD_ID);
       assert.equal(publications.length, 2);
       assert.equal(publications[1]?.state?.threadTitle, "Renamed thread");
+    }),
+  );
+
+  it("counts a desktop or web client as in use only while it is active", () => {
+    const now = DateTime.makeUnsafe(NOW);
+    const inUse = (overrides: Partial<ClientActivityLease>) =>
+      AgentAwarenessRelay.isComputerClientInUse([lease(overrides)], now);
+    assert.isTrue(inUse({ clientKind: "desktop-renderer", systemActive: true }));
+    assert.isTrue(inUse({ clientKind: "web", visible: true, focused: true }));
+    assert.isTrue(
+      inUse({ clientKind: "desktop-renderer", visible: true, recentlyInteracted: true }),
+    );
+    assert.isFalse(inUse({ clientKind: "web", visible: false, focused: true }));
+    assert.isFalse(inUse({ clientKind: "web", visible: true }));
+    assert.isFalse(
+      inUse({ clientKind: "mobile", visible: true, focused: true, systemActive: true }),
+    );
+    assert.isFalse(inUse({ clientKind: "unknown", visible: true, focused: true }));
+    assert.isFalse(inUse({ clientKind: "desktop-renderer", systemActive: true, expiresAt: now }));
+    assert.isFalse(AgentAwarenessRelay.isComputerClientInUse([], now));
+  });
+
+  it.effect("marks states attended without republishing on presence changes", () =>
+    Effect.gen(function* () {
+      const { relay, currentShell, leases, publications } = yield* makeTestRelay();
+      yield* Ref.set(leases, [
+        lease({
+          clientKind: "desktop-renderer",
+          systemActive: true,
+          expiresAt: DateTime.add(yield* DateTime.now, { seconds: 45 }),
+        }),
+      ]);
+      yield* relay.publishThread(THREAD_ID);
+      assert.equal(publications.length, 1);
+      assert.isTrue(publications[0]?.state?.attended);
+
+      yield* Ref.set(leases, []);
+      yield* relay.publishThread(THREAD_ID);
+      assert.equal(publications.length, 1);
+
+      yield* Ref.set(currentShell, shell({ title: "Renamed thread" }));
+      yield* relay.publishThread(THREAD_ID);
+      assert.equal(publications.length, 2);
+      assert.isUndefined(publications[1]?.state?.attended);
+    }),
+  );
+
+  it.effect("sends the last visit only for phases that can alert", () =>
+    Effect.gen(function* () {
+      const { relay, currentShell, publications } = yield* makeTestRelay();
+      const visitedAt = DateTime.makeUnsafe("2026-09-04T11:59:00.000Z");
+      yield* Ref.set(currentShell, shell({ lastVisitedAt: visitedAt }));
+      yield* relay.publishThread(THREAD_ID);
+      assert.equal(publications[0]?.state?.phase, "running");
+      assert.isUndefined(publications[0]?.state?.lastVisitedAt);
+
+      yield* Ref.set(
+        currentShell,
+        shell({ lastVisitedAt: DateTime.makeUnsafe("2026-09-04T11:59:30.000Z") }),
+      );
+      yield* relay.publishThread(THREAD_ID);
+      assert.equal(publications.length, 1);
+
+      const waiting = shell({
+        status: "completed",
+        lastVisitedAt: visitedAt,
+        pendingRuntimeRequest: {
+          id: RuntimeRequestId.make("waiting"),
+          kind: "user_input",
+          createdAt: yield* DateTime.now,
+        },
+      });
+      yield* Ref.set(currentShell, waiting);
+      yield* relay.publishThread(THREAD_ID);
+      assert.equal(publications[1]?.state?.phase, "waiting_for_input");
+      assert.equal(publications[1]?.state?.lastVisitedAt, "2026-09-04T11:59:00.000Z");
+
+      yield* Ref.set(currentShell, { ...waiting, lastVisitedAt: DateTime.makeUnsafe(NOW) });
+      yield* relay.publishThread(THREAD_ID);
+      assert.equal(publications.length, 3);
+      assert.equal(publications[2]?.state?.lastVisitedAt, NOW);
+
+      yield* Ref.set(currentShell, {
+        ...waiting,
+        pendingRuntimeRequest: null,
+        latestRunCompletedAt: DateTime.add(yield* DateTime.now, { seconds: 1 }),
+      });
+      yield* relay.publishThread(THREAD_ID);
+      assert.equal(publications[3]?.state?.phase, "completed");
+      assert.equal(publications[3]?.state?.lastVisitedAt, "2026-09-04T11:59:00.000Z");
     }),
   );
 

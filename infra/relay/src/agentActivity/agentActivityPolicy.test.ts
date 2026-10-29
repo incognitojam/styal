@@ -4,9 +4,11 @@ import type { RelayAgentActivityState } from "@t3tools/contracts/relay";
 import { makeAggregateState } from "./agentActivityAggregate.ts";
 import {
   attentionTransitionRows,
+  delayedAlertIsDue,
   terminalTransitionRows,
   shouldAlertForActivity,
 } from "./agentActivityAlerts.ts";
+import { delayedAlertTrigger, isReadStateOnlyChange } from "./AgentActivityPublisher.ts";
 
 const state: RelayAgentActivityState = {
   environmentId: EnvironmentId.make("env"),
@@ -101,5 +103,65 @@ describe("shared agent activity policy", () => {
       }),
     ).toBe(false);
     expect(shouldAlertForActivity({ ...input, nowMs: 180_000 })).toBe(false);
+  });
+
+  describe("while the user is at a computer", () => {
+    const delayed = { ...preferences, attendedAlertDelaySeconds: 600 };
+    const waiting = { ...state, phase: "waiting_for_input" as const, attended: true };
+
+    it("leaves the alert to the delayed job only when this device has a delay", () => {
+      const input = { previousAggregate: aggregate([state]), nextAggregate: aggregate([waiting]) };
+      expect(attentionTransitionRows({ ...input, preferences: delayed })).toEqual([]);
+      expect(attentionTransitionRows({ ...input, preferences })).toHaveLength(1);
+      expect(
+        attentionTransitionRows({
+          previousAggregate: aggregate([state]),
+          nextAggregate: aggregate([{ ...waiting, attended: false }]),
+          preferences: delayed,
+        }),
+      ).toHaveLength(1);
+      const completed = { ...waiting, phase: "completed" as const };
+      expect(shouldAlertForActivity({ ...completed, preferences: delayed, nowMs: 0 })).toBe(false);
+    });
+
+    it("queues a delayed alert when a thread enters an alert phase, not on republishes", () => {
+      expect(delayedAlertTrigger(state, waiting)).toBe(waiting);
+      expect(delayedAlertTrigger(null, waiting)).toBe(waiting);
+      expect(delayedAlertTrigger(waiting, { ...waiting, threadTitle: "Renamed" })).toBeNull();
+      expect(delayedAlertTrigger(state, { ...waiting, attended: false })).toBeNull();
+      expect(delayedAlertTrigger(null, { ...state, attended: true })).toBeNull();
+    });
+
+    it("sends a delayed alert only if the thread is still waiting and unopened", () => {
+      const raised = { phase: waiting.phase, updatedAt: "2026-10-29T10:00:00.000Z" };
+      const current = { ...waiting, updatedAt: raised.updatedAt };
+      const due = (overrides: Partial<RelayAgentActivityState>, prefs = delayed) =>
+        delayedAlertIsDue({
+          raised,
+          current: { ...current, ...overrides },
+          preferences: prefs,
+          nowMs: Date.parse("2026-10-29T10:10:00.000Z"),
+        });
+      expect(due({})).toBe(true);
+      expect(due({ lastVisitedAt: "2026-10-29T09:00:00.000Z" })).toBe(true);
+      // Metadata changes move updatedAt without resolving anything.
+      expect(due({ updatedAt: "2026-10-29T10:05:00.000Z" })).toBe(true);
+      expect(due({ lastVisitedAt: raised.updatedAt })).toBe(false);
+      expect(due({ phase: "running" })).toBe(false);
+      expect(due({}, { ...delayed, notifyOnInput: false })).toBe(false);
+      expect(due({}, { ...delayed, notificationsEnabled: false })).toBe(false);
+      expect(delayedAlertIsDue({ raised, current: null, preferences: delayed, nowMs: 0 })).toBe(
+        false,
+      );
+    });
+
+    it("stores visits without redelivering, but redelivers identical republishes", () => {
+      const visited = { ...waiting, lastVisitedAt: "2026-10-29T10:01:00.000Z" };
+      expect(isReadStateOnlyChange(waiting, visited)).toBe(true);
+      expect(isReadStateOnlyChange(waiting, { ...waiting, attended: false })).toBe(true);
+      expect(isReadStateOnlyChange(waiting, waiting)).toBe(false);
+      expect(isReadStateOnlyChange(null, waiting)).toBe(false);
+      expect(isReadStateOnlyChange(waiting, { ...visited, phase: "running" })).toBe(false);
+    });
   });
 });

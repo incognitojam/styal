@@ -3,6 +3,8 @@ import type { RelayDeviceRegistrationRequest } from "@t3tools/contracts/relay";
 import type { Preferences } from "../../persistence/mobile-preferences";
 import { supportsAgentAwarenessPush } from "./capabilities";
 
+export const DEFAULT_ATTENDED_ALERT_DELAY_SECONDS = 600;
+
 // Development builds are Xcode-signed and receive sandbox APNs tokens;
 // preview and production builds are distribution-signed and use production
 // APNs. The relay routes each device's pushes accordingly.
@@ -47,6 +49,8 @@ export function makeRelayDeviceRegistrationRequest(
       notifyOnInput: input.preferences.notifyOnInput !== false,
       notifyOnCompletion: input.preferences.notifyOnCompletion !== false,
       notifyOnFailure: input.preferences.notifyOnFailure !== false,
+      attendedAlertDelaySeconds:
+        input.preferences.attendedAlertDelaySeconds ?? DEFAULT_ATTENDED_ALERT_DELAY_SECONDS,
     },
   };
 }

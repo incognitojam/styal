@@ -28,6 +28,7 @@ import { isExpiredAgentActivityState, notificationForActivity } from "./agentAct
 import {
   alertForActivityRows,
   attentionTransitionRows,
+  delayedAlertIsDue,
   terminalTransitionRows,
   shouldAlertForActivity,
 } from "./agentActivityAlerts.ts";
@@ -39,6 +40,8 @@ export const FcmDeliveryJob = Schema.Struct({
   state: Schema.NullOr(RelayAgentActivityState),
   queuedAt: Schema.Number,
   replay: Schema.optional(Schema.Boolean),
+  /** Set on a delayed alert: the queue holds it this long before delivery. */
+  delaySeconds: Schema.optional(Schema.Number),
 });
 export type FcmDeliveryJob = typeof FcmDeliveryJob.Type;
 const decodeJob = Schema.decodeUnknownEffect(FcmDeliveryJob);
@@ -64,6 +67,10 @@ export function androidAlertForState(
   nowMs: number,
 ) {
   if (!shouldAlertForActivity({ ...state, preferences, nowMs })) return null;
+  return androidAlertData(state);
+}
+
+function androidAlertData(state: RelayAgentActivityState) {
   const notification = notificationForActivity({ ...state, status: statusForPhase(state.phase) });
   return {
     alert_id: JSON.stringify([state.environmentId, state.threadId, state.phase, state.updatedAt]),
@@ -122,6 +129,7 @@ export class FcmDeliveries extends Context.Service<
       readonly target: LiveActivities.TargetRow;
       readonly state: RelayAgentActivityState | null;
       readonly replay?: boolean;
+      readonly delaySeconds?: number;
     }) => Effect.Effect<RelayDeliveryResult | null, FcmDeliveryError>;
     readonly process: (
       body: unknown,
@@ -164,15 +172,20 @@ export const make = Effect.gen(function* () {
         };
       }
       const now = yield* DateTime.now;
+      const delaySeconds = input.delaySeconds ?? 0;
       yield* sender
-        .send({
-          userId: input.target.user_id,
-          deviceId: input.target.device_id,
-          token: input.target.push_token,
-          state: input.state,
-          ...(input.replay ? { replay: true } : {}),
-          queuedAt: now.epochMilliseconds,
-        })
+        .send(
+          {
+            userId: input.target.user_id,
+            deviceId: input.target.device_id,
+            token: input.target.push_token,
+            state: input.state,
+            ...(input.replay ? { replay: true } : {}),
+            ...(delaySeconds > 0 ? { delaySeconds } : {}),
+            queuedAt: now.epochMilliseconds,
+          },
+          delaySeconds > 0 ? { delaySeconds } : undefined,
+        )
         .pipe(Effect.mapError((cause) => new FcmDeliveryError({ operation: "enqueue", cause })));
       return {
         deviceId: input.target.device_id,
@@ -189,7 +202,8 @@ export const make = Effect.gen(function* () {
         Effect.mapError((cause) => new FcmDeliveryError({ operation: "decode-job", cause })),
       );
       const now = yield* DateTime.now;
-      if (now.epochMilliseconds - job.queuedAt > 5 * 60_000) return;
+      const dueAt = job.queuedAt + (job.delaySeconds ?? 0) * 1_000;
+      if (now.epochMilliseconds - dueAt > 5 * 60_000) return;
       const targets = yield* devices.listTargets({ userId: job.userId });
       const target = targets.find(
         (device) =>
@@ -218,7 +232,27 @@ export const make = Effect.gen(function* () {
       // Deletion jobs can observe another thread's newly completed state. They
       // update the card, but must leave that transition for its own alert job.
       let acknowledgeAggregate = job.state !== null || job.replay === true || aggregate === null;
-      if (job.state && preferences.value.notificationsEnabled) {
+      if (job.delaySeconds !== undefined) {
+        if (!job.state) return;
+        const current = yield* rows.getForUserThread({
+          userId: job.userId,
+          environmentId: job.state.environmentId,
+          threadId: job.state.threadId,
+        });
+        if (
+          !current ||
+          !delayedAlertIsDue({
+            raised: job.state,
+            current,
+            preferences: preferences.value,
+            nowMs: now.epochMilliseconds,
+          })
+        )
+          return;
+        alert = androidAlertData(current);
+        // Leave transition baselines to the immediate jobs, which own those alerts.
+        acknowledgeAggregate = false;
+      } else if (job.state && preferences.value.notificationsEnabled) {
         const state = yield* rows.getForUserThread({
           userId: job.userId,
           environmentId: job.state.environmentId,

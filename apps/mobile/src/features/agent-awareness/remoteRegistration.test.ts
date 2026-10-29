@@ -303,6 +303,7 @@ describe("makeRelayDeviceRegistrationRequest", () => {
         notifyOnInput: true,
         notifyOnCompletion: true,
         notifyOnFailure: true,
+        attendedAlertDelaySeconds: 600,
       },
     });
   });
@@ -379,6 +380,7 @@ describe("makeRelayDeviceRegistrationRequest", () => {
         notifyOnInput: true,
         notifyOnCompletion: true,
         notifyOnFailure: true,
+        attendedAlertDelaySeconds: 600,
       },
     });
   });
@@ -401,6 +403,22 @@ describe("makeRelayDeviceRegistrationRequest", () => {
       notifyOnCompletion: false,
       notifyOnFailure: true,
     });
+  });
+
+  it("delays alerts by 10 minutes at a computer unless this device chose otherwise", () => {
+    const request = (preferences: { attendedAlertDelaySeconds?: number }) =>
+      makeRelayDeviceRegistrationRequest({
+        deviceId: "device-1",
+        label: "Julius's iPhone",
+        iosMajorVersion: 18,
+        appVersion: "1.0.0",
+        pushToken: "apns-token",
+        notificationsEnabled: true,
+        preferences,
+      }).preferences.attendedAlertDelaySeconds;
+    expect(request({})).toBe(600);
+    expect(request({ attendedAlertDelaySeconds: 0 })).toBe(0);
+    expect(request({ attendedAlertDelaySeconds: 120 })).toBe(120);
   });
 
   it("overrides persisted preferences for an in-flight registration", () => {

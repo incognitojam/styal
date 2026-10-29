@@ -45,6 +45,8 @@ export const ApnsNotificationPayload = Schema.Struct({
   deepLink: Schema.String,
   phase: Schema.optional(RelayAgentAwarenessPhase),
   updatedAt: Schema.optional(Schema.String),
+  /** Held while the user was at a computer; re-checked against the thread when due. */
+  delayed: Schema.optional(Schema.Boolean),
 });
 export type ApnsNotificationPayload = typeof ApnsNotificationPayload.Type;
 

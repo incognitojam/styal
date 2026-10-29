@@ -1,4 +1,5 @@
 import type {
+  ClientActivityLease,
   EnvironmentId,
   OrchestrationV2DomainEvent,
   OrchestrationV2ThreadShell,
@@ -38,6 +39,7 @@ import * as HttpClientRequest from "effect/http/HttpClientRequest";
 import * as HttpApiClient from "effect/http-api/HttpApiClient";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
+import * as BackgroundPolicy from "../background/BackgroundPolicy.ts";
 import {
   isAgentActivityPublishingEnabledValue,
   PUBLISH_AGENT_ACTIVITY_SECRET,
@@ -96,6 +98,10 @@ export function shouldPublishAgentAwarenessEvent(
     case "thread.settled":
     case "thread.model-selection-updated":
     case "thread.provider-switched":
+    // The relay drops delayed alerts once the thread has been opened, and
+    // marking unread rewinds that visit.
+    case "thread.visited":
+    case "thread.marked-unread":
     case "run.created":
     case "run.updated":
     case "runtime-request.updated":
@@ -111,8 +117,6 @@ export function shouldPublishAgentAwarenessEvent(
     case "thread.unpinned":
     case "thread.pin-reordered":
     case "thread.active-reordered":
-    case "thread.visited":
-    case "thread.marked-unread":
     case "thread.runtime-mode-updated":
     case "thread.interaction-mode-updated":
     case "run.background-work-cancelled":
@@ -160,8 +164,34 @@ function agentAwarenessPublishIdentity(state: RelayAgentActivityState | null): s
   if (state === null) {
     return "null";
   }
-  const { updatedAt: _updatedAt, ...meaningfulState } = state;
+  // Every publish fans out pushes to phones, so presence changes alone must
+  // never republish.
+  const { updatedAt: _updatedAt, attended: _attended, ...meaningfulState } = state;
   return JSON.stringify(meaningfulState);
+}
+
+export function isComputerClientInUse(
+  leases: ReadonlyArray<ClientActivityLease>,
+  now: DateTime.Utc,
+): boolean {
+  return leases.some(
+    (lease) =>
+      (lease.clientKind === "desktop-renderer" || lease.clientKind === "web") &&
+      DateTime.isGreaterThan(lease.expiresAt, now) &&
+      (lease.systemActive === true ||
+        (lease.visible && (lease.focused || lease.recentlyInteracted))),
+  );
+}
+
+// Visits to threads that cannot alert would republish without informing any
+// delayed alert decision on the relay.
+function phaseCanAlert(phase: RelayAgentActivityState["phase"]): boolean {
+  return (
+    phase === "waiting_for_approval" ||
+    phase === "waiting_for_input" ||
+    phase === "completed" ||
+    phase === "failed"
+  );
 }
 
 function resolveAgentActivityPublishingStartupState(input: {
@@ -312,15 +342,20 @@ function resolveAgentAwarenessRelayPublishSnapshot(input: {
       reason: "project-not-found",
     };
   }
+  const state = sanitizeRelayAgentActivityState(
+    projectThreadAwarenessV2({
+      environmentId: input.environmentId,
+      project: input.project.value,
+      thread: input.thread.value,
+    }),
+  );
+  const lastVisitedAt = input.thread.value.lastVisitedAt;
   return {
     projectId: input.thread.value.projectId,
-    state: sanitizeRelayAgentActivityState(
-      projectThreadAwarenessV2({
-        environmentId: input.environmentId,
-        project: input.project.value,
-        thread: input.thread.value,
-      }),
-    ),
+    state:
+      state !== null && lastVisitedAt != null && phaseCanAlert(state.phase)
+        ? { ...state, lastVisitedAt: DateTime.formatIso(lastVisitedAt) }
+        : state,
     reason: "snapshot",
   };
 }
@@ -366,6 +401,7 @@ export const make = Effect.gen(function* () {
   const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
   const threads = yield* ThreadManagement.ThreadManagementService;
   const projects = yield* ProjectService.ProjectService;
+  const backgroundPolicy = yield* BackgroundPolicy.BackgroundPolicy;
   const crypto = yield* Crypto.Crypto;
   const scope = yield* Effect.scope;
   const cloudLinkKeyPair = yield* getOrCreateEnvironmentKeyPairFromSecretStore(secrets);
@@ -611,9 +647,14 @@ export const make = Effect.gen(function* () {
       });
     }
 
+    const state =
+      snapshot.state !== null &&
+      isComputerClientInUse((yield* backgroundPolicy.snapshot).leases, yield* DateTime.now)
+        ? { ...snapshot.state, attended: true }
+        : snapshot.state;
     yield* publishState({
       projectId: snapshot.projectId,
-      state: snapshot.state,
+      state,
       reason: snapshot.reason,
     }).pipe(withRelayClientTracing);
     publishConfirmDeadlines.delete(threadId);

@@ -115,6 +115,10 @@ When adding a client setting, either report it here or list it with a reason in 
 
 Mobile alert type switches are not reported to PostHog. Each device's current choice is in the relay's `relay_mobile_devices.preferences_json` (`notifyOnApproval`, `notifyOnInput`, `notifyOnCompletion`, `notifyOnFailure`). To measure use, count devices with any of them `false` among devices with an `app_version` that has the switches. Count devices only; do not read labels or tokens.
 
+## Mobile alert delay at a computer
+
+The delay choice is not reported to PostHog. Each device's choice is `attendedAlertDelaySeconds` in the relay's `relay_mobile_devices.preferences_json`; app versions with the setting always send it (600 by default). To measure use, count devices by value among devices that send the field, and treat `0` as opted out. Count devices only; do not read labels or tokens.
+
 ## Provider stall detection
 
 Provider stall detection emits `provider.turn.stall` with `outcome = detected | activity | waiting |
