@@ -26,6 +26,7 @@ import { takeUpdateRestartPath } from "./features/updates/update-restart-locatio
 import { useMobileNavigationTheme } from "./lib/useMobileNavigationTheme";
 import { useUiRuntimeMemoryWarningGc } from "./lib/useUiRuntimeMemoryWarningGc";
 import { SubscriptionUsageCoordinator } from "./widgets/SubscriptionUsageCoordinator";
+import { MobileSettingsSnapshotReporter } from "./features/settings/MobileSettingsSnapshotReporter";
 import { VoiceInputProvider } from "./features/voice-input/VoiceInputProvider";
 import { GlobalVoiceInputControl } from "./features/voice-input/GlobalVoiceInputControl";
 import { NativeLayoutMetricsProvider } from "./native/native-layout-metrics";
@@ -90,6 +91,7 @@ function AppContent() {
     <>
       <SplashScreenCoordinator />
       <SubscriptionUsageCoordinator />
+      <MobileSettingsSnapshotReporter />
       <PermissionUpdateNotice />
       <GestureHandlerRootView className="flex-1">
         <KeyboardProvider statusBarTranslucent>

@@ -101,7 +101,7 @@ For reliability, include every action and outcome, then break down failures and 
 
 ## Client settings snapshot
 
-Web and desktop clients with `forkClientUsageVersion >= 8` send one `client.settings.snapshot` event per device per day. It is not a `feature.used` event. The client reports through its primary environment, or on hosted web through the first paired environment that accepts the vocabulary, and starts the next day only after that server accepts the report. Windows on one device share the day through local storage; a report that fails, for example before the socket reconnects, is retried a minute later, with the wait doubling after each further failure up to an hour. A client older than the server leaves out settings added after its version; those properties are absent rather than set to a default, so count them as unknown, not as a choice. Events carry the reporting server's identity plus `surface`, `clientOs` and `clientAppVersion`. Mobile does not report.
+Web and desktop clients with `forkClientUsageVersion >= 8` send one `client.settings.snapshot` event per device per day. It is not a `feature.used` event. The client reports through its primary environment, or on hosted web through the first paired environment that accepts the vocabulary, and starts the next day only after that server accepts the report. Windows on one device share the day through local storage; a report that fails, for example before the socket reconnects, is retried a minute later, with the wait doubling after each further failure up to an hour. A client older than the server leaves out settings added after its version; those properties are absent rather than set to a default, so count them as unknown, not as a choice. Events carry the reporting server's identity plus `surface`, `clientOs` and `clientAppVersion`. Mobile reports its own settings under the same event; see [Mobile settings](#mobile-settings).
 
 - Composer and conversation: `sendShortcut`, `followUpBehavior`, `composerRichTextEnabled`, `composerCollapseOnScroll`, `persistComposerContextStrip`, `proactivePanelsEnabled`, `showSkillsInSlashMenu`, `planModeEnabled`, `contextWindowMeterEnabled`, `turnUsageEnabled`, `turnUsageFigure`, `chatWidth`, `wordWrap`, `mathRenderingEnabled`, `timestampFormat`, `loadBalancingEnabled`.
 - Sidebar: `legacySidebarEnabled`, `sidebarWorkingShelfEnabled`, `sidebarThreadGrouping`, `sidebarProjectGroupingMode`, `sidebarProjectGroupingOverrideCount`, `sidebarProjectSortOrder`, `sidebarManualProjectOrderSaved` (the device has dragged projects into an order; the order is kept even while another sort is selected), `sidebarThreadSortOrder`, `sidebarThreadTimestampMode`, `sidebarThreadPreviewCount`, `confirmThreadArchive`, `confirmThreadDelete`, `confirmThreadUnpin`.
@@ -114,13 +114,18 @@ Font names, profile names and IDs, project keys, grouping overrides, load-balanc
 
 When adding a client setting, either report it here or list it with a reason in `NOT_REPORTED` in `apps/web/src/clientSettingsSnapshot.test.ts`; that test fails until you choose.
 
-## Mobile alert types
+### Mobile settings
 
-Mobile alert type switches are not reported to PostHog. Each device's current choice is in the relay's `relay_mobile_devices.preferences_json` (`notifyOnApproval`, `notifyOnInput`, `notifyOnCompletion`, `notifyOnFailure`). To measure use, count devices with any of them `false` among devices with an `app_version` that has the switches. Count devices only; do not read labels or tokens.
+The mobile app sends `client.settings.snapshot` with `surface = mobile` once a day per phone, through the first connected environment with `forkClientUsageVersion >= 17`, on the same schedule as web. Every property is sent on every report; a preference the user never touched is sent as the default the app applies. Filter `surface = mobile` before taking the latest report per identity, because the same server identity also receives web and desktop reports.
 
-## Mobile alert delay at a computer
+- Notifications: `notificationsEnabled` (the OS lets styal show alerts), `liveActivitiesEnabled` (Live Activities on iOS, the ongoing activity card on Android), `notifyOnApproval`, `notifyOnInput`, `notifyOnCompletion`, `notifyOnFailure`, `attendedAlertDelaySeconds` (`0` is Immediately).
+- Composer and threads: `composerEnterBehavior`, `followUpBehavior`, `planModeEnabled`, `turnUsageEnabled`, `turnUsageFigure`, `confirmThreadUnpin`, `threadTimestampMode`, `threadGrouping`, `projectGroupingMode`, `workingShelfEnabled`, `threadList{Working,Settled,Snoozed}ShelfExpanded`, `modelFavoriteCount`, `microphoneOrderCustomized`.
+- Appearance: `themeMode`, `lightThemeId`, `darkThemeId`, `baseFontSize`, `terminalFontSize` and `codeFontSize` (`null` follows the base size), `codeWordBreak`, `mathRenderingEnabled`.
+- Review and pull requests: `diffSortMode`, `pullRequestHideTestFiles`, `pullRequestMergeMethod`.
 
-The delay choice is not reported to PostHog. Each device's choice is `attendedAlertDelaySeconds` in the relay's `relay_mobile_devices.preferences_json`; app versions with the setting always send it (600 by default). To measure use, count devices by value among devices that send the field, and treat `0` as opted out. Count devices only; do not read labels or tokens.
+Account IDs, project keys, list filters and microphone names are never sent. When adding a mobile preference, report it or list it with a reason in `NOT_REPORTED` in `apps/mobile/src/features/settings/mobileSettingsSnapshot.test.ts`.
+
+App versions without the snapshot still send their alert choices to the relay: `relay_mobile_devices.preferences_json` holds `notifyOnApproval`, `notifyOnInput`, `notifyOnCompletion`, `notifyOnFailure` and `attendedAlertDelaySeconds` (600 when unset) per device. Count devices only; do not read labels or tokens.
 
 ## Provider stall detection
 

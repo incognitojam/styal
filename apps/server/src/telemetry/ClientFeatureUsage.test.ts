@@ -626,3 +626,79 @@ it.effect("records a snapshot from an older client with its missing settings abs
     expect(isUsage({ ...olderSnapshot, chatWidth: "synthetic" })).toBe(false);
   }),
 );
+
+const mobileSnapshot = {
+  feature: "mobile-settings",
+  action: "snapshot",
+  notificationsEnabled: true,
+  liveActivitiesEnabled: false,
+  notifyOnApproval: true,
+  notifyOnInput: true,
+  notifyOnCompletion: false,
+  notifyOnFailure: true,
+  attendedAlertDelaySeconds: 0,
+  composerEnterBehavior: "send",
+  followUpBehavior: "steer",
+  planModeEnabled: false,
+  turnUsageEnabled: true,
+  turnUsageFigure: "cost",
+  confirmThreadUnpin: true,
+  threadTimestampMode: "last_prompted",
+  threadGrouping: "none",
+  projectGroupingMode: "repository",
+  workingShelfEnabled: false,
+  threadListWorkingShelfExpanded: false,
+  threadListSettledShelfExpanded: true,
+  threadListSnoozedShelfExpanded: false,
+  modelFavoriteCount: 2,
+  microphoneOrderCustomized: false,
+  themeMode: "system",
+  lightThemeId: "t3-code",
+  darkThemeId: "material-you",
+  baseFontSize: 15,
+  terminalFontSize: null,
+  codeFontSize: 12,
+  codeWordBreak: false,
+  mathRenderingEnabled: false,
+  diffSortMode: "relevance",
+  pullRequestHideTestFiles: false,
+  pullRequestMergeMethod: "squash",
+} as const;
+
+it.effect("records a mobile settings snapshot only from mobile, as the client settings event", () =>
+  Effect.gen(function* () {
+    const events: Array<{ event: string; properties: Record<string, unknown> | undefined }> = [];
+    const analytics = {
+      record: (event: string, properties?: Record<string, unknown>) =>
+        Effect.sync(() => {
+          events.push({ event, properties });
+        }),
+      flush: Effect.void,
+    };
+    const reporter = (surface: "web" | "desktop" | "mobile") =>
+      ClientFeatureUsage.reporter({ surface, clientOs: "ios", clientAppVersion: "9.9.9" }).pipe(
+        Effect.provideService(AnalyticsService.AnalyticsService, analytics),
+      );
+    const input = yield* decode({ ...mobileSnapshot, connectOnboardingOptOutAccounts: ["x"] });
+    yield* (yield* reporter("web"))(input);
+    yield* (yield* reporter("desktop"))(input);
+    yield* (yield* reporter("mobile"))(yield* decode(snapshot));
+    expect(events).toEqual([]);
+
+    yield* (yield* reporter("mobile"))(input);
+    const { feature: _feature, action: _action, ...settings } = mobileSnapshot;
+    expect(events).toEqual([
+      {
+        event: "client.settings.snapshot",
+        properties: {
+          ...settings,
+          forkClientUsageVersion: FORK_CLIENT_USAGE_VERSION,
+          surface: "mobile",
+          clientOs: "ios",
+          clientAppVersion: "9.9.9",
+        },
+      },
+    ]);
+    expect(isUsage({ ...mobileSnapshot, darkThemeId: "Synthetic Theme Name" })).toBe(false);
+  }),
+);

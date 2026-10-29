@@ -3,6 +3,7 @@ import * as Struct from "effect/Struct";
 
 import { NonNegativeInt } from "./baseSchemas.ts";
 import { PreviewAppearancePreference, PreviewZoomFactor } from "./preview.ts";
+import { PullRequestMergeMethod } from "./pullRequest.ts";
 import {
   AppearanceContrast,
   BrowserLinkTarget,
@@ -32,7 +33,7 @@ import {
 } from "./settings.ts";
 
 /** Bump when extending the vocabulary; clients require the complete version before reporting. */
-export const FORK_CLIENT_USAGE_VERSION = 16;
+export const FORK_CLIENT_USAGE_VERSION = 17;
 
 /**
  * One device's client preferences, reported daily so we can see which defaults
@@ -134,6 +135,63 @@ export const ReportedClientSettingsSnapshot = ClientSettingsSnapshot.mapFields(
   Struct.mapOmit(["feature", "action"], Schema.optionalKey),
 );
 
+const MobileThemeId = Schema.String.check(Schema.isPattern(/^[a-z0-9-]{1,64}$/));
+
+/**
+ * One phone's app preferences, reported daily like `ClientSettingsSnapshot`.
+ * Settings that mirror a web one keep its name; free text, accounts, project
+ * keys and filters stay on the device.
+ */
+export const MobileSettingsSnapshot = Schema.Struct({
+  feature: Schema.Literal("mobile-settings"),
+  action: Schema.Literal("snapshot"),
+  // Notifications
+  /** The OS lets the app show agent alerts; the switches below choose which. */
+  notificationsEnabled: Schema.Boolean,
+  liveActivitiesEnabled: Schema.Boolean,
+  notifyOnApproval: Schema.Boolean,
+  notifyOnInput: Schema.Boolean,
+  notifyOnCompletion: Schema.Boolean,
+  notifyOnFailure: Schema.Boolean,
+  attendedAlertDelaySeconds: NonNegativeInt,
+  // Composer and threads
+  composerEnterBehavior: Schema.Literals(["send", "newline"]),
+  followUpBehavior: Schema.Literals(["queue", "steer"]),
+  planModeEnabled: Schema.Boolean,
+  turnUsageEnabled: Schema.Boolean,
+  turnUsageFigure: Schema.Literals(["tokens", "cost"]),
+  confirmThreadUnpin: Schema.Boolean,
+  threadTimestampMode: SidebarThreadTimestampMode,
+  threadGrouping: SidebarThreadGrouping,
+  projectGroupingMode: SidebarProjectGroupingMode,
+  workingShelfEnabled: Schema.Boolean,
+  threadListWorkingShelfExpanded: Schema.Boolean,
+  threadListSettledShelfExpanded: Schema.Boolean,
+  threadListSnoozedShelfExpanded: Schema.Boolean,
+  modelFavoriteCount: NonNegativeInt,
+  microphoneOrderCustomized: Schema.Boolean,
+  // Appearance
+  themeMode: Schema.Literals(["system", "light", "dark"]),
+  lightThemeId: MobileThemeId,
+  darkThemeId: MobileThemeId,
+  baseFontSize: Schema.Number,
+  /** Null follows the base font size. */
+  terminalFontSize: Schema.NullOr(Schema.Number),
+  codeFontSize: Schema.NullOr(Schema.Number),
+  codeWordBreak: Schema.Boolean,
+  mathRenderingEnabled: Schema.Boolean,
+  // Review and pull requests
+  diffSortMode: Schema.Literals(["relevance", "alphabetical"]),
+  pullRequestHideTestFiles: Schema.Boolean,
+  pullRequestMergeMethod: PullRequestMergeMethod,
+});
+export type MobileSettingsSnapshot = typeof MobileSettingsSnapshot.Type;
+
+/** What a server accepts from mobile; see `ReportedClientSettingsSnapshot`. */
+export const ReportedMobileSettingsSnapshot = MobileSettingsSnapshot.mapFields(
+  Struct.mapOmit(["feature", "action"], Schema.optionalKey),
+);
+
 export const WebBuildUpdateUsageAction = Schema.Literals(["notice_shown", "refresh_requested"]);
 export type WebBuildUpdateUsageAction = typeof WebBuildUpdateUsageAction.Type;
 
@@ -229,5 +287,6 @@ export const ForkClientUsageInput = Schema.Union([
     outcome: Schema.Literals(["success", "failure"]),
   }),
   ReportedClientSettingsSnapshot,
+  ReportedMobileSettingsSnapshot,
 ]);
 export type ForkClientUsageInput = typeof ForkClientUsageInput.Type;

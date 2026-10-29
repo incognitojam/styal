@@ -7,26 +7,6 @@ import {
 
 /** When this device last had its settings snapshot accepted by a server. */
 export const CLIENT_SETTINGS_SNAPSHOT_STORAGE_KEY = "styal:client-settings-snapshot:v1";
-export const CLIENT_SETTINGS_SNAPSHOT_INTERVAL_MS = 24 * 60 * 60 * 1000;
-
-/** Whether a day has passed since the last accepted report, or none was ever stored. */
-export function isClientSettingsSnapshotDue(lastReportedAt: string | null, now: number): boolean {
-  const last = lastReportedAt === null ? Number.NaN : Date.parse(lastReportedAt);
-  // A missing, unreadable or future timestamp reports again rather than never.
-  return !(last <= now && now - last < CLIENT_SETTINGS_SNAPSHOT_INTERVAL_MS);
-}
-
-const FIRST_RETRY_DELAY_MS = 60 * 1000;
-const LONGEST_RETRY_DELAY_MS = 60 * 60 * 1000;
-
-/**
- * How long to wait after `failures` reports in a row went unaccepted. The first
- * retry stays quick because a report can fail before the socket connects; a
- * server that keeps rejecting it is asked at most hourly.
- */
-export function clientSettingsSnapshotRetryDelayMs(failures: number): number {
-  return Math.min(FIRST_RETRY_DELAY_MS * 2 ** Math.max(failures - 1, 0), LONGEST_RETRY_DELAY_MS);
-}
 
 const sameShortcut = (a: ClientSettings["snapShotShortcut"], b: typeof a) =>
   JSON.stringify(a) === JSON.stringify(b);

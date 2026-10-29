@@ -20,7 +20,7 @@ export function useDiffSortMode(input: {
     toggle: () => {
       const relevance = !sortByRelevance;
       savePreferences({ diffSortMode: relevance ? "relevance" : "alphabetical" });
-      reportForkClientUsage(input.environmentId, {
+      void reportForkClientUsage(input.environmentId, {
         feature: "diff-file-review-order",
         action: relevance ? "relevance_selected" : "alphabetical_selected",
         view: input.view,

@@ -5009,7 +5009,11 @@ features:
       - Web and desktop clients report their device settings at most once a day through the primary environment, or the first paired environment on hosted web, as client.settings.snapshot with forkClientUsageVersion 7 or later. The day restarts only when a server accepts the report, and windows on one device share it. A window retries a report the server did not accept after a minute, doubling the wait after each failure up to an hour.
       - Clients send every reported setting, but a server accepts a snapshot from an older client that predates some settings and records it with those settings absent, never filled with a default.
       - The device report sends whether a manual project order is saved, never project keys, and every client setting is either reported or listed with a reason as deliberately left out.
+      - Mobile reports its app preferences at most once a day through the first connected environment with forkClientUsageVersion 17 or later, as client.settings.snapshot with surface mobile, using the same accept-then-wait-a-day and retry schedule. Unset preferences are sent as the default the app applies; account ids, project keys, filters and microphone names are never sent, and every mobile preference is either reported or listed with a reason as deliberately left out. Servers record the mobile snapshot only from mobile clients and the web snapshot only from web and desktop.
     implementation_paths:
+      - apps/mobile/src/App.tsx
+      - apps/mobile/src/features/settings/MobileSettingsSnapshotReporter.tsx
+      - apps/mobile/src/features/settings/mobileSettingsSnapshot.ts
       - apps/server/src/server.ts
       - apps/server/src/telemetry/AnalyticsService.ts
       - apps/server/src/telemetry/ClientFeatureUsage.ts
@@ -5017,16 +5021,20 @@ features:
       - apps/web/src/AppRoot.tsx
       - apps/web/src/clientSettingsSnapshot.ts
       - apps/web/src/components/ClientSettingsSnapshotReporter.tsx
+      - packages/client-runtime/src/settingsSnapshot.ts
       - packages/contracts/src/forkClientUsage.ts
     upstream_paths:
+      - apps/mobile/src/App.tsx
       - apps/server/src/server.ts
       - apps/server/src/telemetry/AnalyticsService.ts
       - apps/web/src/AppRoot.tsx
     tests:
+      - apps/mobile/src/features/settings/mobileSettingsSnapshot.test.ts
       - apps/server/src/telemetry/AnalyticsService.test.ts
       - apps/server/src/telemetry/ClientFeatureUsage.test.ts
       - apps/server/src/telemetry/SettingsSnapshot.test.ts
       - apps/web/src/clientSettingsSnapshot.test.ts
+      - packages/client-runtime/src/settingsSnapshot.test.ts
     upstream:
       status: unassessed
       tracking: []

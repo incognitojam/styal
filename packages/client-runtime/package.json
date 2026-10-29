@@ -11,6 +11,10 @@
       "types": "./src/imageAttachmentSize.ts",
       "default": "./src/imageAttachmentSize.ts"
     },
+    "./settings-snapshot": {
+      "types": "./src/settingsSnapshot.ts",
+      "default": "./src/settingsSnapshot.ts"
+    },
     "./handoff": {
       "types": "./src/handoff.ts",
       "default": "./src/handoff.ts"
