@@ -129,11 +129,11 @@ it.effect.each(["success", "retry"] as const)(
             snapshot: Effect.succeed({ projects: [] } as never),
           }),
           Layer.mock(ThreadManagement.ThreadManagementService)({
-            getShellSnapshot: () =>
-              Effect.succeed({
-                threads: [{ id: threadId, projectId, lineage: { relationshipToParent: null } }],
-                archivedThreads: [],
-              } as never),
+            countThreads: () => Effect.succeed(1),
+            listActiveShellIndex: () =>
+              Effect.succeed([
+                { id: threadId, projectId, lineage: { relationshipToParent: null } },
+              ] as never),
           }),
           Layer.mock(ThreadLaunch.ThreadLaunchService)({}),
           Layer.mock(ProjectStore.ProjectStoreV2)({ listShells: () => Effect.succeed([]) }),
@@ -270,7 +270,8 @@ it.effect("starts the bootstrap thread on Codex when the environment turned Clau
           snapshot: Effect.succeed({ projects: [] } as never),
         }),
         Layer.mock(ThreadManagement.ThreadManagementService)({
-          getShellSnapshot: () => Effect.succeed({ threads: [], archivedThreads: [] } as never),
+          countThreads: () => Effect.succeed(0),
+          listActiveShellIndex: () => Effect.succeed([]),
         }),
         Layer.mock(ThreadLaunch.ThreadLaunchService)({
           launch: (input) =>
