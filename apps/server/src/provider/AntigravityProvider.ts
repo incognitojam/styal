@@ -81,12 +81,16 @@ export function buildAntigravityModelsFromSession(
           })) ?? [])
         : [];
   const currentThinking = antigravityThinkingConfig(setup.configOptions);
+  const names = new Set<string>();
   return groupAntigravityModels(entries, currentValue).map((model) => {
-    if (model.capabilities?.optionDescriptors?.length) return model;
+    const name = names.has(model.name) ? `${model.name} (${model.slug})` : model.name;
+    names.add(model.name);
+    if (model.capabilities?.optionDescriptors?.length) return { ...model, name };
     const observed =
       model.slug === currentValue ? (currentThinking ?? null) : thinkingLevels.get(model.slug);
     return {
       ...model,
+      name,
       capabilities:
         observed === undefined
           ? thinkingCapabilities(currentThinking, false)
