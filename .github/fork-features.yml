@@ -2800,7 +2800,7 @@ features:
   - id: mobile-android-page-back
     title: Back on Android returns to the page a thread or pull request was opened from
     status: maintained
-    prs: []
+    prs: [1148]
     rationale: Opening a pull request linked in a thread replaced the thread, and Back always went to the list for the page's tab, so reading a linked pull request lost the thread. Compared with upstream revision 37fbefd147 on October 29, 2026, where only a thread opened from its delegator returns to it.
     invariants:
       - On Android, a pull request opened from a page (a link in a thread or pull request, or a thread's pull request controls) opens over that page, and Back or the app bar's back button returns to it.
