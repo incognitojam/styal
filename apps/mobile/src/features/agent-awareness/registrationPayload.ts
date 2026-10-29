@@ -43,10 +43,10 @@ export function makeRelayDeviceRegistrationRequest(
     preferences: {
       liveActivitiesEnabled,
       notificationsEnabled: pushAvailable && input.notificationsEnabled,
-      notifyOnApproval: true,
-      notifyOnInput: true,
-      notifyOnCompletion: true,
-      notifyOnFailure: true,
+      notifyOnApproval: input.preferences.notifyOnApproval !== false,
+      notifyOnInput: input.preferences.notifyOnInput !== false,
+      notifyOnCompletion: input.preferences.notifyOnCompletion !== false,
+      notifyOnFailure: input.preferences.notifyOnFailure !== false,
     },
   };
 }

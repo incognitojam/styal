@@ -35,10 +35,12 @@ import {
   getAgentAwarenessRegistrationStatus,
   refreshAgentAwarenessRegistration,
   subscribeAgentAwarenessRegistrationStatus,
+  updateAgentAwarenessRegistrationPreferences,
 } from "../agent-awareness/remoteRegistration";
 import { refreshManagedRelayEnvironments } from "../cloud/managedRelayState";
 import { hasCloudPublicConfig, resolveRelayClerkTokenOptions } from "../cloud/publicConfig";
 import { runtime } from "../../lib/runtime";
+import type { AppSymbolName } from "../../components/ui/AppSymbol";
 import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
 import { useSavedRemoteConnections } from "../../state/use-remote-environment-registry";
 import { SettingsRow } from "./components/SettingsRow";
@@ -60,6 +62,23 @@ function useDeviceRegistered(): boolean {
 }
 
 const OFF_IN_ANDROID_SETTINGS = "Off in Android settings";
+
+type AlertTypePreference =
+  | "notifyOnApproval"
+  | "notifyOnInput"
+  | "notifyOnCompletion"
+  | "notifyOnFailure";
+
+const ALERT_TYPES: ReadonlyArray<{
+  readonly preference: AlertTypePreference;
+  readonly label: string;
+  readonly icon: AppSymbolName;
+}> = [
+  { preference: "notifyOnApproval", label: "Needs approval", icon: "exclamationmark.shield" },
+  { preference: "notifyOnInput", label: "Needs input", icon: "questionmark.bubble" },
+  { preference: "notifyOnCompletion", label: "Done", icon: "checkmark.circle" },
+  { preference: "notifyOnFailure", label: "Failed", icon: "exclamationmark.triangle" },
+];
 
 function openChannelSettings(channel: AndroidAgentChannel) {
   void openAndroidAgentChannelSettings(channel).catch(() => {
@@ -118,6 +137,28 @@ function ConfiguredSettingsNotificationsRouteScreen() {
 
   const connections = Object.values(savedConnectionsById);
   const environmentCount = connections.length;
+  const alertsEnabled =
+    agentAwarenessPushAvailable &&
+    notificationStatus === "enabled" &&
+    deviceRegistered &&
+    !alertsChannelOff;
+  const storedPreferences = AsyncResult.isSuccess(preferencesResult)
+    ? preferencesResult.value
+    : null;
+
+  // The stored preference is what later registrations send, so a failed relay
+  // update is retried by the next registration (app foreground, token rotation).
+  const handleAlertTypeChange = async (preference: AlertTypePreference, enabled: boolean) => {
+    savePreferences({ [preference]: enabled });
+    const result = await settleAsyncResult(() =>
+      runtime.runPromiseExit(
+        updateAgentAwarenessRegistrationPreferences({ [preference]: enabled }),
+      ),
+    );
+    if (result._tag === "Failure") {
+      reportAtomCommandResult(result, { label: "notification type update" });
+    }
+  };
 
   const refreshNotifications = async () => {
     if (Platform.OS !== "ios" && Platform.OS !== "android") {
@@ -452,12 +493,7 @@ function ConfiguredSettingsNotificationsRouteScreen() {
                   : "When a thread finishes, fails, or needs input or approval"
                 : undefined)
             }
-            value={
-              agentAwarenessPushAvailable &&
-              notificationStatus === "enabled" &&
-              deviceRegistered &&
-              !alertsChannelOff
-            }
+            value={alertsEnabled}
             onValueChange={handleDeviceNotificationsChange}
           />
           <SettingsSwitchRow
@@ -508,6 +544,18 @@ function ConfiguredSettingsNotificationsRouteScreen() {
               }}
             />
           ) : null}
+        </SettingsSection>
+        <SettingsSection title="Notify me when an agent">
+          {ALERT_TYPES.map((alertType) => (
+            <SettingsSwitchRow
+              key={alertType.preference}
+              icon={alertType.icon}
+              label={alertType.label}
+              disabled={!alertsEnabled || storedPreferences === null}
+              value={storedPreferences?.[alertType.preference] !== false}
+              onValueChange={(enabled) => void handleAlertTypeChange(alertType.preference, enabled)}
+            />
+          ))}
         </SettingsSection>
       </ScrollView>
     </SettingsScreen>

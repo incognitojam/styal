@@ -383,6 +383,26 @@ describe("makeRelayDeviceRegistrationRequest", () => {
     });
   });
 
+  it("sends alert types switched off on this device as disabled", () => {
+    expect(
+      makeRelayDeviceRegistrationRequest({
+        deviceId: "device-1",
+        label: "Julius's iPhone",
+        iosMajorVersion: 18,
+        appVersion: "1.0.0",
+        pushToken: "apns-token",
+        notificationsEnabled: true,
+        preferences: { notifyOnCompletion: false, notifyOnFailure: true },
+      }).preferences,
+    ).toMatchObject({
+      notificationsEnabled: true,
+      notifyOnApproval: true,
+      notifyOnInput: true,
+      notifyOnCompletion: false,
+      notifyOnFailure: true,
+    });
+  });
+
   it("overrides persisted preferences for an in-flight registration", () => {
     expect(
       mergeAgentAwarenessRegistrationPreferences(

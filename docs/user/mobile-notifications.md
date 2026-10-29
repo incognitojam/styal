@@ -2,6 +2,8 @@
 
 Sign in to styal Link, link your environments, and enable **Device Notifications** (**Agent alerts** on Android) in **Settings → Notifications** to receive alerts when an agent finishes, fails, needs approval, or asks for input. Tap a notification to open its thread. Your environment must have agent activity publishing enabled.
 
+Use the switches under **Notify me when an agent** to choose which of those alerts reach this device, for example only approvals and input requests. Each device keeps its own choice.
+
 Enable **Ongoing agent activity** on Android or **Live Activity Updates** on iOS to follow work without opening the app. Finished results remain visible for up to 15 minutes. You can dismiss an Android activity card without disabling alerts; turn off ongoing activity in Settings to stop future cards.
 
 Ordinary alerts stay quiet while the mobile app is in the foreground. Ongoing activity continues to update. Viewing a thread on another device does not silence your phone's alerts.
