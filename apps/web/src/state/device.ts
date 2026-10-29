@@ -4,12 +4,16 @@ import {
   type DeviceHubAccess,
   resolveDeviceHubAccess,
 } from "@t3tools/client-runtime/state/deviceHubAccess";
-import { runAtomCommand } from "@t3tools/client-runtime/state/runtime";
+import {
+  createEnvironmentRpcQueryAtomFamily,
+  runAtomCommand,
+} from "@t3tools/client-runtime/state/runtime";
 import {
   type DeviceDetail,
   type DeviceServiceState,
   type EnvironmentId,
   type DeviceEasAccountInput,
+  WS_METHODS,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -179,4 +183,15 @@ export const deviceEasAccountCheck = Atom.family(
         ),
       ),
     ).pipe(Atom.setIdleTTL(0)),
+);
+
+/** Who a Simlock token is, checked as the host editor's URL and token fields change. */
+export const deviceSimlockIdentityCheck = createEnvironmentRpcQueryAtomFamily(
+  connectionAtomRuntime,
+  {
+    label: "environment-data:device:simlock-identity-check",
+    tag: WS_METHODS.deviceSimlockIdentity,
+    staleTimeMs: 0,
+    idleTtlMs: 0,
+  },
 );

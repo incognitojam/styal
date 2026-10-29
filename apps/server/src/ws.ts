@@ -3074,6 +3074,7 @@ export const layerWsRpc = (
         [WS_METHODS.deviceDisconnectEnvironment]: (input) => deviceSharing.disconnect(input.hostId),
         [WS_METHODS.deviceTestHost]: (input) => deviceService.testHost(input),
         [WS_METHODS.deviceEasAccount]: (input) => deviceService.easAccount(input),
+        [WS_METHODS.deviceSimlockIdentity]: (input) => deviceService.simlockIdentity(input),
         [WS_METHODS.deviceList]: (input) =>
           input.inspectOnly && !input.updateTool
             ? deviceService.inspect
