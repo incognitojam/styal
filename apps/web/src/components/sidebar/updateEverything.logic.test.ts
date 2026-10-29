@@ -235,7 +235,6 @@ describe("update capsule", () => {
   const run = (overrides: Partial<UpdateEverythingRun> = {}): UpdateEverythingRun => ({
     localVersion: null,
     phase: "servers",
-    restartAt: null,
     machines: [],
     ...overrides,
   });
@@ -246,17 +245,6 @@ describe("update capsule", () => {
   ) => ({
     machine: runMachine({ environmentId: EnvironmentId.make(label), label, ...overrides }),
     status,
-  });
-
-  it("counts down this app's restart before anything else", () => {
-    expect(
-      describeUpdateCapsule(
-        run({ phase: "countdown", restartAt: 5_000, localVersion: "0.0.50" }),
-        [view("alvin", "restarting")],
-        { status: "waiting" },
-        1_200,
-      ),
-    ).toEqual({ tone: "default", label: "Restart in 4s", action: "later" });
   });
 
   it("names the slowest machine once it passes the slow threshold", () => {

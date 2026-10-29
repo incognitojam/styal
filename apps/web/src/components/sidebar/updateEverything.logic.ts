@@ -181,8 +181,7 @@ export interface UpdateRunMachine {
 
 export interface UpdateEverythingRun {
   readonly localVersion: string | null;
-  readonly phase: "providers" | "servers" | "countdown" | "installing";
-  readonly restartAt: number | null;
+  readonly phase: "providers" | "servers" | "installing";
   readonly machines: ReadonlyArray<UpdateRunMachine>;
 }
 
@@ -235,7 +234,7 @@ export interface UpdateCapsuleView {
   readonly tone: "default" | "slow" | "failed";
   readonly label: string;
   readonly slow?: { readonly status: string; readonly elapsed: string };
-  readonly action: "later" | "retry" | "dismiss" | null;
+  readonly action: "retry" | "dismiss" | null;
 }
 
 const isActive = (status: UpdateRunMachineStatus) => status !== "done" && status !== "failed";
@@ -246,10 +245,6 @@ export function describeUpdateCapsule(
   local: UpdateRunLocalState,
   now: number,
 ): UpdateCapsuleView {
-  if (run.phase === "countdown" && run.restartAt !== null) {
-    const seconds = Math.max(0, Math.ceil((run.restartAt - now) / 1000));
-    return { tone: "default", label: `Restart in ${seconds}s`, action: "later" };
-  }
   if (run.phase === "installing") {
     return { tone: "default", label: "Restarting…", action: null };
   }

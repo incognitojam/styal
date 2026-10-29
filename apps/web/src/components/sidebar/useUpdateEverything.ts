@@ -201,7 +201,6 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
       setUpdateEverythingRun(() => ({
         localVersion,
         phase: "providers",
-        restartAt: null,
         machines: Array.from(machinesById.values()),
       }));
       const providerFailures = new Map<UpdateRunMachine["environmentId"], string>();
@@ -298,7 +297,7 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
             skipped,
           });
         if (outcome.localReady && installLocal) {
-          setUpdateEverythingRun((run) => run && { ...run, phase: "installing", restartAt: null });
+          setUpdateEverythingRun((run) => run && { ...run, phase: "installing" });
           saveUpdateEverythingResult({ ...result(finishedServers), localVersion });
           if (await installLocal(reportLocalError)) return;
           clearSavedUpdateEverythingResult();
@@ -309,7 +308,6 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
             closeFinishedUpdateRun({
               ...run,
               phase: "servers",
-              restartAt: null,
               localVersion: null,
             }),
         );

@@ -18,7 +18,6 @@ import {
 } from "./updateEverything.logic";
 import {
   dismissSettledUpdateRunMachines,
-  postponeUpdateRestart,
   retryFailedUpdateRunServers,
 } from "./updateEverythingRun";
 
@@ -44,10 +43,7 @@ function useUpdateRunMachineViews(run: UpdateEverythingRun): ReadonlyArray<Updat
   }));
 }
 
-function localStatusLabel(run: UpdateEverythingRun, local: UpdateRunLocalState, now: number) {
-  if (run.phase === "countdown" && run.restartAt !== null) {
-    return `restarts in ${Math.max(0, Math.ceil((run.restartAt - now) / 1000))}s`;
-  }
+function localStatusLabel(run: UpdateEverythingRun, local: UpdateRunLocalState) {
   if (run.phase === "installing") return "restarting";
   if (local?.status === "downloading") {
     return `downloading${local.percent === null ? "" : ` ${Math.floor(local.percent)}%`}`;
@@ -70,17 +66,15 @@ export function SidebarUpdateCapsule({
   const hasActiveMachine = machines.some(
     ({ status }) => status !== "done" && status !== "failed" && status !== "waiting",
   );
-  const now = useNow(run.phase === "countdown" ? 1_000 : hasActiveMachine ? 30_000 : null);
+  const now = useNow(hasActiveMachine ? 30_000 : null);
   const view = describeUpdateCapsule(run, machines, local, now);
   const updateServers = useServerUpdates();
   const failed = machines.some(({ status }) => status === "failed");
   const settled = !hasActiveMachine && run.localVersion === null;
 
-  const actionLabel =
-    view.action === "later" ? "Later" : view.action === "retry" ? "Retry" : "Dismiss";
+  const actionLabel = view.action === "retry" ? "Retry" : "Dismiss";
   const runAction = () => {
-    if (view.action === "later") postponeUpdateRestart();
-    else if (view.action === "retry") retryFailedUpdateRunServers(updateServers);
+    if (view.action === "retry") retryFailedUpdateRunServers(updateServers);
     else dismissSettledUpdateRunMachines();
   };
 
@@ -130,7 +124,7 @@ export function SidebarUpdateCapsule({
             <div className="flex items-center justify-between gap-3">
               <span>This app</span>
               <span className="text-muted-foreground tabular-nums">
-                {localStatusLabel(run, local, now)}
+                {localStatusLabel(run, local)}
               </span>
             </div>
           ) : onRestart ? (
