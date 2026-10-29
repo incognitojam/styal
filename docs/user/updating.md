@@ -21,11 +21,11 @@ its own restart. A manually requested update adds no restart countdown. A server
 finishes on its own, and the button keeps showing it after the desktop app
 restarts.
 
-Remote desktop apps never wait for npm. Background services do not wait either
-when the version comes from the desktop app's update. Other server updates
-appear only after that version is published to npm. The confirmation lists each machine it skips
-and why, such as a machine that is offline or needs a manual update. Use
-**Settings → Environments** for those.
+Remote desktop apps never wait for npm. When the desktop app offers the update,
+background services update right away too. Other servers, including older
+background services, update only after that version is published to npm. The
+confirmation lists each machine it skips and why, such as a machine that is
+offline or needs a manual update. Use **Settings → Environments** for those.
 The final update summary also names skipped machines and their reasons, including
 after the desktop app restarts.
 
