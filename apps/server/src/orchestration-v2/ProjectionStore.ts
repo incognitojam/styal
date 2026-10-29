@@ -5934,6 +5934,9 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                 ? sql` AND t.thread_id IN (
                     SELECT thread_id FROM orchestration_v2_projection_runs
                     WHERE status IN ('preparing', 'starting', 'running', 'waiting')
+                      -- Repeats the recovery index's predicate so SQLite searches that
+                      -- partial index instead of scanning every historical run.
+                      AND status IN ('queued', 'preparing', 'starting', 'running', 'waiting')
                     UNION
                     SELECT thread_id FROM orchestration_v2_projection_runtime_requests
                     WHERE status = 'pending'

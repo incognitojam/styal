@@ -451,6 +451,11 @@ it.effect("sql: a busy-only shell read keeps every thread with work in flight", 
       yield* createRun(threadId, status, 2);
       busy.add(threadId);
     }
+    // A newer finished run hides the older running one from status; only activityRunStatus shows it.
+    const olderRunning = yield* createThread("busy-older-running");
+    yield* createRun(olderRunning, "running");
+    yield* createRun(olderRunning, "completed", 2);
+    busy.add(olderRunning);
     const requested = yield* createThread("busy-request");
     yield* createRun(requested);
     yield* store.apply({
@@ -537,6 +542,9 @@ it.effect("sql: a busy-only shell read keeps every thread with work in flight", 
     );
 
     const all = yield* store.getShellSnapshot({ location: "active" });
+    const hidden = all.threads.find((thread) => thread.id === olderRunning);
+    assert.equal(hidden?.status, "completed");
+    assert.equal(hidden?.activityRunStatus, "running");
     const expected = all.threads.filter(
       (thread) =>
         thread.status === "preparing" ||
