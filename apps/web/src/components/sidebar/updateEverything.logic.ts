@@ -84,14 +84,25 @@ export interface SkippedMachine {
   readonly reason: string;
 }
 
+/** Boot services before this build installed the server from npm, not from release archives. */
+const RELEASE_ARCHIVE_SELF_UPDATE_SINCE = "0.1.0-nightly.20260918.380";
+
 /** Skip current and app-hosted servers; the latter update with the app and would relaunch mid-run.
- * Desktop-managed servers use their own feed. */
+ * Desktop-managed servers use their own feed. `waitForNpm` lists targets that need
+ * `@styal/cli@<targetVersion>` on npm first. `releaseArchivesPublished` means the version came from the
+ * desktop feed: its GitHub Release goes public with the CLI archives that boot services download. */
 export function collectServerUpdateTargets(
   machines: ReadonlyArray<UpdateEverythingMachine>,
   targetVersion: string,
-): { readonly targets: ServerUpdateTarget[]; readonly skipped: SkippedMachine[] } {
+  releaseArchivesPublished: boolean,
+): {
+  readonly targets: ServerUpdateTarget[];
+  readonly skipped: SkippedMachine[];
+  readonly waitForNpm: ServerUpdateTarget[];
+} {
   const targets: ServerUpdateTarget[] = [];
   const skipped: SkippedMachine[] = [];
+  const waitForNpm: ServerUpdateTarget[] = [];
   for (const machine of machines) {
     const config = machine.serverConfig;
     if (machine.hostedByThisApp) continue;
@@ -126,7 +137,7 @@ export function collectServerUpdateTargets(
       skip(`on the ${cliReleaseChannelOf(serverVersion)} channel`);
       continue;
     }
-    targets.push({
+    const target: ServerUpdateTarget = {
       environmentId: machine.environmentId,
       serverLabel: machine.label,
       selfUpdate,
@@ -134,9 +145,18 @@ export function collectServerUpdateTargets(
       desktopAppUpdate,
       threadContinuation: supportsServerUpdateThreadContinuation(config),
       targetVersion,
-    });
+    };
+    targets.push(target);
+    if (
+      selfUpdate !== "desktop-managed" &&
+      (!releaseArchivesPublished ||
+        selfUpdate === "respawn" ||
+        compareSemverVersions(serverVersion, RELEASE_ARCHIVE_SELF_UPDATE_SINCE) < 0)
+    ) {
+      waitForNpm.push(target);
+    }
   }
-  return { targets, skipped };
+  return { targets, skipped, waitForNpm };
 }
 
 function unavailableReason(machine: UpdateEverythingMachine): string | null {
