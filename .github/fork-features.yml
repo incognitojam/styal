@@ -2751,7 +2751,7 @@ features:
   - id: mobile-attended-alert-delay
     title: Delay phone alerts while the user is at a computer
     status: maintained
-    prs: []
+    prs: [1138]
     invariants:
       - Desktop and web clients report whether they are in use through client activity leases; the desktop app adds OS-wide input (any app, 5-minute idle threshold), and mobile leases never count.
       - The server marks published agent activity `attended` when a computer client is in use and adds `lastVisitedAt` for phases that can alert; `attended` is excluded from the publish identity so presence changes never republish.
