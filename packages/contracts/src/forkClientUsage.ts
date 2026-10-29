@@ -32,7 +32,7 @@ import {
 } from "./settings.ts";
 
 /** Bump when extending the vocabulary; clients require the complete version before reporting. */
-export const FORK_CLIENT_USAGE_VERSION = 15;
+export const FORK_CLIENT_USAGE_VERSION = 16;
 
 /**
  * One device's client preferences, reported daily so we can see which defaults
@@ -221,6 +221,11 @@ export const ForkClientUsageInput = Schema.Union([
   Schema.Struct({
     feature: Schema.Literal("pull-request-bypass-merge"),
     action: Schema.Literal("merge"),
+    outcome: Schema.Literals(["success", "failure"]),
+  }),
+  Schema.Struct({
+    feature: Schema.Literal("incoming-share-thread"),
+    action: Schema.Literal("added"),
     outcome: Schema.Literals(["success", "failure"]),
   }),
   ReportedClientSettingsSnapshot,
