@@ -5000,7 +5000,7 @@ features:
   - id: settings-snapshot-telemetry
     title: Report server and device preference values to see which defaults people change
     status: maintained
-    prs: [938]
+    prs: [938, 1156]
     rationale: Maintainers decide which opinionated defaults to keep, change, or move into setup from how many installations change them.
     invariants:
       - Each server records one settings.snapshot event two minutes after startup and then daily, through the shared analytics identity, queue and telemetry opt-out, with settingsSnapshotUsageVersion marking reporting servers.
