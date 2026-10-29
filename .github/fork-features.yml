@@ -178,8 +178,8 @@ features:
     implementation_paths:
       - apps/mobile/plugins/withShareExtensionDisplayName.cjs
       - apps/mobile/src/features/sharing/IncomingShareProvider.tsx
-      - apps/mobile/src/features/sharing/incoming-share-presentation.ts
       - apps/mobile/src/features/sharing/ShareToThreadSection.tsx
+      - apps/mobile/src/features/sharing/incoming-share-presentation.ts
       - apps/mobile/src/features/sharing/incoming-share-thread.ts
       - apps/mobile/src/features/threads/ThreadFeed.tsx
       - apps/mobile/src/features/threads/pending-thread-feed.ts
