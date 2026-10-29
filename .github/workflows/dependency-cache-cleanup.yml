@@ -1,0 +1,54 @@
+name: Clean superseded dependency caches
+
+on:
+  workflow_run:
+    workflows:
+      - Fork CI
+      - Fork macOS
+      - Fork E2E (network)
+      - Fork CLI Build
+      - Fork CLI Archives
+      - Fork Desktop Build
+      - Fork JS Bundle
+      - Fork Nightly
+      - Mobile Android Build
+      - Mobile iOS Build
+    types: [completed]
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: dependency-cache-cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    if: github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      # Never execute the triggering run's checkout with this elevated token.
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Delete superseded main dependency caches
+        continue-on-error: true
+        env:
+          # Keep this hashFiles pattern list identical to setup-deps/action.yml.
+          CURRENT_DEPENDENCY_HASH: ${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', '.npmrc', 'package.json', 'apps/*/package.json', 'apps/mobile/modules/**', 'packages/*/package.json', 'infra/*/package.json', 'scripts/package.json', 'e2e/package.json', 'oxlint-plugin-t3code/package.json', 'patches/**', 'scripts/clean-tsgo-backups.mjs', '.github/actions/setup-deps/**') }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          gh api --paginate --slurp "repos/$GH_REPO/actions/caches?ref=refs/heads/main&per_page=100" > caches.json
+          jq -c --arg current "$CURRENT_DEPENDENCY_HASH" -f .github/scripts/superseded-dependency-caches.jq caches.json > victims.jsonl
+          while IFS= read -r cache; do
+            id=$(jq -r '.id' <<< "$cache")
+            echo "Deleting superseded cache: $cache"
+            gh api --method DELETE "repos/$GH_REPO/actions/caches/$id" || echo "::warning::Could not delete cache $id; continuing"
+          done < victims.jsonl
