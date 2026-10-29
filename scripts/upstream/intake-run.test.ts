@@ -1,6 +1,7 @@
 import { assert, describe, it } from "@effect/vitest";
 
 import {
+  addedLineNumbers,
   applyOverridePins,
   autoStopReasons,
   batchLength,
@@ -8,7 +9,6 @@ import {
   describeShippedNativeRuntime,
   nativeFingerprintVerdict,
   newestAndroidReleaseTag,
-  namesUpstreamProduct,
   draftAdaptationNote,
   intakeCommitMessage,
   ledgerFeaturesByPath,
@@ -390,26 +390,50 @@ describe("batchLength", () => {
   });
 });
 
-describe("namesUpstreamProduct", () => {
-  it("flags strings and user guides, not comments, test titles, or other docs", () => {
-    assert.isTrue(
-      namesUpstreamProduct(
-        "packages/client-runtime/src/relay/errorPresentation.ts",
-        '  "Start T3 Code on that computer.";',
-      ),
+describe("draftAdaptationNote naming", () => {
+  it("describes renamed strings and keeps the agent identity feature for agent paths", () => {
+    const draft = draftAdaptationNote([
+      {
+        kind: "naming",
+        path: "apps/server/src/cloud/CloudLink.ts",
+        detail: "T3 Connect -> styal Link",
+      },
+      { kind: "naming", path: "apps/server/src/mcp/WorktreeMcpService.ts", detail: "T3 -> styal" },
+    ]);
+    assert.strictEqual(
+      draft.note,
+      "Upstream's new strings in `apps/server/src/cloud/CloudLink.ts`, `apps/server/src/mcp/WorktreeMcpService.ts` use the fork's names (`T3 Connect` to `styal Link`, `T3` to `styal`), as `naming:check` requires.",
     );
-    assert.isTrue(namesUpstreamProduct("docs/user/remote-access.md", "T3 Connect also removes"));
-    assert.isFalse(
-      namesUpstreamProduct("apps/server/src/cloud/a.ts", " * Traces a T3 Connect request"),
+    assert.deepStrictEqual(draft.features, ["fork-agent-integration-identity"]);
+  });
+});
+
+describe("addedLineNumbers", () => {
+  it("numbers the lines each file gains in a zero-context diff", () => {
+    const diff = [
+      "diff --git a/a.ts b/a.ts",
+      "--- a/a.ts",
+      "+++ b/a.ts",
+      "@@ -3,0 +4,2 @@ export const a = 1;",
+      '+const b = "T3 Code";',
+      "+const c = 2;",
+      "@@ -10 +12 @@",
+      "-old",
+      "+new",
+      "diff --git a/docs/user/b.md b/docs/user/b.md",
+      "--- a/docs/user/b.md",
+      "+++ b/docs/user/b.md",
+      "@@ -1 +1 @@",
+      "-T3 Code",
+      "+styal",
+    ].join("\n");
+    assert.deepStrictEqual(
+      [...addedLineNumbers(diff)].map(([path, lines]) => [path, [...lines]]),
+      [
+        ["a.ts", [4, 5, 12]],
+        ["docs/user/b.md", [1]],
+      ],
     );
-    assert.isFalse(namesUpstreamProduct("apps/server/src/cloud/a.ts", "  // a T3 Connect session"));
-    assert.isFalse(
-      namesUpstreamProduct(
-        "apps/server/src/a.test.ts",
-        '  it.effect("exports T3 Connect requests", () =>',
-      ),
-    );
-    assert.isFalse(namesUpstreamProduct("docs/internals/remote.md", "T3 Connect tunnels"));
   });
 });
 
