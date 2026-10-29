@@ -28,6 +28,7 @@ test("keeps current generations and leaves slots without a current entry alone",
     {
       actions_caches: [
         cache(6, old, "2026-10-02", "Windows-X64"),
+        cache(10, current, "2026-08-01", "Windows-X64"),
         cache(7, old, "2026-10-02", "Linux-X64", "refs/pull/1/merge"),
         { id: 8, ref: "refs/heads/main", key: "other-cache" },
         {
@@ -59,7 +60,7 @@ test("keeps current generations and leaves slots without a current entry alone",
       .filter(Boolean)
       .map((line) => JSON.parse(line).id);
   // Slurp produces the same paginated array as gh api --paginate --slurp.
-  assert.deepEqual(select(current), [2, 3]);
+  assert.deepEqual(select(current), [2, 3, 5, 6]);
   assert.deepEqual(select(hash("missing")), []);
 });
 

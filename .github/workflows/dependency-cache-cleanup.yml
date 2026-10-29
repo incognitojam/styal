@@ -42,11 +42,18 @@ jobs:
           git sparse-checkout set --no-cone '/*' '!/.repos/'
           git fetch -q --depth 1 --no-tags origin main
           git checkout -q FETCH_HEAD
+      - name: Resolve dependency hash
+        id: dependency
+        run: |
+          node --input-type=module <<'JS'
+          import { appendFileSync } from 'node:fs';
+          import { dependencyHash } from './.github/actions/setup-deps/dependency-hash.mjs';
+          appendFileSync(process.env.GITHUB_OUTPUT, `hash=${dependencyHash()}\n`);
+          JS
       - name: Delete superseded main dependency caches
         continue-on-error: true
         env:
-          # Keep this hashFiles pattern list identical to setup-deps/action.yml.
-          CURRENT_DEPENDENCY_HASH: ${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', '.npmrc', 'package.json', 'apps/*/package.json', 'apps/mobile/modules/**', 'packages/*/package.json', 'infra/*/package.json', 'scripts/package.json', 'e2e/package.json', 'oxlint-plugin-t3code/package.json', 'patches/**', 'scripts/clean-tsgo-backups.mjs', '.github/actions/setup-deps/**') }}
+          CURRENT_DEPENDENCY_HASH: ${{ steps.dependency.outputs.hash }}
           CURRENT_PNPM_HASH: ${{ hashFiles('pnpm-lock.yaml') }}
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
