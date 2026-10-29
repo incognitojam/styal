@@ -22,6 +22,8 @@ import {
   toolOutputIndicatesFailure,
 } from "@t3tools/shared/toolOutput";
 
+// A checkpoint over vendored or generated trees can list 15k+ files; the card needs a prefix.
+const MAX_WIRE_CHECKPOINT_FILES = 200;
 const MAX_DETAIL_STRING_BYTES = 32_768;
 /** The wire reads only this much command output; storage reads may stop here too. */
 export const COMMAND_OUTPUT_WIRE_PREFIX_LENGTH = MAX_DETAIL_STRING_BYTES;
@@ -146,6 +148,55 @@ function summarizeDynamicValue(value: unknown): unknown {
   };
 }
 
+type CheckpointFiles = Pick<OrchestrationV2Checkpoint, "files" | "filesTotal">;
+
+// Same input, same output object: snapshot compaction relies on shared item identity.
+const cappedCheckpointFiles = new WeakMap<object, object>();
+
+function capCheckpointFiles<T extends CheckpointFiles>(value: T): T {
+  if (value.files.length <= MAX_WIRE_CHECKPOINT_FILES || value.filesTotal !== undefined) {
+    return value;
+  }
+  const cached = cappedCheckpointFiles.get(value);
+  if (cached !== undefined) return cached as T;
+  let additions = 0;
+  let deletions = 0;
+  for (const file of value.files) {
+    additions += file.additions;
+    deletions += file.deletions;
+  }
+  const capped = {
+    ...value,
+    files: value.files.slice(0, MAX_WIRE_CHECKPOINT_FILES),
+    filesTotal: { count: value.files.length, additions, deletions },
+  };
+  cappedCheckpointFiles.set(value, capped);
+  return capped;
+}
+
+/** Idempotent; bounded snapshots that skip `projectThreadProjectionForWire` still need it. */
+export function capProjectionCheckpointFilesForWire(
+  projection: OrchestrationV2ThreadProjection,
+): OrchestrationV2ThreadProjection {
+  const checkpoints = projection.checkpoints.map(capCheckpointFiles);
+  const turnItems = projection.turnItems.map(capCheckpointItemFiles);
+  const visibleTurnItems = projection.visibleTurnItems.map((row) => {
+    const item = capCheckpointItemFiles(row.item);
+    return item === row.item ? row : { ...row, item };
+  });
+  const unchanged = (next: ReadonlyArray<unknown>, previous: ReadonlyArray<unknown>) =>
+    next.every((value, index) => value === previous[index]);
+  return unchanged(checkpoints, projection.checkpoints) &&
+    unchanged(turnItems, projection.turnItems) &&
+    unchanged(visibleTurnItems, projection.visibleTurnItems)
+    ? projection
+    : { ...projection, checkpoints, turnItems, visibleTurnItems };
+}
+
+function capCheckpointItemFiles(item: OrchestrationV2TurnItem): OrchestrationV2TurnItem {
+  return item.type === "checkpoint" ? capCheckpointFiles(item) : item;
+}
+
 export function projectTurnItemForWire(item: OrchestrationV2TurnItem): OrchestrationV2TurnItem {
   // Imported V1 activity stays in persistence as source evidence. Clients render the
   // canonical item fields, and the retained payloads can be far larger than the item.
@@ -154,6 +205,8 @@ export function projectTurnItemForWire(item: OrchestrationV2TurnItem): Orchestra
     return projectTurnItemForWire(projected);
   }
   switch (item.type) {
+    case "checkpoint":
+      return capCheckpointFiles(item);
     case "handoff": {
       const { summary: _summary, ...projected } = item;
       return projected;
@@ -313,6 +366,7 @@ export function projectThreadProjectionForWire(
   };
   return {
     ...projection,
+    checkpoints: projection.checkpoints.map(capCheckpointFiles),
     contextHandoffs: projection.contextHandoffs.map(projectContextHandoffForWire),
     turnItems: projection.turnItems.map(project),
     visibleTurnItems: projection.visibleTurnItems.map((row) => ({
@@ -329,7 +383,9 @@ export function projectDomainEventForWire(
     ? { ...event, payload: projectTurnItemForWire(event.payload) }
     : event.type === "context-handoff.updated"
       ? { ...event, payload: projectContextHandoffForWire(event.payload) }
-      : event;
+      : event.type === "checkpoint.captured"
+        ? { ...event, payload: capCheckpointFiles(event.payload) }
+        : event;
 }
 
 const LIVE_DEDUPE_MEMORY = 32;

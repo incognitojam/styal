@@ -1,6 +1,9 @@
 import { parsePatchFiles } from "@pierre/diffs/utils/parsePatchFiles";
 import type { ChangeTypes, FileDiffMetadata } from "@pierre/diffs/types";
-import type { ThreadCheckpointSummary } from "@t3tools/client-runtime/state/thread-checkpoints";
+import {
+  checkpointFileTotals,
+  type ThreadCheckpointSummary,
+} from "@t3tools/client-runtime/state/thread-checkpoints";
 import type { ReviewDiffPreviewSource } from "@t3tools/contracts";
 import { orderDiffFiles } from "@t3tools/shared/diffFileOrder";
 import { quoteGitPatchPath } from "@t3tools/shared/gitPatchPath";
@@ -115,7 +118,7 @@ function checkpointTitle(checkpoint: ThreadCheckpointSummary): string {
 }
 
 function checkpointSubtitle(checkpoint: ThreadCheckpointSummary): string {
-  const fileCount = checkpoint.files.length;
+  const fileCount = checkpointFileTotals(checkpoint).count;
   if (checkpoint.status !== "ready") {
     return `Diff ${checkpoint.status}`;
   }
