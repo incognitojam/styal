@@ -41,12 +41,13 @@ jobs:
         env:
           # Keep this hashFiles pattern list identical to setup-deps/action.yml.
           CURRENT_DEPENDENCY_HASH: ${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', '.npmrc', 'package.json', 'apps/*/package.json', 'apps/mobile/modules/**', 'packages/*/package.json', 'infra/*/package.json', 'scripts/package.json', 'e2e/package.json', 'oxlint-plugin-t3code/package.json', 'patches/**', 'scripts/clean-tsgo-backups.mjs', '.github/actions/setup-deps/**') }}
+          CURRENT_PNPM_HASH: ${{ hashFiles('pnpm-lock.yaml') }}
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         shell: bash
         run: |
           gh api --paginate --slurp "repos/$GH_REPO/actions/caches?ref=refs/heads/main&per_page=100" > caches.json
-          jq -c --arg current "$CURRENT_DEPENDENCY_HASH" -f .github/scripts/superseded-dependency-caches.jq caches.json > victims.jsonl
+          jq -c --arg current "$CURRENT_DEPENDENCY_HASH" --arg current_pnpm "$CURRENT_PNPM_HASH" -f .github/scripts/superseded-dependency-caches.jq caches.json > victims.jsonl
           while IFS= read -r cache; do
             id=$(jq -r '.id' <<< "$cache")
             echo "Deleting superseded cache: $cache"

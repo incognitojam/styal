@@ -258,7 +258,7 @@ jobs:
         run: vp check
 
       - name: Test nightly release checks
-        run: node --test .github/scripts/check-nightly-release.test.cjs
+        run: node --test .github/scripts/check-nightly-release.test.cjs .github/scripts/superseded-dependency-caches.test.cjs
 
       - name: Check fork feature ledger
         run: vp run --filter @t3tools/scripts ledger:check
