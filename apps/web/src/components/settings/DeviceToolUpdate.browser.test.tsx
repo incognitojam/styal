@@ -24,7 +24,8 @@ vi.mock("~/state/session", async (importOriginal) => ({
   useEnvironmentScope: () => true,
   readEnvironmentScope: () => true,
 }));
-vi.mock("./SettingsScopeContext", () => ({
+vi.mock("./SettingsScopeContext", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./SettingsScopeContext")>()),
   useSettingsScope: () => ({
     scope: { kind: "all", environmentIds: [] },
     search: {},
@@ -54,15 +55,15 @@ vi.mock("./settingsLayout", async (importOriginal) => ({
 vi.mock("../device/DeviceToolVersions", () => ({
   DeviceToolVersions: ({ action }: { action?: ReactNode }) => action ?? null,
 }));
-vi.mock("../device/DeviceHostUpdates", () => ({ DeviceHostUpdates: () => null }));
 vi.mock("./DeviceHostsSettings", () => ({ DeviceHostsSettings: () => null }));
 vi.mock("./EnvironmentDeviceHostsSettings", () => ({ EnvironmentDeviceHostsSettings: () => null }));
 
 import { DeviceIntegrationControls } from "./IntegrationsSettings";
 
 const environmentId = EnvironmentId.make("environment-1");
-const deviceState = {
+const initialDeviceState = {
   supportsToolUpdate: true,
+  supportsHostRetry: true,
   hosts: [
     {
       id: LOCAL_DEVICE_HOST_ID,
@@ -86,6 +87,7 @@ const deviceState = {
   hubBasePath: "/device-hub",
   revision: 1,
 } satisfies DeviceServiceState;
+let deviceState: DeviceServiceState;
 
 let root: Root | undefined;
 let container: HTMLDivElement | undefined;
@@ -93,6 +95,7 @@ let container: HTMLDivElement | undefined;
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   list.mockReset();
+  deviceState = structuredClone(initialDeviceState);
 });
 
 afterEach(async () => {
@@ -144,5 +147,50 @@ it.each([
 
     expect(list).toHaveBeenCalledWith({ environmentId, input: { updateTool: "hub" } });
     expect(container.querySelector('[role="alert"]')?.textContent).toBe(message);
+  },
+);
+
+it.each(["installing", "starting", "failed"] as const)(
+  "keeps %s feedback visible with maintenance collapsed",
+  async (status) => {
+    const detail =
+      status === "failed" ? "Device tools could not install." : "Preparing device tools…";
+    deviceState = {
+      ...deviceState,
+      hostStatus: status,
+      hostStatuses: { [LOCAL_DEVICE_HOST_ID]: { status, detail } },
+    };
+    list.mockResolvedValue({ _tag: "Success", value: deviceState });
+    container = document.body.appendChild(document.createElement("div"));
+    root = createRoot(container);
+    await act(() =>
+      root!.render(
+        <DeviceIntegrationControls
+          environmentId={environmentId}
+          enabled
+          agentAccessEnabled={false}
+        />,
+      ),
+    );
+
+    const maintenance = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("Device maintenance"),
+    );
+    expect(maintenance?.getAttribute("aria-expanded")).toBe("false");
+    const feedback = [
+      ...container.querySelectorAll<HTMLElement>('[role="alert"], [role="status"]'),
+    ].find((element) => element.textContent?.includes(detail));
+    expect(feedback?.checkVisibility()).toBe(true);
+    if (status === "failed") {
+      const retry = [...container.querySelectorAll("button")].find(
+        (button) => button.textContent === "Retry",
+      );
+      expect(retry?.checkVisibility()).toBe(true);
+      await act(async () => retry!.click());
+      expect(list).toHaveBeenCalledWith({
+        environmentId,
+        input: { retryHostId: LOCAL_DEVICE_HOST_ID },
+      });
+    }
   },
 );

@@ -10,6 +10,58 @@ import * as ClientFeatureUsage from "./ClientFeatureUsage.ts";
 const decode = Schema.decodeUnknownEffect(ForkClientUsageInput);
 const isUsage = Schema.is(ForkClientUsageInput);
 
+it.effect("records integration setting requests without environment names or setting values", () =>
+  Effect.gen(function* () {
+    const events: unknown[] = [];
+    const report = yield* ClientFeatureUsage.reporter({ surface: "web" }).pipe(
+      Effect.provideService(AnalyticsService.AnalyticsService, {
+        record: (event, properties) =>
+          Effect.sync(() => {
+            events.push({ event, properties });
+          }),
+        flush: Effect.void,
+      }),
+    );
+    for (const setting of [
+      "browser_access",
+      "device_support",
+      "device_access",
+      "device_idle_shutdown",
+      "device_sharing",
+    ] as const) {
+      for (const settingScope of ["environment", "project"] as const) {
+        const input = {
+          feature: "integration-settings",
+          action: "change_requested",
+          setting,
+          settingScope,
+        } as const;
+        yield* report(
+          yield* decode({ ...input, environment: "Synthetic device host", value: true }),
+        );
+        expect(events.at(-1)).toEqual({
+          event: "feature.used",
+          properties: {
+            ...input,
+            source: "user",
+            surface: "web",
+            forkClientUsageVersion: FORK_CLIENT_USAGE_VERSION,
+          },
+        });
+      }
+    }
+    expect(events).toHaveLength(10);
+    expect(
+      isUsage({
+        feature: "integration-settings",
+        action: "change_requested",
+        setting: "arbitrary",
+        settingScope: "environment",
+      }),
+    ).toBe(false);
+  }),
+);
+
 it.effect(
   "records deployment interactions with bounded outcomes and no PR or environment content",
   () =>

@@ -134,3 +134,36 @@ export function useSettingsScope() {
   if (scope === null) throw new Error("Settings scope must be read inside SettingsScopeProvider.");
   return scope;
 }
+
+/** Reuse the page's project inventory while controls target one explicit environment. */
+export function SettingsEnvironmentScope({
+  environmentId,
+  onChange,
+  children,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly onChange: (next: SettingsScopeSearch) => void;
+  readonly children: ReactNode;
+}) {
+  const parent = useSettingsScope();
+  const search = { machine: environmentId };
+  const scope = resolveSettingsScope(search, parent.groups, parent.environments);
+  const selected = selectScopedSettingsEnvironments(scope, parent.environments, environmentId);
+  const targets = resolveScopedSettingsTargets(scope, selected.connectedEnvironments);
+  return (
+    <SettingsScopeContext
+      value={{
+        ...parent,
+        ...selected,
+        scope,
+        search,
+        targets,
+        target: targets[0] ?? null,
+        singleEnvironment: true,
+        selectScope: onChange,
+      }}
+    >
+      {children}
+    </SettingsScopeContext>
+  );
+}

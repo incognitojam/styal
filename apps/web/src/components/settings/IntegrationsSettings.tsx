@@ -1,6 +1,6 @@
 import { DeviceHostUpdates } from "../device/DeviceHostUpdates";
 import { DeviceToolVersions } from "../device/DeviceToolVersions";
-import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
+import { reportForkClientUsage } from "~/forkClientUsage";
 import { ScopedSwitch } from "./ScopedSwitch";
 import { DeviceHostsSettings } from "./DeviceHostsSettings";
 import { EnvironmentDeviceHostsSettings } from "./EnvironmentDeviceHostsSettings";
@@ -16,6 +16,7 @@ import { SimulatorMemorySetting } from "./SimulatorMemorySetting";
  */
 import {
   AuthSettingsWriteScope,
+  resolveEnvironmentMachineKind,
   BrowserImportFailureReason,
   BROWSER_PROFILE_MAX_COUNT,
   type BrowserLinkTarget,
@@ -33,7 +34,6 @@ import {
   DEFAULT_BROWSER_VIEWPORT,
   DEFAULT_PREVIEW_APPEARANCE,
   DEFAULT_PREVIEW_ZOOM_FACTOR,
-  DEFAULT_SERVER_SETTINGS,
   FILL_PREVIEW_VIEWPORT,
   PREVIEW_VIEWPORT_MAX_AREA,
   PREVIEW_VIEWPORT_MAX_DIMENSION,
@@ -50,13 +50,18 @@ import { isValidSearchUrlTemplate } from "@t3tools/shared/preview";
 import { PREVIEW_VIEWPORT_PRESETS } from "@t3tools/shared/previewViewport";
 import { MoreVertical, Plus as PlusIcon } from "lucide-react";
 import { useRef, useState } from "react";
+import { Link, useNavigate } from "@tanstack/react-router";
 
 import { ScreenRotationIcon } from "~/browser/ScreenRotationIcon";
 import { AnimatedHeight } from "~/components/AnimatedHeight";
 import { resolveEnvironmentOptionLabel } from "~/components/BranchToolbar.logic";
 import { previewBridge } from "~/components/preview/previewBridge";
 import { cn, randomUUID } from "~/lib/utils";
-import { useEnvironments, usePrimaryEnvironment } from "~/state/environments";
+import {
+  useEnvironments,
+  usePrimaryEnvironment,
+  type EnvironmentPresentation,
+} from "~/state/environments";
 import { deviceEnvironment, useDeviceState } from "~/state/device";
 import { readEnvironmentScope, useEnvironmentScope } from "~/state/session";
 import { useAtomCommand } from "~/state/use-atom-command";
@@ -70,8 +75,6 @@ import {
   deviceHubReadiness,
   PlatformStatus,
   platformSetupStatus,
-  deviceHubDescription,
-  agentDeviceDescription,
 } from "~/components/device/DeviceSetup";
 import { isElectron } from "../../env";
 
@@ -127,7 +130,12 @@ import {
   SettingsSection,
 } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
-import { useSettingsScope } from "./SettingsScopeContext";
+import { SettingsEnvironmentScope } from "./SettingsScopeContext";
+import { AgentBrowserAccessSetting } from "./AgentAccessSettings";
+import { EnvironmentRow, environmentTransportLabel } from "./EnvironmentRow";
+import { SettingsGroup } from "./SettingsGroup";
+import { FoldedSettingsSection } from "./FoldedSettingsSection";
+import { settingsScopeEnvironmentLabels } from "./settingsScopeAxis";
 import { BrowserImportWizard, type WizardTarget } from "./BrowserImportWizard";
 import type { ImportOutcome } from "./browserImportWizard.logic";
 
@@ -811,42 +819,18 @@ function PullRequestLinksOpenInAppSetting() {
   );
 }
 
-function DeviceIntegrationSettings() {
-  const { search, environment: selected } = useSettingsScope();
-  const settings = useScopedSettings();
-  const connected = selected?.connection.phase === "connected" && selected.serverConfig !== null;
-  const environmentId = connected ? selected.environmentId : null;
-
-  return (
-    <SettingsSection id="devices" title="Devices">
-      <DeviceIntegrationControls
-        key={`${environmentId}:${JSON.stringify(search)}`}
-        environmentId={environmentId}
-        enabled={settings.enableDeviceSupport}
-        agentAccessEnabled={settings.enableAgentDeviceAccess}
-      />
-    </SettingsSection>
-  );
-}
-
 export function DeviceIntegrationControls({
   environmentId,
   enabled,
   agentAccessEnabled,
 }: {
-  environmentId: EnvironmentId | null;
+  environmentId: EnvironmentId;
   enabled: boolean;
   agentAccessEnabled: boolean;
 }) {
   const canConfigure = useEnvironmentScope(environmentId, AuthSettingsWriteScope);
   const { state, loaded } = useDeviceState(environmentId);
-  const { scope, environments, connectedEnvironments } = useSettingsScope();
-  const updateSettings = useUpdateScopedSettings();
-  const projectScope = scope.kind === "project" || scope.kind === "checkout";
-  const anyHubEnabled = connectedEnvironments.some(
-    (environment) => environment.serverConfig?.settings.enableDeviceSupport,
-  );
-  const configure = useAtomCommand(deviceEnvironment.configure, { reportFailure: false });
+  const configure = useAtomCommand(deviceEnvironment.configure);
   const list = useAtomCommand(deviceEnvironment.list, { reportFailure: false });
   const [pending, setPending] = useState<
     "hub" | "check" | "agent" | "update-hub" | "update-agent" | null
@@ -870,34 +854,18 @@ export function DeviceIntegrationControls({
     kind: NonNullable<typeof pending>,
     input: { enabled?: boolean; agentAccessEnabled?: boolean },
   ) => {
-    if (!environmentId || !readEnvironmentScope(environmentId, AuthSettingsWriteScope)) return;
-    setPending(kind);
-    const results = await Promise.allSettled(
-      environments.map(async (environment) => {
-        if (environment.connection.phase !== "connected" || !environment.serverConfig) {
-          throw new Error("Environment disconnected");
-        }
-        if (!readEnvironmentScope(environment.environmentId, AuthSettingsWriteScope)) {
-          throw new Error("This connection cannot change device settings.");
-        }
-        return configure({
-          environmentId: environment.environmentId,
-          input: { ...input, ...(input.enabled ? { onboardingCompleted: true } : {}) },
-        });
-      }),
-    );
-    setPending(null);
-    const failed = environments.filter((_, index) => {
-      const result = results[index];
-      return result?.status !== "fulfilled" || result.value._tag === "Failure";
+    if (!readEnvironmentScope(environmentId, AuthSettingsWriteScope)) return;
+    void reportForkClientUsage(environmentId, {
+      feature: "integration-settings",
+      action: "change_requested",
+      setting: kind === "hub" ? "device_support" : "device_access",
+      settingScope: "environment",
     });
-    if (failed.length > 0) {
-      toastManager.add({
-        type: "error",
-        title: "Device settings not saved on all environments",
-        description: `Could not update ${failed.map((environment) => environment.label).join(", ")}.`,
-      });
-    }
+    setPending(kind);
+    await configure({
+      environmentId,
+      input: { ...input, ...(input.enabled ? { onboardingCompleted: true } : {}) },
+    }).finally(() => setPending(null));
   };
 
   const [updateError, setUpdateError] = useState<{ tool: "hub" | "agent"; message: string } | null>(
@@ -913,9 +881,8 @@ export function DeviceIntegrationControls({
           {state.supportsToolUpdate && needsUpdate ? (
             <Button
               size="sm"
-              disabled={!environmentId || pending !== null || busy}
+              disabled={pending !== null || busy}
               onClick={() => {
-                if (!environmentId) return;
                 setUpdateError(null);
                 setPending(`update-${tool}`);
                 void list({ environmentId, input: { updateTool: tool } })
@@ -933,9 +900,8 @@ export function DeviceIntegrationControls({
             <Button
               size="sm"
               variant="outline"
-              disabled={!environmentId || pending !== null || busy}
+              disabled={pending !== null || busy}
               onClick={() => {
-                if (!environmentId) return;
                 setPending("check");
                 void list({ environmentId, input: { inspectOnly: true } }).finally(() =>
                   setPending(null),
@@ -959,9 +925,10 @@ export function DeviceIntegrationControls({
     <>
       <SettingsRow
         {...searchableSetting("device-hub")}
+        id={`device-hub-${environmentId}`}
         serverScoped
         settingKeys={["enableDeviceSupport"]}
-        description={deviceHubDescription}
+        description="Open local and shared simulators and emulators on this environment."
         control={
           <>
             <DeviceToolVersions
@@ -973,14 +940,7 @@ export function DeviceIntegrationControls({
             <ScopedSwitch
               settingKeys={["enableDeviceSupport"]}
               checked={enabled}
-              disabled={
-                !canConfigure ||
-                projectScope ||
-                !loaded ||
-                !environmentId ||
-                busy ||
-                pending !== null
-              }
+              disabled={!canConfigure || !loaded || busy || pending !== null}
               aria-label="Device hub"
               onCheckedChange={(checked) =>
                 void update("hub", {
@@ -996,11 +956,7 @@ export function DeviceIntegrationControls({
         {platformsRevealed ? (
           <SettingsRow
             {...searchableSetting("device-platform-support")}
-            description={
-              connectedEnvironments.length > 1
-                ? `Status for ${connectedEnvironments.find((environment) => environment.environmentId === environmentId)?.label}. Select an environment to inspect its simulator support.`
-                : undefined
-            }
+            id={`device-platform-support-${environmentId}`}
             status={
               <div className="flex flex-wrap gap-x-5 gap-y-2">
                 <PlatformStatus compact platform="iOS" status={platformSetupStatus(state, "ios")} />
@@ -1015,9 +971,8 @@ export function DeviceIntegrationControls({
               <Button
                 size="sm"
                 variant="outline"
-                disabled={!environmentId || !enabled || busy || pending !== null}
+                disabled={!enabled || busy || pending !== null}
                 onClick={() => {
-                  if (!environmentId) return;
                   setPending("check");
                   void list({ environmentId, input: {} }).finally(() => setPending(null));
                 }}
@@ -1030,9 +985,10 @@ export function DeviceIntegrationControls({
       </AnimatedHeight>
       <SettingsRow
         {...searchableSetting("agent-device-access")}
+        id={`agent-device-access-${environmentId}`}
         serverScoped
         settingKeys={["enableAgentDeviceAccess"]}
-        description={agentDeviceDescription}
+        description="Allow agents on this environment to start and control devices."
         control={
           <>
             <DeviceToolVersions
@@ -1044,73 +1000,29 @@ export function DeviceIntegrationControls({
             <ScopedSwitch
               settingKeys={["enableAgentDeviceAccess"]}
               checked={agentAccessEnabled}
-              disabled={
-                !canConfigure ||
-                connectedEnvironments.length === 0 ||
-                (!projectScope && (!loaded || !anyHubEnabled || busy)) ||
-                pending !== null
-              }
+              disabled={!canConfigure || !loaded || !enabled || busy || pending !== null}
               aria-label="Agent device access"
               onCheckedChange={(checked) =>
-                projectScope
-                  ? updateSettings({ enableAgentDeviceAccess: Boolean(checked) })
-                  : void update("agent", { agentAccessEnabled: Boolean(checked) })
+                void update("agent", { agentAccessEnabled: Boolean(checked) })
               }
             />
           </>
         }
       />
-      <DeviceIdleShutdownSetting disabled={projectScope || !environmentId || !enabled} />
-      <SimulatorMemorySetting />
-      {environmentId ? (
-        <DeviceHostUpdates
-          state={{ ...state, hosts: state.hosts.filter((host) => host.kind === "local") }}
-          environmentId={environmentId}
-        />
-      ) : null}
       <EnvironmentDeviceHostsSettings />
+      <DeviceHostUpdates
+        state={{ ...state, hosts: state.hosts.filter((host) => host.kind === "local") }}
+        environmentId={environmentId}
+      />
+      <FoldedSettingsSection id={`device-maintenance-${environmentId}`} title="Device maintenance">
+        <DeviceIdleShutdownSetting
+          id={`device-idle-shutdown-${environmentId}`}
+          disabled={!enabled}
+        />
+        <SimulatorMemorySetting />
+      </FoldedSettingsSection>
       <DeviceHostsSettings environmentId={environmentId} />
     </>
-  );
-}
-
-function AgentBrowserAccessSetting() {
-  const { scope } = useSettingsScope();
-  const settings = useScopedSettings();
-  const updateSettings = useUpdateScopedSettings();
-  const isProjectScope = scope.kind === "project" || scope.kind === "checkout";
-
-  return (
-    <SettingsRow
-      serverScoped
-      settingKeys={["enableAgentBrowserAccess"]}
-      {...searchableSetting("agent-browser-access")}
-      description={
-        isProjectScope
-          ? "Allow agents in this project to use the shared browser. Applies when the agent session next starts."
-          : "Allow agents to use the shared browser. Projects can override it."
-      }
-      resetAction={
-        settings.enableAgentBrowserAccess !== DEFAULT_SERVER_SETTINGS.enableAgentBrowserAccess ? (
-          <SettingResetButton
-            label="default browser access"
-            onClick={() =>
-              updateSettings({
-                enableAgentBrowserAccess: DEFAULT_SERVER_SETTINGS.enableAgentBrowserAccess,
-              })
-            }
-          />
-        ) : null
-      }
-      control={
-        <ScopedSwitch
-          settingKeys={["enableAgentBrowserAccess"]}
-          aria-label="Agent browser access"
-          checked={settings.enableAgentBrowserAccess}
-          onCheckedChange={(enabled) => updateSettings({ enableAgentBrowserAccess: enabled })}
-        />
-      }
-    />
   );
 }
 
@@ -1612,6 +1524,7 @@ function BrowserProfilesSetting({ disabled }: { readonly disabled: boolean }) {
 }
 
 export function IntegrationsSettingsPanel() {
+  const { environments } = useEnvironments();
   const previewDefaultsDisabled = !isElectron;
   const previewDefaults = (
     <>
@@ -1628,8 +1541,16 @@ export function IntegrationsSettingsPanel() {
 
   return (
     <SettingsPageContainer>
-      <SettingsSection id="browser" title="Browser">
-        <AgentBrowserAccessSetting />
+      <FoldedSettingsSection
+        id="browser"
+        title={
+          <>
+            <span>Browser preferences</span>
+            <span className="text-xs text-muted-foreground">This client</span>
+          </>
+        }
+        headerPlacement="outside"
+      >
         {previewDefaultsDisabled ? (
           <SettingsUnavailableGroup message="Only available in the desktop app.">
             {previewDefaults}
@@ -1640,8 +1561,111 @@ export function IntegrationsSettingsPanel() {
         {/* Not desktop-only: web clients search from server-run browser tabs too. */}
         <BrowserSearchEngineSetting />
         <PullRequestLinksOpenInAppSetting />
+      </FoldedSettingsSection>
+      <SettingsSection id="devices" title="Environments" variant="plain">
+        <div className="space-y-3">
+          {environments.length === 0 ? (
+            <SettingsRow
+              title="Connect an environment"
+              description="Connect an environment to set up agent browser and device access."
+              control={
+                <Button variant="outline" size="sm" render={<Link to="/settings/connections" />}>
+                  Connections
+                </Button>
+              }
+            />
+          ) : null}
+          {environments.map((environment) => {
+            const connected =
+              environment.connection.phase === "connected" && environment.serverConfig !== null;
+            const loading =
+              environment.connection.phase === "connecting" ||
+              environment.connection.phase === "reconnecting" ||
+              environment.connection.phase === "connected";
+            const connectionLabel = connected
+              ? "Connected"
+              : loading
+                ? "Connecting"
+                : environment.connection.phase === "error" ||
+                    environment.connection.phase === "unsupported"
+                  ? "Needs attention"
+                  : environment.connection.phase === "available"
+                    ? "Not connected"
+                    : "Offline";
+            const labels = settingsScopeEnvironmentLabels(environment, environments);
+            return (
+              <section
+                key={environment.environmentId}
+                id={`integration-environment-${environment.environmentId}`}
+                aria-label={`${labels.primary} integrations`}
+              >
+                <SettingsGroup>
+                  <EnvironmentRow
+                    kind={resolveEnvironmentMachineKind(environment.serverConfig)}
+                    label={labels.primary}
+                    subtitle={labels.secondary || environmentTransportLabel(environment)}
+                    className="rounded-t-xl bg-muted/30"
+                  >
+                    <Badge variant={connected ? "success" : "secondary"}>{connectionLabel}</Badge>
+                  </EnvironmentRow>
+                  {connected ? (
+                    <EnvironmentIntegrationControls environment={environment} />
+                  ) : (
+                    <SettingsRow
+                      title={
+                        loading
+                          ? "Waiting for environment settings"
+                          : environment.connection.phase === "available"
+                            ? "Environment not connected"
+                            : "Environment disconnected"
+                      }
+                      description={
+                        loading
+                          ? "Settings will appear when this environment is ready."
+                          : environment.connection.phase === "available"
+                            ? "Connect this environment to inspect and change its integration settings."
+                            : "Reconnect this environment to inspect and change its integration settings."
+                      }
+                      control={
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          render={<Link to="/settings/connections" />}
+                        >
+                          Manage connection
+                        </Button>
+                      }
+                    />
+                  )}
+                </SettingsGroup>
+              </section>
+            );
+          })}
+        </div>
       </SettingsSection>
-      <DeviceIntegrationSettings />
     </SettingsPageContainer>
+  );
+}
+
+function EnvironmentIntegrationControls({
+  environment,
+}: {
+  readonly environment: EnvironmentPresentation;
+}) {
+  const navigate = useNavigate();
+  return (
+    <SettingsEnvironmentScope
+      environmentId={environment.environmentId}
+      onChange={(search) => {
+        void navigate({ to: "/settings/projects", search: () => search });
+      }}
+    >
+      <AgentBrowserAccessSetting id={`agent-browser-access-${environment.environmentId}`} />
+      <DeviceIntegrationControls
+        environmentId={environment.environmentId}
+        enabled={environment.serverConfig?.settings.enableDeviceSupport ?? false}
+        agentAccessEnabled={environment.serverConfig?.settings.enableAgentDeviceAccess ?? false}
+      />
+    </SettingsEnvironmentScope>
   );
 }

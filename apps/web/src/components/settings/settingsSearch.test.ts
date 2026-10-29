@@ -406,7 +406,15 @@ describe("searchSettings", () => {
       id: "browser-recording-frame-rate",
       to: "/settings/integrations",
     });
-    expect(result).not.toHaveProperty("targetId");
+    expect(result).toHaveProperty("targetId", "browser");
+  });
+
+  it("opens browser preferences for search engine results", () => {
+    expect(searchSettings("search engine")[0]).toMatchObject({
+      id: "browser-search-engine",
+      to: "/settings/integrations",
+      targetId: "browser",
+    });
   });
 
   it("routes where links open to integrations", () => {
@@ -421,7 +429,7 @@ describe("searchSettings", () => {
     expect(searchSettings("default profile")[0]).toMatchObject({
       id: "browser-default-profile",
       to: "/settings/integrations",
-      targetId: "browser-profiles",
+      targetId: "browser",
     });
   });
 

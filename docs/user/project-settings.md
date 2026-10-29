@@ -2,7 +2,8 @@
 
 On web and desktop, the "Applying settings for …" sentence at the top of Settings pages picks
 the project and environment a change applies to. Pages that only hold device preferences, such as
-Appearance, don't show it. They start at **All projects** and **All environments**
+Appearance, don't show it. Integrations lists every environment explicitly and has no scope filters.
+The filters start at **All projects** and **All environments**
 and stay selected as you move between categories or search for a setting.
 
 Preferences saved on this device, such as appearance, confirmations and browser profiles, always
@@ -25,7 +26,8 @@ click a project to jump to it, or **Reset all** to make those projects follow th
 again.
 
 Providers and diagnostics are per machine: they show one environment at a time, the primary
-one until you pick another. Every other setting fans out to the selection.
+one until you pick another. Integrations shows each environment's setup and changes only the
+environment whose controls you use. Other server settings fan out to the selection.
 
 With a project selected, a provider's switch in **Settings → Providers** turns it on or off for
 that project only, in either direction: a provider off on the machine can be used in one project,
@@ -123,10 +125,13 @@ than** on the task.
 
 ## Defaults and inheritance
 
-General contains the model and workspace for new threads. Integrations controls agent browser
-access. Source Control contains automatic pull, the default pull request merge method and text
-generation. The same rows edit environment defaults or project overrides depending on the
-project crumb.
+General contains the model and workspace for new threads. Integrations controls browser and device
+access separately for each environment; its browser preferences apply to this client. Source Control
+contains automatic pull, the default pull request merge method and text generation. General and
+Source Control edit environment defaults or project overrides depending on the project crumb.
+
+To override browser or device access for a project, select it in **Settings → Projects** and use
+**Agent access**; its simulator memory mode is under **Devices**. Reset an override to follow the environment again. Existing overrides keep their values.
 
 The Project category, shown while a project is selected, holds the project's name, icon,
 additional instructions, actions, checkouts and removal. Actions belong to a project: editing them

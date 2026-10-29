@@ -105,9 +105,17 @@ vi.mock(import("~/lib/composerDraftUploads"), async (original) => ({
   releaseProjectDraftUploads: state.releaseUploads,
 }));
 // Sections with their own data sources and tests; this file covers project permissions.
+vi.mock(import("./AgentAccessSettings"), async (original) => ({
+  ...(await original()),
+  ProjectAgentAccessSettings: (() => null) as never,
+}));
 vi.mock(import("./ProjectDefaultsSettings"), async (original) => ({
   ...(await original()),
   ProjectDefaultsSettings: (() => null) as never,
+}));
+vi.mock(import("./SimulatorMemorySetting"), async (original) => ({
+  ...(await original()),
+  ProjectSimulatorMemorySettings: (() => null) as never,
 }));
 vi.mock(import("./ProjectActionsSettings"), async (original) => ({
   ...(await original()),

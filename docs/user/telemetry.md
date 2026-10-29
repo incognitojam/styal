@@ -12,6 +12,10 @@ and its duration. It does not include visited URLs, page content, screenshots, s
 input, or evaluated code. Device panel actions and agent device tools record their operation and
 outcome, whether the device is local or remote when known, and its platform when reported. Device
 names, identifiers, screenshots and action arguments are not collected.
+Web and desktop integration settings record requests to change browser access, device support,
+agent device access, idle shutdown, or sharing, and whether the control applies to an environment
+or project. These requests do not report whether a save succeeded. Environment and project names,
+addresses, identifiers, and chosen values are not collected.
 Hardware tools and the hardware lease controls in Settings and the thread header record their
 operation, its outcome, and for an agent's device call the action's access tier. Device names,
 addresses, action names, arguments, responses and uploaded files are not collected, and calls
