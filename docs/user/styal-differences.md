@@ -74,6 +74,13 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   [revision adb0420](https://github.com/pingdotgg/t3code/tree/adb04202b25c1c45255e76be9f03f0b346b9c5c4).
   [Send while the agent is working](./composer.md#send-while-the-agent-is-working).
 
+- **Agents can wait for a group of delegated tasks.** An agent that delegates several tasks can ask
+  to be woken once, when all of them have finished, instead of once per task. A failed task or a
+  question from a child still wakes it early, and an optional timeout wakes it with the tasks that
+  are still running. T3 Code wakes the parent once per finished task as of
+  [revision a42bdd4](https://github.com/pingdotgg/t3code/tree/a42bdd4e516433a16650b9401ab3c066544ca5cd),
+  checked October 29, 2026.
+
 - **An Auto default fits each provider.** With **Auto** as the default for new threads, Claude,
   Codex, and Grok threads start in **Auto**, where the provider's own reviewer approves routine
   actions, and providers without automatic review start in **Full access** instead of asking about

@@ -1989,6 +1989,9 @@ const make = Effect.gen(function* () {
           "Delegated tasks require an active run owned by this MCP provider session.",
         );
       }
+      if (input.wakeAfterMs !== undefined && input.wake !== "all") {
+        return yield* failure("invalid_request", "wakeAfterMs applies only with wake=all.");
+      }
       const providers = yield* loadProviders;
       const key = yield* requestKey(input.clientRequestId);
       const commandId = stableCommandId({
@@ -2064,6 +2067,8 @@ const make = Effect.gen(function* () {
           // delegations deliver through the blocking tool call, so a wake is
           // only needed if the parent settled first (timeout, disconnect).
           completionWake: input.mode === "wait" ? "settled_only" : "always",
+          ...(input.wake === "all" ? { wakeWhen: "all" as const } : {}),
+          ...(input.wakeAfterMs === undefined ? {} : { wakeAfterMs: input.wakeAfterMs }),
         })
         .pipe(
           Effect.mapError((error) =>

@@ -179,6 +179,7 @@ function commandThreadIds(command: OrchestrationV2Command): ReadonlyArray<Thread
     case "thread.user-input.dismiss":
     case "checkpoint.rollback":
     case "provider.switch":
+    case "delegated_task.wake-timeout":
       return [command.threadId];
     case "delegated_task.request":
     case "delegated_task.wake-policy":

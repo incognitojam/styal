@@ -540,6 +540,25 @@ export const layerExecutor: Layer.Layer<
                     }),
                 ),
               );
+          case "delegated-task.wake-timeout":
+            return threads
+              .dispatch({
+                type: "delegated_task.wake-timeout",
+                commandId: CommandId.make(`${effect.commandId}:wake-timeout`),
+                threadId: effect.threadId,
+                taskId: effect.request.taskId,
+              })
+              .pipe(
+                Effect.asVoid,
+                Effect.mapError(
+                  (cause) =>
+                    new OrchestrationEffectExecutionError({
+                      effectId: effect.id,
+                      effectType: effect.request.type,
+                      cause,
+                    }),
+                ),
+              );
         }
       },
     });

@@ -7,6 +7,7 @@ import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import * as OrchestratorMcpService from "../../OrchestratorMcpService.ts";
 import * as ThreadMetadataMcpService from "../../ThreadMetadataMcpService.ts";
+import * as DelegatedWakeUsage from "../../../telemetry/DelegatedWakeUsage.ts";
 
 const handlers = {
   orchestrator_capabilities: McpToolAccess.reads(() =>
@@ -151,4 +152,7 @@ const handlers = {
   ),
 } satisfies McpToolAccess.Handlers<typeof OrchestratorToolkit.tools>;
 
-export const layer = McpToolAccess.toLayer(OrchestratorToolkit, handlers);
+export const layer = McpToolAccess.toLayer(
+  OrchestratorToolkit,
+  McpToolAccess.wrapHandlers(handlers, DelegatedWakeUsage.observeHandlers),
+);
