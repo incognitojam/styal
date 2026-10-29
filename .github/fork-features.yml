@@ -1256,7 +1256,7 @@ features:
   - id: device-environment-hosts
     title: Share local devices between connected environments
     status: maintained
-    prs: [746, 805]
+    prs: [746, 805, 1171]
     invariants:
       - New remote device setup in settings uses environment sharing. Web and desktop hide SSH host configuration unless their connected environment has saved hosts, which remain editable and removable in a collapsed section. Editing or removing saved hosts only changes matching entries on connected environments; settings do not offer adding SSH hosts.
       - Web, desktop, and mobile clients with settings:write on both environments can authorize an already connected environment as a device host without SSH configuration; devices:operate stays in the legacy wire vocabulary for older clients.
