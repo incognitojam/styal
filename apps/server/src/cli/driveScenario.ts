@@ -83,7 +83,7 @@ const prepareScenario = Effect.fn("drive.prepareScenario")(function* (
 export const driveScenarioCommand = Command.make("scenario", {
   file: Argument.String("file").pipe(Argument.withDescription("Version 2 scenario JSON file.")),
   homeDir: Flag.String("home-dir").pipe(
-    Flag.withDescription("New, nonexistent T3 home to populate. Existing paths are refused."),
+    Flag.withDescription("New, nonexistent styal home to populate. Existing paths are refused."),
   ),
 }).pipe(
   Command.withDescription(

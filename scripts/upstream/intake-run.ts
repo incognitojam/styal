@@ -26,6 +26,14 @@ import * as NodeURL from "node:url";
 import { parse as parseYaml } from "yaml";
 
 import {
+  findUpstreamNames,
+  isCheckedSource,
+  namesUpstreamProductText,
+  renameRepositoryUpstreamNames,
+  upstreamNamesRenamed,
+} from "../upstream-naming.ts";
+
+import {
   changedLinesByFile,
   cherryPickSources,
   compareWithUpstream,
@@ -161,6 +169,7 @@ function sleep(milliseconds: number) {
 export type AdaptationKind =
   | "rerere"
   | "identity"
+  | "naming"
   | "upstream-rename"
   | "additions"
   | "fork-deletion"
@@ -645,32 +654,22 @@ function moveLedgerPathsForStagedRenames(cwd: string): ReadonlyArray<Adaptation>
   return [{ kind: "ledger-paths", path: LEDGER, detail: String(result.moved) }];
 }
 
-/** Code whose strings agents or users read: tool text, instructions, contracts, and client UI. */
-const PRODUCT_FACING =
-  /^(apps\/server\/src\/(mcp|provider|orchestration-v2)\/|packages\/contracts\/src\/|apps\/(web|mobile|desktop)\/src\/)/u;
-const UPSTREAM_PRODUCT = /\bT3 Code\b|\bT3 Connect\b|\bT3 home\b|t3-code MCP server/u;
-
-/** Lines the pick adds that name upstream's product where agents or users read them. */
-function identityReview(cwd: string): ReadonlyArray<string> {
-  const diff = git(cwd, ["diff", "--cached", "-U0", "HEAD"]);
-  const findings: Array<string> = [];
-  let path = "";
-  for (const line of diff.split("\n")) {
-    const header = /^\+\+\+ b\/(.+)$/u.exec(line);
-    if (header) {
-      path = header[1]!;
-      continue;
-    }
-    if (
-      line.startsWith("+") &&
-      PRODUCT_FACING.test(path) &&
-      !/\.test\.tsx?$/u.test(path) &&
-      UPSTREAM_PRODUCT.test(line)
-    ) {
-      findings.push(`${path}: ${line.slice(1).trim().slice(0, 160)}`);
-    }
-  }
-  return findings;
+/**
+ * Gives upstream's names in the strings the pick adds the fork's names, as `naming:check` requires,
+ * along with the pick's test assertions that quote them.
+ */
+function renameStagedUpstreamNames(cwd: string): ReadonlyArray<Adaptation> {
+  const renamed = renameRepositoryUpstreamNames(
+    cwd,
+    addedLineNumbers(git(cwd, ["diff", "--cached", "-U0", "HEAD"])),
+  );
+  if (renamed.size === 0) return [];
+  git(cwd, ["add", "--", ...renamed.keys()]);
+  return [...renamed].map(([path, renames]) => ({
+    kind: "naming" as const,
+    path,
+    detail: upstreamNamesRenamed(renames).join(", "),
+  }));
 }
 
 /**
@@ -813,13 +812,16 @@ export function pickUpstreamCommit(
       new Set(unresolved.map((file) => file.path)),
     ),
   );
-  if (unresolved.length === 0) adaptations.push(...moveLedgerPathsForStagedRenames(cwd));
+  if (unresolved.length === 0) {
+    adaptations.push(...moveLedgerPathsForStagedRenames(cwd));
+    adaptations.push(...renameStagedUpstreamNames(cwd));
+  }
   return {
     upstreamSha,
     status: unresolved.length > 0 ? "stopped" : conflicts.length > 0 ? "resolved" : "clean",
     adaptations,
     unresolved,
-    identityReview: unresolved.length > 0 ? [] : identityReview(cwd),
+    identityReview: unresolved.length > 0 ? [] : addedUpstreamNames(cwd),
     ...(lockfile ? { lockfile } : {}),
   };
 }
@@ -850,6 +852,23 @@ export function draftAdaptationNote(
     );
     features.add(
       identity.some((adaptation) => AGENT_PATHS.test(adaptation.path))
+        ? "fork-agent-integration-identity"
+        : "fork-distribution-identity",
+    );
+  }
+  const naming = adaptations.filter((adaptation) => adaptation.kind === "naming");
+  if (naming.length > 0) {
+    const renames = [
+      ...new Set(naming.flatMap((adaptation) => (adaptation.detail ?? "").split(", "))),
+    ]
+      .filter((rename) => rename !== "")
+      .map((rename) => `\`${rename.replace(" -> ", "` to `")}\``);
+    const files = [...new Set(naming.map((adaptation) => `\`${adaptation.path}\``))];
+    sentences.push(
+      `Upstream's new strings in ${files.join(", ")} use the fork's names (${renames.join(", ")}), as \`naming:check\` requires.`,
+    );
+    features.add(
+      naming.some((adaptation) => AGENT_PATHS.test(adaptation.path))
         ? "fork-agent-integration-identity"
         : "fork-distribution-identity",
     );
@@ -1175,34 +1194,50 @@ function applyEntries(
 
 const DEFAULT_AUTO_MAX = 30;
 
-const CODE_FILE = /\.(ts|tsx|mts|mjs|js)$/u;
-// The fork keeps upstream's product name in comments and test titles; strings a person reads are
-// what it renames.
-const COMMENT_OR_TEST_TITLE = /^\s*(\/\/|\/\*|\*|(it|test|describe)(\.\w+)?\()/u;
-
-/**
- * Whether an added line names upstream's product where the fork renames it: code outside comments
- * and test titles, and the user guides.
- */
-export function namesUpstreamProduct(path: string, line: string): boolean {
-  if (!UPSTREAM_PRODUCT.test(line)) return false;
-  if (CODE_FILE.test(path)) return !COMMENT_OR_TEST_TITLE.test(line);
-  return path.startsWith("docs/user/");
-}
-
-/** Added lines in the staged pick that name upstream's product where the fork renames it. */
-function addedUpstreamNames(cwd: string): ReadonlyArray<string> {
-  const diff = git(cwd, ["diff", "--cached", "-U0", "HEAD"]);
-  const findings: Array<string> = [];
+/** Line numbers each file gains in the staged pick. */
+export function addedLineNumbers(diff: string): ReadonlyMap<string, ReadonlySet<number>> {
+  const added = new Map<string, Set<number>>();
   let path = "";
+  let next = 0;
   for (const line of diff.split("\n")) {
     const header = /^\+\+\+ b\/(.+)$/u.exec(line);
     if (header) {
       path = header[1]!;
       continue;
     }
-    if (line.startsWith("+") && namesUpstreamProduct(path, line.slice(1))) {
-      findings.push(`${path}: ${line.slice(1).trim().slice(0, 160)}`);
+    const hunk = /^@@ -\S+ \+(\d+)/u.exec(line);
+    if (hunk) {
+      next = Number(hunk[1]);
+      continue;
+    }
+    if (line.startsWith("+") && path !== "") {
+      const lines = added.get(path) ?? new Set<number>();
+      lines.add(next);
+      added.set(path, lines);
+      next += 1;
+    }
+  }
+  return added;
+}
+
+/**
+ * Upstream names the staged pick adds where the fork renames them and the driver could not, such
+ * as t3.codes links: strings `naming:check` holds to the fork's naming, and the user guides.
+ */
+function addedUpstreamNames(cwd: string): ReadonlyArray<string> {
+  const findings: Array<string> = [];
+  for (const [path, lines] of addedLineNumbers(git(cwd, ["diff", "--cached", "-U0", "HEAD"]))) {
+    if (isCheckedSource(path)) {
+      for (const finding of findUpstreamNames(path, git(cwd, ["show", `:${path}`]))) {
+        if (lines.has(finding.line)) findings.push(`${path}: ${finding.text.slice(0, 160)}`);
+      }
+    } else if (path.startsWith("docs/user/")) {
+      const text = git(cwd, ["show", `:${path}`]).split("\n");
+      for (const line of lines) {
+        const added = text[line - 1] ?? "";
+        if (namesUpstreamProductText(added))
+          findings.push(`${path}: ${added.trim().slice(0, 160)}`);
+      }
     }
   }
   return findings;
@@ -1649,7 +1684,7 @@ function survey(
 ): ReadonlyArray<SurveyEntry> {
   const directory = NodePath.join(
     git(cwd, ["rev-parse", "--path-format=absolute", "--git-common-dir"]).trim(),
-    "intake-survey",
+    `intake-survey-${process.pid}`,
   );
   run(cwd, "git", ["worktree", "remove", "--force", directory]);
   NodeFS.rmSync(directory, { recursive: true, force: true });

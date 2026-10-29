@@ -9,10 +9,17 @@ import ts from "typescript-legacy";
  * Upstream product names that must not reach styal users or agents. Upstream
  * intake brings new messages that use them, and nothing else notices. Bare
  * "T3" counts when used as a name ("T3 server", "T3's browser", "T3-owned");
- * "T3 home" is the glossary term for the data directory, and "T3 Chat" is a
- * theme named after another product.
+ * T3 Chat, T3 Tools and the T3 Stack are other products and the company.
  */
-const UPSTREAM_NAME = /T3 Code|T3 Connect|t3\.codes|\bT3(?! home\b| Chat\b)(?=[ '’]|-[a-z])/u;
+const BARE_T3 = String.raw`\bT3(?! Chat\b| Tools\b| Stack\b)(?=[ '’]|-[a-z])`;
+const UPSTREAM_NAME = new RegExp(String.raw`T3 Code|T3 Connect|t3\.codes|${BARE_T3}`, "u");
+
+/** The fork's name for each upstream name. t3.codes has none yet, so it stays for a person. */
+const renameText = (text: string) =>
+  text
+    .replaceAll("T3 Connect", "styal Link")
+    .replaceAll("T3 Code", "styal")
+    .replaceAll(new RegExp(BARE_T3, "gu"), "styal");
 
 /**
  * Files whose strings may keep an upstream name, each with the reason. A path
@@ -21,6 +28,8 @@ const UPSTREAM_NAME = /T3 Code|T3 Connect|t3\.codes|\bT3(?! home\b| Chat\b)(?=[ 
 const UPSTREAM_NAMING_EXCEPTIONS: ReadonlyArray<{
   readonly path: string;
   readonly reason: string;
+  /** Its strings reach agents or users through a styal rename, so tests quoting them see styal. */
+  readonly renderedAsStyal?: true;
 }> = [
   {
     path: "apps/server/src/dataImport/",
@@ -41,19 +50,23 @@ const UPSTREAM_NAMING_EXCEPTIONS: ReadonlyArray<{
   {
     path: "apps/server/src/mcp/toolkits/",
     reason: "Tool descriptions and titles are advertised through renderStyalProductName.",
+    renderedAsStyal: true,
   },
   {
     path: "packages/provider-core/src/server/orchestrationInstructions.ts",
     reason: "Instructions are delivered through renderStyalProductName.",
+    renderedAsStyal: true,
   },
   {
     path: "packages/shared/src/htmlRender.ts",
     reason:
       "Its guides are part of MCP tool descriptions, advertised through renderStyalProductName.",
+    renderedAsStyal: true,
   },
   {
     path: "packages/shared/src/t3McpToolPresentation.ts",
     reason: "Tool labels are rewritten by styalToolDefinition before display.",
+    renderedAsStyal: true,
   },
   {
     path: "apps/desktop/src/app/DesktopCliCommand.ts",
@@ -70,6 +83,7 @@ const UPSTREAM_NAMING_EXCEPTIONS: ReadonlyArray<{
   {
     path: "apps/server/src/provider/CodexDeveloperInstructions.ts",
     reason: "Rewrites the upstream name in Codex's instructions.",
+    renderedAsStyal: true,
   },
   {
     path: "packages/provider-muse/src/server/sdk.ts",
@@ -98,9 +112,15 @@ const SCANNED_ROOTS = [
   ":(glob)apps/mobile/modules/**",
   ":(glob)apps/desktop/gnome-extension/**",
   ":(glob)packages/*/src/**",
+  ":(glob)apps/mobile/plugins/**",
+  "apps/mobile/app.config.ts",
+  "scripts/build-desktop-artifact.ts",
 ];
+const SCANNED_PATH =
+  /^(?:apps\/[^/]+\/src\/|apps\/mobile\/modules\/|apps\/desktop\/gnome-extension\/|packages\/[^/]+\/src\/|apps\/mobile\/plugins\/|apps\/mobile\/app\.config\.ts$|scripts\/build-desktop-artifact\.ts$)/u;
+const TEST_PATH = /\.test\./u;
 const SKIPPED_PATH =
-  /^apps\/marketing\/|\.test\.|\.fixture\.|\.testkit\.|\/testkit\/|\/fixtures\/|\/__tests__\/|\.d\.ts$/u;
+  /^apps\/marketing\/|\.fixture\.|\.testkit\.|\/testkit\/|\/fixtures\/|\/__tests__\/|\.d\.ts$/u;
 const SCRIPT_FILE = /\.(?:ts|tsx|mts|js|mjs|cjs)$/u;
 const NATIVE_FILE = /\.(?:kt|swift|java)$/u;
 
@@ -111,35 +131,96 @@ interface UpstreamNameFinding {
   readonly text: string;
 }
 
+/** A renamed piece of string text, before and after. */
+export interface UpstreamNameRename {
+  readonly line: number;
+  readonly before: string;
+  readonly after: string;
+}
+
 const isException = (path: string) =>
   UPSTREAM_NAMING_EXCEPTIONS.some((exception) =>
     exception.path.endsWith("/") ? path.startsWith(exception.path) : path === exception.path,
   );
 
-const finding = (path: string, line: number, text: string): UpstreamNameFinding | undefined => {
-  const match = UPSTREAM_NAME.exec(text);
-  return match === null
-    ? undefined
-    : { path, line, name: match[0], text: text.replace(/\s+/gu, " ").trim() };
-};
+const isSource = (path: string) =>
+  SCANNED_PATH.test(path) &&
+  (SCRIPT_FILE.test(path) || NATIVE_FILE.test(path)) &&
+  !SKIPPED_PATH.test(path);
 
-/** Upstream names in the string literals, template text and JSX text of one source file. */
-export function findUpstreamNames(
-  path: string,
-  source: string,
-): ReadonlyArray<UpstreamNameFinding> {
+/** Whether `naming:check` holds this file's strings to the fork's naming. */
+export const isCheckedSource = (path: string) =>
+  isSource(path) && !TEST_PATH.test(path) && !isException(path);
+
+/** Whether this is a test whose assertions follow renamed source strings. */
+export const isRenamedTest = (path: string) =>
+  isSource(path) && TEST_PATH.test(path) && !isException(path);
+
+interface StringSpan {
+  /** Offsets of the span's raw source text, between its quotes or template delimiters. */
+  readonly start: number;
+  readonly end: number;
+  readonly line: number;
+  readonly endLine: number;
+  readonly text: string;
+  /** The string names something rather than saying something, so renaming it changes behavior. */
+  readonly identity: boolean;
+}
+
+/** Properties whose string values identify an app to the OS or to stored data. */
+const IDENTITY_PROPERTY = /keychain|service|account|application|identity|bundle|appid|scheme/iu;
+/** Channel product names such as "T3 Code (Beta)", which name apps, keychains and profiles. */
+const CHANNEL_NAME = /^T3 Code \(/u;
+
+/**
+ * Whether a string is compared, used as a key, or given to an identity property: renaming one of
+ * those changes what it matches, which a person has to decide.
+ */
+function isIdentityString(node: ts.Node, text: string): boolean {
+  if (CHANNEL_NAME.test(text)) return true;
+  const parent = node.parent;
+  if (ts.isBinaryExpression(parent)) {
+    return [
+      ts.SyntaxKind.EqualsEqualsEqualsToken,
+      ts.SyntaxKind.ExclamationEqualsEqualsToken,
+      ts.SyntaxKind.EqualsEqualsToken,
+      ts.SyntaxKind.ExclamationEqualsToken,
+    ].includes(parent.operatorToken.kind);
+  }
+  if (ts.isCaseClause(parent) || ts.isElementAccessExpression(parent)) return true;
+  if (ts.isPropertyAssignment(parent)) {
+    return parent.name === node || IDENTITY_PROPERTY.test(parent.name.getText());
+  }
+  return false;
+}
+
+/** The string literals, template text and JSX text of one source file that name upstream. */
+function namedSpans(path: string, source: string): ReadonlyArray<StringSpan> {
   if (!UPSTREAM_NAME.test(source)) return [];
-  const findings: Array<UpstreamNameFinding> = [];
+  const spans: Array<StringSpan> = [];
 
   if (NATIVE_FILE.test(path)) {
+    let offset = 0;
     source.split("\n").forEach((line, index) => {
-      if (/^\s*(?:\/\/|\*|\/\*)/u.test(line)) return;
-      for (const literal of line.matchAll(/"(?:[^"\\]|\\.)*"/gu)) {
-        const found = finding(path, index + 1, literal[0].slice(1, -1));
-        if (found !== undefined) findings.push(found);
+      if (!/^\s*(?:\/\/|\*|\/\*)/u.test(line)) {
+        for (const literal of line.matchAll(/"(?:[^"\\]|\\.)*"/gu)) {
+          const text = literal[0].slice(1, -1);
+          const start = offset + literal.index + 1;
+          if (UPSTREAM_NAME.test(text)) {
+            spans.push({
+              start,
+              end: start + text.length,
+              line: index + 1,
+              endLine: index + 1,
+              text,
+              identity: false,
+            });
+          }
+        }
       }
+      offset += line.length + 1;
     });
-    return findings;
+    return spans;
   }
 
   const file = ts.createSourceFile(
@@ -154,38 +235,194 @@ export function findUpstreamNames(
         : ts.ScriptKind.TS,
   );
   const visit = (node: ts.Node) => {
+    const jsx = ts.isJsxText(node);
     if (
+      jsx ||
       ts.isStringLiteral(node) ||
       ts.isNoSubstitutionTemplateLiteral(node) ||
       ts.isTemplateHead(node) ||
       ts.isTemplateMiddle(node) ||
-      ts.isTemplateTail(node) ||
-      ts.isJsxText(node)
+      ts.isTemplateTail(node)
     ) {
-      const line = file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1;
-      const found = finding(path, line, node.text);
-      if (found !== undefined) findings.push(found);
+      // Names never contain quotes, escapes or `${`, so matching the raw text between the
+      // delimiters finds the same names as the cooked text.
+      const start = node.getStart(file) + (jsx ? 0 : 1);
+      const end =
+        node.getEnd() - (jsx ? 0 : ts.isTemplateHead(node) || ts.isTemplateMiddle(node) ? 2 : 1);
+      if (UPSTREAM_NAME.test(node.text)) {
+        spans.push({
+          start,
+          end,
+          line: file.getLineAndCharacterOfPosition(start).line + 1,
+          endLine: file.getLineAndCharacterOfPosition(end).line + 1,
+          text: source.slice(start, end),
+          identity: !jsx && isIdentityString(node, node.text),
+        });
+      }
     }
     ts.forEachChild(node, visit);
   };
   visit(file);
-  return findings;
+  return spans;
 }
+
+/** Upstream names in the string literals, template text and JSX text of one source file. */
+export function findUpstreamNames(
+  path: string,
+  source: string,
+): ReadonlyArray<UpstreamNameFinding> {
+  return namedSpans(path, source).map(({ line, text }) => ({
+    path,
+    line,
+    name: UPSTREAM_NAME.exec(text)![0],
+    text: text.replace(/\s+/gu, " ").trim(),
+  }));
+}
+
+function renameSpans(
+  source: string,
+  spans: ReadonlyArray<StringSpan>,
+): { readonly text: string; readonly renames: ReadonlyArray<UpstreamNameRename> } {
+  const renames: Array<UpstreamNameRename> = [];
+  let text = source;
+  for (const span of spans.toReversed()) {
+    const after = renameText(span.text);
+    if (after === span.text) continue;
+    text = text.slice(0, span.start) + after + text.slice(span.end);
+    renames.unshift({ line: span.line, before: span.text, after });
+  }
+  return { text, renames };
+}
+
+/** Line numbers to limit a rename to, such as the lines a pick adds; all lines when absent. */
+type LineFilter = ReadonlySet<number> | undefined;
+
+const onLines = (span: StringSpan, lines: LineFilter) => {
+  if (lines === undefined) return true;
+  for (let line = span.line; line <= span.endLine; line += 1) if (lines.has(line)) return true;
+  return false;
+};
+
+/**
+ * Renames upstream names in one source file's strings to the fork's names, except identity
+ * strings, which stay for a person.
+ */
+export function renameUpstreamNames(path: string, source: string, lines?: LineFilter) {
+  return renameSpans(
+    source,
+    namedSpans(path, source).filter((span) => !span.identity && onLines(span, lines)),
+  );
+}
+
+/**
+ * Renames a test's strings that quote a renamed source string, so assertions follow the source.
+ * A short string that only appears inside a renamed one, such as a project titled "T3 Code", is
+ * test data and stays.
+ */
+export function renameTestStrings(
+  path: string,
+  source: string,
+  renamed: ReadonlyArray<string>,
+  lines?: LineFilter,
+) {
+  const quotes = (text: string) =>
+    renamed.some(
+      (before) =>
+        text.includes(before) ||
+        (before.includes(text) && text.length >= UPSTREAM_NAME.exec(text)![0].length + 12),
+    );
+  return renameSpans(
+    source,
+    namedSpans(path, source).filter(
+      (span) => !span.identity && onLines(span, lines) && quotes(span.text),
+    ),
+  );
+}
+
+const trackedFiles = (repoRoot: string) =>
+  NodeChildProcess.execFileSync("git", ["ls-files", "-z", "--", ...SCANNED_ROOTS], {
+    cwd: repoRoot,
+    encoding: "utf8",
+  }).split("\0");
 
 /** Upstream names in tracked application and package sources outside the exceptions. */
 export function findRepositoryUpstreamNames(repoRoot: string): ReadonlyArray<UpstreamNameFinding> {
-  const paths = NodeChildProcess.execFileSync("git", ["ls-files", "-z", "--", ...SCANNED_ROOTS], {
-    cwd: repoRoot,
-    encoding: "utf8",
-  })
-    .split("\0")
+  return trackedFiles(repoRoot)
+    .filter(isCheckedSource)
+    .flatMap((path) =>
+      findUpstreamNames(path, NodeFS.readFileSync(NodePath.join(repoRoot, path), "utf8")),
+    );
+}
+
+/** Strings in files whose text reaches readers through a styal rename, which tests quote as styal. */
+function renderedAsStyalStrings(repoRoot: string): ReadonlyArray<string> {
+  const rendered = UPSTREAM_NAMING_EXCEPTIONS.filter((exception) => exception.renderedAsStyal);
+  return trackedFiles(repoRoot)
     .filter(
       (path) =>
-        (SCRIPT_FILE.test(path) || NATIVE_FILE.test(path)) &&
-        !SKIPPED_PATH.test(path) &&
-        !isException(path),
+        !TEST_PATH.test(path) &&
+        rendered.some((exception) =>
+          exception.path.endsWith("/") ? path.startsWith(exception.path) : path === exception.path,
+        ),
+    )
+    .flatMap((path) =>
+      namedSpans(path, NodeFS.readFileSync(NodePath.join(repoRoot, path), "utf8")).map(
+        ({ text }) => text,
+      ),
     );
-  return paths.flatMap((path) =>
-    findUpstreamNames(path, NodeFS.readFileSync(NodePath.join(repoRoot, path), "utf8")),
-  );
+}
+
+/**
+ * Renames upstream names in every tracked source, or only on the given lines of the given files,
+ * and in the tests that quote the renamed strings, and returns the renames by file.
+ */
+export function renameRepositoryUpstreamNames(
+  repoRoot: string,
+  addedLines?: ReadonlyMap<string, ReadonlySet<number>>,
+): ReadonlyMap<string, ReadonlyArray<UpstreamNameRename>> {
+  const paths = addedLines === undefined ? trackedFiles(repoRoot) : [...addedLines.keys()];
+  const renamesByPath = new Map<string, ReadonlyArray<UpstreamNameRename>>();
+  const rewrite = (
+    path: string,
+    rename: (source: string) => ReturnType<typeof renameUpstreamNames>,
+  ) => {
+    const absolute = NodePath.join(repoRoot, path);
+    if (!NodeFS.existsSync(absolute)) return;
+    const result = rename(NodeFS.readFileSync(absolute, "utf8"));
+    if (result.renames.length === 0) return;
+    NodeFS.writeFileSync(absolute, result.text);
+    renamesByPath.set(path, result.renames);
+  };
+  for (const path of paths.filter(isCheckedSource)) {
+    rewrite(path, (source) => renameUpstreamNames(path, source, addedLines?.get(path)));
+  }
+  const tests = paths.filter(isRenamedTest);
+  if (tests.length > 0) {
+    const renamed = [
+      ...[...renamesByPath.values()].flat().map(({ before }) => before),
+      ...renderedAsStyalStrings(repoRoot),
+    ];
+    for (const path of tests) {
+      rewrite(path, (source) => renameTestStrings(path, source, renamed, addedLines?.get(path)));
+    }
+  }
+  return renamesByPath;
+}
+
+/** Whether a line names upstream's product, for text outside parsed sources such as user guides. */
+export const namesUpstreamProductText = (text: string) => UPSTREAM_NAME.test(text);
+
+/** The names a file's renames replaced, as "from -> to", for adaptation notes. */
+export function upstreamNamesRenamed(
+  renames: ReadonlyArray<UpstreamNameRename>,
+): ReadonlyArray<string> {
+  const found = new Set<string>();
+  for (const { before } of renames) {
+    if (before.includes("T3 Connect")) found.add("T3 Connect -> styal Link");
+    if (before.includes("T3 Code")) found.add("T3 Code -> styal");
+    if (new RegExp(BARE_T3, "u").test(before.replaceAll(/T3 Code|T3 Connect/gu, ""))) {
+      found.add("T3 -> styal");
+    }
+  }
+  return [...found];
 }

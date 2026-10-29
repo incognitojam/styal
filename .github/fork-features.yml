@@ -2051,6 +2051,7 @@ features:
       - scripts/release-changelog.test.ts
       - scripts/smoke-cli-archive.mjs
       - scripts/upstream-naming.test.ts
+      - scripts/upstream/intake-naming.test.ts
       - scripts/verify-cli-package.mjs
     upstream:
       status: unassessed
