@@ -179,7 +179,9 @@ jobs:
     needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    environment: android-preview
+    environment:
+      name: android-preview
+      url: ${{ steps.upload.outputs.download_url }}
     permissions:
       contents: write
       pull-requests: write
