@@ -636,9 +636,12 @@ export const TraitsPicker = memo(function TraitsPicker({
         )
       : null;
   // Workflow levels such as Ultracode always show their name; the setting names every level.
+  // Traits the bars cannot show, such as an agent mode, appear as words in the composer.
   const effortWord = effortGlyph
     ? (effortGlyph.special ?? (effortDisplay === "label" ? effortGlyph.label : null))
-    : null;
+    : isComposerOwned
+      ? triggerLabel
+      : null;
   const tooltipContent = [
     traitsTriggerTooltip({
       label: selectedValues,
@@ -729,6 +732,15 @@ export const TraitsPicker = memo(function TraitsPicker({
                 </span>
               ) : null}
             </span>
+          ) : effortWord !== null ? (
+            <>
+              <span data-composer-control-label>{effortWord}</span>
+              <GaugeIcon
+                aria-hidden="true"
+                data-composer-control-compact-icon
+                className="invisible absolute size-3.5"
+              />
+            </>
           ) : isCodexStyle ? (
             <span
               className={cn(
