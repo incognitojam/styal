@@ -676,7 +676,7 @@ it.effect("records a mobile settings snapshot only from mobile, as the client se
       flush: Effect.void,
     };
     const reporter = (surface: "web" | "desktop" | "mobile") =>
-      ClientFeatureUsage.reporter({ surface, clientOs: "ios", clientAppVersion: "9.9.9" }).pipe(
+      ClientFeatureUsage.reporter({ surface, clientOs: "iOS", clientAppVersion: "9.9.9" }).pipe(
         Effect.provideService(AnalyticsService.AnalyticsService, analytics),
       );
     const input = yield* decode({ ...mobileSnapshot, connectOnboardingOptOutAccounts: ["x"] });
@@ -694,7 +694,7 @@ it.effect("records a mobile settings snapshot only from mobile, as the client se
           ...settings,
           forkClientUsageVersion: FORK_CLIENT_USAGE_VERSION,
           surface: "mobile",
-          clientOs: "ios",
+          clientOs: "iOS",
           clientAppVersion: "9.9.9",
         },
       },
