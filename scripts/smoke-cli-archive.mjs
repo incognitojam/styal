@@ -34,6 +34,20 @@ NodeFS.mkdirSync(home, { recursive: true });
 NodeFS.writeFileSync(NodePath.join(project, "README.md"), "Synthetic CLI verification project.\n");
 const cli = NodePath.join(install, platform === "win32" ? "styal.exe" : "styal");
 const manifest = { version: expectedVersion };
+if (platform === "linux") {
+  const bundled = NodePath.join(install, "lib/libatomic.so.1");
+  NodeAssert.ok(NodeFS.existsSync(bundled), "The Linux archive must carry libatomic.so.1.");
+  NodeAssert.ok(
+    NodeFS.existsSync(`${bundled}.LICENSE`),
+    "libatomic's license must travel with it.",
+  );
+  // The runner has libatomic installed; fresh Ubuntu servers do not.
+  const ldd = NodeChildProcess.execFileSync("ldd", [cli], { encoding: "utf8" });
+  const loaded = /libatomic\.so\.1 => (\/.*) \(0x[0-9a-f]+\)/.exec(ldd)?.[1];
+  NodeAssert.ok(loaded, `styal did not resolve libatomic:\n${ldd}`);
+  // Older glibc prints the path as given, newer prints it resolved; compare both resolved.
+  NodeAssert.equal(NodeFS.realpathSync(loaded), NodeFS.realpathSync(bundled));
+}
 // No host credentials, provider configuration, or Node on PATH reaches the server.
 const env = {
   PATH: "",

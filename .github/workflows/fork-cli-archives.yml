@@ -192,6 +192,13 @@ jobs:
           echo "STYAL_CLI_MAC_SIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
           printf '%s' "$APPLE_API_KEY" > .scratch/cli-signing/AuthKey.p8
           echo "APPLE_API_KEY=$PWD/.scratch/cli-signing/AuthKey.p8" >> "$GITHUB_ENV"
+      - uses: ./.github/actions/setup-apt-mirrors
+        if: matrix.platform == 'linux'
+      # The Linux archive ships libatomic.so.1 and points styal's RUNPATH at it.
+      - name: Install patchelf
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: command -v patchelf || { sudo apt-get update && sudo apt-get install -y patchelf; }
       - name: Build archive and verify extracted runtime
         shell: bash
         env:
