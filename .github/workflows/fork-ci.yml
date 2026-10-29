@@ -538,6 +538,7 @@ jobs:
       # thread-transfer-report.yml reads this artifact after CI, so a run whose
       # server tests passed must have produced it.
       - name: Require transfer measurements
+        if: needs.test_server.result == 'success'
         uses: actions/download-artifact@v8
         with:
           name: thread-transfer-results
