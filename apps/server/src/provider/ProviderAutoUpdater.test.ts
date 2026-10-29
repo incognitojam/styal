@@ -296,7 +296,8 @@ describe("ProviderAutoUpdater.runPass", () => {
         Effect.sync(() => {
           assert.strictEqual(installs.length, 1);
           // Before the pass and again under the install lock; archived threads have no session.
-          assert.deepStrictEqual(snapshotReads, [{ location: "active" }, { location: "active" }]);
+          const read = { location: "active", busyOnly: true };
+          assert.deepStrictEqual(snapshotReads, [read, read]);
         }),
       ),
     );

@@ -423,6 +423,137 @@ it.effect.each([
   }).pipe(Effect.provide(testLayer)),
 );
 
+it.effect("sql: a busy-only shell read keeps every thread with work in flight", () =>
+  Effect.gen(function* () {
+    const store = yield* ProjectionStore.ProjectionStoreV2;
+    yield* createThread("quiet-idle");
+    yield* createRun(yield* createThread("quiet-completed"));
+    yield* createRun(yield* createThread("quiet-queued"), "queued");
+    yield* createRun(yield* createThread("quiet-archived", { archivedAt: old }), "running");
+    const settledItem = yield* createThread("quiet-settled-item");
+    yield* createItem(settledItem, yield* createRun(settledItem), "completed");
+    const pullRequest = {
+      host: "github.com",
+      repository: "example/repo",
+      number: 7,
+      url: "https://github.com/example/repo/pull/7",
+      source: "agent" as const,
+      linkedAt: DateTime.formatIso(old),
+      snapshot: null,
+      stack: null,
+    };
+    yield* createThread("quiet-unwatched-pr", { pullRequests: [pullRequest] });
+
+    const busy = new Set<ThreadId>();
+    for (const status of ["preparing", "starting", "running", "waiting"] as const) {
+      const threadId = yield* createThread(`busy-${status}`);
+      yield* createRun(threadId, "completed");
+      yield* createRun(threadId, status, 2);
+      busy.add(threadId);
+    }
+    const requested = yield* createThread("busy-request");
+    yield* createRun(requested);
+    yield* store.apply({
+      id: EventId.make("event:busy:request"),
+      type: "runtime-request.updated",
+      threadId: requested,
+      occurredAt: old,
+      payload: {
+        id: RuntimeRequestId.make("request:busy"),
+        nodeId: NodeId.make("node:busy"),
+        providerTurnId: null,
+        nativeRequestRef: null,
+        kind: "user_input",
+        status: "pending",
+        responseCapability: { type: "not_resumable", reason: "Process stopped" },
+        createdAt: old,
+        resolvedAt: null,
+      },
+    });
+    busy.add(requested);
+    const background = yield* createThread("busy-background-item");
+    yield* createItem(background, yield* createRun(background), "running");
+    busy.add(background);
+    const roster = yield* createThread("busy-provider-roster");
+    yield* createRun(roster);
+    yield* store.apply({
+      id: EventId.make("event:busy:roster"),
+      type: "provider-thread.updated",
+      threadId: roster,
+      occurredAt: old,
+      payload: {
+        id: ProviderThreadId.make("provider-thread:busy"),
+        appThreadId: roster,
+        ownerNodeId: null,
+        driver: ProviderDriverKind.make("codex"),
+        providerInstanceId,
+        providerSessionId: null,
+        nativeThreadRef: null,
+        nativeConversationHeadRef: null,
+        status: "idle",
+        firstRunOrdinal: null,
+        lastRunOrdinal: null,
+        handoffIds: [],
+        forkedFrom: null,
+        createdAt: old,
+        updatedAt: old,
+        pendingBackgroundTasks: [{ taskId: "running-task", kind: "subagent" }],
+      },
+    });
+    busy.add(roster);
+    busy.add(
+      yield* createThread("busy-watched-pr", {
+        pullRequests: [
+          {
+            ...pullRequest,
+            watch: {
+              startedAt: DateTime.formatIso(old),
+              headSha: null,
+              failedChecks: [],
+              passed: false,
+              passedChecks: [],
+              remarksThrough: DateTime.formatIso(old),
+              remarkIds: [],
+              conflicting: false,
+              wakes: 0,
+            },
+          },
+        ],
+      }),
+    );
+    busy.add(
+      yield* createThread("busy-workflow-run", {
+        workflowRuns: [
+          {
+            host: "github.com",
+            repository: "example/repo",
+            runId: 812,
+            url: "https://github.com/example/repo/actions/runs/812",
+            name: "CI #812",
+            startedAt: DateTime.formatIso(old),
+          },
+        ],
+      }),
+    );
+
+    const all = yield* store.getShellSnapshot({ location: "active" });
+    const expected = all.threads.filter(
+      (thread) =>
+        thread.status === "preparing" ||
+        thread.status === "starting" ||
+        thread.status === "running" ||
+        thread.status === "waiting" ||
+        (thread.activityRunStatus ?? null) !== null ||
+        thread.pendingRuntimeRequest !== null ||
+        (thread.pendingBackgroundTasks?.length ?? 0) > 0,
+    );
+    assert.deepEqual(new Set(expected.map((thread) => thread.id)), busy);
+    const narrowed = yield* store.getShellSnapshot({ location: "active", busyOnly: true });
+    assert.deepEqual(narrowed.threads, expected);
+    assert.equal(narrowed.archivedThreads.length, 0);
+  }).pipe(Effect.provide(layerSql)),
+);
+
 it.effect(
   "reads settlement candidates and thread metadata without loading historical or archived payloads",
   () =>
