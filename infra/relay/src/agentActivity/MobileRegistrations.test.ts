@@ -80,7 +80,7 @@ function makeAgentActivityRows(
   overrides: Partial<AgentActivityRows.AgentActivityRows["Service"]> = {},
 ): AgentActivityRows.AgentActivityRows["Service"] {
   return {
-    upsert: () => Effect.void,
+    upsert: () => Effect.succeed(null),
     remove: () => Effect.void,
     pruneTerminal: () => Effect.void,
     listForUser: () => {
@@ -106,7 +106,7 @@ function makeEnvironmentLinks(
   overrides: Partial<EnvironmentLinks.EnvironmentLinks["Service"]> = {},
 ): EnvironmentLinks.EnvironmentLinks["Service"] {
   return {
-    upsert: () => Effect.void,
+    upsert: () => Effect.succeed(null),
     listDeliveryUsersForEnvironment: () =>
       Effect.succeed([
         {

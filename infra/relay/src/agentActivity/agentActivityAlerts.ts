@@ -1,10 +1,13 @@
 import type {
   RelayAgentActivityAggregateRow,
   RelayAgentActivityAggregateState,
+  RelayAgentActivityState,
   RelayAgentAwarenessPreferences,
 } from "@t3tools/contracts/relay";
 import * as DateTime from "effect/DateTime";
 import * as Option from "effect/Option";
+
+import { isExpiredAgentActivityState } from "./agentActivityPayloads.ts";
 
 export interface AgentActivityAlert {
   readonly title: string;
@@ -32,6 +35,31 @@ function rowKey(row: RelayAgentActivityAggregateRow): string {
 
 function isAttentionPhase(phase: string): boolean {
   return phase === "waiting_for_approval" || phase === "waiting_for_input";
+}
+
+export function isAlertPhase(phase: string): boolean {
+  return isAttentionPhase(phase) || phase === "completed" || phase === "failed";
+}
+
+export function attendedAlertDelaySeconds(
+  preferences: RelayAgentAwarenessPreferences | null,
+): number {
+  return preferences?.attendedAlertDelaySeconds ?? 0;
+}
+
+/** The delayed alert job owns this alert; the immediate delivery must stay silent. */
+function isDelayedWhileAttended(
+  preferences: RelayAgentAwarenessPreferences | null,
+  row: { readonly attended?: boolean | undefined },
+): boolean {
+  return row.attended === true && attendedAlertDelaySeconds(preferences) > 0;
+}
+
+function alertAllowedNow(
+  preferences: RelayAgentAwarenessPreferences | null,
+  row: { readonly phase: string; readonly attended?: boolean | undefined },
+): boolean {
+  return alertAllowedForPhase(preferences, row.phase) && !isDelayedWhileAttended(preferences, row);
 }
 
 export function alertAllowedForPhase(
@@ -63,7 +91,7 @@ export function attentionTransitionRows(input: TransitionInput) {
     (row) =>
       isAttentionPhase(row.phase) &&
       !previouslyAttention.has(rowKey(row)) &&
-      alertAllowedForPhase(input.preferences, row.phase),
+      alertAllowedNow(input.preferences, row),
   );
 }
 
@@ -96,7 +124,7 @@ export function terminalTransitionRows(
     input.includeUnobserved,
   ).filter((row) => {
     return (
-      alertAllowedForPhase(input.preferences, row.phase) &&
+      alertAllowedNow(input.preferences, row) &&
       isFreshTerminalNotification(row.updatedAt, input.nowMs)
     );
   });
@@ -132,19 +160,51 @@ export function alertForTerminalAggregate(input: {
 }): AgentActivityAlert | null {
   const row = input.aggregate?.activities[0];
   if (!row || (row.phase !== "completed" && row.phase !== "failed")) return null;
-  return alertAllowedForPhase(input.preferences, row.phase) ? alertForActivityRows([row]) : null;
+  return alertAllowedNow(input.preferences, row) ? alertForActivityRows([row]) : null;
 }
 
 export function shouldAlertForActivity(input: {
   readonly phase: RelayAgentActivityAggregateRow["phase"];
   readonly updatedAt: string;
+  readonly attended?: boolean | undefined;
   readonly preferences: RelayAgentAwarenessPreferences | null;
   readonly nowMs: number;
 }): boolean {
   return (
     input.preferences?.notificationsEnabled === true &&
-    alertAllowedForPhase(input.preferences, input.phase) &&
+    alertAllowedNow(input.preferences, input) &&
     ((input.phase !== "completed" && input.phase !== "failed") ||
       isFreshTerminalNotification(input.updatedAt, input.nowMs))
   );
+}
+
+function epochMillis(value: string | undefined): number {
+  if (value === undefined) return Number.NaN;
+  return Option.match(DateTime.make(value), {
+    onNone: () => Number.NaN,
+    onSome: (dt) => dt.epochMilliseconds,
+  });
+}
+
+/**
+ * A delayed alert still goes out when the thread is in the phase that raised it and
+ * nobody has opened it since. Resolving it or reading it at the computer drops it.
+ */
+export function delayedAlertIsDue(input: {
+  readonly raised: Pick<RelayAgentActivityState, "phase" | "updatedAt">;
+  readonly current: RelayAgentActivityState | null;
+  readonly preferences: RelayAgentAwarenessPreferences | null;
+  readonly nowMs: number;
+}): boolean {
+  const current = input.current;
+  if (
+    current === null ||
+    current.phase !== input.raised.phase ||
+    input.preferences?.notificationsEnabled !== true ||
+    !alertAllowedForPhase(input.preferences, current.phase) ||
+    isExpiredAgentActivityState(current, input.nowMs)
+  ) {
+    return false;
+  }
+  return !(epochMillis(current.lastVisitedAt) >= epochMillis(input.raised.updatedAt));
 }

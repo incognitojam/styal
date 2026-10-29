@@ -30,6 +30,7 @@ import {
   supportsAndroidLiveUpdateSettings,
 } from "../agent-awareness/androidNotifications";
 import { setLiveActivityUpdatesEnabled } from "../agent-awareness/liveActivityPreferences";
+import { DEFAULT_ATTENDED_ALERT_DELAY_SECONDS } from "../agent-awareness/registrationPayload";
 import { requestAgentNotificationPermission } from "../agent-awareness/notificationPermissions";
 import {
   getAgentAwarenessRegistrationStatus,
@@ -43,6 +44,7 @@ import { runtime } from "../../lib/runtime";
 import type { AppSymbolName } from "../../components/ui/AppSymbol";
 import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
 import { useSavedRemoteConnections } from "../../state/use-remote-environment-registry";
+import { SettingsChoiceRow } from "./components/SettingsChoiceRow";
 import { SettingsRow } from "./components/SettingsRow";
 import { SettingsSection } from "./components/SettingsSection";
 import { SettingsSwitchRow } from "./components/SettingsSwitchRow";
@@ -78,6 +80,14 @@ const ALERT_TYPES: ReadonlyArray<{
   { preference: "notifyOnInput", label: "Needs input", icon: "questionmark.bubble" },
   { preference: "notifyOnCompletion", label: "Done", icon: "checkmark.circle" },
   { preference: "notifyOnFailure", label: "Failed", icon: "exclamationmark.triangle" },
+];
+
+const ATTENDED_ALERT_DELAYS: ReadonlyArray<{ readonly seconds: number; readonly label: string }> = [
+  { seconds: 0, label: "Immediately" },
+  { seconds: 60, label: "After 1 minute" },
+  { seconds: 120, label: "After 2 minutes" },
+  { seconds: 300, label: "After 5 minutes" },
+  { seconds: 600, label: "After 10 minutes" },
 ];
 
 function openChannelSettings(channel: AndroidAgentChannel) {
@@ -157,6 +167,20 @@ function ConfiguredSettingsNotificationsRouteScreen() {
     );
     if (result._tag === "Failure") {
       reportAtomCommandResult(result, { label: "notification type update" });
+    }
+  };
+
+  const selectedAlertDelay =
+    storedPreferences?.attendedAlertDelaySeconds ?? DEFAULT_ATTENDED_ALERT_DELAY_SECONDS;
+  const handleAlertDelayChange = async (seconds: number) => {
+    savePreferences({ attendedAlertDelaySeconds: seconds });
+    const result = await settleAsyncResult(() =>
+      runtime.runPromiseExit(
+        updateAgentAwarenessRegistrationPreferences({ attendedAlertDelaySeconds: seconds }),
+      ),
+    );
+    if (result._tag === "Failure") {
+      reportAtomCommandResult(result, { label: "notification delay update" });
     }
   };
 
@@ -554,6 +578,21 @@ function ConfiguredSettingsNotificationsRouteScreen() {
               disabled={!alertsEnabled || storedPreferences === null}
               value={storedPreferences?.[alertType.preference] !== false}
               onValueChange={(enabled) => void handleAlertTypeChange(alertType.preference, enabled)}
+            />
+          ))}
+        </SettingsSection>
+        <SettingsSection
+          title="While I'm using a computer"
+          footer="Alerts wait while you're active in styal on a computer, and are skipped if you handle or open the thread there first."
+        >
+          {ATTENDED_ALERT_DELAYS.map((delay, index) => (
+            <SettingsChoiceRow
+              key={delay.seconds}
+              label={delay.label}
+              selected={selectedAlertDelay === delay.seconds}
+              separated={index > 0}
+              disabled={!alertsEnabled || storedPreferences === null}
+              onPress={() => void handleAlertDelayChange(delay.seconds)}
             />
           ))}
         </SettingsSection>

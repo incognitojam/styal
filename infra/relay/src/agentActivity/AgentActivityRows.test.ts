@@ -19,7 +19,7 @@ const state: RelayAgentActivityState = {
 };
 
 describe("AgentActivityRows", () => {
-  it.effect("validates database JSON objects and ignores invalid activity rows", () => {
+  it.effect("validates database JSON objects and returns the state an upsert replaced", () => {
     const queryRows = [
       { stateJson: null },
       { stateJson: JSON.stringify(state) },
@@ -27,8 +27,14 @@ describe("AgentActivityRows", () => {
       { stateJson: { ...state, unrelated: "ignored" } },
     ];
     const db = {
+      insert: () => ({
+        values: () => ({
+          onConflictDoUpdate: () => Effect.void,
+        }),
+      }),
       select: () => ({
         from: () => ({
+          where: () => Effect.succeed([{ stateJson: { ...state, phase: "waiting_for_input" } }]),
           innerJoin: () => ({
             where: () => ({
               orderBy: () => Effect.succeed(queryRows),
@@ -48,6 +54,10 @@ describe("AgentActivityRows", () => {
           threadId: "thread-1",
         }),
       ).toEqual(state);
+      expect(yield* rows.upsert({ environmentPublicKey: "public-key", state })).toEqual({
+        ...state,
+        phase: "waiting_for_input",
+      });
     }).pipe(
       Effect.provide(
         AgentActivityRows.layer.pipe(Layer.provide(Layer.succeed(RelayDb.RelayDb, db))),
@@ -68,6 +78,7 @@ describe("AgentActivityRows", () => {
       }),
       select: () => ({
         from: () => ({
+          where: () => Effect.fail(cause),
           innerJoin: () => ({
             where: () => ({
               orderBy: () => Effect.fail(cause),

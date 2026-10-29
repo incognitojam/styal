@@ -175,7 +175,7 @@ function layerFor(input: {
     Layer.provide(
       Layer.mergeAll(
         Layer.succeed(AgentActivityRows.AgentActivityRows, {
-          upsert: () => Effect.void,
+          upsert: () => Effect.succeed(null),
           remove: () => Effect.void,
           pruneTerminal: () => Effect.void,
           listForUser: () =>
@@ -956,6 +956,53 @@ describe("ApnsDeliveries", () => {
       );
     },
   );
+
+  it.effect.each([
+    { name: "sends a delayed alert for a thread still waiting", seen: false },
+    { name: "drops a delayed alert for a thread opened in the meantime", seen: true },
+  ])("$name", ({ seen }) => {
+    const attempts: Array<DeliveryAttempts.DeliveryAttemptInput> = [];
+    const queuedJobs: Array<SignedApnsDeliveryJob> = [];
+    const requests: Array<HttpClientRequest.HttpClientRequest> = [];
+    const waiting = { ...state, phase: "waiting_for_input" as const, attended: true };
+    const phone = {
+      ...target,
+      push_token: "push-token",
+      preferences_json: JSON.stringify({
+        ...JSON.parse(enabledPreferences),
+        attendedAlertDelaySeconds: 600,
+      }),
+    };
+    return Effect.gen(function* () {
+      const deliveries = yield* ApnsDeliveries.ApnsDeliveries;
+      yield* deliveries.enqueueDelayedAlert({ target: phone, state: waiting, delaySeconds: 600 });
+      const job = queuedJobs[0]!;
+      expect(job.payload).toMatchObject({
+        createdAt: "1970-01-01T00:10:00.000Z",
+        notification: { delayed: true, phase: "waiting_for_input", body: "Input: Project" },
+      });
+      yield* deliveries.processSignedJob(job);
+      expect(requests).toHaveLength(seen ? 0 : 1);
+      expect(attempts[0]?.apnsReason ?? null).toBe(
+        seen ? "Delayed alert was handled or seen." : null,
+      );
+    }).pipe(
+      Effect.provide(
+        layerFor({
+          attempts,
+          queuedJobs,
+          config: signingConfig,
+          currentTargets: [phone],
+          activityStates: [seen ? { ...waiting, lastVisitedAt: waiting.updatedAt } : waiting],
+          execute: (request) =>
+            Effect.sync(() => {
+              requests.push(request);
+              return HttpClientResponse.fromWeb(request, new Response("", { status: 200 }));
+            }),
+        }),
+      ),
+    );
+  });
 
   it.effect("skips a queued start when the user no longer has live work", () => {
     const attempts: Array<DeliveryAttempts.DeliveryAttemptInput> = [];

@@ -69,6 +69,8 @@ export interface Preferences {
   readonly notifyOnInput?: boolean;
   readonly notifyOnCompletion?: boolean;
   readonly notifyOnFailure?: boolean;
+  /** How long agent alerts wait while the user is at a computer; unset means 10 minutes. */
+  readonly attendedAlertDelaySeconds?: number;
   readonly themeId?: MobileThemeId;
   readonly lightThemeId?: MobileThemeId;
   readonly darkThemeId?: MobileThemeId;
@@ -161,6 +163,7 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     notifyOnInput?: boolean;
     notifyOnCompletion?: boolean;
     notifyOnFailure?: boolean;
+    attendedAlertDelaySeconds?: number;
     themeId?: MobileThemeId;
     lightThemeId?: MobileThemeId;
     darkThemeId?: MobileThemeId;
@@ -224,6 +227,14 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   }
   if (typeof parsed.notifyOnFailure === "boolean") {
     preferences.notifyOnFailure = parsed.notifyOnFailure;
+  }
+  if (
+    typeof parsed.attendedAlertDelaySeconds === "number" &&
+    Number.isInteger(parsed.attendedAlertDelaySeconds) &&
+    parsed.attendedAlertDelaySeconds >= 0 &&
+    parsed.attendedAlertDelaySeconds <= 3_600
+  ) {
+    preferences.attendedAlertDelaySeconds = parsed.attendedAlertDelaySeconds;
   }
   if (
     typeof parsed.themeId === "string" &&

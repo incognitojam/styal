@@ -87,6 +87,7 @@ const config = {
 function harness() {
   const sent: Array<Parameters<FcmClient.FcmClient["Service"]["send"]>[0]> = [];
   const queued: FcmDeliveries.FcmDeliveryJob[] = [];
+  const queuedOptions: Array<{ readonly delaySeconds?: number } | undefined> = [];
   const marked: Array<Parameters<LiveActivities.LiveActivities["Service"]["markDelivery"]>[0]> = [];
   const current = {
     target: { ...target },
@@ -102,9 +103,10 @@ function harness() {
     NodeCryptoLayer.layer,
     Layer.succeed(RelayConfiguration.RelayConfiguration, config),
     Layer.succeed(FcmDeliveryQueueSender.FcmDeliveryQueueSender, {
-      send: (job) =>
+      send: (job, options) =>
         Effect.sync(() => {
           queued.push(job);
+          queuedOptions.push(options);
         }),
     }),
     Layer.succeed(FcmClient.FcmClient, {
@@ -132,7 +134,7 @@ function harness() {
       invalidateDeliveryToken: () => Effect.void,
     }),
     Layer.succeed(AgentActivityRows.AgentActivityRows, {
-      upsert: () => Effect.void,
+      upsert: () => Effect.succeed(null),
       remove: () => Effect.void,
       pruneTerminal: () => Effect.void,
       listForUser: () =>
@@ -156,7 +158,7 @@ function harness() {
         ),
     }),
     Layer.succeed(EnvironmentLinks.EnvironmentLinks, {
-      upsert: () => Effect.void,
+      upsert: () => Effect.succeed(null),
       listDeliveryUsersForEnvironment: (input) =>
         Effect.sync(() =>
           current.linked && !current.revokedEnvironments.includes(input.environmentId)
@@ -197,6 +199,7 @@ function harness() {
   return {
     sent,
     queued,
+    queuedOptions,
     marked,
     current,
     layer: FcmDeliveries.layer.pipe(Layer.provide(layerServices)),
@@ -520,6 +523,52 @@ describe("Android delivery routing", () => {
         alert_body: "Done: Project",
       });
       expect(h.sent[0]?.data.user_id).toBe("user");
+    }).pipe(Effect.provide(h.layer));
+  });
+
+  it.effect(
+    "holds an attended alert for the delayed job, which drops it once handled or seen",
+    () => {
+      const h = harness();
+      const waiting = { ...state, phase: "waiting_for_input" as const, attended: true };
+      h.current.target.preferences_json = encodeJson({
+        ...preferences,
+        attendedAlertDelaySeconds: 600,
+      });
+      h.current.target.last_aggregate_json = encodeJson(aggregateFor([state]));
+      h.current.state = waiting;
+      return Effect.gen(function* () {
+        const delivery = yield* FcmDeliveries.FcmDeliveries;
+        yield* delivery.process({ ...h.job, state: waiting });
+        expect(h.sent[0]?.data.alert_title).toBeUndefined();
+        expect(h.sent[0]?.data.active).toBe("true");
+
+        const delayedJob = { ...h.job, state: waiting, delaySeconds: 600 };
+        const markedBefore = h.marked.length;
+        yield* delivery.process(delayedJob);
+        expect(h.sent[1]?.data).toMatchObject({
+          active: "true",
+          alert_title: "Fix notifications",
+          alert_body: "Input: Project",
+        });
+        expect(h.marked).toHaveLength(markedBefore);
+
+        h.current.state = { ...waiting, lastVisitedAt: waiting.updatedAt };
+        yield* delivery.process(delayedJob);
+        h.current.state = { ...state, attended: true };
+        yield* delivery.process(delayedJob);
+        expect(h.sent).toHaveLength(2);
+      }).pipe(Effect.provide(h.layer));
+    },
+  );
+
+  it.effect("queues delayed alerts with the queue delay", () => {
+    const h = harness();
+    return Effect.gen(function* () {
+      const delivery = yield* FcmDeliveries.FcmDeliveries;
+      yield* delivery.enqueue({ target: h.current.target, state, delaySeconds: 600 });
+      expect(h.queued).toMatchObject([{ delaySeconds: 600, queuedAt: 0 }]);
+      expect(h.queuedOptions).toEqual([{ delaySeconds: 600 }]);
     }).pipe(Effect.provide(h.layer));
   });
 

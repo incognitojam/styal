@@ -37,6 +37,13 @@ export const RelayAgentAwarenessPreferences = Schema.Struct({
   notifyOnInput: Schema.Boolean,
   notifyOnCompletion: Schema.Boolean,
   notifyOnFailure: Schema.Boolean,
+  /**
+   * While the user is active at a computer, alerts wait this long and are dropped if the
+   * thread was handled or opened in the meantime. Absent or 0 sends them immediately.
+   */
+  attendedAlertDelaySeconds: Schema.optional(
+    Schema.Int.check(Schema.isGreaterThanOrEqualTo(0), Schema.isLessThanOrEqualTo(3_600)),
+  ),
 });
 export type RelayAgentAwarenessPreferences = typeof RelayAgentAwarenessPreferences.Type;
 
@@ -128,6 +135,10 @@ export const RelayAgentActivityState = Schema.Struct({
   modelTitle: TrimmedNonEmptyString,
   updatedAt: TrimmedNonEmptyString,
   deepLink: TrimmedNonEmptyString,
+  /** A computer client was in use when this state was published. */
+  attended: Schema.optional(Schema.Boolean),
+  /** When the user last opened the thread, on the same clock as `updatedAt`. */
+  lastVisitedAt: Schema.optional(TrimmedNonEmptyString),
 });
 export type RelayAgentActivityState = typeof RelayAgentActivityState.Type;
 
@@ -141,6 +152,7 @@ export const RelayAgentActivityAggregateRow = Schema.Struct({
   status: TrimmedNonEmptyString,
   updatedAt: TrimmedNonEmptyString,
   deepLink: TrimmedNonEmptyString,
+  attended: Schema.optional(Schema.Boolean),
 });
 export type RelayAgentActivityAggregateRow = typeof RelayAgentActivityAggregateRow.Type;
 

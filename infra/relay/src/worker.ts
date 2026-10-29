@@ -44,6 +44,7 @@ import {
   RelayApnsDeliveryQueue,
   RelayFcmDeliveryQueue,
   RelayFcmDeliveryDeadLetterQueue,
+  queueSendOptions,
 } from "./queues.ts";
 import * as WebCrypto from "./WebCrypto.ts";
 import * as FcmAssertionSigner from "./agentActivity/FcmAssertionSigner.ts";
@@ -267,9 +268,9 @@ export const layer = Api.make(
         FcmDeliveries.layer.pipe(
           Layer.provide(
             Layer.succeed(FcmDeliveryQueueSender.FcmDeliveryQueueSender, {
-              send: (body) =>
+              send: (body, options) =>
                 fcmDeliveryQueueSender
-                  .send(body)
+                  .send(body, queueSendOptions(options))
                   .pipe(Effect.provideService(Alchemy.RuntimeContext, alchemyRuntimeContext)),
             }),
           ),

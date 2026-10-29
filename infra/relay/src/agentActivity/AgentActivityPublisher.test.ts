@@ -72,7 +72,7 @@ function makeAgentActivityRows(
   overrides: Partial<AgentActivityRows.AgentActivityRows["Service"]> = {},
 ): AgentActivityRows.AgentActivityRows["Service"] {
   return {
-    upsert: () => Effect.void,
+    upsert: () => Effect.succeed(null),
     remove: () => Effect.void,
     pruneTerminal: () => Effect.void,
     listForUser: () => Effect.succeed([state]),
@@ -85,7 +85,7 @@ function makeEnvironmentLinks(
   overrides: Partial<EnvironmentLinks.EnvironmentLinks["Service"]> = {},
 ): EnvironmentLinks.EnvironmentLinks["Service"] {
   return {
-    upsert: () => Effect.void,
+    upsert: () => Effect.succeed(null),
     listDeliveryUsersForEnvironment: () =>
       Effect.succeed([
         {
@@ -109,6 +109,7 @@ function makeApnsDeliveries(
   return {
     sendForTarget: () => Effect.succeed(null),
     sendPushNotificationForTarget: () => Effect.succeed(null),
+    enqueueDelayedAlert: () => Effect.succeed(null),
     sendLiveActivity: () =>
       Effect.succeed({
         deviceId: "device",
@@ -141,6 +142,104 @@ function makeApnsDeliveries(
 }
 
 describe("AgentActivityPublisher", () => {
+  it.effect(
+    "queues delayed alerts for devices with a delay and skips visit-only republishes",
+    () => {
+      const delayedPreferences = JSON.stringify({
+        liveActivitiesEnabled: true,
+        notificationsEnabled: true,
+        notifyOnApproval: true,
+        notifyOnInput: true,
+        notifyOnCompletion: true,
+        notifyOnFailure: true,
+        attendedAlertDelaySeconds: 600,
+      });
+      const android = {
+        ...target("android"),
+        platform: "android" as const,
+        ios_major_version: null,
+        preferences_json: delayedPreferences,
+      };
+      const ios = { ...target("ios"), preferences_json: delayedPreferences };
+      const immediate = { ...target("immediate"), preferences_json: "{}" };
+      const waiting = { ...state, phase: "waiting_for_input" as const, attended: true };
+      let stored: RelayAgentActivityState | null = state;
+      const fcmCalls: Array<Parameters<FcmDeliveries.FcmDeliveries["Service"]["enqueue"]>[0]> = [];
+      const delayedApple: Array<{ readonly deviceId: string; readonly delaySeconds: number }> = [];
+      const publish = (next: RelayAgentActivityState) =>
+        Effect.gen(function* () {
+          const publisher = yield* AgentActivityPublisher.AgentActivityPublisher;
+          return yield* publisher.publish({
+            environmentId: state.environmentId,
+            environmentPublicKey: "key",
+            threadId: state.threadId,
+            state: next,
+          });
+        });
+      return Effect.gen(function* () {
+        yield* publish(waiting);
+        expect(fcmCalls).toEqual([
+          { target: android, state: waiting, delaySeconds: 600 },
+          { target: android, state: waiting },
+        ]);
+        expect(delayedApple).toEqual([{ deviceId: "ios", delaySeconds: 600 }]);
+
+        fcmCalls.length = 0;
+        const visit = yield* publish({ ...waiting, lastVisitedAt: waiting.updatedAt });
+        expect(visit).toEqual({ ok: true, deliveries: [] });
+        expect(fcmCalls).toEqual([]);
+      }).pipe(
+        Effect.provide(
+          AgentActivityPublisher.layer.pipe(
+            Layer.provide(
+              Layer.mergeAll(
+                Layer.succeed(
+                  AgentActivityRows.AgentActivityRows,
+                  makeAgentActivityRows({
+                    upsert: (input) =>
+                      Effect.sync(() => {
+                        const previous = stored;
+                        stored = input.state;
+                        return previous;
+                      }),
+                  }),
+                ),
+                Layer.succeed(EnvironmentLinks.EnvironmentLinks, makeEnvironmentLinks()),
+                Layer.succeed(
+                  LiveActivities.LiveActivities,
+                  makeLiveActivities({
+                    listTargets: () => Effect.succeed([android, ios, immediate]),
+                  }),
+                ),
+                Layer.succeed(
+                  ApnsDeliveries.ApnsDeliveries,
+                  makeApnsDeliveries({
+                    enqueueDelayedAlert: (input) =>
+                      Effect.sync(() => {
+                        delayedApple.push({
+                          deviceId: input.target.device_id,
+                          delaySeconds: input.delaySeconds,
+                        });
+                        return null;
+                      }),
+                  }),
+                ),
+                Layer.succeed(FcmDeliveries.FcmDeliveries, {
+                  enqueue: (input) =>
+                    Effect.sync(() => {
+                      fcmCalls.push(input);
+                      return null;
+                    }),
+                  process: () => Effect.void,
+                }),
+              ),
+            ),
+          ),
+        ),
+      );
+    },
+  );
+
   it.effect("routes Android publication and registration replay to FCM alongside iOS", () => {
     const android = { ...target("android"), platform: "android" as const, ios_major_version: null };
     const ios = target("ios");
@@ -370,6 +469,7 @@ describe("AgentActivityPublisher", () => {
                     upsert: (input) =>
                       Effect.sync(() => {
                         upserts.push(input);
+                        return null;
                       }),
                   }),
                 ),
@@ -464,6 +564,7 @@ describe("AgentActivityPublisher", () => {
                     upsert: (input) =>
                       Effect.sync(() => {
                         upserts.push(input);
+                        return null;
                       }),
                     listForUser: () => Effect.succeed([]),
                   }),

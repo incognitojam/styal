@@ -9,6 +9,7 @@ export class FcmDeliveryQueueSender extends Context.Service<
   {
     readonly send: (
       body: FcmDeliveries.FcmDeliveryJob,
+      options?: { readonly delaySeconds?: number },
     ) => Effect.Effect<void, Cloudflare.Queues.SendError>;
   }
 >()("t3code-relay/agentActivity/FcmDeliveryQueueSender") {}

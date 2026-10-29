@@ -1,5 +1,6 @@
 import type {
   RelayAgentActivityAggregateState,
+  RelayAgentActivityState,
   RelayAgentAwarenessPreferences,
   RelayDeliveryKind,
   RelayDeliveryResult,
@@ -24,7 +25,7 @@ import {
   sanitizeAgentActivityAggregateState,
   sanitizeApnsNotificationPayload,
 } from "./agentActivityPayloads.ts";
-import { makeAggregateState } from "./agentActivityAggregate.ts";
+import { makeAggregateState, statusForPhase } from "./agentActivityAggregate.ts";
 import * as Apns from "./ApnsClient.ts";
 import {
   ApnsDeliveryJobLiveActivityAggregateMissing,
@@ -48,6 +49,7 @@ import {
   alertForAttentionTransition,
   alertForNewlyTerminal,
   alertForTerminalAggregate,
+  delayedAlertIsDue,
   newlyTerminalRows,
   shouldAlertForActivity,
 } from "./agentActivityAlerts.ts";
@@ -521,6 +523,11 @@ export class ApnsDeliveries extends Context.Service<
       readonly target: LiveActivities.TargetRow;
       readonly aggregate: RelayAgentActivityAggregateState | null;
     }) => Effect.Effect<RelayDeliveryResult | null, ApnsDeliveryError>;
+    readonly enqueueDelayedAlert: (input: {
+      readonly target: LiveActivities.TargetRow;
+      readonly state: RelayAgentActivityState;
+      readonly delaySeconds: number;
+    }) => Effect.Effect<RelayDeliveryResult | null, ApnsDeliveryError>;
     readonly sendLiveActivity: (
       input: SendLiveActivityDeliveryInput,
     ) => Effect.Effect<RelayDeliveryResult, ApnsDeliveryError>;
@@ -943,7 +950,39 @@ export const make = Effect.gen(function* () {
           kind: "push_notification",
         });
       }
-      if (
+      if (notification.delayed === true) {
+        const due =
+          notification.phase !== undefined &&
+          notification.updatedAt !== undefined &&
+          delayedAlertIsDue({
+            raised: { phase: notification.phase, updatedAt: notification.updatedAt },
+            current: yield* activityRows
+              .getForUserThread({
+                userId: input.target.user_id,
+                environmentId: notification.environmentId,
+                threadId: notification.threadId,
+              })
+              .pipe(
+                // Unlike a stale immediate push, a wrongly sent delayed alert is the
+                // interruption this delay exists to prevent.
+                Effect.catchCause((cause) =>
+                  Effect.logWarning("delayed alert state recheck failed; dropping it", {
+                    cause,
+                  }).pipe(Effect.as(null)),
+                ),
+              ),
+            preferences: parsePreferences(currentTarget.preferences_json),
+            nowMs: now.epochMilliseconds,
+          });
+        if (!due) {
+          yield* attempts.completeSourceJob({
+            sourceJobId: input.sourceJobId,
+            apnsReason: "Delayed alert was handled or seen.",
+          });
+          return staleJobResult({ deviceId: input.target.device_id, kind: "push_notification" });
+        }
+        deliveryTarget = currentTarget;
+      } else if (
         !(yield* notificationStateIsCurrent({
           userId: input.target.user_id,
           notification,
@@ -957,25 +996,26 @@ export const make = Effect.gen(function* () {
           deviceId: input.target.device_id,
           kind: "push_notification",
         });
-      }
-      deliveryTarget = currentTarget;
-      const preferences = parsePreferences(currentTarget.preferences_json);
-      const alertAllowed =
-        notification.phase !== undefined && notification.updatedAt !== undefined
-          ? shouldAlertForActivity({
-              ...notification,
-              phase: notification.phase,
-              updatedAt: notification.updatedAt,
-              preferences,
-              nowMs: now.epochMilliseconds,
-            })
-          : preferences?.notificationsEnabled === true;
-      if (!alertAllowed) {
-        yield* attempts.completeSourceJob({
-          sourceJobId: input.sourceJobId,
-          apnsReason: "Notification is disabled or no longer fresh.",
-        });
-        return staleJobResult({ deviceId: input.target.device_id, kind: "push_notification" });
+      } else {
+        deliveryTarget = currentTarget;
+        const preferences = parsePreferences(currentTarget.preferences_json);
+        const alertAllowed =
+          notification.phase !== undefined && notification.updatedAt !== undefined
+            ? shouldAlertForActivity({
+                ...notification,
+                phase: notification.phase,
+                updatedAt: notification.updatedAt,
+                preferences,
+                nowMs: now.epochMilliseconds,
+              })
+            : preferences?.notificationsEnabled === true;
+        if (!alertAllowed) {
+          yield* attempts.completeSourceJob({
+            sourceJobId: input.sourceJobId,
+            apnsReason: "Notification is disabled or no longer fresh.",
+          });
+          return staleJobResult({ deviceId: input.target.device_id, kind: "push_notification" });
+        }
       }
     }
     const result = yield* apns
@@ -1140,6 +1180,22 @@ export const make = Effect.gen(function* () {
             notification,
           })
         : Effect.succeed(null);
+    }),
+    enqueueDelayedAlert: Effect.fnUntraced(function* (input) {
+      const token = input.target.push_token;
+      if (!config.apns || !token) return null;
+      return yield* deliveryQueue.enqueuePushNotification({
+        userId: input.target.user_id,
+        deviceId: input.target.device_id,
+        token,
+        bundleId: input.target.bundle_id,
+        apsEnvironment: input.target.aps_environment,
+        notification: {
+          ...notificationForActivity({ ...input.state, status: statusForPhase(input.state.phase) }),
+          delayed: true,
+        },
+        delaySeconds: input.delaySeconds,
+      });
     }),
     sendForTarget: Effect.fnUntraced(function* (input) {
       if (!config.apns) return null;

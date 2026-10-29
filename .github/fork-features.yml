@@ -2794,6 +2794,45 @@ features:
         - https://github.com/pingdotgg/t3code/pull/9135
       retire_when: Upstream validates missing project and worktree paths before every provider starts, and a stream failure after a failed Claude result no longer replaces that result's error.
 
+  - id: mobile-attended-alert-delay
+    title: Delay phone alerts while the user is at a computer
+    status: maintained
+    prs: [1138]
+    invariants:
+      - Desktop and web clients report whether they are in use through client activity leases; the desktop app adds OS-wide input (any app, 5-minute idle threshold), and mobile leases never count.
+      - The server marks published agent activity `attended` when a computer client is in use and adds `lastVisitedAt` for phases that can alert; `attended` is excluded from the publish identity so presence changes never republish.
+      - The relay holds the immediate alert for an attended state on devices with a delay and queues a delayed alert when the thread enters an alert phase. The delayed alert is sent only if the thread is still in that phase and was not opened after the state's `updatedAt`.
+      - A republish that only changes `lastVisitedAt` or `attended` updates the stored row without delivering to devices.
+      - Devices that do not send a delay, and states from servers that do not send `attended`, alert immediately as before.
+    rationale: Users working at a computer already get desktop notifications, so the phone buzzing for the same thread is noise. Discord delays mobile pushes the same way. Compared with upstream revision a42bdd4e516433a16650b9401ab3c066544ca5cd on October 29, 2026.
+    implementation_paths:
+      - apps/desktop/src/ipc/methods/window.ts
+      - apps/mobile/src/features/settings/SettingsNotificationsRouteScreen.tsx
+      - apps/server/src/relay/AgentAwarenessRelay.ts
+      - apps/web/src/lib/backgroundActivityReporter.ts
+      - infra/relay/src/agentActivity/AgentActivityPublisher.ts
+      - infra/relay/src/agentActivity/ApnsDeliveries.ts
+      - infra/relay/src/agentActivity/FcmDeliveries.ts
+      - infra/relay/src/agentActivity/agentActivityAlerts.ts
+    upstream_paths:
+      - apps/server/src/relay/AgentAwarenessRelay.ts
+      - apps/web/src/lib/backgroundActivityReporter.ts
+      - infra/relay/src/agentActivity/AgentActivityPublisher.ts
+      - infra/relay/src/agentActivity/ApnsDeliveries.ts
+      - infra/relay/src/agentActivity/FcmDeliveries.ts
+    tests:
+      - apps/mobile/src/features/agent-awareness/remoteRegistration.test.ts
+      - apps/server/src/relay/AgentAwarenessRelay.test.ts
+      - apps/web/src/lib/backgroundActivityReporter.test.ts
+      - infra/relay/src/agentActivity/AgentActivityPublisher.test.ts
+      - infra/relay/src/agentActivity/ApnsDeliveries.test.ts
+      - infra/relay/src/agentActivity/FcmDeliveries.test.ts
+      - infra/relay/src/agentActivity/agentActivityPolicy.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream delays or suppresses phone alerts while the user is active on a computer client.
+
   - id: mobile-chat-literal-html
     title: Preserve HTML-looking text in mobile user messages
     status: maintained
