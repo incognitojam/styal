@@ -68,12 +68,16 @@ Leave the field blank to use the managed runtime, or a compatible executable on
 
 ## Models and threads
 
-The model list comes from your Antigravity account and can differ from other
-Antigravity apps. Choose the Gemini generation in the model picker and its
-thinking level in **Reasoning effort**. Only levels available to your account are
-offered. A resumed thread keeps its selected model and effort. If access to that
-model ends, select another available model before continuing. If a saved effort
-is no longer offered, the model's default effort is used instead.
+The model list comes from your Antigravity account, including Claude and GPT models
+when your plan has them. Choose the model and its thinking level in **Reasoning
+effort**. Only levels available to your account are offered. A resumed thread keeps
+its selected model and effort. If access to that model ends, select another
+available model before continuing. If a saved effort is no longer offered, the
+model's default effort is used instead.
+
+Antigravity creates empty `.gemini/skills` and `.agents/skills` folders in the
+workspace when a session starts. Git does not track empty folders, so they never
+appear in commits.
 
 Use Antigravity's native `/plan` command for planning. styal's separate Plan mode
 is unavailable. Tool approvals follow [Permission modes](./permission-modes.md).
