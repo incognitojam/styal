@@ -981,13 +981,23 @@ const withStyalToolDescriptions = Effect.fn("McpHttpServer.withStyalToolDescript
     addTool: (options) =>
       server.addTool({
         ...options,
-        tool:
-          options.tool.description === undefined
-            ? options.tool
-            : new McpSchema.Tool({
-                ...options.tool,
-                description: renderStyalProductName(options.tool.description),
+        tool: new McpSchema.Tool({
+          ...options.tool,
+          ...(options.tool.description === undefined
+            ? {}
+            : { description: renderStyalProductName(options.tool.description) }),
+          ...(options.tool.title === undefined
+            ? {}
+            : { title: renderStyalProductName(options.tool.title) }),
+          ...(options.tool.annotations?.title === undefined
+            ? {}
+            : {
+                annotations: {
+                  ...options.tool.annotations,
+                  title: renderStyalProductName(options.tool.annotations.title),
+                },
               }),
+        }),
       }),
   });
   return yield* registration.pipe(Effect.provideService(McpServer.McpServer, brandingServer));

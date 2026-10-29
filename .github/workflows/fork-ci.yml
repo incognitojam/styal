@@ -266,6 +266,9 @@ jobs:
       - name: Check fork feature ledger
         run: vp run --filter @t3tools/scripts ledger:check
 
+      - name: Check for upstream product names
+        run: vp run --filter @t3tools/scripts naming:check
+
       - name: Check upstream migration history
         run: |
           git fetch --no-tags https://github.com/pingdotgg/t3code.git '+refs/heads/main:refs/remotes/upstream/main'
