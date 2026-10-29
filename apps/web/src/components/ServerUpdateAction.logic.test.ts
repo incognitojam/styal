@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { ThreadId } from "@t3tools/contracts";
+import { ThreadId, summarizeDesktopUpdateActivity } from "@t3tools/contracts";
 
 import {
   type ServerUpdateHost,
@@ -24,6 +24,14 @@ function host(overrides: Partial<ServerUpdateHost> = {}): ServerUpdateHost {
   return {
     serverLabel: "Lab server",
     activity: idle,
+    desktopActivity: [
+      overrides.activity === null
+        ? null
+        : {
+            ...summarizeDesktopUpdateActivity(overrides.activity ?? idle),
+            isRequestingEnvironment: true,
+          },
+    ],
     desktopApp: false,
     continueRunningThreads: false,
     ...overrides,

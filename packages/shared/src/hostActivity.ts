@@ -1,5 +1,6 @@
 import type {
   ConfirmDialogThreadActivity,
+  DesktopUpdateActivity,
   HostActivity,
   HostActivityThread,
 } from "@t3tools/contracts";
@@ -8,6 +9,47 @@ export type HostActivityCheck = HostActivity & {
   readonly hostLabel?: string;
   readonly continueRunningThreads?: boolean;
 };
+
+/** Replace only the selected environment's counts with its separately authorized details. */
+export function desktopUpdateActivityChecks(
+  primary: HostActivity | null,
+  pool: ReadonlyArray<DesktopUpdateActivity | null> | null | undefined,
+): ReadonlyArray<HostActivityCheck | null> {
+  if (!pool?.length || pool.filter((entry) => entry?.isRequestingEnvironment).length !== 1) {
+    // Unidentified entries may duplicate the primary. Retain known siblings and
+    // readable primary details, but require consent for the incomplete coverage.
+    return [
+      primary && { ...primary, continueRunningThreads: true },
+      ...(pool ?? []).flatMap((entry) =>
+        entry && !entry.isRequestingEnvironment
+          ? [
+              {
+                ...entry,
+                hostLabel: "other environments on this desktop app",
+                continueRunningThreads: true,
+              },
+            ]
+          : [],
+      ),
+      null,
+    ];
+  }
+  return [
+    ...pool.map((entry) => {
+      const activity = entry?.isRequestingEnvironment && primary ? primary : entry;
+      return (
+        activity && {
+          ...activity,
+          ...(entry && !entry.isRequestingEnvironment
+            ? { hostLabel: "other environments on this desktop app" }
+            : {}),
+          continueRunningThreads: true,
+        }
+      );
+    }),
+    ...(primary === null ? [null] : []),
+  ];
+}
 
 /** Short labels for the restart warning's per-thread status badges. */
 export const hostActivityReasonLabels: Record<HostActivityThread["reasons"][number], string> = {
@@ -133,7 +175,8 @@ export function describeHostActivity(
       `Could not check ${plural(uncheckedTerminals, "terminal session")} for running commands.`,
     );
   if (uncheckedHosts) lines.push(options.uncheckedHostsLine);
-  if (threadWarnings.length) lines.push("", ...threadWarnings);
+  // Hosts without a label, and anonymous desktop siblings, produce identical warnings.
+  if (threadWarnings.length) lines.push("", ...new Set(threadWarnings));
   return {
     concern:
       active || terminals || deviceUsers || providerInstalls

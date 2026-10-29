@@ -10,6 +10,8 @@ import {
   type DesktopHostTelemetrySnapshot,
   DesktopTelemetryControlMessage,
   type DesktopUpdateStatusReport,
+  type DesktopUpdateActivityReport,
+  type EnvironmentId,
   type ResourceTelemetrySourceStatus,
 } from "@t3tools/contracts";
 import { resolveServerBackgroundActivitySettings } from "@t3tools/shared/backgroundActivitySettings";
@@ -175,6 +177,15 @@ export class DesktopTelemetryReceiver extends Context.Service<
     readonly setDiagnosticsDemand: (
       enabled: boolean,
     ) => Effect.Effect<void, DesktopTelemetryControlError>;
+    readonly requestUpdateActivity: (
+      requestId: string,
+      requestingEnvironmentId: EnvironmentId,
+    ) => Effect.Effect<void, DesktopTelemetryControlError>;
+    readonly updateActivity: Effect.Effect<
+      Stream.Stream<DesktopUpdateActivityReport>,
+      never,
+      Scope.Scope
+    >;
     readonly requestDesktopUpdate: (
       requestId: string,
     ) => Effect.Effect<void, DesktopTelemetryControlError>;
@@ -356,6 +367,7 @@ export const make = Effect.fn("resourceTelemetry.desktopTelemetryReceiver.make")
   const changes = yield* PubSub.sliding<DesktopHostTelemetrySnapshot>(8);
   const healthChanges = yield* PubSub.sliding<DesktopTelemetryReceiverHealth>(4);
   const latestUpdateReport = yield* Ref.make(Option.none<DesktopUpdateStatusReport>());
+  const activityReports = yield* PubSub.unbounded<DesktopUpdateActivityReport>();
   const updateReportChanges = yield* PubSub.sliding<DesktopUpdateStatusReport>(16);
   const featureUsage = yield* Queue.unbounded<DesktopFeatureUsageReport>();
   const controlMutex = yield* Semaphore.make(1);
@@ -535,6 +547,13 @@ export const make = Effect.fn("resourceTelemetry.desktopTelemetryReceiver.make")
           );
         }
 
+        if (message.type === "desktopUpdateActivity") {
+          return recordContact.pipe(
+            Effect.andThen(PubSub.publish(activityReports, message)),
+            Effect.asVoid,
+          );
+        }
+
         if (message.type === "desktopUpdateStatus") {
           return recordContact.pipe(
             Effect.andThen(Ref.set(latestUpdateReport, Option.some(message))),
@@ -659,6 +678,14 @@ export const make = Effect.fn("resourceTelemetry.desktopTelemetryReceiver.make")
     health: Ref.get(health),
     subscribeHealth: subscribeBeforeSnapshotWithoutMutex(healthChanges, Ref.get(health)),
     setDiagnosticsDemand,
+    requestUpdateActivity: (requestId, requestingEnvironmentId) =>
+      sendControlMessage({
+        version: 1,
+        type: "requestDesktopUpdateActivity",
+        requestId,
+        requestingEnvironmentId,
+      }),
+    updateActivity: PubSub.subscribe(activityReports).pipe(Effect.map(Stream.fromSubscription)),
     requestDesktopUpdate: (requestId) =>
       sendControlMessage({
         version: 1,
@@ -718,6 +745,8 @@ export const layerTest = (
           })),
         ),
       setDiagnosticsDemand: () => Effect.void,
+      requestUpdateActivity: () => Effect.void,
+      updateActivity: Effect.succeed(Stream.empty),
       requestDesktopUpdate: () => Effect.void,
       commitDesktopUpdate: () => Effect.void,
       cancelDesktopUpdate: () => Effect.void,

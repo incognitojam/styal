@@ -1,10 +1,16 @@
-import type { HostActivity } from "@t3tools/contracts";
-import { describeHostActivity, hostActivityQuestion } from "@t3tools/shared/hostActivity";
+import type { DesktopUpdateActivity, HostActivity } from "@t3tools/contracts";
+import {
+  desktopUpdateActivityChecks,
+  describeHostActivity,
+  hostActivityQuestion,
+} from "@t3tools/shared/hostActivity";
 
 export interface ServerUpdateHost {
   readonly serverLabel: string;
   /** Null when the host could not be checked. */
   readonly activity: HostActivity | null;
+  /** Complete desktop pool coverage; absent on hosts predating remote activity checks. */
+  readonly desktopActivity?: ReadonlyArray<DesktopUpdateActivity | null> | null;
   readonly desktopApp: boolean;
   readonly continueRunningThreads: boolean;
 }
@@ -40,22 +46,27 @@ export function serverUpdateQuestion(
   return `Update the ${target}${concern === null ? "?" : hostActivityQuestion[concern]}`;
 }
 
-/**
- * Confirmation copy for updating one or more servers together, or null when
- * the update can start without asking. Desktop app updates always confirm
- * because they relaunch the remote app.
- */
-export function serverUpdateConfirmation(hosts: ReadonlyArray<ServerUpdateHost>) {
+export function serverUpdateActivity(hosts: ReadonlyArray<ServerUpdateHost>) {
   const single = hosts.length === 1 ? hosts[0]! : null;
-  const unchecked = hosts.filter((host) => host.activity === null);
-  const { concern, lines, incomplete, threadActivity } = describeHostActivity(
-    hosts.map(
-      ({ activity, continueRunningThreads, serverLabel }) =>
-        activity && {
-          ...activity,
-          continueRunningThreads,
-          ...(hosts.length > 1 ? { hostLabel: serverLabel } : {}),
-        },
+  const checks = hosts.map((host) =>
+    host.desktopApp
+      ? desktopUpdateActivityChecks(host.activity, host.desktopActivity)
+      : [
+          host.activity && {
+            ...host.activity,
+            continueRunningThreads: host.continueRunningThreads,
+          },
+        ],
+  );
+  const unchecked = hosts.filter((_, index) => checks[index]!.includes(null));
+  return describeHostActivity(
+    checks.flatMap((hostChecks, index) =>
+      hosts.length > 1
+        ? hostChecks.map((activity) => {
+            const label = [hosts[index]!.serverLabel, activity?.hostLabel].filter(Boolean);
+            return activity && { ...activity, hostLabel: label.join(" / ") };
+          })
+        : hostChecks,
     ),
     {
       uncheckedHostsLine: single
@@ -63,6 +74,14 @@ export function serverUpdateConfirmation(hosts: ReadonlyArray<ServerUpdateHost>)
         : `Could not check ${labels(unchecked)} for running work.`,
     },
   );
+}
+
+/** Remote desktop relaunches always need explicit confirmation. */
+export function serverUpdateConfirmation(
+  hosts: ReadonlyArray<ServerUpdateHost>,
+  activity = serverUpdateActivity(hosts),
+) {
+  const { concern, lines, incomplete, threadActivity } = activity;
   const desktopApps = hosts.filter((host) => host.desktopApp);
   if (desktopApps.length > 0) {
     return {

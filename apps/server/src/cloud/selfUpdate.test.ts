@@ -118,6 +118,8 @@ const makeHarness = Effect.fn("test.make_self_update_harness")(function* (
       DesktopAppUpdate.DesktopAppUpdate,
       options.desktopAppUpdate ?? {
         available: false,
+        inspectActivity: Effect.succeed([null]),
+        commit: () => Effect.never,
         run: () => Effect.die("unexpected desktop app update run"),
       },
     ),
@@ -376,6 +378,7 @@ it.layer(NodeServices.layer)("server self update", (it) => {
         mode: "desktop",
         desktopAppUpdate: {
           available: true,
+          inspectActivity: Effect.succeed([null]),
           run: (reportProgress) =>
             reportProgress("downloading").pipe(
               Effect.andThen(reportProgress("installing")),

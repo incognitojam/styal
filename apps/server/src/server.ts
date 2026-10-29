@@ -281,6 +281,7 @@ const layerHostPowerMonitor = HostPowerMonitor.layer.pipe(
 // would open a second reader on the desktop telemetry fd.
 const layerDesktopAppUpdate = DesktopAppUpdate.layer.pipe(
   Layer.provide(layerDesktopTelemetryReceiver),
+  Layer.provide(ServerEnvironment.layerIdentity),
 );
 
 const layerBackground = BackgroundPolicy.layer.pipe(
@@ -806,7 +807,8 @@ const layerMakeRoutes = Layer.mergeAll(
   Layer.provide(ServerBrowser.layer.pipe(Layer.provide(DesktopBrowserChannel.layer))),
   Layer.provide(PreviewBrowser.layer),
   Layer.provide(layerPreviewAutomationBroker),
-  Layer.provide(ServerSelfUpdate.layer.pipe(Layer.provide(layerDesktopAppUpdate))),
+  Layer.provide(ServerSelfUpdate.layer),
+  Layer.provide(layerDesktopAppUpdate),
   Layer.provide(layerCommandReadiness),
   Layer.provide(ServerHttp.layerBrowserApiCors),
   Layer.provide(ServerHttp.layerHttpCompression),

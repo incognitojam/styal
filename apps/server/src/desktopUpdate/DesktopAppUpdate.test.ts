@@ -1,6 +1,12 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
-import type { DesktopUpdateState, DesktopUpdateStatusReport } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  type DesktopUpdateActivity,
+  DesktopUpdateActivityReport,
+  type DesktopUpdateState,
+  type DesktopUpdateStatusReport,
+} from "@t3tools/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -8,10 +14,17 @@ import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
+import * as Schema from "effect/Schema";
+import * as TestClock from "effect/testing/TestClock";
 
 import * as ServerConfig from "../config.ts";
+import { ServerEnvironmentIdentity } from "../environment/ServerEnvironment.ts";
 import * as DesktopTelemetryReceiver from "../resourceTelemetry/DesktopTelemetryReceiver.ts";
 import * as DesktopAppUpdate from "./DesktopAppUpdate.ts";
+
+const activityWire = Schema.fromJsonString(DesktopUpdateActivityReport);
+const decodeActivityReport = Schema.decodeSync(activityWire);
+const encodeActivityReport = Schema.encodeSync(activityWire);
 
 function makeState(overrides: Partial<DesktopUpdateState> = {}): DesktopUpdateState {
   return {
@@ -58,6 +71,9 @@ interface HarnessOptions {
   readonly controlFd?: number | undefined;
   readonly reports?: (requestId: string) => readonly DesktopUpdateStatusReport[];
   readonly keepOpen?: boolean;
+  readonly activityHosts?: ReadonlyArray<DesktopUpdateActivity | null>;
+  readonly activityRequest?: DesktopTelemetryReceiver.DesktopTelemetryReceiver["Service"]["requestUpdateActivity"];
+  readonly legacyActivity?: boolean;
 }
 
 const makeHarness = Effect.fn("test.make_desktop_app_update_harness")(function* (
@@ -66,6 +82,36 @@ const makeHarness = Effect.fn("test.make_desktop_app_update_harness")(function* 
   const fs = yield* FileSystem.FileSystem;
   const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-desktop-app-update-test-" });
   const requestIdDeferred = yield* Deferred.make<string>();
+  const activityRequestId = yield* Deferred.make<string>();
+  let subscribed = false;
+  const activityReports = Effect.sync(() => {
+    subscribed = true;
+    return options.legacyActivity
+      ? Stream.never
+      : Stream.unwrap(
+          Deferred.await(activityRequestId).pipe(
+            Effect.map((requestId) => {
+              const reports: ReadonlyArray<DesktopUpdateActivityReport> = [
+                { version: 1, type: "desktopUpdateActivity", requestId: "unrelated", hosts: [] },
+                {
+                  version: 1,
+                  type: "desktopUpdateActivity",
+                  requestId,
+                  hosts: decodeActivityReport(
+                    encodeActivityReport({
+                      version: 1,
+                      type: "desktopUpdateActivity",
+                      requestId,
+                      hosts: options.activityHosts ?? [],
+                    }),
+                  ).hosts,
+                },
+              ];
+              return Stream.fromIterable(reports);
+            }),
+          ),
+        );
+  });
   const baseConfig = yield* ServerConfig.ServerConfig.pipe(
     Effect.provide(ServerConfig.layerTest(process.cwd(), baseDir)),
   );
@@ -89,7 +135,19 @@ const makeHarness = Effect.fn("test.make_desktop_app_update_harness")(function* 
   const service = yield* DesktopAppUpdate.make().pipe(
     Effect.provide(
       Layer.mergeAll(
+        Layer.succeed(ServerEnvironmentIdentity, {
+          getEnvironmentId: Effect.succeed(EnvironmentId.make("selected-environment")),
+        }),
         DesktopTelemetryReceiver.layerTest({
+          updateActivity: activityReports,
+          requestUpdateActivity:
+            options.activityRequest ??
+            ((requestId, requestingEnvironmentId) =>
+              Effect.gen(function* () {
+                expect(requestingEnvironmentId).toBe("selected-environment");
+                expect(subscribed).toBe(true);
+                yield* Deferred.succeed(activityRequestId, requestId);
+              })),
           requestDesktopUpdate: (requestId) =>
             Deferred.succeed(requestIdDeferred, requestId).pipe(Effect.asVoid),
           desktopUpdates: Effect.succeed({
@@ -105,6 +163,61 @@ const makeHarness = Effect.fn("test.make_desktop_app_update_harness")(function* 
 });
 
 it.layer(NodeServices.layer)("desktop app update", (it) => {
+  it.effect(
+    "preserves the primary marker and interruption counts through the wire schema and correlates replies",
+    () =>
+      Effect.gen(function* () {
+        const idle = {
+          activeSessions: 0,
+          continuableSessions: 0,
+          waitingSessions: 0,
+          terminalsRequiringConfirmation: 0,
+          terminalsWithUnknownActivity: 0,
+          environmentsUsingDevices: 0,
+        };
+        const hosts = [
+          { ...idle, isRequestingEnvironment: true },
+          { ...idle, isRequestingEnvironment: false, terminalsRequiringConfirmation: 1 },
+          null,
+        ];
+        const { service } = yield* makeHarness({ activityHosts: hosts });
+        expect(yield* service.inspectActivity).toEqual([
+          { ...idle, isRequestingEnvironment: true },
+          { ...idle, isRequestingEnvironment: false, terminalsRequiringConfirmation: 1 },
+          null,
+        ]);
+      }),
+  );
+
+  it.effect("treats unavailable and failed desktop activity checks as unknown", () =>
+    Effect.gen(function* () {
+      const unavailable = yield* makeHarness({ mode: "web" });
+      expect(yield* unavailable.service.inspectActivity).toEqual([null]);
+      const failed = yield* makeHarness({
+        activityRequest: () =>
+          Effect.fail(
+            new DesktopTelemetryReceiver.DesktopTelemetryControlFailed({
+              fd: 5,
+              operation: "write",
+              cause: new Error("pipe closed"),
+            }),
+          ),
+      });
+      expect(yield* failed.service.inspectActivity).toEqual([null]);
+    }),
+  );
+
+  it.effect("bounds a legacy desktop app that never replies and requires confirmation", () =>
+    Effect.gen(function* () {
+      const { service } = yield* makeHarness({ legacyActivity: true });
+      const inspection = yield* service.inspectActivity.pipe(
+        Effect.forkChild({ startImmediately: true }),
+      );
+      yield* TestClock.adjust("4 seconds");
+      expect(yield* Fiber.join(inspection)).toEqual([null]);
+    }),
+  );
+
   it.effect("is unavailable without desktop mode or the control fd", () =>
     Effect.gen(function* () {
       const web = yield* makeHarness({ mode: "web" });

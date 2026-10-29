@@ -49,7 +49,6 @@ describe("describeHostActivity", () => {
         "3 threads and 1 terminal session will be interrupted.",
         "",
         "Thread names and activity reasons are unavailable from this server.",
-        "Thread names and activity reasons are unavailable from this server.",
       ],
       incomplete: false,
       interrupts: true,

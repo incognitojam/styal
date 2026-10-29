@@ -1,7 +1,8 @@
-import type {
-  DesktopTelemetryRequestDesktopUpdate,
-  DesktopUpdateRemoteOutcome,
-  DesktopUpdateState,
+import {
+  summarizeDesktopUpdateActivity,
+  type DesktopTelemetryRequestDesktopUpdate,
+  type DesktopUpdateRemoteOutcome,
+  type DesktopUpdateState,
 } from "@t3tools/contracts";
 import * as Duration from "effect/Duration";
 import * as Clock from "effect/Clock";
@@ -13,6 +14,7 @@ import * as Ref from "effect/Ref";
 import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 
+import * as DesktopShutdownGuard from "../app/DesktopShutdownGuard.ts";
 import * as DesktopObservability from "../app/DesktopObservability.ts";
 import * as DesktopTelemetryPublisher from "../telemetry/DesktopTelemetryPublisher.ts";
 import * as DesktopUpdates from "./DesktopUpdates.ts";
@@ -44,10 +46,33 @@ type CommitClaim =
 export const listen: Effect.Effect<
   void,
   never,
-  DesktopUpdates.DesktopUpdates | DesktopTelemetryPublisher.DesktopTelemetryPublisher | Scope.Scope
+  | DesktopUpdates.DesktopUpdates
+  | DesktopTelemetryPublisher.DesktopTelemetryPublisher
+  | DesktopShutdownGuard.DesktopShutdownGuard
+  | Scope.Scope
 > = Effect.gen(function* () {
   const updates = yield* DesktopUpdates.DesktopUpdates;
   const publisher = yield* DesktopTelemetryPublisher.DesktopTelemetryPublisher;
+  const guard = yield* DesktopShutdownGuard.DesktopShutdownGuard;
+  yield* Stream.runForEach(publisher.updateActivityRequests, (request) =>
+    guard.inspect.pipe(
+      Effect.catchCause(() => Effect.succeed([null])),
+      Effect.flatMap((hosts) =>
+        publisher.publishUpdateActivity({
+          version: 1,
+          type: "desktopUpdateActivity",
+          requestId: request.requestId,
+          hosts: hosts.map(
+            (host) =>
+              host && {
+                ...summarizeDesktopUpdateActivity(host),
+                isRequestingEnvironment: host.environmentId === request.requestingEnvironmentId,
+              },
+          ),
+        }),
+      ),
+    ),
+  ).pipe(Effect.forkScoped);
   const activeRequestIdRef = yield* Ref.make(Option.none<string>());
   const requestControlRef = yield* Ref.make<{
     readonly active: Option.Option<{

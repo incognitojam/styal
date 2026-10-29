@@ -1,5 +1,13 @@
-import type { ConfirmDialogThreadActivity, HostActivity } from "@t3tools/contracts";
-import { describeHostActivity, hostActivityQuestion } from "@t3tools/shared/hostActivity";
+import type {
+  ConfirmDialogThreadActivity,
+  DesktopUpdateActivity,
+  HostActivity,
+} from "@t3tools/contracts";
+import {
+  desktopUpdateActivityChecks,
+  describeHostActivity,
+  hostActivityQuestion,
+} from "@t3tools/shared/hostActivity";
 
 export type ServerUpdateConfirmation = {
   readonly title: string;
@@ -16,10 +24,18 @@ export function describeServerUpdate(input: {
   readonly targetVersion: string;
   readonly desktopManaged: boolean;
   readonly activity: HostActivity | null;
+  readonly desktopActivity?: ReadonlyArray<DesktopUpdateActivity | null> | null;
   readonly continueRunningThreads: boolean;
 }): ServerUpdateConfirmation {
   const { concern, lines, incomplete, threadActivity } = describeHostActivity(
-    [input.activity && { ...input.activity, continueRunningThreads: input.continueRunningThreads }],
+    input.desktopManaged
+      ? desktopUpdateActivityChecks(input.activity, input.desktopActivity)
+      : [
+          input.activity && {
+            ...input.activity,
+            continueRunningThreads: input.continueRunningThreads,
+          },
+        ],
     { uncheckedHostsLine: `Could not check ${input.serverLabel} for running work.` },
   );
   return {

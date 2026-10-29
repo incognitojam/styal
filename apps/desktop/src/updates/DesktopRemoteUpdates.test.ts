@@ -1,9 +1,12 @@
 import { assert, describe, it } from "@effect/vitest";
+import { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
 import type {
   DesktopTelemetryRequestDesktopUpdate,
   DesktopTelemetryCommitDesktopUpdate,
   DesktopTelemetryCancelDesktopUpdate,
   DesktopUpdateStatusReport,
+  DesktopUpdateActivityReport,
+  DesktopTelemetryRequestUpdateActivity,
 } from "@t3tools/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
@@ -41,6 +44,8 @@ const request = (requestId: string): DesktopTelemetryRequestDesktopUpdate => ({
 function runRemoteUpdatesTest(
   harness: ReturnType<typeof makeHarness>,
   body: (context: {
+    readonly activityRequests: Queue.Queue<DesktopTelemetryRequestUpdateActivity>;
+    readonly activityReports: Queue.Queue<DesktopUpdateActivityReport>;
     readonly reports: DesktopUpdateStatusReport[];
     readonly requests: Queue.Queue<DesktopTelemetryRequestDesktopUpdate>;
     readonly commits: Queue.Queue<DesktopTelemetryCommitDesktopUpdate>;
@@ -49,6 +54,8 @@ function runRemoteUpdatesTest(
 ) {
   return Effect.scoped(
     Effect.gen(function* () {
+      const activityRequests = yield* Queue.unbounded<DesktopTelemetryRequestUpdateActivity>();
+      const activityReports = yield* Queue.unbounded<DesktopUpdateActivityReport>();
       const requests = yield* Queue.unbounded<DesktopTelemetryRequestDesktopUpdate>();
       const commits = yield* Queue.unbounded<DesktopTelemetryCommitDesktopUpdate>();
       const cancellations = yield* Queue.unbounded<DesktopTelemetryCancelDesktopUpdate>();
@@ -59,6 +66,8 @@ function runRemoteUpdatesTest(
         encoded: Stream.empty,
         handleControlForSource: () => Effect.void,
         removeControlSource: () => Effect.void,
+        updateActivityRequests: Stream.fromQueue(activityRequests),
+        publishUpdateActivity: (report) => Queue.offer(activityReports, report).pipe(Effect.asVoid),
         publishUpdateReport: (report) =>
           Effect.sync(() => {
             reports.push(report);
@@ -75,7 +84,7 @@ function runRemoteUpdatesTest(
         Effect.provideService(DesktopTelemetryPublisher.DesktopTelemetryPublisher, publisher),
       );
       yield* settle;
-      yield* body({ reports, requests, commits, cancellations });
+      yield* body({ reports, requests, commits, cancellations, activityRequests, activityReports });
     }),
   ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
 }
@@ -85,6 +94,105 @@ function terminalReports(reports: DesktopUpdateStatusReport[]): DesktopUpdateSta
 }
 
 describe("DesktopRemoteUpdates", () => {
+  it.effect(
+    "preflights pool interruption counts without exposing sibling environment details",
+    () => {
+      const harness = makeHarness();
+      const idle = {
+        activeSessions: 0,
+        continuableSessions: 0,
+        waitingSessions: 0,
+        terminalsRequiringConfirmation: 0,
+        terminalsWithUnknownActivity: 0,
+        environmentsUsingDevices: 0,
+      };
+      harness.idleRestart.hosts = [
+        { ...idle, environmentId: EnvironmentId.make("selected-environment") },
+        {
+          ...idle,
+          hostLabel: "Unpaired WSL",
+          environmentId: EnvironmentId.make("unpaired"),
+          activeSessions: 1,
+          continuableSessions: 1,
+          waitingSessions: 1,
+          terminalsRequiringConfirmation: 1,
+          terminalsWithUnknownActivity: 1,
+          environmentsUsingDevices: 1,
+          providerInstalls: 1,
+          threads: [
+            {
+              threadId: ThreadId.make("unpaired-task"),
+              title: "Unpaired task",
+              reasons: ["running"],
+              continuable: true,
+              project: {
+                id: ProjectId.make("unpaired-project"),
+                title: "Unpaired project",
+                workspaceRoot: "/synthetic/private-project",
+                faviconPath: null,
+                projectIcon: null,
+              },
+            },
+          ],
+        },
+      ];
+      return runRemoteUpdatesTest(harness, ({ activityRequests, activityReports }) =>
+        Effect.gen(function* () {
+          yield* Queue.offer(activityRequests, {
+            version: 1,
+            type: "requestDesktopUpdateActivity",
+            requestId: "inspect-1",
+            requestingEnvironmentId: EnvironmentId.make("selected-environment"),
+          });
+          const report = yield* Queue.take(activityReports);
+          assert.deepEqual(report, {
+            version: 1,
+            type: "desktopUpdateActivity",
+            requestId: "inspect-1",
+            hosts: [
+              { ...idle, isRequestingEnvironment: true },
+              {
+                ...idle,
+                isRequestingEnvironment: false,
+                activeSessions: 1,
+                continuableSessions: 1,
+                waitingSessions: 1,
+                terminalsRequiringConfirmation: 1,
+                terminalsWithUnknownActivity: 1,
+                environmentsUsingDevices: 1,
+                providerInstalls: 1,
+              },
+            ],
+          });
+          harness.idleRestart.onInspect = () => {
+            throw new Error("pool inspection failed");
+          };
+          yield* Queue.offer(activityRequests, {
+            version: 1,
+            type: "requestDesktopUpdateActivity",
+            requestId: "inspect-3",
+            requestingEnvironmentId: EnvironmentId.make("selected-environment"),
+          });
+          assert.deepEqual((yield* Queue.take(activityReports)).hosts, [null]);
+          harness.idleRestart.onInspect = undefined;
+          harness.idleRestart.hosts = [idle];
+          yield* Queue.offer(activityRequests, {
+            version: 1,
+            type: "requestDesktopUpdateActivity",
+            requestId: "inspect-4",
+            requestingEnvironmentId: EnvironmentId.make("selected-environment"),
+          });
+          assert.deepEqual((yield* Queue.take(activityReports)).hosts, [
+            { ...idle, isRequestingEnvironment: false },
+          ]);
+          assert.equal(harness.checkCount(), 0);
+          assert.equal(harness.downloadCount(), 0);
+          assert.equal(harness.quitAndInstalls(), 0);
+        }),
+      );
+    },
+  );
+
   it.effect("drives check, download, and install with no local confirmation", () => {
     const harness = makeHarness();
 

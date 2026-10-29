@@ -45,6 +45,7 @@ describe("describeServerUpdate", () => {
     const confirmation = describeServerUpdate({
       ...base,
       desktopManaged: true,
+      desktopActivity: [{ ...idle, isRequestingEnvironment: true }],
       continueRunningThreads: true,
       activity: {
         ...idle,

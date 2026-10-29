@@ -48,6 +48,11 @@ running terminal commands, and provider updates being installed, including work
 started from other devices. If
 work is running or the check fails, styal lists it and asks you to confirm.
 
+Updating a remote desktop app also checks its other hosted environments, including
+WSL. The confirmation lists threads from the environment you connected to and
+counts other hosted work without revealing its thread or project names. If part
+of the desktop app cannot be checked, the confirmation says so.
+
 **Settings → General → Continue threads after restarts** is on by default.
 It resumes supported active threads after an update, crash, or machine
 restart. Changes are saved to connected environments that support this setting;

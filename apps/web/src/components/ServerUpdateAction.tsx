@@ -23,7 +23,11 @@ import { serverEnvironment, updateOutdatedServer } from "~/state/server";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { manualServerUpdateCommand, type ServerUpdateCapability } from "~/versionSkew";
-import { serverUpdateConfirmation, serverUpdateQuestion } from "./ServerUpdateAction.logic";
+import {
+  serverUpdateActivity,
+  serverUpdateConfirmation,
+  serverUpdateQuestion,
+} from "./ServerUpdateAction.logic";
 import { Button } from "./ui/button";
 import {
   Dialog,
@@ -112,7 +116,10 @@ function serverUpdateHost(target: ServerUpdateTarget) {
 }
 
 function useReadHostActivity() {
-  return useAtomCommand(serverEnvironment.hostActivity, { reportFailure: false });
+  return {
+    host: useAtomCommand(serverEnvironment.hostActivity, { reportFailure: false }),
+    desktop: useAtomCommand(serverEnvironment.desktopHostActivity, { reportFailure: false }),
+  };
 }
 
 /** Reads each server's running work and describes what its update would interrupt. */
@@ -120,18 +127,26 @@ async function checkServerUpdateHosts(
   readHostActivity: ReturnType<typeof useReadHostActivity>,
   targets: ReadonlyArray<ServerUpdateTarget>,
 ) {
-  const activities = await Promise.all(
-    targets.map(async ({ environmentId }) => {
-      const activity = await readHostActivity({ environmentId, input: {} });
-      return activity._tag === "Success" ? activity.value : null;
+  const hosts = await Promise.all(
+    targets.map(async (target) => {
+      const request = { environmentId: target.environmentId, input: {} };
+      const [result, desktopResult] = await Promise.all([
+        readHostActivity.host(request),
+        target.selfUpdate === "desktop-managed" ? readHostActivity.desktop(request) : null,
+      ]);
+      return {
+        ...serverUpdateHost(target),
+        activity: result._tag === "Success" ? result.value : null,
+        ...(target.selfUpdate === "desktop-managed"
+          ? {
+              desktopActivity: desktopResult?._tag === "Success" ? desktopResult.value : null,
+            }
+          : {}),
+      };
     }),
   );
-  return serverUpdateConfirmation(
-    targets.map((target, index) => ({
-      ...serverUpdateHost(target),
-      activity: activities[index] ?? null,
-    })),
-  );
+  const activity = serverUpdateActivity(hosts);
+  return { activity, confirmation: serverUpdateConfirmation(hosts, activity) };
 }
 
 /**
@@ -141,12 +156,12 @@ async function checkServerUpdateHosts(
 export function useServerUpdateCheck() {
   const readHostActivity = useReadHostActivity();
   return async (targets: ReadonlyArray<ServerUpdateTarget>) => {
-    const confirmation =
+    const checked =
       targets.length === 0 ? null : await checkServerUpdateHosts(readHostActivity, targets);
     // The first line repeats the question the caller's own confirmation asks.
     return {
-      lines: confirmation?.message.split("\n").slice(1) ?? [],
-      threadActivity: confirmation?.threadActivity ?? [],
+      lines: checked?.confirmation?.message.split("\n").slice(1) ?? checked?.activity.lines ?? [],
+      threadActivity: checked?.activity.threadActivity ?? [],
     };
   };
 }
@@ -230,7 +245,8 @@ export function useServerUpdates() {
       if (!confirmed) {
         // The remote machines restart without asking anyone there, so work
         // started from any client counts.
-        const prepare = () => checkServerUpdateHosts(readHostActivity, claimed);
+        const prepare = async () =>
+          (await checkServerUpdateHosts(readHostActivity, claimed)).confirmation;
         const confirmation = requestConfirmDialog(
           `${serverUpdateQuestion(claimed.map(serverUpdateHost))}\nChecking for running work…`,
           { confirmLabel: "Update" },

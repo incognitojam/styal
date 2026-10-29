@@ -43,6 +43,12 @@ describe("RPC authorization scopes", () => {
     );
   });
 
+  it("requires maintenance access to inspect the desktop pool for an update", () => {
+    expect(requiredScopeForRpcMethod(WS_METHODS.serverGetDesktopHostActivity)).toBe(
+      AuthEnvironmentMaintainScope,
+    );
+  });
+
   it("authorizes background policy reporting and observation deliberately", () => {
     expect(requiredScopeForRpcMethod(WS_METHODS.serverReportClientActivity)).toBe(
       AuthOrchestrationReadScope,
