@@ -137,7 +137,10 @@ it.effect("agent context matches the committed budget", () =>
         .toSorted(([left], [right]) => (left < right ? -1 : 1)),
     );
 
-    expect(measured).toEqual(budget);
+    expect(
+      measured,
+      "Set agentContextBudget.json to the measured values. Before you cut text to fit, run the evals that cover it (evals/README.md).",
+    ).toEqual(budget);
     yield* Effect.promise(() =>
       expect(`${JSON.stringify(toolSizes, null, 2)}\n`).toMatchFileSnapshot(
         "./agentContextTools.json",

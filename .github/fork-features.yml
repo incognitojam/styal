@@ -3779,13 +3779,14 @@ features:
       - apps/mobile/src/features/threads/PendingUserInputCard.tsx
       - apps/mobile/src/features/threads/QuestionAttachments.tsx
       - apps/mobile/src/lib/threadActivity.ts
+      - packages/client-runtime/src/state/pendingUserInput.ts
     upstream_paths:
       - apps/mobile/src/features/threads/PendingUserInputCard.tsx
       - apps/mobile/src/features/threads/QuestionAttachments.tsx
       - apps/mobile/src/lib/threadActivity.ts
     tests:
-      - apps/mobile/src/lib/threadActivityCustomAnswer.test.ts
-      - apps/mobile/src/lib/threadActivityMultiSelect.test.ts
+      - packages/client-runtime/src/state/pendingUserInputCustomAnswer.test.ts
+      - packages/client-runtime/src/state/pendingUserInputMultiSelect.test.ts
     upstream:
       status: partial
       tracking:
@@ -3841,6 +3842,7 @@ features:
       - apps/web/src/components/chat/ChatComposer.tsx
       - apps/web/src/components/chat/ComposerPendingUserInputPanel.tsx
       - apps/web/src/pendingUserInput.ts
+      - packages/client-runtime/src/state/pendingUserInput.ts
     upstream_paths:
       - apps/mobile/src/features/threads/QuestionAttachments.tsx
       - apps/mobile/src/lib/threadActivity.ts
@@ -3849,8 +3851,8 @@ features:
       - apps/web/src/components/chat/ComposerPendingUserInputPanel.tsx
       - apps/web/src/pendingUserInput.ts
     tests:
-      - apps/mobile/src/lib/threadActivityMultiSelect.test.ts
       - apps/web/src/pendingUserInputMultiSelect.test.ts
+      - packages/client-runtime/src/state/pendingUserInputMultiSelect.test.ts
     upstream:
       status: tracking
       tracking:

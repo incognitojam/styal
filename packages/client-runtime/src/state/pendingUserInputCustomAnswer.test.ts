@@ -5,7 +5,7 @@ import {
   isPendingUserInputOptionSelected,
   setPendingUserInputCustomAnswer,
   togglePendingUserInputOptionSelection,
-} from "./threadActivity";
+} from "./pendingUserInput.ts";
 
 const runtime = {
   id: "runtime",

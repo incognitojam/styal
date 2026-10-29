@@ -1,13 +1,13 @@
+import { derivePendingUserInputProgress } from "./pendingUserInput";
 import type { ThreadUserInputQuestion as UserInputQuestion } from "@t3tools/client-runtime/state/thread-requests";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
   buildPendingUserInputAnswers,
-  derivePendingUserInputProgress,
   setPendingUserInputCustomAnswer,
   togglePendingUserInputOptionSelection,
   type PendingUserInputDraftAnswer,
-} from "./pendingUserInput";
+} from "@t3tools/client-runtime/state/pending-user-input";
 
 const areas: UserInputQuestion = {
   id: "areas",
@@ -30,8 +30,8 @@ const ttl: UserInputQuestion = {
   multiSelect: false,
 };
 const typed = "  Mobile too, with offline support  ";
-const typeAnswer = (draft: Parameters<typeof setPendingUserInputCustomAnswer>[0], text: string) =>
-  setPendingUserInputCustomAnswer(draft, text, { multiSelect: true });
+const typeAnswer = (draft: PendingUserInputDraftAnswer | undefined, text: string) =>
+  setPendingUserInputCustomAnswer(areas, draft, text);
 
 describe("multi-select answers with a typed addition", () => {
   it.each([true, false])(
