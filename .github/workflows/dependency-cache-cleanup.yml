@@ -31,17 +31,17 @@ jobs:
       contents: read
       actions: write
     steps:
-      # Never execute the triggering run's checkout with this elevated token.
-      - uses: actions/checkout@v6
-        with:
-          ref: main
-          persist-credentials: false
-          # .repos/ holds nested submodule paths that checkout's credential
-          # cleanup cannot resolve. The hashed files are all outside it.
-          sparse-checkout: |
-            /*
-            !/.repos/
-          sparse-checkout-cone-mode: false
+      # Fetch main, never the triggering run's checkout, and without the token.
+      # actions/checkout's credential cleanup runs `git submodule foreach`,
+      # which fails on a gitlink under .repos/ that has no .gitmodules entry,
+      # even when sparse checkout excludes it. The hashed files are outside it.
+      - name: Fetch main
+        run: |
+          git init -q .
+          git remote add origin "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
+          git sparse-checkout set --no-cone '/*' '!/.repos/'
+          git fetch -q --depth 1 --no-tags origin main
+          git checkout -q FETCH_HEAD
       - name: Delete superseded main dependency caches
         continue-on-error: true
         env:
