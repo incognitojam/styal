@@ -880,6 +880,8 @@ export const ServerSelfUpdateInput = Schema.Struct({
       the server and the acknowledging client agree on what was requested). */
   targetVersion: TrimmedNonEmptyString,
   continueRunningThreads: Schema.optionalKey(Schema.Boolean),
+  /** Explicit consent to interrupt work, not an automatically accepted safe preflight. */
+  confirmed: Schema.optionalKey(Schema.Boolean),
 });
 export type ServerSelfUpdateInput = typeof ServerSelfUpdateInput.Type;
 

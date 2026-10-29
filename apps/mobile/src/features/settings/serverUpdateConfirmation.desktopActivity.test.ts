@@ -67,4 +67,20 @@ describe("remote desktop update pool confirmation", () => {
     ]);
     expect(confirmation.message).toContain("2 terminal sessions will be interrupted.");
   });
+
+  it("needs no confirmation when the selected environment and every sibling can resume", () => {
+    const resumable = { ...idle, activeSessions: 1, continuableSessions: 1 };
+    const confirmation = describeServerUpdate({
+      serverLabel: "Desktop host",
+      targetVersion: "1.2.4",
+      desktopManaged: true,
+      continueRunningThreads: true,
+      activity: resumable,
+      desktopActivity: [
+        { ...summarizeDesktopUpdateActivity(resumable), isRequestingEnvironment: true },
+        { ...summarizeDesktopUpdateActivity(resumable), isRequestingEnvironment: false },
+      ],
+    });
+    expect(confirmation.requiresConfirmation).toBe(false);
+  });
 });

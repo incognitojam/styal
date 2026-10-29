@@ -95,6 +95,106 @@ function terminalReports(reports: DesktopUpdateStatusReport[]): DesktopUpdateSta
 
 describe("DesktopRemoteUpdates", () => {
   it.effect(
+    "refuses newly interruptible work after an idle preflight and keeps the download for a consented retry",
+    () => {
+      const harness = makeHarness({
+        confirmShutdown: Effect.die("Remote updates must never open a local confirmation"),
+      });
+      return runRemoteUpdatesTest(
+        harness,
+        ({ activityRequests, activityReports, reports, requests, commits }) =>
+          Effect.gen(function* () {
+            yield* Queue.offer(activityRequests, {
+              version: 1,
+              type: "requestDesktopUpdateActivity",
+              requestId: "idle-preflight",
+              requestingEnvironmentId: EnvironmentId.make("selected-environment"),
+            });
+            yield* Queue.take(activityReports);
+            assert.equal(harness.idleRestart.inspections, 1);
+            // Older servers omit consent, which must not permit an interruption.
+            yield* Queue.offer(requests, request("race"));
+            yield* settle;
+            harness.emit("update-available", { version: "1.2.4" });
+            yield* settle;
+            harness.idleRestart.hosts = harness.idleRestart.hosts.map(
+              (host) => host && { ...host, waitingSessions: 1, terminalsRequiringConfirmation: 1 },
+            );
+            harness.emit("update-downloaded", { version: "1.2.4" });
+            yield* settle;
+            yield* Queue.offer(commits, {
+              version: 1,
+              type: "commitDesktopUpdate",
+              requestId: "race",
+            });
+            yield* settle;
+            assert.equal(harness.idleRestart.inspections, 2);
+            assert.equal(harness.quitAndInstalls(), 0);
+            assert.equal(harness.installSteps.length, 0);
+            const failure = terminalReports(reports).find((report) => report.outcome === "failed");
+            assert.include(failure?.reason ?? "", "Activity changed");
+            assert.include(failure?.reason ?? "", "Try updating again");
+            const updates = yield* DesktopUpdates.DesktopUpdates;
+            assert.equal((yield* updates.getState).downloadedVersion, "1.2.4");
+            assert.isFalse(yield* updates.isActionActive);
+
+            yield* Queue.offer(requests, { ...request("consented-retry"), confirmed: true });
+            yield* settle;
+            yield* Queue.offer(commits, {
+              version: 1,
+              type: "commitDesktopUpdate",
+              requestId: "consented-retry",
+            });
+            yield* settle;
+            assert.equal(harness.quitAndInstalls(), 1);
+            assert.equal(harness.downloadCount(), 1);
+            assert.equal(harness.checkCount(), 1);
+            assert.equal(harness.idleRestart.inspections, 2);
+          }),
+      );
+    },
+  );
+
+  it.effect.each(["idle", "resumable", "unknown"] as const)(
+    "checks %s activity at unconfirmed handoff without a local prompt",
+    (activity) => {
+      const harness = makeHarness({
+        confirmShutdown: Effect.die("Remote updates must never open a local confirmation"),
+      });
+      return runRemoteUpdatesTest(harness, ({ requests, commits, reports }) =>
+        Effect.gen(function* () {
+          yield* Queue.offer(requests, { ...request("handoff-check"), confirmed: false });
+          yield* settle;
+          harness.emit("update-available", { version: "1.2.4" });
+          yield* settle;
+          harness.emit("update-downloaded", { version: "1.2.4" });
+          yield* settle;
+          if (activity === "resumable") {
+            harness.idleRestart.hosts = harness.idleRestart.hosts.map(
+              (host) => host && { ...host, activeSessions: 1, continuableSessions: 1 },
+            );
+          } else if (activity === "unknown") {
+            harness.idleRestart.hosts = [null];
+          }
+          yield* Queue.offer(commits, {
+            version: 1,
+            type: "commitDesktopUpdate",
+            requestId: "handoff-check",
+          });
+          yield* settle;
+          assert.equal(harness.idleRestart.inspections, 1);
+          const safe = activity === "idle" || activity === "resumable";
+          assert.equal(harness.quitAndInstalls(), safe ? 1 : 0);
+          assert.equal(
+            terminalReports(reports).some((report) => report.outcome === "failed"),
+            !safe,
+          );
+        }),
+      );
+    },
+  );
+
+  it.effect(
     "preflights pool interruption counts without exposing sibling environment details",
     () => {
       const harness = makeHarness();
@@ -114,10 +214,7 @@ describe("DesktopRemoteUpdates", () => {
           environmentId: EnvironmentId.make("unpaired"),
           activeSessions: 1,
           continuableSessions: 1,
-          waitingSessions: 1,
           terminalsRequiringConfirmation: 1,
-          terminalsWithUnknownActivity: 1,
-          environmentsUsingDevices: 1,
           providerInstalls: 1,
           threads: [
             {
@@ -156,10 +253,7 @@ describe("DesktopRemoteUpdates", () => {
                 isRequestingEnvironment: false,
                 activeSessions: 1,
                 continuableSessions: 1,
-                waitingSessions: 1,
                 terminalsRequiringConfirmation: 1,
-                terminalsWithUnknownActivity: 1,
-                environmentsUsingDevices: 1,
                 providerInstalls: 1,
               },
             ],

@@ -363,7 +363,7 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 - **Confirm only when quitting may interrupt work.** Desktop quits and restarts check agents and
   terminal work across the environments hosted by the app, including work started from other devices
   and agents in other environments using its shared devices.
-  Local restarts proceed without a dialog when all active threads will resume and no other work
+  Updates and restarts proceed without a dialog when all active threads will resume and no other work
   would be interrupted. Quit still asks about active work. Terminal commands, other interruptions,
   and an unavailable check require confirmation.
   The **Update server** action checks the connected server the same way before it restarts.
@@ -371,6 +371,11 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   whose desktop lifecycle does not check host activity before quitting, and
   [T3 Code revision fd46510](https://github.com/pingdotgg/t3code/tree/fd465100581055383126aab922a8da2c5d7952fd), whose server update action
   does not check activity.
+
+  Combined updates show one detailed confirmation for local and remote work that needs
+  attention, then restart this app after the remote handoffs without a countdown.
+  Compared with [T3 Code revision 5b35402](https://github.com/pingdotgg/t3code/tree/5b35402623d7d1d88eaa472807272a6c2e78012a),
+  checked October 25, 2026, whose combined update dialog shows thread counts and adds a restart countdown.
 
 - **Reopen in full screen on macOS.** If styal quits while its window is in full screen, including
   when it restarts to update, it opens in full screen again. Compared with

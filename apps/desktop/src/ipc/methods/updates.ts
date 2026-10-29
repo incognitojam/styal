@@ -52,7 +52,7 @@ export const installUpdate = DesktopIpc.makeIpcMethod({
     const updates = yield* DesktopUpdates.DesktopUpdates;
     return yield* input === undefined
       ? updates.install
-      : updates.installPrepared(input.expectedVersion);
+      : updates.installPrepared(input.expectedVersion, input.confirmed ? "confirmed" : "ask");
   }),
 });
 

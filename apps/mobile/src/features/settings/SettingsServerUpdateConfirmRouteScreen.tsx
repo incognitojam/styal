@@ -59,16 +59,13 @@ function ThreadActivityList({
   readonly activity: ReadonlyArray<ConfirmDialogThreadActivity>;
 }) {
   return groupHostActivityThreads(activity).map((host) => {
-    const labelSections = host.sections.some((section) => section.continues);
     return (
       <View key={host.key} className="gap-5">
         {host.sections.map((section) => {
           const heading = section.continues ? "Continues after restart" : "Will be interrupted";
           return (
             <View key={heading} className="gap-3">
-              {labelSections ? (
-                <Text className="text-base font-t3-medium text-foreground">{heading}</Text>
-              ) : null}
+              <Text className="text-base font-t3-medium text-foreground">{heading}</Text>
               {section.projects.map((project) => {
                 const projectInfo = project.activity[0]!.thread.project;
                 return (

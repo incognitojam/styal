@@ -25,6 +25,7 @@ import {
   collectUpdateEverythingResult,
   describeUpdateEverything,
   runUpdateEverything,
+  serverUpdateKey,
   type SkippedMachine,
   type UpdateRunMachine,
   type UpdateEverythingConfirmation,
@@ -92,8 +93,8 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
   ];
   // Settings still offers a manual update for providers styal manages.
   const providers = useProviderUpdates({ leaveManagedUpdates: true });
-  // The fork checks each server for running work when the confirmation opens,
-  // so the server step does not ask again.
+  // The fork checks each server for running work when the confirmation opens.
+  // Without explicit consent, the server step checks again before restarting.
   const checkServers = useServerUpdateCheck();
   const updateServers = useServerUpdates();
 
@@ -109,8 +110,10 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
     })),
   });
 
-  const checkLocalActivity = async (): Promise<UpdateEverythingConfirmation> => {
-    if (localUpdateVersion === null) return { lines: [], threadActivity: [], localVersion: null };
+  const checkLocalActivity = async (): Promise<Omit<UpdateEverythingConfirmation, "servers">> => {
+    if (localUpdateVersion === null) {
+      return { lines: [], threadActivity: [], localVersion: null, interrupts: false };
+    }
     const inspect = window.desktopBridge?.getLocalHostActivity;
     if (!inspect) {
       // An older desktop bridge cannot inspect itself or pin the confirmed version,
@@ -131,7 +134,7 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
     const checks = await inspect().catch(() => [null]);
     const activity =
       checks.length === 0
-        ? { lines: [], threadActivity: [] }
+        ? { lines: [], threadActivity: [], interrupts: false }
         : describeHostActivity(
             checks.map((check) => check && { ...check, hostLabel: check.hostLabel ?? "This app" }),
             {
@@ -148,6 +151,8 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
       lines: [...local.lines, ...remote.lines],
       threadActivity: [...local.threadActivity, ...remote.threadActivity],
       localVersion: local.localVersion,
+      interrupts: local.interrupts || remote.interrupts,
+      servers: serverUpdateKey(servers),
     };
   };
 
@@ -160,10 +165,14 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
     run: async ({
       downloadLocal,
       installLocal,
+      confirmation,
     }: {
       downloadLocal?: (reportError: ReportLocalUpdateError) => Promise<boolean>;
       installLocal?: (reportError: ReportLocalUpdateError) => Promise<boolean>;
+      /** What the user explicitly confirmed, which covers only the servers it checked. */
+      confirmation?: UpdateEverythingConfirmation;
     }) => {
+      const confirmed = confirmation?.servers === serverUpdateKey(servers);
       const localFailures: Array<string> = [];
       const reportLocalError: ReportLocalUpdateError = (title, description) => {
         localFailures.push(`${title}: ${description}`);
@@ -241,9 +250,8 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
             );
             return outcomes;
           },
-          // One batch the confirmation already checked for running work. Each
-          // server still settles on its own, so the pass can stop waiting for a
-          // server once it restarts into its update.
+          // Without explicit consent, check again after provider installations:
+          // a resumable turn may have started waiting for input in the meantime.
           updateServers: async () => {
             type FinishedServer = { label: string; outcome: ServerUpdateOutcome };
             const settlers = new Map<
@@ -261,7 +269,7 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
             );
             updateServers(servers, {
               quiet: true,
-              confirmed: true,
+              confirmed,
               onSettled: (server, serverOutcome) => {
                 settleUpdateRunMachine(
                   server.environmentId,

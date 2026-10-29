@@ -3,6 +3,7 @@ import { ThreadId, summarizeDesktopUpdateActivity } from "@t3tools/contracts";
 
 import {
   type ServerUpdateHost,
+  serverUpdateActivity,
   serverUpdateConfirmation,
   serverUpdateQuestion,
 } from "./ServerUpdateAction.logic";
@@ -43,6 +44,57 @@ function messageForHosts(hosts: ReadonlyArray<ServerUpdateHost>): string | null 
 }
 
 describe("serverUpdateConfirmation", () => {
+  it("skips confirmation for mixed hosts only when each running turn will resume", () => {
+    const hosts = [
+      host({ desktopApp: true }),
+      host({
+        serverLabel: "Build server",
+        activity: { ...idle, activeSessions: 2, continuableSessions: 2 },
+        continueRunningThreads: true,
+      }),
+    ];
+    expect(serverUpdateConfirmation(hosts)).toBeNull();
+    expect(
+      serverUpdateConfirmation([hosts[0]!, { ...hosts[1]!, continueRunningThreads: false }]),
+    ).not.toBeNull();
+  });
+
+  it.each([
+    { name: "a waiting request", activity: { ...idle, waitingSessions: 1 } },
+    { name: "a failed host check", activity: null },
+  ])("keeps confirmation for $name beside safe hosts", ({ activity }) => {
+    const confirmation = serverUpdateConfirmation([
+      host({
+        serverLabel: "Safe server",
+        activity: { ...idle, activeSessions: 1, continuableSessions: 1 },
+        continueRunningThreads: true,
+      }),
+      host({ serverLabel: "Other server", activity, continueRunningThreads: true }),
+    ]);
+    expect(confirmation).not.toBeNull();
+    expect(confirmation!.message).toContain("Safe server, Other server");
+  });
+
+  it("retains safe hosts' thread rows even when they need no standalone confirmation", () => {
+    const thread = {
+      threadId: ThreadId.make("resumes"),
+      title: "Prepare release",
+      reasons: ["running" as const],
+      continuable: true,
+    };
+    const safe = host({
+      serverLabel: "Build server",
+      activity: { ...idle, activeSessions: 1, continuableSessions: 1, threads: [thread] },
+      continueRunningThreads: true,
+    });
+    const rows = [{ thread, hostLabel: "Build server", continuesAfterRestart: true }];
+    expect(serverUpdateConfirmation([safe, host()])).toBeNull();
+    expect(serverUpdateActivity([safe, host()]).threadActivity).toEqual(rows);
+    expect(serverUpdateConfirmation([safe, host({ activity: null })])?.threadActivity).toEqual(
+      rows,
+    );
+  });
+
   it("names threads on each server and only promises continuation where requested", () => {
     const activity = {
       ...idle,
@@ -123,16 +175,14 @@ describe("serverUpdateConfirmation", () => {
         "Running threads and terminals may be interrupted.",
       ].join("\n"),
     );
-    expect(confirmation({ serverLabel: "build-box", desktopApp: true })?.split("\n")[0]).toBe(
-      "Update the styal desktop app that runs the build-box server?",
-    );
+    expect(
+      confirmation({ serverLabel: "build-box", desktopApp: true, activity: null })?.split("\n")[0],
+    ).toBe("Update the styal desktop app that runs the build-box server?");
     expect(serverUpdateQuestion([host({ serverLabel: "server" })])).toBe("Update the server?");
   });
 
-  it("always asks before relaunching a remote desktop app", () => {
-    expect(confirmation({ desktopApp: true })).toBe(
-      "Update the styal desktop app that runs the Lab server?\nIt will close and relaunch on that machine.",
-    );
+  it("skips an idle remote desktop restart and asks when work would be interrupted", () => {
+    expect(confirmation({ desktopApp: true })).toBeNull();
     expect(confirmation({ desktopApp: true, activity: { ...idle, activeSessions: 1 } })).toContain(
       "1 thread will be interrupted.",
     );
@@ -146,9 +196,11 @@ describe("serverUpdateConfirmation", () => {
     ],
     [host({ serverLabel: "Laptop", desktopApp: true }), host({ serverLabel: "Office" })],
   ])("keeps the desktop update title while checking running work: %j", (...hosts) => {
-    expect(serverUpdateConfirmation(hosts)?.message.split("\n")[0]).toBe(
-      serverUpdateQuestion(hosts),
-    );
+    expect(
+      serverUpdateConfirmation(
+        hosts.map((host) => ({ ...host, activity: null, desktopActivity: null })),
+      )?.message.split("\n")[0],
+    ).toBe(serverUpdateQuestion(hosts));
   });
 
   it("asks once for several servers and counts continuation per server", () => {

@@ -129,25 +129,24 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
         readHostActivity({ environmentId, input: {} }),
         desktopManaged ? readDesktopHostActivity({ environmentId, input: {} }) : null,
       ]);
-      const confirmed = await requestServerUpdateConfirmation(
-        describeServerUpdate({
-          serverLabel: environment?.environmentLabel ?? "environment",
-          targetVersion,
-          desktopManaged,
-          activity: AsyncResult.isSuccess(activity) ? activity.value : null,
-          desktopActivity: desktopActivity?._tag === "Success" ? desktopActivity.value : null,
-          continueRunningThreads,
+      const confirmation = describeServerUpdate({
+        serverLabel: environment?.environmentLabel ?? "environment",
+        targetVersion,
+        desktopManaged,
+        activity: AsyncResult.isSuccess(activity) ? activity.value : null,
+        desktopActivity: desktopActivity?._tag === "Success" ? desktopActivity.value : null,
+        continueRunningThreads,
+      });
+      const proceed = await requestServerUpdateConfirmation(confirmation, (requestId) =>
+        navigation.navigate("SettingsSheet", {
+          screen: "SettingsContent",
+          params: {
+            screen: "SettingsServerUpdateConfirm",
+            params: { environmentId, requestId },
+          },
         }),
-        (requestId) =>
-          navigation.navigate("SettingsSheet", {
-            screen: "SettingsContent",
-            params: {
-              screen: "SettingsServerUpdateConfirm",
-              params: { environmentId, requestId },
-            },
-          }),
       );
-      if (!confirmed) return;
+      if (!proceed) return;
       if (
         AsyncResult.isFailure(
           appAtomRegistry.get(environmentSession.sessionStateAtom(environmentId)),
@@ -160,7 +159,12 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
         return;
       const result = await updateServer({
         environmentId,
-        input: { targetVersion, ...(continueRunningThreads ? { continueRunningThreads } : {}) },
+        input: {
+          targetVersion,
+          // A safe update without a confirmation is rechecked before its handoff.
+          confirmed: confirmation.requiresConfirmation,
+          ...(continueRunningThreads ? { continueRunningThreads } : {}),
+        },
       });
       if (AsyncResult.isFailure(result)) throw squashAtomCommandFailure(result);
       setRelease(null);

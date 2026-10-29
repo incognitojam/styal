@@ -42,15 +42,13 @@ describe("update everything from the sidebar", () => {
     // Offered only once npm confirms the client's version is published.
     const update = page.getByRole("button", { name: "Update 1 server" });
     await update.click({ timeout: 60_000 });
-    const confirmation = page.getByRole("alertdialog");
-    await confirmation.getByText(`server to ${CLIENT_VERSION}`).waitFor();
-    await confirmation.getByRole("button", { name: "Update" }).click();
 
-    // The confirmation checks the server for running work first; Update waits for it.
+    // The idle server has no running work to confirm, so the update starts without a dialog.
     // The launcher records the version it switched to once the new server is up.
     await expect
       .poll(() => server.activeVersion(), { timeout: 240_000, interval: 1_000 })
       .toBe(CLIENT_VERSION);
+    expect(await page.getByRole("alertdialog").count()).toBe(0);
     await expect(update.waitFor({ state: "detached", timeout: 60_000 })).resolves.toBeUndefined();
   }, 360_000);
 });

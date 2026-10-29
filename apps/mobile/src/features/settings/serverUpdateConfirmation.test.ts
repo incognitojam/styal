@@ -1,5 +1,5 @@
 import { ThreadId } from "@t3tools/contracts";
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
   describeServerUpdate,
@@ -32,6 +32,7 @@ describe("describeServerUpdate", () => {
       title: "Update Lab server?",
       message: "Install styal 9.1.0. The server will restart and reconnect.",
       threadActivity: [],
+      requiresConfirmation: false,
     });
   });
 
@@ -80,9 +81,37 @@ describe("describeServerUpdate", () => {
 });
 
 describe("requestServerUpdateConfirmation", () => {
+  it.each([
+    ["idle", idle],
+    ["resumable", { ...idle, activeSessions: 1, continuableSessions: 1 }],
+  ] as const)("continues a safe %s update without presenting a sheet", async (_name, activity) => {
+    const confirmation = describeServerUpdate({ ...base, continueRunningThreads: true, activity });
+    const present = vi.fn();
+    await expect(requestServerUpdateConfirmation(confirmation, present)).resolves.toBe(true);
+    expect(present).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["a thread waiting for approval", { ...idle, waitingSessions: 1 }, true],
+    ["unknown host activity", null, true],
+    [
+      "resumable work with continuation disabled",
+      { ...idle, activeSessions: 1, continuableSessions: 1 },
+      false,
+    ],
+  ] as const)("asks for %s", (_name, activity, continueRunningThreads) => {
+    const confirmation = describeServerUpdate({ ...base, continueRunningThreads, activity });
+    const present = vi.fn();
+    void requestServerUpdateConfirmation(confirmation, present);
+    expect(present).toHaveBeenCalledTimes(1);
+  });
+
   it("resolves with the first answer and forgets the request", async () => {
     let requestId = "";
-    const confirmation = describeServerUpdate(base);
+    const confirmation = describeServerUpdate({
+      ...base,
+      activity: { ...idle, terminalsRequiringConfirmation: 1 },
+    });
     const answer = requestServerUpdateConfirmation(confirmation, (id) => {
       requestId = id;
     });

@@ -1,5 +1,11 @@
 import { RegistryContext } from "@effect/atom-react";
-import { AuthSessionState, type EnvironmentId } from "@t3tools/contracts";
+import {
+  AuthSessionState,
+  ThreadId,
+  summarizeDesktopUpdateActivity,
+  type EnvironmentId,
+  type HostActivity,
+} from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Schema from "effect/Schema";
 import { AsyncResult, Atom } from "effect/reactivity";
@@ -14,7 +20,7 @@ type SessionResult = AsyncResult.AsyncResult<AuthSessionState, Error>;
 const testState = vi.hoisted(() => ({
   updateServer: vi.fn(),
   hostActivity: vi.fn(),
-  desktopHostActivity: vi.fn(),
+  desktopActivity: vi.fn(),
   toast: vi.fn(),
   copy: vi.fn(),
   sessionAtom: null as unknown,
@@ -38,12 +44,11 @@ vi.mock(import("~/state/use-atom-command"), async (original) => {
   const { serverEnvironment } = await import("~/state/server");
   return {
     ...(await original()),
-    useAtomCommand: ((command: unknown) =>
-      command === serverEnvironment.hostActivity
-        ? testState.hostActivity
-        : command === serverEnvironment.desktopHostActivity
-          ? testState.desktopHostActivity
-          : testState.updateServer) as never,
+    useAtomCommand: ((command: unknown) => {
+      if (command === serverEnvironment.hostActivity) return testState.hostActivity;
+      if (command === serverEnvironment.desktopHostActivity) return testState.desktopActivity;
+      return testState.updateServer;
+    }) as never,
   };
 });
 vi.mock(import("./ui/toast"), async (original) => {
@@ -61,6 +66,7 @@ import {
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import {
   ServerUpdateAction,
+  OutdatedServerUpdateAction,
   ServerUpdateProgress,
   ServerUpdatesAction,
   type ServerUpdateTarget,
@@ -151,11 +157,10 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   testState.updateServer.mockReset();
   testState.hostActivity.mockReset();
-  testState.desktopHostActivity.mockReset();
-  testState.desktopHostActivity.mockResolvedValue(
-    AsyncResult.success([{ ...idleActivity, isRequestingEnvironment: true }]),
-  );
   testState.hostActivity.mockResolvedValue(AsyncResult.success(idleActivity));
+  testState.desktopActivity
+    .mockReset()
+    .mockResolvedValue(AsyncResult.success([{ ...idleActivity, isRequestingEnvironment: true }]));
   testState.toast.mockReset();
   testState.copy.mockReset();
   sessionAtom = Atom.make<SessionResult>(AsyncResult.success(currentSession));
@@ -174,6 +179,84 @@ afterEach(async () => {
 });
 
 describe("ServerUpdateAction", () => {
+  it.each(["boot-service", "desktop-managed"] as const)(
+    "updates resumable work on a %s host without an affirmative confirmation",
+    async (selfUpdate) => {
+      registerConfirmDialogHost();
+      const result = AsyncResult.success({
+        ...idleActivity,
+        activeSessions: 1,
+        continuableSessions: 1,
+        threads: [
+          {
+            threadId: ThreadId.make("release"),
+            title: "Prepare release",
+            reasons: ["running" as const],
+            continuable: true,
+          },
+        ],
+      });
+      const activity = deferred<typeof result>();
+      testState.hostActivity.mockReturnValue(activity.promise);
+      testState.desktopActivity.mockReturnValue(
+        activity.promise.then((snapshot) =>
+          AsyncResult.success([
+            { ...summarizeDesktopUpdateActivity(snapshot.value), isRequestingEnvironment: true },
+          ]),
+        ),
+      );
+      testState.updateServer.mockResolvedValue(
+        success(selfUpdate === "desktop-managed" ? "desktop-app" : "boot-service"),
+      );
+
+      await renderAction({ selfUpdate, desktopAppUpdate: true, threadContinuation: true });
+      await click("Update");
+      expect(readConfirmDialogState().status).toBe("idle");
+      expect(button("Update")!.disabled).toBe(true);
+      expect(testState.updateServer).not.toHaveBeenCalled();
+
+      await act(async () => activity.resolve(result));
+      expect(readConfirmDialogState().status).toBe("idle");
+      expect(
+        selfUpdate === "desktop-managed" ? testState.desktopActivity : testState.hostActivity,
+      ).toHaveBeenCalledTimes(1);
+      expect(testState.updateServer).toHaveBeenCalledExactlyOnceWith({
+        environmentId: "env-test",
+        input: { targetVersion: "0.0.31", confirmed: false, continueRunningThreads: true },
+      });
+      expect(testState.toast).toHaveBeenCalledWith(expect.objectContaining({ type: "success" }));
+    },
+  );
+
+  it.each([
+    {
+      name: "a terminal command",
+      blocker: { terminalsRequiringConfirmation: 1 },
+      warning: "1 terminal session will be interrupted.",
+    },
+  ])("requires consent for $name alongside resumable work", async ({ blocker, warning }) => {
+    registerConfirmDialogHost();
+    testState.hostActivity.mockResolvedValue(
+      AsyncResult.success({
+        ...idleActivity,
+        activeSessions: 1,
+        continuableSessions: 1,
+        ...blocker,
+      } satisfies HostActivity),
+    );
+    await renderAction({ threadContinuation: true });
+    await click("Update");
+    expect(readConfirmDialogState()).toMatchObject({
+      status: "confirming",
+      message: expect.stringContaining(warning),
+    });
+    expect(testState.updateServer).not.toHaveBeenCalled();
+    await act(async () => respondToConfirmDialog(false));
+    expect(testState.updateServer).not.toHaveBeenCalled();
+    expect(testState.toast).not.toHaveBeenCalled();
+    expect(button("Update")!.disabled).toBe(false);
+  });
+
   it.each([
     { serverUpdateScope: undefined, scopes: ["orchestration:operate"], allowed: true },
     { serverUpdateScope: undefined, scopes: ["orchestration:read"], allowed: false },
@@ -238,7 +321,7 @@ describe("ServerUpdateAction", () => {
 
     expect(testState.updateServer).toHaveBeenCalledWith({
       environmentId: "env-test",
-      input: { targetVersion: "0.0.31" },
+      input: { targetVersion: "0.0.31", confirmed: false },
     });
     expect(testState.toast).toHaveBeenCalledWith({
       type: "success",
@@ -293,7 +376,7 @@ describe("ServerUpdateAction", () => {
 
     expect(testState.updateServer).toHaveBeenCalledWith({
       environmentId: "env-test",
-      input: { targetVersion: "0.0.31" },
+      input: { targetVersion: "0.0.31", confirmed: false },
     });
     expect(testState.toast).toHaveBeenCalledWith({
       type: "success",
@@ -313,7 +396,22 @@ describe("ServerUpdateAction", () => {
     expect(testState.updateServer).toHaveBeenCalledTimes(1);
   });
 
-  it("opens immediately and prevents updates until running work has been checked", async () => {
+  it.each(["terminal", "failed inspection"] as const)(
+    "keeps work running without a dialog host after a %s",
+    async (blocker) => {
+      testState.hostActivity.mockResolvedValue(
+        blocker === "terminal"
+          ? AsyncResult.success({ ...idleActivity, terminalsRequiringConfirmation: 1 })
+          : AsyncResult.failure(Cause.fail(new Error("Inspection unavailable"))),
+      );
+      await renderAction();
+      await click("Update");
+      expect(testState.updateServer).not.toHaveBeenCalled();
+      expect(button("Update")!.disabled).toBe(false);
+    },
+  );
+
+  it("shows the check on the button and opens a dialog only once work is found", async () => {
     registerConfirmDialogHost();
     const result = AsyncResult.success({ ...idleActivity, activeSessions: 1 });
     const activity = deferred<typeof result>();
@@ -325,47 +423,17 @@ describe("ServerUpdateAction", () => {
       button("Update")!.click();
       button("Update")!.click();
     });
-    expect(readConfirmDialogState()).toMatchObject({
-      status: "confirming",
-      loading: true,
-      message: "Update the Test server?\nChecking for running work…",
-    });
+    expect(readConfirmDialogState().status).toBe("idle");
+    expect(button("Update")!.disabled).toBe(true);
     expect(testState.hostActivity).toHaveBeenCalledTimes(1);
-    await act(async () => respondToConfirmDialog(true));
-    expect(testState.updateServer).not.toHaveBeenCalled();
 
     await act(async () => activity.resolve(result));
     expect(readConfirmDialogState()).toMatchObject({
       status: "confirming",
       message: expect.stringContaining("1 thread will be interrupted."),
     });
-    expect(readConfirmDialogState()).not.toHaveProperty("loading");
     await act(async () => respondToConfirmDialog(true));
     expect(testState.updateServer).toHaveBeenCalledTimes(1);
-  });
-
-  it("cancels a pending check immediately and ignores its result after a retry", async () => {
-    registerConfirmDialogHost();
-    const result = AsyncResult.success(idleActivity);
-    const activity = deferred<typeof result>();
-    testState.hostActivity
-      .mockReturnValueOnce(activity.promise)
-      .mockResolvedValue(AsyncResult.success({ ...idleActivity, activeSessions: 2 }));
-
-    await renderAction();
-    await click("Update");
-    await act(async () => respondToConfirmDialog(false));
-    completeConfirmDialogClose();
-    expect(readConfirmDialogState().status).toBe("idle");
-
-    await click("Update");
-    await act(async () => activity.resolve(result));
-    expect(readConfirmDialogState()).toMatchObject({
-      status: "confirming",
-      message: expect.stringContaining("2 threads will be interrupted."),
-    });
-    expect(testState.updateServer).not.toHaveBeenCalled();
-    await act(async () => respondToConfirmDialog(false));
   });
 
   it("keeps running work when the user cancels the confirmation", async () => {
@@ -396,7 +464,10 @@ describe("ServerUpdateAction", () => {
     await click("Update");
     await act(async () => respondToConfirmDialog(true));
 
-    expect(testState.updateServer).toHaveBeenCalledTimes(1);
+    expect(testState.updateServer).toHaveBeenCalledExactlyOnceWith({
+      environmentId: "env-test",
+      input: { targetVersion: "0.0.31", confirmed: true },
+    });
   });
 
   it("asks before updating when activity cannot be checked", async () => {
@@ -422,7 +493,7 @@ describe("ServerUpdateAction", () => {
 
     expect(testState.updateServer).toHaveBeenCalledWith({
       environmentId: "env-test",
-      input: { targetVersion: "0.0.31" },
+      input: { targetVersion: "0.0.31", confirmed: false },
     });
   });
 
@@ -434,7 +505,7 @@ describe("ServerUpdateAction", () => {
 
     expect(testState.updateServer).toHaveBeenCalledWith({
       environmentId: "env-test",
-      input: { targetVersion: "0.0.31", continueRunningThreads: true },
+      input: { targetVersion: "0.0.31", confirmed: false, continueRunningThreads: true },
     });
   });
 });
@@ -473,9 +544,9 @@ describe("ServerUpdatesAction", () => {
     expect(testState.updateServer.mock.calls.map(([target]) => target)).toEqual([
       {
         environmentId: "batch-a",
-        input: { targetVersion: "0.0.31", continueRunningThreads: true },
+        input: { targetVersion: "0.0.31", confirmed: false, continueRunningThreads: true },
       },
-      { environmentId: "batch-b", input: { targetVersion: "0.0.31" } },
+      { environmentId: "batch-b", input: { targetVersion: "0.0.31", confirmed: false } },
     ]);
     expect(testState.toast.mock.calls.map(([toast]) => toast.title)).toEqual([
       "Laptop updated",
@@ -525,6 +596,12 @@ describe("ServerUpdatesAction", () => {
   });
 
   it("asks once for desktop machines and cancels the entire batch", async () => {
+    testState.desktopActivity.mockResolvedValue(
+      AsyncResult.success([
+        { ...idleActivity, isRequestingEnvironment: true },
+        { ...idleActivity, isRequestingEnvironment: false, terminalsRequiringConfirmation: 1 },
+      ]),
+    );
     registerConfirmDialogHost();
     await mount(
       targets.map((target, index) =>
@@ -539,6 +616,8 @@ describe("ServerUpdatesAction", () => {
         confirmLabel: "Update",
       }),
     );
+    expect(testState.hostActivity).toHaveBeenCalledTimes(2);
+    expect(testState.desktopActivity).toHaveBeenCalledTimes(2);
     expect(testState.updateServer).not.toHaveBeenCalled();
     await act(async () => respondToConfirmDialog(false));
     expect(testState.updateServer).not.toHaveBeenCalled();
@@ -563,6 +642,38 @@ describe("ServerUpdatesAction", () => {
     await act(async () => respondToConfirmDialog(true));
     expect(testState.updateServer).toHaveBeenCalledTimes(2);
   });
+});
+
+describe("OutdatedServerUpdateAction", () => {
+  it.each([false, true])(
+    "requires explicit consent for unavailable activity (%s)",
+    async (consent) => {
+      registerConfirmDialogHost();
+      testState.updateServer.mockResolvedValue(success());
+      await render(
+        <OutdatedServerUpdateAction
+          environmentId={"outdated" as EnvironmentId}
+          serverLabel="Lab"
+          fromVersion="0.0.30"
+          targetVersion="0.0.31"
+        />,
+      );
+      await click("Update");
+      expect(readConfirmDialogState()).toMatchObject({
+        status: "confirming",
+        message: expect.stringContaining("Could not check this outdated server for running work"),
+      });
+      expect(testState.updateServer).not.toHaveBeenCalled();
+      await act(async () => respondToConfirmDialog(consent));
+      if (consent) {
+        expect(testState.updateServer).toHaveBeenCalledExactlyOnceWith({
+          environmentId: "outdated",
+          input: { targetVersion: "0.0.31", confirmed: true },
+          fromVersion: "0.0.30",
+        });
+      } else expect(testState.updateServer).not.toHaveBeenCalled();
+    },
+  );
 });
 
 describe("ServerUpdateProgress", () => {
@@ -628,8 +739,14 @@ describe("server updates from the environment selector", () => {
     desktopAppUpdate: true,
   } satisfies ServerUpdateTarget & { serverVersion: string };
 
-  it("confirms a locked chip update and honors cancellation before updating", async () => {
+  it("confirms a locked chip update that interrupts remote work and honors cancellation", async () => {
     registerConfirmDialogHost();
+    testState.desktopActivity.mockResolvedValue(
+      AsyncResult.success([
+        { ...idleActivity, isRequestingEnvironment: true },
+        { ...idleActivity, isRequestingEnvironment: false, terminalsRequiringConfirmation: 1 },
+      ]),
+    );
     testState.updateServer.mockResolvedValue(success("desktop-app"));
     await render(
       <BranchToolbarEnvironmentSelector
@@ -655,7 +772,7 @@ describe("server updates from the environment selector", () => {
     await act(async () => respondToConfirmDialog(true));
     expect(testState.updateServer).toHaveBeenCalledExactlyOnceWith({
       environmentId: localId,
-      input: { targetVersion: "0.0.31" },
+      input: { targetVersion: "0.0.31", confirmed: true },
     });
   });
 

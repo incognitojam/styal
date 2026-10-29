@@ -48,6 +48,7 @@ export class DesktopAppUpdate extends Context.Service<
       reportProgress: (
         stage: ServerSelfUpdateProgressStage,
       ) => Effect.Effect<void, ServerSelfUpdateError>,
+      confirmed?: boolean,
     ) => Effect.Effect<ServerSelfUpdateResult, ServerSelfUpdateError>;
     /** Success stops this server, so this effect
         returns only when installation fails or times out. */
@@ -138,7 +139,7 @@ export const make = Effect.fn("desktopUpdate.desktopAppUpdate.make")(function* (
   });
 
   const run: DesktopAppUpdate["Service"]["run"] = Effect.fn("desktopUpdate.desktopAppUpdate.run")(
-    function* (reportProgress) {
+    function* (reportProgress, confirmed = false) {
       if (!available) {
         return yield* failWith(
           "This server was not started by the styal desktop app, so it cannot drive a desktop update.",
@@ -161,7 +162,7 @@ export const make = Effect.fn("desktopUpdate.desktopAppUpdate.make")(function* (
           // cannot be missed.
           const { changes } = yield* receiver.desktopUpdates;
           yield* receiver
-            .requestDesktopUpdate(requestId)
+            .requestDesktopUpdate(requestId, confirmed)
             .pipe(
               Effect.mapError((error) =>
                 failWith("Could not reach the styal desktop app on this machine.", error),

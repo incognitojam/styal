@@ -23,12 +23,9 @@ import { serverEnvironment, updateOutdatedServer } from "~/state/server";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { manualServerUpdateCommand, type ServerUpdateCapability } from "~/versionSkew";
-import {
-  serverUpdateActivity,
-  serverUpdateConfirmation,
-  serverUpdateQuestion,
-} from "./ServerUpdateAction.logic";
+import { serverUpdateActivity, serverUpdateConfirmation } from "./ServerUpdateAction.logic";
 import { Button } from "./ui/button";
+import { Spinner } from "./ui/spinner";
 import {
   Dialog,
   DialogDescription,
@@ -78,6 +75,8 @@ export type PendingServerUpdate = ServerUpdateTarget & {
 export interface ServerUpdateControl {
   readonly label: string;
   readonly disabled: boolean;
+  /** Checking for running work or updating; a dialog opens only if something needs confirming. */
+  readonly pending: boolean;
   readonly onClick: () => void;
 }
 
@@ -162,6 +161,7 @@ export function useServerUpdateCheck() {
     return {
       lines: checked?.confirmation?.message.split("\n").slice(1) ?? checked?.activity.lines ?? [],
       threadActivity: checked?.activity.threadActivity ?? [],
+      interrupts: checked?.activity.interrupts ?? false,
     };
   };
 }
@@ -178,6 +178,7 @@ export function useServerUpdates() {
   const updateOne = async (
     target: ServerUpdateTarget,
     quiet: boolean,
+    confirmed: boolean,
   ): Promise<ServerUpdateOutcome> => {
     const { environmentId, serverLabel, selfUpdate, targetVersion } = target;
     if (!canUpdateServer(appAtomRegistry.get(environmentSession.sessionStateAtom(environmentId))))
@@ -186,6 +187,7 @@ export function useServerUpdates() {
       environmentId,
       input: {
         targetVersion,
+        confirmed,
         ...(continuesRunningThreads(target) ? { continueRunningThreads: true } : {}),
       },
     });
@@ -242,23 +244,27 @@ export function useServerUpdates() {
     if (claimed.length === 0) return skipAll(unclaimed);
     for (const target of claimed) pendingUpdateEnvironmentIds.add(target.environmentId);
     const result = await settlePromise(async () => {
+      let explicitConsent = confirmed;
       if (!confirmed) {
         // The remote machines restart without asking anyone there, so work
         // started from any client counts.
-        const prepare = async () =>
-          (await checkServerUpdateHosts(readHostActivity, claimed)).confirmation;
-        const confirmation = requestConfirmDialog(
-          `${serverUpdateQuestion(claimed.map(serverUpdateHost))}\nChecking for running work…`,
-          { confirmLabel: "Update" },
-          { prepare },
-        );
-        // No themed host mounted (undefined) means proceed: the click itself
-        // was the request.
-        if (confirmation === undefined) await prepare();
-        else if (!(await confirmation)) return skipAll(targets);
+        const { confirmation } = await checkServerUpdateHosts(readHostActivity, claimed);
+        // Without a dialog host (undefined), only a safe check can proceed.
+        if (
+          confirmation !== null &&
+          !(await requestConfirmDialog(confirmation.message, {
+            confirmLabel: "Update",
+            threadActivity: confirmation.threadActivity,
+          }))
+        ) {
+          return skipAll(targets);
+        }
+        explicitConsent = confirmation !== null;
       }
       const updated = await Promise.all(
-        claimed.map(async (target) => settle(target, await updateOne(target, quiet))),
+        claimed.map(async (target) =>
+          settle(target, await updateOne(target, quiet, explicitConsent)),
+        ),
       );
       return [...skipAll(unclaimed), ...updated];
     });
@@ -297,6 +303,7 @@ export function ServerUpdatesAction({
       disabled={isPending || eligible.length === 0}
       onClick={() => void handleUpdate()}
     >
+      {isPending ? <Spinner aria-hidden="true" /> : null}
       {label}
     </Button>
   );
@@ -367,6 +374,7 @@ export function ServerUpdateAction({
   const sessionStateAtom = environmentSession.sessionStateAtom(environmentId);
   const canUpdate = canUpdateServer(useAtomValue(sessionStateAtom));
   const update = useServerUpdates();
+  const [isPending, setIsPending] = useState(false);
   const { copyToClipboard } = useCopyToClipboard<{ description: string }>({
     target: "command",
     onCopy: ({ description }) => {
@@ -385,21 +393,33 @@ export function ServerUpdateAction({
     },
   });
 
-  const handleUpdate = () =>
-    update([
-      {
-        environmentId,
-        serverLabel,
-        selfUpdate,
-        desktopAppUpdate,
-        threadContinuation,
-        targetVersion,
-      },
-    ]);
+  const handleUpdate = async () => {
+    // A second click must not clear the first click's pending state.
+    if (pendingUpdateEnvironmentIds.has(environmentId)) return;
+    setIsPending(true);
+    await settlePromise(() =>
+      update([
+        {
+          environmentId,
+          serverLabel,
+          selfUpdate,
+          desktopAppUpdate,
+          threadContinuation,
+          targetVersion,
+        },
+      ]),
+    );
+    setIsPending(false);
+  };
 
   if (unsupportedDesktopUpdate) {
     if (render) {
-      return render({ label: "Update the desktop app on", disabled: true, onClick: () => {} });
+      return render({
+        label: "Update the desktop app on",
+        disabled: true,
+        pending: false,
+        onClick: () => {},
+      });
     }
     return (
       <span className="text-muted-foreground text-xs">
@@ -495,6 +515,7 @@ export function ServerUpdateAction({
           {render({
             label: "Update instructions for",
             disabled: false,
+            pending: false,
             onClick: () => setInstructionsOpen(true),
           })}
           <Dialog open={instructionsOpen} onOpenChange={setInstructionsOpen}>
@@ -542,7 +563,8 @@ export function ServerUpdateAction({
   const actionLabel = label;
   const onClick = () => void handleUpdate();
 
-  if (render) return render({ label: actionLabel, disabled: !canUpdate, onClick });
+  const disabled = !canUpdate || isPending;
+  if (render) return render({ label: actionLabel, disabled, pending: isPending, onClick });
 
   if (appearance === "icon") {
     return (
@@ -554,12 +576,12 @@ export function ServerUpdateAction({
               variant="ghost-muted"
               className={className}
               aria-label={`${actionLabel} for ${serverLabel}`}
-              disabled={!canUpdate}
+              disabled={disabled}
               onClick={onClick}
             />
           }
         >
-          <CircleArrowUpIcon className="size-3.5" />
+          {isPending ? <Spinner size="sm" /> : <CircleArrowUpIcon className="size-3.5" />}
         </TooltipTrigger>
         <TooltipPopup side="top">{actionLabel}</TooltipPopup>
       </Tooltip>
@@ -571,9 +593,10 @@ export function ServerUpdateAction({
       size={size}
       variant={variant}
       className={className}
-      disabled={!canUpdate}
+      disabled={disabled}
       onClick={onClick}
     >
+      {isPending ? <Spinner aria-hidden="true" /> : null}
       {actionLabel}
     </Button>
   );
@@ -599,9 +622,17 @@ export function OutdatedServerUpdateAction({
   const handleUpdate = async () => {
     if (pendingUpdateEnvironmentIds.has(environmentId)) return;
     pendingUpdateEnvironmentIds.add(environmentId);
+    const confirmed = await requestConfirmDialog(
+      `Update the ${serverLabel} server?\nCould not check this outdated server for running work. Running threads and terminals may be interrupted.`,
+      { confirmLabel: "Update" },
+    );
+    if (confirmed !== true) {
+      pendingUpdateEnvironmentIds.delete(environmentId);
+      return;
+    }
     const result = await update({
       environmentId,
-      input: { targetVersion },
+      input: { targetVersion, confirmed },
       ...(fromVersion === undefined ? {} : { fromVersion }),
     });
     pendingUpdateEnvironmentIds.delete(environmentId);

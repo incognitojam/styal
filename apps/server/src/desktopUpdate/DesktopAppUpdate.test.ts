@@ -22,9 +22,7 @@ import { ServerEnvironmentIdentity } from "../environment/ServerEnvironment.ts";
 import * as DesktopTelemetryReceiver from "../resourceTelemetry/DesktopTelemetryReceiver.ts";
 import * as DesktopAppUpdate from "./DesktopAppUpdate.ts";
 
-const activityWire = Schema.fromJsonString(DesktopUpdateActivityReport);
-const decodeActivityReport = Schema.decodeSync(activityWire);
-const encodeActivityReport = Schema.encodeSync(activityWire);
+const decodeActivityReport = Schema.decodeSync(DesktopUpdateActivityReport);
 
 function makeState(overrides: Partial<DesktopUpdateState> = {}): DesktopUpdateState {
   return {
@@ -82,6 +80,7 @@ const makeHarness = Effect.fn("test.make_desktop_app_update_harness")(function* 
   const fs = yield* FileSystem.FileSystem;
   const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-desktop-app-update-test-" });
   const requestIdDeferred = yield* Deferred.make<string>();
+  const confirmations: boolean[] = [];
   const activityRequestId = yield* Deferred.make<string>();
   let subscribed = false;
   const activityReports = Effect.sync(() => {
@@ -97,14 +96,12 @@ const makeHarness = Effect.fn("test.make_desktop_app_update_harness")(function* 
                   version: 1,
                   type: "desktopUpdateActivity",
                   requestId,
-                  hosts: decodeActivityReport(
-                    encodeActivityReport({
-                      version: 1,
-                      type: "desktopUpdateActivity",
-                      requestId,
-                      hosts: options.activityHosts ?? [],
-                    }),
-                  ).hosts,
+                  hosts: decodeActivityReport({
+                    version: 1,
+                    type: "desktopUpdateActivity",
+                    requestId,
+                    hosts: options.activityHosts ?? [],
+                  }).hosts,
                 },
               ];
               return Stream.fromIterable(reports);
@@ -148,8 +145,10 @@ const makeHarness = Effect.fn("test.make_desktop_app_update_harness")(function* 
                 expect(subscribed).toBe(true);
                 yield* Deferred.succeed(activityRequestId, requestId);
               })),
-          requestDesktopUpdate: (requestId) =>
-            Deferred.succeed(requestIdDeferred, requestId).pipe(Effect.asVoid),
+          requestDesktopUpdate: (requestId, confirmed = false) =>
+            Effect.sync(() => {
+              confirmations.push(confirmed);
+            }).pipe(Effect.andThen(Deferred.succeed(requestIdDeferred, requestId)), Effect.asVoid),
           desktopUpdates: Effect.succeed({
             latest: Option.none<DesktopUpdateStatusReport>(),
             changes,
@@ -159,10 +158,26 @@ const makeHarness = Effect.fn("test.make_desktop_app_update_harness")(function* 
       ),
     ),
   );
-  return { service };
+  return { service, confirmations };
 });
 
 it.layer(NodeServices.layer)("desktop app update", (it) => {
+  it.effect.each([undefined, true] as const)(
+    "preserves explicit remote consent through preparation (%s)",
+    (confirmed) =>
+      Effect.gen(function* () {
+        const { service, confirmations } = yield* makeHarness({
+          reports: (requestId) => [
+            report(requestId, makeState({ status: "downloaded", downloadedVersion: "1.2.4" }), {
+              outcome: "ready-to-install",
+            }),
+          ],
+        });
+        yield* service.run(() => Effect.void, confirmed);
+        expect(confirmations).toEqual([confirmed === true]);
+      }),
+  );
+
   it.effect(
     "preserves the primary marker and interruption counts through the wire schema and correlates replies",
     () =>

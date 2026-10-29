@@ -60,8 +60,16 @@ const PREPARED_INSTALL_CHECK_WAIT = Duration.seconds(90);
 
 type UpdateAction = "check" | "download" | "install" | "install-recovery" | "channel";
 
+/**
+ * How an install handles running work: ask in a native dialog, proceed on consent
+ * given elsewhere, or refuse unless nothing would be interrupted. Remote callers
+ * get consent on their own client, never in a local native dialog.
+ */
+export type DesktopInstallConsent = "ask" | "confirmed" | "require-safe";
+
 interface DesktopPreparedUpdateInstallResult extends DesktopUpdateActionResult {
   readonly failed: boolean;
+  readonly reason?: string;
 }
 
 const AppUpdateYmlConfig = Schema.Record(Schema.String, Schema.String);
@@ -199,6 +207,7 @@ export class DesktopUpdates extends Context.Service<
     readonly installOnQuit: Effect.Effect<boolean>;
     readonly installPrepared: (
       expectedVersion: string,
+      consent?: DesktopInstallConsent,
     ) => Effect.Effect<DesktopPreparedUpdateInstallResult>;
   }
 >()("@t3tools/desktop/updates/DesktopUpdates") {}
@@ -740,7 +749,10 @@ export const make = Effect.gen(function* () {
     );
   });
 
-  const installDownloadedUpdate = (expectedVersion?: string) =>
+  const installDownloadedUpdate = (
+    expectedVersion: string | undefined,
+    consent: DesktopInstallConsent,
+  ) =>
     Effect.scoped(
       Effect.gen(function* () {
         const actionCompletions = yield* PubSub.subscribe(finishedUpdateActions);
@@ -788,8 +800,21 @@ export const make = Effect.gen(function* () {
           return { accepted: false, completed: false, failed: false };
         }
 
+        if (consent === "require-safe") {
+          const checks = yield* guard.inspect.pipe(Effect.catchCause(() => Effect.succeed([null])));
+          if (DesktopShutdownGuard.shutdownConfirmation(checks, "restart") !== null) {
+            yield* finishUpdateAction("install");
+            return {
+              accepted: false,
+              completed: false,
+              failed: false,
+              reason:
+                "Activity changed while the desktop update was preparing. Try updating again to review and confirm any running work. The downloaded update is ready to retry.",
+            };
+          }
+        }
         if (
-          expectedVersion === undefined &&
+          consent === "ask" &&
           !(yield* guard.confirm("restart", {
             title: "Install the downloaded update and restart styal?",
           }))
@@ -871,6 +896,7 @@ export const make = Effect.gen(function* () {
 
   const installWithExpectedVersion = Effect.fn("desktop.updates.install")(function* (
     expectedVersion?: string,
+    consent: DesktopInstallConsent = expectedVersion === undefined ? "ask" : "confirmed",
   ) {
     if (yield* Ref.get(desktopState.quitting)) {
       return {
@@ -880,11 +906,12 @@ export const make = Effect.gen(function* () {
         state: yield* Ref.get(updateStateRef),
       };
     }
-    const result = yield* installDownloadedUpdate(expectedVersion);
+    const result = yield* installDownloadedUpdate(expectedVersion, consent);
     return {
       accepted: result.accepted,
       completed: result.completed,
       failed: result.failed,
+      ...(result.reason === undefined ? {} : { reason: result.reason }),
       state: yield* Ref.get(updateStateRef),
     };
   });
@@ -1289,7 +1316,8 @@ export const make = Effect.gen(function* () {
     install: installWithExpectedVersion().pipe(
       Effect.map(({ accepted, completed, state }) => ({ accepted, completed, state })),
     ),
-    installPrepared: (expectedVersion) => installWithExpectedVersion(expectedVersion),
+    installPrepared: (expectedVersion, consent) =>
+      installWithExpectedVersion(expectedVersion, consent),
   });
 });
 

@@ -28,7 +28,7 @@ describe("update installation IPC", () => {
       harness.emit("update-downloaded", { version: "1.2.4" });
       yield* flushCallbacks;
 
-      const result = yield* installUpdate.handler({ expectedVersion: "1.2.4" });
+      const result = yield* installUpdate.handler({ expectedVersion: "1.2.4", confirmed: true });
 
       assert.deepInclude(result, { accepted: true, completed: false });
       assert.equal(prompts, 0);
@@ -42,7 +42,10 @@ describe("update installation IPC", () => {
     }).pipe(Effect.scoped, Effect.provide(harness.layer));
   });
 
-  it.effect("keeps an unconfirmed install guarded and leaves a declined download usable", () => {
+  it.effect.each([
+    { name: "without a version", input: undefined },
+    { name: "for a pinned version without consent", input: { expectedVersion: "1.2.4" } },
+  ])("asks before an install $name and leaves a declined download usable", ({ input }) => {
     let confirmed = false;
     let prompts = 0;
     let stops = 0;
@@ -63,7 +66,7 @@ describe("update installation IPC", () => {
       harness.emit("update-downloaded", { version: "1.2.4" });
       yield* flushCallbacks;
 
-      assert.deepInclude(yield* installUpdate.handler(undefined), { accepted: false });
+      assert.deepInclude(yield* installUpdate.handler(input), { accepted: false });
       assert.equal(prompts, 1);
       assert.equal(stops, 0);
       assert.isFalse(yield* Ref.get(state.quitting));
@@ -72,7 +75,7 @@ describe("update installation IPC", () => {
       assert.equal(harness.updateRestartMarkers.size, 0);
 
       confirmed = true;
-      assert.deepInclude(yield* installUpdate.handler(undefined), {
+      assert.deepInclude(yield* installUpdate.handler(input), {
         accepted: true,
         completed: false,
       });
@@ -82,9 +85,9 @@ describe("update installation IPC", () => {
     }).pipe(Effect.scoped, Effect.provide(harness.layer));
   });
 
-  it.effect(
-    "refuses a stale confirmation before stopping the app and permits the matching version",
-    () => {
+  it.effect.each([false, true])(
+    "refuses a stale version even with confirmed=%s and permits the matching version",
+    (confirmed) => {
       let stops = 0;
       let prompts = 0;
       const harness = makeHarness({
@@ -104,7 +107,7 @@ describe("update installation IPC", () => {
         harness.emit("update-downloaded", { version: "1.2.5" });
         yield* flushCallbacks;
 
-        const stale = yield* installUpdate.handler({ expectedVersion: "1.2.4" });
+        const stale = yield* installUpdate.handler({ expectedVersion: "1.2.4", confirmed });
 
         assert.deepInclude(stale, { accepted: false, completed: false });
         assert.equal(stops, 0);
@@ -115,10 +118,13 @@ describe("update installation IPC", () => {
         assert.equal(harness.installRecords.size, 0);
         assert.equal(harness.updateRestartMarkers.size, 0);
 
-        assert.deepInclude(yield* installUpdate.handler({ expectedVersion: "1.2.5" }), {
-          accepted: true,
-          completed: false,
-        });
+        assert.deepInclude(
+          yield* installUpdate.handler({ expectedVersion: "1.2.5", confirmed: true }),
+          {
+            accepted: true,
+            completed: false,
+          },
+        );
         assert.equal(stops, 1);
         assert.lengthOf(harness.installs, 1);
       }).pipe(Effect.scoped, Effect.provide(harness.layer));

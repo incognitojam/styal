@@ -1,10 +1,5 @@
 import type { ConfirmDialogOptions, ConfirmDialogVariant } from "@t3tools/contracts";
 
-type ConfirmDialogContent = {
-  readonly message: string;
-  readonly threadActivity?: ConfirmDialogOptions["threadActivity"];
-};
-
 export type ConfirmDialogState =
   | { readonly status: "idle" }
   | {
@@ -12,7 +7,6 @@ export type ConfirmDialogState =
       readonly message: string;
       readonly variant: ConfirmDialogVariant;
       readonly confirmLabel: string;
-      readonly loading?: boolean;
       readonly threadActivity?: ConfirmDialogOptions["threadActivity"];
     }
   | {
@@ -20,17 +14,14 @@ export type ConfirmDialogState =
       readonly message: string;
       readonly variant: ConfirmDialogVariant;
       readonly confirmLabel: string;
-      readonly loading?: boolean;
       readonly threadActivity?: ConfirmDialogOptions["threadActivity"];
     };
 
 type PendingConfirmation = {
-  message: string;
+  readonly message: string;
   readonly variant: ConfirmDialogVariant;
   readonly confirmLabel: string;
-  threadActivity?: ConfirmDialogOptions["threadActivity"];
-  readonly prepare?: () => Promise<ConfirmDialogContent | null>;
-  loading: boolean;
+  readonly threadActivity?: ConfirmDialogOptions["threadActivity"];
   readonly resolve: (confirmed: boolean) => void;
   readonly onPresented?: () => void;
   presented: boolean;
@@ -52,37 +43,13 @@ function publish(next: ConfirmDialogState): void {
 
 function presentConfirmation(pending: PendingConfirmation): void {
   activeConfirmation = pending;
-  const publishConfirmation = () =>
-    publish({
-      status: "confirming",
-      message: pending.message,
-      variant: pending.variant,
-      confirmLabel: pending.confirmLabel,
-      ...(pending.loading ? { loading: true } : {}),
-      ...(pending.threadActivity ? { threadActivity: pending.threadActivity } : {}),
-    });
-  publishConfirmation();
-  if (!pending.prepare) return;
-  void pending.prepare().then(
-    (content) => {
-      // Cancellation, host teardown, or expiry must not revive this dialog.
-      if (activeConfirmation !== pending) return;
-      pending.loading = false;
-      if (content === null) {
-        respondToConfirmDialog(true);
-        // A fast check can finish before React commits the open dialog, so
-        // there may be no close transition to advance the queue.
-        if (!pending.presented) completeConfirmDialogClose();
-        return;
-      }
-      pending.message = content.message;
-      pending.threadActivity = content.threadActivity;
-      publishConfirmation();
-    },
-    () => {
-      if (activeConfirmation === pending) respondToConfirmDialog(false);
-    },
-  );
+  publish({
+    status: "confirming",
+    message: pending.message,
+    variant: pending.variant,
+    confirmLabel: pending.confirmLabel,
+    ...(pending.threadActivity ? { threadActivity: pending.threadActivity } : {}),
+  });
 }
 
 function resolvePendingConfirmations(confirmed: boolean): void {
@@ -130,8 +97,6 @@ export function requestConfirmDialog(
   lifecycle?: {
     readonly onPresented?: () => void;
     readonly signal?: AbortSignal;
-    /** Shows the dialog immediately; null proceeds without further confirmation. */
-    readonly prepare?: () => Promise<ConfirmDialogContent | null>;
   },
 ): Promise<boolean> | undefined {
   if (registeredHostCount === 0) return undefined;
@@ -148,8 +113,6 @@ export function requestConfirmDialog(
         resolve(confirmed);
       },
       ...(lifecycle?.onPresented ? { onPresented: lifecycle.onPresented } : {}),
-      ...(lifecycle?.prepare ? { prepare: lifecycle.prepare } : {}),
-      loading: lifecycle?.prepare !== undefined,
       presented: false,
     } satisfies PendingConfirmation;
     function cancel() {
@@ -191,7 +154,6 @@ export function isConfirmDialogActive(): boolean {
 
 export function respondToConfirmDialog(confirmed: boolean): void {
   if (state.status !== "confirming" || !activeConfirmation) return;
-  if (confirmed && activeConfirmation.loading) return;
 
   const confirmation = activeConfirmation;
   activeConfirmation = null;
@@ -201,7 +163,6 @@ export function respondToConfirmDialog(confirmed: boolean): void {
     message: state.message,
     variant: state.variant,
     confirmLabel: state.confirmLabel,
-    ...(state.loading ? { loading: true } : {}),
     ...(state.threadActivity ? { threadActivity: state.threadActivity } : {}),
   });
 }

@@ -21,6 +21,7 @@ import { showDesktopUpdateDownloadedToast } from "../desktopUpdate.toast";
 import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
 import { Popover, PopoverCreateHandle, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { SidebarMenuItem } from "../ui/sidebar";
+import { Spinner } from "../ui/spinner";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { DesktopUpdateStatusIcon } from "./DesktopUpdateStatusIcon";
 import { SidebarUpdateReleaseNotes } from "./SidebarUpdateReleaseNotes";
@@ -92,12 +93,13 @@ async function installLocalUpdate(
   bridge: DesktopBridge,
   reportError: ReportLocalUpdateError = toastUpdateError,
   expectedVersion?: string,
+  confirmed = false,
 ): Promise<boolean> {
   try {
     const result =
       expectedVersion === undefined
         ? await bridge.installUpdate()
-        : await bridge.installUpdate({ expectedVersion });
+        : await bridge.installUpdate({ expectedVersion, confirmed });
     if (!result.accepted) {
       showDesktopUpdateDownloadedToast(bridge, result.state);
       return false;
@@ -139,7 +141,6 @@ function SidebarUpdateControl() {
   const [isActionPending, setIsActionPending] = useState(false);
   const [isConfirmingEverything, setIsConfirmingEverything] = useState(false);
   const [activityCheck, setActivityCheck] = useState<UpdateEverythingConfirmation | null>(null);
-  const serverCheckRequest = useRef(0);
   const action = state ? resolveDesktopUpdateButtonAction(state) : "none";
   const showsLocalUpdate = shouldShowDesktopUpdateButton(state);
   const localUpdateVersion =
@@ -179,23 +180,19 @@ function SidebarUpdateControl() {
   const handleAction = async () => {
     if (isInteractionDisabled) return;
     if (runsEverything) {
-      const request = ++serverCheckRequest.current;
-      setActivityCheck(null);
+      // The button shows the check in progress; a dialog opens only when something needs consent.
+      setIsActionPending(true);
+      const activity = await everything.checkActivity().catch((): UpdateEverythingConfirmation => ({
+        lines: ["Could not check the servers for running work."],
+        threadActivity: [],
+        localVersion: null,
+        interrupts: true,
+        servers: "",
+      }));
+      if (!activity.interrupts) return runEverything(activity, false);
+      setIsActionPending(false);
+      setActivityCheck(activity);
       setIsConfirmingEverything(true);
-      void everything.checkActivity().then(
-        (activity) => {
-          if (serverCheckRequest.current === request) setActivityCheck(activity);
-        },
-        () => {
-          if (serverCheckRequest.current === request) {
-            setActivityCheck({
-              lines: ["Could not check the servers for running work."],
-              threadActivity: [],
-              localVersion: null,
-            });
-          }
-        },
-      );
       return;
     }
     const bridge = window.desktopBridge;
@@ -204,19 +201,25 @@ function SidebarUpdateControl() {
     void installLocalUpdate(bridge).finally(() => setIsActionPending(false));
   };
 
-  const runEverything = async () => {
+  const runEverything = async (activity: UpdateEverythingConfirmation, confirmed: boolean) => {
     const bridge = window.desktopBridge;
     setIsConfirmingEverything(false);
     setIsActionPending(true);
     const result = await settlePromise(() =>
-      everything.run(
-        bridge && action === "install"
+      everything.run({
+        ...(confirmed ? { confirmation: activity } : {}),
+        ...(bridge && action === "install"
           ? {
               installLocal: (reportError) =>
-                installLocalUpdate(bridge, reportError, activityCheck?.localVersion ?? undefined),
+                installLocalUpdate(
+                  bridge,
+                  reportError,
+                  activity.localVersion ?? undefined,
+                  confirmed,
+                ),
             }
-          : {},
-      ),
+          : {}),
+      }),
     );
     if (result._tag === "Failure") {
       const error = squashAtomCommandFailure(result);
@@ -233,13 +236,15 @@ function SidebarUpdateControl() {
 
   if (!showsLocalUpdate && !showsEverything) return null;
 
-  const statusIcon = (
+  const statusIcon = isActionPending ? (
+    <Spinner size="md" aria-hidden="true" />
+  ) : (
     <DesktopUpdateStatusIcon
       status={showsEverything ? "everything" : "downloaded"}
       downloadPercent={null}
     />
   );
-  const confirmDialog = (
+  const confirmDialog = activityCheck ? (
     <UpdateEverythingDialog
       open={isConfirmingEverything}
       onOpenChange={setIsConfirmingEverything}
@@ -247,9 +252,9 @@ function SidebarUpdateControl() {
       lines={everything.lines}
       skipped={everything.skipped}
       activity={activityCheck}
-      onConfirm={() => void runEverything()}
+      onConfirm={() => void runEverything(activityCheck, true)}
     />
-  );
+  ) : null;
 
   if (run !== null) {
     const local: UpdateRunLocalState =

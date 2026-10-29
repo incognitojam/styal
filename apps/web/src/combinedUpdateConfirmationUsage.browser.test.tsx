@@ -61,7 +61,7 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-async function render(open: boolean, ready = true, summary = "Update synthetic computers") {
+async function render(open: boolean, summary = "Update synthetic computers") {
   await act(async () => {
     root.render(
       <StrictMode>
@@ -71,7 +71,13 @@ async function render(open: boolean, ready = true, summary = "Update synthetic c
           summary={summary}
           lines={["Synthetic machine update"]}
           skipped={[]}
-          activity={ready ? { lines: [], threadActivity: [], localVersion: "1.2.0" } : null}
+          activity={{
+            lines: [],
+            threadActivity: [],
+            localVersion: "1.2.0",
+            interrupts: true,
+            servers: "",
+          }}
           onConfirm={onConfirm}
         />
       </StrictMode>,
@@ -95,15 +101,10 @@ function report(action: "shown" | "confirmed" | "cancelled", environmentId = fir
   return { environmentId, input: { feature: "combined-update-confirmation", action } };
 }
 
-it("counts one opening through StrictMode and activity rerenders, and one confirmation intent", async () => {
+it("counts one opening through StrictMode and rerenders, and one confirmation intent", async () => {
   await render(false);
   expect(reports()).toEqual([]);
-  await render(true, false);
-  expect(reports()).toEqual([report("shown")]);
-  await click("Update");
-  expect(onConfirm).not.toHaveBeenCalled();
-  expect(reports()).toEqual([report("shown")]);
-  await render(true, true, "Updated synthetic summary");
+  await render(true, "Updated synthetic summary");
   await render(true);
   expect(reports()).toEqual([report("shown")]);
   await click("Update");
@@ -116,7 +117,7 @@ it("counts one opening through StrictMode and activity rerenders, and one confir
 });
 
 it("counts Cancel and Escape per opening, but no decision for a programmatic close", async () => {
-  await render(true, false);
+  await render(true);
   await click("Cancel");
   expect(onOpenChange).toHaveBeenLastCalledWith(false);
   await render(false);

@@ -13,6 +13,7 @@ export type ServerUpdateConfirmation = {
   readonly title: string;
   readonly message: string;
   readonly threadActivity: ReadonlyArray<ConfirmDialogThreadActivity>;
+  readonly requiresConfirmation: boolean;
 };
 
 /**
@@ -27,7 +28,7 @@ export function describeServerUpdate(input: {
   readonly desktopActivity?: ReadonlyArray<DesktopUpdateActivity | null> | null;
   readonly continueRunningThreads: boolean;
 }): ServerUpdateConfirmation {
-  const { concern, lines, incomplete, threadActivity } = describeHostActivity(
+  const { concern, lines, incomplete, interrupts, threadActivity } = describeHostActivity(
     input.desktopManaged
       ? desktopUpdateActivityChecks(input.activity, input.desktopActivity)
       : [
@@ -50,6 +51,7 @@ export function describeServerUpdate(input: {
       ...(incomplete ? ["Running threads and terminals may be interrupted."] : []),
     ].join("\n"),
     threadActivity,
+    requiresConfirmation: interrupts,
   };
 }
 
@@ -64,12 +66,13 @@ let nextId = 0;
 /**
  * Presents a confirmation through `present`, which receives the request id to
  * pass to the confirmation screen. Resolves false if the screen closes without
- * an answer.
+ * an answer, and true without presenting when nothing would be interrupted.
  */
 export function requestServerUpdateConfirmation(
   confirmation: ServerUpdateConfirmation,
   present: (requestId: string) => void,
 ): Promise<boolean> {
+  if (!confirmation.requiresConfirmation) return Promise.resolve(true);
   const requestId = String(++nextId);
   return new Promise((resolve) => {
     pending.set(requestId, { confirmation, resolve });

@@ -188,6 +188,7 @@ export class DesktopTelemetryReceiver extends Context.Service<
     >;
     readonly requestDesktopUpdate: (
       requestId: string,
+      confirmed?: boolean,
     ) => Effect.Effect<void, DesktopTelemetryControlError>;
     readonly commitDesktopUpdate: (
       requestId: string,
@@ -686,11 +687,12 @@ export const make = Effect.fn("resourceTelemetry.desktopTelemetryReceiver.make")
         requestingEnvironmentId,
       }),
     updateActivity: PubSub.subscribe(activityReports).pipe(Effect.map(Stream.fromSubscription)),
-    requestDesktopUpdate: (requestId) =>
+    requestDesktopUpdate: (requestId, confirmed = false) =>
       sendControlMessage({
         version: 1,
         type: "requestDesktopUpdate",
         requestId,
+        confirmed,
       }),
     commitDesktopUpdate: (requestId) =>
       sendControlMessage({ version: 1, type: "commitDesktopUpdate", requestId }),

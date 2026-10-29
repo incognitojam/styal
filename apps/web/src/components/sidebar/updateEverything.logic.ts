@@ -31,8 +31,20 @@ export interface RestartingMachine {
 export interface UpdateEverythingConfirmation {
   readonly lines: ReadonlyArray<string>;
   readonly threadActivity: ReadonlyArray<ConfirmDialogThreadActivity>;
+  readonly interrupts: boolean;
   /** The local version whose restart activity was included in this confirmation. */
   readonly localVersion: string | null;
+  /** The servers and versions whose activity was included, from `serverUpdateKey`. */
+  readonly servers: string;
+}
+
+export function serverUpdateKey(
+  servers: ReadonlyArray<Pick<ServerUpdateTarget, "environmentId" | "targetVersion">>,
+) {
+  return servers
+    .map((server) => `${server.environmentId}@${server.targetVersion}`)
+    .toSorted()
+    .join("\n");
 }
 
 export function collectRestartingMachines(

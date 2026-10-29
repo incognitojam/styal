@@ -86,6 +86,24 @@ describe("remote desktop update activity", () => {
     expect(serverUpdateConfirmation(hosts)?.threadActivity).toEqual(activity.threadActivity);
   });
 
+  it("needs no confirmation when the selected thread and every sibling can resume", () => {
+    const resumableSibling = sibling({ activeSessions: 1, continuableSessions: 1 });
+    expect(
+      serverUpdateConfirmation([
+        {
+          ...target,
+          activity: resumable,
+          desktopActivity: [selectedEntry(resumable), resumableSibling],
+        },
+      ]),
+    ).toBeNull();
+    expect(
+      serverUpdateConfirmation([
+        { ...target, desktopActivity: [selectedEntry(idle), sibling({ waitingSessions: 1 })] },
+      ]),
+    ).not.toBeNull();
+  });
+
   it("explains missing sibling thread names once for several busy siblings", () => {
     const busy = sibling({ waitingSessions: 1 });
     const { lines } = serverUpdateActivity([
