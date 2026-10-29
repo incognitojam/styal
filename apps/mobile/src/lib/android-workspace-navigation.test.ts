@@ -6,6 +6,7 @@ import {
   type AndroidWorkspaceNavigationTab,
 } from "../features/workspace/android-workspace-tabs";
 import {
+  androidWorkspaceBackReturnsToPage,
   androidWorkspaceNavigationState,
   resetAndroidWorkspace,
   type AndroidWorkspaceDestination,
@@ -172,6 +173,23 @@ describe("Android workspace navigation", () => {
     });
     expect(state.routes[1]?.key).not.toBe(previous.routes[1]?.key);
     expect(state.routes[1]?.params).toEqual({ ...pullRequest.params, ...change });
+  });
+
+  it("returns from a pull request opened in a thread to that thread", () => {
+    const opened = apply(
+      select(router.getInitialState(options), thread),
+      StackActions.push(pullRequest.name, pullRequest.params),
+    );
+    expect(androidWorkspaceBackReturnsToPage(opened)).toBe(true);
+    const back = apply(opened, StackActions.pop());
+    expect(names(back)).toEqual(["Home", "Thread"]);
+    expect(androidWorkspaceBackReturnsToPage(back)).toBe(false);
+  });
+
+  it("returns from a pull request selected in the list to the list", () => {
+    const selected = select(router.getInitialState(options), pullRequest);
+    expect(androidWorkspaceBackReturnsToPage(selected)).toBe(false);
+    expect(androidWorkspaceBackReturnsToPage(select(legacyHistory(), pullRequest))).toBe(false);
   });
 
   it("does not reuse a thread key from another environment", () => {

@@ -45,6 +45,17 @@ export function androidWorkspaceNavigationState(
 }
 
 /**
+ * A list selection leaves only Home below its page, so Back returns to the list. Anything else
+ * was opened from a page, such as a pull request linked in a thread, and Back returns there.
+ */
+export function androidWorkspaceBackReturnsToPage(
+  state: Pick<NavigationState, "index" | "routes">,
+) {
+  const below = state.routes[state.index - 1];
+  return below !== undefined && below.name !== "Home";
+}
+
+/**
  * Resets the root stack to a workspace list or detail. Always reads and targets the root
  * navigator: the sidebar and rail render in the root layout, where `useNavigation()` is the
  * container, and a container dispatch runs on the deepest focused navigator. With Settings

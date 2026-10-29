@@ -11,20 +11,28 @@ type PullRequestContext = { readonly environmentId: string; readonly projectId: 
 
 // Route-free so navigator layouts such as the workspace sidebar, which have no
 // route context for useRoute, can open pull requests for any thread.
-export function useNavigateToPullRequest(options?: { readonly replace?: boolean }) {
+export function useNavigateToPullRequest(options?: {
+  readonly replace?: boolean;
+  /**
+   * Android only: the pull request replaces the workspace page, as a list selection does.
+   * Otherwise it opens over the current page, so Back returns there.
+   */
+  readonly selectInWorkspace?: boolean;
+}) {
   const navigation = useNavigation();
   const replace = options?.replace;
+  const selectInWorkspace = options?.selectInWorkspace;
   return useCallback(
     async (url: string, context: PullRequestContext | null) => {
       const params = nativePullRequestDestination(url, context);
       if (!params) return tryOpenExternalUrl(url, "pull-request");
-      if (Platform.OS === "android")
+      if (Platform.OS === "android" && selectInWorkspace)
         resetAndroidWorkspace(navigation, { name: "PullRequest", params });
       else if (replace) navigation.dispatch(StackActions.replace("PullRequest", params));
       else navigation.navigate("PullRequest", params);
       return true;
     },
-    [navigation, replace],
+    [navigation, replace, selectInWorkspace],
   );
 }
 

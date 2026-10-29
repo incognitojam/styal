@@ -12,7 +12,7 @@ import {
 /** Called once per thread list so virtualized rows share one stable handler. */
 export function useOpenThreadPullRequests() {
   const navigation = useNavigation();
-  const navigateToPullRequest = useNavigateToPullRequest();
+  const navigateToPullRequest = useNavigateToPullRequest({ selectInWorkspace: true });
   return useCallback(
     (thread: EnvironmentThreadShell, pr: ThreadPrPresentation) => {
       if (resolveThreadPrBadgeAction(pr).kind === "list") {
