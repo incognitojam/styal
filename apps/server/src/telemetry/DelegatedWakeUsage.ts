@@ -7,22 +7,23 @@ import * as FeatureUsage from "./FeatureUsage.ts";
 
 type Handlers = Toolkit.HandlersFrom<Toolkit.Tools<typeof OrchestratorToolkit>>;
 
-/** Observes delegate_task calls that use wake=all; other calls and tools pass through. */
+/** Observes the wake each delegate_task call chooses; other tools pass through. */
 export const observeHandlers = Effect.fnUntraced(function* (handlers: Handlers) {
   const analytics = yield* AnalyticsService.AnalyticsService;
   return {
     ...handlers,
     delegate_task: (input, context) =>
-      input.wake === "all"
-        ? FeatureUsage.observe(
-            {
-              feature: "delegated-wake-all",
+      FeatureUsage.observe(
+        input.wake === "all"
+          ? {
+              feature: "delegated-wake",
               action: "delegate",
               source: "agent",
+              wake: "all",
               wakeAfter: input.wakeAfterMs !== undefined,
-            },
-            handlers.delegate_task(input, context),
-          ).pipe(Effect.provideService(AnalyticsService.AnalyticsService, analytics))
-        : handlers.delegate_task(input, context),
+            }
+          : { feature: "delegated-wake", action: "delegate", source: "agent", wake: "each" },
+        handlers.delegate_task(input, context),
+      ).pipe(Effect.provideService(AnalyticsService.AnalyticsService, analytics)),
   } satisfies Handlers;
 });

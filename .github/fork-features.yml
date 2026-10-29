@@ -938,7 +938,7 @@ features:
       - Wake=each tasks and earlier deliveries never release a held wake=all result, and tasks delegated in a later parent run form a separate group. Follow-up tasks in a child thread do not join the original's group.
       - A child's question wakes the parent through the existing question notification while its group is held.
       - wakeAfterMs, accepted only with wake=all, is an outbox effect scheduled through availableAt, so it survives a server restart; it runs outside the thread's ordered effect lane, so a pending timer never delays the parent's turns or checkpoints. When it fires while the group is unfinished, the parent gets one notification listing finished and unfinished task IDs; timers that fire while the group is unchanged share that notification, and the hold stays in place.
-      - Each delegate_task call with wake=all records one feature.used event with whether wakeAfterMs was set, never the task or its arguments.
+      - Each delegate_task call records one feature.used event with the wake it chose (each or all) and, for all, whether wakeAfterMs was set, never the task or its arguments.
     rationale: An orchestrator that delegates several parallel tracks otherwise takes one turn per finished track, each reloading its whole context to learn little.
     implementation_paths:
       - apps/server/src/mcp/OrchestratorMcpService.ts

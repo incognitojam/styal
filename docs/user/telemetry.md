@@ -29,9 +29,9 @@ found a run already finished, and how each watch ended: the run's conclusion, a 
 it, or being stopped, with how many minutes it was watched. Approving or rejecting a watched run's
 deployments records which of the two it was and its outcome. Repositories, run links, environments,
 comments, and workflow or job names are not collected.
-When an agent delegates a task that waits for its group before waking the agent, styal records
-that it did, whether it set a timeout, and the call's outcome. Prompts, task identifiers, and
-timeout values are not collected.
+When an agent delegates a task, styal records whether the agent asked to be woken for each task or
+once for the whole group, whether it set a timeout, and the call's outcome. Prompts, task
+identifiers, and timeout values are not collected.
 
 Once after startup and then daily, the server reports each configured provider: its type, whether
 it is the default or an added instance, whether it is installed, enabled and healthy, its version

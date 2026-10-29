@@ -9,7 +9,7 @@ import * as DelegatedWakeUsage from "./DelegatedWakeUsage.ts";
 
 type Handlers = Parameters<typeof DelegatedWakeUsage.observeHandlers>[0];
 
-it.effect("records one delegate_task call with wake=all and leaves other calls unrecorded", () =>
+it.effect("records the wake each delegate_task call chooses, and nothing from the task", () =>
   Effect.gen(function* () {
     const events: Array<unknown> = [];
     const analytics = AnalyticsService.AnalyticsService.of({
@@ -43,18 +43,21 @@ it.effect("records one delegate_task call with wake=all and leaves other calls u
     yield* call({ wake: "each" });
     yield* call({});
 
-    expect(events).toEqual([
-      {
-        event: "feature.used",
-        properties: {
-          feature: "delegated-wake-all",
-          action: "delegate",
-          source: "agent",
-          wakeAfter: true,
-          outcome: "success",
-          durationMs: 0,
-        },
+    const usage = (properties: Record<string, unknown>) => ({
+      event: "feature.used",
+      properties: {
+        feature: "delegated-wake",
+        action: "delegate",
+        source: "agent",
+        ...properties,
+        outcome: "success",
+        durationMs: 0,
       },
+    });
+    expect(events).toEqual([
+      usage({ wake: "all", wakeAfter: true }),
+      usage({ wake: "each" }),
+      usage({ wake: "each" }),
     ]);
   }),
 );

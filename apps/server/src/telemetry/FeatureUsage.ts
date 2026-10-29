@@ -174,9 +174,16 @@ type ObservedUsage =
       readonly source: "user";
     }
   | {
-      readonly feature: "delegated-wake-all";
+      readonly feature: "delegated-wake";
       readonly action: "delegate";
       readonly source: "agent";
+      readonly wake: "each";
+    }
+  | {
+      readonly feature: "delegated-wake";
+      readonly action: "delegate";
+      readonly source: "agent";
+      readonly wake: "all";
       readonly wakeAfter: boolean;
     }
   | {
@@ -378,7 +385,9 @@ export const observe = Effect.fnUntraced(function* <A, E, R>(
           ...(usage.feature === "hardware" && usage.hardwareTier
             ? { hardwareTier: usage.hardwareTier }
             : {}),
-          ...(usage.feature === "delegated-wake-all" ? { wakeAfter: usage.wakeAfter } : {}),
+          ...(usage.feature === "delegated-wake"
+            ? { wake: usage.wake, ...(usage.wake === "all" ? { wakeAfter: usage.wakeAfter } : {}) }
+            : {}),
           ...(usage.feature === "workflow-run-watch" && usage.action === "review"
             ? { reviewState: usage.reviewState }
             : {}),
