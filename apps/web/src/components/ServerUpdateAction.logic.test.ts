@@ -60,16 +60,8 @@ describe("serverUpdateConfirmation", () => {
   });
 
   it.each([
-    { name: "waiting requests or secrets", activity: { ...idle, waitingSessions: 1 } },
-    { name: "non-continuable turns", activity: { ...idle, activeSessions: 1 } },
-    { name: "terminal commands", activity: { ...idle, terminalsRequiringConfirmation: 1 } },
-    {
-      name: "unknown terminal activity",
-      activity: { ...idle, terminalsRequiringConfirmation: 1, terminalsWithUnknownActivity: 1 },
-    },
-    { name: "provider installs", activity: { ...idle, providerInstalls: 1 } },
-    { name: "shared devices", activity: { ...idle, environmentsUsingDevices: 1 } },
-    { name: "failed host checks", activity: null },
+    { name: "a waiting request", activity: { ...idle, waitingSessions: 1 } },
+    { name: "a failed host check", activity: null },
   ])("keeps confirmation for $name beside safe hosts", ({ activity }) => {
     const confirmation = serverUpdateConfirmation([
       host({

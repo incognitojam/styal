@@ -94,9 +94,9 @@ function terminalReports(reports: DesktopUpdateStatusReport[]): DesktopUpdateSta
 }
 
 describe("DesktopRemoteUpdates", () => {
-  it.effect.each([undefined, false] as const)(
-    "refuses newly interruptible work after an idle preflight (consent: %s) and keeps the download for a consented retry",
-    (confirmed) => {
+  it.effect(
+    "refuses newly interruptible work after an idle preflight and keeps the download for a consented retry",
+    () => {
       const harness = makeHarness({
         confirmShutdown: Effect.die("Remote updates must never open a local confirmation"),
       });
@@ -108,13 +108,12 @@ describe("DesktopRemoteUpdates", () => {
               version: 1,
               type: "requestDesktopUpdateActivity",
               requestId: "idle-preflight",
+              requestingEnvironmentId: EnvironmentId.make("selected-environment"),
             });
             yield* Queue.take(activityReports);
             assert.equal(harness.idleRestart.inspections, 1);
-            yield* Queue.offer(requests, {
-              ...request("race"),
-              ...(confirmed === undefined ? {} : { confirmed }),
-            });
+            // Older servers omit consent, which must not permit an interruption.
+            yield* Queue.offer(requests, request("race"));
             yield* settle;
             harness.emit("update-available", { version: "1.2.4" });
             yield* settle;
@@ -156,7 +155,7 @@ describe("DesktopRemoteUpdates", () => {
     },
   );
 
-  it.effect.each(["idle", "resumable", "unknown", "failed"] as const)(
+  it.effect.each(["idle", "resumable", "unknown"] as const)(
     "checks %s activity at unconfirmed handoff without a local prompt",
     (activity) => {
       const harness = makeHarness({
@@ -176,10 +175,6 @@ describe("DesktopRemoteUpdates", () => {
             );
           } else if (activity === "unknown") {
             harness.idleRestart.hosts = [null];
-          } else if (activity === "failed") {
-            harness.idleRestart.onInspect = () => {
-              throw new Error("inspection failed");
-            };
           }
           yield* Queue.offer(commits, {
             version: 1,

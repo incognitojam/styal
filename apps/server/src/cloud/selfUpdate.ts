@@ -172,9 +172,9 @@ export const withRunningThreadContinuation = Effect.fn(
   });
 });
 
-export const checkUpdateHandoffActivity = <E, R>(
+const checkUpdateHandoffActivity = <E>(
   input: ServerSelfUpdateInput,
-  inspect: Effect.Effect<HostActivity, E, R>,
+  inspect: Effect.Effect<HostActivity, E>,
 ) =>
   input.confirmed === true
     ? Effect.void
@@ -196,8 +196,9 @@ export const checkUpdateHandoffActivity = <E, R>(
         ),
       );
 
-export const make = Effect.fn("cloud.server_self_update.make")(function* (
-  beforeHandoff: (input: ServerSelfUpdateInput) => Effect.Effect<void, ServerSelfUpdateError>,
+/** `inspect` reads this server's activity for the recheck before an unconfirmed handoff. */
+export const make = Effect.fn("cloud.server_self_update.make")(function* <E>(
+  inspect: Effect.Effect<HostActivity, E>,
 ) {
   const serverConfig = yield* ServerConfig.ServerConfig;
   const desktopAppUpdate = yield* DesktopAppUpdate.DesktopAppUpdate;
@@ -335,7 +336,7 @@ export const make = Effect.fn("cloud.server_self_update.make")(function* (
       );
 
       yield* reportProgress("installing");
-      yield* beforeHandoff(input);
+      yield* checkUpdateHandoffActivity(input, inspect);
       const updateId = yield* Effect.uninterruptible(
         launcher.requestUpdate({ targetVersion, dbPath: serverConfig.dbPath }).pipe(
           Effect.mapError((error) =>
@@ -371,9 +372,7 @@ export const layer = <E, R>(inspect: Effect.Effect<HostActivity, E, R>) =>
     ServerSelfUpdate,
     Effect.gen(function* () {
       const activityContext = yield* Effect.context<R>();
-      return yield* make((input) =>
-        checkUpdateHandoffActivity(input, inspect.pipe(Effect.provideContext(activityContext))),
-      );
+      return yield* make(inspect.pipe(Effect.provideContext(activityContext)));
     }),
   ).pipe(Layer.provide(ProcessRunner.layer));
 

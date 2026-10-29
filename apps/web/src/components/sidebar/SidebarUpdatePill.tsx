@@ -196,6 +196,7 @@ function SidebarUpdateControl() {
               threadActivity: [],
               localVersion: null,
               interrupts: true,
+              servers: "",
             });
           }
         },
@@ -215,7 +216,7 @@ function SidebarUpdateControl() {
     setIsActionPending(true);
     const result = await settlePromise(() =>
       everything.run({
-        confirmed,
+        ...(confirmed ? { confirmation: activity } : {}),
         ...(bridge && action === "install"
           ? {
               installLocal: (reportError) =>

@@ -73,7 +73,13 @@ async function render(open: boolean, ready = true, summary = "Update synthetic c
           skipped={[]}
           activity={
             ready
-              ? { lines: [], threadActivity: [], localVersion: "1.2.0", interrupts: true }
+              ? {
+                  lines: [],
+                  threadActivity: [],
+                  localVersion: "1.2.0",
+                  interrupts: true,
+                  servers: "",
+                }
               : null
           }
           onConfirm={onConfirm}

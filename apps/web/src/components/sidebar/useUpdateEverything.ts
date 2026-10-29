@@ -25,6 +25,7 @@ import {
   collectUpdateEverythingResult,
   describeUpdateEverything,
   runUpdateEverything,
+  serverUpdateKey,
   type SkippedMachine,
   type UpdateRunMachine,
   type UpdateEverythingConfirmation,
@@ -92,8 +93,8 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
   ];
   // Settings still offers a manual update for providers styal manages.
   const providers = useProviderUpdates({ leaveManagedUpdates: true });
-  // The fork checks each server for running work when the confirmation opens,
-  // so the server step does not ask again.
+  // The fork checks each server for running work when the confirmation opens.
+  // Without explicit consent, the server step checks again before restarting.
   const checkServers = useServerUpdateCheck();
   const updateServers = useServerUpdates();
 
@@ -109,7 +110,7 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
     })),
   });
 
-  const checkLocalActivity = async (): Promise<UpdateEverythingConfirmation> => {
+  const checkLocalActivity = async (): Promise<Omit<UpdateEverythingConfirmation, "servers">> => {
     if (localUpdateVersion === null) {
       return { lines: [], threadActivity: [], localVersion: null, interrupts: false };
     }
@@ -151,6 +152,7 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
       threadActivity: [...local.threadActivity, ...remote.threadActivity],
       localVersion: local.localVersion,
       interrupts: local.interrupts || remote.interrupts,
+      servers: serverUpdateKey(servers),
     };
   };
 
@@ -163,13 +165,14 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
     run: async ({
       downloadLocal,
       installLocal,
-      confirmed = false,
+      confirmation,
     }: {
       downloadLocal?: (reportError: ReportLocalUpdateError) => Promise<boolean>;
       installLocal?: (reportError: ReportLocalUpdateError) => Promise<boolean>;
-      /** Explicit consent covers the activity shown before provider installations. */
-      confirmed?: boolean;
+      /** What the user explicitly confirmed, which covers only the servers it checked. */
+      confirmation?: UpdateEverythingConfirmation;
     }) => {
+      const confirmed = confirmation?.servers === serverUpdateKey(servers);
       const localFailures: Array<string> = [];
       const reportLocalError: ReportLocalUpdateError = (title, description) => {
         localFailures.push(`${title}: ${description}`);

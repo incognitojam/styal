@@ -60,6 +60,13 @@ const PREPARED_INSTALL_CHECK_WAIT = Duration.seconds(90);
 
 type UpdateAction = "check" | "download" | "install" | "install-recovery" | "channel";
 
+/**
+ * How an install handles running work: ask in a native dialog, proceed on consent
+ * given elsewhere, or refuse unless nothing would be interrupted. Remote callers
+ * get consent on their own client, never in a local native dialog.
+ */
+export type DesktopInstallConsent = "ask" | "confirmed" | "require-safe";
+
 interface DesktopPreparedUpdateInstallResult extends DesktopUpdateActionResult {
   readonly failed: boolean;
   readonly reason?: string;
@@ -200,11 +207,7 @@ export class DesktopUpdates extends Context.Service<
     readonly installOnQuit: Effect.Effect<boolean>;
     readonly installPrepared: (
       expectedVersion: string,
-      options?: {
-        readonly confirmShutdown?: boolean;
-        /** Remote callers must get consent on their own client, never in a local native dialog. */
-        readonly requireSafeShutdown?: boolean;
-      },
+      consent?: DesktopInstallConsent,
     ) => Effect.Effect<DesktopPreparedUpdateInstallResult>;
   }
 >()("@t3tools/desktop/updates/DesktopUpdates") {}
@@ -747,9 +750,8 @@ export const make = Effect.gen(function* () {
   });
 
   const installDownloadedUpdate = (
-    expectedVersion?: string,
-    confirmShutdown = expectedVersion === undefined,
-    requireSafeShutdown = false,
+    expectedVersion: string | undefined,
+    consent: DesktopInstallConsent,
   ) =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -798,7 +800,7 @@ export const make = Effect.gen(function* () {
           return { accepted: false, completed: false, failed: false };
         }
 
-        if (requireSafeShutdown) {
+        if (consent === "require-safe") {
           const checks = yield* guard.inspect.pipe(Effect.catchCause(() => Effect.succeed([null])));
           if (DesktopShutdownGuard.shutdownConfirmation(checks, "restart") !== null) {
             yield* finishUpdateAction("install");
@@ -812,7 +814,7 @@ export const make = Effect.gen(function* () {
           }
         }
         if (
-          confirmShutdown &&
+          consent === "ask" &&
           !(yield* guard.confirm("restart", {
             title: "Install the downloaded update and restart styal?",
           }))
@@ -894,8 +896,7 @@ export const make = Effect.gen(function* () {
 
   const installWithExpectedVersion = Effect.fn("desktop.updates.install")(function* (
     expectedVersion?: string,
-    confirmShutdown = expectedVersion === undefined,
-    requireSafeShutdown = false,
+    consent: DesktopInstallConsent = expectedVersion === undefined ? "ask" : "confirmed",
   ) {
     if (yield* Ref.get(desktopState.quitting)) {
       return {
@@ -905,11 +906,7 @@ export const make = Effect.gen(function* () {
         state: yield* Ref.get(updateStateRef),
       };
     }
-    const result = yield* installDownloadedUpdate(
-      expectedVersion,
-      confirmShutdown,
-      requireSafeShutdown,
-    );
+    const result = yield* installDownloadedUpdate(expectedVersion, consent);
     return {
       accepted: result.accepted,
       completed: result.completed,
@@ -1319,12 +1316,8 @@ export const make = Effect.gen(function* () {
     install: installWithExpectedVersion().pipe(
       Effect.map(({ accepted, completed, state }) => ({ accepted, completed, state })),
     ),
-    installPrepared: (expectedVersion, options) =>
-      installWithExpectedVersion(
-        expectedVersion,
-        options?.confirmShutdown,
-        options?.requireSafeShutdown,
-      ),
+    installPrepared: (expectedVersion, consent) =>
+      installWithExpectedVersion(expectedVersion, consent),
   });
 });
 

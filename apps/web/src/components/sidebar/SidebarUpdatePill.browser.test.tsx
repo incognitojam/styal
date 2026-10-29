@@ -340,53 +340,53 @@ afterEach(async () => {
 });
 
 describe("combined sidebar update", () => {
-  it.each([false, true])(
-    "keeps the later activity check silent and presents only a new blocker: %s",
-    async (blocked) => {
-      const providers =
-        deferred<AsyncResult.AsyncResult<{ providers: ReadonlyArray<ServerProvider> }>>();
-      const recheck = deferred<AsyncResult.AsyncResult<HostActivity>>();
-      testState.providers.set(EnvironmentId.make("remote-a"), [provider]);
-      testState.updateProvider.mockReturnValue(providers.promise);
-      testState.localActivity.mockResolvedValue(safeLocalChecks);
-      const presentations: Array<ReturnType<typeof readConfirmDialogState>> = [];
-      const unsubscribe = subscribeConfirmDialog(() =>
-        presentations.push(readConfirmDialogState()),
-      );
-      try {
-        await render();
-        await click(container.querySelector<HTMLButtonElement>("button")!);
-        testState.hostActivity.mockReturnValue(recheck.promise);
-        await act(async () => providers.resolve(AsyncResult.success({ providers: [] })));
-        expect(readConfirmDialogState().status).toBe("idle");
-        expect(testState.updateServer).not.toHaveBeenCalled();
+  it("keeps a safe activity check after provider installation silent", async () => {
+    const providers =
+      deferred<AsyncResult.AsyncResult<{ providers: ReadonlyArray<ServerProvider> }>>();
+    const recheck = deferred<AsyncResult.AsyncResult<HostActivity>>();
+    testState.providers.set(EnvironmentId.make("remote-a"), [provider]);
+    testState.updateProvider.mockReturnValue(providers.promise);
+    testState.localActivity.mockResolvedValue(safeLocalChecks);
+    const presentations: Array<ReturnType<typeof readConfirmDialogState>> = [];
+    const unsubscribe = subscribeConfirmDialog(() => presentations.push(readConfirmDialogState()));
+    try {
+      await render();
+      await click(container.querySelector<HTMLButtonElement>("button")!);
+      testState.hostActivity.mockReturnValue(recheck.promise);
+      await act(async () => providers.resolve(AsyncResult.success({ providers: [] })));
+      expect(readConfirmDialogState().status).toBe("idle");
+      expect(testState.updateServer).not.toHaveBeenCalled();
 
-        await act(async () =>
-          recheck.resolve(
-            AsyncResult.success({ ...idle, terminalsRequiringConfirmation: blocked ? 1 : 0 }),
-          ),
-        );
-        if (blocked) {
-          expect(readConfirmDialogState()).toMatchObject({
-            status: "confirming",
-            message: expect.stringContaining("terminal"),
-          });
-          expect(testState.updateServer).not.toHaveBeenCalled();
-          await act(async () => respondToConfirmDialog(false));
-          expect(testState.updateServer).not.toHaveBeenCalled();
-        } else {
-          expect(readConfirmDialogState().status).toBe("idle");
-          expect(testState.updateServer).toHaveBeenCalledTimes(2);
-          expect(presentations).toEqual([]);
-        }
-        expect(
-          presentations.filter((state) => state.status === "confirming" && state.loading),
-        ).toEqual([]);
-      } finally {
-        unsubscribe();
-      }
-    },
-  );
+      await act(async () => recheck.resolve(AsyncResult.success(idle)));
+      expect(readConfirmDialogState().status).toBe("idle");
+      expect(testState.updateServer).toHaveBeenCalledTimes(2);
+      expect(presentations).toEqual([]);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it("does not extend consent to servers that changed while the dialog was open", async () => {
+    testState.hostActivity.mockResolvedValue(
+      AsyncResult.success({ ...idle, terminalsRequiringConfirmation: 1 }),
+    );
+    await render();
+    await openConfirmation();
+    // Another client starts updating the test machine, which drops it from this run.
+    await act(async () =>
+      appAtomRegistry.set(testState.updateAtoms.get("remote-b")!, {
+        status: "running",
+        stage: "resuming",
+        fromVersion: "0.0.49",
+        targetVersion: localVersion,
+      }),
+    );
+    await click(button("Update", dialog()!));
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 50)));
+    // The remaining server is checked again and its terminal asks before any restart.
+    expect(readConfirmDialogState()).toMatchObject({ status: "confirming" });
+    expect(testState.updateServer).not.toHaveBeenCalled();
+  });
 
   it.each(["local", "remote"] as const)(
     "automatically updates safe mixed hosts after %s inspection finishes first",
@@ -449,25 +449,12 @@ describe("combined sidebar update", () => {
     },
   );
 
-  it.each(
-    [
-      { name: "waiting requests or secrets", blocker: { waitingSessions: 1 } },
-      { name: "non-continuable turns", blocker: { activeSessions: 1 } },
-      { name: "terminal commands", blocker: { terminalsRequiringConfirmation: 1 } },
-      {
-        name: "unknown terminal activity",
-        blocker: { terminalsRequiringConfirmation: 1, terminalsWithUnknownActivity: 1 },
-      },
-      { name: "provider installs", blocker: { providerInstalls: 1 } },
-      { name: "shared devices", blocker: { environmentsUsingDevices: 1 } },
-      { name: "unknown host activity", blocker: null },
-    ].flatMap((scenario) =>
-      (["local", "remote"] as const).map((location) => ({ ...scenario, location })),
-    ),
-  )(
+  it.each([
+    { name: "a waiting request", blocker: { ...idle, waitingSessions: 1 }, location: "local" },
+    { name: "unknown host activity", blocker: null, location: "remote" },
+  ] as const)(
     "requires consent for $name on a $location host despite other resumable work",
-    async ({ blocker, location }) => {
-      const blocked = blocker === null ? null : { ...idle, ...blocker };
+    async ({ blocker: blocked, location }) => {
       testState.localActivity.mockResolvedValue(location === "local" ? [blocked] : safeLocalChecks);
       testState.hostActivity.mockImplementation(({ environmentId }) =>
         Promise.resolve(

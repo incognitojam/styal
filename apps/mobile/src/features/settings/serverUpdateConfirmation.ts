@@ -65,20 +65,19 @@ let nextId = 0;
 
 /**
  * Presents a confirmation through `present`, which receives the request id to
- * pass to the confirmation screen. A safe preflight may proceed without granting
- * consent to interrupt work that starts before handoff.
+ * pass to the confirmation screen. Resolves false if the screen closes without
+ * an answer, and true without presenting when nothing would be interrupted.
  */
 export function requestServerUpdateConfirmation(
   confirmation: ServerUpdateConfirmation,
   present: (requestId: string) => void,
-): Promise<{ readonly proceed: boolean; readonly confirmed: boolean }> {
-  if (!confirmation.requiresConfirmation)
-    return Promise.resolve({ proceed: true, confirmed: false });
+): Promise<boolean> {
+  if (!confirmation.requiresConfirmation) return Promise.resolve(true);
   const requestId = String(++nextId);
-  return new Promise<boolean>((resolve) => {
+  return new Promise((resolve) => {
     pending.set(requestId, { confirmation, resolve });
     present(requestId);
-  }).then((confirmed) => ({ proceed: confirmed, confirmed }));
+  });
 }
 
 export function readServerUpdateConfirmation(requestId: string) {

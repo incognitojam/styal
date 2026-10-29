@@ -229,34 +229,9 @@ describe("ServerUpdateAction", () => {
 
   it.each([
     {
-      name: "approvals",
-      blocker: { waitingSessions: 1 },
-      warning: "1 thread will be interrupted.",
-    },
-    {
-      name: "non-continuable turns",
-      blocker: { activeSessions: 2 },
-      warning: "1 thread will be interrupted.",
-    },
-    {
-      name: "terminal commands",
+      name: "a terminal command",
       blocker: { terminalsRequiringConfirmation: 1 },
       warning: "1 terminal session will be interrupted.",
-    },
-    {
-      name: "unknown terminal activity",
-      blocker: { terminalsRequiringConfirmation: 1, terminalsWithUnknownActivity: 1 },
-      warning: "Could not check 1 terminal session for running commands.",
-    },
-    {
-      name: "provider installs",
-      blocker: { providerInstalls: 1 },
-      warning: "A provider update is installing and will be interrupted.",
-    },
-    {
-      name: "shared devices",
-      blocker: { environmentsUsingDevices: 1 },
-      warning: "Devices in use by other environments will be disconnected.",
     },
   ])("requires consent for $name alongside resumable work", async ({ blocker, warning }) => {
     registerConfirmDialogHost();

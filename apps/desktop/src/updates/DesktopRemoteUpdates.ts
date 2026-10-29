@@ -437,9 +437,10 @@ export const listen: Effect.Effect<
         }
         return;
       }
-      const result = yield* updates.installPrepared(claim.prepared.downloadedVersion, {
-        requireSafeShutdown: !claim.prepared.confirmed,
-      });
+      const result = yield* updates.installPrepared(
+        claim.prepared.downloadedVersion,
+        claim.prepared.confirmed ? "confirmed" : "require-safe",
+      );
       if (
         !result.accepted &&
         result.state.downloadedVersion === claim.prepared.downloadedVersion &&

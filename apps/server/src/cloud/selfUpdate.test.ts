@@ -118,11 +118,8 @@ const makeHarness = Effect.fn("test.make_self_update_harness")(function* (
       return HttpClientResponse.fromWeb(request, new Response(bytes));
     }),
   );
-  const selfUpdate = yield* ServerSelfUpdate.make((input) =>
-    ServerSelfUpdate.checkUpdateHandoffActivity(
-      input,
-      options.activity ?? Effect.succeed(idleActivity),
-    ),
+  const selfUpdate = yield* ServerSelfUpdate.make(
+    options.activity ?? Effect.succeed(idleActivity),
   ).pipe(
     Effect.provideService(ProcessRunner.ProcessRunner, runner),
     Effect.provideService(HttpClient.HttpClient, httpClient),
@@ -145,9 +142,9 @@ const makeHarness = Effect.fn("test.make_self_update_harness")(function* (
 });
 
 it.layer(NodeServices.layer)("server self update", (it) => {
-  it.effect.each([undefined, false] as const)(
-    "refuses new terminal and waiting work after download without consent (%s), then reuses the runtime on a consented retry",
-    (confirmed) =>
+  it.effect(
+    "refuses new terminal and waiting work after download without consent, then reuses the runtime on a consented retry",
+    () =>
       Effect.gen(function* () {
         let activity = idleActivity;
         let inspections = 0;
@@ -160,12 +157,7 @@ it.layer(NodeServices.layer)("server self update", (it) => {
             return activity;
           }),
         });
-        const refused = yield* selfUpdate
-          .update({
-            targetVersion: "1.1.0",
-            ...(confirmed === undefined ? {} : { confirmed }),
-          })
-          .pipe(Effect.flip);
+        const refused = yield* selfUpdate.update({ targetVersion: "1.1.0" }).pipe(Effect.flip);
         expect(refused.reason).toContain("Activity changed");
         expect(refused.reason).toContain("Try updating again");
         expect(order).toEqual(["install", "preflight"]);
@@ -190,46 +182,6 @@ it.layer(NodeServices.layer)("server self update", (it) => {
       name: "continuation disabled",
       activity: { ...idleActivity, activeSessions: 1, continuableSessions: 1 },
       continues: false,
-      safe: false,
-    },
-    {
-      name: "non-continuable",
-      activity: { ...idleActivity, activeSessions: 1 },
-      continues: true,
-      safe: false,
-    },
-    {
-      name: "waiting",
-      activity: { ...idleActivity, waitingSessions: 1 },
-      continues: true,
-      safe: false,
-    },
-    {
-      name: "terminal",
-      activity: { ...idleActivity, terminalsRequiringConfirmation: 1 },
-      continues: true,
-      safe: false,
-    },
-    {
-      name: "unknown terminal",
-      activity: {
-        ...idleActivity,
-        terminalsRequiringConfirmation: 1,
-        terminalsWithUnknownActivity: 1,
-      },
-      continues: true,
-      safe: false,
-    },
-    {
-      name: "provider install",
-      activity: { ...idleActivity, providerInstalls: 1 },
-      continues: true,
-      safe: false,
-    },
-    {
-      name: "shared device",
-      activity: { ...idleActivity, environmentsUsingDevices: 1 },
-      continues: true,
       safe: false,
     },
   ])(

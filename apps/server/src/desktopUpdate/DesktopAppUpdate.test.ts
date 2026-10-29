@@ -162,7 +162,7 @@ const makeHarness = Effect.fn("test.make_desktop_app_update_harness")(function* 
 });
 
 it.layer(NodeServices.layer)("desktop app update", (it) => {
-  it.effect.each([undefined, false, true] as const)(
+  it.effect.each([undefined, true] as const)(
     "preserves explicit remote consent through preparation (%s)",
     (confirmed) =>
       Effect.gen(function* () {

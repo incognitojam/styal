@@ -133,11 +133,11 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
         serverLabel: environment?.environmentLabel ?? "environment",
         targetVersion,
         desktopManaged,
-        activity: activity?._tag === "Success" ? activity.value : null,
+        activity: AsyncResult.isSuccess(activity) ? activity.value : null,
         desktopActivity: desktopActivity?._tag === "Success" ? desktopActivity.value : null,
         continueRunningThreads,
       });
-      const decision = await requestServerUpdateConfirmation(confirmation, (requestId) =>
+      const proceed = await requestServerUpdateConfirmation(confirmation, (requestId) =>
         navigation.navigate("SettingsSheet", {
           screen: "SettingsContent",
           params: {
@@ -146,7 +146,7 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
           },
         }),
       );
-      if (!decision.proceed) return;
+      if (!proceed) return;
       if (
         AsyncResult.isFailure(
           appAtomRegistry.get(environmentSession.sessionStateAtom(environmentId)),
@@ -161,7 +161,8 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
         environmentId,
         input: {
           targetVersion,
-          confirmed: decision.confirmed,
+          // A safe update without a confirmation is rechecked before its handoff.
+          confirmed: confirmation.requiresConfirmation,
           ...(continueRunningThreads ? { continueRunningThreads } : {}),
         },
       });
