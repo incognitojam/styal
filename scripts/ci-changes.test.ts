@@ -94,7 +94,9 @@ describe("fork CI change gates", () => {
 });
 
 describe("required CI aggregate checks", () => {
-  const workflow = parse(NodeFS.readFileSync(".github/workflows/fork-ci.yml", "utf8"));
+  const workflow = parse(
+    NodeFS.readFileSync(new URL("../.github/workflows/fork-ci.yml", import.meta.url), "utf8"),
+  );
   it.each(["check", "test_server_required", "test_workspace_required", "release_smoke"])(
     "%s rejects cancellation, failure and unexplained skips",
     (job: string) => {
