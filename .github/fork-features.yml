@@ -6169,6 +6169,7 @@ features:
       - A switched-to route whose session held for five minutes clears its cooldown history, so a later drop such as a server restart does not hold it back.
       - Once an attempted route fails transiently, routes that did not answer their reachability check are not given full attempts; the supervisor backs off and checks every route again. They are still tried when every attempted route was blocked or none was attempted.
       - A relay WebSocket that opened and later closed or stopped responding does not carry the DNS or firewall hint; a socket that never opened still does.
+      - Better-route checks of a route that keeps not answering back off (upstream's dead-route backoff), but every newly established session starts that backoff over, and reconnect attempts check every route regardless of it.
     rationale: On a train, a tailnet path through a distant DERP relay answers an occasional quick check but cannot hold a session. Upstream switched to it every few minutes and spent up to a minute per failed reconnect on routes that had not answered.
     implementation_paths:
       - packages/client-runtime/src/connection/driver.ts
