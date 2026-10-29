@@ -58,6 +58,7 @@ import { publishedToolkits } from "./testing/toolPresentationFixtures.ts";
 const layerOrchestratorToolkit = McpHttpServer.layerOrchestratorToolkit.pipe(
   Layer.provide(Layer.mock(ThreadLaunchService.ThreadLaunchService)({})),
   Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
+  Layer.provide(AnalyticsService.AnalyticsService.layerTest),
 );
 
 // Effect returns a declared tool failure as `isError` with its encoded payload

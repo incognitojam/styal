@@ -511,6 +511,7 @@ function commandThreadId(command: OrchestrationV2ServerCommand): ThreadId {
     case "thread.background-work.settle":
     case "thread.stop":
     case "provider.switch":
+    case "delegated_task.wake-timeout":
       return command.threadId;
     case "delegated_task.request":
     case "delegated_task.wake-policy":
@@ -657,6 +658,87 @@ function isTerminalDelegatedTaskStatus(status: OrchestrationV2Subagent["status"]
     status === "cancelled" ||
     status === "interrupted"
   );
+}
+
+function isWakeAllGroupMember(
+  task: OrchestrationV2Subagent,
+  parentRunId: OrchestrationV2Subagent["runId"],
+): boolean {
+  return task.origin === "app_owned" && task.runId === parentRunId && task.wakeWhen === "all";
+}
+
+// A wake=all task's completion waits for the rest of its group, the wake=all
+// tasks delegated by the same parent run. A task that failed or was interrupted
+// is never held, so the parent hears about it while the others keep running.
+function delegatedCompletionHeld(
+  task: OrchestrationV2Subagent,
+  subagents: ReadonlyArray<OrchestrationV2Subagent>,
+): boolean {
+  if (task.wakeWhen !== "all" || task.status === "failed" || task.status === "interrupted") {
+    return false;
+  }
+  return subagents.some(
+    (sibling) =>
+      sibling.id !== task.id &&
+      isWakeAllGroupMember(sibling, task.runId) &&
+      !isTerminalDelegatedTaskStatus(sibling.status),
+  );
+}
+
+// The held results that leave with a wake for `trigger`: its whole wake=all
+// group once the group has finished, or when `trigger` failed.
+function releasedWakeAllMembers(
+  trigger: OrchestrationV2Subagent,
+  subagents: ReadonlyArray<OrchestrationV2Subagent>,
+  eligible: (task: OrchestrationV2Subagent) => boolean,
+): ReadonlyArray<OrchestrationV2Subagent> {
+  if (trigger.wakeWhen !== "all" || delegatedCompletionHeld(trigger, subagents)) return [];
+  return subagents.filter(
+    (candidate) =>
+      candidate.id !== trigger.id &&
+      isWakeAllGroupMember(candidate, trigger.runId) &&
+      isTerminalDelegatedTaskStatus(candidate.status) &&
+      eligible(candidate),
+  );
+}
+
+// Pending results a follow-up wake sweeps up, with the held group results each
+// released one carries. A failed group member releases its group even after the
+// parent read it, since the wake its failure deferred may never have gone out.
+function sweptDelegatedCompletionTaskIds(
+  subagents: ReadonlyArray<OrchestrationV2Subagent>,
+  eligible: (task: OrchestrationV2Subagent) => boolean,
+): ReadonlyArray<OrchestrationV2Subagent["id"]> {
+  const released = subagents.filter(
+    (task) => eligible(task) && !delegatedCompletionHeld(task, subagents),
+  );
+  const failedGroupMembers = subagents.filter(
+    (task) =>
+      task.origin === "app_owned" &&
+      task.wakeWhen === "all" &&
+      (task.status === "failed" || task.status === "interrupted"),
+  );
+  return Array.from(
+    new Set(
+      [
+        ...released,
+        ...[...released, ...failedGroupMembers].flatMap((task) =>
+          releasedWakeAllMembers(task, subagents, eligible),
+        ),
+      ].map((task) => task.id),
+    ),
+  );
+}
+
+function delegatedWakeTimeoutDetail(input: {
+  readonly finishedTaskIds: ReadonlyArray<string>;
+  readonly unfinishedTaskIds: ReadonlyArray<string>;
+}): string {
+  const finished =
+    input.finishedTaskIds.length === 0
+      ? "None of them has finished yet."
+      : `Finished: ${input.finishedTaskIds.join(", ")}.`;
+  return `wakeAfterMs elapsed for delegated tasks with wake=all. ${finished} Still running: ${input.unfinishedTaskIds.join(", ")}. Use task_status with each taskId to read results and progress. The tasks still running wake this thread once they have all finished.`;
 }
 
 function delegatedTaskTerminalStatus(
@@ -7056,6 +7138,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         title: command.title ?? null,
         model: command.modelSelection.model,
         ...(command.completionWake === undefined ? {} : { completionWake: command.completionWake }),
+        ...(command.wakeWhen === "all" ? { wakeWhen: "all" as const } : {}),
         status: "running",
         result: null,
         startedAt: now,
@@ -7162,6 +7245,17 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             : { type: "defer_start", workspaceStrategy: command.workspaceStrategy },
       } satisfies Extract<OrchestrationV2Command, { readonly type: "message.dispatch" }>;
       yield* dispatchMessage(childMessageCommand, events, effects);
+      const wakeAfterMs = command.wakeWhen === "all" ? command.wakeAfterMs : undefined;
+      if (wakeAfterMs !== undefined) {
+        const wakeTimeout: PendingOrchestrationEffectV2 = {
+          id: `effect:${command.commandId}:delegated-task.wake-timeout`,
+          commandId: command.commandId,
+          threadId: command.parentThreadId,
+          request: { type: "delegated-task.wake-timeout", taskId: taskNodeId },
+          availableAt: DateTime.add(now, { milliseconds: wakeAfterMs }),
+        };
+        yield* Ref.update(effects, (existing) => [...existing, wakeTimeout]);
+      }
 
       const childProjection = yield* getProjectionWithPendingEvents(childThreadId, events);
       const childRun = childProjection.runs[0];
@@ -7278,8 +7372,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     const now = message.createdAt;
     const adapter = yield* providerAdapters.get(run.providerInstanceId);
     const taskId = idAllocator.derive.delegatedTaskNode({ commandId: command.commandId });
+    // A follow-up is new work, not a member of the original's wake=all group.
+    const { wakeWhen: _wakeWhen, ...originalWithoutWakeGroup } = original;
     const task: OrchestrationV2Subagent = {
-      ...original,
+      ...originalWithoutWakeGroup,
       createdBy: command.createdBy,
       driver: adapter.driver,
       id: taskId,
@@ -7375,6 +7471,91 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     });
   });
 
+  // A wake=all group holds finished results until the rest finish, so a stuck
+  // member would otherwise keep the parent asleep. This wakes the parent with
+  // the group's state and leaves the hold in place; the parent reads finished
+  // results with task_status, which takes them out of the final wake.
+  const dispatchDelegatedTaskWakeTimeout = Effect.fn(
+    "orchestrationV2.dispatch.delegatedTaskWakeTimeout",
+  )(function* (
+    command: Extract<OrchestrationV2Command, { readonly type: "delegated_task.wake-timeout" }>,
+    events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
+    effects: Ref.Ref<Array<PendingOrchestrationEffectV2>>,
+  ) {
+    const projection = yield* projectionStore
+      .getThreadRecords(command.threadId, ["subagents", "runs", "messages"], {
+        messageRoles: ["user"],
+      })
+      .pipe(
+        Effect.mapError(
+          (cause) => new OrchestratorProjectionError({ threadId: command.threadId, cause }),
+        ),
+      );
+    const task = projection.subagents.find(
+      (candidate) => candidate.id === command.taskId && candidate.origin === "app_owned",
+    );
+    const group =
+      task === undefined || task.wakeWhen !== "all"
+        ? []
+        : projection.subagents.filter((candidate) => isWakeAllGroupMember(candidate, task.runId));
+    const unfinishedTaskIds = group
+      .filter((candidate) => !isTerminalDelegatedTaskStatus(candidate.status))
+      .map((candidate) => candidate.id)
+      .toSorted();
+    const parentRun = projection.runs.find((run) => run.id === task?.runId);
+    // Sibling timers that fire while the group is unchanged share one wake.
+    const messageId = MessageId.make(
+      `message:delegated-task-wake-timeout:${task?.runId ?? command.taskId}:${unfinishedTaskIds.join(",")}`,
+    );
+    if (
+      task === undefined ||
+      unfinishedTaskIds.length === 0 ||
+      projection.thread.archivedAt !== null ||
+      projection.thread.deletedAt !== null ||
+      (parentRun?.delegatedCompletion !== undefined &&
+        parentRun.delegatedCompletion.disposition !== "open") ||
+      projection.messages.some((message) => message.id === messageId)
+    ) {
+      yield* emit(
+        events,
+        command,
+      )({
+        type: "thread.metadata-updated",
+        threadId: command.threadId,
+        occurredAt: yield* DateTime.now,
+        payload: projection.thread,
+      });
+      return;
+    }
+    const finishedTaskIds = group
+      .filter((candidate) => isTerminalDelegatedTaskStatus(candidate.status))
+      .map((candidate) => candidate.id)
+      .toSorted();
+    yield* dispatchMessage(
+      {
+        type: "message.dispatch",
+        commandId: command.commandId,
+        threadId: command.threadId,
+        messageId,
+        text: delegatedWakeTimeoutDetail({ finishedTaskIds, unfinishedTaskIds }),
+        notification: {
+          source: { kind: "delegated_task", taskIds: [...finishedTaskIds, ...unfinishedTaskIds] },
+          outcome: "updated",
+          summary:
+            unfinishedTaskIds.length === 1
+              ? "1 delegated task is still running"
+              : `${unfinishedTaskIds.length} delegated tasks are still running`,
+        },
+        attachments: [],
+        dispatchMode: { type: "queue_after_active" },
+        createdBy: "agent",
+        creationSource: "server",
+      },
+      events,
+      effects,
+    );
+  });
+
   // The wait path uses this when its blocking window ends without a terminal
   // (timeout), so a child that later terminalizes mid-parent-turn still wakes
   // the parent. Runs under the parent thread's dispatch lock, which is also
@@ -7452,6 +7633,18 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     });
     if (completionPlan === undefined) {
       return;
+    }
+    for (const released of completionPlan.releasedTasks) {
+      yield* emitEvent({
+        type: "subagent.updated",
+        threadId: command.parentThreadId,
+        ...(released.runId === null ? {} : { runId: released.runId }),
+        nodeId: released.id,
+        driver: released.driver,
+        providerInstanceId: released.providerInstanceId,
+        occurredAt: now,
+        payload: released,
+      });
     }
     if (completionPlan.parentRun !== undefined) {
       yield* emitEvent({
@@ -10516,18 +10709,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     readonly now: DateTime.Utc;
   }) {
     const taskDelivery = input.updatedTask.completionDelivery;
-    if (
+    const resolved =
       taskDelivery?.state === "acknowledged" ||
       taskDelivery?.state === "delivered" ||
-      taskDelivery?.state === "disposed"
-    ) {
-      return {
-        task: input.updatedTask,
-        parentRun: undefined,
-        message: undefined,
-        offer: false,
-      };
-    }
+      taskDelivery?.state === "disposed";
     const cohort = input.parentRun?.delegatedCompletion;
     if (
       input.parentRun === undefined ||
@@ -10536,38 +10721,85 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       (cohort !== undefined && cohort.disposition !== "open")
     ) {
       return {
-        task: {
-          ...input.updatedTask,
-          completionDelivery: {
-            state: "disposed" as const,
-            observedByRunId: null,
-          },
-        },
+        task: resolved
+          ? input.updatedTask
+          : {
+              ...input.updatedTask,
+              completionDelivery: {
+                state: "disposed" as const,
+                observedByRunId: null,
+              },
+            },
         parentRun: undefined,
         message: undefined,
         offer: false,
+        releasedTasks: [],
       };
     }
+    const subagents = input.parentProjection.subagents.map((candidate) =>
+      candidate.id === input.updatedTask.id ? input.updatedTask : candidate,
+    );
+    const held = delegatedCompletionHeld(input.updatedTask, subagents);
+    const parentIsLive = hasLiveRun({ runs: [input.parentRun] });
     // settled_only defers to a blocking delegate_task wait, which lives only as
     // long as the turn that spawned the task. Once that turn is over (a restart
     // continues it as a new run), nothing else delivers the result.
-    if (
-      (input.task.completionWake ?? "settled_only") === "settled_only" &&
-      hasLiveRun({ runs: [input.parentRun] })
-    ) {
+    const ownWake =
+      !resolved &&
+      !held &&
+      !((input.task.completionWake ?? "settled_only") === "settled_only" && parentIsLive);
+    // The task that ends or interrupts a wake=all group releases the group's
+    // held results even when it needs no wake itself (a blocking wait returned
+    // it, or the parent already read it).
+    const releasedTasks = releasedWakeAllMembers(
+      input.updatedTask,
+      subagents,
+      (candidate) =>
+        candidate.completionDelivery?.state === "pending" &&
+        (!parentIsLive || candidate.completionWake === "always"),
+    ).map((candidate) => ({
+      ...candidate,
+      completionDelivery: { state: "claimed" as const, observedByRunId: null },
+      updatedAt: input.now,
+    }));
+    const waitingTask =
+      held && !resolved
+        ? {
+            ...input.updatedTask,
+            completionDelivery: { state: "pending" as const, observedByRunId: null },
+          }
+        : input.updatedTask;
+    if (!ownWake && releasedTasks.length === 0) {
       return {
-        task: input.updatedTask,
+        task: waitingTask,
         parentRun: undefined,
         message: undefined,
         offer: false,
+        releasedTasks: [],
       };
     }
+    const claimedTaskIds = [
+      ...(ownWake ? [input.task.id] : []),
+      ...releasedTasks.map((candidate) => candidate.id),
+    ];
+    const claimedTask = ownWake
+      ? {
+          ...input.updatedTask,
+          completionDelivery: { state: "claimed" as const, observedByRunId: null },
+        }
+      : input.updatedTask;
+    const deferredTask = ownWake
+      ? {
+          ...input.updatedTask,
+          completionDelivery: { state: "pending" as const, observedByRunId: null },
+        }
+      : input.updatedTask;
 
     const delivery = cohort?.delivery ?? null;
     const deliveryRun = completionDeliveryRun(input.parentProjection, delivery);
     if (delivery !== null) {
       if (deliveryRun?.status === "queued" && deliveryRun.userMessageId === delivery?.messageId) {
-        const taskIds = Array.from(new Set([...delivery.taskIds, input.task.id]));
+        const taskIds = Array.from(new Set([...delivery.taskIds, ...claimedTaskIds]));
         const message = completionDeliveryMessage(input.parentProjection, delivery);
         const nextCohort = {
           ...cohort!,
@@ -10577,13 +10809,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           },
         };
         return {
-          task: {
-            ...input.updatedTask,
-            completionDelivery: {
-              state: "claimed" as const,
-              observedByRunId: null,
-            },
-          },
+          task: claimedTask,
           parentRun: {
             ...input.parentRun,
             delegatedCompletion: nextCohort,
@@ -10602,20 +10828,16 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                   updatedAt: input.now,
                 },
           offer: false,
+          releasedTasks,
         };
       }
       if (deliveryRun !== undefined && isBlockingRun(deliveryRun)) {
         return {
-          task: {
-            ...input.updatedTask,
-            completionDelivery: {
-              state: "pending" as const,
-              observedByRunId: null,
-            },
-          },
+          task: deferredTask,
           parentRun: undefined,
           message: undefined,
           offer: false,
+          releasedTasks: [],
         };
       }
       if (deliveryRun !== undefined) {
@@ -10624,19 +10846,14 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         // successor that listener reserves, rather than creating a competing
         // delivery.
         return {
-          task: {
-            ...input.updatedTask,
-            completionDelivery: {
-              state: "pending" as const,
-              observedByRunId: null,
-            },
-          },
+          task: deferredTask,
           parentRun: undefined,
           message: undefined,
           offer: false,
+          releasedTasks: [],
         };
       }
-      const taskIds = Array.from(new Set([...delivery.taskIds, input.task.id]));
+      const taskIds = Array.from(new Set([...delivery.taskIds, ...claimedTaskIds]));
       const nextCohort = {
         ...cohort!,
         delivery: {
@@ -10645,19 +10862,14 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         },
       };
       return {
-        task: {
-          ...input.updatedTask,
-          completionDelivery: {
-            state: "claimed" as const,
-            observedByRunId: null,
-          },
-        },
+        task: claimedTask,
         parentRun: {
           ...input.parentRun,
           delegatedCompletion: nextCohort,
         },
         message: undefined,
         offer: true,
+        releasedTasks,
       };
     }
 
@@ -10677,23 +10889,18 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       delivery: {
         generation,
         messageId,
-        taskIds: [input.task.id],
+        taskIds: claimedTaskIds,
       },
     };
     return {
-      task: {
-        ...input.updatedTask,
-        completionDelivery: {
-          state: "claimed" as const,
-          observedByRunId: null,
-        },
-      },
+      task: claimedTask,
       parentRun: {
         ...input.parentRun,
         delegatedCompletion: nextCohort,
       },
       message: undefined,
       offer: true,
+      releasedTasks,
     };
   });
 
@@ -10962,6 +11169,16 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           occurredAt: now,
           payload: completionPlan.task,
         },
+        ...completionPlan.releasedTasks.map((released) => ({
+          type: "subagent.updated" as const,
+          threadId: parentThreadId,
+          ...(released.runId === null ? {} : { runId: released.runId }),
+          nodeId: released.id,
+          driver: released.driver,
+          providerInstanceId: released.providerInstanceId,
+          occurredAt: now,
+          payload: released,
+        })),
         ...(completionPlan.parentRun === undefined
           ? []
           : [
@@ -11216,16 +11433,15 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         observedByRunId: null,
       });
     }
-    const pendingTaskIds = projection.subagents
-      .filter(
-        (task) =>
-          task.origin === "app_owned" &&
-          task.runId === parentRun.id &&
-          isTerminalDelegatedTaskStatus(task.status) &&
-          (task.completionDelivery?.state === "pending" ||
-            nextTaskStates.get(task.id)?.state === "pending"),
-      )
-      .map((task) => task.id);
+    const pendingTaskIds = sweptDelegatedCompletionTaskIds(
+      projection.subagents,
+      (task) =>
+        task.origin === "app_owned" &&
+        task.runId === parentRun.id &&
+        isTerminalDelegatedTaskStatus(task.status) &&
+        (task.completionDelivery?.state === "pending" ||
+          nextTaskStates.get(task.id)?.state === "pending"),
+    );
     const canReserveFollowUp =
       cohort.disposition === "open" &&
       projection.thread.archivedAt === null &&
@@ -11332,16 +11548,15 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     const parentIsLive = hasLiveRun({ runs: [parentRun] });
     const pendingTaskIds =
       projection.thread.archivedAt === null && projection.thread.deletedAt === null
-        ? projection.subagents
-            .filter(
-              (task) =>
-                task.origin === "app_owned" &&
-                task.runId === parentRun.id &&
-                task.completionDelivery?.state === "pending" &&
-                isTerminalDelegatedTaskStatus(task.status) &&
-                (!parentIsLive || task.completionWake === "always"),
-            )
-            .map((task) => task.id)
+        ? sweptDelegatedCompletionTaskIds(
+            projection.subagents,
+            (task) =>
+              task.origin === "app_owned" &&
+              task.runId === parentRun.id &&
+              task.completionDelivery?.state === "pending" &&
+              isTerminalDelegatedTaskStatus(task.status) &&
+              (!parentIsLive || task.completionWake === "always"),
+          )
         : [];
     const nextDelivery =
       pendingTaskIds.length === 0
@@ -11680,6 +11895,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         break;
       case "delegated_task.wake-policy":
         yield* dispatchDelegatedTaskWakePolicy(command, events);
+        break;
+      case "delegated_task.wake-timeout":
+        yield* dispatchDelegatedTaskWakeTimeout(command, events, effects);
         break;
       case "delegated_task.completion-delivery.acknowledge":
       case "delegated_task.completion-delivery.dispose":

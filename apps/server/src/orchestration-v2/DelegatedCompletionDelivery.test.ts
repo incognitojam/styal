@@ -20,6 +20,7 @@ import {
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 import * as Tracer from "effect/Tracer";
 
@@ -36,6 +37,7 @@ import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
+import * as EffectOutbox from "./EffectOutbox.ts";
 import * as EventSink from "./EventSink.ts";
 import * as Orchestrator from "./Orchestrator.ts";
 import { continueRestartedRun } from "./RestartContinuation.ts";
@@ -104,7 +106,11 @@ const layerTestProviderInstanceRegistry = Layer.succeed(
   },
 );
 
-const layerTest = Layer.mergeAll(RuntimeLayer.layer, RuntimeLayer.layerEventSink).pipe(
+const layerTest = Layer.mergeAll(
+  RuntimeLayer.layer,
+  RuntimeLayer.layerEventSink,
+  EffectOutbox.layer,
+).pipe(
   Layer.provideMerge(RuntimeLayer.layerProjectService),
   Layer.provide(
     Layer.mock(WorkspacePaths.WorkspacePaths)({
@@ -2201,3 +2207,375 @@ it.layer(layerTest)("delegated tasks across a server restart", (it) => {
     }),
   );
 });
+
+it.layer(Layer.merge(layerTest, ProviderContinuationRequests.layer))(
+  "delegated tasks with wake=all",
+  (it) => {
+    const startParent = (name: string) =>
+      Effect.gen(function* () {
+        const projects = yield* ProjectService.ProjectService;
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const projectId = ProjectId.make(`project:${name}`);
+        const threadId = ThreadId.make(`thread:${name}`);
+        yield* projects.create({
+          commandId: CommandId.make(`command:create-project:${name}`),
+          projectId,
+          title: "Wake all",
+          workspaceRoot: `/workspace/${name}`,
+        });
+        yield* orchestrator.dispatch({
+          type: "thread.create",
+          createdBy: "user",
+          creationSource: "web",
+          commandId: CommandId.make(`command:create-thread:${name}`),
+          threadId,
+          projectId,
+          title: "Wake all",
+          modelSelection,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+        });
+        yield* orchestrator.dispatch({
+          type: "message.dispatch",
+          createdBy: "user",
+          creationSource: "web",
+          commandId: CommandId.make(`command:start-parent:${name}`),
+          threadId,
+          messageId: MessageId.make(`message:start-parent:${name}`),
+          text: "Delegate the tracks",
+          attachments: [],
+          dispatchMode: { type: "start_immediately" },
+        });
+        const run = (yield* orchestrator.getThreadProjection(threadId)).runs[0]!;
+        return { threadId, runId: run.id, rootNodeId: run.rootNodeId! };
+      });
+
+    const delegate = (
+      parent: { readonly threadId: ThreadId; readonly runId: RunId; readonly rootNodeId: NodeId },
+      name: string,
+      wake: {
+        readonly wakeWhen?: "each" | "all";
+        readonly wakeAfterMs?: number;
+        readonly completionWake?: "always" | "settled_only";
+      } = {},
+    ) =>
+      Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const commandId = CommandId.make(`command:delegate:${name}`);
+        yield* orchestrator.dispatch({
+          type: "delegated_task.request",
+          createdBy: "agent",
+          creationSource: "mcp",
+          commandId,
+          parentThreadId: parent.threadId,
+          parentRunId: parent.runId,
+          parentNodeId: parent.rootNodeId,
+          task: `Track ${name}`,
+          modelSelection,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          completionWake: "always",
+          ...wake,
+        });
+        const projection = yield* orchestrator.getThreadProjection(parent.threadId);
+        return projection.subagents.find((task) => task.prompt === `Track ${name}`)!;
+      });
+
+    const finish = (
+      task: { readonly id: NodeId; readonly childThreadId: ThreadId | null },
+      status: "completed" | "failed",
+    ) =>
+      Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const sink = yield* EventSink.EventSinkV2;
+        const now = yield* DateTime.now;
+        const childRun = (yield* orchestrator.getThreadProjection(task.childThreadId!)).runs[0]!;
+        const afterSequence = yield* sink.latestSequence();
+        yield* sink.write({
+          events: [
+            {
+              ...runEvent({
+                threadId: task.childThreadId!,
+                runId: childRun.id,
+                ordinal: childRun.ordinal,
+                status,
+                now,
+              }),
+              payload: { ...childRun, status, completedAt: now },
+            },
+          ],
+        });
+        yield* sink.stream({ afterSequence, eventType: "subagent.updated" }).pipe(
+          Stream.filter(
+            (stored) =>
+              stored.event.type === "subagent.updated" &&
+              stored.event.payload.id === task.id &&
+              stored.event.payload.status === status,
+          ),
+          Stream.take(1),
+          Stream.runDrain,
+        );
+      });
+
+    const deliveryState = (threadId: ThreadId) =>
+      Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const projection = yield* orchestrator.getThreadProjection(threadId);
+        return {
+          states: (taskId: NodeId) =>
+            projection.subagents.find((task) => task.id === taskId)?.completionDelivery?.state,
+          delivery: (runId: RunId) =>
+            projection.runs.find((run) => run.id === runId)?.delegatedCompletion?.delivery ?? null,
+          notifications: projection.messages.filter(
+            (message) => message.notification !== undefined,
+          ),
+        };
+      });
+
+    it.effect("wakes the parent once, after every task in the group has finished", () =>
+      Effect.gen(function* () {
+        const parent = yield* startParent("wake-all-finish");
+        const first = yield* delegate(parent, "wake-all-finish-1", { wakeWhen: "all" });
+        const second = yield* delegate(parent, "wake-all-finish-2", { wakeWhen: "all" });
+        const third = yield* delegate(parent, "wake-all-finish-3", { wakeWhen: "all" });
+
+        yield* finish(first, "completed");
+        yield* finish(second, "completed");
+        const held = yield* deliveryState(parent.threadId);
+        assert.isNull(held.delivery(parent.runId));
+        assert.equal(held.states(first.id), "pending");
+        assert.equal(held.states(second.id), "pending");
+
+        yield* finish(third, "completed");
+        const woken = yield* deliveryState(parent.threadId);
+        const delivery = woken.delivery(parent.runId)!;
+        assert.equal(delivery.generation, 1);
+        assert.sameMembers([...delivery.taskIds], [first.id, second.id, third.id]);
+        for (const task of [first, second, third]) {
+          assert.equal(woken.states(task.id), "claimed");
+        }
+      }),
+    );
+
+    it.effect("wakes early with the finished results when a task fails", () =>
+      Effect.gen(function* () {
+        const parent = yield* startParent("wake-all-failure");
+        const first = yield* delegate(parent, "wake-all-failure-1", { wakeWhen: "all" });
+        const second = yield* delegate(parent, "wake-all-failure-2", { wakeWhen: "all" });
+        const third = yield* delegate(parent, "wake-all-failure-3", { wakeWhen: "all" });
+
+        yield* finish(first, "completed");
+        yield* finish(second, "failed");
+        const woken = yield* deliveryState(parent.threadId);
+        assert.sameMembers([...woken.delivery(parent.runId)!.taskIds], [first.id, second.id]);
+        assert.equal(woken.states(third.id), undefined);
+      }),
+    );
+
+    it.effect("each wakes per task, and does not release or join the all group", () =>
+      Effect.gen(function* () {
+        const parent = yield* startParent("wake-each");
+        const grouped = yield* delegate(parent, "wake-each-grouped", { wakeWhen: "all" });
+        yield* delegate(parent, "wake-each-grouped-running", { wakeWhen: "all" });
+        const single = yield* delegate(parent, "wake-each-single");
+
+        yield* finish(grouped, "completed");
+        yield* finish(single, "completed");
+        const woken = yield* deliveryState(parent.threadId);
+        assert.deepEqual(woken.delivery(parent.runId)?.taskIds, [single.id]);
+        assert.equal(woken.states(single.id), "claimed");
+        assert.equal(woken.states(grouped.id), "pending");
+      }),
+    );
+
+    it.effect("a group member that needs no wake of its own still releases the group", () =>
+      Effect.gen(function* () {
+        const parent = yield* startParent("wake-all-waited-last");
+        const held = yield* delegate(parent, "wake-all-waited-last-async", { wakeWhen: "all" });
+        // mode=wait: the blocking call returns this result, so it never wakes the parent.
+        const waited = yield* delegate(parent, "wake-all-waited-last-wait", {
+          wakeWhen: "all",
+          completionWake: "settled_only",
+        });
+
+        yield* finish(held, "completed");
+        assert.equal((yield* deliveryState(parent.threadId)).states(held.id), "pending");
+        yield* finish(waited, "completed");
+        const woken = yield* deliveryState(parent.threadId);
+        assert.deepEqual(woken.delivery(parent.runId)?.taskIds, [held.id]);
+        assert.equal(woken.states(held.id), "claimed");
+        assert.notEqual(woken.states(waited.id), "claimed");
+      }),
+    );
+
+    it.effect.each([
+      { name: "wake-all-deferred-failure", readFailure: false },
+      { name: "wake-all-deferred-failure-read", readFailure: true },
+    ])(
+      "a failure deferred behind an active wake still brings the finished results (read: $readFailure)",
+      ({ name, readFailure }) =>
+        Effect.gen(function* () {
+          const orchestrator = yield* Orchestrator.OrchestratorV2;
+          const sink = yield* EventSink.EventSinkV2;
+          const now = yield* DateTime.now;
+          const parent = yield* startParent(name);
+          const single = yield* delegate(parent, `${name}-each`);
+          const done = yield* delegate(parent, `${name}-done`, { wakeWhen: "all" });
+          const failed = yield* delegate(parent, `${name}-failed`, {
+            wakeWhen: "all",
+          });
+          const running = yield* delegate(parent, `${name}-running`, {
+            wakeWhen: "all",
+          });
+          const parentRun = (yield* orchestrator.getThreadProjection(parent.threadId)).runs[0]!;
+          yield* sink.write({
+            events: [
+              {
+                ...runEvent({
+                  threadId: parent.threadId,
+                  runId: parent.runId,
+                  ordinal: 1,
+                  status: "completed",
+                  now,
+                }),
+                id: EventId.make(`event:${name}:parent-completed`),
+                payload: { ...parentRun, status: "completed", completedAt: now },
+              },
+            ],
+          });
+
+          yield* finish(single, "completed");
+          const delivery = (yield* deliveryState(parent.threadId)).delivery(parent.runId)!;
+          yield* orchestrator.dispatch({
+            type: "message.dispatch",
+            createdBy: "agent",
+            creationSource: "server",
+            commandId: CommandId.make(`command:${name}:wake`),
+            threadId: parent.threadId,
+            messageId: delivery.messageId,
+            text: "Delegated task completed",
+            attachments: [],
+            modelSelection,
+            dispatchMode: { type: "queue_after_active" },
+            delegatedCompletion: {
+              parentRunId: parent.runId,
+              generation: delivery.generation,
+              taskIds: delivery.taskIds,
+            },
+          });
+          yield* orchestrator.resumeQueuedRuns;
+          const wake = (yield* orchestrator.getThreadProjection(parent.threadId)).runs.find(
+            (run) => run.userMessageId === delivery.messageId,
+          )!;
+
+          yield* finish(done, "completed");
+          yield* finish(failed, "failed");
+          const deferred = yield* deliveryState(parent.threadId);
+          assert.equal(deferred.states(done.id), "pending");
+          assert.equal(deferred.states(failed.id), "pending");
+          if (readFailure) {
+            // task_status on the failed task while the earlier wake runs.
+            yield* orchestrator.dispatch({
+              type: "delegated_task.completion-delivery.acknowledge",
+              commandId: CommandId.make(`command:${name}:read-failure`),
+              parentThreadId: parent.threadId,
+              taskId: failed.id,
+              observedByRunId: wake.id,
+            });
+          }
+
+          const afterSequence = yield* sink.latestSequence();
+          yield* sink.write({
+            events: [
+              {
+                ...runEvent({
+                  threadId: parent.threadId,
+                  runId: wake.id,
+                  ordinal: wake.ordinal,
+                  status: "completed",
+                  now,
+                }),
+                id: EventId.make(`event:${name}:wake-completed`),
+                payload: { ...wake, status: "completed", completedAt: now },
+              },
+            ],
+          });
+          yield* sink.stream({ afterSequence, eventType: "subagent.updated" }).pipe(
+            Stream.filter(
+              (stored) =>
+                stored.event.type === "subagent.updated" &&
+                stored.event.payload.id === done.id &&
+                stored.event.payload.completionDelivery?.state === "claimed",
+            ),
+            Stream.take(1),
+            Stream.runDrain,
+          );
+          const next = yield* deliveryState(parent.threadId);
+          assert.sameMembers(
+            [...next.delivery(parent.runId)!.taskIds],
+            readFailure ? [done.id] : [done.id, failed.id],
+          );
+          assert.notInclude(next.delivery(parent.runId)!.taskIds, running.id);
+        }),
+    );
+
+    it.effect("wakeAfterMs schedules a durable wake that reports the unfinished tasks", () =>
+      Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const outbox = yield* EffectOutbox.EffectOutboxV2;
+        const parent = yield* startParent("wake-all-timeout");
+        const requestedAt = yield* DateTime.now;
+        const first = yield* delegate(parent, "wake-all-timeout-1", {
+          wakeWhen: "all",
+          wakeAfterMs: 1_800_000,
+        });
+        const second = yield* delegate(parent, "wake-all-timeout-2", {
+          wakeWhen: "all",
+          wakeAfterMs: 1_800_000,
+        });
+        const timer = Option.getOrThrow(
+          yield* outbox.get(
+            "effect:command:delegate:wake-all-timeout-1:delegated-task.wake-timeout",
+          ),
+        );
+        assert.deepEqual(timer.request, { type: "delegated-task.wake-timeout", taskId: first.id });
+        assert.equal(timer.threadId, parent.threadId);
+        assert.equal(
+          DateTime.toEpochMillis(DateTime.makeUnsafe(timer.availableAt)),
+          DateTime.toEpochMillis(requestedAt) + 1_800_000,
+        );
+
+        yield* finish(first, "completed");
+        // What the effect worker dispatches once availableAt passes, for each task's timer.
+        for (const task of [first, second]) {
+          yield* orchestrator.dispatch({
+            type: "delegated_task.wake-timeout",
+            commandId: CommandId.make(`command:wake-timeout:${task.id}`),
+            threadId: parent.threadId,
+            taskId: task.id,
+          });
+        }
+        const timedOut = yield* deliveryState(parent.threadId);
+        assert.equal(timedOut.notifications.length, 1);
+        assert.include(timedOut.notifications[0]!.text, `Finished: ${first.id}.`);
+        assert.include(timedOut.notifications[0]!.text, `Still running: ${second.id}.`);
+        assert.isNull(timedOut.delivery(parent.runId));
+        assert.equal(timedOut.states(first.id), "pending");
+
+        yield* finish(second, "completed");
+        const woken = yield* deliveryState(parent.threadId);
+        assert.sameMembers([...woken.delivery(parent.runId)!.taskIds], [first.id, second.id]);
+
+        yield* orchestrator.dispatch({
+          type: "delegated_task.wake-timeout",
+          commandId: CommandId.make("command:wake-timeout:after-finish"),
+          threadId: parent.threadId,
+          taskId: first.id,
+        });
+        assert.equal((yield* deliveryState(parent.threadId)).notifications.length, 1);
+      }),
+    );
+  },
+);

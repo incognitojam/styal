@@ -2248,6 +2248,56 @@ it.layer(layerTest)("orchestration V2 foundation persistence", (it) => {
     }),
   );
 
+  it.effect("runs wake timeouts at their own deadlines without holding up the thread", () =>
+    Effect.gen(function* () {
+      const outbox = yield* EffectOutbox.EffectOutboxV2;
+      const now = yield* DateTime.now;
+      const commandId = CommandId.make("command:foundation-wake-timeout-lane");
+      const threadId = ThreadId.make("thread:foundation-wake-timeout-lane");
+      const claim = outbox.claimNext({ workerId: "wake-timeout-worker", leaseDurationMs: 30_000 });
+      yield* outbox.enqueue([
+        {
+          id: "effect:foundation-wake-timeout-lane:a-late-timer",
+          commandId,
+          threadId,
+          request: { type: "delegated-task.wake-timeout", taskId: NodeId.make("node:late") },
+          availableAt: DateTime.add(now, { minutes: 30 }),
+        },
+        {
+          id: "effect:foundation-wake-timeout-lane:b-early-timer",
+          commandId,
+          threadId,
+          request: { type: "delegated-task.wake-timeout", taskId: NodeId.make("node:early") },
+          availableAt: DateTime.add(now, { minutes: 10 }),
+        },
+        {
+          id: "effect:foundation-wake-timeout-lane:c-turn",
+          commandId,
+          threadId,
+          request: { type: "provider-turn.start", runId: RunId.make("run:wake-timeout-lane") },
+        },
+      ]);
+
+      const turn = Option.getOrThrow(yield* claim);
+      assert.equal(turn.id, "effect:foundation-wake-timeout-lane:c-turn");
+      yield* outbox.succeed({ effectId: turn.id, workerId: "wake-timeout-worker" });
+      assert.isTrue(Option.isNone(yield* claim));
+
+      yield* TestClock.adjust("10 minutes");
+      const early = Option.getOrThrow(yield* claim);
+      assert.equal(early.id, "effect:foundation-wake-timeout-lane:b-early-timer");
+      assert.isTrue(Option.isNone(yield* claim));
+
+      // Later tests in this file share the outbox.
+      yield* outbox.succeed({ effectId: early.id, workerId: "wake-timeout-worker" });
+      yield* outbox.cancelUnsettled({
+        threadId,
+        effectTypes: ["delegated-task.wake-timeout"],
+        reason: "test cleanup",
+      });
+    }),
+  );
+
   it.effect("ignores deadlines blocked by a running effect on the same thread", () =>
     Effect.gen(function* () {
       const outbox = yield* EffectOutbox.EffectOutboxV2;

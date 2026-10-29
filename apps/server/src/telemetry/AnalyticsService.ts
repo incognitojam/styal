@@ -228,6 +228,7 @@ export const make = Effect.gen(function* () {
           settingsSnapshotUsageVersion: 1,
           simulatorMemoryUsageVersion: 1,
           desktopUpdateIdleRestartUsageVersion: 1,
+          delegatedWakeAllUsageVersion: 1,
           ...buildContext,
           telemetryChannel,
           clientType,

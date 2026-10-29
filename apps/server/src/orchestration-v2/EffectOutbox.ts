@@ -117,6 +117,11 @@ export const OrchestrationEffectRequestV2 = Schema.Union([
     type: Schema.Literal("delegated-tasks.stop"),
     reason: Schema.optional(Schema.String),
   }),
+  // Scheduled through availableAt, so the wake survives a server restart.
+  Schema.Struct({
+    type: Schema.Literal("delegated-task.wake-timeout"),
+    taskId: NodeId,
+  }),
 ]);
 export type OrchestrationEffectRequestV2 = typeof OrchestrationEffectRequestV2.Type;
 
@@ -131,6 +136,7 @@ export const REPLAY_SAFE_EFFECT_TYPES_AFTER_PROCESS_LOSS = [
   "attachment.cleanup",
   "thread-title.generate",
   "delegated-tasks.stop",
+  "delegated-task.wake-timeout",
 ] as const satisfies ReadonlyArray<OrchestrationEffectRequestV2["type"]>;
 
 export const PROCESS_BOUND_EFFECT_TYPES = [
@@ -330,10 +336,15 @@ export const layer: Layer.Layer<EffectOutboxV2, never, SqlClient.SqlClient> = La
             : sql`candidate.available_at <= ${availableBefore}`
         }
         AND candidate.status = 'pending'
-        AND NOT EXISTS (
+        AND (
+          -- A wake timeout waits on its own availableAt, often for many minutes,
+          -- so it neither waits behind the thread's other effects nor holds them up.
+          candidate.effect_type = 'delegated-task.wake-timeout'
+          OR NOT EXISTS (
           SELECT 1
           FROM orchestration_v2_effect_outbox AS active
           WHERE active.thread_id = candidate.thread_id
+            AND active.effect_type != 'delegated-task.wake-timeout'
             AND (
               active.status = 'running'
               OR (
@@ -357,6 +368,7 @@ export const layer: Layer.Layer<EffectOutboxV2, never, SqlClient.SqlClient> = La
                 AND active.effect_type != 'thread-title.generate'
               )
             )
+          )
         )
       `;
 

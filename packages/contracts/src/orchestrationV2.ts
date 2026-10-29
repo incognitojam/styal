@@ -749,6 +749,9 @@ export const OrchestrationV2Subagent = Schema.Struct({
   model: Schema.NullOr(Schema.String),
   modelSelection: Schema.optional(ModelSelection),
   completionWake: Schema.optional(Schema.Literals(["always", "settled_only"])),
+  // "all" holds this task's completion wake until every "all" task delegated by
+  // the same parent run is terminal, or one of them fails. Omitted means "each".
+  wakeWhen: Schema.optional(Schema.Literals(["each", "all"])),
   completionDelivery: Schema.optional(OrchestrationV2DelegatedCompletionTaskDelivery),
   status: Schema.Literals([
     "idle",
@@ -3133,7 +3136,18 @@ export const OrchestrationV2Command = Schema.Union([
     // Omitted behaves as "settled_only" (no wake while the parent has a live
     // run); producers that want fire-and-forget wakes must set "always".
     completionWake: Schema.optional(Schema.Literals(["always", "settled_only"])),
+    wakeWhen: Schema.optional(Schema.Literals(["each", "all"])),
+    // Wakes the parent after this long if the task's "all" group is still
+    // unfinished, listing what has finished and what has not.
+    wakeAfterMs: Schema.optional(PositiveInt),
     createdAt: Schema.optional(Schema.DateTimeUtc),
+  }),
+  Schema.Struct({
+    type: Schema.Literal("delegated_task.wake-timeout"),
+    commandId: CommandId,
+    // The parent thread; named threadId so it routes like other thread commands.
+    threadId: ThreadId,
+    taskId: NodeId,
   }),
   Schema.Struct({
     type: Schema.Literal("delegated_task.wake-policy"),

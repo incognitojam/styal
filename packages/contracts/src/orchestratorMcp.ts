@@ -183,6 +183,18 @@ export const OrchestratorMcpDelegateTaskInput = Schema.Struct({
     description:
       "Wait budget for mode=wait only. Default 10 minutes. Elapsing it returns waitTimedOut=true on that call and does not cancel the child.",
   }),
+  wake: Schema.optional(
+    Schema.Literals(["each", "all"]).annotate({
+      description:
+        "Defaults to each: every finished task wakes this thread. all holds the wake until every task this turn delegated with wake=all has finished, then wakes once with all of them. A failed task wakes early with whatever has finished. Use all for several parallel tracks whose results are only useful together.",
+    }),
+  ),
+  wakeAfterMs: Schema.optional(
+    Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 86_400_000 })).annotate({
+      description:
+        "With wake=all: if the group is still unfinished after this long, wake this thread once with what has finished and what has not. The rest stay held until they finish.",
+    }),
+  ),
   clientRequestId: Schema.optional(OrchestratorMcpClientRequestId),
   runtimeMode: Schema.optional(
     OrchestratorMcpRuntimeMode.annotate({
