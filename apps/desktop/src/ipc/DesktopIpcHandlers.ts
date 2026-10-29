@@ -42,6 +42,7 @@ import {
   checkForUpdate,
   downloadUpdate,
   getUpdateState,
+  getLocalHostActivity,
   installUpdate,
   setUpdateChannel,
 } from "./methods/updates.ts";
@@ -171,6 +172,7 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(shutdownRendererReady);
   yield* ipc.handle(resolveShutdownConfirmation);
   yield* ipc.handle(getUpdateState);
+  yield* ipc.handle(getLocalHostActivity);
   yield* ipc.handle(setUpdateChannel);
   yield* ipc.handle(downloadUpdate);
   yield* ipc.handle(installUpdate);

@@ -1,5 +1,5 @@
 import type { ServerUpdateState } from "@t3tools/client-runtime/state/server";
-import type { EnvironmentId, ServerConfig } from "@t3tools/contracts";
+import type { ConfirmDialogThreadActivity, EnvironmentId, ServerConfig } from "@t3tools/contracts";
 import { cliReleaseChannelOf } from "@t3tools/shared/cliRelease";
 
 import {
@@ -26,6 +26,13 @@ export interface UpdateEverythingMachine {
 export interface RestartingMachine {
   readonly environmentId: EnvironmentId;
   readonly continuesThreads: boolean;
+}
+
+export interface UpdateEverythingConfirmation {
+  readonly lines: ReadonlyArray<string>;
+  readonly threadActivity: ReadonlyArray<ConfirmDialogThreadActivity>;
+  /** The local version whose restart activity was included in this confirmation. */
+  readonly localVersion: string | null;
 }
 
 export function collectRestartingMachines(
@@ -174,8 +181,7 @@ export interface UpdateRunMachine {
 
 export interface UpdateEverythingRun {
   readonly localVersion: string | null;
-  readonly phase: "providers" | "servers" | "countdown" | "installing";
-  readonly restartAt: number | null;
+  readonly phase: "providers" | "servers" | "installing";
   readonly machines: ReadonlyArray<UpdateRunMachine>;
 }
 
@@ -228,7 +234,7 @@ export interface UpdateCapsuleView {
   readonly tone: "default" | "slow" | "failed";
   readonly label: string;
   readonly slow?: { readonly status: string; readonly elapsed: string };
-  readonly action: "later" | "retry" | "dismiss" | null;
+  readonly action: "retry" | "dismiss" | null;
 }
 
 const isActive = (status: UpdateRunMachineStatus) => status !== "done" && status !== "failed";
@@ -239,10 +245,6 @@ export function describeUpdateCapsule(
   local: UpdateRunLocalState,
   now: number,
 ): UpdateCapsuleView {
-  if (run.phase === "countdown" && run.restartAt !== null) {
-    const seconds = Math.max(0, Math.ceil((run.restartAt - now) / 1000));
-    return { tone: "default", label: `Restart in ${seconds}s`, action: "later" };
-  }
   if (run.phase === "installing") {
     return { tone: "default", label: "Restarting…", action: null };
   }

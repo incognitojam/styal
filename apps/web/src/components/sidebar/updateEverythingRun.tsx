@@ -133,27 +133,6 @@ export function waitForServerUpdateHandoff(
   });
 }
 
-let decideRestart: ((restart: boolean) => void) | null = null;
-
-export function waitForUpdateRestart(delayMs: number): Promise<boolean> {
-  return new Promise((resolve) => {
-    const decide = (restart: boolean) => {
-      clearTimeout(timer);
-      decideRestart = null;
-      resolve(restart);
-    };
-    const timer = setTimeout(() => decide(true), delayMs);
-    decideRestart = decide;
-    setUpdateEverythingRun(
-      (run) => run && { ...run, phase: "countdown", restartAt: Date.now() + delayMs },
-    );
-  });
-}
-
-export function postponeUpdateRestart(): void {
-  decideRestart?.(false);
-}
-
 const SAVED_RESULT_KEY = "t3code:update-everything-result:v1";
 const SAVED_RESULT_MAX_AGE_MS = 10 * 60 * 1000;
 // Covers a background service's 30-minute trial start, like the server update itself.
@@ -255,7 +234,6 @@ function followHandedOffServers(servers: ReadonlyArray<HandedOffServer>): void {
   setUpdateEverythingRun(() => ({
     localVersion: null,
     phase: "servers",
-    restartAt: null,
     machines: servers.map((server) => ({
       environmentId: server.environmentId,
       label: server.label,

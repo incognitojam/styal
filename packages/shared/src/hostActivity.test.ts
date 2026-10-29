@@ -195,7 +195,9 @@ describe("host thread descriptions", () => {
       ],
       options,
     );
-    expect(activity.lines).toEqual(["1 thread will be interrupted."]);
+    expect(activity.lines).toEqual([]);
+    expect(activity.concern).toBe("running");
+    expect(activity.interrupts).toBe(true);
     expect(activity.threadActivity).toEqual([
       {
         thread: namedThread,
@@ -214,10 +216,7 @@ describe("host thread descriptions", () => {
       ],
       options,
     );
-    expect(activity.lines).toEqual([
-      "1 thread will be interrupted.",
-      "1 thread will continue after the restart.",
-    ]);
+    expect(activity.lines).toEqual([]);
     expect(activity.threadActivity).toEqual([
       { thread: namedThread, hostLabel: "Laptop", continuesAfterRestart: true },
       { thread: namedThread, hostLabel: "Lab server", continuesAfterRestart: false },
@@ -235,7 +234,7 @@ describe("host thread descriptions", () => {
       ],
       options,
     );
-    expect(activity.lines).toEqual(["1 thread will be interrupted."]);
+    expect(activity.lines).toEqual([]);
     expect(activity.threadActivity).toEqual([
       { thread: unnamed, hostLabel: null, continuesAfterRestart: false },
     ]);
@@ -259,6 +258,58 @@ describe("host thread descriptions", () => {
     expect(activity.threadActivity).toEqual([
       { thread: waiting, hostLabel: null, continuesAfterRestart: false },
     ]);
+  });
+
+  it("retains other interruption and inspection warnings beside the thread list", () => {
+    const activity = describeHostActivity(
+      [
+        {
+          ...idle,
+          activeSessions: 1,
+          continuableSessions: 1,
+          threads: [namedThread],
+          terminalsRequiringConfirmation: 2,
+          terminalsWithUnknownActivity: 1,
+          environmentsUsingDevices: 1,
+          providerInstalls: 1,
+        },
+        null,
+      ],
+      { ...options, continueRunningThreads: true },
+    );
+    expect(activity.lines).toEqual([
+      "1 terminal session will be interrupted.",
+      "Devices in use by other environments will be disconnected.",
+      "A provider update is installing and will be interrupted.",
+      "Could not check 1 terminal session for running commands.",
+      "Some hosts could not be checked.",
+    ]);
+    expect(activity.threadActivity).toHaveLength(1);
+    expect(activity.interrupts).toBe(true);
+    expect(activity.incomplete).toBe(true);
+  });
+
+  it("keeps counts for hosts without details without repeating listed threads", () => {
+    const activity = describeHostActivity(
+      [
+        { ...idle, activeSessions: 1, continuableSessions: 1, threads: [namedThread] },
+        {
+          ...idle,
+          activeSessions: 2,
+          continuableSessions: 1,
+          waitingSessions: 1,
+          hostLabel: "Older server",
+        },
+      ],
+      { ...options, continueRunningThreads: true },
+    );
+    expect(activity.lines).toEqual([
+      "2 threads will be interrupted.",
+      "1 thread will continue after the restart.",
+      "",
+      "Thread names and activity reasons are unavailable for Older server.",
+    ]);
+    expect(activity.threadActivity).toHaveLength(1);
   });
 });
 

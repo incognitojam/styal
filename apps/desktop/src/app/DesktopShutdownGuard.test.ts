@@ -185,7 +185,10 @@ describe("DesktopShutdownGuard", () => {
 
       assert.isFalse(yield* guard.confirm("restart", { continueThreads: false }));
       assert.lengthOf(h.messages, 2);
-      assert.include(h.messages[1]!, "2 threads will be interrupted.");
+      assert.deepEqual(
+        h.details[1]?.map((item) => item.continuesAfterRestart),
+        [false, false],
+      );
     }).pipe(Effect.provide(h.layer));
   });
 
@@ -252,7 +255,7 @@ describe("DesktopShutdownGuard", () => {
     return Effect.gen(function* () {
       const guard = yield* Guard.DesktopShutdownGuard;
       assert.isFalse(yield* guard.confirm("restart"));
-      assert.include(h.messages[0]!, "2 threads will be interrupted.");
+      assert.notInclude(h.messages[0]!, "2 threads will be interrupted.");
       assert.deepEqual(
         h.details[0]?.map(({ thread, hostLabel }) => ({
           title: thread.title,
@@ -436,10 +439,7 @@ describe("shutdown confirmation copy", () => {
       ],
       "restart",
     );
-    assert.strictEqual(
-      confirmation?.detail,
-      "1 thread will be interrupted.\n1 thread will continue after the restart. Make sure you're ready before continuing.",
-    );
+    assert.strictEqual(confirmation?.detail, "Make sure you're ready before continuing.");
     assert.deepEqual(
       confirmation?.threadActivity?.map((item) => item.continuesAfterRestart),
       [true, false],
@@ -473,10 +473,7 @@ describe("shutdown confirmation copy", () => {
       ],
       "restart",
     );
-    assert.strictEqual(
-      confirmation?.detail,
-      "1 thread will be interrupted.\n1 thread will continue after the restart. Make sure you're ready before continuing.",
-    );
+    assert.strictEqual(confirmation?.detail, "Make sure you're ready before continuing.");
   });
   it("reports every thread as interrupted when the restart replaces a backend", () => {
     const confirmation = Guard.shutdownConfirmation(
@@ -491,10 +488,7 @@ describe("shutdown confirmation copy", () => {
       "restart",
       { continueThreads: false },
     );
-    assert.strictEqual(
-      confirmation?.detail,
-      "1 thread will be interrupted. Make sure you're ready before continuing.",
-    );
+    assert.strictEqual(confirmation?.detail, "Make sure you're ready before continuing.");
     assert.deepEqual(
       confirmation?.threadActivity?.map((item) => item.continuesAfterRestart),
       [false],

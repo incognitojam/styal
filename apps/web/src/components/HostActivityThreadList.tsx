@@ -5,6 +5,8 @@ import {
   hostActivityReasonTone,
 } from "@t3tools/shared/hostActivity";
 import { deriveProjectIdentity } from "../projectIdentity";
+import { useEnvironmentMachines } from "../state/environments";
+import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
 import { ProjectFavicon } from "./ProjectFavicon";
 import { ProjectMonogram } from "./ProjectMonogram";
 import { Badge } from "./ui/badge";
@@ -25,17 +27,22 @@ export function HostActivityThreadList({
 }: {
   readonly activity: ReadonlyArray<ConfirmDialogThreadActivity>;
 }) {
+  const machines = useEnvironmentMachines();
   const hosts = groupHostActivityThreads(activity);
   return (
     <div className="mx-6 mb-6 min-h-0 overflow-y-auto">
       <ul aria-label="Affected threads" className="space-y-6">
         {hosts.map((host) => {
-          const labelSections = host.sections.some((section) => section.continues);
           return (
             <li key={host.key}>
               {host.label ? (
-                <h3 className="mb-3 wrap-anywhere text-sm font-semibold text-foreground">
-                  {host.label}
+                <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
+                  <EnvironmentMachineIcon
+                    aria-hidden
+                    kind={(host.environmentId && machines.get(host.environmentId)) || "server"}
+                    className="size-4 shrink-0 text-muted-foreground"
+                  />
+                  <span className="min-w-0 wrap-anywhere">{host.label}</span>
                 </h3>
               ) : null}
               <div className="space-y-5">
@@ -43,9 +50,7 @@ export function HostActivityThreadList({
                   const heading = section.continues ? "Will continue" : "Will be interrupted";
                   return (
                     <section aria-label={heading} key={heading}>
-                      {labelSections ? (
-                        <h4 className="mb-2 text-sm font-medium text-foreground">{heading}</h4>
-                      ) : null}
+                      <h4 className="mb-2 text-sm font-medium text-foreground">{heading}</h4>
                       <div className="space-y-3">
                         {section.projects.map((project) => {
                           const first = project.activity[0]!;

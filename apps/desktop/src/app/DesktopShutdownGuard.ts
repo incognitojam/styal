@@ -35,6 +35,7 @@ export function shutdownConfirmation(
     uncheckedHostsLine: "Could not check every local environment for running work.",
     continueRunningThreads: continueThreads,
     continuesWhen: action === "quit" ? "when styal next starts" : "after the restart",
+    includeListedThreadCounts: action === "quit",
   });
   if (concern === null || (action === "restart" && !interrupts)) return null;
   const detail = incomplete
@@ -46,9 +47,12 @@ export function shutdownConfirmation(
     : lines;
   return {
     message: title ?? `${action === "quit" ? "Quit" : "Restart"}${hostActivityQuestion[concern]}`,
-    detail: interrupts
-      ? `${detail.join("\n")} Make sure you're ready before continuing.`
-      : detail.join("\n"),
+    detail: [
+      detail.join("\n"),
+      ...(interrupts ? ["Make sure you're ready before continuing."] : []),
+    ]
+      .filter(Boolean)
+      .join(" "),
     confirmLabel: action === "quit" ? "Quit" : "Restart",
     ...(threadActivity.length ? { threadActivity } : {}),
   };

@@ -18,8 +18,7 @@ it will update.
 While it runs, the button widens to show progress. It names a machine that is
 taking longer than usual, and offers **Retry** for a server that failed. Click
 it to see every machine. The desktop app restarts once each server has started
-its own restart, after a short countdown. Choose **Later** to keep working and
-restart from the update button when you are ready. A server still restarting
+its own restart. A manually requested update adds no restart countdown. A server still restarting
 finishes on its own, and the button keeps showing it after the desktop app
 restarts.
 
@@ -34,9 +33,11 @@ If a desktop app restarts on its old version, styal tells you the update did
 not apply. It does not install that version again on its own, on quit or when
 another device asks. Use the update button on that machine to retry.
 
-The confirmation counts the running threads that the restarts will interrupt,
-and how many can resume afterwards. See **Continue threads after restarts**
-below.
+The combined confirmation lists affected threads by environment and project,
+separating work that will continue from work that will be interrupted. Terminal
+commands and activity that could not be checked remain warnings. One confirmation
+covers the matching downloaded app update; older desktop apps can still ask at
+installation. See **Continue threads after restarts** below.
 
 ## Before you update
 

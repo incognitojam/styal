@@ -300,6 +300,56 @@ it.effect("records the desktop update notice only from the desktop app", () =>
   }),
 );
 
+it.effect("separates combined update exposure from decisions without sending update content", () =>
+  Effect.gen(function* () {
+    const events: unknown[] = [];
+    const analytics = {
+      record: (event: string, properties?: Record<string, unknown>) =>
+        Effect.sync(() => {
+          events.push({ event, properties });
+        }),
+      flush: Effect.void,
+    };
+    for (const surface of ["web", "desktop", "mobile", undefined] as const) {
+      const report = yield* ClientFeatureUsage.reporter({ surface }).pipe(
+        Effect.provideService(AnalyticsService.AnalyticsService, analytics),
+      );
+      for (const action of ["shown", "confirmed", "cancelled"] as const) {
+        const countBefore = events.length;
+        yield* report(
+          yield* decode({
+            feature: "combined-update-confirmation",
+            action,
+            version: "1.2.0",
+            host: "Synthetic computer",
+            summary: "Synthetic update summary",
+            threads: [{ title: "Synthetic thread" }],
+          }),
+        );
+        if (surface === "web" || surface === "desktop") {
+          expect(events).toHaveLength(countBefore + 1);
+          expect(events.at(-1)).toEqual({
+            event: action === "shown" ? "feature.exposed" : "feature.used",
+            properties: {
+              feature: "combined-update-confirmation",
+              action,
+              source: action === "shown" ? "system" : "user",
+              forkClientUsageVersion: FORK_CLIENT_USAGE_VERSION,
+              surface,
+            },
+          });
+        } else {
+          expect(events).toHaveLength(countBefore);
+        }
+      }
+    }
+    expect(events).toHaveLength(6);
+    for (const action of ["anything", "notice_shown", "install_succeeded"]) {
+      expect(isUsage({ feature: "combined-update-confirmation", action })).toBe(false);
+    }
+  }),
+);
+
 it.effect(
   "observes approving and revoking styal.json actions once each, only from a user surface",
   () =>
