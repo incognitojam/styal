@@ -167,14 +167,6 @@
     {
       "pr": 25794,
       "reason": "Reopens the chat the user was in after iOS ends the app or an update restart, using upstream's remembered workspace selections (iOS only, from the #24742/#24750/#25627 chain the fork has not taken yet). The fork's mobile-update-restart-location fix covers update restarts on Android and iOS until then. When it merges, take it at chronological intake, check whether it now covers Android, and retire or narrow the fork's fix and ledger entry."
-    },
-    {
-      "pr": 22482,
-      "reason": "Restores left-aligned default Markdown table cells after #20325 centered them. Batch 33 takes #20325 in order, so web chat tables render centered until this lands; it merged after the fixed intake target. Take it at chronological intake, or import it early if centered tables should not ship in the meantime."
-    },
-    {
-      "pr": 22395,
-      "reason": "Reverts #19964, which batch 34 takes in order: the pooled Limits bar on the Usage page uses a 224px-per-segment threshold that upstream's maintainer rejected on the live page. It merged after the fixed intake target, so the fork shows #19964's layout until this lands. Take it at chronological intake, or import it early if that layout should not ship in the meantime."
     }
   ]
 }
