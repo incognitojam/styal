@@ -13,7 +13,6 @@ export type ServerUpdateConfirmation = {
   readonly title: string;
   readonly message: string;
   readonly threadActivity: ReadonlyArray<ConfirmDialogThreadActivity>;
-  readonly requiresConfirmation: boolean;
 };
 
 /**
@@ -51,7 +50,6 @@ export function describeServerUpdate(input: {
       ...(incomplete ? ["Running threads and terminals may be interrupted."] : []),
     ].join("\n"),
     threadActivity,
-    requiresConfirmation: input.desktopManaged || concern !== null,
   };
 }
 
@@ -72,7 +70,6 @@ export function requestServerUpdateConfirmation(
   confirmation: ServerUpdateConfirmation,
   present: (requestId: string) => void,
 ): Promise<boolean> {
-  if (!confirmation.requiresConfirmation) return Promise.resolve(true);
   const requestId = String(++nextId);
   return new Promise((resolve) => {
     pending.set(requestId, { confirmation, resolve });

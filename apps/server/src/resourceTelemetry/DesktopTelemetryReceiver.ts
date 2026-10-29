@@ -179,7 +179,7 @@ export class DesktopTelemetryReceiver extends Context.Service<
     ) => Effect.Effect<void, DesktopTelemetryControlError>;
     readonly requestUpdateActivity: (
       requestId: string,
-      requestingEnvironmentId?: EnvironmentId,
+      requestingEnvironmentId: EnvironmentId,
     ) => Effect.Effect<void, DesktopTelemetryControlError>;
     readonly updateActivity: Effect.Effect<
       Stream.Stream<DesktopUpdateActivityReport>,
@@ -683,7 +683,7 @@ export const make = Effect.fn("resourceTelemetry.desktopTelemetryReceiver.make")
         version: 1,
         type: "requestDesktopUpdateActivity",
         requestId,
-        ...(requestingEnvironmentId === undefined ? {} : { requestingEnvironmentId }),
+        requestingEnvironmentId,
       }),
     updateActivity: PubSub.subscribe(activityReports).pipe(Effect.map(Stream.fromSubscription)),
     requestDesktopUpdate: (requestId) =>

@@ -363,8 +363,8 @@ export type DesktopFeatureUsageReport = typeof DesktopFeatureUsageReport.Type;
 
 /** Pool checks cross environment boundaries; sibling activity stays anonymous. */
 export const DesktopUpdateActivity = Schema.Struct({
-  /** Only identifies the requesting environment, never a sibling. Absent on older hosts. */
-  isRequestingEnvironment: Schema.optionalKey(Schema.Boolean),
+  /** Only identifies the requesting environment, never a sibling. */
+  isRequestingEnvironment: Schema.Boolean,
   activeSessions: HostActivity.fields.activeSessions,
   continuableSessions: HostActivity.fields.continuableSessions,
   waitingSessions: HostActivity.fields.waitingSessions,
@@ -375,7 +375,9 @@ export const DesktopUpdateActivity = Schema.Struct({
 });
 export type DesktopUpdateActivity = typeof DesktopUpdateActivity.Type;
 
-export function summarizeDesktopUpdateActivity(activity: HostActivity): DesktopUpdateActivity {
+export function summarizeDesktopUpdateActivity(
+  activity: HostActivity,
+): Omit<DesktopUpdateActivity, "isRequestingEnvironment"> {
   return {
     activeSessions: activity.activeSessions,
     continuableSessions: activity.continuableSessions,
@@ -453,7 +455,7 @@ export const DesktopTelemetryRequestUpdateActivity = Schema.Struct({
   version: Schema.Literal(1),
   type: Schema.Literal("requestDesktopUpdateActivity"),
   requestId: TrimmedNonEmptyString,
-  requestingEnvironmentId: Schema.optionalKey(EnvironmentId),
+  requestingEnvironmentId: EnvironmentId,
 });
 export type DesktopTelemetryRequestUpdateActivity =
   typeof DesktopTelemetryRequestUpdateActivity.Type;

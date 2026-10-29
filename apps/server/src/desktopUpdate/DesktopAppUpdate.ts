@@ -2,7 +2,6 @@ import {
   ServerSelfUpdateError,
   type DesktopUpdateState,
   type DesktopUpdateActivity,
-  summarizeDesktopUpdateActivity,
   type DesktopUpdateStatusReport,
   type ServerSelfUpdateProgressStage,
   type ServerSelfUpdateResult,
@@ -232,19 +231,7 @@ export const make = Effect.fn("desktopUpdate.desktopAppUpdate.make")(function* (
         Stream.filter((report) => report.requestId === requestId),
         Stream.runHead,
       );
-      return Option.isSome(report)
-        ? report.value.hosts.map(
-            (host) =>
-              host && {
-                ...summarizeDesktopUpdateActivity(host),
-                ...(host.isRequestingEnvironment === undefined
-                  ? {}
-                  : {
-                      isRequestingEnvironment: host.isRequestingEnvironment,
-                    }),
-              },
-          )
-        : [null];
+      return Option.isSome(report) ? report.value.hosts : [null];
     }),
   ).pipe(
     // Each pool member's inspection has a three-second deadline. Older apps

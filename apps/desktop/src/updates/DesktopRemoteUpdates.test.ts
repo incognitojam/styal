@@ -164,13 +164,6 @@ describe("DesktopRemoteUpdates", () => {
               },
             ],
           });
-          harness.idleRestart.hosts = [idle, null];
-          yield* Queue.offer(activityRequests, {
-            version: 1,
-            type: "requestDesktopUpdateActivity",
-            requestId: "inspect-2",
-          });
-          assert.deepEqual((yield* Queue.take(activityReports)).hosts, [idle, null]);
           harness.idleRestart.onInspect = () => {
             throw new Error("pool inspection failed");
           };
@@ -178,6 +171,7 @@ describe("DesktopRemoteUpdates", () => {
             version: 1,
             type: "requestDesktopUpdateActivity",
             requestId: "inspect-3",
+            requestingEnvironmentId: EnvironmentId.make("selected-environment"),
           });
           assert.deepEqual((yield* Queue.take(activityReports)).hosts, [null]);
           harness.idleRestart.onInspect = undefined;
@@ -186,8 +180,11 @@ describe("DesktopRemoteUpdates", () => {
             version: 1,
             type: "requestDesktopUpdateActivity",
             requestId: "inspect-4",
+            requestingEnvironmentId: EnvironmentId.make("selected-environment"),
           });
-          assert.deepEqual((yield* Queue.take(activityReports)).hosts, [idle]);
+          assert.deepEqual((yield* Queue.take(activityReports)).hosts, [
+            { ...idle, isRequestingEnvironment: false },
+          ]);
           assert.equal(harness.checkCount(), 0);
           assert.equal(harness.downloadCount(), 0);
           assert.equal(harness.quitAndInstalls(), 0);

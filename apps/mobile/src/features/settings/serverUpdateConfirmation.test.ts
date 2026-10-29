@@ -32,7 +32,6 @@ describe("describeServerUpdate", () => {
       title: "Update Lab server?",
       message: "Install styal 9.1.0. The server will restart and reconnect.",
       threadActivity: [],
-      requiresConfirmation: false,
     });
   });
 
@@ -81,23 +80,9 @@ describe("describeServerUpdate", () => {
 });
 
 describe("requestServerUpdateConfirmation", () => {
-  it("requires confirmation for resumable standalone work, while idle standalone updates proceed", async () => {
-    const present = () => {
-      throw new Error("Idle standalone updates should not present a sheet");
-    };
-    expect(await requestServerUpdateConfirmation(describeServerUpdate(base), present)).toBe(true);
-    expect(
-      describeServerUpdate({
-        ...base,
-        continueRunningThreads: true,
-        activity: { ...idle, activeSessions: 1, continuableSessions: 1 },
-      }).requiresConfirmation,
-    ).toBe(true);
-  });
-
   it("resolves with the first answer and forgets the request", async () => {
     let requestId = "";
-    const confirmation = describeServerUpdate({ ...base, desktopManaged: true });
+    const confirmation = describeServerUpdate(base);
     const answer = requestServerUpdateConfirmation(confirmation, (id) => {
       requestId = id;
     });

@@ -48,34 +48,26 @@ export function serverUpdateQuestion(
 
 export function serverUpdateActivity(hosts: ReadonlyArray<ServerUpdateHost>) {
   const single = hosts.length === 1 ? hosts[0]! : null;
-  const unchecked = hosts.filter((host) =>
+  const checks = hosts.map((host) =>
     host.desktopApp
-      ? desktopUpdateActivityChecks(host.activity, host.desktopActivity).some(
-          (activity) => activity === null,
-        )
-      : host.activity === null,
+      ? desktopUpdateActivityChecks(host.activity, host.desktopActivity)
+      : [
+          host.activity && {
+            ...host.activity,
+            continueRunningThreads: host.continueRunningThreads,
+          },
+        ],
   );
+  const unchecked = hosts.filter((_, index) => checks[index]!.includes(null));
   return describeHostActivity(
-    hosts.flatMap((host) => {
-      if (host.desktopApp) {
-        return desktopUpdateActivityChecks(host.activity, host.desktopActivity).map(
-          (activity) =>
-            activity && {
-              ...activity,
-              ...(hosts.length > 1
-                ? { hostLabel: [host.serverLabel, activity.hostLabel].filter(Boolean).join(" / ") }
-                : {}),
-            },
-        );
-      }
-      return [
-        host.activity && {
-          ...host.activity,
-          continueRunningThreads: host.continueRunningThreads,
-          ...(hosts.length > 1 ? { hostLabel: host.serverLabel } : {}),
-        },
-      ];
-    }),
+    checks.flatMap((hostChecks, index) =>
+      hosts.length > 1
+        ? hostChecks.map((activity) => {
+            const label = [hosts[index]!.serverLabel, activity?.hostLabel].filter(Boolean);
+            return activity && { ...activity, hostLabel: label.join(" / ") };
+          })
+        : hostChecks,
+    ),
     {
       uncheckedHostsLine: single
         ? `Could not check the ${serverNoun(single.serverLabel)} for running work.`

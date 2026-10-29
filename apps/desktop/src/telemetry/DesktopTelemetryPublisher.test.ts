@@ -476,6 +476,7 @@ describe("DesktopTelemetryPublisher", () => {
         assert.equal(activityRequest.requestingEnvironmentId, "selected-environment");
         const hosts = [
           {
+            isRequestingEnvironment: true,
             activeSessions: 0,
             continuableSessions: 0,
             waitingSessions: 0,

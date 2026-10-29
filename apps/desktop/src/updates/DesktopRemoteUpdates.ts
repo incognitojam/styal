@@ -66,12 +66,7 @@ export const listen: Effect.Effect<
             (host) =>
               host && {
                 ...summarizeDesktopUpdateActivity(host),
-                ...(request.requestingEnvironmentId === undefined
-                  ? {}
-                  : {
-                      isRequestingEnvironment:
-                        host.environmentId === request.requestingEnvironmentId,
-                    }),
+                isRequestingEnvironment: host.environmentId === request.requestingEnvironmentId,
               },
           ),
         }),
