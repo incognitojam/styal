@@ -1,6 +1,7 @@
 import { assert, describe, it } from "@effect/vitest";
 
 import {
+  applyOverridePins,
   autoStopReasons,
   batchLength,
   describeNativeFingerprint,
@@ -15,7 +16,9 @@ import {
   mergedModuleMoves,
   moveLedgerPaths,
   overrideSelector,
+  patchOverridePins,
   plannedTestRuns,
+  queuedAutoMerges,
   relatedTestFiles,
   rewriteServiceKeyText,
   summarizeSurvey,
@@ -605,5 +608,161 @@ describe("nativeFingerprintVerdict", () => {
       "moved",
     );
     assert.equal(nativeFingerprintVerdict({ error: "base install failed" }), "unknown");
+  });
+});
+
+describe("patchOverridePins", () => {
+  const fork = [
+    "catalog:",
+    "  yaml: 2.8.0",
+    "",
+    "overrides:",
+    "  # Pin every patched package.",
+    "  expo-audio: 58.0.9",
+    '  "@pierre/diffs": 1.5.2',
+    '  vite: "catalog:"',
+    "",
+    "patchedDependencies:",
+    "  expo-audio@58.0.9: patches/expo-audio@58.0.9.patch",
+    "",
+  ].join("\n");
+  const upstream = (...patched: Array<string>) =>
+    ["patchedDependencies:", ...patched.map((entry) => `  "${entry}": patches/x.patch`), ""].join(
+      "\n",
+    );
+
+  it("pins a package upstream starts patching and moves a pin upstream bumps", () => {
+    const pins = patchOverridePins({
+      upstreamBefore: upstream("@pierre/diffs@1.5.2"),
+      upstreamAfter: upstream("@pierre/diffs@1.6.0", "expo-network@58.0.3"),
+      fork,
+    });
+    assert.deepStrictEqual(pins, [
+      { name: "@pierre/diffs", version: "1.6.0", previous: "1.5.2" },
+      { name: "expo-network", version: "58.0.3", previous: null },
+    ]);
+    assert.strictEqual(
+      applyOverridePins(fork, pins),
+      [
+        "catalog:",
+        "  yaml: 2.8.0",
+        "",
+        "overrides:",
+        "  # Pin every patched package.",
+        "  expo-audio: 58.0.9",
+        '  "@pierre/diffs": 1.6.0',
+        '  vite: "catalog:"',
+        "  expo-network: 58.0.3",
+        "",
+        "patchedDependencies:",
+        "  expo-audio@58.0.9: patches/expo-audio@58.0.9.patch",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  it("leaves patches it already pins, catalog pins, and existing patches alone", () => {
+    assert.deepStrictEqual(
+      patchOverridePins({
+        upstreamBefore: upstream("dbus-next@0.10.2"),
+        upstreamAfter: upstream(
+          "dbus-next@0.10.2",
+          "expo-audio@58.0.9",
+          "vite@8.0.0",
+          "yaml@2.8.0",
+        ),
+        fork,
+      }),
+      [],
+    );
+  });
+
+  it("reads a commit without a workspace file as patching nothing", () => {
+    assert.deepStrictEqual(
+      patchOverridePins({ upstreamBefore: "", upstreamAfter: upstream("a@1.0.0"), fork }),
+      [{ name: "a", version: "1.0.0", previous: null }],
+    );
+  });
+});
+
+describe("draftAdaptationNote patch pins", () => {
+  it("explains the override pin", () => {
+    assert.strictEqual(
+      draftAdaptationNote([
+        { kind: "patch-pins", path: "pnpm-workspace.yaml", detail: "expo-network@58.0.3" },
+      ]).note,
+      "`pnpm-workspace.yaml` pins the newly patched expo-network@58.0.3 in `overrides`, as the fork pins every patched package so lockfile-free installs keep the patch.",
+    );
+  });
+});
+
+describe("queuedAutoMerges", () => {
+  const pullRequest = (
+    number: number,
+    overrides: Partial<Parameters<typeof queuedAutoMerges>[0][number]> = {},
+  ) => ({
+    number,
+    title: `PR ${number}`,
+    isDraft: false,
+    mergeable: "MERGEABLE",
+    reviewDecision: null,
+    autoMergeRequest: { enabledAt: "2026-10-29T00:00:00Z" },
+    statusCheckRollup: [{ name: "Fork CI", conclusion: "SUCCESS" }],
+    ...overrides,
+  });
+
+  it("lists auto-merge pull requests that can still land on their own", () => {
+    const queued = queuedAutoMerges([
+      pullRequest(1),
+      pullRequest(2, { statusCheckRollup: [{ name: "Fork CI", conclusion: null }] }),
+      pullRequest(3, {
+        statusCheckRollup: [{ context: "Intake landing hold", state: "SUCCESS" }],
+      }),
+    ]);
+    assert.deepStrictEqual(
+      queued.map((entry) => entry.number),
+      [1, 2, 3],
+    );
+  });
+
+  it("skips pull requests that will not land before the batch", () => {
+    const queued = queuedAutoMerges([
+      pullRequest(1, { autoMergeRequest: null }),
+      pullRequest(2, { isDraft: true }),
+      pullRequest(3, { mergeable: "CONFLICTING" }),
+      pullRequest(4, { reviewDecision: "CHANGES_REQUESTED" }),
+      pullRequest(5, { statusCheckRollup: [{ name: "Fork CI", conclusion: "FAILURE" }] }),
+      pullRequest(6, {
+        statusCheckRollup: [{ context: "Intake landing hold", state: "PENDING" }],
+      }),
+    ]);
+    assert.deepStrictEqual(queued, []);
+  });
+});
+
+describe("summarizeSurvey lint changes", () => {
+  it("lists the commits that change lint rules", () => {
+    const summary = summarizeSurvey([
+      {
+        sha: "a".repeat(40),
+        pr: 1,
+        title: "chore: add prefer-effect-fn",
+        status: "clean",
+        reasons: [],
+        features: [],
+        laterFixes: [],
+        changesLint: true,
+      },
+    ]);
+    assert.strictEqual(
+      summary,
+      [
+        "Surveyed 1 commits: 1 clean, 0 resolved, 0 need a person.",
+        "",
+        "These change lint rules or their configuration; lint the whole repository on the clean picks before assembly, and give fork-code violations their own track:",
+        "  aaaaaaaaaa #1 chore: add prefer-effect-fn",
+        "",
+      ].join("\n"),
+    );
   });
 });

@@ -7,12 +7,13 @@
  *
  *   intake-run.ts apply (--count <n> | --through <upstream-sha> | --commits <sha,...>) [--branch <name>]
  *   intake-run.ts continue [--note <text>] [--feature <id,id>]
- *   intake-run.ts auto --branch <name> [--max <n>] [--push] [--no-rerere]
- *   intake-run.ts push
+ *   intake-run.ts auto --branch <name> [--max <n>] [--push] [--hold-queued] [--no-rerere]
+ *   intake-run.ts push [--hold-queued]
  *   intake-run.ts survey [--base HEAD] [--count 100 | --through <sha>] [--json]
+ *   intake-run.ts review-brief [--base origin/main] [--out <file>]
  *   intake-run.ts fix-trailers [--base origin/main]
  *   intake-run.ts fix-references [--base origin/main]
- *   intake-run.ts verify [--base origin/main] [--all-tests]
+ *   intake-run.ts verify [--base origin/main] [--all-tests | --quick]
  *   intake-run.ts replay <promoted-candidate-sha> [--base <fork-sha>] [--skip-lockfile] [--json] [--dump <dir>]
  *   intake-run.ts score <dump-dir> [--exclude <sha-prefixes>] [--verbose]
  */
@@ -21,6 +22,8 @@ import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
+
+import { parse as parseYaml } from "yaml";
 
 import {
   changedLinesByFile,
@@ -46,7 +49,7 @@ import {
 } from "./lib/references.ts";
 import { applyIdentifierRenames, deriveIdentifierRenames } from "./lib/renames.ts";
 import { decodeTrackedPRs } from "./lib/tracked-prs.ts";
-import { holdForPushedCandidate } from "./landing-hold.ts";
+import { HOLD_CONTEXT, holdForPushedCandidate } from "./landing-hold.ts";
 
 const repoRoot = NodePath.resolve(
   NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),
@@ -163,7 +166,8 @@ export type AdaptationKind =
   | "fork-deletion"
   | "lockfile"
   | "service-keys"
-  | "ledger-paths";
+  | "ledger-paths"
+  | "patch-pins";
 
 export interface Adaptation {
   readonly kind: AdaptationKind;
@@ -192,6 +196,7 @@ export interface LockfileReport {
 }
 
 const LOCKFILE = "pnpm-lock.yaml";
+const WORKSPACE = "pnpm-workspace.yaml";
 /** Files pnpm reads to resolve the lockfile. */
 const MANIFEST = /(^|\/)package\.json$|^pnpm-workspace\.yaml$/u;
 
@@ -313,6 +318,99 @@ function splitPackage(entry: string): { readonly name: string; readonly version:
 export function overrideSelector(name: string, version: string): string {
   const major = Number.parseInt(version, 10);
   return major > 0 ? `${name}@^${major}.0.0` : name;
+}
+
+export interface OverridePin {
+  readonly name: string;
+  readonly version: string;
+  readonly previous: string | null;
+}
+
+function workspaceSection(workspace: string, key: string): Record<string, unknown> {
+  const parsed = (workspace.trim() === "" ? null : parseYaml(workspace)) as Record<
+    string,
+    unknown
+  > | null;
+  const section = parsed?.[key];
+  return section !== null && typeof section === "object"
+    ? (section as Record<string, unknown>)
+    : {};
+}
+
+/**
+ * Override pins for the packages an upstream commit starts patching. The fork pins every patched
+ * package in `overrides` so lockfile-free release installs cannot drift past the patch; upstream
+ * does not, so its new patches arrive unpinned. Catalog packages already pin through the catalog.
+ */
+export function patchOverridePins(input: {
+  readonly upstreamBefore: string;
+  readonly upstreamAfter: string;
+  readonly fork: string;
+}): ReadonlyArray<OverridePin> {
+  const before = new Set(
+    Object.keys(workspaceSection(input.upstreamBefore, "patchedDependencies")),
+  );
+  const overrides = workspaceSection(input.fork, "overrides");
+  const catalog = workspaceSection(input.fork, "catalog");
+  return Object.keys(workspaceSection(input.upstreamAfter, "patchedDependencies"))
+    .filter((key) => !before.has(key))
+    .flatMap((key): ReadonlyArray<OverridePin> => {
+      const { name, version } = splitPackage(key);
+      const current = overrides[name];
+      if (current === undefined) return name in catalog ? [] : [{ name, version, previous: null }];
+      if (typeof current !== "string" || current === version || current.startsWith("catalog:")) {
+        return [];
+      }
+      return [{ name, version, previous: current }];
+    });
+}
+
+/** Writes `pins` into the workspace's top-level `overrides` block, keeping its comments and order. */
+export function applyOverridePins(workspace: string, pins: ReadonlyArray<OverridePin>): string {
+  const lines = workspace.split("\n");
+  const start = lines.indexOf("overrides:");
+  if (start === -1) throw new Error("pnpm-workspace.yaml has no top-level overrides block.");
+  let end = start + 1;
+  while (end < lines.length && /^ {2}\S/u.test(lines[end]!)) end += 1;
+  for (const pin of pins) {
+    const key = pin.name.startsWith("@") ? JSON.stringify(pin.name) : pin.name;
+    const line = `  ${key}: ${pin.version}`;
+    const existing = lines.findIndex(
+      (candidate, index) =>
+        index > start &&
+        index < end &&
+        new RegExp(`^ {2}"?${escapeRegExp(pin.name)}"?:`, "u").test(candidate),
+    );
+    if (existing === -1) {
+      lines.splice(end, 0, line);
+      end += 1;
+    } else {
+      lines[existing] = line;
+    }
+  }
+  return lines.join("\n");
+}
+
+/** Pins the packages `upstreamSha` starts patching, staging the workspace file it changes. */
+function pinPatchedPackages(cwd: string, upstreamSha: string): ReadonlyArray<Adaptation> {
+  const show = (ref: string) => run(cwd, "git", ["show", `${ref}:${WORKSPACE}`]).stdout;
+  const path = NodePath.join(cwd, WORKSPACE);
+  const fork = readIfExists(path);
+  const pins = patchOverridePins({
+    upstreamBefore: show(`${upstreamSha}^1`),
+    upstreamAfter: show(upstreamSha),
+    fork,
+  });
+  if (pins.length === 0) return [];
+  NodeFS.writeFileSync(path, applyOverridePins(fork, pins));
+  git(cwd, ["add", "--", WORKSPACE]);
+  return [
+    {
+      kind: "patch-pins",
+      path: WORKSPACE,
+      detail: pins.map((pin) => `${pin.name}@${pin.version}`).join(", "),
+    },
+  ];
 }
 
 function compareLockfiles(
@@ -682,9 +780,11 @@ export function pickUpstreamCommit(
   // pnpm cannot read a manifest that still holds conflict markers, so the lockfile waits for
   // `continue`, which regenerates it once the manifests are resolved.
   const manifestsPending = unresolved.some((file) => MANIFEST.test(file.path));
+  const pins = manifestsPending ? [] : pinPatchedPackages(cwd, upstreamSha);
+  adaptations.push(...pins);
   if (lockfileConflict && manifestsPending) {
     unresolved.push({ path: LOCKFILE, hunks: 1 });
-  } else if (lockfileConflict) {
+  } else if (lockfileConflict || pins.length > 0) {
     if (options.skipLockfile) {
       // The fork's lockfile stays as it was; regenerate it before validating the batch.
       git(cwd, ["add", "--", LOCKFILE]);
@@ -763,6 +863,12 @@ export function draftAdaptationNote(
   }
   if (adaptations.some((adaptation) => adaptation.kind === "ledger-paths")) {
     sentences.push("The fork feature ledger names the moved files' new paths.");
+  }
+  const pins = adaptations.filter((adaptation) => adaptation.kind === "patch-pins");
+  if (pins.length > 0) {
+    sentences.push(
+      `\`${WORKSPACE}\` pins the newly patched ${pins.map((adaptation) => adaptation.detail).join(", ")} in \`overrides\`, as the fork pins every patched package so lockfile-free installs keep the patch.`,
+    );
   }
   for (const deletion of adaptations.filter((adaptation) => adaptation.kind === "fork-deletion")) {
     sentences.push(`\`${deletion.path}\` stays absent: the fork does not carry it.`);
@@ -1160,6 +1266,7 @@ async function autoBatch(
     readonly branch: string;
     readonly max: number;
     readonly push: boolean;
+    readonly holdQueued: boolean;
     readonly rerere: boolean;
   },
 ): Promise<boolean> {
@@ -1245,15 +1352,140 @@ async function autoBatch(
     process.stdout.write(`\nVerified. Push it with intake-run.ts push.\n`);
     return true;
   }
-  pushCandidate(cwd, options.branch);
-  return true;
+  return pushCandidate(cwd, options.branch, { holdQueued: options.holdQueued });
+}
+
+export interface OpenPullRequest {
+  readonly number: number;
+  readonly title: string;
+  readonly isDraft: boolean;
+  readonly mergeable: string;
+  readonly reviewDecision: string | null;
+  readonly autoMergeRequest: unknown;
+  readonly statusCheckRollup: ReadonlyArray<{
+    readonly name?: string;
+    readonly context?: string;
+    readonly conclusion?: string | null;
+    readonly state?: string | null;
+  }>;
+}
+
+const FAILED_CHECK = new Set([
+  "FAILURE",
+  "ERROR",
+  "CANCELLED",
+  "TIMED_OUT",
+  "ACTION_REQUIRED",
+  "STARTUP_FAILURE",
+]);
+
+/**
+ * Pull requests set to auto-merge that can still land on their own: not held by the landing hold,
+ * not draft or conflicting, not waiting on a review, and with no failed check. Pushing a candidate
+ * would hold them until it lands.
+ */
+export function queuedAutoMerges(
+  pullRequests: ReadonlyArray<OpenPullRequest>,
+): ReadonlyArray<OpenPullRequest> {
+  return pullRequests.filter((pullRequest) => {
+    if (pullRequest.autoMergeRequest === null || pullRequest.isDraft) return false;
+    if (pullRequest.mergeable === "CONFLICTING") return false;
+    if (
+      pullRequest.reviewDecision === "REVIEW_REQUIRED" ||
+      pullRequest.reviewDecision === "CHANGES_REQUESTED"
+    ) {
+      return false;
+    }
+    return pullRequest.statusCheckRollup.every((check) =>
+      (check.context ?? check.name) === HOLD_CONTEXT
+        ? check.state !== "PENDING"
+        : !FAILED_CHECK.has(check.conclusion ?? check.state ?? ""),
+    );
+  });
+}
+
+function openPullRequests(cwd: string): ReadonlyArray<OpenPullRequest> | null {
+  const result = run(cwd, "gh", [
+    "pr",
+    "list",
+    "--repo",
+    forkRepository(),
+    "--state",
+    "open",
+    "--limit",
+    "100",
+    "--json",
+    "number,title,isDraft,mergeable,reviewDecision,autoMergeRequest,statusCheckRollup",
+  ]);
+  return result.status === 0 ? (JSON.parse(result.stdout) as Array<OpenPullRequest>) : null;
 }
 
 /**
  * Pushes an intake candidate and holds open pull requests while it lands. Promotion starts by
- * itself when Fork CI passes.
+ * itself when Fork CI passes. Pull requests about to auto-merge go first unless `holdQueued`, and
+ * the candidate rebases onto whatever they moved `main` to, so a person merging pull requests
+ * never has to time it around the batch.
  */
-function pushCandidate(cwd: string, branch: string): void {
+async function pushCandidate(
+  cwd: string,
+  branch: string,
+  options: { readonly holdQueued: boolean },
+): Promise<boolean> {
+  if (!options.holdQueued) {
+    const pullRequests = openPullRequests(cwd);
+    if (pullRequests === null) {
+      process.stdout.write("Could not list open pull requests; not checking for auto-merges.\n");
+    } else {
+      const queued = queuedAutoMerges(pullRequests);
+      if (queued.length > 0) {
+        process.stdout.write(
+          `\nThese pull requests are set to auto-merge and can still land; pushing now would hold them:\n${queued.map((pullRequest) => `  #${pullRequest.number} ${pullRequest.title}`).join("\n")}\n\nPush again once they land, or pass --hold-queued to hold them behind this batch.\n`,
+        );
+        return false;
+      }
+    }
+  }
+  git(cwd, [
+    "fetch",
+    "-q",
+    "--prune",
+    "origin",
+    "main",
+    "+refs/heads/intake/*:refs/remotes/origin/intake/*",
+  ]);
+  const isAncestor = (ancestor: string, descendant: string) =>
+    run(cwd, "git", ["merge-base", "--is-ancestor", ancestor, descendant]).status === 0;
+  // A batch pipelined on an earlier one waits for it: rebasing now would carry its commits along.
+  const unlanded = lines(
+    git(cwd, ["for-each-ref", "--format=%(refname:short)", "refs/remotes/origin/intake/"]),
+  ).filter(
+    (ref) =>
+      ref !== `origin/${branch}` && !isAncestor(ref, "origin/main") && isAncestor(ref, "HEAD"),
+  );
+  if (unlanded.length > 0) {
+    process.stdout.write(
+      `\nThis branch builds on ${unlanded.join(", ")}, which has not landed. Push it once that lands.\n`,
+    );
+    return false;
+  }
+  if (!isAncestor("origin/main", "HEAD")) {
+    const rebase = run(cwd, "git", ["rebase", "-q", "origin/main"]);
+    if (rebase.status !== 0) {
+      run(cwd, "git", ["rebase", "--abort"]);
+      throw new Error(
+        `main moved and the batch does not rebase cleanly onto it. Rebase by hand, then push again.\n${rebase.stderr.trim()}`,
+      );
+    }
+    process.stdout.write(
+      `main moved; rebased onto ${git(cwd, ["rev-parse", "--short=10", "origin/main"]).trim()}.\n`,
+    );
+    if (!(await verify(cwd, "origin/main", { quick: true }))) {
+      process.stdout.write(
+        "\nThe rebased batch fails its quick checks; fix it, then push again.\n",
+      );
+      return false;
+    }
+  }
   git(cwd, ["push", "-q", "--force-with-lease", "-u", "origin", `HEAD:refs/heads/${branch}`]);
   const sha = git(cwd, ["rev-parse", "HEAD"]).trim();
   process.stdout.write(`\nPushed ${sha}.\n`);
@@ -1263,6 +1495,7 @@ function pushCandidate(cwd: string, branch: string): void {
       ? "Fork CI has not started for it; the Intake landing hold workflow holds pull requests once it does.\n"
       : `Fork CI: ${forkCi}\n`,
   );
+  return true;
 }
 
 export interface SurveyEntry {
@@ -1275,7 +1508,12 @@ export interface SurveyEntry {
   readonly features: ReadonlyArray<string>;
   /** Later upstream fixes, beyond the surveyed commits, that name this commit. */
   readonly laterFixes: ReadonlyArray<LaterFix>;
+  /** Whether the commit changes lint rules or their configuration, which fork-only code must pass. */
+  readonly changesLint?: boolean;
 }
+
+/** Lint rules and configuration, so a new or stricter rule is found before assembly. */
+const LINT_CONFIG = /^oxlint-plugin-t3code\/(?!.*\.test\.ts$)|^vite\.config\.ts$/u;
 
 /** Ledger feature ids by the implementation and upstream paths each entry lists. */
 export function ledgerFeaturesByPath(ledger: string): ReadonlyMap<string, ReadonlyArray<string>> {
@@ -1479,6 +1717,7 @@ function survey(
         reasons,
         features,
         laterFixes: fixesByCommit.get(entry.sha) ?? [],
+        ...(changedPaths.some((path) => LINT_CONFIG.test(path)) ? { changesLint: true } : {}),
       });
     }
   } finally {
@@ -1502,6 +1741,13 @@ export function summarizeSurvey(entries: ReadonlyArray<SurveyEntry>): string {
     for (const reason of entry.reasons) parts.push(`    ${reason}`);
     if (entry.features.length > 0) parts.push(`    fork features: ${entry.features.join(", ")}`);
   }
+  const lint = entries.filter((entry) => entry.changesLint === true);
+  if (lint.length > 0) {
+    parts.push(
+      "\nThese change lint rules or their configuration; lint the whole repository on the clean picks before assembly, and give fork-code violations their own track:",
+    );
+    for (const entry of lint) parts.push(`  ${describeCommit(entry.sha, entry.pr, entry.title)}`);
+  }
   const fixed = entries.filter((entry) => entry.laterFixes.length > 0);
   if (fixed.length > 0) {
     parts.push(
@@ -1519,6 +1765,64 @@ export function summarizeSurvey(entries: ReadonlyArray<SurveyEntry>): string {
     }
   }
   return `${parts.join("\n")}\n`;
+}
+
+const REVIEW_DIFF_LINES = 150;
+
+/**
+ * A review prompt scoped to the batch commits that differ from upstream, each with its fork note,
+ * features, and its difference from the upstream commit it imports. Commits without a note match
+ * upstream, which reviewed them, so the review skips them.
+ */
+function reviewBrief(cwd: string, base: string): string {
+  const head = git(cwd, ["rev-parse", "HEAD"]).trim();
+  const commits = lines(git(cwd, ["rev-list", "--reverse", `${base}..HEAD`]));
+  const sections = commits.flatMap((sha) => {
+    const message = git(cwd, ["show", "-s", "--format=%B", sha]);
+    const note = forkAdaptationNote(message);
+    if (note === null) return [];
+    const source = [
+      ...cherryPickSources(message),
+      ...parseUpstreamProvenance([message]).commitShas,
+    ][0];
+    const subject = message.split("\n", 1)[0]!;
+    const features = preservedFeatureIds(message);
+    const interdiff =
+      source === undefined
+        ? git(cwd, ["show", "--format=", sha])
+        : git(cwd, ["range-diff", "--no-color", `${source}^1..${source}`, `${sha}^..${sha}`]);
+    const diffLines = interdiff.split("\n");
+    const shown =
+      diffLines.length > REVIEW_DIFF_LINES
+        ? `${diffLines.slice(0, REVIEW_DIFF_LINES).join("\n")}\n[${diffLines.length - REVIEW_DIFF_LINES} more lines: run \`git range-diff ${source?.slice(0, 10)}^1..${source?.slice(0, 10)} ${sha.slice(0, 10)}^..${sha.slice(0, 10)}\`]`
+        : interdiff;
+    return [
+      [
+        `## ${sha.slice(0, 10)} ${subject}`,
+        `Fork adaptation: ${note}`,
+        ...(features.length > 0 ? [`Fork features: ${features.join(", ")}`] : []),
+        source === undefined
+          ? "Its full change:"
+          : `How it differs from upstream ${source.slice(0, 10)} (\`git range-diff\`):`,
+        "```diff",
+        shown.trimEnd(),
+        "```",
+      ].join("\n"),
+    ];
+  });
+  const intro = [
+    `Review an upstream intake batch: ${commits.length} commits on ${base} at ${head.slice(0, 10)}, checked out at ${cwd}.`,
+    "",
+    `Review only the ${sections.length} commits below. Each differs from the upstream commit it imports, and its \`Fork adaptation:\` note says why. The other commits match upstream and are out of scope.`,
+    "",
+    "For each one, check that:",
+    "- the fork behaviour named in its note and features survives; the features are entries in `.github/fork-features.yml`, whose invariants say what must hold;",
+    "- upstream's change still does what upstream meant, apart from what the note explains;",
+    "- the note is accurate and complete.",
+    "",
+    "Read the surrounding code in the checkout and run focused tests where useful. Do not edit files. Report each finding with severity (P0-P3), commit, file and line, and a concrete failure scenario. Say plainly if you find nothing.",
+  ].join("\n");
+  return `${intro}\n\n${sections.join("\n\n")}\n`;
 }
 
 export interface ReplayResult {
@@ -1978,7 +2282,7 @@ const VERIFY_CONCURRENCY = 2;
 async function verify(
   cwd: string,
   base: string,
-  options: { readonly allTests?: boolean } = {},
+  options: { readonly allTests?: boolean; readonly quick?: boolean } = {},
 ): Promise<boolean> {
   const changed = lines(git(cwd, ["diff", "--name-only", "--no-renames", `${base}...HEAD`])).filter(
     (path) => !path.startsWith(".repos/") && NodeFS.existsSync(NodePath.join(cwd, path)),
@@ -2002,8 +2306,11 @@ async function verify(
     };
   };
   const install = await runStep({ name: "install", directory: cwd, command: "vp", args: ["i"] });
-  const testRuns = verifyTestRuns(cwd, changed, options.allTests ? "all" : "related");
-  if (testRuns.length === 0) process.stdout.write("--   no tests related to the batch\n");
+  const testRuns = options.quick
+    ? []
+    : verifyTestRuns(cwd, changed, options.allTests ? "all" : "related");
+  if (options.quick) process.stdout.write("--   tests skipped; Fork CI runs them\n");
+  else if (testRuns.length === 0) process.stdout.write("--   no tests related to the batch\n");
   const sources = changed.filter((path) => /\.(ts|tsx|mts|mjs|js)$/u.test(path));
   const queue: Array<VerifyStep> = [
     ...testRuns.map((test) => ({ ...test, directory: NodePath.join(cwd, test.directory) })),
@@ -2543,11 +2850,15 @@ async function main() {
       if (state.current === null) throw new Error("No stopped pick to continue.");
       // A lockfile left for this step: regenerate it now that the manifests are resolved.
       let lockfile = state.current.outcome.lockfile;
-      if (unmergedFiles(cwd).some((file) => file.path === LOCKFILE)) {
-        if (unmergedFiles(cwd).some((file) => MANIFEST.test(file.path))) {
-          throw new Error("Resolve and stage the package manifests first.");
-        }
-        git(cwd, ["checkout", "--ours", "--", LOCKFILE]);
+      const lockfilePending = unmergedFiles(cwd).some((file) => file.path === LOCKFILE);
+      if (lockfilePending && unmergedFiles(cwd).some((file) => MANIFEST.test(file.path))) {
+        throw new Error("Resolve and stage the package manifests first.");
+      }
+      // The pick skips pinning while its workspace file holds conflicts; pins already made are
+      // found in place, so this adds nothing for them.
+      const pins = pinPatchedPackages(cwd, state.current.entry.sha);
+      if (lockfilePending || pins.length > 0) {
+        if (lockfilePending) git(cwd, ["checkout", "--ours", "--", LOCKFILE]);
         lockfile = regenerateLockfile(cwd, state.current.entry.sha);
         git(cwd, ["add", "--", LOCKFILE]);
       }
@@ -2573,6 +2884,7 @@ async function main() {
           ...state.current.outcome.adaptations,
           ...keys,
           ...ledger,
+          ...pins,
           ...(regenerated ? [{ kind: "lockfile" as const, path: LOCKFILE }] : []),
         ],
         ...(lockfile ? { lockfile } : {}),
@@ -2597,6 +2909,7 @@ async function main() {
         branch,
         max,
         push: process.argv.includes("--push"),
+        holdQueued: process.argv.includes("--hold-queued"),
         rerere: !process.argv.includes("--no-rerere"),
       }))
         ? 0
@@ -2607,7 +2920,11 @@ async function main() {
       const branch = git(cwd, ["branch", "--show-current"]).trim();
       if (!branch.startsWith("intake/"))
         throw new Error("push needs an intake/ branch checked out.");
-      pushCandidate(cwd, branch);
+      process.exitCode = (await pushCandidate(cwd, branch, {
+        holdQueued: process.argv.includes("--hold-queued"),
+      }))
+        ? 0
+        : 2;
       return;
     }
     case "survey": {
@@ -2625,6 +2942,17 @@ async function main() {
           ? `${JSON.stringify(results, null, 2)}\n`
           : summarizeSurvey(results),
       );
+      return;
+    }
+    case "review-brief": {
+      const brief = reviewBrief(cwd, flag("--base") ?? "origin/main");
+      const out = flag("--out");
+      if (out) {
+        NodeFS.writeFileSync(out, brief);
+        process.stdout.write(`Wrote ${out}.\n`);
+      } else {
+        process.stdout.write(brief);
+      }
       return;
     }
     case "fix-trailers": {
@@ -2657,6 +2985,7 @@ async function main() {
     case "verify": {
       process.exitCode = (await verify(cwd, flag("--base") ?? "origin/main", {
         allTests: process.argv.includes("--all-tests"),
+        quick: process.argv.includes("--quick"),
       }))
         ? 0
         : 1;
@@ -2707,7 +3036,7 @@ async function main() {
     }
     default:
       process.stdout.write(
-        "Usage: intake-run.ts apply (--count <n> | --through <sha> | --commits <sha,...>) [--branch <name>] | continue [--note <text>] [--feature <ids>] | auto --branch <name> [--max <n>] [--push] [--no-rerere] | push | survey [--base <ref>] [--count <n> | --through <sha>] [--json] | fix-trailers [--base <ref>] | verify [--base <ref>] [--all-tests] | fingerprint [--base <ref>] [--json] | replay <candidate-sha> [--base <sha>] [--skip-lockfile] [--json] [--dump <dir>] | score <dump-dir> [--exclude <sha-prefixes>] [--verbose]\n",
+        "Usage: intake-run.ts apply (--count <n> | --through <sha> | --commits <sha,...>) [--branch <name>] | continue [--note <text>] [--feature <ids>] | auto --branch <name> [--max <n>] [--push] [--hold-queued] [--no-rerere] | push [--hold-queued] | survey [--base <ref>] [--count <n> | --through <sha>] [--json] | review-brief [--base <ref>] [--out <file>] | fix-trailers [--base <ref>] | verify [--base <ref>] [--all-tests | --quick] | fingerprint [--base <ref>] [--json] | replay <candidate-sha> [--base <sha>] [--skip-lockfile] [--json] [--dump <dir>] | score <dump-dir> [--exclude <sha-prefixes>] [--verbose]\n",
       );
       process.exitCode = command === undefined ? 0 : 1;
   }
