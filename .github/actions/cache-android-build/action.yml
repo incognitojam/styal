@@ -7,8 +7,8 @@ inputs:
 runs:
   using: composite
   steps:
-    # React Native's application CMake file automatically uses ccache when
-    # installed. Gradle's build cache does not cache these C++ compilations.
+    # CMake initializes compiler launchers from these environment variables
+    # for the app and native libraries. Gradle does not cache C++ compilations.
     - name: Install ccache
       shell: bash
       run: |
@@ -17,6 +17,8 @@ runs:
         {
           echo "CCACHE_DIR=$HOME/.cache/styal-android-ccache"
           echo "CCACHE_MAXSIZE=512M"
+          echo "CMAKE_C_COMPILER_LAUNCHER=ccache"
+          echo "CMAKE_CXX_COMPILER_LAUNCHER=ccache"
           # Fresh NDK installations can have different compiler timestamps.
           echo "CCACHE_COMPILERCHECK=content"
         } >> "$GITHUB_ENV"
