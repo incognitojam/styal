@@ -1,11 +1,5 @@
 import { DeviceHostUpdates } from "./DeviceHostUpdates";
-import type {
-  DeviceHostSummary,
-  DevicePlatform,
-  DeviceServiceState,
-  DeviceSummary,
-  ScopedThreadRef,
-} from "@t3tools/contracts";
+import type { DeviceHostSummary, DeviceSummary, ScopedThreadRef } from "@t3tools/contracts";
 import { ArrowUpRight, CircleAlert, Play, Smartphone, X } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 
@@ -23,13 +17,11 @@ import { useAtomCommand } from "~/state/use-atom-command";
 import { useComposerDraftStore } from "~/composerDraftStore";
 import { DeviceLoadingView } from "./DeviceLoadingView";
 import { DeviceSetup, deviceHubReadiness, isAndroidDiscoveryUncertain } from "./DeviceSetup";
+import { groupDevices } from "./deviceGroups";
 import { DeviceWorkspace } from "./DeviceWorkspace";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import { toastManager } from "../ui/toast";
 import { PreviewPanelShell, type PreviewPanelMode } from "../preview/PreviewPanelShell";
-
-const platformLabel = (platform: DevicePlatform) =>
-  platform === "ios" ? "iOS Simulators" : "Android Emulators";
 
 const deviceKey = (device: Pick<DeviceSummary, "hostId" | "id">) =>
   `${device.hostId}\u0000${device.id}`;
@@ -80,7 +72,7 @@ export function DevicePanel(props: {
       )
     : undefined;
 
-  const grouped = groupDevices(state);
+  const grouped = groupDevices(state.devices);
 
   const startOperation = (pending: DeviceSummary | null) => {
     const started = { scope, pending, error: null };
@@ -284,10 +276,10 @@ export function DevicePanel(props: {
                 {hostReady && grouped.length > 0 ? (
                   <div className="w-full space-y-6 text-left">
                     {grouped.map((group) => (
-                      <section key={group.platform} className="space-y-3">
+                      <section key={group.key} className="space-y-3">
                         <div className="flex items-center gap-2 text-sm text-muted-foreground">
                           <Smartphone className="size-4 shrink-0" />
-                          <h3 className="font-medium">{platformLabel(group.platform)}</h3>
+                          <h3 className="font-medium">{group.label}</h3>
                         </div>
                         <DiscoveryList>
                           {group.devices.map((device) => (
@@ -415,15 +407,4 @@ function DeviceDiscoveryWarning(props: { readonly label: string; readonly detail
       {props.detail}
     </DeviceNotice>
   );
-}
-
-function groupDevices(state: DeviceServiceState) {
-  const groups: Array<{ platform: DevicePlatform; devices: DeviceSummary[] }> = [];
-  for (const platform of ["ios", "android"] as const) {
-    const devices = state.devices
-      .filter((device) => device.platform === platform)
-      .toSorted((a, b) => Number(b.booted) - Number(a.booted) || a.name.localeCompare(b.name));
-    if (devices.length > 0) groups.push({ platform, devices });
-  }
-  return groups;
 }
