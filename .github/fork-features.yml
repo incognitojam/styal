@@ -5001,6 +5001,7 @@ features:
       - apps/web/src/components/ServerUpdateAction.logic.test.ts
       - apps/web/src/confirmDialog.test.ts
       - apps/web/src/versionSkew.test.ts
+      - e2e/tests/network/update-busy-server.e2e.ts
       - e2e/tests/network/update-everything.e2e.ts
       - packages/client-runtime/src/state/hostActivity.test.ts
       - packages/shared/src/hostActivity.test.ts
