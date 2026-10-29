@@ -129,7 +129,7 @@ describe("searchSettings", () => {
   it("keeps the fork cloud service name while accepting the upstream alias", () => {
     expect(searchableSetting("t3-connect").title).toBe("styal Link");
     expect(SETTINGS_SEARCH_ITEMS.find((item) => item.id === "t3-connect")?.searchTerms).toContain(
-      "T3 Connect managed tunnel cloud other devices remote",
+      "styal Link managed tunnel cloud other devices remote",
     );
   });
 

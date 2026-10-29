@@ -1099,7 +1099,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "styal Link",
     to: "/settings/connections",
     targetId: "connections-environment",
-    searchTerms: ["T3 Connect managed tunnel cloud other devices remote"],
+    searchTerms: ["styal Link managed tunnel cloud other devices remote"],
     desktopOnly: true,
     cloudOnly: true,
   },

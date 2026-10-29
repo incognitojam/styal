@@ -39,7 +39,7 @@ export const retireLegacyPairing = Effect.fn("clientRuntime.connection.retireLeg
       Effect.provideService(Socket.WebSocketConstructor, webSocketConstructor),
       Effect.as(true),
       Effect.catch((error) =>
-        Effect.logInfo("Kept an old pairing because T3 Connect could not connect.", {
+        Effect.logInfo("Kept an old pairing because styal Link could not connect.", {
           environmentId,
           error,
         }).pipe(Effect.as(false)),
