@@ -1855,6 +1855,7 @@ features:
       - apps/desktop/resources/dmg/dmg-background-latest.svg
       - apps/desktop/resources/dmg/dmg-background-nightly.svg
       - apps/desktop/resources/installer.nsh
+      - apps/desktop/resources/linux/build.styal.Styal.metainfo.xml
       - apps/desktop/src/app/DesktopAssets.ts
       - apps/desktop/src/app/DesktopCliCommand.ts
       - apps/desktop/src/app/DesktopCliShim.ts
