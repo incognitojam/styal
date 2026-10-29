@@ -958,21 +958,38 @@ describe("ApnsDeliveries", () => {
   );
 
   it.effect.each([
-    { name: "sends a delayed alert for a thread still waiting", seen: false },
-    { name: "drops a delayed alert for a thread opened in the meantime", seen: true },
-  ])("$name", ({ seen }) => {
+    { name: "sends a delayed alert as a banner without a Live Activity", card: false },
+    { name: "drops a delayed alert for a thread opened in the meantime", card: false, seen: true },
+    {
+      name: "sends a delayed alert as a banner when Live Activities are off",
+      card: true,
+      off: true,
+    },
+    { name: "rings a delayed alert on the Live Activity with the current aggregate", card: true },
+  ])("$name", ({ card, seen = false, off = false }) => {
     const attempts: Array<DeliveryAttempts.DeliveryAttemptInput> = [];
     const queuedJobs: Array<SignedApnsDeliveryJob> = [];
     const requests: Array<HttpClientRequest.HttpClientRequest> = [];
+    const markedDeliveries: Array<
+      Parameters<LiveActivities.LiveActivities["Service"]["markDelivery"]>[0]
+    > = [];
     const waiting = { ...state, phase: "waiting_for_input" as const, attended: true };
+    const other = { ...state, threadId: "other" as RelayAgentActivityState["threadId"] };
     const phone = {
       ...target,
       push_token: "push-token",
+      activity_push_token: card ? "activity-token" : null,
       preferences_json: JSON.stringify({
         ...JSON.parse(enabledPreferences),
+        liveActivitiesEnabled: !off,
         attendedAlertDelaySeconds: 600,
       }),
+      // The card shows the silent update from when the alert was raised, and the
+      // update throttle window has not elapsed.
+      last_aggregate_json: JSON.stringify(aggregate),
+      last_live_activity_delivery_at: "1970-01-01T00:10:00.000Z",
     };
+    const ringsCard = card && !off;
     return Effect.gen(function* () {
       const deliveries = yield* ApnsDeliveries.ApnsDeliveries;
       yield* deliveries.enqueueDelayedAlert({ target: phone, state: waiting, delaySeconds: 600 });
@@ -982,18 +999,35 @@ describe("ApnsDeliveries", () => {
         notification: { delayed: true, phase: "waiting_for_input", body: "Input: Project" },
       });
       yield* deliveries.processSignedJob(job);
-      expect(requests).toHaveLength(seen ? 0 : 1);
+      expect(requests.map((request) => request.headers["apns-push-type"])).toEqual(
+        seen ? [] : [ringsCard ? "liveactivity" : "alert"],
+      );
+      if (ringsCard && requests[0]?.body._tag === "Uint8Array") {
+        const { aps } = JSON.parse(new TextDecoder().decode(requests[0].body.body));
+        expect(aps).toMatchObject({ event: "update", alert: { body: "Input: Project" } });
+      }
+      expect(
+        markedDeliveries.map((marked) => marked.aggregate?.activities.map((row) => row.threadId)),
+      ).toEqual(ringsCard ? [["thread", "other"]] : []);
       expect(attempts[0]?.apnsReason ?? null).toBe(
-        seen ? "Delayed alert was handled or seen." : null,
+        seen
+          ? "Delayed alert was handled or seen."
+          : ringsCard
+            ? "Delayed alert sent on the Live Activity."
+            : null,
       );
     }).pipe(
       Effect.provide(
         layerFor({
           attempts,
           queuedJobs,
+          markedDeliveries,
           config: signingConfig,
           currentTargets: [phone],
-          activityStates: [seen ? { ...waiting, lastVisitedAt: waiting.updatedAt } : waiting],
+          activityStates: [
+            seen ? { ...waiting, lastVisitedAt: waiting.updatedAt } : waiting,
+            other,
+          ],
           execute: (request) =>
             Effect.sync(() => {
               requests.push(request);
