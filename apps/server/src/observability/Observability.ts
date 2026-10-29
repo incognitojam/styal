@@ -17,6 +17,7 @@ import * as ResourceAttribution from "../resourceTelemetry/ResourceAttribution.t
 import * as ServerLogger from "../serverLogger.ts";
 import * as BrowserTraceCollector from "./BrowserTraceCollector.ts";
 import { OpenSpans, trackOpenSpans } from "./OpenSpans.ts";
+import * as HeapAttribution from "./HeapAttribution.ts";
 
 export const layer = Layer.unwrap(
   Effect.gen(function* () {
@@ -73,8 +74,11 @@ export const layer = Layer.unwrap(
         });
 
         const tracked = trackOpenSpans(tracer);
+        const heapAttribution = yield* HeapAttribution.make(tracked.tracer);
+        yield* heapAttribution.run;
+
         return Layer.mergeAll(
-          Layer.succeed(Tracer.Tracer, tracked.tracer),
+          Layer.succeed(Tracer.Tracer, heapAttribution.tracer),
           Layer.succeed(OpenSpans, tracked.openSpans),
           BrowserTraceCollector.layer(sink),
         );
