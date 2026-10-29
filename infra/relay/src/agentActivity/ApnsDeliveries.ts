@@ -46,6 +46,7 @@ import * as ApnsDeliveryQueue from "./ApnsDeliveryQueue.ts";
 import { withSpanAttributes } from "../observability.ts";
 
 import {
+  alertForActivityRows,
   alertForAttentionTransition,
   alertForNewlyTerminal,
   alertForTerminalAggregate,
@@ -877,6 +878,50 @@ export const make = Effect.gen(function* () {
     };
   });
 
+  // Undelayed alerts on a device with a card ring through the Live Activity update, not
+  // a banner, so a delayed alert does the same. It repaints the whole current aggregate
+  // because markDelivery stores it as the baseline the throttle and later alerts diff
+  // against. Returns null, so the caller sends the banner, when there is no card to ring.
+  const sendDelayedAlertOnLiveActivity = Effect.fnUntraced(function* (input: {
+    readonly target: LiveActivities.TargetRow;
+    readonly notification: ApnsNotificationPayload;
+    readonly nowMs: number;
+  }) {
+    const token = input.target.activity_push_token;
+    if (
+      !token ||
+      parsePreferences(input.target.preferences_json)?.liveActivitiesEnabled === false
+    ) {
+      return null;
+    }
+    const activeStates = yield* activityRows.listForUser({ userId: input.target.user_id }).pipe(
+      Effect.catchCause((cause) =>
+        Effect.logWarning("delayed alert aggregate read failed; sending a banner", {
+          cause,
+        }).pipe(Effect.as(null)),
+      ),
+    );
+    const aggregate =
+      activeStates === null
+        ? null
+        : makeAggregateState({ activeStates, terminalState: null, nowMs: input.nowMs });
+    const row = aggregate?.activities.find(
+      (activity) =>
+        activity.environmentId === input.notification.environmentId &&
+        activity.threadId === input.notification.threadId,
+    );
+    if (!aggregate || !row) return null;
+    const result = yield* sendLiveActivity({
+      target: input.target,
+      token,
+      kind: "live_activity_update",
+      aggregate,
+      alert: alertForActivityRows([row]),
+    });
+    // A failed update usually means the card is gone; the banner still has to arrive.
+    return result.ok ? result : null;
+  });
+
   const sendPushNotification: ApnsDeliveries["Service"]["sendPushNotification"] = Effect.fn(
     "relay.apns_deliveries.send_push_notification",
   )(function* (input) {
@@ -980,6 +1025,19 @@ export const make = Effect.gen(function* () {
             apnsReason: "Delayed alert was handled or seen.",
           });
           return staleJobResult({ deviceId: input.target.device_id, kind: "push_notification" });
+        }
+        const liveActivityResult = yield* sendDelayedAlertOnLiveActivity({
+          target: currentTarget,
+          notification,
+          nowMs: now.epochMilliseconds,
+        });
+        if (liveActivityResult) {
+          yield* attempts.completeSourceJob({
+            sourceJobId: input.sourceJobId,
+            apnsReason: "Delayed alert sent on the Live Activity.",
+            apnsId: liveActivityResult.apnsId,
+          });
+          return liveActivityResult;
         }
         deliveryTarget = currentTarget;
       } else if (

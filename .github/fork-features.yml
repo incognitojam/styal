@@ -2860,6 +2860,7 @@ features:
       - Desktop and web clients report whether they are in use through client activity leases; the desktop app adds OS-wide input (any app, 5-minute idle threshold), and mobile leases never count.
       - The server marks published agent activity `attended` when a computer client is in use and adds `lastVisitedAt` for phases that can alert; `attended` is excluded from the publish identity so presence changes never republish.
       - The relay holds the immediate alert for an attended state on devices with a delay and queues a delayed alert when the thread enters an alert phase. The delayed alert is sent only if the thread is still in that phase and was not opened after the state's `updatedAt`.
+      - On iOS, a due delayed alert rings through an alerting Live Activity update carrying the user's current aggregate, as undelayed alerts do, and that update is stored as the card's delivered baseline. It falls back to a banner when Live Activities are off, the device has no card, the thread is not on the card, or the update fails.
       - A republish that only changes `lastVisitedAt` or `attended` updates the stored row without delivering to devices.
       - Devices that do not send a delay, and states from servers that do not send `attended`, alert immediately as before.
     rationale: Users working at a computer already get desktop notifications, so the phone buzzing for the same thread is noise. Discord delays mobile pushes the same way. Compared with upstream revision a42bdd4e516433a16650b9401ab3c066544ca5cd on October 29, 2026.

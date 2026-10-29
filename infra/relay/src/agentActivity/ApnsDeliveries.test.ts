@@ -957,6 +957,18 @@ describe("ApnsDeliveries", () => {
     },
   );
 
+  const delayPreferences = JSON.stringify({
+    ...JSON.parse(enabledPreferences),
+    attendedAlertDelaySeconds: 600,
+  });
+  const attendedWaiting = { ...state, phase: "waiting_for_input" as const, attended: true };
+
+  function decodedAps(request: HttpClientRequest.HttpClientRequest) {
+    return request.body._tag === "Uint8Array"
+      ? JSON.parse(new TextDecoder().decode(request.body.body)).aps
+      : null;
+  }
+
   it.effect.each([
     { name: "sends a delayed alert for a thread still waiting", seen: false },
     { name: "drops a delayed alert for a thread opened in the meantime", seen: true },
@@ -964,18 +976,19 @@ describe("ApnsDeliveries", () => {
     const attempts: Array<DeliveryAttempts.DeliveryAttemptInput> = [];
     const queuedJobs: Array<SignedApnsDeliveryJob> = [];
     const requests: Array<HttpClientRequest.HttpClientRequest> = [];
-    const waiting = { ...state, phase: "waiting_for_input" as const, attended: true };
     const phone = {
       ...target,
       push_token: "push-token",
-      preferences_json: JSON.stringify({
-        ...JSON.parse(enabledPreferences),
-        attendedAlertDelaySeconds: 600,
-      }),
+      activity_push_token: null,
+      preferences_json: delayPreferences,
     };
     return Effect.gen(function* () {
       const deliveries = yield* ApnsDeliveries.ApnsDeliveries;
-      yield* deliveries.enqueueDelayedAlert({ target: phone, state: waiting, delaySeconds: 600 });
+      yield* deliveries.enqueueDelayedAlert({
+        target: phone,
+        state: attendedWaiting,
+        delaySeconds: 600,
+      });
       const job = queuedJobs[0]!;
       expect(job.payload).toMatchObject({
         createdAt: "1970-01-01T00:10:00.000Z",
@@ -983,6 +996,7 @@ describe("ApnsDeliveries", () => {
       });
       yield* deliveries.processSignedJob(job);
       expect(requests).toHaveLength(seen ? 0 : 1);
+      expect(requests[0]?.headers["apns-push-type"]).toBe(seen ? undefined : "alert");
       expect(attempts[0]?.apnsReason ?? null).toBe(
         seen ? "Delayed alert was handled or seen." : null,
       );
@@ -993,11 +1007,151 @@ describe("ApnsDeliveries", () => {
           queuedJobs,
           config: signingConfig,
           currentTargets: [phone],
-          activityStates: [seen ? { ...waiting, lastVisitedAt: waiting.updatedAt } : waiting],
+          activityStates: [
+            seen
+              ? { ...attendedWaiting, lastVisitedAt: attendedWaiting.updatedAt }
+              : attendedWaiting,
+          ],
           execute: (request) =>
             Effect.sync(() => {
               requests.push(request);
               return HttpClientResponse.fromWeb(request, new Response("", { status: 200 }));
+            }),
+        }),
+      ),
+    );
+  });
+
+  it.effect("rings a due delayed alert on the Live Activity with the current aggregate", () => {
+    const attempts: Array<DeliveryAttempts.DeliveryAttemptInput> = [];
+    const queuedJobs: Array<SignedApnsDeliveryJob> = [];
+    const requests: Array<HttpClientRequest.HttpClientRequest> = [];
+    const markedDeliveries: Array<
+      Parameters<LiveActivities.LiveActivities["Service"]["markDelivery"]>[0]
+    > = [];
+    const otherThread = {
+      ...state,
+      threadId: "other" as RelayAgentActivityState["threadId"],
+      threadTitle: "Other",
+    };
+    const phone = {
+      ...target,
+      push_token: "push-token",
+      preferences_json: delayPreferences,
+      // The device shows the silent update the attended state produced, and a throttle
+      // window that has not elapsed.
+      last_aggregate_json: JSON.stringify(aggregate),
+      last_live_activity_delivery_at: "1970-01-01T00:00:00.000Z",
+    };
+    return Effect.gen(function* () {
+      const deliveries = yield* ApnsDeliveries.ApnsDeliveries;
+      yield* deliveries.enqueueDelayedAlert({
+        target: phone,
+        state: attendedWaiting,
+        delaySeconds: 600,
+      });
+      const result = yield* deliveries.processSignedJob(queuedJobs[0]!);
+
+      expect(result).toMatchObject({ kind: "live_activity_update", ok: true });
+      expect(requests).toHaveLength(1);
+      expect(requests[0]?.url).toBe("https://api.sandbox.push.apple.com/3/device/activity-token");
+      expect(requests[0]?.headers["apns-push-type"]).toBe("liveactivity");
+      expect(decodedAps(requests[0]!)).toMatchObject({
+        event: "update",
+        alert: { title: "Thread", body: "Input: Project" },
+      });
+      expect(markedDeliveries).toMatchObject([
+        {
+          kind: "live_activity_update",
+          aggregate: {
+            activeCount: 2,
+            activities: [{ threadId: "thread" }, { threadId: "other" }],
+          },
+        },
+      ]);
+      expect(attempts.map((attempt) => [attempt.kind, attempt.apnsReason ?? null])).toEqual([
+        ["push_notification", "Delayed alert sent on the Live Activity."],
+        ["live_activity_update", null],
+      ]);
+    }).pipe(
+      Effect.provide(
+        layerFor({
+          attempts,
+          queuedJobs,
+          markedDeliveries,
+          config: signingConfig,
+          currentTargets: [phone],
+          activityStates: [attendedWaiting, otherThread],
+          execute: (request) =>
+            Effect.sync(() => {
+              requests.push(request);
+              return HttpClientResponse.fromWeb(request, new Response("", { status: 200 }));
+            }),
+        }),
+      ),
+    );
+  });
+
+  it.effect.each([
+    {
+      name: "sends a delayed alert as a banner when Live Activities are turned off",
+      liveActivitiesEnabled: false,
+      cardStatus: 200,
+    },
+    {
+      name: "sends a delayed alert as a banner when the Live Activity is gone",
+      liveActivitiesEnabled: true,
+      cardStatus: 410,
+    },
+  ])("$name", ({ liveActivitiesEnabled, cardStatus }) => {
+    const attempts: Array<DeliveryAttempts.DeliveryAttemptInput> = [];
+    const queuedJobs: Array<SignedApnsDeliveryJob> = [];
+    const requests: Array<HttpClientRequest.HttpClientRequest> = [];
+    const invalidatedTokens: Array<
+      Parameters<LiveActivities.LiveActivities["Service"]["invalidateDeliveryToken"]>[0]
+    > = [];
+    const phone = {
+      ...target,
+      push_token: "push-token",
+      preferences_json: JSON.stringify({ ...JSON.parse(delayPreferences), liveActivitiesEnabled }),
+    };
+    return Effect.gen(function* () {
+      const deliveries = yield* ApnsDeliveries.ApnsDeliveries;
+      yield* deliveries.enqueueDelayedAlert({
+        target: phone,
+        state: attendedWaiting,
+        delaySeconds: 600,
+      });
+      const result = yield* deliveries.processSignedJob(queuedJobs[0]!);
+
+      expect(result).toMatchObject({ kind: "push_notification", ok: true });
+      expect(requests.map((request) => request.headers["apns-push-type"])).toEqual(
+        liveActivitiesEnabled ? ["liveactivity", "alert"] : ["alert"],
+      );
+      expect(requests.at(-1)?.url).toBe("https://api.sandbox.push.apple.com/3/device/push-token");
+      expect(invalidatedTokens.map((token) => token.kind)).toEqual(
+        liveActivitiesEnabled ? ["live_activity_update"] : [],
+      );
+    }).pipe(
+      Effect.provide(
+        layerFor({
+          attempts,
+          queuedJobs,
+          invalidatedTokens,
+          config: signingConfig,
+          currentTargets: [phone],
+          activityStates: [attendedWaiting],
+          execute: (request) =>
+            Effect.sync(() => {
+              requests.push(request);
+              const status =
+                request.headers["apns-push-type"] === "liveactivity" ? cardStatus : 200;
+              return HttpClientResponse.fromWeb(
+                request,
+                status === 200
+                  ? new Response("", { status })
+                  : Response.json({ reason: "Unregistered" }, { status }),
+              );
             }),
         }),
       ),
