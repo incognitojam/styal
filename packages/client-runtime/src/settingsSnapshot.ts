@@ -40,6 +40,10 @@ export function startSettingsSnapshotReports(reports: SettingsSnapshotReports): 
   let busy = false;
   let failures = 0;
   let retryAt = 0;
+  const save = (reportedAt: number) =>
+    Promise.resolve()
+      .then(() => reports.saveReportedAt(new Date(reportedAt).toISOString()))
+      .catch(() => undefined);
   const reportIfDue = async () => {
     const now = Date.now();
     if (busy || now < retryAt) return;
@@ -57,12 +61,13 @@ export function startSettingsSnapshotReports(reports: SettingsSnapshotReports): 
         failures += 1;
         // From the attempt, not the reply, so the next check on the interval qualifies.
         retryAt = now + settingsSnapshotRetryDelayMs(failures);
+        // Stored as a report a day before the retry, so a reconnect or restart,
+        // which starts the count again, still waits for it.
+        await save(retryAt - SETTINGS_SNAPSHOT_INTERVAL_MS);
         return;
       }
       failures = 0;
-      await Promise.resolve()
-        .then(() => reports.saveReportedAt(new Date().toISOString()))
-        .catch(() => undefined);
+      await save(Date.now());
     } finally {
       busy = false;
     }

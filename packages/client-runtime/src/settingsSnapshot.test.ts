@@ -42,13 +42,15 @@ describe("startSettingsSnapshotReports", () => {
     vi.useRealTimers();
   });
 
-  function schedule(replies: Array<boolean | undefined | Error>) {
-    let stored: string | null = null;
+  function schedule(
+    replies: Array<boolean | undefined | Error>,
+    storage: { stored: string | null } = { stored: null },
+  ) {
     const attempts: number[] = [];
     const stop = startSettingsSnapshotReports({
-      readLastReportedAt: async () => stored,
+      readLastReportedAt: async () => storage.stored,
       saveReportedAt: async (reportedAt) => {
-        stored = reportedAt;
+        storage.stored = reportedAt;
       },
       report: () => {
         attempts.push(Date.now());
@@ -57,14 +59,13 @@ describe("startSettingsSnapshotReports", () => {
         return reply === undefined ? undefined : Promise.resolve(reply);
       },
     });
-    return { attempts, stop, stored: () => stored };
+    return { attempts, stop, stored: () => storage.stored };
   }
 
   it("retries rejected or failed reports with backoff and then waits a day", async () => {
     const { attempts, stop, stored } = schedule([false, new Error("Synthetic"), true, true]);
     await vi.advanceTimersByTimeAsync(0);
     expect(attempts).toHaveLength(1);
-    expect(stored()).toBeNull();
 
     await vi.advanceTimersByTimeAsync(60_000);
     expect(attempts).toHaveLength(2);
@@ -80,6 +81,21 @@ describe("startSettingsSnapshotReports", () => {
     await vi.advanceTimersByTimeAsync(60_000);
     expect(attempts).toHaveLength(4);
     stop();
+  });
+
+  it("keeps waiting for a retry after the reporter restarts", async () => {
+    const storage = { stored: null };
+    const first = schedule([false], storage);
+    await vi.advanceTimersByTimeAsync(0);
+    first.stop();
+
+    const second = schedule([true], storage);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(second.attempts).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(second.attempts).toHaveLength(1);
+    expect(storage.stored).toBe("2026-10-23T12:01:00.000Z");
+    second.stop();
   });
 
   it("checks again a minute later when no server could take the report", async () => {
