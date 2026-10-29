@@ -317,16 +317,38 @@ describe("DesktopUpdates", () => {
             version: "1.2.4-nightly.20260709.766",
             items: ["feat(client): persist offline environment data by @juliusmarminge in #3795"],
             totalItems: 1,
+            releasedAt: "2026-07-09",
           },
           {
             version: "1.2.4-nightly.20260709.765",
             items: ["[codex] Upgrade Clerk stack by @juliusmarminge in #3821"],
             totalItems: 1,
+            releasedAt: "2026-07-09",
           },
-          { version: "1.2.4-nightly.20260709.764", items: ["Change 764"], totalItems: 1 },
-          { version: "1.2.4-nightly.20260709.763", items: ["Change 763"], totalItems: 1 },
-          { version: "1.2.4-nightly.20260709.762", items: ["Change 762"], totalItems: 1 },
-          { version: "1.2.4-nightly.20260709.761", items: ["Change 761"], totalItems: 1 },
+          {
+            version: "1.2.4-nightly.20260709.764",
+            items: ["Change 764"],
+            totalItems: 1,
+            releasedAt: "2026-07-09",
+          },
+          {
+            version: "1.2.4-nightly.20260709.763",
+            items: ["Change 763"],
+            totalItems: 1,
+            releasedAt: "2026-07-09",
+          },
+          {
+            version: "1.2.4-nightly.20260709.762",
+            items: ["Change 762"],
+            totalItems: 1,
+            releasedAt: "2026-07-09",
+          },
+          {
+            version: "1.2.4-nightly.20260709.761",
+            items: ["Change 761"],
+            totalItems: 1,
+            releasedAt: "2026-07-09",
+          },
         ]);
         assert.equal(state.omittedReleaseCount, 1);
         assert.deepEqual(harness.sentStates.at(-1)?.releaseNotes, state.releaseNotes);
