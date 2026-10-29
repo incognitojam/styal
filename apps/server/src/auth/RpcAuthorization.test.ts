@@ -7,6 +7,7 @@ import {
   DEFAULT_SERVER_SETTINGS,
   ProviderInstanceId,
   ProjectId,
+  SecretProviderId,
   ThreadId,
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
@@ -186,7 +187,7 @@ describe("settings mutation authorization", () => {
     }).pipe(Effect.scoped),
   );
 
-  it.effect("does not let a settings grant create or remove providers", () =>
+  it.effect("does not let a settings grant create or remove providers or secret providers", () =>
     Effect.gen(function* () {
       let handled = false;
       const client = yield* RpcTest.makeClient(group).pipe(
@@ -206,6 +207,11 @@ describe("settings mutation authorization", () => {
         yield* client[WS_METHODS.serverUpdateSettings]({
           patch: {},
           providerInstanceMutation,
+        }).pipe(Effect.flip),
+      ).toMatchObject({ requiredPermission: AuthProvidersManageScope });
+      expect(
+        yield* client[WS_METHODS.serverUpdateSettings]({
+          patch: { secretProviders: { [SecretProviderId.make("personal")]: null } },
         }).pipe(Effect.flip),
       ).toMatchObject({ requiredPermission: AuthProvidersManageScope });
       expect(handled).toBe(false);
