@@ -19,6 +19,8 @@ const INERT = [
   /^\.(agents|cursor|vscode|devcontainer|macroscope|repos)\//,
   /^[^/]+\.md$/,
   /^LICENSE$/,
+  /^\.github\/fork-features\.yml$/,
+  /^\.github\/workflows\/provider-canary\.yml$/,
 ];
 
 // Run everything: the root vite.config.ts loads the testing files as setup for
@@ -167,6 +169,40 @@ function decide(files, packages, full) {
     (pkg) => pkg.hasTest && !OWN_TEST_JOB.has(pkg.name) && affected.has(pkg.name),
   );
   const has = (name) => affected.has(name);
+  const other = tested.filter(
+    (pkg) => !["@t3tools/desktop", "@t3tools/mobile", "@t3tools/client-runtime"].includes(pkg.name),
+  );
+  const web1 = has("@t3tools/web") || has("@t3tools/client-runtime");
+  const web2 = has("@t3tools/web") || everything || rust;
+  const clients = has("@t3tools/desktop") || has("@t3tools/mobile");
+  // E2E boots the server and built web client without workspace dependencies.
+  const e2e = has("@t3tools/e2e") || has("@styal/cli") || has("@t3tools/web");
+  const suites = [
+    web1 && { suite: "Web 1/2", shard: "1/2", filters: "--filter './packages/client-runtime'" },
+    web2 && { suite: "Web 2/2", shard: "2/2", native: true },
+    clients && { suite: "Clients", filters: "--filter './apps/desktop' --filter './apps/mobile'" },
+    e2e && { suite: "E2E", e2e: true },
+    other.length > 0 && {
+      suite: "Other",
+      // A full run keeps the remainder open-ended so new workspaces are tested too.
+      filters: everything
+        ? [
+            "./apps/*",
+            "./infra/*",
+            "./packages/*",
+            "./oxlint-plugin-t3code",
+            "./scripts",
+            "!./apps/server",
+            "!./apps/web",
+            "!./apps/desktop",
+            "!./apps/mobile",
+            "!./packages/client-runtime",
+          ]
+            .map((filter) => `--filter '${filter}'`)
+            .join(" ")
+        : other.map((pkg) => `--filter '${pkg.name}'`).join(" "),
+    },
+  ].filter(Boolean);
 
   return {
     affected: [...affected].sort(),
@@ -178,6 +214,16 @@ function decide(files, packages, full) {
       test_packages: everything ? "" : tested.map((pkg) => pkg.name).join(" "),
       test_web: has("@t3tools/web"),
       test_server: has("@styal/cli"),
+      test_device_windows: has("@styal/cli"),
+      // Calibration also imports the web viewport layout directly.
+      preview_calibration: has("@t3tools/desktop") || has("@t3tools/web"),
+      test_web_1: web1,
+      test_web_2: web2,
+      test_clients: clients,
+      test_e2e: e2e,
+      test_other: other.length > 0,
+      test_workspace: suites.length > 0,
+      workspace_matrix: JSON.stringify({ include: suites }),
       rust: everything || rust,
       release_smoke: scriptsChanged,
       mobile_native: files === null || files.some((file) => MOBILE_NATIVE.test(file)),
@@ -201,4 +247,6 @@ function main() {
   for (const [key, value] of Object.entries(outputs)) console.log(`${key}=${value}`);
 }
 
-main();
+module.exports = { readWorkspace, decide };
+
+if (require.main === module) main();
