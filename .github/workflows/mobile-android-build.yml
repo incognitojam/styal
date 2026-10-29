@@ -131,6 +131,16 @@ jobs:
         with:
           variant: production
 
+      # Metro keys each transform by file content, config, and inlined
+      # EXPO_PUBLIC_ values, so an older snapshot is safe to restore.
+      - name: Cache Metro transforms
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/metro/metro-cache
+          key: metro-android-v1-${{ runner.os }}-${{ runner.arch }}-production-${{ hashFiles('pnpm-lock.yaml', 'patches/**', 'apps/mobile/metro.config.*', 'apps/mobile/babel.config.*') }}-${{ github.sha }}
+          restore-keys: |
+            metro-android-v1-${{ runner.os }}-${{ runner.arch }}-production-${{ hashFiles('pnpm-lock.yaml', 'patches/**', 'apps/mobile/metro.config.*', 'apps/mobile/babel.config.*') }}-
+
       - id: meta
         name: Resolve version, version code, and fingerprint
         working-directory: apps/mobile
@@ -214,7 +224,10 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          # Uniwind keeps its Metro cache store under the temp directory.
+          TMPDIR: ${{ runner.temp }}/metro
         run: |
+          mkdir -p "$TMPDIR"
           keystore="$RUNNER_TEMP/release.jks"
           base64 -d <<<"$ANDROID_KEYSTORE_BASE64" > "$keystore"
           # The prebuild template signs release builds with the debug key.
