@@ -27,7 +27,10 @@ import {
   type ProviderDriver,
   type ProviderInstance,
 } from "@t3tools/provider-core/server/driver";
-import { mergeProviderInstanceEnvironment } from "@t3tools/provider-core/server/instanceEnvironment";
+import {
+  inheritedProviderEnvironment,
+  mergeProviderInstanceEnvironment,
+} from "@t3tools/provider-core/server/instanceEnvironment";
 import {
   makeCachedProviderMaintenanceResolution,
   resolveProviderMaintenanceCapabilitiesEffect,
@@ -79,7 +82,7 @@ export const MuseDriver: ProviderDriver<MuseSettings, MuseDriverEnv> = {
     // Drop an inherited META_API_KEY so Muse uses its login; an instance value still wins.
     const processEnvironment = yield* mergeProviderInstanceEnvironment(
       environment,
-      makeMuseEnvironment(hostEnvironment),
+      makeMuseEnvironment(inheritedProviderEnvironment(hostEnvironment)),
     );
     const effectiveConfig = {
       ...config,

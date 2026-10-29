@@ -1272,6 +1272,7 @@ const captureSdkExecutablePaths = Effect.fn("captureSdkExecutablePaths")(functio
 ) {
   const executablePaths: Array<string | undefined> = [];
   const taskToolEnvironment: Array<string | undefined> = [];
+  const sdkEnvironments: Array<NodeJS.ProcessEnv | undefined> = [];
   const adapter = yield* ClaudeAdapterV2.createClaudeAdapterV2(
     {
       instanceId: ClaudeAdapterV2.CLAUDE_DEFAULT_INSTANCE_ID,
@@ -1293,6 +1294,7 @@ const captureSdkExecutablePaths = Effect.fn("captureSdkExecutablePaths")(functio
         Effect.sync(() => {
           executablePaths.push(input.options.pathToClaudeCodeExecutable);
           taskToolEnvironment.push(input.options.env?.CLAUDE_CODE_ENABLE_TODO_TOOLS);
+          sdkEnvironments.push(input.options.env);
           return {
             messages: Stream.never,
             offer: () => Effect.void,
@@ -1332,7 +1334,7 @@ const captureSdkExecutablePaths = Effect.fn("captureSdkExecutablePaths")(functio
       attachments: [],
     }),
   );
-  return { executablePaths, taskToolEnvironment };
+  return { executablePaths, taskToolEnvironment, sdkEnvironments };
 });
 
 describe("ClaudeAdapterV2 executable path", () => {
@@ -1364,6 +1366,34 @@ describe("ClaudeAdapterV2 executable path", () => {
       }),
     ).pipe(
       Effect.provideService(HostProcess.Environment, testCase.hostEnvironment),
+      Effect.provide(
+        Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+      ),
+    ),
+  );
+
+  it.effect("does not pass the server's own settings to the Claude process", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { sdkEnvironments } = yield* captureSdkExecutablePaths("claude", [
+          { name: "T3CODE_HOST", value: "configured", sensitive: false },
+        ]);
+
+        assert.equal(sdkEnvironments.length, 1);
+        const env = sdkEnvironments[0];
+        assert.equal(env?.ANTHROPIC_BASE_URL, "https://example.test");
+        assert.equal(env?.T3CODE_HOST, "configured");
+        assert.equal(env?.T3CODE_PORT, undefined);
+        assert.equal(env?.STYAL_HOME, undefined);
+        assert.equal(env?.T3_SERVICE_LAUNCHER_CONTEXT, undefined);
+      }),
+    ).pipe(
+      Effect.provideService(HostProcess.Environment, {
+        ANTHROPIC_BASE_URL: "https://example.test",
+        T3CODE_PORT: "3773",
+        STYAL_HOME: "/home/example/.styal",
+        T3_SERVICE_LAUNCHER_CONTEXT: '{"childVersion":"9.9.9"}',
+      }),
       Effect.provide(
         Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
       ),

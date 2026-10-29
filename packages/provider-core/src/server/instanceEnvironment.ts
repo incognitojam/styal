@@ -21,12 +21,14 @@ export function inheritedProviderEnvironment(
 
 /**
  * Applies a provider instance's configured variables on top of `baseEnv`. An
- * explicit `baseEnv` is used as given; only the default is filtered.
+ * explicit `baseEnv` is used as given; the default is the host environment
+ * filtered by `inheritedProviderEnvironment`.
  */
 export const mergeProviderInstanceEnvironment = Effect.fn(function* (
   environment: ProviderInstanceEnvironment | undefined,
-  baseEnv: NodeJS.ProcessEnv = inheritedProviderEnvironment(),
+  explicitBaseEnv?: NodeJS.ProcessEnv,
 ) {
+  const baseEnv = explicitBaseEnv ?? inheritedProviderEnvironment(yield* HostProcess.Environment);
   if (!environment || environment.length === 0) {
     return baseEnv;
   }

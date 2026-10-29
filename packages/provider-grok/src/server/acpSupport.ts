@@ -84,6 +84,9 @@ export function buildGrokAcpSpawnInput(
       ...environment,
       [GROK_OAUTH2_REFERRER_ENV]: T3_CODE_OAUTH_REFERRER,
     },
+    // A provided environment is complete and already filtered; extending it
+    // would merge the server's own variables back in.
+    ...(environment === undefined ? {} : { extendEnv: false }),
   };
 }
 

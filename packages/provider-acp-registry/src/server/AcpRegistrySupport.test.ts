@@ -294,6 +294,7 @@ describe("AcpRegistrySupport", () => {
           args: ["--profile", "acp", "", " spaced ", "$(touch injected); $VALUE"],
           cwd: "/workspace",
           env: environment,
+          extendEnv: false,
           shell: false,
         },
       });
@@ -333,6 +334,7 @@ describe("AcpRegistrySupport", () => {
         args: [],
         cwd: "/workspace",
         env: environment,
+        extendEnv: false,
         shell: false,
       });
       expect(resolved.agent).toBeUndefined();
@@ -446,6 +448,7 @@ describe("AcpRegistrySupport", () => {
           OVERRIDE_ME: "registry",
           REGISTRY_VALUE: "registry",
         },
+        extendEnv: false,
       });
       expect(requests).toEqual([registryUrl]);
     }).pipe(
