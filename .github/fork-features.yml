@@ -2797,6 +2797,33 @@ features:
         - https://github.com/pingdotgg/t3code/pull/9135
       retire_when: Upstream validates missing project and worktree paths before every provider starts, and a stream failure after a failed Claude result no longer replaces that result's error.
 
+  - id: mobile-android-page-back
+    title: Back on Android returns to the page a thread or pull request was opened from
+    status: maintained
+    prs: []
+    rationale: Opening a pull request linked in a thread replaced the thread, and Back always went to the list for the page's tab, so reading a linked pull request lost the thread. Compared with upstream revision 37fbefd147 on October 29, 2026, where only a thread opened from its delegator returns to it.
+    invariants:
+      - On Android, a pull request opened from a page (a link in a thread or pull request, or a thread's pull request controls) opens over that page, and Back or the app bar's back button returns to it.
+      - Selecting a thread or pull request from a list, including a thread row's pull request badge, still replaces the workspace page, and Back from it returns to the list for its tab.
+    implementation_paths:
+      - apps/mobile/src/features/threads/use-open-thread-pull-requests.ts
+      - apps/mobile/src/features/workspace/useAndroidWorkspaceNavigation.ts
+      - apps/mobile/src/lib/android-workspace-navigation.ts
+      - apps/mobile/src/native/useOpenPullRequest.ts
+    upstream_paths:
+      - apps/mobile/src/features/threads/use-open-thread-pull-requests.ts
+      - apps/mobile/src/features/workspace/useAndroidWorkspaceNavigation.ts
+      - apps/mobile/src/lib/android-workspace-navigation.ts
+      - apps/mobile/src/native/useOpenPullRequest.ts
+    tests:
+      - apps/mobile/src/lib/android-workspace-navigation.test.ts
+    upstream:
+      status: partial
+      # Compared against 37fbefd147; upstream returns to a delegator thread (#23795) but replaces the page for pull request links.
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/23795
+      retire_when: Upstream Android opens a pull request linked from a page over that page and Back returns there.
+
   - id: mobile-attended-alert-delay
     title: Delay phone alerts while the user is at a computer
     status: maintained
