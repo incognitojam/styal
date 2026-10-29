@@ -19,7 +19,8 @@ export const reporter = Effect.fnUntraced(function* (client: FeatureUsage.Client
     const reported =
       client.surface === "web" ||
       client.surface === "desktop" ||
-      (client.surface === "mobile" && input.feature === "diff-file-review-order");
+      (client.surface === "mobile" &&
+        (input.feature === "diff-file-review-order" || input.feature === "incoming-share-thread"));
     if (!reported) return Effect.void;
     if (input.feature === "web-build-update-notice" && client.surface !== "web") {
       return Effect.void;

@@ -230,7 +230,20 @@ it.effect("records allowlisted client interactions with socket attribution and n
       view: "pull_request",
     });
     expect(events).toHaveLength(13);
+    yield* mobile({ feature: "incoming-share-thread", action: "added", outcome: "success" });
+    expect(events).toHaveLength(14);
     expect(events.at(-1)).toEqual({
+      event: "feature.used",
+      properties: {
+        feature: "incoming-share-thread",
+        action: "added",
+        outcome: "success",
+        source: "user",
+        forkClientUsageVersion: FORK_CLIENT_USAGE_VERSION,
+        surface: "mobile",
+      },
+    });
+    expect(events[12]).toEqual({
       event: "feature.used",
       properties: {
         feature: "diff-file-review-order",

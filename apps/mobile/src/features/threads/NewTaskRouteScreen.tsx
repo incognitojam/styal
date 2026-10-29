@@ -34,6 +34,7 @@ import { useWorkspaceState } from "../../state/workspace";
 import { useAdaptiveWorkspaceLayout } from "../layout/AdaptiveWorkspaceLayout";
 import { usePromptLinkResolver } from "../prompt-links/usePromptLinkResolver";
 import { useIncomingShare } from "../sharing/IncomingShareProvider";
+import { ShareToThreadSection } from "../sharing/ShareToThreadSection";
 import { useNewTaskFlow } from "./new-task-flow-provider";
 import { filterProjectScopes, getProjectScopeSelectionTarget } from "./new-task-project-selection";
 
@@ -110,6 +111,7 @@ function NewTaskHeader(props: {
   readonly title: string;
   readonly subtitle: string | null;
   readonly canAddProject: boolean;
+  readonly searchPlaceholder: string;
   readonly searchText: string;
   readonly onSearchTextChange: (text: string) => void;
 }) {
@@ -141,7 +143,7 @@ function NewTaskHeader(props: {
       search={{
         value: props.searchText,
         onChangeText: props.onSearchTextChange,
-        placeholder: "Search projects",
+        placeholder: props.searchPlaceholder,
       }}
     />
   );
@@ -161,12 +163,15 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
     ? route.params.incomingShareId[0]
     : route.params?.incomingShareId;
   const incomingShare = routeShareId ? getShare(routeShareId) : null;
+  // A share already headed into a project draft finishes there.
+  const canShareToThread = incomingShare !== null && !incomingShare.destination;
+  const shareTarget = canShareToThread ? "a thread or project" : "a project";
   const incomingShareSubtitle = incomingShare
     ? incomingShare.attachments.length === 0
-      ? "Choose a project for what you shared"
+      ? `Choose ${shareTarget} for what you shared`
       : incomingShare.attachments.length === 1
-        ? `Choose a project for the ${incomingShare.attachments[0]?.type === "image" ? "image" : "file"} you shared`
-        : `Choose a project for the ${incomingShare.attachments.length} ${incomingShare.attachments.every((attachment) => attachment.type === "image") ? "images" : "files"} you shared`
+        ? `Choose ${shareTarget} for the ${incomingShare.attachments[0]?.type === "image" ? "image" : "file"} you shared`
+        : `Choose ${shareTarget} for the ${incomingShare.attachments.length} ${incomingShare.attachments.every((attachment) => attachment.type === "image") ? "images" : "files"} you shared`
     : null;
   const screenTitle = incomingShare ? "Start a task" : "Choose project";
   const projectEmptyState = deriveProjectEmptyState(catalogState);
@@ -300,6 +305,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
         title={screenTitle}
         subtitle={incomingShareSubtitle}
         canAddProject={catalogState.hasReadyEnvironment}
+        searchPlaceholder={canShareToThread ? "Search threads and projects" : "Search projects"}
         searchText={searchText}
         onSearchTextChange={setSearchText}
       />
@@ -321,6 +327,13 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
               : {}),
           }}
         >
+          {canShareToThread ? (
+            <ShareToThreadSection
+              share={incomingShare}
+              searchText={searchText}
+              showNewThreadHeading={listScopes.length > 0}
+            />
+          ) : null}
           {canStartScratch && listScopes.length > 0 ? (
             Platform.OS === "android" ? (
               <View collapsable={false} className="overflow-hidden rounded-[28px] bg-grouped-card">

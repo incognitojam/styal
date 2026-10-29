@@ -50,6 +50,12 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   provider with its icon and sign-in status, including Claude and Codex, which sign in through
   their own CLI. T3 Code lists only providers that sign in inside the app as of
   [revision 7ac952c](https://github.com/pingdotgg/t3code/tree/7ac952c630ef8a60d14ca8f6a0c7adce33db4bae).
+- **Share into an existing thread.** Sharing an image, file or text to the mobile app from
+  another app offers your recent threads as well as projects. Choosing a thread adds the content
+  to that thread's draft so you can write a message before sending. T3 Code starts a new thread for
+  every share as of
+  [revision 37fbefd](https://github.com/pingdotgg/t3code/tree/37fbefd147197fab9d88f9c120560c3f21b52cfc),
+  checked October 29, 2026. [Attach files](./composer.md#attach-files).
 
 ## Command line
 
