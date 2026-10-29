@@ -44,9 +44,14 @@ import * as ManagedRelay from "../relay/managedRelay.ts";
 import { setManagedRelaySession } from "../relay/managedRelayState.ts";
 import { type RemoteEnvironmentRequestError } from "../rpc/http.ts";
 import * as RpcHttp from "../rpc/http.ts";
+import type { RpcSession } from "../rpc/session.ts";
 import * as PullRequestDiffLoader from "./pullRequestDiffHttp.ts";
 import { createCommandPermissions } from "./commandPermissions.ts";
-import { createEnvironmentSessionAtoms, fetchEnvironmentSessionState } from "./session.ts";
+import {
+  createEnvironmentSessionAtoms,
+  fetchEnvironmentSessionState,
+  isSessionStateRejected,
+} from "./session.ts";
 import { fetchEnvironmentShellSnapshot } from "./shellSnapshotHttp.ts";
 import * as ThreadSnapshotLoader from "./threadSnapshotHttp.ts";
 import { fetchEnvironmentThreadTranscript } from "./threadTranscriptHttp.ts";
@@ -192,7 +197,12 @@ const makeSessionHarness = Effect.fn(function* (
   registry: AtomRegistry.AtomRegistry = AtomRegistry.make(),
 ) {
   const prepared = yield* SubscriptionRef.make(Option.some(connection));
-  const supervisor = { target: connection.target, prepared } as EnvironmentSupervisor["Service"];
+  const session = yield* SubscriptionRef.make(Option.some({} as RpcSession));
+  const supervisor = {
+    target: connection.target,
+    prepared,
+    session,
+  } as EnvironmentSupervisor["Service"];
   const environments = {
     followStream: (_environmentId, stream) =>
       Stream.provideService(stream, EnvironmentSupervisor, supervisor),
@@ -791,14 +801,17 @@ describe("session refresh permissions", () => {
   it.effect("denies an initial failure without manufacturing a cached grant", () =>
     Effect.gen(function* () {
       const http = makeHarness(() => Promise.reject(new TypeError("Failed to fetch")));
-      const { registry, permissions, read } = yield* makeSessionHarness(http);
+      const { registry, permissions, read, nextCheck } = yield* makeSessionHarness(http);
       expect((yield* read.pipe(Effect.flip))._tag).toBe("RemoteEnvironmentAuthFetchError");
       expect(registry.get(permissions.permissionAtom(TARGET.environmentId))).toBe(false);
       expect(
         (yield* permissions.authorize(registry, TARGET.environmentId).pipe(Effect.flip))._tag,
       ).toBe("EnvironmentAuthorizationError");
-      yield* TestClock.adjust("1 minute");
-      expect(http.calls).toHaveLength(1);
+      const retried = nextCheck();
+      yield* TestClock.adjust("2 seconds");
+      yield* retried;
+      expect(http.calls).toHaveLength(2);
+      expect(registry.get(permissions.permissionAtom(TARGET.environmentId))).toBe(false);
     }).pipe(Effect.scoped),
   );
 
@@ -844,6 +857,9 @@ describe("session refresh permissions", () => {
         (yield* permissions.authorize(registry, TARGET.environmentId).pipe(Effect.flip))._tag,
       ).toBe("EnvironmentAuthorizationError");
       expect(registry.get(atom).waiting).toBe(false);
+      expect(isSessionStateRejected(registry.get(atom))).toBe(
+        failure !== "bearer session rejection",
+      );
       const requests = http.calls.length;
       yield* TestClock.adjust("1 minute");
       expect(http.calls).toHaveLength(requests);
@@ -917,8 +933,11 @@ describe("session refresh permissions", () => {
         expect(
           (yield* permissions.authorize(registry, TARGET.environmentId).pipe(Effect.flip))._tag,
         ).toBe("EnvironmentAuthorizationError");
-        yield* TestClock.adjust("1 minute");
-        expect(http.calls).toHaveLength(4);
+        const retried = nextCheck();
+        yield* TestClock.adjust("2 seconds");
+        yield* retried;
+        expect(http.calls).toHaveLength(5);
+        expect(registry.get(permissions.permissionAtom(TARGET.environmentId))).toBe(true);
       }).pipe(Effect.scoped),
   );
 
@@ -969,8 +988,13 @@ describe("session refresh permissions", () => {
       expect(
         (yield* permissions.authorize(registry, TARGET.environmentId).pipe(Effect.flip))._tag,
       ).toBe("EnvironmentAuthorizationError");
-      yield* TestClock.adjust("1 minute");
-      expect(http.calls).toHaveLength(2);
+      const retried = nextCheck();
+      yield* TestClock.adjust("2 seconds");
+      yield* retried;
+      expect(new Headers(http.calls[2]!.init.headers).get("authorization")).toBe(
+        "Bearer replacement-credential",
+      );
+      expect(registry.get(permissions.permissionAtom(TARGET.environmentId))).toBe(false);
     }).pipe(Effect.scoped),
   );
 });

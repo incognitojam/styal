@@ -1,5 +1,6 @@
 import { pipe } from "effect/Function";
 import type { AuthSessionState, EnvironmentId, ServerConfig } from "@t3tools/contracts";
+import * as Cause from "effect/Cause";
 import * as Data from "effect/Data";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -13,12 +14,14 @@ import { AsyncResult, Atom } from "effect/reactivity";
 import * as RemoteEnvironmentAuthorization from "../authorization/service.ts";
 import { mapRemoteEnvironmentError } from "../connection/errors.ts";
 import * as EnvironmentRegistry from "../connection/registry.ts";
-import type { PreparedConnection } from "../connection/model.ts";
+import type { ConnectionTransientError, PreparedConnection } from "../connection/model.ts";
 import * as EnvironmentSupervisor from "../connection/supervisor.ts";
 import { connectionRouteId } from "../connection/routes.ts";
+import type { ConnectionPersistenceError } from "../platform/persistence.ts";
 import * as ManagedRelay from "../relay/managedRelay.ts";
 import { managedRelaySessionAtom, type ManagedRelaySession } from "../relay/managedRelayState.ts";
 import type { RemoteEnvironmentRequestError } from "../rpc/http.ts";
+import type { RpcSession } from "../rpc/session.ts";
 import { safeErrorLogAttributes } from "../errors/safeLog.ts";
 import { executeAuthenticatedEnvironmentHttpRequest } from "./environmentHttpAuth.ts";
 import { followStreamInEnvironment } from "./environmentStreams.ts";
@@ -44,6 +47,8 @@ function initialConfigOption<E>(
 
 const DEFAULT_SESSION_STATE_TIMEOUT_MS = 6_000;
 const MAX_SESSION_STATE_TIMEOUT_MS = 60_000;
+const SESSION_STATE_RETRY_BASE_MS = 2_000;
+const SESSION_STATE_RETRY_MAX_MS = 60_000;
 const SESSION_STATE_RETRY_SCHEDULE = Schedule.exponential("1 second").pipe(
   Schedule.modifyDelay(({ duration }) =>
     Effect.succeed(Duration.min(duration, Duration.seconds(30))),
@@ -56,6 +61,26 @@ function isTransientSessionError(
   return (
     error._tag !== "SessionHttpClientUnavailable" &&
     mapRemoteEnvironmentError(error)._tag === "ConnectionTransientError"
+  );
+}
+
+/** A failed check the client does not retry, because the environment refused the credential. */
+export function isSessionStateRejected(
+  result: AsyncResult.AsyncResult<
+    unknown,
+    | SessionHttpClientUnavailable
+    | RemoteEnvironmentRequestError
+    | ConnectionTransientError
+    | ConnectionPersistenceError
+  >,
+): boolean {
+  if (result._tag !== "Failure") return false;
+  const error = Option.getOrNull(Cause.findErrorOption(result.cause));
+  return (
+    error !== null &&
+    error._tag !== "ConnectionTransientError" &&
+    error._tag !== "ConnectionPersistenceError" &&
+    !isTransientSessionError(error)
   );
 }
 
@@ -193,15 +218,40 @@ function makeEnvironmentSessionAtoms<R, E>(
     ).pipe(Atom.withLabel(`environment-prepared-connection:${environmentId}`)),
   );
 
-  const sessionQueryAtom = Atom.family((environmentId: EnvironmentId) =>
-    runtime
+  const transportSessionAtom = Atom.family((environmentId: EnvironmentId) =>
+    runtime.atom(
+      followStreamInEnvironment(
+        environmentId,
+        Stream.unwrap(
+          EnvironmentSupervisor.EnvironmentSupervisor.pipe(
+            Effect.map((supervisor) => SubscriptionRef.changes(supervisor.session)),
+          ),
+        ),
+      ),
+      { initialValue: Option.none() },
+    ),
+  );
+
+  const sessionQueryAtom = Atom.family((environmentId: EnvironmentId) => {
+    let consecutiveFailures = 0;
+    let backoffTransport: RpcSession | null = null;
+    return runtime
       .atom((get) => {
         const connection = Option.getOrNull(
           AsyncResult.value(get(connectionStateAtom(environmentId))),
         );
         const prepared = connection === null ? null : Option.getOrNull(connection.prepared);
-        if (connection === null || prepared === null) {
+        // Each established connection fetches anew, and a failure retries while it stays up,
+        // so a fetch that failed mid-reconnect cannot outlive the socket that recovered.
+        const transport = AsyncResult.getOrElse(get(transportSessionAtom(environmentId)), () =>
+          Option.none(),
+        );
+        if (connection === null || prepared === null || Option.isNone(transport)) {
           return Effect.never;
+        }
+        if (transport.value !== backoffTransport) {
+          backoffTransport = transport.value;
+          consecutiveFailures = 0;
         }
         const owner = {
           supervisor: connection.supervisor,
@@ -237,10 +287,31 @@ function makeEnvironmentSessionAtoms<R, E>(
               }),
             )
           : fetchSession;
-        return request.pipe(Effect.map((session) => ({ ...owner, session })));
+        // Outside the confirmed-grant retry, which handles its own transient failures. A refused
+        // credential stays refused, so only transient failures come back.
+        return request.pipe(
+          Effect.tap(() =>
+            Effect.sync(() => {
+              consecutiveFailures = 0;
+            }),
+          ),
+          Effect.tapError((error) => {
+            if (!isTransientSessionError(error)) return Effect.void;
+            const delayMs = Math.min(
+              SESSION_STATE_RETRY_BASE_MS * 2 ** consecutiveFailures,
+              SESSION_STATE_RETRY_MAX_MS,
+            );
+            consecutiveFailures += 1;
+            return Effect.sleep(delayMs).pipe(
+              Effect.andThen(Effect.sync(() => get.refreshSelf())),
+              Effect.forkScoped,
+            );
+          }),
+          Effect.map((session) => ({ ...owner, session })),
+        );
       })
-      .pipe(Atom.withLabel(`environment-session-query:${environmentId}`)),
-  );
+      .pipe(Atom.withLabel(`environment-session-query:${environmentId}`));
+  });
 
   const sessionStateAtom = Atom.family((environmentId: EnvironmentId) =>
     sessionQueryAtom(environmentId).pipe(

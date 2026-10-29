@@ -1,5 +1,8 @@
 import { useAtomValue } from "@effect/atom-react";
-import { createEnvironmentSessionAtoms } from "@t3tools/client-runtime/state/session";
+import {
+  createEnvironmentSessionAtoms,
+  isSessionStateRejected,
+} from "@t3tools/client-runtime/state/session";
 import {
   type AuthEnvironmentScope,
   type AuthSessionState,
@@ -96,6 +99,7 @@ export function useEnvironmentSessionState(environmentId: EnvironmentId) {
   return {
     data: AsyncResult.getOrElse(result, () => null),
     hasError: result._tag === "Failure",
+    isRejected: isSessionStateRejected(result),
     isPending: result.waiting,
   };
 }
