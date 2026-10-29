@@ -5,6 +5,7 @@ import { ScopedSwitch } from "./ScopedSwitch";
 import { DeviceHostsSettings } from "./DeviceHostsSettings";
 import { EnvironmentDeviceHostsSettings } from "./EnvironmentDeviceHostsSettings";
 import { DeviceIdleShutdownSetting } from "./DeviceIdleShutdownSetting";
+import { PhysicalScreenOffSetting } from "./PhysicalScreenOffSetting";
 import { SimulatorMemorySetting } from "./SimulatorMemorySetting";
 /**
  * Integrations settings - preferences for surfaces styal embeds rather than
@@ -1017,6 +1018,10 @@ export function DeviceIntegrationControls({
       <FoldedSettingsSection id={`device-maintenance-${environmentId}`} title="Device maintenance">
         <DeviceIdleShutdownSetting
           id={`device-idle-shutdown-${environmentId}`}
+          disabled={!enabled}
+        />
+        <PhysicalScreenOffSetting
+          id={`physical-android-screen-off-${environmentId}`}
           disabled={!enabled}
         />
         <SimulatorMemorySetting />

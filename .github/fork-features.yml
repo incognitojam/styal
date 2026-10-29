@@ -3250,6 +3250,34 @@ features:
       tracking: []
       retire_when: Upstream records and shows a failure reason per route and stops naming a single route when every route fails.
 
+  - id: physical-android-device-hold
+    title: Keep physical Android phones awake, and optionally dark, while a thread holds them
+    status: maintained
+    prs: [1130]
+    invariants:
+      - While device support is on, every local physical Android device with at least one styal device session (opened from the Device panel or by an agent; closing a panel tab does not end it) is held by a control-only scrcpy server with `stay_awake` set, so it does not sleep. With `keepPhysicalAndroidScreensOff`, the server also powers the display off. Mirroring and input continue either way.
+      - When the device has no session left, or device support turns off, the scrcpy server exits and scrcpy's cleanup restores the previous stay-awake value and turns the display back on. The same cleanup runs if styal exits, because the control socket closes. Changing `keepPhysicalAndroidScreensOff` restarts the hold with the new option.
+      - A hold that ends while the device is still held, such as on a replug, is retried every 15 seconds. Emulators, SSH hosts, and connected-environment devices are never held; a shared device is held by the environment that owns it.
+      - The scrcpy-server jar and its version come from the installed device hub, so no second copy is downloaded.
+      - "`keepPhysicalAndroidScreensOff` defaults to true; web and mobile settings edit it per environment. Keeping held phones awake has no setting."
+    rationale: A held phone that sleeps streams a black screen and ignores input, and a phone lit for as long as an agent holds it wears the screen and battery. expo-device-hub mirrors physical devices with scrcpy but never asks them to stay awake or uses scrcpy's display power control, and it is installed from npm at runtime, so styal runs its own control-only scrcpy session beside the hub's instead of patching it.
+    implementation_paths:
+      - apps/mobile/src/features/settings/SettingsDevicesRouteScreen.tsx
+      - apps/server/src/device/PhysicalAndroidHold.ts
+      - apps/web/src/components/settings/PhysicalScreenOffSetting.tsx
+    upstream_paths:
+      - apps/server/src/device/DeviceHost.ts
+      - apps/server/src/device/DeviceService.ts
+      - apps/server/src/device/LocalDeviceHost.ts
+      - apps/web/src/components/settings/IntegrationsSettings.tsx
+      - packages/contracts/src/settings.ts
+    tests:
+      - apps/server/src/device/PhysicalAndroidHold.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream or expo-device-hub keeps held physical Android devices awake and can turn their displays off while mirroring them.
+
   - id: pinned-thread-auto-settlement
     title: Keep pinned threads active until unpinned or manually settled
     status: retiring

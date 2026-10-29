@@ -203,6 +203,21 @@ function EnvironmentDevices(props: {
             )
           }
         />
+        <SettingsSwitchRow
+          icon={{ ios: "iphone.slash", android: "smartphone" }}
+          label="Turn off physical Android screens"
+          subtitle="Held phones go dark and stay awake. Streaming and input keep working."
+          value={device.serverConfig.settings.keepPhysicalAndroidScreensOff}
+          disabled={busy || !device.serverConfig.settings.enableDeviceSupport}
+          onValueChange={(keepPhysicalAndroidScreensOff) =>
+            perform("configure", () =>
+              updateSettings({
+                environmentId: device.environmentId,
+                input: { patch: { keepPhysicalAndroidScreensOff } },
+              }),
+            )
+          }
+        />
         {props.agents.map((agent) => (
           <SharingSwitch
             key={agent.environmentId}
