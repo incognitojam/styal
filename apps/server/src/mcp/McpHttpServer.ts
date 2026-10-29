@@ -19,6 +19,7 @@ import {
   type RunId,
   ThreadId,
 } from "@t3tools/contracts";
+import { renderStyalProductName } from "@t3tools/provider-core/server/orchestrationInstructions";
 
 import packageJson from "../../package.json" with { type: "json" };
 import * as ServerConfig from "../config.ts";
@@ -969,6 +970,29 @@ const withToolAnalytics =
     return yield* registration.pipe(Effect.provideService(McpServer.McpServer, recordingServer));
   });
 
+const withStyalToolDescriptions = Effect.fn("McpHttpServer.withStyalToolDescriptions")(function* <
+  A,
+  E,
+  R,
+>(registration: Effect.Effect<A, E, R>) {
+  const server = yield* McpServer.McpServer;
+  const brandingServer = McpServer.McpServer.of({
+    ...server,
+    addTool: (options) =>
+      server.addTool({
+        ...options,
+        tool:
+          options.tool.description === undefined
+            ? options.tool
+            : new McpSchema.Tool({
+                ...options.tool,
+                description: renderStyalProductName(options.tool.description),
+              }),
+      }),
+  });
+  return yield* registration.pipe(Effect.provideService(McpServer.McpServer, brandingServer));
+});
+
 /**
  * `McpServer.toolkit` asks for every service its tools declare when it
  * registers them, but the auth middleware provides `McpInvocationContext` to
@@ -980,7 +1004,9 @@ export const toolkitRegistration = <Tools extends Record<string, Tool.Any>, EX, 
   handlers: McpToolAccess.HandlersLayer<Tools, EX, RX>,
 ) => {
   const registration = Layer.effectDiscard(
-    withToolAnalytics(McpServer.registerToolkit(decodeAsAdvertised(toolkit))),
+    withToolAnalytics(
+      withStyalToolDescriptions(McpServer.registerToolkit(decodeAsAdvertised(toolkit))),
+    ),
   ).pipe(Layer.provide(McpServer.McpServer.layer));
   // @effect-diagnostics-next-line unsafeEffectTypeAssertion:off - the auth middleware provides it per request.
   const registered = registration as Layer.Layer<
@@ -995,7 +1021,7 @@ const imageToolRegistration = <Tools extends Record<string, Tool.Any>, A, E, R, 
   register: Effect.Effect<A, E, R>,
   handlers: McpToolAccess.HandlersLayer<Tools, EX, RX>,
 ) =>
-  Layer.effectDiscard(withToolAnalytics(register)).pipe(
+  Layer.effectDiscard(withToolAnalytics(withStyalToolDescriptions(register))).pipe(
     Layer.provide(McpToolAccess.HandlersLayer.layer(handlers)),
   );
 

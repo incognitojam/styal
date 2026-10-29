@@ -1680,6 +1680,7 @@ features:
       - Web tool rows, mobile rows, and group previews take lifecycle wording and icons from the shared tool inventory, with short preview labels and no T3 product name in thread labels; preview arguments stay separate from their headings.
       - The published-tool guard exercises provider mappings and both namespaces through client presentation; new preview tools require wording review, retired customizations fail, and intake uses a synthetic catalog fixture for real-client comparison.
       - Device instructions use the session's MCP namespace and only appear with device access, while provider subprocesses retain their per-session environment overrides.
+      - Every provider's orchestration instructions, including Claude's system prompt and Pi's bridge, name the session's MCP namespace and call the product styal; advertised MCP tool descriptions, MCP error messages, preview browser install errors and the context handoff preface say styal instead of T3 Code or T3, while tool names and identifiers keep their upstream `t3_` form.
     implementation_paths:
       - apps/mobile/src/lib/threadActivity.ts
       - apps/server/scripts/seed-tool-presentation-fixture.ts
@@ -1702,6 +1703,7 @@ features:
       - packages/provider-cursor/src/server/adapter.ts
       - packages/provider-opencode/src/server/adapter.ts
       - packages/provider-opencode/src/server/toolItems.ts
+      - packages/provider-pi/src/server/mcpExtensionSource.ts
       - packages/shared/src/styalToolWording.ts
       - packages/shared/src/t3McpToolPresentation.ts
       - packages/shared/src/toolActivity.ts
@@ -1723,6 +1725,7 @@ features:
       - packages/provider-opencode/src/server/adapter.ts
     tests:
       - apps/mobile/src/lib/threadActivity.test.ts
+      - apps/server/src/mcp/McpHttpServer.test.ts
       - apps/server/src/mcp/toolkits/core.test.ts
       - apps/server/src/mcp/toolkits/toolPresentation.test.ts
       - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.test.ts
@@ -1735,6 +1738,7 @@ features:
       - packages/provider-core/src/server/mcpToolPresentation.test.ts
       - packages/provider-core/src/server/orchestrationInstructions.test.ts
       - packages/provider-opencode/src/server/adapter.test.ts
+      - packages/provider-pi/src/server/mcpExtensionSource.test.ts
       - packages/shared/src/t3McpToolPresentation.test.ts
       - packages/shared/src/toolRowPresentation.test.ts
     upstream:

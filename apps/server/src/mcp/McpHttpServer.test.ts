@@ -566,6 +566,33 @@ it.effect("reports a tagged error when the screenshot cannot be saved", () =>
   ).pipe(Effect.provide(layerTest)),
 );
 
+it.effect("advertises tool descriptions under the styal name", () =>
+  Effect.gen(function* () {
+    const BrandToolkit = Toolkit.make(
+      Tool.make("brand_probe", {
+        description:
+          "Needs an agent running inside a T3 thread. Delegate to a T3-owned child; T3 Code shows the thread's title in T3's sidebar. Reads T3_MCP_URL and t3_thread_read.",
+        success: Schema.Struct({ ok: Schema.Boolean }),
+        failure: OrchestratorMcpFailure,
+        failureMode: "return",
+      }),
+    );
+    const server = yield* McpServer.McpServer.pipe(
+      Effect.provide(
+        McpHttpServer.toolkitRegistration(
+          BrandToolkit,
+          McpToolAccess.toLayer(BrandToolkit, {
+            brand_probe: McpToolAccess.reads(() => Effect.succeed({ ok: true })),
+          }),
+        ).pipe(Layer.provideMerge(McpServer.McpServer.layer)),
+      ),
+    );
+    expect(server.tools.find(({ tool }) => tool.name === "brand_probe")?.tool.description).toBe(
+      "Needs an agent running inside a styal thread. Delegate to a styal-owned child; styal shows the thread's title in styal's sidebar. Reads T3_MCP_URL and t3_thread_read.",
+    );
+  }),
+);
+
 it.effect(
   "registers the pull request toolkit and surfaces a missing capability as a tool error",
   () =>
