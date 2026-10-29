@@ -1,6 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
 import * as NodePath from "@effect/platform-node/NodePath";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import { EnvironmentId, type ExecutionEnvironmentDescriptor } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -15,12 +16,24 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import { FetchHttpClient, HttpClient, HttpClientResponse } from "effect/http";
 import * as NetService from "@t3tools/shared/Net";
 import * as ServerConfig from "../config.ts";
+import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import {
   AGENT_DEVICE_VERSION,
   DEVICE_HUB_VERSION,
   agentDeviceStateDir,
 } from "./DeviceToolchain.ts";
+
+const serverEnvironment = Layer.succeed(ServerEnvironment.ServerEnvironment, {
+  getEnvironmentId: Effect.succeed(EnvironmentId.make("environment-studio")),
+  getDescriptor: Effect.succeed<ExecutionEnvironmentDescriptor>({
+    environmentId: EnvironmentId.make("environment-studio"),
+    label: "Studio",
+    platform: { os: "darwin", arch: "arm64", machine: "mac-studio" },
+    serverVersion: "0.0.0-test",
+    capabilities: { repositoryIdentity: true },
+  }),
+});
 
 const processOutput = (code: number, stdout = "", stderr = "", timedOut = false) => ({
   code: ChildProcessSpawner.ExitCode(code),
@@ -53,7 +66,9 @@ const agentFixture = Effect.fn("agentFixture")(function* (
     yield* fs.writeFileString(path.join(installDir, ".install-complete"), version!);
   }
   const host = yield* LocalDeviceHost.make().pipe(
-    Effect.provide(Layer.mergeAll(ServerConfig.layerTest(baseDir, baseDir), NetService.layer)),
+    Effect.provide(
+      Layer.mergeAll(ServerConfig.layerTest(baseDir, baseDir), NetService.layer, serverEnvironment),
+    ),
     Effect.provideService(HostProcess.Environment, { HOME: baseDir, PATH: "" }),
     Effect.provideService(HostProcess.IsExecutable, false),
     Effect.provideService(HostProcess.Platform, "darwin"),
@@ -551,6 +566,7 @@ http.createServer((req,res)=>res.end('ok')).listen(Number(args[args.indexOf('--p
           Layer.mergeAll(
             ServerConfig.layerTest(baseDir, baseDir),
             NetService.layer,
+            serverEnvironment,
             ProcessRunner.layer,
             FetchHttpClient.layer,
           ),
@@ -593,7 +609,13 @@ it.effect("keeps local Android and iOS available without ffmpeg", () =>
         Effect.provideService(HostProcess.Platform, "darwin"),
       );
     const host = yield* LocalDeviceHost.make().pipe(
-      Effect.provide(Layer.mergeAll(ServerConfig.layerTest(baseDir, baseDir), NetService.layer)),
+      Effect.provide(
+        Layer.mergeAll(
+          ServerConfig.layerTest(baseDir, baseDir),
+          NetService.layer,
+          serverEnvironment,
+        ),
+      ),
       onTestHost,
       Effect.provideService(
         HttpClient.HttpClient,
@@ -625,7 +647,13 @@ it.effect(
       const fs = yield* FileSystem.FileSystem;
       const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-device-consent-" });
       const host = yield* LocalDeviceHost.make().pipe(
-        Effect.provide(Layer.mergeAll(ServerConfig.layerTest(baseDir, baseDir), NetService.layer)),
+        Effect.provide(
+          Layer.mergeAll(
+            ServerConfig.layerTest(baseDir, baseDir),
+            NetService.layer,
+            serverEnvironment,
+          ),
+        ),
         Effect.provideService(HostProcess.Environment, { HOME: baseDir, PATH: "" }),
         Effect.provideService(HostProcess.Platform, "linux"),
         Effect.provideService(
@@ -645,6 +673,9 @@ it.effect(
         ),
       );
       expect(yield* host.current).toBeNull();
+      const summary = yield* host.summary;
+      expect(summary.label).toBe("Studio");
+      expect(summary.machine).toBe("mac-studio");
       const error = yield* host
         .ensureReady(() => Effect.die("Must not install without Node"))
         .pipe(Effect.flip, Effect.provideService(HostProcess.IsExecutable, true));
