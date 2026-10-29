@@ -41,6 +41,7 @@ export function clientSettingsSnapshot(
     loadBalancingEnabled: settings.loadBalancingEnabled,
     boringSidebarEnabled: settings.boringSidebarEnabled,
     boringSidebarMultilineRows: settings.boringSidebarMultilineRows,
+    threadDetailsUsageEnabled: settings.threadDetailsUsageEnabled,
     legacySidebarEnabled: settings.legacySidebarEnabled,
     sidebarWorkingShelfEnabled: settings.sidebarWorkingShelfEnabled,
     sidebarThreadGrouping: settings.sidebarThreadGrouping,
