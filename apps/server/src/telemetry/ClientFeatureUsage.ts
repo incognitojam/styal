@@ -15,12 +15,15 @@ import * as FeatureUsage from "./FeatureUsage.ts";
 export const reporter = Effect.fnUntraced(function* (client: FeatureUsage.ClientDimensions) {
   const analytics = yield* AnalyticsService.AnalyticsService;
   return (input: ForkClientUsageInput) => {
-    // Mobile reports only the vocabulary its own controls emit; the rest is web and desktop UI.
+    // Each surface reports only the vocabulary its own controls emit.
+    const mobileFeature =
+      input.feature === "diff-file-review-order" ||
+      input.feature === "incoming-share-thread" ||
+      input.feature === "mobile-settings";
     const reported =
-      client.surface === "web" ||
-      client.surface === "desktop" ||
-      (client.surface === "mobile" &&
-        (input.feature === "diff-file-review-order" || input.feature === "incoming-share-thread"));
+      ((client.surface === "web" || client.surface === "desktop") &&
+        input.feature !== "mobile-settings") ||
+      (client.surface === "mobile" && mobileFeature);
     if (!reported) return Effect.void;
     if (input.feature === "web-build-update-notice" && client.surface !== "web") {
       return Effect.void;
@@ -35,7 +38,7 @@ export const reporter = Effect.fnUntraced(function* (client: FeatureUsage.Client
       ...(client.clientAppVersion ? { clientAppVersion: client.clientAppVersion } : {}),
     };
     // A preference snapshot is not usage; keep it off feature.used dashboards.
-    if (input.feature === "client-settings") {
+    if (input.feature === "client-settings" || input.feature === "mobile-settings") {
       const { feature: _feature, action: _action, ...settings } = input;
       return analytics
         .record("client.settings.snapshot", { ...settings, ...attribution })

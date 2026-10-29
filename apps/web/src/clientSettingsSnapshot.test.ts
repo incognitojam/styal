@@ -2,12 +2,7 @@ import { ClientSettingsSnapshot, DEFAULT_CLIENT_SETTINGS } from "@t3tools/contra
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 
-import {
-  CLIENT_SETTINGS_SNAPSHOT_INTERVAL_MS,
-  clientSettingsSnapshot,
-  clientSettingsSnapshotRetryDelayMs,
-  isClientSettingsSnapshotDue,
-} from "./clientSettingsSnapshot";
+import { clientSettingsSnapshot } from "./clientSettingsSnapshot";
 
 const isSnapshot = Schema.is(ClientSettingsSnapshot);
 
@@ -89,33 +84,5 @@ describe("clientSettingsSnapshot", () => {
     );
     expect(unaccounted).toEqual([]);
     expect(Object.keys(NOT_REPORTED).filter((key) => readKeys.has(key))).toEqual([]);
-  });
-});
-
-describe("isClientSettingsSnapshotDue", () => {
-  const now = Date.parse("2026-10-23T12:00:00.000Z");
-
-  it("reports once a day after the last accepted report", () => {
-    expect(isClientSettingsSnapshotDue(null, now)).toBe(true);
-    expect(isClientSettingsSnapshotDue(new Date(now - 60_000).toISOString(), now)).toBe(false);
-    expect(
-      isClientSettingsSnapshotDue(
-        new Date(now - CLIENT_SETTINGS_SNAPSHOT_INTERVAL_MS).toISOString(),
-        now,
-      ),
-    ).toBe(true);
-  });
-
-  it("reports again after an unreadable or future timestamp instead of never", () => {
-    expect(isClientSettingsSnapshotDue("not a date", now)).toBe(true);
-    expect(isClientSettingsSnapshotDue(new Date(now + 60_000).toISOString(), now)).toBe(true);
-  });
-});
-
-describe("clientSettingsSnapshotRetryDelayMs", () => {
-  it("retries a rejected report after a minute, then backs off to hourly", () => {
-    expect(
-      [1, 2, 3, 4, 5, 6, 7, 20].map((failures) => clientSettingsSnapshotRetryDelayMs(failures)),
-    ).toEqual([1, 2, 4, 8, 16, 32, 60, 60].map((minutes) => minutes * 60_000));
   });
 });

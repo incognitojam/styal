@@ -103,7 +103,7 @@ async function addShareToThread(
       consumeShare,
       releaseUnusedAttachments: scheduleUnusedComposerAttachmentCleanup,
     });
-    reportForkClientUsage(environmentId, {
+    void reportForkClientUsage(environmentId, {
       feature: "incoming-share-thread",
       action: "added",
       outcome: "success",
@@ -113,7 +113,7 @@ async function addShareToThread(
     }
     return true;
   } catch (error) {
-    reportForkClientUsage(environmentId, {
+    void reportForkClientUsage(environmentId, {
       feature: "incoming-share-thread",
       action: "added",
       outcome: "failure",

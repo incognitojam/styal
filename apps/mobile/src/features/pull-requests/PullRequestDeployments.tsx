@@ -57,7 +57,7 @@ export function PullRequestDeployments(props: {
     showAll || !canCollapse ? ordered : ordered.slice(0, PULL_REQUEST_DEPLOYMENT_PAGE);
   const open = async (url: string, action: UsageAction) => {
     const opened = await tryOpenExternalUrl(url, "deployment");
-    reportForkClientUsage(environmentId, {
+    void reportForkClientUsage(environmentId, {
       feature: "pull-request-deployments",
       action,
       outcome: opened ? "success" : "failure",
@@ -95,7 +95,7 @@ export function PullRequestDeployments(props: {
             onPress={() => {
               setShowAll(!showAll);
               if (!showAll)
-                reportForkClientUsage(environmentId, {
+                void reportForkClientUsage(environmentId, {
                   feature: "pull-request-deployments",
                   action: "show_all",
                   outcome: "success",
