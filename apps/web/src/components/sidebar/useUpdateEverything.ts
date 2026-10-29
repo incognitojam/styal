@@ -36,7 +36,6 @@ import {
   settleUpdateRunMachine,
   showUpdateEverythingResult,
   waitForServerUpdateHandoff,
-  waitForUpdateRestart,
 } from "./updateEverythingRun";
 
 export type ReportLocalUpdateError = (title: string, description: string) => void;
@@ -91,8 +90,6 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
         reason: `@styal/cli@${targetVersion} is not on npm yet`,
       })),
   ];
-  // Older desktop bridges still check local work at installation time.
-  const restarts = collectRestartingMachines(machines, [], localUpdateVersion !== null);
   // Settings still offers a manual update for providers styal manages.
   const providers = useProviderUpdates({ leaveManagedUpdates: true });
   // The fork checks each server for running work when the confirmation opens,
@@ -112,56 +109,45 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
     })),
   });
 
+  const checkLocalActivity = async (): Promise<UpdateEverythingConfirmation> => {
+    if (localUpdateVersion === null) return { lines: [], threadActivity: [], localVersion: null };
+    const inspect = window.desktopBridge?.getLocalHostActivity;
+    if (!inspect) {
+      // An older desktop bridge cannot inspect itself or pin the confirmed version,
+      // so ask the servers it hosts and let its installer check again.
+      const hosted = await checkServers(
+        collectRestartingMachines(machines, [], true).map((machine) => ({
+          environmentId: machine.environmentId,
+          serverLabel:
+            machines.find((item) => item.environmentId === machine.environmentId)?.label ??
+            "This app",
+          selfUpdate: null,
+          targetVersion,
+          threadContinuation: machine.continuesThreads,
+        })),
+      );
+      return { ...hosted, localVersion: null };
+    }
+    const checks = await inspect().catch(() => [null]);
+    const activity =
+      checks.length === 0
+        ? { lines: [], threadActivity: [] }
+        : describeHostActivity(
+            checks.map((check) => check && { ...check, hostLabel: check.hostLabel ?? "This app" }),
+            {
+              uncheckedHostsLine: "Could not check this app for running work.",
+              continueRunningThreads: true,
+            },
+          );
+    return { ...activity, localVersion: localUpdateVersion };
+  };
+
   const checkActivity = async (): Promise<UpdateEverythingConfirmation> => {
-    const localCheck = window.desktopBridge?.getLocalHostActivity;
-    const local =
-      localUpdateVersion === null
-        ? Promise.resolve({ lines: [], threadActivity: [], localVersion: null })
-        : localCheck
-          ? localCheck().then(
-              (checks) => {
-                const activity =
-                  checks.length === 0
-                    ? { lines: [], threadActivity: [] }
-                    : describeHostActivity(
-                        checks.map(
-                          (check) =>
-                            check && {
-                              ...check,
-                              hostLabel: check.hostLabel ?? "This app",
-                            },
-                        ),
-                        {
-                          uncheckedHostsLine: "Could not check this app for running work.",
-                          continueRunningThreads: true,
-                        },
-                      );
-                return { ...activity, localVersion: localUpdateVersion };
-              },
-              () => ({
-                ...describeHostActivity([null], {
-                  uncheckedHostsLine: "Could not check this app for running work.",
-                  continueRunningThreads: true,
-                }),
-                localVersion: localUpdateVersion,
-              }),
-            )
-          : checkServers(
-              restarts.map((machine) => ({
-                environmentId: machine.environmentId,
-                serverLabel:
-                  machines.find((item) => item.environmentId === machine.environmentId)?.label ??
-                  "This app",
-                selfUpdate: null,
-                targetVersion,
-                threadContinuation: machine.continuesThreads,
-              })),
-            ).then((activity) => ({ ...activity, localVersion: null }));
-    const [remoteActivity, localActivity] = await Promise.all([checkServers(servers), local]);
+    const [remote, local] = await Promise.all([checkServers(servers), checkLocalActivity()]);
     return {
-      lines: [...localActivity.lines, ...remoteActivity.lines],
-      threadActivity: [...localActivity.threadActivity, ...remoteActivity.threadActivity],
-      localVersion: localActivity.localVersion,
+      lines: [...local.lines, ...remote.lines],
+      threadActivity: [...local.threadActivity, ...remote.threadActivity],
+      localVersion: local.localVersion,
     };
   };
 
@@ -174,12 +160,9 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
     run: async ({
       downloadLocal,
       installLocal,
-      restartDelayMs = 0,
     }: {
       downloadLocal?: (reportError: ReportLocalUpdateError) => Promise<boolean>;
       installLocal?: (reportError: ReportLocalUpdateError) => Promise<boolean>;
-      /** A countdown is available to callers that did not just confirm a manual restart. */
-      restartDelayMs?: number;
     }) => {
       const localFailures: Array<string> = [];
       const reportLocalError: ReportLocalUpdateError = (title, description) => {
@@ -315,14 +298,10 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
             skipped,
           });
         if (outcome.localReady && installLocal) {
-          if (restartDelayMs <= 0 || (await waitForUpdateRestart(restartDelayMs))) {
-            setUpdateEverythingRun(
-              (run) => run && { ...run, phase: "installing", restartAt: null },
-            );
-            saveUpdateEverythingResult({ ...result(finishedServers), localVersion });
-            if (await installLocal(reportLocalError)) return;
-            clearSavedUpdateEverythingResult();
-          }
+          setUpdateEverythingRun((run) => run && { ...run, phase: "installing", restartAt: null });
+          saveUpdateEverythingResult({ ...result(finishedServers), localVersion });
+          if (await installLocal(reportLocalError)) return;
+          clearSavedUpdateEverythingResult();
         }
         setUpdateEverythingRun(
           (run) =>

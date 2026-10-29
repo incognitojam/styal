@@ -1,6 +1,3 @@
-import { useAtomValue } from "@effect/atom-react";
-import type { EnvironmentServerConfig } from "@t3tools/client-runtime/connection";
-import type { EnvironmentId } from "@t3tools/contracts";
 import { useEffect } from "react";
 
 import {
@@ -9,27 +6,14 @@ import {
   clientSettingsSnapshotRetryDelayMs,
   isClientSettingsSnapshotDue,
 } from "../clientSettingsSnapshot";
-import { reportForkClientUsage, supportsForkClientUsage } from "../forkClientUsage";
+import { reportForkClientUsage } from "../forkClientUsage";
+import { useForkUsageEnvironmentId } from "../forkUsageEnvironment";
 import { getClientSettings, useClientSettingsHydrated } from "../hooks/useSettings";
-import { useServerConfigs } from "../state/entities";
-import { primaryEnvironmentIdAtom } from "../state/primaryEnvironment";
 import { useUiStateStore } from "../uiStateStore";
 
 // A check is one storage read. Checking often retries soon after a report that
 // failed because the cached server config arrived before the socket connected.
 const CHECK_INTERVAL_MS = 60 * 1000;
-
-/** The primary environment, or on hosted web the first paired one, if it accepts the report. */
-function reportingEnvironment(
-  primaryId: EnvironmentId | null,
-  configs: ReadonlyMap<EnvironmentId, EnvironmentServerConfig>,
-): EnvironmentId | null {
-  if (primaryId) return supportsForkClientUsage(configs.get(primaryId)) ? primaryId : null;
-  for (const [environmentId, config] of configs) {
-    if (supportsForkClientUsage(config)) return environmentId;
-  }
-  return null;
-}
 
 function readLastReportedAt() {
   try {
@@ -46,10 +30,7 @@ function readLastReportedAt() {
  */
 export function ClientSettingsSnapshotReporter() {
   const hydrated = useClientSettingsHydrated();
-  const environmentId = reportingEnvironment(
-    useAtomValue(primaryEnvironmentIdAtom),
-    useServerConfigs(),
-  );
+  const environmentId = useForkUsageEnvironmentId();
 
   useEffect(() => {
     if (!hydrated || !environmentId) return;

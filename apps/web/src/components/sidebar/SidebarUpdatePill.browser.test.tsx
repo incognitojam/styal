@@ -87,7 +87,6 @@ import {
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { SidebarUpdatePill } from "./SidebarUpdatePill";
 import { setUpdateEverythingRun } from "./updateEverythingRun";
-import { useUpdateEverything } from "./useUpdateEverything";
 
 const localVersion = "0.0.50";
 const downloaded: DesktopUpdateState = {
@@ -247,32 +246,13 @@ function button(name: string, within: ParentNode = document) {
 }
 const click = (element: HTMLElement) => act(async () => element.click());
 
-function DelayedUpdateButton() {
-  const update = useUpdateEverything(localVersion);
-  return (
-    <button
-      type="button"
-      onClick={() =>
-        void update.run({
-          restartDelayMs: 5_000,
-          installLocal: async () =>
-            (await window.desktopBridge!.installUpdate({ expectedVersion: localVersion })).accepted,
-        })
-      }
-    >
-      Update with countdown
-    </button>
-  );
-}
-
-async function render(withCountdown = false) {
+async function render() {
   await act(async () =>
     root.render(
       <RegistryContext.Provider value={appAtomRegistry}>
         <ul>
           <SidebarUpdatePill />
         </ul>
-        {withCountdown ? <DelayedUpdateButton /> : null}
       </RegistryContext.Provider>,
     ),
   );
@@ -447,7 +427,6 @@ describe("combined sidebar update", () => {
       });
       expect(testState.install).toHaveBeenCalledExactlyOnceWith({ expectedVersion: localVersion });
       expect(container.textContent).toContain("Restarting…");
-      expect(container.textContent).not.toContain("Restart in");
       expect(testState.toast).not.toHaveBeenCalled();
       expect(testState.localActivity).toHaveBeenCalledTimes(1);
       await act(async () => remoteA.resolve(updated()));
@@ -513,29 +492,6 @@ describe("combined sidebar update", () => {
     expect(readConfirmDialogState().status).toBe("idle");
     expect(testState.toast).not.toHaveBeenCalled();
   });
-
-  it.each(["restart", "postpone"] as const)(
-    "keeps an explicitly requested countdown available to %s",
-    async (decision) => {
-      await render(true);
-      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
-      vi.setSystemTime(new Date("2026-10-20T10:00:00.000Z"));
-      await click(button("Update with countdown", container));
-      expect(container.textContent).toContain("Restart in 5s");
-      expect(testState.install).not.toHaveBeenCalled();
-      if (decision === "postpone") await click(button("Later", container));
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(4_999);
-      });
-      expect(testState.install).not.toHaveBeenCalled();
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(1);
-      });
-      expect(testState.install).toHaveBeenCalledTimes(decision === "restart" ? 1 : 0);
-      expect(container.textContent).not.toContain("Restart in");
-      if (decision === "restart") expect(container.textContent).toContain("Restarting…");
-    },
-  );
 
   it("falls back to the connected local host on legacy bridges and keeps installation guarded", async () => {
     delete window.desktopBridge!.getLocalHostActivity;
