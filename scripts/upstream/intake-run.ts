@@ -655,12 +655,14 @@ function moveLedgerPathsForStagedRenames(cwd: string): ReadonlyArray<Adaptation>
 }
 
 /**
- * Gives upstream's names in the pick's new strings the fork's names, as `naming:check` requires,
+ * Gives upstream's names in the strings the pick adds the fork's names, as `naming:check` requires,
  * along with the pick's test assertions that quote them.
  */
 function renameStagedUpstreamNames(cwd: string): ReadonlyArray<Adaptation> {
-  const staged = lines(git(cwd, ["diff", "--cached", "--name-only", "--diff-filter=AMR", "HEAD"]));
-  const renamed = renameRepositoryUpstreamNames(cwd, staged);
+  const renamed = renameRepositoryUpstreamNames(
+    cwd,
+    addedLineNumbers(git(cwd, ["diff", "--cached", "-U0", "HEAD"])),
+  );
   if (renamed.size === 0) return [];
   git(cwd, ["add", "--", ...renamed.keys()]);
   return [...renamed].map(([path, renames]) => ({

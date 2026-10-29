@@ -161,6 +161,7 @@ interface StringSpan {
   readonly start: number;
   readonly end: number;
   readonly line: number;
+  readonly endLine: number;
   readonly text: string;
   /** The string names something rather than saying something, so renaming it changes behavior. */
   readonly identity: boolean;
@@ -206,7 +207,14 @@ function namedSpans(path: string, source: string): ReadonlyArray<StringSpan> {
           const text = literal[0].slice(1, -1);
           const start = offset + literal.index + 1;
           if (UPSTREAM_NAME.test(text)) {
-            spans.push({ start, end: start + text.length, line: index + 1, text, identity: false });
+            spans.push({
+              start,
+              end: start + text.length,
+              line: index + 1,
+              endLine: index + 1,
+              text,
+              identity: false,
+            });
           }
         }
       }
@@ -246,6 +254,7 @@ function namedSpans(path: string, source: string): ReadonlyArray<StringSpan> {
           start,
           end,
           line: file.getLineAndCharacterOfPosition(start).line + 1,
+          endLine: file.getLineAndCharacterOfPosition(end).line + 1,
           text: source.slice(start, end),
           identity: !jsx && isIdentityString(node, node.text),
         });
@@ -285,14 +294,23 @@ function renameSpans(
   return { text, renames };
 }
 
+/** Line numbers to limit a rename to, such as the lines a pick adds; all lines when absent. */
+type LineFilter = ReadonlySet<number> | undefined;
+
+const onLines = (span: StringSpan, lines: LineFilter) => {
+  if (lines === undefined) return true;
+  for (let line = span.line; line <= span.endLine; line += 1) if (lines.has(line)) return true;
+  return false;
+};
+
 /**
  * Renames upstream names in one source file's strings to the fork's names, except identity
  * strings, which stay for a person.
  */
-export function renameUpstreamNames(path: string, source: string) {
+export function renameUpstreamNames(path: string, source: string, lines?: LineFilter) {
   return renameSpans(
     source,
-    namedSpans(path, source).filter(({ identity }) => !identity),
+    namedSpans(path, source).filter((span) => !span.identity && onLines(span, lines)),
   );
 }
 
@@ -301,7 +319,12 @@ export function renameUpstreamNames(path: string, source: string) {
  * A short string that only appears inside a renamed one, such as a project titled "T3 Code", is
  * test data and stays.
  */
-export function renameTestStrings(path: string, source: string, renamed: ReadonlyArray<string>) {
+export function renameTestStrings(
+  path: string,
+  source: string,
+  renamed: ReadonlyArray<string>,
+  lines?: LineFilter,
+) {
   const quotes = (text: string) =>
     renamed.some(
       (before) =>
@@ -310,7 +333,9 @@ export function renameTestStrings(path: string, source: string, renamed: Readonl
     );
   return renameSpans(
     source,
-    namedSpans(path, source).filter(({ text, identity }) => !identity && quotes(text)),
+    namedSpans(path, source).filter(
+      (span) => !span.identity && onLines(span, lines) && quotes(span.text),
+    ),
   );
 }
 
@@ -348,13 +373,14 @@ function renderedAsStyalStrings(repoRoot: string): ReadonlyArray<string> {
 }
 
 /**
- * Renames upstream names in `paths` (default: every tracked source) and in the tests that quote
- * the renamed strings, and returns the renames by file.
+ * Renames upstream names in every tracked source, or only on the given lines of the given files,
+ * and in the tests that quote the renamed strings, and returns the renames by file.
  */
 export function renameRepositoryUpstreamNames(
   repoRoot: string,
-  paths: ReadonlyArray<string> = trackedFiles(repoRoot),
+  addedLines?: ReadonlyMap<string, ReadonlySet<number>>,
 ): ReadonlyMap<string, ReadonlyArray<UpstreamNameRename>> {
+  const paths = addedLines === undefined ? trackedFiles(repoRoot) : [...addedLines.keys()];
   const renamesByPath = new Map<string, ReadonlyArray<UpstreamNameRename>>();
   const rewrite = (
     path: string,
@@ -368,7 +394,7 @@ export function renameRepositoryUpstreamNames(
     renamesByPath.set(path, result.renames);
   };
   for (const path of paths.filter(isCheckedSource)) {
-    rewrite(path, (source) => renameUpstreamNames(path, source));
+    rewrite(path, (source) => renameUpstreamNames(path, source, addedLines?.get(path)));
   }
   const tests = paths.filter(isRenamedTest);
   if (tests.length > 0) {
@@ -377,7 +403,7 @@ export function renameRepositoryUpstreamNames(
       ...renderedAsStyalStrings(repoRoot),
     ];
     for (const path of tests) {
-      rewrite(path, (source) => renameTestStrings(path, source, renamed));
+      rewrite(path, (source) => renameTestStrings(path, source, renamed, addedLines?.get(path)));
     }
   }
   return renamesByPath;

@@ -61,10 +61,15 @@ describe("pickUpstreamCommit naming", () => {
   it("renames upstream names in the pick's strings and the assertions that quote them", () => {
     const { directory, git, read, base, upstreamCommit, remove } = fixtureRepository();
     try {
-      base({ "apps/web/src/link.ts": "export const ready = true;\n" });
+      // A name already on the base belongs to whichever pick added it, not this one.
+      base({
+        "apps/web/src/link.ts":
+          'export const ready = true;\nexport const earlier = "T3 Tools Inc. and T3 Code";\n',
+      });
       const upstream = upstreamCommit({
         "apps/web/src/link.ts": [
           "export const ready = true;",
+          'export const earlier = "T3 Tools Inc. and T3 Code";',
           "// Shown until T3 Connect links this environment.",
           'export const message = "Link this environment to T3 Connect first.";',
           'export const privacy = "https://t3.codes/privacy-policy";',
@@ -105,6 +110,7 @@ describe("pickUpstreamCommit naming", () => {
         'export const message = "Link this environment to styal Link first.";',
       );
       assert.include(read("apps/web/src/link.ts"), "// Shown until T3 Connect links");
+      assert.include(read("apps/web/src/link.ts"), '"T3 Tools Inc. and T3 Code"');
       assert.strictEqual(
         read("apps/web/src/link.test.ts"),
         [
