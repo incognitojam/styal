@@ -1472,6 +1472,96 @@ describe("incremental v2 timeline entries", () => {
       expect(next.entries[index]).toBe(entry);
   });
 
+  it("re-derives only the work entry whose tool item changed", () => {
+    const fixture = makeStreamingTimelineFixture("Partial");
+    const tool = fixture.visibleTurnItems.find((row) => row.item.id === "live-work")!;
+    const padding = Array.from({ length: 160 }, (_, index) => ({
+      ...tool,
+      sourceItemId: TurnItemId.make(`historical-tool-${index}`),
+      item: { ...tool.item, id: TurnItemId.make(`historical-tool-${index}`) },
+    }));
+    const visibleTurnItems = [...padding, ...fixture.visibleTurnItems].map((row) =>
+      row.item.id === "live-work"
+        ? {
+            ...row,
+            item: {
+              ...row.item,
+              status: "running" as const,
+              completedAt: null,
+              deferredWork: { cursor: "old-work", itemCount: 200, lastOrdinal: 200 },
+            },
+          }
+        : row,
+    );
+    const input = { visibleTurnItems, optimisticMessages: [] };
+    const previous = deriveTimelineEntriesFromVisibleTurnItemsWithState(input);
+    const nextInput = {
+      ...input,
+      visibleTurnItems: [...padding, ...fixture.visibleTurnItems].map((row) =>
+        row.item.id === "live-work"
+          ? {
+              ...row,
+              item: {
+                ...row.item,
+                status: "cancelled" as const,
+                deferredWork: {
+                  cursor: "updated-work",
+                  itemCount: 201,
+                  lastOrdinal: 201,
+                  typeCounts: {
+                    command_execution: 180,
+                    file_change: 21,
+                    file_search: 0,
+                    web_search: 0,
+                    dynamic_tool: 0,
+                  },
+                },
+              },
+            }
+          : row,
+      ),
+    };
+    const next = deriveTimelineEntriesFromVisibleTurnItemsWithState(nextInput, previous);
+    expect(next.entries).toEqual(deriveTimelineEntriesFromVisibleTurnItems(nextInput));
+    expect(next.entries.find((entry) => entry.id === "live-work")).toMatchObject({
+      entry: {
+        toolLifecycleStatus: "stopped",
+        projectedItem: { item: { deferredWork: { cursor: "updated-work", itemCount: 201 } } },
+      },
+    });
+    for (const [index, entry] of previous.entries.entries()) {
+      if (entry.id === "live-work") expect(next.entries[index]).not.toBe(entry);
+      else expect(next.entries[index]).toBe(entry);
+    }
+
+    const anchoredInput = {
+      ...nextInput,
+      anchoredMessages: [
+        {
+          id: MessageId.make("feedback"),
+          runId: null,
+          role: "assistant" as const,
+          text: "Feedback received",
+          streaming: false,
+          createdAt: fixture.time(6),
+          updatedAt: fixture.time(6),
+        },
+      ],
+    };
+    const anchored = deriveTimelineEntriesFromVisibleTurnItemsWithState(anchoredInput);
+    const movedInput = {
+      ...anchoredInput,
+      visibleTurnItems: anchoredInput.visibleTurnItems.map((row) =>
+        row.item.id === "live-work"
+          ? { ...row, item: { ...row.item, startedAt: DateTime.makeUnsafe(fixture.time(8)) } }
+          : row,
+      ),
+    };
+    expect(
+      deriveTimelineEntriesFromVisibleTurnItemsWithState(movedInput, anchored).entries,
+    ).toEqual(deriveTimelineEntriesFromVisibleTurnItems(movedInput));
+  });
+
   it.each(["completion", "provenance", "ordering", "attachment", "run"] as const)(
     "rebuilds entries for a %s change instead of retaining stale v2 metadata",
     (change) => {

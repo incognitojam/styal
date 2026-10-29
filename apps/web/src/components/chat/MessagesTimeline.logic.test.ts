@@ -252,6 +252,10 @@ describe("deriveMessagesTimelineRows", () => {
       // Cover both a question at the live tail and one followed by more work.
       for (const hasFollowingCommand of [false, true]) {
         const items = [
+          ...Array.from({ length: 160 }, (_, index) => ({
+            ...command,
+            id: TurnItemId.make(`historical-command-${index}`),
+          })),
           command,
           question,
           ...(hasFollowingCommand
@@ -920,6 +924,13 @@ describe("deriveMessagesTimelineRows", () => {
     const derive = (latestRunId: string, expandedWorkGroupIds?: ReadonlySet<string>) =>
       deriveMessagesTimelineRows({
         timelineEntries: [
+          ...Array.from({ length: 160 }, (_, index) =>
+            work(`historical-read-${index}`, "2026-01-01T00:00:01Z", {
+              label: "Read",
+              toolName: "Read",
+              toolLifecycleStatus: "completed",
+            }),
+          ),
           work("read", "2026-01-01T00:00:01Z", {
             label: "Read",
             toolName: "Read",
@@ -1492,6 +1503,10 @@ describe("deriveMessagesTimelineRows", () => {
     const rows = deriveMessagesTimelineRows({
       timelineEntries: [
         message("user-edits", "user", "2026-01-01T00:00:00Z"),
+        ...Array.from({ length: 160 }, (_, index) => ({
+          ...edit(2, "failed"),
+          id: `historical-failed-edit-${index}`,
+        })),
         edit(1, "completed"),
         edit(2, "failed"),
         edit(3, "declined"),
