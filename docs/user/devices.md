@@ -131,7 +131,7 @@ Agents hand a device back when they finish testing, so other threads can use it;
 The device stream goes through the environment server, so it works over the
 local network, Tailscale, and styal Link. In a browser, live video needs a
 secure page (HTTPS or localhost); on a plain-HTTP remote origin iOS falls back
-to a slower still-image stream and Android cannot show video. The mobile app
+to a slower still-image stream and Android cannot show video, except on EAS Simulator. The mobile app
 shows live Android video on any connection.
 
 If the stream lags or drops out, choose **Show stream stats** from the Device
