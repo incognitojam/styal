@@ -629,7 +629,10 @@ function RootStackLayout(props: {
   };
 }) {
   const { navigation } = props;
-  const { pendingShare, discardShare } = useIncomingShare();
+  const { pendingShare, importingShare, discardShare } = useIncomingShare();
+  // The sheet opens while a share is still importing, so the user can choose
+  // where it goes instead of waiting on a blank screen.
+  const pendingShareId = importingShare?.id ?? pendingShare?.id ?? null;
   const sharePresentationRef = useRef(EMPTY_INCOMING_SHARE_PRESENTATION_STATE);
   const [sharePresentationRetry, setSharePresentationRetry] = useState(0);
   const path = getPathFromState(props.state, navigationPathConfig);
@@ -648,7 +651,7 @@ function RootStackLayout(props: {
     const transition = transitionIncomingSharePresentation(sharePresentationRef.current, {
       isSheetPresented: sheet.isSheetPresented,
       sheetShareId: sheet.shareId,
-      pendingShareId: pendingShare?.id ?? null,
+      pendingShareId,
     });
     sharePresentationRef.current = transition.state;
     if (transition.shareIdToDiscard) {
@@ -676,7 +679,7 @@ function RootStackLayout(props: {
     });
     // Retry after a failed discard even when the inbox and routes are unchanged.
     // eslint-disable-next-line react/exhaustive-effect-dependencies
-  }, [discardShare, navigation, pendingShare, props.state, sharePresentationRetry]);
+  }, [discardShare, navigation, pendingShare, pendingShareId, props.state, sharePresentationRetry]);
 
   return (
     <HardwareKeyboardCommandProvider pathname={pathname}>

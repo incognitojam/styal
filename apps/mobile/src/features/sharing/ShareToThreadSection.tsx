@@ -9,10 +9,15 @@ import { AppText as Text } from "../../components/ui/AppText";
 import { ListSection } from "../../components/ui/ListSection";
 import { NavigationRow } from "../../components/ui/NavigationRow";
 import { cn } from "../../lib/cn";
+import { scopedThreadKey } from "../../lib/scopedEntities";
 import { appAtomRegistry } from "../../state/atom-registry";
 import { useProjects, useThreadShells } from "../../state/entities";
 import { reportForkClientUsage } from "../../state/forkClientUsage";
 import { serverEnvironment } from "../../state/server";
+import {
+  addPendingComposerAttachments,
+  removePendingComposerAttachments,
+} from "../../state/composer-pending-attachments";
 import {
   getComposerDraftSnapshot,
   mergeComposerDraftContent,
@@ -29,31 +34,49 @@ import {
 /**
  * Recent threads offered above the project list when content is shared to
  * the app. Choosing one adds the share to that thread's draft and opens it.
+ * A share still importing opens the thread at once, with its attachments
+ * shown as pending in the composer until they land.
  */
 export function ShareToThreadSection(props: {
-  readonly share: IncomingShareDraft;
+  readonly shareId: string;
+  readonly share: IncomingShareDraft | null;
   readonly searchText: string;
   readonly showNewThreadHeading: boolean;
 }) {
   const navigation = useNavigation();
-  const { consumeShare } = useIncomingShare();
+  const { claimShare, consumeShare, importingShare, waitForShare } = useIncomingShare();
   const threads = useThreadShells();
   const projects = useProjects();
   const [isAdding, setIsAdding] = useState(false);
   const targets = shareThreadTargets({ threads, projects, searchText: props.searchText });
 
+  function openThread(target: ShareThreadTarget): void {
+    navigation.dispatch(
+      StackActions.replace("Thread", {
+        environmentId: String(target.thread.environmentId),
+        threadId: String(target.thread.id),
+      }),
+    );
+  }
+
   function select(target: ShareThreadTarget): void {
     if (isAdding) return;
+    if (!props.share) {
+      void addImportingShareToThread({
+        shareId: props.shareId,
+        previewUris: importingShare?.id === props.shareId ? importingShare.previewUris : [],
+        target,
+        claimShare,
+        consumeShare,
+        waitForShare,
+      });
+      openThread(target);
+      return;
+    }
     setIsAdding(true);
     void addShareToThread(props.share, target, consumeShare).then((added) => {
       setIsAdding(false);
-      if (!added) return;
-      navigation.dispatch(
-        StackActions.replace("Thread", {
-          environmentId: String(target.thread.environmentId),
-          threadId: String(target.thread.id),
-        }),
-      );
+      if (added) openThread(target);
     });
   }
 
@@ -88,16 +111,50 @@ export function ShareToThreadSection(props: {
 }
 
 // Outside the component: React Compiler cannot compile try/finally.
+async function addImportingShareToThread(input: {
+  readonly shareId: string;
+  readonly previewUris: ReadonlyArray<string | null>;
+  readonly target: ShareThreadTarget;
+  readonly claimShare: (shareId: string) => () => void;
+  readonly consumeShare: (shareId: string) => Promise<void>;
+  readonly waitForShare: (shareId: string) => Promise<IncomingShareDraft | null>;
+}): Promise<void> {
+  const draftKey = scopedThreadKey(input.target.thread.environmentId, input.target.thread.id);
+  const pending = input.previewUris.map((previewUri, index) => ({
+    id: `${input.shareId}:pending:${index}`,
+    previewUri,
+  }));
+  const release = input.claimShare(input.shareId);
+  addPendingComposerAttachments(draftKey, pending);
+  try {
+    const share = await input.waitForShare(input.shareId);
+    // A failed import was already reported by the share inbox.
+    if (share) {
+      await addShareToThread(share, input.target, input.consumeShare, () =>
+        removePendingComposerAttachments(draftKey, pending),
+      );
+    }
+  } finally {
+    removePendingComposerAttachments(draftKey, pending);
+    release();
+  }
+}
+
 async function addShareToThread(
   share: IncomingShareDraft,
   target: ShareThreadTarget,
   consumeShare: (shareId: string) => Promise<void>,
+  onMerged?: () => void,
 ): Promise<boolean> {
   const { environmentId } = target.thread;
   try {
     const { warnings } = await importIncomingShareIntoThread(share, target.thread, {
       serverConfig: appAtomRegistry.get(serverEnvironment.configValueAtom(environmentId)),
-      mergeDraft: mergeComposerDraftContent,
+      mergeDraft: async (draftKey, content) => {
+        const merged = await mergeComposerDraftContent(draftKey, content);
+        onMerged?.();
+        return merged;
+      },
       draftAttachmentIds: (draftKey) =>
         new Set(getComposerDraftSnapshot(draftKey).attachments.map((attachment) => attachment.id)),
       consumeShare,

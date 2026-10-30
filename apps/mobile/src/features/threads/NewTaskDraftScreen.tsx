@@ -49,6 +49,10 @@ import {
 } from "../../components/ComposerEditor";
 import { composerContextImportsAtom } from "../../state/use-composer-drafts";
 import {
+  usePendingComposerAttachments,
+  withPendingComposerAttachments,
+} from "../../state/composer-pending-attachments";
+import {
   composerContextSendBlockReason,
   type ComposerDocumentAttachment,
 } from "../../lib/composerContext";
@@ -213,6 +217,7 @@ export function NewTaskDraftScreen(props: {
     consumeShare,
     getShare,
     isLoading: isIncomingShareInboxLoading,
+    importingShare,
     releaseShareReservation,
     reserveShare,
   } = useIncomingShare();
@@ -534,9 +539,20 @@ export function NewTaskDraftScreen(props: {
   const isIncomingShareUnavailable = Boolean(
     props.incomingShareId &&
     !isIncomingShareInboxLoading &&
+    importingShare?.id !== props.incomingShareId &&
     !incomingShare &&
     !hasImportedIncomingShare,
   );
+  const arrivingShare =
+    !incomingShare && importingShare?.id === props.incomingShareId ? importingShare : null;
+  const pickedPendingAttachments = usePendingComposerAttachments(flow.draftKey);
+  const pendingAttachments = [
+    ...pickedPendingAttachments,
+    ...(arrivingShare?.previewUris.map((previewUri, index) => ({
+      id: `${arrivingShare.id}:pending:${index}`,
+      previewUri,
+    })) ?? []),
+  ];
   const isIncomingShareReady =
     !props.incomingShareId ||
     (hasImportedIncomingShare && !incomingShare) ||
@@ -1009,26 +1025,35 @@ export function NewTaskDraftScreen(props: {
     }
     const capabilities = selectedEnvironmentServerConfig?.environment.capabilities;
     const insertion = flow.draftKey ? captureComposerDraftInsertion(flow.draftKey) : undefined;
-    const result = await pickComposerMedia({
-      existingCount:
-        flow.draftKey && insertion
-          ? countComposerDraftAttachmentsAfterSelection(flow.draftKey, insertion)
-          : flow.attachments.length,
-      maxVideoBytes:
-        capabilities?.attachmentUploads === true
-          ? capabilities.fileAttachments?.maxUploadBytes
-          : undefined,
-    });
-    const rejectedCount =
-      result.attachments.length > 0 ? flow.appendAttachments(result.attachments, insertion) : 0;
-    const problems = [
-      ...(result.error ? [result.error] : []),
-      ...(rejectedCount > 0
-        ? [`You can attach up to ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} attachments per message.`]
-        : []),
-    ];
-    if (problems.length > 0) {
-      Dialog.alert("Could not attach photo or video", problems.join("\n\n"));
+    const pick = (onPicked?: Parameters<typeof pickComposerMedia>[0]["onPicked"]) =>
+      pickComposerMedia({
+        existingCount:
+          flow.draftKey && insertion
+            ? countComposerDraftAttachmentsAfterSelection(flow.draftKey, insertion)
+            : flow.attachments.length,
+        maxVideoBytes:
+          capabilities?.attachmentUploads === true
+            ? capabilities.fileAttachments?.maxUploadBytes
+            : undefined,
+        onPicked,
+      });
+    const land = (result: Awaited<ReturnType<typeof pickComposerMedia>>) => {
+      const rejectedCount =
+        result.attachments.length > 0 ? flow.appendAttachments(result.attachments, insertion) : 0;
+      const problems = [
+        ...(result.error ? [result.error] : []),
+        ...(rejectedCount > 0
+          ? [`You can attach up to ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} attachments per message.`]
+          : []),
+      ];
+      if (problems.length > 0) {
+        Dialog.alert("Could not attach photo or video", problems.join("\n\n"));
+      }
+    };
+    if (flow.draftKey) {
+      await withPendingComposerAttachments(flow.draftKey, pick, land);
+    } else {
+      land(await pick());
     }
   }
 
@@ -1388,6 +1413,7 @@ export function NewTaskDraftScreen(props: {
     Boolean(flow.selectedModel) &&
     (flow.prompt.trim().length > 0 || flow.attachments.length > 0) &&
     isIncomingShareReady &&
+    pendingAttachments.length === 0 &&
     !isImportingShare &&
     !flow.submitting &&
     pendingPastedTextAttachmentCount === 0 &&
@@ -1699,11 +1725,12 @@ export function NewTaskDraftScreen(props: {
           paddingTop: 14,
         }}
       >
-        {stripAttachments.length > 0 ? (
+        {stripAttachments.length > 0 || pendingAttachments.length > 0 ? (
           <View className="px-[14px] pb-2.5">
             <ComposerAttachmentStrip
               environmentId={selectedProject.environmentId}
               attachments={stripAttachments}
+              pendingAttachments={pendingAttachments}
               imageBorderRadius={16}
               imageSize={72}
               onRemove={
@@ -1818,15 +1845,17 @@ export function NewTaskDraftScreen(props: {
                       ? projectClone === null || projectClone.phase === "running"
                         ? "Cloning repository"
                         : "Repository not cloned"
-                      : pendingPastedTextAttachmentCount > 0
-                        ? "Attaching pasted text"
-                        : flow.submitting
-                          ? "Starting task"
-                          : attachmentsUploading
-                            ? "Queue task, sends when uploads finish"
-                            : environmentConnected
-                              ? "Start task"
-                              : "Queue task")
+                      : pendingAttachments.length > 0
+                        ? "Preparing attachments"
+                        : pendingPastedTextAttachmentCount > 0
+                          ? "Attaching pasted text"
+                          : flow.submitting
+                            ? "Starting task"
+                            : attachmentsUploading
+                              ? "Queue task, sends when uploads finish"
+                              : environmentConnected
+                                ? "Start task"
+                                : "Queue task")
                   }
                   disabled={!canStart}
                   icon={queuesInsteadOfStarting ? "tray.and.arrow.up" : "arrow.up"}

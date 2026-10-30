@@ -19,7 +19,7 @@ import {
   type IncomingShareDraft,
 } from "./incoming-share-model";
 import { createIncomingSharePayloadReader } from "./incoming-share-native";
-import { IncomingShareInbox } from "./incoming-share-inbox";
+import { IncomingShareInbox, type IncomingShareImport } from "./incoming-share-inbox";
 import { persistComposerAttachmentFile } from "../../lib/composerImages";
 import { scheduleUnusedComposerAttachmentCleanup } from "../../state/use-composer-drafts";
 import {
@@ -30,9 +30,18 @@ import {
 
 type IncomingShareContextValue = {
   readonly pendingShare: IncomingShareDraft | null;
+  /** A share that arrived and is still being imported; `getShare` returns null for it until then. */
+  readonly importingShare: IncomingShareImport | null;
   readonly isLoading: boolean;
   readonly error: Error | null;
   readonly getShare: (shareId: string) => IncomingShareDraft | null;
+  /**
+   * Keeps a share that is on its way into a thread from being discarded when its sheet
+   * closes. Returns the release.
+   */
+  readonly claimShare: (shareId: string) => () => void;
+  /** Resolves once any in-flight import settles, with the share or null if it never landed. */
+  readonly waitForShare: (shareId: string) => Promise<IncomingShareDraft | null>;
   readonly reserveShare: (shareId: string, destination: IncomingShareDestination) => Promise<void>;
   readonly releaseShareReservation: (
     shareId: string,
@@ -211,6 +220,7 @@ const incomingShareInbox = new IncomingShareInbox({
 export function IncomingShareProvider(props: React.PropsWithChildren) {
   const enabled = receiveSharingEnabled();
   const [drafts, setDrafts] = useState<ReadonlyArray<IncomingShareDraft>>([]);
+  const [importingShare, setImportingShare] = useState<IncomingShareImport | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const refreshPromiseRef = useRef<Promise<void> | null>(null);
@@ -230,7 +240,12 @@ export function IncomingShareProvider(props: React.PropsWithChildren) {
 
     const operation = (async () => {
       try {
-        const snapshot = await incomingShareInbox.refresh({ ingestNative: enabled });
+        const snapshot = await incomingShareInbox.refresh({
+          ingestNative: enabled,
+          onImportStart: (share) => {
+            if (mountedRef.current) setImportingShare(share);
+          },
+        });
         if (mountedRef.current) {
           setDrafts(snapshot);
           setError(null);
@@ -248,6 +263,7 @@ export function IncomingShareProvider(props: React.PropsWithChildren) {
       }
     })().finally(() => {
       refreshPromiseRef.current = null;
+      if (mountedRef.current) setImportingShare(null);
     });
 
     refreshPromiseRef.current = operation;
@@ -300,20 +316,24 @@ export function IncomingShareProvider(props: React.PropsWithChildren) {
       setDrafts(snapshot);
     }
   }, []);
-  const discardShare = useCallback(
-    async (shareId: string) => {
-      const discarded = drafts.find((draft) => draft.id === shareId);
-      const snapshot = await incomingShareInbox.consume(shareId);
-      if (discarded) {
-        // The inbox entry was the only owner of these files.
-        scheduleUnusedComposerAttachmentCleanup(discarded.attachments);
-      }
-      if (mountedRef.current) {
-        setDrafts(snapshot);
-      }
-    },
-    [drafts],
-  );
+  const claimedShareIdsRef = useRef(new Set<string>());
+  const claimShare = useCallback((shareId: string) => {
+    claimedShareIdsRef.current.add(shareId);
+    return () => {
+      claimedShareIdsRef.current.delete(shareId);
+    };
+  }, []);
+  const discardShare = useCallback(async (shareId: string) => {
+    if (claimedShareIdsRef.current.has(shareId)) return;
+    const { snapshot, discarded } = await incomingShareInbox.discard(shareId);
+    if (discarded) {
+      // The inbox entry was the only owner of these files.
+      scheduleUnusedComposerAttachmentCleanup(discarded.attachments);
+    }
+    if (mountedRef.current) {
+      setDrafts(snapshot);
+    }
+  }, []);
   const reserveShare = useCallback(
     async (shareId: string, destination: IncomingShareDestination) => {
       const snapshot = await incomingShareInbox.reserve(shareId, destination);
@@ -332,6 +352,11 @@ export function IncomingShareProvider(props: React.PropsWithChildren) {
     },
     [],
   );
+  const waitForShare = useCallback(async (shareId: string) => {
+    // Inbox operations are serialized, so this load runs after the import in flight.
+    const snapshot = await incomingShareInbox.refresh({ ingestNative: false });
+    return snapshot.find((draft) => draft.id === shareId) ?? null;
+  }, []);
   const getShare = useCallback(
     (shareId: string) => drafts.find((draft) => draft.id === shareId) ?? null,
     [drafts],
@@ -340,25 +365,31 @@ export function IncomingShareProvider(props: React.PropsWithChildren) {
   const value = useMemo<IncomingShareContextValue>(
     () => ({
       pendingShare: drafts[0] ?? null,
+      importingShare,
       isLoading,
       error,
       getShare,
+      claimShare,
       releaseShareReservation,
       reserveShare,
+      waitForShare,
       consumeShare,
       discardShare,
       refresh,
     }),
     [
+      claimShare,
       consumeShare,
       discardShare,
       drafts,
       error,
       getShare,
+      importingShare,
       isLoading,
       refresh,
       releaseShareReservation,
       reserveShare,
+      waitForShare,
     ],
   );
 

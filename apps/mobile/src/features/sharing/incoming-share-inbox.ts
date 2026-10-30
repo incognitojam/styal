@@ -29,6 +29,30 @@ export interface IncomingShareInboxDependencies {
   readonly onCleanupError?: (error: unknown) => void;
 }
 
+/** What the sheet can show about a share before its content is imported. */
+export interface IncomingShareImport {
+  readonly id: string;
+  readonly attachmentCount: number;
+  readonly onlyImages: boolean;
+  /** One entry per shared file: its source while the import runs, or null when not drawable. */
+  readonly previewUris: ReadonlyArray<string | null>;
+}
+
+const FILE_SHARE_TYPES: ReadonlySet<string> = new Set(["image", "file", "audio", "video"]);
+
+export function summarizeIncomingSharePayloads(
+  id: string,
+  payloads: ReadonlyArray<SharePayload>,
+): IncomingShareImport {
+  const files = payloads.filter((payload) => FILE_SHARE_TYPES.has(payload.shareType));
+  return {
+    id,
+    attachmentCount: files.length,
+    onlyImages: files.every((payload) => payload.shareType === "image"),
+    previewUris: files.map((payload) => (payload.shareType === "image" ? payload.value : null)),
+  };
+}
+
 export function sortAndDedupeIncomingShares(
   drafts: ReadonlyArray<IncomingShareDraft>,
 ): ReadonlyArray<IncomingShareDraft> {
@@ -73,7 +97,11 @@ export class IncomingShareInbox {
     }
   }
 
-  refresh(options: { readonly ingestNative: boolean }): Promise<ReadonlyArray<IncomingShareDraft>> {
+  refresh(options: {
+    readonly ingestNative: boolean;
+    /** Called before a new native share is imported, which can take seconds for many photos. */
+    readonly onImportStart?: (share: IncomingShareImport) => void;
+  }): Promise<ReadonlyArray<IncomingShareDraft>> {
     return this.runExclusive(async () => {
       const loaded = await this.dependencies.loadDrafts();
       const persisted = sortAndDedupeIncomingShares(loaded);
@@ -98,6 +126,7 @@ export class IncomingShareInbox {
         return persisted;
       }
 
+      options.onImportStart?.(summarizeIncomingSharePayloads(shareId, payloads));
       const built = await this.dependencies.buildDraft({
         payloads,
         id: shareId,
@@ -136,6 +165,26 @@ export class IncomingShareInbox {
       // users may intentionally share identical content more than once.
       await this.dependencies.removeDraft(shareId);
       return sortAndDedupeIncomingShares(await this.dependencies.loadDrafts());
+    });
+  }
+
+  /**
+   * Removes a share the user walked away from. Queued behind an in-flight
+   * import, so closing the sheet mid-import still removes the share once it
+   * lands, and returns it so the caller can release its files.
+   */
+  discard(shareId: string): Promise<{
+    readonly snapshot: ReadonlyArray<IncomingShareDraft>;
+    readonly discarded: IncomingShareDraft | null;
+  }> {
+    return this.runExclusive(async () => {
+      const discarded =
+        (await this.dependencies.loadDrafts()).find((draft) => draft.id === shareId) ?? null;
+      await this.dependencies.removeDraft(shareId);
+      return {
+        snapshot: sortAndDedupeIncomingShares(await this.dependencies.loadDrafts()),
+        discarded,
+      };
     });
   }
 

@@ -116,6 +116,7 @@ import { enqueueThreadOutboxMessage } from "./thread-outbox";
 import { dispatchingQueuedMessageIdAtom, useThreadOutboxMessages } from "./use-thread-outbox";
 import { threadEnvironment } from "./threads";
 import { useAtomCommand } from "./use-atom-command";
+import { withPendingComposerAttachments } from "./composer-pending-attachments";
 import {} from "./composer-attachment-uploads";
 
 const EMPTY_QUEUE_WORKFLOW_ATOM = Atom.make<null>(null).pipe(
@@ -723,26 +724,35 @@ export function useThreadComposerState() {
     const threadKey = activeComposerDraftKey(selectedThreadShell);
     const insertion = captureComposerDraftInsertion(threadKey);
     const capabilities = selectedEnvironmentRuntime?.serverConfig?.environment.capabilities;
-    const result = await pickComposerMedia({
-      existingCount: countComposerDraftAttachmentsAfterSelection(threadKey, insertion),
-      maxVideoBytes:
-        capabilities?.attachmentUploads === true
-          ? capabilities.fileAttachments?.maxUploadBytes
-          : undefined,
-    });
-    const rejectedCount = appendComposerDraftAttachments(threadKey, result.attachments, {
-      appendReference: true,
-      insertion,
-    });
-    const problems = [
-      ...(result.error ? [result.error] : []),
-      ...(rejectedCount > 0
-        ? [`You can attach up to ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} attachments per message.`]
-        : []),
-    ];
-    if (problems.length > 0) {
-      Dialog.alert("Could not attach photo or video", problems.join("\n\n"));
-    }
+    await withPendingComposerAttachments(
+      threadKey,
+      (onPicked) =>
+        pickComposerMedia({
+          existingCount: countComposerDraftAttachmentsAfterSelection(threadKey, insertion),
+          maxVideoBytes:
+            capabilities?.attachmentUploads === true
+              ? capabilities.fileAttachments?.maxUploadBytes
+              : undefined,
+          onPicked,
+        }),
+      (result) => {
+        const rejectedCount = appendComposerDraftAttachments(threadKey, result.attachments, {
+          appendReference: true,
+          insertion,
+        });
+        const problems = [
+          ...(result.error ? [result.error] : []),
+          ...(rejectedCount > 0
+            ? [
+                `You can attach up to ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} attachments per message.`,
+              ]
+            : []),
+        ];
+        if (problems.length > 0) {
+          Dialog.alert("Could not attach photo or video", problems.join("\n\n"));
+        }
+      },
+    );
   };
 
   const onPickDraftFiles = async () => {

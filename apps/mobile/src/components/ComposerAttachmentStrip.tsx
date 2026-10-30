@@ -25,10 +25,14 @@ import {
 import { PresentationSource } from "./ui/NativePresentation";
 import type { FilePreviewSource } from "./FilePreviewModal";
 import { isPdfFile } from "../lib/filePreview";
+import type { PendingComposerAttachment } from "../state/composer-pending-attachments";
+import { AppActivityIndicator } from "./ui/AppActivityIndicator";
 
 export interface ComposerAttachmentStripProps {
   readonly environmentId?: EnvironmentId;
   readonly attachments: ReadonlyArray<DraftComposerAttachment>;
+  /** Picked or shared items still being prepared; they follow the attachments. */
+  readonly pendingAttachments?: ReadonlyArray<PendingComposerAttachment>;
   readonly onRemove: (imageId: string) => void;
   readonly onPressPreview?: (source: FilePreviewSource) => void;
   readonly onPressVideo?: (
@@ -89,6 +93,34 @@ export function ComposerAttachmentThumbnail(props: ComposerAttachmentThumbnailPr
           ) : null}
         </Pressable>
       ) : null}
+    </View>
+  );
+}
+
+export function PendingComposerAttachmentThumbnail(props: {
+  readonly attachment: PendingComposerAttachment;
+  readonly size: number;
+  readonly borderRadius: number;
+}) {
+  const style = { width: props.size, height: props.size, borderRadius: props.borderRadius };
+  return (
+    <View
+      accessibilityRole="progressbar"
+      accessibilityLabel="Preparing attachment"
+      className="items-center justify-center overflow-hidden bg-subtle"
+      style={style}
+    >
+      {props.attachment.previewUri ? (
+        <Image
+          source={{ uri: props.attachment.previewUri }}
+          style={style}
+          className="absolute opacity-50"
+          resizeMode="cover"
+          // Picked photos are full resolution; decode them at tile size.
+          resizeMethod="resize"
+        />
+      ) : null}
+      <AppActivityIndicator size="small" />
     </View>
   );
 }
@@ -310,12 +342,13 @@ function ComposerVideoAttachment(props: {
 
 export function ComposerAttachmentStrip(props: ComposerAttachmentStripProps) {
   const gallery = useMemo(() => composerImageGallery(props.attachments), [props.attachments]);
+  const pendingAttachments = props.pendingAttachments ?? [];
   const size = props.imageSize ?? 72;
   const radius = props.imageBorderRadius ?? 16;
   const removeButtonPlacement = props.removeButtonPlacement ?? "overlay";
   const removeButtonGutter = removeButtonPlacement === "gutter" ? 10 : 0;
 
-  if (props.attachments.length === 0) {
+  if (props.attachments.length === 0 && pendingAttachments.length === 0) {
     return null;
   }
 
@@ -363,6 +396,18 @@ export function ComposerAttachmentStrip(props: ComposerAttachmentStripProps) {
                   weight="bold"
                 />
               </Pressable>
+            </View>
+          ))}
+          {pendingAttachments.map((attachment) => (
+            <View
+              key={attachment.id}
+              style={{ paddingTop: removeButtonGutter, paddingRight: removeButtonGutter }}
+            >
+              <PendingComposerAttachmentThumbnail
+                attachment={attachment}
+                size={size}
+                borderRadius={radius}
+              />
             </View>
           ))}
         </View>

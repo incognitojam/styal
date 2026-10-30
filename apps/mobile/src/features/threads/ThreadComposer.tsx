@@ -69,7 +69,9 @@ import { ComposerAttachmentButton } from "./ComposerAttachmentButton";
 import {
   ComposerAttachmentStrip,
   ComposerAttachmentThumbnail,
+  PendingComposerAttachmentThumbnail,
 } from "../../components/ComposerAttachmentStrip";
+import { usePendingComposerAttachments } from "../../state/composer-pending-attachments";
 import { VideoPreviewModal, type VideoPreviewSource } from "../../components/VideoPreviewModal";
 import { GlassSurface } from "../../components/ui/GlassSurface";
 import { ComposerEditor, type ComposerEditorHandle } from "../../components/ComposerEditor";
@@ -374,11 +376,14 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
   const composerDraftKey = props.draftKey ?? composerOwnerKey;
   const { text: draftMessage, attachments: draftAttachments } = useComposerDraft(composerDraftKey);
   const queuedEdit = props.queuedEdit ?? null;
+  const pendingAttachments = usePendingComposerAttachments(composerDraftKey);
   const hasContent =
     draftMessage.trim().length > 0 ||
     draftAttachments.length > 0 ||
+    pendingAttachments.length > 0 ||
     (queuedEdit?.existingAttachments.length ?? 0) > 0;
   const stripAttachments = composerStripAttachments(draftAttachments);
+  const stripItemCount = stripAttachments.length + pendingAttachments.length;
   const showStopAction = !hasContent && props.canStopThread && queuedEdit === null;
   const onResumeQueue = props.onResumeQueue;
   const [resumingQueue, setResumingQueue] = useState(false);
@@ -531,8 +536,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
   const showsCompactDictation = isVoiceInputPresented && !usesCard;
   const isToolbarVisible = usesCard || isVoiceInputPresented;
   const hasEditingAttachments =
-    (queuedEdit !== null && queuedEdit.existingAttachments.length > 0) ||
-    stripAttachments.length > 0;
+    (queuedEdit !== null && queuedEdit.existingAttachments.length > 0) || stripItemCount > 0;
   const attachmentBlockReason = composerAttachmentUploadBlockReason({
     environmentId: props.environmentId,
     attachments: draftAttachments,
@@ -545,6 +549,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
     (queuedEdit?.saving === true ? "Saving…" : null) ??
     props.sendBlockedReason ??
     (pendingPastedTextAttachmentCount > 0 ? "Attaching pasted text" : null) ??
+    (pendingAttachments.length > 0 ? "Preparing attachments" : null) ??
     attachmentBlockReason;
   const canSend =
     (props.canOperateThread || props.connectionState !== "connected") &&
@@ -730,7 +735,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
           />
         </Animated.View>
       ) : null}
-      {stripAttachments.length > 0 ? (
+      {stripItemCount > 0 ? (
         <Animated.View
           className="px-[14px] pb-2.5"
           entering={COMPOSER_ATTACHMENT_ENTERING}
@@ -739,6 +744,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
           <ComposerAttachmentStrip
             environmentId={props.environmentId}
             attachments={stripAttachments}
+            pendingAttachments={pendingAttachments}
             onRemove={isSubmissionLocked ? () => undefined : props.onRemoveDraftImage}
             onPressPreview={isSubmissionLocked ? undefined : onPressPreview}
             onPressVideo={isSubmissionLocked ? undefined : onPressVideo}
@@ -1037,7 +1043,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
                 }}
               />
             </Animated.View>
-            {!isExpanded && stripAttachments.length > 0 ? (
+            {!isExpanded && stripItemCount > 0 ? (
               <View className="flex-row gap-1 pl-1">
                 {stripAttachments.slice(0, 3).map((attachment) => (
                   <ComposerAttachmentThumbnail
@@ -1051,10 +1057,20 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
                     onPressVideo={isSubmissionLocked ? undefined : onPressVideo}
                   />
                 ))}
-                {stripAttachments.length > 3 ? (
+                {pendingAttachments
+                  .slice(0, Math.max(0, 3 - stripAttachments.length))
+                  .map((attachment) => (
+                    <PendingComposerAttachmentThumbnail
+                      key={attachment.id}
+                      attachment={attachment}
+                      size={30}
+                      borderRadius={8}
+                    />
+                  ))}
+                {stripItemCount > 3 ? (
                   <View className="size-[30px] items-center justify-center rounded-lg bg-subtle-strong">
                     <Text className="text-foreground-muted text-2xs font-t3-bold">
-                      +{stripAttachments.length - 3}
+                      +{stripItemCount - 3}
                     </Text>
                   </View>
                 ) : null}

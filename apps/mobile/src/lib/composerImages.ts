@@ -24,6 +24,7 @@ import { fitComposerImage, renderPhoto } from "./composerImageFit";
 import { beginForegroundHandoff } from "./foreground-handoff";
 import { uuidv4 } from "./uuid";
 import { writeFileAtomically } from "./atomic-file";
+import type { PendingComposerAttachment } from "../state/composer-pending-attachments";
 
 export interface DraftComposerImageAttachment extends Omit<UploadChatImageAttachment, "dataUrl"> {
   readonly id: string;
@@ -360,6 +361,8 @@ export async function pickComposerImages(input: { readonly existingCount: number
 export async function pickComposerMedia(input: {
   readonly existingCount: number;
   readonly maxVideoBytes?: number;
+  /** Called once the picker closes, before the selection is read and resized. */
+  readonly onPicked?: (pending: ReadonlyArray<PendingComposerAttachment>) => void;
 }): Promise<{
   readonly attachments: ReadonlyArray<DraftComposerAttachment>;
   readonly error: string | null;
@@ -413,6 +416,16 @@ export async function pickComposerMedia(input: {
       error: null,
     };
   }
+
+  input.onPicked?.(
+    result.assets.slice(0, remainingSlots).map((asset) => ({
+      id: uuidv4(),
+      previewUri:
+        asset.type === "video" || asset.mimeType?.toLowerCase().startsWith("video/")
+          ? null
+          : asset.uri,
+    })),
+  );
 
   const attachments: DraftComposerAttachment[] = [];
   let error: string | null = null;

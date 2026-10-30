@@ -157,23 +157,36 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
   const navigation = useNavigation();
   const isFocused = useIsFocused();
   const insets = useSafeAreaInsets();
-  const { getShare, releaseShareReservation } = useIncomingShare();
+  const { getShare, importingShare, releaseShareReservation } = useIncomingShare();
   usePromptLinkResolver(route.params);
   const routeShareId = Array.isArray(route.params?.incomingShareId)
     ? route.params.incomingShareId[0]
     : route.params?.incomingShareId;
   const incomingShare = routeShareId ? getShare(routeShareId) : null;
+  const shareImport =
+    incomingShare === null && importingShare !== null && importingShare.id === routeShareId
+      ? importingShare
+      : null;
+  const shareId = incomingShare?.id ?? shareImport?.id;
   // A share already headed into a project draft finishes there.
-  const canShareToThread = incomingShare !== null && !incomingShare.destination;
+  const canShareToThread =
+    shareImport !== null || (incomingShare !== null && !incomingShare.destination);
   const shareTarget = canShareToThread ? "a thread or project" : "a project";
-  const incomingShareSubtitle = incomingShare
-    ? incomingShare.attachments.length === 0
-      ? `Choose ${shareTarget} for what you shared`
-      : incomingShare.attachments.length === 1
-        ? `Choose ${shareTarget} for the ${incomingShare.attachments[0]?.type === "image" ? "image" : "file"} you shared`
-        : `Choose ${shareTarget} for the ${incomingShare.attachments.length} ${incomingShare.attachments.every((attachment) => attachment.type === "image") ? "images" : "files"} you shared`
-    : null;
-  const screenTitle = incomingShare ? "Start a task" : "Choose project";
+  const sharedAttachmentCount =
+    incomingShare?.attachments.length ?? shareImport?.attachmentCount ?? 0;
+  const sharedOnlyImages =
+    incomingShare?.attachments.every((attachment) => attachment.type === "image") ??
+    shareImport?.onlyImages ??
+    false;
+  const sharedContent =
+    sharedAttachmentCount === 0
+      ? "what you shared"
+      : sharedAttachmentCount === 1
+        ? `the ${sharedOnlyImages ? "image" : "file"} you shared`
+        : `the ${sharedAttachmentCount} ${sharedOnlyImages ? "images" : "files"} you shared`;
+  const incomingShareSubtitle =
+    shareId === undefined ? null : `Choose ${shareTarget} for ${sharedContent}`;
+  const screenTitle = shareId !== undefined ? "Start a task" : "Choose project";
   const projectEmptyState = deriveProjectEmptyState(catalogState);
   const serverConfigs = useServerConfigs();
   // Scratch projects are reached through the No project row, never as rows
@@ -241,7 +254,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
         environmentId: project.environmentId,
         projectId: project.id,
         title: project.title,
-        incomingShareId: incomingShare?.id,
+        incomingShareId: shareId,
       }),
     );
   }
@@ -327,8 +340,9 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
               : {}),
           }}
         >
-          {canShareToThread ? (
+          {canShareToThread && shareId !== undefined ? (
             <ShareToThreadSection
+              shareId={shareId}
               share={incomingShare}
               searchText={searchText}
               showNewThreadHeading={listScopes.length > 0}
