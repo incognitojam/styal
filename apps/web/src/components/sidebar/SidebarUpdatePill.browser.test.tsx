@@ -36,10 +36,6 @@ const testState = vi.hoisted(() => ({
 }));
 
 vi.mock(import("~/env"), () => ({ isElectron: true }));
-vi.mock(import("~/state/npmRelease"), async (original) => ({
-  ...(await original()),
-  useNpmReleasePublished: () => true,
-}));
 vi.mock(import("~/state/environments"), async (original) => ({
   ...(await original()),
   useEnvironments: (() => ({ environments })) as never,

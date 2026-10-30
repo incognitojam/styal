@@ -2208,6 +2208,7 @@ features:
       - apps/server/src/bin.ts
       - apps/server/src/cli/triage.ts
       - apps/server/src/cli/update.ts
+      - apps/server/src/cloud/npmRelease.ts
       - apps/server/src/cloud/pinnedRuntime.ts
       - apps/server/src/cloud/serviceProtocol.ts
       - apps/server/src/device/sshDeviceScript.ts

@@ -21,11 +21,11 @@ its own restart. A manually requested update adds no restart countdown. A server
 finishes on its own, and the button keeps showing it after the desktop app
 restarts.
 
-Remote desktop apps never wait for npm. When the desktop app offers the update,
-background services update right away too. Other servers, including older
-background services, update only after that version is published to npm. The
-confirmation lists each machine it skips and why, such as a machine that is
-offline or needs a manual update. Use **Settings → Environments** for those.
+Each server checks that it can install the release before it restarts. If the
+release is not available to a server yet, its update fails, the server keeps
+running, and you can retry. The confirmation lists each machine it skips and
+why, such as a machine that is offline or needs a manual update. Use
+**Settings → Environments** for those.
 The final update summary also names skipped machines and their reasons, including
 after the desktop app restarts.
 
@@ -224,6 +224,16 @@ could not start" window instead of the app. If a newer version is available,
 choose **Update** to install it. If not, the window links to the last version
 that started on your computer. Download and install it to go back. Use **Copy
 details** to include the error in a bug report.
+
+## Registries and proxies
+
+Each server checks styal releases, and providers installed with npm, through
+its own npm, so the checks use npm's configured registry, authentication, and
+proxy settings. Providers installed with Homebrew or pnpm check through those
+tools.
+Configure npm on the server's machine. If that registry cannot be reached, the
+release shows as unavailable; styal does not try the public registry instead.
+Machines without npm check the public npm registry directly.
 
 ## Update providers
 
