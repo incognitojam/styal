@@ -101,10 +101,6 @@
       }
     },
     {
-      "pr": 17118,
-      "reason": "A thread snoozed during its own run, such as an agent snoozing its thread through `t3_thread_organize` before its final reply, wakes as soon as that run completes. The fix only wakes for runs requested after the snooze. Not imported early: it builds on #16782 (`isSnoozed`), which conflicts with a chain of pending MCP changes. Take it at chronological intake; #15135 (an agent archiving its own thread fails its turn) is a related open issue it does not cover."
-    },
-    {
       "pr": 17585,
       "reason": "The fork borrowed parts of this unmerged PR into its own canary-gated updater (ledger provider-auto-updates): ProviderInstallLock.ts nearly verbatim (credited with a Co-authored-by trailer) and the ProviderTurnStartService turn-start gate, narrowed to the CLI being installed through the fork's ProviderInstallGate. It did not take the 15-minute client-idle window, host-wide activity rule, silent background installs, settings, or detached installer. When it merges, intake must reconcile the lock file with the fork's copy, keep the fork's per-CLI gate and busy check instead of upstream's global `untilIdle`/`active-work` gate, and re-evaluate the detached installer."
     },
@@ -119,10 +115,6 @@
         "base": "d02e292610ea5eff171d388211ba3ede2f0467a0",
         "head": "d6ff90c39d47183e57080878958e8e2d9e125637"
       }
-    },
-    {
-      "pr": 17900,
-      "reason": "Moves the mobile environment update check from GitHub's API to github.com release pages to avoid the anonymous quota. The fork already fixed this for the mobile check and `styal update` through npm dist-tags (fork #741, ledger fork-distribution-identity). Expect conflicts in `packages/shared/src/cliRelease.ts` and `apps/mobile/src/features/settings/environment-maintenance.ts`; keep the fork's lookup."
     },
     {
       "pr": 18053,
