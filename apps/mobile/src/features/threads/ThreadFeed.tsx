@@ -1344,9 +1344,8 @@ function renderFeedEntry(
         : visibleAttachments.filter((attachment) => !isImageAttachment(attachment));
       const pendingImages =
         entry.pendingMessage?.attachments.filter((attachment) => attachment.type === "image") ?? [];
-      const userImageTileSize = imageGridTileSize(
-        props.userBubbleMaxWidth - USER_BUBBLE_HORIZONTAL_PADDING * 2,
-      );
+      // The bubble's px-3.5 padding; a grid wider than the bubble's inner width would wrap.
+      const userImageTileSize = imageGridTileSize(props.userBubbleMaxWidth - 14 * 2);
       return (
         <Animated.View
           className="mb-5 items-end"
@@ -1434,7 +1433,11 @@ function renderFeedEntry(
                     attachmentId={attachment.id}
                     name={attachment.name}
                     mimeType={attachment.mimeType}
-                    className="aspect-[1.3] w-full rounded-[14px] bg-user-bubble-foreground/15"
+                    className={
+                      size === undefined
+                        ? "aspect-[1.3] w-full rounded-[14px] bg-user-bubble-foreground/15"
+                        : "rounded-[14px] bg-user-bubble-foreground/15"
+                    }
                     {...(size === undefined ? {} : { size })}
                     onPressPreview={props.onPressPreview}
                   />
