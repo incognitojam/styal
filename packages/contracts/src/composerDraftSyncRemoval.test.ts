@@ -3,10 +3,14 @@ import * as Schema from "effect/Schema";
 
 import { OrchestrationV2RpcSchemas } from "./orchestrationV2.ts";
 
+const decodeDispatchCommand = Schema.decodeUnknownSync(
+  OrchestrationV2RpcSchemas.dispatchCommand.input,
+);
+
 // Clients released before composer draft sync was removed attach the draft revision they sent.
 describe("composer draft sync removal", () => {
   it("accepts a dispatch from clients that still send a composer draft revision", () => {
-    const command = Schema.decodeUnknownSync(OrchestrationV2RpcSchemas.dispatchCommand.input)({
+    const command = decodeDispatchCommand({
       type: "message.dispatch",
       createdBy: "user",
       creationSource: "mobile",
