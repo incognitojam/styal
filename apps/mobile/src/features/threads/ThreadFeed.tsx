@@ -36,6 +36,7 @@ import type { HandoffEndpoints } from "@t3tools/client-runtime/handoff";
 import {
   IDLE_COMPACTING_LABELS,
   resolveUserMessageIntent,
+  resolveUserMessageFileCards,
   resolveUserMessagePresentation,
 } from "@t3tools/client-runtime/user-message";
 import { canForkProjectedAssistantItem } from "@t3tools/client-runtime/state/thread-workflows";
@@ -147,7 +148,10 @@ import {
   messageImageLayout,
   userMessageAttachmentLayout,
 } from "./messageImageGrid";
+import { isFileBackedComposerAttachment } from "../../lib/composerImages";
+import { useLocalAttachmentPreview } from "../../lib/localAttachmentPreview";
 import { messageImageGallery } from "./messageImageGallery";
+import { MARKDOWN_IMAGE_MAX_WIDTH, resolveMarkdownImageDisplaySize } from "./markdownImageSize";
 import { FilePreviewModal, type FilePreviewSource } from "../../components/FilePreviewModal";
 import { inlineFilePreviewKind, isPdfFile } from "../../lib/filePreview";
 import { ThreadInlineFilePreview } from "./ThreadInlineFilePreview";
@@ -241,7 +245,9 @@ import {
 import {
   appendGuestPendingMessages,
   appendPendingThreadMessages,
+  createThreadFeedGrouping,
   isCompactionCommandFeedEntry,
+  type GroupedThreadFeedRow,
   type ThreadFeedRow,
 } from "./pending-thread-feed";
 import type { QueuedThreadMessage } from "../../state/thread-outbox-model";
@@ -510,6 +516,49 @@ function AssistantForkButton(props: {
   );
 }
 
+function MessageImage(props: {
+  readonly source: ComponentPropsWithRef<typeof ExpoImage>["source"];
+  readonly className: string;
+  readonly size?: number;
+  readonly maxWidth?: number;
+  readonly onLoad?: () => void;
+  readonly onError?: () => void;
+}) {
+  const imageStyle = useResolveClassNames(props.className);
+  const [sourceSize, setSourceSize] = useState<{ width: number; height: number } | null>(null);
+  const displaySize =
+    props.maxWidth !== undefined && sourceSize !== null
+      ? resolveMarkdownImageDisplaySize({
+          sourceWidth: sourceSize.width,
+          sourceHeight: sourceSize.height,
+          availableWidth: props.maxWidth,
+        })
+      : null;
+  return (
+    <ExpoImage
+      source={props.source}
+      cachePolicy="memory-disk"
+      style={[
+        imageStyle,
+        props.size !== undefined
+          ? { width: props.size, height: props.size }
+          : props.maxWidth !== undefined
+            ? (displaySize ?? {
+                width: Math.min(props.maxWidth, MARKDOWN_IMAGE_MAX_WIDTH),
+                aspectRatio: 1.3,
+              })
+            : undefined,
+      ]}
+      contentFit={props.maxWidth === undefined ? "cover" : "contain"}
+      onLoad={(event) => {
+        if (props.maxWidth !== undefined) setSourceSize(event.source);
+        props.onLoad?.();
+      }}
+      onError={props.onError}
+    />
+  );
+}
+
 function MessageAttachmentImage(props: {
   readonly environmentId: EnvironmentId;
   readonly attachmentId: string;
@@ -517,6 +566,7 @@ function MessageAttachmentImage(props: {
   readonly mimeType: string;
   readonly className: string;
   readonly size?: number;
+  readonly maxWidth?: number;
   readonly onPressPreview: (source: FilePreviewSource) => void;
 }) {
   const withGallery = useFilePreviewGallery();
@@ -530,13 +580,19 @@ function MessageAttachmentImage(props: {
   const uri = useAssetUrl(props.environmentId, resource);
   const refreshAssetUrl = useRefreshAssetUrl(props.environmentId, resource);
   const retriedImage = useRef(false);
-  const classStyle = useResolveClassNames(props.className);
-  const imageStyle =
-    props.size === undefined ? classStyle : [classStyle, { width: props.size, height: props.size }];
 
   if (uri === null) {
     return (
-      <View className={`${props.className} items-center justify-center`} style={imageStyle}>
+      <View
+        className={`${props.className} items-center justify-center`}
+        style={
+          props.size !== undefined
+            ? { width: props.size, height: props.size }
+            : props.maxWidth !== undefined
+              ? { width: Math.min(props.maxWidth, MARKDOWN_IMAGE_MAX_WIDTH), aspectRatio: 1.3 }
+              : undefined
+        }
+      >
         <AppActivityIndicator />
       </View>
     );
@@ -565,11 +621,11 @@ function MessageAttachmentImage(props: {
           )
         }
       >
-        <ExpoImage
+        <MessageImage
           source={assetImageSource(props.environmentId, resource, uri)}
-          cachePolicy="memory-disk"
-          style={imageStyle}
-          contentFit="cover"
+          className={props.className}
+          size={props.size}
+          maxWidth={props.maxWidth}
           onLoad={() => {
             retriedImage.current = false;
           }}
@@ -627,11 +683,21 @@ function isFileAttachment(attachment: ChatAttachment): attachment is ChatFileAtt
   return attachment.type === "file";
 }
 
+function isMediaAttachment(attachment: ChatAttachment): boolean {
+  return (
+    isImageAttachment(attachment) ||
+    (isFileAttachment(attachment) && videoMimeType(attachment) !== null)
+  );
+}
+
 function MessageAttachmentFile(props: {
   readonly environmentId: EnvironmentId;
   readonly attachment: ChatFileAttachment;
   readonly onPressPreview: (source: FilePreviewSource) => void;
   readonly onPlaybackStart: () => void;
+  readonly standaloneMedia?: boolean;
+  readonly standaloneFile?: boolean;
+  readonly available?: boolean;
 }) {
   const sourceIdentifier = useId();
   const navigation = useNavigation();
@@ -666,7 +732,7 @@ function MessageAttachmentFile(props: {
   );
 
   const shareFile = (sourceIdentifier?: string) => {
-    if (httpBaseUrl === null || openingRef.current) return;
+    if (props.available === false || httpBaseUrl === null || openingRef.current) return;
     const controller = new AbortController();
     openingRef.current = controller;
     setOpening(true);
@@ -766,29 +832,34 @@ function MessageAttachmentFile(props: {
 
   if (videoType !== null) {
     return (
-      <View className="my-1" style={{ width: 224, maxWidth: "100%" }}>
+      <View
+        className={props.standaloneMedia ? undefined : "my-1"}
+        style={{ width: props.standaloneMedia ? 320 : 224, maxWidth: "100%" }}
+      >
         <ThreadMarkdownVideo
           source={attachmentVideoPreviewSource(props.environmentId, attachment, sourceIdentifier)}
           onPlaybackStart={props.onPlaybackStart}
+          borderRadius={props.standaloneMedia ? 20 : undefined}
         />
       </View>
     );
   }
 
+  const disabled = props.available === false || opening || httpBaseUrl === null;
   return (
-    <>
-      <PresentationSource
-        identifier={sourceIdentifier}
-        className="my-1"
-        style={{ width: 280, maxWidth: "100%" }}
-      >
+    <PresentationSource
+      identifier={sourceIdentifier}
+      className="my-1"
+      style={{ width: 280, maxWidth: "100%" }}
+    >
+      <View className="min-w-0 flex-row items-center overflow-hidden rounded-xl border border-border bg-card">
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={`Open ${attachment.name}`}
           accessibilityValue={{ text: `${fileTypeLabel}, ${sizeLabel}` }}
-          accessibilityState={{ disabled: opening || httpBaseUrl === null, busy: opening }}
-          disabled={opening || httpBaseUrl === null}
-          className="min-w-0 flex-row items-center gap-3 rounded-xl border border-border bg-card p-3 active:bg-subtle"
+          accessibilityState={{ disabled, busy: opening }}
+          disabled={disabled}
+          className="min-w-0 flex-1 flex-row items-center gap-3 p-3 active:bg-subtle"
           onLongPress={() => shareFile(sourceIdentifier)}
           onPress={openAttachment}
         >
@@ -814,8 +885,184 @@ function MessageAttachmentFile(props: {
             type="monochrome"
           />
         </Pressable>
-      </PresentationSource>
-    </>
+        {props.standaloneFile ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Download ${attachment.name}`}
+            accessibilityState={{ disabled, busy: opening }}
+            disabled={disabled}
+            className="mr-1 min-h-11 w-11 items-center justify-center rounded-lg active:bg-subtle disabled:opacity-40"
+            onPress={() => shareFile(sourceIdentifier)}
+          >
+            <SymbolView name="arrow.down" size={16} tintColorClassName="accent-foreground-muted" />
+          </Pressable>
+        ) : null}
+      </View>
+    </PresentationSource>
+  );
+}
+
+function MessageMediaEdge() {
+  return (
+    <View pointerEvents="none" className="absolute inset-0 rounded-[20px] border border-border" />
+  );
+}
+
+function UserMessageMedia(props: {
+  readonly attachments: ReadonlyArray<ChatAttachment>;
+  readonly pendingAttachments: QueuedThreadMessage["attachments"];
+  readonly environmentId: EnvironmentId;
+  readonly maxWidth: number;
+  readonly onPressPreview: (source: FilePreviewSource) => void;
+  readonly onPlaybackStart: () => void;
+}) {
+  const className = "w-full bg-user-bubble-foreground/15";
+  const media = [
+    ...props.pendingAttachments.map((attachment) => {
+      const image = isImageAttachment(attachment);
+      return {
+        id: attachment.id,
+        image,
+        render: (imageSize: { size: number } | { maxWidth: number }) =>
+          image && attachment.uploadedAttachmentId ? (
+            <MessageAttachmentImage
+              environmentId={props.environmentId}
+              attachmentId={attachment.uploadedAttachmentId}
+              name={attachment.name}
+              mimeType={attachment.mimeType}
+              className={className}
+              {...imageSize}
+              onPressPreview={props.onPressPreview}
+            />
+          ) : !image && attachment.uploadedAttachmentId ? (
+            <ThreadMarkdownVideo
+              source={attachmentVideoPreviewSource(props.environmentId, {
+                ...attachment,
+                type: "file",
+                id: attachment.uploadedAttachmentId,
+              })}
+              onPlaybackStart={props.onPlaybackStart}
+              borderRadius={20}
+            />
+          ) : (
+            <PendingMessageMedia
+              attachment={attachment}
+              className={className}
+              {...imageSize}
+              onPressPreview={props.onPressPreview}
+              onPlaybackStart={props.onPlaybackStart}
+            />
+          ),
+      };
+    }),
+    ...props.attachments.map((attachment) => ({
+      id: attachment.id,
+      image: isImageAttachment(attachment),
+      render: (imageSize: { size: number } | { maxWidth: number }) =>
+        isImageAttachment(attachment) ? (
+          <MessageAttachmentImage
+            environmentId={props.environmentId}
+            attachmentId={attachment.id}
+            name={attachment.name}
+            mimeType={attachment.mimeType}
+            className={className}
+            {...imageSize}
+            onPressPreview={props.onPressPreview}
+          />
+        ) : isFileAttachment(attachment) ? (
+          <MessageAttachmentFile
+            environmentId={props.environmentId}
+            attachment={attachment}
+            onPressPreview={props.onPressPreview}
+            onPlaybackStart={props.onPlaybackStart}
+            standaloneMedia
+          />
+        ) : null,
+    })),
+  ];
+  return (
+    <View className="items-end gap-2">
+      <MessageImages
+        images={media.filter((item) => item.image)}
+        tileSize={imageGridTileSize(props.maxWidth)}
+        radius={20}
+        renderImage={(item, size) => (
+          <View key={item.id} className="overflow-hidden rounded-[20px]">
+            {item.render(size === undefined ? { maxWidth: props.maxWidth } : { size })}
+            <MessageMediaEdge />
+          </View>
+        )}
+      />
+      {media
+        .filter((item) => !item.image)
+        .map((item) => (
+          <View
+            key={item.id}
+            className="overflow-hidden rounded-[20px]"
+            style={{ width: 320, maxWidth: "100%" }}
+          >
+            {item.render({ maxWidth: props.maxWidth })}
+            <MessageMediaEdge />
+          </View>
+        ))}
+    </View>
+  );
+}
+
+function PendingMessageMedia(props: {
+  readonly attachment: QueuedThreadMessage["attachments"][number];
+  readonly className: string;
+  readonly size?: number;
+  readonly maxWidth?: number;
+  readonly onPressPreview: (source: FilePreviewSource) => void;
+  readonly onPlaybackStart: () => void;
+}) {
+  const withGallery = useFilePreviewGallery();
+  const { attachment } = props;
+  const fileBacked = isFileBackedComposerAttachment(attachment);
+  const preview = useLocalAttachmentPreview(fileBacked ? attachment : null);
+  if (isImageAttachment(attachment)) {
+    const uri = fileBacked ? preview.uri : (attachment.dataUrl ?? attachment.previewUri);
+    return (
+      <Pressable
+        accessibilityRole="imagebutton"
+        accessibilityLabel={`Open ${attachment.name}`}
+        onPress={() => {
+          const source = composerImageGallery([attachment])[0];
+          if (source) props.onPressPreview(withGallery(source));
+        }}
+      >
+        <MessageImage
+          source={uri === null ? undefined : { uri }}
+          className={props.className}
+          size={props.size}
+          maxWidth={props.maxWidth}
+        />
+      </Pressable>
+    );
+  }
+  if (preview.uri === null) {
+    return (
+      <View className="aspect-video items-center justify-center bg-black">
+        {preview.error ? (
+          <Text className="p-3 text-center text-xs text-white/70">{preview.error.message}</Text>
+        ) : (
+          <AppActivityIndicator />
+        )}
+      </View>
+    );
+  }
+  return (
+    <ThreadMarkdownVideo
+      source={{
+        type: "media",
+        name: attachment.name,
+        mimeType: attachment.mimeType,
+        uri: preview.uri,
+      }}
+      onPlaybackStart={props.onPlaybackStart}
+      borderRadius={20}
+    />
   );
 }
 
@@ -1457,6 +1704,7 @@ function renderFeedEntry(
     readonly contentWidth: number;
     readonly threadTitle: string;
     readonly workflowOpening: WorkflowOpening | null;
+    readonly userMessageGrouping: GroupedThreadFeedRow["userMessageGrouping"];
   },
 ) {
   const entry = info.item;
@@ -1729,29 +1977,48 @@ function renderFeedEntry(
       const foldRowId = presentation.attribution === "agent" ? `agent:${message.id}` : null;
       const foldExpanded = foldRowId !== null && (props.expandedWorkRows[foldRowId] ?? false);
       const bubbleBodyVisible = foldRowId === null || foldExpanded;
-      const intent = resolveUserMessageIntent(message.inputIntent, message.id);
-      const { gridImages, listedAttachments } = userMessageAttachmentLayout({
+      const intent = props.userMessageGrouping.continuesSteer
+        ? null
+        : resolveUserMessageIntent(message.inputIntent, message.id);
+      const { gridImages, listedAttachments, inlineAttachmentIds } = userMessageAttachmentLayout({
         text: message.text,
         context: message.context,
         attachments,
       });
-      const pendingImages =
-        entry.pendingMessage?.attachments.filter((attachment) => attachment.type === "image") ?? [];
+      const standaloneMedia = foldRowId === null && presentation.attribution !== "guest";
+      const mediaAttachments = standaloneMedia ? attachments.filter(isMediaAttachment) : [];
+      const bubbleImages = standaloneMedia ? [] : gridImages;
+      const bubbleAttachments = standaloneMedia
+        ? listedAttachments.filter((attachment) => !isMediaAttachment(attachment))
+        : listedAttachments;
+      const pendingAttachments = entry.pendingMessage?.attachments ?? [];
+      const pendingMedia = standaloneMedia ? pendingAttachments.filter(isMediaAttachment) : [];
+      const pendingBubbleAttachments = standaloneMedia
+        ? pendingAttachments.filter(
+            (attachment) =>
+              !isMediaAttachment(attachment) && !inlineAttachmentIds.has(attachment.id),
+          )
+        : pendingAttachments;
+      const pendingBubbleImages = pendingBubbleAttachments.filter(
+        (attachment) => attachment.type === "image",
+      );
       // The bubble's px-3.5 padding; a grid wider than the bubble's inner width would wrap.
       const userImageTileSize = imageGridTileSize(props.userBubbleMaxWidth - 14 * 2);
-      // Images sent without words show as images, not as a bubble around them.
-      const mediaOnly =
-        foldRowId === null &&
-        presentation.attribution !== "guest" &&
-        presentation.text.trim() === "" &&
-        gridImages.length + (entry.pendingMessage?.attachments.length ?? 0) > 0 &&
-        listedAttachments.length === 0 &&
-        (entry.pendingMessage?.attachments ?? []).every(
-          (attachment) => attachment.type === "image",
-        );
+      const fileCards = standaloneMedia
+        ? resolveUserMessageFileCards({
+            text: presentation.text,
+            attachments: attachments.length > 0 ? attachments : pendingAttachments,
+            context: message.context,
+          })
+        : null;
+      const hasBubble =
+        fileCards === null &&
+        (foldRowId !== null ||
+          presentation.text.trim().length > 0 ||
+          bubbleImages.length + bubbleAttachments.length + pendingBubbleAttachments.length > 0);
       return (
         <Animated.View
-          className="mb-5 items-end"
+          className={cn("items-end", props.userMessageGrouping.groupedWithNext ? "mb-1" : "mb-5")}
           {...(enterAnimated ? { entering: FadeInUp.duration(220) } : {})}
         >
           {presentation.attribution === "t3code" ? (
@@ -1762,158 +2029,192 @@ function renderFeedEntry(
           {presentation.guestName !== undefined ? (
             <GuestMessageName name={presentation.guestName} />
           ) : null}
-          <View
-            className="min-w-0 rounded-[20px]"
-            style={{
-              backgroundColor: mediaOnly ? undefined : userBubbleColor,
-              maxWidth: props.duoColumns ? "85%" : props.userBubbleMaxWidth,
-              ...(!bubbleBodyVisible
-                ? null
-                : hasReviewCommentContext
-                  ? { width: props.reviewCommentBubbleWidth }
-                  : hasWideBlock || foldExpanded || (mediaOnly && gridImages.length > 0)
-                    ? { width: props.duoColumns ? "85%" : props.userBubbleMaxWidth }
-                    : null),
-            }}
-          >
-            {presentation.attribution === "guest" ? <GuestBubbleTint /> : null}
-            {foldRowId !== null ? (
-              <AgentMessageFoldHeader
+          {mediaAttachments.length + pendingMedia.length > 0 ? (
+            <View
+              className={hasBubble ? "mb-2" : undefined}
+              style={{ width: props.duoColumns ? "85%" : props.userBubbleMaxWidth }}
+            >
+              <UserMessageMedia
+                attachments={mediaAttachments}
+                pendingAttachments={pendingMedia}
                 environmentId={props.environmentId}
-                senderThreadId={message.senderThreadId}
-                summary={
-                  replaceComposerContextReferences(presentation.text, (ref) => ref.label)
-                    .split(/\r?\n/)
-                    .find((line) => line.trim().length > 0)
-                    ?.trim() ?? ""
-                }
-                expanded={foldExpanded}
-                onToggle={() => props.onToggleWorkRow(foldRowId, entry.id)}
-                iconSubtleColor={iconSubtleColor}
+                maxWidth={props.userBubbleMaxWidth}
+                onPressPreview={props.onPressPreview}
+                onPlaybackStart={props.onPlaybackStart}
               />
-            ) : null}
-            {bubbleBodyVisible ? (
-              <View
-                className={cn(
-                  "gap-2",
-                  !mediaOnly && "px-3.5 pb-2.5",
-                  !mediaOnly && foldRowId === null && "pt-2.5",
-                )}
-              >
-                <MessageImages
-                  images={pendingImages}
-                  tileSize={userImageTileSize}
-                  radius={mediaOnly ? 20 : 14}
-                  renderImage={(attachment, size) =>
-                    attachment.uploadedAttachmentId ? (
+            </View>
+          ) : null}
+          {fileCards ? (
+            <View
+              className="items-end"
+              style={{ maxWidth: props.duoColumns ? "85%" : props.userBubbleMaxWidth }}
+            >
+              {fileCards.map((file) => {
+                const pendingFile = pendingAttachments.find(
+                  (attachment) => attachment.id === file.id,
+                );
+                return (
+                  <MessageAttachmentFile
+                    key={file.id}
+                    environmentId={props.environmentId}
+                    attachment={
+                      pendingFile?.uploadedAttachmentId
+                        ? { ...file, id: pendingFile.uploadedAttachmentId }
+                        : file
+                    }
+                    available={
+                      pendingFile === undefined || pendingFile.uploadedAttachmentId !== undefined
+                    }
+                    onPressPreview={props.onPressPreview}
+                    onPlaybackStart={props.onPlaybackStart}
+                    standaloneFile
+                  />
+                );
+              })}
+            </View>
+          ) : null}
+          {hasBubble ? (
+            <View
+              className="min-w-0 rounded-[20px]"
+              style={{
+                backgroundColor: userBubbleColor,
+                maxWidth: props.duoColumns ? "85%" : props.userBubbleMaxWidth,
+                ...(!bubbleBodyVisible
+                  ? null
+                  : hasReviewCommentContext
+                    ? { width: props.reviewCommentBubbleWidth }
+                    : hasWideBlock || foldExpanded
+                      ? { width: props.duoColumns ? "85%" : props.userBubbleMaxWidth }
+                      : null),
+              }}
+            >
+              {presentation.attribution === "guest" ? <GuestBubbleTint /> : null}
+              {foldRowId !== null ? (
+                <AgentMessageFoldHeader
+                  environmentId={props.environmentId}
+                  senderThreadId={message.senderThreadId}
+                  summary={
+                    replaceComposerContextReferences(presentation.text, (ref) => ref.label)
+                      .split(/\r?\n/)
+                      .find((line) => line.trim().length > 0)
+                      ?.trim() ?? ""
+                  }
+                  expanded={foldExpanded}
+                  onToggle={() => props.onToggleWorkRow(foldRowId, entry.id)}
+                  iconSubtleColor={iconSubtleColor}
+                />
+              ) : null}
+              {bubbleBodyVisible ? (
+                <View className={cn("gap-2 px-3.5 pb-2.5", foldRowId === null && "pt-2.5")}>
+                  <MessageImages
+                    images={pendingBubbleImages}
+                    tileSize={userImageTileSize}
+                    radius={14}
+                    renderImage={(attachment, size) =>
+                      attachment.uploadedAttachmentId ? (
+                        <MessageAttachmentImage
+                          key={attachment.id}
+                          environmentId={props.environmentId}
+                          attachmentId={attachment.uploadedAttachmentId}
+                          name={attachment.name}
+                          mimeType={attachment.mimeType}
+                          className="h-[140px] w-[180px] rounded-[14px]"
+                          {...(size === undefined ? {} : { size })}
+                          onPressPreview={props.onPressPreview}
+                        />
+                      ) : (
+                        <Pressable
+                          key={attachment.id}
+                          accessibilityRole="imagebutton"
+                          accessibilityLabel={`Open ${attachment.name}`}
+                          onPress={() => {
+                            const source = composerImageGallery([attachment])[0];
+                            if (source)
+                              props.onPressPreview({
+                                ...source,
+                                gallery: composerImageGallery(
+                                  entry.pendingMessage?.attachments ?? [],
+                                  props.environmentId,
+                                ),
+                              });
+                          }}
+                        >
+                          <Image
+                            source={{ uri: attachment.previewUri }}
+                            style={{
+                              width: size ?? 180,
+                              height: size ?? 140,
+                              borderRadius: 14,
+                            }}
+                          />
+                        </Pressable>
+                      )
+                    }
+                  />
+                  {pendingBubbleAttachments.map((attachment) =>
+                    attachment.type === "image" ? null : (
+                      <MessageAttachmentUnknown key={attachment.id} name={attachment.name} />
+                    ),
+                  )}
+                  <MessageImages
+                    images={bubbleImages}
+                    tileSize={userImageTileSize}
+                    radius={14}
+                    renderImage={(attachment, size) => (
                       <MessageAttachmentImage
                         key={attachment.id}
                         environmentId={props.environmentId}
-                        attachmentId={attachment.uploadedAttachmentId}
+                        attachmentId={attachment.id}
                         name={attachment.name}
                         mimeType={attachment.mimeType}
                         className={
-                          mediaOnly
-                            ? "h-[140px] w-[180px] rounded-[20px]"
-                            : "h-[140px] w-[180px] rounded-[14px]"
+                          size === undefined
+                            ? "aspect-[1.3] w-full rounded-[14px] bg-user-bubble-foreground/15"
+                            : "rounded-[14px] bg-user-bubble-foreground/15"
                         }
                         {...(size === undefined ? {} : { size })}
                         onPressPreview={props.onPressPreview}
                       />
-                    ) : (
-                      <Pressable
-                        key={attachment.id}
-                        accessibilityRole="imagebutton"
-                        accessibilityLabel={`Open ${attachment.name}`}
-                        onPress={() =>
-                          props.onPressPreview({
-                            kind: "image",
-                            name: attachment.name,
-                            uri: attachment.dataUrl ?? attachment.previewUri,
-                            gallery: composerImageGallery(entry.pendingMessage?.attachments ?? []),
-                          })
-                        }
-                      >
-                        <Image
-                          source={{ uri: attachment.previewUri }}
-                          style={{
-                            width: size ?? 180,
-                            height: size ?? 140,
-                            borderRadius: mediaOnly ? 20 : 14,
-                          }}
-                        />
-                      </Pressable>
-                    )
-                  }
-                />
-                {entry.pendingMessage?.attachments.map((attachment) =>
-                  attachment.type === "image" ? null : (
-                    <MessageAttachmentUnknown key={attachment.id} name={attachment.name} />
-                  ),
-                )}
-                <MessageImages
-                  images={gridImages}
-                  tileSize={userImageTileSize}
-                  radius={mediaOnly ? 20 : 14}
-                  renderImage={(attachment, size) => (
-                    <MessageAttachmentImage
-                      key={attachment.id}
-                      environmentId={props.environmentId}
-                      attachmentId={attachment.id}
-                      name={attachment.name}
-                      mimeType={attachment.mimeType}
-                      className={
-                        size !== undefined
-                          ? mediaOnly
-                            ? "rounded-[20px] border border-border bg-user-bubble-foreground/15"
-                            : "rounded-[14px] bg-user-bubble-foreground/15"
-                          : mediaOnly
-                            ? // Matches the bubble's corners; native borders sit inside, so the edge adds no size.
-                              "aspect-[1.3] w-full rounded-[20px] border border-border bg-user-bubble-foreground/15"
-                            : "aspect-[1.3] w-full rounded-[14px] bg-user-bubble-foreground/15"
-                      }
-                      {...(size === undefined ? {} : { size })}
-                      onPressPreview={props.onPressPreview}
-                    />
-                  )}
-                />
-                {/* An empty container still takes a gap, which pads every attachment-free bubble. */}
-                {listedAttachments.length > 0 ? (
-                  <View className="gap-2">
-                    {listedAttachments.map((attachment) => {
-                      return isFileAttachment(attachment) ? (
-                        <MessageAttachmentFile
-                          key={attachment.id}
-                          environmentId={props.environmentId}
-                          attachment={attachment}
-                          onPressPreview={props.onPressPreview}
-                          onPlaybackStart={props.onPlaybackStart}
-                        />
-                      ) : (
-                        <MessageAttachmentUnknown key={attachment.id} name={attachment.name} />
-                      );
-                    })}
-                  </View>
-                ) : null}
-                {presentation.text.trim().length > 0 ? (
-                  <MarkdownImageAvailableWidthContext
-                    value={props.userBubbleMaxWidth - USER_BUBBLE_HORIZONTAL_PADDING * 2}
-                  >
-                    <UserMessageContent
-                      text={renderedText}
-                      environmentId={props.environmentId}
-                      context={message.context}
-                      markdownStyles={styles}
-                      reviewCommentColors={props.reviewCommentColors}
-                      skills={props.skills}
-                      linkHandlers={props.markdownLinkHandlers}
-                      renderImage={props.renderMarkdownImage}
-                    />
-                  </MarkdownImageAvailableWidthContext>
-                ) : null}
-              </View>
-            ) : null}
-          </View>
+                    )}
+                  />
+                  {/* An empty container still takes a gap, which pads every attachment-free bubble. */}
+                  {bubbleAttachments.length > 0 ? (
+                    <View className="gap-2">
+                      {bubbleAttachments.map((attachment) => {
+                        return isFileAttachment(attachment) ? (
+                          <MessageAttachmentFile
+                            key={attachment.id}
+                            environmentId={props.environmentId}
+                            attachment={attachment}
+                            onPressPreview={props.onPressPreview}
+                            onPlaybackStart={props.onPlaybackStart}
+                          />
+                        ) : (
+                          <MessageAttachmentUnknown key={attachment.id} name={attachment.name} />
+                        );
+                      })}
+                    </View>
+                  ) : null}
+                  {presentation.text.trim().length > 0 ? (
+                    <MarkdownImageAvailableWidthContext
+                      value={props.userBubbleMaxWidth - USER_BUBBLE_HORIZONTAL_PADDING * 2}
+                    >
+                      <UserMessageContent
+                        text={renderedText}
+                        environmentId={props.environmentId}
+                        context={message.context}
+                        markdownStyles={styles}
+                        reviewCommentColors={props.reviewCommentColors}
+                        skills={props.skills}
+                        linkHandlers={props.markdownLinkHandlers}
+                        renderImage={props.renderMarkdownImage}
+                      />
+                    </MarkdownImageAvailableWidthContext>
+                  ) : null}
+                </View>
+              ) : null}
+            </View>
+          ) : null}
           {bubbleBodyVisible ? (
             <View className="mt-1 flex-row items-center justify-end gap-1 pr-0.5">
               {foldRowId !== null && message.senderThreadId ? (
@@ -3110,6 +3411,12 @@ export const ThreadFeed = memo(function ThreadFeed({
   const setupAnchorIndex = presentedFeed.findIndex(
     (entry) => entry.type === "message" && entry.message.role === "user",
   );
+  const [groupFeed] = useState(createThreadFeedGrouping);
+  const groupedFeed = groupFeed(presentedFeed, {
+    workflowOpeningMessageId: workflowOpening?.messageId,
+    setupAnchorIndex:
+      props.worktreeSetup || props.setupWorkingStartedAt ? setupAnchorIndex : undefined,
+  });
   // The empty↔filled key below remounts the list and resets its imperative
   // content-inset override. Seed each fresh instance as it attaches with the
   // current overlay height before the scroll integration's next reaction;
@@ -3432,7 +3739,7 @@ export const ThreadFeed = memo(function ThreadFeed({
     }
   }, [textSizeKey, contentWidth, hasHtmlRenders, beginReflow, listRef]);
 
-  const renderItem = (info: { item: ThreadFeedRow; index: number }) => (
+  const renderItem = (info: { item: GroupedThreadFeedRow; index: number }) => (
     <Animated.View
       key={info.item.id}
       entering={disclosureToggleSettling ? THREAD_FEED_DISCLOSURE_ENTER_TRANSITION : undefined}
@@ -3445,6 +3752,7 @@ export const ThreadFeed = memo(function ThreadFeed({
       >
         <ThreadMediaVisibility>
           {renderFeedEntry(info, {
+            userMessageGrouping: info.item.userMessageGrouping,
             environmentId: props.environmentId,
             dispatchingMessageId: props.dispatchingMessageId,
             onEditPendingMessage: props.onEditPendingMessage,
@@ -3568,7 +3876,7 @@ export const ThreadFeed = memo(function ThreadFeed({
             maintainVisibleContentPosition={
               followsEnd && !disclosureToggleSettling ? false : maintainVisibleContentPosition
             }
-            data={presentedFeed}
+            data={groupedFeed}
             extraData={listAppearanceData}
             renderItem={renderItem}
             viewabilityConfig={THREAD_MEDIA_VIEWABILITY_CONFIG}
@@ -3706,7 +4014,7 @@ function MessageImageGalleryScope(props: {
     entry.type === "message"
       ? [
           ...messageImageGallery(entry.message, { environmentId, threadId, workspaceRoot }),
-          ...composerImageGallery(entry.pendingMessage?.attachments ?? []),
+          ...composerImageGallery(entry.pendingMessage?.attachments ?? [], environmentId),
         ]
       : [];
   return <FilePreviewGallery value={images}>{props.children}</FilePreviewGallery>;

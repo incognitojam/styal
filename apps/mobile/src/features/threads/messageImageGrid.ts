@@ -55,6 +55,7 @@ export function userMessageAttachmentLayout(message: {
     ),
   );
   return {
+    inlineAttachmentIds,
     gridImages: message.attachments.filter(isImageAttachment),
     listedAttachments: message.attachments.filter(
       (attachment) => !isImageAttachment(attachment) && !inlineAttachmentIds.has(attachment.id),
