@@ -552,8 +552,9 @@ function MessageAttachmentImage(props: {
 }
 
 const IMAGE_GRID_GAP = 8;
-// Keeps a grid compact on tablets, where half the bubble would be a huge tile.
-const IMAGE_GRID_MAX_TILE = 150;
+// Phones fill the bubble; this only bounds tiles on tablets, where half a bubble is huge.
+const IMAGE_GRID_MAX_TILE = 240;
+const IMAGE_GRID_MAX_TILES = 4;
 
 function imageGridTileSize(availableWidth: number) {
   return Math.max(
@@ -562,22 +563,41 @@ function imageGridTileSize(availableWidth: number) {
   );
 }
 
-// One image keeps its large single layout; several share a two-column grid of square tiles.
+// One image keeps its large single layout; several share a 2x2 grid of square tiles, with the
+// rest counted on the last tile. The gallery a tile opens still pages through every image.
 // The explicit width stops the wrapping row from stretching an auto-sized bubble to its max width.
-function MessageImages(props: {
-  readonly count: number;
+function MessageImages<T extends { readonly id: string }>(props: {
+  readonly images: readonly T[];
   readonly tileSize: number;
+  readonly radius: number;
   readonly className?: string;
-  readonly children: (tileSize: number | undefined) => ReactNode;
+  readonly renderImage: (image: T, tileSize: number | undefined) => ReactNode;
 }) {
-  if (props.count === 0) return null;
-  if (props.count === 1) return props.children(undefined);
+  const { images, tileSize } = props;
+  if (images.length === 0) return null;
+  if (images.length === 1) return props.renderImage(images[0]!, undefined);
+  const hiddenCount = images.length - IMAGE_GRID_MAX_TILES;
   return (
     <View
       className={cn("flex-row flex-wrap", props.className)}
-      style={{ width: props.tileSize * 2 + IMAGE_GRID_GAP, gap: IMAGE_GRID_GAP }}
+      style={{ width: tileSize * 2 + IMAGE_GRID_GAP, gap: IMAGE_GRID_GAP }}
     >
-      {props.children(props.tileSize)}
+      {images.slice(0, IMAGE_GRID_MAX_TILES).map((image, index) =>
+        hiddenCount > 0 && index === IMAGE_GRID_MAX_TILES - 1 ? (
+          <View key={image.id}>
+            {props.renderImage(image, tileSize)}
+            <View
+              pointerEvents="none"
+              className="absolute inset-0 items-center justify-center bg-black/55"
+              style={{ borderRadius: props.radius }}
+            >
+              <Text className="font-t3-semibold text-2xl text-white">+{hiddenCount}</Text>
+            </View>
+          </View>
+        ) : (
+          props.renderImage(image, tileSize)
+        ),
+      )}
     </View>
   );
 }
@@ -1377,73 +1397,75 @@ function renderFeedEntry(
                   : null),
             }}
           >
-            <MessageImages count={pendingImages.length} tileSize={userImageTileSize}>
-              {(size) =>
-                pendingImages.map((attachment) =>
-                  attachment.uploadedAttachmentId ? (
-                    <MessageAttachmentImage
-                      key={attachment.id}
-                      environmentId={props.environmentId}
-                      attachmentId={attachment.uploadedAttachmentId}
-                      name={attachment.name}
-                      mimeType={attachment.mimeType}
-                      className="h-[140px] w-[180px] rounded-[14px]"
-                      {...(size === undefined ? {} : { size })}
-                      onPressPreview={props.onPressPreview}
+            <MessageImages
+              images={pendingImages}
+              tileSize={userImageTileSize}
+              radius={14}
+              renderImage={(attachment, size) =>
+                attachment.uploadedAttachmentId ? (
+                  <MessageAttachmentImage
+                    key={attachment.id}
+                    environmentId={props.environmentId}
+                    attachmentId={attachment.uploadedAttachmentId}
+                    name={attachment.name}
+                    mimeType={attachment.mimeType}
+                    className="h-[140px] w-[180px] rounded-[14px]"
+                    {...(size === undefined ? {} : { size })}
+                    onPressPreview={props.onPressPreview}
+                  />
+                ) : (
+                  <Pressable
+                    key={attachment.id}
+                    accessibilityRole="imagebutton"
+                    accessibilityLabel={`Open ${attachment.name}`}
+                    onPress={() =>
+                      props.onPressPreview({
+                        kind: "image",
+                        name: attachment.name,
+                        uri: attachment.dataUrl ?? attachment.previewUri,
+                        gallery: composerImageGallery(entry.pendingMessage?.attachments ?? []),
+                      })
+                    }
+                  >
+                    <Image
+                      source={{ uri: attachment.previewUri }}
+                      style={{
+                        width: size ?? 180,
+                        height: size ?? 140,
+                        borderRadius: 14,
+                      }}
                     />
-                  ) : (
-                    <Pressable
-                      key={attachment.id}
-                      accessibilityRole="imagebutton"
-                      accessibilityLabel={`Open ${attachment.name}`}
-                      onPress={() =>
-                        props.onPressPreview({
-                          kind: "image",
-                          name: attachment.name,
-                          uri: attachment.dataUrl ?? attachment.previewUri,
-                          gallery: composerImageGallery(entry.pendingMessage?.attachments ?? []),
-                        })
-                      }
-                    >
-                      <Image
-                        source={{ uri: attachment.previewUri }}
-                        style={{
-                          width: size ?? 180,
-                          height: size ?? 140,
-                          borderRadius: 14,
-                        }}
-                      />
-                    </Pressable>
-                  ),
+                  </Pressable>
                 )
               }
-            </MessageImages>
+            />
             {entry.pendingMessage?.attachments.map((attachment) =>
               attachment.type === "image" ? null : (
                 <MessageAttachmentUnknown key={attachment.id} name={attachment.name} />
               ),
             )}
+            <MessageImages
+              images={gridImages}
+              tileSize={userImageTileSize}
+              radius={14}
+              renderImage={(attachment, size) => (
+                <MessageAttachmentImage
+                  key={attachment.id}
+                  environmentId={props.environmentId}
+                  attachmentId={attachment.id}
+                  name={attachment.name}
+                  mimeType={attachment.mimeType}
+                  className={
+                    size === undefined
+                      ? "aspect-[1.3] w-full rounded-[14px] bg-user-bubble-foreground/15"
+                      : "rounded-[14px] bg-user-bubble-foreground/15"
+                  }
+                  {...(size === undefined ? {} : { size })}
+                  onPressPreview={props.onPressPreview}
+                />
+              )}
+            />
             {/* An empty container still takes a gap, which pads every attachment-free bubble. */}
-            <MessageImages count={gridImages.length} tileSize={userImageTileSize}>
-              {(size) =>
-                gridImages.map((attachment) => (
-                  <MessageAttachmentImage
-                    key={attachment.id}
-                    environmentId={props.environmentId}
-                    attachmentId={attachment.id}
-                    name={attachment.name}
-                    mimeType={attachment.mimeType}
-                    className={
-                      size === undefined
-                        ? "aspect-[1.3] w-full rounded-[14px] bg-user-bubble-foreground/15"
-                        : "rounded-[14px] bg-user-bubble-foreground/15"
-                    }
-                    {...(size === undefined ? {} : { size })}
-                    onPressPreview={props.onPressPreview}
-                  />
-                ))
-              }
-            </MessageImages>
             {listedAttachments.length > 0 ? (
               <View className={inlineAttachmentIds.size ? "flex-row flex-wrap gap-2" : "gap-2"}>
                 {listedAttachments.map((attachment) => {
@@ -1596,29 +1618,27 @@ function renderFeedEntry(
           </MarkdownImageAvailableWidthContext>
         ) : null}
         <MessageImages
-          count={assistantImages.length}
+          images={assistantImages}
           tileSize={imageGridTileSize(props.markdownContentWidth)}
+          radius={18}
           className="mt-1.5"
-        >
-          {(size) =>
-            assistantImages.map((attachment) => (
-              <MessageAttachmentImage
-                key={attachment.id}
-                environmentId={props.environmentId}
-                attachmentId={attachment.id}
-                name={attachment.name}
-                mimeType={attachment.mimeType}
-                className={
-                  size === undefined
-                    ? "mt-1.5 aspect-[1.3] w-full rounded-[18px] bg-subtle-strong"
-                    : "rounded-[18px] bg-subtle-strong"
-                }
-                {...(size === undefined ? {} : { size })}
-                onPressPreview={props.onPressPreview}
-              />
-            ))
-          }
-        </MessageImages>
+          renderImage={(attachment, size) => (
+            <MessageAttachmentImage
+              key={attachment.id}
+              environmentId={props.environmentId}
+              attachmentId={attachment.id}
+              name={attachment.name}
+              mimeType={attachment.mimeType}
+              className={
+                size === undefined
+                  ? "mt-1.5 aspect-[1.3] w-full rounded-[18px] bg-subtle-strong"
+                  : "rounded-[18px] bg-subtle-strong"
+              }
+              {...(size === undefined ? {} : { size })}
+              onPressPreview={props.onPressPreview}
+            />
+          )}
+        />
         {attachments.map((attachment) => {
           return isImageAttachment(attachment) ? null : isFileAttachment(attachment) ? (
             <MessageAttachmentFile
