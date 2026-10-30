@@ -31,8 +31,8 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import { MAX_TERMINALS_PER_GROUP } from "../../types";
 import {
-  type RightPanelSurface,
   selectThreadRightPanelState,
+  type RightPanelSurface,
   useRightPanelStore,
 } from "../../rightPanelStore";
 import { isPreviewSupportedInRuntime } from "../../previewStateStore";
@@ -447,8 +447,6 @@ export function useChatTerminalActions(input: ChatTerminalActionsInput) {
     terminalActions.closeTerminalSession(target, terminalId);
     storeCloseTerminal(target, terminalId);
     store.closeTerminal(target, surface.id, terminalId);
-    // Closing a surface's last terminal falls back to a neighbouring surface,
-    // which can be another terminal surface.
     focusActivePanelTerminal(target);
   };
   const closePanelTerminalStable = useStableCallback(closePanelTerminal);

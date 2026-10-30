@@ -1,4 +1,6 @@
 import { EnvironmentId, ThreadId, type ScopedThreadRef } from "@t3tools/contracts";
+import * as Cause from "effect/Cause";
+import { AsyncResult } from "effect/reactivity";
 import { useLayoutEffect } from "react";
 import { expect, it, vi } from "vite-plus/test";
 
@@ -65,7 +67,7 @@ function setup() {
   useTerminalUiStateStore.setState({ terminalUiStateByThreadKey: {} });
 }
 
-it.each(["confirmed", "cancelled", "revoked"])(
+it.each(["confirmed", "confirmed with a failed close", "cancelled", "revoked"])(
   "keeps a delayed %s close on its original thread",
   async (outcome) => {
     setup();
@@ -75,6 +77,11 @@ it.each(["confirmed", "cancelled", "revoked"])(
         confirm = resolve;
       }),
     );
+    if (outcome === "confirmed with a failed close") {
+      state.close.mockResolvedValueOnce(
+        AsyncResult.failure(Cause.fail(new Error("synthetic close failure"))),
+      );
+    }
     for (const target of [original, other]) {
       useRightPanelStore.getState().openTerminal(target, "term-1");
       useTerminalUiStateStore.getState().ensureTerminal(target, "term-1");
@@ -91,11 +98,22 @@ it.each(["confirmed", "cancelled", "revoked"])(
     await act(async () => {
       confirm(outcome !== "cancelled");
     });
+    const closeRequest = {
+      environmentId: original.environmentId,
+      input: { threadId: original.threadId, terminalId: "term-1", deleteHistory: true },
+    };
     if (outcome === "confirmed") {
-      expect(state.close).toHaveBeenCalledExactlyOnceWith({
-        environmentId: original.environmentId,
-        input: { threadId: original.threadId, terminalId: "term-1", deleteHistory: true },
-      });
+      expect(state.close).toHaveBeenCalledExactlyOnceWith(closeRequest);
+    } else if (outcome === "confirmed with a failed close") {
+      expect(state.close.mock.calls).toEqual([
+        [closeRequest],
+        [
+          {
+            environmentId: original.environmentId,
+            input: { threadId: original.threadId, terminalId: "term-1", data: "exit\n" },
+          },
+        ],
+      ]);
     } else {
       expect(state.close).not.toHaveBeenCalled();
     }
