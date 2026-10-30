@@ -213,11 +213,14 @@ export function projectTurnItemForWire(item: OrchestrationV2TurnItem): Orchestra
     }
     case "command_execution": {
       const { output, ...projected } = item;
+      // A successful search can print "ENOENT" or "exit code 2", so output text
+      // decides only when the provider reported no exit code.
       const failed =
-        item.outputIndicatesFailure === true ||
-        (item.exitCode !== undefined && item.exitCode !== 0) ||
-        (output !== undefined &&
-          toolOutputIndicatesFailure(output.slice(0, COMMAND_OUTPUT_WIRE_PREFIX_LENGTH)));
+        item.exitCode === undefined
+          ? item.outputIndicatesFailure === true ||
+            (output !== undefined &&
+              toolOutputIndicatesFailure(output.slice(0, COMMAND_OUTPUT_WIRE_PREFIX_LENGTH)))
+          : item.exitCode !== 0;
       return {
         ...projected,
         ...(failed ? { outputIndicatesFailure: true } : {}),
