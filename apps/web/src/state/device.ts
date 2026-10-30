@@ -43,6 +43,8 @@ export function useDeviceState(environmentId: EnvironmentId | null): {
   readonly loaded: boolean;
   /** It answered, or could not; a failed read stays not loaded. */
   readonly settled: boolean;
+  readonly error: string | null;
+  readonly refresh: () => void;
 } {
   const query = useEnvironmentQuery(
     environmentId === null ? null : deviceEnvironment.state({ environmentId, input: {} }),
@@ -51,6 +53,8 @@ export function useDeviceState(environmentId: EnvironmentId | null): {
     state: query.data ?? EMPTY_DEVICE_STATE,
     loaded: query.data !== null,
     settled: query.data !== null || query.error !== null,
+    error: query.error,
+    refresh: query.refresh,
   };
 }
 
