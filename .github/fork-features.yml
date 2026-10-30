@@ -1357,7 +1357,7 @@ features:
   - id: device-list-physical-section
     title: List plugged-in devices apart from simulators and emulators
     status: maintained
-    prs: []
+    prs: [1176]
     invariants:
       - The web Device panel lists physical devices in their own section per platform ("Android Devices", "iOS Devices") above that platform's simulators or emulators, instead of under the "Android Emulators" or "iOS Simulators" heading.
     rationale: Upstream groups devices by platform only, so a plugged-in phone appeared under "Android Emulators" beside AVDs it does not behave like.
