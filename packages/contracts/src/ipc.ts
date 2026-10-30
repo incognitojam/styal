@@ -1176,6 +1176,7 @@ export interface DesktopBridge {
   ) => Promise<DesktopSystemNotificationResult>;
   closeSystemNotification?: (tag: string) => Promise<void>;
   onSystemNotificationClick?: (listener: (tag: string) => void) => () => void;
+  onTrackpadScrollBegin: (listener: () => void) => () => void;
   onTrackpadScrollEnd: (listener: () => void) => () => void;
   /**
    * Renderer `window.focus()` cannot raise an Electron window, and on Wayland
