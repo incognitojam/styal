@@ -136,8 +136,6 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   threadTitleRegeneration: Schema.optionalKey(Schema.Boolean),
   threadVisitedTracking: Schema.optionalKey(Schema.Boolean),
   threadPullRequestLinking: Schema.optionalKey(Schema.Boolean),
-  /** Server can persist and stream revisioned web/desktop composer drafts. */
-  composerDraftSync: Schema.optionalKey(Schema.Boolean),
   /** Highest complete fork client usage vocabulary accepted by this server. */
   forkClientUsageVersion: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThan(0))),
   /** Server understands thread.pull-request.link / .unlink, exposes `pullRequests` on

@@ -401,12 +401,18 @@ describe("thread outbox", () => {
       },
       runtimeMode: "approval-required",
       interactionMode: "plan",
-      composerDraftRevision: 7,
     } satisfies QueuedThreadMessage;
 
     expect(decodeQueuedThreadMessage(encodeQueuedThreadMessage(selectedMessage))).toEqual(
       selectedMessage,
     );
+    // Messages queued by app versions that synchronized drafts carry a draft revision.
+    expect(
+      decodeQueuedThreadMessage({
+        ...(encodeQueuedThreadMessage(selectedMessage) as object),
+        composerDraftRevision: 7,
+      }),
+    ).toEqual(selectedMessage);
     expect(
       resolveQueuedThreadSettings(legacyMessage, {
         modelSelection: selectedMessage.modelSelection,

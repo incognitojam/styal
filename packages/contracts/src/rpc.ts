@@ -408,13 +408,6 @@ import {
   SourceControlSetDefaultRepositoryInput,
 } from "./sourceControl.ts";
 import { VcsError } from "./vcs.ts";
-import {
-  ComposerDraftGetInput,
-  ComposerDraftSnapshot,
-  ComposerDraftSyncError,
-  ComposerDraftUpdateInput,
-  ComposerDraftUpdateResult,
-} from "./composerDraft.ts";
 import { Project, ProjectMutation, ProjectMutationError } from "./project.ts";
 import { ForkClientUsageInput } from "./forkClientUsage.ts";
 import {
@@ -470,9 +463,6 @@ export const WS_METHODS = {
   providerInstallCancel: "provider.install.cancel",
   providerInstallSubscribe: "provider.install.subscribe",
   providerInstallRemove: "provider.install.remove",
-
-  // Existing-thread composer draft synchronization
-  composerDraftUpdate: "composerDraft.update",
 
   vcsPull: "vcs.pull",
   vcsRefreshStatus: "vcs.refreshStatus",
@@ -650,21 +640,7 @@ export const WS_METHODS = {
   subscribeAuthAccess: "subscribeAuthAccess",
   subscribeBackgroundPolicy: "subscribeBackgroundPolicy",
   subscribeResourceTelemetry: "subscribeResourceTelemetry",
-  subscribeComposerDraft: "subscribeComposerDraft",
 } as const;
-
-const WsComposerDraftUpdateRpc = Rpc.make(WS_METHODS.composerDraftUpdate, {
-  payload: ComposerDraftUpdateInput,
-  success: ComposerDraftUpdateResult,
-  error: Schema.Union([ComposerDraftSyncError, EnvironmentAuthorizationError]),
-});
-
-const WsSubscribeComposerDraftRpc = Rpc.make(WS_METHODS.subscribeComposerDraft, {
-  payload: ComposerDraftGetInput,
-  success: ComposerDraftSnapshot,
-  error: Schema.Union([ComposerDraftSyncError, EnvironmentAuthorizationError]),
-  stream: true,
-});
 
 const WsServerUpsertKeybindingRpc = Rpc.make(WS_METHODS.serverUpsertKeybinding, {
   payload: ServerUpsertKeybindingInput,
@@ -2240,7 +2216,6 @@ export const WsRpcGroup = RpcGroup.make(
   WsMcpAppsReadResourceRpc,
   WsMcpAppsUpdateModelContextRpc,
   WsProviderUploadFeedbackRpc,
-  WsComposerDraftUpdateRpc,
   WsSubscribeVcsStatusRpc,
   WsSubscribeWorktreeSetupRpc,
   WsWorktreeSetupCancelRpc,
@@ -2304,7 +2279,6 @@ export const WsRpcGroup = RpcGroup.make(
   WsSubscribeAuthAccessRpc,
   WsSubscribeBackgroundPolicyRpc,
   WsSubscribeResourceTelemetryRpc,
-  WsSubscribeComposerDraftRpc,
   WsOrchestrationV2DispatchCommandRpc,
   WsOrchestrationV2GetWorkflowScriptRpc,
   WsOrchestrationV2GetCommandOutputRpc,

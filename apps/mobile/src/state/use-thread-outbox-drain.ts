@@ -867,9 +867,6 @@ export function useThreadOutboxDrain(): void {
           }),
           runtimeMode: sendSettings.runtimeMode,
           interactionMode: sendSettings.interactionMode,
-          ...(queuedMessage.composerDraftRevision === undefined
-            ? {}
-            : { composerDraftRevision: queuedMessage.composerDraftRevision }),
           createdAt: queuedMessage.createdAt,
           dispatchMode: queuedMessage.dispatchMode ?? "start",
         },

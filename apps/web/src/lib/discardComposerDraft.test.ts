@@ -5,7 +5,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import { toastManager } from "../components/ui/toast";
 import { DraftId, useComposerDraftStore } from "../composerDraftStore";
 import { useThreadUndoNotice } from "../hooks/showThreadUndoNotice";
-import * as ComposerDrafts from "../state/composerDrafts";
 import { releaseDraftAttachments } from "./attachmentUploadQueue";
 import { discardComposerDraft } from "./discardComposerDraft";
 
@@ -38,47 +37,6 @@ afterEach(() => {
 });
 
 describe("discardComposerDraft", () => {
-  it("clears the synchronized copy of a closed thread's draft", async () => {
-    let remoteText = "reply in progress";
-    useComposerDraftStore.getState().setPrompt(threadRef, remoteText);
-    vi.spyOn(ComposerDrafts, "discardServerComposerDraft").mockImplementation(async (ref) => {
-      remoteText = useComposerDraftStore.getState().getComposerDraft(ref)?.prompt ?? "";
-    });
-
-    discardComposerDraft(threadRef);
-    expect(remoteText).toBe("");
-    vi.advanceTimersByTime(5_000);
-    expect(remoteText).toBe("");
-  });
-
-  it("restores the synchronized draft after an in-flight discard finishes", async () => {
-    let remoteText = "reply in progress";
-    let finishClear = () => {};
-    const clearFinished = new Promise<void>((resolve) => {
-      finishClear = resolve;
-    });
-    useComposerDraftStore.getState().setPrompt(threadRef, remoteText);
-    vi.spyOn(ComposerDrafts, "discardServerComposerDraft")
-      .mockImplementationOnce(async () => {
-        await clearFinished;
-        remoteText = "";
-      })
-      .mockImplementationOnce(async (ref) => {
-        remoteText = useComposerDraftStore.getState().getComposerDraft(ref)?.prompt ?? "";
-      });
-
-    discardComposerDraft(threadRef);
-    const restored = undoNotice().undo();
-    expect(useComposerDraftStore.getState().getComposerDraft(threadRef)?.prompt).toBe(
-      "reply in progress",
-    );
-    finishClear();
-    await restored;
-    expect(remoteText).toBe("reply in progress");
-    vi.runAllTimers();
-    expect(releaseDraftAttachments).not.toHaveBeenCalled();
-  });
-
   it("restores a discarded new-thread draft with its project mapping", async () => {
     const store = useComposerDraftStore.getState();
     store.setProjectDraftThreadId(projectRef, draftId);

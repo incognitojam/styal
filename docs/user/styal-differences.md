@@ -159,10 +159,6 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   Compared with
   [T3 Code revision 680152e](https://github.com/pingdotgg/t3code/tree/680152e27b2a961686389ca69a1557cbb2c55f08),
   checked October 21, 2026, which reads only `t3.json` and imports its scripts as copies.
-- **Drafts that follow you.** Existing-thread draft text and model settings sync between clients
-  connected to the same server. Attachments and other device-specific context stay local; drafts
-  containing that context are withheld from other clients to avoid sending an incomplete message.
-  [Composer drafts](./composer-drafts.md).
 
 ## GitHub and code review
 

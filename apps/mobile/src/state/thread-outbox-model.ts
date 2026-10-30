@@ -10,7 +10,6 @@ import {
   IsoDateTime,
   MessageId,
   ModelSelection,
-  NonNegativeInt,
   OrchestrationMessageContext,
   ProjectId,
   ProviderInteractionMode,
@@ -57,7 +56,6 @@ export const QueuedThreadMessageSchema = Schema.Struct({
   dispatchMode: Schema.optional(Schema.Literals(["auto", "queue", "steer", "restart"])),
   runtimeMode: Schema.optional(RuntimeMode),
   interactionMode: Schema.optional(ProviderInteractionMode),
-  composerDraftRevision: Schema.optional(NonNegativeInt),
   creation: Schema.optional(QueuedThreadCreationSchema),
   createdAt: IsoDateTime,
 });
@@ -87,7 +85,6 @@ export interface QueuedThreadMessage {
   readonly modelSelection?: ModelSelectionType;
   readonly runtimeMode?: RuntimeModeType;
   readonly interactionMode?: ProviderInteractionModeType;
-  readonly composerDraftRevision?: number;
   /**
    * Captured at enqueue time because the drain can fire long after the tap.
    */

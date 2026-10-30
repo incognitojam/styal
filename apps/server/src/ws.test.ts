@@ -103,7 +103,6 @@ import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
 import * as ServerConfigModule from "./config.ts";
 import * as Keybindings from "./keybindings.ts";
-import * as ComposerDrafts from "./persistence/ComposerDrafts.ts";
 import * as DeviceSharing from "./device/DeviceSharing.ts";
 import * as HardwareService from "./hardware/HardwareService.ts";
 import * as LegacyImport from "./dataImport/LegacyImport.ts";
@@ -563,7 +562,6 @@ const layerUnusedConfigRpcServices = Layer.mergeAll(
   Layer.mock(WorkspaceEntries.WorkspaceEntries)({}),
   Layer.mock(WorkspaceFileSystem.WorkspaceFileSystem)({}),
   Layer.mock(WorktreeSetupTracker.WorktreeSetupTracker)({}),
-  Layer.mock(ComposerDrafts.ComposerDraftRepository)({}),
   Layer.mock(DeviceSharing.DeviceSharing)({}),
   Layer.mock(HardwareService.HardwareService)({}),
   Layer.mock(LegacyImport.LegacyImportService)({}),

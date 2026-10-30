@@ -55,33 +55,26 @@ const readHistories = Effect.fn("readNightlyUpgradeHistories")(function* () {
   } satisfies Histories;
 });
 
-const insertDraft = Effect.fn("insertNightlyUpgradeDraft")(function* (threadId: string) {
+const insertPortAllocation = Effect.fn("insertNightlyUpgradePortAllocation")(function* (
+  workspacePath: string,
+) {
   const sql = yield* SqlClient.SqlClient;
   yield* sql`
-    INSERT INTO composer_drafts (
-      thread_id,
-      revision,
-      common_json,
-      updated_at,
-      client_mutation_id
-    ) VALUES (
-      ${threadId},
-      1,
-      '{"text":"upgrade fixture"}',
-      '2026-01-01T00:00:00.000Z',
-      'fixture-write'
-    )
+    INSERT INTO workspace_port_allocations (workspace_path, base_port)
+    VALUES (${workspacePath}, 20010)
   `;
 });
 
-const readDraft = Effect.fn("readNightlyUpgradeDraft")(function* (threadId: string) {
+const readPortAllocation = Effect.fn("readNightlyUpgradePortAllocation")(function* (
+  workspacePath: string,
+) {
   const sql = yield* SqlClient.SqlClient;
-  const rows = yield* sql<{ readonly thread_id: string; readonly common_json: string | null }>`
-    SELECT thread_id, common_json
-    FROM composer_drafts
-    WHERE thread_id = ${threadId}
+  const rows = yield* sql<{ readonly workspace_path: string; readonly base_port: number }>`
+    SELECT workspace_path, base_port
+    FROM workspace_port_allocations
+    WHERE workspace_path = ${workspacePath}
   `;
-  return rows.map(({ thread_id, common_json }) => ({ thread_id, common_json }));
+  return rows.map(({ workspace_path, base_port }) => ({ workspace_path, base_port }));
 });
 
 const runOnDatabase = <A, E>(
@@ -92,15 +85,15 @@ const runOnDatabase = <A, E>(
     Effect.scoped(effect.pipe(Effect.provide(NodeSqliteClient.layer({ filename: databasePath })))),
   );
 
-const assertCurrentState = async (databasePath: string, threadId: string): Promise<void> => {
+const assertCurrentState = async (databasePath: string, workspacePath: string): Promise<void> => {
   const state = await runOnDatabase(
     databasePath,
     Effect.gen(function* () {
       yield* CurrentForkMigrations.runAllMigrations();
       const histories = yield* readHistories();
-      const draft = yield* readDraft(threadId);
+      const portAllocation = yield* readPortAllocation(workspacePath);
       const secondRun = yield* CurrentForkMigrations.runAllMigrations();
-      return { histories, draft, secondRun } as const;
+      return { histories, portAllocation, secondRun } as const;
     }),
   );
 
@@ -112,8 +105,8 @@ const assertCurrentState = async (databasePath: string, threadId: string): Promi
     state.histories.fork,
     manifestRows(CurrentForkMigrations.forkMigrationManifest),
   );
-  NodeAssert.deepStrictEqual(state.draft, [
-    { thread_id: threadId, common_json: '{"text":"upgrade fixture"}' },
+  NodeAssert.deepStrictEqual(state.portAllocation, [
+    { workspace_path: workspacePath, base_port: 20010 },
   ]);
   NodeAssert.deepStrictEqual(state.secondRun, {
     upstream: [],
@@ -192,7 +185,7 @@ try {
     splitDatabasePath,
     Effect.gen(function* () {
       yield* previousForkMigrations.runAllMigrations();
-      yield* insertDraft("post-split-thread");
+      yield* insertPortAllocation("/synthetic/post-split-workspace");
       return yield* readHistories();
     }),
   );
@@ -204,7 +197,7 @@ try {
     previousSplitState.fork,
     manifestRows(previousForkMigrations.forkMigrationManifest),
   );
-  await assertCurrentState(splitDatabasePath, "post-split-thread");
+  await assertCurrentState(splitDatabasePath, "/synthetic/post-split-workspace");
 
   process.stdout.write(`Verified schema upgrades from ${previousRef}.\n`);
 } finally {

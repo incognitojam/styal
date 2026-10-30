@@ -28,7 +28,6 @@ import {
   type RuntimeMode,
   type ThreadId,
 } from "@t3tools/contracts";
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
 import { clampFileAttachmentUploadBytes } from "@t3tools/client-runtime/state/attachments";
 import { nextPastedTextFileName, pastedTextDisposition } from "@t3tools/client-runtime/text-paste";
@@ -117,11 +116,6 @@ import { enqueueThreadOutboxMessage } from "./thread-outbox";
 import { dispatchingQueuedMessageIdAtom, useThreadOutboxMessages } from "./use-thread-outbox";
 import { threadEnvironment } from "./threads";
 import { useAtomCommand } from "./use-atom-command";
-import {
-  markComposerDraftSent,
-  readComposerDraftRevision,
-  useServerComposerDraftSync,
-} from "./composer-draft-sync";
 import {} from "./composer-attachment-uploads";
 
 const EMPTY_QUEUE_WORKFLOW_ATOM = Atom.make<null>(null).pipe(
@@ -232,11 +226,6 @@ export function useThreadComposerState() {
   const selectedThreadKey = selectedThreadShell
     ? scopedThreadKey(selectedThreadShell.environmentId, selectedThreadShell.id)
     : null;
-  const selectedThreadRef = (() =>
-    selectedThreadShell
-      ? scopeThreadRef(selectedThreadShell.environmentId, selectedThreadShell.id)
-      : null)();
-  useServerComposerDraftSync(selectedThreadRef);
   const selectedThreadQueuedMessages = selectedThreadKey
     ? (queuedMessagesByThreadKey[selectedThreadKey] ?? []).filter(
         (message) => message.creation === undefined,

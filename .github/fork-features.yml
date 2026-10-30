@@ -174,6 +174,7 @@ features:
       - Mobile retains local attachment bytes through draft, outbox, preview, upload, and signed-out account ownership; failed storage hydration or persistence must not authorize cleanup.
       - Dismissing an incoming-share task picker removes its durable inbox entry and releases attachments only after checking ownership by other inbox items, composer drafts, outbox messages, and previews.
       - The incoming-share picker offers recent threads as well as projects; choosing a thread merges the share into that thread's composer draft before consuming the inbox entry, without sending.
+      - Web file drafts persist environment-scoped upload references; legacy local file bytes remain until a replacement reference is durable. Mobile drafts and queued messages retain owned file copies until delivery or removal.
       - Web and desktop stored HEIC images use the shared decoding fallback in file previews, queued messages, answered questions, and image attachment chips.
     implementation_paths:
       - apps/mobile/plugins/withShareExtensionDisplayName.cjs
@@ -754,80 +755,6 @@ features:
       tracking:
         - https://github.com/pingdotgg/t3code/pull/11481
       retire_when: Upstream provides independent event sound choices and previews with equivalent preference migration and playback behavior.
-
-  - id: composer-draft-sync
-    title: Cross-device composer draft synchronization
-    status: maintained
-    prs: [23, 39, 44, 69, 195, 473, 657, 750]
-    invariants:
-      - Mobile pending messages stay visible through upload and acknowledgment; editing persists their text and attachments into the existing draft before removing the queued copy.
-      - Existing-thread draft text and settings synchronize without overwriting newer local edits; attachments remain client-owned, and a draft holding attachments or context records stays on its device.
-      - Restored web and desktop rich-text drafts persist the displayed document's Markdown separators before sending, keeping paragraphs after quotes outside the quote without requiring another edit; plain-text input and literal question answers keep their source text.
-      - Recalling sent prompts normalizes their text before recording the history position, so automatic formatting preserves Up/Down browsing while actual edits still end browsing.
-      - The latest issued draft autosave cannot restore sent text through its own subscription echo, including after transport failure, or block another device's changes to a clean composer; delayed responses cannot roll back newer revisions.
-      - Returning to a thread after sending cannot restore that message from a pending autosave; the client keeps its send marker until a newer cleared revision arrives.
-      - Autosave timers and draft acknowledgments read live composer state on web, desktop, and mobile, so a send clear or newer edit takes effect before React renders it.
-      - Navigating away flushes pending composer edits and retains their sync state until acknowledgment, so reopening before autosave, during an in-flight save, or after a transport failure cannot restore manually deleted text. Cached snapshots cannot roll back an acknowledged clear.
-      - Web file drafts persist environment-scoped upload references; legacy local file bytes remain until a replacement reference is durable. Mobile drafts and queued messages retain owned file copies until delivery or removal.
-      - The web and mobile source implementations use the same server-backed draft contract and fork-owned migration history; desktop inherits the web implementation. Pre-split databases require an intermediate fixed release before an in-place upgrade.
-      - Web sidebar and mobile thread list rows indicate unsent prompts, attachments, or context without treating model, provider, runtime, or interaction choices alone as a user draft.
-      - Mobile Home and tablet sidebar rows mark existing threads holding non-blank composer text or attachments with an amber pen and an unsent draft accessibility label; the currently open sidebar thread is not marked, and new-task drafts remain separate rows.
-      - Typing more text into an already marked mobile draft does not notify thread list subscribers unless the set of threads with unsent content changes; clearing the content removes the marker.
-      - Discarding a closed thread's draft from the web sidebar also clears its synchronized copy, so the text does not return on the next visit or on another client; Undo restores the synchronized text after the discard write completes.
-      - A web new-thread draft reserves a fresh thread id only after the server rejects its bootstrap. When the connection drops before the reply, the draft keeps its id and prompt, follows the thread once its turn appears after reconnecting, and clears the restored prompt if it was not edited.
-    implementation_paths:
-      - apps/mobile/src/features/home/HomeScreen.tsx
-      - apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx
-      - apps/mobile/src/features/threads/thread-list-v2-items.tsx
-      - apps/mobile/src/features/threads/threadListV2.ts
-      - apps/mobile/src/features/threads/unsent-draft-icon.tsx
-      - apps/mobile/src/state/composer-draft-sync-common.ts
-      - apps/mobile/src/state/composer-draft-sync.ts
-      - apps/mobile/src/state/edit-pending-thread-message.ts
-      - apps/mobile/src/state/use-composer-drafts.ts
-      - apps/server/src/persistence/ComposerDrafts.ts
-      - apps/server/src/persistence/ForkMigrations/001_ComposerDrafts.ts
-      - apps/web/src/components/ComposerPromptEditorTiptap.tsx
-      - apps/web/src/components/Sidebar.tsx
-      - apps/web/src/components/chat/ChatComposer.tsx
-      - apps/web/src/components/chat/composerPromptHistory.ts
-      - apps/web/src/composerDraftStore.ts
-      - apps/web/src/lib/discardComposerDraft.ts
-      - apps/web/src/state/composerDrafts.ts
-      - packages/client-runtime/src/state/composerDrafts.ts
-      - packages/contracts/src/composerDraft.ts
-    upstream_paths:
-      - apps/mobile/src/features/home/HomeScreen.tsx
-      - apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx
-      - apps/mobile/src/features/threads/thread-list-v2-items.tsx
-      - apps/mobile/src/features/threads/threadListV2.ts
-      - apps/mobile/src/state/use-composer-drafts.ts
-      - apps/server/src/server.ts
-      - apps/server/src/ws.ts
-      - apps/web/src/components/ChatView.tsx
-      - apps/web/src/components/Sidebar.tsx
-      - apps/web/src/components/chat/ChatComposer.tsx
-      - packages/client-runtime/src/rpc/client.ts
-      - packages/contracts/src/rpc.ts
-    tests:
-      - apps/mobile/src/features/threads/threadListV2.test.ts
-      - apps/mobile/src/state/composer-draft-sync-common.test.ts
-      - apps/mobile/src/state/edit-pending-thread-message.test.ts
-      - apps/mobile/src/state/use-composer-drafts.test.ts
-      - apps/server/src/persistence/ComposerDrafts.test.ts
-      - apps/server/src/persistence/ForkMigrations.test.ts
-      - apps/web/src/components/ComposerPromptEditorTiptap.restoredDraft.browser.test.tsx
-      - apps/web/src/components/chat/composerPromptHistory.test.ts
-      - apps/web/src/composerDraftStore.test.ts
-      - apps/web/src/lib/discardComposerDraft.test.ts
-      - apps/web/src/state/composerDrafts.browser.test.tsx
-      - e2e/tests/prompt-history.e2e.ts
-      - packages/client-runtime/src/state/composerDrafts.test.ts
-    upstream:
-      status: partial
-      tracking:
-        - https://github.com/pingdotgg/t3code/pull/9658
-      retire_when: Upstream synchronizes equivalent composer draft state across clients, marks existing mobile threads with unsent content without notifying thread lists on every keystroke, and safely migrates installations carrying the fork schema.
 
   - id: data-import-from-t3-code
     title: T3 Code migration in setup and Settings
@@ -3122,6 +3049,36 @@ features:
         - https://github.com/pingdotgg/t3code/commit/86534db4d3525a070589a234d660a3e0373a42ea
       retire_when: Upstream floating status icons resolve their tint from the active theme foreground using a valid accent color utility.
 
+  - id: mobile-unsent-draft-markers
+    title: Mark mobile threads that hold an unsent draft
+    status: maintained
+    prs: [473]
+    invariants:
+      - Mobile Home and tablet sidebar rows mark existing threads holding non-blank composer text or attachments with an amber pen and an unsent draft accessibility label; the currently open sidebar thread is not marked, and new-task drafts remain separate rows.
+      - Model, provider, runtime, or interaction choices alone do not count as an unsent draft.
+      - Typing more text into an already marked draft does not notify thread list subscribers unless the set of threads with unsent content changes; clearing the content removes the marker.
+    implementation_paths:
+      - apps/mobile/src/features/home/HomeScreen.tsx
+      - apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx
+      - apps/mobile/src/features/threads/thread-list-v2-items.tsx
+      - apps/mobile/src/features/threads/threadListV2.ts
+      - apps/mobile/src/features/threads/unsent-draft-icon.tsx
+      - apps/mobile/src/state/use-composer-drafts.ts
+    upstream_paths:
+      - apps/mobile/src/features/home/HomeScreen.tsx
+      - apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx
+      - apps/mobile/src/features/threads/thread-list-v2-items.tsx
+      - apps/mobile/src/features/threads/threadListV2.ts
+      - apps/mobile/src/state/use-composer-drafts.ts
+    tests:
+      - apps/mobile/src/features/threads/threadListV2.test.ts
+      - apps/mobile/src/state/use-composer-drafts.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/blob/6575ce32508bd7908444241f3719aa33aaf77f90/apps/mobile/src/features/threads/thread-list-v2-items.tsx
+      retire_when: Upstream mobile marks existing threads with unsent text or attachments in the thread list without notifying thread lists on every keystroke.
+
   - id: mobile-update-restart-location
     title: Mobile update restarts reopen the page the user was on
     status: maintained
@@ -3186,6 +3143,30 @@ features:
       status: unassessed
       tracking: []
       retire_when: Upstream measures client connection quality per network type and exposes it to users and maintainers.
+
+  - id: new-thread-send-recovery
+    title: Keep a new thread's first message when its send fails
+    status: maintained
+    prs: [195, 503]
+    invariants:
+      - When the server rejects a web new-thread draft's bootstrap, the draft keeps its prompt and reserves a fresh thread id so the next send does not collide with the rejected one.
+      - When the connection drops before the server replies to the first send, the draft keeps its id and prompt, follows the thread once its turn appears after reconnecting, and clears the restored prompt if it was not edited.
+    implementation_paths:
+      - apps/web/src/components/ChatView.tsx
+      - apps/web/src/composerDraftStore.ts
+      - packages/client-runtime/src/errors/orchestration.ts
+    upstream_paths:
+      - apps/web/src/components/ChatView.tsx
+      - apps/web/src/composerDraftStore.ts
+      - packages/client-runtime/src/errors/orchestration.ts
+    tests:
+      - apps/web/src/composerDraftStore.test.ts
+      - e2e/tests/new-thread-send-recovery.e2e.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/11372
+      retire_when: Upstream keeps a new-thread draft's prompt after a rejected bootstrap and follows the created thread after a dropped first-send reply.
 
   - id: next-unread-thread-shortcut
     title: Open the next unread thread
@@ -4860,6 +4841,31 @@ features:
       tracking:
         - https://github.com/pingdotgg/t3code/pull/2829
       retire_when: Upstream renders ReportFindings results as a readable findings list that survives turn folding on web and mobile.
+
+  - id: rich-text-composer-restored-text
+    title: Keep restored and recalled rich-text prompts intact
+    status: maintained
+    prs: [1055, 1071]
+    invariants:
+      - Restored web and desktop rich-text drafts persist the displayed document's Markdown separators before sending, keeping paragraphs after quotes outside the quote without requiring another edit; plain-text input and literal question answers keep their source text.
+      - Recalling sent prompts normalizes their text before recording the history position, so automatic formatting preserves Up/Down browsing while actual edits still end browsing.
+    implementation_paths:
+      - apps/web/src/components/ComposerPromptEditorTiptap.tsx
+      - apps/web/src/components/chat/ChatComposer.tsx
+      - apps/web/src/components/chat/composerPromptHistory.ts
+    upstream_paths:
+      - apps/web/src/components/ComposerPromptEditorTiptap.tsx
+      - apps/web/src/components/chat/ChatComposer.tsx
+      - apps/web/src/components/chat/composerPromptHistory.ts
+    tests:
+      - apps/web/src/components/ComposerPromptEditorTiptap.restoredDraft.browser.test.tsx
+      - apps/web/src/components/chat/composerPromptHistory.test.ts
+      - e2e/tests/prompt-history.e2e.ts
+      - e2e/tests/rich-text-restored-drafts.e2e.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream persists the rich-text editor's Markdown for restored drafts and recalled prompts before sending or comparing them.
 
   - id: same-turn-follow-up-lifecycle
     title: Keep follow-up turn lifecycle state truthful
