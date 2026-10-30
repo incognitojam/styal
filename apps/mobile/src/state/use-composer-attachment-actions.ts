@@ -19,6 +19,7 @@ import {
   getComposerDraftSnapshot,
   type ComposerDraftInsertion,
 } from "./use-composer-drafts";
+import { withPendingComposerAttachments } from "./composer-pending-attachments";
 
 export function useComposerAttachmentActions(props: {
   readonly draftKey: string | null;
@@ -63,16 +64,22 @@ export function useComposerAttachmentActions(props: {
     const key = props.draftKey;
     if (!key || props.locked) return;
     const insertion = captureComposerDraftInsertion(key);
-    const result = await pickComposerMedia({
-      existingCount: countComposerDraftAttachmentsAfterSelection(key, insertion),
-      maxVideoBytes: capabilities?.attachmentUploads
-        ? capabilities.fileAttachments?.maxUploadBytes
-        : undefined,
-    });
-    report(
-      "Could not attach photo or video",
-      result.error,
-      await append(key, result.attachments, insertion),
+    await withPendingComposerAttachments(
+      key,
+      (onPicked) =>
+        pickComposerMedia({
+          existingCount: countComposerDraftAttachmentsAfterSelection(key, insertion),
+          maxVideoBytes: capabilities?.attachmentUploads
+            ? capabilities.fileAttachments?.maxUploadBytes
+            : undefined,
+          onPicked,
+        }),
+      async (result) =>
+        report(
+          "Could not attach photo or video",
+          result.error,
+          await append(key, result.attachments, insertion),
+        ),
     );
   };
   const onPickDraftFiles = async () => {
