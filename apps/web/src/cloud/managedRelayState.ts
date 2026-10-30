@@ -12,6 +12,7 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import {
   DEFAULT_MANAGED_TUNNEL_LIMIT,
+  type RelayT3ChatLinkResponse,
   type RelayClientDeviceRecord,
   type RelayClientEnvironmentRecord,
 } from "@t3tools/contracts/relay";
@@ -59,6 +60,10 @@ const EMPTY_DEVICES_ATOM = Atom.make(
   AsyncResult.success<ReadonlyArray<RelayClientDeviceRecord>>([]),
 ).pipe(Atom.keepAlive, Atom.withLabel("managed-relay:web:devices:null"));
 
+const EMPTY_TUNNEL_CAP_ATOM = Atom.make(
+  AsyncResult.success<RelayT3ChatLinkResponse>({ available: false, link: null }),
+).pipe(Atom.keepAlive, Atom.withLabel("managed-relay:web:tunnel-cap:null"));
+
 export function useManagedRelayEnvironments() {
   const session = useAtomValue(managedRelaySessionAtom);
   const accountId = session?.accountId ?? null;
@@ -103,11 +108,18 @@ export function refreshManagedTunnelUsage() {
   const accountId = appAtomRegistry.get(managedRelaySessionAtom)?.accountId;
   if (!accountId) return;
   managedRelayQueryManager.refreshEnvironments(appAtomRegistry, accountId);
+  managedRelayQueryManager.refreshT3ChatLink(appAtomRegistry, accountId);
 }
 
 /** Managed tunnels on this account and its cap. Null fields are still loading or failed. */
 export function useManagedTunnelUsage() {
   const environments = useManagedRelayEnvironments();
+  const capResult = useAtomValue(
+    environments.accountId
+      ? managedRelayQueryManager.t3ChatLinkAtom(environments.accountId)
+      : EMPTY_TUNNEL_CAP_ATOM,
+  );
+  const cap = readManagedRelaySnapshotState(capResult);
   const used =
     environments.accountId === null
       ? null
@@ -116,7 +128,7 @@ export function useManagedTunnelUsage() {
         ).length ?? null);
   return {
     used,
-    limit: DEFAULT_MANAGED_TUNNEL_LIMIT,
+    limit: cap.data?.maxTunnelsOverride ?? DEFAULT_MANAGED_TUNNEL_LIMIT,
     refresh: refreshManagedTunnelUsage,
   };
 }
