@@ -51,25 +51,6 @@ type ProjectFaviconInput = {
 
 export function ProjectFavicon(input: ProjectFaviconInput) {
   const { project } = input;
-  // Import previews name a project that is not in any environment yet, so its icon comes from the
-  // legacy data directory rather than the cached project favicon.
-  const cachedSrc = useAtomValue(
-    project === undefined
-      ? NO_PROJECT_FAVICON_URL
-      : projectFaviconUrlAtom({
-          environmentId: project.environmentId,
-          cwd: project.workspaceRoot,
-          faviconPath: project.faviconPath,
-        }),
-  );
-  const legacyAsset = useAssetUrlState(
-    input.project === undefined ? input.environmentId : input.project.environmentId,
-    input.project === undefined
-      ? { _tag: "legacy-project-favicon", projectId: input.legacyProjectId }
-      : null,
-  );
-  const src =
-    project === undefined ? (legacyAsset._tag === "Success" ? legacyAsset.url : null) : cachedSrc;
   if (project?.projectIcon?.kind === "monogram") {
     return (
       <ProjectMonogram
@@ -106,6 +87,30 @@ export function ProjectFavicon(input: ProjectFaviconInput) {
       </span>
     );
   }
+  return <AutomaticProjectFavicon {...input} />;
+}
+
+function AutomaticProjectFavicon(input: Parameters<typeof ProjectFavicon>[0]) {
+  const { project } = input;
+  // Import previews name a project that is not in any environment yet, so its icon comes from the
+  // legacy data directory rather than the cached project favicon.
+  const cachedSrc = useAtomValue(
+    project === undefined
+      ? NO_PROJECT_FAVICON_URL
+      : projectFaviconUrlAtom({
+          environmentId: project.environmentId,
+          cwd: project.workspaceRoot,
+          faviconPath: project.faviconPath,
+        }),
+  );
+  const legacyAsset = useAssetUrlState(
+    input.project === undefined ? input.environmentId : input.project.environmentId,
+    input.project === undefined
+      ? { _tag: "legacy-project-favicon", projectId: input.legacyProjectId }
+      : null,
+  );
+  const src =
+    project === undefined ? (legacyAsset._tag === "Success" ? legacyAsset.url : null) : cachedSrc;
   const FallbackIcon = input.fallbackIcon ?? FolderCodeIcon;
 
   if (!src || isProjectFaviconFallbackUrl(src)) {
