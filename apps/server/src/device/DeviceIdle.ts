@@ -446,7 +446,10 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
       const hold = yield* holdFor(session, state);
       if (!hold || (!takeOver && !(yield* holderIdle(hold)))) continue;
       yield* release(hold);
-      yield* inner.close({ threadId: session.threadId, hostId, deviceId });
+      yield* inner.close(
+        { threadId: session.threadId, hostId, deviceId },
+        { claimsReleased: true },
+      );
       yield* Effect.logInfo("Handed device to another thread", {
         from: session.threadId,
         threadId,
@@ -573,12 +576,15 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
       const hold = yield* holdFor(session, yield* inner.state);
       if (hold) yield* release(hold);
     }
-    yield* inner.close({
-      threadId: session.threadId,
-      hostId: session.hostId,
-      deviceId: session.deviceId,
-      ...(shutdown ? { shutdown } : {}),
-    });
+    yield* inner.close(
+      {
+        threadId: session.threadId,
+        hostId: session.hostId,
+        deviceId: session.deviceId,
+        ...(shutdown ? { shutdown } : {}),
+      },
+      { claimsReleased: true },
+    );
     if (shutdown) yield* poweredOff(session.hostId, session.deviceId);
     yield* markUsed(deviceKey(session.hostId, session.deviceId));
   });

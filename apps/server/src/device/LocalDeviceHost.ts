@@ -36,6 +36,7 @@ import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
 import * as ServerConfig from "../config.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as ProcessRunner from "../processRunner.ts";
+import { releaseAgentDeviceSession } from "./AgentDeviceTarget.ts";
 import * as DeviceHost from "./DeviceHost.ts";
 import * as PhysicalAndroidHold from "./PhysicalAndroidHold.ts";
 import { makeDeviceHubOperations } from "./DeviceHubOperations.ts";
@@ -659,10 +660,11 @@ export const make = Effect.fn("LocalDeviceHost.make")(function* () {
     onPhase: (phase: "installing" | "starting", detail?: string) => Effect.Effect<void>,
   ): Effect.fn.Return<RunningHost, DeviceHost.DeviceHostError | NodeRuntimeUnavailableError> {
     const running = yield* Ref.get(runningRef);
+    // A dead hub's record stays until a replacement is published: the agent
+    // daemon outlives the hub, and close needs its endpoint if the restart fails.
     if (running) {
       const alive = yield* running.hub.child.isRunning.pipe(Effect.orElseSucceed(() => false));
       if (alive) return running;
-      yield* Ref.set(runningRef, null);
     }
     const nodePath = yield* resolveNodeExecutable("Local device support", hostEnvironment).pipe(
       Effect.provideService(FileSystem.FileSystem, fs),
@@ -710,7 +712,7 @@ export const make = Effect.fn("LocalDeviceHost.make")(function* () {
       })[0];
       const next: RunningHost = {
         hub,
-        agentDevice: null,
+        agentDevice: running?.agentDevice ?? null,
         helpers: {
           serveSimAxSettings: axExists ? candidate.serveSimAxSettings : null,
           serveSimCli: cliExists ? candidate.serveSimCli : null,
@@ -850,6 +852,9 @@ export const make = Effect.fn("LocalDeviceHost.make")(function* () {
       nodePath: running.hub.nodePath,
       run,
       helpers: running.helpers,
+      ...(running.agentDevice
+        ? { releaseAgentSession: releaseAgentDeviceSession(httpClient, running.agentDevice) }
+        : {}),
       ...(adbPath && scrcpyServer
         ? {
             holdPhysicalDevice: (serial, options) =>

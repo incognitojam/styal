@@ -20,6 +20,7 @@ import {
   agentDeviceConfigPath,
   agentDeviceSession,
   readAgentDeviceConfig,
+  releaseAgentDeviceSession,
   writeAgentDeviceConfig,
 } from "./AgentDeviceTarget.ts";
 import * as DeviceHost from "./DeviceHost.ts";
@@ -138,7 +139,12 @@ const fixture = Effect.fn("fixture")(function* (
           { ...ready, agentDevice: options.perDeviceDaemonDir === undefined ? agentDevice : null }
         ),
       ),
-    current: Effect.sync(() => (starts.length > 0 ? ready : null)),
+    // Real hosts offer this release; DeviceIdle closes with claimsReleased, so it must go unused.
+    current: Effect.sync(() =>
+      starts.length > 0
+        ? { ...ready, releaseAgentSession: releaseAgentDeviceSession(httpClient, agentDevice) }
+        : null,
+    ),
     stopAgent: Effect.void,
     stop: Effect.void,
   };
@@ -507,6 +513,34 @@ describe("hand-back", () => {
       yield* service.close({ threadId });
       yield* service.shutdown({ deviceId: "emulator-5554", platform: "android" });
       expect(calls).toEqual([release("thread-1"), "shutdown"]);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("a daemon that does not answer does not keep a handed-back device", () =>
+    Effect.gen(function* () {
+      const { service, calls, releaseError } = yield* fixture(yield* Ref.make<BootRecords>([]));
+      yield* service.configure({ enabled: true });
+      yield* agentOpen(service);
+      yield* Ref.set(releaseError, "DOWN");
+      yield* service.close({ threadId });
+      expect(yield* threads(service)).toEqual([]);
+      expect(calls).toEqual([release("thread-1")]);
+
+      yield* Ref.set(releaseError, null);
+      yield* service.shutdown({ deviceId: "emulator-5554", platform: "android" });
+      expect(calls).toEqual([release("thread-1"), release("thread-1"), "shutdown"]);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("device_close leaves another thread's session on the device", () =>
+    Effect.gen(function* () {
+      const { service, calls } = yield* fixture(yield* Ref.make<BootRecords>([]));
+      yield* service.configure({ enabled: true });
+      const opened = yield* agentOpen(service);
+      yield* service.open({ threadId: thread2, deviceId: opened.deviceId, platform: "android" });
+      yield* service.close({ threadId, deviceId: opened.deviceId });
+      expect(yield* threads(service)).toEqual([thread2]);
+      expect(calls).toEqual([release("thread-1")]);
     }).pipe(Effect.scoped),
   );
 
@@ -901,6 +935,9 @@ describe("idle shutdown", () => {
         ]);
         expect(calls).toEqual([release("thread-1"), "shutdown"]);
         expect(yield* Ref.get(saved)).toEqual([]);
+
+        yield* service.close({ threadId });
+        expect(calls).toEqual([release("thread-1"), "shutdown"]);
       }).pipe(Effect.scoped),
   );
 

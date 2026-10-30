@@ -166,6 +166,16 @@ export interface DeviceHostReady {
   /** Keeps driver sessions distinct when different environments reuse a thread ID. */
   readonly agentSessionNamespace?: string;
   readonly nodePath: string;
+  /**
+   * Ends an agent-device session on the daemon that serves `deviceId`. Hosts
+   * with a shared daemon provide it only while that daemon runs; hosts with a
+   * daemon per device succeed when the device's daemon is gone. Cleanup never
+   * starts a daemon or a device.
+   */
+  readonly releaseAgentSession?: (
+    session: string,
+    deviceId: string,
+  ) => Effect.Effect<void, DeviceOperationError>;
   readonly hub: DeviceHubEndpoint;
   readonly devices: DeviceOperations;
   readonly run: (

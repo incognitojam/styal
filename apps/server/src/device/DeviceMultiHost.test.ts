@@ -7,6 +7,7 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { HttpClient, HttpClientResponse } from "effect/http";
 import * as ServerSettings from "../serverSettings.ts";
+import { releaseAgentDeviceSession } from "./AgentDeviceTarget.ts";
 import * as DeviceHost from "./DeviceHost.ts";
 import { makeDeviceHubOperations } from "./DeviceHubOperations.ts";
 import * as DeviceService from "./DeviceService.ts";
@@ -17,19 +18,23 @@ it.effect("keeps hosts independent when serials collide and another host fails",
       Effect.succeed(
         HttpClientResponse.fromWeb(
           request,
-          Response.json({
-            simulators: [],
-            emulators: [
-              {
-                id: "emulator-5554",
-                name: "Pixel",
-                version: "36",
-                platform: "android",
-                booted: true,
-                physical: false,
-              },
-            ],
-          }),
+          Response.json(
+            request.url.endsWith("/rpc")
+              ? { result: { ok: true } }
+              : {
+                  simulators: [],
+                  emulators: [
+                    {
+                      id: "emulator-5554",
+                      name: "Pixel",
+                      version: "36",
+                      platform: "android",
+                      booted: true,
+                      physical: false,
+                    },
+                  ],
+                },
+          ),
         ),
       ),
     );
@@ -51,6 +56,10 @@ it.effect("keeps hosts independent when serials collide and another host fails",
           androidAvailable: Effect.succeed(true),
         }),
         agentDevice: { baseUrl: `http://${id}`, token: "test", entryPath: "/agent-device" },
+        releaseAgentSession: releaseAgentDeviceSession(http, {
+          baseUrl: `http://${id}`,
+          token: "test",
+        }),
         run,
         helpers: { serveSimAxSettings: null, serveSimCli: null },
       };
@@ -150,7 +159,7 @@ it.effect("keeps hosts independent when serials collide and another host fails",
 );
 
 it.effect(
-  "opens environment emulators through their owning server without running local probes",
+  "opens and closes environment emulators through their owning server, outside the lifecycle lock",
   () =>
     Effect.gen(function* () {
       const threadId = ThreadId.make("peer-thread");
@@ -164,6 +173,8 @@ it.effect(
         physical: false,
       };
       const opened: string[] = [];
+      const closed: string[] = [];
+      const shutdownStarted = yield* Deferred.make<void>();
       const unsupported = () => Effect.die("Unexpected device operation");
       const ready: DeviceHost.DeviceHostReady = {
         devices: {
@@ -203,8 +214,10 @@ it.effect(
                 openedAt: "2026-01-01T00:00:00.000Z",
               };
             }),
-          close: unsupported,
-          shutdown: unsupported,
+          close: (input) => Effect.sync(() => void closed.push(input.deviceId ?? "")),
+          // The environment never answers, like a peer that went to sleep mid-request.
+          shutdown: () =>
+            Deferred.succeed(shutdownStarted, undefined).pipe(Effect.andThen(Effect.never)),
           detail: unsupported,
           action: unsupported,
           screenshot: unsupported,
@@ -228,19 +241,72 @@ it.effect(
         stopAgent: Effect.void,
         stop: Effect.void,
       };
-      const service = yield* DeviceService.makeWithHosts(new Map([["peer", host]])).pipe(
+      let launcherRelease = yield* Deferred.make<void>();
+      let finishLauncherRelease = yield* Deferred.make<void>();
+      const service = yield* DeviceService.makeWithHosts(
+        new Map([["peer", host]]),
+        undefined,
+        undefined,
+        undefined,
+        {
+          bind: ({ session }) => Effect.succeed(session),
+          prune: () => Effect.void,
+          // A launcher's close reaches the peer, which is not answering either.
+          release: () =>
+            Deferred.succeed(launcherRelease, undefined).pipe(
+              Effect.andThen(Deferred.await(finishLauncherRelease)),
+            ),
+        },
+      ).pipe(
         Effect.provide(NodeCrypto.layer),
         Effect.provideService(HttpClient.HttpClient, HttpClient.make(unsupported)),
       );
-      const session = yield* service.open({
-        threadId,
-        hostId: "peer",
-        deviceId: device.id,
-        platform: "android",
+      const openWithLauncher = Effect.gen(function* () {
+        const session = yield* service.open({
+          threadId,
+          hostId: "peer",
+          deviceId: device.id,
+          platform: "android",
+        });
+        yield* service.agentLauncher({
+          threadId,
+          hostId: "peer",
+          deviceId: device.id,
+          targetArgs: [],
+        });
+        return session;
       });
+      const closingAlone = yield* openWithLauncher.pipe(
+        Effect.andThen(service.close({ threadId, hostId: "peer" })),
+        Effect.forkChild,
+      );
+      yield* Deferred.await(launcherRelease);
+      yield* service.withLifecycleLock(Effect.void);
+      yield* Deferred.succeed(finishLauncherRelease, undefined);
+      yield* Fiber.join(closingAlone);
+      expect((yield* service.state).sessions).toEqual([]);
+      expect(closed).toEqual([device.id]);
+      closed.length = 0;
+      opened.length = 0;
+
+      launcherRelease = yield* Deferred.make<void>();
+      finishLauncherRelease = yield* Deferred.make<void>();
+      const session = yield* openWithLauncher;
       expect(session.deviceId).toBe(device.id);
       expect(opened).toEqual([device.id]);
       expect((yield* service.state).sessions).toEqual([session]);
+
+      const closing = yield* service
+        .close({ threadId, hostId: "peer", shutdown: true })
+        .pipe(Effect.forkChild);
+      yield* Deferred.await(launcherRelease);
+      yield* service.withLifecycleLock(Effect.void);
+      yield* Deferred.succeed(finishLauncherRelease, undefined);
+      yield* Deferred.await(shutdownStarted);
+      yield* service.withLifecycleLock(Effect.void);
+      expect(closed).toEqual([device.id]);
+      expect((yield* service.state).sessions).toEqual([]);
+      yield* Fiber.interrupt(closing);
     }).pipe(Effect.provide(ServerSettings.layerTest({ enableDeviceSupport: true }))),
 );
 
