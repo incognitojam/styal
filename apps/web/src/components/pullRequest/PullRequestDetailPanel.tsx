@@ -1331,7 +1331,7 @@ function PullRequestDetailPanelBody({
   const resolveConflictsControl = (
     <PullRequestResolveConflictsButton
       handoff={handoff}
-      unavailable={attachTarget === null && checkoutRoot === null}
+      unavailable={attachTarget === null && (checkoutRoot === null || !canPrepareWorktree)}
       onResolve={startResolveConflicts}
     />
   );
