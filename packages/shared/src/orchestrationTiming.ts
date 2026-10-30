@@ -30,10 +30,7 @@ export function formatDuration(durationMs: number): string {
   if (!Number.isFinite(durationMs) || durationMs < 0) return "0ms";
   // Each unit is chosen after rounding, so 59.6s reads "1m" rather than "60s".
   if (Math.round(durationMs) < 1_000) return `${Math.max(1, Math.round(durationMs))}ms`;
-  if (durationMs < 10_000) {
-    const tenths = Math.round(durationMs / 100) / 10;
-    return tenths >= 10 ? "10s" : `${tenths.toFixed(1)}s`;
-  }
+  if (durationMs < 10_000) return `${Math.round(durationMs / 100) / 10}s`;
   const totalSeconds = Math.round(durationMs / 1_000);
   if (totalSeconds < 60) return `${totalSeconds}s`;
   const hours = Math.floor(totalSeconds / 3_600);

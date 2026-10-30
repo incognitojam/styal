@@ -59,7 +59,7 @@ describe("describeNetworkReport", () => {
     expect(describeNetworkReport(TRAIN)).toEqual([
       { text: "Connected 95% of 15m", trouble: false },
       {
-        text: "2 drops (1 stopped responding, 1 disconnected) · reconnected in 8.0s (slowest 31s)",
+        text: "2 drops (1 stopped responding, 1 disconnected) · reconnected in 8s (slowest 31s)",
         trouble: true,
       },
       { text: "2 route switches · 1 switch back after a failure", trouble: true },
