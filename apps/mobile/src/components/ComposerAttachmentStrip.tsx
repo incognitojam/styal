@@ -13,6 +13,7 @@ import {
   type DraftComposerAttachment,
   type DraftComposerFileAttachment,
   type DraftComposerImageAttachment,
+  type PendingComposerAttachment,
 } from "../lib/composerImages";
 import { resolveOwnedComposerAttachmentFileUri } from "../lib/composerAttachmentFiles";
 import { VideoAttachmentTile } from "./VideoAttachmentTile";
@@ -25,7 +26,6 @@ import {
 import { PresentationSource } from "./ui/NativePresentation";
 import type { FilePreviewSource } from "./FilePreviewModal";
 import { isPdfFile } from "../lib/filePreview";
-import type { PendingComposerAttachment } from "../state/composer-pending-attachments";
 import { AppActivityIndicator } from "./ui/AppActivityIndicator";
 
 export interface ComposerAttachmentStripProps {

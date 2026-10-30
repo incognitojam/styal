@@ -1,17 +1,8 @@
 import { useAtomValue } from "@effect/atom-react";
 import { Atom } from "effect/reactivity";
 
+import type { PendingComposerAttachment } from "../lib/composerImages";
 import { appAtomRegistry } from "./atom-registry";
-
-/**
- * A picked or shared attachment the composer is still turning into draft content. It is
- * shown in the strip straight away and blocks sending until it lands in the draft.
- */
-export interface PendingComposerAttachment {
-  readonly id: string;
-  /** The source the user picked, when it can be drawn while it is processed. */
-  readonly previewUri: string | null;
-}
 
 const EMPTY: ReadonlyArray<PendingComposerAttachment> = [];
 

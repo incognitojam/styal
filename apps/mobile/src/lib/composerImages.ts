@@ -24,7 +24,6 @@ import { fitComposerImage, renderPhoto } from "./composerImageFit";
 import { beginForegroundHandoff } from "./foreground-handoff";
 import { uuidv4 } from "./uuid";
 import { writeFileAtomically } from "./atomic-file";
-import type { PendingComposerAttachment } from "../state/composer-pending-attachments";
 
 export interface DraftComposerImageAttachment extends Omit<UploadChatImageAttachment, "dataUrl"> {
   readonly id: string;
@@ -77,6 +76,16 @@ export async function createPastedTextComposerAttachment(input: {
 }
 
 export type DraftComposerAttachment = DraftComposerImageAttachment | DraftComposerFileAttachment;
+
+/**
+ * A picked or shared attachment the composer is still turning into draft content. It is
+ * shown in the strip straight away and blocks sending until it lands in the draft.
+ */
+export interface PendingComposerAttachment {
+  readonly id: string;
+  /** The source the user picked, when it can be drawn while it is processed. */
+  readonly previewUri: string | null;
+}
 
 /**
  * The chip is not optional for a non-media file. Every path that attaches one also writes
