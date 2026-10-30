@@ -149,14 +149,18 @@ it("leaves workflow run watches with the parent when creating a subagent child",
   assert.deepEqual(parentThread.workflowRuns, workflowRuns);
 });
 
-it.effect.each([
-  ["sql", ProjectionStore.layer.pipe(Layer.provideMerge(SqlitePersistence.layerMemory))],
-] as const)(
-  "%s: a pinned parent's subagent child is born unpinned and settles once idle",
-  ([, testLayer]) =>
+it.effect.each(["provider", "mcp"] as const)(
+  "a %s child does not inherit parent settlement protections and settles once idle",
+  (creationSource) =>
     Effect.gen(function* () {
       const store = yield* ProjectionStore.ProjectionStoreV2;
-      const parentThread = { ...makeParentThread(), pinnedAt: parentCreatedAt, pinOrderKey: "a0" };
+      const parentThread = {
+        ...makeParentThread(),
+        pinnedAt: parentCreatedAt,
+        pinOrderKey: "a0",
+        autoSettleDisabledAt: parentCreatedAt,
+        settleReason: { kind: "user" as const },
+      };
       const childThread = makeSubagentChildThread({
         parentThread,
         childThreadId,
@@ -167,13 +171,16 @@ it.effect.each([
         title: "Child",
         now: childCreatedAt,
         createdBy: "agent",
-        creationSource: "provider",
+        creationSource,
       });
 
       assert.equal(parentThread.pinnedAt, parentCreatedAt);
       assert.equal(parentThread.pinOrderKey, "a0");
       assert.isNull(childThread.pinnedAt);
       assert.isNull(childThread.pinOrderKey);
+      assert.isNull(childThread.autoSettleDisabledAt);
+      assert.isNull(childThread.settleReason);
+      assert.deepEqual(parentThread.settleReason, { kind: "user" });
 
       for (const thread of [parentThread, childThread]) {
         yield* store.apply({
@@ -187,6 +194,7 @@ it.effect.each([
       const savedParent = yield* store.getThread(parentThreadId);
       assert.deepEqual(savedParent.pinnedAt, parentCreatedAt);
       assert.equal(savedParent.pinOrderKey, "a0");
+      assert.deepEqual(savedParent.autoSettleDisabledAt, parentCreatedAt);
       const candidates = yield* store.getSettlementCandidates();
       assert.deepEqual(
         candidates.map((candidate) => candidate.id),
@@ -200,7 +208,9 @@ it.effect.each([
         autoSettleOnMerge: false,
       });
       assert.equal(settledAt && DateTime.formatIso(settledAt), DateTime.formatIso(childCreatedAt));
-    }).pipe(Effect.provide(testLayer)),
+    }).pipe(
+      Effect.provide(ProjectionStore.layer.pipe(Layer.provideMerge(SqlitePersistence.layerMemory))),
+    ),
 );
 
 function taskFixture() {
