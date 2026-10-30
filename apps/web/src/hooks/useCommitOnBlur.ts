@@ -1,4 +1,4 @@
-import { type ChangeEvent, type KeyboardEvent, useState } from "react";
+import { type ChangeEvent, type KeyboardEvent, useRef, useState } from "react";
 
 /**
  * A commit that is saving: the text the user entered, and the value it
@@ -25,6 +25,7 @@ export function useCommitOnBlur(
   if (pending !== null && value !== pending.from) {
     setPending(null);
   }
+  const valueOnFocus = useRef(value);
 
   return {
     value: draft ?? pending?.next ?? value,
@@ -32,12 +33,13 @@ export function useCommitOnBlur(
       setDraft(event.target.value);
     },
     onFocus: () => {
+      valueOnFocus.current = pending?.next ?? value;
       setDraft(pending?.next ?? value);
     },
     onBlur: () => {
       const next = draft ?? value;
       setDraft(null);
-      if (next === (pending?.next ?? value)) return;
+      if (next === valueOnFocus.current || next === (pending?.next ?? value)) return;
       const saving = onCommit(next);
       if (saving === undefined) return;
       const commit = { next, from: value };
