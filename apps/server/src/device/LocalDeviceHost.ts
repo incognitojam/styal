@@ -38,6 +38,7 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
 import * as ServerConfig from "../config.ts";
+import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import * as DeviceHost from "./DeviceHost.ts";
 import * as PhysicalAndroidHold from "./PhysicalAndroidHold.ts";
@@ -281,6 +282,8 @@ export const make = Effect.fn("LocalDeviceHost.make")(function* () {
   const runningRef = yield* Ref.make<RunningHost | null>(null);
   const restartDelayRef = yield* Ref.make(0);
   const hostId = LOCAL_DEVICE_HOST_ID;
+  const { label, platform: environmentPlatform } =
+    yield* (yield* ServerEnvironment.ServerEnvironment).getDescriptor;
 
   const platformAvailability = Effect.fn("LocalDeviceHost.platformAvailability")(function* (
     platform: DevicePlatform,
@@ -327,7 +330,11 @@ export const make = Effect.fn("LocalDeviceHost.make")(function* () {
       ...(tools === undefined ? {} : { tools }),
       id: hostId,
       kind: "local",
-      label: "This machine",
+      // Clients may be on another machine, so the host is named after its environment.
+      label,
+      ...(environmentPlatform.machine === undefined
+        ? {}
+        : { machine: environmentPlatform.machine }),
       platforms,
       hubInstalled,
       agentDeviceInstalled,

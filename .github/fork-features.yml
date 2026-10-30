@@ -1256,7 +1256,7 @@ features:
   - id: device-environment-hosts
     title: Share local devices between connected environments
     status: maintained
-    prs: [746, 805]
+    prs: [746, 805, 1171]
     invariants:
       - New remote device setup in settings uses environment sharing. Web and desktop hide SSH host configuration unless their connected environment has saved hosts, which remain editable and removable in a collapsed section. Editing or removing saved hosts only changes matching entries on connected environments; settings do not offer adding SSH hosts.
       - Web, desktop, and mobile clients with settings:write on both environments can authorize an already connected environment as a device host without SSH configuration; devices:operate stays in the legacy wire vocabulary for older clients.
@@ -1269,13 +1269,16 @@ features:
       - When the selected address stops answering, the next request selects another saved address after checking both identities. Reads and cleanup retry once; other commands report the failure and are never replayed. New streams use the selected address; a running agent picks it up when agent access next starts.
       - Authenticated cleanup remains available when device access is disabled, and connected agent environments retain removal controls for offline or removed device environments.
       - Quit, restart, and update confirmations on the device environment count other environments with a device command or agent request in progress, or that used a device they still hold within five minutes. An idle shared session or a person only viewing a shared device does not ask for confirmation.
+      - A server's own device host is named after its environment label and carries its machine kind, which connected environments pass on, so device rows show a machine icon and name rather than "This machine", which reads as the client's machine when viewed remotely. Agents still identify their own host by the `local` kind.
     rationale: Connecting a machine to the client does not give an agent server access to it. An explicit device-only grant provides persistent access without copying a client credential or requiring redundant SSH setup.
     implementation_paths:
       - apps/mobile/src/features/settings/SettingsDevicesRouteScreen.tsx
       - apps/server/src/device/DeviceSharing.ts
       - apps/server/src/device/DeviceSharingHttp.ts
       - apps/server/src/device/EnvironmentDeviceHost.ts
+      - apps/server/src/device/LocalDeviceHost.ts
       - apps/server/src/environment/HostActivity.ts
+      - apps/web/src/components/device/DevicePanel.tsx
       - apps/web/src/components/settings/DeviceHostsSettings.tsx
       - apps/web/src/components/settings/EnvironmentDeviceHostsSettings.tsx
       - apps/web/src/components/settings/IntegrationsSettings.tsx
@@ -1292,6 +1295,7 @@ features:
     tests:
       - apps/server/src/device/DeviceMultiHost.test.ts
       - apps/server/src/device/DeviceSharing.test.ts
+      - apps/server/src/device/LocalDeviceHost.test.ts
       - apps/web/src/components/settings/ConnectionsSettings.logic.test.ts
       - apps/web/src/components/settings/deviceHostsSettings.logic.test.ts
       - packages/client-runtime/src/state/deviceSharingAddress.test.ts

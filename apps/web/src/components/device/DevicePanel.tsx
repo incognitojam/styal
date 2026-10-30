@@ -1,5 +1,6 @@
 import { DeviceHostUpdates } from "./DeviceHostUpdates";
 import type {
+  DeviceHostSummary,
   DevicePlatform,
   DeviceServiceState,
   DeviceSummary,
@@ -23,6 +24,7 @@ import { useComposerDraftStore } from "~/composerDraftStore";
 import { DeviceLoadingView } from "./DeviceLoadingView";
 import { DeviceSetup, deviceHubReadiness } from "./DeviceSetup";
 import { DeviceWorkspace } from "./DeviceWorkspace";
+import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import { toastManager } from "../ui/toast";
 import { PreviewPanelShell, type PreviewPanelMode } from "../preview/PreviewPanelShell";
 
@@ -300,9 +302,10 @@ export function DevicePanel(props: {
                                 <span className="truncate text-sm font-medium text-foreground">
                                   {device.name}
                                 </span>
-                                <span className="truncate text-xs text-muted-foreground">
-                                  {`${state.hosts.find((host) => host.id === device.hostId)?.label} · ${device.version} · ${device.booted ? "Running" : "Stopped"}`}
-                                </span>
+                                <DeviceHostLine
+                                  host={state.hosts.find((host) => host.id === device.hostId)}
+                                  detail={`${device.version} · ${device.booted ? "Running" : "Stopped"}`}
+                                />
                               </div>
                               <Button
                                 variant="outline"
@@ -385,6 +388,20 @@ function DeviceNotice(props: {
         <X />
       </Button>
     </div>
+  );
+}
+
+function DeviceHostLine(props: {
+  readonly host: DeviceHostSummary | undefined;
+  readonly detail: string;
+}) {
+  return (
+    <span className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
+      {props.host?.machine ? (
+        <EnvironmentMachineIcon kind={props.host.machine} className="size-3 shrink-0" />
+      ) : null}
+      <span className="truncate">{`${props.host?.label ?? "Device host"} · ${props.detail}`}</span>
+    </span>
   );
 }
 

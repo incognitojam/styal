@@ -20,6 +20,7 @@ import {
   ThreadId,
   TrimmedNonEmptyString,
 } from "./baseSchemas.ts";
+import { EnvironmentMachineKind } from "./environment.ts";
 
 export const DevicePlatform = Schema.Literals(["ios", "android"]);
 export type DevicePlatform = typeof DevicePlatform.Type;
@@ -166,6 +167,7 @@ export const DeviceHostSummary = Schema.Struct({
   id: DeviceHostId,
   kind: Schema.Literals(["local", "ssh", "environment"]),
   label: TrimmedNonEmptyString,
+  machine: Schema.optional(EnvironmentMachineKind),
   connectedUrl: Schema.optional(DeviceEnvironmentUrl),
   platforms: Schema.Array(DevicePlatformAvailability),
   tools: Schema.optional(DeviceToolVersions),
