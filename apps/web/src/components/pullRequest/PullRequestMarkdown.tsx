@@ -29,6 +29,7 @@ import {
 
 export const PullRequestMarkdownContext = createContext<{
   autolinks: ((text: string) => ReadonlyArray<ReferenceAutolink>) | null;
+  lineBreaks: boolean;
   threadRef: ScopedThreadRef | null;
 } | null>(null);
 
@@ -65,12 +66,14 @@ export function PullRequestMarkdown({
   detail,
   environmentId,
   threadRef,
+  lineBreaks,
   className,
 }: {
   text: string;
   detail: PullRequestDetailView;
   environmentId: EnvironmentId;
   threadRef?: ScopedThreadRef | null;
+  lineBreaks?: boolean;
   className?: string;
 }) {
   const cwd = detail.workspaceRoot;
@@ -135,6 +138,7 @@ export function PullRequestMarkdown({
               imageAssetResource={imageAssetResource}
               referenceContext={referenceContext}
               extraRemarkPlugins={extraRemarkPlugins}
+              lineBreaks={lineBreaks ?? context?.lineBreaks ?? false}
               sourceControlMedia
             />
           );
