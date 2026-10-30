@@ -70,7 +70,6 @@ export type EnvironmentSubscriptionRpcTag =
   | typeof WS_METHODS.subscribeResourceTelemetry
   | typeof WS_METHODS.pullRequestsSubscribeRefreshes
   | typeof WS_METHODS.subscribeVcsStatus
-  | typeof WS_METHODS.subscribeComposerDraft
   | typeof WS_METHODS.subscribeWorktreeSetup
   | typeof WS_METHODS.subscribeProjectClones
   | typeof WS_METHODS.terminalAttach

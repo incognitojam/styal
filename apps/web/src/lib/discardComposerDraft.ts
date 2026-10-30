@@ -9,7 +9,6 @@ import {
 } from "../composerDraftStore";
 import { showThreadUndoNotice } from "../hooks/showThreadUndoNotice";
 import * as ThreadUndo from "../hooks/threadUndo";
-import { discardServerComposerDraft } from "../state/composerDrafts";
 import { releaseDraftAttachments } from "./attachmentUploadQueue";
 
 export function discardComposerDraft(target: ComposerThreadTarget): void {
@@ -29,8 +28,6 @@ export function discardComposerDraft(target: ComposerThreadTarget): void {
   } else {
     store.clearComposerContent(target);
   }
-  const discardedServerDraft =
-    typeof target === "string" ? Promise.resolve() : discardServerComposerDraft(target);
 
   showThreadUndoNotice({
     action: "Discarded",
@@ -70,11 +67,6 @@ export function discardComposerDraft(target: ComposerThreadTarget): void {
           logicalProjectDraftThreadKeyByLogicalProjectKey,
         };
       });
-      if (typeof target !== "string") {
-        // The clear must finish before restoring the synchronized draft.
-        await discardedServerDraft;
-        await discardServerComposerDraft(target);
-      }
       return AsyncResult.success(undefined);
     },
     commit: () => releaseDraftAttachments([...draft.images, ...draft.files]),

@@ -33,7 +33,6 @@ import {
   type AuthAccessStreamEvent,
   AuthOrchestrationOperateScope,
   type AuthEnvironmentScope,
-  ComposerDraftSyncError,
   type ScheduledTaskListResult,
   AuthSessionId,
   ClientConnectionMethod,
@@ -112,7 +111,6 @@ import { RpcGroup, RpcSerialization, RpcServer } from "effect/rpc";
 
 import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
 import * as CommandOutputQuery from "./orchestration-v2/CommandOutputQuery.ts";
-import * as ComposerDrafts from "./persistence/ComposerDrafts.ts";
 import * as LegacyImportPreview from "./dataImport/LegacyImportPreview.ts";
 import * as LegacyImport from "./dataImport/LegacyImport.ts";
 import * as ServerConfig from "./config.ts";
@@ -1223,13 +1221,11 @@ export const layerWsRpc = (
       const currentSessionId = currentSession.sessionId;
       const sql = yield* SqlClient.SqlClient;
       const threadManagement = yield* ThreadManagementService.ThreadManagementService;
-      const composerDrafts = yield* ComposerDrafts.ComposerDraftRepository;
       const intakeContext = yield* Effect.context<
         | ThreadManagementService.ThreadManagementService
         | ThreadLaunchService.ThreadLaunchService
         | FileSystem.FileSystem
         | ServerConfig.ServerConfig
-        | ComposerDrafts.ComposerDraftRepository
         | ServerSettings.ServerSettingsService
       >();
       const applicationEvents = yield* OrchestrationEventStore.OrchestrationEventStore;
@@ -1875,34 +1871,6 @@ export const layerWsRpc = (
       const coreHandlers = WsCoreRpcGroup.of({
         [WS_METHODS.serverPreviewLegacyImport]: (_input) => legacyImportPreview.preview,
         [WS_METHODS.serverImportLegacyData]: (input) => legacyImport.importData(input),
-        [WS_METHODS.composerDraftUpdate]: (input) =>
-          Effect.annotateCurrentSpan({ threadId: input.threadId }).pipe(
-            Effect.andThen(
-              composerDrafts.update(input).pipe(
-                Effect.mapError(
-                  () =>
-                    new ComposerDraftSyncError({
-                      message: "Failed to save the composer draft.",
-                    }),
-                ),
-              ),
-            ),
-          ),
-        [WS_METHODS.subscribeComposerDraft]: (input) =>
-          Stream.unwrap(
-            Effect.annotateCurrentSpan({ threadId: input.threadId }).pipe(
-              Effect.as(
-                composerDrafts.subscribe(input).pipe(
-                  Stream.mapError(
-                    () =>
-                      new ComposerDraftSyncError({
-                        message: "Composer draft sync was interrupted.",
-                      }),
-                  ),
-                ),
-              ),
-            ),
-          ),
         [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: (command) =>
           Effect.annotateCurrentSpan({
             "orchestration_v2.command_id": command.commandId,
@@ -3288,7 +3256,6 @@ export const layer = Layer.unwrap(
     const serverSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
     const desktopAppUpdate = yield* DesktopAppUpdate.DesktopAppUpdate;
     const pullRequests = yield* PullRequestService.PullRequestService;
-    const composerDrafts = yield* ComposerDrafts.ComposerDraftRepository;
     const reviewGuides = yield* PullRequestReviewGuideService.PullRequestReviewGuideService;
     const sql = yield* SqlClient.SqlClient;
     return HttpRouter.add(
@@ -3362,7 +3329,6 @@ export const layer = Layer.unwrap(
               previewAutomationBroker,
               serverBrowser,
             ).pipe(
-              Layer.provide(Layer.succeed(ComposerDrafts.ComposerDraftRepository, composerDrafts)),
               Layer.provideMerge(RpcSerialization.layerJson),
               // Request fibers run in the handlers' context, so this reporter sees
               // their defects, not the rest of the server's.

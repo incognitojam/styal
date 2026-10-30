@@ -162,7 +162,6 @@ interface StartThreadBootstrap {
 }
 
 export interface StartThreadTurnInput extends ThreadCommandInput {
-  readonly composerDraftRevision?: number;
   readonly manualContinuationOfRunId?: RunId;
   readonly message: {
     readonly messageId: MessageId;
@@ -696,9 +695,6 @@ export const startThreadTurn = Effect.fn("EnvironmentCommands.startThreadTurn")(
       creationSource: input.creationSource ?? "web",
       threadId: input.threadId,
       messageId: input.message.messageId,
-      ...(input.composerDraftRevision === undefined
-        ? {}
-        : { composerDraftRevision: input.composerDraftRevision }),
       ...(input.manualContinuationOfRunId === undefined
         ? {}
         : { manualContinuationOfRunId: input.manualContinuationOfRunId }),
@@ -763,9 +759,6 @@ export const startThreadTurn = Effect.fn("EnvironmentCommands.startThreadTurn")(
     creationSource: input.creationSource ?? "web",
     threadId: input.threadId,
     messageId: input.message.messageId,
-    ...(input.composerDraftRevision === undefined
-      ? {}
-      : { composerDraftRevision: input.composerDraftRevision }),
     text: input.message.text,
     ...(context ? { context } : {}),
     attachments,

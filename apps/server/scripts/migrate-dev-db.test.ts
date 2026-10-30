@@ -227,7 +227,7 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
     }),
   );
 
-  it.effect("preserves fork migration history and prunes composer drafts", () =>
+  it.effect("preserves fork migration history and drops composer drafts", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const sourceDir = yield* fs.makeTempDirectoryScoped({ prefix: "migrate-dev-db-fork-" });
@@ -284,10 +284,8 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
             SELECT migration_id, name
             FROM yngatech_sql_migrations
           `;
-          const drafts = yield* sql<{ readonly thread_id: string }>`
-            SELECT thread_id
-            FROM composer_drafts
-            ORDER BY thread_id
+          const drafts = yield* sql<{ readonly name: string }>`
+            SELECT name FROM sqlite_master WHERE name = 'composer_drafts'
           `;
           const recordedUsage = yield* encodeJson({
             turns: [{ turnId: "recorded-turn", inputTokens: 123, costUsd: 0.012345 }],
@@ -324,8 +322,9 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
         { migration_id: 9, name: "RederiveLegacyActivityItems" },
         { migration_id: 10, name: "HardwareLeases" },
         { migration_id: 11, name: "ProjectionProjectsOrganization" },
+        { migration_id: 12, name: "DropComposerDrafts" },
       ]);
-      assert.deepStrictEqual(migrated.drafts, [{ thread_id: "stopped-thread" }]);
+      assert.deepStrictEqual(migrated.drafts, []);
       assert.deepStrictEqual(migrated.usage, [{ payload_json: migrated.recordedUsage }]);
     }),
   );

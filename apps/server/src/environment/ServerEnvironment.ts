@@ -267,7 +267,6 @@ export const make = Effect.gen(function* () {
       threadPullRequestWatch: true,
       pullRequestStackActions: true,
       threadPullRequestLinking: true,
-      composerDraftSync: true,
       forkClientUsageVersion: FORK_CLIENT_USAGE_VERSION,
       serverResolvedCommandContext: true,
       threadStop: true,

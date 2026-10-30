@@ -2960,7 +2960,6 @@ export const OrchestrationV2Command = Schema.Union([
   }),
   Schema.Struct({
     type: Schema.Literal("message.dispatch"),
-    composerDraftRevision: Schema.optional(NonNegativeInt),
     notification: Schema.optional(OrchestrationV2Notification),
     ...OrchestrationV2CreationFields,
     scheduledTaskId: Schema.optional(ScheduledTaskId),

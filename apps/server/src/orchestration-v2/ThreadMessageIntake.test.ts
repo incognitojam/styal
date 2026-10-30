@@ -30,9 +30,6 @@ import {
 } from "./Orchestrator.ts";
 import * as ThreadManagementService from "./ThreadManagementService.ts";
 import { dispatchCommand, sendToThread } from "./ThreadMessageIntake.ts";
-import * as ComposerDrafts from "../persistence/ComposerDrafts.ts";
-import { runAllMigrations } from "../persistence/ForkMigrations.ts";
-import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 
 const layerIntakeTest = ServerConfig.layerTest(process.cwd(), {
   prefix: "t3-question-intake-",
@@ -752,83 +749,6 @@ it.effect("applies the image budget across all questions before dispatch", () =>
     expect(captured).toEqual([]);
   }).pipe(Effect.provide(layerIntakeTest)),
 );
-
-it.layer(
-  Layer.mergeAll(
-    layerIntakeTest,
-    ComposerDrafts.layer.pipe(Layer.provideMerge(NodeSqliteClient.layer({ filename: ":memory:" }))),
-  ),
-)("draft clears after message intake", (it) => {
-  it.effect(
-    "clears the sent revision, preserves a newer draft, and leaves rejected sends intact",
-    () =>
-      Effect.gen(function* () {
-        yield* runAllMigrations();
-        const repository = yield* ComposerDrafts.ComposerDraftRepository;
-        const common = {
-          text: "synthetic unsent text",
-          modelSelection: null,
-          runtimeMode: null,
-          interactionMode: null,
-        };
-        for (const scenario of ["accepted", "newer-draft", "rejected"] as const) {
-          const threadId = ThreadId.make(`intake-draft-${scenario}`);
-          yield* repository.update({
-            threadId,
-            baseRevision: 0,
-            common,
-            clientMutationId: "initial",
-          });
-          if (scenario === "newer-draft")
-            yield* repository.update({
-              threadId,
-              baseRevision: 1,
-              common: { ...common, text: "newer edit" },
-              clientMutationId: "newer",
-            });
-          const command: OrchestrationV2Command = {
-            type: "message.dispatch",
-            commandId: CommandId.make(`send-${scenario}`),
-            threadId,
-            messageId: MessageId.make(`message-${scenario}`),
-            text: common.text,
-            attachments: [],
-            composerDraftRevision: 1,
-            createdBy: "user",
-            creationSource: "web",
-            dispatchMode: { type: "start_immediately" },
-            modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5" },
-          };
-          yield* dispatchCommand(command).pipe(
-            Effect.provide(
-              Layer.mock(ThreadManagementService.ThreadManagementService)({
-                dispatch: () =>
-                  scenario === "rejected"
-                    ? Effect.fail(
-                        new OrchestratorCommandPreviouslyRejectedError({
-                          commandId: command.commandId,
-                          commandType: command.type,
-                          detail: "synthetic rejection",
-                        }),
-                      )
-                    : Effect.succeed({ sequence: 1, storedEvents: [] }),
-              }),
-            ),
-            Effect.exit,
-          );
-          const snapshot = yield* repository.get({ threadId });
-          expect(snapshot.common?.text ?? null).toBe(
-            scenario === "accepted"
-              ? null
-              : scenario === "newer-draft"
-                ? "newer edit"
-                : common.text,
-          );
-          expect(snapshot.revision).toBe(scenario === "rejected" ? 1 : 2);
-        }
-      }),
-  );
-});
 
 it.effect("releases claimed copies when a project disables the message's provider instance", () =>
   Effect.gen(function* () {

@@ -392,7 +392,6 @@ import {
 import { threadEnvironment } from "../state/threads";
 import { resolveProviderSkillsForCwd } from "@t3tools/client-runtime/providerSkills";
 import { vcsEnvironment } from "../state/vcs";
-import { markComposerDraftSent, readComposerDraftRevision } from "../state/composerDrafts";
 import { sourceControlEnvironment } from "../state/sourceControl";
 import { useProjectClone } from "../state/projectClones";
 import { projectCloneDisplayName, projectCloneProgressSummary } from "@t3tools/contracts";
@@ -6705,9 +6704,6 @@ export default function ChatView(props: ChatViewProps) {
     const composerAttachmentsSnapshot = [...composerImagesSnapshot, ...composerFilesSnapshot];
     const composerTerminalContextsSnapshot = [...sendableComposerTerminalContexts];
     const composerIssueContextsSnapshot = [...composerIssueContexts];
-    const composerDraftRevision = isServerThread
-      ? readComposerDraftRevision(routeThreadRef)
-      : undefined;
     const composerPreviewAnnotationsSnapshot = [...composerPreviewAnnotations];
     const composerReviewCommentsSnapshot: ReviewCommentContext[] = [...composerReviewComments];
     const composerThreadContextsSnapshot = [...composerThreadContexts];
@@ -7224,7 +7220,6 @@ export default function ChatView(props: ChatViewProps) {
     if (sentDraftThreadRef) markPromotedDraftThreadByRef(sentDraftThreadRef);
     promptRef.current = "";
     clearComposerDraftContent(composerDraftTarget);
-    if (isServerThread) markComposerDraftSent(routeThreadRef, promptForSend);
     composerRef.current?.resetCursorState();
 
     const title = deriveThreadTitleSeed({
@@ -7372,7 +7367,6 @@ export default function ChatView(props: ChatViewProps) {
           interactionMode: sendInteractionMode,
           dispatchMode: turnDispatchMode,
           ...(bootstrap ? { bootstrap } : {}),
-          ...(composerDraftRevision === undefined ? {} : { composerDraftRevision }),
           createdAt: messageCreatedAt,
         },
       });

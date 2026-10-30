@@ -155,7 +155,6 @@ import {
 import { appAtomRegistry } from "./atom-registry";
 import { threadOutboxManager } from "./thread-outbox";
 import {
-  applySyncedComposerDraftCommon,
   resetComposerDraftsLoadState,
   appendComposerDraftAttachments,
   captureComposerDraftInsertion,
@@ -267,42 +266,6 @@ describe("mobile composer drafts", () => {
 
     appAtomRegistry.set(composerDraftsAtom, {});
     expect(appAtomRegistry.get(draftThreadKeysAtom).size).toBe(0);
-  });
-
-  it("applies synchronized common state without replacing local attachments or workspace", () => {
-    const draftKey = "environment-1:thread-1";
-    const attachment = {
-      id: "image-1",
-      previewUri: "file:///image.png",
-      type: "image" as const,
-      name: "image.png",
-      mimeType: "image/png",
-      sizeBytes: 4,
-      dataUrl: "data:image/png;base64,AAAA",
-    };
-    const workspaceSelection = {
-      mode: "worktree" as const,
-      branch: "main",
-      worktreePath: "/repo-worktree",
-    };
-    appAtomRegistry.set(composerDraftsAtom, {
-      [draftKey]: { text: "local", attachments: [attachment], workspaceSelection },
-    });
-
-    applySyncedComposerDraftCommon(draftKey, {
-      text: "remote",
-      modelSelection: null,
-      runtimeMode: "full-access",
-      interactionMode: "plan",
-    });
-
-    expect(getComposerDraftSnapshot(draftKey)).toEqual({
-      text: "remote",
-      attachments: [attachment],
-      workspaceSelection,
-      runtimeMode: "full-access",
-      interactionMode: "plan",
-    });
   });
 
   it("restores a PR checkout source after restarting the composer", () => {

@@ -3,8 +3,6 @@ import { appendUserInputAttachmentPaths } from "../provider/userInputAttachments
 import type { ChatAttachment, OrchestrationV2Command } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
-import * as Option from "effect/Option";
-import * as ComposerDrafts from "../persistence/ComposerDrafts.ts";
 import { resolveAttachmentPath } from "../attachmentStore.ts";
 import * as ServerConfig from "../config.ts";
 import * as Orchestrator from "./Orchestrator.ts";
@@ -152,22 +150,6 @@ export const dispatchCommand = Effect.fn("ThreadMessageIntake.dispatchCommand")(
         : {}),
     })
     .pipe(
-      Effect.tap(() => {
-        if (command.type !== "message.dispatch" || command.composerDraftRevision === undefined)
-          return Effect.void;
-        const revision = command.composerDraftRevision;
-        return Effect.gen(function* () {
-          const drafts = yield* Effect.serviceOption(ComposerDrafts.ComposerDraftRepository);
-          if (Option.isNone(drafts)) return;
-          // Compare-and-set leaves a newer draft written by another client intact.
-          yield* drafts.value.update({
-            threadId: command.threadId,
-            baseRevision: revision,
-            common: null,
-            clientMutationId: `turn:${command.commandId}`,
-          });
-        }).pipe(Effect.ignoreCause({ log: true }));
-      }),
       Effect.tap((result) =>
         releaseUnusedClaims(
           claimed.claimedPaths,

@@ -370,7 +370,6 @@ import {
   submitComposerDraft,
 } from "./composerSubmission";
 import { ComposerPromptLengthValidation } from "./ComposerPromptLengthValidation";
-import { useServerComposerDraftSync } from "../../state/composerDrafts";
 import { PierreEntryIcon } from "./PierreEntryIcon";
 import { pendingDraftWork } from "./pendingDraftWork";
 import {
@@ -2057,7 +2056,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const activeTaskSteps = shownSyncPhase === null ? props.activeTaskSteps : null;
   const isEditingQueuedMessage = editingQueuedAttachments !== null;
   const composerDraft = useComposerThreadDraft(composerDraftTarget);
-  useServerComposerDraftSync(routeKind === "server" ? routeThreadRef : null);
   const composerDraftTargetKeyRef = useRef("");
   useLayoutEffect(() => {
     composerDraftTargetKeyRef.current = composerDraftTargetKey;

@@ -10,7 +10,6 @@ import {
   IsoDateTime,
   MessageId,
   ModelSelection,
-  NonNegativeInt,
   OrchestrationMessageContext,
   ProjectId,
   ProviderInteractionMode,
@@ -30,7 +29,8 @@ import type { DraftComposerAttachment } from "../lib/composerImages";
 import { scopedThreadKey } from "../lib/scopedEntities";
 import { resolveProviderInteractionMode } from "./legacy-plan-mode";
 
-const THREAD_OUTBOX_SCHEMA_VERSION = 4;
+// Keep current writes until a compatible native baseline includes the v4 reader.
+const THREAD_OUTBOX_SCHEMA_VERSION = 3;
 const THREAD_OUTBOX_MAX_RETRY_DELAY_MS = 16_000;
 
 const QueuedThreadCreationSchema = Schema.Struct({
@@ -45,7 +45,7 @@ const QueuedThreadCreationSchema = Schema.Struct({
 });
 
 export const QueuedThreadMessageSchema = Schema.Struct({
-  schemaVersion: Schema.Literals([1, 2, 3, THREAD_OUTBOX_SCHEMA_VERSION]),
+  schemaVersion: Schema.Literals([1, 2, THREAD_OUTBOX_SCHEMA_VERSION, 4]),
   environmentId: EnvironmentId,
   threadId: ThreadId,
   messageId: MessageId,
@@ -57,7 +57,6 @@ export const QueuedThreadMessageSchema = Schema.Struct({
   dispatchMode: Schema.optional(Schema.Literals(["auto", "queue", "steer", "restart"])),
   runtimeMode: Schema.optional(RuntimeMode),
   interactionMode: Schema.optional(ProviderInteractionMode),
-  composerDraftRevision: Schema.optional(NonNegativeInt),
   creation: Schema.optional(QueuedThreadCreationSchema),
   createdAt: IsoDateTime,
 });
@@ -87,7 +86,6 @@ export interface QueuedThreadMessage {
   readonly modelSelection?: ModelSelectionType;
   readonly runtimeMode?: RuntimeModeType;
   readonly interactionMode?: ProviderInteractionModeType;
-  readonly composerDraftRevision?: number;
   /**
    * Captured at enqueue time because the drain can fire long after the tap.
    */

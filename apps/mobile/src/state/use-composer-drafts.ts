@@ -1,6 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
 import {
-  type ComposerDraftCommon,
   EnvironmentId as EnvironmentIdSchema,
   ModelSelection as ModelSelectionSchema,
   ComposerContextId,
@@ -1442,41 +1441,6 @@ export function updateComposerDraftSettings(
       ...settings,
     };
     return withComposerDraft(current, draftKey, draft);
-  });
-}
-
-/** Applies the server-owned draft section without touching device-local assets. */
-export function applySyncedComposerDraftCommon(
-  draftKey: string,
-  common: ComposerDraftCommon | null,
-): void {
-  updateComposerDrafts((current) => {
-    const existing = normalizeDraft(current[draftKey]);
-    const {
-      modelSelection: _modelSelection,
-      runtimeMode: _runtimeMode,
-      interactionMode: _interactionMode,
-      ...deviceLocal
-    } = existing;
-    const draft: ComposerDraft = {
-      ...deviceLocal,
-      text: common?.text ?? "",
-      ...(common?.modelSelection === null || common?.modelSelection === undefined
-        ? {}
-        : { modelSelection: common.modelSelection }),
-      ...(common?.runtimeMode === null || common?.runtimeMode === undefined
-        ? {}
-        : { runtimeMode: common.runtimeMode }),
-      ...(common?.interactionMode === null || common?.interactionMode === undefined
-        ? {}
-        : { interactionMode: common.interactionMode }),
-    };
-    if (isEmptyDraft(draft)) {
-      const next = { ...current };
-      delete next[draftKey];
-      return next;
-    }
-    return { ...current, [draftKey]: draft };
   });
 }
 

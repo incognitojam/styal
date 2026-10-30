@@ -44,10 +44,6 @@ are ready. Retry or remove a failed upload. On web and desktop, reloading before
 an upload finishes requires you to attach that file again. Uploaded draft files
 are kept for 24 hours; after that, attach them again.
 
-Draft text and settings in an existing thread sync between devices, but
-attachments stay with the device that added them. See
-[Composer drafts](./composer-drafts.md).
-
 You can drag or paste images into the web or desktop composer. HEIC and HEIF
 photos are converted to JPEG there and when selected from the mobile photo
 library; photos over the image limit are also resized to fit. On mobile, you can
