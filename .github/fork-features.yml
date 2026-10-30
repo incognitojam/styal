@@ -1354,6 +1354,25 @@ features:
         - https://github.com/pingdotgg/t3code/pull/18726
       retire_when: Upstream releases device claims on close and after idle turns, and shuts down devices it booted once nobody holds or watches them, without touching devices started outside it.
 
+  - id: device-list-physical-section
+    title: List plugged-in devices apart from simulators and emulators
+    status: maintained
+    prs: [1176]
+    invariants:
+      - The web Device panel lists physical devices in their own section per platform ("Android Devices", "iOS Devices") above that platform's simulators or emulators, instead of under the "Android Emulators" or "iOS Simulators" heading. Their rows say "Connected" rather than "Running", since a physical device is always running and cannot be started or powered off.
+    rationale: Upstream groups devices by platform only, so a plugged-in phone appeared under "Android Emulators" beside AVDs it does not behave like.
+    implementation_paths:
+      - apps/web/src/components/device/DevicePanel.tsx
+      - apps/web/src/components/device/deviceGroups.ts
+    upstream_paths:
+      - apps/web/src/components/device/DevicePanel.tsx
+    tests:
+      - apps/web/src/components/device/deviceGroups.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream lists physical devices separately from simulators and emulators.
+
   - id: device-panel-tabs
     title: Keep a panel tab for every live device
     status: maintained
