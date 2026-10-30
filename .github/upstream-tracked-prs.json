@@ -45,10 +45,6 @@
       "reason": "preview_snapshot times out or returns a stale image when the desktop window is minimized, hidden, covered, or on another macOS Space, because the occluded guest does not present a fresh frame. Agents see this as a page-capture failure. Take it at chronological intake; the fork's capture retry and timeout handling in apps/desktop/src/preview/Manager.ts must be reconciled with its Page.captureScreenshot path."
     },
     {
-      "pr": 13608,
-      "reason": "Proactive panels re-select a thread's pull request tab every time the thread is entered, hiding a Browser or Device tab the user or an agent was using. This PR leaves an existing PR tab alone on re-entry. At intake, adapt its existing-tab check to the fork's PR tab matching (ledger entry with fork #531) so sidebar-created tabs whose IDs include the host are also recognised; otherwise re-entry still steals focus. Closing the PR tab and re-entering still reopens it, and a newly linked PR still takes focus from an active Browser tab."
-    },
-    {
       "pr": 13687,
       "reason": "Imported provisionally as one snapshot: a cached styal Link websocket-ticket request that times out is retried once with the same token (3 s, then 7 s), the token is kept on a second timeout, and only the third timeout in a row asks the relay for a new credential. The fork applied it on top of the learned LAN and tailnet routes the PR predates: the retry also targets a direct endpoint, and a direct route still fails that route and keeps its token before the timeout count applies. One supervisor test waits 2 s for its first backoff to match the jittered retry schedule. When it merges, compare the frozen base-to-head diff with the final upstream change, reconcile how upstream combined it with #19426's 6 s ticket timeout, rerun the relay ticket supervisor and authorization tests, then clear the snapshot marker with that intake. If it closes without merging, review whether to remove the change or retain it as maintained fork behavior and record that decision before clearing the marker.",
       "snapshot": {
