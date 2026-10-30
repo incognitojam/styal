@@ -2803,7 +2803,12 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     if (!captureSession?.consumers.has("picture-in-picture") || captureSession.scope === null)
       return;
     const wc = yield* requireWebContents(tabId);
-    const image = yield* capturePageWithTimeout("frameCapture.capturePage", tabId, wc);
+    const image = yield* capturePageWithTimeout(
+      "frameCapture.capturePage",
+      tabId,
+      wc,
+      CAPTURE_PAGE_ATTEMPT_TIMEOUT_MS,
+    );
     const currentCaptureSession = yield* Effect.all(
       [SynchronizedRef.get(frameCaptureSessionsRef), SynchronizedRef.get(tabsRef)],
       { concurrency: 2 },
@@ -3002,7 +3007,11 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     if (!captureInitialFrame) return;
     yield* capturePreviewFrame(tabId).pipe(
       Effect.catch((error) => {
-        if (isPreviewOperationError(error) && error.cause instanceof PreviewCaptureTimeoutError) {
+        if (
+          consumer !== "picture-in-picture" &&
+          isPreviewOperationError(error) &&
+          error.cause instanceof PreviewCaptureTimeoutError
+        ) {
           return stopFrameCapture(tabId, consumer).pipe(Effect.andThen(Effect.fail(error)));
         }
         return Effect.logWarning(
