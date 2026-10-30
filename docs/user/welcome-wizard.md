@@ -66,7 +66,7 @@ terminal metadata while the terminal process can use them.
 
 ## Import your projects
 
-Choose **T3 Code** to migrate an existing installation, or **Claude Code / Codex**
+Choose **T3 Code** to migrate an existing installation, or **Claude Code / Codex / Pi**
 to import CLI conversation history. Setup imports projects from one source at a
 time. Each source only checks the computers selected earlier in setup.
 
@@ -93,9 +93,9 @@ computers. Settings shows projects and preferences together with a direct
 While importing, the main panel shows remaining threads and repairs, preference
 imports, and completed work for each computer. Counts refresh every 30 seconds.
 
-### Claude/Codex history
+### Claude/Codex/Pi history
 
-styal finds directories that Claude Code or Codex has used. Git repositories
+styal finds directories that Claude Code, Codex or Pi has used. Git repositories
 are listed first, newest activity on top. When the remote is on GitHub, the
 group shows the repository as `owner/name`. Clones with the same remote share
 one group. Directories that are not git repositories sit under "Other folders".
@@ -109,9 +109,13 @@ separate projects. Other linked git worktrees, Codex scratch directories under
 A large or malformed history can reach the scan limit. styal keeps the
 projects it found and warns when projects or conversations may be missing.
 
-Imported projects include Codex and Claude conversations active within the last
+Imported projects include Claude, Codex and Pi conversations active within the last
 30 days. You can continue those conversations in styal. If the scan fails on a computer
-running an older styal version, update that computer and retry.
+running an older styal version, update that computer and retry. Pi is off by default:
+enable it in Settings, then open `/welcome` to import its sessions. Pi sessions
+are read from each enabled Pi provider's session directory, which follows
+`PI_CODING_AGENT_SESSION_DIR` and `PI_CODING_AGENT_DIR` in its environment. A
+Pi conversation imports its active branch, the one Pi reopens.
 
 During import, each selected project shows whether it is queued, importing, complete, or could not be imported. Completed counts come from the import result. Failed projects stay selected so you can retry.
 
@@ -143,7 +147,7 @@ has differing values. It is omitted when there is no T3 Code installation, no
 saved preferences, or all values already match.
 
 This step is independent of the project source: you can import preferences after
-choosing Claude Code / Codex history, T3 Code projects, or skipping projects.
+choosing Claude Code / Codex / Pi history, T3 Code projects, or skipping projects.
 Differing preferences are selected by default. Review the changed values and clear
 **Bring over T3 Code preferences** on any computer where you want to keep the current values.
 Importing projects alone does not replace preferences.

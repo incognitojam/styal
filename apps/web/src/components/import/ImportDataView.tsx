@@ -15,7 +15,8 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import { cn } from "../../lib/utils";
 import { splitOnboardingProjectPath } from "../../onboarding/projectImport.logic";
 import { RelativeTime } from "../RelativeTime";
-import { ClaudeAI, OpenAI, type Icon } from "../Icons";
+import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
+import { ProviderDriverKind } from "@t3tools/contracts";
 import { Button } from "../ui/button";
 import { ProjectFavicon } from "../ProjectFavicon";
 import { Checkbox } from "../ui/checkbox";
@@ -42,18 +43,13 @@ export function plural(value: number, singular: string, many = `${singular}s`): 
   return `${formatCount(value)} ${value === 1 ? singular : many}`;
 }
 
-/** CLI rows carry the mark of the tool the conversations came from. */
-const PROVIDER_ICONS: Record<"claudeAgent" | "codex", Icon> = {
-  claudeAgent: ClaudeAI,
-  codex: OpenAI,
-};
-
-const PROVIDER_LABELS: Record<"claudeAgent" | "codex", string> = {
+const PROVIDER_LABELS: Record<"claudeAgent" | "codex" | "pi", string> = {
   claudeAgent: "Claude Code",
   codex: "Codex",
+  pi: "Pi",
 };
 
-function providerSummary(providers: readonly ("claudeAgent" | "codex")[]): string {
+function providerSummary(providers: readonly ("claudeAgent" | "codex" | "pi")[]): string {
   return `${providers.map((provider) => PROVIDER_LABELS[provider]).join(" and ")} history`;
 }
 
@@ -384,8 +380,14 @@ function ImportProjectRowView({
           {providers.length > 0 ? (
             <>
               {providers.map((provider) => {
-                const ProviderIcon = PROVIDER_ICONS[provider];
-                return <ProviderIcon key={provider} className="size-3.5" aria-hidden />;
+                return (
+                  <ProviderInstanceIcon
+                    key={provider}
+                    driverKind={ProviderDriverKind.make(provider)}
+                    displayName={PROVIDER_LABELS[provider]}
+                    iconClassName="size-3.5"
+                  />
+                );
               })}
               <span className="sr-only">{providerSummary(providers)}</span>
             </>
@@ -703,7 +705,7 @@ export function ImportDataView({
             ? "Preferences"
             : legacy
               ? "T3 Code"
-              : "Claude Code / Codex"}
+              : "Claude Code / Codex / Pi"}
         </h2>
       </div>
 

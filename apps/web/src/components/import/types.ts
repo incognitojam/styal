@@ -20,7 +20,7 @@ export interface ImportProjectRow {
     readonly environmentId: EnvironmentId;
     readonly projectId: string;
   };
-  readonly providers?: readonly ("claudeAgent" | "codex")[] | undefined;
+  readonly providers?: readonly ("claudeAgent" | "codex" | "pi")[] | undefined;
   readonly lastActiveAt?: string | null | undefined;
 }
 

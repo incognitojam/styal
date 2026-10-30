@@ -93,7 +93,7 @@ export function ImportSourceChooser({
               <OpenAI className="size-4" aria-hidden />
             </>
           }
-          title="Claude Code / Codex"
+          title="Claude Code / Codex / Pi"
           detail="CLI conversation history"
           disabled={busy}
           onClick={() => onSelect("history")}

@@ -227,7 +227,7 @@ export function HistoryImportComputer({
       }));
     return (
       <ImportProgressView
-        label={`${label} · Claude Code / Codex`}
+        label={`${label} · Claude Code / Codex / Pi`}
         rows={progress.map((project) => ({
           id: project.key,
           title: project.title.trim() || "Untitled project",
@@ -258,7 +258,7 @@ export function HistoryImportComputer({
       <ImportSourceView
         disabled={busy || !connected}
         source={{
-          title: "Claude Code / Codex",
+          title: "Claude Code / Codex / Pi",
           projects: history.candidates.map((project) => ({
             id: project.key,
             title: project.title,
