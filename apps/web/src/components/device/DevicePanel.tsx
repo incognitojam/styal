@@ -296,7 +296,7 @@ export function DevicePanel(props: {
                                 </span>
                                 <DeviceHostLine
                                   host={state.hosts.find((host) => host.id === device.hostId)}
-                                  detail={`${device.version} · ${device.booted ? "Running" : "Stopped"}`}
+                                  detail={`${device.version} · ${device.physical ? "Connected" : device.booted ? "Running" : "Stopped"}`}
                                 />
                               </div>
                               <Button
