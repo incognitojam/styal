@@ -62,7 +62,7 @@ const diagnose = (input: {
   return PreviewBrowserHost.diagnoseLaunchFailure({
     executable: "/home/me/.t3/tools/chrome-headless-shell/linux64/154/chrome-headless-shell",
     output: input.output,
-    setupCommand: "sudo t3 browser setup",
+    setupCommand: "sudo styal browser setup",
   }).pipe(
     Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
     Effect.provideService(HostProcess.Platform, input.platform),
@@ -72,6 +72,36 @@ const diagnose = (input: {
 };
 
 describe("diagnoseLaunchFailure", () => {
+  it.effect("explains how to restart a root server without Chrome's sandbox", () =>
+    Effect.gen(function* () {
+      const { error, commands } = yield* diagnose({
+        platform: "linux",
+        uid: 0,
+        output: PreviewBrowserHost.NO_SANDBOX_SIGNATURE,
+        ldd: "",
+      });
+      expect(error).toBeInstanceOf(PreviewBrowserHost.PreviewBrowserRootError);
+      expect(error?.message).toContain("styal server is running as root");
+      expect(error?.message).toContain("styal server's environment and restart the server");
+      expect(error?.message).toContain("T3CODE_SERVER_BROWSER_SANDBOX=0 styal serve");
+      expect(error?.message).toContain("Environment=T3CODE_SERVER_BROWSER_SANDBOX=0");
+      expect(error?.message).toContain("this disables Chrome's sandbox");
+      expect(commands).toEqual([]);
+    }),
+  );
+
+  it.effect("keeps host setup guidance for a nonroot sandbox failure", () =>
+    Effect.gen(function* () {
+      const { error } = yield* diagnose({
+        platform: "linux",
+        output: PreviewBrowserHost.NO_SANDBOX_SIGNATURE,
+        ldd: "",
+      });
+      expect(error).toBeInstanceOf(PreviewBrowserHost.PreviewBrowserSandboxError);
+      expect(error?.message).toContain("Run `sudo styal browser setup` on the host");
+    }),
+  );
+
   it.effect("names every library the loader cannot find", () =>
     Effect.gen(function* () {
       const { error } = yield* diagnose({
@@ -83,7 +113,7 @@ describe("diagnoseLaunchFailure", () => {
         _tag: "PreviewBrowserLibrariesError",
         libraries: ["libglib-2.0.so.0", "libnss3.so", "libX11.so.6"],
       });
-      expect(error?.message).toContain("Run `sudo t3 browser setup` on the host");
+      expect(error?.message).toContain("Run `sudo styal browser setup` on the host");
     }),
   );
 
