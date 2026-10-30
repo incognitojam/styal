@@ -86,8 +86,8 @@ import type {
   ExtraProps as ReactMarkdownExtraProps,
   Options as ReactMarkdownOptions,
 } from "react-markdown";
-import ReactMarkdown from "react-markdown";
 import { createIncrementalMarkdownPlugin } from "../markdown-incremental";
+import type { Pluggable, PluggableList } from "unified";
 import { defaultUrlTransform } from "react-markdown";
 import { parseAssistantCitationHref } from "@t3tools/shared/assistantCitations";
 import { parseComposerContextHref } from "@t3tools/shared/composerContextReferences";
@@ -201,6 +201,7 @@ import {
 import { resolveLinkTarget } from "../browser/browserLinkTarget";
 import { PullRequestLinkPreview } from "./pullRequest/PullRequestLinkPreview";
 import { MarkdownCodeBlock, SuspenseShikiCodeBlock } from "./chat/MarkdownCodeBlock";
+import { createMarkdownRenderer } from "./chat/markdownRenderer";
 import { splitMarkdownBlocks } from "./chat/markdownStreamBlocks";
 import { MarkdownMermaidCodeBlock } from "./chat/MarkdownMermaidCodeBlock";
 import { MarkdownTable } from "./chat/MarkdownTable";
@@ -422,6 +423,14 @@ const CHAT_MARKDOWN_LITERAL_HTML_REHYPE_PLUGINS = [
   rehypeHeadingIds,
   rehypeTextDirection,
 ] satisfies NonNullable<ReactMarkdownOptions["rehypePlugins"]>;
+
+function markdownUrlTransform(href: string) {
+  if (parseAssistantCitationHref(href)) return href;
+  if (parseComposerContextHref(href)) return href;
+  if (parseThreadLinkHref(href)) return href;
+  if (isWindowsDrivePathHref(href)) return href;
+  return rewriteMarkdownFileUriHref(href) ?? defaultUrlTransform(href);
+}
 
 const NO_MARKDOWN_EDITORS: ReadonlyArray<EditorId> = [];
 
@@ -686,13 +695,6 @@ function useChatMarkdownState({
   };
   const diffThemeName = resolveDiffThemeName(resolvedTheme);
 
-  const markdownUrlTransform = (href: string) => {
-    if (parseAssistantCitationHref(href)) return href;
-    if (parseComposerContextHref(href)) return href;
-    if (parseThreadLinkHref(href)) return href;
-    if (isWindowsDrivePathHref(href)) return href;
-    return rewriteMarkdownFileUriHref(href) ?? defaultUrlTransform(href);
-  };
   const handleCopy = (event: ReactClipboardEvent<HTMLElement>) => {
     const selection = window.getSelection();
     if (!selection || selection.isCollapsed || !event.clipboardData) return;
@@ -958,7 +960,6 @@ function useChatMarkdownState({
     componentState,
     handleCopy,
     markdownRef,
-    markdownUrlTransform,
     localMediaPreview,
     closeLocalMediaPreview,
   };
@@ -1727,29 +1728,62 @@ const CHAT_MARKDOWN_COMPONENTS = {
   },
 } satisfies Components;
 
+const REMARK_MATH: Pluggable = [remarkMath, { singleDollarTextMath: true }];
+// Shared lists, so every message with the same options shares a processor and its cache.
+const CHAT_MARKDOWN_REMARK_PLUGIN_SETS = {
+  plain: CHAT_MARKDOWN_REMARK_PLUGINS,
+  breaks: CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS,
+  math: [REMARK_MATH, ...CHAT_MARKDOWN_REMARK_PLUGINS],
+  mathBreaks: [REMARK_MATH, ...CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS],
+} satisfies Record<string, PluggableList>;
+
+const markdownRenderers = new WeakMap<
+  PluggableList,
+  WeakMap<PluggableList, ReturnType<typeof createMarkdownRenderer>>
+>();
+
+function markdownRenderer(remarkPlugins: PluggableList, rehypePlugins: PluggableList) {
+  let byRehype = markdownRenderers.get(remarkPlugins);
+  if (!byRehype) markdownRenderers.set(remarkPlugins, (byRehype = new WeakMap()));
+  let renderer = byRehype.get(rehypePlugins);
+  if (!renderer) {
+    renderer = createMarkdownRenderer({
+      remarkPlugins,
+      rehypePlugins,
+      components: CHAT_MARKDOWN_COMPONENTS,
+      urlTransform: markdownUrlTransform,
+    });
+    byRehype.set(rehypePlugins, renderer);
+  }
+  return renderer;
+}
+
 const MarkdownSource = memo(function MarkdownSource({
   text,
   remarkPlugins,
   rehypePlugins,
-  urlTransform,
+  shared,
+  cache,
 }: {
   text: string;
-  remarkPlugins: NonNullable<ReactMarkdownOptions["remarkPlugins"]>;
-  rehypePlugins: NonNullable<ReactMarkdownOptions["rehypePlugins"]>;
-  urlTransform: ReactMarkdownOptions["urlTransform"];
+  remarkPlugins: PluggableList;
+  rehypePlugins: PluggableList;
+  /** The plugins are one of the shared sets. */
+  shared: boolean;
+  /** The text will not change again; streamed text would only fill the cache with prefixes. */
+  cache: boolean;
 }) {
+  // Per-instance plugins, such as the incremental parser, set up their state on every render.
+  const render = shared
+    ? markdownRenderer(remarkPlugins, rehypePlugins)
+    : createMarkdownRenderer({
+        remarkPlugins,
+        rehypePlugins,
+        components: CHAT_MARKDOWN_COMPONENTS,
+        urlTransform: markdownUrlTransform,
+      });
   return (
-    <ChatMarkdownTextContext value={text}>
-      <ReactMarkdown
-        remarkPlugins={remarkPlugins}
-        rehypePlugins={rehypePlugins}
-        skipHtml={false}
-        components={CHAT_MARKDOWN_COMPONENTS}
-        urlTransform={urlTransform}
-      >
-        {text}
-      </ReactMarkdown>
-    </ChatMarkdownTextContext>
+    <ChatMarkdownTextContext value={text}>{render(text, shared && cache)}</ChatMarkdownTextContext>
   );
 });
 
@@ -1763,14 +1797,8 @@ function ChatMarkdown({
   referenceContext,
   ...props
 }: ChatMarkdownProps) {
-  const {
-    componentState,
-    handleCopy,
-    markdownRef,
-    markdownUrlTransform,
-    localMediaPreview,
-    closeLocalMediaPreview,
-  } = useChatMarkdownState({ text, inline, referenceContext, ...props });
+  const { componentState, handleCopy, markdownRef, localMediaPreview, closeLocalMediaPreview } =
+    useChatMarkdownState({ text, inline, referenceContext, ...props });
   // Streaming re-renders only the last block; offsets for task edits need the whole text.
   const streamingBlocks =
     props.isStreaming === true &&
@@ -1790,35 +1818,41 @@ function ChatMarkdown({
   const bindMarkdownRef = (node: HTMLElement | null) => {
     markdownRef.current = node;
   };
-  // Held apart so a caller spelling the context inline does not reparse the body every render.
-  const referenceHost = referenceContext?.host;
-  const referenceRepository = referenceContext?.repository;
-  const marksMentionedTimes = props.writtenAt !== undefined;
-  const mentionedTimeCheck = props.mentionedTimeCheck;
-  const remarkPlugins = (() => {
-    const base = lineBreaks
-      ? CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS
-      : CHAT_MARKDOWN_REMARK_PLUGINS;
-    const incremental = incrementalParsing ? [createIncrementalMarkdownPlugin()] : [];
-    // After the references, whose links it leaves alone.
-    const mentionedTimes = marksMentionedTimes
-      ? ([[remarkMentionedTimes, { check: mentionedTimeCheck }]] satisfies NonNullable<
-          ReactMarkdownOptions["remarkPlugins"]
-        >)
-      : [];
-    if (referenceHost === undefined || referenceRepository === undefined)
-      return [...base, ...mentionedTimes, ...extraRemarkPlugins, ...incremental];
-    // After remark-gfm, whose autolink literals are the links this rewrites as shorthand.
-    return [
-      ...base,
-      [remarkGithubReferences, { host: referenceHost, repository: referenceRepository }],
-      ...mentionedTimes,
-      ...extraRemarkPlugins,
-      ...incremental,
-    ] satisfies NonNullable<ReactMarkdownOptions["remarkPlugins"]>;
-  })();
-  if (componentState.mathEnabled)
-    remarkPlugins.unshift([remarkMath, { singleDollarTextMath: true }]);
+  const sharedRemarkPlugins =
+    CHAT_MARKDOWN_REMARK_PLUGIN_SETS[
+      componentState.mathEnabled
+        ? lineBreaks
+          ? "mathBreaks"
+          : "math"
+        : lineBreaks
+          ? "breaks"
+          : "plain"
+    ];
+  // Extra and incremental plugins are per instance, so their output is not shared.
+  const uncachedPlugins =
+    extraRemarkPlugins.length > 0 ||
+    incrementalParsing ||
+    referenceContext !== undefined ||
+    props.writtenAt !== undefined;
+  const remarkPlugins = uncachedPlugins
+    ? [
+        ...sharedRemarkPlugins,
+        ...(referenceContext
+          ? [
+              [
+                remarkGithubReferences,
+                { host: referenceContext.host, repository: referenceContext.repository },
+              ] as Pluggable,
+            ]
+          : []),
+        ...(props.writtenAt !== undefined
+          ? [[remarkMentionedTimes, { check: props.mentionedTimeCheck }] as Pluggable]
+          : []),
+        ...extraRemarkPlugins,
+        ...(incrementalParsing ? [createIncrementalMarkdownPlugin()] : []),
+      ]
+    : sharedRemarkPlugins;
+  const blocks = streamingBlocks ?? [text];
 
   return (
     <Root
@@ -1833,7 +1867,7 @@ function ChatMarkdown({
       onCopy={handleCopy}
     >
       <ChatMarkdownRendererContext value={componentState}>
-        {(streamingBlocks ?? [text]).map((source, index) => (
+        {blocks.map((source, index) => (
           <MarkdownSource
             // oxlint-disable-next-line react/no-array-index-key -- streamed blocks only change at the end
             key={index}
@@ -1844,7 +1878,8 @@ function ChatMarkdown({
                 ? CHAT_MARKDOWN_RENDER_REHYPE_PLUGINS
                 : CHAT_MARKDOWN_LITERAL_HTML_REHYPE_PLUGINS
             }
-            urlTransform={markdownUrlTransform}
+            shared={!uncachedPlugins}
+            cache={!props.isStreaming}
           />
         ))}
       </ChatMarkdownRendererContext>

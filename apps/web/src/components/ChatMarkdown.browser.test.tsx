@@ -240,6 +240,13 @@ it("loads a host image through the page's own route when there is no environment
   expect(new Set(hostImageUrl.mock.calls.map(([path]) => path))).toEqual(
     new Set(["/work/my shot.png"]),
   );
+  const renewed = `${pixel}#renewed`;
+  await screen.rerender(
+    <HostImageUrlContext value={() => renewed}>
+      <ChatMarkdown cwd={undefined} text="![Shot](</work/my shot.png>)" />
+    </HostImageUrlContext>,
+  );
+  await expect.element(screen.getByAltText("Shot")).toHaveAttribute("src", renewed);
 });
 
 describe("ChatMarkdown favicon privacy", () => {
