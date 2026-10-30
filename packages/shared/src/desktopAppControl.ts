@@ -22,16 +22,21 @@ export function resolveDesktopAppControlAddress(input: {
   const stateHash = shortHash(input.stateDir);
   if (input.platform === "win32") {
     return {
-      address: `\\\\.\\pipe\\t3code-app-${stateHash}`,
+      address: `\\\\.\\pipe\\styal-app-${stateHash}`,
       directory: null,
     };
   }
 
   const userKey =
     input.userId === undefined ? shortHash(input.stateDir).slice(0, 12) : input.userId;
-  const directory = input.joinPath(input.tempDir, `t3code-${userKey}`);
+  const socketName = `${stateHash}.sock`;
+  const maxPathBytes = input.platform === "linux" ? 107 : 103;
+  let directory = input.joinPath(input.tempDir, `styal-${userKey}`);
+  if (new TextEncoder().encode(input.joinPath(directory, socketName)).byteLength > maxPathBytes) {
+    directory = input.joinPath("/tmp", `styal-${userKey}`);
+  }
   return {
-    address: input.joinPath(directory, `${stateHash}.sock`),
+    address: input.joinPath(directory, socketName),
     directory,
   };
 }

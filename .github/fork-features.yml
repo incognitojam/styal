@@ -2496,6 +2496,7 @@ features:
       - apps/web/src/connection/storage.ts
       - apps/web/src/hooks/useDefaultTheme.ts
       - apps/web/src/hostedStorageCleanup.ts
+      - packages/shared/src/desktopAppControl.ts
     upstream_paths:
       - apps/desktop/src/app/DesktopApp.ts
       - apps/desktop/src/app/DesktopConfig.ts
