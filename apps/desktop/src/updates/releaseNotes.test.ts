@@ -18,7 +18,7 @@ describe("normalizeDesktopUpdateReleaseNotes", () => {
         "- fix(opencode): handle child approvals, stops, and model catalogs by @human in #8480",
         "## New Contributors",
         "- @human made their first contribution in #8435",
-        "**Full Changelog**: https://github.com/pingdotgg/t3code/compare/old...new",
+        "**Full Changelog**: https://github.com/incognitojam/styal/compare/old...new",
       ].join("\n"),
       "0.0.36-nightly.20260828.1213",
       "nightly",
@@ -72,7 +72,7 @@ describe("normalizeDesktopUpdateReleaseNotes", () => {
         ...fixes,
         "<details>",
         "<summary>Full changelog</summary>",
-        "* fix: raw entry by @human in https://github.com/pingdotgg/t3code/pull/1",
+        "* fix: raw entry by @human in https://github.com/incognitojam/styal/pull/1",
         "</details>",
       ].join("\n"),
       "1.2.4",
@@ -301,6 +301,47 @@ describe("normalizeDesktopUpdateReleaseNotes", () => {
             "New contributors can configure passkeys",
             "Full changelog links now use fork tags",
           ],
+        },
+      ],
+      omittedReleaseCount: 0,
+    });
+  });
+
+  it("ignores the Full Changelog paragraph that ends GitHub's generated notes", () => {
+    const fullChangelog = (from: string, to: string) =>
+      `<p><strong>Full Changelog</strong>: <a class="commit-link" href="https://github.com/incognitojam/styal/compare/v${from}...v${to}"><tt>v${from}...v${to}</tt></a></p>`;
+    const result = normalizeDesktopUpdateReleaseNotes(
+      [
+        {
+          version: "0.1.3-nightly.20261024.3604",
+          note: fullChangelog("0.1.3-nightly.20261023.3592", "0.1.3-nightly.20261024.3604"),
+        },
+        {
+          version: "0.1.3-nightly.20261023.3592",
+          note:
+            "<h2>What's Changed</h2>\n<ul>\n" +
+            '<li>fix(web): A by <a href="https://github.com/a">@a</a> in <a href="https://github.com/incognitojam/styal/pull/1">#1</a></li>\n' +
+            '<li>fix(web): B by <a href="https://github.com/b">@b</a> in <a href="https://github.com/incognitojam/styal/pull/2">#2</a></li>\n' +
+            "<li>Full Changelog: links open in the browser in #3</li>\n" +
+            "</ul>\n" +
+            fullChangelog("0.1.3-nightly.20261023.3579", "0.1.3-nightly.20261023.3592"),
+        },
+      ],
+      "0.1.3-nightly.20261024.3604",
+      "nightly",
+    );
+
+    expect(result).toEqual({
+      releaseNotes: [
+        {
+          version: "0.1.3-nightly.20261023.3592",
+          items: [
+            "Full Changelog: links open in the browser in #3",
+            "fix(web): B by @b in #2",
+            "fix(web): A by @a in #1",
+          ],
+          releasedAt: "2026-10-23",
+          totalItems: 3,
         },
       ],
       omittedReleaseCount: 0,

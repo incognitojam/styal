@@ -87,11 +87,15 @@ function isCommitListHeading(line: string): boolean {
 // Match GitHub's generated footer labels, not links: electron-updater sends HTML, where
 // stripMarkup() drops the href and leaves link text such as
 // "Full Changelog: pingdotgg/t3code@4c51b4c...4c51b4c".
-const GENERATED_FOOTER_LABELS = ["full changelog", "new contributors", "compare"];
+const GENERATED_FOOTER_LABELS = ["new contributors", "compare"];
 
 function isGeneratedFooterLine(normalized: string): boolean {
-  return GENERATED_FOOTER_LABELS.some(
-    (label) => normalized === label || normalized.startsWith(`${label}:`),
+  return (
+    normalized === "full changelog" ||
+    /^full changelog: \S+\.\.\.\S+$/.test(normalized) ||
+    GENERATED_FOOTER_LABELS.some(
+      (label) => normalized === label || normalized.startsWith(`${label}:`),
+    )
   );
 }
 
