@@ -14,6 +14,8 @@ import { claudeResumeCompactionAge } from "@t3tools/shared/claudeCompaction";
 import {
   IDLE_COMPACTING_LABELS,
   IDLE_COMPACTION_TITLES,
+  resolveUserMessageIntent,
+  resolveUserMessagePresentation,
 } from "@t3tools/client-runtime/user-message";
 import type { HandoffTimelineRun } from "@t3tools/client-runtime/handoff";
 import { renderCodexDirectivesForCopy } from "@t3tools/shared/codexMarkdownDirectives";
@@ -643,6 +645,10 @@ type MessagesTimelineRowContent =
       assistantCopyStreaming: boolean;
       assistantTurnDiffSummary?: TurnDiffSummary | undefined;
       revertTurnCount?: number | undefined;
+      /** Another of your messages follows directly, so the two sit closer together. */
+      groupedWithNext?: boolean;
+      /** Set when the message above is a steer too, so the label shows once. */
+      continuesSteer?: boolean;
     }
   | {
       kind: "assistant-meta";
@@ -2444,11 +2450,34 @@ export function deriveMessagesTimelineRows(input: {
   const result = attachTrailingToolGroupsToAssistant(
     attachCreatedThreadSummaries(nextRows, timelineEntries, collapsedFoldMemberIds),
   );
-  return result.map((row, index) =>
-    timelineRowIsWorkLog(row) && timelineRowIsWorkLog(result[index + 1])
-      ? { ...row, continuesWorkLog: true }
-      : row,
+  return result.map((row, index) => {
+    if (timelineRowIsWorkLog(row) && timelineRowIsWorkLog(result[index + 1])) {
+      return { ...row, continuesWorkLog: true };
+    }
+    if (!timelineRowIsOwnUserMessage(row)) return row;
+    const previous = result[index - 1];
+    const groupedWithNext = timelineRowIsOwnUserMessage(result[index + 1]);
+    const continuesSteer =
+      timelineRowIsOwnUserMessage(previous) &&
+      messageIsSteer(row.message) &&
+      messageIsSteer(previous.message);
+    if (!groupedWithNext && !continuesSteer) return row;
+    return { ...row, groupedWithNext, continuesSteer };
+  });
+}
+
+function timelineRowIsOwnUserMessage(
+  row: MessagesTimelineRow | undefined,
+): row is Extract<MessagesTimelineRow, { kind: "message" }> {
+  return (
+    row?.kind === "message" &&
+    row.message.role === "user" &&
+    resolveUserMessagePresentation(row.message).attribution === null
   );
+}
+
+function messageIsSteer(message: ChatMessage): boolean {
+  return resolveUserMessageIntent(message.inputIntent, message.id)?.steer === true;
 }
 
 function timelineRowIsWorkLog(row: MessagesTimelineRow | undefined): boolean {
@@ -2801,7 +2830,9 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
         a.showAssistantCopyButton === bm.showAssistantCopyButton &&
         a.assistantCopyStreaming === bm.assistantCopyStreaming &&
         a.assistantTurnDiffSummary === bm.assistantTurnDiffSummary &&
-        a.revertTurnCount === bm.revertTurnCount
+        a.revertTurnCount === bm.revertTurnCount &&
+        a.groupedWithNext === bm.groupedWithNext &&
+        a.continuesSteer === bm.continuesSteer
       );
     }
   }

@@ -734,7 +734,12 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
                 Open thread
               </InlineButton>
             ) : null}
-            <UserMessageIntentMarker intent={row.message.inputIntent} messageId={row.message.id} />
+            {row.continuesSteer ? null : (
+              <UserMessageIntentMarker
+                intent={row.message.inputIntent}
+                messageId={row.message.id}
+              />
+            )}
             <Tooltip>
               <TooltipTrigger render={<p className="text-muted-foreground text-xs tabular-nums" />}>
                 {formatDayAwareTimestamp(row.message.createdAt, ctx.timestampFormat)}
