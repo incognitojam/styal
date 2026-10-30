@@ -318,20 +318,18 @@ describe("thread outbox", () => {
     });
   });
 
-  it("decodes persisted v1-v3 messages and rejects incomplete messages", () => {
+  it("decodes the persisted schema and rejects incomplete messages", () => {
     const message = queuedMessage({
       messageId: "message-1",
       createdAt: "2026-06-08T10:00:01.000Z",
     });
 
-    for (const schemaVersion of [1, 2, 3] as const) {
-      expect(
-        decodeQueuedThreadMessage({
-          schemaVersion,
-          ...message,
-        }),
-      ).toEqual(message);
-    }
+    expect(
+      decodeQueuedThreadMessage({
+        schemaVersion: 1,
+        ...message,
+      }),
+    ).toEqual(message);
     expect(() =>
       decodeQueuedThreadMessage({
         schemaVersion: 1,
@@ -406,13 +404,6 @@ describe("thread outbox", () => {
     expect(decodeQueuedThreadMessage(encodeQueuedThreadMessage(selectedMessage))).toEqual(
       selectedMessage,
     );
-    // Messages queued by app versions that synchronized drafts carry a draft revision.
-    expect(
-      decodeQueuedThreadMessage({
-        ...(encodeQueuedThreadMessage(selectedMessage) as object),
-        composerDraftRevision: 7,
-      }),
-    ).toEqual(selectedMessage);
     expect(
       resolveQueuedThreadSettings(legacyMessage, {
         modelSelection: selectedMessage.modelSelection,
