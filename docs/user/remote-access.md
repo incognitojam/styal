@@ -118,7 +118,7 @@ Open **Permissions** next to **Routes** in web or desktop, or **Your permissions
 in the mobile route details, to see what your current connection can do on that
 environment. For a remote environment, this is in its route details. Permissions
 shown there apply only to the route marked **In use**; other routes are not
-checked. Direct pairing and T3 Connect have separate sessions and may grant
+checked. Direct pairing and styal Link have separate sessions and may grant
 different permissions.
 
 ### Balance new threads across machines
@@ -424,7 +424,8 @@ shows that it was removed from styal Link. To link it again, turn on
 command-line host that released its tunnel when it last stopped may link itself
 again on its next start; run `styal link unlink` on that host to keep it off.
 Removing an environment from a device's connection settings only forgets it on
-that device; it stays registered to your account.
+that device and doesn't change your styal Link account. A device keeps a saved
+environment after it's deregistered until you remove it from that device.
 
 When idle tunnel cleanup is enabled, styal Link removes a linked environment's
 tunnel after it stays offline for several minutes. The environment stays linked
