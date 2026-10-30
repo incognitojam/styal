@@ -2161,6 +2161,66 @@ it.layer(
     }),
   );
 
+  it.effect.each([
+    {
+      name: "a missing fish shell",
+      platform: "linux",
+      env: { SHELL: "/missing/fish --login" },
+      failures: 1,
+      expected: [
+        { shell: "/missing/fish", args: ["-ic", "echo setup-ready"] },
+        { shell: "/bin/zsh", args: ["-o", "nopromptsp", "-ic", "echo setup-ready"] },
+      ],
+    },
+    {
+      name: "missing PowerShell installs, down to cmd.exe",
+      platform: "win32",
+      env: { SystemRoot: "C:\\Windows" },
+      failures: 3,
+      expected: [
+        { shell: "pwsh.exe", args: ["-NoLogo", "-Command", "echo setup-ready"] },
+        {
+          shell: "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+          args: ["-NoLogo", "-Command", "echo setup-ready"],
+        },
+        { shell: "powershell.exe", args: ["-NoLogo", "-Command", "echo setup-ready"] },
+        { shell: "C:\\Windows\\System32\\cmd.exe", args: ["/d", "/s", "/c", "echo setup-ready"] },
+      ],
+    },
+  ] as const)(
+    "runs a finite command through the fallback shells past $name and reports its exit code",
+    ({ platform, env, failures, expected }) =>
+      Effect.gen(function* () {
+        const { manager, ptyAdapter } = yield* createManager(5, { env }).pipe(
+          Effect.provide(layerWithHostPlatform(platform)),
+        );
+        for (let index = 0; index < failures; index++) {
+          ptyAdapter.spawnFailures.push(new Error("spawn ENOENT"));
+        }
+        const exited = yield* Deferred.make<Extract<TerminalEvent, { type: "exited" }>>();
+        const unsubscribe = yield* manager.subscribe((event) =>
+          event.type === "exited"
+            ? Deferred.succeed(exited, event).pipe(Effect.asVoid)
+            : Effect.void,
+        );
+        yield* Effect.addFinalizer(() => Effect.sync(unsubscribe));
+
+        yield* manager.openCommand({
+          ...openInput({ terminalId: "setup-setup" }),
+          command: "echo setup-ready",
+        });
+
+        expect(ptyAdapter.spawnInputs.map(({ shell, args }) => ({ shell, args }))).toEqual(
+          expected,
+        );
+        const process = ptyAdapter.processes[0]!;
+        expect(ptyAdapter.processes).toHaveLength(1);
+        expect(process.writes).toEqual([]);
+        process.emitExit({ exitCode: 7, signal: null });
+        expect((yield* Deferred.await(exited)).exitCode).toBe(7);
+      }),
+  );
+
   it.effect("removes terminal metadata subscriptions when initial delivery fails", () =>
     Effect.gen(function* () {
       const { manager } = yield* createManager();
