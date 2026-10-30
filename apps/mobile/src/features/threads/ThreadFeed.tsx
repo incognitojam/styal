@@ -1739,6 +1739,16 @@ function renderFeedEntry(
         entry.pendingMessage?.attachments.filter((attachment) => attachment.type === "image") ?? [];
       // The bubble's px-3.5 padding; a grid wider than the bubble's inner width would wrap.
       const userImageTileSize = imageGridTileSize(props.userBubbleMaxWidth - 14 * 2);
+      // Images sent without words show as images, not as a bubble around them.
+      const mediaOnly =
+        foldRowId === null &&
+        presentation.attribution !== "guest" &&
+        presentation.text.trim() === "" &&
+        gridImages.length + (entry.pendingMessage?.attachments.length ?? 0) > 0 &&
+        listedAttachments.length === 0 &&
+        (entry.pendingMessage?.attachments ?? []).every(
+          (attachment) => attachment.type === "image",
+        );
       return (
         <Animated.View
           className="mb-5 items-end"
@@ -1755,13 +1765,13 @@ function renderFeedEntry(
           <View
             className="min-w-0 rounded-[20px]"
             style={{
-              backgroundColor: userBubbleColor,
+              backgroundColor: mediaOnly ? undefined : userBubbleColor,
               maxWidth: props.duoColumns ? "85%" : props.userBubbleMaxWidth,
               ...(!bubbleBodyVisible
                 ? null
                 : hasReviewCommentContext
                   ? { width: props.reviewCommentBubbleWidth }
-                  : hasWideBlock || foldExpanded
+                  : hasWideBlock || foldExpanded || (mediaOnly && gridImages.length > 0)
                     ? { width: props.duoColumns ? "85%" : props.userBubbleMaxWidth }
                     : null),
             }}
@@ -1783,11 +1793,17 @@ function renderFeedEntry(
               />
             ) : null}
             {bubbleBodyVisible ? (
-              <View className={cn("gap-2 px-3.5 pb-2.5", foldRowId === null && "pt-2.5")}>
+              <View
+                className={cn(
+                  "gap-2",
+                  !mediaOnly && "px-3.5 pb-2.5",
+                  !mediaOnly && foldRowId === null && "pt-2.5",
+                )}
+              >
                 <MessageImages
                   images={pendingImages}
                   tileSize={userImageTileSize}
-                  radius={14}
+                  radius={mediaOnly ? 20 : 14}
                   renderImage={(attachment, size) =>
                     attachment.uploadedAttachmentId ? (
                       <MessageAttachmentImage
@@ -1796,7 +1812,11 @@ function renderFeedEntry(
                         attachmentId={attachment.uploadedAttachmentId}
                         name={attachment.name}
                         mimeType={attachment.mimeType}
-                        className="h-[140px] w-[180px] rounded-[14px]"
+                        className={
+                          mediaOnly
+                            ? "h-[140px] w-[180px] rounded-[20px]"
+                            : "h-[140px] w-[180px] rounded-[14px]"
+                        }
                         {...(size === undefined ? {} : { size })}
                         onPressPreview={props.onPressPreview}
                       />
@@ -1819,7 +1839,7 @@ function renderFeedEntry(
                           style={{
                             width: size ?? 180,
                             height: size ?? 140,
-                            borderRadius: 14,
+                            borderRadius: mediaOnly ? 20 : 14,
                           }}
                         />
                       </Pressable>
@@ -1834,7 +1854,7 @@ function renderFeedEntry(
                 <MessageImages
                   images={gridImages}
                   tileSize={userImageTileSize}
-                  radius={14}
+                  radius={mediaOnly ? 20 : 14}
                   renderImage={(attachment, size) => (
                     <MessageAttachmentImage
                       key={attachment.id}
@@ -1843,9 +1863,14 @@ function renderFeedEntry(
                       name={attachment.name}
                       mimeType={attachment.mimeType}
                       className={
-                        size === undefined
-                          ? "aspect-[1.3] w-full rounded-[14px] bg-user-bubble-foreground/15"
-                          : "rounded-[14px] bg-user-bubble-foreground/15"
+                        size !== undefined
+                          ? mediaOnly
+                            ? "rounded-[20px] border border-border bg-user-bubble-foreground/15"
+                            : "rounded-[14px] bg-user-bubble-foreground/15"
+                          : mediaOnly
+                            ? // Matches the bubble's corners; native borders sit inside, so the edge adds no size.
+                              "aspect-[1.3] w-full rounded-[20px] border border-border bg-user-bubble-foreground/15"
+                            : "aspect-[1.3] w-full rounded-[14px] bg-user-bubble-foreground/15"
                       }
                       {...(size === undefined ? {} : { size })}
                       onPressPreview={props.onPressPreview}
@@ -1870,7 +1895,7 @@ function renderFeedEntry(
                     })}
                   </View>
                 ) : null}
-                {message.text.trim().length > 0 ? (
+                {presentation.text.trim().length > 0 ? (
                   <MarkdownImageAvailableWidthContext
                     value={props.userBubbleMaxWidth - USER_BUBBLE_HORIZONTAL_PADDING * 2}
                   >
