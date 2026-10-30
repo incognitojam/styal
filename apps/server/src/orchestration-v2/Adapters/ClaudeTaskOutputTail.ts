@@ -17,6 +17,8 @@ const MAX_READ_BYTES = 256 * 1024;
 export function claudeTaskOutputRoot(
   environment: Readonly<Record<string, string | undefined>> | undefined,
   path: Path.Path,
+  cwd: string | null,
+  platform: NodeJS.Platform,
 ): string | undefined {
   const configured = environment?.CLAUDE_CODE_TMPDIR?.trim();
   const uid = process.getuid?.();
@@ -29,9 +31,15 @@ export function claudeTaskOutputRoot(
       environment?.TEMP ||
       environment?.TMP ||
       (systemRoot === undefined ? undefined : path.join(systemRoot, "temp"));
-    return base === undefined ? undefined : path.join(base, "claude-0");
+    return base === undefined ? undefined : path.resolve(cwd ?? ".", base, "claude-0");
   }
-  return path.join(configured || "/tmp", `claude-${uid}`);
+  // Claude Code's macOS build ignores launchd's TMPDIR; other builds use it.
+  // Relative temp roots follow the CLI's working directory, not the server's.
+  const fallback =
+    platform === "darwin"
+      ? "/tmp"
+      : environment?.TMPDIR || environment?.TMP || environment?.TEMP || "/tmp";
+  return path.resolve(cwd ?? ".", configured || fallback, `claude-${uid}`);
 }
 
 const locate = Effect.fn("ClaudeTaskOutputTail.locate")(function* (input: {
