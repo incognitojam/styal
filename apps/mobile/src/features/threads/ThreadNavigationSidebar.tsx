@@ -40,7 +40,7 @@ import { useMobileThreadGroupingByProject } from "../../state/project-grouping";
 import { useThreadListV2ShelfPreferences } from "./use-thread-list-v2-shelf-preferences";
 import { useThreadListNow } from "./use-thread-list-now";
 import { usePendingThreadOrder } from "../../state/thread-order";
-import { threadListEnvironmentsAtom } from "../../state/server";
+import { threadListEnvironmentsAtom } from "../../state/presentation";
 import { usePendingNewTasks, type PendingNewTask } from "../../state/use-pending-new-tasks";
 import { useDraftThreadKeys } from "../../state/use-composer-drafts";
 import { useQueuedThreadKeys } from "../../state/use-thread-outbox";

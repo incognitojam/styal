@@ -56,7 +56,7 @@ import { useThreadJumpShortcuts } from "../keyboard/threadKeyboardShortcuts";
 import { usePendingThreadOrder } from "../../state/thread-order";
 import { mobilePreferencesAtom } from "../../state/preferences";
 import { useMobileThreadGroupingByProject } from "../../state/project-grouping";
-import { threadListEnvironmentsAtom } from "../../state/server";
+import { threadListEnvironmentsAtom } from "../../state/presentation";
 import type { PendingNewTask } from "../../state/use-pending-new-tasks";
 import { useDraftThreadKeys } from "../../state/use-composer-drafts";
 import { useQueuedThreadKeys } from "../../state/use-thread-outbox";

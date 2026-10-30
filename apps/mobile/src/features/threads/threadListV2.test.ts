@@ -1944,6 +1944,45 @@ describe("threads grouped by project", () => {
     expect(ids(layoutOf(moved, grouping()))).toEqual(["pinned", "a2", "a1", "b1"]);
   });
 
+  it("never assigns an order key to an offline thread in another project", () => {
+    const offlineEnvironmentId = EnvironmentId.make("environment-offline");
+    const online = [
+      makeThread({
+        id: ThreadId.make("first"),
+        title: "First",
+        projectId: projectA,
+        activeOrderKey: "f",
+      }),
+      makeThread({
+        id: ThreadId.make("second"),
+        title: "Second",
+        projectId: projectA,
+        activeOrderKey: "t",
+      }),
+    ];
+    const offlineRow = (activeOrderKey: string | null) =>
+      makeThread({
+        id: ThreadId.make("offline"),
+        title: "Offline",
+        environmentId: offlineEnvironmentId,
+        projectId: projectB,
+        activeOrderKey,
+      });
+    const movedId = `${environmentId}:second`;
+    const plan = (rows: readonly EnvironmentThreadShell[]) =>
+      createThreadMovePlanner({
+        ordered: getThreadListV2OrderedSection({ threads: rows, section: "active", now: NOW }),
+        allThreads: rows,
+        section: "active",
+        reorderableEnvironmentIds: new Set([environmentId]),
+      })(movedId, { targetId: `${environmentId}:first`, placement: "before" });
+
+    expect(plan([...online, offlineRow("m")])?.map(({ id }) => id)).toEqual([movedId]);
+    expect(
+      plan([offlineRow(null), ...online.map((thread) => ({ ...thread, activeOrderKey: null }))]),
+    ).toBeNull();
+  });
+
   it("offers no moves on servers that cannot reorder or while a move is pending", () => {
     const items = layoutOf(threads, grouping()).items;
     const pendingOrder = createPendingThreadOrder({
