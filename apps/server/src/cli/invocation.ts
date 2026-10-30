@@ -6,7 +6,7 @@ import * as Schema from "effect/Schema";
 
 import type { ServerInstallation } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
-import { isCommandAvailable } from "@t3tools/shared/shell";
+import { resolveCommandPath } from "@t3tools/shared/shell";
 
 import { CLI_COMMAND_NAME, CLI_PACKAGE_NAME } from "@t3tools/shared/cliPackage";
 
@@ -157,7 +157,7 @@ const resolveInstallLauncher = Effect.gen(function* () {
 });
 
 /**
- * Uses `styal` on PATH, the originating package runner, or this install's absolute launcher path.
+ * Uses this install's `styal` on PATH, the originating runner, or its absolute launcher path.
  * Arguments are quoted for POSIX shells or PowerShell on Windows.
  */
 export const resolveHostCliCommand = Effect.fn("invocation.resolveHostCliCommand")(function* (
@@ -168,12 +168,19 @@ export const resolveHostCliCommand = Effect.fn("invocation.resolveHostCliCommand
   const withArgs = (prefix: string) =>
     [prefix, ...args.map((arg) => hostShellWord(platform, arg))].join(" ");
   const command = yield* resolveCliCommand(subcommand);
-  if (command !== `${CLI_COMMAND_NAME} ${subcommand}`) {
+  if (command !== `${CLI_COMMAND_NAME} ${subcommand}`)
     return { command: withArgs(command), launcher: false };
+  const onPath = yield* resolveCommandPath(CLI_COMMAND_NAME);
+  if (onPath !== null) {
+    const shim = (yield* HostProcess.Environment).T3CODE_CLI_PATH?.trim();
+    const fs = yield* FileSystem.FileSystem;
+    const real = (file: string) => fs.realPath(file).pipe(Effect.orElseSucceed(() => null));
+    const shimReal = shim ? yield* real(shim) : null;
+    if (shimReal === null || shimReal === (yield* real(onPath))) {
+      return { command: withArgs(command), launcher: false };
+    }
   }
-  if (yield* isCommandAvailable(CLI_COMMAND_NAME)) {
-    return { command: withArgs(command), launcher: false };
-  }
+
   const launcher = yield* resolveInstallLauncher;
   if (Option.isNone(launcher)) return { command: withArgs(command), launcher: false };
   // PowerShell runs a quoted path only through the call operator.
