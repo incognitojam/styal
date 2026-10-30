@@ -128,14 +128,14 @@ export const inspectHostActivity = Effect.gen(function* () {
   const environmentsUsingDevices = yield* (yield* DeviceSharing).environmentsUsingDevices;
   // An install cut off mid-write can leave the provider CLI broken.
   const providerInstalls = yield* (yield* ProviderInstallGate).installsInFlight;
-  // Reads every thread, so run it off the event loop: a slow read on a large
-  // database otherwise stalls the server past the client's timeout.
+  // Run it off the event loop: even a narrow read can wait on a cold page cache.
   const snapshot = yield* projections
-    .getShellSnapshot()
+    .getShellSnapshot({ location: "active", busyOnly: true })
     .pipe(NodeSqliteClient.readOnly, Effect.mapError(readFailed));
   const continuable = yield* listContinuableThreadIds(
     snapshot.threads.filter(isActiveHostThread),
   ).pipe(
+    NodeSqliteClient.readOnly,
     Effect.catchCause((cause) =>
       Effect.logWarning("could not read continuable threads", { cause }).pipe(
         Effect.as(new Set<string>()),

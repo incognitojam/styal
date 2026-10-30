@@ -404,6 +404,11 @@ export interface ShellSnapshotOptions {
   readonly location?: "active" | "archive";
   readonly projectId?: ProjectId;
   readonly unsettledOnly?: boolean;
+  /**
+   * Skips threads that cannot be running, waiting, or holding background work.
+   * A superset: callers still read status and pending work from each shell.
+   */
+  readonly busyOnly?: boolean;
 }
 
 export interface ProjectionStoreV2Shape {
@@ -5719,7 +5724,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
 
     const selectShellThreadRows = (
       threadId?: ThreadId,
-      { location, projectId, unsettledOnly = false }: ShellSnapshotOptions = {},
+      { location, projectId, unsettledOnly = false, busyOnly = false }: ShellSnapshotOptions = {},
     ) =>
       sql<ShellThreadRow>`
             SELECT
@@ -5919,6 +5924,37 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             }${
               unsettledOnly
                 ? sql` AND json_extract(t.payload_json, '$.settledAt') IS NULL AND json_extract(t.payload_json, '$.settledOverride') IS NOT 'settled'`
+                : sql``
+            }${
+              // Each branch is a source of a busy status, a pending request, or
+              // pending background work, read from an index or a small table, so
+              // the subqueries above only run for threads that may be busy. Secret
+              // requests and running-run items only exist under a listed run.
+              busyOnly
+                ? sql` AND t.thread_id IN (
+                    SELECT thread_id FROM orchestration_v2_projection_runs
+                    WHERE status IN ('preparing', 'starting', 'running', 'waiting')
+                      -- Repeats the recovery index's predicate so SQLite searches that
+                      -- partial index instead of scanning every historical run.
+                      AND status IN ('queued', 'preparing', 'starting', 'running', 'waiting')
+                    UNION
+                    SELECT thread_id FROM orchestration_v2_projection_runtime_requests
+                    WHERE status = 'pending'
+                    UNION
+                    SELECT thread_id FROM orchestration_v2_projection_turn_items
+                    WHERE type IN ('command_execution', 'dynamic_tool', 'subagent')
+                      AND status NOT IN ('completed', 'interrupted', 'failed', 'cancelled')
+                    UNION
+                    SELECT thread_id FROM orchestration_v2_projection_provider_threads
+                    WHERE json_array_length(payload_json, '$.pendingBackgroundTasks') > 0
+                    UNION
+                    SELECT watched.thread_id FROM orchestration_v2_projection_threads watched
+                    WHERE json_array_length(watched.payload_json, '$.workflowRuns') > 0
+                      OR EXISTS (
+                        SELECT 1 FROM json_each(watched.payload_json, '$.pullRequests') link
+                        WHERE json_type(link.value, '$.watch') IS NOT NULL
+                      )
+                  )`
                 : sql``
             }
             ORDER BY t.updated_at ASC, t.thread_id ASC

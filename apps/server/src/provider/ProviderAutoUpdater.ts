@@ -156,7 +156,7 @@ export const make = Effect.gen(function* () {
   const busyReason = Effect.fn("ProviderAutoUpdater.busyReason")(
     function* (target: ProviderInstallTarget) {
       const { threads } = yield* projections
-        .getShellSnapshot({ location: "active" })
+        .getShellSnapshot({ location: "active", busyOnly: true })
         .pipe(NodeSqliteClient.readOnly);
       const now = yield* Clock.currentTimeMillis;
       const sharesCli = new Map<ProviderInstanceId, boolean>();
