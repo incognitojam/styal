@@ -273,7 +273,13 @@ const makeReconcile = <R>(input: {
           replacedIds.add(instanceId);
         }
       }
-      for (const id of [...removedIds, ...replacedIds]) {
+      const retiredIds = [...removedIds, ...replacedIds];
+      if (retiredIds.length > 0) {
+        const remaining = new Map(previousEntries);
+        for (const id of retiredIds) remaining.delete(id);
+        yield* Ref.set(state.entries, remaining);
+      }
+      for (const id of retiredIds) {
         const live = previousEntries.get(id);
         if (!live) continue;
         // Adapter finalizers stop sessions silently so shutdown keeps threads resumable. A settings
