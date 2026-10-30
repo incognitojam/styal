@@ -713,6 +713,24 @@ features:
         - https://github.com/pingdotgg/t3code/pull/24176
       retire_when: Upstream classifies Claude's PowerShell tool as a command and finds Claude Code's task output files on Windows.
 
+  - id: clipboard-failure-reason
+    title: Clipboard failures name the browser's reason
+    status: maintained
+    prs: [223]
+    invariants:
+      - A failed clipboard write reports the browser's own reason when it gives one, and the generic message when it gives none.
+    implementation_paths:
+      - apps/web/src/hooks/useCopyToClipboard.ts
+    upstream_paths:
+      - apps/web/src/hooks/useCopyToClipboard.ts
+    tests:
+      - apps/web/src/components/DiffFilePathCopyButton.browser.test.tsx
+      - apps/web/src/components/chat/MessageCopyButton.browser.test.tsx
+    rationale: A generic message gives no way to tell an unfocused document from a denied permission.
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream shows the browser's reason in its clipboard failure message.
   - id: clone-failure-guidance
     title: Explain clone authentication and rate-limit failures
     status: maintained
