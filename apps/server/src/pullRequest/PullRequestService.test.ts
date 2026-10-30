@@ -1782,22 +1782,32 @@ const baseMoveService = (baseOf: Record<number, string>) =>
   Effect.gen(function* () {
     const merged = new Set<number>();
     const detailReads: number[] = [];
+    const held = new Map<number, ReturnType<typeof changeRequestDetail>>();
     const service = yield* makeService({
       projects: [project({ id: "p1", title: "web", workspaceRoot: "/a", repository: "acme/web" })],
       providers: [
         fakePullRequestProvider(SourceControlProviderKind.make("github"), {
           runAction: (input) => Effect.sync(() => void merged.add(input.number)),
+          forgetChangeRequestReads: (scope) =>
+            Effect.sync(() => {
+              if (scope?.number === undefined) held.clear();
+              else held.delete(scope.number);
+            }),
           getChangeRequest: (input) =>
             Effect.sync(() => {
+              const cached = held.get(input.number);
+              if (cached !== undefined) return cached;
               detailReads.push(input.number);
               const base = baseOf[input.number] ?? "main";
               const baseMoved = [...merged].some((number) => baseOf[number] === base);
-              return {
+              const detail = {
                 ...changeRequestDetail(input.number),
                 baseBranch: base,
                 state: merged.has(input.number) ? ("merged" as const) : ("open" as const),
                 baseComparison: baseMoved ? ("behind" as const) : ("up-to-date" as const),
               };
+              held.set(input.number, detail);
+              return detail;
             }),
           getChangeRequestSummary: (input) =>
             Effect.succeed({
@@ -2830,6 +2840,98 @@ it.effect("hands over a diff slice without attributions when the checkout cannot
 
     assert.strictEqual(slice.generatedPaths, undefined);
     assert.strictEqual(slice.patch.length > 0, true);
+  }),
+);
+
+it.effect("a refresh or a finished turn drops the provider's own change request reads", () =>
+  Effect.gen(function* () {
+    const forgotten: Array<{ readonly repository: string; readonly number?: number } | undefined> =
+      [];
+    const service = yield* makeService({
+      projects: [
+        project({
+          id: "p1",
+          title: "web",
+          workspaceRoot: "/a",
+          repository: "acme/web",
+          provider: "gitlab",
+        }),
+      ],
+      providers: [
+        fakePullRequestProvider(SourceControlProviderKind.make("gitlab"), {
+          forgetChangeRequestReads: (scope) => Effect.sync(() => void forgotten.push(scope)),
+        }),
+      ],
+    });
+    const reference = { projectId: "p1" as ProjectId, repository: "acme/web", number: 1 };
+
+    yield* service.invalidate({ reference });
+    yield* service.refreshAfterTurn(reference.projectId);
+    yield* service.invalidate({});
+
+    assert.deepStrictEqual(forgotten, [
+      { repository: "acme/web", number: 1 },
+      undefined,
+      undefined,
+    ]);
+  }),
+);
+
+it.effect("a read during a refresh cannot keep the provider's old change request", () =>
+  Effect.gen(function* () {
+    let hostTitle = "old";
+    let held: string | undefined;
+    let gate:
+      | { readonly entered: Deferred.Deferred<void>; readonly release: Deferred.Deferred<void> }
+      | undefined;
+    const service = yield* makeService({
+      projects: [
+        project({
+          id: "p1",
+          title: "web",
+          workspaceRoot: "/a",
+          repository: "acme/web",
+          provider: "gitlab",
+        }),
+      ],
+      providers: [
+        fakePullRequestProvider(SourceControlProviderKind.make("gitlab"), {
+          getChangeRequest: () =>
+            Effect.sync(() => {
+              held ??= hostTitle;
+              return { ...hostedChangeRequest("body"), title: held };
+            }),
+          forgetChangeRequestReads: () =>
+            Effect.gen(function* () {
+              if (gate !== undefined) {
+                yield* Deferred.succeed(gate.entered, undefined);
+                yield* Deferred.await(gate.release);
+              }
+              held = undefined;
+            }),
+        }),
+      ],
+    });
+    const reference = { projectId: "p1" as ProjectId, repository: "acme/web", number: 1 };
+    const refreshWithReadInBetween = (refresh: Effect.Effect<void>) =>
+      Effect.gen(function* () {
+        gate = { entered: yield* Deferred.make<void>(), release: yield* Deferred.make<void>() };
+        const running = yield* refresh.pipe(Effect.forkChild());
+        yield* Deferred.await(gate.entered);
+        yield* service.detail(reference);
+        yield* Deferred.succeed(gate.release, undefined);
+        yield* Fiber.join(running);
+        gate = undefined;
+      });
+
+    assert.strictEqual((yield* service.detail(reference)).title, "old");
+    hostTitle = "after turn";
+    yield* refreshWithReadInBetween(service.refreshAfterTurn(reference.projectId));
+    assert.strictEqual((yield* service.detail(reference)).title, "after turn");
+
+    hostTitle = "after refresh";
+    yield* refreshWithReadInBetween(service.invalidate({ reference }));
+    assert.strictEqual((yield* service.detail(reference)).title, "after refresh");
   }),
 );
 
