@@ -55,6 +55,11 @@ export class PullRequestProviderError extends Schema.TaggedError<PullRequestProv
     ]),
     detail: Schema.String,
     retryAt: Schema.optional(Schema.Number),
+    /**
+     * Why the host would not return a repository and what to change, in the reader's terms.
+     * Shown beside that repository in the list; `detail` is about the failed call instead.
+     */
+    accessHint: Schema.optional(Schema.String),
     cause: Schema.optional(Schema.Defect()),
   },
 ) {
@@ -71,6 +76,7 @@ export interface ProviderChangeRequestWatchFingerprint {
 export interface PullRequestProviderFailure {
   readonly reason: PullRequestProviderError["reason"];
   readonly retryAt?: number | undefined;
+  readonly accessHint?: string | undefined;
 }
 
 export interface ProviderChangeRequest {
