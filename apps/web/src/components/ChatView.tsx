@@ -2447,7 +2447,8 @@ export default function ChatView(props: ChatViewProps) {
   const {
     acknowledgeActiveThreadWoke,
     activeBranchMismatchKey,
-    backgroundWorkNow,
+    attentionNow,
+    workNow,
     childInputNow,
     goalNow,
     handleSwitchCheckoutToThread,
@@ -3108,9 +3109,9 @@ export default function ChatView(props: ChatViewProps) {
   };
   const onExpandTimelineImageStable = useStableCallback(onExpandTimelineImage);
   const shownThreadSyncPhase = activeEnvironmentUnavailable ? null : delayedThreadSyncPhase;
-  const threadNowWork = workflowRunReviewIncludesBackgroundWork ? null : backgroundWorkNow;
+  const threadNowWork = workflowRunReviewIncludesBackgroundWork ? null : workNow;
   const hasThreadNow =
-    childInputNow !== null ||
+    attentionNow !== null ||
     threadNowWork !== null ||
     goalNow !== null ||
     shownThreadSyncPhase !== null;
@@ -3152,7 +3153,7 @@ export default function ChatView(props: ChatViewProps) {
         )}
         <ThreadNow
           key={routeThreadKey}
-          attention={childInputNow}
+          attention={attentionNow}
           work={threadNowWork}
           syncPhase={shownThreadSyncPhase}
           goal={goalNow}
@@ -3673,7 +3674,7 @@ export default function ChatView(props: ChatViewProps) {
                               workflowRuns={activeThreadShell?.workflowRuns}
                               workflowRunReviewActions={
                                 workflowRunReviewIncludesBackgroundWork
-                                  ? backgroundWorkNow?.actions
+                                  ? workNow?.actions
                                   : undefined
                               }
                               activePendingProgress={activePendingProgress}

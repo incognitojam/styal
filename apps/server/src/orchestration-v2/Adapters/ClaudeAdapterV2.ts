@@ -397,6 +397,8 @@ const WORKFLOW_MEMBER_TRANSCRIPT_FLUSH_MS = 500;
 // A steer waits at most this long, from its request, for its foreground
 // subagents to move to the background before it is sent.
 const BACKGROUND_MOVE_TIMEOUT_MS = 5_000;
+// How long a Stop waits for the CLI to exit before the user is offered Force stop.
+const CLAUDE_STOP_CONFIRM_TIMEOUT_MS = 10_000;
 
 export const ClaudeProviderCapabilitiesV2 = {
   sessions: {
@@ -10980,7 +10982,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             yield* existing.query.interrupt;
             yield* existing.query.close.pipe(Effect.ignore);
             const closed = yield* Deferred.await(existing.closed).pipe(
-              Effect.timeoutOption("10 seconds"),
+              Effect.timeoutOption(CLAUDE_STOP_CONFIRM_TIMEOUT_MS),
             );
             if (Option.isSome(closed)) {
               if (nativeThreadId !== null) {
@@ -10992,39 +10994,31 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               }
               return;
             }
-
-            const completedAt = yield* DateTime.now;
+            // The turn stays open: the CLI may still be working, and the user decides
+            // whether to Force stop it.
             yield* Effect.logWarning("orchestration-v2.claude-query-interrupt-timeout", {
               providerSessionId: input.providerSessionId,
               providerThreadId: turnInput.providerThread.id,
               providerTurnId: turnInput.providerTurnId,
             });
-            const ownedLiveQuery = yield* Ref.modify(queryContext, (current) =>
-              current?.query === existing.query ? [true, null] : [false, current],
-            );
-            if (ownedLiveQuery) {
-              existing.stopping = true;
-              yield* finalizeActiveTurnAfterQueryExit(existing);
-              yield* endSubagentCallsOfClosedQuery(existing.nativeThreadId, "interrupted");
-            } else {
-              yield* finalizeActiveTurn({
-                context: currentTurn,
-                status: "interrupted",
-                completedAt,
-              });
-            }
-            yield* Deferred.succeed(existing.closed, undefined);
+            return yield* new ProviderAdapter.ProviderAdapterInterruptTimeoutError({
+              driver: CLAUDE_PROVIDER,
+              providerThreadId: turnInput.providerThread.id,
+              providerTurnId: turnInput.providerTurnId,
+              timeoutMs: CLAUDE_STOP_CONFIRM_TIMEOUT_MS,
+            });
           },
           (effect, turnInput) =>
             effect.pipe(
-              Effect.mapError(
-                (cause) =>
-                  new ProviderAdapter.ProviderAdapterInterruptError({
-                    driver: CLAUDE_PROVIDER,
-                    providerThreadId: turnInput.providerThread.id,
-                    providerTurnId: turnInput.providerTurnId,
-                    cause,
-                  }),
+              Effect.mapError((cause) =>
+                cause._tag === "ProviderAdapterInterruptTimeoutError"
+                  ? cause
+                  : new ProviderAdapter.ProviderAdapterInterruptError({
+                      driver: CLAUDE_PROVIDER,
+                      providerThreadId: turnInput.providerThread.id,
+                      providerTurnId: turnInput.providerTurnId,
+                      cause,
+                    }),
               ),
             ),
         );
