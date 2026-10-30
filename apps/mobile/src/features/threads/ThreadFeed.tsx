@@ -1353,15 +1353,12 @@ function renderFeedEntry(
             : [],
         ),
       );
-      const visibleAttachments = attachments.filter(
-        (attachment) => isImageAttachment(attachment) || !inlineAttachmentIds.has(attachment.id),
+      // Images stay in the grid even when the text references them; other files referenced
+      // inline already show as chips in the text.
+      const gridImages = attachments.filter(isImageAttachment);
+      const listedAttachments = attachments.filter(
+        (attachment) => !isImageAttachment(attachment) && !inlineAttachmentIds.has(attachment.id),
       );
-      const gridImages = inlineAttachmentIds.size
-        ? []
-        : visibleAttachments.filter(isImageAttachment);
-      const listedAttachments = inlineAttachmentIds.size
-        ? visibleAttachments
-        : visibleAttachments.filter((attachment) => !isImageAttachment(attachment));
       const pendingImages =
         entry.pendingMessage?.attachments.filter((attachment) => attachment.type === "image") ?? [];
       // The bubble's px-3.5 padding; a grid wider than the bubble's inner width would wrap.
@@ -1467,19 +1464,9 @@ function renderFeedEntry(
             />
             {/* An empty container still takes a gap, which pads every attachment-free bubble. */}
             {listedAttachments.length > 0 ? (
-              <View className={inlineAttachmentIds.size ? "flex-row flex-wrap gap-2" : "gap-2"}>
+              <View className="gap-2">
                 {listedAttachments.map((attachment) => {
-                  return isImageAttachment(attachment) ? (
-                    <MessageAttachmentImage
-                      key={attachment.id}
-                      environmentId={props.environmentId}
-                      attachmentId={attachment.id}
-                      name={attachment.name}
-                      mimeType={attachment.mimeType}
-                      className="h-24 w-24 rounded-[14px] bg-user-bubble-foreground/15"
-                      onPressPreview={props.onPressPreview}
-                    />
-                  ) : isFileAttachment(attachment) ? (
+                  return isFileAttachment(attachment) ? (
                     <MessageAttachmentFile
                       key={attachment.id}
                       environmentId={props.environmentId}
