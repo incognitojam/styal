@@ -67,7 +67,10 @@ import {
   resolveUserMessageContext,
   selectedMessageContextFragment,
 } from "~/lib/composerContextRecords";
-import { collectComposerContextReferences } from "@t3tools/shared/composerContextReferences";
+import {
+  collectComposerContextReferences,
+  formatComposerContextReference,
+} from "@t3tools/shared/composerContextReferences";
 import {
   COMPOSER_CONTEXT_CLIPBOARD_MIME,
   encodeComposerContextClipboardHtml,
@@ -88,7 +91,10 @@ import {
   UserMessageContextReferenceChip,
   UserMessageIssueContextChip,
 } from "./UserMessageContextChips";
-import { resolvePreviewAnnotationImage } from "./TimelineUserMessageRow.logic";
+import {
+  resolvePreviewAnnotationImage,
+  userMessageFileLabel,
+} from "./TimelineUserMessageRow.logic";
 
 // Drawn inside the media so dark screenshots keep an edge on the dark background.
 const MEDIA_EDGE_CLASS_NAME =
@@ -105,6 +111,8 @@ function UserFileCard({
   readonly copyMarkdown: string | undefined;
 }) {
   const ctx = use(TimelineRowCtx);
+  const pastedText = file.source?._tag === "pasted-text";
+  const label = userMessageFileLabel(file);
   const extension = /\.([a-z0-9]{1,8})$/i.exec(file.name)?.[1]?.toUpperCase() ?? "File";
   const identity = (
     <>
@@ -113,10 +121,17 @@ function UserFileCard({
       </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-medium group-hover/file:underline">
-          {file.name}
+          {label}
         </span>
         <span className="block text-xs text-muted-foreground tabular-nums">
-          {extension} · {formatBytes(file.sizeBytes)}
+          {file.downloadable === false ? (
+            "Sending…"
+          ) : (
+            <>
+              {!pastedText && `${extension} · `}
+              {formatBytes(file.sizeBytes)}
+            </>
+          )}
         </span>
       </span>
     </>
@@ -127,12 +142,17 @@ function UserFileCard({
       className="flex w-64 max-w-full items-center gap-1 rounded-2xl bg-message py-2 ps-2 pe-1 text-message-foreground"
     >
       {file.downloadable === false ? (
-        <div className="flex min-w-0 flex-1 items-center gap-3">{identity}</div>
+        <>
+          <div className="flex min-w-0 flex-1 items-center gap-3">{identity}</div>
+          <Button size="icon-xs" variant="ghost-muted" disabled aria-label="Sending attachment">
+            <DownloadIcon />
+          </Button>
+        </>
       ) : (
         <>
           <button
             type="button"
-            aria-label={`Preview ${file.name}`}
+            aria-label={`Preview ${label}`}
             onClick={() => ctx.onFileOpen(file)}
             className="group/file focus-visible:ring-ring/70 flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-xl text-left focus-visible:ring-2 focus-visible:ring-inset focus-visible:outline-none"
           >
@@ -144,14 +164,14 @@ function UserFileCard({
                 <Button
                   size="icon-xs"
                   variant="ghost-muted"
-                  aria-label={`Download ${file.name}`}
+                  aria-label={`Download ${label}`}
                   onClick={() => ctx.onFileDownload(file)}
                 />
               }
             >
               <DownloadIcon />
             </TooltipTrigger>
-            <TooltipPopup side="top">Download {file.name}</TooltipPopup>
+            <TooltipPopup side="top">Download {label}</TooltipPopup>
           </Tooltip>
         </>
       )}
@@ -466,11 +486,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
     regularImages.length + userVideos.length > 0;
   const standaloneMedia = mediaOnly || mediaAboveText;
   // A lone image keeps its own shape; a 4:3 crop hides most of a wide screenshot.
-  const loneImage =
-    standaloneMedia &&
-    userVideos.length === 0 &&
-    regularImages.length === 1 &&
-    regularImages[0]!.source?.kind !== "snap-shot";
+  const loneImage = standaloneMedia && userVideos.length === 0 && regularImages.length === 1;
   // Several images share one rounded shape, split by hairlines.
   const collage =
     standaloneMedia &&
@@ -493,6 +509,22 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
         ? ""
         : reference.label,
     ).trim() === "";
+  const audioOnly =
+    !folded &&
+    userMessage.attribution !== "guest" &&
+    issueContexts.length === 0 &&
+    userAudio.length > 0 &&
+    regularImages.length + userVideos.length + otherUserFiles.length + unknownAttachments.length ===
+      0 &&
+    replaceComposerContextReferences(resolvedContext.text, (reference) =>
+      attachmentReferences.some(
+        (attached) =>
+          attached.contextId === reference.contextId &&
+          userAudio.some((file) => file.id === attached.attachmentId),
+      )
+        ? ""
+        : reference.label,
+    ).trim() === "";
   const annotationRecordIds = resolvedContext.records
     .filter((record) => record.kind === "preview-annotation")
     .map((record) => record.contextId);
@@ -506,8 +538,19 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
       .split(/\r?\n/)
       .find((line) => line.trim().length > 0)
       ?.trim() ?? "";
+  const mediaCopyRecords = mediaOnly
+    ? resolvedContext.records.flatMap((record) => {
+        const known = asKnownContextRecord(record);
+        return (known?.kind === "image" || known?.kind === "file") &&
+          (regularImages.some((image) => image.id === known.attachmentId) ||
+            userVideos.some((file) => file.id === known.attachmentId))
+          ? [known]
+          : [];
+      })
+    : [];
+  const copyRecords = mediaOnly ? mediaCopyRecords : resolvedContext.records;
   const contextClipboardFragment =
-    resolvedContext.records.length === 0
+    copyRecords.length === 0
       ? null
       : encodeComposerContextFragment({
           version: 1,
@@ -516,8 +559,10 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
             ...(ctx.threadRef ? { threadId: ctx.threadRef.threadId } : {}),
             messageId: row.message.id,
           },
-          records: resolvedContext.records,
+          records: copyRecords,
         });
+  const copyText =
+    resolvedContext.text || mediaCopyRecords.map(formatComposerContextReference).join("\n");
   const onBodyCopyCapture = (event: React.ClipboardEvent<HTMLDivElement>) => {
     if (resolvedContext.records.length === 0 || !event.clipboardData) return;
     const selection = window.getSelection();
@@ -626,9 +671,13 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
               "bg-background/70",
               image.source?.kind === "snap-shot" && image.previewUrl
                 ? cn(
-                    SNAP_SHOT_ATTACHMENT_FRAME_CLASS,
                     "col-span-2",
-                    standaloneMedia && "justify-self-end",
+                    standaloneMedia
+                      ? cn(
+                          MEDIA_EDGE_CLASS_NAME,
+                          "min-h-16 justify-self-end overflow-hidden rounded-2xl",
+                        )
+                      : SNAP_SHOT_ATTACHMENT_FRAME_CLASS,
                   )
                 : loneImage
                   ? cn(MEDIA_EDGE_CLASS_NAME, "overflow-hidden rounded-2xl")
@@ -667,10 +716,11 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
                   loading="lazy"
                   className={cn(
                     "block transform-gpu",
-                    // A fixed height keeps the row from growing when the image loads.
-                    loneImage
-                      ? "h-48 w-auto min-w-24 max-w-full object-cover"
-                      : "size-full object-cover",
+                    standaloneMedia && image.source?.kind === "snap-shot"
+                      ? "h-auto max-h-48 w-auto min-w-24 max-w-full object-contain"
+                      : loneImage
+                        ? "h-48 w-auto min-w-24 max-w-full object-cover"
+                        : "size-full object-cover",
                   )}
                 />
               </button>
@@ -729,8 +779,8 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
           BUBBLE_CHIP_CLASS_NAME,
           userMessage.attribution === "guest"
             ? guestBubbleClassName(false)
-            : !mediaOnly && !fileCardsOnly && "bg-message",
-          !folded && !mediaOnly && !fileCardsOnly && "p-3",
+            : !mediaOnly && !fileCardsOnly && !audioOnly && "bg-message",
+          !folded && !mediaOnly && !fileCardsOnly && !audioOnly && "p-3",
           folded && expanded && "w-full",
         )}
       >
@@ -775,11 +825,12 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
               </div>
             ) : null}
             {userAudio.length > 0 ? (
-              <div className="mb-2 flex max-w-full flex-col gap-1">
+              <div className={cn("flex max-w-full flex-col gap-1", !audioOnly && "mb-2")}>
                 {userAudio.map((file) => (
                   <InlineAudioPreview
                     key={file.id}
                     name={file.name}
+                    variant={audioOnly ? "bubble" : "chip"}
                     environmentId={ctx.activeThreadEnvironmentId}
                     resource={{
                       _tag: "attachment",
@@ -810,6 +861,8 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
             {!fileCardsOnly && (unchippedFiles.length > 0 || unknownAttachments.length > 0) ? (
               <div className="mb-2 flex flex-col gap-1">
                 {unchippedFiles.map((file) => {
+                  const pastedText = file.source?._tag === "pasted-text";
+                  const label = userMessageFileLabel(file);
                   const fileIdentity = (
                     <>
                       <PierreEntryIcon
@@ -817,7 +870,14 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
                         kind="file"
                         theme={ctx.resolvedTheme}
                       />
-                      <span className="min-w-0 flex-1 truncate">{file.name}</span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate">{label}</span>
+                        {file.downloadable === false || pastedText ? (
+                          <span className="block text-xs text-muted-foreground tabular-nums">
+                            {file.downloadable === false ? "Sending…" : formatBytes(file.sizeBytes)}
+                          </span>
+                        ) : null}
+                      </span>
                     </>
                   );
                   if (file.downloadable !== false) {
@@ -825,7 +885,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
                       <div key={file.id} className="flex min-w-0 items-center gap-1">
                         <button
                           type="button"
-                          aria-label={`Preview ${file.name}`}
+                          aria-label={`Preview ${label}`}
                           onClick={() => ctx.onFileOpen(file)}
                           className="focus-visible:ring-ring/70 flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md py-1 text-left text-sm hover:underline focus-visible:ring-2 focus-visible:ring-inset focus-visible:outline-none"
                         >
@@ -838,14 +898,14 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
                               <Button
                                 size="icon-xs"
                                 variant="ghost-muted"
-                                aria-label={`Download ${file.name}`}
+                                aria-label={`Download ${label}`}
                                 onClick={() => ctx.onFileDownload(file)}
                               />
                             }
                           >
                             <DownloadIcon />
                           </TooltipTrigger>
-                          <TooltipPopup side="top">Download {file.name}</TooltipPopup>
+                          <TooltipPopup side="top">Download {label}</TooltipPopup>
                         </Tooltip>
                       </div>
                     );
@@ -869,7 +929,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
                 ))}
               </div>
             ) : null}
-            {fileCardsOnly ? null : (
+            {fileCardsOnly || audioOnly ? null : (
               <div onCopyCapture={onBodyCopyCapture}>
                 <CollapsibleUserMessageBody
                   text={resolvedContext.text}
@@ -910,9 +970,9 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
               {typeof revertTurnCount === "number" && (
                 <RevertUserMessageButton turnCount={revertTurnCount} messageId={row.message.id} />
               )}
-              {resolvedContext.text && (
+              {copyText && (
                 <MessageCopyButton
-                  text={contextClipboardFragment ? resolvedContext.text : plainText}
+                  text={contextClipboardFragment ? copyText : plainText}
                   {...(contextClipboardFragment
                     ? {
                         extraFlavors: {
