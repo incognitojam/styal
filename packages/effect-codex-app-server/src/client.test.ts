@@ -15,6 +15,7 @@ import { assert, expect, it } from "@effect/vitest";
 
 import * as CodexClient from "./client.ts";
 import { makeInMemoryStdio } from "./_internal/stdio.ts";
+import * as CodexError from "./errors.ts";
 
 const mockPeerPath = Effect.map(Effect.service(Path.Path), (path) =>
   path.join(import.meta.dirname, "../test/fixtures/codex-app-server-mock-peer.ts"),
@@ -161,49 +162,6 @@ it.layer(NodeServices.layer)("effect-codex-app-server client", (it) => {
     }),
   );
 
-  it.effect("reports the crash reason a launcher prints to stderr before exiting", () =>
-    Effect.gen(function* () {
-      const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-      // Mirrors the npm launcher left behind when its platform binary failed to install.
-      const launcher = [
-        "process.stderr.write([",
-        "  'file:///prefix/@openai/codex/bin/codex.js:107',",
-        "  '  throw new Error(',",
-        "  '',",
-        "  'Error: Missing optional dependency @openai/codex-linux-x64. Reinstall Codex: npm install -g @openai/codex@latest',",
-        "  '    at findCodexExecutable (file:///prefix/@openai/codex/bin/codex.js:107:9)',",
-        "  '',",
-        "  'Node.js v24.0.0',",
-        "].join('\\n') + '\\n');",
-        "process.exit(1);",
-      ].join("\n");
-      const handle = yield* spawner.spawn(ChildProcess.make(process.execPath, ["-e", launcher]));
-      const scope = yield* Scope.make();
-      const context = yield* Layer.buildWithScope(CodexClient.layerChildProcess(handle), scope);
-
-      const error = yield* Effect.gen(function* () {
-        const client = yield* CodexClient.CodexAppServerClient;
-        return yield* client.request("initialize", {
-          clientInfo: {
-            name: "effect-codex-app-server-test",
-            title: "Effect Codex App Server Test",
-            version: "0.0.0",
-          },
-          capabilities: {
-            experimentalApi: true,
-            optOutNotificationMethods: null,
-          },
-        });
-      }).pipe(Effect.flip, Effect.provide(context), Effect.ensuring(Scope.close(scope, Exit.void)));
-
-      assert.equal(error._tag, "CodexAppServerProcessExitedError");
-      assert.equal(
-        error.message,
-        "Codex App Server process exited with code 1: Error: Missing optional dependency @openai/codex-linux-x64. Reinstall Codex: npm install -g @openai/codex@latest",
-      );
-    }),
-  );
-
   it.effect("warns once about a notification that fails to decode and keeps dispatching", () =>
     Effect.gen(function* () {
       const secret = "codex-notification-secret-sentinel";
@@ -252,3 +210,38 @@ it.layer(NodeServices.layer)("effect-codex-app-server client", (it) => {
     }),
   );
 });
+
+it.live("reports the stderr error when the process exits before initialize", () =>
+  Effect.gen(function* () {
+    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+    const handle = yield* spawner.spawn(
+      ChildProcess.make(process.execPath, [
+        "-e",
+        'throw new Error("Missing optional dependency @openai/codex-darwin-arm64. Reinstall Codex: npm install -g @openai/codex@latest")',
+      ]),
+    );
+    const scope = yield* Scope.make();
+    const context = yield* Layer.buildWithScope(CodexClient.layerChildProcess(handle), scope);
+
+    const error = yield* Effect.gen(function* () {
+      const client = yield* CodexClient.CodexAppServerClient;
+      return yield* client.request("initialize", {
+        clientInfo: {
+          name: "effect-codex-app-server-test",
+          title: "Effect Codex App Server Test",
+          version: "0.0.0",
+        },
+        capabilities: {
+          experimentalApi: true,
+          optOutNotificationMethods: null,
+        },
+      });
+    }).pipe(Effect.flip, Effect.provide(context), Effect.ensuring(Scope.close(scope, Exit.void)));
+
+    assert.instanceOf(error, CodexError.CodexAppServerProcessExitedError);
+    assert.equal(
+      error.message,
+      "Codex App Server process exited with code 1: Error: Missing optional dependency @openai/codex-darwin-arm64. Reinstall Codex: npm install -g @openai/codex@latest",
+    );
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);

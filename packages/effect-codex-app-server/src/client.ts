@@ -17,7 +17,7 @@ import {
   encodeOptionalPayload,
   runHandler,
 } from "./_internal/shared.ts";
-import { collectStderrTail, makeChildStdio, makeTerminationError } from "./_internal/stdio.ts";
+import { makeChildStdio, makeStderrTail, makeTerminationError } from "./_internal/stdio.ts";
 
 export interface CodexAppServerClientOptions {
   readonly logIncoming?: boolean;
@@ -310,6 +310,10 @@ export const layerChildProcess = (
 const makeChildProcessClient = Effect.fn(
   "effect-codex-app-server/CodexAppServerClient.makeChildProcessClient",
 )(function* (handle: ChildProcessSpawner.ChildProcessHandle, options: CodexAppServerClientOptions) {
-  const stderrTail = yield* collectStderrTail(handle.stderr);
-  return yield* make(makeChildStdio(handle), options, makeTerminationError(handle, stderrTail));
+  const stderrTail = yield* makeStderrTail(handle.stderr);
+  return yield* make(
+    makeChildStdio(handle, stderrTail.awaitDrained),
+    options,
+    makeTerminationError(handle, stderrTail.read),
+  );
 });
