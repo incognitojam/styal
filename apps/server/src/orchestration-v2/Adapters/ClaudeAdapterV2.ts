@@ -2697,12 +2697,12 @@ export function claudeRuntimeQueryPolicyForRuntimePolicy(
 
 const ClaudeBypassSettings = Schema.StructWithRest(
   Schema.Struct({
-    disableAutoMode: Schema.optionalKey(Schema.Literal("disable")),
+    disableAutoMode: Schema.optionalKey(Schema.Literals(["disable", false])),
     permissions: Schema.optionalKey(
       Schema.StructWithRest(
         Schema.Struct({
-          disableBypassPermissionsMode: Schema.optionalKey(Schema.Literal("disable")),
-          disableAutoMode: Schema.optionalKey(Schema.Literal("disable")),
+          disableBypassPermissionsMode: Schema.optionalKey(Schema.Literals(["disable", false])),
+          disableAutoMode: Schema.optionalKey(Schema.Literals(["disable", false])),
         }),
         [Schema.Record(Schema.String, Schema.Unknown)],
       ),
@@ -2714,6 +2714,39 @@ const decodeClaudeBypassSettings = Schema.decodeUnknownEffect(
   fromLenientJson(ClaudeBypassSettings),
 );
 const decodeClaudeLaunchArgBypassSettings = Schema.decodeUnknownEffect(ClaudeBypassSettings);
+
+function claudeSdkBypassSettings(settings: typeof ClaudeBypassSettings.Type) {
+  const { disableAutoMode, permissions, ...rest } = settings;
+  const {
+    disableBypassPermissionsMode,
+    disableAutoMode: nestedAutoMode,
+    ...permissionRest
+  } = permissions ?? {};
+  return {
+    ...rest,
+    ...(disableAutoMode === "disable" ? { disableAutoMode } : {}),
+    ...(permissions
+      ? {
+          permissions: {
+            ...permissionRest,
+            ...(disableBypassPermissionsMode === "disable" ? { disableBypassPermissionsMode } : {}),
+            ...(nestedAutoMode === "disable" ? { disableAutoMode: nestedAutoMode } : {}),
+          },
+        }
+      : {}),
+  };
+}
+
+// --settings travels to the SDK as options.settings, whose type only allows "disable".
+// Shapes the schema rejects keep their current pass-through; resolveBypassAvailability
+// already treats them as a bypass failure.
+const decodeClaudeLaunchArgBypassSettingsOption = Schema.decodeUnknownOption(ClaudeBypassSettings);
+function claudeSdkLaunchArgSettings(settings: ClaudeSdkSettings): ClaudeSdkSettings {
+  const decoded = decodeClaudeLaunchArgBypassSettingsOption(settings);
+  return Option.isNone(decoded)
+    ? settings
+    : (claudeSdkBypassSettings(decoded.value) as ClaudeSdkSettings);
+}
 
 const ClaudePromptCacheTtl = Schema.Literals(["5m", "1h"]);
 const decodeClaudePromptCacheTtl = Schema.decodeUnknownOption(ClaudePromptCacheTtl);
@@ -4603,7 +4636,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
   const readBypassSettings = (filePath: string) =>
     fileSystem.readFileString(filePath).pipe(
       Effect.flatMap(decodeClaudeBypassSettings),
-      Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed({})),
+      Effect.catchReason("PlatformError", "NotFound", () =>
+        Effect.succeed({} as typeof ClaudeBypassSettings.Type),
+      ),
     );
   const resolveBypassAvailability = Effect.fn("ClaudeAdapterV2.resolveBypassAvailability")(
     function* (cwd: string | null) {
@@ -4617,7 +4652,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
         resolveClaudeSettings({
           ...(cwd === null ? {} : { cwd }),
           settingSources: customHome ? ["project", "local"] : ["user", "project", "local"],
-          serverManagedSettings: remote,
+          serverManagedSettings: claudeSdkBypassSettings(remote),
         }),
       );
       const launchArgSettings = yield* readClaudeLaunchArgSettings({
@@ -10628,7 +10663,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             cwd: turnInput.runtimePolicy.cwd,
             attachmentsDir,
             settings: adapterOptions.settings,
-            ...(launchArgSettings === undefined ? {} : { sdkSettings: launchArgSettings }),
+            ...(launchArgSettings === undefined
+              ? {}
+              : { sdkSettings: claudeSdkLaunchArgSettings(launchArgSettings) }),
             environment: claudeQueryEnvironment(
               McpProviderSession.withAgentDeviceEnvironment(
                 {
