@@ -714,12 +714,13 @@ function PairingForm({
           </div>
           <CollapsiblePanel>
             <p className="pt-3 text-sm text-muted-foreground">
-              Run this on the computer with your code.
+              On the computer with your code, start styal or run{" "}
+              <code className="font-mono">npx @styal/cli serve</code>, then run:
             </p>
             <CommandBlock command="npx @styal/cli pair" className="mt-2" />
             <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-              Start styal first, or run <code className="font-mono">npx @styal/cli serve</code>. Add{" "}
-              <code className="font-mono">--tailscale</code> to use your tailnet.
+              On a tailnet, run <code className="font-mono">npx @styal/cli pair --tailscale</code>{" "}
+              instead.
             </p>
           </CollapsiblePanel>
         </Collapsible>
