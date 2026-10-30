@@ -79,4 +79,5 @@ export * from "./secretRequest.ts";
 export * from "./feedback.ts";
 export * from "./forkClientUsage.ts";
 export * from "./discordPresence.ts";
+export * from "./secretReference.ts";
 export * from "./clientRpcPermissions.ts";
