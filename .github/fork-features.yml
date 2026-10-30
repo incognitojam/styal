@@ -1559,6 +1559,7 @@ features:
     prs: [274, 275, 296, 636, 653]
     invariants:
       - Turn, working-tree, branch, and pull request diffs order source dependencies first, their tests next, and repository-attributed or recognized generated output last across web, desktop, and mobile review surfaces. A working-tree or branch diff too large to load at once loads its files in that tier order, by path within each tier, since their import lines are not known until they load.
+      - Web and desktop local commit previews use the same relevance ordering, generated-file attribution, and progressive loading order as branch diffs.
       - Test and generated tiers remain visible, generated files start collapsed, and explicit reader fold choices take precedence over automatic classification.
       - One persisted web preference switches the diff panel and pull request Code tab between relevance and alphabetical order; one persisted mobile preference does the same for the review sheet and pull request file list, Changed files sheet, and file diff, and the Changed files sheet groups by directory only in alphabetical order.
       - Explicit web, desktop, and mobile sort choices emit bounded client-usage events for the owning environment; default rendering is not counted as a choice and file paths are never reported.

@@ -544,18 +544,23 @@ export function buildReviewSectionItems(input: {
     },
   );
 
-  const gitItems = input.gitSections.map<ReviewSectionItem>((section) => ({
-    id: `git:${section.kind}`,
-    kind: section.kind,
-    title: section.title,
-    subtitle: gitSubtitle(section),
-    diff: section.diff,
-    source: section,
-    ...(section.files ? { files: section.files } : {}),
-    truncated: section.truncated,
-    isLoading: false,
-    generatedPaths: section.generatedPaths ?? [],
-  }));
+  const gitItems = input.gitSections
+    .filter(
+      (section): section is typeof section & { kind: ReviewSectionKind } =>
+        section.kind !== "commit",
+    )
+    .map<ReviewSectionItem>((section) => ({
+      id: `git:${section.kind}`,
+      kind: section.kind,
+      title: section.title,
+      subtitle: gitSubtitle(section),
+      diff: section.diff,
+      source: section,
+      ...(section.files ? { files: section.files } : {}),
+      truncated: section.truncated,
+      isLoading: false,
+      generatedPaths: section.generatedPaths ?? [],
+    }));
   const hasChangesItem = gitItems.some((item) => item.id === CHANGES_SECTION_ID);
   const visibleGitItems =
     input.loadingGitSections && !hasChangesItem
