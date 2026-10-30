@@ -2,5 +2,14 @@
   "upstreamRepository": "pingdotgg/t3code",
   "baseline": "ed0f7b908b2e7b3a22e6fd82a73794c2fe6ee06e",
   "target": "67c0fc0cdaf963b103518862dd7b68a9c758ecf2",
-  "exceptions": {}
+  "exceptions": {
+    "3819eb367a29bf52fd39a194e1453b299abe9b55": {
+      "disposition": "skip",
+      "reason": "Upstream #20907 changed the desktop safe-storage identity and left existing installs unable to decrypt their saved connection catalog; upstream reverted it in #22219, which is skipped with it. Taking the pair in order would ship the break to fork nightlies for several batches, and their net effect is zero. If upstream re-lands the change, take the re-land at chronological intake."
+    },
+    "41b513d99aac6ba4d4a4000a3a3a1320b0f79dad": {
+      "disposition": "skip",
+      "reason": "Reverts upstream #20907, which is skipped with it as a pair (net effect zero); see that exception."
+    }
+  }
 }
