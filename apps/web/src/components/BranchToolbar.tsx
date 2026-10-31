@@ -782,7 +782,7 @@ export const BranchToolbar = memo(function BranchToolbar({
         // A non-Git strip with no visible composer controls should occupy no
         // space, but its host must retain a prospective width so controls can
         // become visible again when the chat view grows.
-        !contextStripVisible && "pointer-events-none invisible absolute inset-x-0 top-full",
+        !contextStripVisible && "pointer-events-none invisible absolute inset-x-0 bottom-0",
       )}
     >
       {showGitControls ? (
