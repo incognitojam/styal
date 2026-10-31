@@ -33,11 +33,12 @@ interface InstallFlags {
 
 /**
  * macOS background staging for DesktopUpdates. Once Squirrel.Mac stages a
- * download, its ShipIt job installs it whenever the app exits, so a staged
- * update is frozen until quit: no further checks or downloads. Staging cannot
- * be cancelled, so the lock is held until Squirrel's own terminal event; the
- * handoff and channel changes wait for it. On other platforms every method
- * leaves the updater's own behaviour in place.
+ * download, its ShipIt job installs it whenever the app exits. Checks continue
+ * while it waits; a newer release discards it before downloading, so the
+ * restart installs the latest build rather than the first one downloaded.
+ * Staging cannot be cancelled, so the lock is held until Squirrel's own
+ * terminal event; checks, the handoff and channel changes wait for it. On
+ * other platforms every method leaves the updater's own behaviour in place.
  */
 export const make = Effect.fn("desktop.updates.makeNativeUpdateStaging")(function* (options: {
   readonly enabled: boolean;
@@ -81,12 +82,12 @@ export const make = Effect.fn("desktop.updates.makeNativeUpdateStaging")(functio
   });
 
   return {
-    /** True while a download is staging or staged: it is what the next exit
-        installs, so the caller skips the update check. */
+    /** True while Squirrel is staging a download, which cannot be
+        interrupted, so the caller skips the update check. */
     holdsChecks: Effect.fn("desktop.updates.nativeStagingHoldsChecks")(function* (reason: string) {
       const nativeStage = yield* Ref.get(nativeStageRef);
-      if (nativeStage === undefined || nativeStage.status === "failed") return false;
-      yield* logInfo("skipping update check while an update is staged", {
+      if (nativeStage?.status !== "staging") return false;
+      yield* logInfo("skipping update check while an update is staging", {
         reason,
         version: nativeStage.version,
       });
@@ -170,6 +171,35 @@ export const make = Effect.fn("desktop.updates.makeNativeUpdateStaging")(functio
             }),
           )
         : electronUpdater.quitAndInstall(flags),
+
+    /** Before downloading a newer release: removes the staged update so the
+        newer download can stage. False when the ShipIt job cannot be
+        removed; the staged update then stays what the next exit installs. */
+    releaseSuperseded: (version: string) =>
+      lock.withPermits(1)(
+        Effect.gen(function* () {
+          const nativeStage = yield* Ref.get(nativeStageRef);
+          if (!options.enabled || nativeStage?.status !== "staged") return true;
+          if (nativeStage.version === version) return true;
+          const discarded = yield* nativeUpdater.discard.pipe(Effect.exit);
+          if (Exit.isFailure(discarded)) {
+            yield* logWarning("could not discard a superseded staged update", {
+              version: nativeStage.version,
+              newerVersion: version,
+              cause: discarded.cause,
+            });
+            return false;
+          }
+          yield* Ref.update(nativeFeedRef, (feed) => feed && { ...feed, spent: true });
+          yield* Ref.set(nativeStageRef, undefined);
+          yield* options.onDiscarded;
+          yield* logInfo("discarded a superseded staged update", {
+            version: nativeStage.version,
+            newerVersion: version,
+          });
+          return true;
+        }),
+      ),
 
     /** Before a channel change: removes any staged update and clears the
         download, so the old channel's update cannot install on quit. */

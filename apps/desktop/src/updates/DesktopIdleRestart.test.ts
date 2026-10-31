@@ -26,6 +26,14 @@ describe("idle restart measurement", () => {
     updateVersion,
     delayBucket,
   });
+  // Checks keep polling while an update is staged; each finds the same release.
+  const makeStagingHarness = () => {
+    const harness = makeHarness({
+      stagesInBackground: true,
+      checkForUpdates: Effect.sync(() => harness.emit("update-available", { version: "1.2.4" })),
+    });
+    return harness;
+  };
   const withStagedUpdate = <E, R>(
     harness: ReturnType<typeof makeHarness>,
     body: (updates: DesktopUpdates.DesktopUpdates["Service"]) => Effect.Effect<void, E, R>,
@@ -52,7 +60,7 @@ describe("idle restart measurement", () => {
   });
 
   it.effect("records the first idle moment once and never installs", () => {
-    const harness = makeHarness({ stagesInBackground: true });
+    const harness = makeStagingHarness();
     return withStagedUpdate(harness, (updates) =>
       Effect.gen(function* () {
         assert.equal(harness.idleRestart.pendingFile, "1.2.4");
@@ -72,7 +80,7 @@ describe("idle restart measurement", () => {
   });
 
   it.effect("waits for the user to go idle and counts a locked screen as idle", () => {
-    const harness = makeHarness({ stagesInBackground: true });
+    const harness = makeStagingHarness();
     return withStagedUpdate(harness, () =>
       Effect.gen(function* () {
         yield* TestClock.adjust("2 hours");
@@ -96,7 +104,7 @@ describe("idle restart measurement", () => {
     ["devices used by another environment", { ...quietHost, environmentsUsingDevices: 1 }],
     ["a host that could not be checked", null],
   ] as const)("holds off while there is %s", ([, blockingHost]) => {
-    const harness = makeHarness({ stagesInBackground: true });
+    const harness = makeStagingHarness();
     return withStagedUpdate(harness, () =>
       Effect.gen(function* () {
         harness.idleRestart.idleState = "idle";
@@ -115,7 +123,7 @@ describe("idle restart measurement", () => {
   });
 
   it.effect("waits for turns that will not resume, but not for terminal commands", () => {
-    const harness = makeHarness({ stagesInBackground: true });
+    const harness = makeStagingHarness();
     return withStagedUpdate(harness, () =>
       Effect.gen(function* () {
         harness.idleRestart.idleState = "idle";
@@ -138,7 +146,7 @@ describe("idle restart measurement", () => {
   });
 
   it.effect("records nothing when the user returns during the activity check", () => {
-    const harness = makeHarness({ stagesInBackground: true });
+    const harness = makeStagingHarness();
     return withStagedUpdate(harness, () =>
       Effect.gen(function* () {
         harness.idleRestart.idleState = "idle";
@@ -180,7 +188,7 @@ describe("idle restart measurement", () => {
   });
 
   it.effect("skips checks while quitting", () => {
-    const harness = makeHarness({ stagesInBackground: true });
+    const harness = makeStagingHarness();
     return withStagedUpdate(harness, () =>
       Effect.gen(function* () {
         const desktopState = yield* DesktopState.DesktopState;
@@ -215,7 +223,7 @@ describe("idle restart measurement", () => {
   );
 
   it.effect("records never for a staged update discarded by a channel change", () => {
-    const harness = makeHarness({ stagesInBackground: true });
+    const harness = makeStagingHarness();
     return withStagedUpdate(harness, (updates) =>
       Effect.gen(function* () {
         yield* updates.setChannel("nightly");
@@ -230,7 +238,7 @@ describe("idle restart measurement", () => {
   });
 
   it.effect("records installed_first when the next launch runs the pending version", () => {
-    const harness = makeHarness({ stagesInBackground: true });
+    const harness = makeStagingHarness();
     harness.idleRestart.pendingFile = "1.2.3";
     return Effect.scoped(
       Effect.gen(function* () {
@@ -242,7 +250,7 @@ describe("idle restart measurement", () => {
   });
 
   it.effect("keeps the pending version across a quit and records never on the next launch", () => {
-    const harness = makeHarness({ stagesInBackground: true });
+    const harness = makeStagingHarness();
     return Effect.gen(function* () {
       yield* withStagedUpdate(harness, () => Effect.void);
       assert.equal(harness.idleRestart.pendingFile, "1.2.4");

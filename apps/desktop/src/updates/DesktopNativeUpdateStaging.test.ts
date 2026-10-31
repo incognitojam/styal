@@ -34,8 +34,11 @@ describe("macOS background staging", () => {
       }),
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
 
-  it.effect("stages a download once and freezes it until quit hands it off", () => {
-    const harness = makeHarness({ stagesInBackground: true });
+  it.effect("stages a download once and keeps it when checks find the same release", () => {
+    const harness = makeHarness({
+      stagesInBackground: true,
+      checkForUpdates: Effect.sync(() => harness.emit("update-available", { version: "1.2.4" })),
+    });
     return run(harness, (updates, quit) =>
       Effect.gen(function* () {
         harness.emit("update-downloaded", { version: "1.2.4" });
@@ -43,14 +46,65 @@ describe("macOS background staging", () => {
         assert.equal(harness.squirrel.stageCount, 1);
         assert.isTrue(harness.squirrel.job);
 
-        // The staged update installs on the next exit, so nothing replaces it.
-        assert.isFalse((yield* updates.check("manual")).checked);
-        assert.equal(harness.checkCount(), 0);
+        assert.isTrue((yield* updates.check("manual")).checked);
+        yield* flushCallbacks;
+        assert.equal(harness.downloadCount(), 0);
+        assert.equal(harness.squirrel.discardCount, 0);
+        assert.equal((yield* updates.getState).status, "downloaded");
 
         assert.isTrue(yield* quit);
         assert.equal(harness.squirrel.stageCount, 1);
         assert.deepEqual(harness.squirrel.installedOnExit, ["1.2.4"]);
         assert.isFalse(harness.autoInstallOnAppQuit());
+      }),
+    );
+  });
+
+  it.effect("replaces a staged update when a newer release appears", () => {
+    const harness = makeHarness({
+      stagesInBackground: true,
+      checkForUpdates: Effect.sync(() => harness.emit("update-available", { version: "1.2.5" })),
+      downloadUpdate: Effect.sync(() => harness.emit("update-downloaded", { version: "1.2.5" })),
+    });
+    return run(harness, (updates, quit) =>
+      Effect.gen(function* () {
+        harness.emit("update-downloaded", { version: "1.2.4" });
+        yield* flushCallbacks;
+        assert.equal(harness.squirrel.stageCount, 1);
+
+        assert.isTrue((yield* updates.check("poll")).checked);
+        yield* flushCallbacks;
+        assert.equal(harness.squirrel.discardCount, 1);
+        assert.equal(harness.downloadCount(), 1);
+        assert.equal(harness.squirrel.stageCount, 2);
+        assert.equal((yield* updates.getState).downloadedVersion, "1.2.5");
+
+        assert.isTrue(yield* quit);
+        assert.deepEqual(harness.squirrel.installedOnExit, ["1.2.5"]);
+      }),
+    );
+  });
+
+  it.effect("keeps the staged update when it cannot be discarded for a newer release", () => {
+    const harness = makeHarness({
+      stagesInBackground: true,
+      discardNativeUpdateFailure: "job-removal",
+      checkForUpdates: Effect.sync(() => harness.emit("update-available", { version: "1.2.5" })),
+    });
+    return run(harness, (updates, quit) =>
+      Effect.gen(function* () {
+        harness.emit("update-downloaded", { version: "1.2.4" });
+        yield* flushCallbacks;
+
+        assert.isTrue((yield* updates.check("poll")).checked);
+        yield* flushCallbacks;
+        assert.equal(harness.downloadCount(), 0);
+        const state = yield* updates.getState;
+        assert.equal(state.status, "downloaded");
+        assert.equal(state.downloadedVersion, "1.2.4");
+
+        assert.isTrue(yield* quit);
+        assert.deepEqual(harness.squirrel.installedOnExit, ["1.2.4"]);
       }),
     );
   });
