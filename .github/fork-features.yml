@@ -2218,6 +2218,7 @@ features:
       - apps/server/vite.config.ts
       - apps/web/src/branding.logic.ts
       - apps/web/src/branding.ts
+      - apps/web/src/components/GitHubStarPrompt.tsx
       - apps/web/src/components/SidebarStageBackdrop.tsx
       - apps/web/src/components/StyalToolIcon.tsx
       - apps/web/src/components/StyalWordmark.tsx
