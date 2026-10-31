@@ -186,10 +186,16 @@ export function WorkflowRunReviewCard(props: {
       </View>
       <Pressable
         accessibilityRole="link"
-        className="items-center justify-center rounded-2xl px-4 py-2.5 active:opacity-70"
+        className="flex-row items-center justify-center gap-1.5 rounded-2xl px-4 py-2.5 active:opacity-70"
         onPress={() => void tryOpenExternalUrl(run.url, "workflow-run")}
       >
         <Text className="font-t3-bold text-sm text-foreground-muted">Open on GitHub</Text>
+        <SymbolView
+          name="arrow.up.right"
+          size={13}
+          tintColorClassName="accent-foreground-muted"
+          type="monochrome"
+        />
       </Pressable>
       {!canReview ? (
         <Text className="font-sans text-xs text-foreground-tertiary">
