@@ -174,7 +174,8 @@
         "expo-sharing",
         "expo-audio",
         "expo-video",
-        "expo-network"
+        "expo-network",
+        "expo-sharing"
       ]
     }
   },
