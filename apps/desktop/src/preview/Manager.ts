@@ -460,6 +460,8 @@ interface BrowserControlSession {
   readonly debugger: Electron.Debugger;
   readonly semaphore: Semaphore.Semaphore;
   readonly scope: Scope.Closeable;
+  /** The viewport scale last sent over this session, which a reattached one starts without. */
+  surfaceScale: number;
   readonly onDetach: (event: Electron.Event, reason: string) => void;
   readonly onMessage: (
     event: Electron.Event,
@@ -1323,6 +1325,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
             debugger: wcDebugger,
             semaphore,
             scope,
+            surfaceScale: 1,
             onDetach,
             onMessage,
           };
@@ -1369,6 +1372,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         { operation: "clearViewportPresentation", tabId, webContentsId: wc.id },
         () => control.debugger.sendCommand("Emulation.clearDeviceMetricsOverride"),
       );
+      control.surfaceScale = 1;
       return;
     }
     // The renderer measures the panel in host CSS pixels, while CDP scales
@@ -1391,6 +1395,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
           scale,
         }),
     );
+    control.surfaceScale = scale;
   });
 
   const captureNativeViewportPage = (
@@ -2675,7 +2680,11 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       }
       if (afterAttach.serverTab) {
         yield* listenForAgentPointers;
-        browserHost.attach(afterAttach.serverTab, { webContents: wc, debugger: control.debugger });
+        browserHost.attach(afterAttach.serverTab, {
+          webContents: wc,
+          debugger: control.debugger,
+          surfaceScale: () => control.surfaceScale,
+        });
       }
       yield* control.semaphore.withPermit(
         Effect.gen(function* () {

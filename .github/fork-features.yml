@@ -3516,11 +3516,13 @@ features:
     prs: [193, 197, 198, 217, 833, 841]
     invariants:
       - Fitted previews apply logical viewport dimensions through device metrics while preserving sharp presentation scaling and a working DevTools fallback. Presentation accounts for independent desktop window and page zoom, including zoom changes, so the requested CSS viewport fits its visible and captured surface.
-      - Hiding, reopening, or moving a preview preserves its owning surface and viewport state. Fitted screenshots the user takes capture the displayed surface rather than tiling it, and annotation crops are given in logical page coordinates and mapped into that surface. Agent input and captures on a desktop tab follow upstream's server-driven browser, which does not map them through the fitted scale.
+      - Hiding, reopening, or moving a preview preserves its owning surface and viewport state. Fitted screenshots, including agent snapshots of a desktop tab, capture the displayed surface rather than tiling it, and annotation crops and screenshot clips are given in logical page coordinates and mapped into that surface. Agent pointer input on a fitted desktop tab is scaled onto its surface so it lands where locators report.
       - Floating browser and device previews remain visible but do not send pointer or keyboard input to their page or device; dragging anywhere on the view-only surface moves the frame, double-clicking it opens that source in the right panel, and its frame controls and the server browser's take and release control button remain usable.
     implementation_paths:
       - .github/workflows/fork-ci.yml
       - apps/desktop/scripts/test-preview-calibration.mjs
+      - apps/desktop/src/preview/DesktopBrowserHost.ts
+      - apps/desktop/src/preview/FittedSurface.ts
       - apps/desktop/src/preview/Manager.ts
       - apps/web/src/browser/BrowserSurfaceSlot.tsx
       - apps/web/src/browser/HostedBrowserWebview.tsx
@@ -3531,6 +3533,7 @@ features:
       - apps/web/src/components/preview/usePreviewBridge.ts
       - apps/web/src/previewStateStore.ts
     upstream_paths:
+      - apps/desktop/src/preview/DesktopBrowserHost.ts
       - apps/desktop/src/preview/Manager.ts
       - apps/web/src/browser/ElectronBrowserHost.tsx
       - apps/web/src/browser/HostedBrowserWebview.tsx
@@ -3540,6 +3543,8 @@ features:
       - apps/web/src/components/preview/usePreviewBridge.ts
     tests:
       - apps/desktop/scripts/preview-calibration/main.mjs
+      - apps/desktop/src/preview/DesktopBrowserHost.test.ts
+      - apps/desktop/src/preview/FittedSurface.test.ts
       - apps/desktop/src/preview/Manager.test.ts
       - apps/web/src/browser/browserSurfaceStore.test.ts
       - apps/web/src/browser/hostedBrowserWebviewStyle.test.ts
