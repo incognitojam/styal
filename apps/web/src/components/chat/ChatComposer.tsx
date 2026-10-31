@@ -95,6 +95,7 @@ import { serializeComposerImages } from "./composerImagePersistence";
 import {
   isInsideCollapsedComposerControls,
   isInsideRestingComposerControlScope,
+  markOpenToEffort,
   markOpenToPermissions,
 } from "./composerEventScope";
 import {
@@ -3008,6 +3009,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         if (!trigger) return;
         trigger.focus({ preventScroll: true });
         if (command === "composer.mode") markOpenToPermissions(trigger);
+        if (command === "composer.effort") markOpenToEffort(trigger);
         trigger.click();
       },
       isModelPickerOpen: () => isComposerModelPickerOpen,

@@ -69,11 +69,11 @@ Leave the field blank to use the managed runtime, or a compatible executable on
 ## Models and threads
 
 The model list comes from your Antigravity account, including Claude and GPT models
-when your plan has them. Choose the model and its thinking level in **Reasoning
-effort**. Only levels available to your account are offered. A resumed thread keeps
-its selected model and effort. If access to that model ends, select another
-available model before continuing. If a saved effort is no longer offered, the
-model's default effort is used instead.
+when your plan has them. Pick a thinking level beside the model list in the model picker.
+Only levels available to your account are offered. A resumed thread keeps its
+selected model and effort. If access to that model ends, select another available
+model before continuing. If a saved effort is no longer offered, the model's default
+effort is used instead.
 
 Antigravity creates empty `.gemini/skills` and `.agents/skills` folders in the
 workspace when a session starts. Git does not track empty folders, so they never

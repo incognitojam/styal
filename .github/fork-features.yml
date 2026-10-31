@@ -1757,12 +1757,12 @@ features:
     rationale: Upstream's tooltip repeats the values already shown on the button and does not say what the menu holds or how to open it.
     implementation_paths:
       - apps/web/src/components/chat/ComposerControlsBar.tsx
+      - apps/web/src/components/chat/ComposerModelEffort.tsx
       - apps/web/src/components/chat/TraitsPicker.tsx
-      - apps/web/src/components/chat/composerProviderState.tsx
     upstream_paths:
       - apps/web/src/components/chat/ComposerControlsBar.tsx
+      - apps/web/src/components/chat/ComposerModelEffort.tsx
       - apps/web/src/components/chat/TraitsPicker.tsx
-      - apps/web/src/components/chat/composerProviderState.tsx
     tests:
       - apps/web/src/components/chat/TraitsPicker.test.ts
     upstream:
