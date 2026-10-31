@@ -22,6 +22,7 @@ import * as OtelEnvironment from "@t3tools/shared/otelEnvironment";
 import * as ServerConfig from "./config.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
 import * as ServerLogger from "./serverLogger.ts";
+import * as ErrorReporting from "./telemetry/ErrorReporting.ts";
 import {
   announceStartupPairingUrl,
   logBrowserAutoOpenUnavailable,
@@ -117,7 +118,8 @@ const logInSpanThrough = (
         },
       }),
     );
-    yield* program.pipe(
+    const reported = yield* program.pipe(
+      Effect.andThen(Effect.map(ErrorReporting.ErrorReportSink, (sink) => sink.drain())),
       Effect.withSpan("server-logger-test"),
       Effect.provide(
         Layer.mergeAll(
@@ -129,7 +131,7 @@ const logInSpanThrough = (
         ),
       ),
     );
-    return { requests, spans };
+    return { requests, spans, reported };
   });
 
 const printThroughConsole = (fields: object) =>
@@ -176,6 +178,29 @@ describe("ServerLoggerLive", () => {
       const body = requests.map((request) => request.body).join("\n");
       assert.include(body, '"key":"t3code.server.managed_by","value":{"stringValue":"desktop"}');
       assert.notInclude(body, "service.mode");
+    }),
+  );
+
+  it.effect("exports logged request failures without their connection tickets", () =>
+    Effect.gen(function* () {
+      const { requests, reported } = yield* logInSpanThrough(
+        { otlpLogsUrl: "https://collector.example.com/v1/logs" },
+        Effect.logError(
+          Cause.die(
+            new Error("RequestParseError (GET /ws?wsTicket=ticket-secret&dpop=proof-secret)"),
+          ),
+        ),
+      );
+
+      const body = requests.map((request) => request.body).join("\n");
+      assert.include(body, "wsTicket=<redacted>&dpop=<redacted>");
+      assert.notInclude(body, "ticket-secret");
+      assert.notInclude(body, "proof-secret");
+      assert.strictEqual(reported.length, 1);
+      const reportedCause = Cause.pretty(reported[0]!.cause);
+      assert.include(reportedCause, "wsTicket=<redacted>&dpop=<redacted>");
+      assert.notInclude(reportedCause, "ticket-secret");
+      assert.notInclude(reportedCause, "proof-secret");
     }),
   );
 

@@ -12,9 +12,15 @@ import * as OtlpLogger from "effect/observability/OtlpLogger";
 import * as ServerConfig from "./config.ts";
 import * as ErrorReporting from "./telemetry/ErrorReporting.ts";
 
+// HTTP errors logged with --log-ws-events carry the request URL and its connection ticket.
+const redactingCredentials = <Output>(logger: Logger.Logger<unknown, Output>) =>
+  Logger.make<unknown, Output>((options) =>
+    logger.log({ ...options, cause: SharedObservability.redactCauseCredentials(options.cause) }),
+  );
+
 // consolePretty collapses Cause fields via util.inspect; render them with Cause.pretty like standalone arguments.
 const consolePretty = (): Logger.Logger<unknown, void> => {
-  const pretty = Logger.consolePretty();
+  const pretty = redactingCredentials(Logger.consolePretty());
   return Logger.make((options) =>
     pretty.log({
       ...options,
@@ -50,7 +56,7 @@ export const layer = Effect.gen(function* () {
   // Loggers are installed before the services that deliver reports exist, so
   // error entries wait in this sink until ErrorReporting.layer drains it.
   const errorReportSink = ErrorReporting.makeErrorReportSink();
-  const errorReportLogger = ErrorReporting.errorReportLogger(errorReportSink);
+  const errorReportLogger = redactingCredentials(ErrorReporting.errorReportLogger(errorReportSink));
 
   const logs = config.otlpLogsExport;
   const otlpLogger =
@@ -61,7 +67,7 @@ export const layer = Effect.gen(function* () {
           exportInterval: `${logs.exportIntervalMs} millis`,
           headers: logs.headers,
           resource: ServerConfig.otlpResource(config, hostName),
-        });
+        }).pipe(Effect.map(redactingCredentials));
 
   // Logger.layer replaces the whole set; name every logger here.
   // OTLP includes traced messages as log records, so also using tracerLogger would duplicate in-span exports.
