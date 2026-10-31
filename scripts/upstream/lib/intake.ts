@@ -25,6 +25,8 @@ export interface UpstreamIntakeAuditInput {
   readonly candidateLedgerErrors?: ReadonlyArray<string>;
   /** Differences between the candidate's upstream migration history and upstream's. */
   readonly migrationErrors?: ReadonlyArray<string>;
+  /** Pending queue entries the candidate leaves behind while recording later ones. */
+  readonly queueOrderErrors?: ReadonlyArray<string>;
   /** Upstream migration manifest entries the candidate adds or changes, such as "adds 51 Name". */
   readonly migrationChanges?: ReadonlyArray<string>;
   /** Each candidate commit compared with its upstream sources, in candidate order. */
@@ -150,6 +152,7 @@ export function auditUpstreamIntakeCandidate(input: UpstreamIntakeAuditInput): U
   errors.push(...provenance.errors);
   errors.push(...(input.candidateLedgerErrors ?? []));
   errors.push(...(input.migrationErrors ?? []));
+  errors.push(...(input.queueOrderErrors ?? []));
   const commitReviews = input.commitReviews ?? [];
   const knownFeatureIds = new Set([
     ...input.ledger.features.map((feature) => feature.id),

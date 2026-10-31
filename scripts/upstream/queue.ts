@@ -417,6 +417,73 @@ function writeAssociationsCache(path: string, associations: Associations): void 
   NodeFS.renameSync(temporaryPath, path);
 }
 
+/**
+ * The baseline..target integrations, or those up to and including `through`,
+ * with their upstream PRs, reusing the shared association cache.
+ */
+export function readQueue(input: {
+  root: string;
+  state: IntakeState;
+  upstreamChain: readonly string[];
+  through?: string;
+  refreshMetadata?: boolean;
+  run: Run;
+}): { integrations: Integration[]; targetChain: Set<string> } {
+  const { root, state, upstreamChain, run } = input;
+  const all = readIntegrations(state, run);
+  const integrations =
+    input.through === undefined
+      ? all
+      : all.slice(0, all.findIndex((entry) => entry.sha === input.through) + 1);
+  const targetChain = new Set(
+    run("git", ["rev-list", "--first-parent", state.target]).trim().split("\n"),
+  );
+  const scratch = ensureScratchDirectory(root);
+  const cacheName = `upstream-queue-${state.upstreamRepository.replace("/", "-")}-${state.target}-prs.json`;
+  const cachePath = NodePath.resolve(scratch, cacheName);
+  const worktreeCachePath = NodePath.resolve(root, ".scratch", cacheName);
+  const otherCachePaths = [scratch, NodePath.resolve(root, ".scratch")].flatMap((directory) =>
+    NodeFS.existsSync(directory)
+      ? NodeFS.readdirSync(directory)
+          .filter(
+            (name) =>
+              name.startsWith(`upstream-queue-${state.upstreamRepository.replace("/", "-")}-`) &&
+              name.endsWith("-prs.json"),
+          )
+          .map((name) => NodePath.resolve(directory, name))
+      : [],
+  );
+  const readCache = (path: string) => JSON.parse(NodeFS.readFileSync(path, "utf8")) as Associations;
+  const currentCachePath = [cachePath, worktreeCachePath].find((path) => NodeFS.existsSync(path));
+  const cache = !input.refreshMetadata && currentCachePath ? readCache(currentCachePath) : {};
+  if (!input.refreshMetadata) {
+    for (const path of otherCachePaths) {
+      if (path === currentCachePath) continue;
+      const reusable = reusableAssociations(readCache(path), state.upstreamRepository, targetChain);
+      for (const [sha, prs] of Object.entries(reusable)) cache[sha] ??= prs;
+    }
+  }
+  writeAssociationsCache(cachePath, cache);
+  const associations = fetchAssociations(
+    integrations,
+    state.upstreamRepository,
+    cache,
+    run,
+    (next) => writeAssociationsCache(cachePath, next),
+  );
+  writeAssociationsCache(cachePath, associations);
+  return {
+    integrations: associatePRs(
+      integrations,
+      associations,
+      state.upstreamRepository,
+      targetChain,
+      new Set(upstreamChain),
+    ),
+    targetChain,
+  };
+}
+
 function main() {
   const { values, positionals } = NodeUtil.parseArgs({
     allowPositionals: true,
@@ -515,51 +582,13 @@ function main() {
       throw new Error("New target must be a full SHA at or after the old target on upstream main.");
     state.target = source;
   }
-  const integrations = readIntegrations(state, run);
-  const targetChain = new Set(
-    run("git", ["rev-list", "--first-parent", state.target]).trim().split("\n"),
-  );
-  const scratch = ensureScratchDirectory(root);
-  const cacheName = `upstream-queue-${state.upstreamRepository.replace("/", "-")}-${state.target}-prs.json`;
-  const cachePath = NodePath.resolve(scratch, cacheName);
-  const worktreeCachePath = NodePath.resolve(root, ".scratch", cacheName);
-  const otherCachePaths = [scratch, NodePath.resolve(root, ".scratch")].flatMap((directory) =>
-    NodeFS.existsSync(directory)
-      ? NodeFS.readdirSync(directory)
-          .filter(
-            (name) =>
-              name.startsWith(`upstream-queue-${state.upstreamRepository.replace("/", "-")}-`) &&
-              name.endsWith("-prs.json"),
-          )
-          .map((name) => NodePath.resolve(directory, name))
-      : [],
-  );
-  const readCache = (path: string) => JSON.parse(NodeFS.readFileSync(path, "utf8")) as Associations;
-  const currentCachePath = [cachePath, worktreeCachePath].find((path) => NodeFS.existsSync(path));
-  const cache = !values["refresh-metadata"] && currentCachePath ? readCache(currentCachePath) : {};
-  if (!values["refresh-metadata"]) {
-    for (const path of otherCachePaths) {
-      if (path === currentCachePath) continue;
-      const reusable = reusableAssociations(readCache(path), state.upstreamRepository, targetChain);
-      for (const [sha, prs] of Object.entries(reusable)) cache[sha] ??= prs;
-    }
-  }
-  writeAssociationsCache(cachePath, cache);
-  const associations = fetchAssociations(
-    integrations,
-    state.upstreamRepository,
-    cache,
+  const { integrations: associated, targetChain } = readQueue({
+    root,
+    state,
+    upstreamChain,
+    refreshMetadata: values["refresh-metadata"] === true,
     run,
-    (next) => writeAssociationsCache(cachePath, next),
-  );
-  writeAssociationsCache(cachePath, associations);
-  const associated = associatePRs(
-    integrations,
-    associations,
-    state.upstreamRepository,
-    targetChain,
-    new Set(upstreamChain),
-  );
+  });
   if (command === "target") {
     NodeFS.writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`);
     console.log(`Target set to ${shortSha(state.target)}`);
