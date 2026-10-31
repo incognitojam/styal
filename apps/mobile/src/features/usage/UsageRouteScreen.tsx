@@ -31,6 +31,7 @@ import {
   formatUsd,
   makeWindow,
   USAGE_EMISSIONS_GRAMS_PER_1K_OUTPUT_TOKENS,
+  usageSourceMessages,
 } from "@t3tools/shared/usageFormat";
 import { useRef, useState, type ReactNode } from "react";
 import { Alert, Platform, Pressable, RefreshControl, View } from "react-native";
@@ -123,22 +124,9 @@ function UsageScreen(props: {
     void refresh();
     void limits.refreshAfterEnable();
   };
-  const sourceMessages = [
-    ...new Set(
-      selectedEnvironments.flatMap(
-        (environment) =>
-          environment.summary?.sources.flatMap((source) =>
-            source.message &&
-            !source.action &&
-            (source.status === "partial" ||
-              source.status === "failed" ||
-              source.fingerprint.provider === "cursor")
-              ? [source.message]
-              : [],
-          ) ?? [],
-      ),
-    ),
-  ];
+  const sourceMessages = usageSourceMessages(
+    selectedEnvironments.flatMap((environment) => environment.summary?.sources ?? []),
+  );
   const canReadDiagnostics = selectedEnvironments.some(
     (environment) => environment.canReadDiagnostics,
   );
