@@ -10,7 +10,7 @@ import * as Schema from "effect/Schema";
 import { loadCursorSdk } from "./sdk.ts";
 
 export interface CursorSdkCatalogSnapshot {
-  readonly user: SDKUser;
+  readonly user: SDKUser | undefined;
   readonly models: ReadonlyArray<SDKModel>;
 }
 
@@ -30,6 +30,11 @@ export class CursorSdkCatalogError extends Schema.TaggedError<CursorSdkCatalogEr
   get planRequired(): boolean {
     const { CursorSdkError } = loadCursorSdk();
     return this.cause instanceof CursorSdkError && this.cause.code === "plan_required";
+  }
+
+  get accountBlocked(): boolean {
+    const { CursorSdkError } = loadCursorSdk();
+    return this.cause instanceof CursorSdkError && this.cause.status === 403 && !this.planRequired;
   }
 }
 
@@ -84,7 +89,13 @@ export const makeCursorSdkCatalog = Effect.fn("CursorSdkCatalog.make")(function*
     read: Effect.fn("CursorSdkCatalog.read")(function (apiKey) {
       return Effect.all(
         {
-          user: probes.readUser(apiKey),
+          // Enterprise teams can block account labels while model discovery still works.
+          user: Effect.catchIf(
+            probes.readUser(apiKey),
+            (error: CursorSdkCatalogError): boolean => error.accountBlocked,
+            () => Effect.undefined,
+            (error: CursorSdkCatalogError) => Effect.fail(error),
+          ),
           models: Cache.get(modelCache, apiKey),
         },
         { concurrency: "unbounded" },
