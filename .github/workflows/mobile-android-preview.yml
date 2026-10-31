@@ -3,6 +3,24 @@ name: Mobile Android Preview
 on:
   pull_request:
     types: [labeled, unlabeled, synchronize, reopened, closed]
+  # Main builds an unpublished preview whenever the compiled-output or Metro
+  # cache key changes, so each PR's first preview build restores warm outputs.
+  # PR caches are not visible to main or other PRs, and production outputs do
+  # not match: its Google Services plugin changes the Gradle transform paths
+  # in every C++ include path.
+  push:
+    branches: [main]
+    paths:
+      - pnpm-lock.yaml
+      - patches/**
+      - apps/mobile/metro.config.*
+      - apps/mobile/babel.config.*
+      - apps/mobile/modules/**
+      - apps/mobile/plugins/**
+      - apps/mobile/app.config.ts
+      - .github/actions/cache-android-build/action.yml
+      - .github/workflows/mobile-android-preview.yml
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -10,7 +28,7 @@ permissions:
 # Build events and cleanup events use separate groups, as in Desktop macOS
 # Preview: a push cancels a stale in-flight build but never a cleanup run.
 concurrency:
-  group: mobile-android-preview-${{ github.event.pull_request.number }}-${{ contains(fromJSON('["closed", "unlabeled"]'), github.event.action) && 'cleanup' || 'build' }}
+  group: mobile-android-preview-${{ github.event.pull_request.number || github.ref_name }}-${{ contains(fromJSON('["closed", "unlabeled"]'), github.event.action) && 'cleanup' || 'build' }}
   # Keep in sync with the build job's condition.
   cancel-in-progress: >-
     ${{ github.event.action != 'closed' &&
@@ -26,11 +44,12 @@ jobs:
   build:
     name: Build Android preview APK
     if: >-
-      github.event.action != 'closed' &&
+      github.event_name != 'pull_request' ||
+      (github.event.action != 'closed' &&
       github.event.action != 'unlabeled' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       contains(github.event.pull_request.labels.*.name, 'preview:android') &&
-      (github.event.action != 'labeled' || github.event.label.name == 'preview:android')
+      (github.event.action != 'labeled' || github.event.label.name == 'preview:android'))
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
@@ -53,7 +72,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           sparse-checkout: |
             /*
             !/.repos/
@@ -74,8 +93,8 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      # Restore dependencies only: main saves this large cache. Compiled
-      # outputs have their own smaller cache that previews can populate.
+      # Restore dependencies only: production builds save this large cache.
+      # Compiled outputs have their own smaller cache that previews can populate.
       - name: Restore Gradle cache
         uses: actions/cache/restore@v6
         with:
@@ -99,7 +118,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}/metro/metro-cache
-          key: metro-android-v1-${{ runner.os }}-${{ runner.arch }}-preview-${{ hashFiles('pnpm-lock.yaml', 'patches/**', 'apps/mobile/metro.config.*', 'apps/mobile/babel.config.*') }}-${{ github.event.pull_request.head.sha }}
+          key: metro-android-v1-${{ runner.os }}-${{ runner.arch }}-preview-${{ hashFiles('pnpm-lock.yaml', 'patches/**', 'apps/mobile/metro.config.*', 'apps/mobile/babel.config.*') }}-${{ github.event.pull_request.head.sha || github.sha }}
           restore-keys: |
             metro-android-v1-${{ runner.os }}-${{ runner.arch }}-preview-${{ hashFiles('pnpm-lock.yaml', 'patches/**', 'apps/mobile/metro.config.*', 'apps/mobile/babel.config.*') }}-
 
@@ -112,7 +131,11 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           base_version="$(npx expo config --json --type public | jq -er '.version')"
-          version="${base_version}-pr.${PR_NUMBER}.${GITHUB_RUN_NUMBER}"
+          if [[ -n "$PR_NUMBER" ]]; then
+            version="${base_version}-pr.${PR_NUMBER}.${GITHUB_RUN_NUMBER}"
+          else
+            version="${base_version}-main.${GITHUB_RUN_NUMBER}"
+          fi
           {
             echo "T3CODE_MOBILE_VERSION=$version"
             echo "T3CODE_ANDROID_VERSION_CODE=$GITHUB_RUN_NUMBER"
@@ -177,6 +200,7 @@ jobs:
       # archive: false uploads the file as its own artifact named after the
       # file, so the publish job downloads by *.apk pattern, not by name.
       - name: Upload the APK
+        if: github.event_name == 'pull_request'
         uses: actions/upload-artifact@v7
         with:
           path: release/*.apk
@@ -193,6 +217,7 @@ jobs:
   publish:
     name: Sign and publish the APK
     needs: build
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     environment:
