@@ -12,6 +12,24 @@ Var IsPowerShellAvailable
   !insertmacro _CHECK_APP_RUNNING
 !macroend
 
+!include "StrFunc.nsh"
+!ifdef BUILD_UNINSTALLER
+  ${UnStrRep}
+  !define T3StrRep '${UnStrRep}'
+!else
+  ${StrRep}
+  !define T3StrRep '${StrRep}'
+!endif
+
+!macro customAppRunningMessages
+  Push $1
+  ${T3StrRep} $1 "${APP_EXECUTABLE_FILENAME}" ".exe" ""
+  ${T3StrRep} $appRunningMessage $appRunningMessage "${PRODUCT_NAME}" $1
+  ${T3StrRep} $appClosingMessage $appClosingMessage "${PRODUCT_NAME}" $1
+  ${T3StrRep} $appCannotBeClosedMessage $appCannotBeClosedMessage "${PRODUCT_NAME}" $1
+  Pop $1
+!macroend
+
 !macro customInstall
   # The styal install has completed and registered its new GUID. Remove the
   # earlier fork and pre-fix styal registrations without running either old
