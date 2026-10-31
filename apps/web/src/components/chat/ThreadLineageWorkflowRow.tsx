@@ -70,7 +70,7 @@ function WorkflowMemberRow({
 }) {
   const threadId = member.childThreadId;
   const childThread = threadId === null ? undefined : getThread(threadId);
-  const canOpen = threadId !== null && childThread !== undefined;
+  const canOpen = threadId !== null;
   return (
     <li>
       <Tooltip>
