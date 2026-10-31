@@ -23,6 +23,8 @@ const state = vi.hoisted(() => ({
   subagent: false,
   background: [] as Array<{ taskId: string; kind: "command" | "monitor" }>,
   delegatedChild: null as "running" | "approval" | null,
+  latestRunId: "run-1",
+  workflowReview: false,
   add: vi.fn(
     (_toast: { title: string; description: string; actionProps: { onClick: () => void } }) =>
       "toast-1",
@@ -57,8 +59,21 @@ function mockThreadShell() {
     forkedFrom: null,
     createdBy: "user",
     creationSource: "web",
-    latestRunId: "run-1",
+    latestRunId: state.latestRunId,
     activeRunId: null,
+    workflowRuns: state.workflowReview
+      ? [
+          {
+            host: "github.com",
+            repository: "acme/web",
+            runId: 812,
+            url: "https://github.com/acme/web/actions/runs/812",
+            name: "Deploy #812",
+            startedAt: "2026-09-13T09:00:00.000Z",
+            review: { environments: [{ id: 1, name: "production" }] },
+          },
+        ]
+      : [],
     status: state.completedAt
       ? "completed"
       : state.sessionError || state.turnError || state.limited
@@ -175,6 +190,8 @@ function setup() {
     subagent: false,
     background: [],
     delegatedChild: null,
+    latestRunId: "run-1",
+    workflowReview: false,
   });
   stableParent = null;
   const stack = new AsyncDisposableStack();
@@ -203,6 +220,22 @@ function setup() {
 }
 
 describe("thread notifications", () => {
+  it("alerts once for a workflow review that stays pending across agent runs", async () => {
+    await using app = setup();
+    state.mode = "sound";
+    await app.render();
+    state.workflowReview = true;
+    await app.render();
+    state.latestRunId = "run-2";
+    await app.render();
+
+    expect(state.sound).toHaveBeenCalledTimes(1);
+    expect(state.add).toHaveBeenCalledTimes(1);
+    expect(state.add).toHaveBeenLastCalledWith(
+      expect.objectContaining({ title: "Approval needed" }),
+    );
+  });
+
   it("sends macOS desktop alerts through the main process and warns once when macOS blocks them", async () => {
     await using app = setup();
     let click: ((tag: string) => void) | undefined;
