@@ -4,7 +4,7 @@ import { planSurfaceCapture, toSurfaceInput } from "./FittedSurface.ts";
 
 // A 1280x800 page fitted into a 760x475 panel on a 2x display.
 const surface = { width: 1520, height: 950 };
-const viewport = { width: 1280, height: 800, pageX: 0, pageY: 400, devicePixelRatio: 2 };
+const viewport = { width: 1280, height: 800, pageX: 0, pageY: 400, displayRatio: 2 };
 
 describe("planSurfaceCapture", () => {
   it("renders the whole viewport once at the requested scale", () => {

@@ -19,14 +19,18 @@ export const toSurfaceInput = (
   return { ...params, x: x * scale, y: y * scale };
 };
 
+/**
+ * The viewport the surface displays, in device-independent pixels: CSS pixels
+ * times page zoom, the units of `Page.captureScreenshot` clips.
+ */
 export interface FittedViewport {
-  /** CSS size of the viewport the surface displays. */
   readonly width: number;
   readonly height: number;
-  /** Document offset of the viewport, the origin of `Page.captureScreenshot` clips. */
+  /** Document offset of the viewport, the origin of clips. */
   readonly pageX: number;
   readonly pageY: number;
-  readonly devicePixelRatio: number;
+  /** Device pixels per device-independent pixel, without page zoom. */
+  readonly displayRatio: number;
 }
 
 export interface ScreenshotClip {
@@ -64,7 +68,7 @@ export const planSurfaceCapture = (
   const scaleY = surface.height / viewport.height;
   const x = Math.floor(left * scaleX);
   const y = Math.floor(top * scaleY);
-  const outputScale = (clip?.scale ?? 1) * viewport.devicePixelRatio;
+  const outputScale = (clip?.scale ?? 1) * viewport.displayRatio;
   return {
     crop: {
       x,
@@ -79,13 +83,15 @@ export const planSurfaceCapture = (
   };
 };
 
-const VIEWPORT_EXPRESSION = `({
-  width: innerWidth,
-  height: innerHeight,
-  pageX: visualViewport ? visualViewport.pageLeft : scrollX,
-  pageY: visualViewport ? visualViewport.pageTop : scrollY,
-  devicePixelRatio,
-})`;
+interface LayoutMetrics {
+  readonly cssVisualViewport: { readonly pageX: number; readonly pageY: number; zoom?: number };
+}
+
+interface PageSize {
+  readonly result?: {
+    readonly value?: { readonly width: number; readonly height: number; readonly ratio: number };
+  };
+}
 
 const readClip = (value: unknown): ScreenshotClip | undefined => {
   if (typeof value !== "object" || value === null) return undefined;
@@ -107,16 +113,29 @@ export const captureFittedScreenshot = async (
   debuggee: Electron.Debugger,
   params: Record<string, unknown>,
 ): Promise<{ readonly data: string }> => {
-  const [image, reply] = await Promise.all([
+  const [image, metrics, size] = await Promise.all([
     webContents.capturePage(),
+    debuggee.sendCommand("Page.getLayoutMetrics") as Promise<LayoutMetrics>,
     debuggee.sendCommand("Runtime.evaluate", {
-      expression: VIEWPORT_EXPRESSION,
+      expression: "({ width: innerWidth, height: innerHeight, ratio: devicePixelRatio })",
       returnByValue: true,
-    }) as Promise<{ readonly result?: { readonly value?: FittedViewport } }>,
+    }) as Promise<PageSize>,
   ]);
-  const viewport = reply.result?.value;
-  const plan = viewport
-    ? planSurfaceCapture(image.getSize(), viewport, readClip(params["clip"]))
+  const page = size.result?.value;
+  // Measured as the server's snapshot measures a desktop page, which sizes its clip from this.
+  const zoom = metrics.cssVisualViewport.zoom ?? 1;
+  const plan = page
+    ? planSurfaceCapture(
+        image.getSize(),
+        {
+          width: page.width * zoom,
+          height: page.height * zoom,
+          pageX: metrics.cssVisualViewport.pageX * zoom,
+          pageY: metrics.cssVisualViewport.pageY * zoom,
+          displayRatio: page.ratio / zoom,
+        },
+        readClip(params["clip"]),
+      )
     : null;
   if (!plan) throw new Error("The screenshot area is outside the preview's visible viewport.");
   const output = image.crop(plan.crop).resize({ ...plan.size, quality: "best" });

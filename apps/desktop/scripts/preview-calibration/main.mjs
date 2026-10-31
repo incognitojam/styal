@@ -239,16 +239,23 @@ async function run() {
               NodeFSP.writeFile(NodePath.join(outputDir, `${name}.png`), png),
             );
             const { width, height } = assertCorners(name, png);
-            // Captured as the environment server's snapshot asks: the viewport clip, capped at
-            // 1280 wide on a 2x render. An unfitted tab's capture is Chromium's own, which
-            // never answers for a hidden window, so only fitted tabs are checked.
+            // Captured as the environment server's snapshot asks: a clip of the viewport in
+            // device-independent pixels, capped at 1280 wide. An unfitted tab's capture is
+            // Chromium's own, which never answers for a hidden window, so only fitted tabs.
             let agentCapture = null;
             if (fitted) {
-              const scale = Math.min(1, 1280 / (requestedWidth * 2));
-              const relayed = yield* relay("Page.captureScreenshot", {
-                format: "png",
-                clip: { x: 0, y: 0, width: requestedWidth, height: requestedHeight, scale },
-              });
+              const page = yield* evaluate(
+                "({ width: innerWidth, height: innerHeight, ratio: devicePixelRatio })",
+              );
+              const zoom = guest.getZoomFactor();
+              const clip = {
+                x: 0,
+                y: 0,
+                width: Math.round(page.width * zoom),
+                height: Math.round(page.height * zoom),
+              };
+              clip.scale = Math.min(1, 1280 / (clip.width * (page.ratio / zoom)));
+              const relayed = yield* relay("Page.captureScreenshot", { format: "png", clip });
               const agentPng = Buffer.from(relayed.data, "base64");
               yield* Effect.promise(() =>
                 NodeFSP.writeFile(NodePath.join(outputDir, `${name}-agent.png`), agentPng),
