@@ -143,6 +143,7 @@ export const driveServeCommand = Command.make("serve", {
           logWebSocketEvents: Option.some(false),
           tailscaleServeEnabled: Option.some(false),
           tailscaleServePort: Option.none(),
+          lan: Option.some(false),
         },
         yield* GlobalFlag.LogLevel,
         { startupPresentation: "headless", forceAutoBootstrapProjectFromCwd: false },

@@ -230,5 +230,5 @@ if ($interactive) { [Console]::Error.Write("`r$esc[2K") }
 if (($env:PATH -split ";") -notcontains $binDir) {
   Write-Host "  Add $binDir to your PATH, then run ${bold}styal$reset.`n"
 } else {
-  Write-Host "  Run ${bold}styal$reset to get started.`n"
+  Write-Host "  Run ${bold}styal start$reset to use styal here, or ${bold}styal up$reset to use it from your other devices.`n"
 }

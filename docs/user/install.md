@@ -36,7 +36,8 @@ stable releases.
 
 Run `styal start` to start the server and open the local web app, or `styal serve`
 for a headless server. Running `styal` without a subcommand, or `styal help`,
-shows its help. Run `styal update` to install a newer version and choose whether
+shows its help. Run `styal up` to use it from your other devices
+([details](./remote-access.md)). Run `styal update` to install a newer version and choose whether
 to restart an installed background service. `styal uninstall` removes the managed
 runtime and service while keeping projects, threads, and settings. `styal doctor`
 reclaims database space ([details](./background-service.md#reclaim-database-space)).

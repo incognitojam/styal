@@ -7,13 +7,15 @@ to keep a terminal open.
 
 Run these commands on the machine that will host styal:
 
-| Task                            | Command                                    |
-| ------------------------------- | ------------------------------------------ |
-| Install and start               | `npx @styal/cli@nightly service install`   |
-| Inspect status and log location | `npx @styal/cli@nightly service status`    |
-| Update to a newer release       | `npx @styal/cli@nightly update`            |
-| Repair                          | `npx @styal/cli@nightly service install`   |
-| Stop and remove from startup    | `npx @styal/cli@nightly service uninstall` |
+| Task                                  | Command                                    |
+| ------------------------------------- | ------------------------------------------ |
+| Set up access from your other devices | `npx @styal/cli@nightly up`                |
+| See how your other devices reach it   | `npx @styal/cli@nightly status`            |
+| Install and start                     | `npx @styal/cli@nightly service install`   |
+| Inspect status and log location       | `npx @styal/cli@nightly service status`    |
+| Update to a newer release             | `npx @styal/cli@nightly update`            |
+| Repair                                | `npx @styal/cli@nightly service install`   |
+| Stop and remove from startup          | `npx @styal/cli@nightly service uninstall` |
 
 Uninstalling the service leaves your projects, threads, and settings intact.
 
@@ -32,13 +34,18 @@ container's process supervisor. The CLI does not install a service manager.
 
 ## Local network access
 
-The service listens on your local network and Tailscale addresses, so the
-desktop and mobile apps on the same network connect directly instead of through
-styal Link. The hosted web app at app.styal.build stays on styal Link, because
-browsers block plain HTTP from an HTTPS page. The service does not answer on
-public addresses, and every device still needs to pair or sign in. To keep the service reachable from this machine only, set
-`T3CODE_HOST=127.0.0.1` in `service.env` (below). Any `T3CODE_HOST` value
-replaces this default.
+A new service answers only on this machine. Other devices reach it through
+styal Link, or directly once you choose the local network in `styal up` (or run
+`styal up --lan`, which sets `T3CODE_LAN=true` in `service.env`). It then listens on
+your local network and Tailscale addresses, so the desktop and mobile apps on
+the same network connect directly instead of through styal Link. It still does
+not answer on public addresses. Anyone on the same network can reach the port,
+so a pairing code is all that keeps them out. The hosted web app at app.styal.build
+stays on styal Link, because browsers block plain HTTP from an HTTPS page.
+
+A service installed before `T3CODE_LAN` existed keeps listening on the local
+network. `styal status` says so, and `styal up --no-lan` turns it off. Any
+`T3CODE_HOST` value replaces this setting.
 
 ## Configure the service environment
 
@@ -82,7 +89,7 @@ enabled, or keep `styal serve` running in a terminal. Minimize the desktop app r
 than closing its last window, which stops its local server. Linking styal Link
 does not configure automatic startup at Windows sign-in.
 
-styal Link can offer service installation during setup, but the two are managed
+`styal up` installs the service when you set up styal Link, but the two are managed
 separately. Signing out of styal Link does not stop or uninstall the service.
 
 ## Migrating an existing styal installation

@@ -12,17 +12,20 @@ Sharing & access**, sign in, and enable **styal Link** for that environment.
 For a command-line host, run:
 
 ```bash
-npx @styal/cli@nightly link
+npx @styal/cli@nightly up
 ```
 
-Follow the sign-in instructions. On Linux and macOS, setup offers a
-[background service](./background-service.md); if you decline it, start the
-server with `npx @styal/cli serve`.
+It asks how your other devices reach the machine: styal Link, the local network,
+or both. Choose styal Link and follow the sign-in instructions. On Linux and
+macOS, it then runs styal as a [background service](./background-service.md).
+`npx @styal/cli link` is the same as `npx @styal/cli up --link`. Run `npx @styal/cli up` again to change your
+choice, and `npx @styal/cli status` to see it.
 
-The background service is not available on Windows. Keep the desktop app running
-with its local environment enabled, or keep `npx @styal/cli serve` running in a terminal.
-Closing the desktop app's last window stops its local server. Saving your
-sign-in alone does not start a server or make the machine reachable.
+The background service is not available on Windows, so there `styal up` prints the
+`styal serve` command to keep running in a terminal. You can also keep the desktop
+app running with its local environment enabled. Closing the desktop app's last
+window stops its local server. Saving your sign-in alone does not start a server
+or make the machine reachable.
 
 On your other device, sign in to the same styal Link account and choose the
 environment. If you close setup on app.styal.build before adding a computer,
@@ -36,6 +39,19 @@ connection. Pull request diffs and provider settings keep working after the
 previous credential expires. A failed renewal affects that request; it does not
 disconnect an otherwise healthy conversation.
 
+### Scripts and agents
+
+`styal up` asks nothing when you name a choice: `--link`, `--lan`, or their
+`--no-` forms. Choices you do not name keep their settings, and `--yes` takes
+the defaults. Without a terminal:
+
+- styal Link sign-in prints a URL and a code. Approve it on any device.
+- A needed restart runs without asking, and stops running agent turns.
+- With nothing set up and no choice named, `styal up` stops and names the flags.
+
+`styal status --json` prints the settings. `styal up --help` lists every flag with
+examples.
+
 ## Pair over a LAN or private network
 
 Use direct pairing when the other device can reach the host's network address.
@@ -44,12 +60,15 @@ On a desktop host, open **Settings → Sharing & access**, enable **Network acce
 then create a pairing link using an address the other device can reach. Changing
 network access restarts the desktop app. You can turn it off in the same place.
 
-For a command-line host, replace `<private-ip>` with the host's LAN or tailnet
-address:
+For a command-line host, choose the local network in `styal up`, or run:
 
 ```bash
-npx @styal/cli serve --host <private-ip>
+npx @styal/cli up --lan
 ```
+
+For a server in a terminal, run `styal serve --lan`. Either way, styal then
+accepts connections from your local network and tailnet, so a pairing code is
+all that keeps other devices on them out.
 
 If a server is already running, generate a fresh link without restarting it:
 
@@ -93,8 +112,9 @@ machine's current LAN and Tailscale addresses and adds them as routes, so
 pairing once through styal Link is enough to use the LAN at home. When the
 machine's LAN address changes, for example after it joins another Wi-Fi network,
 the learned route follows it. The machine must allow network access for its LAN
-address to be learned. The [background service](./background-service.md#local-network-access)
-allows it on private networks by default. You can reorder a learned route, but not remove it; it
+address to be learned: **Network access** in the desktop app, or the
+[local network](./background-service.md#local-network-access) choice in `styal up`.
+You can reorder a learned route, but not remove it; it
 goes away with the route it was learned through, or when the machine stops
 reporting that address.
 

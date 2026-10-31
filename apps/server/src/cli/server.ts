@@ -39,13 +39,17 @@ const runServerCommand = Effect.fn("server.runServerCommand")(function* (
 });
 
 export const startCommand = Command.make("start", { ...sharedServerCommandFlags }).pipe(
-  Command.withDescription("Run the styal server."),
+  Command.withShortDescription("Run styal in this terminal and open it in your browser."),
+  Command.withDescription(
+    "Run styal in this terminal and open it in your browser. To use it from your other devices, run `styal up`.",
+  ),
   Command.withHandler((flags) => runServerCommand(flags, { rejectRunningServer: true })),
 );
 
 export const serveCommand = Command.make("serve", { ...sharedServerCommandFlags }).pipe(
+  Command.withShortDescription("Run styal in this terminal, with no browser."),
   Command.withDescription(
-    "Run the styal server without opening a browser and print headless pairing details.",
+    "Run styal in this terminal without opening a browser, and print pairing details. The background service runs this. To set up access from your other devices, run `styal up`.",
   ),
   Command.withHandler((flags) =>
     runServerCommand(flags, {

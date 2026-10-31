@@ -67,8 +67,8 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 
 - **Explicit startup and styal Link naming.** Running `styal` without a subcommand shows command
   guidance; use `styal start` for the browser-opening server or `styal serve` for a headless host.
-  styal also exposes its managed remote-access setup as `styal link`, while accepting the upstream
-  `connect` spelling as a compatibility alias. [Install styal](./install.md) and
+  styal also exposes its managed remote-access setup as `styal link` and `styal up --link`, while
+  accepting the upstream `connect` spelling as a compatibility alias on the `link` command. [Install styal](./install.md) and
   [Remote access](./remote-access.md).
 - **Agent control with `styal drive`.** Scripts and agents can read and change a running
   environment as JSON, send real messages, and serve repeatable synthetic states such as streaming,
