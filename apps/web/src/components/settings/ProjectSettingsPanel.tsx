@@ -15,7 +15,6 @@ import { AsyncResult } from "effect/reactivity";
 import {
   type EnvironmentId,
   type EnvironmentMachineKind,
-  type ProjectIconOverride,
   resolveEnvironmentMachineKind,
   type SourceControlDefaultRepositoryState,
 } from "@t3tools/contracts";
@@ -63,7 +62,12 @@ import { ProjectActionsSettings } from "./ProjectActionsSettings";
 import { ProjectAgentAccessSettings } from "./AgentAccessSettings";
 import { ProjectDefaultsSettings } from "./ProjectDefaultsSettings";
 import { ProjectSimulatorMemorySettings } from "./SimulatorMemorySetting";
-import { projectGroupTitleNeedsUpdate } from "./ProjectSettingsPanel.logic";
+import {
+  defaultProjectIcon,
+  hasDefaultProjectIcon,
+  projectGroupTitleNeedsUpdate,
+  SCRATCH_PROJECT_TITLE,
+} from "./ProjectSettingsPanel.logic";
 import { useSettingsProjectGroups } from "./useSettingsProjectGroups";
 import { readUnloadedThreadCount } from "../../state/olderSettledShelf";
 import { settingsScopeEnvironmentLabels } from "./settingsScopeAxis";
@@ -514,10 +518,7 @@ function ProjectDetail({
   const [iconPickerOpen, setIconPickerOpen] = useComposerMenuState(!canEditGroup);
   const [isSavingFavicon, setIsSavingFavicon] = useState(false);
   const savingFaviconRef = useRef(false);
-  const setProjectIcon = async (input: {
-    faviconPath: string | null;
-    projectIcon: ProjectIconOverride | null;
-  }) => {
+  const setProjectIcon = async (input: Parameters<typeof updateGroup>[1]) => {
     if (savingFaviconRef.current) return;
     savingFaviconRef.current = true;
     setIsSavingFavicon(true);
@@ -534,6 +535,9 @@ function ProjectDetail({
     );
 
   const hasMultipleCheckouts = group.memberProjects.length > 1;
+  const canResetScratchTitle =
+    group.memberProjects.every((member) => member.isScratch) &&
+    group.memberProjects.some((member) => member.title !== SCRATCH_PROJECT_TITLE);
 
   const removeMembers = async (members: ReadonlyArray<SidebarProjectGroupMember>) => {
     if (checkProjectAccess(members, "Failed to remove project")) return;
@@ -650,6 +654,21 @@ function ProjectDetail({
           <SettingsRow
             title="Name"
             description="The shared name for this project group in the sidebar and thread lists."
+            resetAction={
+              canResetScratchTitle ? (
+                <SettingResetButton
+                  label="project name"
+                  disabled={!canEditGroup}
+                  onClick={() =>
+                    void updateGroup(
+                      group,
+                      { title: SCRATCH_PROJECT_TITLE },
+                      "Failed to rename project",
+                    )
+                  }
+                />
+              ) : null
+            }
             control={
               <Input
                 key={`${group.projectKey}:${group.displayName}`}
@@ -684,13 +703,11 @@ function ProjectDetail({
                     : (faviconPath ?? "Automatic")
             }
             resetAction={
-              group.memberProjects.some(
-                (member) => member.faviconPath != null || member.projectIcon != null,
-              ) ? (
+              group.memberProjects.some((member) => !hasDefaultProjectIcon(member)) ? (
                 <SettingResetButton
                   label="project icon"
                   disabled={isSavingFavicon || !canEditGroup}
-                  onClick={() => void setProjectIcon({ faviconPath: null, projectIcon: null })}
+                  onClick={() => void setProjectIcon(defaultProjectIcon)}
                 />
               ) : null
             }

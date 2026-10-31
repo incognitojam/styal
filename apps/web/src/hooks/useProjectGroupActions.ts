@@ -15,7 +15,7 @@ import { AsyncResult } from "effect/reactivity";
 import { create } from "zustand";
 
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
-import type { SidebarProjectSnapshot } from "../sidebarProjectGrouping";
+import type { SidebarProjectGroupMember, SidebarProjectSnapshot } from "../sidebarProjectGrouping";
 import { useEnvironments } from "../state/environments";
 import { projectEnvironment } from "../state/projects";
 import { readEnvironmentScope } from "../state/session";
@@ -120,7 +120,7 @@ export function useProjectGroupActions() {
 
   const updateGroup = async (
     group: ProjectGroup,
-    input: ProjectGroupFields,
+    input: ProjectGroupFields | ((member: SidebarProjectGroupMember) => ProjectGroupFields),
     failureTitle: string,
   ): Promise<GroupResult> => {
     // Refuse before the first write, so a connection that may not change
@@ -158,7 +158,10 @@ export function useProjectGroupActions() {
       const result = mapAtomCommandResult(
         await updateProject({
           environmentId: member.environmentId,
-          input: { projectId: member.id, ...input },
+          input: {
+            projectId: member.id,
+            ...(typeof input === "function" ? input(member) : input),
+          },
         }),
         () => undefined,
       );
