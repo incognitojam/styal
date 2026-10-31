@@ -2,7 +2,10 @@ import { AsyncResult } from "effect/reactivity";
 import { useActiveNewTask } from "../../state/active-new-task";
 import { ThreadUndoNotice } from "../home/ThreadUndoNotice";
 import { useAndroidControlSizing } from "../../components/ui/useAndroidControlSizing";
-import { resolveScratchProjectScopeKey } from "@t3tools/client-runtime/state/project-grouping";
+import {
+  pickableProjectGroups,
+  resolveScratchProjectScopeKey,
+} from "@t3tools/client-runtime/state/project-grouping";
 import {
   useAppearancePreferences,
   useAndroidFloatingTabs,
@@ -53,12 +56,7 @@ import { requestThreadMessageJump } from "./threadMessageJump";
 import { useThreadListSearchMatches } from "./useThreadListSearchMatches";
 import { useHomeListOptions } from "../home/home-list-options";
 import { buildHomeListFilterMenu } from "../home/home-list-filter-menu";
-import {
-  archivedProjectRefKeys,
-  buildHomeProjectScopes,
-  buildHomeThreadProjectGrouping,
-  homeProjectFilterOptions,
-} from "../home/homeThreadList";
+import { buildHomeProjectScopes, buildHomeThreadProjectGrouping } from "../home/homeThreadList";
 import { SwipeableScrollGateProvider, useSwipeableScrollGate } from "../home/thread-swipe-actions";
 import { usePendingTaskListActions } from "../home/usePendingTaskListActions";
 import { useThreadListActions } from "../home/useThreadListActions";
@@ -234,11 +232,13 @@ function ThreadNavigationSidebarPane(
       }),
     [projects, options.selectedEnvironmentId, options.projectGroupingMode],
   );
-  const projectFilterOptions = homeProjectFilterOptions(projectScopes);
+  const projectFilterOptions = pickableProjectGroups(projectScopes).map((scope) => ({
+    key: scope.key,
+    label: scope.title,
+  }));
   const projectGrouping = useMobileThreadGroupingByProject()
     ? buildHomeThreadProjectGrouping(projectScopes)
     : null;
-  const archivedProjectKeys = archivedProjectRefKeys(projectScopes);
   const projectTitleByProjectKey = useMemo(
     () =>
       new Map(
@@ -254,8 +254,9 @@ function ThreadNavigationSidebarPane(
       ),
     [projectScopes],
   );
+  // An archived project's filter reads as all projects, matching the filter menu.
   const selectedProjectScope =
-    projectScopes.find((scope) => scope.key === resolvedProjectKey) ?? null;
+    pickableProjectGroups(projectScopes).find((scope) => scope.key === resolvedProjectKey) ?? null;
   const threadSearch = useThreadSearch(
     searchEnvironmentIds,
     props.searchQuery,
@@ -338,7 +339,6 @@ function ThreadNavigationSidebarPane(
     snoozedShelfExpanded,
     settledShelfExpanded,
     selectedThreadKey: props.selectedThreadKey ?? null,
-    archivedProjectKeys,
     projectGrouping,
     draftThreadKeys,
     timestampMode,

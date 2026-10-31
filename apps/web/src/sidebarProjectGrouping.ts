@@ -1,5 +1,5 @@
 import type { EnvironmentId, ScopedProjectRef } from "@t3tools/contracts";
-import { resolveProjectGroupOrganization } from "@t3tools/client-runtime/state/project-organization";
+import { resolveProjectGroupPinOrder } from "@t3tools/client-runtime/state/project-organization";
 import {
   buildProjectGroups,
   derivePhysicalProjectKey,
@@ -25,6 +25,8 @@ export interface SidebarProjectSnapshot extends Project {
   memberProjects: readonly SidebarProjectGroupMember[];
   memberProjectRefs: readonly ScopedProjectRef[];
   remoteEnvironmentLabels: readonly string[];
+  pinned: boolean;
+  archived: boolean;
 }
 
 export function projectGroupsSpanEnvironments(
@@ -168,8 +170,6 @@ export function buildSidebarProjectSnapshots(input: {
 
     return {
       ...representative,
-      // Pin and archive belong to the whole group, not the representative.
-      ...resolveProjectGroupOrganization(members),
       projectKey: group.key,
       displayName: group.label,
       groupedProjectCount: members.length,
@@ -180,6 +180,9 @@ export function buildSidebarProjectSnapshots(input: {
       memberProjects: members,
       memberProjectRefs: group.memberProjectRefs,
       remoteEnvironmentLabels,
+      ...resolveProjectGroupPinOrder(members),
+      pinned: group.pinned,
+      archived: group.archived,
     };
   });
 }
@@ -217,13 +220,10 @@ export function buildSidebarProjectPickerEntries(input: {
 
     return [{ group, targetProject, isPreferred }];
   });
-  // The preferred project leads the unpinned ones. Pinned projects keep their
-  // order ahead of it, and a pinned preferred project stays in its slot.
-  const preferredIndex = entries.findIndex((entry) => entry.isPreferred);
-  const preferred = entries[preferredIndex];
-  if (!preferred || preferred.group.pinnedAt != null) return entries;
-  const rest = entries.filter((_, index) => index !== preferredIndex);
-  const pinnedCount = rest.findIndex((entry) => entry.group.pinnedAt == null);
-  const insertAt = pinnedCount === -1 ? rest.length : pinnedCount;
-  return [...rest.slice(0, insertAt), preferred, ...rest.slice(insertAt)];
+  // The preferred project leads the unpinned ones; pinned projects stay first.
+  const preferred = entries.find((entry) => entry.isPreferred);
+  if (!preferred || preferred.group.pinned) return entries;
+  const rest = entries.filter((entry) => entry !== preferred);
+  const pinnedCount = rest.filter((entry) => entry.group.pinned).length;
+  return [...rest.slice(0, pinnedCount), preferred, ...rest.slice(pinnedCount)];
 }

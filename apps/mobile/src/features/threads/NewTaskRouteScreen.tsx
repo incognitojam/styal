@@ -10,6 +10,7 @@ import {
   type StaticScreenProps,
 } from "@react-navigation/native";
 import { SymbolView } from "../../components/ui/AppSymbol";
+import { pickableProjectGroups } from "@t3tools/client-runtime/state/project-grouping";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import {
   isAtomCommandInterrupted,
@@ -182,10 +183,9 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
   const projectEmptyState = deriveProjectEmptyState(catalogState);
   const serverConfigs = useServerConfigs();
   // Scratch projects are reached through the No project row, never as rows
-  // of their own. Archived projects stay out of the list.
-  const listScopes = projectScopes.filter(
+  // of their own.
+  const listScopes = pickableProjectGroups(projectScopes).filter(
     (scope) =>
-      scope.archivedAt === null &&
       !scope.projects.every((project) =>
         isScratchProject(project, serverConfigs.get(project.environmentId)?.scratchWorkspaceRoot),
       ),

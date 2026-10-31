@@ -10,7 +10,10 @@ import { useMemo, useState } from "react";
 import { Platform, useWindowDimensions } from "react-native";
 
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
-import { resolveScratchProjectScopeKey } from "@t3tools/client-runtime/state/project-grouping";
+import {
+  pickableProjectGroups,
+  resolveScratchProjectScopeKey,
+} from "@t3tools/client-runtime/state/project-grouping";
 
 import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { useProjects } from "../../state/entities";
@@ -27,7 +30,7 @@ import { HomeScreen } from "./HomeScreen";
 import { HomeHeader } from "./HomeHeader";
 import { useHomeListOptions } from "./home-list-options";
 import { useAtomValueWhileVisible, useHomeRouteVisible } from "./home-route-visibility";
-import { buildHomeProjectScopes, homeProjectFilterOptions } from "./homeThreadList";
+import { buildHomeProjectScopes } from "./homeThreadList";
 import { usePendingTaskListActions } from "./usePendingTaskListActions";
 import { useThreadListActions } from "./useThreadListActions";
 import { getConnectionAwareBrandHeaderOptions } from "./WorkspaceConnectionTitle";
@@ -138,13 +141,16 @@ export function HomeRouteScreen() {
   );
   const projectFilterOptions = useMemo(
     () =>
-      homeProjectFilterOptions(
+      pickableProjectGroups(
         buildHomeProjectScopes({
           projects,
           environmentId: selectedEnvironmentId,
           projectGroupingMode: listOptions.projectGroupingMode,
         }),
-      ),
+      ).map((scope) => ({
+        key: scope.key,
+        label: scope.title,
+      })),
     [listOptions.projectGroupingMode, projects, selectedEnvironmentId],
   );
   const selectedProjectKey = projectFilterOptions.some(

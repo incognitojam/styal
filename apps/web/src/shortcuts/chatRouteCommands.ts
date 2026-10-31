@@ -7,13 +7,17 @@ import { isCommandPaletteOpen, openCommandPalette } from "../commandPaletteBus";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { dispatchPreviewAction, type PreviewAction } from "../components/preview/previewActionBus";
 import { isAppModalPage } from "../components/sidebar/mainAppLocation";
+import { shouldCreateNewThreadInCurrentProject } from "../components/Sidebar.logic";
 import { createNewThreadHandler, resolveDefaultProjectRef } from "../hooks/useHandleNewThread";
 import { createScratchProjectActions } from "../hooks/useScratchProject";
 import { getClientSettings } from "../hooks/useSettings";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
 import { isRightPanelFocused } from "../lib/rightPanelFocus";
 import { focusPullRequestTab, readThreadPullRequestUrl } from "../lib/viewPullRequest";
-import { selectProjectGroupingSettings } from "@t3tools/client-runtime/state/project-grouping";
+import {
+  pickableProjectGroups,
+  selectProjectGroupingSettings,
+} from "@t3tools/client-runtime/state/project-grouping";
 import { selectActiveRightPanel, useRightPanelStore } from "../rightPanelStore";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { buildSidebarProjectSnapshots } from "../sidebarProjectGrouping";
@@ -60,13 +64,15 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
       ? selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, threadRef) === "preview"
       : false;
   };
+  // Grouped like the sidebar, so the shortcut and the New thread button agree.
   const readProjectGroups = () =>
     buildSidebarProjectSnapshots({
       projects: readProjects(),
+      groupScratchProjects: true,
       settings: selectProjectGroupingSettings(getClientSettings()),
       primaryEnvironmentId: appAtomRegistry.get(primaryEnvironmentIdAtom),
       resolveEnvironmentLabel: () => null,
-    }).filter((group) => group.archivedAt == null);
+    });
   const readThreadContext = () => {
     const target = readRouteTarget();
     const drafts = useComposerDraftStore.getState();
@@ -88,7 +94,7 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
       // are viewing outranks the sidebar's filter. The filter still beats the
       // fallback default, so with nothing open they land in the project on screen
       // rather than the top of the project list.
-      scopedProjectGroups: readScopedProjectGroups(readProjectGroups()),
+      scopedProjectGroups: readScopedProjectGroups(pickableProjectGroups(readProjectGroups())),
     };
   };
   const canOperatePreview = (environmentId: EnvironmentId) =>
@@ -101,7 +107,10 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
 
   const startNewLocal: CommandHandler = (event) => {
     claim(event);
-    void startNewThreadFromContext(readThreadContext());
+    // With no current or open project, such as when every project is archived, pick one.
+    void startNewThreadFromContext(readThreadContext()).then((started) => {
+      if (!started) openCommandPalette({ open: "new-thread-in" });
+    });
   };
 
   const previewCommand =
@@ -130,7 +139,18 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
         // chat.newLocal already creates in the current project, so collapsing the two would
         // leave no way to deliberately pick.
         const { boringSidebarEnabled, legacySidebarEnabled } = getClientSettings();
-        if (!boringSidebarEnabled && !legacySidebarEnabled && readProjectGroups().length > 1) {
+        const groups = readProjectGroups();
+        if (
+          !boringSidebarEnabled &&
+          !legacySidebarEnabled &&
+          !shouldCreateNewThreadInCurrentProject({
+            shiftKey: false,
+            openProjectGroupCount: groups.filter((group) => !group.archived).length,
+            projectGroupCount: groups.length,
+            hasProjectScope: false,
+            boringWithoutFilter: false,
+          })
+        ) {
           claim(event);
           openCommandPalette({ open: "new-thread-in" });
           return;

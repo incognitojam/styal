@@ -48,8 +48,6 @@ import {
   useThreadShell,
   useThreadShells,
 } from "../../state/entities";
-import { useMobileProjectGroupingSettings } from "../../state/project-grouping";
-import { organizeProjectRecords } from "@t3tools/client-runtime/state/project-organization";
 import { useThreadSearch } from "../../state/queries";
 import { requestThreadMessageJump } from "../threads/threadMessageJump";
 import { threadEnvironment } from "../../state/threads";
@@ -227,23 +225,7 @@ export function CommandPalette(props: {
   const { themeVariables } = useAppearancePreferences();
   const selectDetail = useSelectWorkspaceDetail();
   const runCommand = props.onCommand;
-  const allProjects = useProjects();
-  const projectGroupingSettings = useMobileProjectGroupingSettings();
-  // Pinned projects first; archived projects and their threads stay out.
-  const projects = useMemo(
-    () => organizeProjectRecords({ projects: allProjects, settings: projectGroupingSettings }),
-    [allProjects, projectGroupingSettings],
-  );
-  const archivedProjectKeys = useMemo(() => {
-    const visible = new Set(
-      projects.map((project) => scopedProjectKey(project.environmentId, project.id)),
-    );
-    return new Set(
-      allProjects
-        .map((project) => scopedProjectKey(project.environmentId, project.id))
-        .filter((key) => !visible.has(key)),
-    );
-  }, [allProjects, projects]);
+  const projects = useProjects();
   const threads = useThreadShells();
   const activeThreadRef = parseActiveThreadPath(props.pathname);
   const activeThread = useThreadShell(activeThreadRef);
@@ -376,9 +358,8 @@ export function CommandPalette(props: {
         run: () => void startTriage(triageEnvironmentId),
       });
     }
-    // Every record, so the current thread's project resolves even when archived.
     const projectByKey = new Map(
-      allProjects.map((project) => [scopedProjectKey(project.environmentId, project.id), project]),
+      projects.map((project) => [scopedProjectKey(project.environmentId, project.id), project]),
     );
     const activeProject = activeThread
       ? projectByKey.get(scopedProjectKey(activeThread.environmentId, activeThread.projectId))
@@ -420,7 +401,11 @@ export function CommandPalette(props: {
         })),
       );
     }
-    const projectItems: CommandPaletteItem[] = projects.map((project) => ({
+    const openProjects = projects.filter((project) => project.archivedAt == null);
+    const projectItems: CommandPaletteItem[] = [
+      ...openProjects.filter((project) => project.pinnedAt != null),
+      ...openProjects.filter((project) => project.pinnedAt == null),
+    ].map((project) => ({
       key: `project:${scopedProjectKey(project.environmentId, project.id)}`,
       kind: "project",
       project,
@@ -441,12 +426,7 @@ export function CommandPalette(props: {
         }),
     }));
     const threadItems: CommandPaletteItem[] = threads
-      .filter(
-        (thread) =>
-          thread.archivedAt === null &&
-          isListedThreadLineage(thread.lineage) &&
-          !archivedProjectKeys.has(scopedProjectKey(thread.environmentId, thread.projectId)),
-      )
+      .filter((thread) => thread.archivedAt === null && isListedThreadLineage(thread.lineage))
       .map((thread) => {
         const project = projectByKey.get(scopedProjectKey(thread.environmentId, thread.projectId));
         const environment =
@@ -484,8 +464,6 @@ export function CommandPalette(props: {
     selectTab,
     activeThread,
     activeThreadRef,
-    allProjects,
-    archivedProjectKeys,
     environments.length,
     canTriage,
     navigation,

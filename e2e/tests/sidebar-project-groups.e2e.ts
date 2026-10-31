@@ -59,15 +59,14 @@ describe("group sidebar threads by project", () => {
     await header("demo-app").getByRole("img", { name: "Pinned" }).waitFor();
     expect(await headerOrder()).toEqual(["demo-app", "second-app"]);
 
-    // Archiving hides the project and its threads; the toast's Undo brings them back.
+    // An archived project keeps its folder and threads while it has active threads.
     await headerMenu("second-app", "Archive project");
     const toast = page.getByRole("dialog", { name: "Archived second-app" });
     await toast.waitFor();
-    await header("second-app").waitFor({ state: "detached" });
-    await sidebarThread(page, "Fake Codex thread", "second-app").waitFor({
-      state: "detached",
-    });
+    await header("second-app").waitFor();
+    await sidebarThread(page, "Fake Codex thread", "second-app").waitFor();
     await toast.getByRole("button", { name: "Undo" }).click();
+    await toast.waitFor({ state: "detached" });
     await header("second-app").waitFor();
     expect(await headerOrder()).toEqual(["demo-app", "second-app"]);
 

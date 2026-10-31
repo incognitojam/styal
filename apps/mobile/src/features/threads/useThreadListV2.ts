@@ -7,7 +7,6 @@ import { scopedProjectKey } from "../../lib/scopedEntities";
 import { useOlderSettledShelf, useOlderSettledShelfGrowth } from "../../state/olderSettledShelf";
 import type { PendingNewTask } from "../../state/use-pending-new-tasks";
 import {
-  archivedOlderSettledCount,
   buildThreadListV2Items,
   buildThreadListV2ListItems,
   getThreadListV2OrderedSection,
@@ -58,13 +57,11 @@ export function useThreadListV2(input: {
   readonly snoozedShelfExpanded: boolean;
   readonly settledShelfExpanded: boolean;
   readonly selectedThreadKey: string | null;
-  /** Threads and pending tasks of these projects leave the list until the project is unarchived. */
-  readonly archivedProjectKeys: ReadonlySet<string>;
   readonly projectGrouping: ThreadListV2ProjectGrouping | null;
   readonly draftThreadKeys: ReadonlySet<string>;
   readonly timestampMode: SidebarThreadTimestampMode;
 }) {
-  const { threads, workingShelfEnabled, archivedProjectKeys, projectGrouping } = input;
+  const { threads, workingShelfEnabled, projectGrouping } = input;
   // A thread can stop working when the threads change, or when its exit grace expires.
   const inboxVersion = useSyncExternalStore(
     threadListInboxReturns.subscribe,
@@ -85,11 +82,7 @@ export function useThreadListV2(input: {
   });
   const layout = buildThreadListV2Items({
     pendingOrder: input.pendingOrder,
-    threads: threads.filter(
-      (thread) =>
-        thread.archivedAt === null &&
-        !archivedProjectKeys.has(scopedProjectKey(thread.environmentId, thread.projectId)),
-    ),
+    threads: threads.filter((thread) => thread.archivedAt === null),
     environmentId: input.environmentId,
     projectRefs: input.projectRefs,
     searchQuery: input.searchQuery,
@@ -108,23 +101,16 @@ export function useThreadListV2(input: {
     selectedThreadKey: input.selectedThreadKey,
     projectGrouping,
     isListedSettled: olderSettledShelf.isListed,
-    unloadedSettledCount: Math.max(
-      0,
-      olderSettledShelf.unloadedCount(
-        threads.filter(
-          (thread) =>
-            thread.archivedAt === null &&
-            !archivedProjectKeys.has(scopedProjectKey(thread.environmentId, thread.projectId)) &&
-            scopes.some(
-              (scope) =>
-                scope.environmentId === thread.environmentId &&
-                (scope.projectIds === null || scope.projectIds.includes(thread.projectId)),
-            ),
-        ),
-      ) -
-        (input.projectRefs == null
-          ? archivedOlderSettledCount(olderSettledShelf.environments, archivedProjectKeys)
-          : 0),
+    unloadedSettledCount: olderSettledShelf.unloadedCount(
+      threads.filter(
+        (thread) =>
+          thread.archivedAt === null &&
+          scopes.some(
+            (scope) =>
+              scope.environmentId === thread.environmentId &&
+              (scope.projectIds === null || scope.projectIds.includes(thread.projectId)),
+          ),
+      ),
     ),
   });
   // Up/down menu availability for every card, computed once per section per
@@ -173,9 +159,6 @@ export function useThreadListV2(input: {
         scopedProjectKeys.has(
           scopedProjectKey(pendingTask.environmentId, pendingTask.projectId),
         )) &&
-      !archivedProjectKeys.has(
-        scopedProjectKey(pendingTask.environmentId, pendingTask.projectId),
-      ) &&
       (searchQuery.length === 0 || pendingTask.title.toLocaleLowerCase().includes(searchQuery)),
   );
   const items = buildThreadListV2ListItems({

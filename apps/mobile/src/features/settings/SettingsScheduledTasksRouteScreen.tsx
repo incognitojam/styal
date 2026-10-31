@@ -56,8 +56,6 @@ import { usePreparedConnection } from "../../state/session";
 import { buildModelOptions } from "../../lib/modelOptions";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { useProjects, useEnvironmentServerConfig } from "../../state/entities";
-import { useMobileProjectGroupingSettings } from "../../state/project-grouping";
-import { organizeProjectRecords } from "@t3tools/client-runtime/state/project-organization";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -668,16 +666,16 @@ function TaskForm({
   const tasks = useEnvironmentQuery(
     serverEnvironment.scheduledTasksLive({ environmentId, input: {} }),
   );
-  const allProjects = useProjects();
-  const projectGroupingSettings = useMobileProjectGroupingSettings();
-  // Pinned projects first and archived ones out, except the task's own project.
-  const savedProjectId = draft.task?.projectId;
-  const projects = (() =>
-    organizeProjectRecords({
-      projects: allProjects,
-      settings: projectGroupingSettings,
-      keep: (project) => project.id === savedProjectId,
-    }).filter((project) => project.environmentId === environmentId))();
+  // Pinned first. The chosen project stays listed after it is archived.
+  const projects = useProjects()
+    .filter(
+      (project) =>
+        project.environmentId === environmentId &&
+        (project.archivedAt == null ||
+          project.id === draft.projectId ||
+          project.id === draft.task?.projectId),
+    )
+    .sort((left, right) => Number(right.pinnedAt != null) - Number(left.pinnedAt != null));
   const config = useEnvironmentServerConfig(environmentId);
   const modelOptions = buildModelOptions(config, null, undefined, draft.projectId);
   const canOperate = useAtomValue(

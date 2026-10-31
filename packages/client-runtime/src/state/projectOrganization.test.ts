@@ -1,58 +1,31 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { EnvironmentId, ProjectId } from "@t3tools/contracts";
-
-import type { EnvironmentProject } from "./models.ts";
 import {
   nextProjectPinOrderKey,
-  organizeProjectRecords,
   planProjectPinReorder,
-  resolveProjectGroupOrganization,
+  resolveProjectGroupPinOrder,
   sortPinnedProjectsFirst,
 } from "./projectOrganization.ts";
 
-const record = (
-  fields: Partial<{ pinnedAt: string; pinOrderKey: string; archivedAt: string }> = {},
-) => ({
+const record = (fields: Partial<{ pinnedAt: string; pinOrderKey: string }> = {}) => ({
   pinnedAt: fields.pinnedAt ?? null,
   pinOrderKey: fields.pinOrderKey ?? null,
-  archivedAt: fields.archivedAt ?? null,
 });
 
-describe("resolveProjectGroupOrganization", () => {
-  it("keeps a project visible when its machines disagree", () => {
+describe("resolveProjectGroupPinOrder", () => {
+  it("takes the earliest pin and first slot across machines", () => {
     expect(
-      resolveProjectGroupOrganization([
+      resolveProjectGroupPinOrder([
         record({ pinnedAt: "2026-01-02T00:00:00.000Z", pinOrderKey: "t" }),
-        record({ archivedAt: "2026-01-03T00:00:00.000Z" }),
+        record({ pinnedAt: "2026-01-01T00:00:00.000Z", pinOrderKey: "m" }),
+        record(),
       ]),
-    ).toEqual({ pinnedAt: "2026-01-02T00:00:00.000Z", pinOrderKey: "t", archivedAt: null });
-  });
-
-  it("archives only when every record is archived, and takes the first pin slot", () => {
-    expect(
-      resolveProjectGroupOrganization([
-        record({
-          pinnedAt: "2026-01-02T00:00:00.000Z",
-          pinOrderKey: "t",
-          archivedAt: "2026-01-03T00:00:00.000Z",
-        }),
-        record({
-          pinnedAt: "2026-01-01T00:00:00.000Z",
-          pinOrderKey: "m",
-          archivedAt: "2026-01-04T00:00:00.000Z",
-        }),
-      ]),
-    ).toEqual({
-      pinnedAt: "2026-01-01T00:00:00.000Z",
-      pinOrderKey: "m",
-      archivedAt: "2026-01-04T00:00:00.000Z",
-    });
+    ).toEqual({ pinnedAt: "2026-01-01T00:00:00.000Z", pinOrderKey: "m" });
   });
 
   it("ignores the slot of an unpinned record", () => {
-    expect(resolveProjectGroupOrganization([record({ pinOrderKey: "a" })])).toEqual(record());
-    expect(resolveProjectGroupOrganization([])).toEqual(record());
+    expect(resolveProjectGroupPinOrder([record({ pinOrderKey: "a" })])).toEqual(record());
+    expect(resolveProjectGroupPinOrder([])).toEqual(record());
   });
 });
 
@@ -108,60 +81,5 @@ describe("project pin slots", () => {
     });
     expect(writes.map((write) => write.key)).toEqual(["b"]);
     expect(writes[0]!.pinOrderKey < "g").toBe(true);
-  });
-});
-
-describe("organizeProjectRecords", () => {
-  const repositoryIdentity = {
-    canonicalKey: "github.com/example/shared",
-    locator: {
-      source: "git-remote" as const,
-      remoteName: "origin",
-      remoteUrl: "https://github.com/example/shared.git",
-    },
-  };
-  const project = (
-    id: string,
-    environmentId: string,
-    fields: Partial<EnvironmentProject> = {},
-  ): EnvironmentProject => ({
-    id: ProjectId.make(id),
-    environmentId: EnvironmentId.make(environmentId),
-    title: id,
-    workspaceRoot: `/work/${id}`,
-    repositoryIdentity: null,
-    defaultModelSelection: null,
-    scripts: [],
-    createdAt: "2026-01-01T00:00:00.000Z",
-    updatedAt: "2026-01-01T00:00:00.000Z",
-    ...fields,
-  });
-  const settings = {
-    sidebarProjectGroupingMode: "repository" as const,
-    sidebarProjectGroupingOverrides: {},
-  };
-
-  it("judges each record by its whole project and keeps a saved choice", () => {
-    const plain = project("plain", "local");
-    const archived = project("archived", "local", { archivedAt: "2026-01-02T00:00:00.000Z" });
-    // Pinned on the remote machine only, so the local record leads too.
-    const sharedLocal = project("shared-local", "local", { repositoryIdentity });
-    const sharedRemote = project("shared-remote", "remote", {
-      repositoryIdentity,
-      pinnedAt: "2026-01-03T00:00:00.000Z",
-      pinOrderKey: "m",
-    });
-    const records = [plain, archived, sharedLocal, sharedRemote];
-
-    expect(
-      organizeProjectRecords({ projects: records, settings }).map((entry) => entry.id),
-    ).toEqual([sharedLocal.id, sharedRemote.id, plain.id]);
-    expect(
-      organizeProjectRecords({
-        projects: records,
-        settings,
-        keep: (entry) => entry.id === archived.id,
-      }).map((entry) => entry.id),
-    ).toContain(archived.id);
   });
 });

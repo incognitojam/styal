@@ -1,5 +1,3 @@
-import { settlePromise } from "@t3tools/client-runtime/state/runtime";
-import { AsyncResult } from "effect/reactivity";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { AppText as Text, AppTextInput } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
@@ -11,18 +9,16 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import { deriveProjectGroupLabel } from "@t3tools/client-runtime/state/project-grouping";
 import {
-  nextProjectPinOrderKey,
-  resolveProjectGroupOrganization,
-} from "@t3tools/client-runtime/state/project-organization";
+  deriveProjectGroupLabel,
+  type ProjectGroup,
+} from "@t3tools/client-runtime/state/project-grouping";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { useNavigation } from "@react-navigation/native";
 import { useRef, useState } from "react";
 import { Platform, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { useProjects } from "../../state/entities";
 import { projectEnvironment } from "../../state/projects";
 import { useThreadShells } from "../../state/entities";
 import { appAtomRegistry } from "../../state/atom-registry";
@@ -104,7 +100,7 @@ export function SettingsProjectOverviewRouteScreen() {
             <Text className="px-2 text-base text-foreground-muted">
               Choose a project with the filter above to manage its name, checkouts and removal.
             </Text>
-          ) : members.length === 0 ? (
+          ) : !group || members.length === 0 ? (
             <Text className="px-2 text-base text-foreground-muted">
               This project has no checkout on the selected connected environments. Change the filter
               above.
@@ -113,9 +109,9 @@ export function SettingsProjectOverviewRouteScreen() {
             <ProjectOverviewContent
               key={`${selectedProjectKey}:${members.map((member) => member.id).join(",")}`}
               members={members}
-              allMembers={group?.members.map((entry) => entry.project) ?? members}
+              group={group}
+              connectedTargets={availableTargets}
               environments={selectedTargets}
-              connectedEnvironments={availableTargets}
               hasOtherMembers={members.length < (group?.members.length ?? 0)}
               isRemoving={isRemoving}
               setIsRemoving={setIsRemoving}
@@ -133,10 +129,10 @@ export function SettingsProjectOverviewRouteScreen() {
 
 function ProjectOverviewContent(props: {
   readonly members: readonly EnvironmentProject[];
-  /** Every machine's record; pin and archive always change all of them. */
-  readonly allMembers: readonly EnvironmentProject[];
+  /** Pin and archive belong to the whole project, even when the filter picks one machine. */
+  readonly group: ProjectGroup;
+  readonly connectedTargets: readonly SettingsTarget[];
   readonly environments: readonly SettingsTarget[];
-  readonly connectedEnvironments: readonly SettingsTarget[];
   readonly hasOtherMembers: boolean;
   readonly isRemoving: boolean;
   readonly setIsRemoving: (isRemoving: boolean) => void;
@@ -151,10 +147,8 @@ function ProjectOverviewContent(props: {
   const [draftName, setDraftName] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const threads = useThreadShells();
-  const removableEnvironments = useEnvironmentsWithScope(
-    props.members,
-    AuthOrchestrationOperateScope,
-  );
+  const allMembers = props.group.members.map((member) => member.project);
+  const removableEnvironments = useEnvironmentsWithScope(allMembers, AuthOrchestrationOperateScope);
   const canRemoveGroup = props.members.every((member) =>
     removableEnvironments.has(member.environmentId),
   );
@@ -163,37 +157,51 @@ function ProjectOverviewContent(props: {
     label: "project name update",
     reportFailure: true,
   });
-  const projects = useProjects();
-  const organization = resolveProjectGroupOrganization(props.allMembers);
-  const canOrganize = props.allMembers.every(
-    (member) =>
-      props.connectedEnvironments.find((entry) => entry.environmentId === member.environmentId)
-        ?.serverConfig.environment.capabilities.projectOrganization === true,
-  );
-  const [isOrganizing, setIsOrganizing] = useState(false);
-  const updateOrganization = useAtomCommand(projectEnvironment.update, {
-    label: "project pin or archive",
+  const organizeProject = useAtomCommand(projectEnvironment.update, {
+    label: "project update",
     reportFailure: true,
   });
-  const organize = (input: {
-    readonly pinned?: boolean;
-    readonly pinOrderKey?: string | null;
-    readonly archived?: boolean;
-  }) => {
+  const [isOrganizing, setIsOrganizing] = useState(false);
+  const memberTargets = allMembers.map((member) =>
+    props.connectedTargets.find((entry) => entry.environmentId === member.environmentId),
+  );
+  const offline = memberTargets.some((target) => target === undefined);
+  // Older servers drop pin and archive, so their projects do not offer them.
+  // Offline members are checked when the write runs, so their reason can show.
+  const canOrganize =
+    allMembers.every(
+      (member, index) =>
+        memberTargets[index] === undefined || removableEnvironments.has(member.environmentId),
+    ) &&
+    memberTargets.every(
+      (target) =>
+        target === undefined ||
+        target.serverConfig.environment.capabilities.projectOrganization === true,
+    );
+  // One machine at a time, stopping at the first failure, as web does.
+  const organize = async (input: { readonly pinned?: boolean; readonly archived?: boolean }) => {
     setIsOrganizing(true);
-    void (async () => {
-      const result = await settlePromise(async () => {
-        for (const member of props.allMembers) {
-          const result = await updateOrganization({
-            environmentId: member.environmentId,
-            input: { projectId: member.id, ...input },
-          });
-          if (result._tag === "Failure") return;
-        }
+    for (const member of allMembers) {
+      if (!readEnvironmentScope(member.environmentId, AuthOrchestrationOperateScope)) {
+        Dialog.alert("Failed to update project", "This connection can no longer change it.");
+        break;
+      }
+      const result = await organizeProject({
+        environmentId: member.environmentId,
+        input: { projectId: member.id, ...input },
       });
-      setIsOrganizing(false);
-      if (AsyncResult.isFailure(result)) throw squashAtomCommandFailure(result);
-    })();
+      if (result._tag === "Failure") {
+        if (!isAtomCommandInterrupted(result)) {
+          const error = squashAtomCommandFailure(result);
+          Dialog.alert(
+            `Failed to update "${member.title}"`,
+            error instanceof Error ? error.message : "An error occurred.",
+          );
+        }
+        break;
+      }
+    }
+    setIsOrganizing(false);
   };
   const nextName = (draftName ?? displayName).trim();
   const canSave = !isSaving && nextName.length > 0 && nextName !== displayName;
@@ -346,24 +354,25 @@ function ProjectOverviewContent(props: {
           <SettingsSwitchRow
             icon="pin"
             label="Pin"
-            subtitle="Pinned projects come first when you choose a project."
-            disabled={isOrganizing}
-            value={organization.pinnedAt !== null}
-            onValueChange={(pinned) =>
-              organize(
-                pinned
-                  ? { pinned: true, pinOrderKey: nextProjectPinOrderKey(projects) }
-                  : { pinned: false },
-              )
+            subtitle={
+              offline
+                ? "Connect every machine with this project to change this."
+                : "Pinned projects come first in project pickers."
             }
+            value={props.group.pinned}
+            disabled={isOrganizing || offline}
+            onValueChange={(pinned) => void organize({ pinned })}
           />
-          <SettingsSwitchRow
+          <SettingsActionRow
             icon="archivebox"
-            label="Archive"
-            subtitle="Hides the project and its threads. Nothing is deleted."
-            disabled={isOrganizing}
-            value={organization.archivedAt !== null}
-            onValueChange={(archived) => organize({ archived })}
+            label={props.group.archived ? "Unarchive project" : "Archive project"}
+            description={
+              props.group.archived
+                ? "Hidden from project pickers. Threads and files are kept."
+                : "Hides the project from project pickers. Threads and files are kept."
+            }
+            disabled={isOrganizing || offline}
+            onPress={() => void organize({ archived: !props.group.archived })}
           />
         </SettingsSection>
       ) : null}

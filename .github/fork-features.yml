@@ -4346,6 +4346,25 @@ features:
         - https://github.com/pingdotgg/t3code/pull/9416
       retire_when: Upstream preserves project scope across sidebar state and every new-thread entry point.
 
+  - id: project-pin-archive-migration-reconciliation
+    title: Keep project pins and archives from fork migration 11 when upstream migration 76 arrives
+    status: maintained
+    prs: []
+    invariants:
+      - A database that already has `pinned_at` and `archived_at` from fork migration 11 records upstream migration 76 instead of running it, and starts with its pins and archives unchanged. A fresh database runs upstream migration 76, and fork migration 11 then adds only `pin_order_key`. The upstream migration file stays verbatim.
+    rationale: The fork shipped pin and archive before upstream's own migration existed. Upstream's migration adds the columns without checking for them, so running it on an existing fork database would fail with a duplicate column and stop the server from starting.
+    implementation_paths:
+      - apps/server/src/persistence/ForkMigrations.ts
+      - apps/server/src/persistence/ForkMigrations/011_ProjectionProjectsOrganization.ts
+    upstream_paths:
+      - apps/server/src/persistence/Migrations.ts
+    tests:
+      - apps/server/src/persistence/ForkMigrations.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: No supported database can still have the columns from fork migration 11 without upstream migration 76 recorded.
+
   - id: provider-auto-default
     title: Apply an Auto default only where the provider reviews actions
     status: maintained
@@ -6232,7 +6251,7 @@ features:
       - Pinned projects lead the grouped Active and Working lists in their shared pin order, ahead of the saved project order, and their headers show a pin icon. A zero-height divider follows the pinned projects' groups and shows a "Pinned projects above" label only while a header is dragged. Dropping a header above it pins the project at that slot, dropping it below unpins it, and moving it among pinned projects saves the pin order through the shared project write hook; pinned projects without active threads keep their place relative to the pinned projects around the drop. The new placement shows at once and holds until the projects match it or the write fails.
       - Group headers open project actions on right-click or the keyboard context-menu shortcut to start a thread in that project, toggle its filter, pin or unpin it, archive it, copy a checkout path, or open Project Settings. Pin and archive appear only when every machine with the project supports project organization. New threads preserve the current environment when it belongs to the group; grouped paths are selectable per checkout.
       - Header reorders, pins, unpins, pin reorders and archives emit bounded `sidebar-project-groups` client-usage events with the entry point (header drag or header menu) through the primary environment, after the write succeeds, never with project names or keys.
-    rationale: With several projects active, a flat list makes the user read each card's project label to see which threads belong together. The fork retains thread details under opt-in project headers, omitting the empty branch line when an entire group is branchless, whereas upstream's closed proposal collapsed groups into title-only lists.
+    rationale: With several projects active, a flat list makes the user read each card's project label to see which threads belong together. The fork retains thread details under opt-in project headers, omitting the empty branch line when an entire group is branchless, whereas upstream's closed proposal collapsed groups into title-only lists. Upstream's pin and archive has no drag order, so the fork keeps `pinOrderKey` on the project record (fork migration 11's column, the update payload and `useProjectPinOrder`) only for dragging these headers; project pickers follow upstream's order.
     implementation_paths:
       - apps/mobile/src/features/home/HomeScreen.tsx
       - apps/mobile/src/features/home/homeThreadList.ts
@@ -6240,6 +6259,8 @@ features:
       - apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx
       - apps/mobile/src/features/threads/thread-list-v2-items.tsx
       - apps/mobile/src/features/threads/threadListV2.ts
+      - apps/server/src/orchestration-v2/ProjectCommands.ts
+      - apps/server/src/orchestration-v2/ProjectStore.ts
       - apps/web/src/components/Sidebar.drag.ts
       - apps/web/src/components/Sidebar.logic.ts
       - apps/web/src/components/Sidebar.tsx
@@ -6247,8 +6268,10 @@ features:
       - apps/web/src/components/settings/settingsSearch.ts
       - apps/web/src/components/sidebar/SidebarListMarkers.tsx
       - apps/web/src/components/sidebar/SidebarThreadRow.tsx
+      - apps/web/src/hooks/useProjectPinOrder.ts
       - apps/web/src/hooks/useSidebarProjectGroups.ts
       - apps/web/src/sidebarProjectGroupUsage.ts
+      - packages/client-runtime/src/state/projectOrganization.ts
       - packages/client-runtime/src/state/threadProjectGroups.ts
       - packages/contracts/src/forkClientUsage.ts
       - packages/contracts/src/settings.ts
@@ -6262,11 +6285,13 @@ features:
       - packages/contracts/src/settings.ts
     tests:
       - apps/mobile/src/features/threads/threadListV2.test.ts
+      - apps/server/src/orchestration-v2/ProjectCommands.test.ts
       - apps/server/src/telemetry/ClientFeatureUsage.test.ts
       - apps/web/src/components/Sidebar.drag.test.ts
       - apps/web/src/components/Sidebar.logic.test.ts
       - apps/web/src/components/sidebar/SidebarListMarkers.browser.test.tsx
       - e2e/tests/sidebar-project-groups.e2e.ts
+      - packages/client-runtime/src/state/projectOrganization.test.ts
       - packages/client-runtime/src/state/threadProjectGroups.test.ts
     upstream:
       status: tracking

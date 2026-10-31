@@ -199,8 +199,7 @@ export function planProjectCommand(input: {
       if (command.pinOrderKey != null && !willBePinned) {
         return invariant("Only a pinned project has a pin order.");
       }
-      // Pinning an already pinned project keeps its pinnedAt; unpinning drops
-      // its slot. Archive works the same way.
+      // Repeating a pin or archive keeps the original time; unpinning drops the slot.
       const pin =
         command.pinned === undefined
           ? command.pinOrderKey === undefined
@@ -216,17 +215,6 @@ export function planProjectCommand(input: {
         command.archived === undefined
           ? {}
           : { archivedAt: command.archived ? (project.archivedAt ?? occurredAt) : null };
-      // Pinning and archiving are not activity: clients order projects without
-      // threads by updatedAt, so those changes alone keep it.
-      const organizesOnly =
-        command.title === undefined &&
-        command.workspaceRoot === undefined &&
-        command.defaultModelSelection === undefined &&
-        command.defaultThreadEnvMode === undefined &&
-        command.autoPull === undefined &&
-        command.faviconPath === undefined &&
-        command.projectIcon === undefined &&
-        command.scripts === undefined;
       return Result.succeed({
         ...base,
         type: "project.meta-updated",
@@ -249,7 +237,7 @@ export function planProjectCommand(input: {
           ...(command.scripts === undefined ? {} : { scripts: command.scripts }),
           ...pin,
           ...archive,
-          updatedAt: organizesOnly ? project.updatedAt : occurredAt,
+          updatedAt: occurredAt,
         },
       });
     }

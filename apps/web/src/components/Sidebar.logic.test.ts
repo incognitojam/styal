@@ -1,4 +1,3 @@
-import type { OlderSettled } from "@t3tools/client-runtime/state/threads";
 import { presentThreadShell } from "@t3tools/client-runtime/state/models";
 import { isThreadWorking as isSidebarThreadWorking } from "@t3tools/client-runtime/state/thread-inbox";
 import * as DateTime from "effect/DateTime";
@@ -7,7 +6,6 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/reactivity";
 import {
-  archivedOlderSettledCount,
   sidebarListItemId,
   resolveSidebarProjectDrop,
   sidebarMarkerId,
@@ -75,18 +73,22 @@ const localEnvironmentId = EnvironmentId.make("environment-local");
 
 describe("shouldCreateNewThreadInCurrentProject", () => {
   it.each([
-    { shiftKey: false, projectGroupCount: 3, hasProjectScope: false, boring: false, direct: false },
-    { shiftKey: true, projectGroupCount: 3, hasProjectScope: false, boring: false, direct: true },
-    { shiftKey: false, projectGroupCount: 1, hasProjectScope: false, boring: false, direct: true },
-    { shiftKey: false, projectGroupCount: 3, hasProjectScope: true, boring: false, direct: true },
-    { shiftKey: false, projectGroupCount: 3, hasProjectScope: false, boring: true, direct: true },
+    { shiftKey: false, open: 3, total: 3, hasProjectScope: false, boring: false, direct: false },
+    { shiftKey: true, open: 3, total: 3, hasProjectScope: false, boring: false, direct: true },
+    { shiftKey: false, open: 1, total: 1, hasProjectScope: false, boring: false, direct: true },
+    { shiftKey: false, open: 1, total: 3, hasProjectScope: false, boring: false, direct: true },
+    { shiftKey: false, open: 0, total: 2, hasProjectScope: false, boring: false, direct: false },
+    { shiftKey: false, open: 0, total: 0, hasProjectScope: false, boring: false, direct: true },
+    { shiftKey: false, open: 3, total: 3, hasProjectScope: true, boring: false, direct: true },
+    { shiftKey: false, open: 3, total: 3, hasProjectScope: false, boring: true, direct: true },
   ])(
-    "$direct for $projectGroupCount projects, shift $shiftKey, scope $hasProjectScope, boring $boring",
+    "$direct for $open of $total projects, shift $shiftKey, scope $hasProjectScope, boring $boring",
     (row) => {
       expect(
         shouldCreateNewThreadInCurrentProject({
           shiftKey: row.shiftKey,
-          projectGroupCount: row.projectGroupCount,
+          openProjectGroupCount: row.open,
+          projectGroupCount: row.total,
           hasProjectScope: row.hasProjectScope,
           boringWithoutFilter: row.boring,
         }),
@@ -257,15 +259,6 @@ describe("sidebar thread lineage helpers", () => {
         new Set(),
       ).map((thread) => thread.id),
     ).toEqual([parentId, fork.id]);
-    // An archived project hides its threads, scoped or not.
-    expect(
-      filterSidebarV2VisibleThreads(
-        [root, otherProject],
-        null,
-        new Set(),
-        new Set([`${environmentId}:${projectId}`]),
-      ).map((thread) => thread.id),
-    ).toEqual([otherProject.id]);
   });
 
   it("maps an open subagent to its nearest visible ancestor's sidebar row", () => {
@@ -1107,18 +1100,6 @@ describe("sortLogicalProjectsForSidebar", () => {
         (project) => project.projectKey,
       ),
     ).toEqual(["logical-newer", "logical-older"]);
-
-    // A pinned project leads in every order.
-    const pinned = projects.map((project) =>
-      project.projectKey === "logical-older"
-        ? { ...project, pinnedAt: "2026-03-01T00:00:00.000Z", pinOrderKey: "m" }
-        : project,
-    );
-    for (const order of ["manual", "updated_at"] as const) {
-      expect(
-        sortLogicalProjectsForSidebar(pinned, threads, order).map((project) => project.projectKey),
-      ).toEqual(["logical-older", "logical-newer"]);
-    }
   });
 });
 
@@ -2012,38 +1993,6 @@ describe("pendingSidebarRouteReveal", () => {
   });
 });
 
-describe("archivedOlderSettledCount", () => {
-  it("counts only archived projects' older settled threads", () => {
-    const local = EnvironmentId.make("synthetic-local");
-    const remote = EnvironmentId.make("synthetic-remote");
-    const older = (
-      counts: ReadonlyArray<readonly [string, number]>,
-    ): { readonly older: OlderSettled | null } => ({
-      older: {
-        before: "2026-09-01T00:00:00.000Z",
-        beforeMs: Date.UTC(2026, 8, 1),
-        counts: new Map(counts.map(([projectId, count]) => [ProjectId.make(projectId), count])),
-      },
-    });
-    const environments = new Map([
-      [
-        local,
-        older([
-          ["archived", 4],
-          ["active", 7],
-        ]),
-      ],
-      [remote, older([["archived", 2]])],
-      [EnvironmentId.make("synthetic-unloaded"), { older: null }],
-    ]);
-
-    expect(
-      archivedOlderSettledCount(environments, new Set([`${local}:archived`, `${remote}:archived`])),
-    ).toBe(6);
-    expect(archivedOlderSettledCount(environments, new Set())).toBe(0);
-  });
-});
-
 describe("resolveSidebarRouteReveal", () => {
   const scopedProjectKeys = new Set(["environment-test:project-scoped"]);
   const hidden = makeThreadFixture({ projectId: ProjectId.make("project-other") });
@@ -2145,6 +2094,12 @@ describe("groupSidebarThreadsByProject", () => {
         projectKey: "fleet",
         memberProjectRefs: [{ environmentId: localEnvironmentId, projectId: fleet }],
       },
+      {
+        projectKey: "notes",
+        memberProjectRefs: [
+          { environmentId: localEnvironmentId, projectId: ProjectId.make("notes") },
+        ],
+      },
     ];
 
     const threads = [
@@ -2152,17 +2107,23 @@ describe("groupSidebarThreadsByProject", () => {
       thread("orphan", localEnvironmentId, ProjectId.make("deleted")),
       thread("b", remoteEnvironmentId, t3codeRemote),
     ];
-    const summarize = (keepEmpty: boolean) =>
+    const summarize = (keepEmpty: (group: (typeof groups)[number]) => boolean) =>
       groupSidebarThreadsByProject(groups, threads, keepEmpty).map((folder) => ({
         projectKey: folder.group.projectKey,
         threads: folder.threads.map((entry) => entry.id),
       }));
 
-    expect(summarize(true)).toEqual([
+    expect(summarize(() => true)).toEqual([
+      { projectKey: "t3code", threads: ["a", "b"] },
+      { projectKey: "fleet", threads: [] },
+      { projectKey: "notes", threads: [] },
+    ]);
+    expect(summarize(() => false)).toEqual([{ projectKey: "t3code", threads: ["a", "b"] }]);
+    // A pinned project keeps its empty folder while other empty projects drop out.
+    expect(summarize((group) => group.projectKey === "fleet")).toEqual([
       { projectKey: "t3code", threads: ["a", "b"] },
       { projectKey: "fleet", threads: [] },
     ]);
-    expect(summarize(false)).toEqual([{ projectKey: "t3code", threads: ["a", "b"] }]);
   });
 });
 

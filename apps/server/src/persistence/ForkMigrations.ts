@@ -182,6 +182,38 @@ const keepV1HistoryTables = Effect.fn("keepV1HistoryTables")(function* () {
   return true;
 });
 
+const UPSTREAM_PROJECT_PIN_ARCHIVE_MIGRATION_ID = 76;
+const UPSTREAM_PROJECT_PIN_ARCHIVE_MIGRATION_NAME = "ProjectionProjectsPinArchive";
+
+/**
+ * Upstream migration 76 adds `pinned_at` and `archived_at` without checking for them, and fork
+ * migration 11 already added both on databases from earlier builds. Recording it lets the
+ * upstream migration stay verbatim without failing on a duplicate column.
+ */
+const recordProjectPinArchiveColumns = Effect.fn("recordProjectPinArchiveColumns")(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  const columns = new Set(
+    (yield* sql<{ readonly name: string }>`
+      PRAGMA table_info(projection_projects)
+    `).map((column) => column.name),
+  );
+  if (!columns.has("pinned_at") || !columns.has("archived_at")) return false;
+  const recorded = yield* sql`
+    SELECT 1 FROM effect_sql_migrations
+    WHERE migration_id >= ${UPSTREAM_PROJECT_PIN_ARCHIVE_MIGRATION_ID}
+    LIMIT 1
+  `;
+  if (recorded.length > 0) return false;
+  yield* sql`
+    INSERT INTO effect_sql_migrations (migration_id, name)
+    VALUES (
+      ${UPSTREAM_PROJECT_PIN_ARCHIVE_MIGRATION_ID},
+      ${UPSTREAM_PROJECT_PIN_ARCHIVE_MIGRATION_NAME}
+    )
+  `;
+  return true;
+});
+
 export interface RunAllMigrationsOptions {
   readonly forkToMigrationInclusive?: number | undefined;
 }
@@ -198,7 +230,13 @@ export const runAllMigrations = Effect.fn("runAllMigrations")(function* ({
   if (yield* keepV1HistoryTables()) {
     yield* Effect.log("Kept the V1 activity and turn history in fork tables");
   }
-  const upstream = [...beforeDrop, ...(yield* runMigrations())];
+  const beforePinArchive = yield* runMigrations({
+    toMigrationInclusive: UPSTREAM_PROJECT_PIN_ARCHIVE_MIGRATION_ID - 1,
+  });
+  if (yield* recordProjectPinArchiveColumns()) {
+    yield* Effect.log("Recorded the project pin and archive columns from fork migration 11");
+  }
+  const upstream = [...beforeDrop, ...beforePinArchive, ...(yield* runMigrations())];
   const fork = yield* runForkMigrations({ toMigrationInclusive: forkToMigrationInclusive });
   return { upstream, fork } as const;
 });

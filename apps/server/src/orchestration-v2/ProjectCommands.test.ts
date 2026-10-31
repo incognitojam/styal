@@ -117,17 +117,6 @@ describe("planProjectCommand", () => {
     assert.isFalse("pinnedAt" in renamed || "pinOrderKey" in renamed || "archivedAt" in renamed);
   });
 
-  it("keeps updatedAt when only the pin or archive changes", () => {
-    const earlier = row({ updatedAt: "2025-10-01T00:00:00.000Z" });
-    for (const fields of [{ pinned: true }, { archived: true }, { pinned: false }]) {
-      assert.equal(payloadOf(update(fields, earlier)).updatedAt, "2025-10-01T00:00:00.000Z");
-    }
-    assert.equal(
-      payloadOf(update({ pinned: true, title: "Renamed" }, earlier)).updatedAt,
-      "2026-01-01T00:00:00.000Z",
-    );
-  });
-
   it("rejects a pin order for a project that stays unpinned", () => {
     const pinned = row({ pinnedAt: "2025-12-01T00:00:00.000Z", pinOrderKey: "m" });
     for (const result of [

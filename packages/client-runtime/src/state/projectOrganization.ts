@@ -1,42 +1,26 @@
 import type { OrchestrationProjectShell } from "@t3tools/contracts";
 
-import { scopedProjectKey, scopeProjectRef } from "../environment/scoped.ts";
-import type { EnvironmentProject } from "./models.ts";
-import { buildProjectGroups, type ProjectGroupingSettings } from "./projectGrouping.ts";
 import { pinOrderKeyBetween, planPinnedReorder } from "./threadSort.ts";
 
-type ProjectOrganizationFields = Pick<
-  OrchestrationProjectShell,
-  "pinnedAt" | "pinOrderKey" | "archivedAt"
->;
-
-export interface ProjectGroupOrganization {
-  readonly pinnedAt: string | null;
-  readonly pinOrderKey: string | null;
-  readonly archivedAt: string | null;
-}
+type ProjectPinFields = Pick<OrchestrationProjectShell, "pinnedAt" | "pinOrderKey">;
 
 /**
- * Records can disagree (an agent changed one, or a machine added the project later), so the
- * project stays visible: pinned when any record is pinned, archived only when all are.
+ * Records can disagree (an agent changed one, or a machine added the project later): the project
+ * is pinned when any record is, at its earliest pin time and first slot.
  */
-export function resolveProjectGroupOrganization(
-  members: ReadonlyArray<ProjectOrganizationFields>,
-): ProjectGroupOrganization {
+export function resolveProjectGroupPinOrder(members: ReadonlyArray<ProjectPinFields>): {
+  readonly pinnedAt: string | null;
+  readonly pinOrderKey: string | null;
+} {
   let pinnedAt: string | null = null;
   let pinOrderKey: string | null = null;
-  let archivedAt: string | null = null;
-  let everyMemberArchived = members.length > 0;
   for (const member of members) {
-    if (member.pinnedAt != null) {
-      if (pinnedAt === null || member.pinnedAt < pinnedAt) pinnedAt = member.pinnedAt;
-      if (member.pinOrderKey != null && (pinOrderKey === null || member.pinOrderKey < pinOrderKey))
-        pinOrderKey = member.pinOrderKey;
-    }
-    if (member.archivedAt == null) everyMemberArchived = false;
-    else if (archivedAt === null || member.archivedAt > archivedAt) archivedAt = member.archivedAt;
+    if (member.pinnedAt == null) continue;
+    if (pinnedAt === null || member.pinnedAt < pinnedAt) pinnedAt = member.pinnedAt;
+    if (member.pinOrderKey != null && (pinOrderKey === null || member.pinOrderKey < pinOrderKey))
+      pinOrderKey = member.pinOrderKey;
   }
-  return { pinnedAt, pinOrderKey, archivedAt: everyMemberArchived ? archivedAt : null };
+  return { pinnedAt, pinOrderKey };
 }
 
 interface PinnableProject {
@@ -88,40 +72,4 @@ export function planProjectPinReorder(input: {
     keysById: input.pinOrderKeyByKey,
     movedId: input.movedKey,
   }).map(({ id, orderKey }) => ({ key: id, pinOrderKey: orderKey }));
-}
-
-/**
- * Project records for a picker that lists each machine's record on its own:
- * archived projects left out and pinned ones first, judged by the whole
- * logical project across machines. Filter to one machine afterwards.
- */
-export function organizeProjectRecords<TProject extends EnvironmentProject>(input: {
-  readonly projects: ReadonlyArray<TProject>;
-  readonly settings: ProjectGroupingSettings;
-  /** Keeps a record whose project is archived, such as a saved choice. */
-  readonly keep?: (project: TProject) => boolean;
-}): TProject[] {
-  const organizationByRef = new Map<string, ProjectGroupOrganization>();
-  for (const group of buildProjectGroups({ projects: input.projects, settings: input.settings })) {
-    const organization = resolveProjectGroupOrganization(
-      group.members.map((member) => member.project),
-    );
-    for (const projectRef of group.memberProjectRefs) {
-      organizationByRef.set(scopedProjectKey(projectRef), organization);
-    }
-  }
-  const entries = input.projects.flatMap((project) => {
-    const organization = organizationByRef.get(
-      scopedProjectKey(scopeProjectRef(project.environmentId, project.id)),
-    );
-    if (organization?.archivedAt != null && input.keep?.(project) !== true) return [];
-    return [
-      {
-        project,
-        pinnedAt: organization?.pinnedAt ?? null,
-        pinOrderKey: organization?.pinOrderKey ?? null,
-      },
-    ];
-  });
-  return sortPinnedProjectsFirst(entries).map((entry) => entry.project);
 }

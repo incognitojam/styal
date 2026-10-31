@@ -66,6 +66,68 @@ upstreamLayer("ForkMigrations canonical upstream upgrade", (it) => {
   );
 });
 
+const organizedLayer = it.layer(NodeSqliteClient.layer({ filename: ":memory:" }));
+
+organizedLayer("ForkMigrations project pins from fork migration 11", (it) => {
+  it.effect("records upstream migration 76 and keeps the pins and archives", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const pinnedAt = "2026-10-01T00:00:00.000Z";
+      // An earlier build's history: fork migration 11 ran, upstream stops at 75.
+      yield* runAllMigrations();
+      yield* sql`DELETE FROM effect_sql_migrations WHERE migration_id = 76`;
+      yield* sql`
+        INSERT INTO projection_projects (
+          project_id, title, workspace_root, scripts_json, created_at, updated_at,
+          pinned_at, pin_order_key, archived_at
+        )
+        VALUES (
+          'project-pinned', 'Pinned', '/tmp/pinned', '[]', ${pinnedAt}, ${pinnedAt},
+          ${pinnedAt}, 'm', ${pinnedAt}
+        )
+      `;
+
+      const { upstream } = yield* runAllMigrations();
+      assert.deepStrictEqual(upstream, []);
+      assert.deepStrictEqual(
+        yield* sql`
+          SELECT migration_id, name FROM effect_sql_migrations WHERE migration_id = 76
+        `,
+        [{ migration_id: 76, name: "ProjectionProjectsPinArchive" }],
+      );
+      assert.deepStrictEqual(
+        yield* sql`
+          SELECT pinned_at, pin_order_key, archived_at FROM projection_projects
+          WHERE project_id = 'project-pinned'
+        `,
+        [{ pinned_at: pinnedAt, pin_order_key: "m", archived_at: pinnedAt }],
+      );
+      assert.deepStrictEqual(yield* runAllMigrations(), { upstream: [], fork: [] });
+    }),
+  );
+});
+
+organizedLayer("ForkMigrations project pins on a fresh database", (it) => {
+  it.effect("runs upstream migration 76, then fork migration 11 adds only the pin order", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const { upstream, fork } = yield* runAllMigrations();
+      assert.includeDeepMembers(
+        upstream.map(([id, name]) => [id, name]),
+        [[76, "ProjectionProjectsPinArchive"]],
+      );
+      assert.includeDeepMembers(
+        fork.map(([id, name]) => [id, name]),
+        [[11, "ProjectionProjectsOrganization"]],
+      );
+      const columns = (yield* sql<{ readonly name: string }>`
+        PRAGMA table_info(projection_projects)
+      `).map((column) => column.name);
+      assert.includeMembers(columns, ["pinned_at", "pin_order_key", "archived_at"]);
+    }),
+  );
+});
+
 it("keeps fork migration IDs sequential from 1", () => {
   assert.deepStrictEqual(
     forkMigrationEntries.map(([id]) => id),

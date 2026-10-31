@@ -44,9 +44,6 @@ function makeProject(
 
 function makeScope(projects: ReadonlyArray<EnvironmentProject>): HomeProjectScope {
   return {
-    pinnedAt: null,
-    pinOrderKey: null,
-    archivedAt: null,
     key: "github.com/t3tools/t3code",
     title: "T3 Code",
     representative: projects[0]!,
@@ -55,6 +52,8 @@ function makeScope(projects: ReadonlyArray<EnvironmentProject>): HomeProjectScop
       environmentId: project.environmentId,
       projectId: project.id,
     })),
+    pinned: false,
+    archived: false,
   };
 }
 
@@ -120,18 +119,6 @@ describe("resolveEnvironmentProjectMatch", () => {
 });
 
 describe("resolveDraftProjectSelection", () => {
-  it("does not pick an archived project on its own", () => {
-    const project = makeProject("t3code");
-    const archived = { ...makeScope([project]), archivedAt: "2026-07-02T00:00:00.000Z" };
-    const shareDraft = { incomingShareId: "share", pickerClosed: false };
-    expect(resolveDraftProjectSelection(null, [project], [archived], shareDraft)).toEqual({
-      kind: "pick",
-    });
-    expect(
-      resolveDraftProjectSelection("environment:t3code", [project], [archived], shareDraft),
-    ).toEqual({ kind: "preserve" });
-  });
-
   const projects = [makeProject("t3code"), makeProject("t3code-2")];
   const draft = { incomingShareId: undefined, pickerClosed: false };
 
@@ -211,6 +198,20 @@ describe("newTaskDestination", () => {
       }),
     ).toEqual({
       draft: { requestId: "request", environmentId: "other-environment", projectId: "current" },
+    });
+  });
+
+  it("opens the picker for an archived last project, but keeps an archived current one", () => {
+    const archived = { ...makeProject("archived"), archivedAt: "2026-01-01T00:00:00.000Z" };
+    expect(
+      destination({
+        useLastProject: true,
+        projects: [archived],
+        last: { environmentId: "environment", projectId: "archived" },
+      }),
+    ).toEqual(picker);
+    expect(destination({ useLastProject: true, projects: [archived], current: archived })).toEqual({
+      draft: { requestId: "request", environmentId: "environment", projectId: "archived" },
     });
   });
 

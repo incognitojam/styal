@@ -14,7 +14,6 @@ import type {
   EnvironmentThreadShell,
 } from "@t3tools/client-runtime/state/shell";
 import { resolveThreadProviderStack } from "@t3tools/client-runtime/state/models";
-import type { OlderSettled } from "@t3tools/client-runtime/state/threads";
 import {
   threadSearchMatchKey,
   threadSearchSubject,
@@ -1014,21 +1013,4 @@ export function buildThreadListV2Items(input: {
     nextSnoozeWakeAt,
     contentOnlyThreadKeys,
   };
-}
-
-/**
- * Older settled threads of archived projects: the server counts them below the shell's cut, but
- * archived projects' threads stay out of the list, so an all-projects Settled count drops them.
- */
-export function archivedOlderSettledCount(
-  environments: ReadonlyMap<EnvironmentId, { readonly older: OlderSettled | null }>,
-  archivedProjectKeys: ReadonlySet<string>,
-): number {
-  let count = 0;
-  for (const [environmentId, { older }] of environments) {
-    for (const [projectId, projectCount] of older?.counts ?? []) {
-      if (archivedProjectKeys.has(`${environmentId}:${projectId}`)) count += projectCount;
-    }
-  }
-  return count;
 }

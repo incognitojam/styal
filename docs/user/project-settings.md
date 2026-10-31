@@ -49,6 +49,24 @@ Settings that are environment-wide stay read-only while a project is selected. W
 targets disagree, a control shows **Mixed** until you choose one value. Appearance, keyboard,
 and other phone-only settings ignore the filter.
 
+## Pin and archive projects
+
+Pinned projects come first in the project pickers: the project picker on a new thread, the
+new-thread list, the command palette, the sidebar project filter, and mobile. In the boring sidebar, pinned projects get the top
+folders, even with no active threads. Pin or unpin a project from its row in any of those lists,
+or press the thread pin shortcut (`mod+shift+p` by default) on the highlighted row. **Pin
+project** in the command palette and **Settings → Projects** work too. A list keeps its order
+while it is open, so a new pin moves up the next time you open it.
+
+Archive a project you are done with in **Settings → Projects**. It leaves the project pickers.
+Its threads, settings, and files stay as they are, and archived projects still show in the
+Settings project list, marked **Archived**. Choose one there and select **Unarchive** to bring it
+back. On mobile, both are in **Settings → Projects → Organize**.
+
+A project on several machines must have every machine connected to pin or archive it.
+
+With [threads grouped by project](./thread-sidebar.md#group-threads-by-project), you can also drag a project's header to pin it, unpin it, or change the order of pinned projects, and right-click the header to archive it. Archived projects' pull requests leave the **Pull requests** page.
+
 ## Worktree branch names
 
 In **Settings → Worktrees → Worktree branch naming**, choose a static prefix,
@@ -234,24 +252,9 @@ Results also list folders in the worktree folder that no thread uses, with their
 Browser captures and rotated logs have separate retention periods. Expired capture links stop
 working. Current logs, message attachments, and browser profiles are kept.
 
-## Pin and archive projects
-
-**Settings → Projects** lists every project on every connected machine. Pin the ones you use
-most: pinned projects come first in every project picker, in the order you drag them to. You can
-also pin from the sidebar's project filter, with **Pin project** in the command palette
-(`Cmd/Ctrl+K`), or, with [threads grouped by project](./thread-sidebar.md#group-threads-by-project),
-by dragging a project's header.
-
-Archive a project you are done with. It leaves the project pickers, its threads leave the
-sidebar and the command palette, and its pull requests leave the **Pull requests** page. Nothing is deleted, and threads keep their state. Find it under
-**Archived** in **Settings → Projects** and choose **Unarchive** to bring everything back.
-
-Pin and archive apply to the project on every machine, so every machine with the project must
-be connected. On mobile, use **Organize** in **Settings → Projects**.
-
 ## Project icons
 
-Select the project and open Projects to choose an icon, emoji, monogram, or image. The choice applies to
+Select the project and open Project to choose an icon, emoji, monogram, or image. The choice applies to
 every checkout in the project group and appears on connected clients. Choose **Automatic** to let
 T3 Code detect an icon again.
 

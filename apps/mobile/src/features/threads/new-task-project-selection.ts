@@ -140,12 +140,8 @@ export function resolveDraftProjectSelection(
     return { kind: "dismiss" };
   }
 
-  // An archived project is not offered in the picker, so never pick it either.
-  const selectableScopes = projectScopes.filter((scope) => scope.archivedAt === null);
   const onlyScope =
-    draft.incomingShareId !== undefined && selectableScopes.length === 1
-      ? selectableScopes[0]
-      : null;
+    draft.incomingShareId !== undefined && projectScopes.length === 1 ? projectScopes[0] : null;
   return onlyScope ? { kind: "select", project: onlyScope.representative } : { kind: "pick" };
 }
 
@@ -163,10 +159,12 @@ export function newTaskDestination(options: {
     options.projects.find(
       (project) => project.environmentId === ref.environmentId && project.id === ref.projectId,
     );
+  // A remembered project that was archived since opens the picker; the current one still wins.
+  const last = find(options.lastProject);
   const project =
     options.useLastProject === false
       ? undefined
-      : (find(options.currentProject) ?? find(options.lastProject));
+      : (find(options.currentProject) ?? (last?.archivedAt == null ? last : undefined));
   return project
     ? {
         draft: {

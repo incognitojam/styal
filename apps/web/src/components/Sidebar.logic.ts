@@ -24,9 +24,7 @@ import {
 } from "@t3tools/contracts";
 import type { SidebarProjectSortOrder, SidebarThreadSortOrder } from "@t3tools/contracts/settings";
 import type { AsyncResult } from "effect/reactivity";
-import { sortPinnedProjectsFirst } from "@t3tools/client-runtime/state/project-organization";
 import { clusterByGroup } from "@t3tools/client-runtime/state/thread-project-groups";
-import type { OlderSettled } from "@t3tools/client-runtime/state/threads";
 import {
   effectiveSnoozed,
   type ThreadSnoozeShell,
@@ -622,8 +620,6 @@ type SidebarProject = {
   title: string;
   createdAt?: string | undefined;
   updatedAt?: string | undefined;
-  pinnedAt?: string | null | undefined;
-  pinOrderKey?: string | null | undefined;
 };
 
 type ScopedSidebarProject = SidebarProject & {
@@ -741,25 +737,18 @@ export function filterSidebarV2VisibleThreads<
   threads: readonly T[],
   scopedProjectKeys: ReadonlySet<string> | null,
   delegatedUnderParent: ReadonlySet<string>,
-  /** `environmentId:projectId` of archived projects, whose threads stay hidden. */
-  archivedProjectKeys?: ReadonlySet<string>,
 ): T[] {
-  return threads.filter((thread) => {
-    if (
-      thread.archivedAt !== null ||
-      isShownUnderParent(
+  return threads.filter(
+    (thread) =>
+      thread.archivedAt === null &&
+      !isShownUnderParent(
         { environmentId: thread.environmentId, threadId: thread.id },
         thread.lineage,
         delegatedUnderParent,
-      )
-    )
-      return false;
-    const projectKey = `${thread.environmentId}:${thread.projectId}`;
-    return (
-      (scopedProjectKeys === null || scopedProjectKeys.has(projectKey)) &&
-      archivedProjectKeys?.has(projectKey) !== true
-    );
-  });
+      ) &&
+      (scopedProjectKeys === null ||
+        scopedProjectKeys.has(`${thread.environmentId}:${thread.projectId}`)),
+  );
 }
 
 export function buildBulkTitleRegenerationContextMenuItem(input: {
@@ -911,10 +900,11 @@ export function isSidebarNestedLinkClick(target: EventTarget | null): boolean {
   return nodeClosest(parent, "a[href]") !== null;
 }
 
-// With one project, or the sidebar filtered to one, a plain click already creates directly.
-// chat.newLocal starts a thread beside the one on screen while the list is filtered.
+// One open project, or the sidebar filtered to one, leaves nothing to pick, and so does having no
+// projects at all. chat.newLocal starts a thread beside the one on screen while the list is filtered.
 export function shouldCreateNewThreadInCurrentProject(input: {
   shiftKey: boolean;
+  openProjectGroupCount: number;
   projectGroupCount: number;
   hasProjectScope: boolean;
   /** Boring mode with no project filter: its folders already show the context. */
@@ -923,7 +913,8 @@ export function shouldCreateNewThreadInCurrentProject(input: {
   return (
     input.shiftKey ||
     input.hasProjectScope ||
-    input.projectGroupCount <= 1 ||
+    input.openProjectGroupCount === 1 ||
+    input.projectGroupCount === 0 ||
     input.boringWithoutFilter
   );
 }
@@ -1210,7 +1201,7 @@ export function sidebarFolderExpansionKeys(group: {
 
 /**
  * Boring sidebar folders. Folders follow `groups` order and threads keep their
- * input order. A project with no threads gets a folder only with `keepEmpty`.
+ * input order. A project with no threads gets a folder only when `keepEmpty` says so.
  * A thread whose project is in no group has no folder and is left out.
  */
 export function groupSidebarThreadsByProject<
@@ -1224,7 +1215,7 @@ export function groupSidebarThreadsByProject<
 >(
   groups: readonly TGroup[],
   threads: readonly TThread[],
-  keepEmpty: boolean,
+  keepEmpty: (group: TGroup) => boolean,
 ): Array<{ group: TGroup; threads: TThread[] }> {
   const folders = groups.map((group) => ({ group, threads: [] as TThread[] }));
   const folderByProject = new Map<string, (typeof folders)[number]>();
@@ -1236,7 +1227,7 @@ export function groupSidebarThreadsByProject<
   for (const thread of threads) {
     folderByProject.get(`${thread.environmentId}:${thread.projectId}`)?.threads.push(thread);
   }
-  return keepEmpty ? folders : folders.filter((folder) => folder.threads.length > 0);
+  return folders.filter((folder) => folder.threads.length > 0 || keepEmpty(folder.group));
 }
 
 export type SidebarV2TopStatusKind =
@@ -1607,14 +1598,12 @@ export function sortLogicalProjectsForSidebar<
     }
   }
 
-  return sortPinnedProjectsFirst(
-    sortProjectsByActivity(
-      projects,
-      sortOrder,
-      (project) => threadsByProjectKey.get(project.projectKey) ?? [],
-      (left, right) =>
-        left.title.localeCompare(right.title) || left.projectKey.localeCompare(right.projectKey),
-    ),
+  return sortProjectsByActivity(
+    projects,
+    sortOrder,
+    (project) => threadsByProjectKey.get(project.projectKey) ?? [],
+    (left, right) =>
+      left.title.localeCompare(right.title) || left.projectKey.localeCompare(right.projectKey),
   );
 }
 
@@ -1665,21 +1654,4 @@ export function sortScopedProjectsForSidebar<
       left.environmentId.localeCompare(right.environmentId) ||
       left.id.localeCompare(right.id),
   );
-}
-
-/**
- * Older settled threads of archived projects: the server counts them below the shell's cut, but
- * archived projects' threads stay out of the list, so an all-projects Settled count drops them.
- */
-export function archivedOlderSettledCount(
-  environments: ReadonlyMap<EnvironmentId, { readonly older: OlderSettled | null }>,
-  archivedProjectKeys: ReadonlySet<string>,
-): number {
-  let count = 0;
-  for (const [environmentId, { older }] of environments) {
-    for (const [projectId, projectCount] of older?.counts ?? []) {
-      if (archivedProjectKeys.has(`${environmentId}:${projectId}`)) count += projectCount;
-    }
-  }
-  return count;
 }

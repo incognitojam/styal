@@ -1,4 +1,3 @@
-import type { OlderSettled } from "@t3tools/client-runtime/state/threads";
 import { threadSearchMatchKey } from "@t3tools/client-runtime/state/thread-search";
 import { createInboxReturnTracker } from "@t3tools/client-runtime/state/thread-inbox";
 import { presentThreadShell } from "@t3tools/client-runtime/state/models";
@@ -36,7 +35,6 @@ import type { PendingNewTask } from "../../state/use-pending-new-tasks";
 import { makeRawThreadShell, makeThreadShellFixture } from "../../test-fixtures";
 import { threadJumpTarget } from "../keyboard/threadKeyboardShortcuts";
 import {
-  archivedOlderSettledCount,
   buildThreadListV2Items,
   buildThreadListV2ListItems,
   getThreadListV2OrderedSection,
@@ -2005,37 +2003,5 @@ describe("threads grouped by project", () => {
         pendingOrder,
       }).size,
     ).toBe(0);
-  });
-});
-
-describe("archivedOlderSettledCount", () => {
-  it("counts only archived projects' older settled threads", () => {
-    const local = EnvironmentId.make("synthetic-local");
-    const remote = EnvironmentId.make("synthetic-remote");
-    const older = (
-      counts: ReadonlyArray<readonly [string, number]>,
-    ): { readonly older: OlderSettled | null } => ({
-      older: {
-        before: "2026-09-01T00:00:00.000Z",
-        beforeMs: Date.UTC(2026, 8, 1),
-        counts: new Map(counts.map(([projectId, count]) => [ProjectId.make(projectId), count])),
-      },
-    });
-    const environments = new Map([
-      [
-        local,
-        older([
-          ["archived", 4],
-          ["active", 7],
-        ]),
-      ],
-      [remote, older([["archived", 2]])],
-      [EnvironmentId.make("synthetic-unloaded"), { older: null }],
-    ]);
-
-    expect(
-      archivedOlderSettledCount(environments, new Set([`${local}:archived`, `${remote}:archived`])),
-    ).toBe(6);
-    expect(archivedOlderSettledCount(environments, new Set())).toBe(0);
   });
 });

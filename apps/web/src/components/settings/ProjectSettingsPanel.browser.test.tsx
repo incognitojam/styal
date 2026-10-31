@@ -70,12 +70,18 @@ vi.mock(import("@t3tools/client-runtime/state/session"), async (original) => {
 vi.mock(import("~/state/environments"), async (original) => ({
   ...(await original()),
   useEnvironments: (() => ({ environments })) as never,
+  readEnvironment: ((id: EnvironmentId) =>
+    environments.find((environment) => environment.environmentId === id) ?? null) as never,
   usePrimaryEnvironmentId: () => primaryId,
 }));
 vi.mock(import("~/state/entities"), async (original) => ({
   ...(await original()),
   useProjects: (() => state.projects) as never,
   useThreadShells: () => [],
+  useServerConfigs: (() =>
+    new Map(
+      environments.map((environment) => [environment.environmentId, environment.serverConfig]),
+    )) as never,
   waitForProjectRemoval: async () => true,
 }));
 vi.mock(import("~/state/projects"), async (original) => {
@@ -337,6 +343,21 @@ async function expectProjectAccessDeniedToast(
   expect(state.toast).toHaveBeenCalledOnce();
 }
 
+describe("project organization", () => {
+  it("archives the checkout on every machine while one machine is picked", async () => {
+    setup();
+    await using _screen = await mountPanel({ machine: primaryId });
+    await userEvent.click(page.getByRole("button", { name: "Archive" }));
+    await vi.waitFor(() => expect(state.update).toHaveBeenCalledTimes(2));
+    expect(
+      state.update.mock.calls.map(([request]) => [request.environmentId, request.input.archived]),
+    ).toEqual([
+      [primaryId, true],
+      [remoteId, true],
+    ]);
+  });
+});
+
 describe("project settings permissions", () => {
   it("disables shared edits when any member lacks project access", async () => {
     setup();
@@ -376,8 +397,8 @@ describe("project settings permissions", () => {
       await firstUpdate.promise;
     });
     await expectProjectAccessDeniedToast(
-      "Failed to rename project on remote",
-      "This connection cannot change threads or projects.",
+      "Failed to rename project",
+      "This connection cannot change projects in remote.",
     );
     expect(state.update).toHaveBeenCalledOnce();
     expect(state.update.mock.calls[0]![0].environmentId).toBe(primaryId);

@@ -152,12 +152,13 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   /** Only explicit false skips Live Activity seeding; older servers may still publish. */
   agentActivityPublishing: Schema.optionalKey(Schema.Boolean),
   projectCloneTracking: Schema.optionalKey(Schema.Boolean),
-  /** Server persists project pins and archives (`pinned`, `pinOrderKey` and
-      `archived` on project.update). Absent on older servers, which drop
-      those fields, so clients hide pin and archive for them. */
+  /** Server keeps `pinned` and `archived` from project.update. Older servers drop them. */
   projectOrganization: Schema.optionalKey(Schema.Boolean),
   /** Server answers projects.listIgnoredFiles. */
   ignoredFileListing: Schema.optionalKey(Schema.Boolean),
+  /** Server detects `platform.machine` and persists the `environmentIcon`
+      setting. Older servers drop the key on write, so clients show the
+      picker inert rather than offering a choice that would never stick. */
   environmentIcon: Schema.optionalKey(Schema.Boolean),
   desktopAppUpdate: Schema.optionalKey(Schema.Boolean),
   /** The desktop app switches update tracks when a server update request names one. */

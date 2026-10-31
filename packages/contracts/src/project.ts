@@ -204,12 +204,7 @@ export const ProjectUpdatePayload = Schema.Struct({
   additionalInstructions: Schema.optional(Schema.NullOr(ProjectAdditionalInstructions)),
   defaultThreadEnvMode: Schema.optional(Schema.NullOr(ThreadEnvMode)),
   scripts: Schema.optional(Schema.Array(ProjectScript)),
-  pinned: Schema.optional(
-    Schema.Boolean.annotate({
-      description:
-        "Pin (true) or unpin (false) the project. Pinned projects lead every project picker.",
-    }),
-  ),
+  pinned: Schema.optional(Schema.Boolean),
   pinOrderKey: Schema.optional(
     Schema.NullOr(TrimmedNonEmptyString).annotate({
       description:
@@ -218,8 +213,7 @@ export const ProjectUpdatePayload = Schema.Struct({
   ),
   archived: Schema.optional(
     Schema.Boolean.annotate({
-      description:
-        "Archive (true) or unarchive (false) the project. Archiving hides it and its threads without changing them.",
+      description: "Threads and files are kept.",
     }),
   ),
 });

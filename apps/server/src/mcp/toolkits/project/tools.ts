@@ -87,8 +87,7 @@ const ProjectCreateTool = Tool.make("t3_project_create", {
 }).annotate(Tool.Destructive, true);
 const ProjectUpdateTool = Tool.make("t3_project_update", {
   ...shared,
-  description:
-    "Update one project's settings. Omitted fields are unchanged. `pinned` and `archived` change this environment's record only; the app writes them to every machine with the project.",
+  description: "Update one project's settings. Omitted fields are unchanged.",
   parameters: Schema.Struct({
     environmentId: OrchestratorMcpEnvironmentTarget,
     projectId: ProjectId,
