@@ -1,7 +1,7 @@
 use crate::Result;
 use serde::{Deserialize, Serialize};
 use std::{
-    io::{BufRead, BufReader, Read, Write},
+    io::{BufRead, BufReader, ErrorKind, Read, Write},
     os::unix::net::UnixStream,
     path::PathBuf,
     time::{Duration, Instant},
@@ -145,7 +145,7 @@ pub fn destination(windows: Vec<Window>, pid: u32, title: &str) -> Result<Option
 }
 
 pub fn activate(pid: u32, title: &str) -> Result<()> {
-    // Subscribe before looking up a newly mapped T3 window, so no map/title event is missed.
+    // Subscribe before looking up a newly mapped styal window, so no map/title event is missed.
     let socket = UnixStream::connect(session_directory()?.join(".socket2.sock"))?;
     let deadline = Instant::now() + Duration::from_secs(3);
     let mut events = BufReader::new(socket);
@@ -161,16 +161,30 @@ pub fn activate(pid: u32, title: &str) -> Result<()> {
             }
             return Ok(());
         }
-        events.get_ref().set_read_timeout(Some(
-            deadline
-                .checked_duration_since(Instant::now())
-                .ok_or("styal did not become visible.")?,
-        ))?;
-        let mut event = Vec::new();
-        if events.by_ref().take(8193).read_until(b'\n', &mut event)? == 0 || event.len() > 8192 {
-            return Err("Hyprland's event stream closed or returned an invalid event.".into());
-        }
+        next_event(&mut events, deadline)?;
     }
+}
+
+/// Waits for one Hyprland event, or explains that styal never appeared before `deadline`.
+fn next_event(events: &mut BufReader<UnixStream>, deadline: Instant) -> Result<()> {
+    let not_visible = "styal did not become visible.";
+    let left = deadline.checked_duration_since(Instant::now());
+    events.get_ref().set_read_timeout(Some(
+        left.filter(|left| !left.is_zero()).ok_or(not_visible)?,
+    ))?;
+    let mut event = Vec::new();
+    let read = events.by_ref().take(8193).read_until(b'\n', &mut event);
+    // The read timeout ends at the deadline, and Linux reports its expiry as WouldBlock.
+    if read
+        .as_ref()
+        .is_err_and(|error| matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut))
+    {
+        return Err(not_visible.into());
+    }
+    if read? == 0 || event.len() > 8192 {
+        return Err("Hyprland's event stream closed or returned an invalid event.".into());
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -181,7 +195,7 @@ mod tests {
             address: "0x123456789abcdef".into(),
             pid,
             title: title.into(),
-            class: "t3".into(),
+            class: "build.styal.Styal".into(),
             at: [-1920, 20],
             size: [1000, 800],
             mapped: true,
@@ -209,6 +223,27 @@ mod tests {
             destination(vec![window(2, "T3"), window(1, "T3")], 1, "T3")
                 .unwrap()
                 .is_some()
+        );
+    }
+    #[test]
+    fn event_wait_explains_an_activation_timeout() {
+        let (socket, mut hyprland) = UnixStream::pair().unwrap();
+        // A quiet socket reports the same WouldBlock as an expired read timeout, without waiting.
+        socket.set_nonblocking(true).unwrap();
+        let mut events = BufReader::new(socket);
+        let deadline = Instant::now() + Duration::from_secs(3);
+        assert_eq!(
+            next_event(&mut events, deadline).unwrap_err().to_string(),
+            "styal did not become visible."
+        );
+        hyprland
+            .write_all(b"openwindow>>1,1,build.styal.Styal,styal\n")
+            .unwrap();
+        assert!(next_event(&mut events, deadline).is_ok());
+        drop(hyprland);
+        assert_eq!(
+            next_event(&mut events, deadline).unwrap_err().to_string(),
+            "Hyprland's event stream closed or returned an invalid event."
         );
     }
     #[test]
