@@ -970,6 +970,10 @@ export const make = Effect.gen(function* () {
           }
 
           const checkedAt = yield* currentIsoTimestamp;
+          if (!(yield* nativeStaging.releaseSuperseded(info.version))) {
+            yield* setState(reduceDesktopUpdateStateOnNoUpdate(state, checkedAt));
+            return;
+          }
           const { releaseNotes, omittedReleaseCount } = normalizeDesktopUpdateReleaseNotes(
             info.releaseNotes,
             info.version,
