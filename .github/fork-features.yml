@@ -2265,12 +2265,14 @@ features:
       - An open upstream PR is imported as one attributed snapshot commit with PR provenance and a separate tracking commit recording the frozen base and head and the reconciliation plan.
       - A snapshot remains provisional until its final upstream outcome is reviewed; PR provenance alone cannot skip its eventual integration or advance the intake baseline.
       - Queue and candidate reports read committed tracking metadata from the selected fork ref, and lag history records completion at reconciliation rather than the initial snapshot.
+      - The intake audit blocks a candidate that records a queue source while an earlier entry stays pending, unless each commit importing the later source carries an `Early-Import` trailer.
     rationale: Open PRs can be amended, rebased, or closed after intake. A reviewed snapshot keeps useful PR provenance without treating unfinished upstream work as fully reconciled.
     implementation_paths:
       - .github/upstream-tracked-prs.json
       - docs/operations/upstream-tracking.md
       - scripts/upstream/check-intake.ts
       - scripts/upstream/lag-report.ts
+      - scripts/upstream/lib/queue-order.ts
       - scripts/upstream/lib/tracked-prs.ts
       - scripts/upstream/queue.ts
       - scripts/upstream/tracked-prs-report.ts
@@ -2284,6 +2286,7 @@ features:
       - scripts/upstream/tracked-prs-report.ts
     tests:
       - scripts/upstream/lag-report.test.ts
+      - scripts/upstream/lib/queue-order.test.ts
       - scripts/upstream/lib/tracked-prs.test.ts
       - scripts/upstream/queue.test.ts
     upstream:

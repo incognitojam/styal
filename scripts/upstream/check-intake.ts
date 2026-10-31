@@ -35,8 +35,9 @@ import {
   snapshotTrackingErrors,
   type TrackedPR,
 } from "./lib/tracked-prs.ts";
+import { queueOrderError, queueOrderGap } from "./lib/queue-order.ts";
 import { makeUpstreamMigrationGit } from "./migration-git.ts";
-import { fetchAssociations } from "./queue.ts";
+import { decodeState, fetchAssociations, readQueue } from "./queue.ts";
 
 const repoRoot = NodePath.resolve(
   NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),
@@ -303,6 +304,63 @@ function withScratchDirectory<A>(use: (directory: string) => A): A {
   }
 }
 
+/** Checks that the candidate records the queue in order, using main's intake state. */
+function queueOrderReview(input: {
+  readonly baseSha: string;
+  readonly upstreamRef: string;
+  readonly commits: ReadonlyArray<string>;
+  readonly commitMessages: ReadonlyArray<string>;
+  /** Upstream commits the candidate names, including its PRs' merge commits. */
+  readonly sourceShas: ReadonlySet<string>;
+  readonly mainTracked: readonly TrackedPR[];
+  readonly candidateTracked: readonly TrackedPR[];
+}): ReadonlyArray<string> {
+  try {
+    const run = (command: string, args: string[]) =>
+      NodeChildProcess.execFileSync(command, args, {
+        cwd: repoRoot,
+        encoding: "utf8",
+        maxBuffer: 256 * 1024 * 1024,
+      });
+    const state = decodeState(git(["show", `${input.baseSha}:.github/upstream-intake.json`]));
+    const upstream = git(["rev-parse", "--verify", `${input.upstreamRef}^{commit}`]);
+    // Entries after the candidate's last source cannot be skipped by it, so their
+    // PR associations, one GitHub query per 40 commits, are not needed.
+    const queue = lines(
+      git(["rev-list", "--first-parent", "--reverse", `${state.baseline}..${state.target}`]),
+    );
+    const through = queue.findLast((sha) => input.sourceShas.has(sha));
+    if (through === undefined) return [];
+    const { integrations } = readQueue({
+      root: repoRoot,
+      state,
+      upstreamChain: lines(git(["rev-list", "--first-parent", upstream])),
+      through,
+      run,
+    });
+    const log = run("git", ["log", "--format=%H%x00%B%x00", input.baseSha]).split("\0");
+    const mainCommits: Array<{ sha: string; message: string }> = [];
+    for (let index = 0; index + 1 < log.length; index += 2)
+      mainCommits.push({ sha: log[index]!.trim(), message: log[index + 1]! });
+    const error = queueOrderError(
+      queueOrderGap({
+        integrations,
+        mainCommits,
+        candidateCommits: input.commits.map((sha, index) => ({
+          sha,
+          message: input.commitMessages[index] ?? "",
+        })),
+        exceptions: state.exceptions,
+        mainTracked: input.mainTracked,
+        candidateTracked: input.candidateTracked,
+      }),
+    );
+    return error === null ? [] : [error];
+  } catch (error) {
+    return [`The upstream queue order was not checked: ${String(error)}`];
+  }
+}
+
 function writeOutput(name: string, value: string | boolean): void {
   if (process.env.GITHUB_OUTPUT !== undefined) {
     NodeFS.appendFileSync(process.env.GITHUB_OUTPUT, `${name}=${String(value)}\n`);
@@ -456,11 +514,8 @@ try {
   if (ledgerErrors.length > 0) throw new Error(ledgerErrors.join("\n"));
 
   const candidateLedger = candidateLedgerReview(headSha);
-  const migrations = upstreamMigrationReview({
-    baseSha,
-    headSha,
-    upstreamRef: optionalFlag("--upstream-ref") ?? "refs/remotes/upstream/main",
-  });
+  const upstreamRef = optionalFlag("--upstream-ref") ?? "refs/remotes/upstream/main";
+  const migrations = upstreamMigrationReview({ baseSha, headSha, upstreamRef });
   const commits = lines(git(["rev-list", "--reverse", `${baseSha}..${headSha}`]));
   const commitMessages = commits.map((commit) => git(["show", "-s", "--format=%B", commit]));
   const tracked = decodeTrackedPRs(git(["show", `${headSha}:.github/upstream-tracked-prs.json`]));
@@ -468,16 +523,17 @@ try {
     git(["show", `${baseSha}:.github/upstream-tracked-prs.json`]),
   );
   const sourcePRs = parseUpstreamProvenance(commitMessages).pullRequestNumbers;
+  const sourcePRMetadata = fetchTrackedPRMetadata(
+    ledger.upstream_repository,
+    sourcePRs.map((number) => ({ number, reason: "Candidate source" })),
+    (command, args) =>
+      NodeChildProcess.execFileSync(command, args, { cwd: repoRoot, encoding: "utf8" }),
+  );
   const snapshotErrors = snapshotTrackingErrors({
     tracked,
     previous: previousTracked,
     sourcePRs,
-    metadata: fetchTrackedPRMetadata(
-      ledger.upstream_repository,
-      sourcePRs.map((number) => ({ number, reason: "Candidate source" })),
-      (command, args) =>
-        NodeChildProcess.execFileSync(command, args, { cwd: repoRoot, encoding: "utf8" }),
-    ),
+    metadata: sourcePRMetadata,
   });
   if (snapshotErrors.length) throw new Error(snapshotErrors.join("\n"));
   for (const pr of tracked) {
@@ -515,6 +571,19 @@ try {
     candidateLedgerErrors: candidateLedger.errors,
     candidateFeatureIds: candidateLedger.featureIds,
     migrationErrors: migrations.errors,
+    queueOrderErrors: queueOrderReview({
+      baseSha,
+      upstreamRef,
+      commits,
+      commitMessages,
+      sourceShas: new Set([
+        ...commitMessages.flatMap((message) => cherryPickSources(message)),
+        ...parseUpstreamProvenance(commitMessages).commitShas,
+        ...sourcePRMetadata.flatMap((pr) => (pr.mergeCommit === null ? [] : [pr.mergeCommit.oid])),
+      ]),
+      mainTracked: previousTracked,
+      candidateTracked: tracked,
+    }),
     migrationChanges: migrations.changes,
     commitReviews: withScratchDirectory((scratch) =>
       reviewCommits({ commits, commitMessages, ledger, scratch, tracked }),
