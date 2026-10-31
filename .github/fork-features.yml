@@ -1764,6 +1764,7 @@ features:
       - apps/web/src/components/chat/ComposerModelEffort.tsx
       - apps/web/src/components/chat/TraitsPicker.tsx
     tests:
+      - apps/web/src/components/chat/ComposerModelEffort.browser.test.tsx
       - apps/web/src/components/chat/TraitsPicker.test.ts
     upstream:
       status: unassessed
