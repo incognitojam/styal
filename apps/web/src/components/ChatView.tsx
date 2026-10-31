@@ -8972,7 +8972,7 @@ export default function ChatView(props: ChatViewProps) {
                               className={cn(
                                 "group-data-model-strip-transition/composer-surface:before:backdrop-blur-(--glass-blur) group-data-model-strip-transition/composer-surface:before:bg-(--chat-composer-glass-surface)/(--glass-opacity)",
                                 !showComposerModelStrip &&
-                                  "pointer-events-none invisible absolute inset-x-0 top-full",
+                                  "pointer-events-none invisible absolute inset-x-0 bottom-0",
                               )}
                             >
                               <div
