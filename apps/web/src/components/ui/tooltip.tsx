@@ -153,7 +153,10 @@ function TooltipPopup({
           data-slot="tooltip-popup"
           {...props}
         >
-          <div className={cn("px-2 py-1", padding === "none" && "p-0")} data-slot="tooltip-viewport">
+          <div
+            className={cn("min-w-0 px-2 py-1", padding === "none" && "p-0")}
+            data-slot="tooltip-viewport"
+          >
             {children}
           </div>
         </TooltipPrimitive.Popup>
