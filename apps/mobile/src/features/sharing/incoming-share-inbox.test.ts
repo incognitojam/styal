@@ -136,6 +136,54 @@ describe("IncomingShareInbox", () => {
     expect([...persisted.values()]).toEqual([]);
   });
 
+  it("announces a share under its final id before the slow import runs", async () => {
+    const building = deferred();
+    const images: ReadonlyArray<SharePayload> = [
+      { shareType: "image", mimeType: "image/jpeg", value: "content://photos/1" },
+      { shareType: "image", mimeType: "image/jpeg", value: "content://photos/2" },
+    ];
+    const { inbox, dependencies } = createHarness({
+      getPayloads: () => images,
+      buildDraft: async ({ id, createdAt }) => {
+        await building.promise;
+        return { draft: draft(id, createdAt), cleanup: async () => undefined };
+      },
+    });
+    const onImportStart = vi.fn();
+
+    const refresh = inbox.refresh({ ingestNative: true, onImportStart });
+    await vi.waitFor(() =>
+      expect(onImportStart).toHaveBeenCalledWith({
+        id: "share-stable",
+        attachmentCount: 2,
+        onlyImages: true,
+        previewUris: ["content://photos/1", "content://photos/2"],
+      }),
+    );
+    expect(await dependencies.loadDrafts()).toEqual([]);
+    building.resolve();
+
+    await expect(refresh).resolves.toEqual([draft("share-stable")]);
+  });
+
+  it("discards a share closed mid-import once it lands, returning it for cleanup", async () => {
+    const building = deferred();
+    const { inbox, persisted } = createHarness({
+      buildDraft: async ({ id, createdAt }) => {
+        await building.promise;
+        return { draft: draft(id, createdAt), cleanup: async () => undefined };
+      },
+    });
+
+    const refresh = inbox.refresh({ ingestNative: true });
+    const discard = inbox.discard("share-stable");
+    building.resolve();
+
+    await refresh;
+    await expect(discard).resolves.toEqual({ snapshot: [], discarded: draft("share-stable") });
+    expect([...persisted.values()]).toEqual([]);
+  });
+
   it("consumes only the addressed share when another share has identical content", async () => {
     const { inbox, persisted } = createHarness();
     persisted.set("share-first", draft("share-first", "2026-07-16T07:59:00.000Z"));

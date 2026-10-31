@@ -177,6 +177,7 @@ features:
       - Dismissing an incoming-share task picker removes its durable inbox entry and releases attachments only after checking ownership by other inbox items, composer drafts, outbox messages, and previews.
       - The incoming-share picker offers recent threads as well as projects; choosing a thread merges the share into that thread's composer draft before consuming the inbox entry, without sending.
       - Web file drafts persist environment-scoped upload references; legacy local file bytes remain until a replacement reference is durable. Mobile drafts and queued messages retain owned file copies until delivery or removal.
+      - Picked and shared attachments appear in the composer as pending tiles as soon as they are chosen, and sending stays blocked until they land; the incoming-share picker opens before a share finishes importing, and a thread chosen meanwhile opens at once and receives the share without the closing sheet discarding it.
       - Web and desktop stored HEIC images use the shared decoding fallback in file previews, queued messages, answered questions, and image attachment chips.
     implementation_paths:
       - apps/mobile/plugins/withShareExtensionDisplayName.cjs
@@ -190,6 +191,7 @@ features:
       - apps/mobile/src/lib/composerAttachmentUploadQueue.ts
       - apps/mobile/src/state/acknowledged-thread-messages.ts
       - apps/mobile/src/state/composer-attachment-uploads.ts
+      - apps/mobile/src/state/composer-pending-attachments.ts
       - apps/mobile/src/state/edit-pending-thread-message.ts
       - apps/mobile/src/state/use-composer-drafts.ts
       - apps/server/src/attachmentStore.ts

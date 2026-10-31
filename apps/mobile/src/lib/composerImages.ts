@@ -78,6 +78,16 @@ export async function createPastedTextComposerAttachment(input: {
 export type DraftComposerAttachment = DraftComposerImageAttachment | DraftComposerFileAttachment;
 
 /**
+ * A picked or shared attachment the composer is still turning into draft content. It is
+ * shown in the strip straight away and blocks sending until it lands in the draft.
+ */
+export interface PendingComposerAttachment {
+  readonly id: string;
+  /** The source the user picked, when it can be drawn while it is processed. */
+  readonly previewUri: string | null;
+}
+
+/**
  * The chip is not optional for a non-media file. Every path that attaches one also writes
  * its reference, so a file with no chip means the draft lost it rather than that the strip
  * should stand in.
@@ -360,6 +370,8 @@ export async function pickComposerImages(input: { readonly existingCount: number
 export async function pickComposerMedia(input: {
   readonly existingCount: number;
   readonly maxVideoBytes?: number;
+  /** Called once the picker closes, before the selection is read and resized. */
+  readonly onPicked?: (pending: ReadonlyArray<PendingComposerAttachment>) => void;
 }): Promise<{
   readonly attachments: ReadonlyArray<DraftComposerAttachment>;
   readonly error: string | null;
@@ -413,6 +425,16 @@ export async function pickComposerMedia(input: {
       error: null,
     };
   }
+
+  input.onPicked?.(
+    result.assets.slice(0, remainingSlots).map((asset) => ({
+      id: uuidv4(),
+      previewUri:
+        asset.type === "video" || asset.mimeType?.toLowerCase().startsWith("video/")
+          ? null
+          : asset.uri,
+    })),
+  );
 
   const attachments: DraftComposerAttachment[] = [];
   let error: string | null = null;
