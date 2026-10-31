@@ -153,6 +153,10 @@
       "reason": "Adds agent prompt actions: an action can send a saved prompt, optionally with its own model and reasoning level, to the current thread from the actions menu or its shortcut. styal users want this. It is unvouched and has no maintainer approval, and earlier attempts at this feature closed unmerged, so watch for it closing. If it merges, take it at chronological intake after #23063 and #23467, then add a fork commit that lets styal.json declare prompt actions (type and prompt, no modelSelection, no setup or settle roles, no approval for a manual run) and update the styal-project-file ledger entry and docs. If it closes without merging, raise it with the maintainer before deciding whether the fork builds the feature itself with the same type: \"prompt\" contract shape."
     },
     {
+      "pr": 24850,
+      "reason": "Rewrites t3_thread_launch so scratch reads as the choice for callers outside a thread, dropping the fork's \"outside any repository\" pitch. Agents in a project thread pick scratch: true for work unrelated to the code, and the new thread loses the project's instructions, settings and per-project memory. Take it at chronological intake; if agents still launch from a project thread into No project afterwards, tighten the scratch wording in a fork commit."
+    },
+    {
       "pr": 25794,
       "reason": "Reopens the chat the user was in after iOS ends the app or an update restart, using upstream's remembered workspace selections (iOS only, from the #24742/#24750/#25627 chain the fork has not taken yet). The fork's mobile-update-restart-location fix covers update restarts on Android and iOS until then. When it merges, take it at chronological intake, check whether it now covers Android, and retire or narrow the fork's fix and ledger entry."
     },
