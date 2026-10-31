@@ -99,6 +99,15 @@ export function ThreadNotificationCoordinator() {
   ));
 }
 
+// A workflow run's deployment review outlives the agent run that was latest when it
+// appeared, so keying it by run would alert again on every message sent while it waits.
+function attentionSubject(thread: OrchestrationV2ThreadShell): string | null {
+  if (thread.pendingRuntimeRequest) return thread.pendingRuntimeRequest.id;
+  const reviews = (thread.workflowRuns ?? []).filter((run) => run.review !== undefined);
+  if (reviews.length === 0) return null;
+  return reviews.map((run) => `${run.host}/${run.repository}#${run.runId}`).join(",");
+}
+
 interface NotificationState {
   readonly raw: OrchestrationV2ThreadShell;
   readonly subagentRequest: PendingSubagentRequest | null;
@@ -150,7 +159,7 @@ function EnvironmentNotifications({
       if (status === "ready" && thread.latestRun?.status === "failed") status = "failed";
       const attention =
         status === "input" || status === "approval" || status === "failed" || status === "limited"
-          ? `${thread.latestRun?.runId ?? ""}:${status}`
+          ? `${(status === "approval" || status === "input" ? attentionSubject(rawThread) : null) ?? thread.latestRun?.runId ?? ""}:${status}`
           : null;
       const completedAt = Date.parse(thread.latestRun?.completedAt ?? "");
       const completion =
