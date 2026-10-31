@@ -5335,34 +5335,6 @@ features:
         - https://github.com/pingdotgg/t3code/pull/9759
       retire_when: Upstream keeps read Approval rows at full prominence, as it already does for Input rows.
 
-  - id: sidebar-checkpoint-diff-stats
-    title: Show the latest checkpoint change counts in the thread list
-    status: maintained
-    prs: []
-    invariants:
-      - Sidebar change counts use the latest ready completed native root checkpoint, falling back to frozen historical checkpoints, and exclude subagent checkpoint scopes.
-      - The server sums file additions and deletions only for the selected checkpoint and sends compact totals on the shell without hydrating the transcript or sending checkpoint file arrays.
-      - Missing checkpoints remove the badge, and obsolete transcript or checkpoint file payloads do not break shell reads.
-    rationale: Upstream de343914 leaves the sidebar diff badge calculation returning null because V2 shells lack checkpoint totals. The fork supplies a bounded shell summary while preserving the upstream separation between shell and thread detail.
-    implementation_paths:
-      - apps/server/src/orchestration-v2/ProjectionStore.ts
-      - apps/web/src/components/Sidebar.tsx
-      - apps/web/src/components/sidebar/SidebarThreadRow.tsx
-      - packages/client-runtime/src/state/models.ts
-      - packages/contracts/src/orchestrationV2.ts
-    upstream_paths:
-      - apps/server/src/orchestration-v2/ProjectionStore.ts
-      - apps/web/src/components/Sidebar.tsx
-      - packages/client-runtime/src/state/models.ts
-      - packages/contracts/src/orchestrationV2.ts
-    tests:
-      - apps/server/src/orchestration-v2/ProjectionStore.test.ts
-    upstream:
-      status: partial
-      tracking:
-        - https://github.com/pingdotgg/t3code/pull/2829
-      retire_when: Upstream supplies bounded latest checkpoint change totals through V2 shells and displays them in the sidebar, including preserved historical checkpoints.
-
   - id: sidebar-last-message-time
     title: Choose the timestamp shown for thread activity
     status: maintained
