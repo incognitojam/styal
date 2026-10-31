@@ -7,6 +7,7 @@ import { app, BrowserWindow, nativeImage } from "electron";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Stream from "effect/Stream";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as DesktopEnvironment from "../../src/app/DesktopEnvironment.ts";
 import * as DesktopConfig from "../../src/app/DesktopConfig.ts";
@@ -33,6 +34,36 @@ const server = NodeHttp.createServer((_request, response) => {
 });
 let window;
 const measurements = [];
+
+const assertCorners = (name, png, tolerance = 3) => {
+  const image = nativeImage.createFromBuffer(png);
+  NodeAssert.ok(!image.isEmpty(), `${name}: empty capture`);
+  const { width, height } = image.getSize();
+  const pixels = image.toBitmap();
+  // Reference pixels are solid CSS colors, independent of fonts and platform
+  // rasterization. Distinct corners expose both clipping and repeated tiles.
+  const cornerColors = [
+    [224, 32, 64],
+    [32, 176, 96],
+    [48, 80, 224],
+    [224, 176, 32],
+  ];
+  for (const y of [0.05, 0.15, 0.22, 0.78, 0.85, 0.95]) {
+    for (const x of [0.05, 0.15, 0.22, 0.78, 0.85, 0.95]) {
+      const column = x < 0.2 ? 0 : x > 0.8 ? 1 : -1;
+      const row = y < 0.2 ? 0 : y > 0.8 ? 1 : -1;
+      const rgb = column >= 0 && row >= 0 ? cornerColors[row * 2 + column] : [226, 232, 240];
+      const offset = (Math.floor(y * height) * width + Math.floor(x * width)) * 4;
+      const actual = [pixels[offset + 2], pixels[offset + 1], pixels[offset]];
+      NodeAssert.ok(
+        actual.every((value, index) => Math.abs(value - rgb[index]) <= tolerance) &&
+          pixels[offset + 3] === 255,
+        `${name}: wrong pixel at ${x},${y}: ${actual}, expected ${rgb}`,
+      );
+    }
+  }
+  return { width, height };
+};
 
 async function run() {
   let exitCode = 0;
@@ -79,7 +110,8 @@ async function run() {
       runningUnderArm64Translation: false,
     });
     const runtime = PreviewManager.layer.pipe(
-      Layer.provide(DesktopBrowserHost.layer),
+      // Kept in context: agents reach the tab through this host's CDP relay.
+      Layer.provideMerge(DesktopBrowserHost.layer),
       Layer.provide(BrowserSession.layer.pipe(Layer.provide(ElectronDialog.layer))),
       Layer.provide(PreviewPasskeys.layer),
       // Calibration measures captures; renderer telemetry would only add files to its artifacts.
@@ -98,9 +130,52 @@ async function run() {
       Effect.scoped(
         Effect.gen(function* () {
           const manager = yield* PreviewManager.PreviewManager;
+          const host = yield* DesktopBrowserHost.DesktopBrowserHost;
           const tabId = "viewport-calibration";
-          yield* manager.createTab(tabId);
+          const serverTab = { threadId: "calibration", tabId };
+          yield* manager.createTab(tabId, { serverTab });
           yield* manager.registerWebview(tabId, guest.id);
+          // The relay the environment server's Playwright drives for agent snapshots and clicks.
+          const replies = new Map();
+          yield* host.events.pipe(
+            Stream.runForEach((line) =>
+              Effect.sync(() => {
+                const event = JSON.parse(new TextDecoder().decode(line));
+                if (event.type !== "cdp") return;
+                const message = JSON.parse(event.message);
+                replies.get(message.id)?.(message);
+                replies.delete(message.id);
+              }),
+            ),
+            Effect.forkScoped,
+          );
+          let relayId = 0;
+          const relay = (method, params) =>
+            Effect.promise(
+              () =>
+                new Promise((resolve, reject) => {
+                  const id = ++relayId;
+                  replies.set(id, (message) =>
+                    message.error
+                      ? reject(new Error(`${method}: ${message.error.message}`))
+                      : resolve(message.result),
+                  );
+                  Effect.runFork(
+                    host.handleCommandLine(
+                      JSON.stringify({
+                        type: "cdp",
+                        ...serverTab,
+                        message: JSON.stringify({
+                          id,
+                          method,
+                          params,
+                          sessionId: "t3-preview-page",
+                        }),
+                      }),
+                    ),
+                  );
+                }),
+            );
           // Agents drive tabs from the environment server now; the page is read here directly.
           const evaluate = (expression) =>
             Effect.promise(() => guest.executeJavaScript(expression));
@@ -151,66 +226,89 @@ async function run() {
               });
             },
           );
-          const check = Effect.fn("PreviewCalibration.check")(
-            function* (name, requestedWidth, requestedHeight) {
-              yield* paint();
-              const artifact = yield* manager.captureScreenshot(tabId);
-              const png = yield* Effect.promise(() => NodeFSP.readFile(artifact.path));
+          const check = Effect.fn("PreviewCalibration.check")(function* (
+            name,
+            requestedWidth,
+            requestedHeight,
+            fitted = true,
+          ) {
+            yield* paint();
+            const artifact = yield* manager.captureScreenshot(tabId);
+            const png = yield* Effect.promise(() => NodeFSP.readFile(artifact.path));
+            yield* Effect.promise(() =>
+              NodeFSP.writeFile(NodePath.join(outputDir, `${name}.png`), png),
+            );
+            const { width, height } = assertCorners(name, png);
+            // Captured as the environment server's snapshot asks: a clip of the viewport in
+            // device-independent pixels, capped at 1280 wide. An unfitted tab's capture is
+            // Chromium's own, which never answers for a hidden window, so only fitted tabs.
+            let agentCapture = null;
+            if (fitted) {
+              const page = yield* evaluate(
+                "({ width: innerWidth, height: innerHeight, ratio: devicePixelRatio })",
+              );
+              const zoom = guest.getZoomFactor();
+              const clip = {
+                x: 0,
+                y: 0,
+                width: Math.round(page.width * zoom),
+                height: Math.round(page.height * zoom),
+              };
+              clip.scale = Math.min(1, 1280 / (clip.width * (page.ratio / zoom)));
+              const relayed = yield* relay("Page.captureScreenshot", { format: "png", clip });
+              const agentPng = Buffer.from(relayed.data, "base64");
               yield* Effect.promise(() =>
-                NodeFSP.writeFile(NodePath.join(outputDir, `${name}.png`), png),
+                NodeFSP.writeFile(NodePath.join(outputDir, `${name}-agent.png`), agentPng),
               );
-              const image = nativeImage.createFromBuffer(png);
-              NodeAssert.ok(!image.isEmpty(), `${name}: empty capture`);
-              const { width, height } = image.getSize();
-              const pixels = image.toBitmap();
-              // Reference pixels are solid CSS colors, independent of fonts and platform
-              // rasterization. Distinct corners expose both clipping and repeated tiles.
-              const cornerColors = [
-                [224, 32, 64],
-                [32, 176, 96],
-                [48, 80, 224],
-                [224, 176, 32],
-              ];
-              for (const y of [0.05, 0.15, 0.22, 0.78, 0.85, 0.95]) {
-                for (const x of [0.05, 0.15, 0.22, 0.78, 0.85, 0.95]) {
-                  const column = x < 0.2 ? 0 : x > 0.8 ? 1 : -1;
-                  const row = y < 0.2 ? 0 : y > 0.8 ? 1 : -1;
-                  const rgb =
-                    column >= 0 && row >= 0 ? cornerColors[row * 2 + column] : [226, 232, 240];
-                  const offset = (Math.floor(y * height) * width + Math.floor(x * width)) * 4;
-                  const actual = [pixels[offset + 2], pixels[offset + 1], pixels[offset]];
-                  NodeAssert.ok(
-                    actual.every((value, index) => Math.abs(value - rgb[index]) <= 3) &&
-                      pixels[offset + 3] === 255,
-                    `${name}: wrong pixel at ${x},${y}: ${actual}, expected ${rgb}`,
-                  );
-                }
-              }
-              const metrics = yield* evaluate("({width:innerWidth,height:innerHeight})");
-              NodeAssert.ok(
-                Math.abs(metrics.width - requestedWidth) <= 1,
-                `${name}: CSS width ${metrics.width}`,
-              );
-              NodeAssert.ok(
-                Math.abs(metrics.height - requestedHeight) <= 1,
-                `${name}: CSS height ${metrics.height}`,
-              );
-              NodeAssert.ok(
-                Math.abs(width / height - requestedWidth / requestedHeight) < 0.02,
-                `${name}: capture aspect ratio`,
-              );
-              measurements.push({
-                name,
-                requestedWidth,
-                requestedHeight,
-                metrics,
-                capture: { width, height },
+              // Resampled from the displayed surface, so edges blur more than a native
+              // capture's. Tiling puts the wrong colors in these probes, well beyond this.
+              agentCapture = assertCorners(`${name} agent snapshot`, agentPng, 8);
+            }
+            const point = {
+              x: Math.round(requestedWidth * 0.4),
+              y: Math.round(requestedHeight * 0.6),
+            };
+            yield* evaluate(
+              "window.__clicks = []; addEventListener('click', (e) => __clicks.push([e.clientX, e.clientY]), { once: true }); 0",
+            );
+            for (const type of ["mousePressed", "mouseReleased"]) {
+              yield* relay("Input.dispatchMouseEvent", {
+                type,
+                ...point,
+                button: "left",
+                clickCount: 1,
               });
-              console.log(
-                `PASS ${name}: ${metrics.width}x${metrics.height}, capture ${width}x${height}`,
-              );
-            },
-          );
+            }
+            const [clicked] = yield* evaluate("window.__clicks");
+            NodeAssert.ok(
+              clicked && Math.abs(clicked[0] - point.x) <= 2 && Math.abs(clicked[1] - point.y) <= 2,
+              `${name}: agent click at ${point.x},${point.y} landed at ${clicked}`,
+            );
+            const metrics = yield* evaluate("({width:innerWidth,height:innerHeight})");
+            NodeAssert.ok(
+              Math.abs(metrics.width - requestedWidth) <= 1,
+              `${name}: CSS width ${metrics.width}`,
+            );
+            NodeAssert.ok(
+              Math.abs(metrics.height - requestedHeight) <= 1,
+              `${name}: CSS height ${metrics.height}`,
+            );
+            NodeAssert.ok(
+              Math.abs(width / height - requestedWidth / requestedHeight) < 0.02,
+              `${name}: capture aspect ratio`,
+            );
+            measurements.push({
+              name,
+              requestedWidth,
+              requestedHeight,
+              metrics,
+              capture: { width, height },
+              agentCapture,
+            });
+            console.log(
+              `PASS ${name}: ${metrics.width}x${metrics.height}, capture ${width}x${height}`,
+            );
+          });
           for (const pageZoom of [0.9, 1, 1.1]) {
             yield* manager.resetZoom(tabId);
             if (pageZoom < 1) yield* manager.zoomOut(tabId);
@@ -237,7 +335,7 @@ async function run() {
           // Leaving a fitted viewport must clear its CDP override too.
           window.webContents.setZoomFactor(1);
           yield* present(440, 275, 440, 275, 1);
-          yield* check("natural-size", 440, 275);
+          yield* check("natural-size", 440, 275, false);
           NodeAssert.deepEqual(runtimeErrors, []);
         }).pipe(Effect.provide(runtime)),
       ),

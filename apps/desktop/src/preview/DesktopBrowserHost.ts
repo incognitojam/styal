@@ -18,6 +18,7 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
 import { createCdpRelayConnection, type CdpRelayConnection } from "./CdpRelay.ts";
+import { captureFittedScreenshot, toSurfaceInput } from "./FittedSurface.ts";
 import { sendPageCommand } from "./GuestInput.ts";
 
 const encodeEvent = Schema.encodeSync(Schema.fromJsonString(DesktopBrowserEvent));
@@ -35,6 +36,8 @@ export interface DesktopBrowserTabKey {
 export interface DesktopBrowserTabDebugger {
   readonly webContents: Electron.WebContents;
   readonly debugger: Electron.Debugger;
+  /** The CDP scale fitting the tab's viewport into its panel, or 1 when it is not fitted. */
+  readonly surfaceScale: () => number;
 }
 
 const keyOf = ({ threadId, tabId }: DesktopBrowserTabKey) => `${threadId}\u0000${tabId}`;
@@ -86,13 +89,23 @@ export const make = Effect.gen(function* () {
 
   const relayFor = (tab: AttachedTab) => {
     if (tab.relay) return tab.relay;
-    const { webContents, debugger: debuggee } = tab.debuggee;
+    const { webContents, debugger: debuggee, surfaceScale } = tab.debuggee;
     const relay: CdpRelayConnection = createCdpRelayConnection(
       {
-        send: (method, params, sessionId) =>
-          sessionId === undefined
-            ? sendPageCommand(webContents, debuggee, method, params)
-            : debuggee.sendCommand(method, params, sessionId),
+        send: (method, params, sessionId) => {
+          if (sessionId !== undefined) return debuggee.sendCommand(method, params, sessionId);
+          const scale = surfaceScale();
+          if (scale === 1) return sendPageCommand(webContents, debuggee, method, params);
+          if (method === "Page.captureScreenshot") {
+            return captureFittedScreenshot(webContents, debuggee, params);
+          }
+          return sendPageCommand(
+            webContents,
+            debuggee,
+            method,
+            toSurfaceInput(method, params, scale),
+          );
+        },
         targetId: () =>
           debuggee
             .sendCommand("Target.getTargetInfo")

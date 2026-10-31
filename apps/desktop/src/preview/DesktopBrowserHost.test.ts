@@ -16,12 +16,14 @@ const decodeCdpReply = Schema.decodeUnknownSync(
 );
 const key = { threadId: "thread-1", tabId: "tab-1" };
 
-const makeDebuggee = () => {
+const makeDebuggee = (surfaceScale = 1) => {
   const emitter = new NodeEvents.EventEmitter();
   const pending: Array<() => void> = [];
+  const sent: Array<{ method: string; params: unknown }> = [];
   const debuggee = Object.assign(emitter, {
-    sendCommand: (method: string) =>
+    sendCommand: (method: string, params?: unknown) =>
       new Promise((resolve) => {
+        sent.push({ method, params });
         if (method === "Target.getTargetInfo") {
           resolve({ targetInfo: { targetId: "GUEST" } });
           return;
@@ -38,7 +40,9 @@ const makeDebuggee = () => {
     tab: {
       webContents: webContents as unknown as Electron.WebContents,
       debugger: debuggee as unknown as Electron.Debugger,
+      surfaceScale: () => surfaceScale,
     },
+    sent,
     emit: (method: string, params: unknown) => emitter.emit("message", {}, method, params, ""),
     release: () => pending.splice(0).forEach((resolve) => resolve()),
   };
@@ -144,6 +148,32 @@ describe("DesktopBrowserHost", () => {
         }),
       );
       expect(host.humanStartedDownload(debuggee.tab.webContents)).toBe(false);
+    }),
+  );
+
+  it.effect("moves agent clicks onto a fitted tab's scaled surface", () =>
+    Effect.gen(function* () {
+      const host = yield* DesktopBrowserHost.make;
+      const debuggee = makeDebuggee(0.5);
+      host.attach(key, debuggee.tab);
+
+      yield* host.handleCommandLine(
+        encodeJson({
+          type: "cdp",
+          ...key,
+          message: encodeJson({
+            id: 1,
+            method: "Input.dispatchMouseEvent",
+            params: { type: "mousePressed", x: 300, y: 120, button: "left" },
+            sessionId: "t3-preview-page",
+          }),
+        }),
+      );
+
+      expect(debuggee.sent.at(-1)).toEqual({
+        method: "Input.dispatchMouseEvent",
+        params: { type: "mousePressed", x: 150, y: 60, button: "left" },
+      });
     }),
   );
 });
