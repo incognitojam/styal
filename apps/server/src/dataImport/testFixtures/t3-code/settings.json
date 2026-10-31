@@ -1,28 +1,20 @@
 {
-  "defaultThreadEnvMode": "local",
-  "newWorktreesStartFromOrigin": false,
-  "responseStreamingMode": "paragraph",
   "enableProviderUpdateChecks": false,
   "enableAgentBrowserAccess": false,
+  "defaultThreadEnvMode": "local",
+  "newWorktreesStartFromOrigin": false,
   "addProjectBaseDirectory": "/workspace/fixture/projects",
-  "providers": {
+  "providerInstances": {
     "codex": {
-      "binaryPath": "/workspace/fixture/bin/codex"
+      "driver": "codex",
+      "config": {
+        "binaryPath": "/workspace/fixture/bin/codex"
+      }
     },
     "claudeAgent": {
-      "enabled": false
-    },
-    "cursor": {
-      "enabled": false
-    },
-    "grok": {
-      "enabled": false
-    },
-    "opencode": {
-      "enabled": false
-    },
-    "antigravity": {
-      "enabled": false
+      "driver": "claudeAgent",
+      "enabled": false,
+      "config": {}
     }
   }
 }

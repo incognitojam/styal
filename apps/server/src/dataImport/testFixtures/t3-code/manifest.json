@@ -1,8 +1,8 @@
 {
   "orchestrationVersion": 2,
   "databaseFilename": "statev2.sqlite",
-  "serverRevision": "263097a8da038a143f2b7b7817250f0ad390ea32",
-  "generatedAt": "2026-10-13T11:14:00.854Z",
+  "serverRevision": "67c0fc0cdaf963b103518862dd7b68a9c758ecf2",
+  "generatedAt": "2026-10-31T12:38:39.982Z",
   "root": "/workspace/fixture",
   "importedThreadIds": [
     "thread-completed",
