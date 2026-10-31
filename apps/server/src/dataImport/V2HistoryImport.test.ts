@@ -383,6 +383,37 @@ it.layer(layer)("V2 fork history import", (it) => {
         }),
         child,
       );
+      const sideChat = {
+        ...child,
+        thread: { ...child.thread, lineage: { ...child.thread.lineage, sideChat: true } },
+      };
+      assert.equal(
+        materializeV2ForkHistory(sideChat, new Set(), () => {
+          throw new Error("A side chat must not inherit rows from an excluded parent.");
+        }),
+        sideChat,
+      );
+      const forkOfSideChat = materializeV2ForkHistory(
+        {
+          ...child,
+          thread: {
+            ...child.thread,
+            id: ThreadId.make("fork-of-side-chat"),
+            forkedFrom: { type: "run", threadId: childId, runId: parent.runs[0]!.id },
+          },
+        },
+        new Set(),
+        (id) => {
+          if (id !== childId) throw new Error("History must stop at the side chat.");
+          return {
+            ...sideChat,
+            runs: parent.runs,
+            attempts: parent.attempts,
+            turnItems: parent.turnItems,
+          };
+        },
+      );
+      assert.equal(forkOfSideChat.turnItems.length, excluded.turnItems.length);
       const write = yield* makeV2HistoryWriter;
       yield* write(excluded, ProjectId.make("fork-project"));
       const store = yield* ProjectionStore.ProjectionStoreV2;

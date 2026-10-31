@@ -88,7 +88,7 @@ describe("Discord presence counts", () => {
     });
   });
 
-  it("counts a parent thread but not the subagents it started", () => {
+  it("counts a parent thread but not the subagents and side chats it started", () => {
     const parent = thread("parent");
     const child = thread("child", {
       lineage: {
@@ -97,7 +97,17 @@ describe("Discord presence counts", () => {
         rootThreadId: parent.id,
       },
     });
-    expect(deriveDiscordPresence({ ...options, threads: [parent, child] }).activity).toEqual({
+    const sideChat = thread("side-chat", {
+      lineage: {
+        parentThreadId: parent.id,
+        relationshipToParent: "fork",
+        rootThreadId: parent.id,
+        sideChat: true,
+      },
+    });
+    expect(
+      deriveDiscordPresence({ ...options, threads: [parent, child, sideChat] }).activity,
+    ).toEqual({
       activeThreads: 1,
       activeProjects: 1,
     });

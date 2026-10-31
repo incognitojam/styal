@@ -36,7 +36,7 @@ import type { SidebarThreadTimestampMode } from "@t3tools/contracts/settings";
 import { type ReactNode } from "react";
 import { formatRelativeTimeLabel } from "../timestampFormat";
 import { type Project, type SidebarThreadSummary, type Thread } from "../types";
-import { isSidebarSubagentThread } from "./Sidebar.logic";
+import { isSidebarHiddenThread } from "./Sidebar.logic";
 
 export const RECENT_THREAD_LIMIT = 12;
 export const ITEM_ICON_CLASS = "size-4 text-icon-muted";
@@ -431,7 +431,7 @@ export function buildThreadActionItems<TThread extends BuildThreadActionItemsThr
 }): CommandPaletteActionItem[] {
   // Callers order these: recents by last use, search results by rank.
   const visibleThreads = input.threads.filter(
-    (thread) => thread.archivedAt === null && !isSidebarSubagentThread(thread),
+    (thread) => thread.archivedAt === null && !isSidebarHiddenThread(thread),
   );
 
   return visibleThreads.map((thread) => {

@@ -11,7 +11,10 @@ export interface AutoSettleNoticeThread {
   readonly settleReason?: OrchestrationV2ThreadSettleReason | null | undefined;
   /** Set to the settle time when the thread settles. */
   readonly updatedAt: string;
-  readonly lineage: { readonly relationshipToParent: "fork" | "subagent" | null };
+  readonly lineage: {
+    readonly relationshipToParent: "fork" | "subagent" | null;
+    readonly sideChat?: boolean | undefined;
+  };
 }
 
 export type AutoSettleNotice<T extends AutoSettleNoticeThread> =
@@ -47,6 +50,7 @@ export function resolveAutoSettleNotice<T extends AutoSettleNoticeThread>(input:
       thread.settledOverride === "settled" &&
       thread.archivedAt === null &&
       thread.lineage.relationshipToParent !== "subagent" &&
+      thread.lineage.sideChat !== true &&
       automaticReason(thread.settleReason) !== null &&
       Date.parse(thread.updatedAt) >= sinceMs,
   );

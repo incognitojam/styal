@@ -41,8 +41,9 @@ import { projectComposerContextForProvider } from "@t3tools/shared/composerConte
 import { formatThreadLink } from "@t3tools/shared/threadLinks";
 import { renderStyalProductName } from "@t3tools/provider-core/server/orchestrationInstructions";
 import { buildCodexAdditionalContext } from "../../apps/server/src/provider/CodexDeveloperInstructions.ts";
-import { withTurnContext } from "../../apps/server/src/orchestration-v2/ContextHandoffDelivery.ts";
 import { worktreeBranchNote } from "../../apps/server/src/orchestration-v2/WorktreeBranchNote.ts";
+import { makeSideChatContext } from "../../apps/server/src/orchestration-v2/ContextHandoffService.ts";
+import { withInlineContext } from "../../apps/server/src/orchestration-v2/ContextHandoffDelivery.ts";
 import { AttachmentToolkit } from "../../apps/server/src/mcp/toolkits/attachment/tools.ts";
 import { DeviceToolkit } from "../../apps/server/src/mcp/toolkits/device/tools.ts";
 import { EnvironmentToolkit } from "../../apps/server/src/mcp/toolkits/environment/tools.ts";
@@ -267,6 +268,10 @@ export const McpToolUseCase = Schema.Struct({
     /** Regexes on one part of a shell command. A match wins over the shell simulator. */
     shellMocks: Schema.optional(
       Schema.Array(Schema.Struct({ match: Schema.String, output: Schema.String })),
+    ),
+    /** The thread is a side chat's first turn: T3 puts the parent's digest ahead of `prompt`. */
+    sideChat: Schema.optional(
+      Schema.Struct({ parentThreadId: Schema.String, digest: Schema.Array(Schema.String) }),
     ),
   }),
   prompt: Schema.String,
@@ -912,12 +917,23 @@ export const buildMessages = (sample: Sample) => {
     }
     if (turn.text) push(turn.role, text(turn.text));
   }
-  const prompt = withTurnContext(
+  const userText = withInlineContext(
     branchNote(testCase),
     testCase.promptContext === undefined
       ? testCase.prompt
       : projectComposerContextForProvider({ text: testCase.prompt, ...testCase.promptContext }),
   );
+  const sideChat = testCase.setup.sideChat;
+  const prompt =
+    sideChat === undefined
+      ? userText
+      : withInlineContext(
+          makeSideChatContext({
+            parentThreadId: ThreadId.make(sideChat.parentThreadId),
+            digest: sideChat.digest,
+          }),
+          userText,
+        );
   const childPrompt = () => taskPrompt({ task: prompt, role: delegateRole });
   push("user", text(role === "delegated-child" ? childPrompt() : prompt));
   // Claude Code gives a subagent its SubagentStart hooks' context as a reminder after the task.

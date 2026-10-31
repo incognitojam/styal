@@ -12,8 +12,8 @@ import {
   selectHistory,
 } from "@t3tools/provider-core/server/handoffBudget";
 
-/** The prompt a turn sends: context such as handoffs and turn notes, then the user's text. */
-export const withTurnContext = (context: string, userText: string): string =>
+/** The provider prompt for a turn that carries inline context ahead of the user's text. */
+export const withInlineContext = (context: string, userText: string): string =>
   context === "" ? userText : `${context}\n\nUser message:\n${userText}`;
 
 /** Persist around injection; ambiguous delivery requires a fresh native thread. Call unsent if refused before prompt consumption. */

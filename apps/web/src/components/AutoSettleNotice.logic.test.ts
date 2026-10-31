@@ -57,7 +57,7 @@ describe("resolveAutoSettleNotice", () => {
     ).toBeNull();
   });
 
-  it("ignores explicit settles, unrecorded reasons, archived threads and subagents", () => {
+  it("ignores explicit settles, unrecorded reasons, archived threads, subagents and side chats", () => {
     expect(
       resolveAutoSettleNotice({
         threads: [
@@ -66,6 +66,7 @@ describe("resolveAutoSettleNotice", () => {
           thread({ settleReason: undefined }),
           thread({ archivedAt: "2026-10-20T12:00:00.000Z" }),
           thread({ lineage: { relationshipToParent: "subagent" } }),
+          thread({ lineage: { relationshipToParent: "fork", sideChat: true } }),
         ],
         since: SINCE,
         dismissed: false,

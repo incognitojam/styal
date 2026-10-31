@@ -33,7 +33,7 @@ export function shareThreadTargets(input: {
   const query = input.searchText.trim().toLowerCase();
   const targets: ShareThreadTarget[] = [];
   for (const thread of input.threads) {
-    if (thread.archivedAt !== null) continue;
+    if (thread.archivedAt !== null || thread.lineage.sideChat === true) continue;
     const project = projectsByKey.get(scopedProjectKey(thread.environmentId, thread.projectId));
     if (!project || project.archivedAt) continue;
     const title = thread.title || "Untitled thread";

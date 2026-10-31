@@ -81,7 +81,7 @@ describe("share thread targets", () => {
   const styal = makeProject("styal", "styal");
   const archived = makeProject("old", "Old project", "2026-06-01T00:00:00.000Z");
 
-  it("lists the most recently used threads first, skipping archived ones", () => {
+  it("lists the most recently used threads first, skipping archived ones and side chats", () => {
     const threads = [
       makeThread({
         id: ThreadId.make("a"),
@@ -93,6 +93,17 @@ describe("share thread targets", () => {
         projectId: styal.id,
         updatedAt: "2026-06-01T00:00:00Z",
         latestUserMessageAt: "2026-06-05T00:00:00Z",
+      }),
+      makeThread({
+        id: ThreadId.make("side-chat"),
+        projectId: styal.id,
+        updatedAt: "2026-06-10T00:00:00Z",
+        lineage: {
+          rootThreadId: ThreadId.make("a"),
+          parentThreadId: ThreadId.make("a"),
+          relationshipToParent: "fork",
+          sideChat: true,
+        },
       }),
       makeThread({
         id: ThreadId.make("archived-thread"),

@@ -19,6 +19,7 @@ vi.mock(import("../state/entities"), async (original) => ({
   ...(await original()),
   useThreadShell: () => null,
   useProject: () => null,
+  readThreadShell: () => null,
 }));
 vi.mock(import("../state/session"), async (original) => ({
   ...(await original()),

@@ -3,7 +3,11 @@ import type {
   EnvironmentThreadShell,
 } from "@t3tools/client-runtime/state/shell";
 import { effectiveSnoozed } from "@t3tools/client-runtime/state/thread-settled";
-import type { DesktopDiscordPresenceActivity, EnvironmentId } from "@t3tools/contracts";
+import {
+  isListedThreadLineage,
+  type DesktopDiscordPresenceActivity,
+  type EnvironmentId,
+} from "@t3tools/contracts";
 
 /** Counts the active inbox across environments, independent of the current sidebar filter. */
 export function deriveDiscordPresence({
@@ -23,8 +27,8 @@ export function deriveDiscordPresence({
   for (const thread of threads) {
     // Cached/disconnected environments must not keep advertising stale activity.
     if (thread.archivedAt !== null || shellStatuses.get(thread.environmentId) !== "live") continue;
-    // Subagent threads are hidden from the sidebar; their parent already counts.
-    if (thread.lineage.relationshipToParent === "subagent") continue;
+    // Subagents and side chats are hidden from the sidebar; their parent already counts.
+    if (!isListedThreadLineage(thread.lineage)) continue;
     const configLoaded = serverConfigs.has(thread.environmentId);
     if (configLoaded && effectiveSnoozed(thread, { now })) {
       const wakeAt = Date.parse(thread.snoozedUntil!);

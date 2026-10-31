@@ -25,7 +25,13 @@ export function materializeV2ForkHistory(
   readAncestor: (id: ThreadId) => OrchestrationV2ThreadProjection,
 ): OrchestrationV2ThreadProjection {
   const fork = source.thread.forkedFrom;
-  if (fork?.type !== "run" || availableThreads.has(fork.threadId)) return source;
+  // A side chat shows only its own rows, whether or not its parent comes along.
+  if (
+    fork?.type !== "run" ||
+    availableThreads.has(fork.threadId) ||
+    source.thread.lineage.sideChat === true
+  )
+    return source;
   const inherited: Array<{
     projection: OrchestrationV2ThreadProjection;
     items: OrchestrationV2TurnItem[];
@@ -37,7 +43,11 @@ export function materializeV2ForkHistory(
     const parent = readAncestor(id);
     const anchor = parent.runs.find((run) => run.id === runId);
     if (anchor === undefined) throw new Error("The imported fork's source run is missing.");
-    if (!parent.thread.forkHistoryMaterialized && parent.thread.forkedFrom?.type === "run")
+    if (
+      !parent.thread.forkHistoryMaterialized &&
+      parent.thread.lineage.sideChat !== true &&
+      parent.thread.forkedFrom?.type === "run"
+    )
       collect(parent.thread.forkedFrom.threadId, parent.thread.forkedFrom.runId);
     const ordinals = new Map(parent.runs.map((run) => [run.id, run.ordinal]));
     inherited.push({
