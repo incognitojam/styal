@@ -45,7 +45,6 @@ import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { useEnvironmentScope } from "../../state/session";
 import type { PendingNewTask } from "../../state/use-pending-new-tasks";
-import { useThreadUsageSummary } from "../../state/use-turn-usage";
 import {
   resolveThreadPrBadgeAction,
   type ThreadPrPresentation,
@@ -682,7 +681,6 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
 
   const providerInstance = props.providerInstance;
   const pr = useThreadPr(thread);
-  const usageSummary = useThreadUsageSummary(thread.tokenUsage);
   const prBadgeLabel = pr ? resolveThreadPrBadgeAction(pr).accessibilityLabel : null;
   const handleOpenPullRequests = useCallback(() => {
     if (pr) onOpenThreadPullRequests(thread, pr);
@@ -1511,7 +1509,6 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       >
         {(close) => (
           <Menu
-            {...(usageSummary ? { title: usageSummary } : {})}
             actions={[
               ...(thread.branch
                 ? [
