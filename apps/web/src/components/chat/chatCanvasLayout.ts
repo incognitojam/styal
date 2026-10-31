@@ -51,16 +51,7 @@ export function resolveChatCanvasLayout({
     : container.width - padding;
   const width = Math.max(0, Math.min(centeredWidth, laneRight - padding));
   const canvasCenterLeft = (container.width - width) / 2;
-  // Beside a card it would crowd, the chat centers between the card and the canvas edge. The shift
-  // eases to zero as clearance grows, so very wide windows keep the chat still and a resize
-  // never jumps it.
-  const besideShift = detailsCard
-    ? Math.min(
-        (container.width - detailsCard.left) / 2,
-        Math.max(0, (container.width - detailsCard.left) / 2 - (laneRight - canvasCenterLeft - width)),
-      )
-    : 0;
-  const left = Math.max(padding, Math.min(canvasCenterLeft - besideShift, laneRight - width));
+  const left = Math.max(padding, Math.min(canvasCenterLeft, laneRight - width));
   const chat = {
     left,
     width,
