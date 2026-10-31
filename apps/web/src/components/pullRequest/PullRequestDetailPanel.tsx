@@ -4,7 +4,6 @@ import {
   resolvePullRequestMergeIntent,
 } from "@t3tools/shared/threadPullRequests";
 import { normalizeThreadPullRequestKey } from "@t3tools/client-runtime/thread-pull-requests";
-import { changeRequestReferenceAutolinker } from "@t3tools/client-runtime/pull-request-markdown";
 import { useAtomValue } from "@effect/atom-react";
 import { usePullRequestStack } from "~/state/usePullRequestStack";
 import {
@@ -117,6 +116,7 @@ import {
 } from "./PullRequestChecksTab";
 import { openOnHostLabel } from "./pullRequestLinkContextMenu";
 import { PullRequestMarkdownContext } from "./PullRequestMarkdown";
+import { pullRequestAutolinkPlugins } from "./pullRequestMarkdown.logic";
 import { PullRequestComposer } from "./PullRequestComposer";
 import { PullRequestSummaryTab } from "./PullRequestSummaryTab";
 import { PullRequestTimelineTab } from "./PullRequestTimelineTab";
@@ -258,7 +258,7 @@ function pullRequestMarkdownContext(
   threadRef: ScopedThreadRef | null,
 ) {
   return {
-    autolinks: changeRequestReferenceAutolinker(detail),
+    remarkPlugins: pullRequestAutolinkPlugins(detail),
     lineBreaks: sourceControlClients.find(detail?.provider ?? "")?.hardLineBreaks ?? false,
     threadRef,
   };

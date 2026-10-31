@@ -21,7 +21,7 @@ const detail = {
 
 async function renderBody(host: string, options: { lineBreaks?: boolean } = {}) {
   const context = {
-    autolinks: null,
+    remarkPlugins: [],
     lineBreaks: sourceControlClients.get(host).hardLineBreaks ?? false,
     threadRef: null,
   };

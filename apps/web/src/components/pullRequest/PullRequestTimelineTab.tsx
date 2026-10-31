@@ -669,7 +669,8 @@ export function PullRequestTimelineTab({
   };
 
   const rowKey = (row: PullRequestTimelineRow) => {
-    if (row.kind === "comments") return `${reference.projectId}#${reference.number}:comments:${row.events[0]?.id ?? "empty"}`;
+    if (row.kind === "comments")
+      return `${reference.projectId}#${reference.number}:comments:${row.events[0]?.id ?? "empty"}`;
     const event = row.event;
     // A thread's resolution or dismissal remounts it, so its disclosure starts in the new state.
     return event.thread === undefined
@@ -717,7 +718,6 @@ export function PullRequestTimelineTab({
     }
     return <LifecycleEvent event={event} term={term} />;
   };
-
 
   if (events.length === 0) {
     return (

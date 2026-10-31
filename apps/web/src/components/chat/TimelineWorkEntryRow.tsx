@@ -82,7 +82,8 @@ import {
   workEntryRawCommand,
   buildToolCallExpandedBody,
   workEntryIconName,
-  remarkThoughtPreview,
+  THINKING_PREVIEW_PLUGINS,
+  THOUGHT_PREVIEW_PLUGINS,
   buildCommandOutputBody,
   toolRowDisplayText,
   toolRowPresentationFor,
@@ -567,12 +568,11 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
                   text={workEntry.detail ?? previewText}
                   cwd={ctx.markdownCwd}
                   parseRawHtml={false}
-                  extraRemarkPlugins={[
-                    [
-                      remarkThoughtPreview,
-                      workEntry.toolLifecycleStatus === "inProgress" ? "Thinking" : "Thought",
-                    ],
-                  ]}
+                  extraRemarkPlugins={
+                    workEntry.toolLifecycleStatus === "inProgress"
+                      ? THINKING_PREVIEW_PLUGINS
+                      : THOUGHT_PREVIEW_PLUGINS
+                  }
                 />
               ) : threadLabel ? (
                 <ThreadReadLabel
