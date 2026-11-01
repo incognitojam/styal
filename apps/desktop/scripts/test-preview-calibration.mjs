@@ -74,7 +74,10 @@ child.once("exit", async (code, signal) => {
     const measurements = JSON.parse(
       await NodeFSP.readFile(NodePath.join(outputDir, "measurements.json"), "utf8"),
     );
-    if (measurements.length !== 13)
+    if (
+      measurements.length !== 13 ||
+      measurements.some((entry) => entry.name !== "natural-size" && !entry.agentCapture)
+    )
       throw new Error("Calibration did not complete all 13 scenarios");
   } catch (error) {
     console.error(error);
