@@ -5595,6 +5595,7 @@ features:
     prs: [100, 299]
     invariants:
       - Each normalized workspace receives a persistent non-overlapping range of ten development ports that is reused across server restarts and threads sharing that workspace.
+      - When the range pool fills, reservations for confirmed-missing workspace paths are reclaimed before retrying allocation; existing paths and paths that cannot be inspected keep their ports.
       - The first port is exposed canonically as `STYAL_WORKSPACE_PORT` to terminal children, project scripts, and fresh or resumed Codex, Claude, Cursor, Grok, and OpenCode sessions, with a one-way `T3CODE_WORKSPACE_PORT` compatibility alias for existing scripts.
       - The repository dev runner uses the workspace base port for the server and the next port for Vite while preserving explicit port, offset, instance, and development URL overrides.
       - Cursor SDK sessions use separate worker environments, so simultaneous workspaces and provider profiles expose their own ports and device environment to shell children without changing the server environment.

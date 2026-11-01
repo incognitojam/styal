@@ -8,6 +8,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Ref from "effect/Ref";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import { layerMemory } from "../src/persistence/Sqlite.ts";
 import * as ProcessRunner from "../src/processRunner.ts";
@@ -24,13 +25,14 @@ const integrationLayer = it.layer(
 );
 
 integrationLayer("workspace port environment integration", (it) => {
-  it.effect("an actual terminal child sees the same port loaded by a new allocator", () =>
+  it.effect("an actual terminal recovers from a full pool and retains stable workspace ports", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
+      const sql = yield* SqlClient.SqlClient;
       const platform = yield* HostProcess.Platform;
       const workspacePath = yield* fs.makeTempDirectoryScoped({
-        prefix: "t3-workspace-port-proof-",
+        prefix: "workspace-port-terminal-proof-",
       });
 
       const firstAllocator = yield* WorkspacePortAllocator.make();
@@ -38,6 +40,29 @@ integrationLayer("workspace port environment integration", (it) => {
       const reloadedAllocator = yield* WorkspacePortAllocator.make();
       const persistedPort = yield* reloadedAllocator.getBasePort(workspacePath);
       assert.strictEqual(persistedPort, allocatedPort);
+
+      const allPorts = Array.from(
+        {
+          length:
+            (WorkspacePortAllocator.WORKSPACE_PORT_MAX -
+              WorkspacePortAllocator.WORKSPACE_PORT_MIN) /
+              WorkspacePortAllocator.WORKSPACE_PORT_RANGE_SIZE +
+            1,
+        },
+        (_, index) =>
+          WorkspacePortAllocator.WORKSPACE_PORT_MIN +
+          index * WorkspacePortAllocator.WORKSPACE_PORT_RANGE_SIZE,
+      );
+      yield* sql`INSERT INTO workspace_port_allocations ${sql.insert(
+        allPorts
+          .filter((port) => port !== allocatedPort)
+          .map((port) => ({
+            workspace_path: path.join(workspacePath, `deleted-${port}`),
+            base_port: port,
+          })),
+      )}`;
+      const newWorkspacePath = path.join(workspacePath, "new-workspace");
+      yield* fs.makeDirectory(newWorkspacePath);
 
       const ptyAdapter = yield* NodePtyAdapter.make();
       const terminalManager = yield* TerminalManager.makeWithOptions({
@@ -60,8 +85,8 @@ integrationLayer("workspace port environment integration", (it) => {
       yield* terminalManager.openCommand({
         threadId: "workspace-port-proof-thread",
         terminalId: "workspace-port-proof-terminal",
-        cwd: workspacePath,
-        worktreePath: workspacePath,
+        cwd: newWorkspacePath,
+        worktreePath: newWorkspacePath,
         command:
           "node -e \"process.stdout.write('PORT_PROOF=' + process.env.STYAL_WORKSPACE_PORT + ':' + process.env.T3CODE_WORKSPACE_PORT)\"",
       });
@@ -70,12 +95,15 @@ integrationLayer("workspace port environment integration", (it) => {
       const observedOutput = yield* Ref.get(output);
       assert.strictEqual(completion.type, "exited");
       if (completion.type === "exited") assert.strictEqual(completion.exitCode, 0);
-      assert.include(observedOutput, `PORT_PROOF=${allocatedPort}:${allocatedPort}`);
+      const recoveredPort = yield* reloadedAllocator.getBasePort(newWorkspacePath);
+      assert.notStrictEqual(recoveredPort, allocatedPort);
+      assert.include(observedOutput, `PORT_PROOF=${recoveredPort}:${recoveredPort}`);
+      assert.strictEqual(yield* reloadedAllocator.getBasePort(workspacePath), allocatedPort);
 
       if (process.env.T3CODE_PRINT_WORKSPACE_PORT_PROOF === "1") {
         yield* Effect.sync(() =>
           process.stdout.write(
-            `workspace port proof: allocated=${allocatedPort} persisted=${persistedPort} child=${observedOutput.trim()}\n`,
+            `workspace port proof: allocated=${allocatedPort} persisted=${persistedPort} recovered=${recoveredPort} child=${observedOutput.trim()}\n`,
           ),
         );
       }
