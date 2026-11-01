@@ -114,7 +114,15 @@ export const declarations = {
         }
         const { task, threadId } = yield* McpToolAccess.withDispatchModeLimit(
           caller.limits,
-          scheduler.runNow({ id: input.taskId }, storedTask).pipe(Effect.mapError(unavailable)),
+          scheduler.runNow({ id: input.taskId }, storedTask).pipe(
+            Effect.mapError(
+              (error) =>
+                new OrchestratorMcpFailure({
+                  code: "orchestration_error",
+                  message: error.message,
+                }),
+            ),
+          ),
         );
         const scope = yield* McpInvocationContext.McpInvocationContext;
         return {
