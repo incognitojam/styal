@@ -4412,6 +4412,7 @@ features:
     status: maintained
     prs: [602]
     invariants:
+      - These invariants cover the web label picker. The mobile label picker taken from upstream does not have them yet (https://github.com/incognitojam/styal/issues/1198).
       - Label pickers show a previously fetched repository catalogue while their pull-request-specific read loads or fails, retaining cached data for thirty idle minutes.
       - Repository catalogues are isolated by environment, project, host, and repository; applied checkmarks come from the current pull request.
       - Applied labels missing from a cached repository page remain available for removal while the current pull request read loads or fails.
