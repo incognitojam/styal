@@ -5607,9 +5607,9 @@ features:
       - The repository dev runner uses the workspace base port for the server and the next port for Vite while preserving explicit port, offset, instance, and development URL overrides.
       - Cursor SDK sessions use separate worker environments, so simultaneous workspaces and provider profiles expose their own ports and device environment to shell children without changing the server environment.
     implementation_paths:
+      - apps/server/src/git/GitWorkflowService.ts
       - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
       - apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts
-      - apps/server/src/git/GitWorkflowService.ts
       - apps/server/src/orchestration-v2/RuntimePolicy.ts
       - apps/server/src/persistence/ForkMigrations/002_WorkspacePortAllocations.ts
       - apps/server/src/server.ts
