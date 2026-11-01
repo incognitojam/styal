@@ -305,7 +305,8 @@ export const make = Effect.gen(function* () {
     if (tab.relay) return tab.relay;
     const { webContents, debugger: debuggee, surfaceScale } = tab.debuggee;
     const send = (method: string, params: Record<string, unknown>, sessionId?: string) => {
-      if (sessionId !== undefined) return debuggee.sendCommand(method, params, sessionId);
+      if (sessionId !== undefined)
+        return sendPageCommand(webContents, debuggee, method, params, sessionId);
       const scale = surfaceScale();
       if (scale === 1) return sendPageCommand(webContents, debuggee, method, params);
       if (method === "Page.captureScreenshot") {
