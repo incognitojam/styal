@@ -1,3 +1,5 @@
+import { markdownProseDirection, type TextDirection } from "@t3tools/shared/textDirection";
+import { Platform } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import { resolveMarkdownLinkPresentation } from "../../lib/markdownLinks";
@@ -14,6 +16,7 @@ import { useLiveThreadLinkLabels } from "../../state/entities";
 
 export function PendingQuestionText(props: {
   readonly text: string;
+  readonly setDirection?: TextDirection;
   readonly threadRef: ScopedThreadRef;
   readonly workspaceRoot: string | null;
 }) {
@@ -71,6 +74,11 @@ export function PendingQuestionText(props: {
     <SelectableMarkdownText
       markdown={markdown}
       textStyle={textStyle}
+      writingDirection={markdownProseDirection(markdown)}
+      // Android aligns relative to each paragraph direction.
+      textAlign={
+        Platform.OS === "android" ? undefined : props.setDirection === "rtl" ? "right" : "left"
+      }
       preserveSoftBreaks
       parseRawHtml={false}
       onLinkPress={onLinkPress}
