@@ -10,6 +10,8 @@ import * as Exit from "effect/Exit";
 import * as NodeEvents from "node:events";
 import * as TestClock from "effect/testing/TestClock";
 
+import * as HostProcess from "@t3tools/shared/HostProcess";
+
 import type * as Electron from "electron";
 
 import * as ElectronApp from "../electron/ElectronApp.ts";
@@ -136,6 +138,7 @@ const makeLifecycleLayer = (
       Layer.succeed(DesktopEnvironment.DesktopEnvironment, {
         platform,
         isDevelopment: false,
+        installVariant: "production",
       } as DesktopEnvironment.DesktopEnvironment["Service"]),
     ),
     Layer.provideMerge(
@@ -506,6 +509,36 @@ describe("DesktopLifecycle", () => {
           ),
         ),
       );
+    }),
+  );
+
+  it.effect("relaunches without the app link that launched it", () =>
+    Effect.gen(function* () {
+      const relaunched = yield* Deferred.make<Electron.RelaunchOptions>();
+      const layer = makeLifecycleLayer(
+        "linux",
+        makeElectronApp({
+          relaunch: (options) => Deferred.succeed(relaunched, options).pipe(Effect.asVoid),
+        }),
+      );
+
+      const options = yield* Effect.gen(function* () {
+        const lifecycle = yield* DesktopLifecycle.DesktopLifecycle;
+        yield* (yield* DesktopShutdown.DesktopShutdown).markComplete;
+        yield* lifecycle.relaunch("network access changed");
+        return yield* Deferred.await(relaunched);
+      }).pipe(
+        Effect.provide(layer),
+        Effect.provideService(HostProcess.ExecutablePath, "/opt/styal/styal"),
+        Effect.provideService(HostProcess.Arguments, [
+          "/opt/styal/styal",
+          "--no-sandbox",
+          "STYAL://pair?token=spent",
+          "styal://new?prompt=hello",
+        ]),
+      );
+
+      assert.deepEqual(options, { execPath: "/opt/styal/styal", args: ["--no-sandbox"] });
     }),
   );
 
