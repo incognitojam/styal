@@ -161,8 +161,6 @@ export interface EnvironmentThreadShell {
   /** A provider approval request, or a watched workflow run's deployment review. */
   readonly hasPendingApprovals: boolean;
   readonly hasPendingUserInput: boolean;
-  /** An async question the user can answer while the run keeps Working. */
-  readonly hasPendingQuestion?: boolean;
   readonly pendingSubagentRequest?: PendingSubagentRequest | null;
   /** Guest messages waiting for the owner to send or dismiss. */
   readonly pendingGuestMessageCount?: number;
@@ -221,17 +219,6 @@ function terminalRunStatus(status: OrchestrationV2RunStatus): boolean {
     status === "failed" ||
     status === "cancelled" ||
     status === "rolled_back"
-  );
-}
-
-/** An async question waits for an answer only once its run stops working. */
-export function shellHasPendingUserInput(thread: OrchestrationV2ThreadShell): boolean {
-  const status = shellRuntime(thread)?.status;
-  // Waiting runs have ended their provider turn and are only draining effects.
-  const working = status === "preparing" || status === "starting" || status === "running";
-  return (
-    thread.pendingRuntimeRequest?.kind === "user_input" &&
-    (thread.pendingRuntimeRequest.blocking !== false || !working)
   );
 }
 
@@ -296,10 +283,6 @@ export function presentThreadShell(
           assistantMessageId: null,
         } satisfies ThreadRunSummary);
   const runtime = shellRuntime(thread);
-  const runtimeIsWorking =
-    runtime?.status === "preparing" ||
-    runtime?.status === "starting" ||
-    runtime?.status === "running";
   return {
     environmentId,
     id: thread.id,
@@ -337,11 +320,7 @@ export function presentThreadShell(
         thread.pendingRuntimeRequest.kind !== "user_input" &&
         thread.pendingRuntimeRequest.kind !== "auth_refresh") ||
       (thread.workflowRuns ?? []).some((run) => run.review !== undefined),
-    hasPendingUserInput: shellHasPendingUserInput(thread),
-    hasPendingQuestion:
-      thread.pendingRuntimeRequest?.kind === "user_input" &&
-      thread.pendingRuntimeRequest.blocking === false &&
-      runtimeIsWorking,
+    hasPendingUserInput: thread.pendingRuntimeRequest?.kind === "user_input",
     pendingSubagentRequest,
     pendingGuestMessageCount: thread.pendingGuestMessageCount ?? 0,
     hasActionableProposedPlan: thread.hasActionableProposedPlan,

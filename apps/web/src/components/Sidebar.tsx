@@ -32,7 +32,6 @@ import { requestCustomSnooze } from "./CustomSnoozeDialog";
 
 import { useAtomValue } from "@effect/atom-react";
 
-import * as DateTime from "effect/DateTime";
 import * as Option from "effect/Option";
 import { Atom } from "effect/reactivity";
 
@@ -3332,7 +3331,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     const wokeAt = threadWokeAt(thread, { now: snoozeNow });
     const rowAttention = resolveSidebarThreadAttention({
       status: resolveSidebarThreadStatus(thread),
-      hasPendingQuestion: thread.hasPendingQuestion === true,
       isUnread: hasUnseenCompletion({ ...thread, lastVisitedAt }),
       isWoke: isSidebarThreadWoke({
         wokeAt,
@@ -3346,15 +3344,10 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       isLatestFailureSeen({ latestRun: thread.latestRun, lastVisitedAt })
         ? null
         : rowAttention;
-    // A woken thread waits from its wake and a question from when it was asked, not the last run.
-    const askedAt =
-      attention === "question" ? thread.source.pendingRuntimeRequest?.createdAt : null;
     const waitingSince =
       attention === "woke" && wokeAt !== null
         ? Date.parse(wokeAt)
-        : askedAt != null
-          ? DateTime.toEpochMillis(askedAt)
-          : threadInboxReturnedAt(thread, inboxReturns.returnedAt);
+        : threadInboxReturnedAt(thread, inboxReturns.returnedAt);
     return { key, attention, waitingSince };
   });
   const nextUnread = resolveNextAttentionThread(unreadCandidates, routeThreadKey);

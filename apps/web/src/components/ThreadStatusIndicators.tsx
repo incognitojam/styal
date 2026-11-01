@@ -659,12 +659,7 @@ function ThreadStatusLabel({
   status: ThreadStatusPill;
   compact?: boolean;
 }) {
-  const label = status.questionDotClass ? `${status.label} · Question waiting` : status.label;
-  // Overlaps the status dot's corner so it adds no width to the row.
-  const questionDot = (position: string) =>
-    status.questionDotClass ? (
-      <span className={`absolute size-1.5 rounded-full ${position} ${status.questionDotClass}`} />
-    ) : null;
+  const label = status.label;
   if (compact) {
     return (
       <Tooltip>
@@ -682,7 +677,6 @@ function ThreadStatusLabel({
               status.pulse ? "motion-safe:animate-status-pulse" : ""
             }`}
           />
-          {questionDot("top-0 right-0")}
         </TooltipTrigger>
         <TooltipPopup side="top">{label}</TooltipPopup>
       </Tooltip>
@@ -706,7 +700,6 @@ function ThreadStatusLabel({
               status.pulse ? "motion-safe:animate-status-pulse" : ""
             }`}
           />
-          {questionDot("-top-0.5 -right-1")}
         </span>
         <span className="hidden md:inline">{status.label}</span>
       </TooltipTrigger>

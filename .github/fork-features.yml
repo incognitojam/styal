@@ -3725,7 +3725,7 @@ features:
     status: maintained
     prs: []
     invariants:
-      - "`thread.nextUnread` (`mod+shift+u` by default, outside terminals) and the command palette's Go to next unread thread open the pinned, active or Working thread with the most urgent attention, in the row status precedence: approval, input, a waiting guest message, usage limit, failed run, an async question on a thread that is still working, woke, then an unread completion. Among the same kind, the thread waiting longest opens first: since it last came back to the inbox, since it woke for a woken thread, or since it asked for an async question. Equal times keep sidebar order."
+      - "`thread.nextUnread` (`mod+shift+u` by default, outside terminals) and the command palette's Go to next unread thread open the pinned, active or Working thread with the most urgent attention, in the row status precedence: approval, input (including async questions), a waiting guest message, usage limit, failed run, woke, then an unread completion. Among the same kind, the thread waiting longest opens first: since it last came back to the inbox, or since it woke for a woken thread. Equal times keep sidebar order."
       - The open thread is skipped, so repeating the command moves to the next waiting thread. Snoozed and settled threads are not candidates.
       - A usage limit or failed run counts only until the thread is opened after that run ended; the row keeps its status but recedes like a read thread, and a later failure counts again.
       - With nothing waiting, it opens nothing and shows a "No unread threads" toast.

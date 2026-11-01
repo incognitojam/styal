@@ -814,8 +814,6 @@ export interface ThreadStatusPill {
   colorClass: string;
   dotClass: string;
   pulse: boolean;
-  /** Set while Working with an async question the user can answer now. */
-  questionDotClass?: string;
 }
 
 const THREAD_STATUS_PRIORITY: Record<ThreadStatusPill["label"], number> = {
@@ -835,7 +833,6 @@ type ThreadStatusInput = Pick<
   | "hasActionableProposedPlan"
   | "hasPendingApprovals"
   | "hasPendingUserInput"
-  | "hasPendingQuestion"
   | "pendingSubagentRequest"
   | "pendingGuestMessageCount"
   | "interactionMode"
@@ -1086,15 +1083,13 @@ export function resolveSidebarThreadStatus(thread: SidebarThreadStatusInput): Si
 }
 
 // What a thread is waiting on the user for, matching the precedence of a
-// row's status slot. Running and idle work is not attention, except an async
-// question: the agent keeps going, so it ranks below threads stalled on the user.
+// row's status slot. Running and idle work is not attention.
 export type SidebarThreadAttention =
   | "approval"
   | "input"
   | "request"
   | "limited"
   | "failed"
-  | "question"
   | "woke"
   | "done";
 
@@ -1104,7 +1099,6 @@ const SIDEBAR_THREAD_ATTENTION_ORDER: readonly SidebarThreadAttention[] = [
   "request",
   "limited",
   "failed",
-  "question",
   "woke",
   "done",
 ];
@@ -1126,7 +1120,6 @@ export function resolveSidebarThreadAttention(input: {
   status: SidebarThreadStatus;
   isUnread: boolean;
   isWoke: boolean;
-  hasPendingQuestion?: boolean;
 }): SidebarThreadAttention | null {
   switch (input.status) {
     case "approval":
@@ -1137,7 +1130,7 @@ export function resolveSidebarThreadAttention(input: {
       return input.status;
     case "working":
     case "waiting":
-      return input.hasPendingQuestion === true ? "question" : null;
+      return null;
   }
   if (input.isWoke) return "woke";
   return input.isUnread ? "done" : null;
@@ -1420,7 +1413,6 @@ export function resolveThreadStatusPill(input: {
       colorClass: "text-sky-600 dark:text-sky-300/80",
       dotClass: "bg-sky-500 dark:bg-sky-300/80",
       pulse: true,
-      ...(thread.hasPendingQuestion === true ? { questionDotClass: AWAITING_INPUT_DOT_CLASS } : {}),
     };
   }
 

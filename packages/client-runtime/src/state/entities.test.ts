@@ -43,7 +43,7 @@ describe("V2 client presentation", () => {
     ).toBe(false);
   });
 
-  it("keeps async questions in Working until the run completes", () => {
+  it("an async question blocks snooze and wakes a snoozed thread", () => {
     const runId = RunId.make("run-async-question");
     const running = {
       ...v2ThreadShell,
@@ -60,21 +60,11 @@ describe("V2 client presentation", () => {
       },
     };
     const active = presentThreadShell(environmentId, running);
-    expect(active.hasPendingUserInput).toBe(false);
-    expect(isThreadWorking(active)).toBe(true);
     expect(canSnooze(active, { now: "2026-06-20T00:05:00.000Z" })).toBe(false);
-
-    const completed = presentThreadShell(environmentId, {
-      ...running,
-      activeRunId: null,
-      status: "completed",
-    });
-    expect(completed.hasPendingUserInput).toBe(true);
-    expect(isThreadWorking(completed)).toBe(false);
     expect(effectiveSnoozed(active, { now: "2026-06-20T00:05:00.000Z" })).toBe(false);
   });
 
-  it("flags an async question as answerable while the run keeps Working", () => {
+  it("moves an async question to Input until answered", () => {
     const runId = RunId.make("run-async-question-indicator");
     const asking = {
       ...v2ThreadShell,
@@ -89,23 +79,23 @@ describe("V2 client presentation", () => {
       },
     } as const;
     const shell = presentThreadShell(environmentId, asking);
-    expect(isThreadWorking(shell)).toBe(true);
-    expect(shell.hasPendingQuestion).toBe(true);
+    expect(isThreadWorking(shell)).toBe(false);
+    expect(shell.hasPendingUserInput).toBe(true);
 
     const answered = presentThreadShell(environmentId, { ...asking, pendingRuntimeRequest: null });
     expect(isThreadWorking(answered)).toBe(true);
-    expect(answered.hasPendingQuestion).toBe(false);
+    expect(answered.hasPendingUserInput).toBe(false);
 
     const completed = presentThreadShell(environmentId, {
       ...asking,
       activeRunId: null,
       status: "completed",
     });
-    expect(completed.hasPendingQuestion).toBe(false);
+    expect(completed.hasPendingUserInput).toBe(true);
   });
 
-  it("keeps blocking and legacy questions out of Working", () => {
-    for (const capability of [{ blocking: true }, {}]) {
+  it("moves a running thread with any question out of Working", () => {
+    for (const capability of [{ blocking: false }, { blocking: true }, {}]) {
       const shell = presentThreadShell(environmentId, {
         ...v2ThreadShell,
         latestRunId: RunId.make("run-blocking-question"),
