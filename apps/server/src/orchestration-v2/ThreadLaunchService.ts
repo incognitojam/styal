@@ -416,9 +416,11 @@ const make = Effect.gen(function* () {
         );
         if (remoteTarget !== null) {
           const fetched = yield* git
+
             .fetchWorktreeBaseCommit({
               cwd: project.workspaceRoot,
               refName: input.workspaceStrategy.baseRef,
+              remote: remoteTarget,
             })
             .pipe(Effect.result);
           let remoteBase = Result.isSuccess(fetched) ? fetched.success : null;
