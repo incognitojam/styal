@@ -539,6 +539,7 @@ const resolvePrimaryStartConfig = Effect.fn("desktop.backendConfiguration.resolv
         // put a preview's server back on the shared userdata database.
         ...(environment.installVariant === "preview" ? { STYAL_HOME: undefined } : {}),
         ELECTRON_RUN_AS_NODE: "1",
+        T3CODE_DESKTOP_SHELL_DISCOVERY_PENDING: "1",
         T3CODE_CLI_PATH: Option.getOrUndefined(input.cliPath),
       },
       // Primary wants process.env (PATH, dev-runner's STYAL_HOME, etc.).

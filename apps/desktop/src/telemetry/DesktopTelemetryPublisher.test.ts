@@ -2,6 +2,7 @@ import { DesktopHostTelemetryMessage, EnvironmentId } from "@t3tools/contracts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
+import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -22,10 +23,17 @@ import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as ElectronPowerMonitor from "../electron/ElectronPowerMonitor.ts";
 import * as DesktopTelemetryPublisher from "./DesktopTelemetryPublisher.ts";
 import * as DesktopRendererHistory from "./DesktopRendererHistory.ts";
+import * as DesktopShellEnvironment from "../shell/DesktopShellEnvironment.ts";
 
 const decodeUpdateActivityMessage = Schema.decodeUnknownEffect(
   Schema.fromJsonString(DesktopHostTelemetryMessage),
 );
+
+const layerShellEnvironment = Layer.succeed(DesktopShellEnvironment.DesktopShellEnvironment, {
+  installIntoProcess: Effect.succeed(true),
+  awaitDiscovery: Effect.succeed(true),
+  updates: Stream.empty,
+});
 
 const layerHistory = Layer.succeed(DesktopRendererHistory.DesktopRendererHistory, {
   register: () => Effect.void,
@@ -66,39 +74,62 @@ function layerElectronApp(
 }
 
 describe("DesktopTelemetryPublisher", () => {
-  it.effect("stops when its scope closes during an Electron telemetry sample", () =>
-    Effect.gen(function* () {
-      const pollStarted = yield* Deferred.make<void>();
-      const blockPoll = yield* Deferred.make<void>();
-      const layerPower = Layer.succeed(
-        ElectronPowerMonitor.ElectronPowerMonitor,
-        ElectronPowerMonitor.ElectronPowerMonitor.of({
-          isOnBatteryPower: Effect.succeed(false),
-          getSystemIdleTime: Deferred.succeed(pollStarted, undefined).pipe(
-            Effect.andThen(Deferred.await(blockPoll)),
-            Effect.as(0),
+  it.effect(
+    "forwards shell discovery while a telemetry sample is pending and stops on scope close",
+    () =>
+      Effect.gen(function* () {
+        const pollStarted = yield* Deferred.make<void>();
+        const blockPoll = yield* Deferred.make<void>();
+        const layerPower = Layer.succeed(
+          ElectronPowerMonitor.ElectronPowerMonitor,
+          ElectronPowerMonitor.ElectronPowerMonitor.of({
+            isOnBatteryPower: Effect.succeed(false),
+            getSystemIdleTime: Deferred.succeed(pollStarted, undefined).pipe(
+              Effect.andThen(Deferred.await(blockPoll)),
+              Effect.as(0),
+            ),
+            getSystemIdleState: () => Effect.succeed("active"),
+            getCurrentThermalState: Effect.succeed("nominal"),
+            onSimpleEvent: () => Effect.void,
+            onThermalStateChange: () => Effect.void,
+            onSpeedLimitChange: () => Effect.void,
+          }),
+        );
+        const layer = DesktopTelemetryPublisher.layer.pipe(
+          Layer.provide(
+            Layer.mergeAll(
+              layerElectronApp([]),
+              layerPower,
+              layerHistory,
+              Layer.succeed(DesktopShellEnvironment.DesktopShellEnvironment, {
+                installIntoProcess: Effect.succeed(true),
+                awaitDiscovery: Effect.succeed(true),
+                updates: Stream.make({
+                  version: 1,
+                  type: "shellEnvironment",
+                  discovered: true,
+                  platform: "darwin",
+                  environment: { PATH: "/discovered/bin" },
+                }),
+              }),
+            ),
           ),
-          getSystemIdleState: () => Effect.succeed("active"),
-          getCurrentThermalState: Effect.succeed("nominal"),
-          onSimpleEvent: () => Effect.void,
-          onThermalStateChange: () => Effect.void,
-          onSpeedLimitChange: () => Effect.void,
-        }),
-      );
-      const layer = DesktopTelemetryPublisher.layer.pipe(
-        Layer.provide(Layer.mergeAll(layerElectronApp([]), layerPower, layerHistory)),
-      );
-      const scope = yield* Scope.make();
+        );
+        const scope = yield* Scope.make();
 
-      yield* Layer.buildWithScope(layer, scope);
-      yield* Deferred.await(pollStarted);
+        const context = yield* Layer.buildWithScope(layer, scope);
+        const publisher = Context.get(context, DesktopTelemetryPublisher.DesktopTelemetryPublisher);
+        const update = yield* publisher.encoded.pipe(
+          Stream.filter((bytes) => new TextDecoder().decode(bytes).includes("shellEnvironment")),
+          Stream.runHead,
+        );
+        assert.isTrue(Option.isSome(update));
+        if (Option.isSome(update))
+          assert.include(new TextDecoder().decode(update.value), "/discovered/bin");
+        yield* Deferred.await(pollStarted);
 
-      const closeFiber = yield* Scope.close(scope, Exit.void).pipe(Effect.forkDetach);
-      yield* Effect.yieldNow;
-      yield* Effect.yieldNow;
-
-      assert.isDefined(closeFiber.pollUnsafe());
-    }),
+        yield* Scope.close(scope, Exit.void);
+      }),
   );
 
   it.effect("routes update and activity requests and replays update reports", () =>
@@ -116,7 +147,9 @@ describe("DesktopTelemetryPublisher", () => {
         }),
       );
       const layer = DesktopTelemetryPublisher.layer.pipe(
-        Layer.provide(Layer.mergeAll(layerElectronApp([]), layerPower, layerHistory)),
+        Layer.provide(
+          Layer.mergeAll(layerElectronApp([]), layerPower, layerHistory, layerShellEnvironment),
+        ),
       );
 
       yield* Effect.gen(function* () {
@@ -241,7 +274,9 @@ describe("DesktopTelemetryPublisher", () => {
         }),
       );
       const layer = DesktopTelemetryPublisher.layer.pipe(
-        Layer.provide(Layer.mergeAll(layerElectronApp([]), layerPower, layerHistory)),
+        Layer.provide(
+          Layer.mergeAll(layerElectronApp([]), layerPower, layerHistory, layerShellEnvironment),
+        ),
       );
 
       yield* Effect.gen(function* () {
