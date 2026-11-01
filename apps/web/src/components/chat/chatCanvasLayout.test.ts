@@ -16,6 +16,47 @@ const resolve = (width: number, player: ChatCanvasPreview | null = preview, heig
   resolveChatCanvasLayout({ container: { width, height }, preview: player, composerHeight: 180 });
 
 describe("chat canvas layout", () => {
+  it("does not enlarge the preview when its right edge is dragged inward", () => {
+    for (const height of [300, 400, 600, 900]) {
+      for (const x of [12, 200, 500, 700]) {
+        const start = resolve(1000, { ...preview, position: { x, y: 500 } }, height).frame!;
+        const resized = resizePreviewMiniPlayer({
+          start,
+          direction: "east",
+          delta: { x: -30, y: 0 },
+          source: preview.source,
+          container: { width: 1000, height },
+        });
+        expect(resized.width, JSON.stringify({ height, x, start, resized })).toBeLessThanOrEqual(
+          start.width,
+        );
+        const rendered = resolve(
+          1000,
+          {
+            ...preview,
+            width: resized.width,
+            position: resized,
+            lastInteraction: "resize",
+          },
+          height,
+        ).frame!;
+        expect(
+          rendered.width,
+          JSON.stringify({ height, x, start, resized, rendered }),
+        ).toBeLessThanOrEqual(start.width);
+        expect(rendered.x).toBe(start.x);
+        expect(rendered.y, JSON.stringify({ height, x, start, resized, rendered })).toBe(start.y);
+        expect(
+          resolve(1000, {
+            ...preview,
+            width: resized.width,
+            position: resized,
+            lastInteraction: "resize",
+          }).frame!.width,
+        ).toBe(resized.width);
+      }
+    }
+  });
   it("never moves or narrows chat for a preview", () => {
     for (const width of [1000, 1200, 1344, 1800]) {
       const centered = resolve(width, null).chat;
