@@ -74,6 +74,7 @@ const contextInput = {
     logsDir: "/home/u/.styal/userdata/logs",
     serviceLogPath: "/home/u/.styal/userdata/logs/boot-service.log",
     desktopBackendLogGlob: "/home/u/.styal/userdata/logs/server-child*.log*",
+    relayClientLogPath: "/home/u/.styal/userdata/logs/relay-client.ndjson",
     serverTracePath: "/home/u/.styal/userdata/logs/server.trace.ndjson",
     providerEventLogPath: "/home/u/.styal/userdata/logs/provider/events.log",
     terminalLogsDir: "/home/u/.styal/userdata/logs/terminals",
