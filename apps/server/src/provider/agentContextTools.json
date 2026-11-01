@@ -71,6 +71,7 @@
   "task_cancel": 399,
   "task_status": 406,
   "unlink_pull_request": 418,
+  "unlink_pull_requests": 487,
   "unwatch_pull_request": 381,
   "unwatch_workflow_run": 372,
   "watch_pull_request": 701,
