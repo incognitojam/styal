@@ -5,6 +5,7 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   ThreadId,
+  type AuthEnvironmentScope,
   type AuthSessionState,
   type DesktopBridge,
   type DesktopHostActivity,
@@ -44,11 +45,21 @@ vi.mock(import("~/state/environments"), async (original) => ({
 vi.mock(import("~/state/session"), async (original) => {
   const actual = await original();
   const { environmentAtomList } = await import("~/state/environmentAtomList");
+  const { useAtomValue } = await import("@effect/atom-react");
   const sessionStateAtom = () => testState.sessionAtom;
   return {
     ...actual,
     environmentSession: { ...actual.environmentSession, sessionStateAtom },
     environmentSessionStatesAtom: environmentAtomList("test-update-sessions", sessionStateAtom),
+    useEnvironmentsWithScope: (
+      targets: ReadonlyArray<{ readonly environmentId: EnvironmentId }>,
+      scope: AuthEnvironmentScope,
+    ) => {
+      const session = useAtomValue(testState.sessionAtom);
+      return new Set(
+        actual.sessionHasScope(session, scope) ? targets.map((target) => target.environmentId) : [],
+      );
+    },
   };
 });
 vi.mock(import("~/state/server"), async (original) => {
@@ -293,7 +304,7 @@ function setup() {
   testState.sessionAtom = Atom.make<AsyncResult.AsyncResult<AuthSessionState>>(
     AsyncResult.success({
       authenticated: true,
-      scopes: ["environment:maintain"],
+      scopes: ["environment:maintain", "providers:manage"],
       auth: {
         policy: "remote-reachable",
         bootstrapMethods: ["one-time-token"],
