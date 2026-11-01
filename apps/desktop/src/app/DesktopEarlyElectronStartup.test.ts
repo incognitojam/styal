@@ -70,7 +70,6 @@ describe("DesktopEarlyElectronStartup", () => {
 
     assert.deepEqual(options, {
       variant: "preview",
-      linuxWmClass: "styal-preview",
       linuxDesktopEntryName: "build.styal.Styal.Preview.desktop",
       passwordStore: "kwallet6",
     });

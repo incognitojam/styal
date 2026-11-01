@@ -115,7 +115,6 @@ describe("DesktopEnvironment", () => {
       assert.equal(preview.safeStorageName, "styal-preview");
       assert.equal(preview.appUserModelId, "build.styal.app.preview");
       assert.equal(preview.linuxDesktopEntryName, "build.styal.Styal.Preview.desktop");
-      assert.equal(preview.linuxWmClass, "styal-preview");
     }),
   );
 });

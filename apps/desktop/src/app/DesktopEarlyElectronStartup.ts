@@ -32,7 +32,6 @@ type EarlyLinuxElectronOptionsInput = EarlyDesktopSettingsInput;
 
 export interface EarlyLinuxElectronOptions {
   readonly variant: DesktopInstallVariant;
-  readonly linuxWmClass: string;
   readonly linuxDesktopEntryName: string;
   readonly passwordStore: LinuxPasswordStoreSwitch | null;
 }
@@ -159,7 +158,6 @@ export function resolveEarlyLinuxElectronOptions(
   const identity = DESKTOP_INSTALL_IDENTITIES[variant];
   return {
     variant,
-    linuxWmClass: identity.slug,
     linuxDesktopEntryName: identity.linuxDesktopEntryName,
     passwordStore: resolveLinuxPasswordStoreSwitch({
       preference,

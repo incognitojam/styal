@@ -36,7 +36,6 @@ const makeEnvironment = (path: Path.Path, overrides: Record<string, unknown> = {
     installVariant: "production",
     displayName: "styal",
     linuxDesktopEntryName: "build.styal.Styal.desktop",
-    linuxWmClass: "styal",
     linuxApplicationsDir: "/home/alice/.local/share/applications",
     desktopLauncherPath: Option.none(),
     appImagePath: Option.some("/home/alice/Applications/T3-Code.AppImage"),
