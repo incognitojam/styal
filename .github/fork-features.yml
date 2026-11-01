@@ -3034,7 +3034,7 @@ features:
     status: maintained
     prs: []
     invariants:
-      - Waiting, background command, compacting, goal, and preparing icons use the active theme foreground in light and dark appearances, including Material You and system appearance changes.
+      - Waiting, background command, compacting, goal, preparing, settled, snoozed, woke, and subagent input icons use the active theme foreground in light and dark appearances, including Material You and system appearance changes.
     implementation_paths:
       - apps/mobile/src/features/threads/floating-working-control.tsx
     upstream_paths:

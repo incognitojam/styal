@@ -151,6 +151,11 @@ export function FloatingWorkingControl(props: {
   const capsuleSizerStyle = useAnimatedStyle(() => ({
     width: capsuleWidth.value ?? 0,
   }));
+  // While the sizer animates, Android can leave the absolute label centered on the
+  // sizer's starting width, over the action. Positioning it from the same value avoids that.
+  const labelHostStyle = useAnimatedStyle(() => ({
+    left: ((capsuleWidth.value ?? 0) - labelWidth) / 2,
+  }));
 
   if (!hasCapsule && !props.showScrollToEnd) {
     return null;
@@ -174,10 +179,10 @@ export function FloatingWorkingControl(props: {
         className="h-11 items-center justify-center"
       >
         <Animated.View className="h-11" style={capsuleSizerStyle} />
-        <View
+        <Animated.View
           pointerEvents={statusInteractive ? "box-none" : "none"}
           className="absolute h-11 items-center justify-center"
-          style={{ width: labelWidth }}
+          style={[{ width: labelWidth }, labelHostStyle]}
         >
           <FloatingStatusLabel
             key={
@@ -188,7 +193,7 @@ export function FloatingWorkingControl(props: {
             status={props.status}
             onLayout={handleLabelLayout}
           />
-        </View>
+        </Animated.View>
       </View>
     ) : null;
 
@@ -402,7 +407,7 @@ function FloatingStatusLabel(props: {
         onLayout={props.onLayout}
         onPress={props.status.onPress}
       >
-        <SymbolView name="text.bubble" size={13} tintColorClassName="foreground" />
+        <SymbolView name="text.bubble" size={13} tintColorClassName="accent-foreground" />
         <Text className="shrink font-t3-medium text-xs text-foreground" numberOfLines={1}>
           {props.status.label}
         </Text>
@@ -444,7 +449,7 @@ function FloatingStatusLabel(props: {
         <SymbolView
           name={props.status.state === "settled" ? "checkmark.circle" : "clock"}
           size={13}
-          tintColorClassName="foreground"
+          tintColorClassName="accent-foreground"
           type="monochrome"
         />
         <Text className="shrink font-t3-medium text-xs text-foreground" numberOfLines={1}>
