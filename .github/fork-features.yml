@@ -5138,8 +5138,8 @@ features:
     prs: [591]
     invariants:
       - After the stack lookup has answered that a pull request is not in a stack, refreshing that answer keeps Merge, Auto-merge, and Merge now visible.
-      - A first stack lookup, a failed lookup, or a pull request in a stack still hides the single pull request merge controls.
-    rationale: Upstream hides the merge controls for every stack refresh, so a manual refresh or refresh trigger removes them until the lookup finishes.
+      - A first or failed stack lookup keeps the primary single pull request merge control visible but blocks activation; Merge now stays hidden, and a pull request in a stack uses stack controls.
+    rationale: Upstream keeps primary controls visible but blocks them for stack lookups. The fork also keeps single pull request actions available while refreshing a previous successful answer that the pull request is not in a stack.
     implementation_paths:
       - apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx
       - apps/web/src/components/pullRequest/pullRequestDetail.logic.ts
