@@ -17,6 +17,7 @@ interface PendingCommit {
 export function useCommitOnBlur(
   value: string,
   onCommit: (next: string) => void | Promise<boolean>,
+  normalizeDraft?: (previous: string, next: string) => string,
 ) {
   const [draft, setDraft] = useState<string | null>(null);
   const [pending, setPending] = useState<PendingCommit | null>(null);
@@ -30,7 +31,8 @@ export function useCommitOnBlur(
   return {
     value: draft ?? pending?.next ?? value,
     onChange: (event: ChangeEvent<HTMLInputElement>) => {
-      setDraft(event.target.value);
+      const next = event.target.value;
+      setDraft(normalizeDraft ? normalizeDraft(draft ?? value, next) : next);
     },
     onFocus: () => {
       valueOnFocus.current = pending?.next ?? value;
