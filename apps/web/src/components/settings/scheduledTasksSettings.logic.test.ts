@@ -7,7 +7,7 @@ import {
   ScheduledTaskId,
   type ScheduledTask,
 } from "@t3tools/contracts";
-import { describe, expect, it } from "vite-plus/test";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import type {
   SidebarProjectGroupMember,
@@ -168,6 +168,54 @@ describe("editing scheduled task branch settings", () => {
     expect(draft.baseRef).toBe("release");
     expect(draft.startFromOrigin).toBe(false);
   });
+});
+
+// A worker thread keeps the process time zone when TZ changes, so the DST cases
+// only run where a stubbed zone takes effect.
+const stubbedZoneApplies = (() => {
+  vi.stubEnv("TZ", "America/Los_Angeles");
+  const applies = new Date(2027, 0, 1).getTimezoneOffset() === 480;
+  vi.unstubAllEnvs();
+  return applies;
+})();
+
+describe("one-time scheduled tasks", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("round-trips the run time through the local date-time input", () => {
+    const runAt = "2026-11-03T17:00:42.000Z";
+    const draft = taskToDraft({ ...legacyTask, schedule: { type: "once", runAt } });
+    expect(draft.scheduleMode).toBe("once");
+    expect(scheduleFromDraft(draft)).toEqual({ type: "once", runAt });
+    const moved = scheduleFromDraft({ ...draft, runAt: "2026-11-04T09:30" });
+    expect(moved).toEqual({ type: "once", runAt: new Date("2026-11-04T09:30").toISOString() });
+    expect(scheduleFromDraft({ ...draft, runAt: "" })).toBeNull();
+  });
+
+  it.skipIf(!stubbedZoneApplies)("rejects a time skipped by daylight saving", () => {
+    vi.stubEnv("TZ", "America/Los_Angeles");
+    const draft = taskToDraft({
+      ...legacyTask,
+      schedule: { type: "once", runAt: "2027-03-14T18:00:00.000Z" },
+    });
+    expect(scheduleFromDraft({ ...draft, runAt: "2027-03-14T02:30" })).toBeNull();
+  });
+
+  it.skipIf(!stubbedZoneApplies)(
+    "keeps the saved offset when an edit stays in an hour that repeats",
+    () => {
+      vi.stubEnv("TZ", "America/Los_Angeles");
+      // 01:30 PST, the second 01:30 on 2026-11-01.
+      const draft = taskToDraft({
+        ...legacyTask,
+        schedule: { type: "once", runAt: "2026-11-01T09:30:00.000Z" },
+      });
+      expect(scheduleFromDraft({ ...draft, runAt: "2026-11-01T01:35" })).toEqual({
+        type: "once",
+        runAt: "2026-11-01T09:35:00.000Z",
+      });
+    },
+  );
 });
 
 describe("webhook scheduled tasks", () => {
