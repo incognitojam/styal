@@ -44,7 +44,6 @@ import {
   ThreadId,
   type ChatAttachment,
   type ChatFileAttachment,
-  type ChatImageAttachment,
   type EnvironmentId,
   type MessageId,
   type OrchestrationV2ProjectedTurnItem,
@@ -62,7 +61,6 @@ import { parseThreadLinkHref, resolveThreadLinkRef } from "@t3tools/shared/threa
 import { PROMPT_LINK_MAX_PROMPT_LENGTH } from "@t3tools/shared/promptLinks";
 import {
   parseComposerContextHref,
-  collectComposerContextReferences,
   replaceComposerContextReferences,
   formatComposerContextReference,
 } from "@t3tools/shared/composerContextReferences";
@@ -86,7 +84,6 @@ import {
   splitCodexArtifactTemplateMarkdown,
 } from "@t3tools/shared/codexMarkdownDirectives";
 import { CHAT_LIST_ANCHOR_OFFSET, resolveChatListAnchoredEndSpace } from "@t3tools/shared/chatList";
-import { imageMimeType } from "@t3tools/shared/image";
 import { videoMimeType } from "@t3tools/shared/video";
 import {
   formatReviewFindingsCopyText,
@@ -136,6 +133,13 @@ import { useResolveClassNames } from "uniwind";
 import { useFilePreviewGallery, FilePreviewGallery } from "../../components/FilePreviewGallery";
 import { assetImageSource } from "../../lib/assetImageSource";
 import { composerImageGallery } from "../../lib/composerImageGallery";
+import {
+  IMAGE_GRID_GAP,
+  imageGridTileSize,
+  isImageAttachment,
+  messageImageLayout,
+  userMessageAttachmentLayout,
+} from "./messageImageGrid";
 import { messageImageGallery } from "./messageImageGallery";
 import { FilePreviewModal, type FilePreviewSource } from "../../components/FilePreviewModal";
 import { isPdfFile } from "../../lib/filePreview";
@@ -581,21 +585,8 @@ function MessageAttachmentImage(props: {
   );
 }
 
-const IMAGE_GRID_GAP = 8;
-// Phones fill the bubble; this only bounds tiles on tablets, where half a bubble is huge.
-const IMAGE_GRID_MAX_TILE = 240;
-const IMAGE_GRID_MAX_TILES = 4;
-
-function imageGridTileSize(availableWidth: number) {
-  return Math.max(
-    0,
-    Math.min(IMAGE_GRID_MAX_TILE, Math.floor((availableWidth - IMAGE_GRID_GAP) / 2)),
-  );
-}
-
-// One image keeps its large single layout; several share a 2x2 grid of square tiles, with the
-// rest counted on the last tile. The gallery a tile opens still pages through every image.
 // The explicit width stops the wrapping row from stretching an auto-sized bubble to its max width.
+// The gallery a tile opens still pages through every image, including the hidden ones.
 function MessageImages<T extends { readonly id: string }>(props: {
   readonly images: readonly T[];
   readonly tileSize: number;
@@ -603,17 +594,18 @@ function MessageImages<T extends { readonly id: string }>(props: {
   readonly className?: string;
   readonly renderImage: (image: T, tileSize: number | undefined) => ReactNode;
 }) {
-  const { images, tileSize } = props;
-  if (images.length === 0) return null;
-  if (images.length === 1) return props.renderImage(images[0]!, undefined);
-  const hiddenCount = images.length - IMAGE_GRID_MAX_TILES;
+  const { tileSize } = props;
+  const layout = messageImageLayout(props.images);
+  if (layout.kind === "none") return null;
+  if (layout.kind === "single") return props.renderImage(layout.image, undefined);
+  const lastIndex = layout.tiles.length - 1;
   return (
     <View
       className={cn("flex-row flex-wrap", props.className)}
       style={{ width: tileSize * 2 + IMAGE_GRID_GAP, gap: IMAGE_GRID_GAP }}
     >
-      {images.slice(0, IMAGE_GRID_MAX_TILES).map((image, index) =>
-        hiddenCount > 0 && index === IMAGE_GRID_MAX_TILES - 1 ? (
+      {layout.tiles.map((image, index) =>
+        layout.hiddenCount > 0 && index === lastIndex ? (
           <View key={image.id}>
             {props.renderImage(image, tileSize)}
             <View
@@ -621,7 +613,7 @@ function MessageImages<T extends { readonly id: string }>(props: {
               className="absolute inset-0 items-center justify-center bg-black/55"
               style={{ borderRadius: props.radius }}
             >
-              <Text className="font-t3-semibold text-2xl text-white">+{hiddenCount}</Text>
+              <Text className="font-t3-semibold text-2xl text-white">+{layout.hiddenCount}</Text>
             </View>
           </View>
         ) : (
@@ -630,10 +622,6 @@ function MessageImages<T extends { readonly id: string }>(props: {
       )}
     </View>
   );
-}
-
-function isImageAttachment(attachment: ChatAttachment): attachment is ChatImageAttachment {
-  return attachment.type === "image" || imageMimeType(attachment) !== null;
 }
 
 function isFileAttachment(attachment: ChatAttachment): attachment is ChatFileAttachment {
@@ -1595,22 +1583,11 @@ function renderFeedEntry(
       const foldExpanded = foldRowId !== null && (props.expandedWorkRows[foldRowId] ?? false);
       const bubbleBodyVisible = foldRowId === null || foldExpanded;
       const intent = resolveUserMessageIntent(message.inputIntent);
-      const referenceIds = new Set(
-        collectComposerContextReferences(message.text).map((reference) => reference.contextId),
-      );
-      const inlineAttachmentIds = new Set(
-        message.context?.records.flatMap((record) =>
-          "attachmentId" in record && referenceIds.has(record.contextId)
-            ? [record.attachmentId]
-            : [],
-        ),
-      );
-      // Images stay in the grid even when the text references them; other files referenced
-      // inline already show as chips in the text.
-      const gridImages = attachments.filter(isImageAttachment);
-      const listedAttachments = attachments.filter(
-        (attachment) => !isImageAttachment(attachment) && !inlineAttachmentIds.has(attachment.id),
-      );
+      const { gridImages, listedAttachments } = userMessageAttachmentLayout({
+        text: message.text,
+        context: message.context,
+        attachments,
+      });
       const pendingImages =
         entry.pendingMessage?.attachments.filter((attachment) => attachment.type === "image") ?? [];
       // The bubble's px-3.5 padding; a grid wider than the bubble's inner width would wrap.

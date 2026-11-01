@@ -2962,6 +2962,30 @@ features:
         - https://github.com/pingdotgg/t3code/pull/15894
       retire_when: Upstream or Clerk retries a failed headless Clerk load and bounds stalled Clerk requests on mobile.
 
+  - id: mobile-message-image-grid
+    title: Mobile messages show several images as a grid
+    status: maintained
+    prs: [1175]
+    invariants:
+      - A message with one image keeps the large single-image layout; two or more images show as a two-column grid of square tiles, capped at 240px each, that fills the bubble or assistant content width.
+      - The grid shows at most four tiles; when there are more images the fourth tile is dimmed with a "+N" count of the rest, and tapping any tile opens the full gallery at that image, paging through every image in the message.
+      - Sent, pending (still uploading), and assistant messages use the same grid, so a pending bubble keeps its layout when the send confirms.
+      - Non-image file attachments follow the images in a stacked list; files the message text references inline are left out of that list because they already show as chips in the text.
+      - Images the message text references inline stay in the grid instead of a separate row of small thumbnails.
+    rationale: Upstream mobile stacks every image full width, so a message with several screenshots becomes several screens tall, and shows images the text references as a row of 96px thumbnails. Upstream web already shows user images in a two-column grid. Compared with upstream revision 976a23161d3eeb2738a66993a40e7dd9aa98229a on November 1, 2026.
+    implementation_paths:
+      - apps/mobile/src/features/threads/ThreadFeed.tsx
+      - apps/mobile/src/features/threads/messageImageGrid.ts
+    upstream_paths:
+      - apps/mobile/src/features/threads/ThreadFeed.tsx
+    tests:
+      - apps/mobile/src/features/threads/messageImageGrid.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/blob/976a23161d3eeb2738a66993a40e7dd9aa98229a/apps/mobile/src/features/threads/ThreadFeed.tsx
+      retire_when: Upstream mobile shows several message images, including images the text references, as a compact grid with an overflow count, for sent, pending, and assistant messages.
+
   - id: mobile-notification-types
     title: Choose which agent alerts reach the phone
     status: maintained
