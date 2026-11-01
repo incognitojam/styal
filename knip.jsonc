@@ -19,8 +19,7 @@
     "scripts": {
       // Knip loads its preprocessor through a CLI option; native verification and
       // worktree setup (from t3.json) run directly. CI uses the reporter and CLI check.
-      // release-desktop.yml bundles the Windows verify script with esbuild through a
-      // path knip does not trace, and electron-builder loads the macOS signer by path.
+      // electron-builder loads the macOS signer by path.
       "entry": [
         // These fixture scripts are injected into a browser page by path.
         "fixtures/*/*.js",
@@ -29,9 +28,10 @@
         "setup-worktree.ts",
         "verify-cli-package.mjs",
         "sign-macos.ts",
-        "verify-windows-desktop-artifact.ts",
         "vitest-ci-exit-reporter.ts",
       ],
+      // esbuild stays in scripts/package.json as in upstream, whose deleted release
+      // workflow was its only user, so upstream bumps to it apply cleanly.
       "ignoreDependencies": ["esbuild"],
       // The `@styal/cli` npm package's files: copied into the package, never imported.
       // knip-schemas.test.ts writes a throwaway project to .knip-test-*, which a

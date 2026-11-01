@@ -5,9 +5,11 @@
 This document covers the unified release workflow for stable and nightly desktop releases.
 
 styal does not release through this workflow. It ships with Fork Nightly and Fork Release; see
-[Fork nightly releases](./fork-nightly.md) and [CLI releases](./cli-release.md). `release.yml` is
-kept identical to upstream and disabled, so upstream changes to it apply cleanly. The relay
-deployment and signing setup sections below also apply to the fork's workflows.
+[Fork nightly releases](./fork-nightly.md) and [CLI releases](./cli-release.md). Upstream's
+`release.yml` and `release-desktop.yml` are deleted from the fork, so the sections that describe
+them (What the workflow does, Hosted web app release deployment, and Nightly builds) document
+upstream's process only. The relay deployment and signing setup sections below also apply to the
+fork's workflows.
 
 ## What the workflow does
 
