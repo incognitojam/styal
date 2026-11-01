@@ -1394,6 +1394,9 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
           // parsed back out of the diff no longer match the working tree for `check-attr`.
           "-c",
           "core.quotePath=false",
+          // Not --no-relative, which Git before 2.28 rejects.
+          "-c",
+          "diff.relative=false",
           "diff",
           ...(input.format === "numstat" ? ["--numstat", "-z"] : ["--patch"]),
           "--no-color",
@@ -1450,7 +1453,15 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
         execute({
           operation,
           cwd: input.cwd,
-          args: [...args, "--name-only", "-z", "--no-renames", "--no-ext-diff"],
+          args: [
+            "-c",
+            "diff.relative=false",
+            ...args,
+            "--name-only",
+            "-z",
+            "--no-renames",
+            "--no-ext-diff",
+          ],
           maxOutputBytes: VcsDriver.CHECKPOINT_DIFF_MAX_OUTPUT_BYTES,
           outputMode: "error",
         }).pipe(Effect.map((result) => result.stdout.split("\0")));
