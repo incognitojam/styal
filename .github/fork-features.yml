@@ -1848,6 +1848,7 @@ features:
       - Mobile About styal identifies the installed binary by its native version and build number on Android and iOS, retaining non-production variant labels.
       - Settings that exist only in styal show the monochrome styal mark beside their title, limited to ledger features that are still maintained or under review; fork refinements of upstream settings stay unmarked.
       - The desktop app's CLI launcher and its Settings install are named `styal`, so they never take over or remove an upstream `t3` command.
+      - styal releases only through its `fork-*` workflows. Upstream's `release.yml` and `release-desktop.yml`, and the scripts only they ran, stay deleted; intake removes upstream edits to them as fork deletions.
     implementation_paths:
       - .github/actions/cache-android-build/action.yml
       - .github/actions/setup-deps/dependency-hash.mjs

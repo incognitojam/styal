@@ -74,22 +74,25 @@ mutation first.
 
 ## GitHub Actions configuration
 
-The four public identifiers are read as `vars.*`; they are not secrets. They are consumed by three
-workflows at two scopes:
+The four public identifiers are read as `vars.*`; they are not secrets. They are consumed at two
+scopes:
 
-| Variable                    | `deploy-web.yml` (`production` env) | `release.yml` `relay_public_config` (`production` env) | `desktop-macos-preview.yml` (no environment) |
-| --------------------------- | :---------------------------------: | :----------------------------------------------------: | :------------------------------------------: |
-| `CLERK_PUBLISHABLE_KEY`     |                  ✓                  |                           ✓                            |                      ✓                       |
-| `CLERK_JWT_TEMPLATE`        |                  ✓                  |                           ✓                            |                      ✓                       |
-| `CLERK_CLI_OAUTH_CLIENT_ID` |                  ✓                  |                           ✓                            |                      ✓                       |
-| `RELAY_URL`                 |                  ✓                  |                derived from relay state                |                      ✓                       |
-| `STYAL_WEB_DOMAIN`          |   ✓ (also `VITE_HOSTED_APP_URL`)    |                                                        |                                              |
+| Variable                    | `deploy-web.yml` (`production` env) | Release builds and previews (no environment) |
+| --------------------------- | :---------------------------------: | :------------------------------------------: |
+| `CLERK_PUBLISHABLE_KEY`     |                  ✓                  |                      ✓                       |
+| `CLERK_JWT_TEMPLATE`        |                  ✓                  |                      ✓                       |
+| `CLERK_CLI_OAUTH_CLIENT_ID` |                  ✓                  |                      ✓                       |
+| `RELAY_URL`                 |                  ✓                  |                      ✓                       |
+| `STYAL_WEB_DOMAIN`          |   ✓ (also `VITE_HOSTED_APP_URL`)    |                                              |
+
+Release builds and previews are `fork-js-bundle.yml`, `fork-desktop-build.yml`,
+`fork-cli-archives.yml`, `fork-cli-build.yml`, and `desktop-macos-preview.yml`.
 
 Every CI build uses the **production** instance — a single relay trusts a single Clerk instance,
 so artifacts that talk to the production relay must all sign into production Clerk. Set the
 production values (`pk_live_…`, `CLERK_JWT_TEMPLATE=t3-relay`, the prod OAuth client ID, and
 `RELAY_URL` once the relay is deployed) as **repository variables**: jobs without an `environment:`
-declaration — the macOS preview — see only that scope. `STYAL_WEB_DOMAIN` and the relay deployment
+declaration, such as the release builds and previews, see only that scope. `STYAL_WEB_DOMAIN` and the relay deployment
 values live on the `production` environment, which can also shadow the Clerk variables when they
 ever need to diverge. The preview job treats the three Clerk values as all-or-nothing (a partial
 set fails the build) and builds Link-disabled with a notice while `RELAY_URL` is unset.
