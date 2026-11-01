@@ -3032,7 +3032,7 @@ features:
   - id: mobile-status-icon-theme-colors
     title: Mobile floating status icons follow the active theme
     status: maintained
-    prs: []
+    prs: [1200]
     invariants:
       - Waiting, background command, compacting, goal, preparing, settled, snoozed, woke, and subagent input icons use the active theme foreground in light and dark appearances, including Material You and system appearance changes.
     implementation_paths:
