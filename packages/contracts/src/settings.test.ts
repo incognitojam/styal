@@ -125,6 +125,9 @@ describe("ServerSettings default permissions", () => {
     // Other defaults never change, with or without a reviewer.
     expect(resolveNewThreadRuntimeMode("approval-required", {})).toBe("approval-required");
     expect(resolveNewThreadRuntimeMode("auto-accept-edits", reviewer)).toBe("auto-accept-edits");
+    // A managed ceiling below Full access keeps the thread in Auto.
+    expect(resolveNewThreadRuntimeMode("auto", {}, "auto")).toBe("auto");
+    expect(resolveNewThreadRuntimeMode("auto", {}, "full-access")).toBe("full-access");
   });
 });
 

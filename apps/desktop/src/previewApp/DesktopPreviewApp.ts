@@ -2,6 +2,7 @@
 import {
   DESKTOP_PREVIEW_APP_REPOSITORY,
   DesktopPreviewAppFailureReason,
+  managedUpdatesMessage,
   type DesktopPreviewAppActionResult,
   type DesktopPreviewAppActivity,
   type DesktopPreviewAppBuild,
@@ -30,6 +31,7 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import { DESKTOP_INSTALL_IDENTITIES } from "../app/DesktopInstallVariant.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
+import * as DesktopManagedPolicy from "../app/DesktopManagedPolicy.ts";
 import * as DesktopObservability from "../app/DesktopObservability.ts";
 import * as ElectronDialog from "../electron/ElectronDialog.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
@@ -183,6 +185,20 @@ export const make = Effect.fn("DesktopPreviewApp.make")(function* (options?: {
   const telemetry = yield* DesktopTelemetryPublisher.DesktopTelemetryPublisher;
   const scope = yield* Scope.Scope;
   const { path } = environment;
+  // Like the updater, a policy that cannot be read refuses.
+  const managedUpdatesRefusal = (yield* DesktopManagedPolicy.DesktopManagedPolicy).read.pipe(
+    Effect.map((found) => {
+      if (found === undefined) return undefined;
+      const updates = found.document.limits?.updates;
+      // Previews download from GitHub, outside an approved feed, and are less tested than nightly.
+      return updates?.mode === "off" ||
+        updates?.feedUrl !== undefined ||
+        updates?.allowNightly === false
+        ? managedUpdatesMessage(found.document.organization)
+        : undefined;
+    }),
+    Effect.catch((error) => Effect.succeed(error.message)),
+  );
 
   const supported = environment.platform === "darwin" && environment.processArch === "arm64";
   const runningAsPreview = environment.installVariant === "preview";
@@ -713,6 +729,8 @@ export const make = Effect.fn("DesktopPreviewApp.make")(function* (options?: {
             "This preview cannot replace itself. Use your main styal app.",
           );
         }
+        const refusal = yield* managedUpdatesRefusal;
+        if (refusal !== undefined) return yield* fail("not_allowed", refusal);
         yield* ensureSlotIsOurs;
         const assets = yield* fetchReleaseAssets.pipe(
           Effect.mapError((cause) =>

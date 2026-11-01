@@ -1903,6 +1903,9 @@ export const layerWsRpc = (
           },
           settings,
           addProjectDefaultDirectory: yield* resolveAddProjectDefaultDirectory(),
+          ...(serverSettings.managedPolicy === undefined
+            ? {}
+            : { managedPolicy: serverSettings.managedPolicy }),
           shellResumeCompletionMarker: true,
           shellThreadFamilies: true,
           shellOlderSettled: true,

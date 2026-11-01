@@ -31,16 +31,32 @@ export const RuntimeMode = Schema.Literals([
 export type RuntimeMode = typeof RuntimeMode.Type;
 export const DEFAULT_RUNTIME_MODE: RuntimeMode = "full-access";
 
+const RUNTIME_MODE_RANK: Record<RuntimeMode, number> = {
+  "approval-required": 0,
+  "auto-accept-edits": 1,
+  auto: 2,
+  "full-access": 3,
+};
+
+/** Whether `mode` grants the agent more than `ceiling`; no ceiling allows every mode. */
+export const isRuntimeModeAbove = (mode: RuntimeMode, ceiling: RuntimeMode | undefined): boolean =>
+  ceiling !== undefined && RUNTIME_MODE_RANK[mode] > RUNTIME_MODE_RANK[ceiling];
+
 /**
  * Auto relies on the provider's own reviewer; a provider without one would ask about every
  * action, so a default of Auto starts its threads in Full access. An unknown provider counts as
- * having no reviewer.
+ * having no reviewer. A managed policy's ceiling keeps the thread in Auto instead.
  */
 export function resolveNewThreadRuntimeMode(
   defaultMode: RuntimeMode,
   provider: { readonly reviewsAutoMode?: boolean | undefined } | null | undefined,
+  maxRuntimeMode?: RuntimeMode,
 ): RuntimeMode {
-  return defaultMode === "auto" && provider?.reviewsAutoMode !== true ? "full-access" : defaultMode;
+  return defaultMode === "auto" &&
+    provider?.reviewsAutoMode !== true &&
+    !isRuntimeModeAbove("full-access", maxRuntimeMode)
+    ? "full-access"
+    : defaultMode;
 }
 
 export const ProviderInteractionMode = Schema.Literals(["default", "plan"]);

@@ -1330,6 +1330,7 @@ features:
       - A build with macOS's quarantine attribute anywhere inside it fails visibly with the `quarantined` reason, a check that cannot complete fails too, and the attribute is never cleared.
       - Removing the app keeps preview data; resetting deletes only the preview's own state directories, and refuses while any live server records using them.
       - A preview app never quits, opens, resets, or replaces the copy it is running from.
+      - A managed policy with updates off, its own update feed, or nightly disallowed, or one that cannot be read, refuses a preview install.
     rationale: Testing a preview otherwise takes eight manual steps per build, including clearing quarantine and unmounting a disk image.
     implementation_paths:
       - apps/desktop/src/ipc/methods/previewApp.ts
@@ -2122,6 +2123,7 @@ features:
       ]
     invariants:
       - The default static worktree branch prefix is styal across clients; explicit environment and project prefixes, including an empty prefix, are preserved.
+      - 'A styal install reads only the managed policy styal owns, never an upstream T3 Code one, so the two run side by side with different policies. It uses macOS profile domain `build.styal.app` and `/Library/Application Support/styal/policy.json`, Windows `HKLM\SOFTWARE\Policies\styal\styal` and `C:\Program Files\styal\policy.json`, and Linux `/etc/styal/policy.json`. Preview builds read the same policy, and the file keeps upstream key names.'
       - Packaged builds ship as styal with their own application identifier, URL scheme, product name, and About-panel identity instead of presenting as upstream T3 Code.
       - Scheme-only mobile wake links for production, development, and preview styal builds preserve the current route and unfinished authentication; path-bearing links, including auth callbacks and pairing links, are still passed to the app's link handling.
       - Electron's application name is a stable identity slug rather than a display string, so OS credential storage keys stay in the same namespace as the user-data directory they protect.
@@ -2264,6 +2266,7 @@ features:
       - packages/shared/src/brandAssets.ts
       - packages/shared/src/cliRelease.ts
       - packages/shared/src/cliReleaseVersion.ts
+      - packages/shared/src/managedPolicyFile.ts
       - packages/ssh/src/tunnel.ts
       - scripts/build-cli-archive.ts
       - scripts/build-desktop-artifact.ts
@@ -4377,6 +4380,7 @@ features:
       - The built-in default permission mode for new threads stays Full access, as upstream; Auto as the default is the user's choice.
       - With Auto as the default, a new thread on a provider whose snapshot does not report its own Auto reviewer (reviewsAutoMode) starts in Full access; Claude, Codex, Cursor, Grok, and fx report one. An unloaded snapshot or an older server counts as no reviewer.
       - Web and mobile drafts follow their selected provider until the user picks a mode; the server's bootstrap thread uses the same resolution. Picking Auto for one thread keeps Auto on every provider.
+      - Under a managed policy's `maxRuntimeMode` below Full access, a default of Auto stays Auto on a provider without a reviewer rather than starting a thread the ceiling refuses.
       - The provider canary's auto scenario fails a release whose Auto turn asks for approval of a routine workspace write, or whose provider does not report applying Auto; providers without reviewsAutoMode skip it.
       - provider.turn.completed reports approvalRequests, the command, file, and permission approvals the turn raised, alongside its runtimeMode.
       - On Codex turns that ran in Auto, provider.turn.completed also reports autoReviewsApproved, autoReviewsDenied, autoReviewsTimedOut, and autoReviewsAborted, counted from the reviewer's item/autoApprovalReview/completed verdicts; turns in other modes leave them out.

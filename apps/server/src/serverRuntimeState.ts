@@ -22,6 +22,16 @@ export const PersistedServerRuntimeState = Schema.Struct({
   startedAt: Schema.String,
   serviceManaged: Schema.optional(Schema.Boolean),
   serverVersion: Schema.optional(Schema.String),
+  // The managed policy this server loaded at startup, null for none; absent from older servers.
+  managedPolicy: Schema.optional(
+    Schema.NullOr(
+      Schema.Struct({
+        source: Schema.String,
+        organization: Schema.String,
+        fingerprint: Schema.String,
+      }),
+    ),
+  ),
 });
 export type PersistedServerRuntimeState = typeof PersistedServerRuntimeState.Type;
 
@@ -57,6 +67,7 @@ export const makePersistedServerRuntimeState = (input: {
     "host" | "privateNetworkOnly" | "devUrl"
   >;
   readonly port: number;
+  readonly managedPolicy?: PersistedServerRuntimeState["managedPolicy"];
 }): Effect.Effect<PersistedServerRuntimeState> =>
   Effect.map(DateTime.now, (now) => ({
     version: 1,
@@ -69,6 +80,7 @@ export const makePersistedServerRuntimeState = (input: {
     ...(input.config.devUrl ? { devUrl: input.config.devUrl.toString() } : {}),
     startedAt: DateTime.formatIso(now),
     serverVersion: packageJson.version,
+    ...(input.managedPolicy === undefined ? {} : { managedPolicy: input.managedPolicy }),
   }));
 
 export const persistServerRuntimeState = (input: {

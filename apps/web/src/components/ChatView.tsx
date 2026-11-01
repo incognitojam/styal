@@ -188,6 +188,7 @@ import { threadPullRequestPanelTarget } from "./pullRequest/pullRequestDetail.lo
 import { LinkPullRequestDialogHost } from "./pullRequest/LinkPullRequestDialog";
 import { GuestPendingMessages } from "./chat/GuestShareControls";
 import { useDeviceState } from "~/state/device";
+import { useManagedPolicy } from "~/state/managedPolicy";
 import { BranchToolbar, type BranchToolbarHandle } from "./BranchToolbar";
 import { ComposerContextPermissions } from "./ComposerContextPermissions";
 import { resolveCompatibleRuntimeMode } from "./chat/runtimeModeConfig";
@@ -1345,9 +1346,11 @@ export default function ChatView(props: ChatViewProps) {
   const selectedProvider = selectedProviderEntry?.driverKind ?? requestedDriverKind;
   const activeProviderInstanceId = selectedProviderEntry?.instanceId ?? null;
   const activeProviderStatus = selectedProviderEntry?.snapshot ?? null;
+  const managedPolicy = useManagedPolicy(environmentId);
   const defaultRuntimeMode = resolveNewThreadRuntimeMode(
     resolveProjectSettings(settings, activeThread?.projectId ?? null).settings.defaultRuntimeMode,
     activeProviderStatus,
+    managedPolicy?.limits?.maxRuntimeMode,
   );
   // Implicit drafts follow their current project/environment and provider,
   // including retargets. Explicit composer choices and existing server threads

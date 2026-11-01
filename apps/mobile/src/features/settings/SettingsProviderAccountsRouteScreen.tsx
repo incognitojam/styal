@@ -6,6 +6,7 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import {
   AuthProvidersManageScope,
+  isManagedDriverAllowed,
   type ProviderAuthResponse,
   type ServerProvider,
 } from "@t3tools/contracts";
@@ -83,7 +84,7 @@ export function SettingsProviderAccountsRouteScreen() {
                 ) : (
                   <>
                     {sortProvidersForAccounts(
-                      providersByEnvironment.get(environment.environmentId) ?? [],
+                      managedProviders(environment, providersByEnvironment),
                     ).map((provider, index) =>
                       supportsInAppSignIn(provider) ? (
                         <ProviderAccount
@@ -100,7 +101,7 @@ export function SettingsProviderAccountsRouteScreen() {
                         />
                       ),
                     )}
-                    {(providersByEnvironment.get(environment.environmentId) ?? []).length === 0 ? (
+                    {managedProviders(environment, providersByEnvironment).length === 0 ? (
                       <Text className="p-4 text-foreground-muted">
                         Add a provider in web or desktop Settings.
                       </Text>
@@ -113,6 +114,16 @@ export function SettingsProviderAccountsRouteScreen() {
         </ScreenScrollView>
       </SettingsScreen>
     </>
+  );
+}
+
+/** Providers the environment's managed policy allows; the rest cannot run or sign in. */
+function managedProviders(
+  environment: SettingsTarget,
+  providersByEnvironment: ReadonlyMap<string, ReadonlyArray<ServerProvider>>,
+) {
+  return (providersByEnvironment.get(environment.environmentId) ?? []).filter((provider) =>
+    isManagedDriverAllowed(environment.serverConfig.managedPolicy, provider.driver),
   );
 }
 

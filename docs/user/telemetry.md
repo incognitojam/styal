@@ -139,6 +139,9 @@ or provider output. Other details the server logs alongside an error are not sen
 To stop error reports while keeping usage events, set `T3CODE_ERROR_REPORTING_ENABLED=false`.
 Disabling telemetry with `T3CODE_TELEMETRY_ENABLED=false` stops both.
 
+An administrator can turn product events and relay tracing off for every user on a machine with
+a [managed policy](./managed-policy.md#other-capabilities).
+
 The desktop app reads `T3CODE_TELEMETRY_ENABLED` from your shell profile (for example `~/.zshrc`) on macOS and
 Linux, so export it there and restart the app. On Windows, set it as a user environment variable.
 

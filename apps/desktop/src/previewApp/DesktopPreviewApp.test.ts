@@ -2,7 +2,7 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeCrypto from "node:crypto";
 import { assert, describe, it } from "@effect/vitest";
-import type { DesktopFeatureUsageReport } from "@t3tools/contracts";
+import type { DesktopFeatureUsageReport, ManagedPolicyDocument } from "@t3tools/contracts";
 import type * as Electron from "electron";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -20,6 +20,7 @@ import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
+import * as DesktopManagedPolicy from "../app/DesktopManagedPolicy.ts";
 import * as ElectronDialog from "../electron/ElectronDialog.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as DesktopTelemetryPublisher from "../telemetry/DesktopTelemetryPublisher.ts";
@@ -93,6 +94,7 @@ interface Scenario {
   readonly downloadStarted?: Deferred.Deferred<void>;
   /** The person's answer to the main-process confirmation. */
   readonly confirmed?: boolean;
+  readonly policy?: ManagedPolicyDocument;
   readonly detachFails?: boolean;
   readonly psFails?: boolean;
   readonly xattrFails?: boolean;
@@ -279,6 +281,7 @@ const setup = (scenario: Scenario) =>
       Effect.provide(
         Layer.mergeAll(
           Layer.succeed(DesktopEnvironment.DesktopEnvironment, environment),
+          DesktopManagedPolicy.layerTest(scenario.policy),
           Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner),
           Layer.succeed(HttpClient.HttpClient, http),
           Layer.succeed(
@@ -403,6 +406,34 @@ describe("DesktopPreviewApp", () => {
             ),
           ),
         );
+      }),
+    ),
+  );
+
+  it.effect.each([
+    { name: "turns updates off", updates: { mode: "off" as const } },
+    {
+      name: "sets its own update feed",
+      updates: { mode: "auto" as const, feedUrl: "https://updates.example.com/styal" },
+    },
+    { name: "disallows nightly", updates: { mode: "auto" as const, allowNightly: false } },
+  ])("refuses to install when a managed policy $name", ({ updates }) =>
+    scoped(
+      Effect.gen(function* () {
+        const app = yield* setup({
+          assets: [buildAsset],
+          policy: {
+            schemaVersion: 1,
+            organization: "Example Corp",
+            limits: { updates },
+          },
+        });
+
+        const result = yield* app.service.install(12);
+
+        assert.strictEqual(result.outcome, "failed");
+        assert.strictEqual(result.message, "Example Corp manages styal updates.");
+        assert.lengthOf(app.commands, 0);
       }),
     ),
   );

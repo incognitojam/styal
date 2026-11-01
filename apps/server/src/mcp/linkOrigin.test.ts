@@ -41,6 +41,7 @@ import * as ProjectCloneTracker from "../project/ProjectCloneTracker.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ScheduledTaskService from "../scheduledTasks/ScheduledTaskService.ts";
+import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as CommandReceiptStore from "../orchestration-v2/CommandReceiptStore.ts";
 import * as SecretRequests from "../secrets/SecretRequests.ts";
@@ -294,7 +295,9 @@ const usersOwnThread = (threadId = ThreadId.make("thread:users-own")) =>
     return threadId;
   });
 
-it.layer(Layer.provideMerge(layerTools, layerOrchestration))("work a link starts", (it) => {
+it.layer(
+  Layer.provideMerge(layerTools, layerOrchestration).pipe(Layer.provide(ManagedPolicy.layerTest())),
+)("work a link starts", (it) => {
   it.effect.each(["within", "already-raised", "raised-after-preflight"] as const)(
     "scheduled bound thread %s respects Auto limits",
     (scenario) =>
