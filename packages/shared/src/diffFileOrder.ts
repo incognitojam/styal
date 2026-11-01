@@ -194,16 +194,27 @@ function orderByImports(
 }
 
 /**
- * The implementation a test names: `foo.test.ts`, `__tests__/foo.ts`, `foo_test.go`,
- * `test_foo.py` and `FooTests.swift` all point at their source's base name.
+ * Where the implementation a test names sits: `foo.test.ts`, `__tests__/foo.ts`, `foo_test.go`,
+ * `test_foo.py` and `FooTests.swift` all point at their source's base name. `a.logic.test.ts`
+ * covers `a.logic.ts` while `a.browser.test.ts` covers `a.ts`, so the longest dotted prefix that
+ * names a source file wins.
  */
-function testedBaseName(path: string): string {
-  return (path.split("/").at(-1) ?? "")
-    .replace(/\.(?:test|spec)\..*$/, "")
-    .replace(/\.[^.]+$/, "")
-    .replace(/^test_(?=.)/, "")
-    .replace(/(?<=.)_(?:test|spec)$/, "")
-    .replace(/(?<=[a-z0-9])(?:Tests?|Spec)$/, "");
+function testedSourcePosition(path: string, sourcePositions: ReadonlyMap<string, number>): number {
+  let name = (path.split("/").at(-1) ?? "").replace(/\.(?:test|spec)\..*$/, "");
+  while (true) {
+    const position =
+      sourcePositions.get(name) ??
+      sourcePositions.get(
+        name
+          .replace(/^test_(?=.)/, "")
+          .replace(/(?<=.)_(?:test|spec)$/, "")
+          .replace(/(?<=[a-z0-9])(?:Tests?|Spec)$/, ""),
+      );
+    if (position !== undefined) return position;
+    const dot = name.lastIndexOf(".");
+    if (dot <= 0) return Number.MAX_SAFE_INTEGER;
+    name = name.slice(0, dot);
+  }
 }
 
 /** How a caller's file shape maps onto the ordering: its diff path and its patch's changed lines. */
@@ -268,9 +279,10 @@ export function orderDiffFiles<T>(
   const orderedTests = [...byPath.keys()]
     .filter((path) => tiers.get(path) === "test")
     .sort((left, right) => {
-      const leftPosition = sourcePositions.get(testedBaseName(left)) ?? Number.MAX_SAFE_INTEGER;
-      const rightPosition = sourcePositions.get(testedBaseName(right)) ?? Number.MAX_SAFE_INTEGER;
-      return leftPosition - rightPosition || left.localeCompare(right);
+      return (
+        testedSourcePosition(left, sourcePositions) -
+          testedSourcePosition(right, sourcePositions) || left.localeCompare(right)
+      );
     });
 
   const orderedGenerated = [...byPath.keys()]

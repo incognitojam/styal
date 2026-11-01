@@ -280,6 +280,26 @@ describe("orderDiffFiles", () => {
     ]);
   });
 
+  it("pairs a test with the source whose name carries its own dotted suffix", () => {
+    expect(
+      order([
+        file("src/c.browser.test.tsx"),
+        file("src/b.test.ts"),
+        file("src/a.logic.test.ts"),
+        file("src/c.tsx"),
+        file("src/b.ts"),
+        file("src/a.logic.ts"),
+      ]),
+    ).toEqual([
+      "src/a.logic.ts",
+      "src/b.ts",
+      "src/c.tsx",
+      "src/a.logic.test.ts",
+      "src/b.test.ts",
+      "src/c.browser.test.tsx",
+    ]);
+  });
+
   it("puts a test with no source in the diff after the ones that have theirs", () => {
     expect(order([file("src/orphan.spec.ts"), file("src/a.test.ts"), file("src/a.ts")])).toEqual([
       "src/a.ts",
