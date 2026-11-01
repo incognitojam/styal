@@ -147,7 +147,7 @@ it.layer(NodeServices.layer)("Claude maintenance", (it) => {
     {
       resolved: "C:\\ProgramData\\chocolatey\\bin\\claude.exe",
       real: "C:\\ProgramData\\chocolatey\\bin\\claude.exe",
-      manualOnly: false,
+      manualOnly: true,
     },
     {
       resolved: "C:\\Work\\node_modules\\@anthropic-ai\\claude-code\\cli.js",
