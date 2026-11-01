@@ -197,7 +197,13 @@ export function backgroundWorkNowItem(input: {
         {only.task.fullLabel ? (
           <WorkflowRunLabel name={only.task.fullLabel} />
         ) : (
-          <span className={cn(isCommand(only) && "font-mono")}>{only.task.label}</span>
+          <span
+            className={cn(
+              isCommand(only) && "font-mono in-data-[slot=popover-popup]:whitespace-pre-wrap",
+            )}
+          >
+            {only.task.label}
+          </span>
         )}
       </>
     ) : (
