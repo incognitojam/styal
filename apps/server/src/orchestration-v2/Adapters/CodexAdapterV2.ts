@@ -103,6 +103,7 @@ import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import { resolveAttachmentPath, resolveAttachmentPathById } from "../../attachmentStore.ts";
+import * as PortScanner from "../../preview/PortScanner.ts";
 import { getCodexServiceTierOptionValue } from "../../codexModelOptions.ts";
 import { ServerConfig } from "../../config.ts";
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
@@ -1350,6 +1351,7 @@ export const CODEX_THREAD_CONFIG = {
 const CODEX_T3_MCP_TOOL_TIMEOUT_SEC = 65 * 60;
 
 function codexThreadRuntimeParams(input: {
+  readonly threadId: ThreadId | null;
   readonly mcpSession: McpProviderSession.McpProviderSessionConfig | undefined;
   readonly modelSelection?: { readonly model: string };
   readonly runtimePolicy?: ProviderAdapter.ProviderAdapterV2RuntimePolicy;
@@ -1366,6 +1368,10 @@ function codexThreadRuntimeParams(input: {
     ...(input.modelSelection === undefined ? {} : { model: input.modelSelection.model }),
     config: {
       ...CODEX_THREAD_CONFIG,
+      // One app-server serves many threads, so the id goes in per-thread shell config, not its env.
+      ...(input.threadId === null
+        ? {}
+        : { [`shell_environment_policy.set.${PortScanner.AGENT_THREAD_ENV}`]: input.threadId }),
       ...(mcpSession === undefined
         ? {}
         : {
@@ -7085,6 +7091,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 client.request(
                   "thread/start",
                   threadRuntimeParams({
+                    threadId: threadInput.threadId,
                     mcpSession,
                     modelSelection: threadInput.modelSelection,
                     runtimePolicy: threadInput.runtimePolicy,
@@ -7113,15 +7120,15 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
           resumeThread: Effect.fn("CodexAdapterV2.resumeThread")(
             function* (threadInput) {
               const nativeThreadId = yield* getNativeThreadId(threadInput.providerThread);
-              const mcpSession = yield* readMcpSession(
-                threadInput.threadId ?? threadInput.providerThread.appThreadId,
-              );
+              const appThreadId = threadInput.threadId ?? threadInput.providerThread.appThreadId;
+              const mcpSession = yield* readMcpSession(appThreadId);
               // Initializing decides whether this session has the styal skill.
               const resume = Effect.suspend(() =>
                 client.raw.request("thread/resume", {
                   threadId: nativeThreadId,
                   excludeTurns: true,
                   ...threadRuntimeParams({
+                    threadId: appThreadId,
                     mcpSession,
                     ...(threadInput.modelSelection === undefined
                       ? {}
@@ -7908,6 +7915,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                   threadId,
                   excludeTurns: true,
                   ...threadRuntimeParams({
+                    threadId: threadInput.providerThread.appThreadId,
                     mcpSession: yield* readMcpSession(threadInput.providerThread.appThreadId),
                     modelSelection: input.modelSelection,
                     runtimePolicy: input.runtimePolicy,
@@ -7962,6 +7970,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                         ? {}
                         : { lastTurnId: boundary.lastTurnId }),
                       ...threadRuntimeParams({
+                        threadId: threadInput.targetThreadId,
                         mcpSession,
                         ...(threadInput.modelSelection === undefined
                           ? {}
