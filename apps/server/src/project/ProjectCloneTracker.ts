@@ -89,8 +89,8 @@ interface TrackedClone {
     readonly destinationPath: string;
     readonly repository: SourceControlRepositoryInfo | null;
     readonly provider: SourceControlProviderKind;
-    readonly protocol: SourceControlCloneProtocol | undefined;
     readonly defaultRepository: SourceControlCloneDefaultRepository | undefined;
+    readonly protocol: SourceControlCloneProtocol;
   };
 }
 
@@ -327,8 +327,8 @@ export const make = Effect.gen(function* () {
             destinationPath: prepared.destinationPath,
             repository: prepared.repository,
             provider: input.provider ?? SourceControlProviderKind.make("unknown"),
-            protocol: input.protocol,
             defaultRepository: input.defaultRepository,
+            protocol: input.protocol ?? "auto",
           },
         });
         return [true, next] as const;
