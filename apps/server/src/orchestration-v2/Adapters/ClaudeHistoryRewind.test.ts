@@ -149,4 +149,121 @@ describe("Claude full native history rewind", () => {
         }),
       ),
   );
+
+  // Transcript order and fields follow what Claude Code 2.1.316 writes for a real /compact: the
+  // boundary and summary come before the row holding the prompt uuid sent for the command.
+  it.effect("rewinds to each turn around a /compact through isolated native forks", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const scratchDir = NodePath.resolve(import.meta.dirname, "../../../../../.scratch");
+        NodeFS.mkdirSync(scratchDir, { recursive: true });
+        const baseDir = NodeFS.mkdtempSync(
+          NodePath.join(scratchDir, "upstream-v2-claude-rewind-compact-"),
+        );
+        yield* Effect.addFinalizer(() =>
+          Effect.sync(() => NodeFS.rmSync(baseDir, { recursive: true, force: true })),
+        );
+        const cwd = NodePath.join(baseDir, "workspace");
+        const configDir = NodePath.join(baseDir, "claude-home");
+        const projectDir = NodePath.join(configDir, "projects", cwd.replace(/[^a-zA-Z0-9-]/g, "-"));
+        NodeFS.mkdirSync(cwd, { recursive: true });
+        NodeFS.mkdirSync(projectDir, { recursive: true });
+        const sessionId = "550e8400-e29b-41d4-a716-446655440011";
+        const uuid = (value: number) =>
+          `550e8400-e29b-41d4-a716-${String(value).padStart(12, "0")}`;
+        const entry = (type: string, id: number, parent: number | null, content: string) => ({
+          type,
+          uuid: uuid(id),
+          parentUuid: parent === null ? null : uuid(parent),
+          sessionId,
+          cwd,
+          timestamp: "2026-01-01T00:00:00.000Z",
+          message: { role: type, content },
+        });
+        const prompts = [uuid(101), uuid(102), uuid(103), uuid(104), uuid(105)];
+        const cursors = [uuid(201), uuid(202), null, uuid(204), uuid(205)];
+        const history = [
+          entry("user", 101, null, "first prompt"),
+          entry("assistant", 201, 101, "first reply"),
+          entry("user", 102, 201, "second prompt"),
+          entry("assistant", 202, 102, "second reply"),
+          {
+            ...entry("system", 301, null, "Conversation compacted"),
+            subtype: "compact_boundary",
+            logicalParentUuid: uuid(202),
+            compactMetadata: { trigger: "manual" },
+          },
+          { ...entry("user", 302, 301, "summary of the session"), isCompactSummary: true },
+          { ...entry("user", 303, 302, "<local-command-caveat>"), isMeta: true },
+          entry("user", 103, 303, "<command-name>/compact</command-name>"),
+          entry("user", 304, 103, "<local-command-stdout>Compacted</local-command-stdout>"),
+          entry("user", 104, 304, "fourth prompt"),
+          entry("assistant", 204, 104, "fourth reply"),
+          entry("user", 105, 204, "fifth prompt"),
+          entry("assistant", 205, 105, "fifth reply"),
+        ];
+        NodeFS.writeFileSync(
+          NodePath.join(projectDir, `${sessionId}.jsonl`),
+          history.map((row) => JSON.stringify(row)).join("\n") + "\n",
+        );
+        const input = {
+          sessionId,
+          options: { dir: cwd },
+          environment: { CLAUDE_CONFIG_DIR: configDir },
+          threadId: ThreadId.make("thread-native-compact-rewind"),
+          providerSessionId: ProviderSessionId.make("session-native-compact-rewind"),
+        };
+        const full = decodeHistory(
+          yield* Effect.promise(() => runScopedClaudeHistory(input, "readSessionHistory")),
+        );
+
+        const contents = (rows: ReadonlyArray<ClaudeSessionHistoryMessage>) =>
+          rows.flatMap((row) =>
+            row.message && typeof row.message === "object" && "content" in row.message
+              ? [row.message.content]
+              : [],
+          );
+        for (const { retainedTurns, lastRetained, summaryKept } of [
+          { retainedTurns: 1, lastRetained: "first reply", summaryKept: false },
+          { retainedTurns: 2, lastRetained: "summary of the session", summaryKept: true },
+          {
+            retainedTurns: 3,
+            lastRetained: "<local-command-stdout>Compacted</local-command-stdout>",
+            summaryKept: true,
+          },
+          { retainedTurns: 4, lastRetained: "fourth reply", summaryKept: true },
+        ]) {
+          const firstRemoved = full.findIndex((row) => row.uuid === prompts[retainedTurns]);
+          const fork = decodeFork(
+            yield* Effect.promise(() =>
+              runScopedClaudeHistory(
+                { ...input, options: { dir: cwd, upToMessageId: full[firstRemoved - 1]!.uuid } },
+                "forkSession",
+              ),
+            ),
+          );
+          const retained = decodeHistory(
+            yield* Effect.promise(() =>
+              runScopedClaudeHistory({ ...input, sessionId: fork.sessionId }, "readSessionHistory"),
+            ),
+          );
+          const retainedText = contents(retained);
+          assert.equal(retainedText.at(-1), lastRetained);
+          assert.equal(retainedText.includes("summary of the session"), summaryKept);
+          assert.include(retainedText, "first prompt");
+          assert.notInclude(retainedText, retainedTurns < 4 ? "fifth reply" : "fifth prompt");
+          const boundaries = [
+            ...prompts.slice(0, retainedTurns),
+            ...cursors.slice(0, retainedTurns),
+          ];
+          const remapped = remapClaudeForkTurnBoundaries(full, retained, firstRemoved, boundaries);
+          assert.isDefined(remapped);
+          remapped!.forEach((id, index) => {
+            assert.equal(id === null, boundaries[index] === null);
+            if (id !== null) assert.notEqual(id, boundaries[index]);
+          });
+        }
+      }),
+    ),
+  );
 });

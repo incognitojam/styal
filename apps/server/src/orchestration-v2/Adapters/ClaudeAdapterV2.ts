@@ -2077,6 +2077,16 @@ const getNativeThreadId = Effect.fnUntraced(function* (
 
 const isSyntheticClaudeTurnId = (nativeTurnId: string): boolean => nativeTurnId.startsWith("turn:");
 
+const claudeTurnCursor = (turn: OrchestrationV2ProviderTurn): string | null => {
+  const ref = turn.nativeTurnRef;
+  return ref !== null &&
+    ref.driver === CLAUDE_PROVIDER &&
+    ref.nativeId !== null &&
+    !isSyntheticClaudeTurnId(ref.nativeId)
+    ? ref.nativeId
+    : null;
+};
+
 const isTerminalProviderTurn = (turn: OrchestrationV2ProviderTurn): boolean =>
   turn.status === "completed" ||
   turn.status === "interrupted" ||
@@ -12073,12 +12083,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               const retained = turns.slice(0, targetIndex + 1);
               const remapped = remapClaudeForkTurnBoundaries(messages, forkMessages, firstRemoved, [
                 ...boundaries.slice(0, targetIndex + 1),
-                ...retained.map((turn) =>
-                  turn.nativeTurnRef?.nativeId &&
-                  !isSyntheticClaudeTurnId(turn.nativeTurnRef.nativeId)
-                    ? turn.nativeTurnRef.nativeId
-                    : null,
-                ),
+                ...retained.map(claudeTurnCursor),
               ]);
               if (remapped === undefined)
                 return yield* new ProviderAdapter.ProviderAdapterRollbackThreadError({

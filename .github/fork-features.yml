@@ -554,6 +554,7 @@ features:
       - Missing, changed, or reordered retained conversation fails validation before replacing the current provider session.
       - Rolling a forked thread back to its start keeps its inherited history in a new native fork rather than resuming the old session at the inherited head, and turn rewinds carry that head over to the new session.
       - Native history operations stay within the selected provider instance's Claude configuration directory.
+      - Rewinding to a /compact turn, which records no assistant message cursor, succeeds from the following turn's prompt reference, and turns on either side of a /compact rewind the same way.
     implementation_paths:
       - apps/server/src/claudeHistoryWorker.ts
       - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
