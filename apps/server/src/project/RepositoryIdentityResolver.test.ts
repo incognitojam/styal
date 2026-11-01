@@ -77,7 +77,19 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
           );
         },
       }),
-    ).pipe(Layer.provide(layerProcessRunner));
+    ).pipe(
+      Layer.provide(layerProcessRunner),
+      Layer.provide(
+        Layer.effect(
+          FileSystem.FileSystem,
+          Effect.gen(function* () {
+            const fileSystem = yield* FileSystem.FileSystem;
+            const directory = yield* fileSystem.stat(process.cwd());
+            return { ...fileSystem, stat: () => Effect.succeed(directory) };
+          }),
+        ),
+      ),
+    );
 
     return Effect.gen(function* () {
       const resolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
@@ -144,7 +156,19 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
     const layerResolver = Layer.effect(
       RepositoryIdentityResolver.RepositoryIdentityResolver,
       RepositoryIdentityResolver.make(),
-    ).pipe(Layer.provide(layerProcessRunner));
+    ).pipe(
+      Layer.provide(layerProcessRunner),
+      Layer.provide(
+        Layer.effect(
+          FileSystem.FileSystem,
+          Effect.gen(function* () {
+            const fileSystem = yield* FileSystem.FileSystem;
+            const directory = yield* fileSystem.stat(process.cwd());
+            return { ...fileSystem, stat: () => Effect.succeed(directory) };
+          }),
+        ),
+      ),
+    );
 
     return Effect.gen(function* () {
       const resolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
@@ -295,25 +319,55 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
       }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
   );
 
-  it.effect("returns null for non-git folders and repos without remotes", () =>
-    Effect.gen(function* () {
-      const fileSystem = yield* FileSystem.FileSystem;
-      const nonGitDir = yield* fileSystem.makeTempDirectoryScoped({
-        prefix: "t3-repository-identity-non-git-",
-      });
-      const gitDir = yield* fileSystem.makeTempDirectoryScoped({
-        prefix: "t3-repository-identity-no-remote-",
-      });
+  it.effect(
+    "returns null for non-git, missing and no-remote folders, probing only what can exist",
+    () =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const nonGitDir = yield* fileSystem.makeTempDirectoryScoped({
+          prefix: "t3-repository-identity-non-git-",
+        });
+        const gitDir = yield* fileSystem.makeTempDirectoryScoped({
+          prefix: "t3-repository-identity-no-remote-",
+        });
 
-      yield* git(gitDir, ["init"]);
+        yield* git(gitDir, ["init"]);
 
-      const resolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
-      const nonGitIdentity = yield* resolver.resolve(nonGitDir);
-      const noRemoteIdentity = yield* resolver.resolve(gitDir);
+        const runner = yield* ProcessRunner.ProcessRunner;
+        const runs: Array<ReadonlyArray<string>> = [];
+        const resolver = yield* RepositoryIdentityResolver.make().pipe(
+          Effect.provideService(ProcessRunner.ProcessRunner, {
+            run: (input) =>
+              Effect.suspend(() => {
+                runs.push(input.args);
+                return runner.run(input);
+              }),
+          }),
+        );
+        const bareProbes = () =>
+          runs.filter((args) => args.some((arg) => arg.startsWith("--git-dir=")));
 
-      expect(nonGitIdentity).toBeNull();
-      expect(noRemoteIdentity).toBeNull();
-    }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
+        expect(yield* resolver.resolve(path.join(nonGitDir, "deleted"))).toBeNull();
+        expect(runs).toEqual([]);
+
+        expect(yield* resolver.resolve(nonGitDir)).toBeNull();
+        expect(bareProbes()).toEqual([]);
+
+        expect(yield* resolver.resolve(gitDir)).toBeNull();
+        yield* git(nonGitDir, ["init"]);
+        yield* git(nonGitDir, [
+          "remote",
+          "add",
+          "origin",
+          "https://github.com/example/new-repo.git",
+        ]);
+        expect(yield* resolver.resolve(nonGitDir)).toBeNull();
+        yield* TestClock.adjust(Duration.minutes(1));
+        expect((yield* resolver.resolve(nonGitDir))?.canonicalKey).toBe(
+          "github.com/example/new-repo",
+        );
+      }).pipe(Effect.provide(ProcessRunner.layer)),
   );
 
   it.effect("uses the remote selected as gh's default repository", () =>
