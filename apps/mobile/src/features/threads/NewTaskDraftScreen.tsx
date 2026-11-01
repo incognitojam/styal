@@ -973,8 +973,6 @@ export function NewTaskDraftScreen(props: {
         connectionStateLabel={connectionState}
         activeThreadBusy={false}
         canStopThread={false}
-        onStopBackgroundWork={() => {}}
-        isStoppingBackgroundWork={false}
         queuedRunEdit={null}
         composerDraftKey={flow.draftKey}
         followUpBehavior="queue"

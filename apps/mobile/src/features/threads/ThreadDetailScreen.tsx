@@ -66,7 +66,11 @@ import {
   type ApprovalResponder,
   type ThreadUserInputQuestion,
 } from "@t3tools/client-runtime/state/thread-requests";
+import { useDeadlinePassed } from "../../lib/clock";
 import {
+  BACKGROUND_WORK_STOP_RETRY_AFTER_MS,
+  type BackgroundWorkStopRequest,
+  isBackgroundWorkStopPending,
   presentPendingBackgroundWork,
   presentProviderGoal,
 } from "@t3tools/client-runtime/state/thread-execution";
@@ -291,8 +295,6 @@ export interface ThreadDetailScreenProps {
   readonly onNativePasteText: (paste: ComposerTextPaste) => Promise<void>;
   readonly onRemoveDraftImage: (imageId: string) => void;
   readonly onStopThread: () => void;
-  readonly onStopBackgroundWork: () => void;
-  readonly isStoppingBackgroundWork: boolean;
   /** Present while the thread's queue is held. */
   readonly onResumeQueue: (() => Promise<void>) | null;
   readonly onSendMessage: (
@@ -371,17 +373,29 @@ const RECONNECT_ERROR_DELAY_MS = 5_000;
 // one thread, so the body remounts when the thread changes.
 export function ThreadDetailScreen(props: ThreadDetailScreenProps) {
   const project = useProject(scopeProjectRef(props.environmentId, props.selectedThread.projectId));
+  const [statusRequests, setStatusRequests] = useState<
+    Record<string, BackgroundWorkStopRequest | undefined>
+  >({});
   return (
     <ThreadGithubRepositoryContext value={githubRepositoryOf(project?.repositoryIdentity)}>
       <ThreadDetailBody
         key={scopedThreadKey(props.environmentId, props.selectedThread.id)}
         {...props}
+        statusRequests={statusRequests}
+        setStatusRequests={setStatusRequests}
       />
     </ThreadGithubRepositoryContext>
   );
 }
 
-function ThreadDetailBody(props: ThreadDetailScreenProps) {
+function ThreadDetailBody(
+  props: ThreadDetailScreenProps & {
+    statusRequests: Record<string, BackgroundWorkStopRequest | undefined>;
+    setStatusRequests: React.Dispatch<
+      React.SetStateAction<Record<string, BackgroundWorkStopRequest | undefined>>
+    >;
+  },
+) {
   const usesNativeWorkspaceColumns = useNativeWorkspaceColumnsSupported();
   const { layout } = useAdaptiveWorkspaceLayout();
   const deviceType = useDeviceType();
@@ -610,8 +624,13 @@ function ThreadDetailBody(props: ThreadDetailScreenProps) {
       );
     }
   };
-  const [statusRequest, setStatusRequest] = useState<{ threadKey: string } | null>(null);
-  const statusPending = statusRequest?.threadKey === selectedThreadKey;
+  const statusRequest = props.statusRequests[selectedThreadKey] ?? null;
+  const statusPending = isBackgroundWorkStopPending(
+    statusRequest,
+    selectedThreadKey,
+    props.selectedThread.pendingBackgroundTasks,
+    useDeadlinePassed(statusRequest?.retryAt ?? null),
+  );
   const [lifecycleNow, setLifecycleNow] = useState(() => new Date().toISOString());
   useFocusEffect(
     useCallback(() => {
@@ -643,8 +662,15 @@ function ThreadDetailBody(props: ThreadDetailScreenProps) {
   });
   const runStatusAction = async (action: "stop" | "wake" | "unsettle" | "dismiss") => {
     if (statusPending || !props.canOperateThread) return;
-    const request = { threadKey: selectedThreadKey };
-    setStatusRequest(request);
+    const request: BackgroundWorkStopRequest = {
+      threadKey: selectedThreadKey,
+      taskIds:
+        action === "stop"
+          ? props.selectedThread.pendingBackgroundTasks.map((task) => task.taskId)
+          : [],
+      retryAt: null,
+    };
+    props.setStatusRequests((current) => ({ ...current, [request.threadKey]: request }));
     const target = {
       environmentId: props.environmentId,
       input: { threadId: props.selectedThread.id },
@@ -678,8 +704,17 @@ function ThreadDetailBody(props: ThreadDetailScreenProps) {
                 ...target,
                 input: { ...target.input, visitedAt: wokeAt ?? lifecycleNow },
               });
-    // An accepted interrupt can leave tasks running. Release the action for retry.
-    setStatusRequest((current) => (current === request ? null : current));
+    props.setStatusRequests((current) =>
+      current[request.threadKey] !== request
+        ? current
+        : {
+            ...current,
+            [request.threadKey]:
+              action === "stop" && result._tag !== "Failure"
+                ? { ...request, retryAt: Date.now() + BACKGROUND_WORK_STOP_RETRY_AFTER_MS }
+                : undefined,
+          },
+    );
     if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
       const error = squashAtomCommandFailure(result);
       Dialog.alert(
@@ -1661,9 +1696,8 @@ function ThreadDetailBody(props: ThreadDetailScreenProps) {
                             stopWatching={
                               workflowRunReviewIncludesBackgroundWork
                                 ? {
-                                    disabled:
-                                      !props.canOperateThread || props.isStoppingBackgroundWork,
-                                    onPress: props.onStopBackgroundWork,
+                                    disabled: !props.canOperateThread || statusPending,
+                                    onPress: () => void runStatusAction("stop"),
                                   }
                                 : undefined
                             }
