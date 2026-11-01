@@ -1,6 +1,6 @@
 import type { ServerConfigIssue, ServerConfigStreamEvent } from "@t3tools/contracts";
 
-const KEYBINDINGS_SUCCESS_TOAST_COOLDOWN_MS = 2_000;
+const KEYBINDINGS_TOAST_COOLDOWN_MS = 2_000;
 
 export type KeybindingsUpdateToastDecision =
   | { readonly _tag: "Success" }
@@ -27,7 +27,7 @@ export function createKeybindingsUpdateToastController(input: {
       ].sort(),
     );
   let previousProblems = problemSet(input.initialIssues ?? []);
-  let lastSuccessToastAt: number | null = null;
+  let lastToast: { readonly key: string; readonly at: number } | null = null;
 
   return {
     handle: (event) => {
@@ -43,24 +43,25 @@ export function createKeybindingsUpdateToastController(input: {
       const changed = problems !== previousProblems;
       previousProblems = problems;
       const issue = event.payload.issues.find((entry) => entry.kind.startsWith("keybindings."));
-      if (issue) {
-        if (!changed || input.isKeybindingsPage?.()) return null;
-        return {
-          _tag: "InvalidConfiguration",
-          message: issue.message,
-        };
-      }
+      if (issue && (!changed || input.isKeybindingsPage?.())) return null;
+      const decision: KeybindingsUpdateToastDecision = issue
+        ? { _tag: "InvalidConfiguration", message: issue.message }
+        : { _tag: "Success" };
 
+      // A save and the server's file watcher each publish the same snapshot,
+      // so an identical toast inside the cooldown is the same change twice.
+      const key = issue ? `invalid:${problems}` : "success";
       const currentTime = now();
       if (
-        lastSuccessToastAt !== null &&
-        currentTime - lastSuccessToastAt < KEYBINDINGS_SUCCESS_TOAST_COOLDOWN_MS
+        lastToast !== null &&
+        lastToast.key === key &&
+        currentTime - lastToast.at < KEYBINDINGS_TOAST_COOLDOWN_MS
       ) {
         return null;
       }
 
-      lastSuccessToastAt = currentTime;
-      return { _tag: "Success" };
+      lastToast = { key, at: currentTime };
+      return decision;
     },
   };
 }
