@@ -56,6 +56,29 @@ allocatorLayer("WorkspacePortAllocator", (it) => {
       assert.strictEqual(environment.T3CODE_WORKSPACE_PORT, String(ports[0]));
     }),
   );
+
+  it.effect("release drops the reservation and leaves other workspaces alone", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const allocator = yield* WorkspacePortAllocator.WorkspacePortAllocator;
+      const released = yield* allocator.getBasePort("/repo/worktrees/released");
+      const kept = yield* allocator.getBasePort("/repo/worktrees/kept");
+
+      yield* allocator.release("/repo/worktrees/released/");
+      yield* allocator.release("/repo/worktrees/never-allocated");
+
+      const rows = yield* sql<{ readonly workspacePath: string }>`
+        SELECT workspace_path AS "workspacePath" FROM workspace_port_allocations
+        WHERE workspace_path IN ('/repo/worktrees/released', '/repo/worktrees/kept')
+      `;
+      assert.deepStrictEqual(
+        rows.map(({ workspacePath }) => workspacePath),
+        ["/repo/worktrees/kept"],
+      );
+      assert.strictEqual(yield* allocator.getBasePort("/repo/worktrees/kept"), kept);
+      assert.notStrictEqual(released, kept);
+    }),
+  );
 });
 
 const isolatedLayer = layerMemory.pipe(Layer.provideMerge(NodeServices.layer));

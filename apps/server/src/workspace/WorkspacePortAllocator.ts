@@ -37,6 +37,18 @@ export class WorkspacePortAllocationError extends Schema.TaggedError<WorkspacePo
   }
 }
 
+export class WorkspacePortReleaseError extends Schema.TaggedError<WorkspacePortReleaseError>()(
+  "WorkspacePortReleaseError",
+  {
+    workspacePath: Schema.String,
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return `Failed to release the development port range for workspace '${this.workspacePath}'.`;
+  }
+}
+
 export class WorkspacePortAllocator extends Context.Service<
   WorkspacePortAllocator,
   {
@@ -46,6 +58,8 @@ export class WorkspacePortAllocator extends Context.Service<
     readonly environmentFor: (
       workspacePath: string,
     ) => Effect.Effect<Record<string, string>, WorkspacePortAllocationError>;
+    /** Frees the workspace's range after its directory is deleted for good. */
+    readonly release: (workspacePath: string) => Effect.Effect<void, WorkspacePortReleaseError>;
   }
 >()("@styal/cli/workspace/WorkspacePortAllocator") {}
 
@@ -175,7 +189,20 @@ export const make = Effect.fn("WorkspacePortAllocator.make")(function* () {
       ),
     );
 
-  return WorkspacePortAllocator.of({ getBasePort, environmentFor });
+  const release: WorkspacePortAllocator["Service"]["release"] = (workspacePath) =>
+    allocationLock
+      .withPermits(1)(
+        sql`
+          DELETE FROM workspace_port_allocations
+          WHERE workspace_path = ${path.resolve(workspacePath)}
+        `,
+      )
+      .pipe(
+        Effect.asVoid,
+        Effect.mapError((cause) => new WorkspacePortReleaseError({ workspacePath, cause })),
+      );
+
+  return WorkspacePortAllocator.of({ getBasePort, environmentFor, release });
 });
 
 export const layer = Layer.effect(WorkspacePortAllocator, make());
