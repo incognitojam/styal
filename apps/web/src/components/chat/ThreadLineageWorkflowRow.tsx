@@ -15,6 +15,7 @@ import { AgentElapsed } from "./AgentElapsed";
 import { SubagentTooltipContent } from "./SubagentTooltipContent";
 import { ThreadHoverCardPopup } from "../ThreadHoverCard";
 import { ThreadRelationshipIcon } from "./ThreadRelationshipIcon";
+import type { ProviderInstanceEntry } from "../../providerInstances";
 import { cn } from "../../lib/utils";
 import { ThreadDetailsControl } from "./ThreadDetailsControl";
 import { CollapsibleSectionHeader, SectionHeaderStatus } from "../ui/collapsible-section-header";
@@ -57,6 +58,7 @@ function WorkflowMemberRow({
   providerInstanceId,
   provider,
   providers,
+  providerEntries,
   driver,
   onOpen,
   getThread,
@@ -65,6 +67,7 @@ function WorkflowMemberRow({
   providerInstanceId: ProviderInstanceId;
   provider: ServerProvider | undefined;
   providers: ReadonlyArray<ServerProvider> | undefined;
+  providerEntries: ReadonlyArray<ProviderInstanceEntry>;
   driver: ProviderDriverKind | undefined;
   onOpen: (threadId: string) => void;
   getThread: (threadId: string) => OrchestrationV2ThreadShell | undefined;
@@ -86,7 +89,12 @@ function WorkflowMemberRow({
             />
           }
         >
-          <ThreadRelationshipIcon driver={driver} provider={provider} status={member.status} />
+          <ThreadRelationshipIcon
+            driver={driver}
+            provider={provider}
+            providerEntries={providerEntries}
+            status={member.status}
+          />
           <span className="min-w-0 flex-1 truncate">{member.title}</span>
           <span className="sr-only">{member.status}</span>
           {member.startedAt ? (
@@ -122,6 +130,7 @@ export function ThreadLineageWorkflowRow({
   providerInstanceId,
   provider,
   providers,
+  providerEntries,
   driver,
   onOpenThread,
   getThread,
@@ -134,6 +143,7 @@ export function ThreadLineageWorkflowRow({
   readonly providerInstanceId: ProviderInstanceId;
   readonly provider: ServerProvider | undefined;
   readonly providers: ReadonlyArray<ServerProvider> | undefined;
+  readonly providerEntries: ReadonlyArray<ProviderInstanceEntry>;
   readonly driver: ProviderDriverKind | undefined;
   readonly onOpenThread: (threadId: string) => void;
   readonly getThread: (threadId: string) => OrchestrationV2ThreadShell | undefined;
@@ -232,6 +242,7 @@ export function ThreadLineageWorkflowRow({
                         providerInstanceId={providerInstanceId}
                         provider={provider}
                         providers={providers}
+                        providerEntries={providerEntries}
                         driver={driver}
                         onOpen={onOpenThread}
                         getThread={getThread}
@@ -249,6 +260,7 @@ export function ThreadLineageWorkflowRow({
               providerInstanceId={providerInstanceId}
               provider={provider}
               providers={providers}
+              providerEntries={providerEntries}
               driver={driver}
               onOpen={onOpenThread}
               getThread={getThread}
