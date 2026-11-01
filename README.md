@@ -8,7 +8,7 @@
   </picture>
 </p>
 
-styal is an open-source control plane for coding agents. It lets you run and direct provider CLIs such as Claude Code, Codex, Cursor, Grok Build, OpenCode, and Google Antigravity from desktop and web clients.
+styal is an open-source control plane for coding agents. It lets you run and direct provider CLIs such as Claude Code, Codex, Cursor, Grok Build, OpenCode, Google Antigravity, and fx from desktop and web clients.
 
 > [!IMPORTANT]
 > styal is in active development. The hosted web app at [app.styal.build](https://app.styal.build) is live, with rough edges and incomplete functionality. Importing T3 Code projects and preferences works. The mobile app is a work in progress.
@@ -22,7 +22,7 @@ See [How styal differs from T3 Code](./docs/user/styal-differences.md) for an ov
 The transition is intentionally gradual. Inherited package names, source paths, documentation, and application copy will continue to reference T3 Code until the corresponding styal surface is ready to own.
 
 > [!WARNING]
-> styal currently supports Codex, Claude, Cursor, Grok Build, OpenCode, and Antigravity. Install and authenticate at least one provider before use:
+> styal currently supports Codex, Claude, Cursor, Grok Build, OpenCode, Antigravity, and fx. Install and authenticate at least one provider before use:
 >
 > - Codex: install [Codex CLI](https://developers.openai.com/codex/cli) and run `codex login`
 > - Claude: install [Claude Code](https://claude.com/product/claude-code) and run `claude auth login`
@@ -30,6 +30,7 @@ The transition is intentionally gradual. Inherited package names, source paths, 
 > - Grok Build: install [Grok Build CLI](https://x.ai/cli) and run `grok login`
 > - OpenCode: install [OpenCode](https://opencode.ai) and run `opencode auth login`
 > - Antigravity: enable it in Settings, then use **Install Antigravity** and **Sign in with Google**. No CLI is required.
+> - fx: install [fx](https://fx.sh) and run `fx login` on the machine running the styal server ([setup guide](./docs/user/providers-fx.md))
 
 ## Desktop app
 
