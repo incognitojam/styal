@@ -95,6 +95,7 @@ export const openCodeUpdateFor = (generation: ProbedOpenCode["generation"]) =>
             }),
           }
         : {}),
+      requiresCommandPath: true,
     },
   });
 
