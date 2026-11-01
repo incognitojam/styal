@@ -454,7 +454,7 @@ export function ServerUpdateAction({
 }: ServerUpdateTarget & UpdateButtonProps) {
   const serverVersion = useServerConfigs().get(environmentId)?.environment.serverVersion;
   const sessionStateAtom = environmentSession.sessionStateAtom(environmentId);
-  const canUpdate = canUpdateServer(useAtomValue(sessionStateAtom));
+  const canUpdate = useAtomValue(sessionStateAtom, canUpdateServer);
   const updatesDenial = managedUpdatesDenial(useManagedPolicy(environmentId));
   const update = useServerUpdates();
   const [isPending, setIsPending] = useState(false);
