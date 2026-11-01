@@ -135,7 +135,7 @@ describe("ErrorReporting scrubbing", () => {
 
     assert.deepStrictEqual(
       frames.map((frame) => frame.filename),
-      ["~/projects/secret-app/tool.js", "node_modules/effect/dist/Effect.js", "dist/bin.mjs"],
+      ["~/<name>/<name>/<name>.js", "node_modules/effect/dist/Effect.js", "dist/bin.mjs"],
     );
     assert.isTrue(frames.every((frame) => !("abs_path" in frame)));
   });
@@ -181,14 +181,41 @@ describe("ErrorReporting scrubbing", () => {
     }
   });
 
+  it("keeps project and folder names in user paths out of reports", () => {
+    assert.strictEqual(
+      scrub.text(
+        "Failed to allocate a development port range for workspace '/Users/alex/.styal/worktrees/acme-billing/acme-billing-ae8c4849'.",
+      ),
+      "Failed to allocate a development port range for workspace '~/.styal/worktrees/<name>/<name>'.",
+    );
+    assert.strictEqual(
+      scrub.text("spawn failed in /home/sam/code/acme-billing/src/index.ts:12:4, retrying"),
+      "spawn failed in /home/<user>/<name>/<name>/src/<name>.ts:12:4, retrying",
+    );
+    assert.strictEqual(
+      scrub.text("cannot read D:\\work\\acme-billing\\package.json"),
+      "cannot read D:\\<name>\\<name>\\<name>.json",
+    );
+    assert.strictEqual(
+      scrub.text("mount /Volumes/AcmeDrive/acme-billing is read-only"),
+      "mount /Volumes/<name>/<name> is read-only",
+    );
+    assert.strictEqual(
+      scrub.text(
+        "See https://github.com/incognitojam/styal/blob/main/docs/user/x.md and file:///Applications/styal.app/main.js",
+      ),
+      "See https://github.com/incognitojam/styal/blob/main/docs/user/x.md and file:///Applications/styal.app/main.js",
+    );
+  });
+
   it("removes personal and secret values from text", () => {
     assert.strictEqual(
       scrub.text("ENOENT: open '/Users/alex/work/notes.md'"),
-      "ENOENT: open '~/work/notes.md'",
+      "ENOENT: open '~/<name>/<name>.md'",
     );
     assert.strictEqual(
       scrub.text("C:\\Users\\sam\\AppData\\styal failed"),
-      "C:\\Users\\<user>\\AppData\\styal failed",
+      "C:\\Users\\<user>\\AppData\\<name> failed",
     );
     assert.strictEqual(
       scrub.text("GET https://user:pw@api.example.com/v1/x?token=abc failed for dev@example.com"),

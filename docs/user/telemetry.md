@@ -124,10 +124,11 @@ To send events to your own PostHog project instead, set `T3CODE_POSTHOG_HOST` an
 Release builds also report server errors so maintainers can find and fix bugs. A report contains
 the error type and message, the stack trace, and the operation that failed, with the same
 identifier and version details as usage events. Before sending, the server replaces your home
-directory and user names in paths, and removes email addresses, credentials in URLs, query strings,
-and long token-like values. An error message can still quote part of what the failing operation
-was handling, such as a file name or a line of command or provider output. Other details the server
-logs alongside an error are not sent.
+directory and user names in paths, replaces folder and file names below your home directory,
+mounted volumes, and Windows drives (keeping file extensions), and removes email addresses,
+credentials in URLs, query strings, and long token-like values. An error message can still quote
+part of what the failing operation was handling, such as a relative file path or a line of command
+or provider output. Other details the server logs alongside an error are not sent.
 
 To stop error reports while keeping usage events, set `T3CODE_ERROR_REPORTING_ENABLED=false`.
 Disabling telemetry with `T3CODE_TELEMETRY_ENABLED=false` stops both.

@@ -125,11 +125,35 @@ export interface Scrubber {
   readonly filename: (filename: string) => string;
 }
 
+// Folder names that describe styal or platform layout rather than a user's work.
+const LAYOUT_SEGMENTS = new Set([
+  "worktrees",
+  "userdata",
+  "logs",
+  "node_modules",
+  "dist",
+  "src",
+  "AppData",
+  "Local",
+  "Roaming",
+  "Library",
+  "Caches",
+]);
+
+// Paths under a home directory, a mounted volume or a Windows drive name the user's projects.
+const ROOTED_PATH =
+  /(?<![\w.])(~|\/(?:Users|home)\/<user>|[A-Za-z]:[\\/]Users[\\/]<user>|\/(?:Volumes|mnt|media|srv)|[A-Za-z]:(?=[\\/]))([\\/](?:[^\s'"`]*[^\s'"`.,;:)])?)/g;
+
+const scrubSegment = (segment: string) => {
+  if (segment === "" || segment.startsWith(".") || LAYOUT_SEGMENTS.has(segment)) return segment;
+  const suffix = /(\.[A-Za-z0-9]{1,8})?((?::\d+)*)$/.exec(segment);
+  return `<name>${suffix?.[1] ?? ""}${suffix?.[2] ?? ""}`;
+};
+
 /**
- * Removes values that identify a person or grant access: the home directory
- * and other user directories, URL credentials and queries, email addresses
- * and long token-like strings. Frame filenames inside the app become relative
- * to `appRoot`, and dependency frames start at `node_modules/`.
+ * Removes values that identify a person, their work, or grant access: user names and folder
+ * and file names in user paths, URL credentials and queries, emails and token-like strings.
+ * App frame filenames become relative to `appRoot`; dependency frames start at `node_modules/`.
  */
 export function makeScrubber(input: { readonly appRoot: string; readonly homeDir: string }) {
   const toPosix = (path: string) => path.replaceAll("\\", "/");
@@ -143,6 +167,15 @@ export function makeScrubber(input: { readonly appRoot: string; readonly homeDir
     }
     scrubbed = scrubbed
       .replace(/(\/Users\/|\/home\/|[A-Za-z]:[\\/]Users[\\/])[^\\/\s'"`]+/g, "$1<user>")
+      .replace(
+        ROOTED_PATH,
+        (_match, root: string, rest: string) =>
+          root +
+          rest
+            .split(/([\\/])/)
+            .map((part, index) => (index % 2 === 1 ? part : scrubSegment(part)))
+            .join(""),
+      )
       .replace(/\b([a-z][a-z0-9+.-]*:\/\/)[^/\s@]*@/gi, "$1<credentials>@")
       .replace(/(\b[a-z][a-z0-9+.-]*:\/\/[^\s?#'"`]*)\?[^\s#'"`]*/gi, "$1?<query>")
       .replace(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g, "<email>")
