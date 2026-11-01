@@ -511,6 +511,29 @@ function isLocalProjectedRow(
   return row.visibility === "local" || String(row.sourceThreadId) === String(projection.thread.id);
 }
 
+function pendingRequestIdsOf(
+  projection: Pick<OrchestrationV2ThreadProjection, "runtimeRequests">,
+): ReadonlySet<string> {
+  return new Set(
+    projection.runtimeRequests
+      .filter((request) => request.status === "pending")
+      .map((request) => String(request.id)),
+  );
+}
+
+// Clients build the answer panel of an open question or approval from its row,
+// and a run that kept working pushes that row out of the newest turns.
+function isRetainedDependency(
+  item: OrchestrationV2TurnItem,
+  pendingRequestIds: ReadonlySet<string>,
+): boolean {
+  return (
+    item.type === "run_interrupt_request" ||
+    ((item.type === "user_input_request" || item.type === "approval_request") &&
+      pendingRequestIds.has(String(item.requestId)))
+  );
+}
+
 /**
  * Retain small requests outside the visible window; later result pages still need them for
  * attempt/run reducers. Also retain running background work, which Stop and the Waiting strip
@@ -522,8 +545,9 @@ function windowIndependentTurnItems(
   const pendingBackground = new Set(
     pendingBackgroundTurnItems({ turnItems: projection.turnItems, runs: projection.runs }),
   );
+  const pendingRequestIds = pendingRequestIdsOf(projection);
   return projection.turnItems.filter(
-    (item) => item.type === "run_interrupt_request" || pendingBackground.has(item),
+    (item) => isRetainedDependency(item, pendingRequestIds) || pendingBackground.has(item),
   );
 }
 
@@ -642,6 +666,7 @@ export function buildBoundedThreadProjection(input: {
   for (const item of dependencyCandidates) {
     dependencyReserve += bytesOfJson(item);
   }
+
   const controlBytes = bytesOfJson({
     ...controlProjection,
     messages: [],
