@@ -32,20 +32,55 @@ export interface ThreadCheckpointSummary {
 export function deriveThreadCheckpointSummaries(
   projection: Pick<OrchestrationV2ThreadProjection, "messages" | "checkpoints">,
 ): ReadonlyArray<ThreadCheckpointSummary> {
+  let assistantMessageIdsByRun: Map<RunId, MessageId | null | undefined> | undefined;
+  let assistantMessageIdsByLegacyTurn: Map<string, MessageId | null | undefined> | undefined;
+  let nextMessageIndex = -1;
   return projection.checkpoints.flatMap((checkpoint) => {
     const count = checkpoint.legacyCheckpointTurnCount ?? checkpoint.appRunOrdinal;
     if (count === null || (checkpoint.runId === null && checkpoint.legacyTurnId === undefined))
       return [];
-    const assistantMessageId =
-      checkpoint.assistantMessageId ??
-      projection.messages.findLast(
-        (message) =>
-          message.role === "assistant" &&
-          (checkpoint.legacyTurnId !== undefined
-            ? message.legacyTurnId === checkpoint.legacyTurnId
-            : message.runId === checkpoint.runId),
-      )?.id ??
-      null;
+    let assistantMessageId = checkpoint.assistantMessageId ?? null;
+    if (checkpoint.assistantMessageId == null) {
+      if (assistantMessageIdsByRun === undefined) {
+        assistantMessageIdsByRun = new Map();
+        assistantMessageIdsByLegacyTurn = new Map();
+        for (const entry of projection.checkpoints) {
+          if ((entry.legacyCheckpointTurnCount ?? entry.appRunOrdinal) === null) continue;
+          if (entry.legacyTurnId !== undefined) {
+            assistantMessageIdsByLegacyTurn.set(entry.legacyTurnId, undefined);
+          } else if (entry.runId !== null) {
+            assistantMessageIdsByRun.set(entry.runId, undefined);
+          }
+        }
+        nextMessageIndex = projection.messages.length - 1;
+      }
+      const lookup = () =>
+        checkpoint.legacyTurnId !== undefined
+          ? assistantMessageIdsByLegacyTurn!.get(checkpoint.legacyTurnId)
+          : assistantMessageIdsByRun!.get(checkpoint.runId!);
+      // Stop once this answer is found, retaining earlier matches for later checkpoints.
+      while (nextMessageIndex >= 0 && lookup() === undefined) {
+        const message = projection.messages[nextMessageIndex--]!;
+        const { runId, role } = message;
+        if (role !== "assistant") continue;
+        if (
+          runId !== null &&
+          assistantMessageIdsByRun.has(runId) &&
+          assistantMessageIdsByRun.get(runId) === undefined
+        ) {
+          assistantMessageIdsByRun.set(runId, message.id ?? null);
+        }
+        if (
+          message.legacyTurnId !== undefined &&
+          assistantMessageIdsByLegacyTurn!.has(message.legacyTurnId) &&
+          assistantMessageIdsByLegacyTurn!.get(message.legacyTurnId) === undefined
+        ) {
+          assistantMessageIdsByLegacyTurn!.set(message.legacyTurnId, message.id ?? null);
+        }
+      }
+      assistantMessageId = lookup() ?? null;
+    }
+
     return [
       {
         checkpointId: checkpoint.id,
