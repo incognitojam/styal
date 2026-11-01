@@ -15,6 +15,8 @@ import {
 import * as CursorSdkCatalog from "./CursorSdkCatalog.ts";
 import { loadCursorSdk } from "./sdk.ts";
 
+const { CursorSdkError } = loadCursorSdk();
+
 const decodeCursorSettings = Schema.decodeSync(CursorSettingsSchema);
 
 function selectDescriptor(
@@ -243,7 +245,8 @@ describe("checkCursorProviderStatus", () => {
               Effect.fail(
                 new CursorSdkCatalog.CursorSdkCatalogError({
                   authenticationFailure: false,
-                  cause: new (loadCursorSdk().CursorSdkError)(
+                  code: "plan_required",
+                  cause: new CursorSdkError(
                     "[plan_required] Cloud Agent is not available for free users. Please upgrade to Pro.",
                     { code: "plan_required", status: 403 },
                   ),
@@ -264,13 +267,10 @@ describe("checkCursorProviderStatus", () => {
   it.effect.each([
     {
       name: "keeps models when /v1/me is blocked",
-      meFailure: new (loadCursorSdk().CursorSdkError)(
-        "[feature_unavailable] Not available for this team.",
-        {
-          code: "feature_unavailable",
-          status: 403,
-        },
-      ),
+      meFailure: new CursorSdkError("[feature_unavailable] Not available for this team.", {
+        code: "feature_unavailable",
+        status: 403,
+      }),
       expected: {
         status: "ready",
         auth: { status: "authenticated", type: "api-key", label: "Cursor API key" },
@@ -279,7 +279,7 @@ describe("checkCursorProviderStatus", () => {
     },
     {
       name: "keeps models when /v1/me returns a 403 without a code",
-      meFailure: new (loadCursorSdk().CursorSdkError)("[unknown] Forbidden", {
+      meFailure: new CursorSdkError("[unknown] Forbidden", {
         code: "unknown",
         status: 403,
       }),
@@ -291,13 +291,10 @@ describe("checkCursorProviderStatus", () => {
     },
     {
       name: "keeps the paid-plan message when /v1/me returns plan_required",
-      meFailure: new (loadCursorSdk().CursorSdkError)(
-        "[plan_required] Not available for free users.",
-        {
-          code: "plan_required",
-          status: 403,
-        },
-      ),
+      meFailure: new CursorSdkError("[plan_required] Not available for free users.", {
+        code: "plan_required",
+        status: 403,
+      }),
       expected: {
         status: "error",
         auth: { status: "unknown" },
@@ -307,7 +304,7 @@ describe("checkCursorProviderStatus", () => {
     },
     {
       name: "fails when /v1/me has a server error",
-      meFailure: new (loadCursorSdk().CursorSdkError)("[unknown] Service unavailable", {
+      meFailure: new CursorSdkError("[unknown] Service unavailable", {
         code: "unknown",
         status: 503,
       }),
@@ -319,7 +316,7 @@ describe("checkCursorProviderStatus", () => {
     },
     {
       name: "rejects a 401 even when its code is feature_unavailable",
-      meFailure: new (loadCursorSdk().CursorSdkError)("Unauthorized", {
+      meFailure: new CursorSdkError("Unauthorized", {
         code: "feature_unavailable",
         status: 401,
       }),
@@ -331,7 +328,7 @@ describe("checkCursorProviderStatus", () => {
     },
     {
       name: "fails a key that /v1/me rejects",
-      meFailure: new (loadCursorSdk().CursorSdkError)("Unauthorized", { status: 401 }),
+      meFailure: new CursorSdkError("Unauthorized", { status: 401 }),
       expected: {
         status: "error",
         auth: { status: "unauthenticated" },
@@ -345,6 +342,8 @@ describe("checkCursorProviderStatus", () => {
           Effect.fail(
             new CursorSdkCatalog.CursorSdkCatalogError({
               authenticationFailure: meFailure.status === 401,
+              ...(meFailure.status === undefined ? {} : { status: meFailure.status }),
+              ...(meFailure.code === undefined ? {} : { code: meFailure.code }),
               cause: meFailure,
             }),
           ),

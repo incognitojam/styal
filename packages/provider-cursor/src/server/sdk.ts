@@ -1,24 +1,29 @@
 // @effect-diagnostics nodeBuiltinImport:off -- The SDK must load from disk beside its Webpack chunks.
 import * as NodeModule from "node:module";
 
-// createRequire loads the disk-backed SDK and adjacent chunks even from a Node SEA executable.
+// createRequire preserves adjacent Webpack chunks and native modules in bundled/SEA builds.
 const requireCursorSdk = NodeModule.createRequire(import.meta.url);
-export const cursorSdkModulePath = requireCursorSdk.resolve("@cursor/sdk");
-// Loading the SDK evaluates its generated protocol and native helpers. An unused
-// Cursor provider must not make that work part of server startup.
-export const loadCursorSdk = () => {
+let sdk: typeof import("@cursor/sdk") | undefined;
+let sqlite: typeof import("@cursor/sdk/sqlite") | undefined;
+
+export const resolveCursorSdkModulePath = () => requireCursorSdk.resolve("@cursor/sdk");
+
+export function loadCursorSdk(): typeof import("@cursor/sdk") {
+  if (sdk !== undefined) return sdk;
   const start = performance.now();
-  const sdk = requireCursorSdk("@cursor/sdk") as typeof import("@cursor/sdk");
+  sdk = requireCursorSdk("@cursor/sdk") as typeof import("@cursor/sdk");
   if (process.env.T3CODE_STARTUP_PROFILE_DIR) {
     performance.measure("provider.cursor.importSdk", { start });
   }
   return sdk;
-};
-export const loadCursorSqliteSdk = () => {
+}
+
+export function loadCursorSqlite(): typeof import("@cursor/sdk/sqlite") {
+  if (sqlite !== undefined) return sqlite;
   const start = performance.now();
-  const sqlite = requireCursorSdk("@cursor/sdk/sqlite") as typeof import("@cursor/sdk/sqlite");
+  sqlite = requireCursorSdk("@cursor/sdk/sqlite") as typeof import("@cursor/sdk/sqlite");
   if (process.env.T3CODE_STARTUP_PROFILE_DIR) {
     performance.measure("provider.cursor.importSqliteStore", { start });
   }
   return sqlite;
-};
+}

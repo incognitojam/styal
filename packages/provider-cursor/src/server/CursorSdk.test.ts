@@ -37,10 +37,10 @@ await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
     const sdk = yield* CursorSdk;
     assert.equal(require.cache[sdkPath], undefined);
     assert.equal(require.cache[sqlitePath], undefined);
-    assert.equal(typeof sdk.Agent.create, "function");
+    assert.equal(typeof sdk.load().Agent.create, "function");
     assert.ok(require.cache[sdkPath]);
     assert.equal(require.cache[sqlitePath], undefined);
-    assert.equal(typeof sdk.SqliteLocalAgentStore, "function");
+    assert.equal(typeof sdk.loadSqlite().SqliteLocalAgentStore, "function");
     assert.ok(require.cache[sqlitePath]);
   }).pipe(Effect.provideContext(context), Effect.provide(NodeServices.layer));
 })));
@@ -51,10 +51,6 @@ await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
   expect(result.error).toBeUndefined();
   expect(result.status, result.stderr).toBe(0);
 });
-vi.mock("./sdk.ts", () => ({
-  loadCursorSdk: () => ({ Agent: {}, createAgentPlatform: {} }),
-  loadCursorSqliteSdk: () => ({ SqliteLocalAgentStore: {} }),
-}));
 
 // Shaped like the SDK's minified class: the constructor is not named after the error.
 class o extends Error {

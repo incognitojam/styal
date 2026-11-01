@@ -19,7 +19,7 @@ import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 
 import * as CursorSdk from "./CursorSdk.ts";
-import { cursorSdkModulePath } from "./sdk.ts";
+import { resolveCursorSdkModulePath } from "./sdk.ts";
 import { makeCursorSdkWorkerApi } from "./CursorSdkWorker.ts";
 import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
 
@@ -355,9 +355,9 @@ export const makeCursorAgentSdkRunner = Effect.fn("makeCursorAgentSdkRunner")(fu
       }
       yield* Effect.tryPromise(async () => {
         const cwd = typeof options.local?.cwd === "string" ? options.local.cwd : undefined;
-        const platform = await cursorSdk.createAgentPlatform(
-          cwd === undefined ? {} : { workspaceRef: cwd },
-        );
+        const platform = await cursorSdk
+          .load()
+          .createAgentPlatform(cwd === undefined ? {} : { workspaceRef: cwd });
         const release = await platform.prewarmLocalWorkspace({
           ...(options.apiKey === undefined ? {} : { apiKey: options.apiKey }),
           local: {
@@ -373,10 +373,13 @@ export const makeCursorAgentSdkRunner = Effect.fn("makeCursorAgentSdkRunner")(fu
 
   return CursorAgentSdkRunner.of({
     open: Effect.fn("CursorAgentSdkRunner.open")(function* (input) {
-      const sdk =
-        input.environment === undefined
-          ? cursorSdk.Agent
-          : makeCursorSdkWorkerApi(cursorSdkModulePath, input.environment);
+      const sdk = yield* Effect.try({
+        try: () =>
+          input.environment === undefined
+            ? cursorSdk.load().Agent
+            : makeCursorSdkWorkerApi(resolveCursorSdkModulePath(), input.environment),
+        catch: (cause) => runnerError(cause, `agent.${input.operation}`),
+      });
       if (
         input.environment === undefined &&
         input.options.local?.sandboxOptions?.enabled === false

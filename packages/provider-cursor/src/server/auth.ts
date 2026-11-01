@@ -160,7 +160,16 @@ export const makeCursorAuth = Effect.fn("makeCursorAuth")(function* (options: Cu
     function* (flow: AuthFlow, stopSessions: Effect.Effect<void, ProviderSetupError>) {
       yield* stopSessions.pipe(Effect.ensuring(stopSessionsWithCredentials));
       // The SDK first writes into memory. Cancellation must not save a late login result.
-      const { Cursor, InMemoryCredentialStore } = loadCursorSdk();
+      const { Cursor, InMemoryCredentialStore } = yield* Effect.try({
+        try: loadCursorSdk,
+        catch: (cause) =>
+          new ProviderSetupError({
+            instanceId: options.instanceId,
+            operation: "start",
+            detail: "Could not load the Cursor SDK. Try signing in again.",
+            cause,
+          }),
+      });
       const pendingStore = new InMemoryCredentialStore();
       const urls = yield* Queue.unbounded<string>();
       yield* Queue.take(urls).pipe(

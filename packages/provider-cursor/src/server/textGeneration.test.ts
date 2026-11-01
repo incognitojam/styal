@@ -33,7 +33,7 @@ vi.mock("./sdk.ts", () => ({
     Agent: { create: cursorSdkMock.create },
     createAgentPlatform: vi.fn(),
   }),
-  loadCursorSqliteSdk: () => ({ SqliteLocalAgentStore: { open: cursorSdkMock.storeOpen } }),
+  loadCursorSqlite: () => ({ SqliteLocalAgentStore: { open: cursorSdkMock.storeOpen } }),
 }));
 
 let hasCustomPolicy = false;
