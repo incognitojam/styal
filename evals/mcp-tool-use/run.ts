@@ -383,12 +383,15 @@ export const normalizeToolName = (name: string) => {
     ? bare.slice(bare.indexOf("__", "mcp__".length) + 2)
     : (CODEX_NAMES[bare] ?? bare.slice(bare.lastIndexOf("_") + 1));
 };
-export const normalizeToolInput = (name: string, input: unknown) =>
-  normalizeToolName(name) === "Bash" && isRecord(input)
+export const normalizeToolInput = (name: string, input: unknown) => {
+  const decode = t3InputDecoders.get(normalizeToolName(name));
+  if (decode !== undefined) return Option.getOrElse(decode(input), () => input);
+  return normalizeToolName(name) === "Bash" && isRecord(input)
     ? { ...input, command: input.command ?? input.cmd }
     : typeof input === "string" && normalizeToolName(name) === "Edit"
       ? { patch: input }
       : input;
+};
 
 // McpHttpServer advertises each tool's JSON schema, and Claude Code passes the MCP name,
 // description, and schema through unchanged.
@@ -408,6 +411,15 @@ const t3SourceTools: ReadonlyArray<Tool.Any> = [
   HtmlToolkit,
   GuideToolkit,
 ].flatMap((toolkit): ReadonlyArray<Tool.Any> => Object.values(toolkit.tools));
+// McpHttpServer decodes arguments with each tool's JSON codec, which drops undeclared keys.
+const t3InputDecoders = new Map(
+  t3SourceTools.map((tool) => [
+    tool.name,
+    Schema.decodeUnknownOption(
+      Schema.toCodecJson(tool.parametersSchema as Schema.Codec<unknown, unknown>),
+    ),
+  ]),
+);
 const t3Tools: ReadonlyArray<ApiTool> = t3SourceTools.map((tool) => ({
   name: `${T3_PREFIX}${tool.name}`,
   description: renderStyalProductName(Tool.getDescription(tool) ?? ""),
