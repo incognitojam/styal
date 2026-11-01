@@ -2911,6 +2911,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
 ) {
   const packageIdentity = resolveDesktopPackageIdentity(version);
   const buildConfig: Record<string, unknown> = {
+    afterPack: (yield* Path.Path).join(yield* RepoRoot, "scripts/prepare-server-compile-cache.cjs"),
     appId: packageIdentity.appId,
     productName: resolveDesktopProductName(version),
     artifactName: "styal-${version}-${arch}.${ext}",
