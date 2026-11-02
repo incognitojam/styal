@@ -2007,6 +2007,7 @@ features:
       - The published-tool guard exercises provider mappings and both namespaces through client presentation; new preview tools require wording review, retired customizations fail, and intake uses a synthetic catalog fixture for real-client comparison.
       - Device instructions use the session's MCP namespace and only appear with device access, while provider subprocesses retain their per-session environment overrides.
       - Claude processes styal starts report `CLAUDE_CODE_ENTRYPOINT=styal` unless the provider instance's environment or Claude's settings set another value.
+      - Codex's direct-only server for `t3_thread_wait` is named after the session's MCP namespace (`styal-direct`, or `t3-code-direct` for a session from before the rename), and presentation recognizes both as well as the earlier `t3code`.
       - Every provider's orchestration instructions, including Claude's system prompt and Pi's bridge, name the session's MCP namespace and call the product styal; advertised MCP tool descriptions, MCP error messages, preview browser install errors and the context handoff preface say styal instead of T3 Code or T3, while tool names and identifiers keep their upstream `t3_` form.
     implementation_paths:
       - apps/mobile/src/lib/threadActivity.ts

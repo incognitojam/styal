@@ -60,10 +60,11 @@ check the `orchestration` capability before reading or mutating state.
 
 Codex gets T3's MCP server in each thread's `thread/start`, `thread/resume`,
 and `thread/fork` config, with the provider-session token in an
-`Authorization` header. The same server is registered twice:
+`Authorization` header. The same server is registered twice, under the session's
+namespace (`styal`, or `t3-code` for a session from before the rename):
 
-- `t3-code`: every tool except `t3_thread_wait`.
-- `t3code`: only `t3_thread_wait`, with `omit_tools_from = ["code_mode", "deferred"]`.
+- `styal`: every tool except `t3_thread_wait`.
+- `styal-direct`: only `t3_thread_wait`, with `omit_tools_from = ["code_mode", "deferred"]`.
 
 Code Mode runs a nested call as part of a script, so the model keeps working
 while a blocking wait runs. The second entry makes the wait a direct tool call,

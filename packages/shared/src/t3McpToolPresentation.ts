@@ -94,7 +94,17 @@ function tool(
 }
 
 // styal registers its server as `styal`; sessions started before the rename keep `t3-code`.
-const T3_MCP_SERVER_ALIASES = new Set(["styal", "t3-code", "t3_code", "t3code"]);
+// Codex also registers `<server>-direct` for tools kept out of Code Mode.
+const T3_MCP_SERVER_ALIASES = new Set([
+  "styal",
+  "styal-direct",
+  "styal_direct",
+  "t3-code",
+  "t3_code",
+  "t3code",
+  "t3-code-direct",
+  "t3_code_direct",
+]);
 
 const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
   link_pull_request: tool(
@@ -422,7 +432,9 @@ function resolveT3McpToolName(value: string): string | null {
   }
 
   const namespaceMatch =
-    /^(?<server>styal|t3-code|t3_code|t3code)(?:[.:/]|\s*·\s*)(?<tool>.+)$/i.exec(label);
+    /^(?<server>styal[-_]direct|styal|t3[-_]code[-_]direct|t3-code|t3_code|t3code)(?:[.:/]|\s*·\s*)(?<tool>.+)$/i.exec(
+      label,
+    );
   if (namespaceMatch?.groups) {
     return namespaceMatch.groups.tool ?? null;
   }
