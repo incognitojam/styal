@@ -1108,6 +1108,13 @@ export const DesktopPreviewRecordingSaveInputSchema = Schema.Struct({
   data: Schema.Uint8Array,
 });
 
+export const DesktopMediaReadSchema = Schema.Struct({
+  status: Schema.Number,
+  mimeType: Schema.String,
+  data: Schema.Uint8Array,
+});
+export type DesktopMediaRead = typeof DesktopMediaReadSchema.Type;
+
 export const DesktopDiscordPresenceActivity = Schema.Struct({
   activeThreads: Schema.Int.check(Schema.isGreaterThan(0)),
   activeProjects: Schema.Int.check(Schema.isGreaterThan(0)),
@@ -1267,6 +1274,8 @@ export interface DesktopBridge {
   receiveProviderAuthCallback: (authorizationUrl: string) => Promise<string>;
   cancelProviderAuthCallback: (authorizationUrl: string) => Promise<void>;
   openExternal: (url: string) => Promise<boolean>;
+  /** Reads http(s) media in the main process, outside renderer CORS and CSP; null on network failure. */
+  readMedia: (url: string) => Promise<DesktopMediaRead | null>;
   openSystemSettings: (pane: SystemSettingsPane) => Promise<boolean>;
   checkSystemPermission: (pane: SystemSettingsPane) => Promise<boolean>;
   probeRemoteEditors: () => Promise<readonly EditorId[]>;
