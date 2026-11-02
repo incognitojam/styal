@@ -283,6 +283,7 @@ Every workspace receives a persistent range of ten development ports; there is n
 enable. Agents, terminals, and project scripts launched locally for the workspace receive the first
 port as `STYAL_WORKSPACE_PORT`, and the range continues with the next nine numbers. A worktree
 keeps its range across restarts, and local threads share the range of the project's main checkout.
+When the available ranges fill up, reservations for deleted workspace directories are reclaimed.
 
 For example, a project script can run `npm run dev -- --port "$STYAL_WORKSPACE_PORT"` and give a
 second service `$((STYAL_WORKSPACE_PORT + 1))`. Workspaces in the same environment never receive

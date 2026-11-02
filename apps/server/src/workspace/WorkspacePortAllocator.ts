@@ -1,5 +1,6 @@
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
@@ -66,7 +67,42 @@ function preferredBasePort(workspacePath: string): number {
 export const make = Effect.fn("WorkspacePortAllocator.make")(function* () {
   const sql = yield* SqlClient.SqlClient;
   const path = yield* Path.Path;
+  const fs = yield* FileSystem.FileSystem;
   const allocationLock = yield* Semaphore.make(1);
+
+  // Deleted worktrees must not reserve ranges forever. Check only under pool
+  // pressure, and keep reservations when the filesystem cannot confirm absence.
+  const reclaimMissingWorkspaces = Effect.fn("WorkspacePortAllocator.reclaimMissingWorkspaces")(
+    function* () {
+      yield* sql.withTransaction(
+        Effect.gen(function* () {
+          const allocations = yield* sql<{ readonly workspacePath: string }>`
+            SELECT workspace_path AS "workspacePath" FROM workspace_port_allocations
+          `;
+          const missing = yield* Effect.filter(
+            allocations,
+            ({ workspacePath }) =>
+              fs.stat(workspacePath).pipe(
+                Effect.match({
+                  onSuccess: () => false,
+                  onFailure: (error) => error.reason._tag === "NotFound",
+                }),
+              ),
+            { concurrency: 16 },
+          );
+          if (missing.length > 0) {
+            yield* sql`
+              DELETE FROM workspace_port_allocations
+              WHERE ${sql.in(
+                "workspace_path",
+                missing.map(({ workspacePath }) => workspacePath),
+              )}
+            `;
+          }
+        }),
+      );
+    },
+  );
 
   const allocate = Effect.fn("WorkspacePortAllocator.allocate")(function* (workspacePath: string) {
     const normalizedPath = path.resolve(workspacePath);
@@ -112,7 +148,14 @@ export const make = Effect.fn("WorkspacePortAllocator.make")(function* () {
 
   const getBasePort: WorkspacePortAllocator["Service"]["getBasePort"] = (workspacePath) =>
     allocationLock
-      .withPermits(1)(allocate(workspacePath))
+      .withPermits(1)(
+        allocate(workspacePath).pipe(
+          Effect.catchTags({
+            WorkspacePortRangesExhaustedError: () =>
+              reclaimMissingWorkspaces().pipe(Effect.andThen(allocate(workspacePath))),
+          }),
+        ),
+      )
       .pipe(
         Effect.mapError(
           (cause) =>
