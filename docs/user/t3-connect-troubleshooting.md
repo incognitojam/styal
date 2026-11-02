@@ -99,7 +99,8 @@ Fix:
 
 ## Sign-in, account, or link problems
 
-styal Link does not have an active link between your account and the host.
+This device's styal Link sign-in is not ready yet, or styal Link does not have
+an active link between your account and the host.
 
 - **The host is linked to a different account.** Sign in to the same styal Link
   account on this device and on the host. On the host, run `styal link logout`,
@@ -111,6 +112,9 @@ styal Link does not have an active link between your account and the host.
   `styal service restart` on the host, or restart `styal serve`.
 - **This device's sign-in expired, or the host no longer accepts this
   device.** Sign out of styal Link and sign in again.
+- **This device is still loading its styal Link sign-in.** Wait a moment;
+  styal retries on its own. If it keeps waiting, reload or restart styal on
+  this device.
 - **Your account reached its tunnel limit.** Remove an environment you do not
   use from your styal account's styal Link page, then restart styal on the host.
 
