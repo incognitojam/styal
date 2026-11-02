@@ -15,6 +15,7 @@ import {
   AuthSourceControlWriteScope,
   AuthTerminalReadScope,
   AuthTerminalOperateScope,
+  ORCHESTRATION_V2_WS_METHODS,
   WS_METHODS,
   WsRpcGroup,
 } from "@t3tools/contracts";
@@ -420,5 +421,36 @@ it.effect("denies manual cleanup before the handler without settings permission"
       requiredPermission: AuthSettingsWriteScope,
     });
     expect(handled).toBe(false);
+  }).pipe(Effect.scoped),
+);
+
+it.effect("guards native subagent work with thread read permission", () =>
+  Effect.gen(function* () {
+    const method = ORCHESTRATION_V2_WS_METHODS.getNativeChildWork;
+    const group = WsRpcGroup.omit(
+      ...[...WsRpcGroup.requests.keys()].filter(
+        (tag): tag is Exclude<keyof typeof RPC_REQUIRED_SCOPES, typeof method> => tag !== method,
+      ),
+    );
+    const handled: string[] = [];
+    const handler = group.toLayerHandler(method, ({ threadId }) =>
+      Effect.sync(() => {
+        handled.push(threadId);
+        return { children: [] };
+      }),
+    );
+    const denied = yield* RpcTest.makeClient(group).pipe(
+      Effect.provide(Layer.merge(handler, RpcAuthorization.layer([AuthOrchestrationOperateScope]))),
+    );
+    const input = { threadId: ThreadId.make("native-child") };
+    expect(yield* denied[method](input).pipe(Effect.flip)).toMatchObject({
+      requiredPermission: AuthOrchestrationReadScope,
+    });
+    expect(handled).toEqual([]);
+    const allowed = yield* RpcTest.makeClient(group).pipe(
+      Effect.provide(Layer.merge(handler, RpcAuthorization.layer([AuthOrchestrationReadScope]))),
+    );
+    expect(yield* allowed[method](input)).toEqual({ children: [] });
+    expect(handled).toEqual([input.threadId]);
   }).pipe(Effect.scoped),
 );
