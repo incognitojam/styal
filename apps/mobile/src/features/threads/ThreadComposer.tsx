@@ -72,7 +72,10 @@ import {
   ComposerAttachmentThumbnail,
   PendingComposerAttachmentThumbnail,
 } from "../../components/ComposerAttachmentStrip";
-import { usePendingComposerAttachments } from "../../state/composer-pending-attachments";
+import {
+  readPendingComposerAttachments,
+  usePendingComposerAttachments,
+} from "../../state/composer-pending-attachments";
 import { VideoPreviewModal, type VideoPreviewSource } from "../../components/VideoPreviewModal";
 import { GlassSurface } from "../../components/ui/GlassSurface";
 import { ComposerEditor, type ComposerEditorHandle } from "../../components/ComposerEditor";
@@ -679,7 +682,8 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
       isSubmissionLocked ||
       sendBlockedReason !== null ||
       pendingPastedTextAttachmentCountRef.current > 0 ||
-      pendingNativeImagePasteCountRef.current > 0
+      pendingNativeImagePasteCountRef.current > 0 ||
+      readPendingComposerAttachments(composerDraftKey).length > 0
     )
       return;
     if (usageLimitsOffered && isUsageLimitsCommand(draftMessage) && draftAttachments.length === 0) {
@@ -695,6 +699,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
       return (
         pendingPastedTextAttachmentCountRef.current === 0 &&
         pendingNativeImagePasteCountRef.current === 0 &&
+        readPendingComposerAttachments(composerDraftKey).length === 0 &&
         draft.text === draftAtSend.text &&
         draft.attachments.length === draftAtSend.attachments.length &&
         draft.attachments.every(

@@ -1,6 +1,6 @@
 import * as Dialog from "../../components/ui/Dialog";
 import { StackActions, useNavigation } from "@react-navigation/native";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Platform, Pressable, View } from "react-native";
 
 import { ProjectFavicon } from "../../components/ProjectFavicon";
@@ -48,6 +48,8 @@ export function ShareToThreadSection(props: {
   const threads = useThreadShells();
   const projects = useProjects();
   const [isAdding, setIsAdding] = useState(false);
+  // State lags a second press in the same frame; a duplicate would copy the share twice.
+  const selectingRef = useRef(false);
   const targets = shareThreadTargets({ threads, projects, searchText: props.searchText });
 
   function openThread(target: ShareThreadTarget): void {
@@ -60,7 +62,8 @@ export function ShareToThreadSection(props: {
   }
 
   function select(target: ShareThreadTarget): void {
-    if (isAdding) return;
+    if (selectingRef.current) return;
+    selectingRef.current = true;
     if (!props.share) {
       void addImportingShareToThread({
         shareId: props.shareId,
@@ -75,6 +78,7 @@ export function ShareToThreadSection(props: {
     }
     setIsAdding(true);
     void addShareToThread(props.share, target, consumeShare).then((added) => {
+      selectingRef.current = false;
       setIsAdding(false);
       if (added) openThread(target);
     });
