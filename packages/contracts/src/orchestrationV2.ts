@@ -1619,6 +1619,13 @@ const ProviderStallIncident = Schema.Struct({
   resolution: Schema.optional(Schema.Literals(["activity", "waiting", "run_ended"])),
 });
 
+/** A same-harness model or effort change that took effect with this message. */
+export const OrchestrationV2ModelSwitch = Schema.Struct({
+  from: ModelSelection,
+  to: ModelSelection,
+});
+export type OrchestrationV2ModelSwitch = typeof OrchestrationV2ModelSwitch.Type;
+
 const OrchestrationV2TurnItemBaseFields = {
   legacyTurnId: Schema.optional(Schema.String),
   legacyActivities: Schema.optional(Schema.Array(OrchestrationV2LegacyActivity)),
@@ -1751,6 +1758,7 @@ export const OrchestrationV2TurnItem = Schema.Union([
     textOmitted: DedupedBodyMarker,
     context: Schema.optional(OrchestrationMessageContext),
     attachments: Schema.Array(ChatAttachment),
+    modelSwitch: Schema.optional(OrchestrationV2ModelSwitch),
   }),
   Schema.Struct({
     ...OrchestrationV2TurnItemBaseFields,
@@ -2617,6 +2625,7 @@ export const OrchestrationV2TurnItemJson = Schema.Union([
     text: Schema.String,
     context: Schema.optional(OrchestrationMessageContext),
     attachments: Schema.Array(ChatAttachment),
+    modelSwitch: Schema.optional(OrchestrationV2ModelSwitch),
   }),
   Schema.Struct({
     ...OrchestrationV2TurnItemJsonBaseFields,
