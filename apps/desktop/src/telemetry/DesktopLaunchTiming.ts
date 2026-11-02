@@ -40,6 +40,7 @@ const reportedPlatform = (platform: NodeJS.Platform) =>
 export class DesktopLaunchTiming extends Context.Service<
   DesktopLaunchTiming,
   {
+    readonly markBackendStarting: Effect.Effect<void>;
     /** First call only: the local backend answered. */
     readonly markBackendReady: Effect.Effect<void>;
     /** First call only: the main window was shown. */
@@ -69,6 +70,8 @@ export const make = Effect.fn("desktop.launchTiming.make")(function* (options?: 
   const timingPath = environment.path.join(runtimeDir, DESKTOP_UPDATE_RESTART_TIMING_FILE);
 
   const backendReadyAt = yield* Ref.make(Option.none<number>());
+  const backendStarting = yield* Ref.make(false);
+  const backendReady = yield* Deferred.make<void>();
   const windowShownAt = yield* Deferred.make<number>();
   const sinceStart = (at: number) => Math.max(0, Math.round(at - processStartedAt));
 
@@ -82,12 +85,15 @@ export const make = Effect.fn("desktop.launchTiming.make")(function* (options?: 
   );
 
   return DesktopLaunchTiming.of({
+    markBackendStarting: Ref.set(backendStarting, true),
     markBackendReady: Clock.currentTimeMillis.pipe(
       Effect.flatMap((now) =>
         Ref.update(backendReadyAt, (current) =>
           Option.isSome(current) ? current : Option.some(now),
         ),
       ),
+      Effect.andThen(Deferred.succeed(backendReady, undefined)),
+      Effect.asVoid,
     ),
     markWindowShown: Clock.currentTimeMillis.pipe(
       Effect.flatMap((now) => Deferred.succeed(windowShownAt, now)),
@@ -106,6 +112,7 @@ export const make = Effect.fn("desktop.launchTiming.make")(function* (options?: 
     }),
     report: Effect.gen(function* () {
       const shownAt = yield* Deferred.await(windowShownAt);
+      if (yield* Ref.get(backendStarting)) yield* Deferred.await(backendReady);
       const backendAt = yield* Ref.get(backendReadyAt);
       return {
         version: 1,
@@ -150,6 +157,7 @@ export const layerReporter = Layer.effectDiscard(
 export const layerNoop = Layer.succeed(
   DesktopLaunchTiming,
   DesktopLaunchTiming.of({
+    markBackendStarting: Effect.void,
     markBackendReady: Effect.void,
     markWindowShown: Effect.void,
     recordUpdateRestart: Effect.fn("DesktopLaunchTiming.recordUpdateRestart")(function () {

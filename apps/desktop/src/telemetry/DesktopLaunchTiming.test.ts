@@ -64,10 +64,17 @@ describe("DesktopLaunchTiming", () => {
   it.effect("reports a normal launch from the process start", () =>
     Effect.gen(function* () {
       const timing = yield* launch(makeFiles(), { appVersion: "1.2.3", processStartedAt: 1_000 });
+      yield* timing.markBackendStarting;
       yield* TestClock.setTime(3_000);
-      yield* timing.markBackendReady;
-      yield* TestClock.setTime(4_000);
       yield* timing.markWindowShown;
+      const reported = yield* Deferred.make<DesktopFeatureUsageReport>();
+      yield* timing.report.pipe(
+        Effect.flatMap((report) => Deferred.succeed(reported, report)),
+        Effect.forkChild({ startImmediately: true }),
+      );
+      assert.isFalse(yield* Deferred.isDone(reported));
+      yield* TestClock.setTime(4_000);
+      yield* timing.markBackendReady;
       // A backend restart or a reopened window later in the run changes nothing.
       yield* TestClock.setTime(60_000);
       yield* timing.markBackendReady;
@@ -79,8 +86,8 @@ describe("DesktopLaunchTiming", () => {
         feature: "desktop-launch",
         action: "launched",
         platform: "darwin",
-        backendReadyMs: 2_000,
-        windowShownMs: 3_000,
+        backendReadyMs: 3_000,
+        windowShownMs: 2_000,
       });
     }),
   );
