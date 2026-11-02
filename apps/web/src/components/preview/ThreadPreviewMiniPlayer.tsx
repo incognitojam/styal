@@ -58,14 +58,13 @@ import {
   clampPreviewMiniPlayerPosition,
   estimatePreviewMiniPlayerVelocity,
   NO_PREVIEW_MINI_PLAYER_OBSTACLES,
-  PREVIEW_MINI_PLAYER_EDGE_GAP,
   PREVIEW_MINI_PLAYER_WEBVIEW_Z_INDEX,
   type PreviewMiniPlayerFrame,
   type PreviewMiniPlayerPointerSample,
   resizePreviewMiniPlayer,
   resolveDeviceMiniPlayerCornerRadius,
   resolveDeviceMiniPlayerSourceSize,
-  resolvePreviewMiniPlayerRelease,
+  resolvePreviewMiniPlayerSettleTarget,
   resolvePreviewMiniPlayerSourceSize,
 } from "./previewMiniPlayerLayout";
 
@@ -362,15 +361,17 @@ function MiniPlayerShell({
 }) {
   const canvas = useChatCanvas();
   const gestureRef = useRef<PointerGesture | null>(null);
-  const settleFrameRef = useRef<number | null>(null);
+  const settleRef = useRef<{ frame: number; to: PreviewMiniPlayerPosition } | null>(null);
   const stopSettling = () => {
-    if (settleFrameRef.current !== null) cancelAnimationFrame(settleFrameRef.current);
-    settleFrameRef.current = null;
+    const settling = settleRef.current;
+    if (settling) cancelAnimationFrame(settling.frame);
+    settleRef.current = null;
+    return settling?.to ?? null;
   };
   // oxlint-disable-next-line t3code/react-effect-budget -- no handler runs at unmount, and a settle's animation frame loop must not outlive the player
   useEffect(
     () => () => {
-      if (settleFrameRef.current !== null) cancelAnimationFrame(settleFrameRef.current);
+      if (settleRef.current) cancelAnimationFrame(settleRef.current.frame);
     },
     [],
   );
@@ -428,13 +429,21 @@ function MiniPlayerShell({
     direction: BrowserViewportResizeDirection | null,
   ) => {
     if (event.button !== 0 || !frame) return;
-    stopSettling();
+    const settleTarget = stopSettling();
+    let start = frame;
+    // A drag picks a settling player up where it is, still free of obstacles.
+    // A resize lands it first, so it resizes from where it rests under them.
+    if (settleTarget && direction !== null) {
+      usePreviewMiniPlayerStore.getState().move(threadRef, sourceKey, settleTarget);
+      setDragging(false);
+      start = { ...frame, ...settleTarget };
+    }
     gestureRef.current = {
       pointerId: event.pointerId,
       pointerType: event.pointerType,
       pointerX: event.clientX,
       pointerY: event.clientY,
-      frame,
+      frame: start,
       direction,
       moved: false,
       samples: [{ x: event.clientX, y: event.clientY, time: event.timeStamp }],
@@ -496,35 +505,21 @@ function MiniPlayerShell({
       container &&
       frame
     ) {
-      // Targets go through the canvas layout so the animation ends where the
-      // frame comes to rest, clear of the composer and details card.
-      const reach = (position: PreviewMiniPlayerPosition): PreviewMiniPlayerPosition => {
-        const resolved = canvas?.resolvePreviewFrame(position) ?? position;
-        return { x: resolved.x, y: resolved.y };
-      };
-      const gap = PREVIEW_MINI_PLAYER_EDGE_GAP;
-      const topLeft = reach({ x: gap, y: gap });
-      const bottomRight = reach({
-        x: container.width - frame.width - gap,
-        y: container.height - frame.height - gap,
-      });
-      const release = resolvePreviewMiniPlayerRelease({
-        position: frame,
+      // The animation ends where the frame comes to rest, clear of the
+      // composer and details card.
+      const target = resolvePreviewMiniPlayerSettleTarget({
+        frame,
         velocity: estimatePreviewMiniPlayerVelocity(gesture.samples, event.timeStamp),
-        bounds: {
-          left: topLeft.x,
-          top: topLeft.y,
-          right: bottomRight.x,
-          bottom: bottomRight.y,
-        },
+        container,
+        resolveFrame: (position) => canvas?.resolvePreviewFrame(position) ?? null,
       });
       void reportForkClientUsage(threadRef.environmentId, {
         feature: "floating-preview",
         action: "released",
-        settle: release.settle,
+        settle: target.settle,
         preview: miniPlayer.source.kind,
       });
-      settle(frame, reach(release));
+      settle(frame, { x: target.x, y: target.y });
       return;
     }
     setDragging(false);
@@ -549,10 +544,14 @@ function MiniPlayerShell({
       const progress = Math.min(1, Math.max(0, (now - start) / duration));
       const eased = 1 - (1 - progress) ** 4;
       move({ x: from.x + (to.x - from.x) * eased, y: from.y + (to.y - from.y) * eased });
-      settleFrameRef.current = progress < 1 ? requestAnimationFrame(step) : null;
-      if (progress === 1) setDragging(false);
+      if (progress < 1) {
+        settleRef.current = { frame: requestAnimationFrame(step), to };
+      } else {
+        settleRef.current = null;
+        setDragging(false);
+      }
     };
-    settleFrameRef.current = requestAnimationFrame(step);
+    settleRef.current = { frame: requestAnimationFrame(step), to };
   };
 
   return (

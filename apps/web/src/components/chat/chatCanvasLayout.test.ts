@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vite-plus/test";
 import { resolveChatCanvasLayout, type ChatCanvasPreview } from "./chatCanvasLayout";
-import { resizePreviewMiniPlayer } from "../preview/previewMiniPlayerLayout";
+import {
+  resizePreviewMiniPlayer,
+  resolvePreviewMiniPlayerSettleTarget,
+} from "../preview/previewMiniPlayerLayout";
 import {
   resolveThreadDetailsCardDensity,
   resolveThreadDetailsCardLayout,
@@ -292,5 +295,39 @@ describe("workspace card beside chat", () => {
       expect(chat.width).toBeGreaterThanOrEqual(640);
       expect(card.x - chat.left - chat.width).toBeGreaterThanOrEqual(32);
     }
+  });
+});
+
+describe("settling a released preview", () => {
+  const container = { width: 1600, height: 600 };
+  const frame = { x: 600, y: 100, width: 320, height: 200 };
+  const resolveFrame = (position: { x: number; y: number }) =>
+    resolveChatCanvasLayout({
+      container,
+      preview: { ...preview, position, lastInteraction: "drag" },
+      composerHeight: 150,
+      detailsCard: { left: 1300, right: 1588, bottom: 400 },
+    }).frame;
+
+  it("lands in a clear corner even when another corner is blocked", () => {
+    expect(
+      resolvePreviewMiniPlayerSettleTarget({
+        frame,
+        velocity: { x: -1, y: 1 },
+        container,
+        resolveFrame,
+      }),
+    ).toEqual({ x: 12, y: 388, settle: "corner" });
+  });
+
+  it("rests a flick toward a blocked corner clear of the obstacles", () => {
+    const target = resolvePreviewMiniPlayerSettleTarget({
+      frame,
+      velocity: { x: 1, y: 1 },
+      container,
+      resolveFrame,
+    });
+    expect(target.settle).toBe("corner");
+    expect(resolveFrame(target)).toMatchObject({ x: target.x, y: target.y });
   });
 });

@@ -357,15 +357,4 @@ describe("resolvePreviewMiniPlayerRelease", () => {
       }),
     ).toEqual({ x: 748, y: gap, settle: "corner" });
   });
-
-  it("chooses corners within the reachable area, not the whole canvas", () => {
-    const lane = { left: 700, top: 255, right: 750, bottom: 416 };
-    expect(
-      resolvePreviewMiniPlayerRelease({
-        position: { x: 700, y: 263 },
-        velocity: { x: 0.8, y: 0.05 },
-        bounds: lane,
-      }),
-    ).toEqual({ x: 750, y: 255, settle: "corner" });
-  });
 });

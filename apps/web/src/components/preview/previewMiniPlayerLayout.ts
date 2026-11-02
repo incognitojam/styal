@@ -301,6 +301,34 @@ export function resolvePreviewMiniPlayerRelease(input: {
   };
 }
 
+/**
+ * Where a released player comes to rest. Corners and edges come from the
+ * canvas itself; obstacles reshape the reachable area per position, so only the
+ * chosen target goes through `resolveFrame`. Resolving the corners first would
+ * let one blocked corner shrink the others.
+ */
+export function resolvePreviewMiniPlayerSettleTarget(input: {
+  readonly frame: PreviewMiniPlayerFrame;
+  readonly velocity: PreviewMiniPlayerPosition;
+  readonly container: PreviewMiniPlayerSize;
+  readonly resolveFrame: (position: PreviewMiniPlayerPosition) => PreviewMiniPlayerPosition | null;
+}): PreviewMiniPlayerPosition & { readonly settle: "corner" | "edge" | "free" } {
+  const { frame, velocity, container, resolveFrame } = input;
+  const gap = PREVIEW_MINI_PLAYER_EDGE_GAP;
+  const release = resolvePreviewMiniPlayerRelease({
+    position: frame,
+    velocity,
+    bounds: {
+      left: gap,
+      top: gap,
+      right: container.width - frame.width - gap,
+      bottom: container.height - frame.height - gap,
+    },
+  });
+  const resolved = resolveFrame(release) ?? release;
+  return { x: resolved.x, y: resolved.y, settle: release.settle };
+}
+
 /** Clamp per layout without persisting so narrow containers preserve the chosen width. */
 export function resolvePreviewMiniPlayerFrame(input: {
   readonly width: number | null;

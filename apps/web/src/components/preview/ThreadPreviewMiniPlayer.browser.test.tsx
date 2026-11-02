@@ -186,6 +186,26 @@ describe("floating browser preview gestures", () => {
     ]);
   });
 
+  it("lands a settling preview before resizing it from a grabbed edge", async () => {
+    await using player = await mount();
+    vi.stubGlobal("matchMedia", () => ({ matches: false }));
+    const start = player.frame();
+    const surface = player.shield();
+    const target = { x: 700 - (start.x - 300), y: 550 - (start.y - 30) };
+    await player.pointer(surface, "pointerdown", 700, 550);
+    await player.pointer(surface, "pointermove", target.x, target.y);
+    await player.pointer(surface, "pointerup", target.x, target.y);
+    expect(player.frame().y).toBe(30);
+    const edge = player.host.querySelector("[data-preview-mini-player-resize='west']")!;
+    await player.pointer(edge, "pointerdown", 300, 100);
+    const landed = player.frame();
+    expect(landed).toMatchObject({ x: 300, y: PREVIEW_MINI_PLAYER_EDGE_GAP });
+    await player.pointer(edge, "pointermove", 260, 100);
+    expect(player.frame().width).toBe(landed.width + 40);
+    expect(player.frame().x + player.frame().width).toBe(landed.x + landed.width);
+    await player.pointer(edge, "pointerup", 260, 100);
+  });
+
   it("keeps anchored edge resizing usable and stops a cancelled gesture", async () => {
     await using player = await mount();
     const start = player.frame();
