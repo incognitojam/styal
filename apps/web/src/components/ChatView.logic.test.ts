@@ -43,6 +43,7 @@ import {
   hasInteractiveTerminal,
   getAntigravitySendBlockReason,
   resolveComposerProviderSelection,
+  resolveVisibleWorktreeSetup,
   resolveWorktreeSetupProgress,
   peekRememberedThreadTimeline,
   rememberReadyThreadTimeline,
@@ -735,7 +736,7 @@ describe("checkout Git memory", () => {
 describe("worktree setup visibility", () => {
   const stage = (
     id: "fetch" | "checkout" | "submodules" | "setup-script" | "agent",
-    status: "done" | "running" | "failed" | "pending",
+    status: "done" | "running" | "failed" | "pending" | "warning",
   ) => ({
     id,
     status,
@@ -779,6 +780,27 @@ describe("worktree setup visibility", () => {
     expect(resolve(base, newest)).toEqual({ snapshot: newest, isPreparingWorktree: false });
     const other = { ...base, threadId: ThreadId.make("another-thread") };
     expect(resolve(other, other)).toEqual({ snapshot: null, isPreparingWorktree: false });
+  });
+
+  it("keeps a finished setup card visible after the agent starts only when a step needs attention", () => {
+    const visible = (snapshot: WorktreeSetupSnapshot) =>
+      resolveVisibleWorktreeSetup({
+        live: snapshot,
+        recorded: null,
+        turnStarted: true,
+        followUpSent: false,
+      });
+    expect(visible(settledDone)).toBeNull();
+    const fetchWarning = {
+      ...settledDone,
+      stages: [stage("fetch", "warning"), ...settledDone.stages],
+    };
+    expect(visible(fetchWarning)).toBe(fetchWarning);
+    const scriptFailed = {
+      ...settledDone,
+      stages: [stage("checkout", "done"), stage("setup-script", "failed"), stage("agent", "done")],
+    };
+    expect(visible(scriptFailed)).toBe(scriptFailed);
   });
 
   it("reads the settled snapshot back from the thread's activities", () => {

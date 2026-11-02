@@ -26,6 +26,7 @@ import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Result from "effect/Result";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
@@ -391,28 +392,61 @@ const make = Effect.gen(function* () {
         }
         let startRef = input.workspaceStrategy.baseRef;
         let baseRefName = input.workspaceStrategy.baseRef;
-        const shouldFetch =
-          input.workspaceStrategy.startFromOrigin === true &&
-          (yield* git
-            .resolveWorktreeBaseRemote({
-              cwd: project.workspaceRoot,
-              refName: input.workspaceStrategy.baseRef,
-            })
-            .pipe(Effect.mapError(mapError(input, "provision-worktree", threadId)))) !== null;
-        yield* setupTracker.stageStatus(threadId, "fetch", shouldFetch ? "running" : "skipped");
-        if (shouldFetch) {
-          const remoteBase = yield* git
+        const remoteTarget =
+          input.workspaceStrategy.startFromOrigin === true
+            ? yield* git
+                .resolveWorktreeBaseRemote({
+                  cwd: project.workspaceRoot,
+                  refName: input.workspaceStrategy.baseRef,
+                })
+                .pipe(Effect.mapError(mapError(input, "provision-worktree", threadId)))
+            : null;
+        yield* setupTracker.stageStatus(
+          threadId,
+          "fetch",
+          remoteTarget !== null ? "running" : "skipped",
+        );
+        if (remoteTarget !== null) {
+          const fetched = yield* git
             .fetchWorktreeBaseCommit({
               cwd: project.workspaceRoot,
               refName: input.workspaceStrategy.baseRef,
             })
-            .pipe(Effect.mapError(mapError(input, "provision-worktree", threadId)));
+            .pipe(Effect.result);
+          let remoteBase = Result.isSuccess(fetched) ? fetched.success : null;
+          if (Result.isFailure(fetched)) {
+            // A slow or unreachable remote should not block a new thread when a local copy exists.
+            const remoteRefName = `${remoteTarget.remoteName}/${remoteTarget.branchName}`;
+            remoteBase = yield* git
+              .resolveRemoteTrackingCommit({
+                cwd: project.workspaceRoot,
+                refName: remoteRefName,
+                fallbackRemoteName: remoteTarget.remoteName,
+              })
+              .pipe(
+                Effect.catch(() =>
+                  Effect.fail(mapError(input, "provision-worktree", threadId)(fetched.failure)),
+                ),
+              );
+            yield* Effect.logWarning("worktree base fetch failed; using the local remote branch", {
+              threadId,
+              remoteRefName,
+              detail: fetched.failure.detail,
+            });
+            yield* setupTracker.stageStatus(
+              threadId,
+              "fetch",
+              "warning",
+              `Used local ${remoteRefName}`,
+            );
+          } else {
+            yield* setupTracker.stageStatus(threadId, "fetch", "done");
+          }
           if (remoteBase !== null) {
             startRef = remoteBase.commitSha;
             baseRefName = `refs/remotes/${remoteBase.remoteRefName}`;
           }
         }
-        if (shouldFetch) yield* setupTracker.stageStatus(threadId, "fetch", "done");
         if (
           branch !== null &&
           isTemporaryWorktreeBranch(branch) &&

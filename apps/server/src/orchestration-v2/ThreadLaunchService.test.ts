@@ -201,6 +201,15 @@ function makeHarness(options: HarnessOptions = {}) {
         (() => Effect.succeed({ commitSha: "remote-main-sha", remoteRefName: "origin/main" })),
       hasCommit: options.hasCommit ?? (() => Effect.succeed(false)),
       resolveWorktreeBaseRemote: () => Effect.succeed({ remoteName: "origin", branchName: "main" }),
+      resolveRemoteTrackingCommit: ({ cwd, refName }) =>
+        Effect.fail(
+          new GitCommandError({
+            operation: "GitVcsDriver.resolveRemoteTrackingCommit",
+            command: "git",
+            cwd,
+            detail: `No local copy of ${refName}.`,
+          }),
+        ),
       remoteExists: options.remoteExists ?? (() => Effect.succeed(true)),
       remoteBranchExists: () => Effect.succeed(true),
       removeWorktree,
@@ -1192,6 +1201,108 @@ it.effect("shows the fetch diagnosis when preparing a worktree from origin fails
     assert.equal(harness.runSetup.mock.calls.length, 0);
   }).pipe(Effect.provide(harness.layer));
 });
+
+const failedBaseFetch = Effect.fail(
+  new GitCommandError({
+    operation: "GitVcsDriver.fetchRemote",
+    command: "git",
+    cwd: project.workspaceRoot,
+    detail: "Git command timed out.",
+  }),
+);
+
+it.effect.each([
+  { remoteName: "origin", branchName: "main" },
+  { remoteName: "upstream", branchName: "release" },
+])(
+  "starts from the local copy of $remoteName/$branchName when the fetch fails",
+  ({ remoteName, branchName }) => {
+    const remoteRefName = `${remoteName}/${branchName}`;
+    let setupStarted: Deferred.Deferred<void> | null = null;
+    const harness = makeHarness({
+      fetchWorktreeBaseCommit: () => failedBaseFetch,
+      git: {
+        resolveWorktreeBaseRemote: () => Effect.succeed({ remoteName, branchName }),
+        resolveRemoteTrackingCommit: ({ refName }) =>
+          refName === remoteRefName
+            ? Effect.succeed({ commitSha: "local-base-sha", remoteRefName: refName })
+            : Effect.die(`unexpected ref ${refName}`),
+      },
+      runSetup: () =>
+        Deferred.succeed(setupStarted!, undefined).pipe(
+          Effect.as({ status: "no-script" as const }),
+        ),
+    });
+    return Effect.gen(function* () {
+      setupStarted = yield* Deferred.make<void>();
+      const launches = yield* ThreadLaunch.ThreadLaunchService;
+      const tracker = yield* WorktreeSetupTracker.WorktreeSetupTracker;
+      const launched = yield* launches.launch(
+        launchInput({
+          command: `command:launch:fetch-fallback-${remoteName}`,
+          thread: `thread:launch:fetch-fallback-${remoteName}`,
+          message: "Start from origin",
+          workspace: { type: "worktree", baseRef: branchName, startFromOrigin: true },
+        }),
+      );
+      yield* Deferred.await(setupStarted);
+      const created = harness.createWorktree.mock.calls[0]?.[0];
+      assert.equal(created?.refName, "local-base-sha");
+      assert.equal(created?.baseRefName, `refs/remotes/${remoteRefName}`);
+      const fetchStage = (yield* tracker.get(launched.threadId))?.stages.find(
+        (stage) => stage.id === "fetch",
+      );
+      assert.equal(fetchStage?.status, "warning");
+      assert.equal(fetchStage?.detail, `Used local ${remoteRefName}`);
+    }).pipe(Effect.provide(harness.layer));
+  },
+);
+
+it.effect(
+  "does not fall back to the local remote branch when setup is interrupted during the fetch",
+  () => {
+    let fetchEntered: Deferred.Deferred<void> | null = null;
+    const harness = makeHarness({
+      fetchWorktreeBaseCommit: () =>
+        Deferred.succeed(fetchEntered!, undefined).pipe(Effect.andThen(Effect.never)),
+      git: {
+        resolveRemoteTrackingCommit: ({ refName }) =>
+          Effect.succeed({ commitSha: "local-origin-main-sha", remoteRefName: refName }),
+      },
+    });
+    return Effect.gen(function* () {
+      fetchEntered = yield* Deferred.make<void>();
+      const launches = yield* ThreadLaunch.ThreadLaunchService;
+      const threads = yield* ThreadManagement.ThreadManagementService;
+      const launched = yield* launches.launch(
+        launchInput({
+          command: "command:launch:fetch-fallback-interrupted",
+          thread: "thread:launch:fetch-fallback-interrupted",
+          message: "Start from origin",
+          workspace: { type: "worktree", baseRef: "main", startFromOrigin: true },
+        }),
+      );
+      yield* Deferred.await(fetchEntered);
+      yield* threads.dispatch({
+        type: "run.interrupt",
+        commandId: CommandId.make("command:launch:fetch-fallback-interrupted:interrupt"),
+        threadId: launched.threadId,
+        runId: launched.projection.runs[0]!.id,
+      });
+      yield* threads.streamStoredEventsFrom({ threadId: launched.threadId }).pipe(
+        Stream.filter(
+          (stored) =>
+            stored.event.type === "run.updated" && stored.event.payload.status === "interrupted",
+        ),
+        Stream.runHead,
+      );
+      const projection = yield* threads.getThreadProjection(launched.threadId);
+      assert.equal(projection.thread.worktreePath, null);
+      assert.equal(harness.createWorktree.mock.calls.length, 0);
+      assert.equal(harness.runSetup.mock.calls.length, 0);
+    }).pipe(Effect.provide(harness.layer));
+  },
+);
 
 it.effect.each(["fails", "is interrupted"] as const)(
   "holds a message queued during setup when the workspace preparation %s",

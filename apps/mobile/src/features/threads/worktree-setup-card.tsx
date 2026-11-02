@@ -62,7 +62,9 @@ export function WorktreeSetupCard(props: WorktreeSetupCardProps) {
             ? "Worktree setup failed"
             : failed
               ? "Setup script failed"
-              : "Worktree ready";
+              : snapshot.stages.some((stage) => stage.status === "warning")
+                ? "Worktree ready, fetch failed"
+                : "Worktree ready";
 
   return (
     <View accessibilityLabel="Worktree setup" className="py-1">

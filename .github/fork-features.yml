@@ -6427,3 +6427,30 @@ features:
         - https://github.com/pingdotgg/t3code/pull/15580
         - https://github.com/pingdotgg/t3code/pull/5944
       retire_when: Upstream uses worktree for Git projects with a commit and local otherwise as the built-in last step after project, environment, and t3.json settings on every client, while refusing unresolvable requested worktree bases with an actionable error.
+
+  - id: worktree-base-fetch-fallback
+    title: Start a worktree from the local remote branch when the fetch fails
+    status: maintained
+    prs: [1205]
+    invariants:
+      - When a new worktree starts from origin and fetching its base fails or times out, setup continues from the existing local remote-tracking ref instead of failing the thread.
+      - The fetch stage of the setup card shows a warning naming the local ref, the git error goes to the server log, and a finished setup card with a warning stays visible after the agent starts on web and mobile.
+      - Without a local remote-tracking ref, setup still fails with the fetch diagnosis.
+    rationale: On a loaded machine or a slow network the 30-second base fetch can time out even though a recent local copy exists, and failing the whole thread loses the user's first message for a recoverable condition.
+    implementation_paths:
+      - apps/mobile/src/features/threads/worktree-setup-card.tsx
+      - apps/server/src/orchestration-v2/ThreadLaunchService.ts
+      - apps/web/src/components/chat/WorktreeSetupCard.tsx
+      - packages/client-runtime/src/worktreeSetup.ts
+    upstream_paths:
+      - apps/mobile/src/features/threads/worktree-setup-card.tsx
+      - apps/server/src/orchestration-v2/ThreadLaunchService.ts
+      - apps/web/src/components/chat/WorktreeSetupCard.tsx
+      - packages/client-runtime/src/worktreeSetup.ts
+    tests:
+      - apps/server/src/orchestration-v2/ThreadLaunchService.test.ts
+      - apps/web/src/components/ChatView.logic.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream starts worktrees from the local remote-tracking ref, or otherwise keeps the thread, when the base fetch fails.
