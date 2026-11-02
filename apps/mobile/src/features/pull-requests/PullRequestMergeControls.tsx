@@ -130,6 +130,8 @@ export function PullRequestMergeControls(props: {
       ? `${MERGE_METHODS[method].title} stack (${scope.layers.length})`
       : MERGE_METHODS[method].title
     : "Merge unavailable";
+  const autoMergeArmed = pr.state === "open" && pr.autoMergeEnabled === true;
+  const armedLabel = `Auto-merge pending${pr.autoMergeMethod ? ` (${pr.autoMergeMethod})` : ""}`;
   const label =
     primaryAction === "merge"
       ? mergeLabel
@@ -229,14 +231,26 @@ export function PullRequestMergeControls(props: {
   return (
     <View className="gap-2 border-t border-border-subtle p-3">
       <SplitButton
-        label={busy ? "Working…" : !permissions.connected ? "Reconnect to merge" : label}
-        accessibilityLabel={
-          scope ? `${label}, ${scope.layers.length} stack layers through #${pr.number}` : label
+        label={
+          busy
+            ? "Working…"
+            : !permissions.connected
+              ? "Reconnect to merge"
+              : autoMergeArmed
+                ? armedLabel
+                : label
         }
-        icon={PR_ACTION_ICONS[primaryAction]}
+        accessibilityLabel={
+          autoMergeArmed
+            ? `${armedLabel}, merges once its requirements are met`
+            : scope
+              ? `${label}, ${scope.layers.length} stack layers through #${pr.number}`
+              : label
+        }
+        icon={autoMergeArmed ? "clock" : PR_ACTION_ICONS[primaryAction]}
         disabled={!canPressPrimary}
         prominent={prominent}
-        loading={busy || checkingStack}
+        loading={busy || (!autoMergeArmed && checkingStack)}
         onPress={() => confirm(primaryAction)}
         menuTitle="Merge options"
         actions={[
@@ -281,6 +295,7 @@ export function PullRequestMergeControls(props: {
         <Text className="px-1 text-xs text-foreground-muted">{blockedReason}</Text>
       ) : null}
       {permissions.connected &&
+      !autoMergeArmed &&
       reason &&
       reason !== MERGE_CONFLICT_REASON &&
       reason !== "Checking stack membership…" &&
@@ -301,6 +316,7 @@ export function PullRequestMergeControls(props: {
           </Text>
         </View>
       ) : null}
+
       {stack.error && stack.supportsStackActions ? (
         <Button label="Retry stack lookup" tone="text" onPress={stack.refresh} />
       ) : null}
