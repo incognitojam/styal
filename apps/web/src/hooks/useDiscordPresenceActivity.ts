@@ -1,11 +1,15 @@
 import { useEffect, useState } from "react";
 import { deriveDiscordPresence } from "../discordPresence";
-import { useEnvironmentShellStatuses, useServerConfigs, useThreadShells } from "../state/entities";
+import {
+  useEnvironmentShellStatuses,
+  useServerConfigs,
+  useVisibleThreadShells,
+} from "../state/entities";
 import { useNowMinute } from "./useNowMinute";
 
 /** The activity Discord would show right now, re-derived when a snoozed thread wakes. */
 export function useDiscordPresenceActivity() {
-  const threads = useThreadShells();
+  const threads = useVisibleThreadShells();
   const serverConfigs = useServerConfigs();
   const shellStatuses = useEnvironmentShellStatuses();
   const nowMinute = useNowMinute();

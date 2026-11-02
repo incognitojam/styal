@@ -55,6 +55,8 @@ function settingsSnapshotProperties(settings: ServerSettings) {
       DEFAULT_SERVER_SETTINGS.snoozePresets,
     ),
     autoResumeLimitedThreads: settings.autoResumeLimitedThreads,
+    hideTaggedThreads: settings.hideTaggedThreads,
+    hiddenThreadTagsSet: settings.hiddenThreadTags.length > 0,
     guestSharingEnabled: settings.guestSharingEnabled,
     linkedEnvironmentsEnabled: settings.linkedEnvironmentsEnabled,
     idleCompaction: globalIdleCompaction(settings),

@@ -18,7 +18,7 @@ import {
   readProject,
   useAllEnvironmentShellsBootstrapped,
   useProjects,
-  useThreadShells,
+  useVisibleThreadShells,
 } from "../state/entities";
 import {
   indexDraftStartNeedsRetry,
@@ -42,7 +42,7 @@ function ChatIndexRouteView() {
 
 function IndexDraftLanding() {
   const projects = useProjects();
-  const threads = useThreadShells();
+  const threads = useVisibleThreadShells();
   const bootstrapped = useAllEnvironmentShellsBootstrapped();
   const primaryWelcome = useAtomValue(primaryServerWelcomeAtom);
   const launchNavigationOwner = useLaunchNavigationStore((store) => store.owner);

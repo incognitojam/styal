@@ -119,6 +119,7 @@ export function shouldPublishAgentAwarenessEvent(
     case "thread.unpinned":
     case "thread.pin-reordered":
     case "thread.active-reordered":
+    case "thread.tags-updated":
     case "thread.runtime-mode-updated":
     case "thread.interaction-mode-updated":
     case "run.background-work-cancelled":

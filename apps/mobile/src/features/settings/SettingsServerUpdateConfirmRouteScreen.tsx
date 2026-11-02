@@ -1,3 +1,5 @@
+import { useAtomValue } from "@effect/atom-react";
+import { visibleHostActivity } from "@t3tools/client-runtime/state/threads";
 import type { ConfirmDialogThreadActivity, EnvironmentId } from "@t3tools/contracts";
 import {
   groupHostActivityThreads,
@@ -15,6 +17,7 @@ import { AppText as Text } from "../../components/ui/AppText";
 import { ScreenContent } from "../../components/ui/ScreenContent";
 import { ProjectFavicon } from "../../components/ProjectFavicon";
 import { cn } from "../../lib/cn";
+import { environmentThreadShells } from "../../state/threads";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { SheetActionButton } from "../threads/git/gitSheetComponents";
 import {
@@ -62,7 +65,14 @@ function ThreadActivityList({
   readonly environmentId: EnvironmentId;
   readonly activity: ReadonlyArray<ConfirmDialogThreadActivity>;
 }) {
-  return groupHostActivityThreads(activity).map((host) => {
+  const hiddenKeys = useAtomValue(environmentThreadShells.hiddenThreadKeysAtom);
+  const hidingAnywhere = useAtomValue(environmentThreadShells.anyEnvironmentHidingAtom);
+  const visible = visibleHostActivity(
+    activity.map((row) => ({ environmentId, ...row })),
+    hiddenKeys,
+    hidingAnywhere,
+  );
+  return groupHostActivityThreads(visible).map((host) => {
     return (
       <View key={host.key} className="gap-5">
         {host.sections.map((section) => {

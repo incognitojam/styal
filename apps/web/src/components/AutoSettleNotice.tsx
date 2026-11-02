@@ -11,7 +11,7 @@ import {
   useLocalStorage,
 } from "../hooks/useLocalStorage";
 import { useOpenPrLink } from "../lib/openPullRequestLink";
-import { useThreadShells } from "../state/entities";
+import { useVisibleThreadShells } from "../state/entities";
 import { buildThreadRouteParams } from "../threadRoutes";
 import { resolveAutoSettleNotice } from "./AutoSettleNotice.logic";
 import { SETTLED_SHELF_EXPANDED_KEY } from "./Sidebar.logic";
@@ -44,7 +44,7 @@ function readOrStartSince(): string | null {
 export function AutoSettleNotice() {
   const navigate = useNavigate();
   const openPrLink = useOpenPrLink();
-  const threads = useThreadShells();
+  const threads = useVisibleThreadShells();
   const [dismissed, setDismissed] = useLocalStorage(DISMISSED_KEY, false, Schema.Boolean);
   const [, setSettledShelfExpanded] = useLocalStorage(
     SETTLED_SHELF_EXPANDED_KEY,

@@ -6641,6 +6641,31 @@ features:
       status: unassessed
       tracking: []
       retire_when: Upstream reads a project file under a name and schema styal can share.
+  - id: tagged-thread-fork-surfaces
+    title: Hide tagged threads on fork-only surfaces
+    status: maintained
+    prs: []
+    rationale: Hiding tagged threads exists so a recording shows nothing from them, and upstream's filter only reaches the lists upstream has. Compared with upstream revision 30654b3e91a51937d1dba18fc83af19d8003f5ca.
+    invariants:
+      - While a thread is hidden by the tag filter, the auto-settle notice, Discord presence, mobile share targets, and the web and mobile update confirmation lists leave it out. An update confirmation row with no environment cannot be judged and stays out while any environment hides tags.
+      - An update confirmation's counts and its message still include hidden threads, because a restart interrupts them whether or not they are shown.
+    implementation_paths:
+      - apps/mobile/src/features/settings/SettingsServerUpdateConfirmRouteScreen.tsx
+      - apps/mobile/src/features/sharing/ShareToThreadSection.tsx
+      - apps/web/src/components/AutoSettleNotice.tsx
+      - apps/web/src/components/HostActivityThreadList.tsx
+      - apps/web/src/hooks/useDiscordPresenceActivity.ts
+      - packages/client-runtime/src/state/threadTagFilter.ts
+    upstream_paths:
+      - packages/client-runtime/src/state/threadTagFilter.ts
+    tests:
+      - packages/client-runtime/src/state/threadTagFilter.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/blob/30654b3e91a51937d1dba18fc83af19d8003f5ca/packages/client-runtime/src/state/threadTagFilter.ts
+      retire_when: Upstream has these surfaces and hides tagged threads on them.
+
   - id: terminal-scroll-on-input
     title: Return the terminal to the live screen when the user types
     status: maintained

@@ -28,6 +28,8 @@ const defaultSnapshot = {
   snoozeLimitedThreads: false,
   snoozePresetsCustomized: false,
   autoResumeLimitedThreads: false,
+  hideTaggedThreads: false,
+  hiddenThreadTagsSet: false,
   guestSharingEnabled: false,
   linkedEnvironmentsEnabled: false,
   idleCompaction: "onReturn",

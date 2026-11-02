@@ -35,6 +35,7 @@ const source = Schema.decodeUnknownSync(OrchestrationV2ThreadProjectionJson)({
     historyOrigin: "native",
     createdBy: "user",
     creationSource: "web",
+    tags: ["private"],
     lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: threadId },
     forkedFrom: null,
     createdAt: at,
@@ -224,6 +225,7 @@ it.layer(layer)("V2 source history import", (it) => {
           threadId,
         );
         assert.equal(projection.thread.projectId, "target-project");
+        assert.deepEqual(projection.thread.tags, ["private"]);
         assert.equal(projection.runs[0]?.status, "cancelled");
         assert.equal(projection.providerThreads[0]?.providerSessionId, null);
         assert.equal(projection.providerThreads[0]?.status, "not_loaded");

@@ -4,7 +4,9 @@ import {
   hostActivityReasonLabels,
   hostActivityReasonTone,
 } from "@t3tools/shared/hostActivity";
+import { visibleHostActivity } from "@t3tools/client-runtime/state/threads";
 import { deriveProjectIdentity } from "../projectIdentity";
+import { useAnyEnvironmentHiding, useHiddenThreadKeys } from "../state/entities";
 import { useEnvironmentMachines } from "../state/environments";
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
 import { ProjectFavicon } from "./ProjectFavicon";
@@ -28,7 +30,9 @@ export function HostActivityThreadList({
   readonly activity: ReadonlyArray<ConfirmDialogThreadActivity>;
 }) {
   const machines = useEnvironmentMachines();
-  const hosts = groupHostActivityThreads(activity);
+  const hiddenKeys = useHiddenThreadKeys();
+  const hidingAnywhere = useAnyEnvironmentHiding();
+  const hosts = groupHostActivityThreads(visibleHostActivity(activity, hiddenKeys, hidingAnywhere));
   return (
     <div className="mx-6 mb-6 min-h-0 overflow-y-auto">
       <ul aria-label="Affected threads" className="space-y-6">

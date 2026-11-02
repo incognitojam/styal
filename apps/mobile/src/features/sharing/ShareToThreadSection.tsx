@@ -10,7 +10,7 @@ import { ListSection } from "../../components/ui/ListSection";
 import { NavigationRow } from "../../components/ui/NavigationRow";
 import { cn } from "../../lib/cn";
 import { appAtomRegistry } from "../../state/atom-registry";
-import { useProjects, useThreadShells } from "../../state/entities";
+import { useProjects, useVisibleThreadShells } from "../../state/entities";
 import { reportForkClientUsage } from "../../state/forkClientUsage";
 import { serverEnvironment } from "../../state/server";
 import {
@@ -36,7 +36,7 @@ export function ShareToThreadSection(props: {
   readonly showNewThreadHeading: boolean;
 }) {
   const navigation = useNavigation();
-  const threads = useThreadShells();
+  const threads = useVisibleThreadShells();
   const projects = useProjects();
   const [isAdding, setIsAdding] = useState(false);
   const targets = shareThreadTargets({ threads, projects, searchText: props.searchText });
