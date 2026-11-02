@@ -1,4 +1,3 @@
-import { WORKING_EXIT_GRACE_MS } from "@t3tools/client-runtime/state/thread-inbox";
 import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts/settings";
 import type { ClientSettings } from "@t3tools/contracts/settings";
 import * as DateTime from "effect/DateTime";
@@ -286,10 +285,8 @@ describe("thread notifications", () => {
     await app.render();
     using _timers = fakeTimers();
     await app.complete();
-    await vi.advanceTimersByTimeAsync(WORKING_EXIT_GRACE_MS);
     state.completedAt = "2026-09-13T11:00:00.000Z";
     await app.render();
-    await vi.advanceTimersByTimeAsync(WORKING_EXIT_GRACE_MS);
     await act(() => Promise.resolve());
 
     expect(state.notification).not.toHaveBeenCalled();

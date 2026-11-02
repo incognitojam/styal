@@ -6,7 +6,6 @@ import {
   RuntimeRequestId,
   type OrchestrationV2ThreadShell,
 } from "@t3tools/contracts";
-import { WORKING_EXIT_GRACE_MS } from "@t3tools/client-runtime/state/thread-inbox";
 import * as Option from "effect/Option";
 import * as DateTime from "effect/DateTime";
 import { AtomRegistry } from "effect/reactivity";
@@ -174,7 +173,6 @@ it("alerts once for a live completion using the persisted sample and opens its e
   await app.render();
   state.shell = snapshot(true);
   await app.render();
-  await vi.advanceTimersByTimeAsync(WORKING_EXIT_GRACE_MS);
   expect(state.play).toHaveBeenCalledExactlyOnceWith("completion", expect.any(Function), "avanti");
   expect(notifications).toHaveLength(1);
   expect(notifications[0]?.title).toBe("Thread completed");

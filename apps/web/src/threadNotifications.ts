@@ -139,8 +139,25 @@ export function prepareNotificationAudio() {
   if (audioContext.state === "running") releaseOutputWhenIdle(audioContext);
 }
 
+function loadNotificationBuffer(context: AudioContext, url: string): Promise<AudioBuffer> {
+  let buffer = buffers.get(url);
+  if (!buffer) {
+    buffer = fetch(url)
+      .then((response) => response.arrayBuffer())
+      .then((data) => context.decodeAudioData(data))
+      .catch((error: unknown) => {
+        buffers.delete(url);
+        throw error;
+      });
+    buffers.set(url, buffer);
+  }
+  return buffer;
+}
+
 /** Called from a gesture so browsers allow later background playback. */
-export async function unlockNotificationAudio() {
+export async function unlockNotificationAudio(
+  preload: ReadonlyArray<NotificationSound> = ["t3-completion", "t3-input"],
+) {
   if (unlocked) return;
   audioContext ??= new AudioContext();
   const context = audioContext;
@@ -151,6 +168,12 @@ export async function unlockNotificationAudio() {
   } catch (error) {
     console.warn("Notification audio could not start", error);
     discardContext(context);
+    return;
+  }
+  // Fetch and decode during interaction so the first alert is ready when the thread finishes.
+  for (const sound of new Set(preload)) {
+    if (sound === "none") continue;
+    void loadNotificationBuffer(context, NOTIFICATION_SOUND_URLS[sound]).catch(() => undefined);
   }
 }
 
@@ -167,16 +190,9 @@ export async function playNotificationSound(
   const url = NOTIFICATION_SOUND_URLS[sound];
   let decoded: AudioBuffer;
   try {
-    let buffer = buffers.get(url);
-    if (!buffer) {
-      buffer = fetch(url)
-        .then((response) => response.arrayBuffer())
-        .then((data) => context.decodeAudioData(data));
-      buffers.set(url, buffer);
-    }
-    decoded = await buffer;
+    decoded = await loadNotificationBuffer(context, url);
   } catch (error) {
-    buffers.delete(url);
+    // A failed load is retried on the next alert.
     console.warn("Notification sound could not load", url, error);
     return;
   }

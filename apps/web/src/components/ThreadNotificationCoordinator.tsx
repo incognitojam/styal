@@ -124,7 +124,6 @@ export function startThreadNotifications(
     setNotificationBadge(0);
   };
 
-  // Completions fire from a timer, so read settings, focus and route when presenting.
   const present = (
     environmentId: EnvironmentId,
     state: NotificationState,
@@ -317,7 +316,6 @@ export function startThreadNotifications(
           observeThreads(environmentId, entry, threads);
           return;
         }
-        entry.gate.cancelPending();
         entry.reconnecting = true;
       },
       { immediate: true },
@@ -391,11 +389,19 @@ export function startThreadNotifications(
       // Safari has no requestIdleCallback.
       if ("requestIdleCallback" in window) window.requestIdleCallback(prepareNotificationAudio);
       else setTimeout(prepareNotificationAudio);
-      document.addEventListener("pointerdown", unlockNotificationAudio);
-      document.addEventListener("keydown", unlockNotificationAudio);
+      const unlockAudio = () => {
+        const settings = getClientSettings();
+        void unlockNotificationAudio([
+          notificationSoundForEvent(settings, "completion"),
+          notificationSoundForEvent(settings, "input"),
+          notificationSoundForEvent(settings, "approval"),
+        ]);
+      };
+      document.addEventListener("pointerdown", unlockAudio);
+      document.addEventListener("keydown", unlockAudio);
       stops.push(() => {
-        document.removeEventListener("pointerdown", unlockNotificationAudio);
-        document.removeEventListener("keydown", unlockNotificationAudio);
+        document.removeEventListener("pointerdown", unlockAudio);
+        document.removeEventListener("keydown", unlockAudio);
       });
     }
     stopModeListeners = () => {

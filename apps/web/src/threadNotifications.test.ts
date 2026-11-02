@@ -99,7 +99,9 @@ it.each([
 ] as const)(
   "uses the selected $sound sample and normalized level",
   async ({ sound, url, volume }) => {
-    const { playNotificationSound } = await loadUnlocked();
+    const { unlockNotificationAudio, playNotificationSound } =
+      await import("./threadNotifications");
+    await unlockNotificationAudio([]);
     await playNotificationSound("completion", () => true, sound);
     audio.currentTime = SOUND_SECONDS;
     await playNotificationSound("completion", () => true, sound);
@@ -113,7 +115,7 @@ it("suppresses playback before a gesture, for None, and when preferences change 
   const { unlockNotificationAudio, playNotificationSound } = await import("./threadNotifications");
   await playNotificationSound("completion", () => true);
   expect(fetchSample).not.toHaveBeenCalled();
-  await unlockNotificationAudio();
+  await unlockNotificationAudio([]);
   await playNotificationSound("completion", () => true, "none");
   expect(fetchSample).not.toHaveBeenCalled();
   await playNotificationSound("completion", () => false);
@@ -132,6 +134,37 @@ it("toggles system notifications and sounds without changing the other", async (
 });
 
 describe("playNotificationSound", () => {
+  it("preloads both sounds on unlock and reuses them for playback", async () => {
+    const { unlockNotificationAudio, playNotificationSound } = await loadUnlocked();
+    expect(fetch).toHaveBeenCalledTimes(2);
+    unlockNotificationAudio();
+    await playNotificationSound("completion", () => true);
+    await playNotificationSound("input", () => true);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(audio.started).toBe(2);
+  });
+
+  it("preloads the sounds the user chose instead of the defaults", async () => {
+    const { unlockNotificationAudio } = await import("./threadNotifications");
+    await unlockNotificationAudio(["avanti", "avanti", "none"]);
+    expect(fetch).toHaveBeenCalledExactlyOnceWith("/avanti.mp3");
+  });
+
+  it("retries failed preloads on an alert rather than every gesture", async () => {
+    vi.mocked(fetch).mockRejectedValue(new Error("offline"));
+    const { unlockNotificationAudio, playNotificationSound } = await loadUnlocked();
+    await playNotificationSound("completion", () => true);
+    expect(fetch).toHaveBeenCalledTimes(2);
+
+    unlockNotificationAudio();
+    expect(fetch).toHaveBeenCalledTimes(2);
+
+    vi.mocked(fetch).mockResolvedValue(new Response(new ArrayBuffer(0)));
+    await playNotificationSound("completion", () => true);
+    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(audio.started).toBe(1);
+  });
+
   it("plays one sound for threads that complete together", async () => {
     const { playNotificationSound } = await loadUnlocked();
 

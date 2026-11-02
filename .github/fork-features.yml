@@ -911,6 +911,7 @@ features:
       - Completion sounds that overlap play once, but a completion never silences an input or approval alert, even when both events use the same sample.
       - The audio context is suspended between sounds, so idle notifications hold no output device and each sound plays on the current default output device.
       - The audio context is created while the app is idle rather than in the first input handler, so the first key press or click does not pay for it.
+      - The first gesture that unlocks audio also fetches and decodes the sounds the user selected, so the first alert plays without a load delay even when a chosen sound is not a default.
       - Fresh settings play upstream completion and attention sounds with system notifications off; legacy Resolve or Chime migrates to T3 completion, and Avanti remains Avanti, with notifications and sound enabled unless a notification mode was explicitly saved.
       - Legacy None stays disabled, Resolve is retired, and Avanti retains its normalized playback level.
       - Departures is an original chime synthesised for styal, so it carries no third-party notice.
