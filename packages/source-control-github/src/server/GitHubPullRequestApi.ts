@@ -2299,7 +2299,12 @@ export const make = Effect.gen(function* () {
       const { owner, name } = parseRepositorySelector(input.repository);
       const operation = "getPullRequestPreview";
       return client
-        .PullRequestPreview({ owner, name, number: input.number })
+        .PullRequestPreview({
+          owner,
+          name,
+          number: input.number,
+          required: asksRequired(input.host),
+        })
         .pipe(
           graphql({ ...input, operation }),
           Effect.map(toPullRequestPreview),
