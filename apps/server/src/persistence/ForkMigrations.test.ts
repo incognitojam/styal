@@ -75,7 +75,7 @@ organizedLayer("ForkMigrations project pins from fork migration 11", (it) => {
       const pinnedAt = "2026-10-01T00:00:00.000Z";
       // An earlier build's history: fork migration 11 ran, upstream stops at 75.
       yield* runAllMigrations();
-      yield* sql`DELETE FROM effect_sql_migrations WHERE migration_id = 76`;
+      yield* sql`DELETE FROM effect_sql_migrations WHERE migration_id >= 76`;
       yield* sql`
         INSERT INTO projection_projects (
           project_id, title, workspace_root, scripts_json, created_at, updated_at,
@@ -88,7 +88,7 @@ organizedLayer("ForkMigrations project pins from fork migration 11", (it) => {
       `;
 
       const { upstream } = yield* runAllMigrations();
-      assert.deepStrictEqual(upstream, []);
+      assert.deepStrictEqual(upstream, [[77, "RepairBooleanSettledOverride"]]);
       assert.deepStrictEqual(
         yield* sql`
           SELECT migration_id, name FROM effect_sql_migrations WHERE migration_id = 76
