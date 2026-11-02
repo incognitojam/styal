@@ -250,11 +250,14 @@ describe("revealServerTabs", () => {
     expect(useRightPanelStore.getState().byThreadKey[threadKey]?.activeSurfaceId).not.toBe(
       browserSurfaceId,
     );
+    const userActionRevision = useRightPanelStore.getState().getUserActionRevision(ref);
     revealServerTabs(ref, [tab("tab_a", true)], { autoShowFloatingPreview: true });
     expect(useRightPanelStore.getState().byThreadKey[threadKey]?.activeSurfaceId).toBe(
       browserSurfaceId,
     );
     expect(floatingTabId()).toBeNull();
+    // A user action moves keyboard focus into the panel; an agent reveal must not.
+    expect(useRightPanelStore.getState().getUserActionRevision(ref)).toBe(userActionRevision);
   });
 
   it("opens a terminal link in the right panel even when floating previews are off", () => {

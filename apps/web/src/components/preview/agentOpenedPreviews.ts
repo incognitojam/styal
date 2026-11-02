@@ -56,7 +56,7 @@ export function revealServerTabs(
     }
     if (!options.autoShowFloatingPreview && !force) continue;
     if (surface && force) {
-      useRightPanelStore.getState().activateSurface(threadRef, surface.id);
+      useRightPanelStore.getState().revealSurface(threadRef, surface.id);
     } else if (!surface) {
       usePreviewMiniPlayerStore.getState().open(threadRef, browserMiniPlayerSource(session.tabId));
     }
