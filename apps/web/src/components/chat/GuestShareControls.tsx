@@ -59,7 +59,7 @@ export function GuestShareDialogHost() {
 
 type CreateState =
   | { readonly status: "idle" }
-  | { readonly status: "creating" }
+  | { readonly status: "creating"; readonly replacesShare: boolean }
   | { readonly status: "created"; readonly url: string }
   | { readonly status: "failed"; readonly message: string };
 
@@ -81,7 +81,7 @@ function GuestShareDialog({
   const [state, setState] = useState<CreateState>({ status: "idle" });
 
   const create = async () => {
-    setState({ status: "creating" });
+    setState({ status: "creating", replacesShare: activeShare !== null });
     const result = await createGuestShare({
       environmentId: threadRef.environmentId,
       input: { threadId: threadRef.threadId },
@@ -132,7 +132,7 @@ function GuestShareDialog({
             </div>
           ) : (
             <p className="text-muted-foreground text-sm">
-              {activeShare !== null
+              {(state.status === "creating" ? state.replacesShare : activeShare !== null)
                 ? "A new link ends the current one."
                 : "The link works once and expires in 24 hours."}
             </p>

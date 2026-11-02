@@ -420,7 +420,9 @@ function ProjectScriptEditorForm({
             setValidationError(error instanceof Error ? error.message : "Failed to save action.");
           }
         } else {
-          close();
+          // Keep the saving state: the closing dialog still shows this form.
+          pendingSubmissionRef.current = null;
+          onClose();
         }
       }
     } catch (error) {

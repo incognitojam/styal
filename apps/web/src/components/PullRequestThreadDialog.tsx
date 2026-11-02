@@ -143,8 +143,8 @@ export function PullRequestThreadDialog({
       mode,
       ...(mode === "worktree" ? { threadId } : {}),
     });
-    setPreparingMode(null);
     if (result._tag === "Failure") {
+      setPreparingMode(null);
       if (isAtomCommandInterrupted(result)) {
         preparePullRequestThreadAction.resetError();
       } else {
@@ -157,10 +157,16 @@ export function PullRequestThreadDialog({
       }
       return;
     }
-    await onPrepared({
-      branch: result.value.branch,
-      worktreePath: result.value.worktreePath,
-    });
+    // Stay in the preparing state until the dialog closes.
+    try {
+      await onPrepared({
+        branch: result.value.branch,
+        worktreePath: result.value.worktreePath,
+      });
+    } catch (error) {
+      setPreparingMode(null);
+      throw error;
+    }
     if (!result.value.isOnPullRequestHead) {
       toastManager.add(offHeadPullRequestCheckoutToast(terminology));
     }

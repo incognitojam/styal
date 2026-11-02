@@ -88,7 +88,7 @@ function DialogPopup({
   bottomStickOnMobile = true,
   variant = "default",
   ...props
-}: DialogPrimitive.Popup.Props & {
+}: Omit<DialogPrimitive.Popup.Props, "render"> & {
   showCloseButton?: boolean;
   bottomStickOnMobile?: boolean;
   variant?: "default" | "media";

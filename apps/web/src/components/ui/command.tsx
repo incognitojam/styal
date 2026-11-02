@@ -15,9 +15,10 @@ import {
   AutocompleteListVirtualized,
 } from "~/components/ui/autocomplete";
 import { DIALOG_BACKDROP_CLASS, DIALOG_POPUP_CLASS } from "~/components/ui/dialog-styles";
+import { Dialog, renderRetainedPopup } from "~/components/ui/dialog";
 import { Button } from "~/components/ui/button";
 
-const CommandDialog = CommandDialogPrimitive.Root;
+const CommandDialog = Dialog;
 
 const CommandDialogPortal = CommandDialogPrimitive.Portal;
 
@@ -53,7 +54,7 @@ function CommandDialogPopup({
   children,
   onBackdropPointerDown,
   ...props
-}: CommandDialogPrimitive.Popup.Props & {
+}: Omit<CommandDialogPrimitive.Popup.Props, "render"> & {
   onBackdropPointerDown?: React.PointerEventHandler<HTMLDivElement>;
 }) {
   const popupRef = useRef<HTMLDivElement>(null);
@@ -71,6 +72,7 @@ function CommandDialogPopup({
             className,
           )}
           data-slot="command-dialog-popup"
+          render={renderRetainedPopup}
           {...props}
         >
           {children}

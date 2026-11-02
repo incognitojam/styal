@@ -860,147 +860,147 @@ function HardwareDeviceEditor({
         if (!open && !busy) onClose();
       }}
     >
-      <DialogPopup
-        showCloseButton={!busy}
-        render={
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              setSubmitted(true);
-              if (parsed.ok && !busy) void onSave(parsed.device);
-            }}
-          />
-        }
-      >
-        <DialogHeader>
-          <DialogTitle>{original ? `Edit ${original.id}` : "Add hardware device"}</DialogTitle>
-          <DialogDescription>
-            The device's actions come from a definition file in the project's repository. This
-            environment must be able to reach its address.
-          </DialogDescription>
-        </DialogHeader>
-        <DialogPanel>
-          <div className="space-y-4">
-            <EditorField
-              label="Id"
-              error={errorFor("id")}
-              hint={
-                original
-                  ? "Fixed once added: its credential and lease history are kept under it."
-                  : "Agents use it to name the device."
-              }
-            >
-              <Input
-                autoFocus={!original}
-                required
-                font="mono"
-                value={draft.id}
-                disabled={busy || original !== null}
-                placeholder="tree"
-                aria-invalid={errorFor("id") ? true : undefined}
-                onBlur={() => touch("id")}
-                onChange={(event) => set({ id: event.target.value })}
-              />
-            </EditorField>
-            <EditorField
-              label="Project"
-              error={errorFor("projectId")}
-              hint="Only this project's threads can use the device."
-            >
-              <Select
-                value={draft.projectId || null}
-                disabled={busy || projects.length === 0}
-                onValueChange={(value) => {
-                  touch("projectId");
-                  if (typeof value === "string") set({ projectId: value as ProjectId });
-                }}
+      <DialogPopup showCloseButton={!busy}>
+        <form
+          className="contents"
+          onSubmit={(event) => {
+            event.preventDefault();
+            setSubmitted(true);
+            if (parsed.ok && !busy) void onSave(parsed.device);
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>{original ? `Edit ${original.id}` : "Add hardware device"}</DialogTitle>
+            <DialogDescription>
+              The device's actions come from a definition file in the project's repository. This
+              environment must be able to reach its address.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogPanel>
+            <div className="space-y-4">
+              <EditorField
+                label="Id"
+                error={errorFor("id")}
+                hint={
+                  original
+                    ? "Fixed once added: its credential and lease history are kept under it."
+                    : "Agents use it to name the device."
+                }
               >
-                <SelectTrigger size="sm" aria-label="Project">
-                  <SelectValue>
-                    {selectedProject?.title ??
-                      (projects.length === 0
-                        ? "No projects on this environment"
-                        : "Choose a project")}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectPopup>
-                  {projects.map((project) => (
-                    <SelectItem key={project.id} value={project.id}>
-                      {project.title}
-                    </SelectItem>
-                  ))}
-                </SelectPopup>
-              </Select>
-            </EditorField>
-            <EditorField
-              label="Definition file"
-              error={errorFor("definitionFile")}
-              hint={`Read from ${HARDWARE_DEFINITION_DIRECTORY}/ on the project's default branch.`}
-            >
-              <Input
-                required
-                font="mono"
-                value={draft.definitionFile}
-                disabled={busy}
-                placeholder="tree.json"
-                aria-invalid={errorFor("definitionFile") ? true : undefined}
-                onBlur={() => touch("definitionFile")}
-                onChange={(event) => set({ definitionFile: event.target.value })}
-              />
-            </EditorField>
-            {sourceChanged ? (
-              <p className="text-xs text-muted-foreground">
-                You will need to review and accept the new definition.
-              </p>
-            ) : null}
-            <EditorField label="Address" error={errorFor("baseUrl")}>
-              <Input
-                required
-                font="mono"
-                value={draft.baseUrl}
-                disabled={busy}
-                placeholder="http://tree.local"
-                aria-invalid={errorFor("baseUrl") ? true : undefined}
-                onBlur={() => touch("baseUrl")}
-                onChange={(event) => set({ baseUrl: event.target.value })}
-              />
-            </EditorField>
-            <details open={original?.auth !== undefined || undefined} className="text-sm">
-              <summary className="cursor-pointer text-muted-foreground">Credential header</summary>
-              <div className="mt-3 grid grid-cols-2 gap-3">
-                <EditorField label="Header" error={errorFor("auth")}>
-                  <Input
-                    value={draft.authHeader}
-                    disabled={busy}
-                    placeholder="Authorization"
-                    onBlur={() => touch("auth")}
-                    onChange={(event) => set({ authHeader: event.target.value })}
-                  />
-                </EditorField>
-                <EditorField label="Scheme">
-                  <Input
-                    value={draft.authScheme}
-                    disabled={busy}
-                    placeholder="Bearer"
-                    onBlur={() => touch("auth")}
-                    onChange={(event) => set({ authScheme: event.target.value })}
-                  />
-                </EditorField>
-              </div>
-              <p className="mt-2 text-xs text-muted-foreground">
-                Optional. Set the credential itself from the device's details after saving.
-              </p>
-            </details>
-          </div>
-        </DialogPanel>
-        <DialogFooter>
-          <Button type="button" variant="outline" disabled={busy} onClick={onClose}>
-            Cancel
-          </Button>
-          <Button type="submit" disabled={busy || (submitted && !parsed.ok)}>
-            {busy ? "Saving…" : original ? "Save" : "Add device"}
-          </Button>
-        </DialogFooter>
+                <Input
+                  autoFocus={!original}
+                  required
+                  font="mono"
+                  value={draft.id}
+                  disabled={busy || original !== null}
+                  placeholder="tree"
+                  aria-invalid={errorFor("id") ? true : undefined}
+                  onBlur={() => touch("id")}
+                  onChange={(event) => set({ id: event.target.value })}
+                />
+              </EditorField>
+              <EditorField
+                label="Project"
+                error={errorFor("projectId")}
+                hint="Only this project's threads can use the device."
+              >
+                <Select
+                  value={draft.projectId || null}
+                  disabled={busy || projects.length === 0}
+                  onValueChange={(value) => {
+                    touch("projectId");
+                    if (typeof value === "string") set({ projectId: value as ProjectId });
+                  }}
+                >
+                  <SelectTrigger size="sm" aria-label="Project">
+                    <SelectValue>
+                      {selectedProject?.title ??
+                        (projects.length === 0
+                          ? "No projects on this environment"
+                          : "Choose a project")}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectPopup>
+                    {projects.map((project) => (
+                      <SelectItem key={project.id} value={project.id}>
+                        {project.title}
+                      </SelectItem>
+                    ))}
+                  </SelectPopup>
+                </Select>
+              </EditorField>
+              <EditorField
+                label="Definition file"
+                error={errorFor("definitionFile")}
+                hint={`Read from ${HARDWARE_DEFINITION_DIRECTORY}/ on the project's default branch.`}
+              >
+                <Input
+                  required
+                  font="mono"
+                  value={draft.definitionFile}
+                  disabled={busy}
+                  placeholder="tree.json"
+                  aria-invalid={errorFor("definitionFile") ? true : undefined}
+                  onBlur={() => touch("definitionFile")}
+                  onChange={(event) => set({ definitionFile: event.target.value })}
+                />
+              </EditorField>
+              {sourceChanged ? (
+                <p className="text-xs text-muted-foreground">
+                  You will need to review and accept the new definition.
+                </p>
+              ) : null}
+              <EditorField label="Address" error={errorFor("baseUrl")}>
+                <Input
+                  required
+                  font="mono"
+                  value={draft.baseUrl}
+                  disabled={busy}
+                  placeholder="http://tree.local"
+                  aria-invalid={errorFor("baseUrl") ? true : undefined}
+                  onBlur={() => touch("baseUrl")}
+                  onChange={(event) => set({ baseUrl: event.target.value })}
+                />
+              </EditorField>
+              <details open={original?.auth !== undefined || undefined} className="text-sm">
+                <summary className="cursor-pointer text-muted-foreground">
+                  Credential header
+                </summary>
+                <div className="mt-3 grid grid-cols-2 gap-3">
+                  <EditorField label="Header" error={errorFor("auth")}>
+                    <Input
+                      value={draft.authHeader}
+                      disabled={busy}
+                      placeholder="Authorization"
+                      onBlur={() => touch("auth")}
+                      onChange={(event) => set({ authHeader: event.target.value })}
+                    />
+                  </EditorField>
+                  <EditorField label="Scheme">
+                    <Input
+                      value={draft.authScheme}
+                      disabled={busy}
+                      placeholder="Bearer"
+                      onBlur={() => touch("auth")}
+                      onChange={(event) => set({ authScheme: event.target.value })}
+                    />
+                  </EditorField>
+                </div>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Optional. Set the credential itself from the device's details after saving.
+                </p>
+              </details>
+            </div>
+          </DialogPanel>
+          <DialogFooter>
+            <Button type="button" variant="outline" disabled={busy} onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={busy || (submitted && !parsed.ok)}>
+              {busy ? "Saving…" : original ? "Save" : "Add device"}
+            </Button>
+          </DialogFooter>
+        </form>
       </DialogPopup>
     </Dialog>
   );

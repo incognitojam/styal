@@ -151,8 +151,12 @@ export function DeviceSetup(props: {
     if (!readEnvironmentScope(props.environmentId, AuthSettingsWriteScope)) return;
     setPending(kind);
     const result = await configure({ environmentId: props.environmentId, input });
+    // Completing closes the setup dialog, which keeps showing this pending state as it fades.
+    if (kind === "complete" && result._tag === "Success" && props.onComplete) {
+      props.onComplete();
+      return;
+    }
     setPending(null);
-    if (kind === "complete" && result._tag === "Success") props.onComplete?.();
   };
 
   return (

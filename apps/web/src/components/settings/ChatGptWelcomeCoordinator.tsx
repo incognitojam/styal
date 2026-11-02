@@ -46,8 +46,11 @@ export function ChatGptWelcomeCoordinator() {
           })),
   );
   const next = profiles.find((profile) => !acknowledged.includes(profile.key));
+  // The dismissed profile stays on screen while the dialog closes; the next one opens afterwards.
+  const [dismissedKey, setDismissedKey] = useState<string | null>(null);
   const dismiss = () => {
     if (!next) return;
+    setDismissedKey(next.key);
     const updated = [...acknowledged, next.key];
     setAcknowledged(updated);
     try {
@@ -56,9 +59,12 @@ export function ChatGptWelcomeCoordinator() {
   };
   return (
     <Dialog
-      open={next !== undefined}
+      open={next !== undefined && dismissedKey === null}
       onOpenChange={(open) => {
         if (!open) dismiss();
+      }}
+      onOpenChangeComplete={(open) => {
+        if (!open) setDismissedKey(null);
       }}
     >
       <DialogPopup>

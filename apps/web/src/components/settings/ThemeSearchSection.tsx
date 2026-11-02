@@ -252,6 +252,8 @@ export function ThemeSearchSection({
           expectedCollection: installedCollection,
         });
         onInstalled(imported, { updated });
+        // The dialog closes on install; resetting here would flip its buttons while it fades.
+        return;
       }
     } catch (cause) {
       if (!controller.signal.aborted) {

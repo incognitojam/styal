@@ -28,7 +28,11 @@ import { SidebarUpdateReleaseNotes } from "./SidebarUpdateReleaseNotes";
 import { SidebarWebUpdatePill } from "./SidebarWebUpdatePill";
 import { SidebarUpdateCapsule } from "./SidebarUpdateCapsule";
 import { UpdateEverythingDialog } from "./UpdateEverythingDialog";
-import type { UpdateEverythingConfirmation, UpdateRunLocalState } from "./updateEverything.logic";
+import type {
+  SkippedMachine,
+  UpdateEverythingConfirmation,
+  UpdateRunLocalState,
+} from "./updateEverything.logic";
 import {
   clearSavedUpdateEverythingResult,
   saveUpdateEverythingResult,
@@ -140,7 +144,13 @@ function SidebarUpdateControl() {
   const state = useDesktopUpdateState();
   const [isActionPending, setIsActionPending] = useState(false);
   const [isConfirmingEverything, setIsConfirmingEverything] = useState(false);
-  const [activityCheck, setActivityCheck] = useState<UpdateEverythingConfirmation | null>(null);
+  // The dialog shows what was checked; live update state can change while it is open.
+  const [activityCheck, setActivityCheck] = useState<{
+    readonly activity: UpdateEverythingConfirmation;
+    readonly summary: string;
+    readonly lines: ReadonlyArray<string>;
+    readonly skipped: ReadonlyArray<SkippedMachine>;
+  } | null>(null);
   const action = state ? resolveDesktopUpdateButtonAction(state) : "none";
   const showsLocalUpdate = shouldShowDesktopUpdateButton(state);
   const localUpdateVersion =
@@ -190,7 +200,12 @@ function SidebarUpdateControl() {
       }));
       if (!activity.interrupts) return runEverything(activity, false);
       setIsActionPending(false);
-      setActivityCheck(activity);
+      setActivityCheck({
+        activity,
+        summary: everything.summary,
+        lines: everything.lines,
+        skipped: everything.skipped,
+      });
       setIsConfirmingEverything(true);
       return;
     }
@@ -247,11 +262,11 @@ function SidebarUpdateControl() {
     <UpdateEverythingDialog
       open={isConfirmingEverything}
       onOpenChange={setIsConfirmingEverything}
-      summary={everything.summary}
-      lines={everything.lines}
-      skipped={everything.skipped}
-      activity={activityCheck}
-      onConfirm={() => void runEverything(activityCheck, true)}
+      summary={activityCheck.summary}
+      lines={activityCheck.lines}
+      skipped={activityCheck.skipped}
+      activity={activityCheck.activity}
+      onConfirm={() => void runEverything(activityCheck.activity, true)}
     />
   ) : null;
 

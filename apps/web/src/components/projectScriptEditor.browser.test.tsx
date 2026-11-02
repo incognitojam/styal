@@ -84,4 +84,19 @@ describe("project action editor save lifecycle", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(onSubmit.mock.calls.map(([scriptId]) => scriptId)).toEqual(["build", "test"]);
   });
+
+  it("still shows the save in progress after a successful save closes the dialog", async () => {
+    setup();
+    await using screen = await render(null);
+    const save = deferredSave();
+    onSubmit.mockReturnValueOnce(save.promise);
+    await open(screen, request("build"));
+    await act(async () => submit());
+    const savingLabel = saveButton().textContent;
+
+    await act(async () => save.resolve(AsyncResult.success(undefined)));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(saveButton().disabled).toBe(true);
+    expect(saveButton().textContent).toBe(savingLabel);
+  });
 });

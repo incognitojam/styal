@@ -64,7 +64,7 @@ function SheetPopup({
   variant = "default",
   style,
   ...props
-}: SheetPrimitive.Popup.Props & {
+}: Omit<SheetPrimitive.Popup.Props, "render"> & {
   showCloseButton?: boolean;
   keepMounted?: boolean;
   transitionDurationMs?: number;

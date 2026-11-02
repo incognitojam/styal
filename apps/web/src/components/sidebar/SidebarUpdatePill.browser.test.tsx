@@ -385,6 +385,26 @@ describe("combined sidebar update", () => {
     expect(testState.updateServer).not.toHaveBeenCalled();
   });
 
+  it("keeps the checked question while the servers change under the open dialog", async () => {
+    using _setup = setup();
+    testState.hostActivity.mockResolvedValue(
+      AsyncResult.success({ ...idle, terminalsRequiringConfirmation: 1 }),
+    );
+    await using screen = await renderPill();
+    await openConfirmation(screen);
+    const question = dialog()!.querySelector("h2")!.textContent;
+    expect(question).toBe("Update this app and 2 servers?");
+    await act(() =>
+      appAtomRegistry.set(testState.updateAtoms.get("remote-b")!, {
+        status: "running",
+        stage: "resuming",
+        fromVersion: "0.0.49",
+        targetVersion: localVersion,
+      }),
+    );
+    expect(dialog()!.querySelector("h2")!.textContent).toBe(question);
+  });
+
   it.each(["local", "remote"] as const)(
     "automatically updates safe mixed hosts after %s inspection finishes first",
     async (first) => {

@@ -47,7 +47,7 @@ function AlertDialogPopup({
   bottomStickOnMobile = true,
   portalContainer,
   ...props
-}: AlertDialogPrimitive.Popup.Props & {
+}: Omit<AlertDialogPrimitive.Popup.Props, "render"> & {
   bottomStickOnMobile?: boolean;
   portalContainer?: AlertDialogPrimitive.Portal.Props["container"];
 }) {

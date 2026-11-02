@@ -38,6 +38,18 @@ Build new UI the same way. Compose or extend a component instead of copying its 
 When a call site repeats a treatment another one already uses, make it a variant or a slot on the
 shared component. A new composer banner or notice uses the `ComposerBanner` slots.
 
+## Dialogs
+
+While a dialog from `components/ui` closes, its popup keeps the elements from its last open
+render, so title and description props built from the state that opens it stay on screen. That
+only covers props. Two cases still change text during the close animation:
+
+- A component inside the popup that keeps its own state. On a confirm that closes the dialog,
+  close it without also resetting that state; reset it when the dialog opens again.
+- Text derived from live data that the confirmed action changes, or that can change while the
+  dialog is open. Capture what the user is confirming when the dialog opens and render from that,
+  as [`SidebarUpdatePill.tsx`](../../apps/web/src/components/sidebar/SidebarUpdatePill.tsx) does.
+
 ## Handlers in large components
 
 V8 gives every closure created in one render a single shared scope. A memoized handler keeps
