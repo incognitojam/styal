@@ -2234,7 +2234,7 @@ features:
     prs: [1128]
     invariants:
       - Release server builds report every Error or Fatal log entry, and every RPC handler defect, as a PostHog `$exception` event through the analytics delivery path, sharing its identity and opt-out.
-      - Reports carry only the thrown value and log message, scrubbed of home directories, user names, folder and file names below home directories, mounted volumes, and Windows drives (extensions and styal layout folders such as `.styal/worktrees` stay), emails, URL credentials and queries, and token-like strings; log annotations are never sent.
+      - Reports carry only the thrown value and log message, scrubbed of home directories, user names, folder and file names in paths under home directories, mounted volumes, temporary folders, network shares, and Windows drives (file extensions, hidden folders, and layout folders such as `.styal/worktrees` stay; quoted paths are scrubbed whole and URLs other than `file://` are left alone), emails, URL credentials and queries, and token-like strings; log annotations are never sent.
       - Operators can disable reports alone with `T3CODE_ERROR_REPORTING_ENABLED=false`; development servers do not report unless it is set to true.
       - Reports are rate limited per issue and per hour so a repeating error cannot flood delivery.
       - Release and nightly server bundles, including each platform's executable, upload source maps to PostHog when `POSTHOG_SOURCEMAPS_API_KEY` is configured, and their reports carry the chunk ids that resolve frames to source; builds without the key are unchanged.

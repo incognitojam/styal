@@ -140,15 +140,76 @@ const LAYOUT_SEGMENTS = new Set([
   "Caches",
 ]);
 
-// Paths under a home directory, a mounted volume or a Windows drive name the user's projects.
-const ROOTED_PATH =
-  /(?<![\w.])(~|\/(?:Users|home)\/<user>|[A-Za-z]:[\\/]Users[\\/]<user>|\/(?:Volumes|mnt|media|srv)|[A-Za-z]:(?=[\\/]))([\\/](?:[^\s'"`]*[^\s'"`.,;:)])?)/g;
+// Roots whose paths name a user's projects; the first component after each root is scrubbed.
+const PATH_ROOT = String.raw`~|\/(?:Users|home)\/<user>|[A-Za-z]:[\\\/]Users[\\\/]<user>|\/(?:root|Volumes|mnt|media|srv|tmp|private|var|workspaces)|[A-Za-z]:(?=[\\\/])|\\(?=\\[^\\\s])`;
+const PATH_ROOT_AT_START = new RegExp(`^(?:${PATH_ROOT})(?=[\\\\/])`);
+const URL_TOKEN = String.raw`\b[a-z][a-z0-9+.-]*:\/\/[^\s'"\x60<>]*`;
+// A URL is matched first so its path is never read as a filesystem path.
+const URL_OR_PATH = new RegExp(
+  `(${URL_TOKEN})|(?<![\\w.~/\\\\])((?:${PATH_ROOT})[\\\\/][^\\s'"\\x60(),;<>|]*)`,
+  "gi",
+);
+const QUOTED_PATHS = ['"', "`", "'"].map(
+  (quote) => new RegExp(`${quote}((?:${PATH_ROOT})[\\\\/][^${quote}\\n]*)${quote}`, "g"),
+);
+// Long inputs are cut before scrubbing; a value split at this bound falls outside the final cap.
+const MAX_SCRUB_INPUT_LENGTH = MAX_TEXT_LENGTH * 4;
 
-const scrubSegment = (segment: string) => {
+const isDigit = (char: string | undefined) => char !== undefined && char >= "0" && char <= "9";
+
+/** Keeps a final component's short extension and `:line:column` suffix. */
+const scrubSegment = (segment: string, last: boolean) => {
   if (segment === "" || segment.startsWith(".") || LAYOUT_SEGMENTS.has(segment)) return segment;
-  const suffix = /(\.[A-Za-z0-9]{1,8})?((?::\d+)*)$/.exec(segment);
-  return `<name>${suffix?.[1] ?? ""}${suffix?.[2] ?? ""}`;
+  if (!last) return "<name>";
+  let end = segment.length;
+  for (;;) {
+    let start = end;
+    while (isDigit(segment[start - 1])) start -= 1;
+    if (start === end || segment[start - 1] !== ":") break;
+    end = start - 1;
+  }
+  const dot = segment.lastIndexOf(".", end - 1);
+  const extension = dot > 0 ? segment.slice(dot, end) : "";
+  return `<name>${/^\.[A-Za-z0-9]{1,5}$/.test(extension) ? extension : ""}${segment.slice(end)}`;
 };
+
+/** Scrubs a path that starts with a known root; the whole value is one path, spaces included. */
+const scrubRootedPath = (path: string) => {
+  const root = PATH_ROOT_AT_START.exec(path)?.[0];
+  if (root === undefined) return path;
+  const parts = path.slice(root.length).split(/([\\/])/);
+  return (
+    root +
+    parts
+      .map((part, index) =>
+        index % 2 === 1 ? part : scrubSegment(part, index === parts.length - 1),
+      )
+      .join("")
+  );
+};
+
+const scrubPathsInText = (value: string) => {
+  let scrubbed = value;
+  for (const quoted of QUOTED_PATHS) {
+    scrubbed = scrubbed.replace(quoted, (match, path: string) =>
+      match.replace(path, scrubRootedPath(path)),
+    );
+  }
+  return scrubbed.replace(
+    URL_OR_PATH,
+    (match, url: string | undefined, path: string | undefined) => {
+      if (url !== undefined) {
+        return url.toLowerCase().startsWith("file://")
+          ? `file://${scrubRootedPath(url.slice("file://".length))}`
+          : url;
+      }
+      const trimmed = path?.replace(/[.:]+$/, "") ?? "";
+      return scrubRootedPath(trimmed) + match.slice(trimmed.length);
+    },
+  );
+};
+
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /**
  * Removes values that identify a person, their work, or grant access: user names and folder
@@ -159,30 +220,32 @@ export function makeScrubber(input: { readonly appRoot: string; readonly homeDir
   const toPosix = (path: string) => path.replaceAll("\\", "/");
   const appRoot = toPosix(input.appRoot).replace(/\/+$/, "");
   const homeDir = toPosix(input.homeDir).replace(/\/+$/, "");
+  const homePrefix =
+    homeDir.length > 1
+      ? new RegExp(
+          `(?:${escapeRegExp(homeDir)}|${escapeRegExp(input.homeDir.replace(/[\\/]+$/, ""))})(?=$|[\\\\/\\s'"\\x60:),;])`,
+          "g",
+        )
+      : undefined;
 
-  const text = (value: string) => {
-    let scrubbed = value;
-    if (homeDir.length > 1) {
-      scrubbed = scrubbed.replaceAll(homeDir, "~").replaceAll(input.homeDir, "~");
-    }
-    scrubbed = scrubbed
-      .replace(/(\/Users\/|\/home\/|[A-Za-z]:[\\/]Users[\\/])[^\\/\s'"`]+/g, "$1<user>")
-      .replace(
-        ROOTED_PATH,
-        (_match, root: string, rest: string) =>
-          root +
-          rest
-            .split(/([\\/])/)
-            .map((part, index) => (index % 2 === 1 ? part : scrubSegment(part)))
-            .join(""),
-      )
-      .replace(/\b([a-z][a-z0-9+.-]*:\/\/)[^/\s@]*@/gi, "$1<credentials>@")
-      .replace(/(\b[a-z][a-z0-9+.-]*:\/\/[^\s?#'"`]*)\?[^\s#'"`]*/gi, "$1?<query>")
-      .replace(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g, "<email>")
-      .replace(/\b(bearer|basic)\s+[\w~+/=.-]+/gi, "$1 <redacted>")
-      .replace(/\b[\w-]{32,}\b/g, "<redacted>");
-    return scrubbed.length > MAX_TEXT_LENGTH ? `${scrubbed.slice(0, MAX_TEXT_LENGTH)}…` : scrubbed;
-  };
+  const userPaths = (value: string) =>
+    (homePrefix === undefined ? value : value.replace(homePrefix, "~")).replace(
+      /(\/Users\/|\/home\/|[A-Za-z]:[\\/]Users[\\/])[^\\/\s'"`]+/g,
+      "$1<user>",
+    );
+
+  const cap = (value: string) =>
+    value.length > MAX_TEXT_LENGTH ? `${value.slice(0, MAX_TEXT_LENGTH)}…` : value;
+
+  const text = (value: string) =>
+    cap(
+      scrubPathsInText(userPaths(value.slice(0, MAX_SCRUB_INPUT_LENGTH)))
+        .replace(/\b([a-z][a-z0-9+.-]*:\/\/)[^/\s@]*@/gi, "$1<credentials>@")
+        .replace(/(\b[a-z][a-z0-9+.-]*:\/\/[^\s?#'"`]*)\?[^\s#'"`]*/gi, "$1?<query>")
+        .replace(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g, "<email>")
+        .replace(/\b(bearer|basic)\s+[\w~+/=.-]+/gi, "$1 <redacted>")
+        .replace(/\b[\w-]{32,}\b/g, "<redacted>"),
+    );
 
   const filename = (value: string) => {
     const path = toPosix(value.startsWith("file://") ? value.slice("file://".length) : value);
@@ -191,7 +254,8 @@ export function makeScrubber(input: { readonly appRoot: string; readonly homeDir
     if (appRoot.length > 0 && path.startsWith(`${appRoot}/`)) {
       return path.slice(appRoot.length + 1);
     }
-    return text(path);
+    const userPath = userPaths(path.slice(0, MAX_SCRUB_INPUT_LENGTH));
+    return PATH_ROOT_AT_START.test(userPath) ? cap(scrubRootedPath(userPath)) : text(path);
   };
 
   return { text, filename } satisfies Scrubber;

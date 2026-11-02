@@ -208,6 +208,65 @@ describe("ErrorReporting scrubbing", () => {
     );
   });
 
+  it("scrubs quoted paths whole and stops unquoted paths at delimiters", () => {
+    assert.strictEqual(
+      scrub.text(`cwd='/Users/alex/Client Work/acme-billing/src/main.ts'`),
+      "cwd='~/<name>/<name>/src/<name>.ts'",
+    );
+    assert.strictEqual(
+      scrub.text(`open "/Users/alex/Bob's Work/acme/x.ts" failed`),
+      `open "~/<name>/<name>/<name>.ts" failed`,
+    );
+    assert.strictEqual(
+      scrub.text("(/mnt/acme/file.ts),code=ENOENT"),
+      "(/mnt/<name>/<name>.ts),code=ENOENT",
+    );
+    assert.strictEqual(
+      scrub.filename("/Users/alex/Client Work/acme/tool.js"),
+      "~/<name>/<name>/<name>.js",
+    );
+  });
+
+  it("keeps extensions only on the last component and leaves URLs alone", () => {
+    assert.strictEqual(
+      scrub.text("/Users/alex/.styal/worktrees/project.zephyr/project.zephyr-ae8c4849"),
+      "~/.styal/worktrees/<name>/<name>",
+    );
+    assert.strictEqual(
+      scrub.text("https://example.com/~/api/status and https://example.com//srv/api/status"),
+      "https://example.com/~/api/status and https://example.com//srv/api/status",
+    );
+    assert.strictEqual(
+      scrub.text("file:///Users/alex/acme/x.ts failed"),
+      "file://~/<name>/<name>.ts failed",
+    );
+    assert.strictEqual(scrub.text("ratio 3/4 at 12:30:01 v1.2.3"), "ratio 3/4 at 12:30:01 v1.2.3");
+  });
+
+  it("replaces the home directory only at a folder boundary", () => {
+    assert.strictEqual(
+      scrub.text("/Users/alexander/acme-billing/main.ts"),
+      "/Users/<user>/<name>/<name>.ts",
+    );
+  });
+
+  it("scrubs temporary, workspace, and network share paths", () => {
+    assert.strictEqual(
+      scrub.text("/tmp/acme/x.log /private/var/folders/ab/acme /workspaces/acme/src/a.ts"),
+      "/tmp/<name>/<name>.log /private/<name>/<name>/<name>/<name> /workspaces/<name>/src/<name>.ts",
+    );
+    assert.strictEqual(
+      scrub.text("\\\\fileserver\\acme-billing\\main.ts"),
+      "\\\\<name>\\<name>\\<name>.ts",
+    );
+  });
+
+  it("caps very long path-like input before scrubbing", () => {
+    const scrubbed = scrub.text(`/mnt/${":1".repeat(64_000)}X`);
+    assert.isAtMost(scrubbed.length, 1_001);
+    assert.isTrue(scrubbed.startsWith("/mnt/<name>"));
+  });
+
   it("removes personal and secret values from text", () => {
     assert.strictEqual(
       scrub.text("ENOENT: open '/Users/alex/work/notes.md'"),
