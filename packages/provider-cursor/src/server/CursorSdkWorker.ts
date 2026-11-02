@@ -2,7 +2,10 @@
 import * as NodeWorkerThreads from "node:worker_threads";
 import type { Agent } from "@cursor/sdk";
 
-export type CursorSdkAgent = Pick<Awaited<ReturnType<typeof Agent.create>>, "agentId" | "send"> & {
+export type CursorSdkAgent = Pick<
+  Awaited<ReturnType<typeof Agent.create>>,
+  "agentId" | "send" | "summarize"
+> & {
   readonly close: () => void | Promise<void>;
 };
 export interface CursorSdkApi {
@@ -40,8 +43,9 @@ parentPort.on('message',async ({id,method,args})=>{
         agent=operation==='create'?await Agent.create(options):await Agent.resume(agentId,options);
         result={agentId:agent.agentId}; break;
       }
+      case 'summarize':
       case 'send': {
-        const run=await agent.send(args[0],{...args[1],onDelta:async ({update})=>{parentPort.postMessage({update});}});
+        const run=method==='summarize'?await agent.summarize():await agent.send(args[0],{...args[1],onDelta:async ({update})=>{parentPort.postMessage({update});}});
         runs.set(run.id,run);result={id:run.id,agentId:run.agentId};break;
       }
       case 'wait': result=await runs.get(args[0]).wait();break;
@@ -145,6 +149,15 @@ export function makeCursorSdkWorkerApi(
             wait: () => call("wait", [run.id]),
             cancel: () => call("cancel", [run.id]),
           } as Awaited<ReturnType<CursorSdkAgent["send"]>>;
+        },
+        summarize: async () => {
+          onDelta = undefined;
+          const run = await call<{ id: string; agentId: string }>("summarize", []);
+          return {
+            ...run,
+            wait: () => call("wait", [run.id]),
+            cancel: () => call("cancel", [run.id]),
+          } as Awaited<ReturnType<CursorSdkAgent["summarize"]>>;
         },
         close: async () => {
           try {

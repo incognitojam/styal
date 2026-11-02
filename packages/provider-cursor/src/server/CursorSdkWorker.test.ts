@@ -20,7 +20,9 @@ it("preserves SDK failure reasons and diagnostics across the worker boundary", a
         this.nonserializable=()=>{};
       }
     }
-    exports.Agent={create:async()=>({agentId:'synthetic',close(){},async send(){
+    exports.Agent={create:async()=>({agentId:'synthetic',close(){},async summarize(){
+      return {id:'summary',agentId:'synthetic',wait:async()=>({summary:true}),cancel:async()=>({cancelled:true})};
+    },async send(){
       return {id:'run',agentId:'synthetic',wait:async()=>{throw new SdkError();}};
     }})};
     `,
@@ -29,6 +31,9 @@ it("preserves SDK failure reasons and diagnostics across the worker boundary", a
     const api = makeCursorSdkWorkerApi(modulePath, process.env);
     const session = await api.create({});
     try {
+      const summary = await session.summarize();
+      assert.deepEqual((await summary.wait()) as unknown, { summary: true });
+      assert.deepEqual((await summary.cancel()) as unknown, { cancelled: true });
       const run = await session.send("synthetic");
       const cause = await run.wait().then(
         () => assert.fail("Expected SDK failure"),
