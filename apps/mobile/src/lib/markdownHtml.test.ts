@@ -3,6 +3,7 @@ import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
 import { unified } from "unified";
 import {
+  markdownForLiteralNativeRendering,
   markdownHtmlContent,
   markdownWithHtml,
   markdownWithFileEmbeds,
@@ -10,6 +11,7 @@ import {
   parseMarkdownDocument,
   type MarkdownNode,
 } from "./markdownDocument";
+import { ENRICHED_INLINE_FILE_LINK_REGEX } from "./enrichedLinkPresentation";
 import { markdownImageSources } from "./markdownImageSources";
 import { markdownFileEmbedLabel, resolveMarkdownMediaPreview } from "./markdownMedia";
 import { resolveMarkdownLinkPresentation } from "./markdownLinks";
@@ -39,6 +41,12 @@ describe("literal HTML in user messages", () => {
     expect(markdownWithLiteralHtml("> <div>\n> quoted\n\n`<b>`")).toBe(
       "> \\<div>\n> quoted\n\n`<b>`",
     );
+  });
+
+  it("keeps HTML literal when prepared for native rendering without file embeds", () => {
+    const content = "Keep <div>example</div> and <!-- marker -->";
+    const prepared = markdownForLiteralNativeRendering(content, ENRICHED_INLINE_FILE_LINK_REGEX);
+    expect(renderedText(parser.parse(prepared))).toBe(content);
   });
 });
 
