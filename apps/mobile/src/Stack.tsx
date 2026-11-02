@@ -15,7 +15,7 @@ import {
   createNativeStackScreen,
   type NativeStackNavigationOptions,
 } from "@react-navigation/native-stack";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Platform, Pressable, ScrollView, StyleSheet, useWindowDimensions } from "react-native";
 import { useResolveClassNames } from "uniwind";
 
@@ -25,6 +25,7 @@ import { getCompactBrandHeaderOptions } from "./components/CompactBrandTitle";
 import { WorkspaceConnectionStatusProvider } from "./features/home/WorkspaceConnectionTitle";
 import { WorkspaceRootScreen } from "./features/workspace/WorkspaceRootScreen";
 import { AndroidWorkspaceTabsProvider } from "./features/workspace/AndroidWorkspaceTabsProvider";
+import { InstantRootNavigationContext } from "./features/workspace/instant-root-navigation";
 import {
   PullRequestRouteScreen,
   PullRequestFileRouteScreen,
@@ -1138,17 +1139,34 @@ export const RootStack = RootStackConfig.with(function AdaptiveRootStack({ Navig
   const { width, height } = useWindowDimensions();
   const nativeMetrics = useNativeLayoutMetrics();
   const usesSplitView = deriveLayout({ width, height, nativeMetrics }).usesSplitView;
+  const [instantNavigation, setInstantNavigation] = useState<(() => void) | null>(null);
+  const navigateInstantly = useCallback(
+    (navigate: () => void) => setInstantNavigation(() => navigate),
+    [],
+  );
+  // oxlint-disable-next-line t3code/react-effect-budget -- `animation: "none"` must reach the native stack before the navigation removes the screen whose animation it plays.
+  useEffect(() => {
+    if (!instantNavigation) return;
+    instantNavigation();
+    setInstantNavigation(null);
+  }, [instantNavigation]);
 
   /* oxlint-disable react/no-unstable-nested-components -- React Navigation invokes screenLayout as a render callback. */
   return (
-    <Navigator
-      screenLayout={(props) => <GuardedScreenLayout {...props} />}
-      screenOptions={({ route }) =>
-        Platform.OS === "android"
-          ? { animation: androidWorkspaceDestinationAnimation(route.name, usesSplitView) }
-          : {}
-      }
-    />
+    <InstantRootNavigationContext value={navigateInstantly}>
+      <Navigator
+        screenLayout={(props) => <GuardedScreenLayout {...props} />}
+        screenOptions={({ route }) =>
+          Platform.OS === "android"
+            ? {
+                animation: instantNavigation
+                  ? "none"
+                  : androidWorkspaceDestinationAnimation(route.name, usesSplitView),
+              }
+            : {}
+        }
+      />
+    </InstantRootNavigationContext>
   );
 
   /* oxlint-enable react/no-unstable-nested-components */
