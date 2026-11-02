@@ -200,6 +200,15 @@ function makeHarness(options: HarnessOptions = {}) {
         (() => Effect.succeed({ commitSha: "remote-main-sha", remoteRefName: "origin/main" })),
       hasCommit: options.hasCommit ?? (() => Effect.succeed(false)),
       resolveWorktreeBaseRemote: () => Effect.succeed({ remoteName: "origin", branchName: "main" }),
+      resolveRemoteTrackingCommit: ({ cwd, refName }) =>
+        Effect.fail(
+          new GitCommandError({
+            operation: "GitVcsDriver.resolveRemoteTrackingCommit",
+            command: "git",
+            cwd,
+            detail: `No local copy of ${refName}.`,
+          }),
+        ),
       remoteExists: options.remoteExists ?? (() => Effect.succeed(true)),
       remoteBranchExists: () => Effect.succeed(true),
       removeWorktree,
@@ -1189,6 +1198,51 @@ it.effect("shows the fetch diagnosis when preparing a worktree from origin fails
     );
     assert.equal(harness.createWorktree.mock.calls.length, 0);
     assert.equal(harness.runSetup.mock.calls.length, 0);
+  }).pipe(Effect.provide(harness.layer));
+});
+
+it.effect("starts from the local copy of the remote branch when the fetch fails", () => {
+  const detail = "Git command timed out.";
+  let setupStarted: Deferred.Deferred<void> | null = null;
+  const harness = makeHarness({
+    fetchWorktreeBaseCommit: () =>
+      Effect.fail(
+        new GitCommandError({
+          operation: "GitVcsDriver.fetchRemote",
+          command: "git",
+          cwd: project.workspaceRoot,
+          detail,
+        }),
+      ),
+    git: {
+      resolveRemoteTrackingCommit: ({ refName }) =>
+        Effect.succeed({ commitSha: "local-origin-main-sha", remoteRefName: refName }),
+    },
+    runSetup: () =>
+      Deferred.succeed(setupStarted!, undefined).pipe(Effect.as({ status: "no-script" as const })),
+  });
+  return Effect.gen(function* () {
+    setupStarted = yield* Deferred.make<void>();
+    const launches = yield* ThreadLaunch.ThreadLaunchService;
+    const tracker = yield* WorktreeSetupTracker.WorktreeSetupTracker;
+    const launched = yield* launches.launch(
+      launchInput({
+        command: "command:launch:fetch-fallback",
+        thread: "thread:launch:fetch-fallback",
+        message: "Start from origin",
+        workspace: { type: "worktree", baseRef: "main", startFromOrigin: true },
+      }),
+    );
+    yield* Deferred.await(setupStarted);
+    const created = harness.createWorktree.mock.calls[0]?.[0];
+    assert.equal(created?.refName, "local-origin-main-sha");
+    assert.equal(created?.baseRefName, "refs/remotes/origin/main");
+    const fetchStage = (yield* tracker.get(launched.threadId))?.stages.find(
+      (stage) => stage.id === "fetch",
+    );
+    assert.equal(fetchStage?.status, "warning");
+    assert.include(fetchStage?.detail ?? "", "origin/main");
+    assert.include(fetchStage?.detail ?? "", detail);
   }).pipe(Effect.provide(harness.layer));
 });
 

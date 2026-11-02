@@ -102,7 +102,9 @@ function headerLabel(snapshot: WorktreeSetupSnapshot): string {
     case "done":
       return snapshot.stages.some((stage) => stage.status === "failed")
         ? "Worktree ready, setup script failed"
-        : "Worktree ready";
+        : snapshot.stages.some((stage) => stage.status === "warning")
+          ? "Worktree ready, fetch failed"
+          : "Worktree ready";
     case "failed":
       return "Worktree setup failed";
     case "cancelled":
@@ -120,7 +122,8 @@ function SetupHeaderRow({
   const running = snapshot.phase === "running";
   const failed = snapshot.phase === "failed";
   const finishedWithFailedStage =
-    snapshot.phase === "done" && snapshot.stages.some((stage) => stage.status === "failed");
+    snapshot.phase === "done" &&
+    snapshot.stages.some((stage) => stage.status === "failed" || stage.status === "warning");
   const text = headerLabel(snapshot);
   const tone = failed
     ? "text-destructive-foreground"
@@ -284,7 +287,9 @@ function CollapsedSummaryRow({
       ? "failed"
       : snapshot.stages.some((stage) => stage.id === "setup-script" && stage.status === "failed")
         ? "failed"
-        : "done";
+        : snapshot.stages.some((stage) => stage.status === "warning")
+          ? "warning"
+          : "done";
   const label = headerLabel(snapshot);
   return (
     <WorkLogRow
