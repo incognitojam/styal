@@ -4452,14 +4452,14 @@ features:
       - Label pickers remain interactive while edits are pending; further selections update immediately and their host requests run in order.
       - Background reads cannot overwrite pending label edits, and confirmed edits remain cached without redundant host reads.
     implementation_paths:
+      - apps/mobile/src/features/pull-requests/PullRequestLabelsScreen.tsx
       - apps/web/src/components/pullRequest/PullRequestLabelPicker.tsx
       - apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx
-      - apps/mobile/src/features/pull-requests/PullRequestLabelsScreen.tsx
       - packages/client-runtime/src/state/pullRequests.ts
     upstream_paths:
+      - apps/mobile/src/features/pull-requests/PullRequestLabelsScreen.tsx
       - apps/web/src/components/pullRequest/PullRequestLabelPicker.tsx
       - apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx
-      - apps/mobile/src/features/pull-requests/PullRequestLabelsScreen.tsx
       - packages/client-runtime/src/state/pullRequests.ts
     tests:
       - apps/mobile/src/features/pull-requests/PullRequestLabelsScreen.test.tsx
