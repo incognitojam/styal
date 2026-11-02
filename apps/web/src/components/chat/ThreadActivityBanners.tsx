@@ -11,6 +11,7 @@ import {
   type RunStopPresentation,
 } from "@t3tools/client-runtime/state/thread-execution";
 import { childThreadInputsTitle } from "@t3tools/client-runtime/state/threads";
+import { commandDisplayText } from "@t3tools/client-runtime/work-log/command-label";
 import { formatDuration } from "@t3tools/shared/orchestrationTiming";
 import * as DateTime from "effect/DateTime";
 import {
@@ -25,7 +26,6 @@ import {
 } from "lucide-react";
 import { Fragment } from "react";
 import { tickTextContent } from "~/lib/tickTextContent";
-import { cn } from "~/lib/utils";
 import { Button, InlineButton } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import type { ComposerBannerStackItem } from "./ComposerBannerStack";
@@ -175,6 +175,17 @@ export function backgroundWorkNowItem(input: {
     const subagent = item?.type === "subagent" ? item : undefined;
     return {
       task,
+      label: task.fullLabel ? (
+        <WorkflowRunLabel name={task.fullLabel} />
+      ) : item?.type === "command_execution" && commandDisplayText(item.input) === task.label ? (
+        <span className="font-mono in-data-[slot=popover-popup]:whitespace-pre-wrap">
+          {task.label}
+        </span>
+      ) : task.label.includes("\n") ? (
+        <span className="in-data-[slot=popover-popup]:whitespace-pre-wrap">{task.label}</span>
+      ) : (
+        task.label
+      ),
       activity: subagent?.progress?.replace(/\s+/gu, " ").trim() || null,
       startedAtMs: item?.startedAt ? DateTime.toEpochMillis(item.startedAt) : null,
       updatedAtMs: subagent ? DateTime.toEpochMillis(subagent.updatedAt) : 0,
@@ -187,42 +198,25 @@ export function backgroundWorkNowItem(input: {
     .toSorted((left, right) => right.updatedAtMs - left.updatedAtMs)[0];
   const listedRows = newest ? [newest, ...rows.filter((row) => row !== newest)] : rows;
   const isCommand = (row: (typeof rows)[number]) => row.task.kind !== "subagent";
-  const verb = presentation.waiting ? "Waiting on" : "Running";
   const onlyThreadId = only?.childThreadId;
   const startedAtMs = only?.startedAtMs ?? null;
   return {
     id: `background-work:${input.threadId}`,
     icon: rows.every(isCommand) ? <TerminalIcon /> : <CircleDashedIcon />,
-    title: only ? (
-      <>
-        {verb}{" "}
-        {only.task.fullLabel ? (
-          <WorkflowRunLabel name={only.task.fullLabel} />
-        ) : (
-          <span
-            className={cn(
-              isCommand(only) && "font-mono in-data-[slot=popover-popup]:whitespace-pre-wrap",
-            )}
-          >
-            {only.task.label}
-          </span>
-        )}
-      </>
-    ) : (
-      presentation.title
-    ),
-    // Subagent links stay in the text, which truncates with a details popover; a button per
-    // subagent among the actions pushes the title and Stop out of the line.
+    title:
+      only && typeof only.label !== "string" && only.task.label !== only.task.kind ? (
+        <>
+          {presentation.waiting ? "Waiting" : "Running"} · {only.label}
+        </>
+      ) : (
+        presentation.title
+      ),
     description: only ? (
       only.activity
     ) : (
-      <span className={cn(rows.every(isCommand) && "font-mono")}>
+      <span>
         {listedRows.map((row, index) => {
-          const label = row.task.fullLabel ? (
-            <WorkflowRunLabel name={row.task.fullLabel} />
-          ) : (
-            row.task.label
-          );
+          const label = row.label;
           const childThreadId = row.childThreadId;
           const punctuation = row === newest ? ":" : index < listedRows.length - 1 ? "," : null;
           return (

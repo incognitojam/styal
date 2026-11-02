@@ -48,7 +48,7 @@ describe("workflow run display", () => {
   it("uses compact monitor labels and keeps full details and watch identity", () => {
     const tasks = tasksFor(run);
     const presentation = presentPendingBackgroundWork(tasks);
-    expect(presentation?.title).toBe(`Watching ${compactName}`);
+    expect(presentation?.title).toBe(`Waiting · Watching ${compactName}`);
     expect(presentation?.items[0]).toMatchObject({
       taskId: tasks[0]?.taskId,
       label: `Watching ${compactName}`,
