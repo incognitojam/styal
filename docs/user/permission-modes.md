@@ -48,7 +48,7 @@ Grok offers no **Auto-accept edits**. A Grok thread already set to it runs in **
 file-change approvals offer **Allow all edits this session**. Its command approvals have no
 session-wide choice, because Grok would remember that command for the whole project.
 
-ACP Registry agents run their own tools in their own mode; T3 Code answers their approval requests
+ACP Registry agents run their own tools in their own mode; styal answers their approval requests
 by the permission mode. See [ACP Registry permissions](./providers-acp.md#permissions-and-terminals).
 
 Claude can still ask in **Full access** when its settings disable bypass permissions or require
@@ -60,5 +60,8 @@ directly to the agent that asked, including a subagent. Other pending requests s
 
 Antigravity can still send native approval requests in **Full access**. It only offers remembered
 approvals for actions that support them.
+
+Kiro offers only **Supervised** and **Full access**. In **Supervised** Kiro also asks you to
+review a turn's file changes. See [Kiro permissions](./providers-kiro.md#permission-modes).
 
 See the [provider guides](./install.md#providers) for setup and provider-specific limits.

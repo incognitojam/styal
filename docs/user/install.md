@@ -156,6 +156,7 @@ computer.
 | Claude      | Install [Claude Code](https://claude.com/product/claude-code), then sign in from **Settings → Providers** or run `claude auth login`.                     |
 | Cursor      | Install [Cursor CLI](https://cursor.com/cli), then run `agent login`.                                                                                     |
 | Grok Build  | Install [Grok Build CLI](https://x.ai/cli), then sign in from **Settings → Providers** or run `grok login`.                                               |
+| Kiro        | Install [Kiro CLI](https://kiro.dev/docs/cli/), then run `kiro-cli login`.                                                                                |
 | OpenCode    | Install [OpenCode](https://opencode.ai), then sign in from **Settings → Providers** or run `opencode auth login`.                                         |
 | Antigravity | Install and sign in with Google from styal's provider settings.                                                                                           |
 | Pi          | Install [Pi](./providers-pi.md#set-up-pi) with Node.js 22.19 or newer, then sign in from **Settings → Providers** or run `pi` and `/login`.               |
@@ -192,8 +193,8 @@ their original values.
 
 For provider-specific setup and accounts, see [Codex](./providers-codex.md),
 [Claude](./providers-claude.md), [OpenCode](./providers-opencode.md),
-[Antigravity](./providers-antigravity.md), [Pi](./providers-pi.md),
-[Muse Code](./providers-muse.md), and [fx](./providers-fx.md).
+[Antigravity](./providers-antigravity.md), [Kiro](./providers-kiro.md),
+[Pi](./providers-pi.md), [Muse Code](./providers-muse.md), and [fx](./providers-fx.md).
 
 ## Next steps
 
