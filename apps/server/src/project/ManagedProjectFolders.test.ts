@@ -16,6 +16,7 @@ import * as GitManager from "../git/GitManager.ts";
 import * as GitWorkflow from "../git/GitWorkflowService.ts";
 import * as RuntimeLayer from "../orchestration-v2/runtimeLayer.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
+import * as WorkspacePortAllocator from "../workspace/WorkspacePortAllocator.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
@@ -32,6 +33,7 @@ const layerGitWorkflow = (vcsProcess?: Layer.Layer<VcsProcess.VcsProcess>) =>
   GitWorkflow.layer.pipe(
     Layer.provide(VcsDriverRegistry.layer.pipe(Layer.provide(vcsProcess ?? VcsProcess.layer))),
     Layer.provide(Layer.mock(GitManager.GitManager)({})),
+    Layer.provide(WorkspacePortAllocator.layer),
   );
 
 const layerEnrichment = ProjectEnrichmentService.layer.pipe(
