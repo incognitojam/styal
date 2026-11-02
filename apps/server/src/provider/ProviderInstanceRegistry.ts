@@ -10,6 +10,8 @@ import {
   type SecretReference,
   secretReferencesInSettings,
   type ServerProvider,
+  type SettingsSecretSlot,
+  withSettingsSecrets,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -46,7 +48,7 @@ export class ProviderInstanceRegistry extends Context.Service<
 
 interface InstanceSecrets {
   readonly environment: ResolvedProviderInstanceEnvironment;
-  readonly config: Readonly<Record<string, string>>;
+  readonly config: ReadonlyArray<SettingsSecretSlot & { readonly value: string }>;
 }
 
 interface LiveEntry {
@@ -111,12 +113,12 @@ const readInstanceSecrets = Effect.fn("ProviderInstanceRegistry.readInstanceSecr
     }
     return [{ ...variable, value: secret, sensitive: true }];
   });
-  const config: Record<string, string> = {};
-  for (const { field } of configFields) {
+  const config = configFields.flatMap(({ field, key }) => {
     const secret = values[index++];
-    if (secret === undefined) unreadable.push(field);
-    else config[field] = secret;
-  }
+    if (secret !== undefined) return [{ field, key, value: secret }];
+    unreadable.push(field);
+    return [];
+  });
   const secrets: InstanceSecrets = { environment, config };
   return { secrets, unreadable };
 });
@@ -225,7 +227,7 @@ const buildEntry = Effect.fn("ProviderInstanceRegistry.buildEntry")(function* <R
   const { secrets, unreadable } = enabled
     ? yield* readInstanceSecrets(driver, entry)
     : {
-        secrets: { environment: withoutSecretReferences(entry.environment ?? []), config: {} },
+        secrets: { environment: withoutSecretReferences(entry.environment ?? []), config: [] },
         unreadable: [],
       };
   // Starting with a blank credential would fail later with a less useful error, or fall back to
@@ -253,9 +255,9 @@ const buildEntry = Effect.fn("ProviderInstanceRegistry.buildEntry")(function* <R
       environment: secrets.environment,
       enabled,
       config:
-        Object.keys(secrets.config).length === 0
+        secrets.config.length === 0
           ? typedConfig
-          : { ...typedConfig, ...secrets.config },
+          : withSettingsSecrets(typedConfig, secrets.config),
     })
     .pipe(Effect.provideService(Scope.Scope, childScope), Effect.result);
   if (createResult._tag === "Failure") {
