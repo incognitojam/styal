@@ -361,30 +361,6 @@ features:
         - https://github.com/pingdotgg/t3code/pull/2829
       retire_when: Upstream keeps a background task's ending with the tool call or run that started it on web and mobile, and shows a completed or failed ending in the turn it wakes the agent for.
 
-  - id: claude-blocked-tool-calls
-    title: Label Claude tool calls that were refused without running
-    status: maintained
-    prs: [1212]
-    invariants:
-      - A Claude tool call that Auto mode or Claude's permission settings refused without asking reads as blocked, with Claude Code's reason when it gives one, on web and mobile rather than as a plain failure.
-      - Only Claude Code's permission_denied message marks a call blocked; an approval the user declined in styal keeps its normal row, because Claude Code stamps it like a deny rule.
-    rationale: Upstream shows these calls as failed commands whose output is the instructions Claude Code wrote for the model, so users cannot tell a classifier block from a broken command.
-    implementation_paths:
-      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
-      - packages/client-runtime/src/work-log/presentation.ts
-      - apps/web/src/components/chat/TimelineWorkEntryRow.tsx
-      - apps/mobile/src/features/threads/thread-work-log.tsx
-    upstream_paths:
-      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
-      - packages/client-runtime/src/work-log/presentation.ts
-    tests:
-      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.test.ts
-      - packages/client-runtime/src/work-log/presentation.test.ts
-    upstream:
-      status: unassessed
-      tracking: []
-      retire_when: Upstream labels refused Claude tool calls with their reason.
-
   - id: claude-background-response-steering
     title: Keep Claude background responses intact when steered
     status: review-needed
@@ -405,6 +381,30 @@ features:
         - https://github.com/pingdotgg/t3code/blob/5cc99e1c23980d7995a13c47f969b47cb68ed1be/apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
         - https://github.com/pingdotgg/t3code/pull/2829
       retire_when: Upstream preserves actively streaming synthetic Claude turns when a user sends a steer while retaining cleanup of idle synthetic turns.
+
+  - id: claude-blocked-tool-calls
+    title: Label Claude tool calls that were refused without running
+    status: maintained
+    prs: [1212]
+    invariants:
+      - A Claude tool call that Auto mode or Claude's permission settings refused without asking reads as blocked, with Claude Code's reason when it gives one, on web and mobile rather than as a plain failure.
+      - Only Claude Code's permission_denied message marks a call blocked; an approval the user declined in styal keeps its normal row, because Claude Code stamps it like a deny rule.
+    rationale: Upstream shows these calls as failed commands whose output is the instructions Claude Code wrote for the model, so users cannot tell a classifier block from a broken command.
+    implementation_paths:
+      - apps/mobile/src/features/threads/thread-work-log.tsx
+      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
+      - apps/web/src/components/chat/TimelineWorkEntryRow.tsx
+      - packages/client-runtime/src/work-log/presentation.ts
+    upstream_paths:
+      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
+      - packages/client-runtime/src/work-log/presentation.ts
+    tests:
+      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.test.ts
+      - packages/client-runtime/src/work-log/presentation.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream labels refused Claude tool calls with their reason.
 
   - id: claude-default-provider
     title: Prefer Claude for new threads
