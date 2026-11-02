@@ -1574,6 +1574,14 @@ describe("CodexAdapterV2 post-settle continuation", () => {
               url: "http://127.0.0.1:43123/mcp",
               tool_timeout_sec: 3_900,
               http_headers: { Authorization: "Bearer secret-codex-token" },
+              disabled_tools: ["t3_thread_wait"],
+            },
+            "mcp_servers.t3code": {
+              url: "http://127.0.0.1:43123/mcp",
+              tool_timeout_sec: 3_900,
+              http_headers: { Authorization: "Bearer secret-codex-token" },
+              enabled_tools: ["t3_thread_wait"],
+              omit_tools_from: ["code_mode", "deferred"],
             },
           },
         },
@@ -1650,7 +1658,10 @@ describe("CodexAdapterV2 post-settle continuation", () => {
       const start = threadStarts[0] as {
         readonly config: Readonly<Record<string, { readonly disabled_tools?: unknown }>>;
       };
-      assert.deepEqual(start.config["mcp_servers.styal"]?.disabled_tools, ["read_styal_guide"]);
+      assert.deepEqual(start.config["mcp_servers.styal"]?.disabled_tools, [
+        "t3_thread_wait",
+        "read_styal_guide",
+      ]);
     }).pipe(
       Effect.scoped,
       Effect.provide(
@@ -1781,6 +1792,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
         url: "http://127.0.0.1:43123/mcp",
         tool_timeout_sec: 3_900,
         http_headers: { Authorization: "Bearer secret-codex-token" },
+        disabled_tools: ["t3_thread_wait"],
       });
     }).pipe(
       Effect.scoped,
