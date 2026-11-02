@@ -3,12 +3,14 @@ import * as NodeOS from "node:os";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 
 import {
   makeClaudeCapabilitiesCacheKey,
   makeClaudeContinuationGroupKey,
   makeClaudeEnvironment,
+  mergeClaudeProcessEnvironment,
   resolveClaudeHomePath,
 } from "./ClaudeHome.ts";
 
@@ -56,4 +58,33 @@ it.layer(NodeServices.layer)("ClaudeHome", (it) => {
       }),
     );
   });
+
+  it.effect(
+    "labels Claude processes styal without the server's own settings unless instance env or Claude settings set one",
+    () =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const homePath = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-claude-home-" });
+        const host = { CLAUDE_CODE_ENTRYPOINT: "claude-desktop", KEEP: "1", STYAL_HOME: "/server" };
+        const instance = [{ name: "CLAUDE_CODE_ENTRYPOINT", value: "instance", sensitive: false }];
+
+        const inherited = yield* mergeClaudeProcessEnvironment({ homePath }, undefined, host);
+        expect(inherited).toMatchObject({ CLAUDE_CODE_ENTRYPOINT: "styal", KEEP: "1" });
+        expect(inherited).not.toHaveProperty("STYAL_HOME");
+        expect(
+          (yield* mergeClaudeProcessEnvironment({ homePath }, instance, host))
+            .CLAUDE_CODE_ENTRYPOINT,
+        ).toBe("instance");
+
+        yield* fileSystem.writeFileString(
+          path.join(homePath, "settings.json"),
+          JSON.stringify({ env: { CLAUDE_CODE_ENTRYPOINT: "custom" } }),
+        );
+        expect(
+          (yield* mergeClaudeProcessEnvironment({ homePath }, instance, host))
+            .CLAUDE_CODE_ENTRYPOINT,
+        ).toBe("custom");
+      }),
+  );
 });

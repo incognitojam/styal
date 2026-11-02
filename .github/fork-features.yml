@@ -2006,6 +2006,7 @@ features:
       - Web tool rows, mobile rows, and group previews take lifecycle wording and icons from the shared tool inventory, with short preview labels and no T3 product name in thread labels; preview arguments stay separate from their headings.
       - The published-tool guard exercises provider mappings and both namespaces through client presentation; new preview tools require wording review, retired customizations fail, and intake uses a synthetic catalog fixture for real-client comparison.
       - Device instructions use the session's MCP namespace and only appear with device access, while provider subprocesses retain their per-session environment overrides.
+      - Claude processes styal starts report `CLAUDE_CODE_ENTRYPOINT=styal` unless the provider instance's environment or Claude's settings set another value.
       - Every provider's orchestration instructions, including Claude's system prompt and Pi's bridge, name the session's MCP namespace and call the product styal; advertised MCP tool descriptions, MCP error messages, preview browser install errors and the context handoff preface say styal instead of T3 Code or T3, while tool names and identifiers keep their upstream `t3_` form.
     implementation_paths:
       - apps/mobile/src/lib/threadActivity.ts
@@ -2018,6 +2019,7 @@ features:
       - apps/server/src/orchestration-v2/ProviderSessionManager.ts
       - apps/server/src/project/AgentSessionImporter.ts
       - apps/server/src/provider/CodexDeveloperInstructions.ts
+      - apps/server/src/provider/Drivers/ClaudeHome.ts
       - evals/mcp-tool-use/run.ts
       - packages/client-runtime/src/work-log/presentation.ts
       - packages/provider-acp/src/server/adapter.ts
@@ -4632,6 +4634,7 @@ features:
       - Provider update commands and the package-manager probes behind update checks are not covered; they still run with the server's full environment.
     implementation_paths:
       - apps/server/src/provider/CodexProvider.ts
+      - apps/server/src/provider/Drivers/ClaudeHome.ts
       - apps/server/src/terminal/Manager.ts
       - packages/provider-acp-registry/src/server/AcpRegistrySupport.ts
       - packages/provider-acp/src/server/AcpSessionRuntime.ts
