@@ -13,14 +13,13 @@ import { Argument, Command, Flag, GlobalFlag } from "effect/cli";
 
 import * as ServerConfig from "../config.ts";
 import { expandHomePath } from "../os-jank.ts";
-import { layerEventSink } from "../orchestration-v2/runtimeLayer.ts";
+import type { layerEventSink } from "../orchestration-v2/runtimeLayer.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import { layerConfig as SqlitePersistenceLayerLive } from "../persistence/Sqlite.ts";
 import { SERVICE_LAUNCHER_CONTEXT_ENV } from "../cloud/serviceProtocol.ts";
 import { DriveMode, DriveScenario, applyDriveScenario } from "../driveMode.ts";
 export { DriveScenario } from "../driveMode.ts";
-import { runServer } from "../server.ts";
 import { resolveServerConfig, sharedServerCommandFlags, resolveCliAuthConfig } from "./config.ts";
 
 const decodeScenarioFile = Schema.decodeUnknownEffect(Schema.fromJsonString(DriveScenario));
@@ -42,11 +41,10 @@ class DriveScenarioError extends Schema.TaggedError<DriveScenarioError>()("Drive
   cause: Schema.optional(Schema.Defect()),
 }) {}
 
-const scenarioRuntimeLayer = Layer.mergeAll(
-  layerEventSink,
-  ProjectionStore.layer,
-  ProjectStore.layer,
-).pipe(Layer.provideMerge(SqlitePersistenceLayerLive));
+const makeScenarioRuntimeLayer = (eventSink: typeof layerEventSink) =>
+  Layer.mergeAll(eventSink, ProjectionStore.layer, ProjectStore.layer).pipe(
+    Layer.provideMerge(SqlitePersistenceLayerLive),
+  );
 
 const prepareScenario = Effect.fn("drive.prepareScenario")(function* (
   file: string,
@@ -91,6 +89,9 @@ export const driveScenarioCommand = Command.make("scenario", {
   ),
   Command.withHandler(
     Effect.fn("driveScenario")(function* (flags) {
+      const { layerEventSink } = yield* Effect.promise(
+        () => import("../orchestration-v2/runtimeLayer.ts"),
+      );
       const { scenario, homeDir } = yield* prepareScenario(flags.file, flags.homeDir);
       const logLevel = yield* GlobalFlag.LogLevel;
       const config = yield* resolveCliAuthConfig({ baseDir: Option.some(homeDir) }, logLevel);
@@ -106,7 +107,11 @@ export const driveScenarioCommand = Command.make("scenario", {
           threads: threads.threads,
           archivedThreads: threads.archivedThreads,
         };
-      }).pipe(Effect.provide(scenarioRuntimeLayer.pipe(Layer.provide(ServerConfig.layer(config)))));
+      }).pipe(
+        Effect.provide(
+          makeScenarioRuntimeLayer(layerEventSink).pipe(Layer.provide(ServerConfig.layer(config))),
+        ),
+      );
       yield* Console.log(
         yield* encodeScenarioSummary({ homeDir, eventCount: scenario.events.length, snapshot }),
       );
@@ -128,6 +133,7 @@ export const driveServeCommand = Command.make("serve", {
   ),
   Command.withHandler(
     Effect.fn("drive.serve")(function* (flags) {
+      const { runServer } = yield* Effect.promise(() => import("../server.ts"));
       const { scenario, homeDir } = yield* prepareScenario(flags.file, flags.homeDir);
       const config = yield* resolveServerConfig(
         {
