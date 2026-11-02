@@ -16,6 +16,7 @@ import {
   type PullRequestListInput,
   type PullRequestDetail,
   type PullRequestLabel,
+  type PullRequestLabelCandidate,
   type PullRequestLabelCandidateList,
   type PullRequestDiffInput,
   type PullRequestRef,
@@ -69,6 +70,35 @@ function applyLabelEdit(labels: PullRequestDetail["labels"], edit: PendingLabelE
   return edit.applied
     ? [...labels, ...edit.labels.filter((label) => !labels.some(({ name }) => name === label.name))]
     : labels.filter((label) => !names.has(label.name));
+}
+
+interface RepositoryLabelCatalogue {
+  readonly candidates: ReadonlyArray<Omit<PullRequestLabelCandidate, "isApplied">>;
+  readonly truncated: boolean;
+}
+
+/**
+ * A picker's list: the pull request's own read, else the repository catalogue another pull
+ * request fetched. A truncated catalogue may omit labels that this one still needs to remove.
+ */
+export function pullRequestLabelCandidateList(
+  read: PullRequestLabelCandidateList | null,
+  catalogue: RepositoryLabelCatalogue | null,
+  labels: PullRequestDetail["labels"],
+): PullRequestLabelCandidateList | null {
+  if (read !== null) return read;
+  if (catalogue === null) return null;
+  const names = new Set(catalogue.candidates.map((label) => label.name));
+  const applied = new Set(labels.map((label) => label.name));
+  return {
+    candidates: [
+      ...labels
+        .filter((label) => !names.has(label.name))
+        .map((label) => ({ ...label, description: null, isApplied: true })),
+      ...catalogue.candidates.map((label) => ({ ...label, isApplied: applied.has(label.name) })),
+    ],
+    truncated: catalogue.truncated,
+  };
 }
 
 function normalizePullRequestQuery<A>(
@@ -248,12 +278,7 @@ export function createPullRequestEnvironmentAtoms<R, E>(
   // Only the catalogue is shared: applied state belongs to each pull request. Keep project
   // and environment in the key because repository access can differ between connections.
   const repositoryLabels = Atom.family((_key: string) =>
-    Atom.make<{
-      readonly candidates: ReadonlyArray<
-        Omit<PullRequestLabelCandidateList["candidates"][number], "isApplied">
-      >;
-      readonly truncated: boolean;
-    } | null>(null).pipe(Atom.setIdleTTL(30 * 60_000)),
+    Atom.make<RepositoryLabelCatalogue | null>(null).pipe(Atom.setIdleTTL(30 * 60_000)),
   );
   const repositoryLabelCandidates = ({
     environmentId,

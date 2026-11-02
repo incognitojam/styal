@@ -4445,7 +4445,7 @@ features:
     status: maintained
     prs: [602]
     invariants:
-      - These invariants cover the web label picker. The mobile label picker taken from upstream does not have them yet (https://github.com/incognitojam/styal/issues/1198).
+      - These invariants cover the web label picker and the mobile labels screen.
       - Label pickers show a previously fetched repository catalogue while their pull-request-specific read loads or fails, retaining cached data for thirty idle minutes.
       - Repository catalogues are isolated by environment, project, host, and repository; applied checkmarks come from the current pull request.
       - Applied labels missing from a cached repository page remain available for removal while the current pull request read loads or fails.
@@ -4453,16 +4453,17 @@ features:
       - Label pickers remain interactive while edits are pending; further selections update immediately and their host requests run in order.
       - Background reads cannot overwrite pending label edits, and confirmed edits remain cached without redundant host reads.
     implementation_paths:
+      - apps/mobile/src/features/pull-requests/PullRequestLabelsScreen.tsx
       - apps/web/src/components/pullRequest/PullRequestLabelPicker.tsx
       - apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx
-      - apps/web/src/components/pullRequest/pullRequestLabelPicker.logic.ts
       - packages/client-runtime/src/state/pullRequests.ts
     upstream_paths:
+      - apps/mobile/src/features/pull-requests/PullRequestLabelsScreen.tsx
       - apps/web/src/components/pullRequest/PullRequestLabelPicker.tsx
       - apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx
       - packages/client-runtime/src/state/pullRequests.ts
     tests:
-      - apps/web/src/components/pullRequest/pullRequestLabelPicker.logic.test.ts
+      - apps/mobile/src/features/pull-requests/PullRequestLabelsScreen.test.tsx
       - packages/client-runtime/src/state/pullRequests.test.ts
     upstream:
       status: partial

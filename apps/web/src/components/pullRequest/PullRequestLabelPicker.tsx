@@ -11,13 +11,13 @@ import { useState } from "react";
 
 import { pullRequestEnvironment } from "~/state/pullRequests";
 import { useEnvironmentQuery } from "~/state/query";
+import { pullRequestLabelCandidateList } from "@t3tools/client-runtime/state/pull-requests";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 
 import { toastManager } from "../ui/toast";
 import { PullRequestCandidatePicker } from "./PullRequestCandidatePicker";
 import { readableFailure } from "./pullRequestDetail.logic";
 import { pullRequestLabelColor } from "./pullRequestList.logic";
-import { cachedPullRequestLabelCandidates } from "./pullRequestLabelPicker.logic";
 
 function matches(candidate: PullRequestLabelCandidate, query: string): boolean {
   if (query.length === 0) return true;
@@ -48,15 +48,12 @@ export function PullRequestLabelPicker({
   const cachedLabels = useAtomValue(
     pullRequestEnvironment.repositoryLabelCandidates({ environmentId, input: reference }),
   );
-  const catalogue = candidatesQuery.data ?? cachedLabels;
+  const catalogue = pullRequestLabelCandidateList(candidatesQuery.data, cachedLabels, labels);
   const setLabels = useAtomCommand(pullRequestEnvironment.setLabels, {
     reportFailure: false,
   });
 
-  const candidates = (
-    candidatesQuery.data?.candidates ??
-    cachedPullRequestLabelCandidates(cachedLabels?.candidates ?? [], labels)
-  ).filter((entry) => matches(entry, query));
+  const candidates = (catalogue?.candidates ?? []).filter((entry) => matches(entry, query));
 
   const toggle = async (candidate: PullRequestLabelCandidate) => {
     const result = await setLabels({

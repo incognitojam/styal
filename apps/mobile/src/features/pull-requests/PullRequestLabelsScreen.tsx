@@ -1,9 +1,10 @@
 import { useAtomValue } from "@effect/atom-react";
 import type { StaticScreenProps } from "@react-navigation/native";
+import { pullRequestLabelCandidateList } from "@t3tools/client-runtime/state/pull-requests";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import type { PullRequestLabelCandidate } from "@t3tools/contracts";
 import { AsyncResult } from "effect/reactivity";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { FlatList, Platform, View } from "react-native";
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { AppText as Text } from "../../components/ui/AppText";
@@ -43,27 +44,24 @@ export function PullRequestLabelsScreen({ route }: StaticScreenProps<PullRequest
             ? "This provider doesn't support changing labels."
             : "Changing labels needs triage access on this repository.";
   const result = useEnvironmentQuery(composerPullRequests.labelCandidates(target));
+  const cachedLabels = useAtomValue(composerPullRequests.repositoryLabelCandidates(target));
+  const list = pullRequestLabelCandidateList(result.data, cachedLabels, pr?.labels ?? []);
+  const loadError = list === null ? result.error : null;
   const setLabels = useAtomCommand(composerPullRequests.setLabels, { reportFailure: false });
   const [query, setQuery] = useState("");
-  const [pending, setPending] = useState<{ readonly name: string; readonly applied: boolean }>();
   const [error, setError] = useState<string | null>(null);
-  const inFlight = useRef(false);
   const needle = query.trim().toLowerCase();
   // Host order, not applied-first: re-sorting on toggle would move the row out from under a tap.
-  const candidates = (result.data?.candidates ?? []).filter((candidate) =>
+  const candidates = (list?.candidates ?? []).filter((candidate) =>
     `${candidate.name} ${candidate.description ?? ""}`.toLowerCase().includes(needle),
   );
   const toggle = async (candidate: PullRequestLabelCandidate) => {
-    if (!allowed || inFlight.current) return;
-    inFlight.current = true;
-    setPending({ name: candidate.name, applied: !candidate.isApplied });
+    if (!allowed) return;
     setError(null);
     const response = await setLabels({
       ...target,
       input: { ...target.input, labels: [candidate.name], applied: !candidate.isApplied },
     });
-    inFlight.current = false;
-    setPending(undefined);
     if (AsyncResult.isFailure(response)) {
       const cause = squashAtomCommandFailure(response);
       setError(cause instanceof Error ? cause.message : "Couldn't update this label. Try again.");
@@ -109,8 +107,7 @@ export function PullRequestLabelsScreen({ route }: StaticScreenProps<PullRequest
               title={item.name}
               {...(item.description ? { subtitle: item.description } : {})}
               role="checkbox"
-              // The change shows as soon as it is tapped; a failure puts the host's answer back.
-              selected={pending?.name === item.name ? pending.applied : item.isApplied}
+              selected={item.isApplied}
               disabled={!allowed}
               isFirst={index === 0}
               isLast={index === candidates.length - 1}
@@ -119,32 +116,32 @@ export function PullRequestLabelsScreen({ route }: StaticScreenProps<PullRequest
             />
           )}
           ListEmptyComponent={
-            result.isPending && !result.data ? (
+            result.isPending && list === null ? (
               <AppActivityIndicator className="my-8" />
             ) : (
               <View>
                 <EmptyState
                   title={
-                    result.error
+                    loadError
                       ? "Couldn't load labels"
                       : needle
                         ? "No matching labels"
                         : "This repository has no labels"
                   }
                   detail={
-                    result.error ??
+                    loadError ??
                     (needle
                       ? "Try another name."
                       : "Create labels on the provider to use them here.")
                   }
                   variant="plain"
                 />
-                {result.error ? <Button label="Retry" onPress={result.refresh} /> : null}
+                {loadError ? <Button label="Retry" onPress={result.refresh} /> : null}
               </View>
             )
           }
           ListFooterComponent={
-            result.data?.truncated ? (
+            list?.truncated ? (
               <Text className="py-4 text-xs text-foreground-muted">
                 This repository has more labels than are listed here. Apply the rest on the
                 provider.

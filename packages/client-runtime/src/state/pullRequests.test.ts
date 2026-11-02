@@ -40,6 +40,7 @@ import type { RpcSession } from "../rpc/session.ts";
 import {
   createLinkedPullRequestSummaryAtomFamily,
   createPullRequestEnvironmentAtoms,
+  pullRequestLabelCandidateList,
 } from "./pullRequests.ts";
 import * as PullRequestDiffLoader from "./pullRequestDiffHttp.ts";
 import { executeAtomQuery } from "./runtime.ts";
@@ -1741,3 +1742,57 @@ it.effect("publishes the accepted guide run before the follow-up read finishes",
     }),
   ),
 );
+
+it("keeps applied labels outside another PR's truncated catalogue available for removal", () => {
+  const list = pullRequestLabelCandidateList(
+    null,
+    {
+      candidates: [
+        { name: "bug", color: "d73a4a", description: "Something is broken" },
+        { name: "documentation", color: "0075ca", description: "Improve documentation" },
+      ],
+      truncated: true,
+    },
+    [
+      { name: "outside-page", color: "a2eeef" },
+      { name: "documentation", color: "0075ca" },
+    ],
+  );
+  expect(list).toEqual({
+    candidates: [
+      { name: "outside-page", color: "a2eeef", description: null, isApplied: true },
+      { name: "bug", color: "d73a4a", description: "Something is broken", isApplied: false },
+      {
+        name: "documentation",
+        color: "0075ca",
+        description: "Improve documentation",
+        isApplied: true,
+      },
+    ],
+    truncated: true,
+  });
+});
+
+it("includes the current PR's applied labels when the cached catalogue is empty", () => {
+  expect(
+    pullRequestLabelCandidateList(null, { candidates: [], truncated: false }, [
+      { name: "new-label", color: null },
+    ]),
+  ).toEqual({
+    candidates: [{ name: "new-label", color: null, description: null, isApplied: true }],
+    truncated: false,
+  });
+});
+
+it("prefers the pull request's own read and has no list before any catalogue loads", () => {
+  const read = {
+    candidates: [{ name: "bug", color: null, description: null, isApplied: false }],
+    truncated: false,
+  };
+  expect(
+    pullRequestLabelCandidateList(read, { candidates: [], truncated: true }, [
+      { name: "bug", color: null },
+    ]),
+  ).toBe(read);
+  expect(pullRequestLabelCandidateList(null, null, [{ name: "bug", color: null }])).toBeNull();
+});
