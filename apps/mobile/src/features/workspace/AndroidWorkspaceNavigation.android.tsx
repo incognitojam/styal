@@ -23,6 +23,7 @@ import { useAppearancePreferences } from "../settings/appearance/AppearancePrefe
 import { useAndroidWorkspaceRoot } from "./AndroidWorkspaceTabsProvider";
 import { useNavigationTabOrder, useHiddenNavigationTabs } from "./navigation-tabs";
 import { useWorkspaceTabs } from "./WorkspaceTabsContext";
+import { useInstantRootNavigation } from "./instant-root-navigation";
 
 // Matches RAIL_WIDTH in the native rail.
 export const ANDROID_WORKSPACE_RAIL_WIDTH = 72;
@@ -69,6 +70,7 @@ export function AndroidWorkspaceNavigation(props: {
   const hidden = useHiddenNavigationTabs();
   const root = useAndroidWorkspaceRoot();
   const navigation = useNavigation();
+  const navigateInstantly = useInstantRootNavigation();
   const insets = useSafeAreaInsets();
   const toolbar = useToolbarLayout();
   const connectionState = useWorkspaceConnectionState();
@@ -117,10 +119,12 @@ export function AndroidWorkspaceNavigation(props: {
           if (tab !== "settings") workspace.dispatch({ type: "select", tab });
           // Reset the root stack even when a nested settings navigator has focus.
           if (root) {
-            navigation.dispatch({
-              ...CommonActions.reset(androidWorkspaceTabNavigationState(root.getState(), tab)),
-              target: root.key,
-            });
+            navigateInstantly(() =>
+              navigation.dispatch({
+                ...CommonActions.reset(androidWorkspaceTabNavigationState(root.getState(), tab)),
+                target: root.key,
+              }),
+            );
           }
           props.onSelect?.();
         }}
