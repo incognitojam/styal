@@ -14,6 +14,7 @@ import * as McpSchema from "effect/ai/McpSchema";
 import * as Tool from "effect/ai/Tool";
 import * as Toolkit from "effect/ai/Toolkit";
 
+import * as ServerSettings from "../../../serverSettings.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as Orchestrator from "../../../orchestration-v2/Orchestrator.ts";
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
@@ -24,6 +25,7 @@ import * as PullRequestReviewGuideService from "../../../pullRequest/PullRequest
 const dependencies = [
   McpInvocationContext.McpInvocationContext,
   ThreadManagementService.ThreadManagementService,
+  ServerSettings.ServerSettingsService,
   Orchestrator.OrchestratorV2,
   ProjectService.ProjectService,
 ];

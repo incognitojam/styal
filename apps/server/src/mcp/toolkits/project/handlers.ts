@@ -13,6 +13,8 @@ import * as ServerSettings from "../../../serverSettings.ts";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { formatThreadLink } from "@t3tools/shared/threadLinks";
 import { resolveRuntimeMode } from "../../OrchestratorMcpService.ts";
+import * as AgentProjectScope from "../../agentProjectScope.ts";
+import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import { newCommandId, readCaller, resolveProjectId, unavailable } from "../../threadAccess.ts";
 import { ProjectToolkit } from "./tools.ts";
@@ -77,6 +79,9 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
             message:
               "scratch:true picks its own project and folder; omit projectId and workspaceStrategy.",
           });
+        const projectScope = yield* AgentProjectScope.services;
+        if (input.scratch === true)
+          yield* AgentProjectScope.assertScratchLaunch(projectScope, context.scope);
         const projectId =
           input.scratch === true
             ? (yield* ManagedProjectFolders.ManagedProjectFolders.pipe(
@@ -90,6 +95,8 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
                 ),
               )).projectId
             : yield* resolveProjectId(context, input.projectId);
+        if (input.scratch !== true)
+          yield* AgentProjectScope.assertProject(projectScope, context.scope, "write", projectId);
         const readProject = Project.ProjectService.pipe(
           Effect.flatMap((projects) => projects.getById(projectId)),
           Effect.mapError(unavailable),
@@ -209,8 +216,15 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
   t3_project_list: McpToolAccess.reads((input) =>
     Effect.gen(function* () {
       const projects = yield* access;
+      const confined = yield* AgentProjectScope.confinedProject(
+        yield* AgentProjectScope.services,
+        yield* McpInvocationContext.McpInvocationContext,
+      );
       const snapshot = yield* projects.snapshot.pipe(Effect.mapError(unavailable));
-      const rows = snapshot.projects.filter((project) => project.deletedAt === null);
+      const rows = snapshot.projects.filter(
+        (project) =>
+          project.deletedAt === null && (confined === undefined || project.id === confined),
+      );
       const start = input.cursor ?? 0,
         end = start + (input.limit ?? 20);
       return { projects: rows.slice(start, end), nextCursor: end < rows.length ? end : null };
@@ -219,6 +233,12 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
   t3_project_read: McpToolAccess.reads((input) =>
     Effect.gen(function* () {
       const projects = yield* access;
+      yield* AgentProjectScope.assertProject(
+        yield* AgentProjectScope.services,
+        yield* McpInvocationContext.McpInvocationContext,
+        "read",
+        input.projectId,
+      );
       const result = yield* projects.getById(input.projectId).pipe(Effect.mapError(unavailable));
       if (Option.isNone(result))
         return yield* new OrchestratorMcpFailure({
@@ -273,6 +293,12 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
   ),
   t3_project_update: McpToolAccess.writesEnvironment((input) =>
     Effect.gen(function* () {
+      yield* AgentProjectScope.assertProject(
+        yield* AgentProjectScope.services,
+        yield* McpInvocationContext.McpInvocationContext,
+        "write",
+        input.projectId,
+      );
       const projects = yield* Project.ProjectService;
       return yield* projects
         .update({ ...input, commandId: yield* newCommandId() })
@@ -281,6 +307,12 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
   ),
   t3_project_delete: McpToolAccess.writesEnvironment((input) =>
     Effect.gen(function* () {
+      yield* AgentProjectScope.assertProject(
+        yield* AgentProjectScope.services,
+        yield* McpInvocationContext.McpInvocationContext,
+        "write",
+        input.projectId,
+      );
       const projects = yield* Project.ProjectService;
       return yield* projects
         .delete({ ...input, commandId: yield* newCommandId() })

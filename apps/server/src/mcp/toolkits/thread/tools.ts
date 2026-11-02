@@ -26,6 +26,7 @@ import { Tool, Toolkit } from "effect/ai";
 import * as ThreadSearch from "../../../orchestration-v2/ThreadSearch.ts";
 import * as ScheduledTaskService from "../../../scheduledTasks/ScheduledTaskService.ts";
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
+import * as ServerSettings from "../../../serverSettings.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 
 const ThreadOrganizeTool = Tool.make("t3_thread_organize", {
@@ -55,6 +56,7 @@ const ThreadOrganizeTool = Tool.make("t3_thread_organize", {
   dependencies: [
     McpInvocationContext.McpInvocationContext,
     ThreadManagementService.ThreadManagementService,
+    ServerSettings.ServerSettingsService,
     Crypto.Crypto,
   ],
 })
@@ -69,6 +71,7 @@ const commandTool = {
   dependencies: [
     McpInvocationContext.McpInvocationContext,
     ThreadManagementService.ThreadManagementService,
+    ServerSettings.ServerSettingsService,
     Crypto.Crypto,
   ],
 };

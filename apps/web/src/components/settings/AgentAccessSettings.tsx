@@ -62,6 +62,46 @@ export function AgentBrowserAccessSetting({ id }: { readonly id: string }) {
   );
 }
 
+export function AgentCrossProjectAccessSetting({ id }: { readonly id: string }) {
+  const { scope } = useSettingsScope();
+  const settings = useScopedSettings();
+  const updateSettings = useUpdateScopedSettings();
+  const clearOverrides = useClearScopedSettings();
+  const projectScope = scope.kind === "project" || scope.kind === "checkout";
+  const change = (enabled: boolean) => updateSettings({ enableAgentCrossProjectAccess: enabled });
+  return (
+    <SettingsRow
+      id={id}
+      serverScoped
+      settingKeys={["enableAgentCrossProjectAccess"]}
+      title="Agent access to other projects"
+      onResetOverride={() => clearOverrides(["enableAgentCrossProjectAccess"])}
+      description={
+        projectScope
+          ? "Allow agents in this project to read, message and manage threads, projects and scheduled tasks in other projects. Applies to running agents right away."
+          : "Allow agents on this environment to read, message and manage threads, projects and scheduled tasks in other projects. Projects can override it."
+      }
+      resetAction={
+        settings.enableAgentCrossProjectAccess !==
+        DEFAULT_SERVER_SETTINGS.enableAgentCrossProjectAccess ? (
+          <SettingResetButton
+            label="default access to other projects"
+            onClick={() => change(DEFAULT_SERVER_SETTINGS.enableAgentCrossProjectAccess)}
+          />
+        ) : null
+      }
+      control={
+        <ScopedSwitch
+          settingKeys={["enableAgentCrossProjectAccess"]}
+          aria-label="Agent access to other projects"
+          checked={settings.enableAgentCrossProjectAccess}
+          onCheckedChange={change}
+        />
+      }
+    />
+  );
+}
+
 export function ProjectAgentAccessSettings() {
   const { environment } = useSettingsScope();
   const settings = useScopedSettings();
@@ -77,6 +117,7 @@ export function ProjectAgentAccessSettings() {
   return (
     <SettingsSection id="project-agent-access" title="Agent access">
       <AgentBrowserAccessSetting id="project-agent-browser-access" />
+      <AgentCrossProjectAccessSetting id="project-agent-cross-project-access" />
       <SettingsRow
         id="project-agent-device-access"
         serverScoped
