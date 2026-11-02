@@ -73,6 +73,8 @@ describe("respond to the agent", () => {
       await page.locator('[data-chat-provider-model-picker="true"]').click();
       await page.locator('[data-composer-permissions-trigger="true"]').click();
       await page.getByRole("menuitemradio", { name: /Supervised/ }).click();
+      await page.keyboard.press("Escape");
+      await page.locator('[data-composer-permissions-trigger="true"]').waitFor({ state: "hidden" });
       await submit("Run a command");
       await page.getByRole("group", { name: "Command approval", exact: true }).waitFor();
       await page
