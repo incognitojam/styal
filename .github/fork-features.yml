@@ -364,7 +364,7 @@ features:
   - id: claude-blocked-tool-calls
     title: Label Claude tool calls that were refused without running
     status: maintained
-    prs: []
+    prs: [1212]
     invariants:
       - A Claude tool call that Auto mode or Claude's permission settings refused without asking reads as blocked, with Claude Code's reason when it gives one, on web and mobile rather than as a plain failure.
       - Only Claude Code's permission_denied message marks a call blocked; an approval the user declined in styal keeps its normal row, because Claude Code stamps it like a deny rule.
