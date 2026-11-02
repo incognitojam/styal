@@ -4432,6 +4432,7 @@ features:
       - apps/server/src/provider/ClaudeProvider.ts
       - apps/server/src/provider/CodexProvider.ts
       - apps/server/src/serverRuntimeStartup.ts
+      - apps/server/src/telemetry/ProviderUsageAnalytics.ts
       - apps/web/src/components/ChatView.tsx
       - packages/contracts/src/providerPolicy.ts
       - packages/contracts/src/server.ts
@@ -6863,6 +6864,7 @@ features:
       - Compact thread shells carry the total across the complete retained provider-turn history and frozen legacy baseline; sidebar and subagent hover cards (timeline, Lineage, and workflow members) on web and desktop show tokens or estimated cost according to the same device setting. Subagent cards use their child thread's totals and omit the figure when usage is unavailable.
       - Claude, Codex, and OpenCode report partial usage while a turn runs; each update replaces that provider turn's prior snapshot, and its final result replaces live usage without double counting. Child provider turns contribute once, and rolled-back turns contribute nothing.
       - A client setting (device-local on mobile) hides the figures; usage metadata does not render as a work-log row.
+      - The first result of a resumed Claude process has no `modelUsage` baseline, because Claude Code can restore the session's earlier totals. It reports main usage only and no `otherUsage`, and later results in that process report their growth.
     implementation_paths:
       - apps/mobile/src/features/threads/ThreadRouteScreen.tsx
       - apps/mobile/src/features/threads/TurnUsageText.tsx

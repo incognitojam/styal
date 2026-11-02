@@ -3,10 +3,12 @@
 The styal server sends product usage events to styal's own PostHog project on PostHog EU Cloud,
 associated with a hashed account or installation identifier. They do not go to T3 Code's analytics.
 To count installations and their owners, events also carry a stable hashed installation ID. The server reports hashed styal Link, OpenAI and Claude account identifiers when signed in, and hashed random identifiers for client devices that connect.
-Events include the provider, model, reasoning effort, permission mode, turn result, duration, how
-many approval requests the turn raised, how many actions Codex's Auto reviewer approved or denied,
-the build's release channel, and main-agent token totals when available. Approval and review
-counts never include the command or file involved.
+Events include the provider, model, reasoning effort, permission mode, turn and request results,
+duration, how many approval requests the turn raised, how many actions Codex's Auto reviewer
+approved or denied, the build's release channel, and token counts when available. Child-agent token
+counts are reported separately from the main agent's. Model names are sent only when they appear in
+a provider's public model list. Approval and review counts never include the command or file
+involved.
 
 Agent browser usage includes the operation name, whether it succeeded, failed, or was cancelled,
 and its duration. It does not include visited URLs, page content, screenshots, selectors, typed
@@ -106,7 +108,7 @@ Bypassing a repository's rules to merge a pull request records whether the merge
 Pull request deployment controls record whether someone opens an environment, opens deployment logs, or expands the environment list, and whether the action succeeded. Environment names, URLs, repositories, pull request numbers, and commit hashes are not collected.
 
 Usage events do not include prompts, responses, file contents, authentication tokens, conversation
-IDs, raw provider events, or child-agent output. Child-agent token use is excluded from the totals.
+IDs, raw provider events, or child-agent output.
 
 Web, desktop, and mobile clients also summarize how each connection to a remote server behaved while
 the app was open: time connected and reconnecting, drops and their cause, failed connection

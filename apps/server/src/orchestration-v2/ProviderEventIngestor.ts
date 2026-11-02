@@ -10,10 +10,6 @@ import {
   type OrchestrationV2Subagent,
   type OrchestrationV2ThreadProjection,
   type ModelSelection,
-  type OrchestrationV2Actor,
-  type OrchestrationV2CreationSource,
-  type RuntimeMode,
-  type ProviderInteractionMode,
   ProviderInstanceId,
   ProviderSessionId,
   ProviderThreadId,
@@ -40,7 +36,10 @@ import { addThreadTokenUsage, sumThreadTokenUsage } from "@t3tools/shared/turnUs
 import { UsageService } from "../usage/UsageService.ts";
 import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
-import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
+import {
+  ProviderTurnAnalytics,
+  type ProviderTurnAnalyticsContext,
+} from "../telemetry/ProviderUsageAnalytics.ts";
 import { StyalSkillAnalytics } from "../telemetry/StyalSkillUsage.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as EffectOutbox from "./EffectOutbox.ts";
@@ -120,45 +119,6 @@ export const ProviderEventIngestorV2Error = Schema.Union([
 ]);
 export type ProviderEventIngestorV2Error = typeof ProviderEventIngestorV2Error.Type;
 
-export interface ProviderTurnAnalyticsContext {
-  readonly modelSelection: ModelSelection;
-  readonly runtimeMode?: RuntimeMode;
-  readonly interactionMode?: ProviderInteractionMode;
-  readonly origin?: ProviderTurnOrigin;
-}
-
-/**
- * Where the run's starting message came from. Most turns start without a
- * person (provider continuations, agent sends, delegated subagents), so
- * reports need this to tell user turns apart.
- */
-export interface ProviderTurnOrigin {
-  readonly createdBy: OrchestrationV2Actor;
-  readonly creationSource: OrchestrationV2CreationSource;
-  readonly scheduled: boolean;
-  readonly subagent: boolean;
-}
-
-export class ProviderTurnAnalytics extends Context.Reference<{
-  readonly record: (properties: Readonly<Record<string, unknown>>) => Effect.Effect<void>;
-}>("t3/orchestration-v2/ProviderTurnAnalytics", {
-  defaultValue: () => ({ record: () => Effect.void }),
-}) {}
-
-export const layerAnalytics = Layer.effect(
-  ProviderTurnAnalytics,
-  Effect.gen(function* () {
-    const analytics = yield* AnalyticsService.AnalyticsService;
-    return {
-      record: Effect.fn("ProviderTurnAnalytics.record")(function (
-        properties: Readonly<Record<string, unknown>>,
-      ) {
-        return analytics.record("provider.turn.completed", properties);
-      }),
-    };
-  }),
-);
-
 /** Runtime request kinds that ask the user to approve an action. */
 const APPROVAL_REQUEST_KINDS: ReadonlySet<OrchestrationV2RuntimeRequest["kind"]> = new Set([
   "command",
@@ -166,60 +126,6 @@ const APPROVAL_REQUEST_KINDS: ReadonlySet<OrchestrationV2RuntimeRequest["kind"]>
   "file-change",
   "permission",
 ]);
-
-function providerTurnAnalyticsProperties(input: {
-  readonly driver: ProviderAdapter.ProviderAdapterV2Event["driver"];
-  readonly providerTurn: OrchestrationV2ProviderTurn;
-  readonly context?: ProviderTurnAnalyticsContext;
-  readonly approvalRequests?: number;
-  readonly autoReviews?: ProviderAdapter.ProviderAdapterV2AutoReviews;
-}): Readonly<Record<string, unknown>> {
-  const usage = input.providerTurn.turnTokenUsage;
-  const modelSelection = input.context?.modelSelection;
-  const effort = modelSelection
-    ? (getModelSelectionStringOptionValue(modelSelection, "reasoningEffort") ??
-      getModelSelectionStringOptionValue(modelSelection, "effort"))
-    : undefined;
-  return {
-    provider: input.driver,
-    terminalStatus: input.providerTurn.status,
-    usageStatus: usage?.usageStatus ?? "unavailable",
-    usageScope: usage?.usageScope ?? "main_agent",
-    ...(usage ? { hasSubagents: usage.hasSubagents } : {}),
-    ...(usage?.inputTokens === undefined ? {} : { inputTokens: usage.inputTokens }),
-    ...(usage?.cachedInputTokens === undefined
-      ? {}
-      : { cachedInputTokens: usage.cachedInputTokens }),
-    ...(usage?.cacheCreationTokens === undefined
-      ? {}
-      : { cacheCreationTokens: usage.cacheCreationTokens }),
-    ...(usage?.outputTokens === undefined ? {} : { outputTokens: usage.outputTokens }),
-    ...(usage?.reasoningTokens === undefined ? {} : { reasoningTokens: usage.reasoningTokens }),
-    ...(modelSelection ? { model: modelSelection.model, mixedModels: false } : {}),
-    ...(effort ? { effort } : {}),
-    ...(input.context?.runtimeMode ? { runtimeMode: input.context.runtimeMode } : {}),
-    ...(input.context?.interactionMode ? { interactionMode: input.context.interactionMode } : {}),
-    ...(input.approvalRequests === undefined ? {} : { approvalRequests: input.approvalRequests }),
-    ...(input.autoReviews
-      ? {
-          autoReviewsApproved: input.autoReviews.approved,
-          autoReviewsDenied: input.autoReviews.denied,
-          autoReviewsTimedOut: input.autoReviews.timedOut,
-          autoReviewsAborted: input.autoReviews.aborted,
-        }
-      : {}),
-    ...input.context?.origin,
-    ...(input.providerTurn.startedAt && input.providerTurn.completedAt
-      ? {
-          durationMs: Math.max(
-            0,
-            DateTime.toEpochMillis(input.providerTurn.completedAt) -
-              DateTime.toEpochMillis(input.providerTurn.startedAt),
-          ),
-        }
-      : {}),
-  };
-}
 
 type TodoListPlan = Extract<OrchestrationV2PlanArtifact, { readonly kind: "todo_list" }>;
 
@@ -1093,19 +999,17 @@ export const layer: Layer.Layer<
                       ),
                       Effect.orElseSucceed(() => undefined),
                     );
-                  yield* analytics.record(
-                    providerTurnAnalyticsProperties({
-                      driver: input.event.driver,
-                      providerTurn,
-                      ...(input.analyticsContext === undefined
-                        ? {}
-                        : { context: input.analyticsContext }),
-                      ...(approvalRequests === undefined ? {} : { approvalRequests }),
-                      ...(input.event.autoReviews === undefined
-                        ? {}
-                        : { autoReviews: input.event.autoReviews }),
-                    }),
-                  );
+                  yield* analytics.turnCompleted({
+                    driver: input.event.driver,
+                    providerTurn,
+                    ...(input.analyticsContext === undefined
+                      ? {}
+                      : { context: input.analyticsContext }),
+                    ...(approvalRequests === undefined ? {} : { approvalRequests }),
+                    ...(input.event.autoReviews === undefined
+                      ? {}
+                      : { autoReviews: input.event.autoReviews }),
+                  });
                 }),
               ),
               (effect) =>

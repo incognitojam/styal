@@ -32,4 +32,15 @@ export function assertClaudeIdleResumeOutput(
     "idle resume first turn complete",
     "idle resume second turn complete",
   ]);
+  // A resumed process has no ledger baseline, so its first turn leaves the other usage unknown.
+  assert.deepEqual(
+    projection.providerTurns.map((turn) => [
+      turn.turnTokenUsage?.outputTokens,
+      turn.turnTokenUsage?.otherUsage,
+    ]),
+    [
+      [7, { inputTokens: 0, outputTokens: 0 }],
+      [7, undefined],
+    ],
+  );
 }

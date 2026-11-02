@@ -210,25 +210,21 @@ function codexTokensByModel(
   ];
 }
 
+/** `model` is the thread model Codex last reported, which a reroute replaces. */
 export function currentCodexTurnTokenUsage(
   state: CodexTurnTokenUsageState,
   turnId: string,
   completed = false,
+  model?: string,
 ): TurnTokenUsage {
   const usage = state.byTurnId.get(turnId);
-  if (!usage) {
+  const models = model === undefined ? {} : { models: [model] };
+  if (!usage?.observed) {
     return {
       usageStatus: "unavailable",
       usageScope: "main_agent",
-      hasSubagents: false,
-    };
-  }
-
-  if (!usage.observed) {
-    return {
-      usageStatus: "unavailable",
-      usageScope: "main_agent",
-      hasSubagents: usage.hasSubagents,
+      hasSubagents: usage?.hasSubagents ?? false,
+      ...models,
     };
   }
 
@@ -250,6 +246,7 @@ export function currentCodexTurnTokenUsage(
     hasSubagents: usage.hasSubagents,
     ...(subagents ? { subagents } : {}),
     ...(byModel ? { byModel } : {}),
+    ...models,
   };
 }
 
@@ -257,8 +254,9 @@ export function completeCodexTurnTokenUsage(
   state: CodexTurnTokenUsageState,
   turnId: string,
   completed: boolean,
+  model?: string,
 ): TurnTokenUsage {
-  const usage = currentCodexTurnTokenUsage(state, turnId, completed);
+  const usage = currentCodexTurnTokenUsage(state, turnId, completed, model);
   state.byTurnId.delete(turnId);
   if (state.activeTurnId === turnId) state.activeTurnId = undefined;
   return usage;

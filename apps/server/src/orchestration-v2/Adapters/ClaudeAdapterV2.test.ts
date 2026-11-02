@@ -6121,6 +6121,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
               outputTokens: queryExits ? 40 : 46,
               cachedInputTokens: queryExits ? 2000 : 11455,
               cacheCreationTokens: queryExits ? 500 : 2847,
+              ...(queryExits ? {} : { models: ["claude-sonnet-4-6"] }),
             },
           );
         }
@@ -12297,6 +12298,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         yield* harness.until(() => harness.terminalEvents().length === 1);
         assert.equal(completedUsage()?.inputTokens, 100);
         assert.isUndefined(completedUsage()?.byModel);
+        assert.isUndefined(completedUsage()?.otherUsage);
 
         // A subagent on another model runs during the next turn.
         yield* startTurn("attempt-subagent-usage-2", 3);
@@ -12333,6 +12335,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         }
         yield* harness.until(() => harness.terminalEvents().length === 2);
         assert.isTrue(completedUsage()?.hasSubagents);
+        assert.deepEqual(completedUsage()?.otherUsage, { inputTokens: 2800, outputTokens: 120 });
         assert.deepEqual(completedUsage()?.byModel, [
           {
             model: "claude-opus-5-5",

@@ -50,7 +50,7 @@ import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
 import * as ErrorReporting from "./telemetry/ErrorReporting.ts";
 import * as DesktopFeatureUsage from "./telemetry/DesktopFeatureUsage.ts";
 import * as DelegatedTaskAnalytics from "./telemetry/DelegatedTaskAnalytics.ts";
-import * as ProviderEventIngestor from "./orchestration-v2/ProviderEventIngestor.ts";
+import * as ProviderUsageAnalytics from "./telemetry/ProviderUsageAnalytics.ts";
 import * as ProviderSessionManager from "./orchestration-v2/ProviderSessionManager.ts";
 import * as ModelManifest from "./provider/ModelManifest.ts";
 import * as ProviderAutoUpdater from "./provider/ProviderAutoUpdater.ts";
@@ -608,7 +608,7 @@ const layerOrchestrationV2Runtime = RuntimeLayer.layerProduction.pipe(
   Layer.provide(layerUsage),
   Layer.provide(layerWorkspacePortAllocator),
   Layer.provide(layerScheduledTaskWebhookOrigin),
-  Layer.provide(ProviderEventIngestor.layerAnalytics),
+  Layer.provide(ProviderUsageAnalytics.layer),
   Layer.provide(StyalSkillUsage.layer),
   Layer.provide(layerCheckpointStore),
   Layer.provide(layerGitWorkflow),
