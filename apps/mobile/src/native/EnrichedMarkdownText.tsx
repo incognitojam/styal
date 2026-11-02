@@ -6,6 +6,7 @@ import {
 } from "@t3tools/shared/composerContextReferences";
 import {
   markdownForNativeRendering,
+  markdownForLiteralNativeRendering,
   markdownWithFileEmbeds,
   markdownWithHtml,
   markdownWithLiteralHtml,
@@ -162,7 +163,10 @@ export function MobileEnrichedMarkdownText(props: SelectableMarkdownTextProps) {
   const { markdown, fileHrefs } = useMemo(() => {
     if (!fileEmbedLabel) {
       return {
-        markdown: markdownForNativeRendering(props.markdown, ENRICHED_INLINE_FILE_LINK_REGEX),
+        markdown: (parseRawHtml ? markdownForNativeRendering : markdownForLiteralNativeRendering)(
+          props.markdown,
+          ENRICHED_INLINE_FILE_LINK_REGEX,
+        ),
         fileHrefs: new Set<string>(),
       };
     }

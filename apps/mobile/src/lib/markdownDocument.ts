@@ -426,6 +426,10 @@ export function markdownForNativeRendering(markdown: string, fileLink: RegExp): 
   return transformNativeMarkdown(markdownWithHtml(markdown), fileLink, true);
 }
 
+export function markdownForLiteralNativeRendering(markdown: string, fileLink: RegExp): string {
+  return transformNativeMarkdown(markdownWithLiteralHtml(markdown), fileLink, true);
+}
+
 /** Native media slots only cover standalone images; nested file embeds must become links. */
 export function markdownWithFileEmbeds(
   markdown: string,
