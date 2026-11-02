@@ -59,7 +59,7 @@ export function pickWorkspaceBasenameMatch(
 }
 
 // Repository-relative paths can repeat the project's suffix in subfolder projects.
-export function stripRepeatedWorkspacePrefix(relativePath: string, cwd: string): string | null {
+function stripRepeatedWorkspacePrefix(relativePath: string, cwd: string): string | null {
   if (isAbsolutePath(relativePath)) return null;
   const pathSegments = relativePath.split(/[\\/]+/);
   const cwdSegments = cwd.split(/[\\/]+/).filter(Boolean);
@@ -75,7 +75,7 @@ export function stripRepeatedWorkspacePrefix(relativePath: string, cwd: string):
   return null;
 }
 
-export function pickStrippedWorkspaceMatch(
+function pickStrippedWorkspaceMatch(
   strippedPath: string,
   cwd: string,
   entries: ReadonlyArray<WorkspaceEntryCandidate>,
@@ -87,4 +87,19 @@ export function pickStrippedWorkspaceMatch(
   };
   const files = entries.filter((entry) => entry.kind === "file");
   return files.find((entry) => key(entry.path) === key(strippedPath))?.path ?? null;
+}
+
+// The search a workspace path runs when it is missing as written, and the
+// file that search resolves it to.
+export function workspaceFileLookup(relativePath: string, cwd: string) {
+  const strippedPath = needsWorkspaceBasenameLookup(relativePath)
+    ? null
+    : stripRepeatedWorkspacePrefix(relativePath, cwd);
+  return {
+    query: strippedPath ?? relativePath,
+    pick: (entries: ReadonlyArray<WorkspaceEntryCandidate>) =>
+      strippedPath === null
+        ? pickWorkspaceBasenameMatch(relativePath, entries)
+        : pickStrippedWorkspaceMatch(strippedPath, cwd, entries),
+  };
 }

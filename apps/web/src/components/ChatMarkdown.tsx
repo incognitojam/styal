@@ -174,15 +174,14 @@ import {
 import { previewEnvironment } from "../state/preview";
 import { useAtomCommand } from "../state/use-atom-command";
 import { useAtomQueryRunner } from "../state/use-atom-query-runner";
+import { useMissingFileLink } from "../hooks/useMissingFileLink";
 import { projectEnvironment } from "../state/projects";
 import { filesystemEnvironment } from "../state/filesystem";
 import {
   claimWorkspaceBasenameLookup,
   needsWorkspaceBasenameLookup,
-  pickStrippedWorkspaceMatch,
-  pickWorkspaceBasenameMatch,
-  stripRepeatedWorkspacePrefix,
   WORKSPACE_BASENAME_LOOKUP_LIMIT,
+  workspaceFileLookup,
 } from "@t3tools/client-runtime/workspace-basename-lookup";
 import { resolvePullRequestPreviewTarget } from "@t3tools/client-runtime/change-request-links";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
@@ -779,22 +778,18 @@ function useChatMarkdownState({
         return null;
       }
     }
-    const strippedPath = isBasename
-      ? null
-      : stripRepeatedWorkspacePrefix(workspaceRelativePath, cwd);
+    const lookup = workspaceFileLookup(workspaceRelativePath, cwd);
     const result = await searchProjectEntries({
       environmentId,
       input: {
         cwd,
-        query: strippedPath ?? workspaceRelativePath,
+        query: lookup.query,
         limit: WORKSPACE_BASENAME_LOOKUP_LIMIT,
         kind: "file",
       },
     });
     if (result._tag !== "Success") return null;
-    return strippedPath === null
-      ? pickWorkspaceBasenameMatch(workspaceRelativePath, result.value.entries)
-      : pickStrippedWorkspaceMatch(strippedPath, cwd, result.value.entries);
+    return lookup.pick(result.value.entries);
   };
   const openFileInPanel = (fileLinkMeta: MarkdownFileLinkMeta, panelPath: string) => {
     if (!threadRef) return;
@@ -974,6 +969,16 @@ function markdownHeadingRenderer(level: 1 | 2 | 3 | 4 | 5 | 6) {
       />
     );
   };
+}
+
+// Inline code only looks like a path, so it stays code when nothing exists to open.
+function MarkdownInlineCodeFile(props: {
+  meta: MarkdownFileLinkMeta;
+  code: ReactNode;
+  children: ReactNode;
+}) {
+  const { environmentId, cwd } = use(ChatMarkdownRendererContext);
+  return useMissingFileLink(environmentId, props.meta, cwd) ? props.code : props.children;
 }
 
 function MarkdownMentionedTime(props: { encoded: unknown; children: ReactNode }) {
@@ -1372,11 +1377,22 @@ const CHAT_MARKDOWN_COMPONENTS = {
         inlineCodeFileLinkMetaByText.get(codeText.trim()) ??
         resolveInlineCodeFileLinkMeta(codeText, cwd, imageBaseDir ?? cwd);
       if (fileLinkMeta) {
-        return fileLinkChip(
-          fileLinkMeta,
-          `\`${codeText}\``,
-          undefined,
-          inlineCodeFilePathCandidate(codeText) ?? codeText.trim(),
+        return (
+          <MarkdownInlineCodeFile
+            meta={fileLinkMeta}
+            code={
+              <code {...props} className={className}>
+                {children}
+              </code>
+            }
+          >
+            {fileLinkChip(
+              fileLinkMeta,
+              `\`${codeText}\``,
+              undefined,
+              inlineCodeFilePathCandidate(codeText) ?? codeText.trim(),
+            )}
+          </MarkdownInlineCodeFile>
         );
       }
     }

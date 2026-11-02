@@ -17,6 +17,15 @@ export function useFileMetadata(
   path: string,
   cwd?: string,
 ) {
+  return useFileMetadataQuery(environmentId, path, cwd).data;
+}
+
+/** `data` is null both while loading and for a missing path; `isSuccess` tells them apart. */
+export function useFileMetadataQuery(
+  environmentId: EnvironmentId | null | undefined,
+  path: string,
+  cwd?: string,
+) {
   const canRead = useEnvironmentScope(environmentId ?? null, AuthFilesystemReadScope);
   const threadRef = useContext(FileMetadataThreadContext);
   const hostPath = splitFilePathPosition(path).path;
@@ -36,5 +45,5 @@ export function useFileMetadata(
           },
         })
       : null,
-  ).data;
+  );
 }
