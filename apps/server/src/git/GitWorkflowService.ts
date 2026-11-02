@@ -2,6 +2,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
 
 import {
   GitManagerError,
@@ -32,6 +33,7 @@ import {
 import * as GitManager from "./GitManager.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
+import * as WorkspacePortAllocator from "../workspace/WorkspacePortAllocator.ts";
 import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
 
 export class GitWorkflowService extends Context.Service<
@@ -175,6 +177,8 @@ export const make = Effect.gen(function* () {
   const git = yield* GitVcsDriver.GitVcsDriver;
   const gitManager = yield* GitManager.GitManager;
   const fileSystem = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const portAllocator = yield* WorkspacePortAllocator.WorkspacePortAllocator;
 
   // Nested projects and path aliases must share the checkout's branch-mutation lease.
   const withCheckoutLease = <A, E, R>(rootPath: string, effect: Effect.Effect<A, E, R>) =>
@@ -435,9 +439,16 @@ export const make = Effect.gen(function* () {
       ensureGitCommand("GitWorkflowService.fetchWorktreeBaseCommit", input.cwd).pipe(
         Effect.andThen(git.fetchWorktreeBaseCommit(input)),
       ),
+    // A worktree deleted on request will not come back, so its port range is freed now.
+    // Storage cleanup removes worktrees it may recreate on resume and keeps their ranges.
     removeWorktree: (input) =>
       ensureGitCommand("GitWorkflowService.removeWorktree", input.cwd).pipe(
         Effect.andThen(git.removeWorktree(input)),
+        Effect.andThen(
+          portAllocator
+            .release(path.resolve(input.cwd, input.path))
+            .pipe(Effect.ignore({ log: true })),
+        ),
       ),
     pruneWorktrees: (input) =>
       ensureGitCommand("GitWorkflowService.pruneWorktrees", input.cwd).pipe(

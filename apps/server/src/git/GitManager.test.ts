@@ -51,6 +51,7 @@ import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import * as VcsProjectConfig from "../vcs/VcsProjectConfig.ts";
 import * as GitWorkflowService from "./GitWorkflowService.ts";
+import * as WorkspacePortAllocator from "../workspace/WorkspacePortAllocator.ts";
 import type { SourceControlProvider } from "@t3tools/source-control-core/server/SourceControlProvider";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
 import * as ServerConfig from "../config.ts";
@@ -4085,6 +4086,14 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
                   );
                 }).pipe(Effect.andThen(manager.runStackedAction(input, options))),
             }),
+            Effect.provideService(
+              WorkspacePortAllocator.WorkspacePortAllocator,
+              WorkspacePortAllocator.WorkspacePortAllocator.of({
+                getBasePort: () => Effect.die("unused"),
+                environmentFor: () => Effect.die("unused"),
+                release: () => Effect.void,
+              }),
+            ),
             Effect.provideService(VcsDriverRegistry.VcsDriverRegistry, {
               ...Context.get(registry, VcsDriverRegistry.VcsDriverRegistry),
               resolve: ({ cwd }) => Effect.succeed(cwd === repoDir ? handle : resolvedHandle),
