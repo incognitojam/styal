@@ -135,7 +135,7 @@ describe("ErrorReporting scrubbing", () => {
 
     assert.deepStrictEqual(
       frames.map((frame) => frame.filename),
-      ["~/projects/secret-app/tool.js", "node_modules/effect/dist/Effect.js", "dist/bin.mjs"],
+      ["~/<name>/<name>/<name>.js", "node_modules/effect/dist/Effect.js", "dist/bin.mjs"],
     );
     assert.isTrue(frames.every((frame) => !("abs_path" in frame)));
   });
@@ -181,14 +181,100 @@ describe("ErrorReporting scrubbing", () => {
     }
   });
 
+  it("keeps project and folder names in user paths out of reports", () => {
+    assert.strictEqual(
+      scrub.text(
+        "Failed to allocate a development port range for workspace '/Users/alex/.styal/worktrees/acme-billing/acme-billing-ae8c4849'.",
+      ),
+      "Failed to allocate a development port range for workspace '~/.styal/worktrees/<name>/<name>'.",
+    );
+    assert.strictEqual(
+      scrub.text("spawn failed in /home/sam/code/acme-billing/src/index.ts:12:4, retrying"),
+      "spawn failed in /home/<user>/<name>/<name>/src/<name>.ts:12:4, retrying",
+    );
+    assert.strictEqual(
+      scrub.text("cannot read D:\\work\\acme-billing\\package.json"),
+      "cannot read D:\\<name>\\<name>\\<name>.json",
+    );
+    assert.strictEqual(
+      scrub.text("mount /Volumes/AcmeDrive/acme-billing is read-only"),
+      "mount /Volumes/<name>/<name> is read-only",
+    );
+    assert.strictEqual(
+      scrub.text(
+        "See https://github.com/incognitojam/styal/blob/main/docs/user/x.md and file:///Applications/styal.app/main.js",
+      ),
+      "See https://github.com/incognitojam/styal/blob/main/docs/user/x.md and file:///Applications/styal.app/main.js",
+    );
+  });
+
+  it("scrubs quoted paths whole and stops unquoted paths at delimiters", () => {
+    assert.strictEqual(
+      scrub.text(`cwd='/Users/alex/Client Work/acme-billing/src/main.ts'`),
+      "cwd='~/<name>/<name>/src/<name>.ts'",
+    );
+    assert.strictEqual(
+      scrub.text(`open "/Users/alex/Bob's Work/acme/x.ts" failed`),
+      `open "~/<name>/<name>/<name>.ts" failed`,
+    );
+    assert.strictEqual(
+      scrub.text("(/mnt/acme/file.ts),code=ENOENT"),
+      "(/mnt/<name>/<name>.ts),code=ENOENT",
+    );
+    assert.strictEqual(
+      scrub.filename("/Users/alex/Client Work/acme/tool.js"),
+      "~/<name>/<name>/<name>.js",
+    );
+  });
+
+  it("keeps extensions only on the last component and leaves URLs alone", () => {
+    assert.strictEqual(
+      scrub.text("/Users/alex/.styal/worktrees/project.zephyr/project.zephyr-ae8c4849"),
+      "~/.styal/worktrees/<name>/<name>",
+    );
+    assert.strictEqual(
+      scrub.text("https://example.com/~/api/status and https://example.com//srv/api/status"),
+      "https://example.com/~/api/status and https://example.com//srv/api/status",
+    );
+    assert.strictEqual(
+      scrub.text("file:///Users/alex/acme/x.ts failed"),
+      "file://~/<name>/<name>.ts failed",
+    );
+    assert.strictEqual(scrub.text("ratio 3/4 at 12:30:01 v1.2.3"), "ratio 3/4 at 12:30:01 v1.2.3");
+  });
+
+  it("replaces the home directory only at a folder boundary", () => {
+    assert.strictEqual(
+      scrub.text("/Users/alexander/acme-billing/main.ts"),
+      "/Users/<user>/<name>/<name>.ts",
+    );
+  });
+
+  it("scrubs temporary, workspace, and network share paths", () => {
+    assert.strictEqual(
+      scrub.text("/tmp/acme/x.log /private/var/folders/ab/acme /workspaces/acme/src/a.ts"),
+      "/tmp/<name>/<name>.log /private/<name>/<name>/<name>/<name> /workspaces/<name>/src/<name>.ts",
+    );
+    assert.strictEqual(
+      scrub.text("\\\\fileserver\\acme-billing\\main.ts"),
+      "\\\\<name>\\<name>\\<name>.ts",
+    );
+  });
+
+  it("caps very long path-like input before scrubbing", () => {
+    const scrubbed = scrub.text(`/mnt/${":1".repeat(64_000)}X`);
+    assert.isAtMost(scrubbed.length, 1_001);
+    assert.isTrue(scrubbed.startsWith("/mnt/<name>"));
+  });
+
   it("removes personal and secret values from text", () => {
     assert.strictEqual(
       scrub.text("ENOENT: open '/Users/alex/work/notes.md'"),
-      "ENOENT: open '~/work/notes.md'",
+      "ENOENT: open '~/<name>/<name>.md'",
     );
     assert.strictEqual(
       scrub.text("C:\\Users\\sam\\AppData\\styal failed"),
-      "C:\\Users\\<user>\\AppData\\styal failed",
+      "C:\\Users\\<user>\\AppData\\<name> failed",
     );
     assert.strictEqual(
       scrub.text("GET https://user:pw@api.example.com/v1/x?token=abc failed for dev@example.com"),
