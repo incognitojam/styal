@@ -13,7 +13,12 @@ const native = vi.hoisted(() => ({
     focus: vi.fn(),
   },
   contents: { isDestroyed: vi.fn(() => false), send: vi.fn() },
+  denied: false,
 }));
+vi.mock("../../permissions/MacNotificationAuthorization.ts", async () => {
+  const { succeed } = await import("effect/Effect");
+  return { macNotificationsDenied: () => succeed(native.denied) };
+});
 vi.mock("electron", async () => {
   const { EventEmitter } = await import("node:events");
   class Notification extends EventEmitter {
@@ -42,6 +47,7 @@ const payload = { title: "Thread completed", body: "Fix the login form", tag: "a
 beforeEach(() => {
   vi.clearAllMocks();
   native.notifications.length = 0;
+  native.denied = false;
 });
 
 const install = Effect.fn(function* () {
@@ -79,6 +85,17 @@ it.effect("reports blocked when macOS rejects the notification", () =>
       const blocked = ipc.show({ ...payload, tag: "def" });
       latest().emit("failed", {}, "Notifications are not allowed for this application");
       expect(yield* Effect.promise(() => blocked)).toBe("blocked");
+    }),
+  ),
+);
+
+it.effect("reports blocked without showing while macOS denies notifications", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const ipc = yield* install();
+      native.denied = true;
+      expect(yield* Effect.promise(() => ipc.show(payload))).toBe("blocked");
+      expect(native.notifications).toHaveLength(0);
     }),
   ),
 );
