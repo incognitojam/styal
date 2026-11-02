@@ -428,11 +428,16 @@ const make = Effect.gen(function* () {
                   Effect.fail(mapError(input, "provision-worktree", threadId)(fetched.failure)),
                 ),
               );
+            yield* Effect.logWarning("worktree base fetch failed; using the local remote branch", {
+              threadId,
+              remoteRefName,
+              detail: fetched.failure.detail,
+            });
             yield* setupTracker.stageStatus(
               threadId,
               "fetch",
               "warning",
-              `Used local ${remoteRefName}: ${fetched.failure.detail}`,
+              `Used local ${remoteRefName}`,
             );
           } else {
             yield* setupTracker.stageStatus(threadId, "fetch", "done");

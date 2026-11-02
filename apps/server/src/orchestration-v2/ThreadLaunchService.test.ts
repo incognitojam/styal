@@ -1241,8 +1241,7 @@ it.effect("starts from the local copy of the remote branch when the fetch fails"
       (stage) => stage.id === "fetch",
     );
     assert.equal(fetchStage?.status, "warning");
-    assert.include(fetchStage?.detail ?? "", "origin/main");
-    assert.include(fetchStage?.detail ?? "", detail);
+    assert.equal(fetchStage?.detail, "Used local origin/main");
   }).pipe(Effect.provide(harness.layer));
 });
 

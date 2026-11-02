@@ -36,7 +36,9 @@ export function resolveVisibleWorktreeSetup(input: {
   if (input.followUpSent) return null;
   if (snapshot.phase !== "done") return snapshot;
   if (!input.turnStarted) return snapshot;
-  return snapshot.stages.some((stage) => stage.status === "failed") ? snapshot : null;
+  return snapshot.stages.some((stage) => stage.status === "failed" || stage.status === "warning")
+    ? snapshot
+    : null;
 }
 
 export function worktreeSetupAgentStarted(snapshot: WorktreeSetupSnapshot): boolean {
