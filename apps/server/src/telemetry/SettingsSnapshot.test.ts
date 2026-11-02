@@ -245,6 +245,7 @@ const NOT_REPORTED: Record<string, string> = {
   usageLimitSources: "account records",
   usagePriceOverrides: "per-model records",
   usageModelAliases: "per-model records",
+  usageModelFilter: "provider and model records",
   compactIdleThreads: "legacy switch, reported as idleCompaction",
 };
 
