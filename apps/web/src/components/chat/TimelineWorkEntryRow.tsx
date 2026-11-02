@@ -21,6 +21,7 @@ import { notificationChildThreadId } from "@t3tools/client-runtime/state/thread-
 import {
   resolveViewedImageAsset,
   resolveWorkEntryToolPresentation,
+  workEntryToolRefusalSummary,
   workEntryViewedImagePath,
 } from "@t3tools/client-runtime/work-log/presentation";
 import {
@@ -406,6 +407,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
     workEntry.questionAnswer && hasQuestionAnswer(workEntry.questionAnswer)
       ? getQuestionAnswerPreview(workEntry.questionAnswer)
       : null;
+  const refusalSummary = answerPreview ? null : workEntryToolRefusalSummary(workEntry);
   const fileChangeStat =
     workEntry.fileChangeStat && hasNonZeroStat(workEntry.fileChangeStat)
       ? workEntry.fileChangeStat
@@ -499,9 +501,11 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
   const accessiblePreview = [threadLabel?.text ?? previewText, answerPreview ?? setupActionStatus]
     .filter(Boolean)
     .join(": ");
-  const accessibleDisplayText = showFailedIndicator
-    ? `${accessiblePreview}, tool call failed`
-    : accessiblePreview;
+  const accessibleDisplayText = refusalSummary
+    ? `${accessiblePreview}, ${refusalSummary}`
+    : showFailedIndicator
+      ? `${accessiblePreview}, tool call failed`
+      : accessiblePreview;
   const rowToggleProps = canExpandProjectedItem
     ? {
         role: "button" as const,
@@ -542,7 +546,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
           <p className="flex min-w-0 w-full items-baseline gap-1.5 text-sm leading-relaxed">
             <span
               className={cn(
-                answerPreview || setupActionStatus ? "min-w-0" : "min-w-0 flex-1",
+                answerPreview || setupActionStatus || refusalSummary ? "min-w-0" : "min-w-0 flex-1",
                 "truncate",
                 headingClass,
               )}
@@ -591,6 +595,11 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
                 )}
               >
                 {answerPreview}
+              </span>
+            ) : null}
+            {refusalSummary ? (
+              <span className="min-w-0 max-w-[60%] shrink-0 truncate text-muted-foreground">
+                {refusalSummary}
               </span>
             ) : null}
           </p>

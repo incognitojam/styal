@@ -19,6 +19,7 @@ import {
   workEntryIndicatesToolFailure,
   workEntryDisplayIndicatesToolFailure,
   workEntryIndicatesToolSuccess,
+  workEntryToolRefusalSummary,
 } from "./presentation.js";
 
 function commandItem(
@@ -126,6 +127,25 @@ describe("workEntryIndicatesToolFailure", () => {
 
     expect(workEntryIndicatesToolFailure(entry)).toBe(true);
     expect(workEntryDisplayIndicatesToolFailure({ ...entry, detail: "File not found" })).toBe(true);
+  });
+});
+
+describe("workEntryToolRefusalSummary", () => {
+  it.each([
+    [
+      { source: "auto_mode", reason: "External System Writes" },
+      "Blocked by Auto mode: External System Writes",
+    ],
+    [{ source: "auto_mode" }, "Blocked by Auto mode"],
+    [{ source: "settings", reason: " " }, "Blocked by permission settings"],
+    [undefined, null],
+  ] as const)("summarizes %o", (toolDenial, expected) => {
+    const structuredPayload = commandItem({
+      status: "failed",
+      toolNonExecutionKind: "permission-rule",
+      ...(toolDenial === undefined ? {} : { toolDenial }),
+    });
+    expect(workEntryToolRefusalSummary({ structuredPayload })).toBe(expected);
   });
 });
 

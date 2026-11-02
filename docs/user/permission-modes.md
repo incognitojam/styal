@@ -27,6 +27,10 @@ Providers enforce permissions differently. Some read-only actions can proceed in
 including OpenCode and Antigravity, fall back to asking. On Grok, commands its review blocks come
 to you for approval.
 
+On Claude, actions its review blocks are not run, and the agent carries on without them. The
+conversation marks each one **Blocked by Auto mode** with Claude's reason. Ask the agent to try
+again in another mode if you want that action to run.
+
 Muse Code offers only **Supervised** and **Full access**. A Muse thread already set to another mode
 runs in **Supervised**.
 
