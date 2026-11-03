@@ -4607,6 +4607,7 @@ features:
       - apps/server/src/orchestration-v2/ProviderTurnStartService.ts
       - apps/server/src/orchestration-v2/runtimeLayer.ts
       - apps/server/src/provider/Drivers/ClaudeDriver.ts
+      - apps/server/src/provider/Drivers/ClaudeMaintenance.ts
       - apps/server/src/provider/Drivers/CodexDriver.ts
       - apps/server/src/provider/Drivers/claudeSelfUpdater.ts
       - apps/server/src/provider/Drivers/codexPinnedInstall.ts

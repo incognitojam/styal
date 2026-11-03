@@ -43,13 +43,7 @@ import {
   type ProviderInstance,
 } from "@t3tools/provider-core/server/driver";
 import { withInstanceIdentity } from "@t3tools/provider-core/server/instanceIdentity";
-import {
-  enrichProviderSnapshotWithVersionAdvisory,
-  makeCachedProviderMaintenanceResolution,
-  makePackageManagedProviderMaintenanceResolver,
-  normalizeCommandPath,
-  resolveProviderMaintenanceCapabilitiesEffect,
-} from "@t3tools/provider-core/server/maintenanceResolver";
+import { enrichProviderSnapshotWithVersionAdvisory } from "@t3tools/provider-core/server/maintenanceResolver";
 import {
   haveProviderSnapshotSettingsChanged,
   makeProviderSnapshotSettingsSource,
@@ -64,14 +58,9 @@ import {
   claudeCredentialsHoldLogin,
 } from "./ClaudeHome.ts";
 import { readClaudeHistoryRetention } from "./ClaudeHistoryRetention.ts";
-import {
-  claudeSelfUpdaterActive,
-  handBackClaudeSelfUpdater,
-  turnOffClaudeSelfUpdater,
-  type ClaudeUpdaterPaths,
-} from "./claudeSelfUpdater.ts";
 import * as ProviderCliLogin from "@t3tools/provider-core/server/providerCliLogin";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import { makeClaudeMaintenanceResolution } from "./ClaudeMaintenance.ts";
 const decodeClaudeSettings = Schema.decodeSync(ClaudeSettings);
 
 const DRIVER_KIND = ProviderDriverKind.make("claudeAgent");
@@ -82,42 +71,6 @@ const withoutUsage = (capabilities: ClaudeCapabilitiesProbe): ClaudeCapabilities
   delete result.usage;
   return result;
 };
-
-function isClaudeNativeCommandPath(commandPath: string): boolean {
-  const normalized = normalizeCommandPath(commandPath);
-  return (
-    normalized.endsWith("/.local/bin/claude") ||
-    normalized.endsWith("/.local/bin/claude.exe") ||
-    normalized.includes("/.local/share/claude/")
-  );
-}
-
-/**
- * Update ownership of the Claude executable an instance runs. A native install
- * pins versions with `claude install <version>`; styal then turns off Claude's
- * own updater in the instance's settings, see `claudeSelfUpdater.ts`.
- */
-export function makeClaudeMaintenance(paths: ClaudeUpdaterPaths) {
-  return makePackageManagedProviderMaintenanceResolver({
-    provider: DRIVER_KIND,
-    npmPackageName: "@anthropic-ai/claude-code",
-    nativeUpdate: {
-      args: ["update"],
-      isCommandPath: isClaudeNativeCommandPath,
-      supportsWindowsPinning: true,
-      // Moves the native install to exactly `version` without `--force`.
-      pinned: (version, context) => ({
-        executable: context.resolvedCommandPath,
-        args: ["install", version],
-      }),
-      selfUpdaterActive: (context) => claudeSelfUpdaterActive(paths, context.env),
-      selfUpdater: (context) => ({
-        turnOff: turnOffClaudeSelfUpdater(paths, context.env),
-        handBack: handBackClaudeSelfUpdater(paths),
-      }),
-    },
-  });
-}
 
 export type ClaudeDriverEnv =
   | ClaudeAdapterV2DriverEnv
@@ -183,18 +136,14 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
         ? configDir
         : undefined,
     );
-    const resolveMaintenance = yield* makeCachedProviderMaintenanceResolution(
-      resolveProviderMaintenanceCapabilitiesEffect(
-        makeClaudeMaintenance({ configDir, accountConfigPath }),
-        {
-          binaryPath: effectiveConfig.binaryPath,
-          env: processEnv,
-        },
-      ).pipe(
-        Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
-        Effect.provideService(FileSystem.FileSystem, fileSystem),
-        Effect.provideService(Path.Path, path),
-      ),
+    const resolveMaintenance = yield* makeClaudeMaintenanceResolution(
+      { binaryPath: effectiveConfig.binaryPath, env: processEnv },
+      { configDir, accountConfigPath },
+    ).pipe(
+      Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+      Effect.provideService(FileSystem.FileSystem, fileSystem),
+      Effect.provideService(Path.Path, path),
+      Effect.provideService(HttpClient.HttpClient, httpClient),
     );
     const continuationGroupKey = yield* makeClaudeContinuationGroupKey(effectiveConfig, processEnv);
     const stampIdentity = ProviderCliLogin.withCliLoginSetup(

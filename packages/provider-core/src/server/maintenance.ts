@@ -12,6 +12,8 @@ export interface ProviderMaintenanceCapabilities {
    * `latestVersion`, then npm.
    */
   readonly lookupLatestVersion?: Effect.Effect<string | null>;
+  /** Separates installer release channels that share an update command. */
+  readonly latestVersionCacheKey?: string;
   readonly compareVersions?: (current: string, latest: string) => number;
   /**
    * The provider's own installer set to install exactly `version`, for a

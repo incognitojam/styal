@@ -35,7 +35,7 @@ import * as ProviderMaintenanceRunner from "./providerMaintenanceRunner.ts";
 import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderLatestVersions";
 import * as ServerSettings from "../serverSettings.ts";
 import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
-import { makeClaudeMaintenance } from "./Drivers/ClaudeDriver.ts";
+import { makeClaudeMaintenance } from "./Drivers/ClaudeMaintenance.ts";
 import {
   enrichProviderSnapshotWithVersionAdvisory,
   makeProviderMaintenanceCapabilities,
