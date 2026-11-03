@@ -480,13 +480,63 @@ jobs:
             node apps/server/node_modules/playwright-core/cli.js install-deps chromium
           fi
 
+      # Each test file is a Vite Task whose fingerprint is every file it read, so a
+      # file whose inputs match a passing result is replayed. Failures are never stored.
+      # Entries are immutable, so every run that stored a new result saves a fresh one.
+      - name: Restore server test cache
+        id: test_cache
+        uses: actions/cache/restore@v6
+        with:
+          path: node_modules/.vite/task-cache
+          key: fork-server-tests-v1-${{ runner.os }}-${{ runner.arch }}-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            fork-server-tests-v1-${{ runner.os }}-${{ runner.arch }}-${{ matrix.shard }}-
+
+      # Tests create these in the checkout; a fresh one must list the same entries.
+      - name: Create test scratch directories
+        run: mkdir -p .scratch apps/server/tmp
+
+      # --concurrency replaces vitest's --maxWorkers=3. Grouping four files per task
+      # keeps Vitest startup from dominating runs that mostly miss.
       - name: Test server
+        id: test
         env:
           T3CODE_TRANSFER_BUDGET_REPORT_PATH: ${{ runner.temp }}/styal-transfer-budget.md
           T3CODE_TRANSFER_BUDGET_RESULT_PATH: ${{ runner.temp }}/thread-transfer-result.json
-        run: vp run --filter ./apps/server test --fileParallelism --maxWorkers=3 --shard ${{ matrix.shard }}/${{ strategy.job-total }}
+        run: >-
+          vp run test:cached -- --shard ${{ matrix.shard }}/${{ strategy.job-total }}
+          --concurrency 3 --group-size 4
+          --uncached apps/server/integration/transferBudgetV2.integration.test.ts
+          --verify-hits 1 --report "${{ runner.temp }}/server-test-cache.json" apps/server
 
-      # src/server.test.ts writes the budget report, so exactly one shard
+      - name: Check for new server test results
+        id: test_cache_misses
+        if: ${{ !cancelled() && steps.test.outcome != 'skipped' }}
+        run: |
+          report="${{ runner.temp }}/server-test-cache.json"
+          if test -f "$report" &&
+            jq -e 'any(.summary.tasks[]; .result.Spawned.cache_status | type == "object" and has("Miss"))' "$report" > /dev/null
+          then
+            echo "save=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Save server test cache
+        if: ${{ !cancelled() && steps.test_cache_misses.outputs.save == 'true' }}
+        uses: actions/cache/save@v6
+        with:
+          path: node_modules/.vite/task-cache
+          key: ${{ steps.test_cache.outputs.cache-primary-key }}
+
+      - name: Upload server test cache report
+        if: ${{ !cancelled() && steps.test.outcome != 'skipped' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: server-test-cache-${{ matrix.shard }}
+          path: ${{ runner.temp }}/server-test-cache.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+      # integration/transferBudgetV2.integration.test.ts writes the budget report, so exactly one shard
       # produces these files. Gating the upload on their presence keeps a
       # single `thread-transfer-results` artifact per run, which is the name
       # thread-transfer-report.yml resolves.
