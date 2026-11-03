@@ -178,11 +178,11 @@ it.effect("keeps explicit machine and local project searches scoped", () =>
       { query: "work", environmentId: here },
       {
         ...scope,
-        client: { ...scope.client!, webOrigin: "https://source.example" },
+        client: { ...scope.client!, hostedAppUrl: "https://source.example" },
       },
     ).pipe(Effect.provide(layer));
     expect(outside.matches[0]?.link).toBe(
-      `https://source.example/${encodeURIComponent(here)}/${encodeURIComponent(sameId)}`,
+      `https://source.example/threads/${encodeURIComponent(here)}/${encodeURIComponent(sameId)}`,
     );
   }),
 );
