@@ -830,16 +830,17 @@ export class PreviewAutomationTimeoutError extends Schema.TaggedError<PreviewAut
   {
     ...PreviewAutomationRequestErrorFields,
     ...PreviewAutomationOptionalRemoteDiagnosticFields,
+    reason: Schema.optional(Schema.String),
   },
 ) {
   override get message(): string {
-    if (this.failureStage !== undefined) {
-      return `Preview automation ${this.operation} timed out while ${failureStageDescriptions[this.failureStage]}.`;
-    }
-    // Without a remote tag, the client never answered within the request deadline.
-    return this.remoteTag === undefined
-      ? `Preview automation ${this.operation} timed out after ${this.timeoutMs}ms waiting for the browser to respond.`
-      : `Preview automation ${this.operation} timed out after ${this.timeoutMs}ms.`;
+    const summary =
+      this.failureStage !== undefined
+        ? `Preview automation ${this.operation} timed out while ${failureStageDescriptions[this.failureStage]}.`
+        : this.remoteTag === undefined
+          ? `Preview automation ${this.operation} timed out after ${this.timeoutMs}ms waiting for the browser to respond.`
+          : `Preview automation ${this.operation} timed out after ${this.timeoutMs}ms.`;
+    return this.reason === undefined ? summary : `${summary} ${this.reason}`;
   }
 }
 
