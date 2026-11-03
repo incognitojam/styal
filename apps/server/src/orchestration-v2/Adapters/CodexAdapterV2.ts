@@ -8055,24 +8055,32 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               const threadId = yield* getNativeThreadId(threadInput.sourceProviderThread);
               const boundary = yield* resolveCodexForkBoundary(threadInput);
               const mcpSession = yield* mcpSessions.read(threadInput.targetThreadId);
+              const fork = Effect.suspend(() =>
+                client.request("thread/fork", {
+                  threadId,
+                  ...(boundary.lastTurnId === undefined ? {} : { lastTurnId: boundary.lastTurnId }),
+                  ...threadRuntimeParams({
+                    threadId: threadInput.targetThreadId,
+                    mcpSession,
+                    ...(threadInput.modelSelection === undefined
+                      ? {}
+                      : { modelSelection: threadInput.modelSelection }),
+                    ...(threadInput.runtimePolicy === undefined
+                      ? {}
+                      : { runtimePolicy: threadInput.runtimePolicy }),
+                  }),
+                }),
+              );
               const response = yield* ensureInitialized.pipe(
                 Effect.andThen(
-                  Effect.suspend(() =>
-                    client.request("thread/fork", {
-                      threadId,
-                      ...(boundary.lastTurnId === undefined
-                        ? {}
-                        : { lastTurnId: boundary.lastTurnId }),
-                      ...threadRuntimeParams({
-                        threadId: threadInput.targetThreadId,
-                        mcpSession,
-                        ...(threadInput.modelSelection === undefined
-                          ? {}
-                          : { modelSelection: threadInput.modelSelection }),
-                        ...(threadInput.runtimePolicy === undefined
-                          ? {}
-                          : { runtimePolicy: threadInput.runtimePolicy }),
-                      }),
+                  fork.pipe(
+                    Effect.catchTags({
+                      CodexAppServerRequestError: (cause) =>
+                        /\bsession \S+ is archived\b|\bcodex unarchive\b/i.test(cause.errorMessage)
+                          ? client.raw
+                              .request("thread/unarchive", { threadId })
+                              .pipe(Effect.andThen(fork))
+                          : Effect.fail(cause),
                     }),
                   ),
                 ),
