@@ -1118,7 +1118,7 @@ export const PullRequestPreviewRepositoryPullRequestPullRequest = Schema.Struct(
   /** Returns the auto-merge request object if one exists for this pull request. */
   autoMergeRequest: Schema.NullOr(PullRequestPreviewRepositoryPullRequestAutoMergeRequestAutoMergeRequest),
   /** Indicates whether the pull request is in a merge queue */
-  isInMergeQueue: Schema.Boolean,
+  isInMergeQueue: Schema.optionalKey(Schema.Boolean),
   /** Identifies the pull request number. */
   number: Shared.Int,
   /** Identifies the pull request title. */
@@ -1152,17 +1152,19 @@ export const PullRequestPreview = GraphQL.query("PullRequestPreview", {
     variables: [
       { name: "owner", body: "String!" },
       { name: "name", body: "String!" },
-      { name: "number", body: "Int!" }
+      { name: "number", body: "Int!" },
+      { name: "required", body: "Boolean!" }
     ],
     selections: [
-      { name: "repository", body: ["(owner:$", "owner", " name:$", "name", "){pullRequest(number:$", "number", "){autoMergeRequest{enabledAt}isInMergeQueue number title url state isDraft createdAt author{__typename login avatarUrl...on User{name}}}}"] }
+      { name: "repository", body: ["(owner:$", "owner", " name:$", "name", "){pullRequest(number:$", "number", "){autoMergeRequest{enabledAt}isInMergeQueue@include(if:$", "required", ")number title url state isDraft createdAt author{__typename login avatarUrl...on User{name}}}}"] }
     ],
     fragments: []
   },
   variables: {
     owner: Schema.String,
     name: Schema.String,
-    number: Shared.Int
+    number: Shared.Int,
+    required: Schema.Boolean
   },
   result: Schema.Struct({
     /** Lookup a given repository by the owner and repository name. */

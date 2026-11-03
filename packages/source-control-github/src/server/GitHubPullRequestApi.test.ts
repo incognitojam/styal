@@ -863,6 +863,9 @@ layer("GitHubPullRequestApi.layer", (it) => {
         host: "github.example",
         number: 7,
       });
+      expect(variablesOf("PullRequestPreview")).toEqual([
+        { owner: "acme", name: "web", number: 7, required: false },
+      ]);
       expect(preview).toEqual({
         autoMergeEnabled: true,
         inMergeQueue: true,

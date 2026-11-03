@@ -593,13 +593,13 @@ query PullRequestCheckContexts(
   }
 }
 
-query PullRequestPreview($owner: String!, $name: String!, $number: Int!) {
+query PullRequestPreview($owner: String!, $name: String!, $number: Int!, $required: Boolean!) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
       autoMergeRequest {
         enabledAt
       }
-      isInMergeQueue
+      isInMergeQueue @include(if: $required)
       number
       title
       url
