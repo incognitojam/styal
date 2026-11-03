@@ -37,6 +37,11 @@ When an agent delegates a task, styal records whether the agent asked to be woke
 once for the whole group, whether it set a timeout, and the call's outcome. Prompts, task
 identifiers, and timeout values are not collected.
 
+When an agent in a thread reads or acts on another project's threads, projects or scheduled
+tasks, the server records whether it read or changed something and whether
+**Agent access to other projects** allowed it. Projects, threads, tool names and arguments are not
+collected.
+
 Once after startup and then daily, the server reports each configured provider: its type, whether
 it is the default or an added instance, whether it is installed, enabled and healthy, its version
 and the newest version styal has tested, how it was installed (such as npm or Homebrew), and whether automatic updates are on, could update

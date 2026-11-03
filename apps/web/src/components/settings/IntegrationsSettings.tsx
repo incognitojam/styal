@@ -131,7 +131,7 @@ import {
 } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 import { SettingsEnvironmentScope } from "./SettingsScopeContext";
-import { AgentBrowserAccessSetting } from "./AgentAccessSettings";
+import { AgentBrowserAccessSetting, AgentCrossProjectAccessSetting } from "./AgentAccessSettings";
 import { EnvironmentRow, environmentTransportLabel } from "./EnvironmentRow";
 import { SettingsGroup } from "./SettingsGroup";
 import { FoldedSettingsSection } from "./FoldedSettingsSection";
@@ -1664,6 +1664,9 @@ function EnvironmentIntegrationControls({
       }}
     >
       <AgentBrowserAccessSetting id={`agent-browser-access-${environment.environmentId}`} />
+      <AgentCrossProjectAccessSetting
+        id={`agent-cross-project-access-${environment.environmentId}`}
+      />
       <DeviceIntegrationControls
         environmentId={environment.environmentId}
         enabled={environment.serverConfig?.settings.enableDeviceSupport ?? false}

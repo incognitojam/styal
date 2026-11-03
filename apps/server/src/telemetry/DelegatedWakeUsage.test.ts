@@ -4,6 +4,7 @@ import * as Effect from "effect/Effect";
 import * as McpInvocationContext from "../mcp/McpInvocationContext.ts";
 import * as OrchestratorMcpService from "../mcp/OrchestratorMcpService.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import * as AnalyticsService from "./AnalyticsService.ts";
 import * as DelegatedWakeUsage from "./DelegatedWakeUsage.ts";
 
@@ -38,6 +39,7 @@ it.effect("records the wake each delegate_task call chooses, and nothing from th
           Effect.provideService(McpInvocationContext.McpInvocationContext, {} as never),
           Effect.provideService(OrchestratorMcpService.OrchestratorMcpService, {} as never),
           Effect.provideService(ThreadManagementService.ThreadManagementService, {} as never),
+          Effect.provideService(ServerSettings.ServerSettingsService, {} as never),
         );
 
     yield* call({ wake: "all", wakeAfterMs: 60_000 });

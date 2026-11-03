@@ -60,6 +60,7 @@ import {
   ProviderRequestKind,
   type RuntimeMode,
   type ScheduledTask,
+  ScheduledTaskId,
   type ScheduledTaskUpsertInput,
   type ServerProvider,
   type ServerProviderModel,
@@ -104,6 +105,7 @@ import { userFacingDispatchErrorMessage } from "../orchestration-v2/UserFacingEr
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ScheduledTaskService from "../scheduledTasks/ScheduledTaskService.ts";
+import * as AgentProjectScope from "./agentProjectScope.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import {
   clientRuntimeModeCeiling,
@@ -1776,6 +1778,7 @@ const make = Effect.gen(function* () {
       readonly runtimeMode: RuntimeMode;
       readonly interactionMode: ProviderInteractionMode;
     },
+    caller: { readonly projectId: ProjectId } | undefined,
   ): Effect.fn.Return<ScheduledTask, OrchestratorMcpFailure> {
     const { tasks } = yield* scheduledTasks
       .list()
@@ -1788,6 +1791,14 @@ const make = Effect.gen(function* () {
     if (task === undefined) {
       return yield* failure("task_not_found", `Scheduled task ${scheduledTaskId} was not found.`);
     }
+    // Another project's task is refused as that, whatever its modes.
+    yield* AgentProjectScope.assertProjectFor(
+      serverSettings,
+      caller,
+      "write",
+      task.projectId,
+      `scheduled task ${task.id}`,
+    );
     for (const modes of yield* scheduledTaskRunModes(task)) {
       yield* resolveRuntimeMode(limits.runtimeMode, modes.runtimeMode);
       yield* resolveInteractionMode(limits.interactionMode, modes.interactionMode);
@@ -1799,6 +1810,7 @@ const make = Effect.gen(function* () {
     scheduleTask: Effect.fn("OrchestratorMcpService.scheduleTask")(function* (scope, input) {
       const { parent, limits } = yield* loadCaller(scope);
       const projectId = yield* resolveProjectTarget(parent, input.projectId);
+      yield* AgentProjectScope.assertProjectFor(serverSettings, parent?.thread, "write", projectId);
       yield* assertLiveCallerForOtherProject(scope, parent, projectId);
       const project = yield* requireProject(projectId);
       const bindToCurrentThread =
@@ -1842,6 +1854,27 @@ const make = Effect.gen(function* () {
               }),
             }),
       };
+      // A replayed clientRequestId updates the task it created, which may be
+      // in another project; ScheduledTaskService derives its id this way.
+      if (upsertInput.commandId !== undefined) {
+        const replayedId = ScheduledTaskId.make(`scheduled-task:${upsertInput.commandId}`);
+        const { tasks } = yield* scheduledTasks
+          .list()
+          .pipe(
+            Effect.mapError((error) =>
+              failure("orchestration_error", `Could not schedule task: ${error.message}`),
+            ),
+          );
+        const replayed = tasks.find((candidate) => candidate.id === replayedId);
+        if (replayed !== undefined)
+          yield* AgentProjectScope.assertProjectFor(
+            serverSettings,
+            parent?.thread,
+            "write",
+            replayed.projectId,
+            `scheduled task ${replayed.id}`,
+          );
+      }
       const { task } = yield* scheduledTasks
         .upsert(upsertInput)
         .pipe(
@@ -1855,6 +1888,13 @@ const make = Effect.gen(function* () {
       function* (scope, input) {
         const { parent, limits } = yield* loadCaller(scope);
         const projectId = input.projectId ?? parent?.thread.projectId;
+        if (projectId !== undefined)
+          yield* AgentProjectScope.assertProjectFor(
+            serverSettings,
+            parent?.thread,
+            "read",
+            projectId,
+          );
         const { tasks } = yield* scheduledTasks
           .list()
           .pipe(
@@ -1873,7 +1913,7 @@ const make = Effect.gen(function* () {
     updateScheduledTask: Effect.fn("OrchestratorMcpService.updateScheduledTask")(
       function* (scope, input) {
         const { parent, limits } = yield* loadCaller(scope);
-        const existing = yield* loadScheduledTask(input.scheduledTaskId, limits);
+        const existing = yield* loadScheduledTask(input.scheduledTaskId, limits, parent?.thread);
         yield* assertLiveCallerForOtherProject(scope, parent, existing.projectId);
         if (
           input.bindToCurrentThread === true &&
@@ -1925,7 +1965,7 @@ const make = Effect.gen(function* () {
     deleteScheduledTask: Effect.fn("OrchestratorMcpService.deleteScheduledTask")(
       function* (scope, input) {
         const { parent, limits } = yield* loadCaller(scope);
-        const existing = yield* loadScheduledTask(input.scheduledTaskId, limits);
+        const existing = yield* loadScheduledTask(input.scheduledTaskId, limits, parent?.thread);
         yield* assertLiveCallerForOtherProject(scope, parent, existing.projectId);
         yield* scheduledTasks
           .delete({ id: existing.id })
@@ -2689,6 +2729,7 @@ const make = Effect.gen(function* () {
     listThreads: Effect.fn("OrchestratorMcpService.listThreads")(function* (scope, input) {
       const { parent } = yield* loadCaller(scope);
       const projectId = yield* resolveProjectTarget(parent, input.projectId);
+      yield* AgentProjectScope.assertProjectFor(serverSettings, parent?.thread, "read", projectId);
       const projectThreads = yield* threadManagement
         .listProjectThreads({
           projectId,

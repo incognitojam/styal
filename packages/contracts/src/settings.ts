@@ -1054,6 +1054,7 @@ export const PROJECT_SCOPED_SERVER_SETTING_KEYS = [
   "enableAgentDeviceAccess",
   "simulatorMemoryMode",
   "enableAgentHardwareAccess",
+  "enableAgentCrossProjectAccess",
   "textGenerationModelSelection",
   "threadTitleInstructions",
   "sourceControlWriterModelSelection",
@@ -1093,6 +1094,7 @@ export const ProjectSettingsOverrides = Schema.Struct({
   enableAgentDeviceAccess: Schema.optionalKey(Schema.Boolean),
   simulatorMemoryMode: ForwardCompatibleOptional(SimulatorMemoryMode),
   enableAgentHardwareAccess: Schema.optionalKey(Schema.Boolean),
+  enableAgentCrossProjectAccess: Schema.optionalKey(Schema.Boolean),
   textGenerationModelSelection: Schema.optionalKey(ModelSelection),
   threadTitleInstructions: Schema.optionalKey(TrimmedString),
   sourceControlWriterModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
@@ -1276,6 +1278,14 @@ export const ServerSettings = Schema.Struct({
    * session is prepared, like `enableAgentDeviceAccess`.
    */
   enableAgentHardwareAccess: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  /**
+   * Whether an in-thread agent may reach other projects through the T3 MCP
+   * tools. The calling thread's project decides, checked on every call; MCP
+   * clients from outside a thread are unaffected.
+   */
+  enableAgentCrossProjectAccess: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(true)),
+  ),
   /** Network devices on this environment; definitions live in project repositories. */
   hardwareDevices: HardwareDeviceConfigs.pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   /**
@@ -1647,6 +1657,7 @@ export const ServerSettingsPatch = Schema.Struct({
   deviceHosts: Schema.optionalKey(SshDeviceHostConfigs),
   environmentDeviceHosts: Schema.optionalKey(EnvironmentDeviceHostConfigs),
   enableAgentHardwareAccess: Schema.optionalKey(Schema.Boolean),
+  enableAgentCrossProjectAccess: Schema.optionalKey(Schema.Boolean),
   hardwareDevices: Schema.optionalKey(HardwareDeviceConfigs),
   easDeviceHosts: Schema.optionalKey(EasDeviceHostConfigs),
   sidebarAutoSettleAfterDays: Schema.optionalKey(Schema.NullOr(SidebarAutoSettleAfterDays)),

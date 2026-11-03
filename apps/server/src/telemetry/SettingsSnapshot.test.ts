@@ -51,6 +51,7 @@ const defaultSnapshot = {
   enableAgentBrowserAccess: true,
   enableAgentDeviceAccess: false,
   enableAgentHardwareAccess: false,
+  enableAgentCrossProjectAccess: true,
   enableDeviceSupport: false,
   deviceIdleShutdownMinutes: 10,
   keepPhysicalAndroidScreensOff: true,

@@ -179,6 +179,14 @@
     {
       "pr": 23392,
       "reason": "Brings back a desktop startup splash while the local backend boots. Upstream #22222 reverted #19706 (\"Starting styal…\" splash) because it had never run on a real desktop build; the fork wants a splash again. Take it at intake, or import it early if the maintainer asks; #23637 (splash when the backend never becomes ready) is related."
+    },
+    {
+      "pr": 16695,
+      "reason": "Fences work a linked environment starts to that link, in the same MCP access layer (McpToolAccess.ts, threadAccess.ts) as the agent project limit from fork #1018. At intake, keep both checks: writesThreads and readsThreads must still refuse another project's threads when Agent access to other projects is off, and run McpToolAccess.test.ts and the agent project limit tests."
+    },
+    {
+      "pr": 28859,
+      "reason": "Lets delegate_task start a child in another local project through target.projectId. With fork #1018, that is a new way for an agent to reach another project: at intake, refuse a target.projectId outside the caller's project when Agent access to other projects is off (AgentProjectScope.assertProjectFor in OrchestratorMcpService.delegateTask), record the reach, and add a test."
     }
   ]
 }
