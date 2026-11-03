@@ -13,6 +13,7 @@ import {
   readIntegrations,
   reconcile,
   reconciledThrough,
+  retryTransientGitHub,
   reusableAssociations,
   shortenCommitSha,
 } from "./queue.ts";
@@ -387,6 +388,35 @@ describe("chronological upstream queue", () => {
 
     assert.deepEqual(persisted, [40, 41]);
     assert.equal(Object.keys(associations).length, 41);
+  });
+
+  it("retries GitHub 5xx responses with backoff and rethrows other failures", () => {
+    const ghFailure = (stderr: string) =>
+      Object.assign(new Error(`Command failed: gh api graphql\n${stderr}`), { stderr });
+    const flaky = (failures: string[]) => {
+      let calls = 0;
+      const run = () => {
+        const failure = failures[calls++];
+        if (failure !== undefined) throw ghFailure(failure);
+        return "{}";
+      };
+      return { run, calls: () => calls };
+    };
+    const slept: number[] = [];
+    const sleep = (milliseconds: number) => void slept.push(milliseconds);
+
+    const recovering = flaky(["gh: HTTP 502\n", "gh: HTTP 504\n"]);
+    assert.equal(retryTransientGitHub(recovering.run, sleep, [1, 2, 3])("gh", []), "{}");
+    assert.equal(recovering.calls(), 3);
+    assert.deepEqual(slept, [1, 2]);
+
+    const exhausted = flaky(["gh: HTTP 502\n", "gh: HTTP 502\n", "gh: HTTP 502\n"]);
+    assert.throws(() => retryTransientGitHub(exhausted.run, sleep, [1, 2])("gh", []), "HTTP 502");
+    assert.equal(exhausted.calls(), 3);
+
+    const permanent = flaky(["gh: Not Found (HTTP 404)\n"]);
+    assert.throws(() => retryTransientGitHub(permanent.run, sleep, [1, 2])("gh", []), "HTTP 404");
+    assert.equal(permanent.calls(), 1);
   });
 
   it("walks real first-parent history despite backdated commits, includes merges and empties, and rejects side-branch baselines", () => {

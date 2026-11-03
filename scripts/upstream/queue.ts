@@ -374,6 +374,30 @@ export function associatePRs(
   });
 }
 
+const sleepSync = (milliseconds: number) =>
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
+
+/** GitHub's gateway intermittently answers heavy GraphQL batches with 5xx; the same query then succeeds. */
+export function retryTransientGitHub(
+  run: Run,
+  sleep: (milliseconds: number) => void = sleepSync,
+  delays: ReadonlyArray<number> = [2_000, 5_000, 10_000],
+): Run {
+  return (command, args) => {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return run(command, args);
+      } catch (error) {
+        const delay = delays[attempt];
+        const stderr = String((error as { stderr?: unknown }).stderr ?? "");
+        if (delay === undefined || !/\bHTTP 5\d\d\b/u.test(stderr)) throw error;
+        console.error(`${stderr.trim()}; retrying in ${delay / 1000}s.`);
+        sleep(delay);
+      }
+    }
+  };
+}
+
 export function fetchAssociations(
   integrations: ReadonlyArray<Pick<Integration, "sha">>,
   repository: string,
@@ -381,6 +405,7 @@ export function fetchAssociations(
   run: Run,
   persist: (associations: Associations) => void = () => undefined,
 ): Associations {
+  const runGitHub = retryTransientGitHub(run);
   const missing = integrations.filter((entry) => cache[entry.sha] === undefined);
   const [owner, name] = repository.split("/");
   for (let start = 0; start < missing.length; start += 40) {
@@ -389,7 +414,7 @@ export function fetchAssociations(
       `Reading upstream PR metadata: ${Math.min(start + 40, missing.length)}/${missing.length}`,
     );
     const query = `query { repository(owner:${JSON.stringify(owner)}, name:${JSON.stringify(name)}) { ${batch.map((entry, index) => `c${index}: object(oid:"${entry.sha}") { ... on Commit { associatedPullRequests(first:100) { nodes { number mergedAt baseRefName baseRepository { nameWithOwner } mergeCommit { oid } } pageInfo { hasNextPage } } } }`).join("\n")} } }`;
-    const response = JSON.parse(run("gh", ["api", "graphql", "-f", `query=${query}`])) as {
+    const response = JSON.parse(runGitHub("gh", ["api", "graphql", "-f", `query=${query}`])) as {
       errors?: unknown;
       data: {
         repository: Record<
