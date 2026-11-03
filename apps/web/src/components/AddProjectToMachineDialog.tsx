@@ -204,7 +204,7 @@ function AddProjectToMachineDialog({ request }: { request: AddProjectToMachineRe
         if (!open) close();
       }}
     >
-      <DialogPopup className="sm:max-w-2xl">
+      <DialogPopup className="sm:max-w-xl">
         <form
           className="flex min-h-0 flex-col"
           onSubmit={(event) => {
@@ -220,8 +220,8 @@ function AddProjectToMachineDialog({ request }: { request: AddProjectToMachineRe
             </DialogDescription>
           </DialogHeader>
           <DialogPanel>
-            <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-4">
-              <div className="flex min-w-0 flex-col gap-1">
+            <div className="flex items-center gap-4">
+              <div className="flex min-w-0 flex-1 flex-col gap-1">
                 <span className="flex min-w-0 items-center gap-1.5 font-medium text-sm">
                   <EnvironmentMachineIcon
                     kind={resolveEnvironmentMachineKind(source?.serverConfig ?? null)}
@@ -233,8 +233,8 @@ function AddProjectToMachineDialog({ request }: { request: AddProjectToMachineRe
                   <MiddleTruncate value={project?.workspaceRoot ?? ""} />
                 </span>
               </div>
-              <ArrowRightIcon className="size-4 text-muted-foreground" aria-hidden />
-              <div className="flex min-w-0 flex-col gap-1">
+              <ArrowRightIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+              <div className="flex min-w-0 max-w-1/2 flex-col items-end gap-1">
                 {targets.length > 1 ? (
                   <Select
                     value={target?.environmentId ?? null}
@@ -268,7 +268,7 @@ function AddProjectToMachineDialog({ request }: { request: AddProjectToMachineRe
                     <span className="truncate">{target?.label ?? "No machine available"}</span>
                   </span>
                 )}
-                <span className="flex min-w-0 font-mono text-muted-foreground text-xs">
+                <span className="flex min-w-0 max-w-full font-mono text-muted-foreground text-xs">
                   <MiddleTruncate value={destinationPath} />
                 </span>
               </div>
