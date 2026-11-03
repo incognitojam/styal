@@ -6,6 +6,7 @@ import {
   findMessageZone,
   type MentionedTimeAnchor,
   resolveMentionedTime,
+  tableColumnHoldsDurations,
 } from "./mentionedTimes.ts";
 
 function matchedText(text: string): string[] {
@@ -53,6 +54,10 @@ describe("findMentionedTimes", () => {
     ],
     ["Yes, about 5 hours and 19 minutes ago.", ["about 5 hours and 19 minutes ago"]],
     ["I'll check back in about five minutes.", ["in about five minutes"]],
+    ["the build that took ages finished at 17:25", ["17:25"]],
+    ["the call lasted until 17:25", ["17:25"]],
+    ["the call took 17:25 UTC", ["17:25 UTC"]],
+    ["the build failed in 16:11 UTC", ["16:11 UTC"]],
   ])("finds the time in %j", (text, expected) => {
     expect(matchedText(text)).toEqual(expected);
   });
@@ -73,6 +78,12 @@ describe("findMentionedTimes", () => {
     ['labels such as "5 min ago" and "2 hours ago"'],
     ["the run took 1 hour"],
     ["rated at 300 PM2.5"],
+    ["the call took 17:25"],
+    ["the call lasted 17:25 in total"],
+    ["Length: 17:25"],
+    ["a runtime of 17:25:03"],
+    ["Duration is 12:40."],
+    ["88 passed, 1 skipped in 16:11."],
   ])("finds no time in %j", (text) => {
     expect(matchedText(text)).toEqual([]);
   });
@@ -128,6 +139,29 @@ describe("findMentionedTimes", () => {
       "2026-10-01T18:32:31.000Z",
       "2026-10-01T18:34:27.000Z",
     ]);
+  });
+});
+
+describe("tableColumnHoldsDurations", () => {
+  it.each([
+    ["Length", ["0:02", "17:25"], true],
+    ["Time taken", ["17:25"], true],
+    ["Wall time", ["17:25"], true],
+    ["", ["17:25", "44:08"], true],
+    ["Call", ["17:25", "28:18"], true],
+    ["Time", ["9:05", "17:25"], false],
+    ["Started", ["17:25", "44:08"], false],
+    ["Call", ["4:15", "17:25"], false],
+    ["Recording", ["17:25", "09:00"], false],
+  ])("reads the %j column of %j as durations: %s", (header, cells, expected) => {
+    expect(tableColumnHoldsDurations(header, cells)).toBe(expected);
+  });
+
+  it("keeps a time with a zone, date, or am/pm in a column of durations", () => {
+    for (const text of ["17:25 UTC", "yesterday at 17:25", "5:25 pm"]) {
+      expect(findMentionedTimes(text, { durations: true })).toHaveLength(1);
+    }
+    expect(findMentionedTimes("17:25", { durations: true })).toEqual([]);
   });
 });
 
