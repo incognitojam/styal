@@ -53,6 +53,7 @@ const makeHarness = Effect.fn("test.make_self_update_harness")(function* (
   const path = yield* Path.Path;
   const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-self-update-test-" });
   const order: string[] = [];
+  const urls: string[] = [];
   const runner = ProcessRunner.ProcessRunner.of({
     run: (input) =>
       Effect.gen(function* () {
@@ -131,7 +132,8 @@ const makeHarness = Effect.fn("test.make_self_update_harness")(function* (
   ).join("");
   const httpClient = HttpClient.make((request) =>
     Effect.gen(function* () {
-      if (request.url.endsWith("/SHA256SUMS")) {
+      urls.push(request.url);
+      if (new URL(request.url).pathname.endsWith("/SHA256SUMS")) {
         return HttpClientResponse.fromWeb(
           request,
           new Response(`${checksum}  styal-1.1.0-linux-x64.tar.gz\n`),
@@ -166,7 +168,7 @@ const makeHarness = Effect.fn("test.make_self_update_harness")(function* (
       ),
     ),
   );
-  return { selfUpdate, order };
+  return { selfUpdate, order, urls };
 });
 
 it.layer(NodeServices.layer)("server self update", (it) => {
@@ -331,11 +333,17 @@ it.layer(NodeServices.layer)("server self update", (it) => {
 
   it.effect("lets a user start an update, but only to stable without nightly", () =>
     Effect.gen(function* () {
-      const { selfUpdate, order } = yield* makeHarness({
+      const { selfUpdate, order, urls } = yield* makeHarness({
         policy: {
           schemaVersion: 1,
           organization: "Example Corp",
-          limits: { updates: { mode: "auto", allowNightly: false } },
+          limits: {
+            updates: {
+              mode: "auto",
+              allowNightly: false,
+              feedUrl: "https://updates.example.com/t3code/?token=abc",
+            },
+          },
         },
       });
       expect(
@@ -343,7 +351,19 @@ it.layer(NodeServices.layer)("server self update", (it) => {
           .reason,
       ).toBe("Example Corp manages styal updates. Only stable releases can be installed.");
       expect(order).toEqual([]);
-      expect((yield* selfUpdate.update({ targetVersion: "1.1.0" })).updateId).toBe("launcher-id");
+      expect(urls).toEqual([]);
+      // The mirror lists only 1.1.0's archive.
+      expect((yield* selfUpdate.update({ targetVersion: "1.2.0" }).pipe(Effect.flip)).reason).toBe(
+        "Example Corp's update mirror has no @styal/cli@1.2.0 for this machine.",
+      );
+      expect(
+        (yield* selfUpdate.update({ targetVersion: "1.1.0", channel: "latest" })).updateId,
+      ).toBe("launcher-id");
+      // The release comes from the policy's mirror, not GitHub.
+      expect(urls.length).toBeGreaterThan(0);
+      for (const url of urls)
+        expect(url).toMatch(/^https:\/\/updates\.example\.com\/t3code\/v1\.[12]\.0\//);
+      expect(urls.every((url) => new URL(url).search === "?token=abc")).toBe(true);
     }),
   );
 

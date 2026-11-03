@@ -250,9 +250,13 @@ starts the binary you set.
 
 - `mode`: `auto` keeps the normal update flow. `off` stops styal from checking for updates, for
   machines that get styal through device management.
-- `feedUrl`: the desktop app updates from your own mirror of the release feed instead of GitHub.
-  Publish only the versions you have approved. The `styal` command-line server updates through npm,
-  so pin it with your package tooling.
+- `feedUrl`: styal updates from your own mirror instead of GitHub: the desktop app, `styal update`,
+  and updates started from another device. Publish only the versions you have approved, laid out
+  as on a GitHub release. The release's update files (`latest.yml`, `latest-mac.yml`,
+  `latest-linux.yml`, `latest-linux-arm64.yml`, and their `nightly` versions if you allow nightly)
+  and the desktop installers they list go at the URL's root. The release's `styal-*` archives and
+  `SHA256SUMS` go under `v<version>/`. A `@styal/cli` run through `npx` comes from npm, so pin it with your
+  package tooling.
 - `allowNightly: false`: the nightly channel is unavailable.
 
 These limits cover styal itself. Any of them also stops the desktop app installing pull request
