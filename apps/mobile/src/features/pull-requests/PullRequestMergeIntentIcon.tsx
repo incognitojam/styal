@@ -11,7 +11,7 @@ export function PullRequestMergeIntentIcon({
     <View className="relative">
       <SymbolView {...symbol} />
       {mergeIntent ? (
-        <View className="absolute -top-0.5 -right-0.5 size-1 rounded-full bg-adaptive-emerald-600-400" />
+        <View className="absolute -top-0.5 -right-0.5 size-1 rounded-full bg-adaptive-violet-600-400" />
       ) : null}
     </View>
   );
