@@ -3923,7 +3923,7 @@ function gatewayCooldownResetAt(
 
 function providerFailureFromResult(
   message: SDKResultMessage,
-  completedAt: DateTime.Utc,
+  receivedAt: DateTime.Utc,
   failureHint?: string,
   usageLimited = false,
 ): OrchestrationV2ProviderFailure | null {
@@ -3937,7 +3937,7 @@ function providerFailureFromResult(
           /^API Error: 503 \[[^\]\r\n]+\] \[429\]: \{"type":"error","error":\{"type":"rate_limit_error",[^\r\n]*\} \(reset after (?:(\d+)h ?)?(?:(\d+)m ?)?(?:(\d+)s)?\)/.exec(
             message.result,
           ),
-          completedAt,
+          receivedAt,
         )
       : undefined;
   if (gatewayResetAt !== undefined) {
@@ -3981,7 +3981,7 @@ function providerFailureFromResult(
     apiErrorStatus === 429 && message.result.startsWith("API Error:")
       ? gatewayCooldownResetAt(
           /\(reset after (?:(\d+)h ?)?(?:(\d+)m ?)?(?:(\d+)s)?\)/.exec(message.result),
-          completedAt,
+          receivedAt,
         )
       : undefined;
   return makeProviderFailure({
@@ -5028,6 +5028,8 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
         const pendingSubagentFramesByToolUseId = yield* Ref.make(
           new Map<string, ReadonlyArray<SDKMessage>>(),
         );
+        // A gateway's relative reset counts from the result's arrival, not its replay.
+        const bufferedResultArrivals = new WeakMap<SDKMessage, DateTime.Utc>();
         const wakeBuffers = yield* Ref.make(
           new Map<
             string,
@@ -8403,6 +8405,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               childThreadId: registered?.childThreadId,
             });
           }
+          if (message.type === "result") {
+            bufferedResultArrivals.set(message, yield* DateTime.now);
+          }
           yield* Ref.update(wakeBuffers, (current) => {
             const existing = current.get(wakeInput.nativeThreadId);
             const updated = new Map(current);
@@ -10005,7 +10010,12 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                     message: limitedCompaction.message ?? failureHint,
                     code: "compaction_failed",
                   })
-                : providerFailureFromResult(message, completedAt, failureHint, usageLimited);
+                : providerFailureFromResult(
+                    message,
+                    bufferedResultArrivals.get(message) ?? completedAt,
+                    failureHint,
+                    usageLimited,
+                  );
             const signInRequired =
               !permissionDenied &&
               (context.authenticationFailureMessage !== undefined ||
