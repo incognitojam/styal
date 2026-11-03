@@ -1068,10 +1068,9 @@ function acpMcpFallbackInput(value: string | undefined): Record<string, unknown>
   return undefined;
 }
 
-// The server is injected as "styal", or "t3-code" for older sessions. Known T3 inventory gates
-// matches, so server-name separators can stay loose.
+// Known tool inventory gates matches for styal and legacy t3-code; Kiro titles "@<server>/<tool>".
 const T3_MCP_TITLE_CALL =
-  /^(?:mcp[-_]{1,2})?(?:t3[-_ ]?code|styal)[-_.:/ ]{1,3}(?<tool>[A-Za-z0-9][A-Za-z0-9_.-]*)(?::.*)?$/i;
+  /^(?:@|mcp[-_]{1,2})?(?:t3[-_ ]?code|styal)[-_.:/ ]{1,3}(?<tool>[A-Za-z0-9][A-Za-z0-9_.-]*)(?::.*)?$/i;
 
 const T3_MCP_TITLE_SUFFIX_CALL =
   /^(?<tool>[A-Za-z0-9][A-Za-z0-9_.-]*?)(?: \((?:t3[-_ ]?code|styal) MCP Server\)(?::|$)|[-_.](?:t3[-_ ]?code|styal)$)/i;
