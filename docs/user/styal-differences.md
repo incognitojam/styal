@@ -318,6 +318,12 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 - **Complete conversation export.** Copy a thread's user and assistant messages as Markdown,
   including history that is not currently loaded in the view.
   [Transcripts](./thread-sidebar.md#copying-a-transcript).
+- **Paths that open nothing stay plain code.** A path an agent writes in code formatting
+  becomes a file chip only when it exists or, when shortened, matches one project file; otherwise
+  it stays plain code instead of a chip that opens a missing file. Compared with
+  [T3 Code revision 3ddd398](https://github.com/pingdotgg/t3code/tree/3ddd3989e03e44c0106c6e3e44033a2f5b8b50ae),
+  checked November 3, 2026, which turns every path-like span into a chip.
+  [Reading the chat timeline](./chat-timeline.md).
 - **Floating previews stay out of the way of your text.** A floating browser or device preview
   can sit anywhere over the conversation, and moving or resizing it never shifts or narrows the
   messages or the composer. It still keeps clear of the composer and the thread details card.
