@@ -29,7 +29,7 @@ jobs:
     name: Validate promotion candidate
     if: github.repository == 'incognitojam/styal' && github.event.workflow_run.event == 'push' && github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     outputs:
       base_sha: ${{ steps.candidate.outputs.base_sha }}
       candidate_branch: ${{ steps.candidate.outputs.candidate_branch }}
@@ -180,8 +180,10 @@ jobs:
             echo "**${lane}**: $reason"
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # Informational only: its own timeout keeps a slow report from cancelling the job.
       - name: Report projected upstream lag
         continue-on-error: true
+        timeout-minutes: 4
         env:
           GH_TOKEN: ${{ github.token }}
           CANDIDATE_SHA: ${{ steps.candidate.outputs.candidate_sha }}
