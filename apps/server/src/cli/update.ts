@@ -619,8 +619,15 @@ export const runUpdate = Effect.fn("cli.update.run")(function* (input: {
       `  Background service still running ${serviceVersion ?? "an unknown version"}. Run \`npx @styal/cli@${targetVersion} service update\` to migrate it when you are ready to restart.`,
     );
   } else if (serviceInstalled) {
+    // A pending restart means the service already points at serviceVersion but runs an older one.
+    const running =
+      serviceVersion === undefined
+        ? "an unknown version"
+        : restartPending
+          ? `the version before ${serviceVersion}`
+          : serviceVersion;
     yield* Console.log(
-      `  Background service still running ${serviceVersion ?? "an unknown version"}. Run \`styal service restart\` when you are ready to switch it to ${targetVersion}.`,
+      `  Background service still running ${running}. Run \`styal service restart\` when you are ready to switch it to ${targetVersion}.`,
     );
   } else if (status.installed && !servesThisHome) {
     yield* Console.log(
