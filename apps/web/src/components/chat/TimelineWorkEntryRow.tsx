@@ -13,6 +13,7 @@ import {
 } from "@t3tools/contracts";
 import { useCommandOutput } from "~/state/queries";
 import { Badge } from "../ui/badge";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { DiffStatLabel, hasNonZeroStat } from "./DiffStatLabel";
 import { AttachmentImage } from "../media/AttachmentImage";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
@@ -21,6 +22,7 @@ import { notificationChildThreadId } from "@t3tools/client-runtime/state/thread-
 import {
   resolveViewedImageAsset,
   resolveWorkEntryToolPresentation,
+  workEntryToolRefusalSummary,
   workEntryViewedImagePath,
 } from "@t3tools/client-runtime/work-log/presentation";
 import {
@@ -36,6 +38,7 @@ import {
 } from "../../session-logic";
 import ChatMarkdown from "../ChatMarkdown";
 import { ChatMarkdownAssetImage } from "./ChatMarkdownMedia";
+import { runtimeModeConfig } from "./runtimeModeConfig";
 import {
   CheckIcon,
   ChevronRightIcon,
@@ -209,6 +212,7 @@ const CommandOutputExpandedBody = memo(function CommandOutputExpandedBody(props:
 });
 
 const stopRowToggle = (e: { stopPropagation: () => void }) => e.stopPropagation();
+const AutoModeIcon = runtimeModeConfig.auto.icon;
 
 export function ReasoningTraceContent({ entries }: { entries: ReadonlyArray<TimelineWorkEntry> }) {
   const ctx = use(TimelineRowCtx);
@@ -406,6 +410,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
     workEntry.questionAnswer && hasQuestionAnswer(workEntry.questionAnswer)
       ? getQuestionAnswerPreview(workEntry.questionAnswer)
       : null;
+  const refusalSummary = answerPreview ? null : workEntryToolRefusalSummary(workEntry);
   const fileChangeStat =
     workEntry.fileChangeStat && hasNonZeroStat(workEntry.fileChangeStat)
       ? workEntry.fileChangeStat
@@ -499,9 +504,11 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
   const accessiblePreview = [threadLabel?.text ?? previewText, answerPreview ?? setupActionStatus]
     .filter(Boolean)
     .join(": ");
-  const accessibleDisplayText = showFailedIndicator
-    ? `${accessiblePreview}, tool call failed`
-    : accessiblePreview;
+  const accessibleDisplayText = refusalSummary
+    ? `${accessiblePreview}, ${refusalSummary}`
+    : showFailedIndicator
+      ? `${accessiblePreview}, tool call failed`
+      : accessiblePreview;
   const rowToggleProps = canExpandProjectedItem
     ? {
         role: "button" as const,
@@ -656,7 +663,21 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
               Open subagent
             </InlineButton>
           ) : null}
+          {refusalSummary ? (
+            <Tooltip>
+              <TooltipTrigger render={<span aria-hidden className="flex shrink-0" />}>
+                <Badge variant="secondary" size="sm">
+                  {workEntry.structuredPayload?.toolDenial?.source === "auto_mode" ? (
+                    <AutoModeIcon aria-hidden />
+                  ) : null}
+                  Blocked
+                </Badge>
+              </TooltipTrigger>
+              <TooltipPopup side="top">{refusalSummary}</TooltipPopup>
+            </Tooltip>
+          ) : null}
           {showFailedIndicator &&
+          !refusalSummary &&
           !showDestructiveRowStyle &&
           !statusMark &&
           !toolIconAcceptsTint(entryToolIcon) ? (

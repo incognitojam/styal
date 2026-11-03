@@ -4681,6 +4681,11 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
         const backgroundedSubagentTaskIds = yield* Ref.make<ReadonlySet<string>>(new Set());
         // Nested subagent completions notify their owner and never wake the root.
         const nestedSubagentTaskIds = yield* Ref.make<ReadonlySet<string>>(new Set());
+        // permission_denied arrives before the tool_result that settles the denied call, and
+        // only for calls refused without asking, never for approvals the user declined.
+        const toolDenials = yield* Ref.make<
+          ReadonlyMap<string, { readonly classifier: boolean; readonly reason?: string }>
+        >(new Map());
         const isNestedSubagentTask = (taskId: string) =>
           Ref.get(nestedSubagentTaskIds).pipe(Effect.map((ids) => ids.has(taskId)));
         const recordWakeReport = (
@@ -5482,6 +5487,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           readonly updatedAt: DateTime.Utc;
           readonly presentation: ClaudeToolPresentation | undefined;
           readonly toolNonExecutionKind?: string;
+          readonly toolDenial?: OrchestrationV2TurnItem["toolDenial"];
         }) => {
           const completedAt = input.status === "running" ? null : input.updatedAt;
           const nodeId = idAllocator.derive.nodeFromProviderItem({
@@ -5533,6 +5539,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             ...(input.toolNonExecutionKind === undefined
               ? {}
               : { toolNonExecutionKind: input.toolNonExecutionKind }),
+            ...(input.toolDenial === undefined ? {} : { toolDenial: input.toolDenial }),
             id: turnItemId,
             threadId: input.threadId,
             runId: input.runId,
@@ -6894,6 +6901,24 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             input.message,
             input.toolResult.tool_use_id,
           );
+          const denials = yield* Ref.get(toolDenials);
+          const denial = denials.get(input.toolResult.tool_use_id);
+          if (denial !== undefined) {
+            yield* Ref.set(
+              toolDenials,
+              new Map([...denials].filter(([id]) => id !== input.toolResult.tool_use_id)),
+            );
+          }
+          const toolDenial: OrchestrationV2TurnItem["toolDenial"] =
+            denial === undefined
+              ? undefined
+              : {
+                  source:
+                    denial.classifier || toolNonExecutionKind?.startsWith("automode-") === true
+                      ? "auto_mode"
+                      : "settings",
+                  ...(denial.reason === undefined ? {} : { reason: denial.reason }),
+                };
           let artifacts = buildToolCallArtifacts({
             context: input.context,
             nativeItemId: toolCall.nativeItemId,
@@ -6913,6 +6938,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                   ? "failed"
                   : "completed",
             ...(toolNonExecutionKind === undefined ? {} : { toolNonExecutionKind }),
+            ...(toolDenial === undefined ? {} : { toolDenial }),
             startedAt: toolCall.startedAt,
             updatedAt: input.completedAt,
             presentation: toolCall.presentation,
@@ -8218,6 +8244,17 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           const message = input.message;
           // Track before routing: idle-wake Monitors report tasks before replaying their tool calls.
           yield* trackClaudeMonitorCalls(message);
+          if (message.type === "system" && message.subtype === "permission_denied") {
+            const reason = NodeUtil.stripVTControlCharacters(message.decision_reason ?? "").trim();
+            const classifier = message.decision_reason_type === "classifier";
+            yield* Ref.update(toolDenials, (current) =>
+              new Map(current).set(
+                message.tool_use_id,
+                reason === "" ? { classifier } : { classifier, reason },
+              ),
+            );
+            return;
+          }
           // Update before routing because the idle wake gate reads this.
           if (
             message.type === "system" &&

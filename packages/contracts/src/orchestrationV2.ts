@@ -1456,6 +1456,13 @@ const OrchestrationV2TurnItemBaseFields = {
   legacyTurnId: Schema.optional(Schema.String),
   legacyActivities: Schema.optional(Schema.Array(OrchestrationV2LegacyActivity)),
   toolNonExecutionKind: Schema.optional(Schema.String),
+  /** Set when the provider refused the tool call without asking, such as an Auto mode block. */
+  toolDenial: Schema.optional(
+    Schema.Struct({
+      source: Schema.Literals(["auto_mode", "settings"]),
+      reason: Schema.optional(Schema.String),
+    }),
+  ),
   toolSurface: Schema.optional(ToolActivitySurface),
   toolIcon: Schema.optional(ToolActivityIcon),
   toolSource: Schema.optional(ToolActivitySource),

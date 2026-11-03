@@ -102,6 +102,12 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   [revision 30afc56](https://github.com/pingdotgg/t3code/tree/30afc56076c86580d5d913897280bea660d44c79).
   [Permission modes](./permission-modes.md).
 
+- **Blocked Claude actions say why.** When Claude's Auto mode review or permission settings stop a
+  tool call without asking, the conversation marks it blocked, with Claude's reason when it gives
+  one. T3 Code shows these as failed tool calls as of
+  [revision 0847a44](https://github.com/pingdotgg/t3code/tree/0847a448fdca5a688720050ca706cbbd37e6347e).
+  [Permission modes](./permission-modes.md#provider-differences).
+
 - **Separate Gemini model and reasoning choices.** Antigravity lists each Gemini generation once,
   with a separate reasoning effort control. Existing threads retain their selected effort.
   T3 Code lists thinking variants as separate models as of

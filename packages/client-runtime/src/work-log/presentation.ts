@@ -417,6 +417,19 @@ function workEntryIndicatesToolFailureFromOutput(
   return output.length > 0 && toolOutputIndicatesFailure(output);
 }
 
+/** Why the provider refused a tool call without running it, or null when it ran. */
+export function workEntryToolRefusalSummary(
+  entry: Pick<WorkLogPresentationEntry, "structuredPayload">,
+): string | null {
+  const item = entry.structuredPayload;
+  const denial = item?.toolDenial;
+  if (denial === undefined) return null;
+  const summary =
+    denial.source === "auto_mode" ? "Blocked by Auto mode" : "Blocked by permission settings";
+  const reason = denial.reason?.trim();
+  return reason ? `${summary}: ${reason}` : summary;
+}
+
 export function workEntryIndicatesToolFailure(entry: WorkLogPresentationEntry): boolean {
   return workEntryIndicatesToolFailureFromOutput(entry, true);
 }

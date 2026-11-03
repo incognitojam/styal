@@ -5053,6 +5053,83 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       ),
   );
 
+  it.effect("keeps the provider's reason on a tool call it refused without running", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const harness = yield* makeWakeHarness;
+        yield* harness.runtime.startTurn(
+          makeClaudeTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: harness.providerThread,
+            now: yield* DateTime.now,
+            attemptId: RunAttemptId.make("attempt-tool-denial-reason"),
+            text: "Run the tools.",
+            attachments: [],
+          }),
+        );
+        const denied = (toolUseId: string, decisionReason?: string) =>
+          harness.offerAndWait(
+            claudeSdkFrame({
+              type: "system",
+              subtype: "permission_denied",
+              uuid: `denied-${toolUseId}`,
+              session_id: WAKE_NATIVE_SESSION,
+              tool_name: "Bash",
+              tool_use_id: toolUseId,
+              ...(decisionReason === undefined ? {} : { decision_reason: decisionReason }),
+              message: "Permission denied.",
+            }),
+          );
+        yield* denied("tool-classifier", "\u001b[1mExternal System Writes\u001b[0m ");
+        yield* denied("tool-rule");
+        yield* harness.offerAndWait(
+          claudeSdkFrame({
+            type: "user",
+            uuid: "tool-denials",
+            session_id: WAKE_NATIVE_SESSION,
+            parent_tool_use_id: null,
+            message: {
+              role: "user",
+              content: ["tool-classifier", "tool-rule", "tool-declined"].map((id) => ({
+                type: "tool_result",
+                tool_use_id: id,
+                is_error: true,
+                content: "Permission denied.",
+              })),
+            },
+            tool_result_meta: [
+              { id: "tool-classifier", non_execution_kind: "automode-blocked" },
+              { id: "tool-rule", non_execution_kind: "permission-rule" },
+              // Claude Code stamps an approval the user declined the same way as a deny rule.
+              { id: "tool-declined", non_execution_kind: "permission-rule" },
+            ],
+          }),
+        );
+        yield* Queue.offer(
+          harness.sdkMessages,
+          makeResultFrame({ uuid: "result-denials", result: "Done" }),
+        );
+        yield* Queue.take(harness.terminalReceipts);
+        const latest = (nativeId: string) =>
+          harness.events
+            .flatMap((event) => (event.type === "turn_item.updated" ? [event.turnItem] : []))
+            .findLast((item) => item.nativeItemRef?.nativeId === nativeId);
+        assert.deepEqual(latest("tool-classifier")?.toolDenial, {
+          source: "auto_mode",
+          reason: "External System Writes",
+        });
+        assert.deepEqual(latest("tool-rule")?.toolDenial, { source: "settings" });
+        const declined = latest("tool-declined");
+        assert.equal(declined?.toolNonExecutionKind, "permission-rule");
+        assert.equal(declined?.toolDenial, undefined);
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+        ),
+      ),
+    ),
+  );
+
   it.effect.each(
     (["aborted_tools", "aborted_streaming"] as const).flatMap((terminalReason) =>
       [true, false].map((steered) => ({ terminalReason, steered })),
