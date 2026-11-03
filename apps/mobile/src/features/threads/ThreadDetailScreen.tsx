@@ -358,17 +358,18 @@ const COMPOSER_HEIGHT_SETTLE_MS = 220;
 // Anchors, the submitted message, follow state and pending scrolls belong to
 // one thread, so the body remounts when the thread changes.
 export function ThreadDetailScreen(props: ThreadDetailScreenProps) {
+  const project = useProject(scopeProjectRef(props.environmentId, props.selectedThread.projectId));
   return (
-    <ThreadDetailBody
-      key={scopedThreadKey(props.environmentId, props.selectedThread.id)}
-      {...props}
-    />
+    <ThreadGithubRepositoryContext value={githubRepositoryOf(project?.repositoryIdentity)}>
+      <ThreadDetailBody
+        key={scopedThreadKey(props.environmentId, props.selectedThread.id)}
+        {...props}
+      />
+    </ThreadGithubRepositoryContext>
   );
 }
 
 function ThreadDetailBody(props: ThreadDetailScreenProps) {
-  const project = useProject(scopeProjectRef(props.environmentId, props.selectedThread.projectId));
-  const githubRepository = githubRepositoryOf(project?.repositoryIdentity);
   const usesNativeWorkspaceColumns = useNativeWorkspaceColumnsSupported();
   const deviceType = useDeviceType();
   const workspace = useWorkspaceTabs();
@@ -1313,52 +1314,50 @@ function ThreadDetailBody(props: ThreadDetailScreenProps) {
               />
             )}
           >
-            <ThreadGithubRepositoryContext value={githubRepository}>
-              <ThreadFeed
-                environmentId={props.environmentId}
-                threadId={props.selectedThread.id}
-                detailRef={props.selectedThreadDetailRef}
-                workspaceRoot={props.threadCwd}
-                feed={props.selectedThreadFeed}
-                turnUsageByTurnId={props.turnUsageByTurnId}
-                pendingHandoff={props.pendingHandoff}
-                worktreeSetup={props.worktreeSetup}
-                setupWorkingStartedAt={props.setupWorkingStartedAt}
-                queuedMessages={props.queuedMessages}
-                dispatchingMessageId={props.dispatchingMessageId}
-                // A native subagent has no composer to edit a pending message in;
-                // Cancel on the edit banner would discard it.
-                onEditPendingMessage={isProviderSubagent ? null : handleEditPendingMessage}
-                contentPresentation={props.contentPresentation}
-                agentLabel={agentLabel}
-                threadTitle={props.selectedThread.title}
-                latestRun={props.activityRun}
-                activeWorkStartedAt={props.activeWorkStartedAt}
-                runlessWorkActive={props.runlessWorkActive ?? false}
-                listRef={listRef}
-                freeze={freeze}
-                anchorMessageId={anchorMessageId}
-                jumpToMessageId={jumpMessageLoaded ? jumpMessageId : null}
-                onJumpedToMessage={() => finishThreadMessageJump(selectedThreadKey)}
-                ref={feedRef}
-                contentInsetEndAdjustment={combinedContentInsetEndAdjustment}
-                keyboardOffset={composerKeyboardOffset}
-                contentTopInset={0}
-                contentBottomInset={
-                  estimatedOverlayHeight +
-                  (showFloatingStatus ? FLOATING_WORKING_CONTROL_COVERAGE : 0)
-                }
-                contentMaxWidth={contentMaxWidth}
-                historyControls={props.historyControls}
-                contentSideInsets={nativeMetrics?.safeArea}
-                layoutVariant={layoutVariant}
-                usesAutomaticContentInsets={props.usesAutomaticContentInsets}
-                onHeaderMaterialVisibilityChange={props.onHeaderMaterialVisibilityChange}
-                onEndFollowEnabledChange={handleEndFollowEnabledChange}
-                skills={selectedProviderSkills}
-                onUseArtifactTemplate={handleUseArtifactTemplate}
-              />
-            </ThreadGithubRepositoryContext>
+            <ThreadFeed
+              environmentId={props.environmentId}
+              threadId={props.selectedThread.id}
+              detailRef={props.selectedThreadDetailRef}
+              workspaceRoot={props.threadCwd}
+              feed={props.selectedThreadFeed}
+              turnUsageByTurnId={props.turnUsageByTurnId}
+              pendingHandoff={props.pendingHandoff}
+              worktreeSetup={props.worktreeSetup}
+              setupWorkingStartedAt={props.setupWorkingStartedAt}
+              queuedMessages={props.queuedMessages}
+              dispatchingMessageId={props.dispatchingMessageId}
+              // A native subagent has no composer to edit a pending message in;
+              // Cancel on the edit banner would discard it.
+              onEditPendingMessage={isProviderSubagent ? null : handleEditPendingMessage}
+              contentPresentation={props.contentPresentation}
+              agentLabel={agentLabel}
+              threadTitle={props.selectedThread.title}
+              latestRun={props.activityRun}
+              activeWorkStartedAt={props.activeWorkStartedAt}
+              runlessWorkActive={props.runlessWorkActive ?? false}
+              listRef={listRef}
+              freeze={freeze}
+              anchorMessageId={anchorMessageId}
+              jumpToMessageId={jumpMessageLoaded ? jumpMessageId : null}
+              onJumpedToMessage={() => finishThreadMessageJump(selectedThreadKey)}
+              ref={feedRef}
+              contentInsetEndAdjustment={combinedContentInsetEndAdjustment}
+              keyboardOffset={composerKeyboardOffset}
+              contentTopInset={0}
+              contentBottomInset={
+                estimatedOverlayHeight +
+                (showFloatingStatus ? FLOATING_WORKING_CONTROL_COVERAGE : 0)
+              }
+              contentMaxWidth={contentMaxWidth}
+              historyControls={props.historyControls}
+              contentSideInsets={nativeMetrics?.safeArea}
+              layoutVariant={layoutVariant}
+              usesAutomaticContentInsets={props.usesAutomaticContentInsets}
+              onHeaderMaterialVisibilityChange={props.onHeaderMaterialVisibilityChange}
+              onEndFollowEnabledChange={handleEndFollowEnabledChange}
+              skills={selectedProviderSkills}
+              onUseArtifactTemplate={handleUseArtifactTemplate}
+            />
           </RenderErrorBoundary>
         </View>
       ) : (
