@@ -93,7 +93,8 @@ import { parseComposerContextHref } from "@t3tools/shared/composerContextReferen
 import { parseThreadLinkHref } from "@t3tools/shared/threadLinks";
 import { AssistantCitationChip } from "./chat/AssistantCitationChip";
 import { MarkdownThreadLink } from "./chat/MarkdownThreadLink";
-import { githubReferenceUrlLabel, remarkGithubReferences } from "../markdown-github-references";
+import { githubReferenceUrlLabel } from "@t3tools/client-runtime/github-references";
+import { remarkGithubReferences } from "../markdown-github-references";
 import {
   MENTIONED_TIME_PROPERTY,
   readMentionedTime,

@@ -7,11 +7,9 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { CHAT_MARKDOWN_SANITIZE_SCHEMA } from "@t3tools/shared/markdownPipeline";
 
-import {
-  collectGithubReferences,
-  type GithubReferenceContext,
-  remarkGithubReferences,
-} from "./markdown-github-references";
+import type { GithubReferenceContext } from "@t3tools/client-runtime/github-references";
+
+import { collectGithubReferences, remarkGithubReferences } from "./markdown-github-references";
 
 const CONTEXT: GithubReferenceContext = { host: "github.com", repository: "pingdotgg/t3code" };
 

@@ -2508,8 +2508,11 @@ features:
       - GitHub issue, pull request, commit, and repository references resolve against the project remote and become navigable links in chat and pull request Markdown.
       - PR links in descriptions and comments of any tab beside a thread open another tab beside that thread when the repository is available in its environment; Cmd/Ctrl-click retains browser navigation.
       - Reference resolution is environment-scoped, authorized, and cached without leaking repository context across projects.
-      - A bare GitHub issue or pull request URL in chat reads as `#123` in the thread's own repository and `owner/repo#123` elsewhere, keeps its address, hover card, and menu, and copies as the URL. Bare `#123` text in chat stays plain.
+      - A bare GitHub issue or pull request URL in web and mobile chat reads as `#123` in the thread's own repository and `owner/repo#123` elsewhere, keeps its address and tap or click behavior, and copies as the URL. Bare `#123` text in chat stays plain.
     implementation_paths:
+      - apps/mobile/src/features/threads/ThreadDetailScreen.tsx
+      - apps/mobile/src/features/threads/ThreadFeed.tsx
+      - apps/mobile/src/features/threads/githubReferenceUrlLabels.ts
       - apps/server/src/sourceControl/referenceCache.ts
       - apps/web/src/components/ChatMarkdown.tsx
       - apps/web/src/components/ChatView.tsx
@@ -2518,6 +2521,7 @@ features:
       - apps/web/src/components/pullRequest/PullRequestMarkdown.tsx
       - apps/web/src/lib/openPullRequestLink.ts
       - apps/web/src/markdown-github-references.ts
+      - packages/client-runtime/src/githubReferences.ts
       - packages/shared/src/markdownPipeline.ts
       - packages/source-control-github/src/server/GitHubRequestPolicy.ts
       - packages/source-control-github/src/server/gitHubGraphQlClient.ts
@@ -2532,11 +2536,13 @@ features:
       - apps/web/src/lib/openPullRequestLink.ts
       - packages/contracts/src/rpc.ts
     tests:
+      - apps/mobile/src/features/threads/githubReferenceUrlLabels.test.ts
       - apps/server/src/sourceControl/referenceCache.test.ts
       - apps/web/src/components/ChatMarkdown.browser.test.tsx
       - apps/web/src/components/chat/githubReferenceLinks.test.ts
       - apps/web/src/lib/openPullRequestLink.test.ts
       - apps/web/src/markdown-github-references.test.tsx
+      - packages/client-runtime/src/githubReferences.test.ts
       - packages/source-control-github/src/server/gitHubReferences.test.ts
     upstream:
       status: partial

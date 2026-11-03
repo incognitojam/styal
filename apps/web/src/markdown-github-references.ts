@@ -4,16 +4,14 @@
  * chat message plain text.
  */
 
-/** The repository a bare `#123` belongs to, spelled as the repository identity spells it. */
-export interface GithubReferenceContext {
-  readonly host: string;
-  readonly repository: string;
-}
-
-export interface GithubReference {
-  readonly repository: string;
-  readonly number: number;
-}
+import {
+  formatGithubReference,
+  GITHUB_OWNER_PATTERN,
+  GITHUB_REPOSITORY_PATTERN,
+  type GithubReference,
+  type GithubReferenceContext,
+  parseGithubReferenceUrl,
+} from "@t3tools/client-runtime/github-references";
 
 interface MarkdownAstNode {
   type?: string;
@@ -25,38 +23,11 @@ interface MarkdownAstNode {
   children?: MarkdownAstNode[];
 }
 
-const OWNER = "[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?";
-const REPO = "[A-Za-z0-9._-]+";
-
 /** All three shorthands in one pass, so `owner/repo#123` is found before its bare `#123`. */
 const REFERENCE_PATTERN = new RegExp(
-  `(?<!\\w)(?:(?<repository>${OWNER}/${REPO})#|#|GH-)(?<number>[1-9]\\d*)(?!\\w)`,
+  `(?<!\\w)(?:(?<repository>${GITHUB_OWNER_PATTERN}/${GITHUB_REPOSITORY_PATTERN})#|#|GH-)(?<number>[1-9]\\d*)(?!\\w)`,
   "gi",
 );
-
-/** An issue or pull request URL and nothing deeper: `/files` and `/commits` are pages. */
-const REFERENCE_PATHNAME = new RegExp(
-  `^/(?<repository>${OWNER}/${REPO})/(?:pull|issues)/(?<number>[1-9]\\d*)$`,
-  "u",
-);
-
-/** How GitHub names a link into an issue: a review's comment is `(comment)`, the review itself is not. */
-function fragmentSuffix(fragment: string): string {
-  if (fragment.startsWith("#issuecomment-") || fragment.startsWith("#discussion_r")) {
-    return " (comment)";
-  }
-  if (fragment.startsWith("#pullrequestreview-")) return " (review)";
-  return "";
-}
-
-/** `#123` at home, `owner/repo#123` anywhere else. */
-function formatGithubReference(
-  context: GithubReferenceContext,
-  reference: GithubReference,
-): string {
-  const isSameRepository = reference.repository.toLowerCase() === context.repository.toLowerCase();
-  return isSameRepository ? `#${reference.number}` : `${reference.repository}#${reference.number}`;
-}
 
 function githubReferenceHref(context: GithubReferenceContext, reference: GithubReference): string {
   return `https://${context.host}/${reference.repository}/issues/${reference.number}`;
@@ -65,42 +36,6 @@ function githubReferenceHref(context: GithubReferenceContext, reference: GithubR
 /** The marker the renderer reads back off the anchor. */
 export function formatGithubReferenceKey(reference: GithubReference): string {
   return `${reference.repository.toLowerCase()}#${reference.number}`;
-}
-
-/** The reference a URL names, if it names one on this host. */
-function parseGithubReferenceUrl(
-  context: GithubReferenceContext,
-  targetUrl: string,
-): { reference: GithubReference; suffix: string } | null {
-  let url: URL;
-  try {
-    url = new URL(targetUrl);
-  } catch {
-    return null;
-  }
-  if (url.protocol !== "https:" && url.protocol !== "http:") return null;
-  if (url.hostname.toLowerCase() !== context.host.toLowerCase()) return null;
-  if (url.search.length > 0) return null;
-  const match = REFERENCE_PATHNAME.exec(url.pathname);
-  const repository = match?.groups?.repository;
-  const number = Number(match?.groups?.number);
-  if (!repository || !Number.isSafeInteger(number)) return null;
-  return { reference: { repository, number }, suffix: fragmentSuffix(url.hash) };
-}
-
-const GITHUB_DOT_COM: GithubReferenceContext = { host: "github.com", repository: "" };
-
-/**
- * The shorthand GitHub shows for a bare issue or pull request URL. Without a repository every
- * reference names its own, and only github.com is recognised.
- */
-export function githubReferenceUrlLabel(
-  context: GithubReferenceContext | undefined,
-  url: string,
-): string | null {
-  const parsed = parseGithubReferenceUrl(context ?? GITHUB_DOT_COM, url);
-  if (parsed === null) return null;
-  return `${formatGithubReference(context ?? GITHUB_DOT_COM, parsed.reference)}${parsed.suffix}`;
 }
 
 function referenceLink(
