@@ -324,6 +324,8 @@ it.effect("idle compaction filters keep the latest run, live work and the newest
       [2, "completed"],
       [3, "completed"],
       [4, "failed"],
+      // A removed or steered queued message.
+      [5, "cancelled"],
     ] as const) {
       const runId = RunId.make(`run:idle-compaction:${ordinal}`);
       yield* store.apply({
@@ -347,7 +349,7 @@ it.effect("idle compaction filters keep the latest run, live work and the newest
           activeAttemptId: null,
           status,
           requestedAt: now,
-          startedAt: now,
+          startedAt: status === "cancelled" ? null : now,
           completedAt: now,
           checkpointId: null,
           contextHandoffId: null,
@@ -448,7 +450,8 @@ it.effect("idle compaction filters keep the latest run, live work and the newest
         contextTransferStatuses: ["pending"],
       },
     );
-    // The failed latest run stays, so a completed earlier run is not mistaken for the latest.
+    // The failed latest run stays, so a completed earlier run is not mistaken for the latest,
+    // and a cancelled queued run never counts as the latest.
     assert.deepEqual(
       records.runs.map((run) => run.id),
       ["run:idle-compaction:rolled-back", "run:idle-compaction:4"],
