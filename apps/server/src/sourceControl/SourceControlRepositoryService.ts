@@ -857,40 +857,62 @@ export const make = Effect.gen(function* () {
         };
       }
 
-      const pushResult = yield* git.pushCurrentBranch(input.cwd, null, { remoteName }).pipe(
-        Effect.catch((cause) =>
-          Effect.gen(function* () {
-            // Reused remotes, pushurl, and URL rewrites can override the requested transport.
-            const usesSsh = yield* git
+      const push = (pushUrl: string) =>
+        git.pushCurrentBranch(input.cwd, null, { remoteName }).pipe(
+          Effect.map((result) => ({ branch: result.branch, remoteUrl: pushUrl })),
+          Effect.catch((cause) =>
+            Effect.gen(function* () {
+              // Reused remotes, pushurl, and URL rewrites can override the requested transport.
+              const usesSsh = yield* git
+                .execute({
+                  operation: "SourceControlRepositoryService.publishRepository.pushUrl",
+                  cwd: input.cwd,
+                  args: ["remote", "get-url", "--push", "--", remoteName],
+                })
+                .pipe(
+                  Effect.map((result) => isSshRemoteUrl(result.stdout)),
+                  Effect.orElseSucceed(() => false),
+                );
+              return yield* new SourceControlRepositoryError({
+                operation: "publishRepository",
+                provider: providerKind,
+                detail: publishPushFailureDetail({
+                  urls,
+                  remoteName,
+                  usesSsh,
+                  reason: cause.reason,
+                }),
+                cause,
+              });
+            }),
+          ),
+        );
+
+      // Like clone, an auto-selected SSH remote switches to HTTPS when SSH is refused;
+      // otherwise the remote keeps failing every later fetch and push.
+      const canSwitchToHttps = input.protocol !== "ssh" && remoteUrl === urls.sshUrl;
+      const pushed = yield* push(remoteUrl).pipe(
+        Effect.catchIf(
+          (error) => canSwitchToHttps && isSshRejection(error),
+          (sshError) =>
+            git
               .execute({
-                operation: "SourceControlRepositoryService.publishRepository.pushUrl",
+                operation: "SourceControlRepositoryService.publishRepository.switchToHttps",
                 cwd: input.cwd,
-                args: ["remote", "get-url", "--push", "--", remoteName],
+                args: ["remote", "set-url", remoteName, urls.url],
               })
               .pipe(
-                Effect.map((result) => isSshRemoteUrl(result.stdout)),
-                Effect.orElseSucceed(() => false),
-              );
-            return yield* new SourceControlRepositoryError({
-              operation: "publishRepository",
-              provider: providerKind,
-              detail: publishPushFailureDetail({
-                urls,
-                remoteName,
-                usesSsh,
-                reason: cause.reason,
-              }),
-              cause,
-            });
-          }),
+                Effect.mapError(() => sshError),
+                Effect.andThen(push(urls.url)),
+              ),
         ),
       );
 
       return {
         repository: toRepositoryInfo(providerKind, urls),
         remoteName,
-        remoteUrl,
-        branch: pushResult.branch,
+        remoteUrl: pushed.remoteUrl,
+        branch: pushed.branch,
         status: "pushed" as const,
       };
     },
