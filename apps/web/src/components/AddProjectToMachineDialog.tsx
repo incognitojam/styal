@@ -220,8 +220,8 @@ function AddProjectToMachineDialog({ request }: { request: AddProjectToMachineRe
             </DialogDescription>
           </DialogHeader>
           <DialogPanel>
-            <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3">
-              <div className="flex min-w-0 flex-col gap-1">
+            <div className="flex items-center gap-4">
+              <div className="flex min-w-0 flex-1 flex-col gap-1">
                 <span className="flex min-w-0 items-center gap-1.5 font-medium text-sm">
                   <EnvironmentMachineIcon
                     kind={resolveEnvironmentMachineKind(source?.serverConfig ?? null)}
@@ -233,19 +233,8 @@ function AddProjectToMachineDialog({ request }: { request: AddProjectToMachineRe
                   <MiddleTruncate value={project?.workspaceRoot ?? ""} />
                 </span>
               </div>
-              <div className="flex w-28 flex-col items-center gap-0.5 text-muted-foreground text-xs">
-                <span>git clone</span>
-                <span className="flex w-full items-center">
-                  <span className="h-px flex-1 bg-border" />
-                  <ArrowRightIcon className="-ms-1 size-3.5" aria-hidden />
-                </span>
-                <span>
-                  {selectedFiles.size === 0
-                    ? "no files"
-                    : `+ ${selectedFiles.size} ${selectedFiles.size === 1 ? "file" : "files"}`}
-                </span>
-              </div>
-              <div className="flex min-w-0 flex-col gap-1">
+              <ArrowRightIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+              <div className="flex min-w-0 max-w-1/2 flex-col items-end gap-1">
                 {targets.length > 1 ? (
                   <Select
                     value={target?.environmentId ?? null}
@@ -279,7 +268,7 @@ function AddProjectToMachineDialog({ request }: { request: AddProjectToMachineRe
                     <span className="truncate">{target?.label ?? "No machine available"}</span>
                   </span>
                 )}
-                <span className="flex min-w-0 font-mono text-muted-foreground text-xs">
+                <span className="flex min-w-0 max-w-full font-mono text-muted-foreground text-xs">
                   <MiddleTruncate value={destinationPath} />
                 </span>
               </div>
