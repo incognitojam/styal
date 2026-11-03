@@ -4836,7 +4836,7 @@ features:
   - id: pull-request-base-move-freshness
     title: Show sibling pull requests out of date as soon as a merge moves their base
     status: maintained
-    prs: []
+    prs: [1228]
     invariants:
       - When this server sees a pull request merge, through its own merge action or an open-to-merged read, it drops held detail for other open pull requests in the same repository with the same base branch and tells clients to refresh, so an open panel shows them behind without waiting for the detail cache to expire.
       - Summaries and diffs stay cached, and a pull request first seen already merged does not invalidate anything.
