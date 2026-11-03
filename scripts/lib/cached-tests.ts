@@ -101,10 +101,13 @@ export function cachedTestTasks(
           ? false
           : {
               // Vitest reads and rewrites these caches while running otherwise unchanged tests.
+              // Some tests write here; CI creates both directories so parent listings stay stable.
               input: [
                 { auto: true },
                 "!**/node_modules/.vite/**",
                 "!**/node_modules/.vitest-cache/**",
+                "!.scratch/**",
+                "!apps/server/tmp/**",
               ],
               output: [],
             },

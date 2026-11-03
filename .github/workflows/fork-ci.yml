@@ -470,6 +470,10 @@ jobs:
           restore-keys: |
             fork-server-tests-v1-${{ runner.os }}-${{ runner.arch }}-${{ matrix.shard }}-
 
+      # Tests create these in the checkout; a fresh one must list the same entries.
+      - name: Create test scratch directories
+        run: mkdir -p .scratch apps/server/tmp
+
       # --concurrency replaces vitest's --maxWorkers=3. Grouping four files per task
       # keeps Vitest startup from dominating runs that mostly miss.
       - name: Test server
