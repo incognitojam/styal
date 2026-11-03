@@ -38,6 +38,7 @@ import {
 } from "../../session-logic";
 import ChatMarkdown from "../ChatMarkdown";
 import { ChatMarkdownAssetImage } from "./ChatMarkdownMedia";
+import { runtimeModeConfig } from "./runtimeModeConfig";
 import {
   CheckIcon,
   ChevronRightIcon,
@@ -211,6 +212,7 @@ const CommandOutputExpandedBody = memo(function CommandOutputExpandedBody(props:
 });
 
 const stopRowToggle = (e: { stopPropagation: () => void }) => e.stopPropagation();
+const AutoModeIcon = runtimeModeConfig.auto.icon;
 
 export function ReasoningTraceContent({ entries }: { entries: ReadonlyArray<TimelineWorkEntry> }) {
   const ctx = use(TimelineRowCtx);
@@ -665,6 +667,9 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
             <Tooltip>
               <TooltipTrigger render={<span aria-hidden className="flex shrink-0" />}>
                 <Badge variant="secondary" size="sm">
+                  {workEntry.structuredPayload?.toolDenial?.source === "auto_mode" ? (
+                    <AutoModeIcon aria-hidden />
+                  ) : null}
                   Blocked
                 </Badge>
               </TooltipTrigger>
@@ -696,9 +701,6 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
         </>
       }
     >
-      {expanded && refusalSummary ? (
-        <p className="ms-7 pb-1 text-xs text-muted-foreground">{refusalSummary}</p>
-      ) : null}
       {expanded && viewedImage && threadRef ? (
         <WorkLogDetails kind="media">
           <ChatMarkdownAssetImage

@@ -1243,11 +1243,6 @@ const ThreadWorkLogRow = function ThreadWorkLogRow(
             className="max-h-60"
             contentContainerStyle={{ paddingRight: 8 }}
           >
-            {refusalSummary ? (
-              <Text selectable className="mb-1.5 text-2xs leading-normal text-foreground-muted">
-                {refusalSummary}
-              </Text>
-            ) : null}
             {reasoning ? (
               props.renderReasoning(reasoning.text)
             ) : call ? (
