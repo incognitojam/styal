@@ -2484,9 +2484,11 @@ features:
       - GitHub issue, pull request, commit, and repository references resolve against the project remote and become navigable links in chat and pull request Markdown.
       - PR links in descriptions and comments of any tab beside a thread open another tab beside that thread when the repository is available in its environment; Cmd/Ctrl-click retains browser navigation.
       - Reference resolution is environment-scoped, authorized, and cached without leaking repository context across projects.
+      - A bare GitHub issue or pull request URL in chat reads as `#123` in the thread's own repository and `owner/repo#123` elsewhere, keeps its address, hover card, and menu, and copies as the URL. Bare `#123` text in chat stays plain.
     implementation_paths:
       - apps/server/src/sourceControl/referenceCache.ts
       - apps/web/src/components/ChatMarkdown.tsx
+      - apps/web/src/components/ChatView.tsx
       - apps/web/src/components/chat/githubReferenceLinks.ts
       - apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx
       - apps/web/src/components/pullRequest/PullRequestMarkdown.tsx

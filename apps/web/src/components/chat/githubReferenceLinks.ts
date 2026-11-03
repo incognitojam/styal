@@ -5,6 +5,7 @@
  */
 import type {
   EnvironmentId,
+  RepositoryIdentity,
   ScopedThreadRef,
   SourceControlResolvedReference,
 } from "@t3tools/contracts";
@@ -27,6 +28,19 @@ export interface GithubReferenceSurface extends GithubReferenceContext {
 
 /** The thread a pull request surface is mounted beside, told to the bodies it renders. */
 export const GithubReferenceThreadContext = createContext<ScopedThreadRef | undefined>(undefined);
+
+/** The GitHub repository of the thread a chat belongs to, which bare URLs into it are labelled against. */
+export const ChatGithubRepositoryContext = createContext<GithubReferenceContext | undefined>(
+  undefined,
+);
+
+export function githubRepositoryOf(
+  identity: RepositoryIdentity | null | undefined,
+): GithubReferenceContext | undefined {
+  if (identity?.provider !== "github") return undefined;
+  const [host, ...path] = identity.canonicalKey.split("/");
+  return host && path.length === 2 ? { host, repository: path.join("/") } : undefined;
+}
 
 export type GithubReferenceResolution =
   /** No answer: on its way, never asked for, or asked and not given. Nothing is claimed. */

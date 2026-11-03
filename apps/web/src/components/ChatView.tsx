@@ -4,6 +4,7 @@ import { worktreeNeedsFirstCommit } from "@t3tools/client-runtime/state/vcs";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import { ScrollToEndButton, WorkspaceFileDropOverlay } from "./chat/TimelineOverlays";
 import { usePasteToFocusComposer } from "./chat/usePasteToFocusComposer";
+import { ChatGithubRepositoryContext, githubRepositoryOf } from "./chat/githubReferenceLinks";
 import { announcedRun, isDetailBehindShell } from "./chat/threadActivityAnnouncement";
 import {
   deriveAvailableRevertTurnCounts,
@@ -1938,6 +1939,7 @@ export default function ChatView(props: ChatViewProps) {
   });
   // The thread's own change request, placed against the project it belongs to. Without a
   // project there is nothing to resolve it against, so the caller falls back to the browser.
+  const activeGithubRepository = githubRepositoryOf(activeProject?.repositoryIdentity);
   const activeProjectRepository = sourceControlClients.repositorySelector(
     activeProject?.repositoryIdentity,
   );
@@ -4045,7 +4047,9 @@ export default function ChatView(props: ChatViewProps) {
       cwd={activeWorkspaceRoot}
       checkpoints={serverProjection?.checkpoints}
     >
-      {content}
+      <ChatGithubRepositoryContext value={activeGithubRepository}>
+        {content}
+      </ChatGithubRepositoryContext>
     </FileMetadataThreadProvider>
   );
 }
