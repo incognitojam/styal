@@ -93,6 +93,7 @@ import { notificationChildThreadId } from "@t3tools/client-runtime/state/thread-
 import type { MarkdownImageRenderer } from "../../native/SelectableMarkdownText";
 import type { FilePreviewSource } from "../../components/FilePreviewModal";
 import { FilePreviewGallery } from "../../components/FilePreviewGallery";
+import { StatusPill } from "../../components/StatusPill";
 import { ThreadMarkdownImage } from "./ThreadMarkdownImage";
 import Animated, {
   FadeIn,
@@ -1145,9 +1146,6 @@ const ThreadWorkLogRow = function ThreadWorkLogRow(
                   }
                 >{`  ${answerPreview}`}</Text>
               ) : null}
-              {refusalSummary ? (
-                <Text className="text-foreground-subtle">{`  ${refusalSummary}`}</Text>
-              ) : null}
             </WorkLogLabel>
           </>
         )}
@@ -1158,7 +1156,17 @@ const ThreadWorkLogRow = function ThreadWorkLogRow(
               Copied
             </Text>
           ) : null}
-          {failed && toolIcon !== undefined ? (
+          {refusalSummary ? (
+            <View className="pr-1" accessibilityElementsHidden>
+              <StatusPill
+                label="Blocked"
+                pillClassName="bg-subtle"
+                textClassName="text-foreground-secondary"
+                size="compact"
+              />
+            </View>
+          ) : null}
+          {failed && toolIcon !== undefined && !refusalSummary ? (
             <View
               className="h-4 w-4 items-center justify-center"
               accessibilityElementsHidden
@@ -1235,6 +1243,11 @@ const ThreadWorkLogRow = function ThreadWorkLogRow(
             className="max-h-60"
             contentContainerStyle={{ paddingRight: 8 }}
           >
+            {refusalSummary ? (
+              <Text selectable className="mb-1.5 text-2xs leading-normal text-foreground-muted">
+                {refusalSummary}
+              </Text>
+            ) : null}
             {reasoning ? (
               props.renderReasoning(reasoning.text)
             ) : call ? (

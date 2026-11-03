@@ -13,6 +13,7 @@ import {
 } from "@t3tools/contracts";
 import { useCommandOutput } from "~/state/queries";
 import { Badge } from "../ui/badge";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { DiffStatLabel, hasNonZeroStat } from "./DiffStatLabel";
 import { AttachmentImage } from "../media/AttachmentImage";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
@@ -546,7 +547,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
           <p className="flex min-w-0 w-full items-baseline gap-1.5 text-sm leading-relaxed">
             <span
               className={cn(
-                answerPreview || setupActionStatus || refusalSummary ? "min-w-0" : "min-w-0 flex-1",
+                answerPreview || setupActionStatus ? "min-w-0" : "min-w-0 flex-1",
                 "truncate",
                 headingClass,
               )}
@@ -595,11 +596,6 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
                 )}
               >
                 {answerPreview}
-              </span>
-            ) : null}
-            {refusalSummary ? (
-              <span className="min-w-0 max-w-[60%] shrink-0 truncate text-muted-foreground">
-                {refusalSummary}
               </span>
             ) : null}
           </p>
@@ -665,7 +661,18 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
               Open subagent
             </InlineButton>
           ) : null}
+          {refusalSummary ? (
+            <Tooltip>
+              <TooltipTrigger render={<span aria-hidden className="flex shrink-0" />}>
+                <Badge variant="secondary" size="sm">
+                  Blocked
+                </Badge>
+              </TooltipTrigger>
+              <TooltipPopup side="top">{refusalSummary}</TooltipPopup>
+            </Tooltip>
+          ) : null}
           {showFailedIndicator &&
+          !refusalSummary &&
           !showDestructiveRowStyle &&
           !statusMark &&
           !toolIconAcceptsTint(entryToolIcon) ? (
@@ -689,6 +696,9 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
         </>
       }
     >
+      {expanded && refusalSummary ? (
+        <p className="ms-7 pb-1 text-xs text-muted-foreground">{refusalSummary}</p>
+      ) : null}
       {expanded && viewedImage && threadRef ? (
         <WorkLogDetails kind="media">
           <ChatMarkdownAssetImage
