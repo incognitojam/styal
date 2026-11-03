@@ -1,6 +1,6 @@
 import { ProviderDriverKind, TextGenerationError } from "@t3tools/contracts";
 import { KiroSettings } from "../settings.ts";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
@@ -59,7 +59,7 @@ const unsupportedTextGeneration: ProviderTextGeneration = (() => {
 export type KiroDriverEnv =
   | KiroAdapterV2DriverEnv
   | ChildProcessSpawner.ChildProcessSpawner
-  | Crypto.Crypto
+  | SecureRandom.SecureRandom
   | ProviderHost.ProviderHost;
 
 export const KiroDriver: ProviderDriver<KiroSettings, KiroDriverEnv> = {
@@ -79,7 +79,7 @@ export const KiroDriver: ProviderDriver<KiroSettings, KiroDriverEnv> = {
     config,
   }) {
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-    const crypto = yield* Crypto.Crypto;
+    const crypto = yield* SecureRandom.SecureRandom;
     const processEnv = yield* mergeProviderInstanceEnvironment(environment);
     const continuationIdentity = defaultProviderContinuationIdentity({
       driverKind: DRIVER_KIND,
@@ -104,7 +104,7 @@ export const KiroDriver: ProviderDriver<KiroSettings, KiroDriverEnv> = {
       checkProvider: checkKiroProviderStatus(effectiveConfig, processEnv).pipe(
         Effect.map(stampIdentity),
         Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
-        Effect.provideService(Crypto.Crypto, crypto),
+        Effect.provideService(SecureRandom.SecureRandom, crypto),
       ),
     }).pipe(
       Effect.mapError(

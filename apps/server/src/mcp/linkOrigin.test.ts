@@ -127,7 +127,7 @@ const layerTools = Layer.mergeAll(
   McpHttpServer.layerProjectRegistration,
 ).pipe(
   Layer.provide(DocumentText.layer.pipe(Layer.provideMerge(NodeServices.layer))),
-  Layer.provideMerge(McpServer.McpServer.layer),
+  Layer.provideMerge(McpHttpServer.layerInProcessMcpServer),
   Layer.provide(layerLaunches),
   Layer.provide(NodeCrypto.layer),
   Layer.provide(
@@ -333,26 +333,26 @@ it.layer(
             run_scheduled_task_now: ThreadHandlers.declarations.run_scheduled_task_now,
           }),
         ).pipe(
-          Layer.provideMerge(McpServer.McpServer.layer),
+          Layer.provideMerge(McpHttpServer.layerInProcessMcpServer),
           Layer.provide(NodeCrypto.layer),
           Layer.provide(Layer.succeed(ScheduledTaskService.ScheduledTaskService, scheduler)),
-          Layer.provide(
-            Layer.succeed(ThreadManagement.ThreadManagementService, {
-              ...threads,
-              getThreadShell: (id) =>
-                threads
-                  .getThreadShell(id)
-                  .pipe(
-                    Effect.tap(() => (scenario === "raised-after-preflight" ? raise : Effect.void)),
-                  ),
-            }),
-          ),
         );
         const result = yield* call(
           clientScope("auto-caller", false, "auto"),
           "run_scheduled_task_now",
           { taskId: task.id },
-        ).pipe(Effect.provide(registered));
+        ).pipe(
+          Effect.provideService(ThreadManagement.ThreadManagementService, {
+            ...threads,
+            getThreadShell: (id) =>
+              threads
+                .getThreadShell(id)
+                .pipe(
+                  Effect.tap(() => (scenario === "raised-after-preflight" ? raise : Effect.void)),
+                ),
+          }),
+          Effect.provide(registered),
+        );
         if (scenario === "within") {
           assert.equal(result.isError, false, JSON.stringify(result.content));
           assert.equal((result.structuredContent as { threadId: string }).threadId, threadId);

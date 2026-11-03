@@ -242,7 +242,7 @@ export const refusedAtCompileTime = () => {
 
 const probeServer = (threads: Layer.Layer<ThreadManagement.ThreadManagementService>) =>
   McpHttpServer.toolkitRegistration(ProbeToolkit, layerProbeHandlers).pipe(
-    Layer.provideMerge(McpServer.McpServer.layer),
+    Layer.provideMerge(McpHttpServer.layerInProcessMcpServer),
     Layer.provideMerge(threads),
   );
 
@@ -477,7 +477,7 @@ const linkedProbeServer = McpHttpServer.toolkitRegistration(
     writes_environment_auto: McpToolAccess.writesEnvironment(ranHere, { auto: "allowed" }),
   }),
 ).pipe(
-  Layer.provideMerge(McpServer.McpServer.layer),
+  Layer.provideMerge(McpHttpServer.layerInProcessMcpServer),
   Layer.provideMerge(
     Layer.mock(ThreadManagement.ThreadManagementService)({
       getThreadShell: (threadId) => Effect.succeed(shells.get(threadId) ?? null),
@@ -598,7 +598,7 @@ it.effect.each([
           t3_project_create: ProjectHandlers.declarations.t3_project_create,
         }),
       ).pipe(
-        Layer.provideMerge(McpServer.McpServer.layer),
+        Layer.provideMerge(McpHttpServer.layerInProcessMcpServer),
         Layer.provide(Layer.mock(ThreadManagement.ThreadManagementService)({})),
         Layer.provide(
           Layer.mock(ProjectService.ProjectService)({
@@ -651,7 +651,7 @@ it.effect.each([
           run_scheduled_task_now: ThreadHandlers.declarations.run_scheduled_task_now,
         }),
       ).pipe(
-        Layer.provideMerge(McpServer.McpServer.layer),
+        Layer.provideMerge(McpHttpServer.layerInProcessMcpServer),
         Layer.provide(NodeCrypto.layer),
         Layer.provide(Layer.mock(ThreadManagement.ThreadManagementService)({})),
         Layer.provide(
@@ -735,7 +735,7 @@ it.effect.each(
             t3_environment_link: OrchestratorHandlers.handlers.t3_environment_link,
           }),
         ).pipe(
-          Layer.provideMerge(McpServer.McpServer.layer),
+          Layer.provideMerge(McpHttpServer.layerInProcessMcpServer),
           Layer.provide(NodeCrypto.layer),
           Layer.provide(
             Layer.succeed(

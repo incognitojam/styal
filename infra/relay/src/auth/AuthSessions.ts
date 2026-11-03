@@ -1,7 +1,8 @@
 import type { RelayPublicClientId } from "@t3tools/contracts/relay";
 import { and, desc, eq, gt, inArray, lte, sql } from "drizzle-orm";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
@@ -120,10 +121,13 @@ const sessionColumns = {
 
 const make = Effect.gen(function* () {
   const db = yield* RelayDb.RelayDb;
-  const crypto = yield* Crypto.Crypto;
+  const digest = yield* Digest.Digest;
+  const random = yield* SecureRandom.SecureRandom;
   const cleanup = yield* LiveActivityCleanup.make;
   const hashToken = (token: string) =>
-    crypto.digest("SHA-256", new TextEncoder().encode(token)).pipe(Effect.map(Base64Url.encode));
+    digest
+      .digest(Digest.sha256, new TextEncoder().encode(token))
+      .pipe(Effect.map(Base64Url.encode));
 
   // Only the session id and token hash identify the row; the thumbprint must
   // match too, so a copied token is useless without the device's key.
@@ -200,8 +204,8 @@ const make = Effect.gen(function* () {
   return AuthSessions.of({
     create: Effect.fn("relay.auth_sessions.create")(
       function* (input) {
-        const sessionId = toHex(yield* crypto.randomBytes(16));
-        const token = `styal_rt_${sessionId}_${toHex(yield* crypto.randomBytes(32))}`;
+        const sessionId = toHex(yield* random.randomBytes(16));
+        const token = `styal_rt_${sessionId}_${toHex(yield* random.randomBytes(32))}`;
         const now = yield* DateTime.now;
         const tokenHash = yield* hashToken(token);
         yield* db.$client.withTransaction(

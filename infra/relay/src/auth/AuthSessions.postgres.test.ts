@@ -4,7 +4,7 @@ import * as PgClient from "@effect/sql-pg/PgClient";
 import { describe, expect, it } from "@effect/vitest";
 import { eq, sql } from "drizzle-orm";
 import * as PgDrizzle from "drizzle-orm/effect-postgres";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -64,7 +64,7 @@ const fixture = Effect.gen(function* () {
   const db = yield* RelayDb.RelayDb;
   const devices = yield* Devices.Devices;
   const sessions = yield* AuthSessions.AuthSessions;
-  const userId = `usr_test_${yield* (yield* Crypto.Crypto).randomUUIDv4()}`;
+  const userId = `usr_test_${yield* (yield* SecureRandom.SecureRandom).uuidV4()}`;
   yield* Effect.addFinalizer(() =>
     Effect.gen(function* () {
       queueFailures.delete(userId);

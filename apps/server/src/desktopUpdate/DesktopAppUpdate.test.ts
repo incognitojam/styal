@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import {
@@ -161,7 +162,7 @@ const makeHarness = Effect.fn("test.make_desktop_app_update_harness")(function* 
   return { service, confirmations };
 });
 
-it.layer(NodeServices.layer)("desktop app update", (it) => {
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("desktop app update", (it) => {
   it.effect.each([undefined, true] as const)(
     "preserves explicit remote consent through preparation (%s)",
     (confirmed) =>

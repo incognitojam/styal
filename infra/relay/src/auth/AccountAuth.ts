@@ -1,6 +1,6 @@
 import type { RelayDpopAccessTokenScope, RelayPublicClientId } from "@t3tools/contracts/relay";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -177,7 +177,7 @@ export class AccountAuth extends Context.Service<
 
 const make = Effect.gen(function* () {
   const config = yield* RelayConfiguration.RelayConfiguration;
-  const crypto = yield* Crypto.Crypto;
+  const random = yield* SecureRandom.SecureRandom;
   const accounts = yield* Accounts.Accounts;
   const directory = yield* ClerkDirectory.ClerkDirectory;
   const sessions = yield* AuthSessions.AuthSessions;
@@ -199,7 +199,7 @@ const make = Effect.gen(function* () {
       return yield* relayTokens.issueDpopAccessToken({
         userId: input.userId,
         proofKeyThumbprint: input.thumbprint,
-        jti: yield* crypto.randomUUIDv4(),
+        jti: yield* random.uuidV4(),
         issuedAtEpochSeconds: Math.floor(now.epochMilliseconds / 1_000),
         expiresAtEpochSeconds: Math.floor(
           DateTime.addDuration(now, RelayTokens.RELAY_DPOP_ACCESS_TOKEN_TTL).epochMilliseconds /

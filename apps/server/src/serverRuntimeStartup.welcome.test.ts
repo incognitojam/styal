@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
@@ -160,7 +161,7 @@ it.effect.each(["success", "retry"] as const)(
         const context = yield* Layer.buildWithScope(
           Startup.layerWithOptions().pipe(
             Layer.provide(services),
-            Layer.provide(NodeServices.layer),
+            Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
           ),
           serviceScope,
         );
@@ -208,7 +209,9 @@ it.effect.each(["success", "retry"] as const)(
         assert.equal(captureCalls, scenario === "retry" ? 2 : 1);
         assert.equal(providerShutdownCalls, 1);
         assert.equal(reconciliationCalls, 1);
-      }).pipe(Effect.provide(Layer.merge(Lifecycle.layer, NodeServices.layer))),
+      }).pipe(
+        Effect.provide(Layer.mergeAll(Lifecycle.layer, NodeServices.layer, NodeCrypto.layer)),
+      ),
     ),
 );
 
@@ -294,7 +297,10 @@ it.effect("starts the bootstrap thread on Codex when the environment turned Clau
         Layer.succeed(Lifecycle.ServerLifecycleEvents, lifecycle),
       );
       const context = yield* Layer.build(
-        Startup.layerWithOptions().pipe(Layer.provide(services), Layer.provide(NodeServices.layer)),
+        Startup.layerWithOptions().pipe(
+          Layer.provide(services),
+          Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+        ),
       );
       const startup = Context.get(context, Startup.ServerRuntimeStartup);
       yield* startup.markHttpListening;
@@ -305,6 +311,6 @@ it.effect("starts the bootstrap thread on Codex when the environment turned Clau
       );
       const welcome = (yield* lifecycle.snapshot).events.find((event) => event.type === "welcome");
       assert.equal(welcome?.payload.bootstrapThreadId, threadId);
-    }).pipe(Effect.provide(Layer.merge(Lifecycle.layer, NodeServices.layer))),
+    }).pipe(Effect.provide(Layer.mergeAll(Lifecycle.layer, NodeServices.layer, NodeCrypto.layer))),
   ),
 );

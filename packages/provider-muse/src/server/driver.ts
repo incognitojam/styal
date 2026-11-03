@@ -1,7 +1,7 @@
 import { ProviderDriverKind } from "@t3tools/contracts";
 import { MuseSettings } from "../settings.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -59,7 +59,7 @@ export type MuseDriverEnv =
   | ProviderLatestVersions.ProviderLatestVersions
   | Path.Path
   | ProviderEventLoggers.ProviderEventLoggers
-  | Crypto.Crypto;
+  | SecureRandom.SecureRandom;
 
 export const MuseDriver: ProviderDriver<
   MuseSettings,

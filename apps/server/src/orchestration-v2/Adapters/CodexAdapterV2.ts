@@ -84,7 +84,7 @@ import * as CodexErrors from "effect-codex-app-server/errors";
 import * as CodexSchema from "effect-codex-app-server/schema";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -515,7 +515,7 @@ export function codexDynamicToolOutput(
 export const projectCodexDynamicToolItem = Effect.fn("CodexAdapterV2.projectDynamicToolItem")(
   function* (
     item: CodexDynamicToolItem,
-  ): Effect.fn.Return<CodexDynamicToolProjection, never, Crypto.Crypto> {
+  ): Effect.fn.Return<CodexDynamicToolProjection, never, Digest.Digest> {
     const output =
       item.type === "mcpToolCall" ? codexMcpToolOutput(item) : codexDynamicToolOutput(item);
     const toolName =
@@ -1597,7 +1597,7 @@ export const layerAppServerClientFactory: Layer.Layer<
 
 export type CodexAdapterV2DriverEnv =
   | CodexAppServerClientFactory
-  | Crypto.Crypto
+  | Digest.Digest
   | FileSystem.FileSystem
   | IdAllocator.IdAllocatorV2
   | McpProviderSessions.McpProviderSessions
@@ -1613,7 +1613,7 @@ export const createCodexAdapterV2 = Effect.fn("CodexAdapterV2.createCodexAdapter
 ) {
   const clientFactory = yield* CodexAppServerClientFactory;
   const continuationRequests = yield* ProviderContinuationRequests.ProviderContinuationRequests;
-  const crypto = yield* Crypto.Crypto;
+  const digest = yield* Digest.Digest;
   const fileSystem = yield* FileSystem.FileSystem;
   const idAllocator = yield* IdAllocator.IdAllocatorV2;
   const serverConfig = yield* ServerConfig;
@@ -1643,7 +1643,7 @@ export const createCodexAdapterV2 = Effect.fn("CodexAdapterV2.createCodexAdapter
     settings,
     environment: yield* mergeProviderInstanceEnvironment(environment),
     clientFactory,
-    crypto,
+    digest,
     fileSystem,
     idAllocator,
     serverConfig,
@@ -1663,7 +1663,7 @@ export interface CodexAdapterV2Options {
   readonly compatibility?: (
     version: string,
   ) => Effect.Effect<ServerProviderCompatibilityAdvisory | undefined>;
-  readonly crypto: Crypto.Crypto;
+  readonly digest: Digest.Digest["Service"];
   readonly fileSystem: FileSystem.FileSystem;
   readonly idAllocator: IdAllocator.IdAllocatorV2["Service"];
   readonly serverConfig: ServerConfig["Service"];
@@ -1682,7 +1682,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
   const readMcpSession = (threadId: ThreadId | null) =>
     // @effect-diagnostics-next-line effectSucceedWithVoid:off - This optional result requires undefined, not the wider void type.
     threadId === null ? Effect.succeed(undefined) : mcpSessions.read(threadId);
-  const { clientFactory, crypto, fileSystem, idAllocator, serverConfig } = adapterOptions;
+  const { clientFactory, digest, fileSystem, idAllocator, serverConfig } = adapterOptions;
   const path = yield* Path.Path;
   const continuationRequests = adapterOptions.continuationRequests;
 
@@ -3834,7 +3834,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             });
             const { ordinal, startedAt } = yield* resolveItemPosition(context, item.id);
             const projection = yield* projectCodexDynamicToolItem(item).pipe(
-              Effect.provideService(Crypto.Crypto, crypto),
+              Effect.provideService(Digest.Digest, digest),
             );
             const node: OrchestrationV2ExecutionNode = {
               id: nodeId,

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   EnvironmentId,
@@ -104,7 +105,7 @@ it.effect("preview_open navigates the opened tab to a dev server in one tool cal
             record: () => Effect.void,
             flush: Effect.void,
           }),
-        ).pipe(Layer.provide(NodeServices.layer)),
+        ).pipe(Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
       ),
     ),
   ),
@@ -147,7 +148,7 @@ describe("claimPreviewRecording", () => {
     }).pipe(
       Effect.provide(
         ServerConfig.layerTest(process.cwd(), { prefix: "t3-preview-recording-" }).pipe(
-          Layer.provideMerge(NodeServices.layer),
+          Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
         ),
       ),
     ),
@@ -192,7 +193,7 @@ describe("claimPreviewRecording", () => {
       }).pipe(
         Effect.provide(
           ServerConfig.layerTest(process.cwd(), { prefix: "t3-preview-recording-" }).pipe(
-            Layer.provideMerge(NodeServices.layer),
+            Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
           ),
         ),
       ),

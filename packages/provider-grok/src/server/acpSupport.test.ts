@@ -1,7 +1,9 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as FileSystem from "effect/FileSystem";
 import * as EffectAcpErrors from "effect-acp/errors";
 import * as AcpSessionRuntime from "@t3tools/provider-acp/server/AcpSessionRuntime";
@@ -78,7 +80,7 @@ describe("buildGrokAcpSpawnInput", () => {
       expect(childEnvironment.PATH).toBe(process.env.PATH);
       expect(childEnvironment.GROK_TEST_INHERITED).toBe("kept");
       expect(childEnvironment.XAI_API_KEY).toBe("configured");
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it("passes additional instructions through Grok's rules option", () => {

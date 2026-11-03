@@ -1,9 +1,11 @@
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- the mock agent path resolves from this file.
 import * as NodePath from "node:path";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as Fiber from "effect/Fiber";
 import * as Schema from "effect/Schema";
 import * as TestClock from "effect/testing/TestClock";
@@ -1631,7 +1633,7 @@ describe("Grok delayed completion settlement", () => {
       expect(
         yield* Fiber.join(prompt).pipe(Effect.timeout("2 seconds"), TestClock.withLive),
       ).toMatchObject({ stopReason: "end_turn" });
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("ignores child replies, replay, metadata, and background tools during settlement", () =>
@@ -1676,7 +1678,7 @@ describe("Grok delayed completion settlement", () => {
       expect(
         yield* Fiber.join(prompt).pipe(Effect.timeout("2 seconds"), TestClock.withLive),
       ).toMatchObject({ stopReason: "end_turn" });
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("uses the real prompt result if it arrives during fallback settlement", () =>
@@ -1691,7 +1693,7 @@ describe("Grok delayed completion settlement", () => {
         TestClock.withLive,
       );
       expect(result).toEqual({ stopReason: "max_tokens" });
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("cancels a prompt while its already-received completion is settling", () =>
@@ -1710,7 +1712,7 @@ describe("Grok delayed completion settlement", () => {
         .prompt({ prompt: [{ type: "text", text: "follow up" }] })
         .pipe(Effect.timeout("2 seconds"), TestClock.withLive);
       expect(next.stopReason).toBe("max_tokens");
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("fails visibly if reply output keeps arriving beyond the settlement budget", () =>
@@ -1740,6 +1742,6 @@ describe("Grok delayed completion settlement", () => {
         errorMessage:
           "Grok kept streaming after reporting prompt completion; the reply may be incomplete.",
       });
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 });

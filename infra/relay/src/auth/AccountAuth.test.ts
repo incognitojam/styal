@@ -3,7 +3,7 @@ import * as NodeCrypto from "node:crypto";
 
 import * as NodeCryptoLayer from "@effect/platform-node/NodeCrypto";
 import { describe, expect, it } from "@effect/vitest";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -605,11 +605,11 @@ describe("sign-in primitives", () => {
 
   it.effect("pads small code values to eight digits", () =>
     Effect.gen(function* () {
-      const crypto = yield* Crypto.Crypto;
+      const random = yield* SecureRandom.SecureRandom;
       expect(
         yield* EmailSignInCodes.generateSignInCode({
-          ...crypto,
-          randomIntBetween: () => Effect.succeed(7),
+          ...random,
+          intBetween: () => Effect.succeed(7),
         }),
       ).toBe("00000007");
     }).pipe(Effect.provide(NodeCryptoLayer.layer)),
@@ -617,9 +617,9 @@ describe("sign-in primitives", () => {
 
   it.effect("generates eight-digit codes, keeping leading zeros", () =>
     Effect.gen(function* () {
-      const crypto = yield* Crypto.Crypto;
+      const random = yield* SecureRandom.SecureRandom;
       for (let index = 0; index < 200; index += 1) {
-        expect(yield* EmailSignInCodes.generateSignInCode(crypto)).toMatch(/^\d{8}$/);
+        expect(yield* EmailSignInCodes.generateSignInCode(random)).toMatch(/^\d{8}$/);
       }
     }).pipe(Effect.provide(NodeCryptoLayer.layer)),
   );

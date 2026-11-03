@@ -1,7 +1,7 @@
 import { ThreadId, type PreviewError } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -171,7 +171,7 @@ export class TerminalBrowserOpen extends Context.Service<
 
 export const make = Effect.gen(function* TerminalBrowserOpenMake() {
   const config = yield* ServerConfig.ServerConfig;
-  const crypto = yield* Crypto.Crypto;
+  const random = yield* SecureRandom.SecureRandom;
   const platform = yield* HostProcess.Platform;
   const previews = yield* PreviewManager.PreviewManager;
   const fileSystem = yield* FileSystem.FileSystem;
@@ -234,7 +234,7 @@ export const make = Effect.gen(function* TerminalBrowserOpenMake() {
     owner: TerminalBrowserOpenOwner,
   ) {
     if (!helperAvailable) return {};
-    const token = yield* crypto.randomUUIDv4().pipe(Effect.orDie);
+    const token = yield* random.uuidV4();
     yield* SynchronizedRef.update(state, (current) => {
       const key = ownerKey(owner);
       const previousToken = current.tokensByOwner.get(key);

@@ -3,6 +3,7 @@ import { assert, it } from "@effect/vitest";
 import type { TerminalEvent } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Deferred from "effect/Deferred";
+import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -53,14 +54,14 @@ integrationLayer("workspace port environment integration", (it) => {
           WorkspacePortAllocator.WORKSPACE_PORT_MIN +
           index * WorkspacePortAllocator.WORKSPACE_PORT_RANGE_SIZE,
       );
-      yield* sql`INSERT INTO workspace_port_allocations ${sql.insert(
-        allPorts
-          .filter((port) => port !== allocatedPort)
-          .map((port) => ({
-            workspace_path: path.join(workspacePath, `deleted-${port}`),
-            base_port: port,
-          })),
-      )}`;
+      const deletedRows = allPorts
+        .filter((port) => port !== allocatedPort)
+        .map((port) => ({
+          workspace_path: path.join(workspacePath, `deleted-${port}`),
+          base_port: port,
+        }));
+      if (!Arr.isArrayNonEmpty(deletedRows)) return assert.fail("expected other allocations");
+      yield* sql`INSERT INTO workspace_port_allocations ${sql.insert(deletedRows)}`;
       const newWorkspacePath = path.join(workspacePath, "new-workspace");
       yield* fs.makeDirectory(newWorkspacePath);
 

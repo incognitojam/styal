@@ -24,7 +24,7 @@ import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -183,7 +183,7 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
   },
 ) {
   const { ledger } = options;
-  const crypto = yield* Crypto.Crypto;
+  const digest = yield* Digest.Digest;
   const httpClient = (yield* HttpClient.HttpClient).pipe(HttpClient.withScope);
   const booted = new Map(
     (yield* ledger.load).map((record) => [deviceKey(record.hostId, record.deviceId), record]),
@@ -291,7 +291,7 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
           `${environmentId}:${session.threadId.slice(separator + 1)}`,
           environmentDeviceHostId(options.environmentId),
           id,
-        ).pipe(Effect.provideService(Crypto.Crypto, crypto)),
+        ).pipe(Effect.provideService(Digest.Digest, digest)),
       ),
     } satisfies Hold;
   });
@@ -492,7 +492,7 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
           typeof memoryMode === "object" && memoryMode.agentRequested
             ? (targeted.get(asked) ??
               (yield* agentDeviceSession(input.threadId, hostId, input.deviceId).pipe(
-                Effect.provideService(Crypto.Crypto, crypto),
+                Effect.provideService(Digest.Digest, digest),
               )))
             : undefined;
         // Only an agent open hands a device over or is refused one; the user opening a
@@ -772,7 +772,7 @@ const live = Layer.effectContext(
     const config = yield* ServerConfig.ServerConfig;
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
-    const crypto = yield* Crypto.Crypto;
+    const digest = yield* Digest.Digest;
     const projections = yield* ProjectionStore.ProjectionStoreV2;
     const settings = yield* ServerSettings.ServerSettingsService;
     const environment = yield* ServerEnvironment.ServerEnvironment;
@@ -855,7 +855,7 @@ const live = Layer.effectContext(
               ),
               Effect.provideService(FileSystem.FileSystem, fs),
               Effect.provideService(Path.Path, path),
-              Effect.provideService(Crypto.Crypto, crypto),
+              Effect.provideService(Digest.Digest, digest),
             ),
     });
 

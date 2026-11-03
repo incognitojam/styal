@@ -9,6 +9,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
+import { requestUrl } from "../requestUrl.ts";
 import { whileStreaming } from "./DeviceIdle.ts";
 import * as DeviceSharing from "./DeviceSharing.ts";
 import {
@@ -106,7 +107,7 @@ const agentToken = (request: HttpServerRequest.HttpServerRequest) => {
 const proxy = errors(
   Effect.gen(function* () {
     const request = yield* HttpServerRequest.HttpServerRequest;
-    const url = HttpServerRequest.toURL(request);
+    const url = requestUrl(request);
     if (Option.isNone(url)) return HttpServerResponse.empty({ status: 400 });
     const agent = url.value.pathname.startsWith("/api/device-share/agent/");
     const prefix = agent ? "/api/device-share/agent" : "/api/device-share/hub";

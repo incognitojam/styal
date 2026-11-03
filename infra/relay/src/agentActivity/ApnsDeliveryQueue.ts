@@ -1,6 +1,6 @@
 import * as Alchemy from "alchemy";
 import * as Cloudflare from "@alchemy.run/cloudflare";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -82,7 +82,7 @@ export class ApnsDeliveryQueue extends Context.Service<
 
 const make = Effect.gen(function* () {
   const sender = yield* ApnsDeliveryQueueSender;
-  const crypto = yield* Crypto.Crypto;
+  const random = yield* SecureRandom.SecureRandom;
   const config = yield* RelayConfiguration.RelayConfiguration;
 
   return ApnsDeliveryQueue.of({
@@ -93,7 +93,7 @@ const make = Effect.gen(function* () {
           "relay.delivery.kind": input.kind,
         });
         const now = yield* DateTime.now;
-        const jobId = yield* crypto.randomUUIDv4().pipe(
+        const jobId = yield* random.uuidV4().pipe(
           Effect.mapError(
             (cause) =>
               new ApnsDeliveryQueueSendError({
@@ -153,7 +153,7 @@ const make = Effect.gen(function* () {
         });
         const delaySeconds = input.delaySeconds ?? 0;
         const now = yield* DateTime.now;
-        const jobId = yield* crypto.randomUUIDv4().pipe(
+        const jobId = yield* random.uuidV4().pipe(
           Effect.mapError(
             (cause) =>
               new ApnsDeliveryQueueSendError({

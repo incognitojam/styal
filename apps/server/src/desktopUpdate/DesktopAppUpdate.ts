@@ -7,7 +7,7 @@ import {
   type ServerSelfUpdateResult,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -61,7 +61,7 @@ export class DesktopAppUpdate extends Context.Service<
 
 export const make = Effect.fn("desktopUpdate.desktopAppUpdate.make")(function* () {
   const config = yield* ServerConfig.ServerConfig;
-  const crypto = yield* Crypto.Crypto;
+  const random = yield* SecureRandom.SecureRandom;
   const receiver = yield* DesktopTelemetryReceiver.DesktopTelemetryReceiver;
   const identity = yield* ServerEnvironmentIdentity;
   const inFlight = yield* Ref.make(false);
@@ -157,8 +157,8 @@ export const make = Effect.fn("desktopUpdate.desktopAppUpdate.make")(function* (
 
       return yield* Effect.scoped(
         Effect.gen(function* () {
-          const requestId = yield* crypto
-            .randomUUIDv4()
+          const requestId = yield* random
+            .uuidV4()
             .pipe(
               Effect.mapError((error) =>
                 failWith("Could not generate a desktop update request id.", error),
@@ -235,7 +235,7 @@ export const make = Effect.fn("desktopUpdate.desktopAppUpdate.make")(function* (
   const inspectActivity = Effect.scoped(
     Effect.gen(function* () {
       if (!available) return [null];
-      const requestId = yield* crypto.randomUUIDv4();
+      const requestId = yield* random.uuidV4();
       const reports = yield* receiver.updateActivity;
       yield* receiver.requestUpdateActivity(requestId, yield* identity.getEnvironmentId);
       const report = yield* reports.pipe(

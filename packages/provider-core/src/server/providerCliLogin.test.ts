@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
@@ -7,6 +8,7 @@ import {
 } from "@t3tools/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 import * as PtyAdapter from "@t3tools/shared/PtyAdapter";
@@ -143,7 +145,7 @@ it.effect("signs in by pasting a code, then checks status and replaces signed-ou
     const done = yield* harness.until((state) => state.phase === "succeeded");
     assert.isNull(done.authorizationUrl);
     yield* Deferred.await(stopped);
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("keeps an unrecognized login in the terminal, and answers its menus from there", () =>
@@ -167,7 +169,7 @@ it.effect("keeps an unrecognized login in the terminal, and answers its menus fr
       userCode: "2YNS-WF1O2",
       url: "https://example.test/device",
     });
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect.each([
@@ -192,7 +194,7 @@ it.effect.each([
     assert.isString(failed.message);
     assert.equal(harness.refreshes.count, refreshes);
     assert.isFalse(stopped);
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("reports that login is unavailable without a terminal", () =>
@@ -211,7 +213,7 @@ it.effect("reports that login is unavailable without a terminal", () =>
       Effect.map(Option.getOrThrow),
     );
     assert.match(failed.message ?? "", /unavailable/);
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it("reads what each login's output asks for", () => {

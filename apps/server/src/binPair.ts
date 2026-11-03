@@ -1,4 +1,5 @@
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NetService from "@t3tools/shared/Net";
 import * as Effect from "effect/Effect";
@@ -23,7 +24,7 @@ export async function runPairCli() {
 
   Command.run(pairCli, { version: packageJson.version }).pipe(
     Effect.scoped,
-    Effect.provide(Layer.mergeAll(NodeServices.layer, NetService.layer)),
+    Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, NetService.layer)),
     NodeRuntime.runMain,
   );
 }

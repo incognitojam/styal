@@ -9,7 +9,7 @@ import {
   type PeerIncomingWork,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
@@ -35,7 +35,7 @@ const hasUnstoppedWork = (shell: OrchestrationV2ThreadShell) =>
 const make = Effect.gen(function* () {
   const threads = yield* ThreadManagementService.ThreadManagementService;
   const devices = yield* DeviceSharing.DeviceSharing;
-  const crypto = yield* Crypto.Crypto;
+  const random = yield* SecureRandom.SecureRandom;
 
   const workFromMachines = Effect.gen(function* () {
     const index = yield* threads.listActiveShellIndex();
@@ -58,7 +58,7 @@ const make = Effect.gen(function* () {
     yield* Effect.forEach(
       stopping,
       (shell) =>
-        crypto.randomUUIDv4().pipe(
+        random.uuidV4().pipe(
           Effect.flatMap((uuid) =>
             // Stop, not interrupt: an interrupt starts the next queued message.
             threads.dispatch({

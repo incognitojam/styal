@@ -1,4 +1,5 @@
 import { expect, it } from "@effect/vitest";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import * as Deferred from "effect/Deferred";
@@ -43,13 +44,13 @@ const client = McpSchema.McpServerClient.of({
 });
 const makeTestLayer = (analyticsLayer: Layer.Layer<AnalyticsService.AnalyticsService>) =>
   McpHttpServer.layerPreviewToolkit.pipe(
-    Layer.provideMerge(McpServer.McpServer.layer),
+    Layer.provideMerge(McpHttpServer.layerInProcessMcpServer),
     Layer.provideMerge(McpToolAccessTestkit.liveThreadsLayer),
     Layer.provideMerge(PreviewAutomationBroker.layer),
     Layer.provideMerge(
       ServerConfig.layerTest(process.cwd(), { prefix: "t3-mcp-http-server-test-" }),
     ),
-    Layer.provideMerge(NodeServices.layer),
+    Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
     Layer.provide(analyticsLayer),
   );
 const snapshotResult = {

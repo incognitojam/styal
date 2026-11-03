@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, gt, gte, isNull, lt, lte, sql } from "drizzle-orm";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
@@ -81,9 +82,9 @@ export class EmailSignInCodes extends Context.Service<
 >()("t3code-relay/auth/EmailSignInCodes") {}
 
 /** Eight digits, uniform over 00000000-99999999. */
-export const generateSignInCode = (crypto: Crypto.Crypto) =>
-  crypto
-    .randomIntBetween(0, 100_000_000, { halfOpen: true })
+export const generateSignInCode = (random: SecureRandom.SecureRandom["Service"]) =>
+  random
+    .intBetween(0, 100_000_000, { halfOpen: true })
     .pipe(Effect.map((value) => value.toString().padStart(8, "0")));
 
 /** Seconds until the oldest code in the window leaves it, freeing a slot. */
@@ -103,15 +104,16 @@ const constantTimeEqual = (left: string, right: string): boolean => {
 
 const make = Effect.gen(function* () {
   const db = yield* RelayDb.RelayDb;
-  const crypto = yield* Crypto.Crypto;
+  const digest = yield* Digest.Digest;
+  const random = yield* SecureRandom.SecureRandom;
   const config = yield* RelayConfiguration.RelayConfiguration;
 
   // Keyed with a deployment secret, so a database read alone cannot recover
   // codes by hashing all 100 million candidates.
   const hashCode = (codeId: string, code: string) =>
-    crypto
+    digest
       .digest(
-        "SHA-256",
+        Digest.sha256,
         new TextEncoder().encode(`${Redacted.value(config.signInCodeSecret)}:${codeId}:${code}`),
       )
       .pipe(Effect.map(Base64Url.encode));
@@ -120,8 +122,8 @@ const make = Effect.gen(function* () {
     function* (input) {
       const now = yield* DateTime.now;
       const windowStart = DateTime.formatIso(DateTime.subtract(now, { hours: 1 }));
-      const codeId = (yield* crypto.randomUUIDv4()).replaceAll("-", "");
-      const code = input.fixedCode ?? (yield* generateSignInCode(crypto));
+      const codeId = (yield* random.uuidV4()).replaceAll("-", "");
+      const code = input.fixedCode ?? (yield* generateSignInCode(random));
       const codeHash = yield* hashCode(codeId, code);
       const expiresAt = DateTime.add(now, { minutes: SIGN_IN_CODE_TTL_MINUTES });
       // The address lock makes the caps hold under concurrent requests.

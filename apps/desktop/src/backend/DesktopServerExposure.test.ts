@@ -9,6 +9,7 @@ import * as ElectronTheme from "../electron/ElectronTheme.ts";
 import { setServerExposureMode, setTailscaleServeEnabled } from "../ipc/methods/serverExposure.ts";
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
@@ -90,7 +91,11 @@ function layerEnvironmentFor(baseDir: string, env: Record<string, string | undef
     runningUnderArm64Translation: false,
   }).pipe(
     Layer.provide(
-      Layer.mergeAll(NodeServices.layer, DesktopConfig.layerTest({ STYAL_HOME: baseDir, ...env })),
+      Layer.mergeAll(
+        NodeServices.layer,
+        NodeCrypto.layer,
+        DesktopConfig.layerTest({ STYAL_HOME: baseDir, ...env }),
+      ),
     ),
   );
 }
@@ -154,7 +159,7 @@ const withHarness = <A, E, R>(
         }),
       ),
     );
-  }).pipe(Effect.provide(NodeServices.layer), Effect.scoped);
+  }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)), Effect.scoped);
 
 describe("DesktopServerExposure", () => {
   it.effect("restores network preferences when restart is cancelled", () => {
@@ -173,7 +178,7 @@ describe("DesktopServerExposure", () => {
       Layer.mock(DesktopWindow.DesktopWindow)({}),
       Layer.mock(ElectronApp.ElectronApp)({}),
       Layer.mock(ElectronTheme.ElectronTheme)({}),
-    ).pipe(Layer.provideMerge(NodeServices.layer));
+    ).pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
     return Effect.gen(function* () {
       const exposure = yield* DesktopServerExposure.DesktopServerExposure;
       const settings = yield* DesktopAppSettings.DesktopAppSettings;

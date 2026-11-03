@@ -10,7 +10,7 @@ import {
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
@@ -85,7 +85,7 @@ export const make = Effect.gen(function* () {
   const engine = yield* Orchestrator.OrchestratorV2;
   const projections = yield* ProjectionStore.ProjectionStoreV2;
   const pullRequests = yield* PullRequestService.PullRequestService;
-  const crypto = yield* Crypto.Crypto;
+  const random = yield* SecureRandom.SecureRandom;
   const analytics = yield* AnalyticsService.AnalyticsService;
   // Reads in a row that failed, per watch. Kept in memory: a restart only delays the stop.
   const readFailures = new Map<string, number>();
@@ -111,7 +111,7 @@ export const make = Effect.gen(function* () {
     target: WatchTarget,
     wake?: { readonly text: string; readonly notification: OrchestrationV2Notification },
   ) {
-    const uuid = yield* crypto.randomUUIDv4();
+    const uuid = yield* random.uuidV4();
     yield* engine.dispatch({
       type: "thread.workflow-run-watch.finish",
       commandId: CommandId.make(`server:workflow-run-watch:${target.thread.id}:${uuid}`),
@@ -164,7 +164,7 @@ export const make = Effect.gen(function* () {
         first === undefined ? null : { environments: [first, ...rest] };
       const failed = newlyFailedJobs(target.watch, read.value);
       if (failed.length === 0 && reviewKey(review) === reviewKey(target.watch.review)) return;
-      const uuid = yield* crypto.randomUUIDv4();
+      const uuid = yield* random.uuidV4();
       return yield* engine.dispatch({
         type: "thread.workflow-run-watch.sync",
         commandId: CommandId.make(`server:workflow-run-watch:${target.thread.id}:${uuid}`),

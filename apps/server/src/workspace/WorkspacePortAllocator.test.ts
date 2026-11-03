@@ -1,5 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
+import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -90,14 +91,11 @@ const isolatedLayer = layerMemory.pipe(Layer.provideMerge(NodeServices.layer));
 const fillPortPool = Effect.fn("fillPortPool")(function* (root: string) {
   const sql = yield* SqlClient.SqlClient;
   const path = yield* Path.Path;
-  const rows = Array.from(
-    {
-      length:
-        (WorkspacePortAllocator.WORKSPACE_PORT_MAX - WorkspacePortAllocator.WORKSPACE_PORT_MIN) /
-          WorkspacePortAllocator.WORKSPACE_PORT_RANGE_SIZE +
-        1,
-    },
-    (_, index) => ({
+  const rows = Arr.makeBy(
+    (WorkspacePortAllocator.WORKSPACE_PORT_MAX - WorkspacePortAllocator.WORKSPACE_PORT_MIN) /
+      WorkspacePortAllocator.WORKSPACE_PORT_RANGE_SIZE +
+      1,
+    (index) => ({
       workspace_path: path.join(root, `workspace-${index}`),
       base_port:
         WorkspacePortAllocator.WORKSPACE_PORT_MIN +

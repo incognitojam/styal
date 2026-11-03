@@ -33,7 +33,7 @@ it.effect(
       const events: Array<{ event: string; properties: unknown }> = [];
       const layer = McpHttpServer.layerDeviceToolkit.pipe(
         Layer.provide(Layer.mock(ProjectService.ProjectService)({})),
-        Layer.provideMerge(McpServer.McpServer.layer),
+        Layer.provideMerge(McpHttpServer.layerInProcessMcpServer),
         Layer.provideMerge(McpToolAccessTestkit.liveThreadsLayer),
         Layer.provide(
           Layer.mock(DeviceService.DeviceService)({

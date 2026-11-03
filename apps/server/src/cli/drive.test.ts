@@ -1,6 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off -- CLI fixtures use isolated filesystem state.
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import {
@@ -70,6 +71,7 @@ const runCli = (args: ReadonlyArray<string>) =>
     Effect.provide(
       Layer.mergeAll(
         NodeServices.layer,
+        NodeCrypto.layer,
         NetService.layer,
         ConfigProvider.layer(
           ConfigProvider.fromEnv({ env: { T3_DRIVE_TOKEN: "synthetic-drive-token" } }),
@@ -110,7 +112,7 @@ const persistence = (home: string) =>
   ).pipe(
     Layer.provideMerge(Sqlite.layerConfig),
     Layer.provideMerge(ServerConfig.layerTest(process.cwd(), home)),
-    Layer.provideMerge(NodeServices.layer),
+    Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   );
 
 it.effect(

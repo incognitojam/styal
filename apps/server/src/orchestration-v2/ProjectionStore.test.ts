@@ -30,6 +30,7 @@ import {
   isLiveSubagentShell,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
+import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
@@ -2170,7 +2171,7 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
           deletedAt: null,
         },
       });
-      const rows = Array.from({ length: 120 }, (_, index) => {
+      const rows = Arr.makeBy(120, (index) => {
         const ordinal = index + 1;
         const status = ordinal <= 3 ? "running" : "completed";
         const base = {

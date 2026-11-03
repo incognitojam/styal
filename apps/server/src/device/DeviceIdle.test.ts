@@ -6,6 +6,7 @@ import { DEFAULT_SERVER_SETTINGS, LOCAL_DEVICE_HOST_ID, ThreadId } from "@t3tool
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -215,7 +216,10 @@ const fixture = Effect.fn("fixture")(function* (
             );
             yield* writeAgentDeviceConfig(file, endpoint);
             return file;
-          }).pipe(Effect.provide(NodeServices.layer), Effect.orDie),
+          }).pipe(
+            Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+            Effect.orDie,
+          ),
   ).pipe(
     Effect.provideService(
       ServerSettings.ServerSettingsService,
@@ -256,7 +260,7 @@ const fixture = Effect.fn("fixture")(function* (
         ? Ref.get(daemonRunning).pipe(Effect.map((running) => (running ? agentDevice : null)))
         : readAgentDeviceConfig(daemonDir, hostId, deviceId).pipe(
             Effect.map((saved) => (saved ? { ...saved, entryPath: "" } : null)),
-            Effect.provide(NodeServices.layer),
+            Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
           ),
     environmentId: OWN_ENVIRONMENT,
     threadStatus: (thread) =>

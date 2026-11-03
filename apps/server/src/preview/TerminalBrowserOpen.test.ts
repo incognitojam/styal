@@ -1,4 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off - Integration exercises the generated Node browser helper.
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFSP from "node:fs/promises";
@@ -9,6 +10,7 @@ import * as NodePath from "node:path";
 import { ThreadId } from "@t3tools/contracts";
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as FileSystem from "effect/FileSystem";
 
 import * as ServerConfig from "../config.ts";
@@ -36,7 +38,7 @@ function closeServer(server: NodeHttp.Server | NodeNet.Server): Promise<void> {
   });
 }
 
-it.layer(NodeServices.layer)("TerminalBrowserOpen", (it) => {
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("TerminalBrowserOpen", (it) => {
   it.effect("installs the helper and rotates terminal-scoped credentials", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;

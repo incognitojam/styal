@@ -5,6 +5,7 @@ import * as NodePath from "node:path";
 import * as NodeProcess from "node:process";
 import { app, BrowserWindow, nativeImage } from "electron";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
@@ -124,6 +125,7 @@ async function run() {
       ),
       Layer.provide(environment.pipe(Layer.provide(DesktopConfig.layerTest({})))),
       Layer.provide(NodeServices.layer),
+      Layer.provide(NodeCrypto.layer),
       Layer.provide(Layer.succeed(HostProcess.Platform, platform)),
     );
     await Effect.runPromise(

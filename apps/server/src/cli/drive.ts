@@ -11,7 +11,7 @@ import {
 } from "@t3tools/contracts";
 import * as Config from "effect/Config";
 import * as Console from "effect/Console";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -192,9 +192,9 @@ const sendCommand = Command.make("send", {
           headers,
           params: { threadId },
         });
-        const crypto = yield* Crypto.Crypto;
-        const commandId = CommandId.make(yield* crypto.randomUUIDv4());
-        const messageId = MessageId.make(yield* crypto.randomUUIDv4());
+        const random = yield* SecureRandom.SecureRandom;
+        const commandId = CommandId.make(yield* random.uuidV4());
+        const messageId = MessageId.make(yield* random.uuidV4());
         const receipt = yield* client.orchestration.dispatch({
           headers,
           payload: {

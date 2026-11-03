@@ -1,4 +1,5 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { assert, it } from "@effect/vitest";
 import {
   EnvironmentId,
@@ -61,6 +62,7 @@ const reportToMe = (
     Effect.provide(
       ThreadMetadataMcpService.layer.pipe(
         Layer.provide(NodeServices.layer),
+        Layer.provide(NodeCrypto.layer),
         Layer.provide(
           Layer.mock(ThreadManagementService.ThreadManagementService)({
             getThreadShell: (threadId) =>

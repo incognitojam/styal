@@ -5,7 +5,8 @@ import { describe, expect, it } from "@effect/vitest";
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { eq, inArray, sql } from "drizzle-orm";
 import * as PgDrizzle from "drizzle-orm/effect-postgres";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -39,7 +40,7 @@ const layerDb = Layer.effect(RelayDb.RelayDb, PgDrizzle.makeWithDefaults()).pipe
 
 const fixture = Effect.gen(function* () {
   const db = yield* RelayDb.RelayDb;
-  const userId = `usr_test_${yield* (yield* Crypto.Crypto).randomUUIDv4()}`;
+  const userId = `usr_test_${yield* (yield* SecureRandom.SecureRandom).uuidV4()}`;
   const otherUserId = `${userId}_other`;
   const now = "2026-10-18T12:00:00.000Z";
   const queued: Array<SignedApnsDeliveryJob> = [];
@@ -158,8 +159,8 @@ const fixture = Effect.gen(function* () {
     });
   const addAllocation = (environmentId = userId) =>
     Effect.gen(function* () {
-      const hash = yield* (yield* Crypto.Crypto).digest(
-        "SHA-256",
+      const hash = yield* (yield* Digest.Digest).digest(
+        Digest.sha256,
         new TextEncoder().encode(environmentId),
       );
       const hex = Array.from(hash, (byte) => byte.toString(16).padStart(2, "0")).join("");

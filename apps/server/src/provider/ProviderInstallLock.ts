@@ -3,7 +3,7 @@
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -80,7 +80,7 @@ function parseGeneration(name: string) {
 const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const crypto = yield* Crypto.Crypto;
+  const random = yield* SecureRandom.SecureRandom;
   const environment = yield* HostProcess.Environment;
   const cacheHome = environment.XDG_CACHE_HOME || path.join(NodeOS.homedir(), ".cache");
   // Upstream's directory, so styal and T3 Code servers on one host also exclude each other.
@@ -224,7 +224,7 @@ const make = Effect.gen(function* () {
       ) => Effect.Effect<A, E, R>,
     ): Effect.fn.Return<Option.Option<A>, E | ProviderInstallLockError, R> {
       const key = `${encodeURIComponent(lockKey)}.lock`;
-      const owner = yield* crypto.randomUUIDv4().pipe(Effect.mapError(toLockError));
+      const owner = yield* random.uuidV4();
       const contents = `${process.pid}\n${owner}`;
       // Written aside and renamed over the lock, so a failed write (disk full)
       // leaves the previous complete record instead of an empty, held file.

@@ -1,6 +1,6 @@
 import { eq, sql } from "drizzle-orm";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -62,7 +62,7 @@ export class Accounts extends Context.Service<
 
 const make = Effect.gen(function* () {
   const db = yield* RelayDb.RelayDb;
-  const crypto = yield* Crypto.Crypto;
+  const random = yield* SecureRandom.SecureRandom;
 
   const select = (userId: string) =>
     db
@@ -76,7 +76,7 @@ const make = Effect.gen(function* () {
       function* (input) {
         const email = normalizeEmail(input);
         const now = DateTime.formatIso(yield* DateTime.now);
-        const userId = `usr_${(yield* crypto.randomUUIDv4()).replaceAll("-", "")}`;
+        const userId = `usr_${(yield* random.uuidV4()).replaceAll("-", "")}`;
         // One statement: concurrent first sign-ins for the same email agree on
         // one id, and an existing account keeps its id (imported Clerk ids too).
         const rows = yield* db

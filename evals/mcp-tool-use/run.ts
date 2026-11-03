@@ -11,6 +11,7 @@ import * as NodeUtil from "node:util";
 import * as NodeVM from "node:vm";
 import * as NodeZlib from "node:zlib";
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   ComposerContextRecord,
@@ -2463,7 +2464,7 @@ const main = Effect.gen(function* () {
 
 if (import.meta.main) {
   main.pipe(
-    Effect.provide(Layer.mergeAll(NodeServices.layer, FetchHttpClient.layer)),
+    Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, FetchHttpClient.layer)),
     NodeRuntime.runMain,
   );
 }

@@ -1,7 +1,7 @@
 // User-wide ~/.pi/agent state makes continuation identity use default instance grouping.
 import { ProviderDriverKind, type ServerProvider } from "@t3tools/contracts";
 import { PiSettings } from "../settings.ts";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -58,7 +58,7 @@ export type PiDriverEnv =
   | HttpClient.HttpClient
   | ProviderLatestVersions.ProviderLatestVersions
   | Path.Path
-  | Crypto.Crypto;
+  | SecureRandom.SecureRandom;
 
 const withInstanceIdentity =
   (input: {
