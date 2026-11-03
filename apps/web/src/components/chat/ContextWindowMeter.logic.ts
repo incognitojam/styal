@@ -6,6 +6,7 @@ import type {
 } from "@t3tools/contracts";
 import {
   CLAUDE_RESUME_COMPACTION_NEVER_ANSWER,
+  COMPACTION_SUGGESTION_MIN_TOKENS,
   isClaudeResumeCompactionQuestion,
 } from "@t3tools/shared/claudeCompaction";
 import { getProviderOptionCurrentValue, getProviderOptionDescriptors } from "@t3tools/shared/model";
@@ -18,8 +19,6 @@ import { getTriggerDisplayModelName, type ModelEsque } from "./providerIconUtils
 // Fallback TTL: Claude Code's one-hour subscription cache. Claude Code's own prompt waits 70
 // minutes; the banner offers compaction as soon as the cache has expired.
 const CLAUDE_PROMPT_CACHE_FALLBACK_MS = 60 * 60_000;
-// Below this, resending the history uncached costs too little to interrupt.
-const CLAUDE_LARGE_CONTEXT_TOKENS = 100_000;
 // Claude Code sends effort inside the conversation for these models, so an effort change keeps
 // the cached history; elsewhere it is a request parameter and resends it uncached. Add a model
 // once its transcripts record `perTurnEffort` on assistant entries.
@@ -83,7 +82,10 @@ export function shouldOfferResumeCompaction(input: {
   readonly promptCacheTtlMs?: number | undefined;
   readonly now: string;
 }): boolean {
-  if (input.provider !== "claudeAgent" || (input.usedTokens ?? 0) < CLAUDE_LARGE_CONTEXT_TOKENS) {
+  if (
+    input.provider !== "claudeAgent" ||
+    (input.usedTokens ?? 0) < COMPACTION_SUGGESTION_MIN_TOKENS
+  ) {
     return false;
   }
 
@@ -116,7 +118,7 @@ export function claudeSelectionCacheLoss(input: {
   if (
     input.provider !== "claudeAgent" ||
     !current ||
-    (input.usedTokens ?? 0) < CLAUDE_LARGE_CONTEXT_TOKENS
+    (input.usedTokens ?? 0) < COMPACTION_SUGGESTION_MIN_TOKENS
   ) {
     return null;
   }

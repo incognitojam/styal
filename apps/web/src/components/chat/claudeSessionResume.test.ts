@@ -69,7 +69,7 @@ describe("claudeSelectionCacheLoss", () => {
   const warmThread = {
     provider: "claudeAgent",
     capabilities,
-    usedTokens: 150_000,
+    usedTokens: 200_000,
     updatedAt: "2026-08-24T11:30:00.000Z",
     now: "2026-08-24T12:00:00.000Z",
   };
@@ -135,7 +135,7 @@ describe("claudeSelectionCacheLoss", () => {
     expect(
       claudeSelectionCacheLoss({ ...warmThread, ...change, updatedAt: "2026-08-24T11:00:00.000Z" }),
     ).toBeNull();
-    expect(claudeSelectionCacheLoss({ ...warmThread, ...change, usedTokens: 99_999 })).toBeNull();
+    expect(claudeSelectionCacheLoss({ ...warmThread, ...change, usedTokens: 199_999 })).toBeNull();
     expect(claudeSelectionCacheLoss({ ...warmThread, ...change, provider: "codex" })).toBeNull();
   });
 });

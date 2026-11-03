@@ -525,7 +525,7 @@ features:
     status: maintained
     prs: [507]
     invariants:
-      - The web composer shows the Compact chip, and Enter compacts first, for a Claude thread of at least 100,000 tokens once 60 minutes have passed since its last context update, matching Claude Code's one-hour prompt cache TTL rather than upstream's and Claude Code's 70-minute resume threshold.
+      - The web composer shows the Compact chip, and Enter compacts first, for a Claude thread of at least 200,000 tokens (upstream's threshold) once 60 minutes have passed since its last context update, matching Claude Code's one-hour prompt cache TTL rather than upstream's and Claude Code's 70-minute resume threshold.
       - The Compact chip appears only when the next turn resumes the thread's native Claude session; a switch from another provider or to a Claude instance with separate history hands off a summary, so the current usage does not describe it.
     implementation_paths:
       - apps/web/src/components/ChatView.tsx
@@ -548,7 +548,7 @@ features:
     status: maintained
     prs: [534]
     invariants:
-      - While a Claude thread of at least 100,000 tokens has a prompt cache less than 60 minutes old, the web composer warns before a pending model, provider instance, or fast mode change would resend the history uncached, and offers to undo it.
+      - While a Claude thread of at least 200,000 tokens has a prompt cache less than 60 minutes old, the web composer warns before a pending model, provider instance, or fast mode change would resend the history uncached, and offers to undo it.
       - An effort change warns only on models for which Claude Code sends effort as a request parameter; Opus 5.5 and Fable 5.1 send it per turn and keep the cache.
       - Writing an option's default value out explicitly is not treated as a change.
       - Switches that hand off instead of resuming the native Claude session (from another provider, or to a Claude instance with separate history) do not warn, because the next turn receives a bounded summary rather than the history.
