@@ -20,6 +20,14 @@ set -eu
 repo="incognitojam/styal"
 base_url="${STYAL_RELEASE_BASE_URL:-https://github.com/${repo}/releases/download}"
 styal_home="${STYAL_HOME:-$HOME/.styal}"
+case "$styal_home" in
+  /*) ;;
+  *)
+    # Preserve cwd's trailing newlines; trim only pwd's newline and the sentinel.
+    styal_cwd="$(pwd -P && printf .)"
+    styal_home="${styal_cwd%??}/$styal_home"
+    ;;
+esac
 bin_dir="${STYAL_INSTALL_BIN_DIR:-$HOME/.local/bin}"
 
 fail() {
