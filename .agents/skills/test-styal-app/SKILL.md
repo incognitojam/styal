@@ -26,8 +26,13 @@ inspecting or seeding SQLite. Stop the test server before direct fixture writes.
 
 ## Use the Browser panel
 
-Call `preview_status`, then `preview_open` if the Browser panel is
-closed. Navigate to the complete startup pairing URL once with
+Call `preview_status`. If no tab can be automated, call `preview_open`, including
+when status reports `available: false` or `tabId: null`. Status can report
+unavailable simply because no tab exists yet; opening a tab needs no user action.
+Reuse an existing usable tab. Follow the fallback rules above only if opening
+reports unsupported or two panel attempts fail at the same step.
+
+Navigate to the complete startup pairing URL once with
 `preview_navigate`, then use `preview_snapshot` and styal's interaction tools.
 If the token was consumed or expired, run `node apps/server/src/bin.ts pair`
 for a fresh one. Keep using the same tab.
