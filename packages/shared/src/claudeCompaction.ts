@@ -39,8 +39,8 @@ export function claudeResumeCompactionAge(questionAnswer: {
 }
 
 /**
- * Context size below which idle compaction does not run. Matches Claude
- * Code's idleCompaction default of 200K. The stale-thread Compact chip keeps
- * its own lower threshold.
+ * Context size below which T3 does not suggest or run a Claude compaction, or
+ * warn about a cache-breaking setting change. Matches Claude Code's
+ * idleCompaction default of 200K.
  */
 export const COMPACTION_SUGGESTION_MIN_TOKENS = 200_000;
