@@ -108,8 +108,9 @@ an active link between your account and the host.
 - **styal Link is off on the host, or the host only publishes agent activity.**
   On the host, open **Settings > Sharing & access** and turn **styal Link** on, or
   run `styal link`.
-- **The host was linked, but the server did not apply the link yet.** Run
-  `styal service restart` on the host, or restart `styal serve`.
+- **The host was linked, but the server did not apply the link yet.** Restart
+  the server on the host: quit and reopen the styal desktop app, run
+  `styal service restart`, or stop `styal serve` and run it again.
 - **This device's sign-in expired, or the host no longer accepts this
   device.** Sign out of styal Link and sign in again.
 - **This device is still loading its styal Link sign-in.** Wait a moment;

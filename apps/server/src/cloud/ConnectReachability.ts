@@ -68,10 +68,11 @@ export function classifyReachability(
   const restart = "Restart styal. If it stays, run `styal link` again.";
 
   if (!facts.managedTunnelConfigured) {
+    // A running server reads the link `styal link` stores only at startup.
     return fail(
       "not_linked",
       "The server has not set up a styal Link tunnel.",
-      "Run `styal link`, then restart the server (`styal service restart`) so it applies the link.",
+      "Run `styal link`, then restart styal so it applies the link.",
     );
   }
   if (connector === null) {
