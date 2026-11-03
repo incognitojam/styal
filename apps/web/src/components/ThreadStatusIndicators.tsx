@@ -425,10 +425,7 @@ function ThreadPullRequestMiniListItem({
   const Icon = presentation?.Icon ?? PullRequestGlyph.pullRequest;
   const content = (
     <>
-      <span
-        className={presentation?.toneClassName ?? "text-muted-foreground"}
-        title={mergeIntent ? pullRequestMergeIntentLabel(mergeIntent) : undefined}
-      >
+      <span className={presentation?.toneClassName ?? "text-muted-foreground"}>
         <PullRequestMergeIntentIcon Icon={Icon} mergeIntent={mergeIntent} />
       </span>
       <span className="shrink-0 font-mono tabular-nums">#{number}</span>
