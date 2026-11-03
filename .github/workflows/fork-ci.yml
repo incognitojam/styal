@@ -470,7 +470,8 @@ jobs:
           restore-keys: |
             fork-server-tests-v1-${{ runner.os }}-${{ runner.arch }}-${{ matrix.shard }}-
 
-      # --concurrency replaces vitest's --maxWorkers=3: each file runs as its own task.
+      # --concurrency replaces vitest's --maxWorkers=3. Grouping four files per task
+      # keeps Vitest startup from dominating runs that mostly miss.
       - name: Test server
         id: test
         env:
@@ -478,7 +479,7 @@ jobs:
           T3CODE_TRANSFER_BUDGET_RESULT_PATH: ${{ runner.temp }}/thread-transfer-result.json
         run: >-
           vp run test:cached -- --shard ${{ matrix.shard }}/${{ strategy.job-total }}
-          --concurrency 3
+          --concurrency 3 --group-size 4
           --uncached apps/server/integration/transferBudgetV2.integration.test.ts
           --verify-hits 1 --report "${{ runner.temp }}/server-test-cache.json" apps/server
 
