@@ -88,7 +88,10 @@ organizedLayer("ForkMigrations project pins from fork migration 11", (it) => {
       `;
 
       const { upstream } = yield* runAllMigrations();
-      assert.deepStrictEqual(upstream, [[77, "RepairBooleanSettledOverride"]]);
+      assert.deepStrictEqual(upstream, [
+        [77, "RepairBooleanSettledOverride"],
+        [78, "DropOrchestrationEventCorrelationIndex"],
+      ]);
       assert.deepStrictEqual(
         yield* sql`
           SELECT migration_id, name FROM effect_sql_migrations WHERE migration_id = 76
