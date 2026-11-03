@@ -4790,6 +4790,25 @@ features:
         - https://github.com/pingdotgg/t3code/pull/9188
       retire_when: Upstream provides a dedicated checks view with repository-policy-aware required checks and equivalent merge or auto-merge guidance in pull request details.
 
+  - id: pull-request-stack-merge-layer-refresh
+    title: Refresh every layer a stack merge landed
+    status: maintained
+    prs: [1224]
+    invariants:
+      - After Merge stack, every listed layer that the host reports as merged gets a merge announcement and an immediate linked-thread refresh, not only the pull request the merge started from.
+      - Layers above the merge target, and listed layers the host does not report as merged, are not announced as merged.
+    rationale: Upstream confirms and announces only the pull request the action targeted, so lower layers merged by the same stack merge keep an open state and unsettled threads until the next background sync. Compared with upstream revision 3ee55151e075441a798094202503087fcf1268f0 on November 3, 2026.
+    implementation_paths:
+      - apps/server/src/pullRequest/PullRequestService.ts
+    upstream_paths:
+      - apps/server/src/pullRequest/PullRequestService.ts
+    tests:
+      - apps/server/src/pullRequest/PullRequestService.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream confirms and announces each layer a stack merge lands.
+
   - id: pull-requests-page-archived-projects
     title: Leave archived projects off the Pull Requests page
     status: maintained
