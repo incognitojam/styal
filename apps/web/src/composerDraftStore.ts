@@ -45,6 +45,7 @@ import { DeepMutable } from "effect/Types";
 import {
   createModelSelection,
   draftModelPickMatchesThread,
+  normalizeCustomModelSlug,
   normalizeModelSlug,
   normalizeAntigravityModelSelection,
 } from "@t3tools/shared/model";
@@ -1050,7 +1051,11 @@ function normalizeModelSelection(
   const driverKindHint =
     normalizeProviderDriverKind(candidate?.provider ?? legacy?.provider) ??
     ProviderDriverKind.make("codex");
-  const model = normalizeModelSlug(rawModel, driverKindHint);
+  // Instance-scoped picks are already resolved slugs; a custom slug can match a static alias.
+  const model =
+    candidate?.instanceId === undefined
+      ? normalizeModelSlug(rawModel, driverKindHint)
+      : normalizeCustomModelSlug(rawModel);
   if (!model) {
     return null;
   }
@@ -3245,7 +3250,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
           }
           const instanceKey = options?.instanceId ?? defaultInstanceIdForDriver(normalizedProvider);
           const fallbackModel =
-            normalizeModelSlug(options?.model, normalizedProvider) ??
+            normalizeCustomModelSlug(options?.model) ??
             DEFAULT_MODEL_BY_PROVIDER[normalizedProvider] ??
             DEFAULT_MODEL;
           const providerOpts =
@@ -3277,8 +3282,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
                 nextStickyMap[instanceKey] ??
                 base.modelSelectionByProvider[instanceKey] ??
                 createModelSelection(instanceKey, fallbackModel);
-              const rememberedModel =
-                normalizeModelSlug(options?.model, normalizedProvider) ?? stickyBase.model;
+              const rememberedModel = normalizeCustomModelSlug(options?.model) ?? stickyBase.model;
               if (providerOpts) {
                 nextStickyMap[instanceKey] = createModelSelection(
                   instanceKey,
