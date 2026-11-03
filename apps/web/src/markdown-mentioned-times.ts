@@ -8,6 +8,7 @@
 import {
   findMentionedTimes,
   findMessageZone,
+  tableColumnHoldsDurations,
   type MentionedTime,
   type MentionedTimeZone,
 } from "@t3tools/client-runtime/mentioned-times";
@@ -37,8 +38,9 @@ function splitTextNode(
   value: string,
   messageZone: MentionedTimeZone | null,
   before: string,
+  durations: boolean,
 ): MarkdownAstNode[] | null {
-  const matches = findMentionedTimes(value, { messageZone, before });
+  const matches = findMentionedTimes(value, { messageZone, before, durations });
   if (matches.length === 0) return null;
   const nodes: MarkdownAstNode[] = [];
   let consumed = 0;
@@ -61,6 +63,20 @@ function proseOf(node: MarkdownAstNode, parts: string[] = []): string[] {
   return parts;
 }
 
+/** For each column of a GFM table, whether its cells hold lengths rather than times of day. */
+function durationColumns(table: MarkdownAstNode): boolean[] {
+  const rows = (table.children ?? []).map((row) =>
+    (row.children ?? []).map((cell) => proseOf(cell).join("")),
+  );
+  const [header = [], ...body] = rows;
+  return header.map((title, column) =>
+    tableColumnHoldsDurations(
+      title,
+      body.map((row) => row[column] ?? ""),
+    ),
+  );
+}
+
 /** Formatting inside a sentence; any other node starts a new run of text. */
 const INLINE_TYPES = new Set(["text", "emphasis", "strong", "delete", "inlineCode", "break"]);
 
@@ -69,9 +85,21 @@ export function remarkMentionedTimes() {
     const messageZone = findMessageZone(proseOf(tree).join("\n"));
     // The same block's text so far, so "merged at **14:39 UTC**" still reads as past.
     let before = "";
+    let durations = false;
     const visit = (node: MarkdownAstNode): void => {
       if (!INLINE_TYPES.has(node.type ?? "")) before = "";
       if (node.type === "link" || node.type === "linkReference") return;
+      if (node.type === "table") {
+        const columns = durationColumns(node);
+        for (const row of node.children ?? []) {
+          (row.children ?? []).forEach((cell, column) => {
+            durations = columns[column] ?? false;
+            visit(cell);
+          });
+        }
+        durations = false;
+        return;
+      }
       const children = node.children;
       if (!children) return;
       for (let index = 0; index < children.length; index += 1) {
@@ -79,7 +107,7 @@ export function remarkMentionedTimes() {
         if (!child) continue;
         if (child.type === "inlineCode") before += " ";
         if (child.type === "text" && typeof child.value === "string") {
-          const replacement = splitTextNode(child.value, messageZone, before);
+          const replacement = splitTextNode(child.value, messageZone, before, durations);
           before += child.value;
           if (replacement) {
             children.splice(index, 1, ...replacement);

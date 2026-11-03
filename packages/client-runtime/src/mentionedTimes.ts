@@ -348,22 +348,70 @@ export function findMessageZone(text: string): MentionedTimeZone | null {
   return zones.size === 1 ? zones.values().next().value! : null;
 }
 
+/**
+ * A word naming a length, directly before a time: "took 17:25", "Length: 17:25", "passed in
+ * 16:11". A moment takes "at", so a bare "in" before a time is a length.
+ */
+const DURATION_CUE =
+  /\b(?:(?:took|takes|taking|lasted|lasts|lasting|length|duration|elapsed|runtime|run time|uptime)(?:\s+(?:of|was|is))?\s*:?|in)\s*$/i;
+/** A column header naming a length. Checked before {@link CLOCK_HEADER}, so "Time taken" counts. */
+const DURATION_HEADER =
+  /\b(?:length|duration|elapsed|took|taken|runtime|run time|wall time|uptime|total)\b/i;
+const CLOCK_HEADER =
+  /\b(?:time|timestamp|at|when|start|started|end|ended|finished|created|updated|sent|received)\b/i;
+/** `44:08`: minutes and seconds, since no time of day has that hour. */
+const NOT_A_TIME_OF_DAY = /(?<![\w:.])(?<hours>\d{2,}):[0-5]\d(?::[0-5]\d)?(?![\w:])/g;
+
+/**
+ * Whether a table column holds lengths, so its bare `17:25` is not a time of day. The header
+ * decides when it names either; otherwise one cell no clock could show settles it. A one-digit
+ * hour is no evidence, because logs write `9:05` too.
+ */
+export function tableColumnHoldsDurations(header: string, cells: readonly string[]): boolean {
+  if (DURATION_HEADER.test(header)) return true;
+  if (CLOCK_HEADER.test(header)) return false;
+  return cells.some((cell) =>
+    [...cell.matchAll(NOT_A_TIME_OF_DAY)].some((match) => Number(match.groups!.hours) > 23),
+  );
+}
+
 export interface FindMentionedTimesOptions {
   /** From {@link findMessageZone}; stands in for the zone of times written without one. */
   readonly messageZone?: MentionedTimeZone | null;
   /** Text just before `text` in the same sentence, split off by formatting such as bold. */
   readonly before?: string;
+  /** The text sits where a bare `17:25` is a length, such as a table's Length column. */
+  readonly durations?: boolean;
+}
+
+/** A time with nothing beside it to say it is a moment rather than a length. */
+function isBareClock(groups: Record<string, string | undefined>, time: MentionedTime): boolean {
+  return (
+    time.kind === "clock" &&
+    time.zone === undefined &&
+    time.date === undefined &&
+    time.weekday === undefined &&
+    time.dayOffset === undefined &&
+    groups.meridiem === undefined &&
+    groups.hourMeridiem === undefined
+  );
 }
 
 /** Every time mentioned in a run of plain text, in order and without overlaps. */
 export function findMentionedTimes(
   text: string,
-  { messageZone = null, before = "" }: FindMentionedTimesOptions = {},
+  { messageZone = null, before = "", durations = false }: FindMentionedTimesOptions = {},
 ): MentionedTimeMatch[] {
   const matches: MentionedTimeMatch[] = [];
   for (const match of text.matchAll(CLOCK_PATTERN)) {
     const parsed = match.groups ? parseClock(match.groups) : null;
     if (parsed === null || parsed.kind !== "clock" || match.index === undefined) continue;
+    if (
+      isBareClock(match.groups!, parsed) &&
+      (durations || DURATION_CUE.test(before + text.slice(0, match.index)))
+    ) {
+      continue;
+    }
     const tense =
       parsed.date || parsed.dayOffset !== undefined
         ? undefined

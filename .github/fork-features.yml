@@ -2808,6 +2808,7 @@ features:
       - Zone-less times take the one zone the rest of the message uses, else the zone the environment reports as `platform.timeZone`; against a server that reports none and a message that names none, they stay plain text rather than guessing.
       - Times without a date take the occurrence nearest to when the message was sent, unless a tense cue in the same sentence ("next", "merged") points the other way and the nearest occurrence is more than three hours on the wrong side.
       - Durations such as "finished in 36 seconds" and single-digit zone-less clocks such as "2:48" are not marked.
+      - A bare clock (no zone, date, day, or am/pm) directly after a length word or a bare "in" ("took 17:25", "Length: 17:25", "passed in 16:11") or in a table column of lengths is not marked. A column holds lengths when its header names a length; a header naming a time of day keeps its chips; otherwise a cell whose hour exceeds 23 ("44:08") marks it.
       - Timeline labels ending in a punctuation colon retain their clock and explicit zone; extra colon-separated tokens and file line/column references stay unmarked.
       - Opening a time explanation emits at most one structural client-usage event per mounted chip through the message's environment, without sending the time, timezone, message content, or identifiers.
     implementation_paths:

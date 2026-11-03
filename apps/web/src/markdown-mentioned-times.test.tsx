@@ -135,6 +135,23 @@ describe("remarkMentionedTimes", () => {
     ]);
   });
 
+  it("leaves lengths in a duration column alone and keeps times in other columns", () => {
+    const html = renderMarkdown(
+      "| Recording | Started | Length |\n|---|---|---|\n| call-a | 16:03 | 44:08 |\n| call-b | 16:57 | 17:25 |",
+    );
+
+    expect(mentionedTimes(html)).toEqual([
+      expect.objectContaining({ hour: 16, minute: 3 }),
+      expect.objectContaining({ hour: 16, minute: 57 }),
+    ]);
+  });
+
+  it("keeps times in a log table that writes one-digit hours", () => {
+    const html = renderMarkdown("| Time | Event |\n|---|---|\n| 9:05 | start |\n| 17:25 | stop |");
+
+    expect(mentionedTimes(html)).toEqual([expect.objectContaining({ hour: 17, minute: 25 })]);
+  });
+
   it("leaves times in code and link labels alone", () => {
     const html = renderMarkdown(
       "Run `sleep-until 14:39 UTC`, see [the 14:39 UTC run](https://example.com/run).\n\n```\n14:39 UTC\n```",
