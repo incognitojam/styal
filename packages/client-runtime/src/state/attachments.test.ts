@@ -13,6 +13,7 @@ import { isTransportConnectionErrorMessage } from "../errors/transport.ts";
 import type { AtomCommand } from "./runtime.ts";
 import {
   attachmentBatchLimitError,
+  formatAttachmentSize,
   runAttachmentUploadCycle,
   verifyPersistedAttachmentUpload,
 } from "./attachments.ts";
@@ -192,5 +193,16 @@ describe("attachmentBatchLimitError", () => {
     expect(attachmentBatchLimitError(Array.from({ length: 101 }, () => ({ sizeBytes: 1 })))).toBe(
       "Messages can contain at most 100 attachments.",
     );
+  });
+});
+
+describe("formatAttachmentSize", () => {
+  it.each([
+    [1_047_552, "1023 KB"],
+    [1_047_553, "1.0 MB"],
+    [1_048_575, "1.0 MB"],
+    [1_048_576, "1.0 MB"],
+  ])("formats %d bytes as %s", (sizeBytes, label) => {
+    expect(formatAttachmentSize(sizeBytes)).toBe(label);
   });
 });
