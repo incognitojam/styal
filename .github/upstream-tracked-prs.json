@@ -177,6 +177,14 @@
       "reason": "Reopens the chat the user was in after iOS ends the app or an update restart, using upstream's remembered workspace selections (iOS only, from the #24742/#24750/#25627 chain the fork has not taken yet). The fork's mobile-update-restart-location fix covers update restarts on Android and iOS until then. When it merges, take it at chronological intake, check whether it now covers Android, and retire or narrow the fork's fix and ledger entry."
     },
     {
+      "pr": 25869,
+      "reason": "Imported provisionally as a partial snapshot: only the Full access runtime mode icon (LockOpen to ShieldOff, with its comment) in apps/web/src/components/chat/runtimeModeConfig.ts. The rest of the PR, the composer rebuild and resolveCompatibleRuntimeMode, builds on 43 earlier upstream PRs the fork has not taken in and stays pending. When chronological intake reaches it, apply the whole PR (its runtimeModeConfig.ts icon hunk is already present), then clear this snapshot marker with that intake.",
+      "snapshot": {
+        "base": "48a292364ab37574c67fb377b5227e5d281d9203",
+        "head": "bd84b1781a7febb7398a6838cad0416a3240da1a"
+      }
+    },
+    {
       "pr": 23392,
       "reason": "Brings back a desktop startup splash while the local backend boots. Upstream #22222 reverted #19706 (\"Starting styal…\" splash) because it had never run on a real desktop build; the fork wants a splash again. Take it at intake, or import it early if the maintainer asks; #23637 (splash when the backend never becomes ready) is related."
     }
