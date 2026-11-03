@@ -130,8 +130,6 @@ export function SidebarSectionHeader(props: {
         <SidebarThreadUndoNotice className="absolute inset-x-0 bottom-full bg-sidebar surface-grain" />
       ) : null}
       <CollapsibleSectionHeader
-        role="treeitem"
-        tabIndex={-1}
         data-sidebar-row={`shelf:${shelf}`}
         onClick={props.toggle.onToggle}
         expanded={props.toggle.expanded}
@@ -183,8 +181,6 @@ export function SidebarProjectGroupHeader(props: {
       <div
         {...attributes}
         {...listeners}
-        role="treeitem"
-        tabIndex={-1}
         data-sidebar-row={props.id}
         data-sidebar-parent={props.navigationParent}
         aria-label={props.label}

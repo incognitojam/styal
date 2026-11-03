@@ -5863,6 +5863,7 @@ features:
       - apps/server/src/telemetry/ClientFeatureUsage.test.ts
       - apps/web/src/components/Sidebar.drag.test.ts
       - apps/web/src/components/Sidebar.logic.test.ts
+      - apps/web/src/components/sidebar/SidebarListMarkers.browser.test.tsx
       - e2e/tests/sidebar-project-groups.e2e.ts
       - packages/client-runtime/src/state/threadProjectGroups.test.ts
     upstream:
