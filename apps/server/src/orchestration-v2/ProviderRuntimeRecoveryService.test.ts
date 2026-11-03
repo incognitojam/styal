@@ -714,30 +714,38 @@ it.effect(
           updatedAt: recordedAt,
         },
       ],
-      turnItems: ["command_execution", "assistant_message", "reasoning", "compaction"].map(
-        (type, ordinal) => ({
-          id: TurnItemId.make(`turn_item_recovery_cancel_${type}`),
-          threadId,
-          runId,
-          nodeId: rootNodeId,
-          providerThreadId,
-          providerTurnId,
-          nativeItemRef: null,
-          parentItemId: null,
-          ordinal,
-          status: "running",
-          title: null,
-          startedAt: recordedAt,
-          completedAt: null,
-          updatedAt: recordedAt,
-          type,
-          input: "synthetic command",
-          text: "Recorded response",
-          streaming: true,
-          messageId: MessageId.make("message_recovery_cancel"),
-          driver: ProviderDriverKind.make("codex"),
-        }),
-      ),
+      turnItems: [
+        "command_execution",
+        "assistant_message",
+        "reasoning",
+        "proposed_plan",
+        "compaction",
+      ].map((type, ordinal) => ({
+        id: TurnItemId.make(`turn_item_recovery_cancel_${type}`),
+        threadId,
+        runId,
+        nodeId: rootNodeId,
+        providerThreadId,
+        providerTurnId,
+        nativeItemRef: null,
+        parentItemId: null,
+        ordinal,
+        status: "running",
+        title: null,
+        startedAt: recordedAt,
+        completedAt: null,
+        updatedAt: recordedAt,
+        type,
+        input: "synthetic command",
+        text: "Recorded response",
+        planId: "plan_recovery_cancel",
+        markdown: "Recorded plan",
+        ...(["assistant_message", "reasoning", "proposed_plan"].includes(type)
+          ? { streaming: true }
+          : {}),
+        messageId: MessageId.make("message_recovery_cancel"),
+        driver: ProviderDriverKind.make("codex"),
+      })),
     } as unknown as OrchestrationV2ThreadProjection;
     const layer = ProviderRuntimeRecovery.layer.pipe(
       Layer.provide(ServerSettings.layerTest()),
@@ -794,6 +802,7 @@ it.effect(
           ["turn-item.updated", "cancelled"],
           ["turn-item.updated", "cancelled"],
           ["turn-item.updated", "cancelled"],
+          ["turn-item.updated", "cancelled"],
           ["provider-thread.updated", "idle"],
           ["provider-session.updated", "stopped"],
         ],
@@ -815,7 +824,7 @@ it.effect(
           const store = yield* ProjectionStore.ProjectionStoreV2;
           yield* store.apply(messageEvent);
           const stoppedItems = events.filter((event) => event.type === "turn-item.updated");
-          assert.equal(stoppedItems.length, 4);
+          assert.equal(stoppedItems.length, 5);
           for (const event of stoppedItems) {
             assert.equal(
               DateTime.formatIso(event.payload.completedAt!),
@@ -835,6 +844,18 @@ it.effect(
           assert.equal(rows[0]?.updated_at, DateTime.formatIso(recordedAt));
         }).pipe(Effect.provide(ProjectionStore.layer.pipe(Layer.provideMerge(layerMemory))));
       }
+      assert.deepEqual(
+        events.flatMap((event) =>
+          event.type === "turn-item.updated" && "streaming" in event.payload
+            ? [[event.payload.type, event.payload.streaming]]
+            : [],
+        ),
+        [
+          ["assistant_message", false],
+          ["reasoning", false],
+          ["proposed_plan", false],
+        ],
+      );
     }).pipe(Effect.provide(layer));
   },
 );

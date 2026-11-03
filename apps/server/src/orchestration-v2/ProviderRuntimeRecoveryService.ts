@@ -211,7 +211,12 @@ const cancelledItem = (
   const timestamps = cancelledItemTimestamps(item, now);
   return item.type === "secret_request" && item.secretStatus === "pending"
     ? { ...item, status: "cancelled", secretStatus: "cancelled", ...timestamps }
-    : { ...item, status: "cancelled", ...timestamps };
+    : {
+        ...item,
+        ...("streaming" in item ? { streaming: false } : {}),
+        status: "cancelled",
+        ...timestamps,
+      };
 };
 
 function latestStartedRun(
