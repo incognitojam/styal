@@ -19,7 +19,7 @@ export function PullRequestMergeIntentIcon({
       {mergeIntent ? (
         <span
           className={cn(
-            "absolute -top-0.5 -right-0.5 size-1 rounded-full bg-current outline-1 outline-background",
+            "absolute -top-0.5 -right-0.5 size-1 rounded-full bg-current outline-1 outline-offset-0 outline-background",
             PULL_REQUEST_STATE_PRESENTATION.merged.toneClassName,
           )}
         />
