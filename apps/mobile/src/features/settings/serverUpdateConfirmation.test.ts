@@ -2,6 +2,7 @@ import { ThreadId } from "@t3tools/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
+  confirmServerUpdate,
   describeServerUpdate,
   describeServerUpdateCheck,
   readServerUpdateConfirmation,
@@ -153,9 +154,31 @@ describe("requestServerUpdateConfirmation", () => {
       message: expect.stringContaining("Nothing running will be interrupted."),
     });
     expect(readServerUpdateConfirmation(requestId)?.confirmLabel).toBeUndefined();
+    expect(readServerUpdateConfirmation(requestId)?.checking).toBeUndefined();
     respondToServerUpdateConfirmation(requestId, true);
     await expect(answer).resolves.toBe(true);
     unsubscribe();
+  });
+
+  it("ignores a confirm tap just after a late check replaced the content", async () => {
+    using now = vi.spyOn(Date, "now").mockReturnValue(10_000);
+    let requestId = "";
+    const result = Promise.resolve(
+      describeServerUpdate({ ...base, activity: { ...idle, waitingSessions: 1 } }),
+    );
+    const answer = requestServerUpdateConfirmation(
+      describeServerUpdateCheck({ ...base, desktopManaged: false }),
+      (id) => {
+        requestId = id;
+      },
+      result,
+    );
+    await result;
+    now.mockReturnValue(10_300);
+    expect(confirmServerUpdate(requestId)).toBe(false);
+    now.mockReturnValue(10_500);
+    expect(confirmServerUpdate(requestId)).toBe(true);
+    await expect(answer).resolves.toBe(true);
   });
 
   it("ignores a check that finishes after the sheet was answered", async () => {

@@ -82,7 +82,7 @@ export const hostActivityQuestion: Record<HostActivityConcern, string> = {
 };
 
 /** How long an update waits for its running-work check before asking without it. */
-const HOST_ACTIVITY_CHECK_GRACE_MS = 5_000;
+const HOST_ACTIVITY_CHECK_GRACE_MS = 2_000;
 
 /** The check's result when it settles within `graceMs`, otherwise null. */
 export function settleWithinGrace<A>(

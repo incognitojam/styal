@@ -414,7 +414,7 @@ describe("groupHostActivityThreads", () => {
 describe("settleWithinGrace", () => {
   it("returns a check that settles within the grace period", async () => {
     vi.useFakeTimers();
-    const result = settleWithinGrace(Promise.resolve(idle), 5_000);
+    const result = settleWithinGrace(Promise.resolve(idle));
     await expect(result).resolves.toEqual({ value: idle });
     vi.useRealTimers();
   });
@@ -425,8 +425,8 @@ describe("settleWithinGrace", () => {
     const check = new Promise<typeof idle>((resolve) => {
       finish = resolve;
     });
-    const result = settleWithinGrace(check, 5_000);
-    await vi.advanceTimersByTimeAsync(5_000);
+    const result = settleWithinGrace(check);
+    await vi.advanceTimersByTimeAsync(2_000);
     await expect(result).resolves.toBeNull();
     finish(idle);
     await expect(check).resolves.toBe(idle);

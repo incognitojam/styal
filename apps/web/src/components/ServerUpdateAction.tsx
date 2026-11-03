@@ -263,7 +263,7 @@ export function useServerUpdates() {
           const answer = requestConfirmDialog(
             serverUpdateCheckingMessage(hosts),
             { confirmLabel: "Update anyway" },
-            { bindContentUpdate: (update) => (showResult = update) },
+            { checking: true, bindContentUpdate: (update) => (showResult = update) },
           );
           if (answer === undefined) {
             if ((await check).confirmation !== null) return skipAll(targets);

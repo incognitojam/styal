@@ -16,7 +16,12 @@ export type ServerUpdateConfirmation = {
   readonly requiresConfirmation: boolean;
   /** Defaults to "Update". */
   readonly confirmLabel?: string;
+  /** The running-work check is still going and may replace this content. */
+  readonly checking?: boolean;
 };
+
+// A tap aimed at the previous content must not confirm the new content.
+const CONTENT_UPDATE_TAP_GUARD_MS = 500;
 
 /**
  * Copy for confirming a server update from the environment screen. A null
@@ -77,12 +82,14 @@ export function describeServerUpdateCheck(input: {
     threadActivity: [],
     requiresConfirmation: true,
     confirmLabel: "Update anyway",
+    checking: true,
   };
 }
 
 type PendingConfirmation = {
   confirmation: ServerUpdateConfirmation;
   resolve: ((confirmed: boolean) => void) | null;
+  updatedAt?: number;
 };
 
 const pending = new Map<string, PendingConfirmation>();
@@ -112,6 +119,7 @@ export function requestServerUpdateConfirmation(
           message: `${checked.message}\nNothing running will be interrupted.`,
           requiresConfirmation: true,
         };
+    request.updatedAt = Date.now();
     for (const listener of listeners) listener();
   });
   return new Promise((resolve) => {
@@ -138,6 +146,14 @@ export function respondToServerUpdateConfirmation(requestId: string, confirmed: 
   const { resolve } = request;
   request.resolve = null;
   resolve(confirmed);
+}
+
+/** Confirms unless the content changed just before the tap; returns whether it confirmed. */
+export function confirmServerUpdate(requestId: string): boolean {
+  const updatedAt = pending.get(requestId)?.updatedAt;
+  if (updatedAt !== undefined && Date.now() - updatedAt < CONTENT_UPDATE_TAP_GUARD_MS) return false;
+  respondToServerUpdateConfirmation(requestId, true);
+  return true;
 }
 
 /** Answers false if still open, then drops the request once its screen is gone. */

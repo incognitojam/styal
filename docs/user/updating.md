@@ -48,7 +48,7 @@ updating, styal checks the server for active agents, threads waiting for input,
 running terminal commands, and provider updates being installed, including work
 started from other devices. If
 work would be interrupted or the check fails, styal lists it and asks you to confirm.
-If the check takes longer than five seconds, the confirmation opens while it continues:
+If the check takes longer than two seconds, the confirmation opens while it continues:
 choose **Update anyway** to update without waiting, or wait for the result to appear.
 Resumable agent turns do not need confirmation. Running terminal commands, waiting
 approvals or questions, provider installs, and devices used by another environment do.

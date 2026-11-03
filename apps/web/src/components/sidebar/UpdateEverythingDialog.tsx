@@ -9,7 +9,10 @@ import {
   AlertDialogTitle,
 } from "../ui/alert-dialog";
 import { Button } from "../ui/button";
+import { CONTENT_UPDATE_CLICK_GUARD_MS } from "../../confirmDialog";
 import { HostActivityThreadList } from "../HostActivityThreadList";
+import { StableLabel } from "../StableLabel";
+import { Spinner } from "../ui/spinner";
 import type { SkippedMachine, UpdateEverythingConfirmation } from "./updateEverything.logic";
 
 interface UpdateEverythingDialogProps {
@@ -21,6 +24,8 @@ interface UpdateEverythingDialogProps {
   readonly activity: UpdateEverythingConfirmation;
   /** The running-work check is still going, so confirming skips it. */
   readonly checking: boolean;
+  /** When a late check result replaced the content; clicks just after it are ignored. */
+  readonly contentUpdatedAt?: number | null;
   readonly onConfirm: () => void;
 }
 
@@ -32,6 +37,7 @@ export function UpdateEverythingDialog({
   skipped,
   activity,
   checking,
+  contentUpdatedAt = null,
   onConfirm,
 }: UpdateEverythingDialogProps) {
   const reportDecision = useCombinedUpdateConfirmationUsage(open);
@@ -56,7 +62,14 @@ export function UpdateEverythingDialog({
               {lines.join("\n")}
             </AlertDialogDescription>
             {activity.lines.length > 0 ? (
-              <p className="whitespace-pre-line pt-2 text-sm">{activity.lines.join("\n")}</p>
+              <div className="flex items-start gap-2 pt-2">
+                {checking ? (
+                  <span className="pt-0.5">
+                    <Spinner size="sm" tone="muted" aria-label="Checking" />
+                  </span>
+                ) : null}
+                <p className="whitespace-pre-line text-sm">{activity.lines.join("\n")}</p>
+              </div>
             ) : null}
             {skipped.length > 0 ? (
               <p className="whitespace-pre-line pt-2 text-sm">
@@ -70,11 +83,19 @@ export function UpdateEverythingDialog({
           <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
           <Button
             onClick={() => {
+              if (
+                contentUpdatedAt !== null &&
+                Date.now() - contentUpdatedAt < CONTENT_UPDATE_CLICK_GUARD_MS
+              )
+                return;
               reportDecision("confirmed");
               onConfirm();
             }}
           >
-            {checking ? "Update anyway" : "Update"}
+            <StableLabel
+              label={checking ? "Update anyway" : "Update"}
+              previous={contentUpdatedAt === null ? undefined : "Update anyway"}
+            />
           </Button>
         </AlertDialogFooter>
       </AlertDialogPopup>

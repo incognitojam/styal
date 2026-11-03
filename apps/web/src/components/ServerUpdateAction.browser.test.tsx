@@ -377,7 +377,7 @@ describe("ServerUpdateAction", () => {
     await click(screen, "Update");
     expect(readConfirmDialogState().status).toBe("idle");
 
-    await act(async () => vi.advanceTimersByTimeAsync(5_000));
+    await act(async () => vi.advanceTimersByTimeAsync(2_000));
     expect(readConfirmDialogState()).toMatchObject({
       status: "confirming",
       message: expect.stringContaining("Still checking the Test server for running work."),
@@ -406,7 +406,7 @@ describe("ServerUpdateAction", () => {
     await using screen = await renderAction();
     using _timers = fakeTimers();
     await click(screen, "Update");
-    await act(async () => vi.advanceTimersByTimeAsync(5_000));
+    await act(async () => vi.advanceTimersByTimeAsync(2_000));
     expect(readConfirmDialogState()).toMatchObject({ confirmLabel: "Update anyway" });
 
     await act(async () => respondToConfirmDialog(true));

@@ -143,6 +143,8 @@ function SidebarUpdateControl() {
   const [isConfirmingEverything, setIsConfirmingEverything] = useState(false);
   const [activityCheck, setActivityCheck] = useState<UpdateEverythingConfirmation | null>(null);
   const [isCheckingActivity, setIsCheckingActivity] = useState(false);
+  // Set when a late check result replaces the dialog's content.
+  const [activityUpdatedAt, setActivityUpdatedAt] = useState<number | null>(null);
   // Results of a check that outlasted its dialog are ignored.
   const latestActivityCheck = useRef(0);
   const action = state ? resolveDesktopUpdateButtonAction(state) : "none";
@@ -198,12 +200,14 @@ function SidebarUpdateControl() {
         if (!early.value.interrupts) return runEverything(early.value, false);
         setActivityCheck(early.value);
         setIsCheckingActivity(false);
+        setActivityUpdatedAt(null);
         setIsConfirmingEverything(true);
         return;
       }
       const checkId = ++latestActivityCheck.current;
       setActivityCheck(everything.checkingActivity());
       setIsCheckingActivity(true);
+      setActivityUpdatedAt(null);
       setIsConfirmingEverything(true);
       void check.then((activity) => {
         if (latestActivityCheck.current !== checkId) return;
@@ -213,6 +217,7 @@ function SidebarUpdateControl() {
             : { ...activity, lines: ["Nothing running will be interrupted."] },
         );
         setIsCheckingActivity(false);
+        setActivityUpdatedAt(Date.now());
       });
       return;
     }
@@ -275,6 +280,7 @@ function SidebarUpdateControl() {
       open={isConfirmingEverything}
       onOpenChange={(open) => (open ? setIsConfirmingEverything(true) : closeConfirmation())}
       checking={isCheckingActivity}
+      contentUpdatedAt={activityUpdatedAt}
       summary={everything.summary}
       lines={everything.lines}
       skipped={everything.skipped}

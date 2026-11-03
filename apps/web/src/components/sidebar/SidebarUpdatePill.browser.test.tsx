@@ -251,9 +251,15 @@ const updated = () => AsyncResult.success({ method: "boot-service", targetVersio
 const desktopListeners = new Set<(state: DesktopUpdateState) => void>();
 
 const dialog = () => document.querySelector<HTMLElement>('[role="alertdialog"][data-open]');
+// Text hidden from assistive technology, such as a reserved label width, is not the name.
+function visibleText(element: HTMLElement) {
+  const copy = element.cloneNode(true) as HTMLElement;
+  for (const hidden of copy.querySelectorAll('[aria-hidden="true"]')) hidden.remove();
+  return copy.textContent?.trim();
+}
 function button(name: string, within: ParentNode = document) {
   const match = [...within.querySelectorAll<HTMLButtonElement>("button")].find(
-    (item) => item.textContent?.trim() === name,
+    (item) => visibleText(item) === name,
   );
   expect(match, `button ${name}`).toBeDefined();
   return match!;
@@ -753,7 +759,7 @@ describe("combined sidebar update", () => {
     await click(screen.container.querySelector<HTMLButtonElement>("button")!);
     expect(dialog()).toBeNull();
 
-    await act(() => vi.advanceTimersByTimeAsync(5_000));
+    await act(() => vi.advanceTimersByTimeAsync(2_000));
     expect(dialog()!.textContent).toContain(
       "Still checking this app, Build machine, and Test machine for running work.",
     );
@@ -762,6 +768,10 @@ describe("combined sidebar update", () => {
     await act(() => remote.resolve(AsyncResult.success(remoteActivity)));
     expect(dialog()!.textContent).not.toContain("Still checking");
     expect(dialog()!.textContent).toContain("Build release");
+    // A click right after the content changed was aimed at the old content.
+    await click(button("Update", dialog()!));
+    expect(testState.updateServer).not.toHaveBeenCalled();
+    await act(() => vi.advanceTimersByTimeAsync(500));
     await click(button("Update", dialog()!));
     await vi.waitFor(() => expect(testState.updateServer).toHaveBeenCalledTimes(2));
     expect(testState.updateServer.mock.calls.map(([target]) => target.input.confirmed)).toEqual([
@@ -781,7 +791,7 @@ describe("combined sidebar update", () => {
     await using screen = await renderPill();
     using _timers = fakeTimers();
     await click(screen.container.querySelector<HTMLButtonElement>("button")!);
-    await act(() => vi.advanceTimersByTimeAsync(5_000));
+    await act(() => vi.advanceTimersByTimeAsync(2_000));
 
     await click(button("Update anyway", dialog()!));
     await vi.waitFor(() => expect(testState.updateServer).toHaveBeenCalledTimes(2));
