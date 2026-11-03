@@ -1,3 +1,5 @@
+import * as ConfigProvider from "effect/ConfigProvider";
+import * as TestClock from "effect/testing/TestClock";
 // @effect-diagnostics nodeBuiltinImport:off preferSchemaOverJson:off
 /** Compare imports against the views captured by an actual upstream server. */
 import * as NodeFS from "node:fs";
@@ -34,6 +36,10 @@ interface View {
   snapshot: { projects: Json[]; threads: Json[] };
   threads: Record<string, Json>;
 }
+const pruningEnabled = ConfigProvider.layer(
+  ConfigProvider.fromEnv({ env: { T3CODE_EVENT_PRUNING: "1" } }),
+);
+
 const fixtures = [
   {
     name: "native V2",
@@ -311,8 +317,13 @@ for (const fixture of fixtures) {
           assert.notInclude(JSON.stringify(settings.providerInstances), sourceCodexBinaryPath!);
           assert.deepEqual(settings.providerInstances, destinationSettingsBefore.providerInstances);
           const maintenance = yield* Maintenance.ProjectionMaintenanceV2;
-          yield* maintenance.compactEventStore();
-          assert.isTrue((yield* maintenance.rebuild).valid);
+          yield* maintenance.pruneEventStore().pipe(Effect.provide(pruningEnabled));
+          yield* TestClock.adjust("1 day");
+          assert.isAbove(
+            (yield* maintenance.pruneEventStore().pipe(Effect.provide(pruningEnabled)))
+              .deletedEventCount,
+            0,
+          );
           for (const [id, projection] of before)
             assert.deepEqual(yield* store.getThreadProjection(ThreadId.make(id)), projection);
         }).pipe(Effect.provideService(References.MinimumLogLevel, "Warn")),

@@ -169,9 +169,8 @@ For failures after signing in to styal Link, see
 
 ## Reclaim database space
 
-styal removes superseded internal history on its own while it runs; your
-conversations are kept. Databases created before this shrank automatically
-still hold the freed space on disk until a one-time offline repair returns it
+Your conversations remain available from the stored history. Databases with
+unused space still hold it on disk until a one-time offline repair returns it
 and turns on automatic shrinking. Settings > Maintenance (web and desktop) or
 Settings > Maintenance (mobile) suggests the repair when at least 1 GiB can be
 reclaimed.

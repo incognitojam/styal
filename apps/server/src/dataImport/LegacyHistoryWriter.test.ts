@@ -1,3 +1,5 @@
+import * as ConfigProvider from "effect/ConfigProvider";
+import * as TestClock from "effect/testing/TestClock";
 import { assert, it } from "@effect/vitest";
 import {
   EventId,
@@ -18,6 +20,10 @@ import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as ProjectionMaintenance from "../orchestration-v2/ProjectionMaintenance.ts";
 import { makeLegacyHistoryWriter } from "./LegacyHistoryWriter.ts";
+
+const pruningEnabled = ConfigProvider.layer(
+  ConfigProvider.fromEnv({ env: { T3CODE_EVENT_PRUNING: "1" } }),
+);
 
 const stores = Layer.mergeAll(EventStore.layer, ProjectionStore.layer, ProjectStore.layer).pipe(
   Layer.provideMerge(layerMemory),
@@ -390,8 +396,13 @@ it.layer(testLayer)("LegacyHistoryWriter", (it) => {
       yield* write(events, options);
       const after = yield* projections.getThreadProjection(threadId);
       assert.deepEqual(after, before);
-      yield* maintenance.compactEventStore();
-      assert.isTrue((yield* maintenance.rebuild).valid);
+      yield* maintenance.pruneEventStore().pipe(Effect.provide(pruningEnabled));
+      yield* TestClock.adjust("1 day");
+      assert.isAbove(
+        (yield* maintenance.pruneEventStore().pipe(Effect.provide(pruningEnabled)))
+          .deletedEventCount,
+        0,
+      );
       yield* write(events, options);
       assert.deepEqual(yield* projections.getThreadProjection(threadId), before);
       const repair = [
@@ -423,8 +434,9 @@ it.layer(testLayer)("LegacyHistoryWriter", (it) => {
         "repaired-turn",
       );
       assert.deepEqual(repaired.legacyTurnUsage, before.legacyTurnUsage);
-      yield* maintenance.compactEventStore();
-      assert.isTrue((yield* maintenance.rebuild).valid);
+      yield* maintenance.pruneEventStore().pipe(Effect.provide(pruningEnabled));
+      yield* TestClock.adjust("1 day");
+      yield* maintenance.pruneEventStore().pipe(Effect.provide(pruningEnabled));
       yield* write(repair);
       assert.deepEqual(yield* projections.getThreadProjection(threadId), repaired);
     }),

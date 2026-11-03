@@ -1,3 +1,6 @@
+import * as ConfigProvider from "effect/ConfigProvider";
+import * as TestClock from "effect/testing/TestClock";
+import * as ProjectionMaintenance from "../ProjectionMaintenance.ts";
 import { assert, it } from "@effect/vitest";
 import {
   ComposerContextId,
@@ -20,8 +23,12 @@ import { listLinkedPullRequestThreads } from "../../pullRequest/linkedThreads.ts
 import * as EventSink from "../EventSink.ts";
 import * as EventStore from "../EventStore.ts";
 import * as LegacyV1ThreadImporter from "./LegacyV1ThreadImporter.ts";
-import * as ProjectionMaintenance from "../ProjectionMaintenance.ts";
+import * as ProjectionReplay from "../testkit/ProjectionReplay.ts";
 import * as ProjectionStore from "../ProjectionStore.ts";
+
+const pruningEnabled = ConfigProvider.layer(
+  ConfigProvider.fromEnv({ env: { T3CODE_EVENT_PRUNING: "1" } }),
+);
 
 const encodeHistoryJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 const layerDatabase = SqlitePersistence.layerMemory;
@@ -36,14 +43,15 @@ const layerEventSinkProvided = EventSink.layer.pipe(Layer.provide(layerStoresPro
 const layerImporterProvided = LegacyV1ThreadImporter.layer.pipe(
   Layer.provide(Layer.mergeAll(layerStoresProvided, layerEventSinkProvided)),
 );
-const layerProjectionMaintenanceProvided = ProjectionMaintenance.layer.pipe(
+const layerProjectionReplayProvided = ProjectionReplay.layer.pipe(
   Layer.provide(layerStoresProvided),
 );
 const layerTest = Layer.mergeAll(
   layerStoresProvided,
   layerEventSinkProvided,
   layerImporterProvided,
-  layerProjectionMaintenanceProvided,
+  layerProjectionReplayProvided,
+  ProjectionMaintenance.layer.pipe(Layer.provide(layerStoresProvided)),
 );
 
 const seedPendingTranscripts = Effect.gen(function* () {
@@ -395,20 +403,26 @@ it.layer(layerTest)("LegacyV1ThreadImporter", (it) => {
         assert.closeTo(before.legacyTurnUsage!.thread.costUsd!, 0.00821, 1e-12);
         yield* importer.reconcileShells;
         yield* importer.ensureTranscript(threadId);
-        yield* maintenance.compactEventStore();
-        assert.isTrue((yield* maintenance.rebuild).valid);
+        const events = yield* sql<{ readonly count: number }>`
+        SELECT COUNT(*) AS count FROM orchestration_events
+        WHERE stream_id = ${threadId} AND event_type = 'legacy-usage.imported'
+      `;
+        assert.equal(events[0]?.count, 1);
+        yield* maintenance.pruneEventStore().pipe(Effect.provide(pruningEnabled));
+        yield* TestClock.adjust("1 day");
+        assert.isAbove(
+          (yield* maintenance.pruneEventStore().pipe(Effect.provide(pruningEnabled)))
+            .deletedEventCount,
+          0,
+        );
         const after = yield* projections.getThreadProjection(threadId);
+        assert.deepEqual(after, before);
         assert.deepEqual(after.providerThreads, before.providerThreads);
         assert.deepEqual(after.legacyTurnUsage, before.legacyTurnUsage);
         assert.deepEqual(after.turnItems, before.turnItems);
         assert.deepEqual(after.checkpoints, before.checkpoints);
         assert.deepEqual(after.checkpointScopes, before.checkpointScopes);
         assert.equal(after.messages[0]?.legacyTurnId, "turn:1");
-        const events = yield* sql<{ readonly count: number }>`
-        SELECT COUNT(*) AS count FROM orchestration_events
-        WHERE stream_id = ${threadId} AND event_type = 'legacy-usage.imported'
-      `;
-        assert.equal(events[0]?.count, 1);
       }),
   );
 
@@ -416,7 +430,7 @@ it.layer(layerTest)("LegacyV1ThreadImporter", (it) => {
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
       const importer = yield* LegacyV1ThreadImporter.LegacyV1ThreadImporter;
-      const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
+      const maintenance = yield* ProjectionReplay.ProjectionReplay;
       const projections = yield* ProjectionStore.ProjectionStoreV2;
       const eventSink = yield* EventSink.EventSinkV2;
       const threadId = ThreadId.make("thread:legacy-import");
@@ -801,7 +815,7 @@ it.layer(layerTest)("LegacyV1ThreadImporter", (it) => {
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
       const importer = yield* LegacyV1ThreadImporter.LegacyV1ThreadImporter;
-      const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
+      const maintenance = yield* ProjectionReplay.ProjectionReplay;
       const projections = yield* ProjectionStore.ProjectionStoreV2;
       const eventSink = yield* EventSink.EventSinkV2;
       const threadId = ThreadId.make("thread:legacy-metadata-upgrade");

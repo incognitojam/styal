@@ -1,3 +1,5 @@
+import * as ConfigProvider from "effect/ConfigProvider";
+import * as TestClock from "effect/testing/TestClock";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeSqlite from "node:sqlite";
 import { assert, it } from "@effect/vitest";
@@ -13,6 +15,10 @@ import * as Maintenance from "../orchestration-v2/ProjectionMaintenance.ts";
 import { layerMemory } from "../persistence/Sqlite.ts";
 import { materializeV2ForkHistory } from "./V2ForkHistoryImport.ts";
 import { makeV2HistoryWriter, readV2SourceProjection } from "./V2HistoryImport.ts";
+
+const pruningEnabled = ConfigProvider.layer(
+  ConfigProvider.fromEnv({ env: { T3CODE_EVENT_PRUNING: "1" } }),
+);
 
 const encodeProjection = Schema.encodeEffect(OrchestrationV2ThreadProjectionJson);
 const decodeProjection = Schema.decodeUnknownEffect(OrchestrationV2ThreadProjectionJson);
@@ -236,9 +242,13 @@ it.layer(layer)("V2 source history import", (it) => {
         assert.deepEqual(projection.turnItems[0], { ...source.turnItems[0]!, ordinal: 1000001 });
         assert.deepEqual(projection.providerSessions, []);
         const maintenance = yield* Maintenance.ProjectionMaintenanceV2;
-        yield* maintenance.compactEventStore();
-        const rebuilt = yield* maintenance.rebuild;
-        assert.deepEqual(rebuilt.valid ? true : rebuilt, true);
+        yield* maintenance.pruneEventStore().pipe(Effect.provide(pruningEnabled));
+        yield* TestClock.adjust("1 day");
+        assert.isAbove(
+          (yield* maintenance.pruneEventStore().pipe(Effect.provide(pruningEnabled)))
+            .deletedEventCount,
+          0,
+        );
         yield* write(snapshot, ProjectId.make("target-project"));
         assert.deepEqual(
           yield* (yield* ProjectionStore.ProjectionStoreV2).getThreadProjection(threadId),
@@ -455,10 +465,14 @@ it.layer(layer)("V2 fork history import", (it) => {
         "Failure",
       );
       const maintenance = yield* Maintenance.ProjectionMaintenanceV2;
-      yield* maintenance.compactEventStore();
-      const rebuilt = yield* maintenance.rebuild;
+      yield* maintenance.pruneEventStore().pipe(Effect.provide(pruningEnabled));
+      yield* TestClock.adjust("1 day");
+      assert.isAbove(
+        (yield* maintenance.pruneEventStore().pipe(Effect.provide(pruningEnabled)))
+          .deletedEventCount,
+        0,
+      );
       assert.deepEqual(yield* store.getThreadProjection(childId), projection);
-      assert.isTrue(rebuilt.valid);
       yield* write(parent, ProjectId.make("fork-project"));
       assert.equal((yield* store.getThreadProjection(childId)).visibleTurnItems.length, 5);
       assert.equal(

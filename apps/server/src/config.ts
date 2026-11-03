@@ -1,4 +1,5 @@
 import * as Context from "effect/Context";
+import * as Config from "effect/Config";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -27,6 +28,11 @@ export const telemetryChannel: ReleaseChannel =
   typeof __T3CODE_TELEMETRY_CHANNEL__ === "undefined" ? "dev" : __T3CODE_TELEMETRY_CHANNEL__;
 
 export const DEFAULT_PORT = 3773;
+
+export const eventPruningEnabled = Config.String("T3CODE_EVENT_PRUNING").pipe(
+  Config.withDefault(""),
+  Config.map((value) => value === "1"),
+);
 
 export const RuntimeMode = Schema.Literals(["web", "desktop"]);
 export type RuntimeMode = typeof RuntimeMode.Type;

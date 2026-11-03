@@ -1,3 +1,5 @@
+import * as ConfigProvider from "effect/ConfigProvider";
+import * as TestClock from "effect/testing/TestClock";
 // @effect-diagnostics nodeBuiltinImport:off preferSchemaOverJson:off
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
@@ -372,6 +374,10 @@ export function createLegacyDatabase(databasePath: string): void {
   database.close();
 }
 
+const pruningEnabled = ConfigProvider.layer(
+  ConfigProvider.fromEnv({ env: { T3CODE_EVENT_PRUNING: "1" } }),
+);
+
 const importedAttachmentId = "thread-import-00000000-0000-4000-8000-0000000000aa";
 
 function addSecondLegacyThread(databasePath: string): void {
@@ -584,8 +590,13 @@ it.layer(importLayer)("LegacyImport V2 destination", (it) => {
         assert.isFalse(settingsAfter.newWorktreesStartFromOrigin);
         assert.notInclude(JSON.stringify(settingsAfter.providerInstances), "/synthetic/provider");
         const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
-        yield* maintenance.compactEventStore();
-        yield* maintenance.rebuild;
+        yield* maintenance.pruneEventStore().pipe(Effect.provide(pruningEnabled));
+        yield* TestClock.adjust("1 day");
+        assert.isAbove(
+          (yield* maintenance.pruneEventStore().pipe(Effect.provide(pruningEnabled)))
+            .deletedEventCount,
+          0,
+        );
         assert.deepEqual(
           yield* projections.getThreadProjection(ThreadId.make("thread-import")),
           projection,
