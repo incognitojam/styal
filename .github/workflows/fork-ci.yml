@@ -40,10 +40,20 @@ jobs:
       ledger_changed: ${{ steps.filter.outputs.ledger_changed }}
       canary_workflow_changed: ${{ steps.filter.outputs.canary_workflow_changed }}
     steps:
+      # Full history for merge bases, but blobless and with only the files the gates
+      # read: a full clone takes 20-50s and every other job waits for this one.
       - name: Checkout
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          filter: blob:none
+          sparse-checkout: |
+            /.github/scripts/
+            /package.json
+            /pnpm-workspace.yaml
+            /*/package.json
+            /*/*/package.json
+          sparse-checkout-cone-mode: false
 
       # Promotion fast-forwards main to this exact SHA. When main has moved, stop
       # before the rest of Fork CI runs: every job but the intake audit waits on this one.
@@ -682,11 +692,16 @@ jobs:
         if: matrix.e2e
         run: vp run --filter @t3tools/web build
 
+      - name: Build server bundle for e2e
+        if: matrix.e2e
+        run: vp run --filter @styal/cli build:bundle
+
       - name: Test end to end
         if: matrix.e2e
         env:
           # Environments live under TMPDIR; a failed test keeps its directory for upload.
           TMPDIR: ${{ runner.temp }}/e2e
+          E2E_SERVER_BUNDLE: "1"
         run: |
           mkdir -p "$TMPDIR"
           vp run --filter @t3tools/e2e test:e2e \
