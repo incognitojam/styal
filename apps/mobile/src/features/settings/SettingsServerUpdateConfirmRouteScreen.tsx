@@ -6,7 +6,7 @@ import {
   type HostActivityTone,
 } from "@t3tools/shared/hostActivity";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
-import { useEffect, useState } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { Platform, ScrollView, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -18,7 +18,9 @@ import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { SheetActionButton } from "../threads/git/gitSheetComponents";
 import {
   readServerUpdateConfirmation,
+  releaseServerUpdateConfirmation,
   respondToServerUpdateConfirmation,
+  subscribeServerUpdateConfirmations,
 } from "./serverUpdateConfirmation";
 
 const badgeClassNames: Record<HostActivityTone, string> = {
@@ -112,10 +114,13 @@ export function SettingsServerUpdateConfirmRouteScreen({
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
-  const [confirmation] = useState(() => readServerUpdateConfirmation(requestId));
+  // A running-work check that finishes after the screen opens replaces its content.
+  const confirmation = useSyncExternalStore(subscribeServerUpdateConfirmations, () =>
+    readServerUpdateConfirmation(requestId),
+  );
 
   // Swiping the sheet away, or any other close, cancels the update.
-  useEffect(() => () => respondToServerUpdateConfirmation(requestId, false), [requestId]);
+  useEffect(() => () => releaseServerUpdateConfirmation(requestId), [requestId]);
 
   const close = (confirmed: boolean) => {
     respondToServerUpdateConfirmation(requestId, confirmed);
@@ -161,7 +166,7 @@ export function SettingsServerUpdateConfirmRouteScreen({
           <SheetActionButton icon="xmark" label="Cancel" onPress={() => close(false)} />
           <SheetActionButton
             icon="arrow.up.circle"
-            label="Update"
+            label={confirmation?.confirmLabel ?? "Update"}
             tone="primary"
             disabled={!confirmation}
             onPress={() => close(true)}

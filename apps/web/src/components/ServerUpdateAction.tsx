@@ -6,13 +6,14 @@ import {
 } from "@t3tools/contracts";
 import type { AsyncResult } from "effect/reactivity";
 import { environmentSession } from "~/state/session";
-import type { EnvironmentId, ServerInstallation } from "@t3tools/contracts";
+import type { ConfirmDialogOptions, EnvironmentId, ServerInstallation } from "@t3tools/contracts";
 import type { ServerUpdateStage, ServerUpdateState } from "@t3tools/client-runtime/state/server";
 import {
   isAtomCommandInterrupted,
   settlePromise,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
+import { settleWithinGrace } from "@t3tools/shared/hostActivity";
 import { CircleArrowUpIcon } from "lucide-react";
 import { type ComponentProps, useRef, useState } from "react";
 
@@ -23,7 +24,12 @@ import { serverEnvironment, updateOutdatedServer } from "~/state/server";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { manualServerUpdateCommand, type ServerUpdateCapability } from "~/versionSkew";
-import { serverUpdateActivity, serverUpdateConfirmation } from "./ServerUpdateAction.logic";
+import {
+  serverUpdateActivity,
+  serverUpdateCheckingMessage,
+  serverUpdateConfirmation,
+  serverUpdateSafeMessage,
+} from "./ServerUpdateAction.logic";
 import { Button } from "./ui/button";
 import { Spinner } from "./ui/spinner";
 import {
@@ -236,18 +242,44 @@ export function useServerUpdates() {
       if (!confirmed) {
         // The remote machines restart without asking anyone there, so work
         // started from any client counts.
-        const { confirmation } = await checkServerUpdateHosts(readHostActivity, claimed);
-        // Without a dialog host (undefined), only a safe check can proceed.
-        if (
-          confirmation !== null &&
-          !(await requestConfirmDialog(confirmation.message, {
-            confirmLabel: "Update",
-            threadActivity: confirmation.threadActivity,
-          }))
-        ) {
-          return skipAll(targets);
+        const check = checkServerUpdateHosts(readHostActivity, claimed);
+        const early = await settleWithinGrace(check);
+        if (early !== null) {
+          const { confirmation } = early.value;
+          // Without a dialog host (undefined), only a safe check can proceed.
+          if (
+            confirmation !== null &&
+            !(await requestConfirmDialog(confirmation.message, {
+              confirmLabel: "Update",
+              threadActivity: confirmation.threadActivity,
+            }))
+          ) {
+            return skipAll(targets);
+          }
+          explicitConsent = confirmation !== null;
+        } else {
+          const hosts = claimed.map(serverUpdateHost);
+          let showResult: ((message: string, options?: ConfirmDialogOptions) => void) | undefined;
+          const answer = requestConfirmDialog(
+            serverUpdateCheckingMessage(hosts),
+            { confirmLabel: "Update anyway" },
+            { bindContentUpdate: (update) => (showResult = update) },
+          );
+          if (answer === undefined) {
+            if ((await check).confirmation !== null) return skipAll(targets);
+          } else {
+            void check.then(({ confirmation }) =>
+              showResult?.(
+                confirmation?.message ?? serverUpdateSafeMessage(hosts),
+                confirmation === null
+                  ? { confirmLabel: "Update" }
+                  : { confirmLabel: "Update", threadActivity: confirmation.threadActivity },
+              ),
+            );
+            if (!(await answer)) return skipAll(targets);
+            explicitConsent = true;
+          }
         }
-        explicitConsent = confirmation !== null;
       }
       const updated = await Promise.all(
         claimed.map(async (target) =>

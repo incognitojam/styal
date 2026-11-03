@@ -107,3 +107,24 @@ export function serverUpdateConfirmation(
     threadActivity,
   };
 }
+
+/** Asks while the running-work check is still going after the grace period. */
+export function serverUpdateCheckingMessage(
+  hosts: ReadonlyArray<Pick<ServerUpdateHost, "serverLabel" | "desktopApp">>,
+): string {
+  const single = hosts.length === 1 ? hosts[0]! : null;
+  return [
+    serverUpdateQuestion(hosts),
+    single
+      ? `Still checking the ${serverNoun(single.serverLabel)} for running work.`
+      : `Still checking ${labels(hosts)} for running work.`,
+    "Updating now may interrupt running threads and terminals.",
+  ].join("\n");
+}
+
+/** Replaces the checking message when a late check finds nothing to interrupt. */
+export function serverUpdateSafeMessage(
+  hosts: ReadonlyArray<Pick<ServerUpdateHost, "serverLabel" | "desktopApp">>,
+): string {
+  return [serverUpdateQuestion(hosts), "Nothing running will be interrupted."].join("\n");
+}

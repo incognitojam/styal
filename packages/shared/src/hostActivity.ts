@@ -81,6 +81,24 @@ export const hostActivityQuestion: Record<HostActivityConcern, string> = {
   unchecked: "?",
 };
 
+/** How long an update waits for its running-work check before asking without it. */
+const HOST_ACTIVITY_CHECK_GRACE_MS = 5_000;
+
+/** The check's result when it settles within `graceMs`, otherwise null. */
+export function settleWithinGrace<A>(
+  check: Promise<A>,
+  graceMs = HOST_ACTIVITY_CHECK_GRACE_MS,
+): Promise<{ readonly value: A } | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const grace = new Promise<null>((resolve) => {
+    // @effect-diagnostics-next-line globalTimers:off - web and mobile callers await promises.
+    timer = setTimeout(() => resolve(null), graceMs);
+  });
+  return Promise.race([check.then((value) => ({ value })), grace]).finally(() =>
+    clearTimeout(timer),
+  );
+}
+
 function plural(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? "" : "s"}`;
 }

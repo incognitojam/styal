@@ -229,3 +229,59 @@ it("dismisses an expired active request and ignores a stale presentation effect"
   completeConfirmDialogClose();
   unregister();
 });
+
+it("shows content that arrives after the dialog opened, until it is answered", async () => {
+  resetConfirmDialogForTests();
+  const unregister = mountHost();
+  let update!: (message: string, options?: { confirmLabel?: string }) => void;
+  const confirmation = requireConfirmation(
+    requestConfirmDialog(
+      "Update the build-box server?\nChecking for running work…",
+      { confirmLabel: "Update anyway" },
+      { bindContentUpdate: (replace) => (update = replace) },
+    ),
+  );
+  update("Update the build-box server?\nNothing running will be interrupted.", {
+    confirmLabel: "Update",
+  });
+  expect(readConfirmDialogState()).toEqual({
+    status: "confirming",
+    message: "Update the build-box server?\nNothing running will be interrupted.",
+    variant: "default",
+    confirmLabel: "Update",
+  });
+
+  respondToConfirmDialog(false);
+  update("Update the build-box server?\nLate result.", { confirmLabel: "Update" });
+  expect(readConfirmDialogState().status).toBe("closing");
+  await expect(confirmation).resolves.toBe(false);
+  completeConfirmDialogClose();
+  expect(readConfirmDialogState()).toEqual({ status: "idle" });
+  unregister();
+});
+
+it("applies content updates to a queued dialog when it opens", async () => {
+  resetConfirmDialogForTests();
+  const unregister = mountHost();
+  const first = requireConfirmation(requestConfirmDialog("Delete this thread?"));
+  let update!: (message: string, options?: { confirmLabel?: string }) => void;
+  const second = requireConfirmation(
+    requestConfirmDialog("Update the server?\nChecking for running work…", undefined, {
+      bindContentUpdate: (replace) => (update = replace),
+    }),
+  );
+  update("Update the server?\nNothing running will be interrupted.", { confirmLabel: "Update" });
+  expect(readConfirmDialogState()).toMatchObject({ message: "Delete this thread?" });
+
+  respondToConfirmDialog(true);
+  await expect(first).resolves.toBe(true);
+  completeConfirmDialogClose();
+  expect(readConfirmDialogState()).toMatchObject({
+    status: "confirming",
+    message: "Update the server?\nNothing running will be interrupted.",
+    confirmLabel: "Update",
+  });
+  respondToConfirmDialog(true);
+  await expect(second).resolves.toBe(true);
+  unregister();
+});

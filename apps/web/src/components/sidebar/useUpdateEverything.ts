@@ -149,11 +149,30 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
     };
   };
 
+  // Shown when the check outlasts its grace period; confirming it is explicit consent.
+  const checkingActivity = (): UpdateEverythingConfirmation => {
+    const checked = [
+      ...(localUpdateVersion === null ? [] : ["this app"]),
+      ...servers.map((server) => server.serverLabel),
+    ];
+    return {
+      lines: [
+        `Still checking ${new Intl.ListFormat("en").format(checked)} for running work.`,
+        "Updating now may interrupt running threads and terminals.",
+      ],
+      threadActivity: [],
+      localVersion: window.desktopBridge?.getLocalHostActivity ? localUpdateVersion : null,
+      interrupts: true,
+      servers: serverUpdateKey(servers),
+    };
+  };
+
   return {
     hasUpdates: servers.length > 0 || providers.machines.length > 0,
     summary,
     lines,
     checkActivity,
+    checkingActivity,
     skipped,
     run: async ({
       downloadLocal,

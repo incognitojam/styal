@@ -5,12 +5,13 @@ import {
   type ConfirmDialogThreadActivity,
   type HostActivityThread,
 } from "@t3tools/contracts";
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
   describeHostActivity,
   groupHostActivityThreads,
   idleRestartBlocked,
+  settleWithinGrace,
 } from "./hostActivity.ts";
 
 const idle = {
@@ -407,5 +408,28 @@ describe("groupHostActivityThreads", () => {
     };
     const projects = groupHostActivityThreads([first, third, second])[0]!.sections[0]!.projects;
     expect(projects.map((entry) => entry.activity)).toEqual([[first, second], [third]]);
+  });
+});
+
+describe("settleWithinGrace", () => {
+  it("returns a check that settles within the grace period", async () => {
+    vi.useFakeTimers();
+    const result = settleWithinGrace(Promise.resolve(idle), 5_000);
+    await expect(result).resolves.toEqual({ value: idle });
+    vi.useRealTimers();
+  });
+
+  it("gives up waiting at the grace period while the check keeps running", async () => {
+    vi.useFakeTimers();
+    let finish!: (activity: typeof idle) => void;
+    const check = new Promise<typeof idle>((resolve) => {
+      finish = resolve;
+    });
+    const result = settleWithinGrace(check, 5_000);
+    await vi.advanceTimersByTimeAsync(5_000);
+    await expect(result).resolves.toBeNull();
+    finish(idle);
+    await expect(check).resolves.toBe(idle);
+    vi.useRealTimers();
   });
 });

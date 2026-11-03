@@ -19,6 +19,8 @@ interface UpdateEverythingDialogProps {
   readonly lines: ReadonlyArray<string>;
   readonly skipped: ReadonlyArray<SkippedMachine>;
   readonly activity: UpdateEverythingConfirmation;
+  /** The running-work check is still going, so confirming skips it. */
+  readonly checking: boolean;
   readonly onConfirm: () => void;
 }
 
@@ -29,6 +31,7 @@ export function UpdateEverythingDialog({
   lines,
   skipped,
   activity,
+  checking,
   onConfirm,
 }: UpdateEverythingDialogProps) {
   const reportDecision = useCombinedUpdateConfirmationUsage(open);
@@ -71,7 +74,7 @@ export function UpdateEverythingDialog({
               onConfirm();
             }}
           >
-            Update
+            {checking ? "Update anyway" : "Update"}
           </Button>
         </AlertDialogFooter>
       </AlertDialogPopup>

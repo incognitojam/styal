@@ -18,10 +18,10 @@ export type ConfirmDialogState =
     };
 
 type PendingConfirmation = {
-  readonly message: string;
-  readonly variant: ConfirmDialogVariant;
-  readonly confirmLabel: string;
-  readonly threadActivity?: ConfirmDialogOptions["threadActivity"];
+  message: string;
+  variant: ConfirmDialogVariant;
+  confirmLabel: string;
+  threadActivity?: ConfirmDialogOptions["threadActivity"];
   readonly resolve: (confirmed: boolean) => void;
   readonly onPresented?: () => void;
   presented: boolean;
@@ -84,13 +84,17 @@ export function requestConfirmDialog(
   lifecycle?: {
     readonly onPresented?: () => void;
     readonly signal?: AbortSignal;
+    /** Receives a function that replaces the dialog's content until it is answered. */
+    readonly bindContentUpdate?: (
+      update: (message: string, options?: ConfirmDialogOptions) => void,
+    ) => void;
   },
 ): Promise<boolean> | undefined {
   if (listeners.size === 0) return undefined;
   if (lifecycle?.signal?.aborted) return Promise.resolve(false);
 
   const confirmation = new Promise<boolean>((resolve) => {
-    const pending = {
+    const pending: PendingConfirmation = {
       message,
       variant: options?.variant ?? "default",
       confirmLabel: options?.confirmLabel ?? "Confirm",
@@ -101,7 +105,7 @@ export function requestConfirmDialog(
       },
       ...(lifecycle?.onPresented ? { onPresented: lifecycle.onPresented } : {}),
       presented: false,
-    } satisfies PendingConfirmation;
+    };
     function cancel() {
       if (activeConfirmation === pending) {
         respondToConfirmDialog(false);
@@ -110,6 +114,16 @@ export function requestConfirmDialog(
         pending.resolve(false);
       }
     }
+    lifecycle?.bindContentUpdate?.((nextMessage, nextOptions) => {
+      pending.message = nextMessage;
+      pending.variant = nextOptions?.variant ?? "default";
+      pending.confirmLabel = nextOptions?.confirmLabel ?? "Confirm";
+      if (nextOptions?.threadActivity) pending.threadActivity = nextOptions.threadActivity;
+      else delete pending.threadActivity;
+      if (activeConfirmation === pending && state.status === "confirming") {
+        presentConfirmation(pending);
+      }
+    });
     lifecycle?.signal?.addEventListener("abort", cancel, { once: true });
     if (activeConfirmation || state.status === "closing") {
       queuedConfirmations.push(pending);

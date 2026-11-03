@@ -741,6 +741,56 @@ describe("combined sidebar update", () => {
     expect(readConfirmDialogState().status).toBe("idle");
   });
 
+  it("opens the dialog when the check outlasts its grace period and fills in the late result", async () => {
+    using _setup = setup();
+    const remote = deferred<AsyncResult.AsyncResult<HostActivity>>();
+    testState.localActivity.mockResolvedValue(safeLocalChecks);
+    testState.hostActivity.mockImplementation(({ environmentId }) =>
+      environmentId === "remote-a" ? remote.promise : Promise.resolve(AsyncResult.success(idle)),
+    );
+    await using screen = await renderPill();
+    using _timers = fakeTimers();
+    await click(screen.container.querySelector<HTMLButtonElement>("button")!);
+    expect(dialog()).toBeNull();
+
+    await act(() => vi.advanceTimersByTimeAsync(5_000));
+    expect(dialog()!.textContent).toContain(
+      "Still checking this app, Build machine, and Test machine for running work.",
+    );
+    expect(button("Update anyway", dialog()!).disabled).toBe(false);
+
+    await act(() => remote.resolve(AsyncResult.success(remoteActivity)));
+    expect(dialog()!.textContent).not.toContain("Still checking");
+    expect(dialog()!.textContent).toContain("Build release");
+    await click(button("Update", dialog()!));
+    await vi.waitFor(() => expect(testState.updateServer).toHaveBeenCalledTimes(2));
+    expect(testState.updateServer.mock.calls.map(([target]) => target.input.confirmed)).toEqual([
+      true,
+      true,
+    ]);
+  });
+
+  it("updates everything without the check when the user confirms before it finishes", async () => {
+    using _setup = setup();
+    testState.localActivity.mockResolvedValue(safeLocalChecks);
+    testState.hostActivity.mockImplementation(({ environmentId }) =>
+      environmentId === "remote-a"
+        ? new Promise(() => {})
+        : Promise.resolve(AsyncResult.success(idle)),
+    );
+    await using screen = await renderPill();
+    using _timers = fakeTimers();
+    await click(screen.container.querySelector<HTMLButtonElement>("button")!);
+    await act(() => vi.advanceTimersByTimeAsync(5_000));
+
+    await click(button("Update anyway", dialog()!));
+    await vi.waitFor(() => expect(testState.updateServer).toHaveBeenCalledTimes(2));
+    expect(testState.updateServer.mock.calls.map(([target]) => target.input.confirmed)).toEqual([
+      true,
+      true,
+    ]);
+  });
+
   it("warns when local inspection fails while preserving the inspected remote thread details", async () => {
     using _setup = setup();
     testState.localActivity.mockRejectedValue(new Error("Local inspection unavailable"));
