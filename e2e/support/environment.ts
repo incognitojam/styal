@@ -18,7 +18,10 @@ const REPO_ROOT = NodePath.resolve(
   NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),
   "../..",
 );
-const SERVER_BIN = NodePath.join(REPO_ROOT, "apps/server/src/bin.ts");
+// CI runs the bundled server, which starts about 2s faster than the TypeScript source.
+const SERVER_BIN = process.env.E2E_SERVER_BUNDLE
+  ? NodePath.join(REPO_ROOT, "apps/server/dist/bin.mjs")
+  : NodePath.join(REPO_ROOT, "apps/server/src/bin.ts");
 const WEB_DIST_INDEX = NodePath.join(REPO_ROOT, "apps/web/dist/index.html");
 const FAKE_CODEX = NodePath.join(REPO_ROOT, "apps/server/scripts/fake-codex.ts");
 const FAKE_GH = NodePath.join(REPO_ROOT, "e2e/fixtures/fake-gh.ts");
@@ -93,6 +96,11 @@ export interface Environment {
 export async function startEnvironment(options: EnvironmentOptions = {}): Promise<Environment> {
   if (!NodeFS.existsSync(WEB_DIST_INDEX)) {
     throw new Error("apps/web/dist is missing. Build it first: vp run --filter @t3tools/web build");
+  }
+  if (!NodeFS.existsSync(SERVER_BIN)) {
+    throw new Error(
+      "apps/server/dist is missing. Build it first: vp run --filter @styal/cli build:bundle",
+    );
   }
   const state = stateResources("styal-e2e-");
   try {
