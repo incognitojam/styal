@@ -1,3 +1,4 @@
+import { retryTransientGitHub } from "../queue.ts";
 import type { QueueEntry } from "../queue.ts";
 import { parseUpstreamProvenance, withoutFencedExamples } from "./provenance.ts";
 
@@ -37,12 +38,13 @@ export function fetchTrackedPRMetadata(
   tracked: readonly TrackedPR[],
   run: (command: string, args: string[]) => string,
 ): readonly TrackedPRMetadata[] {
+  const runGitHub = retryTransientGitHub(run);
   const [owner, name] = repository.split("/");
   const result: TrackedPRMetadata[] = [];
   for (let start = 0; start < tracked.length; start += 40) {
     const batch = tracked.slice(start, start + 40);
     const query = `query { repository(owner:${JSON.stringify(owner)}, name:${JSON.stringify(name)}) { ${batch.map((pr, index) => `p${index}: pullRequest(number:${pr.number}) { number title state mergedAt mergeCommit { oid } }`).join(" ")} } }`;
-    const response = JSON.parse(run("gh", ["api", "graphql", "-f", `query=${query}`])) as {
+    const response = JSON.parse(runGitHub("gh", ["api", "graphql", "-f", `query=${query}`])) as {
       errors?: unknown;
       data?: { repository?: Record<string, TrackedPRMetadata | null> };
     };
