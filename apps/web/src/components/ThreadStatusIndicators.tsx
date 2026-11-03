@@ -431,9 +431,7 @@ function ThreadPullRequestMiniListItem({
       <span className="shrink-0 font-mono tabular-nums">#{number}</span>
       <span className="min-w-0 truncate text-foreground/75">{title}</span>
       {mergeIntent ? (
-        <span className="shrink-0 text-3xs text-muted-foreground">
-          {pullRequestMergeIntentLabel(mergeIntent)}
-        </span>
+        <span className="sr-only">{pullRequestMergeIntentLabel(mergeIntent)}</span>
       ) : null}
       {children}
     </>

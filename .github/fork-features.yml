@@ -4639,9 +4639,9 @@ features:
     status: maintained
     prs: [853, 1004]
     invariants:
-      - Sidebar, composer, linked pull request panels, pull request lists, detail headers, web tabs and hover previews retain the pull request state glyph and color while a filled corner dot marks enabled auto-merge or confirmed merge-queue membership on web, desktop and mobile where applicable.
+      - Sidebar, composer, linked pull request panels, pull request lists, detail headers, web tabs and hover previews retain the pull request state glyph and color while a filled merge-violet corner dot marks enabled auto-merge or confirmed merge-queue membership on web, desktop and mobile where applicable.
       - A stack or linked count gets the dot only when every remaining open pull request has automatic merge requested; an unknown snapshot or an unarmed draft keeps the aggregate unmarked.
-      - Individual tooltip rows and mobile pull request details distinguish auto-merge enabled from confirmed queue membership. Closed and merged pull requests never retain the marker.
+      - Individual tooltip rows and mobile pull request details distinguish auto-merge enabled from confirmed queue membership; the sidebar hover card's pull request rows show only the dot and carry that label as accessible text. Closed and merged pull requests never retain the marker.
       - Lightweight host summaries, GitHub list and search results, and persisted thread snapshots carry optional merge intent without adding detail reads or interpreting unsupported fields as false; a new observation clears an older marker when intent is absent or disabled.
     rationale: Automatic merge intent helps users see which work has been handed to the host without changing thread lifecycle or treating an open pull request as merged.
     implementation_paths:
