@@ -2557,6 +2557,89 @@ describe("composerDraftStore model seed migration", () => {
       vi.useRealTimers();
     }
   });
+
+  it("upgrades v5 selections that name a provider and keep options in an object", async () => {
+    vi.useFakeTimers();
+    try {
+      const legacySelection = {
+        provider: "codex",
+        model: "gpt-5.4",
+        options: { reasoningEffort: "high", fastMode: true },
+      };
+      const file = { id: "legacy-file", name: "notes.txt", mimeType: "text/plain", sizeBytes: 3 };
+      const issue = issueContextRecord({
+        provider: SourceControlProviderKind.make("github"),
+        repository: "example/project",
+        number: 42,
+        title: "Legacy issue",
+        url: "https://example.com/issues/42",
+        state: "open",
+        author: "example-user",
+        body: "Synthetic legacy context",
+        comments: [],
+      } as SourceControlIssue);
+      if (issue === null) throw new Error("Invalid issue migration fixture");
+      const thread = threadContextRecord(
+        scopeThreadRef(TEST_ENVIRONMENT_ID, ThreadId.make("legacy-context")),
+        "Legacy thread",
+      );
+      const antigravity = {
+        provider: "antigravity",
+        model: "gemini-3-pro",
+        options: { reasoningEffort: "high" },
+      };
+      const storage = useComposerDraftStore.persist.getOptions().storage;
+      expect(storage).toBeDefined();
+      storage?.setItem(COMPOSER_DRAFT_STORAGE_KEY, {
+        version: 5,
+        state: {
+          draftsByThreadKey: {
+            [serverThreadKey]: {
+              prompt: "keep this draft",
+              attachments: [],
+              files: [file],
+              issueContexts: [issue],
+              threadContexts: [thread],
+              modelSelectionExplicit: true,
+              modelSelectionByProvider: { codex: legacySelection, antigravity },
+              activeProvider: "codex",
+            },
+          },
+          draftThreadsByThreadKey: {},
+          stickyModelSelectionByProvider: { codex: legacySelection },
+          stickyActiveProvider: "codex",
+        },
+      } as never);
+      await vi.advanceTimersByTimeAsync(300);
+
+      await useComposerDraftStore.persist.rehydrate();
+
+      const upgraded = modelSelection(CODEX_DRIVER, "gpt-5.4", {
+        reasoningEffort: "high",
+        fastMode: true,
+      });
+      expect(draftByKey(serverThreadKey)).toMatchObject({
+        prompt: `keep this draft [${thread.label}](t3-context://v1/thread/${thread.contextId}) [${issue.label}](t3-context://v1/issue/${issue.contextId}) [notes.txt](t3-context://v1/file/file_legacy-file) `,
+        files: [file],
+        issueContexts: [issue],
+        threadContexts: [thread],
+        modelSelectionExplicit: true,
+        modelSelectionByProvider: {
+          [CODEX_INSTANCE]: upgraded,
+          antigravity: {
+            instanceId: "antigravity",
+            model: "gemini-3-pro",
+            options: [{ id: "reasoningEffort", value: "high" }],
+          },
+        },
+      });
+      expect(useComposerDraftStore.getState().stickyModelSelectionByProvider).toEqual({
+        [CODEX_INSTANCE]: upgraded,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 function createMockStorage() {
