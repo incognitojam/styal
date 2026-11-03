@@ -1152,6 +1152,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     },
   });
   const copyThreadTranscript = useCopyThreadTranscript();
+  const legacySidebarEnabled = useClientSettings((settings) => settings.legacySidebarEnabled);
   const folderRowsMultiline = useClientSettings((settings) => settings.boringSidebarMultilineRows);
   const newThreadContext = useHandleNewThread();
   // Row callbacks capture only the handler; the rest of the context changes with the route.
@@ -3489,7 +3490,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       openProjectGroupCount: scopeGroups.length,
       projectGroupCount: projectGroups.length,
       hasProjectScope: scopedProjectGroups.length === 1,
-      boringWithoutFilter: boringSidebarEnabled && scopedProjectGroups.length === 0,
+      boringWithoutFilter: legacySidebarEnabled && scopedProjectGroups.length === 0,
     });
   const newThreadPicksProject = !newThreadCreatesDirectly(false);
   const handleNewThreadClick = (event?: ReactMouseEvent) => {
@@ -3508,14 +3509,12 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     openCommandPalette({ open: "new-thread-in" });
   };
 
-  // Advertise only a shortcut that does what the button does. chat.newLocal stands in for an
-  // unbound chat.new only when nothing is left to pick. With a filter no command matches the
-  // button: chat.new still opens the chooser (in boring mode it creates directly) and
-  // chat.newLocal follows the thread on screen.
+  // With a filter, chat.new opens the chooser and chat.newLocal follows the current thread,
+  // so neither shortcut represents a button that creates in the filtered project.
   const newThreadShortcutLabel =
     scopeGroups.length === 1 ||
     projectGroups.length === 0 ||
-    (boringSidebarEnabled ? scopedProjectGroups.length === 0 : newThreadPicksProject)
+    (legacySidebarEnabled ? scopedProjectGroups.length === 0 : newThreadPicksProject)
       ? (shortcutLabelForCommand(keybindings, "chat.new") ??
         (newThreadPicksProject ? undefined : shortcutLabelForCommand(keybindings, "chat.newLocal")))
       : undefined;
