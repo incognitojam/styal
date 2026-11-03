@@ -4290,6 +4290,29 @@ features:
         - https://github.com/pingdotgg/t3code/pull/9125
       retire_when: Upstream's repository identity honours `gh repo set-default` before `upstream` and `origin`, and upstream keeps pull request association correct across forks and branch pruning.
 
+  - id: pull-request-base-move-freshness
+    title: Show sibling pull requests out of date as soon as a merge moves their base
+    status: maintained
+    prs: [1228]
+    invariants:
+      - When this server sees a pull request merge, through its own merge action or an open-to-merged read, it drops held detail for other open pull requests in the same repository with the same base branch and tells clients to refresh, so an open panel shows them behind without waiting for the detail cache to expire.
+      - Summaries and diffs stay cached, and a pull request first seen already merged does not invalidate anything.
+      - The out-of-date warning and its Update branch control show while the host reports mergeability as unknown, and stay hidden when it reports a conflict.
+    rationale: Upstream refreshes only the merged pull request, so other open pull requests on its base keep showing up to date until their detail expires, and the warning stays hidden while GitHub recomputes mergeability after the base moves. Compared with upstream revision 550c5fa34b6b4f287496f3d725a300347274fbcf on November 3, 2026.
+    implementation_paths:
+      - apps/server/src/pullRequest/PullRequestService.ts
+      - apps/web/src/components/pullRequest/pullRequestDetail.logic.ts
+    upstream_paths:
+      - apps/server/src/pullRequest/PullRequestService.ts
+      - apps/web/src/components/pullRequest/pullRequestDetail.logic.ts
+    tests:
+      - apps/server/src/pullRequest/PullRequestService.test.ts
+      - apps/web/src/components/pullRequest/pullRequestDetail.logic.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream refreshes open pull requests on a base branch when a merge into it is observed.
+
   - id: pull-request-bypass-merge
     title: Merge past GitHub requirements for viewers allowed to bypass them
     status: maintained
@@ -4832,29 +4855,6 @@ features:
       status: unassessed
       tracking: []
       retire_when: Upstream confirms and announces each layer a stack merge lands.
-
-  - id: pull-request-base-move-freshness
-    title: Show sibling pull requests out of date as soon as a merge moves their base
-    status: maintained
-    prs: [1228]
-    invariants:
-      - When this server sees a pull request merge, through its own merge action or an open-to-merged read, it drops held detail for other open pull requests in the same repository with the same base branch and tells clients to refresh, so an open panel shows them behind without waiting for the detail cache to expire.
-      - Summaries and diffs stay cached, and a pull request first seen already merged does not invalidate anything.
-      - The out-of-date warning and its Update branch control show while the host reports mergeability as unknown, and stay hidden when it reports a conflict.
-    rationale: Upstream refreshes only the merged pull request, so other open pull requests on its base keep showing up to date until their detail expires, and the warning stays hidden while GitHub recomputes mergeability after the base moves. Compared with upstream revision 550c5fa34b6b4f287496f3d725a300347274fbcf on November 3, 2026.
-    implementation_paths:
-      - apps/server/src/pullRequest/PullRequestService.ts
-      - apps/web/src/components/pullRequest/pullRequestDetail.logic.ts
-    upstream_paths:
-      - apps/server/src/pullRequest/PullRequestService.ts
-      - apps/web/src/components/pullRequest/pullRequestDetail.logic.ts
-    tests:
-      - apps/server/src/pullRequest/PullRequestService.test.ts
-      - apps/web/src/components/pullRequest/pullRequestDetail.logic.test.ts
-    upstream:
-      status: unassessed
-      tracking: []
-      retire_when: Upstream refreshes open pull requests on a base branch when a merge into it is observed.
 
   - id: pull-requests-page-archived-projects
     title: Leave archived projects off the Pull Requests page
