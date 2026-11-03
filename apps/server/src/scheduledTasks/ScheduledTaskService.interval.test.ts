@@ -104,7 +104,9 @@ it.effect.each([
           },
         )
         .pipe(Effect.flip);
-      expect(stale.message).toBe("Could not run schedule task.");
+      expect(stale.message).toBe(
+        "The scheduled task's modes changed; read it again before running it.",
+      );
       expect((yield* service.list()).tasks[0]?.runCount).toBe(0);
 
       // Exercise completion rescheduling without starting any provider process.

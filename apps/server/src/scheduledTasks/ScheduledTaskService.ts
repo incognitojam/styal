@@ -1506,7 +1506,9 @@ export const layer = Layer.effect(
       }
       return yield* runTask(task, "manual", undefined, expectedModes).pipe(
         Effect.mapError((cause) =>
-          taskError("Could not run schedule task.", { taskId: input.id, cause }),
+          isScheduledTaskError(cause)
+            ? cause
+            : taskError("Could not run schedule task.", { taskId: input.id, cause }),
         ),
       );
     });
