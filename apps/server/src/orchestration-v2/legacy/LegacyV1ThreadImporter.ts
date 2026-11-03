@@ -381,7 +381,7 @@ const make = Effect.gen(function* () {
     }>`
       SELECT provider_name, provider_instance_id, resume_cursor_json
       FROM provider_session_runtime WHERE thread_id = ${thread.id}
-    `;
+    `.pipe(NodeSqliteClient.readOnly);
     const row = rows[0];
     if (row === undefined || row.resume_cursor_json === null) return null;
     const driver = decodeProviderDriverKind(row.provider_name);
@@ -413,7 +413,7 @@ const make = Effect.gen(function* () {
         WHERE thread_id = ${threadId} AND kind = ${TURN_USAGE_ACTIVITY_KIND} AND turn_id IS NOT NULL
       ) WHERE latest = 1
       ORDER BY created_at ASC, turn_id ASC
-    `;
+    `.pipe(NodeSqliteClient.readOnly);
     const records = rows.flatMap((row) => {
       const payload = parseJson(row.payload_json);
       const usage = Option.getOrNull(decodeTurnTokenUsage(payload));
@@ -424,7 +424,7 @@ const make = Effect.gen(function* () {
     });
     const counts = yield* sql<{ readonly turns: number }>`
       SELECT COUNT(*) AS turns FROM styal_legacy_v1_turns WHERE thread_id = ${threadId}
-    `;
+    `.pipe(NodeSqliteClient.readOnly);
     const latestTotal = rows
       .toReversed()
       .map((row) => Option.getOrNull(decodeThreadTokenUsageTotal(parseJson(row.payload_json))))
@@ -496,7 +496,7 @@ const make = Effect.gen(function* () {
           AND message.role IN ('user', 'assistant')
         ORDER BY message.created_at DESC, message.message_id DESC
         LIMIT 1
-      `;
+      `.pipe(NodeSqliteClient.readOnly);
     const latestUser = yield* sql<LegacyMessageRow>`
         SELECT
           message.message_id,
@@ -527,7 +527,7 @@ const make = Effect.gen(function* () {
           AND message.role = 'user'
         ORDER BY message.created_at DESC, message.message_id DESC
         LIMIT 1
-      `;
+      `.pipe(NodeSqliteClient.readOnly);
     return [latestUser[0], latest[0]].filter(
       (message, index, selected): message is LegacyMessageRow =>
         message !== undefined &&
@@ -579,7 +579,7 @@ const make = Effect.gen(function* () {
          OR json_type(projection.payload_json, '$.branchPullRequest') IS NULL
          OR json_type(projection.payload_json, '$.activeOrderKey') IS NULL
       ORDER BY thread.created_at ASC, thread.thread_id ASC
-    `;
+    `.pipe(NodeSqliteClient.readOnly);
     let repairedThreadCount = 0;
     for (const row of repairRows) {
       const decoded = decodeStoredThread(row.payload_json);
@@ -677,7 +677,7 @@ const make = Effect.gen(function* () {
           AND event.event_type = 'thread.created'
       )
       ORDER BY thread.created_at ASC, thread.thread_id ASC
-    `;
+    `.pipe(NodeSqliteClient.readOnly);
     let importedThreadCount = repairedThreadCount;
     let importedMessageCount = 0;
     for (const row of rows) {

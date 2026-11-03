@@ -31,28 +31,34 @@ const pruningEnabled = ConfigProvider.layer(
 );
 
 const encodeHistoryJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
-const layerDatabase = SqlitePersistence.layerMemory;
-const layerEventStoreProvided = EventStore.layer.pipe(Layer.provideMerge(layerDatabase));
-const layerProjectionStoreProvided = ProjectionStore.layer.pipe(Layer.provideMerge(layerDatabase));
-const layerStoresProvided = Layer.mergeAll(
-  layerDatabase,
-  layerEventStoreProvided,
-  layerProjectionStoreProvided,
-);
-const layerEventSinkProvided = EventSink.layer.pipe(Layer.provide(layerStoresProvided));
-const layerImporterProvided = LegacyV1ThreadImporter.layer.pipe(
-  Layer.provide(Layer.mergeAll(layerStoresProvided, layerEventSinkProvided)),
-);
-const layerProjectionReplayProvided = ProjectionReplay.layer.pipe(
-  Layer.provide(layerStoresProvided),
-);
-const layerTest = Layer.mergeAll(
-  layerStoresProvided,
-  layerEventSinkProvided,
-  layerImporterProvided,
-  layerProjectionReplayProvided,
-  ProjectionMaintenance.layer.pipe(Layer.provide(layerStoresProvided)),
-);
+import { layerReaderDatabase, traceSqlRouting } from "../../persistence/testkit/SqliteRouting.ts";
+
+const makeTestLayer = <E>(layerDatabase: Layer.Layer<SqlClient.SqlClient, E>) => {
+  const layerEventStoreProvided = EventStore.layer.pipe(Layer.provideMerge(layerDatabase));
+  const layerProjectionStoreProvided = ProjectionStore.layer.pipe(
+    Layer.provideMerge(layerDatabase),
+  );
+  const layerStoresProvided = Layer.mergeAll(
+    layerDatabase,
+    layerEventStoreProvided,
+    layerProjectionStoreProvided,
+  );
+  const layerEventSinkProvided = EventSink.layer.pipe(Layer.provide(layerStoresProvided));
+  const layerImporterProvided = LegacyV1ThreadImporter.layer.pipe(
+    Layer.provide(Layer.mergeAll(layerStoresProvided, layerEventSinkProvided)),
+  );
+  const layerProjectionReplayProvided = ProjectionReplay.layer.pipe(
+    Layer.provide(layerStoresProvided),
+  );
+  return Layer.mergeAll(
+    layerStoresProvided,
+    layerEventSinkProvided,
+    layerImporterProvided,
+    layerProjectionReplayProvided,
+    ProjectionMaintenance.layer.pipe(Layer.provide(layerStoresProvided)),
+  );
+};
+const layerTest = makeTestLayer(SqlitePersistence.layerMemory);
 
 const seedPendingTranscripts = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
@@ -89,6 +95,91 @@ const seedPendingTranscripts = Effect.gen(function* () {
   }
   yield* importer.reconcileShells;
 });
+
+it.effect("routes shell selectors to readers while imports stay writable", () =>
+  Effect.gen(function* () {
+    const importer = yield* LegacyV1ThreadImporter.LegacyV1ThreadImporter;
+    const sql = yield* SqlClient.SqlClient;
+    const { queries, trace } = traceSqlRouting();
+    yield* seedPendingTranscripts.pipe(trace);
+    const selectors = queries.filter(
+      ({ query }) =>
+        query.includes("FROM projection_threads AS thread") ||
+        query.includes("FROM orchestration_v2_legacy_imports AS legacy_import") ||
+        query.includes("FROM projection_thread_messages AS message"),
+    );
+    assert.lengthOf(selectors, 6);
+    assert.deepEqual([...new Set(selectors.map((row) => row.connection))], ["reader"]);
+    const shellHistorySelectors = queries.filter(
+      ({ query }) =>
+        query.includes("FROM provider_session_runtime") ||
+        query.includes("FROM styal_legacy_v1_thread_activities") ||
+        query.includes("FROM styal_legacy_v1_turns"),
+    );
+    assert.lengthOf(shellHistorySelectors, 6);
+    assert.deepEqual([...new Set(shellHistorySelectors.map((row) => row.connection))], ["reader"]);
+    assert.deepEqual(yield* importer.reconcileShells, {
+      importedThreadCount: 0,
+      importedMessageCount: 0,
+    });
+    const transcriptRouting = traceSqlRouting();
+    yield* importer.ensureTranscript(ThreadId.make("thread:later")).pipe(transcriptRouting.trace);
+    const historySelectors = transcriptRouting.queries.filter(
+      ({ query }) =>
+        query.includes("FROM styal_legacy_v1_thread_activities") ||
+        query.includes("FROM styal_legacy_v1_turns") ||
+        query.includes("FROM provider_session_runtime") ||
+        query.includes("SELECT thread.payload_json, project.workspace_root"),
+    );
+    assert.lengthOf(historySelectors, 3);
+    assert.deepEqual([...new Set(historySelectors.map((row) => row.connection))], ["writer"]);
+    yield* sql.withTransaction(
+      Effect.gen(function* () {
+        yield* sql`
+        INSERT INTO projection_threads (
+          thread_id, project_id, title, model_selection_json, runtime_mode,
+          interaction_mode, created_at, updated_at
+        ) VALUES (
+          'thread:uncommitted', 'project:background', 'Uncommitted legacy title',
+          '{"instanceId":"codex","model":"gpt-5.4"}', 'full-access', 'default',
+          '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z'
+        )
+      `;
+        yield* sql`
+          INSERT INTO projection_thread_messages (
+            message_id, thread_id, role, text, is_streaming, created_at, updated_at
+          ) VALUES (
+            'message:uncommitted', 'thread:uncommitted', 'user', 'Uncommitted preview', 0,
+            '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z'
+          )
+        `;
+        yield* sql`
+          UPDATE orchestration_v2_projection_threads
+          SET payload_json = json_remove(payload_json, '$.pinnedAt')
+          WHERE thread_id = 'thread:first'
+        `;
+        yield* sql`
+          UPDATE projection_threads SET pinned_at = '2026-01-01T00:00:00.000Z'
+          WHERE thread_id = 'thread:first'
+        `;
+        const result = yield* importer.reconcileShells;
+        assert.deepEqual(result, { importedThreadCount: 2, importedMessageCount: 1 });
+        const projections = yield* ProjectionStore.ProjectionStoreV2;
+        const repaired = yield* projections.getThreadProjection(ThreadId.make("thread:first"));
+        assert.equal(DateTime.formatIso(repaired.thread.pinnedAt!), "2026-01-01T00:00:00.000Z");
+        const imported = yield* projections.getThreadProjection(
+          ThreadId.make("thread:uncommitted"),
+        );
+        assert.equal(imported.messages[0]?.text, "Uncommitted preview");
+        assert.equal(
+          (yield* projections.getThreadProjection(ThreadId.make("thread:uncommitted"))).thread
+            .title,
+          "Uncommitted legacy title",
+        );
+      }),
+    );
+  }).pipe(Effect.provide(makeTestLayer(layerReaderDatabase))),
+);
 
 it.effect(
   "keeps hydrating later transcripts after a defect and leaves the failed thread pending",
