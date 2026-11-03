@@ -38,6 +38,10 @@ import {
 import { ComposerEditor, type ComposerEditorHandle } from "../../components/ComposerEditor";
 import { composerContextImportsAtom } from "../../state/use-composer-drafts";
 import { composerContextSendBlockReason } from "../../lib/composerContext";
+import {
+  addPendingComposerAttachments,
+  removePendingComposerAttachments,
+} from "../../state/composer-pending-attachments";
 import { ComposerInlineControl } from "../../components/ComposerToolbar";
 
 import {
@@ -166,6 +170,7 @@ export function NewTaskDraftScreen(props: {
     consumeShare,
     getShare,
     isLoading: isIncomingShareInboxLoading,
+    importingShare,
     releaseShareReservation,
     reserveShare,
   } = useIncomingShare();
@@ -341,9 +346,23 @@ export function NewTaskDraftScreen(props: {
   const isIncomingShareUnavailable = Boolean(
     props.incomingShareId &&
     !isIncomingShareInboxLoading &&
+    importingShare?.id !== props.incomingShareId &&
     !incomingShare &&
     !hasImportedIncomingShare,
   );
+  const arrivingShare =
+    !incomingShare && importingShare?.id === props.incomingShareId ? importingShare : null;
+  const arrivingShareDraftKey = arrivingShare ? flow.draftKey : null;
+  // oxlint-disable-next-line t3code/react-effect-budget -- mirrors an import that outlives this screen's handlers into the composer's pending-tile store
+  useEffect(() => {
+    if (!arrivingShare || !arrivingShareDraftKey) return;
+    const tiles = arrivingShare.previewUris.map((previewUri, index) => ({
+      id: `${arrivingShare.id}:pending:${index}`,
+      previewUri,
+    }));
+    addPendingComposerAttachments(arrivingShareDraftKey, tiles);
+    return () => removePendingComposerAttachments(arrivingShareDraftKey, tiles);
+  }, [arrivingShare, arrivingShareDraftKey]);
   const isIncomingShareReady =
     !props.incomingShareId ||
     (hasImportedIncomingShare && !incomingShare) ||
