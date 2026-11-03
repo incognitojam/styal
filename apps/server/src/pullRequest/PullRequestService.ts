@@ -2849,7 +2849,12 @@ export const make = Effect.gen(function* () {
           },
         }),
       );
-    return { peek: (key: string) => held.get(key)?.value, read, record };
+    return {
+      peek: (key: string) => held.get(key)?.value,
+      entries: () => Array.from(held, ([key, snapshot]) => [key, snapshot.value] as const),
+      read,
+      record,
+    };
   };
   const lastGoodSummary = makeLastGoodRead<PullRequestSummary>(DETAIL_CACHE_CAPACITY);
   const lastGoodDetail = makeLastGoodRead<PullRequestDetail>(DETAIL_CACHE_CAPACITY);
@@ -3033,7 +3038,13 @@ export const make = Effect.gen(function* () {
       ? Effect.succeed(held)
       : cached.pipe(
           Effect.tap((value) =>
-            shouldReplaceHeldSummary(key, value) ? lastGoodSummary.record(key, value) : Effect.void,
+            noteState(input, value).pipe(
+              Effect.andThen(
+                shouldReplaceHeldSummary(key, value)
+                  ? lastGoodSummary.record(key, value)
+                  : Effect.void,
+              ),
+            ),
           ),
         );
   };
@@ -3225,6 +3236,47 @@ export const make = Effect.gen(function* () {
         Exit.isSuccess(exit) ? detailTimeToLive(exit.value.state) : Duration.zero,
     },
   );
+  // A merge moves its base branch, so other open pull requests on that base fall behind it.
+  // Only held detail is dropped: summaries carry no base comparison, and a detail nobody has
+  // open is not read again until someone does.
+  const invalidateBaseSiblings = Effect.fnUntraced(function* (
+    merged: PullRequestRef,
+    baseBranch: string,
+  ) {
+    const repository = merged.repository.toLowerCase();
+    const host = merged.host?.toLowerCase();
+    const stale = lastGoodDetail.entries().flatMap(([key, held]) => {
+      if (held.state !== "open" || held.baseBranch !== baseBranch) return [];
+      const ref = refOfCacheKey(key);
+      if (ref.number === merged.number || ref.repository.toLowerCase() !== repository) return [];
+      return host === undefined || ref.host === undefined || ref.host === host ? [key] : [];
+    });
+    if (stale.length === 0) return;
+    yield* Effect.forEach(stale, (key) => Cache.invalidate(detailCache, key), { discard: true });
+    yield* SubscriptionRef.set(pullRequestRefreshes, ++epochCounter);
+  });
+  // Merged is terminal, so a later stale read of the open state cannot report the merge twice.
+  const lastStates = new Map<string, PullRequestState>();
+  const noteState = (
+    ref: PullRequestRef,
+    next: Pick<PullRequestSummary, "state" | "baseBranch">,
+    mergedHere = false,
+  ) =>
+    Effect.suspend(() => {
+      const scope = refScope(ref);
+      const previous = lastStates.get(scope);
+      if (previous === "merged") return Effect.void;
+      lastStates.delete(scope);
+      if (lastStates.size >= REF_EPOCH_CAPACITY) {
+        const oldest = lastStates.keys().next().value;
+        if (oldest !== undefined) lastStates.delete(oldest);
+      }
+      lastStates.set(scope, next.state);
+      // The first sight of a pull request merged long ago says nothing about its base now.
+      return next.state === "merged" && (previous === "open" || mergedHere)
+        ? invalidateBaseSiblings(ref, next.baseBranch)
+        : Effect.void;
+    });
   const summaryFromDetail = (
     detail: PullRequestDetail,
     previous: PullRequestSummary | undefined,
@@ -3333,6 +3385,7 @@ export const make = Effect.gen(function* () {
         if (value.state === "merged") noteMerged(input);
         const summary = summaryFromDetail(value, lastGoodSummary.peek(key));
         return noteDetailReading(input, summary).pipe(
+          Effect.andThen(noteState(input, summary)),
           Effect.andThen(
             shouldReplaceHeldSummary(key, summary)
               ? lastGoodSummary.record(key, summary)
@@ -3671,6 +3724,7 @@ export const make = Effect.gen(function* () {
           ),
         );
         if (confirmed?.state !== "merged") return;
+        yield* noteState({ ...ref, repository, number }, confirmed, true);
         yield* PubSub.publish(mergedPullRequests, {
           projectId: input.projectId,
           repository,

@@ -1719,6 +1719,76 @@ it.effect("announces every layer a stack merge landed, not only the one it start
   ),
 );
 
+const baseMoveService = (baseOf: Record<number, string>) =>
+  Effect.gen(function* () {
+    const merged = new Set<number>();
+    const detailReads: number[] = [];
+    const service = yield* makeService({
+      projects: [project({ id: "p1", title: "web", workspaceRoot: "/a", repository: "acme/web" })],
+      providers: [
+        fakePullRequestProvider(SourceControlProviderKind.make("github"), {
+          runAction: (input) => Effect.sync(() => void merged.add(input.number)),
+          getChangeRequest: (input) =>
+            Effect.sync(() => {
+              detailReads.push(input.number);
+              const base = baseOf[input.number] ?? "main";
+              const baseMoved = [...merged].some((number) => baseOf[number] === base);
+              return {
+                ...changeRequestDetail(input.number),
+                baseBranch: base,
+                state: merged.has(input.number) ? ("merged" as const) : ("open" as const),
+                baseComparison: baseMoved ? ("behind" as const) : ("up-to-date" as const),
+              };
+            }),
+          getChangeRequestSummary: (input) =>
+            Effect.succeed({
+              ...changeRequest(input.number, "2026-07-02T00:00:00Z"),
+              baseBranch: baseOf[input.number] ?? "main",
+              state: merged.has(input.number) ? ("merged" as const) : ("open" as const),
+            }),
+        }),
+      ],
+    });
+    const ref = (number: number) => ({
+      projectId: "p1" as ProjectId,
+      repository: "acme/web",
+      number,
+      allowStale: false,
+    });
+    return { service, merged, detailReads, ref };
+  });
+
+it.effect("a merge here makes open pull requests on its base read their comparison again", () =>
+  Effect.gen(function* () {
+    const { service, detailReads, ref } = yield* baseMoveService({ 1: "main", 2: "main", 3: "v1" });
+    assert.strictEqual((yield* service.detail(ref(2))).baseComparison, "up-to-date");
+    assert.strictEqual((yield* service.detail(ref(3))).baseComparison, "up-to-date");
+
+    yield* service.runAction({ ...ref(1), action: "merge" });
+
+    assert.strictEqual((yield* service.detail(ref(2))).baseComparison, "behind");
+    yield* service.detail(ref(3));
+    assert.deepStrictEqual(
+      detailReads.filter((number) => number === 3),
+      [3],
+    );
+  }),
+);
+
+it.effect("a merge seen on a later read also refreshes open pull requests on its base", () =>
+  Effect.gen(function* () {
+    const { service, merged, ref } = yield* baseMoveService({ 1: "main", 2: "main" });
+    yield* service.summary(ref(1));
+    assert.strictEqual((yield* service.detail(ref(2))).baseComparison, "up-to-date");
+
+    merged.add(1);
+    yield* service.invalidate({ reference: ref(1) });
+    assert.strictEqual((yield* service.summary(ref(1))).state, "merged");
+
+    assert.strictEqual((yield* service.detail(ref(2))).baseComparison, "behind");
+  }),
+);
+
 it.effect("keeps two hosts of one provider kind as two accounts", () =>
   Effect.gen(function* () {
     const viewerFor: Record<string, string> = { "/cloud": "bilal", "/enterprise": "b.hassan" };
