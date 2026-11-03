@@ -2651,7 +2651,7 @@ features:
   - id: inline-code-file-chips-need-a-target
     title: Inline-code paths become file chips only when they open something
     status: maintained
-    prs: []
+    prs: [1217]
     invariants:
       - A slashed path in assistant inline code renders as plain code once the host reports it missing and the workspace lookup that a chip click runs resolves no single file; a path that exists, or a shortened path that resolves to one indexed file, stays a chip.
       - A path stays a chip until the host and search have answered, without read access to the environment, and while a short truncated search page shows the index is still scanning.
