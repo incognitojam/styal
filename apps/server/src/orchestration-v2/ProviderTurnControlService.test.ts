@@ -275,6 +275,7 @@ it.effect(
           getUnreadableThreadIds: () => Effect.die("unused getUnreadableThreadIds"),
           getThreadSnapshot: () => Effect.die("unused getThreadSnapshot"),
           getThreadSnapshotWindow: () => Effect.die("unused getThreadSnapshotWindow"),
+          getPullRequestSnapshot: () => Effect.die("unused getPullRequestSnapshot"),
         }),
       );
       const layerSessionManager = Layer.succeed(
