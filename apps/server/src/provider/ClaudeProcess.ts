@@ -32,6 +32,7 @@ export interface ClaudeProcessExit {
 export interface ClaudeProcessObserver {
   readonly onSpawn?: (info: { readonly pid: number | undefined }) => void;
   readonly onStderr?: (text: string) => void;
+  readonly onStderrClose?: () => void;
   readonly onExit?: (
     info: ClaudeProcessExit & {
       readonly pid: number | undefined;
@@ -103,6 +104,7 @@ export function makeClaudeProcessSpawner(input?: {
     // through the process's missing stdout, so nothing is lost by ignoring it.
     process.on("error", () => undefined);
     process.stderr?.setEncoding("utf8");
+    process.stderr?.once("close", () => observer?.onStderrClose?.());
     process.stderr?.on("data", (chunk: string) => {
       stderrTail = (stderrTail + chunk).slice(-STDERR_TAIL_LIMIT);
       observer?.onStderr?.(chunk);

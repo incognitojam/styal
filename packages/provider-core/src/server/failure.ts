@@ -112,6 +112,7 @@ function curatedCauseMessages(cause: unknown): {
         case "ClaudeAppendSystemPromptFileError":
         case "ClaudeAppendSystemPromptMissingValueError":
         case "ClaudeSettingsLaunchArgError":
+        case "ClaudeCodeRootRefusalError":
         case "CursorModelUnavailableError":
         case "CodexGoalObjectiveTooLongError":
         case "ProviderSetupError":

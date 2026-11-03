@@ -417,6 +417,13 @@ const WORKFLOW_MEMBER_TRANSCRIPT_FLUSH_MS = 500;
 const BACKGROUND_MOVE_TIMEOUT_MS = 5_000;
 // How long a Stop waits for the CLI to exit before the user is offered Force stop.
 const CLAUDE_STOP_CONFIRM_TIMEOUT_MS = 10_000;
+// Matches the stderr tail the SDK keeps for a CLI it spawns itself.
+const CLAUDE_STDERR_TAIL_LENGTH = 2_048;
+// The process group is killed on exit, so its stderr closes promptly.
+const CLAUDE_STDERR_DRAIN_TIMEOUT = Duration.seconds(1);
+// Claude Code's refusal of bypassPermissions as root, which it explains only on stderr.
+const CLAUDE_ROOT_REFUSAL =
+  "--dangerously-skip-permissions cannot be used with root/sudo privileges for security reasons";
 
 export const ClaudeProviderCapabilitiesV2 = {
   sessions: {
@@ -599,6 +606,17 @@ export class ClaudeAgentSdkQueryRunnerError extends Schema.TaggedError<ClaudeAge
 ) {
   override get message(): string {
     return "Claude Agent SDK query failed.";
+  }
+}
+
+export class ClaudeCodeRootRefusalError extends Schema.TaggedError<ClaudeCodeRootRefusalError>()(
+  "ClaudeCodeRootRefusalError",
+  {
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return `Claude Code exited before it started: ${CLAUDE_ROOT_REFUSAL}`;
   }
 }
 
@@ -1069,15 +1087,29 @@ export const layerQueryRunner: Layer.Layer<
           );
           const runtimeContext = yield* Effect.context<never>();
           const runFork = Effect.runForkWith(runtimeContext);
+          // Only a CLI that fails before its first message explains itself on
+          // stderr. The known root refusal becomes a curated failure; any other
+          // stderr can hold private text, so it stays out of turn failures.
+          let stderrTail = "";
+          let stderrClosed: Promise<void> = Promise.resolve();
+          let stderrDone = () => {};
+          let answered = false;
+          const appendStderr = (text: string) => {
+            if (answered) return;
+            stderrTail = (stderrTail + text).slice(-CLAUDE_STDERR_TAIL_LENGTH);
+          };
           let stopScope: (() => void) | undefined;
           const claudeProcess = makeClaudeProcessSpawner({
             // Windows has no process groups.
             processGroup: platform !== "win32",
             observer: {
               onSpawn: ({ pid }) => {
+                stderrClosed = new Promise((resolve) => (stderrDone = resolve));
                 runFork(Effect.logInfo("claude.cli.spawned", { threadId: input.threadId, pid }));
               },
+              onStderrClose: () => stderrDone(),
               onStderr: (text) => {
+                appendStderr(text);
                 runFork(Effect.logDebug("claude.cli.stderr", { threadId: input.threadId, text }));
               },
               onExit: ({ pid, code, signal, stderrTail }) => {
@@ -1247,9 +1279,31 @@ export const layerQueryRunner: Layer.Layer<
           );
 
           return {
-            messages: Stream.fromAsyncIterable(claudeQueryMessages(queryRuntime), (cause) =>
-              queryRunnerError(cause, "fromAsyncIterable"),
+            messages: Stream.fromAsyncIterable(
+              claudeQueryMessages(queryRuntime),
+              (cause) => cause,
             ).pipe(
+              Stream.catch((cause) =>
+                Stream.fromEffect(
+                  Effect.gen(function* () {
+                    if (!answered) {
+                      yield* Effect.promise(() => stderrClosed).pipe(
+                        Effect.timeoutOption(CLAUDE_STDERR_DRAIN_TIMEOUT),
+                      );
+                    }
+                    const refusedRoot = !answered && stderrTail.includes(CLAUDE_ROOT_REFUSAL);
+                    return yield* queryRunnerError(
+                      refusedRoot ? new ClaudeCodeRootRefusalError({ cause }) : cause,
+                      "fromAsyncIterable",
+                    );
+                  }),
+                ),
+              ),
+              Stream.tap(() =>
+                Effect.sync(() => {
+                  answered = true;
+                }),
+              ),
               Stream.tap((message) =>
                 logProtocolEvent({
                   direction: "incoming",
