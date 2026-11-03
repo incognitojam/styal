@@ -6,6 +6,7 @@ import { mapAtomCommandResult, settlePromise } from "@t3tools/client-runtime/sta
 import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { planProjectRemoval } from "@t3tools/client-runtime/state/projects";
 import {
+  type SidebarProjectGroupingMode,
   type EnvironmentId,
   type EnvironmentMachineKind,
   resolveEnvironmentMachineKind,
@@ -17,8 +18,12 @@ import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "rea
 
 import { useComposerDraftStore } from "../../composerDraftStore";
 import { releaseProjectDraftUploads } from "../../lib/composerDraftUploads";
+import { persistClientSettingsUpdate, useClientSettings } from "../../hooks/useSettings";
 import { readLocalApi } from "../../localApi";
+import { derivePhysicalProjectKey } from "@t3tools/client-runtime/state/project-grouping";
 import {
+  PROJECT_GROUPING_MODE_LABELS,
+  withProjectGroupingOverride,
   type SidebarProjectGroupMember,
   type SidebarProjectSnapshot,
 } from "../../sidebarProjectGrouping";
@@ -41,7 +46,7 @@ import { Input } from "../ui/input";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Textarea } from "../ui/textarea";
 import { Switch } from "../ui/switch";
-import { toastManager } from "../ui/toast";
+import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { EnvironmentRow } from "./EnvironmentRow";
 import {
@@ -243,11 +248,13 @@ function CheckoutRow({
   checkout,
   machineKind,
   canRemove,
+  hasMultipleCheckouts,
   onRemove,
 }: {
   checkout: SidebarProjectGroupMember;
   machineKind: EnvironmentMachineKind;
   canRemove: boolean;
+  hasMultipleCheckouts: boolean;
   onRemove: () => void;
 }) {
   const defaultRepository = useDefaultRepository(checkout);
@@ -258,46 +265,125 @@ function CheckoutRow({
       label={environmentLabel}
       subtitle={checkout.workspaceRoot}
       detail={
-        defaultRepository ? (
-          <div className="mt-2 flex min-w-0 items-center justify-between gap-3">
-            <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <span
-                      tabIndex={0}
-                      className="rounded-sm underline decoration-dotted underline-offset-2 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
-                    />
-                  }
-                >
-                  Default repository
-                </TooltipTrigger>
-                <TooltipPopup side="top" className="max-w-xs">
-                  {DEFAULT_REPOSITORY_DESCRIPTION}
-                </TooltipPopup>
-              </Tooltip>
-              <ForkFeatureBadge />
-            </span>
-            <DefaultRepositorySelect
-              {...defaultRepository}
-              size="xs"
-              className="w-auto max-w-72 min-w-0"
-              ariaLabel={`Default repository for ${environmentLabel}`}
-            />
+        <>
+          <div className="mt-2">
+            <CheckoutGroupingSelect member={checkout} />
           </div>
-        ) : null
+          {defaultRepository ? (
+            <div className="mt-2 flex min-w-0 items-center justify-between gap-3">
+              <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <span
+                        tabIndex={0}
+                        className="rounded-sm underline decoration-dotted underline-offset-2 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+                      />
+                    }
+                  >
+                    Default repository
+                  </TooltipTrigger>
+                  <TooltipPopup side="top" className="max-w-xs">
+                    {DEFAULT_REPOSITORY_DESCRIPTION}
+                  </TooltipPopup>
+                </Tooltip>
+                <ForkFeatureBadge />
+              </span>
+              <DefaultRepositorySelect
+                {...defaultRepository}
+                size="xs"
+                className="w-auto max-w-72 min-w-0"
+                ariaLabel={`Default repository for ${environmentLabel}`}
+              />
+            </div>
+          ) : null}
+        </>
       }
     >
-      <Button
-        size="xs"
-        variant="outline"
-        disabled={!canRemove}
-        onClick={onRemove}
-        aria-label={`Remove checkout ${checkout.workspaceRoot}`}
-      >
-        Remove
-      </Button>
+      {hasMultipleCheckouts ? (
+        <Button
+          size="xs"
+          variant="outline"
+          disabled={!canRemove}
+          onClick={onRemove}
+          aria-label={`Remove checkout ${checkout.workspaceRoot}`}
+        >
+          Remove
+        </Button>
+      ) : null}
     </EnvironmentRow>
+  );
+}
+
+function isGroupingSelection(value: unknown): value is SidebarProjectGroupingMode | "inherit" {
+  return (
+    value === "inherit" ||
+    value === "repository" ||
+    value === "repository_path" ||
+    value === "separate"
+  );
+}
+
+// Grouping overrides are client settings, so they stay editable without project write access.
+function CheckoutGroupingSelect({ member }: { member: SidebarProjectGroupMember }) {
+  const overrideKey = derivePhysicalProjectKey(member);
+  const globalMode = useClientSettings((settings) => settings.sidebarProjectGroupingMode);
+  const selection = useClientSettings(
+    (settings) => settings.sidebarProjectGroupingOverrides?.[overrideKey] ?? "inherit",
+  );
+  return (
+    <Select
+      value={selection}
+      onValueChange={(value) => {
+        if (!isGroupingSelection(value)) return;
+        persistClientSettingsUpdate((current) => ({
+          ...current,
+          sidebarProjectGroupingOverrides: withProjectGroupingOverride(
+            current.sidebarProjectGroupingOverrides,
+            overrideKey,
+            value,
+          ),
+        })).catch((error) => {
+          console.error("Failed to save checkout grouping rule", error);
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: "Could not save grouping rule",
+              description: error instanceof Error ? error.message : "An error occurred.",
+            }),
+          );
+        });
+      }}
+    >
+      <SelectTrigger
+        size="sm"
+        aria-label={`Grouping rule for ${member.workspaceRoot} on ${
+          member.environmentLabel
+            ? `${member.environmentLabel} (${member.environmentId})`
+            : member.environmentId
+        }`}
+      >
+        <SelectValue>
+          {selection === "inherit"
+            ? `Default (${PROJECT_GROUPING_MODE_LABELS[globalMode]})`
+            : PROJECT_GROUPING_MODE_LABELS[selection]}
+        </SelectValue>
+      </SelectTrigger>
+      <SelectPopup align="end" alignItemWithTrigger={false}>
+        <SelectItem hideIndicator value="inherit">
+          Use global default
+        </SelectItem>
+        <SelectItem hideIndicator value="repository">
+          {PROJECT_GROUPING_MODE_LABELS.repository}
+        </SelectItem>
+        <SelectItem hideIndicator value="repository_path">
+          {PROJECT_GROUPING_MODE_LABELS.repository_path}
+        </SelectItem>
+        <SelectItem hideIndicator value="separate">
+          {PROJECT_GROUPING_MODE_LABELS.separate}
+        </SelectItem>
+      </SelectPopup>
+    </Select>
   );
 }
 
@@ -584,6 +670,10 @@ function ProjectDetail({
   }
   const checkoutChoices = (
     <SettingsSection title="Checkouts">
+      <p className="px-3 py-2.5 text-xs text-muted-foreground sm:px-4">
+        Grouping rule decides how each checkout joins project groups in the sidebar. Changing it can
+        move a checkout to a different project.
+      </p>
       {Array.from(checkoutsByEnvironment, ([environmentId, members]) => {
         const checkouts = members.map((member) => (
           <CheckoutRow
@@ -592,6 +682,7 @@ function ProjectDetail({
             machineKind={resolveEnvironmentMachineKind(
               environmentById.get(member.environmentId)?.serverConfig ?? null,
             )}
+            hasMultipleCheckouts={hasMultipleCheckouts}
             canRemove={editableIds.has(member.environmentId)}
             onRemove={() => void removeMembers([member])}
           />
@@ -797,7 +888,7 @@ function ProjectDetail({
         <ProjectAgentAccessSettings />
         <ProjectSimulatorMemorySettings />
         <ProjectActionsSettings />
-        {hasMultipleCheckouts ? checkoutChoices : null}
+        {checkoutChoices}
         <SettingsSection title="Danger">
           <SettingsRow
             title={
