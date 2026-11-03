@@ -1655,6 +1655,70 @@ it.effect(
     ),
 );
 
+it.effect("announces every layer a stack merge landed, not only the one it started from", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const mergedAt = "2026-11-03T17:41:07.000Z";
+      // Layer 3 sits above the merge target, so the stack merge leaves it open. #4 is unstacked.
+      const merged = new Set([1, 2, 4]);
+      const capabilities = fakePullRequestProvider("github").capabilities;
+      const service = yield* makeService({
+        projects: [
+          project({ id: "p1", title: "web", workspaceRoot: "/a", repository: "acme/web" }),
+        ],
+        providers: [
+          fakePullRequestProvider(SourceControlProviderKind.make("github"), {
+            capabilities: { ...capabilities, actions: ["merge"], stackActions: true },
+            getViewerPermissions: () =>
+              Effect.succeed({
+                actions: ["merge"],
+                comment: true,
+                resolve: true,
+                verdicts: [],
+                requestReviewers: false,
+              }),
+            runAction: () => Effect.void,
+            getChangeRequestSummary: (input) =>
+              Effect.succeed({
+                ...changeRequest(input.number, mergedAt),
+                state: merged.has(input.number) ? ("merged" as const) : ("open" as const),
+              }),
+          }),
+        ],
+      });
+      const merges = yield* service.subscribeMerges;
+      const changes = yield* service.subscribeStateChanges;
+      yield* TestClock.setTime(Date.parse(mergedAt));
+
+      yield* service.runAction({
+        projectId: "p1" as ProjectId,
+        repository: "acme/web",
+        number: 2,
+        action: "merge",
+        stackNumber: 9,
+        expectedStackHeads: [
+          { number: 1, headSha: "aaa" },
+          { number: 2, headSha: "bbb" },
+        ],
+      });
+      // Merging #4 afterwards ends both collections after the stack merge's notifications.
+      yield* service.runAction({
+        projectId: "p1" as ProjectId,
+        repository: "acme/web",
+        number: 4,
+        action: "merge",
+      });
+
+      const before4 = <A extends { readonly number: number }>(stream: Stream.Stream<A>) =>
+        Stream.runCollect(
+          stream.pipe(Stream.takeUntil((event) => event.number === 4, { excludeLast: true })),
+        ).pipe(Effect.map((events) => events.map((event) => event.number).toSorted()));
+      assert.deepStrictEqual(yield* before4(merges), [1, 2]);
+      assert.deepStrictEqual(yield* before4(changes), [1, 2]);
+    }),
+  ),
+);
+
 it.effect("keeps two hosts of one provider kind as two accounts", () =>
   Effect.gen(function* () {
     const viewerFor: Record<string, string> = { "/cloud": "bilal", "/enterprise": "b.hassan" };

@@ -3650,24 +3650,44 @@ export const make = Effect.gen(function* () {
     bumpRefEpoch({ ...ref, repository });
     listingsEpoch = ++epochCounter;
     yield* SubscriptionRef.set(pullRequestRefreshes, listingsEpoch);
-    if (input.action === "merge" || input.action === "enable-auto-merge") {
-      // A merge can merely enqueue the PR or arm auto-merge, and arming it merges a PR that was
-      // already mergeable, so either may or may not have merged.
-      const confirmed = yield* summaryUncached({ ...input, repository }).pipe(
-        Effect.catch((error) =>
-          Effect.logWarning("failed to confirm pull request merge", { error }).pipe(
-            Effect.as(null),
+    if (input.action !== "merge" && input.action !== "enable-auto-merge") return;
+    // A stack merge lands every layer it lists, not only the one it was started from.
+    const numbers = new Set([
+      input.number,
+      ...(input.stackNumber === undefined
+        ? []
+        : (input.expectedStackHeads ?? []).map((head) => head.number)),
+    ]);
+    yield* Effect.forEach(
+      numbers,
+      Effect.fnUntraced(function* (number) {
+        // A merge can merely enqueue the PR or arm auto-merge, and arming it merges a PR that was
+        // already mergeable, so either may or may not have merged.
+        const confirmed = yield* summaryUncached({ ...input, repository, number }).pipe(
+          Effect.catch((error) =>
+            Effect.logWarning("failed to confirm pull request merge", { error, number }).pipe(
+              Effect.as(null),
+            ),
           ),
-        ),
-      );
-      if (confirmed?.state !== "merged") return;
-      yield* PubSub.publish(mergedPullRequests, {
-        projectId: input.projectId,
-        repository,
-        number: input.number,
-        mergedAt: DateTime.formatIso(yield* DateTime.now),
-      });
-    }
+        );
+        if (confirmed?.state !== "merged") return;
+        yield* PubSub.publish(mergedPullRequests, {
+          projectId: input.projectId,
+          repository,
+          number,
+          mergedAt: DateTime.formatIso(yield* DateTime.now),
+        });
+        // Without this, linked threads see a layer nobody has open in a panel only on their next sweep.
+        if (ref.host !== undefined) {
+          yield* PubSub.publish(stateChanges, {
+            host: ref.host,
+            repository: ref.repository,
+            number,
+          });
+        }
+      }),
+      { concurrency: "unbounded", discard: true },
+    );
   });
 
   const credentialCached =
