@@ -121,6 +121,21 @@ jobs:
             args:
               - --filter=@t3tools/scripts...
 
+      # Reruns reuse the upstream PR associations an earlier attempt fetched, so a
+      # transient GitHub failure does not repeat about 30 GraphQL queries.
+      - name: Read the intake target
+        id: intake_target
+        run: echo "sha=$(git show refs/remotes/origin/main:.github/upstream-intake.json | jq -r .target)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore upstream PR associations
+        uses: actions/cache/restore@v6
+        with:
+          path: .scratch/upstream-queue-*-prs.json
+          key: upstream-associations-${{ steps.intake_target.outputs.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            upstream-associations-${{ steps.intake_target.outputs.sha }}-
+            upstream-associations-
+
       - name: Audit upstream intake candidate
         id: audit
         env:
@@ -129,6 +144,13 @@ jobs:
           vp run --filter @t3tools/scripts intake:check -- \
             --base refs/remotes/origin/main \
             --head "$GITHUB_SHA"
+
+      - name: Save upstream PR associations
+        if: always() && hashFiles('.scratch/upstream-queue-*-prs.json') != ''
+        uses: actions/cache/save@v6
+        with:
+          path: .scratch/upstream-queue-*-prs.json
+          key: upstream-associations-${{ steps.intake_target.outputs.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       # Resolving a rebase conflict in pnpm-lock.yaml by taking one side can drop
       # an entry main added. Typecheck and tests still pass on cached packages.
