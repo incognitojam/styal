@@ -34,6 +34,7 @@ describe("shouldHandleAppLink", () => {
     "t3code://threads/env-1/thread-1",
     "t3code://pair?pairingUrl=x",
     "t3code-dev://settings/usage?tab=limits",
+    "https://app.styal.build/threads/env/thread?prompt=Fix%20expo-development-client%20and%20styal://expo-sharing",
   ])("handles path-bearing URL %s", (url) => {
     expect(shouldHandleAppLink(url, true)).toBe(true);
   });
