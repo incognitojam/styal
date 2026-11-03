@@ -10,7 +10,9 @@ worktree directory is omitted because the thread already provides that context.
 
 Source paths written in messages may become clickable file chips. Opening a chip uses its full
 resolved path, while its label and **Copy relative path** action stay workspace-relative.
-Click or tap the linked text or file chip to open the file.
+Click or tap the linked text or file chip to open the file. A shortened path such as
+`ui/command.tsx` opens the one project file whose path ends with it, and a path in code
+formatting that matches no file stays plain code.
 
 File links with descriptive labels, such as **Organizing threads**, keep their original linked
 text and formatting without an added filename chip. Links whose labels name the file, such as
