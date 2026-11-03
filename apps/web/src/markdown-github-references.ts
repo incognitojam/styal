@@ -88,6 +88,21 @@ function parseGithubReferenceUrl(
   return { reference: { repository, number }, suffix: fragmentSuffix(url.hash) };
 }
 
+const GITHUB_DOT_COM: GithubReferenceContext = { host: "github.com", repository: "" };
+
+/**
+ * The shorthand GitHub shows for a bare issue or pull request URL. Without a repository every
+ * reference names its own, and only github.com is recognised.
+ */
+export function githubReferenceUrlLabel(
+  context: GithubReferenceContext | undefined,
+  url: string,
+): string | null {
+  const parsed = parseGithubReferenceUrl(context ?? GITHUB_DOT_COM, url);
+  if (parsed === null) return null;
+  return `${formatGithubReference(context ?? GITHUB_DOT_COM, parsed.reference)}${parsed.suffix}`;
+}
+
 function referenceLink(
   context: GithubReferenceContext,
   reference: GithubReference,

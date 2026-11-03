@@ -79,7 +79,11 @@ vi.mock(import("../hooks/useSettings"), async (original) => {
 });
 
 import ChatMarkdown from "./ChatMarkdown";
-import { GithubReferenceThreadContext } from "./chat/githubReferenceLinks";
+import {
+  ChatGithubRepositoryContext,
+  GithubReferenceThreadContext,
+} from "./chat/githubReferenceLinks";
+import { serializeRenderedMarkdownFragment } from "../markdown-clipboard";
 import { AudioPreview } from "./files/AudioPreview";
 
 it("keeps compact audio playback loaded across signed URL renewals", async () => {
@@ -277,6 +281,47 @@ describe("ChatMarkdown PR link thread context", () => {
     setup();
     await using _screen = await render(<ChatMarkdown cwd="/workspace/project" text={text} />);
     expect(useOpenChangeRequestLink).toHaveBeenLastCalledWith(undefined, undefined);
+  });
+});
+
+describe("ChatMarkdown GitHub URL labels", () => {
+  const text = [
+    "https://github.com/example/project/pull/42",
+    "https://github.com/other/repo/issues/7#issuecomment-1",
+    "https://github.com/example/project/pull/42/files",
+    "[the fix](https://github.com/example/project/pull/43)",
+  ].join("\n\n");
+  const labels = (container: HTMLElement) =>
+    [...container.querySelectorAll("a")].map((anchor) => anchor.textContent);
+
+  it("labels bare issue and pull request URLs as GitHub shorthand and copies the URL", async () => {
+    setup();
+    await using screen = await render(
+      <ChatGithubRepositoryContext value={{ host: "github.com", repository: "example/project" }}>
+        <ChatMarkdown cwd="/workspace/project" text={text} />
+      </ChatGithubRepositoryContext>,
+    );
+    expect(labels(screen.container)).toEqual([
+      "#42",
+      "other/repo#7 (comment)",
+      "https://github.com/example/project/pull/42/files",
+      "the fix",
+    ]);
+    expect(screen.container.querySelector("a")?.getAttribute("href")).toBe(
+      "https://github.com/example/project/pull/42",
+    );
+    expect(serializeRenderedMarkdownFragment(screen.container)).toContain(
+      "https://github.com/example/project/pull/42\n",
+    );
+  });
+
+  it("names the repository outside a GitHub project", async () => {
+    setup();
+    await using screen = await render(<ChatMarkdown cwd="/workspace/project" text={text} />);
+    expect(labels(screen.container).slice(0, 2)).toEqual([
+      "example/project#42",
+      "other/repo#7 (comment)",
+    ]);
   });
 });
 

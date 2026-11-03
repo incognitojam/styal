@@ -93,7 +93,7 @@ import { parseComposerContextHref } from "@t3tools/shared/composerContextReferen
 import { parseThreadLinkHref } from "@t3tools/shared/threadLinks";
 import { AssistantCitationChip } from "./chat/AssistantCitationChip";
 import { MarkdownThreadLink } from "./chat/MarkdownThreadLink";
-import { remarkGithubReferences } from "../markdown-github-references";
+import { githubReferenceUrlLabel, remarkGithubReferences } from "../markdown-github-references";
 import {
   MENTIONED_TIME_PROPERTY,
   readMentionedTime,
@@ -101,6 +101,7 @@ import {
 } from "../markdown-mentioned-times";
 import { MentionedTimeChip } from "./chat/MentionedTimeChip";
 import {
+  ChatGithubRepositoryContext,
   githubReferenceHref,
   GithubReferenceThreadContext,
   MISSING_GITHUB_REFERENCE_ATTRIBUTE,
@@ -1113,6 +1114,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
       openLinkInIntegratedBrowser,
       renderContextReference,
     } = use(ChatMarkdownRendererContext);
+    const githubRepository = use(ChatGithubRepositoryContext);
     const referenceKey = node?.properties?.dataGithubReference;
     if (typeof referenceKey === "string" && href) {
       // A reference already links to the right place; an answer only decides where it opens
@@ -1186,6 +1188,11 @@ const CHAT_MARKDOWN_COMPONENTS = {
             ? plainHastText(node)
             : undefined;
       const isPullRequestAutolink = pullRequestCopy !== undefined;
+      const linkText = plainHastText(node);
+      const shorthand =
+        !isPullRequestAutolink && href && linkText === href
+          ? githubReferenceUrlLabel(githubRepository, href)
+          : null;
       const confirmBeforeOpen = pullRequestAutolink === "reference";
       const pullRequestCandidateUrl =
         confirmBeforeOpen && href
@@ -1203,12 +1210,12 @@ const CHAT_MARKDOWN_COMPONENTS = {
       const onClick = props.onClick;
       const canOpenInPreview =
         canOperatePreview && Boolean(threadRef && isPreviewAvailableFor(threadRef.environmentId));
-      const linkChildren = <MarkdownLinkContext value>{children}</MarkdownLinkContext>;
+      const linkChildren = <MarkdownLinkContext value>{shorthand ?? children}</MarkdownLinkContext>;
       const link = (
         <a
           {...props}
           className={cn(props.className, pullRequestAutolink === "commit" && "font-mono")}
-          data-markdown-copy={pullRequestCopy}
+          data-markdown-copy={pullRequestCopy ?? (shorthand === null ? undefined : href)}
           data-markdown-image-link={!hasText || undefined}
           href={href}
           target={isSameDocumentLink ? undefined : "_blank"}
@@ -1294,7 +1301,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
           }}
         >
           {faviconHost && hasText && !isPullRequestAutolink ? (
-            <MarkdownExternalLinkContent host={faviconHost} plainText={plainHastText(node)}>
+            <MarkdownExternalLinkContent host={faviconHost} plainText={shorthand ?? linkText}>
               {linkChildren}
             </MarkdownExternalLinkContent>
           ) : (
