@@ -173,6 +173,14 @@
       "reason": "Rewrites t3_thread_launch so scratch reads as the choice for callers outside a thread, dropping the fork's \"outside any repository\" pitch. Agents in a project thread pick scratch: true for work unrelated to the code, and the new thread loses the project's instructions, settings and per-project memory. Take it at chronological intake; if agents still launch from a project thread into No project afterwards, tighten the scratch wording in a fork commit."
     },
     {
+      "pr": 25422,
+      "reason": "Imported provisionally as one snapshot: sparkles icons become ones that say what the control does. Auto runtime mode uses ShieldCheck on web, PR guide actions use ScrollText, mobile agent and agent-tool rows use a new robot symbol, the mobile PR agent menu uses ellipsis.bubble and Fix failing checks uses hammer, and the artifact template badge is removed. Taken early so web's Auto icon matches the shield the fork's mobile runtime mode icons use. The fork's own sparkles uses outside this diff (web DiffPanel, PullRequestCodeTab and ModelPickerSidebar, mobile ThreadAgentSpawnCard) are unchanged. When it merges, compare the frozen base-to-head diff with the final upstream change, reconcile amendments, check the web runtime mode menu and the mobile PR toolbar and work-log icons, then clear the snapshot marker with that intake. If it closes without merging, review whether to remove the change or retain it as maintained fork behavior and record that decision before clearing the marker.",
+      "snapshot": {
+        "base": "f58fad04162165653bf06f0c987bbfb0074a8a4b",
+        "head": "4a2b7bfe27b9ccf0663ed8093ba656f2f40f2ffd"
+      }
+    },
+    {
       "pr": 25794,
       "reason": "Reopens the chat the user was in after iOS ends the app or an update restart, using upstream's remembered workspace selections (iOS only, from the #24742/#24750/#25627 chain the fork has not taken yet). The fork's mobile-update-restart-location fix covers update restarts on Android and iOS until then. When it merges, take it at chronological intake, check whether it now covers Android, and retire or narrow the fork's fix and ledger entry."
     },
