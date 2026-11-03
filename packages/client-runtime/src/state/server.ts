@@ -1399,6 +1399,7 @@ export function createServerEnvironmentAtoms<R, E>(
         request(WS_METHODS.serverGetDesktopHostActivity, input).pipe(Effect.timeout("5 seconds")),
     }),
     // Point-in-time check before a restart; a stalled host is treated as unknown activity.
+    // A busy server can take several seconds; this matches the server's own recheck.
     hostActivity: createEnvironmentCommand(runtime, {
       label: "environment-data:server:host-activity",
       concurrency: {
@@ -1406,7 +1407,7 @@ export function createServerEnvironmentAtoms<R, E>(
         key: ({ environmentId }) => environmentId,
       },
       execute: (input: EnvironmentRpcInput<typeof WS_METHODS.serverGetHostActivity>) =>
-        request(WS_METHODS.serverGetHostActivity, input).pipe(Effect.timeout("5 seconds")),
+        request(WS_METHODS.serverGetHostActivity, input).pipe(Effect.timeout("15 seconds")),
     }),
     upsertKeybinding: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:upsert-keybinding",
