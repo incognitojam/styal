@@ -2,7 +2,7 @@ import { useContext, useEffect, useRef, useState } from "react";
 import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId, ScopedProjectRef } from "@t3tools/contracts";
 import { useEnvironments, usePrimaryEnvironmentId } from "../../state/environments";
-import { useProjects } from "../../state/entities";
+import { waitForProject } from "../../state/entities";
 import { dataImportBatchPendingCount, legacyImportPendingCount } from "../../state/dataImport";
 import { LegacyImportComputer, HistoryImportComputer } from "./ImportComputer";
 import { ImportSourceChooser } from "./ImportSourceChooser";
@@ -114,30 +114,29 @@ export function DataImportPanel({
   // Only an import shows per-computer progress; a skip leaves the step as it was.
   const [skipped, setSkipped] = useState(false);
   const importing = progress !== null || (awaitingCompletion && !skipped);
-  const projects = useProjects();
   const busy = running || pending > 0 || awaitingCompletion || finishing;
   useEffect(() => {
     onBusyChange?.(busy);
   }, [busy, onBusyChange]);
   useEffect(() => () => onBusyChange?.(false), [onBusyChange]);
-  // A command receipt may precede the workspace projection needed by navigation.
-  useEffect(() => {
-    if (!awaitingCompletion || !onDone) return;
-    if (
-      landing &&
-      !projects.some(
-        (project) =>
-          project.id === landing.projectId && project.environmentId === landing.environmentId,
-      )
-    )
-      return;
-    // oxlint-disable-next-line react/set-state-in-effect -- Finishing waits for the landing project to reach the projection, which arrives outside this component.
+  const finishSetup = async (landingRef: ScopedProjectRef | undefined) => {
+    if (!onDone) return;
+    setAwaitingCompletion(true);
+    // A command receipt may precede the project projection navigation needs. waitForProject
+    // gives up after its timeout, so a project that never arrives finishes without landing.
+    const arrived = landingRef
+      ? await waitForProject(landingRef).then(
+          () => landingRef,
+          () => undefined,
+        )
+      : undefined;
+    if (!mounted.current) return;
     setAwaitingCompletion(false);
     setFinishing(true);
-    void onDone(landing)
+    await onDone(arrived)
       .catch((failure) => setError(importErrorMessage(failure)))
       .finally(() => setFinishing(false));
-  }, [awaitingCompletion, landing, onDone, projects]);
+  };
   const run = async () => {
     if (busy || runningRef.current) return;
     runningRef.current = true;
@@ -164,7 +163,7 @@ export function DataImportPanel({
       else if (nextStep) {
         setMessage(`Imported ${plural(summary.projects, "project")}.`);
         onContinue?.();
-      } else setAwaitingCompletion(true);
+      } else void finishSetup(firstProject);
     }
     registry.update(dataImportBatchPendingCount, (count) => Math.max(0, count - 1));
     runningRef.current = false;
@@ -178,7 +177,7 @@ export function DataImportPanel({
     setError(null);
     if (stage === "projects") onSourceChange?.(null);
     if (nextStep) onContinue?.();
-    else setAwaitingCompletion(true);
+    else void finishSetup(landing);
   };
 
   // Changing views removes or hides the control that was pressed, so hand focus to
