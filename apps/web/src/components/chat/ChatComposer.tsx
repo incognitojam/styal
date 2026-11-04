@@ -1262,7 +1262,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     prompt,
     imageCount: composerImages.length + composerFiles.length,
     terminalContexts: composerTerminalContexts,
-    elementContextCount: composerPreviewAnnotations.length + composerReviewComments.length,
+    previewAnnotations: composerPreviewAnnotations,
+    reviewComments: composerReviewComments,
+    threadContexts: composerThreadContexts,
+    issueContexts: composerIssueContexts,
   });
   const composerTriggerKind = composerTrigger?.kind ?? null;
   const compactSlashCommandAvailable =

@@ -784,7 +784,10 @@ export function deriveComposerSendState(options: {
   prompt: string;
   imageCount: number;
   terminalContexts: ReadonlyArray<TerminalContextDraft>;
-  elementContextCount?: number;
+  previewAnnotations: ReadonlyArray<unknown>;
+  reviewComments: ReadonlyArray<unknown>;
+  threadContexts: ReadonlyArray<unknown>;
+  issueContexts: ReadonlyArray<unknown>;
 }): {
   trimmedPrompt: string;
   sendableTerminalContexts: TerminalContextDraft[];
@@ -795,7 +798,11 @@ export function deriveComposerSendState(options: {
   const sendableTerminalContexts = filterTerminalContextsWithText(options.terminalContexts);
   const expiredTerminalContextCount =
     options.terminalContexts.length - sendableTerminalContexts.length;
-  const elementContextCount = options.elementContextCount ?? 0;
+  const attachedContextCount =
+    options.previewAnnotations.length +
+    options.reviewComments.length +
+    options.threadContexts.length +
+    options.issueContexts.length;
   return {
     trimmedPrompt,
     sendableTerminalContexts,
@@ -804,7 +811,7 @@ export function deriveComposerSendState(options: {
       trimmedPrompt.length > 0 ||
       options.imageCount > 0 ||
       sendableTerminalContexts.length > 0 ||
-      elementContextCount > 0,
+      attachedContextCount > 0,
   };
 }
 
