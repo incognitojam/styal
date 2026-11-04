@@ -1,29 +1,36 @@
 import type { RuntimeMode } from "@t3tools/contracts";
 
+import type { AppSymbolName } from "../../components/ui/AppSymbol";
+
 export const RUNTIME_MODE_CHOICES: ReadonlyArray<{
   readonly mode: RuntimeMode;
   readonly label: string;
   readonly description: string;
+  readonly icon: AppSymbolName;
 }> = [
   {
     mode: "approval-required",
     label: "Supervised",
     description: "Ask before commands and file changes.",
+    icon: "lock",
   },
   {
     mode: "auto-accept-edits",
     label: "Auto-accept edits",
     description: "Auto-approve edits, ask before other actions.",
+    icon: "pencil.line",
   },
   {
     mode: "auto",
     label: "Auto",
     description: "Supported providers approve routine actions; others still ask.",
+    icon: "checkmark.shield",
   },
   {
     mode: "full-access",
     label: "Full access",
     description: "Allow commands and edits without prompts.",
+    icon: "shield.slash",
   },
 ];
 

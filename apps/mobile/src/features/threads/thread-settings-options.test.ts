@@ -2,10 +2,10 @@ import {
   getPromptControlledTraits,
   getTraitSelectChange,
 } from "@t3tools/client-runtime/model-traits";
-import type { ProviderOptionDescriptor } from "@t3tools/contracts";
+import { type ProviderOptionDescriptor, RuntimeMode } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { selectableChoices } from "./thread-settings-options";
+import { RUNTIME_MODE_CHOICES, selectableChoices } from "./thread-settings-options";
 
 const effortDescriptor: Extract<ProviderOptionDescriptor, { type: "select" }> = {
   id: "effort",
@@ -85,5 +85,16 @@ describe("prompt-controlled reasoning", () => {
         "ultrathink",
       ),
     ).toEqual({ prompt: "/review" });
+  });
+});
+
+describe("RUNTIME_MODE_CHOICES", () => {
+  it("gives every runtime mode its own icon", () => {
+    expect(RUNTIME_MODE_CHOICES.map((choice) => choice.mode).toSorted()).toEqual(
+      [...RuntimeMode.literals].toSorted(),
+    );
+    expect(new Set(RUNTIME_MODE_CHOICES.map((choice) => choice.icon)).size).toBe(
+      RUNTIME_MODE_CHOICES.length,
+    );
   });
 });

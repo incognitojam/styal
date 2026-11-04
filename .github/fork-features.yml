@@ -3119,6 +3119,31 @@ features:
         - https://github.com/pingdotgg/t3code/pull/18425
       retire_when: Upstream's mobile Provider accounts screen shows every provider with its sign-in source and gives each action its own icon.
 
+  - id: mobile-runtime-mode-icons
+    title: Mobile runtime modes carry web's icons
+    status: maintained
+    prs: [1231]
+    invariants:
+      - Every runtime mode choice on mobile has its own icon, matching web's lock, pencil, checked shield, and crossed shield, and Android draws each through its Tabler mapping.
+      - The thread settings Runtime row and the runtime mode choice lists, in thread settings and Server controls default permissions, show each mode's icon beside its label, and screen readers read only the label.
+    rationale: Mobile features that refer to a runtime mode, such as the Blocked chip for tool calls Auto mode refused, need the same icon web shows for that mode.
+    implementation_paths:
+      - apps/mobile/src/components/ui/AppSymbol.tsx
+      - apps/mobile/src/features/threads/ThreadSettingsSheet.tsx
+      - apps/mobile/src/features/threads/thread-settings-options.ts
+    upstream_paths:
+      - apps/mobile/src/components/ui/AppSymbol.tsx
+      - apps/mobile/src/features/threads/ThreadSettingsSheet.tsx
+      - apps/mobile/src/features/threads/thread-settings-options.ts
+    tests:
+      - apps/mobile/src/features/threads/thread-settings-options.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/25422
+        - https://github.com/pingdotgg/t3code/pull/25869
+      retire_when: Upstream mobile gives runtime mode choices the same icons as web.
+
   - id: mobile-status-icon-theme-colors
     title: Mobile floating status icons follow the active theme
     status: maintained

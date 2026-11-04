@@ -350,6 +350,7 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
                     {RUNTIME_MODE_CHOICES.map((choice, index) => (
                       <SettingsChoiceRow
                         key={choice.mode}
+                        icon={choice.icon}
                         label={choice.label}
                         description={
                           choice.mode === "auto"
