@@ -58,6 +58,20 @@ describe("work entry labels", () => {
       "Read src/server.ts",
     );
   });
+
+  it("omits the worktree directory from changed-file labels", () => {
+    const editEntry = {
+      ...entry,
+      itemType: "file_change" as const,
+      changedFiles: [
+        "/home/dev/worktrees/app-1234/src/server.ts",
+        "/home/dev/worktrees/app-1234/src/client.ts",
+      ],
+    };
+    expect(workEntryDisplayLabel(editEntry, "/home/dev/worktrees/app-1234")).toBe(
+      "src/server.ts +1 more",
+    );
+  });
 });
 
 describe("computeMessageDurationStart", () => {

@@ -188,7 +188,9 @@ export function workEntryDisplayLabel(entry: WorkLogEntry, workspaceRoot: string
   }
   const [firstPath] = entry.changedFiles ?? [];
   if (firstPath) {
-    const path = formatWorkspaceRelativePath(firstPath, workspaceRoot);
+    const path = formatWorkspaceRelativePath(firstPath, workspaceRoot, {
+      includeWorkspaceLabel: false,
+    });
     return entry.changedFiles!.length === 1
       ? path
       : `${path} +${entry.changedFiles!.length - 1} more`;
