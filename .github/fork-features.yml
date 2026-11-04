@@ -1574,6 +1574,26 @@ features:
       tracking: []
       retire_when: Upstream's composer effort tooltip names the menu and its shortcut.
 
+  - id: failed-edit-open-diff
+    title: Offer Open diff only on edits that may have applied
+    status: maintained
+    prs: [1260]
+    invariants:
+      - An expanded file edit on web offers Open diff only when the edit did not fail and was not cancelled; a blocked, failed, or cancelled edit changed nothing, so it has no diff to open. Interrupted edits keep the button because they may have partly applied.
+    rationale: Upstream offers Open diff on every file edit with a run, so a blocked edit opens an empty or unrelated turn diff.
+    implementation_paths:
+      - apps/web/src/components/chat/V2ItemInspector.tsx
+      - packages/client-runtime/src/work-log/itemDetail.ts
+    upstream_paths:
+      - apps/web/src/components/chat/V2ItemInspector.tsx
+      - packages/client-runtime/src/work-log/itemDetail.ts
+    tests:
+      - packages/client-runtime/src/work-log/itemDetail.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream hides Open diff on failed and cancelled file edits.
+
   - id: failed-edit-summary-count
     title: Count only applied edits in tool group summaries
     status: maintained

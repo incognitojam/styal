@@ -7,6 +7,7 @@ import type {
 import {
   toolCallLines,
   turnItemDetailRevision,
+  turnItemMayHaveChangedFiles,
   turnItemNeedsDetailFetch,
   turnItemOutputImages,
   turnItemOutputText,
@@ -305,10 +306,7 @@ export const V2ItemInspector = memo(function V2ItemInspector(props: V2ItemInspec
                 <span className="text-diff-deletion">-{formatDiffCount(item.deletions ?? 0)}</span>
               </span>
             ) : null}
-            {item.runId !== null &&
-            item.status !== "failed" &&
-            item.status !== "cancelled" &&
-            props.onOpenTurnDiff ? (
+            {item.runId !== null && turnItemMayHaveChangedFiles(item) && props.onOpenTurnDiff ? (
               <Button
                 size="xs"
                 variant="outline"

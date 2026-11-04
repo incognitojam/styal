@@ -126,6 +126,11 @@ const LIVE_TURN_ITEM_STATUSES: ReadonlySet<OrchestrationV2TurnItem["status"]> = 
  * A running item keeps one key, so an open row fetches once while it streams and
  * again when it finishes, not on every update.
  */
+/** Failed and cancelled edits changed nothing; an interrupted one may have partly applied. */
+export function turnItemMayHaveChangedFiles(item: OrchestrationV2TurnItem): boolean {
+  return item.status !== "failed" && item.status !== "cancelled";
+}
+
 export function turnItemDetailRevision(item: OrchestrationV2TurnItem): string {
   return LIVE_TURN_ITEM_STATUSES.has(item.status) ? "live" : DateTime.formatIso(item.updatedAt);
 }
