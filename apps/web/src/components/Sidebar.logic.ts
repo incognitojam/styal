@@ -826,6 +826,15 @@ function hasUnseenFailure(thread: ThreadStatusInput): boolean {
   return completedAt > lastVisitedAt;
 }
 
+/** Whether the thread was opened after its latest run ended, so its failure was read. */
+export function isLatestFailureSeen(
+  thread: Pick<ThreadStatusInput, "latestRun" | "lastVisitedAt">,
+): boolean {
+  const failedAt = Date.parse(thread.latestRun?.completedAt ?? "");
+  const lastVisitedAt = Date.parse(thread.lastVisitedAt ?? "");
+  return !Number.isNaN(failedAt) && !Number.isNaN(lastVisitedAt) && lastVisitedAt >= failedAt;
+}
+
 export function shouldClearThreadSelectionOnMouseDown(target: HTMLElement | null): boolean {
   if (target === null) return true;
   return !target.closest(THREAD_SELECTION_SAFE_SELECTOR);
