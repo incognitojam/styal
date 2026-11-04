@@ -4889,7 +4889,7 @@ features:
       - apps/web/src/keybindings.test.ts
       - apps/web/src/lib/viewPullRequest.test.ts
       - apps/web/src/rightPanelStore.test.ts
-      - apps/web/src/shortcuts/chatRouteCommands.browser.test.ts
+      - apps/web/src/shortcuts/chatRouteCommands.pullRequests.browser.test.ts
       - packages/contracts/src/keybindings.test.ts
     upstream:
       status: partial
