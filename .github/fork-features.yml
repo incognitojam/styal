@@ -1639,7 +1639,7 @@ features:
     status: review-needed
     prs: [192, 233]
     invariants:
-      - Mod+W closes a focused terminal first, then closes the active browser or diff panel tab before the desktop window.
+      - Mod+W closes a focused terminal first, then the active browser or diff panel tab, and never closes the desktop window.
       - Opening a panel menu or launcher preserves panel focus ownership so the next close shortcut targets the panel predictably.
       - Closing a browser tab preserves the relative order of every remaining panel tab so repeated close actions cannot target a tab that moved unexpectedly.
     implementation_paths:
