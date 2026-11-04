@@ -2,6 +2,7 @@ import type { DesktopBridge, DesktopUpdateState } from "@t3tools/contracts";
 import { TriangleAlertIcon } from "lucide-react";
 import { type ComponentProps, useId, useRef, useState } from "react";
 import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { settleWithinGrace } from "@t3tools/shared/hostActivity";
 import { flushSync } from "react-dom";
 import { isElectron } from "../../env";
 import { cn } from "../../lib/utils";
@@ -141,6 +142,11 @@ function SidebarUpdateControl() {
   const [isActionPending, setIsActionPending] = useState(false);
   const [isConfirmingEverything, setIsConfirmingEverything] = useState(false);
   const [activityCheck, setActivityCheck] = useState<UpdateEverythingConfirmation | null>(null);
+  const [isCheckingActivity, setIsCheckingActivity] = useState(false);
+  // Set when a late check result replaces the dialog's content.
+  const [activityUpdatedAt, setActivityUpdatedAt] = useState<number | null>(null);
+  // Results of a check that outlasted its dialog are ignored.
+  const latestActivityCheck = useRef(0);
   const action = state ? resolveDesktopUpdateButtonAction(state) : "none";
   const showsLocalUpdate = shouldShowDesktopUpdateButton(state);
   const localUpdateVersion =
@@ -181,17 +187,38 @@ function SidebarUpdateControl() {
     if (runsEverything) {
       // The button shows the check in progress; a dialog opens only when something needs consent.
       setIsActionPending(true);
-      const activity = await everything.checkActivity().catch((): UpdateEverythingConfirmation => ({
+      const check = everything.checkActivity().catch((): UpdateEverythingConfirmation => ({
         lines: ["Could not check the servers for running work."],
         threadActivity: [],
         localVersion: null,
         interrupts: true,
         servers: "",
       }));
-      if (!activity.interrupts) return runEverything(activity, false);
+      const early = await settleWithinGrace(check);
       setIsActionPending(false);
-      setActivityCheck(activity);
+      if (early !== null) {
+        if (!early.value.interrupts) return runEverything(early.value, false);
+        setActivityCheck(early.value);
+        setIsCheckingActivity(false);
+        setActivityUpdatedAt(null);
+        setIsConfirmingEverything(true);
+        return;
+      }
+      const checkId = ++latestActivityCheck.current;
+      setActivityCheck(everything.checkingActivity());
+      setIsCheckingActivity(true);
+      setActivityUpdatedAt(null);
       setIsConfirmingEverything(true);
+      void check.then((activity) => {
+        if (latestActivityCheck.current !== checkId) return;
+        setActivityCheck(
+          activity.interrupts
+            ? activity
+            : { ...activity, lines: ["Nothing running will be interrupted."] },
+        );
+        setIsCheckingActivity(false);
+        setActivityUpdatedAt(Date.now());
+      });
       return;
     }
     const bridge = window.desktopBridge;
@@ -200,9 +227,14 @@ function SidebarUpdateControl() {
     void installLocalUpdate(bridge).finally(() => setIsActionPending(false));
   };
 
+  const closeConfirmation = () => {
+    latestActivityCheck.current += 1;
+    setIsConfirmingEverything(false);
+  };
+
   const runEverything = async (activity: UpdateEverythingConfirmation, confirmed: boolean) => {
     const bridge = window.desktopBridge;
-    setIsConfirmingEverything(false);
+    closeConfirmation();
     setIsActionPending(true);
     const result = await settlePromise(() =>
       everything.run({
@@ -246,7 +278,9 @@ function SidebarUpdateControl() {
   const confirmDialog = activityCheck ? (
     <UpdateEverythingDialog
       open={isConfirmingEverything}
-      onOpenChange={setIsConfirmingEverything}
+      onOpenChange={(open) => (open ? setIsConfirmingEverything(true) : closeConfirmation())}
+      checking={isCheckingActivity}
+      contentUpdatedAt={activityUpdatedAt}
       summary={everything.summary}
       lines={everything.lines}
       skipped={everything.skipped}

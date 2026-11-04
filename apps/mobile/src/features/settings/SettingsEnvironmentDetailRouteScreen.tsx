@@ -7,6 +7,7 @@ import {
   type ServerProvider,
 } from "@t3tools/contracts";
 import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { settleWithinGrace } from "@t3tools/shared/hostActivity";
 import { AsyncResult } from "effect/reactivity";
 import { useEffect, useRef, useState } from "react";
 import { View } from "react-native";
@@ -34,7 +35,11 @@ import {
   isLatestProviderVersionUntested,
   supportsEnvironmentUpdate,
 } from "./environment-maintenance";
-import { describeServerUpdate, requestServerUpdateConfirmation } from "./serverUpdateConfirmation";
+import {
+  describeServerUpdate,
+  describeServerUpdateCheck,
+  requestServerUpdateConfirmation,
+} from "./serverUpdateConfirmation";
 
 export function SettingsEnvironmentDetailRouteScreen({
   route,
@@ -129,21 +134,30 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
     const continueRunningThreads = capabilities.threadRestartContinuation === true;
     void run("server", async () => {
       const desktopManaged = capabilities.serverSelfUpdate === "desktop-managed";
-      const [activity, desktopActivity] = await Promise.all([
+      const serverLabel = environment?.environmentLabel ?? "environment";
+      const check = Promise.all([
         readHostActivity({ environmentId, input: {} }),
         desktopManaged ? readDesktopHostActivity({ environmentId, input: {} }) : null,
-      ]);
-      const confirmation = describeServerUpdate({
-        serverLabel: environment?.environmentLabel ?? "environment",
-        targetVersion,
-        desktopManaged,
-        activity: AsyncResult.isSuccess(activity) ? activity.value : null,
-        desktopActivity: desktopActivity?._tag === "Success" ? desktopActivity.value : null,
-        continueRunningThreads,
-      });
-      const proceed = await requestServerUpdateConfirmation(confirmation, (requestId) =>
-        navigation.navigate("SettingsServerUpdateConfirm", { environmentId, requestId }),
+      ]).then(([activity, desktopActivity]) =>
+        describeServerUpdate({
+          serverLabel,
+          targetVersion,
+          desktopManaged,
+          activity: AsyncResult.isSuccess(activity) ? activity.value : null,
+          desktopActivity: desktopActivity?._tag === "Success" ? desktopActivity.value : null,
+          continueRunningThreads,
+        }),
       );
+      const early = await settleWithinGrace(check);
+      const present = (requestId: string) =>
+        navigation.navigate("SettingsServerUpdateConfirm", { environmentId, requestId });
+      const proceed = early
+        ? await requestServerUpdateConfirmation(early.value, present)
+        : await requestServerUpdateConfirmation(
+            describeServerUpdateCheck({ serverLabel, targetVersion, desktopManaged }),
+            present,
+            check,
+          );
       if (!proceed) return;
       if (
         AsyncResult.isFailure(
@@ -160,7 +174,7 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
         input: {
           targetVersion,
           // A safe update without a confirmation is rechecked before its handoff.
-          confirmed: confirmation.requiresConfirmation,
+          confirmed: early ? early.value.requiresConfirmation : true,
           ...(continueRunningThreads ? { continueRunningThreads } : {}),
         },
       });

@@ -12,7 +12,7 @@ import { AsyncResult, Atom } from "effect/reactivity";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vite-plus/test";
 
-import { act, render, type Screen } from "../../test/render";
+import { act, fakeTimers, render, type Screen } from "../../test/render";
 
 type SessionResult = AsyncResult.AsyncResult<AuthSessionState, Error>;
 const testState = vi.hoisted(() => ({
@@ -362,6 +362,58 @@ describe("ServerUpdateAction", () => {
     });
     await act(async () => respondToConfirmDialog(true));
     expect(testState.updateServer).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks without waiting once the check outlasts its grace period, then shows the late result", async () => {
+    using _state = setup();
+    subscribeConfirmDialogHost(() => {});
+    const result = AsyncResult.success({ ...idleActivity, activeSessions: 1 });
+    const activity = deferred<typeof result>();
+    testState.hostActivity.mockReturnValue(activity.promise);
+    testState.updateServer.mockResolvedValue(success());
+
+    await using screen = await renderAction();
+    using _timers = fakeTimers();
+    await click(screen, "Update");
+    expect(readConfirmDialogState().status).toBe("idle");
+
+    await act(async () => vi.advanceTimersByTimeAsync(2_000));
+    expect(readConfirmDialogState()).toMatchObject({
+      status: "confirming",
+      message: expect.stringContaining("Still checking the Test server for running work."),
+      confirmLabel: "Update anyway",
+    });
+
+    await act(async () => activity.resolve(result));
+    expect(readConfirmDialogState()).toMatchObject({
+      status: "confirming",
+      message: expect.stringContaining("1 thread will be interrupted."),
+      confirmLabel: "Update",
+    });
+    await act(async () => respondToConfirmDialog(true));
+    expect(testState.updateServer).toHaveBeenCalledExactlyOnceWith({
+      environmentId: "env-test",
+      input: { targetVersion: "0.0.31", confirmed: true },
+    });
+  });
+
+  it("updates without the check when the user confirms before it finishes", async () => {
+    using _state = setup();
+    subscribeConfirmDialogHost(() => {});
+    testState.hostActivity.mockReturnValue(new Promise(() => {}));
+    testState.updateServer.mockResolvedValue(success());
+
+    await using screen = await renderAction();
+    using _timers = fakeTimers();
+    await click(screen, "Update");
+    await act(async () => vi.advanceTimersByTimeAsync(2_000));
+    expect(readConfirmDialogState()).toMatchObject({ confirmLabel: "Update anyway" });
+
+    await act(async () => respondToConfirmDialog(true));
+    expect(testState.updateServer).toHaveBeenCalledExactlyOnceWith({
+      environmentId: "env-test",
+      input: { targetVersion: "0.0.31", confirmed: true },
+    });
   });
 
   it("keeps running work when the user cancels the confirmation", async () => {

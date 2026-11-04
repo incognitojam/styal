@@ -3,6 +3,7 @@ import { useEffect, useSyncExternalStore } from "react";
 import {
   acknowledgeConfirmDialogPresentation,
   completeConfirmDialogClose,
+  confirmActiveConfirmDialog,
   readConfirmDialogState,
   requestConfirmDialog,
   respondToConfirmDialog,
@@ -19,6 +20,8 @@ import {
 } from "./ui/alert-dialog";
 import { Button } from "./ui/button";
 import { HostActivityThreadList } from "./HostActivityThreadList";
+import { Spinner } from "./ui/spinner";
+import { StableLabel } from "./StableLabel";
 
 type ConfirmationCopy = {
   readonly title: string;
@@ -119,7 +122,10 @@ export function ConfirmDialogHost() {
   const confirmVariant = state.status === "idle" ? "default" : state.variant;
   const threadActivity = state.status === "idle" ? undefined : state.threadActivity;
   const onCancel = () => respondToConfirmDialog(false);
-  const onConfirm = () => respondToConfirmDialog(true);
+  const onConfirm = () => confirmActiveConfirmDialog();
+  const checking = state.status !== "idle" && state.checking === true;
+  const confirmLabel = state.status === "idle" ? "Confirm" : state.confirmLabel;
+  const previousConfirmLabel = state.status === "idle" ? undefined : state.previousConfirmLabel;
 
   return (
     <AlertDialog
@@ -143,9 +149,16 @@ export function ConfirmDialogHost() {
           <AlertDialogHeader>
             <AlertDialogTitle>{copy.title}</AlertDialogTitle>
             {copy.description ? (
-              <AlertDialogDescription className="whitespace-pre-line">
-                {copy.description}
-              </AlertDialogDescription>
+              <div className="flex items-start gap-2">
+                {checking ? (
+                  <span className="pt-0.5">
+                    <Spinner size="sm" tone="muted" aria-label="Checking" />
+                  </span>
+                ) : null}
+                <AlertDialogDescription className="whitespace-pre-line">
+                  {copy.description}
+                </AlertDialogDescription>
+              </div>
             ) : null}
           </AlertDialogHeader>
         </div>
@@ -153,7 +166,7 @@ export function ConfirmDialogHost() {
         <AlertDialogFooter>
           <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
           <Button variant={confirmVariant} onClick={onConfirm}>
-            {state.status === "idle" ? "Confirm" : state.confirmLabel}
+            <StableLabel label={confirmLabel} previous={previousConfirmLabel} />
           </Button>
         </AlertDialogFooter>
       </AlertDialogPopup>

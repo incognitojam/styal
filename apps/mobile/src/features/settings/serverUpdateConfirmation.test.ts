@@ -2,10 +2,15 @@ import { ThreadId } from "@t3tools/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
+  confirmServerUpdate,
   describeServerUpdate,
+  describeServerUpdateCheck,
   readServerUpdateConfirmation,
+  releaseServerUpdateConfirmation,
   requestServerUpdateConfirmation,
   respondToServerUpdateConfirmation,
+  subscribeServerUpdateConfirmations,
+  type ServerUpdateConfirmation,
 } from "./serverUpdateConfirmation";
 
 const idle = {
@@ -118,8 +123,82 @@ describe("requestServerUpdateConfirmation", () => {
     expect(readServerUpdateConfirmation(requestId)).toBe(confirmation);
     respondToServerUpdateConfirmation(requestId, true);
     // The sheet's unmount cleanup answers again; that must not change the result.
-    respondToServerUpdateConfirmation(requestId, false);
+    releaseServerUpdateConfirmation(requestId);
     await expect(answer).resolves.toBe(true);
     expect(readServerUpdateConfirmation(requestId)).toBeNull();
+  });
+
+  it("shows a check that finishes after the sheet opened", async () => {
+    let requestId = "";
+    let finish!: (checked: ServerUpdateConfirmation) => void;
+    const result = new Promise<ServerUpdateConfirmation>((resolve) => {
+      finish = resolve;
+    });
+    const checking = describeServerUpdateCheck({ ...base, desktopManaged: false });
+    const answer = requestServerUpdateConfirmation(
+      checking,
+      (id) => {
+        requestId = id;
+      },
+      result,
+    );
+    expect(readServerUpdateConfirmation(requestId)?.confirmLabel).toBe("Update anyway");
+
+    const changed = vi.fn();
+    const unsubscribe = subscribeServerUpdateConfirmations(changed);
+    finish(describeServerUpdate({ ...base, continueRunningThreads: false, activity: idle }));
+    await result;
+    expect(changed).toHaveBeenCalledTimes(1);
+    expect(readServerUpdateConfirmation(requestId)).toMatchObject({
+      requiresConfirmation: true,
+      message: expect.stringContaining("Nothing running will be interrupted."),
+    });
+    expect(readServerUpdateConfirmation(requestId)?.confirmLabel).toBeUndefined();
+    expect(readServerUpdateConfirmation(requestId)?.checking).toBeUndefined();
+    respondToServerUpdateConfirmation(requestId, true);
+    await expect(answer).resolves.toBe(true);
+    unsubscribe();
+  });
+
+  it("ignores a confirm tap just after a late check replaced the content", async () => {
+    using now = vi.spyOn(Date, "now").mockReturnValue(10_000);
+    let requestId = "";
+    const result = Promise.resolve(
+      describeServerUpdate({ ...base, activity: { ...idle, waitingSessions: 1 } }),
+    );
+    const answer = requestServerUpdateConfirmation(
+      describeServerUpdateCheck({ ...base, desktopManaged: false }),
+      (id) => {
+        requestId = id;
+      },
+      result,
+    );
+    await result;
+    now.mockReturnValue(10_300);
+    expect(confirmServerUpdate(requestId)).toBe(false);
+    now.mockReturnValue(10_500);
+    expect(confirmServerUpdate(requestId)).toBe(true);
+    await expect(answer).resolves.toBe(true);
+  });
+
+  it("ignores a check that finishes after the sheet was answered", async () => {
+    let requestId = "";
+    let finish!: (checked: ServerUpdateConfirmation) => void;
+    const result = new Promise<ServerUpdateConfirmation>((resolve) => {
+      finish = resolve;
+    });
+    const checking = describeServerUpdateCheck({ ...base, desktopManaged: false });
+    const answer = requestServerUpdateConfirmation(
+      checking,
+      (id) => {
+        requestId = id;
+      },
+      result,
+    );
+    respondToServerUpdateConfirmation(requestId, false);
+    finish(describeServerUpdate({ ...base, continueRunningThreads: false, activity: idle }));
+    await result;
+    await expect(answer).resolves.toBe(false);
+    expect(readServerUpdateConfirmation(requestId)).toBe(checking);
   });
 });

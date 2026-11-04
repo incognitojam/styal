@@ -6,10 +6,11 @@ import {
   type HostActivityTone,
 } from "@t3tools/shared/hostActivity";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
-import { useEffect, useState } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { Platform, ScrollView, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { AppText as Text } from "../../components/ui/AppText";
 import { ScreenContent } from "../../components/ui/ScreenContent";
 import { ProjectFavicon } from "../../components/ProjectFavicon";
@@ -17,8 +18,11 @@ import { cn } from "../../lib/cn";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { SheetActionButton } from "../threads/git/gitSheetComponents";
 import {
+  confirmServerUpdate,
   readServerUpdateConfirmation,
+  releaseServerUpdateConfirmation,
   respondToServerUpdateConfirmation,
+  subscribeServerUpdateConfirmations,
 } from "./serverUpdateConfirmation";
 
 const badgeClassNames: Record<HostActivityTone, string> = {
@@ -112,13 +116,20 @@ export function SettingsServerUpdateConfirmRouteScreen({
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
-  const [confirmation] = useState(() => readServerUpdateConfirmation(requestId));
+  // A running-work check that finishes after the screen opens replaces its content.
+  const confirmation = useSyncExternalStore(subscribeServerUpdateConfirmations, () =>
+    readServerUpdateConfirmation(requestId),
+  );
 
   // Swiping the sheet away, or any other close, cancels the update.
-  useEffect(() => () => respondToServerUpdateConfirmation(requestId, false), [requestId]);
+  useEffect(() => () => releaseServerUpdateConfirmation(requestId), [requestId]);
 
   const close = (confirmed: boolean) => {
-    respondToServerUpdateConfirmation(requestId, confirmed);
+    if (confirmed) {
+      if (!confirmServerUpdate(requestId)) return;
+    } else {
+      respondToServerUpdateConfirmation(requestId, false);
+    }
     navigation.goBack();
   };
 
@@ -143,9 +154,14 @@ export function SettingsServerUpdateConfirmRouteScreen({
             <Text className="text-2xl font-t3-bold text-foreground">
               {confirmation?.title ?? "Update server?"}
             </Text>
-            <Text className="text-sm leading-normal text-foreground-secondary">
-              {confirmation?.message ?? "This confirmation is no longer available."}
-            </Text>
+            <View className="flex-row items-start gap-2">
+              {confirmation?.checking ? (
+                <AppActivityIndicator size="small" accessibilityLabel="Checking" />
+              ) : null}
+              <Text className="min-w-0 flex-1 text-sm leading-normal text-foreground-secondary">
+                {confirmation?.message ?? "This confirmation is no longer available."}
+              </Text>
+            </View>
           </View>
           {confirmation?.threadActivity.length ? (
             <ThreadActivityList
@@ -161,7 +177,7 @@ export function SettingsServerUpdateConfirmRouteScreen({
           <SheetActionButton icon="xmark" label="Cancel" onPress={() => close(false)} />
           <SheetActionButton
             icon="arrow.up.circle"
-            label="Update"
+            label={confirmation?.confirmLabel ?? "Update"}
             tone="primary"
             disabled={!confirmation}
             onPress={() => close(true)}

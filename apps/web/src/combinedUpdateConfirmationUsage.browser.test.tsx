@@ -67,6 +67,7 @@ function dialog(open: boolean, summary = "Update synthetic computers") {
           interrupts: true,
           servers: "",
         }}
+        checking={false}
         onConfirm={onConfirm}
       />
     </StrictMode>
