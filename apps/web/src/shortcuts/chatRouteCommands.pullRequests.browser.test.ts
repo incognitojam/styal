@@ -1,21 +1,18 @@
-import { EnvironmentId, ProjectId, SourceControlProviderKind } from "@t3tools/contracts";
 import { compileResolvedKeybindingsConfig } from "@t3tools/shared/keybindings";
 import type { AnyRouter } from "@tanstack/react-router";
 import { Atom } from "effect/reactivity";
-import { describe, expect, it, vi } from "vite-plus/test";
+import { expect, it, vi } from "vite-plus/test";
 
 const state = vi.hoisted(() => ({
-  // Thread id -> the URL of its branch pull request.
   pullRequestByThread: {} as Record<string, string>,
   projects: [] as unknown[],
 }));
 
 vi.mock(import("../state/entities"), async (importOriginal) => ({
   ...(await importOriginal()),
-  readThreadShell: ((ref: { threadId: string }) => {
-    const url = state.pullRequestByThread[ref.threadId];
-    return url === undefined ? null : { branchPullRequest: { url } };
-  }) as never,
+  readThreadShell: ((ref: { threadId: string }) => ({
+    branchPullRequest: { url: state.pullRequestByThread[ref.threadId] },
+  })) as never,
   readProjects: (() => state.projects) as never,
 }));
 vi.mock(import("../state/server"), async (importOriginal) => ({
@@ -33,130 +30,74 @@ vi.mock(import("../state/server"), async (importOriginal) => ({
 import { useRightPanelStore } from "../rightPanelStore";
 import { installChatRouteCommands } from "./chatRouteCommands";
 
-type Match = {
-  readonly routeId: string;
-  readonly pathname: string;
-  readonly params?: Record<string, string>;
+const PR = (number: number) => `https://github.com/owner/repo/pull/${number}`;
+const PROJECT = {
+  id: "project",
+  environmentId: "environment",
+  repositoryIdentity: {
+    canonicalKey: "github.com/owner/repo",
+    provider: "github",
+    owner: "owner",
+    name: "repo",
+  },
 };
 
-function routerAt(matches: Match[]) {
-  const state = { matches: matches.map((match) => ({ params: {}, ...match })) };
+const threadMatches = (threadId: string, pathname = `/environment/${threadId}`) => [
+  { routeId: "/_chat", pathname: "/", params: {} },
+  { routeId: "thread", pathname, params: { environmentId: "environment", threadId } },
+];
+
+function setup() {
+  state.pullRequestByThread = { first: PR(1), second: PR(2) };
+  state.projects = [PROJECT];
+  const routerState = { matches: threadMatches("first") };
+  const stack = new DisposableStack();
+  stack.defer(installChatRouteCommands({ state: routerState } as unknown as AnyRouter));
+  stack.use(vi.spyOn(navigator, "platform", "get").mockReturnValue("Linux x86_64"));
   return {
-    router: { state } as unknown as AnyRouter,
-    navigate: (next: Match[]) => {
-      state.matches = next.map((match) => ({ params: {}, ...match }));
-    },
+    stack,
+    routerState,
+    open: stack.use(vi.spyOn(window, "open").mockReturnValue(null)),
+    openTab: stack.use(
+      vi.spyOn(useRightPanelStore.getState(), "openPullRequest").mockReturnValue(undefined),
+    ),
   };
 }
 
-const CHAT: Match[] = [
-  { routeId: "__root__", pathname: "/" },
-  { routeId: "/_chat", pathname: "/" },
-];
-
-const PROJECT = ProjectId.make("project");
-const FIRST_PR = "https://github.com/owner/repo/pull/1";
-const SECOND_PR = "https://github.com/owner/repo/pull/2";
-
-function threadAt(threadId: string): Match[] {
-  return [
-    ...CHAT,
-    {
-      routeId: "/_chat/$environmentId/$threadId",
-      pathname: `/environment/${threadId}`,
-      params: { environmentId: "environment", threadId },
-    },
-  ];
-}
-
-function setup() {
-  state.pullRequestByThread = { first: FIRST_PR, second: SECOND_PR };
-  state.projects = [];
-}
-
-function press(): void {
+function press() {
   window.dispatchEvent(
-    new KeyboardEvent("keydown", {
-      key: "h",
-      ctrlKey: true,
-      altKey: true,
-      bubbles: true,
-      cancelable: true,
-    }),
+    new KeyboardEvent("keydown", { key: "h", ctrlKey: true, altKey: true, cancelable: true }),
   );
 }
 
-describe("pull request commands", () => {
-  it("open the pull request of the thread on screen, and stay quiet under modal pages", () => {
-    // No project holds owner/repo here, so each press falls back to the browser.
-    setup();
-    using _platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("Linux x86_64");
-    using open = vi.spyOn(window, "open").mockReturnValue(null);
-    const { router, navigate } = routerAt(threadAt("first"));
-    using stack = new DisposableStack();
-    stack.defer(installChatRouteCommands(router));
+it("opens the tab for the thread on screen, or the browser when no project holds its repository", () => {
+  const { stack, routerState, open, openTab } = setup();
+  using _stack = stack;
 
-    press();
-    expect(open.mock.calls).toEqual([[FIRST_PR, "_blank", "noopener,noreferrer"]]);
+  routerState.matches = threadMatches("second");
+  press();
+  expect(openTab).toHaveBeenCalledExactlyOnceWith(
+    { environmentId: "environment", threadId: "second" },
+    expect.objectContaining({ projectId: "project", number: 2, url: PR(2) }),
+  );
+  expect(open).not.toHaveBeenCalled();
 
-    navigate(threadAt("second"));
-    press();
-    expect(open.mock.calls.at(-1)?.[0]).toBe(SECOND_PR);
+  state.projects = [];
+  press();
+  expect(open.mock.calls).toEqual([[PR(2), "_blank", "noopener,noreferrer"]]);
+});
 
-    navigate([...threadAt("second"), { routeId: "/_chat/settings", pathname: "/settings" }]);
-    press();
-    expect(open).toHaveBeenCalledTimes(2);
-  });
+it("opens nothing without a pull request or under a modal page", () => {
+  const { stack, routerState, open, openTab } = setup();
+  using _stack = stack;
 
-  it("open nothing for a thread without a pull request", () => {
-    setup();
-    state.pullRequestByThread = {};
-    using _platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("Linux x86_64");
-    using open = vi.spyOn(window, "open").mockReturnValue(null);
-    using openPullRequest = vi.spyOn(useRightPanelStore.getState(), "openPullRequest");
-    using stack = new DisposableStack();
-    stack.defer(installChatRouteCommands(routerAt(threadAt("first")).router));
+  routerState.matches = threadMatches("first", "/settings");
+  press();
 
-    press();
+  state.pullRequestByThread = {};
+  routerState.matches = threadMatches("first");
+  press();
 
-    expect(open).not.toHaveBeenCalled();
-    expect(openPullRequest).not.toHaveBeenCalled();
-  });
-
-  it("open the pull request tab beside the thread when a project holds its repository", () => {
-    setup();
-    using _platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("Linux x86_64");
-    using open = vi.spyOn(window, "open").mockReturnValue(null);
-    using openPullRequest = vi
-      .spyOn(useRightPanelStore.getState(), "openPullRequest")
-      .mockImplementation(() => undefined);
-    using stack = new DisposableStack();
-    stack.defer(installChatRouteCommands(routerAt(threadAt("second")).router));
-
-    // No project checks out owner/repo, so the tab has nothing to load and the browser opens it.
-    press();
-    expect(open.mock.calls.at(-1)?.[0]).toBe(SECOND_PR);
-    expect(openPullRequest).not.toHaveBeenCalled();
-
-    state.projects = [
-      {
-        id: PROJECT,
-        environmentId: EnvironmentId.make("environment"),
-        repositoryIdentity: {
-          canonicalKey: "github.com/owner/repo",
-          locator: { source: "git-remote", remoteName: "origin", remoteUrl: "" },
-          provider: SourceControlProviderKind.make("github"),
-          displayName: "owner/repo",
-          owner: "owner",
-          name: "repo",
-        },
-      },
-    ];
-    press();
-    expect(openPullRequest).toHaveBeenCalledWith(
-      { environmentId: "environment", threadId: "second" },
-      expect.objectContaining({ projectId: PROJECT, number: 2, url: SECOND_PR }),
-    );
-    expect(open).toHaveBeenCalledTimes(1);
-  });
+  expect(open).not.toHaveBeenCalled();
+  expect(openTab).not.toHaveBeenCalled();
 });

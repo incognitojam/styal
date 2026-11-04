@@ -4867,6 +4867,7 @@ features:
       - apps/server/src/git/GitManager.ts
       - apps/web/src/components/CommandPalette.tsx
       - apps/web/src/components/GitActionsControl.tsx
+      - apps/web/src/lib/openPullRequestLink.ts
       - apps/web/src/lib/viewPullRequest.ts
       - apps/web/src/rightPanelStore.ts
       - apps/web/src/shortcuts/chatRouteCommands.ts
@@ -4877,6 +4878,7 @@ features:
       - apps/server/src/git/GitManager.ts
       - apps/web/src/components/CommandPalette.tsx
       - apps/web/src/components/GitActionsControl.tsx
+      - apps/web/src/lib/openPullRequestLink.ts
       - apps/web/src/rightPanelStore.ts
       - apps/web/src/shortcuts/chatRouteCommands.ts
       - packages/contracts/src/git.ts

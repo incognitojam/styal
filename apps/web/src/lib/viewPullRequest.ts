@@ -1,4 +1,3 @@
-import { resolveChangeRequestLinkTarget } from "@t3tools/client-runtime/change-request-links";
 import { resolveThreadCurrentPullRequestLink } from "@t3tools/client-runtime/thread-pull-requests";
 import type {
   ScopedThreadRef,
@@ -7,14 +6,11 @@ import type {
 } from "@t3tools/contracts";
 
 import { stackedThreadToast, toastManager, type ThreadToastData } from "../components/ui/toast";
-import { getClientSettings } from "../hooks/useSettings";
 import { readLocalApi } from "../localApi";
-import { useRightPanelStore } from "../rightPanelStore";
 import { appAtomRegistry } from "../rpc/atomRegistry";
-import { readProjects, readThreadShell } from "../state/entities";
-import { primaryEnvironmentIdAtom } from "../state/primaryEnvironment";
+import { readThreadShell } from "../state/entities";
 import { environmentServerConfigsAtom } from "../state/server";
-import { openPullRequestLink } from "./openPullRequestLink";
+import { openChangeRequestTab, openPullRequestLink } from "./openPullRequestLink";
 
 interface ThreadPullRequests {
   readonly pullRequests?: ReadonlyArray<ThreadPullRequestLink> | undefined;
@@ -36,17 +32,13 @@ export function threadPullRequestUrl(
   );
 }
 
-function readServerCapabilities(environmentId: ScopedThreadRef["environmentId"]) {
-  return appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId)?.environment
-    .capabilities;
-}
-
 export function readThreadPullRequestUrl(threadRef: ScopedThreadRef): string | null {
   const thread = readThreadShell(threadRef);
   if (thread === null) return null;
-  const supportsLinks =
-    readServerCapabilities(threadRef.environmentId)?.threadPullRequests === true;
-  return threadPullRequestUrl(thread, supportsLinks);
+  const capabilities = appAtomRegistry
+    .get(environmentServerConfigsAtom)
+    .get(threadRef.environmentId)?.environment.capabilities;
+  return threadPullRequestUrl(thread, capabilities?.threadPullRequests === true);
 }
 
 async function openInBrowser(threadRef: ScopedThreadRef, url: string | null) {
@@ -75,34 +67,8 @@ async function openInBrowser(threadRef: ScopedThreadRef, url: string | null) {
   }
 }
 
-/** Opens the pull request as a tab beside the thread; false when it can only open in a browser. */
-function openPullRequestTab(threadRef: ScopedThreadRef, url: string): boolean {
-  if (!getClientSettings().pullRequestLinksOpenInApp) return false;
-  const target = resolveChangeRequestLinkTarget({
-    url,
-    projects: readProjects(),
-    capabilities: readServerCapabilities,
-    environmentId: threadRef.environmentId,
-    primaryEnvironmentId: appAtomRegistry.get(primaryEnvironmentIdAtom),
-    lendHostProject: true,
-  });
-  if (target === null) return false;
-  const { project, repository, number, host } = target;
-  useRightPanelStore.getState().openPullRequest(threadRef, {
-    ...(threadRef.environmentId === project.environmentId
-      ? {}
-      : { environmentId: project.environmentId }),
-    projectId: project.id,
-    ...(host === undefined ? {} : { host }),
-    repository,
-    url,
-    number,
-  });
-  return true;
-}
-
 /** Falls back to the browser when no project matches the repository or the host lacks the panel. */
 export async function focusPullRequestTab(threadRef: ScopedThreadRef, url: string | null) {
-  if (url !== null && openPullRequestTab(threadRef, url)) return;
+  if (url !== null && openChangeRequestTab(threadRef, url)) return;
   await openInBrowser(threadRef, url);
 }
