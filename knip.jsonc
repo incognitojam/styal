@@ -164,6 +164,9 @@
     "infra/web": {
       // Alchemy loads the stack, and the stack names its worker by path.
       "entry": ["alchemy.run.ts!", "src/worker.ts!", "scripts/sync-old-assets.ts!"],
+      // No workspace installs `typescript` since the checker moved to @effect/tsgo, so Knip
+      // only reads the Workers types this tsconfig loads when its plugin is enabled here.
+      "typescript": { "config": ["tsconfig.json"] },
       // The deploy job installs only this workspace's dependencies, so `vp run`
       // resolves Vite+ from here rather than from the root.
       "ignoreDependencies": ["vite-plus"],

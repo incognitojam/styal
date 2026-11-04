@@ -1,6 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off
 // Byte-preserving JSON edits require checking the encoded representation as well as decoded values.
-// @effect-diagnostics preferSchemaOverJson:off
+// @effect-diagnostics globalJsonInEffect:off
 import * as NodeFS from "node:fs";
 import * as NodeURL from "node:url";
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// @effect-diagnostics nodeBuiltinImport:off preferSchemaOverJson:off globalDate:off globalTimers:off globalFetch:off - standalone fake CLI with no workspace imports.
+// @effect-diagnostics nodeBuiltinImport:off globalJsonInEffect:off globalDate:off globalTimers:off globalFetch:off - standalone fake CLI with no workspace imports.
 /* oxlint-disable t3code/no-global-process-runtime -- standalone fake CLI process has no Effect runtime. */
 /**
  * Fake `codex` CLI for tests: `install <dir>` writes a launcher to use as a Codex binary path.

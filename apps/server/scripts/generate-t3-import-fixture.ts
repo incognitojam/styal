@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// @effect-diagnostics nodeBuiltinImport:off preferSchemaOverJson:off globalDate:off globalTimers:off globalFetch:off - standalone generator with no workspace imports.
+// @effect-diagnostics nodeBuiltinImport:off globalJsonInEffect:off globalDate:off globalTimers:off globalFetch:off - standalone generator with no workspace imports.
 /**
  * Generates the T3 Code data directory the import end-to-end test reads, by driving a T3 Code or
  * styal checkout's own server over its APIs so every stored row comes from that server.

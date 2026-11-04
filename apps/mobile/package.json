@@ -47,7 +47,7 @@
     "generate": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/generate-uniwind-themes.mts",
     "generate:highlights": "node scripts/generate-highlights.mts",
     "test": "vp test run --project unit --project react",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "effect-tsgo tsrs --noEmit"
   },
   "dependencies": {
     "@clerk/expo": "catalog:",
@@ -147,8 +147,7 @@
     "@types/react-dom": "catalog:",
     "babel-preset-expo": "~58.0.17",
     "jsdom": "^30.0.1",
-    "tailwindcss": "^4.0.0",
-    "typescript": "catalog:"
+    "tailwindcss": "^4.0.0"
   },
   "enriched-markdown": {
     "enableMath": true,
@@ -158,7 +157,6 @@
     "install": {
       "exclude": [
         "react-native-keyboard-controller",
-        "typescript",
         "react-native-screens",
         "react-native-enriched-markdown"
       ]

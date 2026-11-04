@@ -1,4 +1,4 @@
-// @effect-diagnostics nodeBuiltinImport:off globalTimers:off globalDate:off globalFetch:off globalConsole:off globalConsoleInEffect:off globalDateInEffect:off preferSchemaOverJson:off - Host-side process verifier retains raw wire evidence and owns deadline timers.
+// @effect-diagnostics nodeBuiltinImport:off globalTimers:off globalDate:off globalFetch:off globalConsole:off globalConsoleInEffect:off globalDateInEffect:off globalJsonInEffect:off - Host-side process verifier retains raw wire evidence and owns deadline timers.
 /**
  * Real provider turn verifier that gates automatic provider updates in the canary. Boots a real
  * server with a fresh T3 home and drives provider turns with this process's CLI credentials.

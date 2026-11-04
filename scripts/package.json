@@ -8,7 +8,7 @@
     "migrations:check": "node upstream/check-migrations.ts",
     "naming:check": "node check-upstream-naming.ts",
     "settings:badges": "node check-settings-fork-badges.ts",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "effect-tsgo tsrs --noEmit",
     "test": "vp test run --config ../vite.config.ts --dir ."
   },
   "dependencies": {
@@ -31,7 +31,6 @@
     "@types/pngjs": "6.0.5",
     "esbuild": "0.28.2",
     "postject": "1.0.0-alpha.6",
-    "typescript": "catalog:",
     "typescript-legacy": "npm:typescript@~6.0.3",
     "vite-plus": "catalog:"
   }

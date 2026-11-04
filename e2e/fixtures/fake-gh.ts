@@ -1,4 +1,4 @@
-// @effect-diagnostics nodeBuiltinImport:off preferSchemaOverJson:off - standalone fake CLI with no workspace imports.
+// @effect-diagnostics nodeBuiltinImport:off globalJsonInEffect:off - standalone fake CLI with no workspace imports.
 /**
  * A fake `gh` that reports a signed-in github.com account and a fake token; GitHub data comes
  * from e2e/support/fake-github-api.ts. Calls are appended to `E2E_GH_CALL_LOG`. Unknown commands

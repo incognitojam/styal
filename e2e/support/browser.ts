@@ -1,4 +1,4 @@
-// @effect-diagnostics nodeBuiltinImport:off preferSchemaOverJson:off - plain Node e2e harness.
+// @effect-diagnostics nodeBuiltinImport:off globalJsonInEffect:off - plain Node e2e harness.
 import * as NodeFS from "node:fs";
 import {
   type Browser,

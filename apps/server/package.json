@@ -22,7 +22,7 @@
     "dev:built": "vp run dev",
     "build:bundle": "vp pack",
     "start": "node dist/bin.mjs start",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "effect-tsgo tsrs --noEmit",
     "test": "vp test run",
     "test:nightly-upgrade": "node scripts/verify-nightly-schema-upgrade.ts",
     "build:exe": "node scripts/cli.ts build-exe",

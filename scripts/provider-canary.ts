@@ -1,4 +1,4 @@
-// @effect-diagnostics nodeBuiltinImport:off globalFetch:off globalConsole:off globalDate:off preferSchemaOverJson:off
+// @effect-diagnostics nodeBuiltinImport:off globalFetch:off globalConsole:off globalDate:off globalJsonInEffect:off
 /**
  * Verifies published styal builds, not main: each verification checks out a release tag, so a
  * recorded `autoUpdates` entry names the exact build it passed on. `rewind-plan` instead serves

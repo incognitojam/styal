@@ -1,4 +1,4 @@
-// @effect-diagnostics nodeBuiltinImport:off preferSchemaOverJson:off - writes fixture files for a child process.
+// @effect-diagnostics nodeBuiltinImport:off globalJsonInEffect:off - writes fixture files for a child process.
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";

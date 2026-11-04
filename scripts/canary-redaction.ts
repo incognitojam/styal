@@ -1,4 +1,4 @@
-// @effect-diagnostics nodeBuiltinImport:off preferSchemaOverJson:off globalConsole:off -- Dependency-free sanitizer also runs against release-tag verifier files.
+// @effect-diagnostics nodeBuiltinImport:off globalJsonInEffect:off globalConsole:off -- Dependency-free sanitizer also runs against release-tag verifier files.
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 

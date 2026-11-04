@@ -159,7 +159,7 @@ export const makeSweep = Effect.gen(function* () {
             )
               return null;
           }
-          // @effect-diagnostics-next-line preferSchemaOverJson:off -- An in-memory comparison key, never decoded or persisted.
+          // @effect-diagnostics-next-line globalJsonInEffect:off -- An in-memory comparison key, never decoded or persisted.
           return { project, patterns, stamp: JSON.stringify([threads, patterns]) };
         });
         const initial = yield* eligible();
