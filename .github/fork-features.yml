@@ -6681,3 +6681,27 @@ features:
       status: unassessed
       tracking: []
       retire_when: Upstream starts worktrees from the local remote-tracking ref, or otherwise keeps the thread, when the base fetch fails.
+
+  - id: worktree-branch-rename-note
+    title: Tell an agent when its worktree branch is temporary or renamed
+    status: maintained
+    prs: [1251]
+    invariants:
+      - A turn that starts as the first on its provider thread, in a worktree created on a temporary branch that is still checked out, carries a note saying the branch name is temporary and may change, and to check the current branch before naming it.
+      - A later turn carries a note when HEAD's reflog records a rename away from a temporary branch after the previous turn started; it names the rename and, when it differs, the branch checked out now.
+      - Provider commands and restart continuations carry neither note, and a run's earlier refused attempts do not count as the previous turn.
+    rationale: The background rename usually lands after the agent's session has started, while Claude Code's git status snapshot and the worktree folder keep the temporary name. Agents that named the branch from that snapshot targeted a branch that no longer existed; one `gh stack init` created a new branch from main and left the commit behind.
+    implementation_paths:
+      - apps/server/src/orchestration-v2/ProviderTurnStartService.ts
+      - apps/server/src/orchestration-v2/WorktreeBranchNote.ts
+      - apps/server/src/vcs/GitVcsDriverCore.ts
+    upstream_paths:
+      - apps/server/src/orchestration-v2/ContextHandoffDelivery.ts
+      - apps/server/src/orchestration-v2/ProviderTurnStartService.ts
+      - apps/server/src/vcs/GitVcsDriverCore.ts
+    tests:
+      - apps/server/src/orchestration-v2/WorktreeBranchNote.integration.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream tells the agent when the worktree branch it started on is renamed.
