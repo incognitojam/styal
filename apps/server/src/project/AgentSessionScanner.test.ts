@@ -16,13 +16,13 @@ import {
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { symlinksSupported } from "@t3tools/shared/testing/symlinks";
 import * as DateTime from "effect/DateTime";
-import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
@@ -58,16 +58,16 @@ interface ScannerTestInput {
   readonly importedWorkspaceRoots?: ReadonlyArray<string>;
   readonly configBaseDir?: string;
   readonly providerInstances?: ContractServerSettings["providerInstances"];
-  readonly processRunner?: ProcessRunner.ProcessRunner["Service"];
+  readonly processRunner?: Layer.Layer<ProcessRunner.ProcessRunner>;
 }
 
 const layerScannerTest = (input: ScannerTestInput) =>
-  Layer.effect(AgentSessionScanner.AgentSessionScanner, AgentSessionScanner.make).pipe(
-    Layer.provide(
-      input.processRunner === undefined
-        ? ProcessRunner.layer
-        : Layer.succeed(ProcessRunner.ProcessRunner, input.processRunner),
-    ),
+  (input.processRunner === undefined
+    ? AgentSessionScanner.layer
+    : Layer.effect(AgentSessionScanner.AgentSessionScanner, AgentSessionScanner.make).pipe(
+        Layer.provide(input.processRunner),
+      )
+  ).pipe(
     Layer.provide(
       Layer.mergeAll(
         ServerSettings.layerTest({
@@ -1967,33 +1967,38 @@ describe.skipIf(HostProcess.Platform.defaultValue() === "win32")(
           });
         }
 
-        const runner = yield* ProcessRunner.make();
-        const healthyPaths = new Set(
+        // The deadline fires for every read still in flight, so on a slow runner the
+        // neighbours' `cat` children must have exited before the clock moves.
+        const neighbourConfigs = new Set(
           [repos[0], repos[2]].map((repo) => path.join(repo, ".git", "config")),
         );
+        const finishedNeighbourReads = yield* Queue.unbounded<string>();
+        const processRunner = Layer.effect(
+          ProcessRunner.ProcessRunner,
+          Effect.gen(function* () {
+            const runner = yield* ProcessRunner.ProcessRunner;
+            return ProcessRunner.ProcessRunner.of({
+              run: (input) => {
+                const filePath = input.args.at(-1) ?? "";
+                return neighbourConfigs.has(filePath)
+                  ? runner
+                      .run(input)
+                      .pipe(Effect.ensuring(Queue.offer(finishedNeighbourReads, filePath)))
+                  : runner.run(input);
+              },
+            });
+          }),
+        ).pipe(Layer.provide(ProcessRunner.layer), Layer.provide(NodeServices.layer));
+
         for (let attempt = 1; attempt <= 2; attempt++) {
-          const healthyReadsDone = yield* Deferred.make<void>();
-          const completed = new Set<string>();
-          const processRunner = ProcessRunner.ProcessRunner.of({
-            ...runner,
-            run: (input) =>
-              runner.run(input).pipe(
-                Effect.tap(() => {
-                  const target = input.args.at(-1);
-                  if (target !== undefined && healthyPaths.has(target)) completed.add(target);
-                  return completed.size === healthyPaths.size
-                    ? Deferred.succeed(healthyReadsDone, undefined)
-                    : Effect.void;
-                }),
-              ),
-          });
           const scan = yield* Effect.forkChild(
             runScan({ claudeHomePath, codexHomePath, processRunner }),
           );
           const result = yield* Effect.scoped(
             Effect.gen(function* () {
               yield* awaitGateReader(path.join(repos[1], ".git", "config"));
-              yield* Deferred.await(healthyReadsDone);
+              yield* Queue.take(finishedNeighbourReads);
+              yield* Queue.take(finishedNeighbourReads);
               yield* TestClock.adjust("2 seconds");
               return yield* Fiber.join(scan);
             }),
