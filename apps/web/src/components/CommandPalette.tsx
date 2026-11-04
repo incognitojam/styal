@@ -1252,7 +1252,7 @@ function OpenCommandPaletteDialog(props: {
   /**
    * Fetch the full issue (body + comments), open a fresh draft for the
    * contextual project, and attach the issue as a pending context block. The
-   * user writes and sends the prompt themselves — nothing is auto-sent.
+   * user sends it themselves, with or without a prompt — nothing is auto-sent.
    */
   const attachIssueToNewThread = async (issueNumber: number): Promise<void> => {
     if (contextualProjectRef === null || contextualProjectCwd === null) {

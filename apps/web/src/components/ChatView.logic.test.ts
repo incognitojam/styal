@@ -124,10 +124,29 @@ describe("deriveComposerSendState", () => {
           createdAt: now,
         },
       ],
+      previewAnnotations: [],
+      reviewComments: [],
+      threadContexts: [],
+      issueContexts: [],
     });
 
     expect(state.trimmedPrompt).toBe("yoo  waddup");
     expect(state.expiredTerminalContextCount).toBe(1);
+    expect(state.hasSendableContent).toBe(true);
+  });
+
+  it("sends an attached issue without any typed text", () => {
+    const state = deriveComposerSendState({
+      prompt: "[#42 Crash on launch](t3-context://v1/issue/ctx-issue) ",
+      imageCount: 0,
+      terminalContexts: [],
+      previewAnnotations: [],
+      reviewComments: [],
+      threadContexts: [],
+      issueContexts: [{ contextId: "ctx-issue" }],
+    });
+
+    expect(state.trimmedPrompt).toBe("");
     expect(state.hasSendableContent).toBe(true);
   });
 });

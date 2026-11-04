@@ -612,11 +612,10 @@ export function useComposerSend(input: ComposerSendInput) {
       prompt: promptForSend,
       imageCount: composerImages.length + composerFiles.length,
       terminalContexts: composerTerminalContexts,
-      elementContextCount:
-        composerPreviewAnnotations.length +
-        composerReviewComments.length +
-        composerThreadContexts.length +
-        composerIssueContexts.length,
+      previewAnnotations: composerPreviewAnnotations,
+      reviewComments: composerReviewComments,
+      threadContexts: composerThreadContexts,
+      issueContexts: composerIssueContexts,
     });
     const feedbackCommand =
       ctxSelectedProvider === "codex" &&
