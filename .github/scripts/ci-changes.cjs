@@ -45,6 +45,8 @@ const TEST_ONLY_DEPS = {
     "@t3tools/provider-cursor",
   ],
 };
+// These tests load the server's source; its native dependencies crash worker threads on exit.
+const SERVER_SOURCE_TESTS = new Set(["@t3tools/evals"]);
 // The server bundles the web build without importing it.
 const BUILD_ONLY_DEPS = { "@styal/cli": ["@t3tools/web"] };
 
@@ -154,6 +156,8 @@ function decide(files, packages, full) {
   const other = tested.filter(
     (pkg) => !["@t3tools/desktop", "@t3tools/mobile", "@t3tools/client-runtime"].includes(pkg.name),
   );
+  const forked = other.filter((pkg) => SERVER_SOURCE_TESTS.has(pkg.name));
+  const threaded = other.filter((pkg) => !SERVER_SOURCE_TESTS.has(pkg.name));
   const web1 = has("@t3tools/web") || has("@t3tools/client-runtime");
   const web2 = has("@t3tools/web") || everything || rust;
   const clients = has("@t3tools/desktop") || has("@t3tools/mobile");
@@ -182,7 +186,8 @@ function decide(files, packages, full) {
           ]
             .map((filter) => `--filter '${filter}'`)
             .join(" ")
-        : other.map((pkg) => `--filter '${pkg.name}'`).join(" "),
+        : threaded.map((pkg) => `--filter '${pkg.name}'`).join(" "),
+      fork_filters: forked.map((pkg) => `--filter '${pkg.name}'`).join(" "),
     },
   ].filter(Boolean);
 

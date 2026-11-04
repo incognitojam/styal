@@ -68,6 +68,24 @@ describe("fork CI change gates", () => {
     expect(suites(output)).toEqual(["E2E", "Other"]);
   });
 
+  it("runs tests that load the server's source in forks, apart from threaded packages", () => {
+    for (const output of [
+      gates(["apps/server/src/mcp/toolkits/pullRequests/tools.ts"]),
+      gates(null),
+    ]) {
+      const other = JSON.parse(output.workspace_matrix).include.find(
+        (entry: { suite: string }) => entry.suite === "Other",
+      );
+      expect(other.fork_filters).toBe("--filter '@t3tools/evals'");
+      expect(other.filters).not.toContain("evals");
+      expect(other.filters).toContain("scripts");
+    }
+    const web = JSON.parse(gates(["apps/web/src/example.ts"]).workspace_matrix).include.find(
+      (entry: { suite: string }) => entry.suite === "Other",
+    );
+    expect(web.fork_filters).toBe("");
+  });
+
   it("runs Rust in Web 2/2 and the scripts tests that read crate sources", () => {
     const output = gates(["native/resource-monitor/src/main.rs"]);
     expect(suites(output)).toEqual(["Web 2/2", "Other"]);

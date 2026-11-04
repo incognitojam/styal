@@ -788,6 +788,17 @@ jobs:
             --reporter=default \
             --reporter="$GITHUB_WORKSPACE/scripts/vitest-ci-exit-reporter.ts"
 
+      - name: Test workspace packages that load the server
+        if: matrix.fork_filters
+        run: |
+          # The server's native dependencies crash worker threads on exit.
+          vp run \
+            ${{ matrix.fork_filters }} \
+            test \
+            --pool=forks --maxWorkers=2 \
+            --reporter=default \
+            --reporter="$GITHUB_WORKSPACE/scripts/vitest-ci-exit-reporter.ts"
+
       - name: Test image compression
         if: matrix.native
         run: |
