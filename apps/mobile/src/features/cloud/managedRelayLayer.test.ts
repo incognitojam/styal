@@ -4,7 +4,7 @@ import * as NodeCrypto from "node:crypto";
 
 import { vi } from "vite-plus/test";
 import { assert, describe, it } from "@effect/vitest";
-import { ManagedRelay } from "@t3tools/client-runtime/relay";
+import { DpopProof, ManagedRelay } from "@t3tools/client-runtime/relay";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as SecureStore from "expo-secure-store";
@@ -48,8 +48,8 @@ describe("managed relay DPoP signer", () => {
     Effect.gen(function* () {
       const signer = yield* ManagedRelay.ManagedRelayDpopSigner;
       const initialThumbprint = yield* Dpop.loadOrCreateDpopProofKeyPair().pipe(
+        Effect.flatMap((key) => DpopProof.thumbprint(key.publicJwk)),
         Effect.provide(Dpop.layer),
-        Effect.map((key) => key.thumbprint),
       );
       const savedKeys = new Map(secureStore);
       const readsBefore = vi.mocked(SecureStore.getItemAsync).mock.calls.length;
