@@ -1,6 +1,6 @@
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { Outlet, createFileRoute, redirect, useMatches } from "@tanstack/react-router";
-import { useEffect, useEffectEvent, useState } from "react";
+import { useState } from "react";
 
 import { ThreadRouteView } from "../components/ThreadRouteView";
 import { isAppModalPage } from "../components/sidebar/mainAppLocation";
@@ -9,62 +9,6 @@ import { resolveThreadRouteTarget, type ThreadRouteTarget } from "../threadRoute
 import { retainThreadFindForRoute } from "../components/chat/threadFindStore";
 import { ThreadLinkPrompt } from "../components/promptLinks/ThreadLinkPrompt";
 import { useThreadRouteTarget } from "../hooks/useThreadRouteTarget";
-import { isCommandPaletteOpen } from "../commandPaletteBus";
-import { readThreadShortcutContext } from "../shortcuts/chatRouteCommands";
-import { registerCommands } from "../shortcuts/dispatcher";
-import { useProjects, useQuietThreadShell } from "../state/entities";
-import { useEnvironmentQuery } from "~/state/query";
-import { vcsEnvironment } from "~/state/vcs";
-import { createViewPullRequest, useFocusPullRequestTab } from "~/lib/viewPullRequest";
-
-/** Opens the shown thread's pull request; mounted to keep its branch status subscribed. */
-function ChatRoutePullRequestShortcuts() {
-  const routeTarget = useThreadRouteTarget();
-  const routeThreadRef = routeTarget?.kind === "server" ? routeTarget.threadRef : null;
-  const activeThread = useQuietThreadShell(routeThreadRef);
-  const projects = useProjects();
-  const activeProject = activeThread
-    ? (projects.find(
-        (project) =>
-          project.environmentId === activeThread.environmentId &&
-          project.id === activeThread.projectId,
-      ) ?? null)
-    : null;
-  const gitCwd = activeThread?.worktreePath ?? activeProject?.workspaceRoot ?? null;
-  const gitStatusQuery = useEnvironmentQuery(
-    routeThreadRef && gitCwd
-      ? vcsEnvironment.status({
-          environmentId: routeThreadRef.environmentId,
-          input: { cwd: gitCwd },
-        })
-      : null,
-  );
-  const { viewPullRequest } = createViewPullRequest(gitStatusQuery.data, routeThreadRef);
-  const { focusPullRequestTab } = useFocusPullRequestTab(gitStatusQuery.data, routeThreadRef);
-  const readContext = useEffectEvent(() => readThreadShortcutContext(routeThreadRef));
-  const runViewPullRequest = useEffectEvent(() => void viewPullRequest());
-  const runFocusPullRequestTab = useEffectEvent(() => void focusPullRequestTab());
-  useEffect(
-    () =>
-      registerCommands(
-        {
-          "sourceControl.viewPullRequest": (event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            runViewPullRequest();
-          },
-          "sourceControl.focusPullRequestTab": (event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            runFocusPullRequestTab();
-          },
-        },
-        { when: () => !isCommandPaletteOpen(), context: () => readContext() },
-      ),
-    [],
-  );
-  return null;
-}
 
 function threadRouteTargetKey(target: ThreadRouteTarget | null) {
   if (!target) return null;
@@ -97,7 +41,6 @@ function ChatRouteLayout() {
         <Outlet />
       )}
       {modalOpen ? <Outlet /> : null}
-      {modalOpen ? null : <ChatRoutePullRequestShortcuts />}
     </>
   );
 }

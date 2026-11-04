@@ -105,7 +105,6 @@ export const STATIC_KEYBINDING_COMMANDS = [
   "chat.newWithoutProject",
   "chat.find",
   "editor.openFavorite",
-  "sourceControl.viewPullRequest",
   "sourceControl.focusPullRequestTab",
   "usage.cost",
   "usage.tokens",

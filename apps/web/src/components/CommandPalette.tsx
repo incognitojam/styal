@@ -66,7 +66,6 @@ import {
   CircleDotIcon,
   ClockIcon,
   CornerLeftUpIcon,
-  ExternalLinkIcon,
   FileSearchIcon,
   FolderGit2Icon,
   FolderIcon,
@@ -122,7 +121,6 @@ import { serverEnvironment } from "../state/server";
 import { threadEnvironment } from "../state/threads";
 import { readEnvironmentScope, useEnvironmentScope } from "~/state/session";
 import { sourceControlEnvironment } from "../state/sourceControl";
-import { vcsEnvironment } from "../state/vcs";
 import { useAtomCommand } from "../state/use-atom-command";
 import { useAtomQueryRunner } from "../state/use-atom-query-runner";
 import { useComposerDraftStore } from "../composerDraftStore";
@@ -247,7 +245,8 @@ import { ComposerHandleContext, useComposerHandleContext } from "../composerHand
 import type { ChatComposerHandle } from "./chat/ChatComposer";
 import { buildSidebarProjectPickerEntries } from "../sidebarProjectGrouping";
 import { useScopedProjectGroup } from "../sidebarProjectScopeStore";
-import { useFocusPullRequestTab, createViewPullRequest } from "../lib/viewPullRequest";
+import { focusPullRequestTab, threadPullRequestUrl } from "../lib/viewPullRequest";
+import { useSupportsMultiplePullRequests } from "../hooks/useSupportsMultiplePullRequests";
 import {
   getSourceControlPresentation,
   getSourceControlPresentationForKind,
@@ -807,28 +806,20 @@ function OpenCommandPaletteDialog(props: {
   const activeThreadRef = activeThread
     ? scopeThreadRef(activeThread.environmentId, activeThread.id)
     : null;
-  const activeThreadGitCwd = activeThread?.worktreePath ?? currentProjectCwd;
-  const activeThreadGitStatus = useEnvironmentQuery(
-    activeThreadRef && activeThreadGitCwd
-      ? vcsEnvironment.status({
-          environmentId: activeThreadRef.environmentId,
-          input: { cwd: activeThreadGitCwd },
-        })
-      : null,
+  const supportsThreadPullRequestLinks = useSupportsMultiplePullRequests(
+    activeThread?.environmentId ?? null,
   );
-  const { canViewPullRequest, viewPullRequest } = createViewPullRequest(
-    activeThreadGitStatus.data,
-    activeThreadRef,
-  );
-  const { canFocusPullRequestTab, focusPullRequestTab } = useFocusPullRequestTab(
-    activeThreadGitStatus.data,
-    activeThreadRef,
-  );
-  const changeRequestTerminology = getSourceControlPresentation(
-    activeThreadGitStatus.data?.sourceControlProvider,
+  const activeThreadPullRequestUrl = activeThread
+    ? threadPullRequestUrl(activeThread, supportsThreadPullRequestLinks)
+    : null;
+  const activeThreadPullRequestHost = activeThreadPullRequestUrl
+    ? sourceControlClients.findByChangeRequestUrl(activeThreadPullRequestUrl)
+    : undefined;
+  const changeRequestTerminology = (
+    activeThreadPullRequestHost
+      ? getSourceControlPresentationForKind(activeThreadPullRequestHost.kind)
+      : getSourceControlPresentation(null)
   ).terminology;
-  const isPullRequestStatusLoading =
-    activeThreadGitStatus.isPending && activeThreadGitStatus.data === null;
   const currentProjectCwdForBrowse =
     browseEnvironmentId && currentProjectEnvironmentId === browseEnvironmentId
       ? currentProjectCwd
@@ -1756,40 +1747,16 @@ function OpenCommandPaletteDialog(props: {
       "source control",
     ],
     title: `View ${changeRequestTerminology.shortLabel}`,
-    description: canFocusPullRequestTab
-      ? undefined
-      : isPullRequestStatusLoading
-        ? `Checking ${changeRequestTerminology.singular} status…`
-        : `No open ${changeRequestTerminology.singular} for this thread`,
-    disabled: !canFocusPullRequestTab,
+    description:
+      activeThreadRef && activeThreadPullRequestUrl
+        ? undefined
+        : `No ${changeRequestTerminology.singular} for this thread`,
+    disabled: !activeThreadRef || !activeThreadPullRequestUrl,
     icon: <PullRequestGlyph.pullRequest className={ITEM_ICON_CLASS} />,
     shortcutCommand: "sourceControl.focusPullRequestTab",
-    run: focusPullRequestTab,
-  });
-
-  actionItems.push({
-    kind: "action",
-    value: "action:view-pull-request",
-    searchTerms: [
-      "open pr in browser",
-      "open pull request in browser",
-      "open merge request in browser",
-      "open mr",
-      "change request",
-      "source control",
-      "github",
-      "gitlab",
-    ],
-    title: `Open ${changeRequestTerminology.shortLabel} in browser`,
-    description: canViewPullRequest
-      ? undefined
-      : isPullRequestStatusLoading
-        ? `Checking ${changeRequestTerminology.singular} status…`
-        : `No open ${changeRequestTerminology.singular} for this thread`,
-    disabled: !canViewPullRequest,
-    icon: <ExternalLinkIcon className={ITEM_ICON_CLASS} />,
-    shortcutCommand: "sourceControl.viewPullRequest",
-    run: viewPullRequest,
+    run: async () => {
+      if (activeThreadRef) await focusPullRequestTab(activeThreadRef, activeThreadPullRequestUrl);
+    },
   });
 
   actionItems.push({
