@@ -6693,6 +6693,7 @@ features:
       - apps/server/src/orchestration-v2/WorktreeBranchNote.ts
       - apps/server/src/vcs/GitVcsDriverCore.ts
     upstream_paths:
+      - apps/server/src/orchestration-v2/ContextHandoffDelivery.ts
       - apps/server/src/orchestration-v2/ProviderTurnStartService.ts
       - apps/server/src/vcs/GitVcsDriverCore.ts
     tests:
