@@ -6874,7 +6874,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               undefined
                 ? yield* (
                     adapterOptions.defaultReasoningEffort?.(turnInput.modelSelection.model) ??
-                      Effect.sync(() => undefined)
+                      Effect.undefined
                   )
                 : undefined;
             const turnStartParams = yield* buildCodexTurnStartParams({

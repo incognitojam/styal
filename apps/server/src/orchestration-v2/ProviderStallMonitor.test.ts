@@ -207,7 +207,7 @@ const withHarness = <A, E>(
       ),
       Layer.provide(
         Layer.mock(ProviderInstanceRegistry.ProviderInstanceRegistry)({
-          getInstance: () => Effect.sync(() => undefined),
+          getInstance: () => Effect.undefined,
         }),
       ),
     );

@@ -358,7 +358,7 @@ export const layerWithOptions = (
       const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
       const withMcpIdentity = (providerThread: OrchestrationV2ProviderThread) =>
         (providerThread.appThreadId === null
-          ? Effect.sync(() => undefined)
+          ? Effect.undefined
           : mcpSessions.read(providerThread.appThreadId)
         ).pipe(
           Effect.map((session): OrchestrationV2ProviderThread =>

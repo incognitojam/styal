@@ -183,7 +183,7 @@ it.effect.each([
         Layer.mock(ProjectStore.ProjectStoreV2)({}),
         Layer.mock(EventSink.EventSinkV2)({}),
         Layer.mock(ProviderInstanceRegistry.ProviderInstanceRegistry)({
-          getInstance: () => Effect.sync(() => undefined),
+          getInstance: () => Effect.undefined,
         }),
         Layer.mock(ProjectService.ProjectService)({
           bootstrap: () =>

@@ -438,8 +438,8 @@ const make = Effect.gen(function* () {
                 fallbackRemoteName: remoteTarget.remoteName,
               })
               .pipe(
-                Effect.catch(() =>
-                  Effect.fail(mapError(input, "provision-worktree", threadId)(fetched.failure)),
+                Effect.mapError(() =>
+                  mapError(input, "provision-worktree", threadId)(fetched.failure),
                 ),
               );
             yield* Effect.logWarning("worktree base fetch failed; using the local remote branch", {

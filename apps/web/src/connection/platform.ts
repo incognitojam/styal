@@ -334,8 +334,8 @@ const layerCapabilities = Layer.effectContext(
     const presentation = ClientCapabilities.ClientPresentation.of({
       metadata: currentClientMetadata(),
     });
-    const missingSession = Effect.suspend(() =>
-      Effect.fail(managedRelayMissingSessionError(appAtomRegistry.get(managedRelayAuthLoadAtom))),
+    const missingSession = Effect.failSync(() =>
+      managedRelayMissingSessionError(appAtomRegistry.get(managedRelayAuthLoadAtom)),
     );
     const cloudSession = ClientCapabilities.CloudSession.of({
       identity: Effect.sync(() =>

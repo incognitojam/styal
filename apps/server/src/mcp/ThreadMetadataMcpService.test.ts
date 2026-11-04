@@ -54,7 +54,7 @@ const reportToMe = (
     const outcome = yield* service
       .update(scope(caller), { threadId: target, action: "report_to_me" })
       .pipe(
-        Effect.map(() => "accepted"),
+        Effect.as("accepted"),
         Effect.catch((error) => Effect.succeed(error.code as string)),
       );
     return { outcome, dispatched };

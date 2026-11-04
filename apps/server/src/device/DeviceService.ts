@@ -439,7 +439,7 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
   ) =>
     Effect.suspend(() => {
       const host = hosts.get(hostId ?? LOCAL_DEVICE_HOST_ID);
-      return host ? host.summary : Effect.sync(() => undefined);
+      return host ? host.summary : Effect.undefined;
     }).pipe(
       Effect.flatMap((summary) =>
         summary?.kind === "environment" ? effect : lifecycleLock.withPermit(effect),

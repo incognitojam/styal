@@ -245,7 +245,7 @@ const make = Effect.gen(function* () {
                   pid: undefined,
                   contents,
                 })
-              : Effect.sync(() => undefined),
+              : Effect.undefined,
           ),
         ),
         (ownerState) =>
