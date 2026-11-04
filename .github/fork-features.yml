@@ -2714,7 +2714,7 @@ features:
   - id: inspectable-tool-activity
     title: Keep tool activity concise and inspectable
     status: maintained
-    prs: [4, 11, 36, 58, 60, 66, 117, 139, 158, 168, 190, 204, 230, 238, 278, 282, 301, 582]
+    prs: [4, 11, 36, 58, 60, 66, 117, 139, 158, 168, 190, 204, 230, 238, 278, 282, 301, 582, 1249]
     invariants:
       - Web and mobile name supported tool calls by their action with a concise useful argument, while agent panels and approval rows use the same vocabulary instead of raw provider names or serialized input.
       - Clarifying-question calls name what was asked and expand into those questions with their options, rather than restating the provider's serialized input.
@@ -2727,6 +2727,7 @@ features:
       - Folded turn rows show no hover timestamp of their own, since the user message that starts the turn already reveals the same time.
       - Claude project memory writes and index updates form a distinct work-log category on web and mobile, read as "Updated memory" rows, and count separately in group and folded-turn summaries, including projected file changes that name no tool; reads of those files are titled "Read memory" with the memory name but still count as file reads; similarly named repository files remain ordinary edits and reads.
       - Page fetches read as "Fetched page" with their URL for Claude and ACP providers, and ACP workspace searches read and count as code searches rather than web lookups, including in historical threads.
+      - Claude's ToolSearch calls read as "Loaded tools" with the loaded tool names or "Searched tools" with the query, and ListAgents reads as "Listed agents" with the agent icon, including in historical threads.
     rationale: Upstream V2 owns native item vocabulary, provider-attempt folds, read-path punctuation, and standalone compaction rows; the obsolete V1 aliases and activity inference are retired. The fork retains shared action labels, structured edit counts, findings cards, group summaries, approval details, and on-demand raw command output. Historical provider payloads remain frozen on V2 items so output lookup preserves imported details without reading the retired V1 activity projection.
     implementation_paths:
       - apps/mobile/src/features/threads/thread-work-log.tsx
@@ -2737,18 +2738,21 @@ features:
       - apps/web/src/components/chat/TimelineWorkEntryRow.tsx
       - apps/web/src/components/chat/TimelineWorkGroupRows.tsx
       - packages/client-runtime/src/work-log/presentation.ts
+      - packages/shared/src/toolActivity.ts
       - packages/shared/src/toolRowPresentation.ts
     upstream_paths:
       - apps/mobile/src/features/threads/thread-work-log.tsx
       - apps/web/src/components/chat/TimelineWorkEntryRow.logic.ts
       - apps/web/src/components/chat/TimelineWorkEntryRow.tsx
       - apps/web/src/components/chat/TimelineWorkGroupRows.tsx
+      - packages/shared/src/toolActivity.ts
     tests:
       - apps/mobile/src/lib/threadActivity.test.ts
       - apps/server/src/orchestration-v2/CommandOutputQuery.test.ts
       - apps/server/src/persistence/ForkMigrations.v1History.test.ts
       - apps/web/src/components/chat/MessagesTimeline.logic.test.ts
       - packages/client-runtime/src/work-log/presentation.test.ts
+      - packages/shared/src/toolActivity.test.ts
       - packages/shared/src/toolRowPresentation.test.ts
     upstream:
       status: partial

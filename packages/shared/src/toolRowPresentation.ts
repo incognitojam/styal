@@ -1,6 +1,7 @@
 import type { ToolLifecycleItemType } from "@t3tools/contracts";
 import { resolveT3McpToolDefinition } from "./t3McpToolPresentation.ts";
 import { styalToolHeading } from "./styalToolWording.ts";
+import { isToolSearchSelection, toolSearchArgument } from "./toolActivity.ts";
 
 import {
   isReportFindingsToolName,
@@ -71,6 +72,7 @@ const KNOWN_TOOL_NAMES: Readonly<Record<string, string>> = {
   glob: "Glob",
   grep: "Grep",
   killshell: "KillShell",
+  listagents: "ListAgents",
   notebookedit: "NotebookEdit",
   powershell: "PowerShell",
   read: "Read",
@@ -388,27 +390,6 @@ export function formatAskUserQuestionBody(input: {
     .join("\n\n");
 }
 
-/**
- * `select:a,b,c` is ToolSearch's exact-name form and reads as noise in full;
- * show the names themselves. Free-text queries pass through.
- */
-function toolSearchArgument(query: string): string {
-  const selection = /^select:(?<names>.+)$/su.exec(query)?.groups?.names;
-  if (!selection) {
-    return query;
-  }
-  const names = selection
-    .split(",")
-    .map((name) => name.trim())
-    .filter((name) => name.length > 0)
-    .map((name) => name.replace(/^mcp__[^_]+(?:_[^_]+)*?__/u, ""));
-  if (names.length === 0) {
-    return query;
-  }
-  const shown = names.slice(0, 2).join(", ");
-  return names.length > 2 ? `${shown} +${names.length - 2} more` : shown;
-}
-
 function pathArgument(
   path: string | undefined,
   changedFiles: ReadonlyArray<string> | null | undefined,
@@ -491,8 +472,17 @@ export function isWorkspaceSearchInput(input: Record<string, unknown> | undefine
  * itself, so tools added later (including MCP and user-defined ones) get a
  * correct row with no entry here.
  */
-function overrideHeading(toolName: string): string | undefined {
+function overrideHeading(
+  toolName: string,
+  input: Record<string, unknown> | undefined,
+): string | undefined {
   switch (toolName) {
+    case "ToolSearch":
+      return isToolSearchSelection(asTrimmedString(input?.query) ?? "")
+        ? "Loaded tools"
+        : "Searched tools";
+    case "ListAgents":
+      return "Listed agents";
     // Substring classification in the adapters reads "create"/"delete" as a
     // file mutation, so these arrive typed as file_change.
     case "TaskCreate":
@@ -759,7 +749,7 @@ function deriveBaseToolRowPresentation(
     return { heading: "Read memory", argument: { kind: "text", value: readMemory } };
   }
 
-  const override = toolName ? overrideHeading(toolName) : undefined;
+  const override = toolName ? overrideHeading(toolName, toolInput) : undefined;
   if (override) {
     return { heading: override, ...(argument ? { argument } : {}) };
   }

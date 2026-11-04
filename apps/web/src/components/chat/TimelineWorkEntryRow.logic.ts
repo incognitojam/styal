@@ -333,6 +333,8 @@ export function workEntryIconName(workEntry: TimelineWorkEntry): WorkEntryIconNa
       return "wrench";
     case "SendMessage":
       return "message-circle";
+    case "ListAgents":
+      return "bot";
     case "TaskCreate":
     case "TaskUpdate":
     case "TaskList":
