@@ -4,6 +4,7 @@ import { useSyncExternalStore } from "react";
 
 import { useAppActive } from "../../lib/appState";
 import { minuteTickToEpochMs } from "../../lib/clock";
+import { usePaneRole } from "../../components/ui/Pane";
 
 const subscribeNever = () => () => undefined;
 
@@ -21,8 +22,10 @@ export function useVisibleSecondClock(
   intervalMs: 1_000 | 60_000 = 1_000,
 ): number {
   const focused = useIsFocused();
+  // The sidebar's route stays unfocused under the page beside it.
+  const inSidebar = usePaneRole() === "sidebar";
   const appActive = useAppActive();
-  const ticking = enabled && focused && appActive;
+  const ticking = enabled && (focused || inSidebar) && appActive;
   const tick = intervalMs === 60_000 ? minuteEpochTick : secondTick;
   // While paused the snapshot still reads the shared tick, so resuming shows
   // the current second rather than the one the clock stopped on.
