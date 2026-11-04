@@ -46,7 +46,7 @@ import { Platform, Pressable, RefreshControl, ScrollView, TextInput, View } from
 import Animated, { FadeIn, FadeOut, LinearTransition } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { SymbolView } from "../../components/ui/AppSymbol";
+import { type AppSymbolName, SymbolView } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
 import { AndroidScreenHeader } from "../../components/ui/AndroidScreenHeader";
 import { AndroidAnchoredMenu } from "../../components/ui/AndroidAnchoredMenu";
@@ -186,6 +186,7 @@ function ProviderHeader(props: {
 function DisclosureRow(props: {
   readonly label: string;
   readonly value: string | undefined;
+  readonly valueIcon?: AppSymbolName;
   readonly onPress: () => void;
   readonly isLast?: boolean;
 }) {
@@ -200,6 +201,14 @@ function DisclosureRow(props: {
     >
       <Text className="text-sm font-t3-medium text-foreground">{props.label}</Text>
       <View className="flex-1" />
+      {props.valueIcon ? (
+        <SymbolView
+          name={props.valueIcon}
+          size={13}
+          tintColorClassName="accent-foreground-muted"
+          type="monochrome"
+        />
+      ) : null}
       {props.value ? (
         <Text className="text-sm text-foreground-muted" numberOfLines={1}>
           {props.value}
@@ -839,6 +848,9 @@ function ThreadSettingsOptionsItem(props: {
 }) {
   const insets = useSafeAreaInsets();
   const session = useThreadSettingsSession();
+  const selectedRuntimeChoice = session.runtimeModeChoices.find(
+    (choice) => choice.mode === session.runtimeMode,
+  );
   const configs = useAtomValue(environmentServerConfigsAtom);
   const selectedProvider = session.environmentId
     ? (configs
@@ -903,10 +915,8 @@ function ThreadSettingsOptionsItem(props: {
           <DisclosureRow
             isLast
             label="Runtime"
-            value={
-              session.runtimeModeChoices.find((choice) => choice.mode === session.runtimeMode)
-                ?.label
-            }
+            value={selectedRuntimeChoice?.label}
+            valueIcon={selectedRuntimeChoice?.icon}
             onPress={() => props.onOpenSubmenu({ kind: "runtime" })}
           />
         </Animated.View>
