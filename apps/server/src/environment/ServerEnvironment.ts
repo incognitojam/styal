@@ -58,7 +58,7 @@ export class ServerEnvironmentIdentity extends Context.Service<
 >()("@styal/cli/environment/ServerEnvironment/ServerEnvironmentIdentity") {}
 
 /** The host clock's IANA zone; absent when the runtime cannot name one. */
-function hostTimeZone(): string | undefined {
+export function hostTimeZone(): string | undefined {
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone?.trim();
   return timeZone && timeZone !== "Etc/Unknown" ? timeZone : undefined;
 }

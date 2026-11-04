@@ -668,3 +668,100 @@ export function resolveMentionedTime(
     fromWrittenAt: false,
   };
 }
+
+/** A model's reading of one span, in the shape the server stores; offsets are into the message. */
+export interface MentionedTimeCheckSpan {
+  readonly start: number;
+  readonly end: number;
+  readonly text: string;
+  readonly kind: "moment" | "length" | "other";
+  readonly time?: string | undefined;
+  readonly zone?: string | undefined;
+  readonly date?: string | undefined;
+}
+
+const CHECK_TIME = /^([01]\d|2[0-3]):([0-5]\d)$/;
+const CHECK_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
+const UTC_NAMES = new Set(["UTC", "GMT", "Z"]);
+
+function checkDate(date: string | undefined) {
+  const match = date === undefined ? null : CHECK_DATE.exec(date);
+  return match === null
+    ? undefined
+    : { year: Number(match[1]), month: Number(match[2]), day: Number(match[3]) };
+}
+
+/**
+ * Applies a model check to the times found in one run of text that starts at `offset` in the
+ * message. A time the model calls a length or not a time is dropped; a moment it dated takes that
+ * date; a clock-like span the rules skipped becomes a time when the model gives its time of day.
+ */
+export function applyMentionedTimeCheck(
+  text: string,
+  offset: number,
+  matches: readonly MentionedTimeMatch[],
+  spans: readonly MentionedTimeCheckSpan[],
+  messageZone: MentionedTimeZone | null = null,
+): MentionedTimeMatch[] {
+  const located: { readonly start: number; readonly end: number; span: MentionedTimeCheckSpan }[] =
+    [];
+  for (const span of spans) {
+    // Escapes can make the rendered text shorter than the source, so search near the offset.
+    const start = text.indexOf(span.text, Math.max(0, span.start - offset - 8));
+    if (start === -1 || start > span.end - offset) continue;
+    located.push({ start, end: start + span.text.length, span });
+  }
+  if (located.length === 0) return [...matches];
+
+  const overlapping = (start: number, end: number) =>
+    located.filter((candidate) => candidate.start < end && candidate.end > start);
+  const result: MentionedTimeMatch[] = [];
+  for (const match of matches) {
+    const checked = overlapping(match.start, match.end);
+    if (checked.length === 0) {
+      result.push(match);
+      continue;
+    }
+    if (checked.some((candidate) => candidate.span.kind !== "moment")) continue;
+    const date = checkDate(checked[0]!.span.date);
+    if (match.time.kind !== "clock" || date === undefined) {
+      result.push(match);
+      continue;
+    }
+    const { weekday: _weekday, dayOffset: _dayOffset, tense: _tense, ...time } = match.time;
+    result.push({ ...match, time: { ...time, date } });
+  }
+  for (const candidate of located) {
+    const { span } = candidate;
+    if (
+      span.kind !== "moment" ||
+      matches.some((match) => match.start < candidate.end && match.end > candidate.start)
+    ) {
+      continue;
+    }
+    const clock = span.time === undefined ? null : CHECK_TIME.exec(span.time);
+    if (clock === null) continue;
+    let zone: MentionedTimeZone | undefined;
+    if (span.zone !== undefined) {
+      if (!UTC_NAMES.has(span.zone.toUpperCase())) continue;
+      zone = { offsetMinutes: 0, name: "UTC" };
+    }
+    const date = checkDate(span.date);
+    result.push({
+      start: candidate.start,
+      end: candidate.end,
+      time: {
+        kind: "clock",
+        hour: Number(clock[1]),
+        minute: Number(clock[2]),
+        ...(date === undefined ? {} : { date }),
+        ...(zone !== undefined
+          ? { zone }
+          : messageZone === null
+            ? {}
+            : { zone: messageZone, zoneFromMessage: true }),
+      },
+    });
+  }
+  return result.sort((left, right) => left.start - right.start);
+}

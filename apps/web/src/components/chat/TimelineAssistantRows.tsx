@@ -1,5 +1,5 @@
 import { shouldPreserveAssistantLineBreaks } from "@t3tools/shared/markdownPipeline";
-import { type RunId } from "@t3tools/contracts";
+import { type MessageId, type RunId, type ScopedThreadRef } from "@t3tools/contracts";
 import { canForkProjectedAssistantItem } from "@t3tools/client-runtime/state/thread-workflows";
 import { memo, use, useState } from "react";
 import { type ChatMessage, type TurnDiffSummary } from "../../types";
@@ -16,7 +16,8 @@ import { HtmlRenderFrame } from "./HtmlRenderFrame";
 import { McpAppFrame } from "./McpAppFrame";
 import { ChangedFilesCard } from "./ChangedFilesTree";
 import { useFileContextMenuHandler } from "../../fileContextMenu";
-import { useProject, useThreadShell } from "../../state/entities";
+import { useProject, useThreadMentionedTimes, useThreadShell } from "../../state/entities";
+import { useEnvironmentSettings } from "../../hooks/useSettings";
 import { MessageCopyButton } from "./MessageCopyButton";
 import { TurnUsageLabel } from "./TurnUsageLabel";
 import { AssistantCitationSource } from "./AssistantCitationSource";
@@ -29,9 +30,20 @@ import { useV2ItemSupport } from "../../state/v2ItemSupport";
 import { TimelineRowCtx, TimelineRowActivityCtx, type TimelineRow } from "./timelineRowContext";
 import { MESSAGE_HEADING_LEVEL, MessageAuthorHeading } from "./TimelineRowParts";
 
+/** The model's reading of this message's times, while the environment has the check on. */
+function useMentionedTimeCheck(threadRef: ScopedThreadRef | null, messageId: MessageId) {
+  const checks = useThreadMentionedTimes(threadRef);
+  const enabled = useEnvironmentSettings(
+    threadRef?.environmentId ?? null,
+    (settings) => settings.mentionedTimeCheckEnabled,
+  );
+  return enabled ? checks.get(messageId)?.spans : undefined;
+}
+
 export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
   const messageText = row.message.text || (row.message.streaming ? "" : "(empty response)");
+  const mentionedTimeCheck = useMentionedTimeCheck(ctx.threadRef ?? null, row.message.id);
 
   return (
     <>
@@ -57,6 +69,7 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
               onRunShellCommand={ctx.onRunShellCommand}
               onImageExpand={ctx.onImageExpand}
               writtenAt={row.message.createdAt}
+              mentionedTimeCheck={mentionedTimeCheck}
             />
           </AssistantCitationSource>
         </div>

@@ -95,6 +95,8 @@ export function SourceControlWritingSettingsSection() {
   const mixedWriterModel = useScopedSettingsMixed(["sourceControlWriterModelSelection"]);
   const mixedReviewGuideModel = useScopedSettingsMixed(["reviewGuideModelSelection"]);
   const mixedReviewGuideInstructions = useScopedSettingsMixed(["reviewGuideInstructions"]);
+  const mixedTimeCheckEnabled = useScopedSettingsMixed(["mentionedTimeCheckEnabled"]);
+  const mixedTimeCheckModel = useScopedSettingsMixed(["mentionedTimeCheckModelSelection"]);
   const reviewGuideInstructionsEdited = useRef(false);
   const scopeKey = targets.map((target) => `${target.environmentId}:${target.projectId}`).join(",");
   const customInstructionsRef = useRef<HTMLTextAreaElement>(null);
@@ -176,6 +178,32 @@ export function SourceControlWritingSettingsSection() {
   const reviewGuideInstanceEntry = instanceEntries.find(
     (entry) => entry.instanceId === reviewGuideSelection.instanceId,
   );
+  const usesTimeCheckModel = settings.mentionedTimeCheckModelSelection !== null;
+  const timeCheckSelection = resolveAppModelSelectionState(
+    {
+      ...settings,
+      textGenerationModelSelection:
+        settings.mentionedTimeCheckModelSelection ?? settings.textGenerationModelSelection,
+    },
+    projectEffectiveTextGenerationProviders,
+  );
+  const timeCheckModelOptionsByInstance = getCustomModelOptionsByInstance(
+    settings,
+    projectEffectiveTextGenerationProviders,
+    timeCheckSelection.instanceId,
+    timeCheckSelection.model,
+  );
+  const timeCheckInstanceEntry = instanceEntries.find(
+    (entry) => entry.instanceId === timeCheckSelection.instanceId,
+  );
+  const saveTimeCheckModel = (selection: ReturnType<typeof createModelSelection>) => {
+    const reason = writerModelDisabledReason(selection.instanceId, selection.model);
+    if (reason) {
+      toastManager.add({ type: "error", title: "Time check model not saved", description: reason });
+      return;
+    }
+    updateSettings({ mentionedTimeCheckModelSelection: selection });
+  };
 
   return (
     <SettingsSection id="source-control-text-generation" title="Text generation">
@@ -595,6 +623,98 @@ export function SourceControlWritingSettingsSection() {
             </div>
           </SettingsRow>
         </>
+      ) : null}
+
+      <SettingsRow
+        serverScoped
+        settingKeys={["mentionedTimeCheckEnabled"]}
+        mixed={mixedTimeCheckEnabled}
+        {...searchableSetting("mentioned-time-check")}
+        description="When an agent's reply mentions a clock time, a model reads the whole reply to tell times of day from lengths and examples, and to work out which day it means. Time chips then follow its reading. Each reply with a clock time costs one short model call."
+        control={
+          <Switch
+            mixed={mixedTimeCheckEnabled}
+            checked={mixedTimeCheckEnabled ? false : settings.mentionedTimeCheckEnabled}
+            onCheckedChange={(checked) =>
+              updateSettings({ mentionedTimeCheckEnabled: Boolean(checked) })
+            }
+            aria-label="Check mentioned times with a model"
+          />
+        }
+      />
+
+      {settings.mentionedTimeCheckEnabled || mixedTimeCheckEnabled ? (
+        <SettingsRow
+          serverScoped
+          settingKeys={["mentionedTimeCheckModelSelection"]}
+          {...searchableSetting("mentioned-time-check-model")}
+          description="Model that checks mentioned times. A small, fast model is enough; reasoning does not help. Off uses the text generation model."
+          control={
+            !hasServerTargets ? (
+              <span className="text-sm text-muted-foreground">
+                Connect an environment to choose its time check model.
+              </span>
+            ) : (
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                {usesTimeCheckModel || mixedTimeCheckModel ? (
+                  <ProviderModelPicker
+                    environmentId={environmentId}
+                    activeInstanceId={timeCheckSelection.instanceId}
+                    model={timeCheckSelection.model}
+                    lockedProvider={null}
+                    instanceEntries={instanceEntries}
+                    modelOptionsByInstance={timeCheckModelOptionsByInstance}
+                    triggerClassName={SETTINGS_PICKER_TRIGGER_CLASSNAME}
+                    triggerAriaLabel="Time check model"
+                    {...(mixedTimeCheckModel ? { triggerLabel: "Mixed" } : {})}
+                    getModelDisabledReason={writerModelDisabledReason}
+                    onInstanceModelChange={(instanceId, model) =>
+                      saveTimeCheckModel(createModelSelection(instanceId, model))
+                    }
+                  />
+                ) : null}
+                {usesTimeCheckModel && !mixedTimeCheckModel && timeCheckInstanceEntry ? (
+                  <TraitsPicker
+                    provider={timeCheckInstanceEntry.driverKind}
+                    models={timeCheckInstanceEntry.models}
+                    model={timeCheckSelection.model}
+                    modelOptions={timeCheckSelection.options ?? []}
+                    allowPromptInjectedEffort={false}
+                    planModeEnabled={false}
+                    triggerClassName={SETTINGS_PICKER_TRIGGER_CLASSNAME}
+                    onModelOptionsChange={(options) =>
+                      updateSettings({
+                        mentionedTimeCheckModelSelection: createModelSelection(
+                          timeCheckSelection.instanceId,
+                          timeCheckSelection.model,
+                          options,
+                        ),
+                      })
+                    }
+                  />
+                ) : null}
+                <Switch
+                  mixed={mixedTimeCheckModel}
+                  checked={mixedTimeCheckModel ? false : usesTimeCheckModel}
+                  onCheckedChange={(checked) => {
+                    if (!checked) {
+                      updateSettings({ mentionedTimeCheckModelSelection: null });
+                      return;
+                    }
+                    saveTimeCheckModel(
+                      createModelSelection(
+                        defaultModelSelection.instanceId,
+                        defaultModelSelection.model,
+                        defaultModelSelection.options,
+                      ),
+                    );
+                  }}
+                  aria-label="Use a separate time check model"
+                />
+              </div>
+            )
+          }
+        />
       ) : null}
     </SettingsSection>
   );

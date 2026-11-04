@@ -2466,6 +2466,47 @@ it.layer(layerTest)("orchestration V2 foundation persistence", (it) => {
     }).pipe(Effect.provide(Layer.fresh(layerEffectOutboxProvided))),
   );
 
+  it.effect("runs a mentioned time check beside a thread's turns and titles", () =>
+    Effect.gen(function* () {
+      const outbox = yield* EffectOutbox.EffectOutboxV2;
+      const workerId = "worker:foundation-time-check-lane";
+      const threadId = ThreadId.make("thread:foundation-time-check-lane");
+      const effect = (id: string, request: EffectOutbox.OrchestrationEffectRequestV2) => ({
+        id: `effect:foundation-time-check-lane:${id}`,
+        commandId: CommandId.make(`command:foundation-time-check-lane:${id}`),
+        threadId,
+        request,
+      });
+      yield* outbox.enqueue([
+        effect("a-check", {
+          type: "message.mentioned-times.check",
+          messageId: MessageId.make("message:foundation-time-check-lane"),
+        }),
+        effect("b-check", {
+          type: "message.mentioned-times.check",
+          messageId: MessageId.make("message:foundation-time-check-lane:2"),
+        }),
+        effect("c-start", {
+          type: "provider-turn.start",
+          runId: RunId.make("run:foundation-time-check-lane"),
+        }),
+        effect("d-title", { type: "thread-title.generate", kind: { type: "regenerate" } }),
+      ]);
+
+      const claimed: string[] = [];
+      for (let attempt = 0; attempt < 4; attempt += 1) {
+        const next = yield* outbox.claimNext({ workerId, leaseDurationMs: 30_000 });
+        if (Option.isSome(next)) claimed.push(next.value.id);
+      }
+      // The second check waits for the first; the turn and the title do not wait for either.
+      assert.deepEqual(claimed, [
+        "effect:foundation-time-check-lane:a-check",
+        "effect:foundation-time-check-lane:c-start",
+        "effect:foundation-time-check-lane:d-title",
+      ]);
+    }).pipe(Effect.provide(Layer.fresh(layerEffectOutboxProvided))),
+  );
+
   it.effect("runs distinct threads concurrently while serializing effects within a thread", () =>
     Effect.gen(function* () {
       const outbox = yield* EffectOutbox.EffectOutboxV2;

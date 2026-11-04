@@ -506,6 +506,62 @@ layer("ProviderEventIngestorV2", (it) => {
     }),
   );
 
+  it.effect("queues one time check for a finished reply that names a clock time", () =>
+    Effect.gen(function* () {
+      const now = yield* DateTime.now;
+      const eventSink = yield* EventSink.EventSinkV2;
+      const ingestor = yield* ProviderEventIngestor.ProviderEventIngestorV2;
+      const idAllocator = yield* IdAllocator.IdAllocatorV2;
+      const sql = yield* SqlClient.SqlClient;
+      const threadEvent = yield* threadCreatedEvent(now);
+      yield* eventSink.write({ events: [threadEvent] });
+      const providerSessionId = yield* idAllocator.allocate.providerSession({
+        providerInstanceId: modelSelection.instanceId,
+        threadId: threadEvent.threadId,
+      });
+      const ingestReply = (id: string, text: string, streaming: boolean) =>
+        ingestor.ingestNormalized({
+          providerSessionId,
+          providerInstanceId: modelSelection.instanceId,
+          threadId: threadEvent.threadId,
+          event: {
+            type: "message.updated",
+            driver: CODEX_DRIVER,
+            message: {
+              createdBy: "agent",
+              creationSource: "provider",
+              id: MessageId.make(id),
+              threadId: threadEvent.threadId,
+              runId: null,
+              nodeId: null,
+              role: "assistant",
+              text,
+              attachments: [],
+              streaming,
+              createdAt: now,
+              updatedAt: now,
+            },
+          },
+        });
+      const queuedChecks = sql<{ readonly effect_id: string }>`
+        SELECT effect_id FROM orchestration_v2_effect_outbox
+        WHERE effect_type = 'message.mentioned-times.check'
+        ORDER BY effect_id
+      `;
+
+      yield* ingestReply("message:timed", "The deploy finished at 14:", true);
+      assert.deepEqual(yield* queuedChecks, []);
+      yield* ingestReply("message:timed", "The deploy finished at 14:39.", false);
+      yield* ingestReply("message:timed", "The deploy finished at 14:39.", false);
+      yield* ingestReply("message:untimed", "The deploy took 5 minutes.", false);
+
+      assert.deepEqual(
+        (yield* queuedChecks).map((row) => row.effect_id),
+        ["effect:message.mentioned-times.check:message:timed"],
+      );
+    }),
+  );
+
   it.effect("skips a node update only when it matches the stored node", () =>
     Effect.gen(function* () {
       const now = yield* DateTime.now;

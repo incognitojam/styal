@@ -22,6 +22,7 @@ import {
   buildBranchNamePrompt,
   buildCommitMessagePrompt,
   buildPrContentPrompt,
+  buildMentionedTimesPrompt,
   buildThreadTitlePrompt,
 } from "@t3tools/provider-core/server/textGenerationPrompts";
 import {
@@ -342,11 +343,21 @@ export const makeMuseTextGeneration = Effect.fn("makeMuseTextGeneration")(functi
   });
   const generateReviewGuide: ProviderTextGeneration["generateReviewGuide"] = () =>
     Effect.fail(investigationUnsupported("generateReviewGuide", "Muse Code"));
+  const checkMentionedTimes: ProviderTextGeneration["checkMentionedTimes"] = Effect.fn(
+    "MuseTextGeneration.checkMentionedTimes",
+  )(function* (input) {
+    return yield* runMuseJson({
+      operation: "checkMentionedTimes",
+      ...buildMentionedTimesPrompt(input),
+      modelSelection: input.modelSelection,
+    });
+  });
   return {
     generateCommitMessage,
     generatePrContent,
     generateBranchName,
     generateThreadTitle,
     generateReviewGuide,
+    checkMentionedTimes,
   } satisfies ProviderTextGeneration;
 });

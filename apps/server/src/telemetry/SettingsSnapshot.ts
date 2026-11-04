@@ -71,6 +71,8 @@ function settingsSnapshotProperties(settings: ServerSettings) {
     reviewGuidesEnabled: settings.reviewGuidesEnabled,
     reviewGuideModelSet: settings.reviewGuideModelSelection !== null,
     reviewGuideInstructionsCustomized: settings.reviewGuideInstructions !== "",
+    mentionedTimeCheckEnabled: settings.mentionedTimeCheckEnabled,
+    mentionedTimeCheckModelSet: settings.mentionedTimeCheckModelSelection !== null,
     // Storage cleanup
     worktreeCleanupKeepWhen: worktreeCleanup.worktreeKeepWhen,
     worktreeCleanupAfterDays: worktreeCleanup.worktreeAfterDays,

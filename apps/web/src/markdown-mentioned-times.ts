@@ -6,11 +6,13 @@
  * Code and link labels are left alone: a time inside either belongs to something else.
  */
 import {
+  applyMentionedTimeCheck,
   findMentionedTimes,
   findMessageZone,
   tableColumnHoldsDurations,
   type MentionedTime,
-  type MentionedTimeZone,
+  type MentionedTimeCheckSpan,
+  type MentionedTimeMatch,
 } from "@t3tools/client-runtime/mentioned-times";
 
 interface MarkdownAstNode {
@@ -21,6 +23,7 @@ interface MarkdownAstNode {
     hProperties?: Record<string, unknown>;
   };
   children?: MarkdownAstNode[];
+  position?: { start?: { offset?: number } };
 }
 
 /** The hast property carrying a mentioned time, as the renderer reads it back. */
@@ -36,11 +39,8 @@ function mentionedTimeNode(value: string, time: MentionedTime): MarkdownAstNode 
 
 function splitTextNode(
   value: string,
-  messageZone: MentionedTimeZone | null,
-  before: string,
-  durations: boolean,
+  matches: readonly MentionedTimeMatch[],
 ): MarkdownAstNode[] | null {
-  const matches = findMentionedTimes(value, { messageZone, before, durations });
   if (matches.length === 0) return null;
   const nodes: MarkdownAstNode[] = [];
   let consumed = 0;
@@ -80,7 +80,13 @@ function durationColumns(table: MarkdownAstNode): boolean[] {
 /** Formatting inside a sentence; any other node starts a new run of text. */
 const INLINE_TYPES = new Set(["text", "emphasis", "strong", "delete", "inlineCode", "break"]);
 
-export function remarkMentionedTimes() {
+export interface RemarkMentionedTimesOptions {
+  /** A model's reading of the message's clock-like spans, applied over the rules. */
+  readonly check?: ReadonlyArray<MentionedTimeCheckSpan> | undefined;
+}
+
+export function remarkMentionedTimes(options: RemarkMentionedTimesOptions = {}) {
+  const check = options.check ?? [];
   return (tree: MarkdownAstNode) => {
     const messageZone = findMessageZone(proseOf(tree).join("\n"));
     // The same block's text so far, so "merged at **14:39 UTC**" still reads as past.
@@ -107,7 +113,14 @@ export function remarkMentionedTimes() {
         if (!child) continue;
         if (child.type === "inlineCode") before += " ";
         if (child.type === "text" && typeof child.value === "string") {
-          const replacement = splitTextNode(child.value, messageZone, before, durations);
+          const found = findMentionedTimes(child.value, { messageZone, before, durations });
+          const offset = child.position?.start?.offset;
+          const replacement = splitTextNode(
+            child.value,
+            check.length === 0 || offset === undefined
+              ? found
+              : applyMentionedTimeCheck(child.value, offset, found, check, messageZone),
+          );
           before += child.value;
           if (replacement) {
             children.splice(index, 1, ...replacement);

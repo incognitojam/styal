@@ -232,6 +232,7 @@ export const make = Effect.gen(function* () {
           simulatorMemoryUsageVersion: 1,
           desktopUpdateIdleRestartUsageVersion: 1,
           delegatedWakeUsageVersion: 1,
+          mentionedTimeCheckUsageVersion: 1,
           ...buildContext,
           telemetryChannel: ServerConfig.telemetryChannel,
           clientType,

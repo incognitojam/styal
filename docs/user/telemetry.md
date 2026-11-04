@@ -59,6 +59,8 @@ settings.
 
 Simulator memory reporting includes the environment's chosen mode, how many projects explicitly choose Low memory, and whether each simulator start applied the mode or fell back to a normal start. Project names, identifiers, and app capabilities are not collected.
 
+When the mentioned time check is on, each check a model runs records whether it succeeded and how long it took. The reply and the times in it are not collected.
+
 Web and desktop apps also report their own settings once a day, such as the send shortcut, follow-up
 behavior, sidebar grouping and sorting, sounds, font sizes and browser defaults. Font names, browser
 profile names, and your projects are not collected; the app reports only whether you changed a font,

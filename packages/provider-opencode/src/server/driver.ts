@@ -162,6 +162,11 @@ function selectOpenCodeRuntimeTextGeneration(
         v1: v1.generateReviewGuide(input),
         v2: v2.generateReviewGuide(input),
       }),
+    checkMentionedTimes: (input) =>
+      byOpenCodeRuntime(probe.get, {
+        v1: v1.checkMentionedTimes(input),
+        v2: v2.checkMentionedTimes(input),
+      }),
   };
 }
 

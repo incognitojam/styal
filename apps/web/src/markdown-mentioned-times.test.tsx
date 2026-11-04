@@ -8,6 +8,7 @@ import remarkGfm from "remark-gfm";
 import { describe, expect, it } from "vite-plus/test";
 
 import { CHAT_MARKDOWN_SANITIZE_SCHEMA } from "@t3tools/shared/markdownPipeline";
+import { findMentionedTimeSpans } from "@t3tools/shared/mentionedTimeSpans";
 import {
   MENTIONED_TIME_PROPERTY,
   readMentionedTime,
@@ -18,6 +19,24 @@ function renderMarkdown(markdown: string) {
   return renderToStaticMarkup(
     <ReactMarkdown
       remarkPlugins={[remarkGfm, remarkMentionedTimes]}
+      rehypePlugins={[rehypeRaw, [rehypeSanitize, CHAT_MARKDOWN_SANITIZE_SCHEMA]]}
+    >
+      {markdown}
+    </ReactMarkdown>,
+  );
+}
+
+function renderCheckedMarkdown(
+  markdown: string,
+  kinds: ReadonlyArray<"moment" | "length" | "other">,
+) {
+  const check = findMentionedTimeSpans(markdown).map((span, index) => ({
+    ...span,
+    kind: kinds[index]!,
+  }));
+  return renderToStaticMarkup(
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm, [remarkMentionedTimes, { check }]]}
       rehypePlugins={[rehypeRaw, [rehypeSanitize, CHAT_MARKDOWN_SANITIZE_SCHEMA]]}
     >
       {markdown}
@@ -150,6 +169,17 @@ describe("remarkMentionedTimes", () => {
     const html = renderMarkdown("| Time | Event |\n|---|---|\n| 9:05 | start |\n| 17:25 | stop |");
 
     expect(mentionedTimes(html)).toEqual([expect.objectContaining({ hour: 17, minute: 25 })]);
+  });
+
+  it("follows a model check across formatting and table cells", () => {
+    const html = renderCheckedMarkdown(
+      "**Merged at 14:39 UTC.** The tooltip shows `Today at` 15:20 as an example.\n\n| Call | Started |\n|---|---|\n| a | 16:03 |",
+      ["moment", "other", "moment"],
+    );
+
+    expect(html).toContain(">14:39 UTC</span>");
+    expect(html).not.toContain(">15:20</span>");
+    expect(html).toContain(">16:03</span>");
   });
 
   it("leaves times in code and link labels alone", () => {

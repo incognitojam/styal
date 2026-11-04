@@ -36,6 +36,14 @@ uses, or otherwise in the time zone of the machine the agent runs on. A time wit
 taken as the one nearest to when the message was sent, unless the sentence makes clear it is still
 to come or already past. The tooltip says when it relied on these assumptions.
 
+These rules can mistake a length such as `17:25` for a time of day, or pick the wrong day. To have
+a model check them, turn on **Check mentioned times with a model** in Settings → Source control.
+When an agent finishes a reply that names a clock time, the model reads the whole reply: lengths
+and example times stop being highlighted, and a time takes the day the reply describes, such as
+"last night". Each such reply costs one short call to the model you choose there, or to your text
+generation model. Replies in subagent threads, and replies written before you turned it on, are
+not checked.
+
 On web and desktop, select an image in an agent message to expand it. Images that link somewhere
 keep their link action.
 

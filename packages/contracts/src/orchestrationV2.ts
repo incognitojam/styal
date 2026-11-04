@@ -1228,6 +1228,30 @@ export type OrchestrationV2Notification = typeof OrchestrationV2Notification.Typ
 export const OrchestrationV2IdleCompaction = Schema.Literals(["beforeCacheExpires", "onReturn"]);
 export type OrchestrationV2IdleCompaction = typeof OrchestrationV2IdleCompaction.Type;
 
+/**
+ * A model's reading of the clock-like spans in an assistant message, so time chips can drop
+ * lengths and examples and use the day the message implies. Offsets are into the message text.
+ */
+export const OrchestrationV2MentionedTimeSpan = Schema.Struct({
+  start: NonNegativeInt,
+  end: NonNegativeInt,
+  text: Schema.String,
+  kind: Schema.Literals(["moment", "length", "other"]),
+  /** 24-hour `HH:MM`, for a moment. */
+  time: Schema.optional(Schema.String),
+  /** The zone as the text wrote it; absent when the text gives none. */
+  zone: Schema.optional(Schema.String),
+  /** `YYYY-MM-DD` in that zone; absent when the message does not say which day. */
+  date: Schema.optional(Schema.String),
+});
+export type OrchestrationV2MentionedTimeSpan = typeof OrchestrationV2MentionedTimeSpan.Type;
+
+export const OrchestrationV2MentionedTimes = Schema.Struct({
+  checkedAt: IsoDateTime,
+  spans: Schema.Array(OrchestrationV2MentionedTimeSpan),
+});
+export type OrchestrationV2MentionedTimes = typeof OrchestrationV2MentionedTimes.Type;
+
 export const OrchestrationV2ConversationMessage = Schema.Struct({
   notification: Schema.optional(OrchestrationV2Notification),
   ...OrchestrationV2CreationFields,
@@ -1258,8 +1282,15 @@ export const OrchestrationV2ConversationMessage = Schema.Struct({
       taskIds: Schema.Array(NodeId),
     }),
   ),
+  mentionedTimes: Schema.optional(OrchestrationV2MentionedTimes),
 });
 export type OrchestrationV2ConversationMessage = typeof OrchestrationV2ConversationMessage.Type;
+
+export const OrchestrationV2MentionedTimesChecked = Schema.Struct({
+  messageId: MessageId,
+  mentionedTimes: OrchestrationV2MentionedTimes,
+});
+export type OrchestrationV2MentionedTimesChecked = typeof OrchestrationV2MentionedTimesChecked.Type;
 
 export const OrchestrationV2PlanStep = Schema.Struct({
   id: TrimmedNonEmptyString,
@@ -1923,6 +1954,11 @@ export const OrchestrationV2DomainEvent = Schema.Union([
     ...OrchestrationV2EventBase.fields,
     type: Schema.Literal("turn-item.updated"),
     payload: OrchestrationV2TurnItem,
+  }),
+  Schema.Struct({
+    ...OrchestrationV2EventBase.fields,
+    type: Schema.Literal("message.mentioned-times-checked"),
+    payload: OrchestrationV2MentionedTimesChecked,
   }),
   Schema.Struct({
     ...OrchestrationV2EventBase.fields,
@@ -2835,6 +2871,11 @@ export const OrchestrationV2DomainEventJson = Schema.Union([
     ...OrchestrationV2JsonEventBaseFields,
     type: Schema.Literal("turn-item.updated"),
     payload: OrchestrationV2TurnItemJson,
+  }),
+  Schema.Struct({
+    ...OrchestrationV2JsonEventBaseFields,
+    type: Schema.Literal("message.mentioned-times-checked"),
+    payload: OrchestrationV2MentionedTimesChecked,
   }),
   Schema.Struct({
     ...OrchestrationV2JsonEventBaseFields,

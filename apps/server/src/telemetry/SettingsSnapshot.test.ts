@@ -41,6 +41,8 @@ const defaultSnapshot = {
   reviewGuidesEnabled: false,
   reviewGuideModelSet: false,
   reviewGuideInstructionsCustomized: false,
+  mentionedTimeCheckEnabled: false,
+  mentionedTimeCheckModelSet: false,
   worktreeCleanupKeepWhen: "uncommitted-changes",
   worktreeCleanupAfterDays: null,
   worktreeCleanupOnMerge: false,

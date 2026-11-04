@@ -134,6 +134,54 @@ describe("applyOrchestrationV2ProjectionEvent", () => {
     expect(next?.thread.pullRequests?.[0]).toBe(links[0]);
   });
 
+  it("attaches a time check to its reply and keeps it while the reply's text is unchanged", () => {
+    const messageId = MessageId.make("message-timed");
+    const reply = {
+      id: messageId,
+      threadId,
+      runId,
+      nodeId: null,
+      role: "assistant" as const,
+      text: "Finished at 14:39.",
+      attachments: [],
+      streaming: false,
+      createdBy: "agent" as const,
+      creationSource: "provider" as const,
+      createdAt: now,
+      updatedAt: now,
+    };
+    const mentionedTimes = {
+      checkedAt: DateTime.formatIso(now),
+      spans: [{ start: 12, end: 17, text: "14:39", kind: "moment" as const, date: "2026-06-19" }],
+    };
+    const event = (type: string, payload: unknown) =>
+      ({
+        id: `event-${type}` as OrchestrationV2DomainEvent["id"],
+        type,
+        threadId,
+        occurredAt: now,
+        payload,
+      }) as OrchestrationV2DomainEvent;
+
+    const withReply = applyOrchestrationV2ProjectionEvent(
+      emptyProjection,
+      event("message.updated", reply),
+    );
+    const checked = applyOrchestrationV2ProjectionEvent(
+      withReply,
+      event("message.mentioned-times-checked", { messageId, mentionedTimes }),
+    );
+    expect(checked?.messages[0]?.mentionedTimes).toEqual(mentionedTimes);
+
+    const resent = applyOrchestrationV2ProjectionEvent(checked, event("message.updated", reply));
+    expect(resent?.messages[0]?.mentionedTimes).toEqual(mentionedTimes);
+    const edited = applyOrchestrationV2ProjectionEvent(
+      resent,
+      event("message.updated", { ...reply, text: "Finished at 14:40." }),
+    );
+    expect(edited?.messages[0]?.mentionedTimes).toBeUndefined();
+  });
+
   it("keeps live token usage when the terminal provider turn omits it", () => {
     const providerTurnId = ProviderTurnId.make("provider-turn-reducer");
     const running = {

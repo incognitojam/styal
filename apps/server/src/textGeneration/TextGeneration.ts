@@ -35,7 +35,8 @@ type TextGenerationOp =
   | "generatePrContent"
   | "generateBranchName"
   | "generateThreadTitle"
-  | "generateReviewGuide";
+  | "generateReviewGuide"
+  | "checkMentionedTimes";
 
 const resolveInstance = (
   registry: ProviderInstanceRegistry.ProviderInstanceRegistry["Service"],
@@ -119,6 +120,10 @@ export const make = Effect.gen(function* () {
     generateReviewGuide: (input) =>
       generate("generateReviewGuide", input.modelSelection, (textGeneration, modelSelection) =>
         textGeneration.generateReviewGuide({ ...input, modelSelection }),
+      ),
+    checkMentionedTimes: (input) =>
+      generate("checkMentionedTimes", input.modelSelection, (textGeneration, modelSelection) =>
+        textGeneration.checkMentionedTimes({ ...input, modelSelection }),
       ),
     generateThreadTitle: Effect.fn("TextGeneration.generateThreadTitle")(function* (input) {
       const linkedContext =

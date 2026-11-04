@@ -167,6 +167,11 @@ type ObservedUsage =
       readonly source: "user";
     }
   | {
+      readonly feature: "mentioned-time-check";
+      readonly action: "check";
+      readonly source: "system";
+    }
+  | {
       readonly feature: "workflow-approvals";
       readonly action: "approve";
       readonly source: "user";

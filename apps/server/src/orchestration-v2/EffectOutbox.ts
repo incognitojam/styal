@@ -109,6 +109,10 @@ export const OrchestrationEffectRequestV2 = Schema.Union([
     attachmentIds: Schema.Array(Schema.String),
   }),
   Schema.Struct({
+    type: Schema.Literal("message.mentioned-times.check"),
+    messageId: MessageId,
+  }),
+  Schema.Struct({
     type: Schema.Literal("thread-title.generate"),
     kind: Schema.Union([
       Schema.Struct({ type: Schema.Literal("initial"), messageId: MessageId }),
@@ -137,6 +141,7 @@ export const REPLAY_SAFE_EFFECT_TYPES_AFTER_PROCESS_LOSS = [
   "preview.cleanup",
   "attachment.cleanup",
   "thread-title.generate",
+  "message.mentioned-times.check",
   "delegated-tasks.stop",
   "delegated-task.wake-timeout",
 ] as const satisfies ReadonlyArray<OrchestrationEffectRequestV2["type"]>;
@@ -353,16 +358,14 @@ export const layer: Layer.Layer<EffectOutboxV2, never, SqlClient.SqlClient> = La
                 }
               )
             )
+            -- Model calls for titles and mentioned times each run in their own lane, so a
+            -- slow call neither waits behind a turn nor holds the next one up.
             AND (
-              (
-                candidate.effect_type = 'thread-title.generate'
-                AND active.effect_type = 'thread-title.generate'
-              )
-              OR
-              (
-                candidate.effect_type != 'thread-title.generate'
-                AND active.effect_type != 'thread-title.generate'
-              )
+              CASE WHEN candidate.effect_type IN ('thread-title.generate', 'message.mentioned-times.check')
+                THEN candidate.effect_type ELSE '' END
+            ) = (
+              CASE WHEN active.effect_type IN ('thread-title.generate', 'message.mentioned-times.check')
+                THEN active.effect_type ELSE '' END
             )
           )
         )

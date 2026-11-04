@@ -94,6 +94,7 @@ import { AssistantCitationChip } from "./chat/AssistantCitationChip";
 import { MarkdownThreadLink } from "./chat/MarkdownThreadLink";
 import { githubReferenceUrlLabel } from "@t3tools/client-runtime/github-references";
 import { remarkGithubReferences } from "../markdown-github-references";
+import type { MentionedTimeCheckSpan } from "@t3tools/client-runtime/mentioned-times";
 import {
   MENTIONED_TIME_PROPERTY,
   readMentionedTime,
@@ -269,6 +270,8 @@ interface ChatMarkdownProps {
   /** When the text was written. Turns the times it mentions into chips that read them in the
       reader's zone; days and offsets the text leaves out are counted from here. */
   writtenAt?: string | undefined;
+  /** A model's reading of the message's clock-like spans, which overrides the rules' chips. */
+  mentionedTimeCheck?: ReadonlyArray<MentionedTimeCheckSpan> | undefined;
 }
 
 export interface ChatMarkdownContextReference {
@@ -1709,13 +1712,18 @@ function ChatMarkdown({
   const referenceHost = referenceContext?.host;
   const referenceRepository = referenceContext?.repository;
   const marksMentionedTimes = props.writtenAt !== undefined;
+  const mentionedTimeCheck = props.mentionedTimeCheck;
   const remarkPlugins = (() => {
     const base = lineBreaks
       ? CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS
       : CHAT_MARKDOWN_REMARK_PLUGINS;
     const incremental = incrementalParsing ? [createIncrementalMarkdownPlugin()] : [];
     // After the references, whose links it leaves alone.
-    const mentionedTimes = marksMentionedTimes ? [remarkMentionedTimes] : [];
+    const mentionedTimes = marksMentionedTimes
+      ? ([[remarkMentionedTimes, { check: mentionedTimeCheck }]] satisfies NonNullable<
+          ReactMarkdownOptions["remarkPlugins"]
+        >)
+      : [];
     if (referenceHost === undefined || referenceRepository === undefined)
       return [...base, ...mentionedTimes, ...extraRemarkPlugins, ...incremental];
     // After remark-gfm, whose autolink literals are the links this rewrites as shorthand.

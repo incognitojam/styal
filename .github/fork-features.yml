@@ -2844,29 +2844,84 @@ features:
       - Durations such as "finished in 36 seconds" and single-digit zone-less clocks such as "2:48" are not marked.
       - 'A bare clock (no zone, date, day, or am/pm) directly after a length word or a bare "in" ("took 17:25", "Length: 17:25", "passed in 16:11") or in a table column of lengths is not marked. A column holds lengths when its header names a length; a header naming a time of day keeps its chips; otherwise a cell whose hour exceeds 23 ("44:08") marks it.'
       - Timeline labels ending in a punctuation colon retain their clock and explicit zone; extra colon-separated tokens and file line/column references stay unmarked.
+      - "With Check mentioned times with a model on (a server setting, off by default), a finished assistant reply outside subagent threads that has a clock-like span outside code queues one check per message. The check runs in its own outbox lane, so it never delays a turn or a title, makes one attempt, and stores the model's reading on the message, where it survives a re-sent update with the same text."
+      - "Clients apply a stored reading only while the setting is on: a span it calls a length or other is not marked, a moment takes its date, and a clock-like span the rules skipped is marked when the reading gives a time of day with no zone or UTC."
+      - Each model check records one structural feature-usage event; the reply and its times are not sent.
       - Opening a time explanation emits at most one structural client-usage event per mounted chip through the message's environment, without sending the time, timezone, message content, or identifiers.
     implementation_paths:
       - apps/server/src/environment/ServerEnvironment.ts
+      - apps/server/src/orchestration-v2/EffectOutbox.ts
+      - apps/server/src/orchestration-v2/EffectWorker.ts
+      - apps/server/src/orchestration-v2/MentionedTimesCheckService.ts
+      - apps/server/src/orchestration-v2/ProjectionStore.ts
+      - apps/server/src/orchestration-v2/ProviderEventIngestor.ts
+      - apps/server/src/orchestration-v2/runtimeLayer.ts
+      - apps/server/src/telemetry/FeatureUsage.ts
+      - apps/server/src/telemetry/SettingsSnapshot.ts
+      - apps/server/src/textGeneration/ClaudeTextGeneration.ts
+      - apps/server/src/textGeneration/TextGeneration.ts
       - apps/web/src/components/ChatMarkdown.tsx
       - apps/web/src/components/chat/MentionedTimeChip.tsx
       - apps/web/src/components/chat/TimelineAssistantRows.tsx
+      - apps/web/src/components/settings/SourceControlWritingSettings.tsx
+      - apps/web/src/components/settings/settingsSearch.ts
       - apps/web/src/forkClientUsage.ts
       - apps/web/src/markdown-mentioned-times.ts
+      - apps/web/src/state/entities.ts
       - apps/web/src/timestampFormat.ts
       - packages/client-runtime/src/mentionedTimes.ts
+      - packages/client-runtime/src/state/orchestrationV2Projection.ts
+      - packages/client-runtime/src/state/threadDetail.ts
       - packages/contracts/src/environment.ts
+      - packages/contracts/src/orchestrationV2.ts
+      - packages/contracts/src/settings.ts
+      - packages/provider-core/src/server/textGeneration.ts
+      - packages/provider-core/src/server/textGenerationOperations.ts
+      - packages/provider-core/src/server/textGenerationPrompts.ts
       - packages/shared/src/markdownPipeline.ts
+      - packages/shared/src/mentionedTimeSpans.ts
     upstream_paths:
       - apps/server/src/environment/ServerEnvironment.ts
+      - apps/server/src/orchestration-v2/EffectOutbox.ts
+      - apps/server/src/orchestration-v2/EffectWorker.ts
+      - apps/server/src/orchestration-v2/ProjectionStore.ts
+      - apps/server/src/orchestration-v2/ProviderEventIngestor.ts
+      - apps/server/src/orchestration-v2/runtimeLayer.ts
+      - apps/server/src/provider/Drivers/CodexManagedProvider.ts
+      - apps/server/src/relay/AgentAwarenessRelay.ts
+      - apps/server/src/telemetry/AnalyticsService.ts
+      - apps/server/src/telemetry/FeatureUsage.ts
+      - apps/server/src/textGeneration/ClaudeTextGeneration.ts
+      - apps/server/src/textGeneration/TextGeneration.ts
       - apps/web/src/components/ChatMarkdown.tsx
       - apps/web/src/components/chat/TimelineAssistantRows.tsx
+      - apps/web/src/components/settings/SourceControlWritingSettings.tsx
+      - apps/web/src/components/settings/settingsSearch.ts
+      - apps/web/src/hooks/useSettings.ts
+      - apps/web/src/state/entities.ts
       - apps/web/src/timestampFormat.ts
+      - packages/client-runtime/src/state/orchestrationV2Projection.ts
+      - packages/client-runtime/src/state/threadDetail.ts
       - packages/contracts/src/environment.ts
+      - packages/contracts/src/orchestrationV2.ts
+      - packages/contracts/src/settings.ts
+      - packages/provider-acp-registry/src/server/driver.ts
+      - packages/provider-core/src/server/textGeneration.ts
+      - packages/provider-core/src/server/textGenerationOperations.ts
+      - packages/provider-core/src/server/textGenerationPrompts.ts
+      - packages/provider-muse/src/server/textGeneration.ts
+      - packages/provider-opencode/src/server/driver.ts
+      - packages/provider-opencode/src/server/textGeneration.ts
     tests:
       - apps/server/src/environment/ServerEnvironment.test.ts
+      - apps/server/src/orchestration-v2/FoundationPersistence.test.ts
+      - apps/server/src/orchestration-v2/MentionedTimesCheckService.test.ts
+      - apps/server/src/orchestration-v2/ProviderEventIngestor.test.ts
       - apps/web/src/components/chat/MentionedTimeChip.browser.test.tsx
       - apps/web/src/markdown-mentioned-times.test.tsx
       - packages/client-runtime/src/mentionedTimes.test.ts
+      - packages/client-runtime/src/state/orchestrationV2Projection.test.ts
+      - packages/shared/src/mentionedTimeSpans.test.ts
     upstream:
       status: unassessed
       tracking: []

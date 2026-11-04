@@ -20,6 +20,7 @@ import * as ProviderTurnStart from "./ProviderTurnStartService.ts";
 import * as RunFinalization from "./RunFinalizationService.ts";
 import * as RuntimeRequests from "./RuntimeRequestService.ts";
 import * as ThreadManagement from "./ThreadManagementService.ts";
+import * as MentionedTimes from "./MentionedTimesCheckService.ts";
 import * as ThreadTitles from "./ThreadTitleRegenerationService.ts";
 
 it.effect.each([
@@ -89,6 +90,7 @@ it.effect.each([
         Layer.mock(CheckpointRollback.CheckpointRollbackServiceV2)({}),
         Layer.mock(RuntimeRequests.RuntimeRequestServiceV2)({}),
         Layer.mock(ThreadTitles.ThreadTitleRegenerationService)({}),
+        Layer.mock(MentionedTimes.MentionedTimesCheckService)({}),
         Layer.mock(ThreadManagement.ThreadManagementService)({}),
         ServerSettings.layerTest(),
         Layer.mock(ProviderTurnStart.ProviderTurnStartServiceV2)({
