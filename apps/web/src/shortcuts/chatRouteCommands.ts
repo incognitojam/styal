@@ -12,11 +12,7 @@ import { createScratchProjectActions } from "../hooks/useScratchProject";
 import { getClientSettings } from "../hooks/useSettings";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
 import { isRightPanelFocused } from "../lib/rightPanelFocus";
-import {
-  focusPullRequestTab,
-  readThreadPullRequestUrl,
-  viewPullRequest,
-} from "../lib/viewPullRequest";
+import { focusPullRequestTab, readThreadPullRequestUrl } from "../lib/viewPullRequest";
 import { selectProjectGroupingSettings } from "../logicalProject";
 import { selectActiveRightPanel, useRightPanelStore } from "../rightPanelStore";
 import { appAtomRegistry } from "../rpc/atomRegistry";
@@ -157,11 +153,6 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
           return;
         }
         dispatchPreviewAction("toggle-panel");
-      },
-      "sourceControl.viewPullRequest": (event) => {
-        claim(event);
-        const threadRef = readRouteThreadRef();
-        if (threadRef) void viewPullRequest(threadRef, readThreadPullRequestUrl(threadRef));
       },
       "sourceControl.focusPullRequestTab": (event) => {
         claim(event);

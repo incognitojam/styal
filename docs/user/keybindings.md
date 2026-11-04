@@ -174,10 +174,9 @@ they use the project the sidebar is filtered to. `chat.newWithoutProject`
 (`mod+alt+n`) starts a thread [without a project](./thread-sidebar.md#start-without-a-project).
 
 `sourceControl.focusPullRequestTab` opens the active thread's pull request, the
-one its sidebar row shows, in the right panel. `sourceControl.viewPullRequest`
-opens it in your browser. Neither has a default shortcut; use **View PR** or
-**Open PR in browser** in the command palette, or assign one in
-**Settings → Keybindings**.
+one its sidebar row shows, in the right panel, or in your browser when it can't
+open in the app. It has no default shortcut; use **View PR** in the command
+palette or assign one in **Settings → Keybindings**.
 
 ## Reserved shortcuts
 

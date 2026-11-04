@@ -66,7 +66,6 @@ import {
   CircleDotIcon,
   ClockIcon,
   CornerLeftUpIcon,
-  ExternalLinkIcon,
   FileSearchIcon,
   FolderGit2Icon,
   FolderIcon,
@@ -246,7 +245,7 @@ import { ComposerHandleContext, useComposerHandleContext } from "../composerHand
 import type { ChatComposerHandle } from "./chat/ChatComposer";
 import { buildSidebarProjectPickerEntries } from "../sidebarProjectGrouping";
 import { useScopedProjectGroup } from "../sidebarProjectScopeStore";
-import { focusPullRequestTab, threadPullRequestUrl, viewPullRequest } from "../lib/viewPullRequest";
+import { focusPullRequestTab, threadPullRequestUrl } from "../lib/viewPullRequest";
 import { useSupportsMultiplePullRequests } from "../hooks/useSupportsMultiplePullRequests";
 import {
   getSourceControlPresentation,
@@ -1757,32 +1756,6 @@ function OpenCommandPaletteDialog(props: {
     shortcutCommand: "sourceControl.focusPullRequestTab",
     run: async () => {
       if (activeThreadRef) await focusPullRequestTab(activeThreadRef, activeThreadPullRequestUrl);
-    },
-  });
-
-  actionItems.push({
-    kind: "action",
-    value: "action:view-pull-request",
-    searchTerms: [
-      "open pr in browser",
-      "open pull request in browser",
-      "open merge request in browser",
-      "open mr",
-      "change request",
-      "source control",
-      "github",
-      "gitlab",
-    ],
-    title: `Open ${changeRequestTerminology.shortLabel} in browser`,
-    description:
-      activeThreadRef && activeThreadPullRequestUrl
-        ? undefined
-        : `No ${changeRequestTerminology.singular} for this thread`,
-    disabled: !activeThreadRef || !activeThreadPullRequestUrl,
-    icon: <ExternalLinkIcon className={ITEM_ICON_CLASS} />,
-    shortcutCommand: "sourceControl.viewPullRequest",
-    run: async () => {
-      if (activeThreadRef) await viewPullRequest(activeThreadRef, activeThreadPullRequestUrl);
     },
   });
 

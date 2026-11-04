@@ -22,7 +22,6 @@ vi.mock(import("../state/server"), async (importOriginal) => ({
   ...(await importOriginal()),
   primaryServerKeybindingsAtom: Atom.make(
     compileResolvedKeybindingsConfig([
-      { key: "mod+alt+g", command: "sourceControl.viewPullRequest" },
       { key: "mod+alt+h", command: "sourceControl.focusPullRequestTab" },
     ]),
   ) as never,
@@ -75,10 +74,10 @@ function setup() {
   state.projects = [];
 }
 
-function press(key: "g" | "h"): void {
+function press(): void {
   window.dispatchEvent(
     new KeyboardEvent("keydown", {
-      key,
+      key: "h",
       ctrlKey: true,
       altKey: true,
       bubbles: true,
@@ -89,6 +88,7 @@ function press(key: "g" | "h"): void {
 
 describe("pull request commands", () => {
   it("open the pull request of the thread on screen, and stay quiet under modal pages", () => {
+    // No project holds owner/repo here, so each press falls back to the browser.
     setup();
     using _platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("Linux x86_64");
     using open = vi.spyOn(window, "open").mockReturnValue(null);
@@ -96,16 +96,15 @@ describe("pull request commands", () => {
     using stack = new DisposableStack();
     stack.defer(installChatRouteCommands(router));
 
-    press("g");
+    press();
     expect(open.mock.calls).toEqual([[FIRST_PR, "_blank", "noopener,noreferrer"]]);
 
     navigate(threadAt("second"));
-    press("g");
+    press();
     expect(open.mock.calls.at(-1)?.[0]).toBe(SECOND_PR);
 
     navigate([...threadAt("second"), { routeId: "/_chat/settings", pathname: "/settings" }]);
-    press("g");
-    press("h");
+    press();
     expect(open).toHaveBeenCalledTimes(2);
   });
 
@@ -118,8 +117,7 @@ describe("pull request commands", () => {
     using stack = new DisposableStack();
     stack.defer(installChatRouteCommands(routerAt(threadAt("first")).router));
 
-    press("g");
-    press("h");
+    press();
 
     expect(open).not.toHaveBeenCalled();
     expect(openPullRequest).not.toHaveBeenCalled();
@@ -136,7 +134,7 @@ describe("pull request commands", () => {
     stack.defer(installChatRouteCommands(routerAt(threadAt("second")).router));
 
     // No project checks out owner/repo, so the tab has nothing to load and the browser opens it.
-    press("h");
+    press();
     expect(open.mock.calls.at(-1)?.[0]).toBe(SECOND_PR);
     expect(openPullRequest).not.toHaveBeenCalled();
 
@@ -154,7 +152,7 @@ describe("pull request commands", () => {
         },
       },
     ];
-    press("h");
+    press();
     expect(openPullRequest).toHaveBeenCalledWith(
       { environmentId: "environment", threadId: "second" },
       expect.objectContaining({ projectId: PROJECT, number: 2, url: SECOND_PR }),

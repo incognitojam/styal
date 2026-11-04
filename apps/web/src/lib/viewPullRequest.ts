@@ -49,7 +49,7 @@ export function readThreadPullRequestUrl(threadRef: ScopedThreadRef): string | n
   return threadPullRequestUrl(thread, supportsLinks);
 }
 
-export async function viewPullRequest(threadRef: ScopedThreadRef, url: string | null) {
+async function openInBrowser(threadRef: ScopedThreadRef, url: string | null) {
   const data: ThreadToastData = { threadRef };
   const api = readLocalApi();
   if (!api) {
@@ -104,5 +104,5 @@ function openPullRequestTab(threadRef: ScopedThreadRef, url: string): boolean {
 /** Falls back to the browser when no project matches the repository or the host lacks the panel. */
 export async function focusPullRequestTab(threadRef: ScopedThreadRef, url: string | null) {
   if (url !== null && openPullRequestTab(threadRef, url)) return;
-  await viewPullRequest(threadRef, url);
+  await openInBrowser(threadRef, url);
 }
