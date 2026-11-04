@@ -12,6 +12,7 @@ import {
   type MentionedTimeSpan,
 } from "@t3tools/shared/mentionedTimeSpans";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
+import { resolveMentionedTimeCheckModelSelection } from "@t3tools/shared/serverSettings";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -20,6 +21,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 
 import { hostTimeZone } from "../environment/ServerEnvironment.ts";
+import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
 import * as FeatureUsage from "../telemetry/FeatureUsage.ts";
@@ -85,6 +87,7 @@ const make = Effect.gen(function* () {
   const eventSink = yield* EventSink.EventSinkV2;
   const ids = yield* IdAllocator.IdAllocatorV2;
   const analytics = yield* Effect.serviceOption(AnalyticsService.AnalyticsService);
+  const providerRegistry = yield* Effect.serviceOption(ProviderRegistry.ProviderRegistry);
 
   const check = Effect.fn("MentionedTimesCheckService.check")(function* (input: {
     readonly threadId: ThreadId;
@@ -117,10 +120,11 @@ const make = Effect.gen(function* () {
       markedMessage: markMentionedTimeSpans(message.text, spans),
       writtenAt: wallClock(message.createdAt, timeZone),
       timeZone,
-      modelSelection:
-        settings.mentionedTimeCheckModelSelection ??
-        resolveProjectSettings(settings, projection.thread.projectId).settings
-          .textGenerationModelSelection,
+      modelSelection: resolveMentionedTimeCheckModelSelection(
+        resolveProjectSettings(settings, projection.thread.projectId).settings,
+        Option.isSome(providerRegistry) ? yield* providerRegistry.value.getProviders : undefined,
+        projection.thread.projectId,
+      ),
     });
     const result = yield* Option.match(analytics, {
       onNone: () => request,

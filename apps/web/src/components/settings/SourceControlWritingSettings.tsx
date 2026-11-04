@@ -8,6 +8,7 @@ import type {
 import { DEFAULT_UNIFIED_SETTINGS } from "@t3tools/contracts/settings";
 import { createModelSelection } from "@t3tools/shared/model";
 import {
+  resolveMentionedTimeCheckModelSelection,
   resolveReviewGuideModelSelection,
   resolveSourceControlWriterModelSelection,
 } from "@t3tools/shared/serverSettings";
@@ -182,8 +183,11 @@ export function SourceControlWritingSettingsSection() {
   const timeCheckSelection = resolveAppModelSelectionState(
     {
       ...settings,
-      textGenerationModelSelection:
-        settings.mentionedTimeCheckModelSelection ?? settings.textGenerationModelSelection,
+      textGenerationModelSelection: resolveMentionedTimeCheckModelSelection(
+        settings,
+        textGenerationProviders,
+        target?.projectId ?? null,
+      ),
     },
     projectEffectiveTextGenerationProviders,
   );
@@ -648,7 +652,7 @@ export function SourceControlWritingSettingsSection() {
           serverScoped
           settingKeys={["mentionedTimeCheckModelSelection"]}
           {...searchableSetting("mentioned-time-check-model")}
-          description="Model that checks mentioned times. A small, fast model is enough; reasoning does not help. Off uses the text generation model."
+          description="Model that checks mentioned times. A small, fast model is enough; reasoning does not help. Off uses GPT-6.1 Terra or Claude Haiku when either is available, otherwise the text generation model."
           control={
             !hasServerTargets ? (
               <span className="text-sm text-muted-foreground">
@@ -703,9 +707,9 @@ export function SourceControlWritingSettingsSection() {
                     }
                     saveTimeCheckModel(
                       createModelSelection(
-                        defaultModelSelection.instanceId,
-                        defaultModelSelection.model,
-                        defaultModelSelection.options,
+                        timeCheckSelection.instanceId,
+                        timeCheckSelection.model,
+                        timeCheckSelection.options,
                       ),
                     );
                   }}

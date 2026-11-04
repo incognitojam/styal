@@ -40,9 +40,9 @@ These rules can mistake a length such as `17:25` for a time of day, or pick the 
 a model check them, turn on **Check mentioned times with a model** in Settings → Source control.
 When an agent finishes a reply that names a clock time, the model reads the whole reply: lengths
 and example times stop being highlighted, and a time takes the day the reply describes, such as
-"last night". Each such reply costs one short call to the model you choose there, or to your text
-generation model. Replies in subagent threads, and replies written before you turned it on, are
-not checked.
+"last night". Each such reply costs one short model call. Unless you choose a model there, it uses
+GPT-6.1 Terra or Claude Haiku when either is available, otherwise your text generation model.
+Replies in subagent threads, and replies written before you turned it on, are not checked.
 
 On web and desktop, select an image in an agent message to expand it. Images that link somewhere
 keep their link action.
