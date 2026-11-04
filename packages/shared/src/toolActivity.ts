@@ -53,6 +53,33 @@ export function dynamicToolSurface(toolName: string | null | undefined, input: u
     : undefined;
 }
 
+const TOOL_SEARCH_SELECTION = /^select:(?<names>.+)$/su;
+
+export function isToolSearchSelection(query: string): boolean {
+  return TOOL_SEARCH_SELECTION.test(query);
+}
+
+/**
+ * `select:a,b,c` is ToolSearch's exact-name form and reads as noise in full;
+ * show the names themselves. Free-text queries pass through.
+ */
+export function toolSearchArgument(query: string): string {
+  const selection = TOOL_SEARCH_SELECTION.exec(query)?.groups?.names;
+  if (!selection) {
+    return query;
+  }
+  const names = selection
+    .split(",")
+    .map((name) => name.trim())
+    .filter((name) => name.length > 0)
+    .map((name) => name.replace(/^mcp__[^_]+(?:_[^_]+)*?__/u, ""));
+  if (names.length === 0) {
+    return query;
+  }
+  const shown = names.slice(0, 2).join(", ");
+  return names.length > 2 ? `${shown} +${names.length - 2} more` : shown;
+}
+
 export function dynamicToolTitle(
   toolName: string | null | undefined,
   input: unknown,
@@ -70,6 +97,12 @@ export function dynamicToolTitle(
       (dynamicToolSurface(toolName, input) === "computer" ? "Computer use" : "Run JavaScript")
     );
   }
+  if (toolName === "ToolSearch") {
+    const query = asTrimmedString(asRecord(input)?.query);
+    const heading = query && isToolSearchSelection(query) ? "Loaded tools" : "Searched tools";
+    return query ? `${heading}: ${toolSearchArgument(query)}` : heading;
+  }
+  if (toolName === "ListAgents") return "Listed agents";
   const skill = claudeSkillInvocation(toolName, input);
   return skill === undefined ? undefined : `Skill: ${skill.name}`;
 }

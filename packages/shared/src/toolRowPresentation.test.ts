@@ -300,6 +300,36 @@ describe("deriveToolRowPresentation", () => {
     ).toEqual({ kind: "text", value: "preview_open, preview_status +1 more" });
   });
 
+  it("names ToolSearch by whether it loaded tools or searched for them", () => {
+    expect(
+      deriveToolRowPresentation({
+        toolName: "ToolSearch",
+        itemType: "dynamic_tool_call",
+        input: { query: "select:mcp__styal__t3_environment_read" },
+      }),
+    ).toEqual({
+      heading: "Loaded tools",
+      argument: { kind: "text", value: "t3_environment_read" },
+    });
+    expect(
+      deriveToolRowPresentation({
+        toolName: "ToolSearch",
+        itemType: "dynamic_tool_call",
+        input: { query: "slack send" },
+      }),
+    ).toEqual({ heading: "Searched tools", argument: { kind: "text", value: "slack send" } });
+  });
+
+  it("names ListAgents as an action", () => {
+    expect(
+      deriveToolRowPresentation({
+        toolName: "ListAgents",
+        itemType: "dynamic_tool_call",
+        input: {},
+      }),
+    ).toEqual({ heading: "Listed agents" });
+  });
+
   it("renders MCP tools as server · tool", () => {
     expect(
       deriveToolRowPresentation({

@@ -55,6 +55,17 @@ describe("toolActivity", () => {
     },
   );
 
+  it("titles Claude's ToolSearch and ListAgents calls by what they did", () => {
+    expect(
+      dynamicToolTitle("ToolSearch", { query: "select:mcp__styal__t3_environment_read" }),
+    ).toBe("Loaded tools: t3_environment_read");
+    expect(dynamicToolTitle("ToolSearch", { query: "slack send" })).toBe(
+      "Searched tools: slack send",
+    );
+    expect(dynamicToolTitle("ToolSearch", {})).toBe("Searched tools");
+    expect(dynamicToolTitle("ListAgents", {})).toBe("Listed agents");
+  });
+
   it("recognizes computer-use REPL calls before result metadata exists", () => {
     expect(dynamicToolSurface("cua_repl.js", {})).toBe("computer");
     for (const name of ["node_repl.js", "js"]) {
