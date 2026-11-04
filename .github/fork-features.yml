@@ -6630,9 +6630,9 @@ features:
   - id: workspace-path-presentation
     title: Keep workspace file paths concise and actionable
     status: review-needed
-    prs: [89, 129, 337, 354, 580]
+    prs: [89, 129, 337, 354, 580, 1262]
     invariants:
-      - Scoped tool activity and Markdown file chips on web and mobile omit generated worktree directory names and display workspace-relative paths, while paths outside the workspace remain absolute. This includes ACP file reads (Antigravity, Cursor, Grok), which report no tool name and carry their path only as the row detail.
+      - Scoped tool activity and Markdown file chips on web and mobile omit generated worktree directory names and display workspace-relative paths, while paths outside the workspace remain absolute. This includes ACP file reads (Antigravity, Cursor, Grok), which report no tool name and carry their path only as the row detail, changed-file row labels, and the paths in expanded tool details (edited files, renamed files' old paths, and file search results).
       - Opening a file still uses its full resolved target, while visible labels and Copy relative path actions retain the scoped path.
       - Open-in-editor menus can copy their resolved project, worktree, or file target and report clipboard success or failure.
       - On web and desktop, descriptive Markdown file-link labels retain their authored text and formatting without an appended filename chip; labels naming the destination file retain compact chips, including line references, throughout chat and previews. Mobile follows upstream's Enriched renderer, which shows the filename chip for every file link.
@@ -6645,6 +6645,7 @@ features:
       - apps/web/src/components/chat/MessagesTimeline.logic.ts
       - apps/web/src/components/chat/OpenInPicker.tsx
       - apps/web/src/components/chat/TimelineWorkEntryRow.logic.ts
+      - apps/web/src/components/chat/V2ItemInspector.tsx
       - apps/web/src/components/files/FileMarkdownPreview.tsx
       - apps/web/src/filePathDisplay.ts
       - apps/web/src/index.css
@@ -6659,6 +6660,7 @@ features:
       - apps/web/src/components/chat/MessagesTimeline.logic.ts
       - apps/web/src/components/chat/OpenInPicker.tsx
       - apps/web/src/components/chat/TimelineWorkEntryRow.logic.ts
+      - apps/web/src/components/chat/V2ItemInspector.tsx
       - apps/web/src/components/files/FileMarkdownPreview.tsx
       - apps/web/src/filePathDisplay.ts
       - apps/web/src/index.css

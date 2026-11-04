@@ -72,6 +72,10 @@ function SyntaxTokens({
   ]);
 }
 
+function formatScopedPath(path: string, workspaceRoot: string | undefined): string {
+  return formatWorkspaceRelativePath(path, workspaceRoot, { includeWorkspaceLabel: false });
+}
+
 const monoClassName =
   "font-mono text-(length:--font-size-code,var(--text-2xs)) leading-relaxed whitespace-pre-wrap break-words select-text";
 
@@ -298,7 +302,7 @@ export const V2ItemInspector = memo(function V2ItemInspector(props: V2ItemInspec
         <div className="space-y-2">
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-mono text-muted-foreground">
-              {formatWorkspaceRelativePath(item.fileName, props.workspaceRoot)}
+              {formatScopedPath(item.fileName, props.workspaceRoot)}
             </span>
             {item.additions !== undefined || item.deletions !== undefined ? (
               <span>
@@ -323,8 +327,11 @@ export const V2ItemInspector = memo(function V2ItemInspector(props: V2ItemInspec
             <ul className="space-y-1 font-mono text-muted-foreground">
               {item.changes.map((change) => (
                 <li key={JSON.stringify([change.operation, change.oldPath, change.path])}>
-                  {change.operation} {change.oldPath ? `${change.oldPath} → ` : ""}
-                  {formatWorkspaceRelativePath(change.path, props.workspaceRoot)}
+                  {change.operation}{" "}
+                  {change.oldPath
+                    ? `${formatScopedPath(change.oldPath, props.workspaceRoot)} → `
+                    : ""}
+                  {formatScopedPath(change.path, props.workspaceRoot)}
                   {change.fileType || change.mimeType
                     ? ` (${[change.fileType, change.mimeType].filter(Boolean).join(", ")})`
                     : ""}
@@ -348,7 +355,7 @@ export const V2ItemInspector = memo(function V2ItemInspector(props: V2ItemInspec
           {item.results.map((result) => (
             <li key={JSON.stringify(result)}>
               <span className="font-mono text-foreground/80">
-                {formatWorkspaceRelativePath(result.fileName, props.workspaceRoot)}
+                {formatScopedPath(result.fileName, props.workspaceRoot)}
                 {result.line === undefined ? "" : `:${result.line}`}
                 {result.column === undefined ? "" : `:${result.column}`}
               </span>
