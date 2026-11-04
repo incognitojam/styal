@@ -44,3 +44,4 @@ export function claudeResumeCompactionAge(questionAnswer: {
  * idleCompaction default of 200K.
  */
 export const COMPACTION_SUGGESTION_MIN_TOKENS = 200_000;
+// cache probe
