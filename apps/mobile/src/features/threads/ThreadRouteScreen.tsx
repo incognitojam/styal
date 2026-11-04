@@ -43,7 +43,6 @@ import {
 import { threadUsageView, usageFigureText } from "@t3tools/shared/turnUsage";
 import { Platform } from "react-native";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useConnectionsReady } from "../../state/workspace";
 import { useEnvironmentShellReadiness } from "../../state/shell";
 import { restoredNewTaskDraftKey } from "../../state/new-task-draft-key";
@@ -106,10 +105,7 @@ import { useAppearancePreferences } from "../settings/appearance/AppearancePrefe
 import { Inspector, useAdaptiveWorkspaceLayout } from "../layout/AdaptiveWorkspaceLayout";
 import { ThreadFileNavigatorPane } from "../files/thread-file-navigator-pane";
 import { InspectorSheetContext } from "../layout/workspace-inspector-sheet";
-import {
-  ThreadInspectorContentStack,
-  type ThreadInspectorMode,
-} from "./thread-inspector-content-stack";
+import type { InspectorContent } from "../layout/inspector-panes";
 import {
   threadDetailErrorIsCurrent,
   threadRouteIsHydrating,
@@ -128,7 +124,7 @@ import {
   ThreadInspectorPreview,
   type ThreadInspectorPresentation,
 } from "./thread-inspector-preview";
-import type { ThreadInspectorTarget } from "./thread-inspector-navigation";
+import type { ThreadInspectorMode, ThreadInspectorTarget } from "./thread-inspector-navigation";
 import { useSelectWorkspaceDetail } from "../workspace/useSelectWorkspaceDetail";
 
 const EMPTY_PROVIDERS: ReadonlyArray<ServerProvider> = [];
@@ -181,7 +177,7 @@ type ThreadRouteScreenRouteProps = StaticScreenProps<{
 interface ThreadRouteScreenProps extends ThreadRouteScreenRouteProps {
   readonly inspectorPresentation?: ThreadInspectorPresentation;
   readonly onReturnToThread?: () => void;
-  readonly renderInspector?: (headerInset: number) => ReactNode;
+  readonly renderInspector?: () => ReactNode;
 }
 
 function ThreadUnavailableScreen(props: {
@@ -619,42 +615,28 @@ function ThreadRouteContent(
     navigation.navigate("ThreadFile", params);
   };
   const renderGitInspector = () => (
-    <InspectorHeaderInset>
-      {(headerInset) => (
-        <GitOverviewSheet
-          headerInset={headerInset}
-          presentation="inspector"
-          route={{ params: { environmentId: environmentId!, threadId: threadId! } }}
-        />
-      )}
-    </InspectorHeaderInset>
+    <GitOverviewSheet
+      presentation="inspector"
+      route={{ params: { environmentId: environmentId!, threadId: threadId! } }}
+    />
   );
   const renderFilesInspector = () =>
     selectedThread !== null && selectedThreadCwd !== null ? (
-      <InspectorHeaderInset>
-        {(headerInset) => (
-          <InspectorSheetContext.Consumer>
-            {(closeInspectorSheet) => (
-              <ThreadFileNavigatorPane
-                cwd={selectedThreadCwd}
-                environmentId={selectedThread.environmentId}
-                headerInset={headerInset}
-                projectName={selectedThreadProject?.title ?? "Files"}
-                selectedPath={null}
-                onSelectFile={(path) =>
-                  closeInspectorSheet
-                    ? closeInspectorSheet(() => handleSelectInspectorFile(path))
-                    : handleSelectInspectorFile(path)
-                }
-              />
-            )}
-          </InspectorSheetContext.Consumer>
+      <InspectorSheetContext.Consumer>
+        {(closeInspectorSheet) => (
+          <ThreadFileNavigatorPane
+            cwd={selectedThreadCwd}
+            environmentId={selectedThread.environmentId}
+            projectName={selectedThreadProject?.title ?? "Files"}
+            selectedPath={null}
+            onSelectFile={(path) =>
+              closeInspectorSheet
+                ? closeInspectorSheet(() => handleSelectInspectorFile(path))
+                : handleSelectInspectorFile(path)
+            }
+          />
         )}
-      </InspectorHeaderInset>
-    ) : null;
-  const renderRouteInspector = () =>
-    props.renderInspector ? (
-      <InspectorHeaderInset>{props.renderInspector}</InspectorHeaderInset>
+      </InspectorSheetContext.Consumer>
     ) : null;
   const renderPreviewInspector = () =>
     previewTarget && panes.auxiliaryPaneVisible ? (
@@ -675,18 +657,28 @@ function ThreadRouteContent(
         }}
       />
     ) : null;
-  const renderInspectorStack = () =>
-    inspectorMode === null ? null : (
-      <ThreadInspectorContentStack
-        renderPreview={renderPreviewInspector}
-        renderFiles={renderFilesInspector}
-        renderGit={renderGitInspector}
-        mode={inspectorMode}
-        resetKeys={[routeThreadIdentity, selectedThreadCwd]}
-        renderRoute={props.renderInspector ? renderRouteInspector : undefined}
-      />
-    );
-  const showsInspector = !props.inspectorPresentation && inspectorMode !== null;
+  const inspectorContent: InspectorContent | null =
+    inspectorMode === null
+      ? null
+      : {
+          active: inspectorMode,
+          resetKeys: [routeThreadIdentity, selectedThreadCwd],
+          panes: [
+            ...(inspectorMode === "preview"
+              ? [
+                  {
+                    key: "preview",
+                    render: renderPreviewInspector,
+                    // A thread preview runs its own navigator, whose screens draw its bar.
+                    nativeStack: previewTarget?.type === "thread",
+                  },
+                ]
+              : []),
+            { key: "files", render: renderFilesInspector, prewarm: true },
+            { key: "git", render: renderGitInspector, prewarm: true },
+            ...(props.renderInspector ? [{ key: "route", render: props.renderInspector }] : []),
+          ],
+        };
 
   const handleOpenConnectionEditor = () => {
     void navigation.navigate("Connections");
@@ -1148,7 +1140,7 @@ function ThreadRouteContent(
 
   return (
     <>
-      {showsInspector ? (
+      {!props.inspectorPresentation && inspectorContent ? (
         <Inspector
           // A route's own inspector (files) opens once per thread; going back keeps the user's choice.
           revealKey={
@@ -1156,21 +1148,14 @@ function ThreadRouteContent(
               ? (routeThreadIdentity ?? undefined)
               : undefined
           }
-        >
-          {renderInspectorStack()}
-        </Inspector>
+          content={inspectorContent}
+        />
       ) : null}
       <SettledShelfAutoCollapse thread={selectedThread} />
 
       {renderThreadRouteBody()}
     </>
   );
-}
-
-/** The inspector's top inset where it renders: under an Android column's status bar, not a sheet's. */
-function InspectorHeaderInset(props: { readonly children: (headerInset: number) => ReactNode }) {
-  const insets = useSafeAreaInsets();
-  return props.children(Platform.OS === "ios" ? 0 : insets.top);
 }
 
 export function FullscreenThreadRouteScreen(
