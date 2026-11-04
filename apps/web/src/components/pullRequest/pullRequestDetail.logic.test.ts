@@ -952,6 +952,11 @@ describe("how the branch stands against its base", () => {
     expect(resolveBaseFreshness(detail({ baseComparison: undefined }))).toBeNull();
   });
 
+  it("warns while the host is still recomputing mergeability after its base moved", () => {
+    expect(resolveBaseFreshness(detail({ mergeability: "unknown" }))?.behindBy).toBe(12);
+    expect(resolveBaseFreshness(detail({ mergeability: "conflicting" }))).toBeNull();
+  });
+
   it("narrows to what this reader may actually take", () => {
     expect(
       resolveBaseFreshness(detail({ viewerPermissions: { updateMethods: ["merge"] } }))?.methods,

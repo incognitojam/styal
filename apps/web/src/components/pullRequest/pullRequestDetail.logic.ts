@@ -1215,7 +1215,8 @@ export function resolveBaseFreshness(detail: {
   readonly methods: ReadonlyArray<PullRequestUpdateMethod>;
 } | null {
   if (detail.state !== "open" || detail.baseComparison !== "behind") return null;
-  if (detail.mergeability !== "mergeable") return null;
+  // The host recomputes mergeability lazily after its base moves; the behind count is already known.
+  if (detail.mergeability === "conflicting") return null;
   const offered = detail.capabilities.updateMethods ?? [];
   const allowed = detail.viewerPermissions.updateMethods ?? [];
   return {
