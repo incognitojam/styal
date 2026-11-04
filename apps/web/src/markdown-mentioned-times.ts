@@ -162,6 +162,7 @@ export function readMentionedTime(encoded: unknown): MentionedTime | null {
   if (!isWholeNumber(time.hour, 0, 23) || !isWholeNumber(time.minute, 0, 59)) return null;
   if (time.second !== undefined && !isWholeNumber(time.second, 0, 59)) return null;
   if (time.weekday !== undefined && !isWholeNumber(time.weekday, 0, 6)) return null;
+  if (time.monthDay !== undefined && !isWholeNumber(time.monthDay, 1, 31)) return null;
   if (time.dayOffset !== undefined && !isWholeNumber(time.dayOffset, -1, 1)) return null;
   if (time.tense !== undefined && time.tense !== "past" && time.tense !== "future") return null;
   if (time.zoneFromMessage !== undefined && typeof time.zoneFromMessage !== "boolean") return null;

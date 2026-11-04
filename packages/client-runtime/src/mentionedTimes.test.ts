@@ -55,6 +55,13 @@ describe("findMentionedTimes", () => {
     ],
     ["Yes, about 5 hours and 19 minutes ago.", ["about 5 hours and 19 minutes ago"]],
     ["I'll check back in about five minutes.", ["in about five minutes"]],
+    ["the watch is due around 20:00 UK time", ["20:00 UK time"]],
+    ["it began after 15:57 on the 21st", ["15:57 on the 21st"]],
+    ["did you mark it done around 21:23 your time yesterday?", ["21:23 your time yesterday"]],
+    [
+      "The run starts at 14:41 UTC, about 20 minutes from now.",
+      ["14:41 UTC", "about 20 minutes from now"],
+    ],
     ["the build that took ages finished at 17:25", ["17:25"]],
     ["the call lasted until 17:25", ["17:25"]],
     ["the call took 17:25 UTC", ["17:25 UTC"]],
@@ -79,6 +86,8 @@ describe("findMentionedTimes", () => {
     ['labels such as "5 min ago" and "2 hours ago"'],
     ["the run took 1 hour"],
     ["rated at 300 PM2.5"],
+    ["the office is 40 minutes away by train"],
+    ["she finished 1st in 12:40 on the day"],
     ["the call took 17:25"],
     ["the call lasted 17:25 in total"],
     ["Length: 17:25"],
@@ -221,6 +230,28 @@ describe("resolveMentionedTime", () => {
     expect(resolveAll("Monday 09:00 UTC", LONDON_AFTERNOON)).toEqual(["2026-09-28T09:00:00.000Z"]);
     const newYear = { writtenAtMs: Date.parse("2027-01-02T10:00:00Z"), environmentTimeZone: "UTC" };
     expect(resolveAll("on 31 December at 23:00", newYear)).toEqual(["2026-12-31T23:00:00.000Z"]);
+  });
+
+  it("reads named zones, days of the month and a day after your time", () => {
+    expect(resolveAll("due around 20:00 UK time", LONDON_AFTERNOON)).toEqual([
+      "2026-10-01T19:00:00.000Z",
+    ]);
+    expect(resolveAll("standup at 09:00 Pacific time", LONDON_AFTERNOON)).toEqual([
+      "2026-10-01T16:00:00.000Z",
+    ]);
+    // Written 1 October: the 21st that already passed is September's.
+    expect(resolveAll("it began after 15:57 on the 21st", LONDON_AFTERNOON)).toEqual([
+      "2026-09-21T14:57:00.000Z",
+    ]);
+    expect(resolveAll("the next run is on the 3rd at 09:00", LONDON_AFTERNOON)).toEqual([
+      "2026-10-03T08:00:00.000Z",
+    ]);
+    expect(resolveAll("done around 21:23 your time yesterday", LONDON_AFTERNOON)).toEqual([
+      "2026-09-30T20:23:00.000Z",
+    ]);
+    expect(resolveAll("about 20 minutes from now", LONDON_AFTERNOON)).toEqual([
+      "2026-10-01T14:28:00.000Z",
+    ]);
   });
 
   it("follows daylight saving for regional zones", () => {

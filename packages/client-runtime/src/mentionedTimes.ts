@@ -21,6 +21,8 @@ export type MentionedTime =
       readonly second?: number;
       /** A written calendar date; `year` is absent when the text left it out. */
       readonly date?: { readonly year?: number; readonly month: number; readonly day: number };
+      /** A day of the month written without its month: "on the 21st". */
+      readonly monthDay?: number;
       /** 0 for Sunday. Only when the text named a weekday without a date. */
       readonly weekday?: number;
       /** `yesterday`, `today`, `tomorrow`. */
@@ -118,6 +120,16 @@ const ZONE_ABBREVIATIONS: Readonly<Record<string, MentionedTimeZone>> = {
   PST: { timeZone: "America/Los_Angeles" },
   PDT: { timeZone: "America/Los_Angeles" },
 };
+/** Zones written as words before "time": "20:00 UK time", "09:00 Pacific time". */
+const NAMED_ZONES: Readonly<Record<string, string>> = {
+  UK: "Europe/London",
+  London: "Europe/London",
+  British: "Europe/London",
+  Pacific: "America/Los_Angeles",
+  Mountain: "America/Denver",
+  Central: "America/Chicago",
+  Eastern: "America/New_York",
+};
 const ZONE_ABBREVIATION = Object.keys(ZONE_ABBREVIATIONS)
   .filter((abbreviation) => abbreviation !== "Z")
   .sort((left, right) => right.length - left.length)
@@ -127,6 +139,7 @@ const DATE =
   `(?:(?<isoYear>\\d{4})-(?<isoMonth>\\d{2})-(?<isoDay>\\d{2})` +
   `|(?:(?<dayMonthWeekday>${WEEKDAY}),?\\s+)?(?<dayMonthDay>\\d{1,2})(?:st|nd|rd|th)?\\s+(?<dayMonthMonth>${MONTH})\\.?(?:,?\\s+(?<dayMonthYear>\\d{4}))?` +
   `|(?:(?<monthDayWeekday>${WEEKDAY}),?\\s+)?(?<monthDayMonth>${MONTH})\\.?\\s+(?<monthDayDay>\\d{1,2})(?:st|nd|rd|th)?(?:,?\\s+(?<monthDayYear>\\d{4}))?` +
+  `|the\\s+(?<ordinalDay>\\d{1,2})(?:st|nd|rd|th)` +
   `|(?<weekday>${WEEKDAY})` +
   `|(?<relativeDay>[Tt]oday|[Tt]onight|[Tt]omorrow|[Yy]esterday))`;
 const DATE_SEPARATOR = `(?:,?\\s+at\\s+|,\\s*|\\s+|T)`;
@@ -139,9 +152,13 @@ const ZONE =
   `|\\s?(?<utc>UTC|GMT|utc|gmt|Z)(?:\\s?(?<utcOffset>[+\\-−]\\d{1,2}(?::?\\d{2})?))?` +
   `|\\s(?<abbreviation>${ZONE_ABBREVIATION})` +
   `|\\s\\((?<parenthesizedZone>${ZONE_ABBREVIATION})\\)` +
-  `|\\s+in\\s+(?<inZone>${ZONE_ABBREVIATION}))`;
+  `|\\s+in\\s+(?<inZone>${ZONE_ABBREVIATION})` +
+  `|\\s+(?<namedZone>${Object.keys(NAMED_ZONES).join("|")})\\s+time\\b)`;
 
-const TRAILING_DAY = `(?:,?\\s+(?<trailingDay>today|tonight|tomorrow|yesterday))`;
+// "your time" names the reader's zone, which the agent knows as its environment's.
+const TRAILING_DAY =
+  `(?:,?\\s+(?:(?:your|local)\\s+time,?\\s+)?(?<trailingDay>today|tonight|tomorrow|yesterday)` +
+  `|,?\\s+on\\s+the\\s+(?<trailingOrdinal>\\d{1,2})(?:st|nd|rd|th))`;
 // A label's colon is punctuation; a colon attached to another token is not a clock boundary.
 const CLOCK_PATTERN = new RegExp(
   `(?<![\\w:./#])(?:${DATE}${DATE_SEPARATOR})?${CLOCK}${ZONE}?${TRAILING_DAY}?(?!\\w|:\\S|\\.\\d)`,
@@ -173,6 +190,8 @@ const AGO_PATTERN = new RegExp(`(?<![\\w"'“‘])${SPAN}\\s+ago\\b(?!["'”’]
 const FUTURE_CUE =
   "due|scheduled|expires|expiring|resets|resetting|starts|starting|retry|retries|retrying|again|back|ready|fires|firing|ends|ending|closes|opens|lands|landing";
 const FUTURE_PATTERN = new RegExp(`(?<=\\b(?:${FUTURE_CUE})\\s+)in\\s+${SPAN}\\b`, "gi");
+// "away" alone also measures travel ("the office is 40 minutes away"), so only "from now" counts.
+const FROM_NOW_PATTERN = new RegExp(`(?<![\\w"'“‘])${SPAN}\\s+from\\s+now\\b`, "gi");
 
 function unitMilliseconds(unit: string): number {
   const normalized = unit.toLowerCase();
@@ -246,6 +265,10 @@ function parseZone(
   }
   const abbreviation = groups.abbreviation ?? groups.parenthesizedZone ?? groups.inZone;
   if (abbreviation !== undefined) return namedZone(abbreviation);
+  if (groups.namedZone !== undefined) {
+    const timeZone = NAMED_ZONES[groups.namedZone];
+    return timeZone === undefined ? null : { timeZone, name: `${groups.namedZone} time` };
+  }
   return undefined;
 }
 
@@ -291,6 +314,10 @@ function parseClock(groups: Record<string, string | undefined>): MentionedTime |
       month: month + 1,
       day: Number(groups.dayMonthDay ?? groups.monthDayDay),
     };
+  } else if (groups.ordinalDay !== undefined || groups.trailingOrdinal !== undefined) {
+    const monthDay = Number(groups.ordinalDay ?? groups.trailingOrdinal);
+    if (monthDay < 1 || monthDay > 31) return null;
+    time.monthDay = monthDay;
   } else if (groups.weekday !== undefined) {
     const weekday = indexOfPattern(WEEKDAY_PATTERNS, groups.weekday);
     if (weekday === null) return null;
@@ -424,6 +451,7 @@ export function findMentionedTimes(
   for (const [pattern, sign] of [
     [AGO_PATTERN, -1],
     [FUTURE_PATTERN, 1],
+    [FROM_NOW_PATTERN, 1],
   ] as const) {
     for (const match of text.matchAll(pattern)) {
       const milliseconds = match.groups ? spanMilliseconds(match.groups) : null;
@@ -648,6 +676,16 @@ export function resolveMentionedTime(
     );
   } else if (time.dayOffset !== undefined) {
     instantMs = at(addDays(writtenDate, time.dayOffset));
+  } else if (time.monthDay !== undefined) {
+    const { monthDay } = time;
+    instantMs = chooseOccurrence(
+      [-1, 0, 1].map((months) => {
+        const month = new Date(Date.UTC(writtenDate.year, writtenDate.month - 1 + months, 1));
+        return at({ year: month.getUTCFullYear(), month: month.getUTCMonth() + 1, day: monthDay });
+      }),
+      anchor.writtenAtMs,
+      time.tense,
+    );
   } else if (time.weekday !== undefined) {
     const sameWeekday = [-7, -6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7]
       .map((offset) => addDays(writtenDate, offset))
@@ -730,7 +768,13 @@ export function applyMentionedTimeCheck(
       result.push(match);
       continue;
     }
-    const { weekday: _weekday, dayOffset: _dayOffset, tense: _tense, ...time } = match.time;
+    const {
+      weekday: _weekday,
+      dayOffset: _dayOffset,
+      monthDay: _monthDay,
+      tense: _tense,
+      ...time
+    } = match.time;
     result.push({ ...match, time: { ...time, date, dateFromCheck: true } });
   }
   for (const candidate of located) {
