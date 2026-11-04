@@ -166,7 +166,6 @@ function WorkspaceRootContent() {
         ) : (
           <AppBar
             embedded
-            sidebar={false}
             title="styal"
             titleContent={renderHeaderTitle()}
             actions={[

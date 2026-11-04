@@ -412,7 +412,6 @@ function ReviewFileNavigator({
       {Platform.OS === "android" ? (
         <AppBar
           embedded
-          sidebar={false}
           title="Changed files"
           subtitle={`${files.length} ${files.length === 1 ? "file" : "files"}`}
           hideBottomBorder

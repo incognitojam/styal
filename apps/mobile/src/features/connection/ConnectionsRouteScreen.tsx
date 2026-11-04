@@ -18,7 +18,6 @@ export function ConnectionsRouteScreen() {
       {Platform.OS === "android" ? (
         <AppBar
           embedded
-          sidebar={false}
           title="Machines"
           onBack={() => navigation.goBack()}
           actions={[
