@@ -107,7 +107,9 @@ import Animated, {
 import { useAssetUrl } from "../../state/assets";
 import { PullRequestGlyph } from "../pull-requests/pullRequestGlyphs";
 import { useOpenLinkedThread } from "./useOpenLinkedThread";
+import { RUNTIME_MODE_CHOICES } from "./thread-settings-options";
 
+const AUTO_MODE_ICON = RUNTIME_MODE_CHOICES.find((choice) => choice.mode === "auto")?.icon;
 const SHIMMER_WIDTH = 72;
 const SHIMMER_SWEEP_MS = 1_350;
 const SHIMMER_PAUSE_MS = 1_450;
@@ -1157,9 +1159,19 @@ const ThreadWorkLogRow = function ThreadWorkLogRow(
             </Text>
           ) : null}
           {refusalSummary ? (
-            <View className="pr-1" accessibilityElementsHidden>
+            <View
+              className="pr-1"
+              accessibilityElementsHidden
+              importantForAccessibility="no-hide-descendants"
+            >
               <StatusPill
                 label="Blocked"
+                icon={
+                  row.workEntry.structuredPayload?.toolDenial?.source === "auto_mode"
+                    ? AUTO_MODE_ICON
+                    : undefined
+                }
+                iconTintClassName="accent-foreground-secondary"
                 pillClassName="bg-subtle"
                 textClassName="text-foreground-secondary"
                 size="compact"
