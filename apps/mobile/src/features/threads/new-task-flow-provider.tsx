@@ -62,6 +62,7 @@ import {
   withRememberedModelOptions,
 } from "../../state/use-model-option-memory";
 import { useBranches, usePaginatedBranches } from "../../state/queries";
+import { useProjectClone } from "../../state/projectClones";
 import { vcsEnvironment } from "../../state/vcs";
 import { type QueuedThreadMessage } from "../../state/thread-outbox";
 import {
@@ -444,9 +445,18 @@ export function NewTaskFlowProvider(
   const projectSettings = projectDefaults.projectSettings;
   const canChooseWorkspace = !isScratchDraft;
   const defaultWorkspaceMode: WorkspaceMode = projectDefaults.defaultWorkspaceMode;
+  const selectedProjectClone = useProjectClone(
+    selectedProject
+      ? { environmentId: selectedProject.environmentId, projectId: selectedProject.id }
+      : null,
+  );
+  // Mid-clone HEAD is Git's init default branch, which the remote may not have; wait for the clone.
+  const repositoryReady =
+    selectedProjectClone === null ||
+    (selectedProjectClone !== "pending" && selectedProjectClone.phase === "done");
   const branchState = usePaginatedBranches({
     environmentId: selectedProject?.environmentId ?? null,
-    cwd: selectedProject?.workspaceRoot || null,
+    cwd: repositoryReady ? selectedProject?.workspaceRoot || null : null,
   });
   const branchesLoading = branchState.isPending && branchState.data === null;
   const allBranchRefs = branchState.refs;
