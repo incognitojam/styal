@@ -1094,12 +1094,16 @@ export const RootStack = RootStackConfig.with(function AdaptiveRootStack({ Navig
     <InstantRootNavigationContext value={navigateInstantly}>
       <Navigator
         screenLayout={(props) => <GuardedScreenLayout {...props} />}
-        screenOptions={({ route }) =>
+        screenOptions={({ route, navigation }) =>
           Platform.OS === "android"
             ? {
                 animation: instantNavigation
                   ? "none"
-                  : androidWorkspaceDestinationAnimation(route.name, usesSplitView),
+                  : androidWorkspaceDestinationAnimation(
+                      route,
+                      navigation.getState().routes,
+                      usesSplitView,
+                    ),
               }
             : {}
         }

@@ -10,7 +10,6 @@ import {
   type ViewProps,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useKeyboardState } from "react-native-keyboard-controller";
 
 import { useAndroidControlSizing } from "../../components/ui/useAndroidControlSizing";
 import { useToolbarLayout } from "../../components/ui/useToolbarLayout";
@@ -22,6 +21,8 @@ import {
   type AndroidWorkspaceNavigationTab,
 } from "./android-workspace-tabs";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
+import { useSoftKeyboardShowing } from "../keyboard/useSoftKeyboardShowing";
+import { useAdaptiveWorkspaceLayout } from "../layout/adaptive-workspace-context";
 import { useAndroidWorkspaceRoot } from "./AndroidWorkspaceTabsProvider";
 import { useNavigationTabOrder, useHiddenNavigationTabs } from "./navigation-tabs";
 import { useWorkspaceTabs } from "./WorkspaceTabsContext";
@@ -81,7 +82,8 @@ export function AndroidWorkspaceNavigation(props: {
   const insets = useSafeAreaInsets();
   const toolbar = useToolbarLayout();
   const connectionState = useWorkspaceConnectionState();
-  const keyboardVisible = useKeyboardState((state) => state.isVisible);
+  const keyboardVisible = useSoftKeyboardShowing();
+  const { layout } = useAdaptiveWorkspaceLayout();
   const { themeAppearance, themeVariables: colors } = useAppearancePreferences();
   const { scale, fabSize } = useAndroidControlSizing();
   const window = useWindowDimensions();
@@ -144,7 +146,9 @@ export function AndroidWorkspaceNavigation(props: {
           if (root && rootState) {
             navigateInstantly(() =>
               navigation.dispatch({
-                ...CommonActions.reset(androidWorkspaceTabNavigationState(rootState, tab, rail)),
+                ...CommonActions.reset(
+                  androidWorkspaceTabNavigationState(rootState, tab, layout.usesSplitView),
+                ),
                 target: root.key,
               }),
             );
