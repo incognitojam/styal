@@ -6473,12 +6473,12 @@ features:
       retire_when: Upstream detects and approves approval-required workflow runs on same-repository pull requests, not only forks.
 
   - id: workflow-run-watch
-    title: Wake agents when a watched CI workflow run completes
+    title: Wake agents when a watched CI workflow run fails a job or completes
     status: maintained
     prs: [896]
     invariants:
       - watch_workflow_run reads the GitHub Actions run first; a run that already completed is reported to the agent instead of watched, and an unreadable run is an error.
-      - The server reads each watched run every 30 seconds, respecting host quota pauses, and wakes the agent once when it completes, naming its conclusion and the jobs of the latest attempt that did not pass, then ends the watch in the same step.
+      - The server reads each watched run every 30 seconds, respecting host quota pauses. While the run is going, it wakes the agent once for each newly failed job of the latest attempt, recording the names it reported on the watch, as a watched pull request does for failed checks. When the run completes, it wakes the agent once with the conclusion and the failed jobs it had not yet reported, then ends the watch in the same step.
       - A watched run keeps the thread in the Working list as a monitor background task until the watch ends.
       - Forks and subagent child threads start without workflow run watches; the parent's watches remain unchanged.
       - Settling, archiving, or stopping the thread ends its workflow run watches, and a finish read before that changes nothing and wakes no one. Subagents and settled or archived threads cannot start one.

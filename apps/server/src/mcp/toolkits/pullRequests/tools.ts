@@ -430,7 +430,7 @@ const UnwatchPullRequestTool = Tool.make("unwatch_pull_request", {
 
 const WatchWorkflowRunTool = Tool.make("watch_workflow_run", {
   description:
-    "Watch a GitHub Actions run no watched PR covers: CI after a merge or push, deploys, releases, dispatched workflows. T3 wakes you once when it completes, with the jobs that did not pass. Find it with `gh run list --commit <sha>` or `--workflow <file>`. After this call, end your turn. A completed run is not watched; the result says how it ended. Leave deployment reviews to the user. Subagents cannot watch.",
+    "Watch a GitHub Actions run no watched PR covers: CI after a merge or push, deploys, releases, dispatched workflows. T3 wakes you when a job fails and again when the run completes, with the jobs that did not pass. Find it with `gh run list --commit <sha>` or `--workflow <file>`. After this call, end your turn. A completed run is not watched; the result says how it ended. Leave deployment reviews to the user. Subagents cannot watch.",
   parameters: WorkflowRunTargetInput,
   success: WatchWorkflowRunResult,
   failure: PullRequestToolError,

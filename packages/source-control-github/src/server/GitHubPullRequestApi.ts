@@ -557,6 +557,8 @@ export class GitHubPullRequestApi extends Context.Service<
       readonly repository: string;
       readonly host: string;
       readonly runId: number;
+      /** Also read the jobs of a run that is still going, to find the ones that already failed. */
+      readonly runningJobs?: boolean;
     }) => Effect.Effect<ProviderWorkflowRun, GitHubPullRequestApiError>;
 
     readonly reviewWorkflowRun: (
@@ -1917,7 +1919,7 @@ export const make = Effect.gen(function* () {
   }).pipe(RequestResolver.batchN(FILES_VIEWED_PER_REQUEST));
 
   /**
-   * A GitHub Actions run, and the jobs that did not pass once it completed. REST reads: they
+   * A GitHub Actions run, and the jobs of it that finished without passing. REST reads: they
    * do not spend the GraphQL budget the pull request pages share.
    */
   const getWorkflowRun: GitHubPullRequestApi["Service"]["getWorkflowRun"] = Effect.fn(
@@ -1975,14 +1977,14 @@ export const make = Effect.gen(function* () {
           run.status === "waiting"
             ? yield* readJson(`${endpoint}/pending_deployments`, decodeGitHubPendingDeploymentsJson)
             : [];
-        const jobs =
-          completed && run.conclusion !== "success"
-            ? yield* readJson(
-                `${endpoint}/jobs?filter=latest&per_page=100`,
-                decodeGitHubWorkflowRunJobsJson,
-                false,
-              )
-            : null;
+        const readJobs = completed ? run.conclusion !== "success" : input.runningJobs === true;
+        const jobs = readJobs
+          ? yield* readJson(
+              `${endpoint}/jobs?filter=latest&per_page=100`,
+              decodeGitHubWorkflowRunJobsJson,
+              false,
+            )
+          : null;
         return {
           name: `${run.name ?? "Workflow"} #${run.run_number}`,
           url: run.html_url,
@@ -1995,11 +1997,13 @@ export const make = Effect.gen(function* () {
             .filter((deployment) => deployment.current_user_can_approve)
             .map(({ environment }) => ({ id: environment.id, name: environment.name })),
           failedJobs: (jobs?.jobs ?? [])
-            .filter(
-              (job) =>
-                job.conclusion !== "success" &&
-                job.conclusion !== "skipped" &&
-                job.conclusion !== "neutral",
+            .filter((job) =>
+              // A job without a conclusion is still running, unless the whole run ended.
+              job.conclusion === null
+                ? completed
+                : job.conclusion !== "success" &&
+                  job.conclusion !== "skipped" &&
+                  job.conclusion !== "neutral",
             )
             .map((job) => ({ name: job.name, conclusion: job.conclusion, url: job.html_url })),
         } satisfies ProviderWorkflowRun;

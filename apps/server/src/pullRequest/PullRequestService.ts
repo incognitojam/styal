@@ -231,6 +231,8 @@ export class PullRequestService extends Context.Service<
     readonly workflowRun: (
       input: Pick<PullRequestRef, "projectId" | "host" | "repository"> & {
         readonly runId: number;
+        /** Also read the jobs of a run that is still going, to find the ones that already failed. */
+        readonly runningJobs?: boolean;
       },
     ) => Effect.Effect<ProviderWorkflowRun, PullRequestError>;
     /** Approves or rejects deployment environments a workflow run waits on. */
@@ -1899,6 +1901,7 @@ export const make = Effect.gen(function* () {
           repository: project.repository,
           host: project.host,
           runId: input.runId,
+          ...(input.runningJobs === undefined ? {} : { runningJobs: input.runningJobs }),
         }).pipe(Effect.mapError(toPullRequestError("workflowRun")));
       }),
     );
