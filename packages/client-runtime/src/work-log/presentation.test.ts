@@ -184,6 +184,31 @@ describe("summarizeToolGroup", () => {
     );
   });
 
+  it("does not count failed or declined edits as changed files", () => {
+    const fileChange = (id: string, path: string, status?: WorkLogToolLifecycleStatus) =>
+      entry(id, {
+        label: `Changed ${path}`,
+        itemType: "file_change",
+        changedFiles: [path],
+        ...(status ? { toolLifecycleStatus: status } : {}),
+      });
+    expect(
+      summarizeToolGroup([fileChange("blocked", "/synthetic/.bashrc", "failed")]).summary,
+    ).toBe("Tried to change 1 file");
+    expect(
+      summarizeToolGroup([
+        fileChange("declined", "/synthetic/a.ts", "declined"),
+        fileChange("failed", "/synthetic/b.ts", "failed"),
+      ]).summary,
+    ).toBe("Tried to change 2 files");
+    expect(
+      summarizeToolGroup([
+        fileChange("applied", "/synthetic/a.ts", "completed"),
+        fileChange("failed", "/synthetic/b.ts", "failed"),
+      ]).summary,
+    ).toBe("Changed 1 file");
+  });
+
   it("names memory reads without counting them as memory updates", () => {
     const read = (id: string, path: string) =>
       entry(id, {

@@ -636,6 +636,14 @@ function toolGroupActionCount(
     return memoryPaths.size;
   }
   if (action !== "edit") return entries.length;
+  return countChangedFiles(entries.filter((entry) => !editDidNotApply(entry)));
+}
+
+function editDidNotApply(entry: WorkLogPresentationEntry): boolean {
+  return entry.toolLifecycleStatus === "failed" || entry.toolLifecycleStatus === "declined";
+}
+
+function countChangedFiles(entries: ReadonlyArray<WorkLogPresentationEntry>): number {
   const changedFiles = new Set<string>();
   let editsWithoutFileDetails = 0;
   for (const entry of entries) {
@@ -687,6 +695,16 @@ function toolGroupActionLabel(action: ToolGroupAction, count: number): string {
     case "update":
       return `Received ${count} ${count === 1 ? "update" : "updates"}`;
   }
+}
+
+function toolGroupSummaryLabel(
+  action: ToolGroupAction,
+  entries: ReadonlyArray<WorkLogPresentationEntry>,
+): string {
+  const count = toolGroupActionCount(action, entries);
+  if (action !== "edit" || count > 0) return toolGroupActionLabel(action, count);
+  const attempted = countChangedFiles(entries);
+  return `Tried to change ${attempted} ${attempted === 1 ? "file" : "files"}`;
 }
 
 function t3ToolSummaryCall(entry: WorkLogPresentationEntry): T3ToolSummaryCall {
@@ -790,10 +808,7 @@ export function summarizeToolGroup(entries: ReadonlyArray<WorkLogPresentationEnt
     ...(group.t3Action
       ? summarizeT3ToolCalls(group.t3Action, group.entries.map(t3ToolSummaryCall))
       : {
-          label: toolGroupActionLabel(
-            group.action,
-            toolGroupActionCount(group.action, group.entries),
-          ),
+          label: toolGroupSummaryLabel(group.action, group.entries),
           failedCount: group.entries.filter(workEntryDisplayIndicatesToolFailure).length,
         }),
   }));
