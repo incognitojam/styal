@@ -108,6 +108,7 @@ import {
   resolveSidebarThreadAttention,
   isSidebarThreadWoke,
   resolveThreadLastVisitedAt,
+  isLatestFailureSeen,
   shouldRecedeSidebarThread,
   resolveWorkingStartedAt,
   useRetainedValue,
@@ -755,14 +756,15 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
   });
   // Background work always recedes when it is not selected: an unread parent
   // completion must not pull a still-working thread back into the foreground.
-  // Ready rows keep their unread and wake prominence; action-required rows
-  // always stay prominent.
+  // Ready rows keep their unread and wake prominence, failed rows until the
+  // failure is seen; action-required rows always stay prominent.
   const shouldRecede = shouldRecedeSidebarThread({
     status,
     isUnread,
     isWoke,
     isActive: props.isActive,
     isSelected,
+    isFailureSeen: isLatestFailureSeen({ latestRun: thread.latestRun, lastVisitedAt }),
   });
   const topStatus =
     status === "working"
