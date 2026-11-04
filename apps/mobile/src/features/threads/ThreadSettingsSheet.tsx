@@ -202,12 +202,14 @@ function DisclosureRow(props: {
       <Text className="text-sm font-t3-medium text-foreground">{props.label}</Text>
       <View className="flex-1" />
       {props.valueIcon ? (
-        <SymbolView
-          name={props.valueIcon}
-          size={13}
-          tintColorClassName="accent-foreground-muted"
-          type="monochrome"
-        />
+        <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+          <SymbolView
+            name={props.valueIcon}
+            size={13}
+            tintColorClassName="accent-foreground-muted"
+            type="monochrome"
+          />
+        </View>
       ) : null}
       {props.value ? (
         <Text className="text-sm text-foreground-muted" numberOfLines={1}>
