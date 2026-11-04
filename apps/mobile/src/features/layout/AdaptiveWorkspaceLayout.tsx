@@ -84,6 +84,7 @@ import { RenderErrorBoundary, RenderFailureView } from "../../components/RenderE
 import { PaneContext } from "../../components/ui/Pane";
 import { WORKSPACE_PANE_TIMING } from "./workspace-pane-animation";
 import { WorkspaceInspectorPane } from "./workspace-inspector-pane";
+import { WorkspaceInspectorSheet } from "./workspace-inspector-sheet";
 import {
   WorkspaceContentWidthContext,
   WorkspaceSettledContentWidthContext,
@@ -132,11 +133,6 @@ export function Inspector(props: {
       </NavigationRouteContext.Provider>
     </NavigationContext.Provider>
   );
-  const reveal =
-    props.revealKey === undefined || route === undefined
-      ? undefined
-      : { routeKey: route.key, key: props.revealKey };
-
   const focusedRef = useRef(false);
   const deactivateRef = useRef<(() => void) | null>(null);
 
@@ -145,7 +141,7 @@ export function Inspector(props: {
       deactivateRef.current?.();
       return;
     }
-    deactivateRef.current = registerWorkspaceInspector(render, reveal);
+    deactivateRef.current = registerWorkspaceInspector(render, route?.key, props.revealKey);
   });
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Navigation focus events own the inspector registration lifetime.
@@ -359,7 +355,17 @@ function AdaptiveWorkspaceLayoutContent(
   const [workspaceInspector, setWorkspaceInspector] = useState<{
     readonly render: () => ReactNode;
     readonly active: boolean;
+    readonly routeKey: string | undefined;
   } | null>(null);
+  // Without a column the inspector is a sheet, opened only on request for the route on top, and
+  // shown again when that route returns to the top.
+  const [inspectorSheetRoute, setInspectorSheetRoute] = useState<string | null>(null);
+  const inspectorSheetOpen =
+    !fileInspector.supported &&
+    !workspacePage &&
+    inspectorSheetRoute !== null &&
+    workspaceInspector?.active === true &&
+    workspaceInspector.routeKey === inspectorSheetRoute;
   const inspectorActive = workspaceInspector?.active ?? false;
   const panes = useMemo(
     () =>
@@ -391,17 +397,22 @@ function AdaptiveWorkspaceLayoutContent(
   const workspaceInspectorOwner = useRef<symbol | null>(null);
   const registerWorkspaceInspector = (
     render: () => ReactNode,
-    reveal?: { readonly routeKey: string; readonly key: string },
+    routeKey: string | undefined,
+    revealKey?: string,
   ) => {
     const owner = Symbol("workspace-inspector");
     workspaceInspectorOwner.current = owner;
-    setWorkspaceInspector({ render, active: true });
-    if (reveal && revealedInspectors.current.get(reveal.routeKey) !== reveal.key) {
+    setWorkspaceInspector({ render, active: true, routeKey });
+    if (
+      routeKey !== undefined &&
+      revealKey !== undefined &&
+      revealedInspectors.current.get(routeKey) !== revealKey
+    ) {
       const state = rootStackState(navigation);
       const live = new Set(state?.routes.slice(0, state.index + 1).map((route) => route.key));
       revealedInspectors.current = new Map(
-        [...revealedInspectors.current, [reveal.routeKey, reveal.key] as const].filter(
-          ([routeKey]) => live.has(routeKey) || routeKey === reveal.routeKey,
+        [...revealedInspectors.current, [routeKey, revealKey] as const].filter(
+          ([key]) => live.has(key) || key === routeKey,
         ),
       );
       setFileInspectorPreferredVisible(true);
@@ -455,7 +466,21 @@ function AdaptiveWorkspaceLayoutContent(
   };
   const sidebarCommands = primarySidebarPinned ? [] : (["toggleSidebar"] as const);
   useHardwareKeyboardCommand(sidebarCommands, handleToggleSidebarCommand);
-  const showInspector = () => setFileInspectorPreferredVisible(true);
+  // Resizing into a column closes the sheet without this, so the inspector moves into the column.
+  const dismissInspectorSheet = () => {
+    setFileInspectorPreferredVisible(false);
+    setInspectorSheetRoute(null);
+  };
+  const showInspector = () => {
+    setFileInspectorPreferredVisible(true);
+    if (fileInspector.supported) {
+      setInspectorSheetRoute(null);
+      return;
+    }
+    const state = rootStackState(navigation);
+    const top = workspaceRoutesOf(state?.routes.slice(0, state.index + 1) ?? []).workspace.at(-1);
+    setInspectorSheetRoute(top?.key ?? null);
+  };
   const handleOpenFilesCommand = () => {
     const activeThread = parseActiveThreadPath(pathname);
     if (!layout.usesSplitView || !fileInspector.supported || activeThread === null) {
@@ -469,7 +494,13 @@ function AdaptiveWorkspaceLayoutContent(
     return true;
   };
   useHardwareKeyboardCommand("files", handleOpenFilesCommand);
-  const toggleAuxiliaryPane = () => setFileInspectorPreferredVisible((current) => !current);
+  const toggleAuxiliaryPane = () => {
+    if (fileInspector.supported) {
+      setFileInspectorPreferredVisible((current) => !current);
+      setInspectorSheetRoute(null);
+    } else if (inspectorSheetOpen) dismissInspectorSheet();
+    else showInspector();
+  };
   /**
    * The one way to open a workspace tab: replaces the workspace with the tab's list and, when the
    * window has columns, the page it last showed, keeping any sheet on top. An overlay sidebar
@@ -505,6 +536,7 @@ function AdaptiveWorkspaceLayoutContent(
     threadSelectionDeferral.run(() => {
       if (Platform.OS === "android") Keyboard.dismiss();
       setFileInspectorPreferredVisible(false);
+      setInspectorSheetRoute(null);
       if (layout.variant === "medium") setPrimarySidebarVisible(false);
       workspace?.dispatch({
         type: "select",
@@ -823,6 +855,11 @@ function AdaptiveWorkspaceLayoutContent(
     sidebarByOrientation,
   };
 
+  const inspectorSheet = (
+    <WorkspaceInspectorSheet open={inspectorSheetOpen} onClose={dismissInspectorSheet}>
+      {workspaceInspector?.render()}
+    </WorkspaceInspectorSheet>
+  );
   if (nativeWorkspace) {
     return (
       <HomeListOptionsProvider
@@ -831,9 +868,14 @@ function AdaptiveWorkspaceLayoutContent(
       >
         <AdaptiveWorkspaceContext value={contextValue}>
           <NativeWorkspaceInspectorContext
-            value={{ render: workspaceInspector?.render, visible: inspectorColumnTargetWidth > 0 }}
+            value={{
+              // Without a column the sheet shows it; the hidden native column must not mount it too.
+              render: fileInspector.supported ? workspaceInspector?.render : undefined,
+              visible: inspectorColumnTargetWidth > 0,
+            }}
           >
             {props.children}
+            {inspectorSheet}
           </NativeWorkspaceInspectorContext>
         </AdaptiveWorkspaceContext>
       </HomeListOptionsProvider>
@@ -994,6 +1036,7 @@ function AdaptiveWorkspaceLayoutContent(
           onClosed={handleWorkspaceInspectorClosed}
         />
       </PaneContext>
+      {inspectorSheet}
       {shouldRenderNavigationRail && navigationRailWidth > 0 ? (
         // Its trailing inset clips the old rail as soon as Android fits the workspace to a cover display.
         <View
