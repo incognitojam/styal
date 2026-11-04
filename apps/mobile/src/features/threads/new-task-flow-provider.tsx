@@ -465,6 +465,7 @@ export function NewTaskFlowProvider(
     Arr.filter((branch) => !branch.isRemote),
   );
 
+  const worktreeUnavailable = worktreeNeedsFirstCommit(projectGitStatus.data);
   const resolveWorkspaceSelection = (selection: ComposerDraftWorkspaceSelection | undefined) =>
     resolveNewTaskDraftWorkspace({
       selection,
@@ -472,11 +473,12 @@ export function NewTaskFlowProvider(
       defaultMode: defaultWorkspaceMode,
       defaultModeSettled: projectDefaults.defaultWorkspaceModeSettled,
       isGitRepo,
+      worktreeNeedsFirstCommit: worktreeUnavailable,
       branches: allBranchRefs,
       projectCwd: selectedProject?.workspaceRoot ?? null,
     });
   const workspaceSelection = resolveWorkspaceSelection(selectedProjectDraft.workspaceSelection);
-  const requestedWorkspaceMode = canChooseWorkspace ? workspaceSelection.mode : "local";
+  const workspaceMode: WorkspaceMode = canChooseWorkspace ? workspaceSelection.mode : "local";
   const selectedBranchName = workspaceSelection.branch;
   const selectedWorktreePath = workspaceSelection.worktreePath;
   // Keep the user's explicit choice separate from the resolved display value:
@@ -623,15 +625,6 @@ export function NewTaskFlowProvider(
     }
     replaceComposerDraftAttachments(selectedProjectDraftKey, []);
   };
-  const worktreeUnavailable = worktreeNeedsFirstCommit(projectGitStatus.data);
-  // A non-repository or a repository with no commits cannot supply a worktree
-  // base, so the draft runs in the checkout. Keep the stored selection so
-  // the worktree default takes effect once a first commit exists.
-  const workspaceMode: WorkspaceMode =
-    projectGitStatus.data?.isRepo === false ||
-    (requestedWorkspaceMode === "worktree" && worktreeUnavailable)
-      ? "local"
-      : requestedWorkspaceMode;
 
   const carryDraftContentTo = (project: EnvironmentProject): string => {
     const target = { environmentId: project.environmentId, projectId: project.id };
@@ -811,8 +804,6 @@ export function NewTaskFlowProvider(
       return null;
     }
     const workspaceSelection = resolveWorkspaceSelection(draft.workspaceSelection);
-    // Queue the mode shown by the composer. The saved selection can still be
-    // worktree while an unborn repository temporarily runs in the checkout.
     const mode = workspaceMode;
     return {
       environmentId: selectedProject.environmentId,
