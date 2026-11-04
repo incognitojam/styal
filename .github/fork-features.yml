@@ -2782,8 +2782,8 @@ features:
     upstream:
       status: partial
       tracking:
-        - https://github.com/pingdotgg/t3code/pull/13375
         - https://github.com/pingdotgg/t3code/issues/8879
+        - https://github.com/pingdotgg/t3code/pull/13375
         - https://github.com/pingdotgg/t3code/pull/14860
         - https://github.com/pingdotgg/t3code/pull/14980
         - https://github.com/pingdotgg/t3code/pull/15475
