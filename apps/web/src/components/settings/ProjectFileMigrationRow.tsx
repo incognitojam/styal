@@ -53,7 +53,7 @@ export function ProjectFileMigrationRow(props: {
 
   return (
     <SettingsRow
-      title="Create styal.json from t3.json"
+      title="Migrate t3.json to styal.json"
       description={
         state === "failed"
           ? "Could not write styal.json. Check that the project folder is writable, then try again."
@@ -66,7 +66,7 @@ export function ProjectFileMigrationRow(props: {
           disabled={!canWriteFiles || state === "writing"}
           onClick={() => void migrate()}
         >
-          Create styal.json
+          Migrate to styal.json
         </Button>
       }
     />
