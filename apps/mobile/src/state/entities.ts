@@ -27,7 +27,7 @@ import { AsyncResult, Atom } from "effect/reactivity";
 import { useMemo } from "react";
 
 import { threadChipTargets } from "../lib/enrichedLinkPresentation";
-import { resolveProjectChipIcon } from "../lib/projectIcon";
+import { projectChipTile, resolveProjectChipIcon } from "../lib/projectIcon";
 import { projectGlyphImageAtom, projectGlyphKey } from "../native/ProjectChipIconImages";
 import { projectFaviconUrlAtom } from "./assets";
 import { environmentProjects } from "./projects";
@@ -104,8 +104,9 @@ const threadProjectChipIconAtom = Atom.family((key: string) => {
           : null,
     );
     if (!icon) return null;
-    if (icon.kind === "favicon") return icon.uri;
-    return Option.getOrNull(AsyncResult.value(get(projectGlyphImageAtom(projectGlyphKey(icon)))));
+    const tile = projectChipTile(icon);
+    if (!tile) return icon.kind === "favicon" ? icon.uri : null;
+    return Option.getOrNull(AsyncResult.value(get(projectGlyphImageAtom(projectGlyphKey(tile)))));
   }).pipe(Atom.withLabel(`mobile-thread-project-chip-icon:${key}`));
 });
 

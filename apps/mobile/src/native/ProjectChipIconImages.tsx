@@ -3,16 +3,21 @@ import * as Effect from "effect/Effect";
 import { Atom } from "effect/reactivity";
 import { useRef, useSyncExternalStore } from "react";
 import { Platform, View } from "react-native";
-import Svg, { Rect, Text } from "react-native-svg";
+import Svg, { parse, Rect, Text, type JsxAST } from "react-native-svg";
 import { useResolveClassNames } from "uniwind";
 
-import { countGlyphs, projectIconColorClassNames, type ProjectIconGlyph } from "../lib/projectIcon";
+import { resolveSvgImageSize } from "../features/threads/markdownImageSize";
+import { countGlyphs, projectIconColorClassNames, type ProjectChipTile } from "../lib/projectIcon";
 
 const TILE_SIZE = 48;
 
+type TileContent =
+  | Exclude<ProjectChipTile, { readonly kind: "svg" }>
+  | { readonly kind: "svg"; readonly ast: JsxAST };
+
 interface PendingTile {
   readonly key: string;
-  readonly glyph: ProjectIconGlyph;
+  readonly glyph: TileContent;
   readonly promise: Promise<string>;
   readonly resolve: (uri: string) => void;
   readonly reject: () => void;
@@ -22,27 +27,56 @@ const tiles = new Map<string, PendingTile>();
 let pendingTiles: ReadonlyArray<PendingTile> = [];
 const listeners = new Set<() => void>();
 
-export function projectGlyphKey(glyph: ProjectIconGlyph): string {
-  return JSON.stringify(
-    glyph.kind === "emoji" ? ["emoji", glyph.emoji] : ["monogram", glyph.text, glyph.color],
-  );
+export function projectGlyphKey(glyph: ProjectChipTile): string {
+  switch (glyph.kind) {
+    case "emoji":
+      return JSON.stringify(["emoji", glyph.emoji]);
+    case "monogram":
+      return JSON.stringify(["monogram", glyph.text, glyph.color]);
+    case "svg":
+      return JSON.stringify(["svg", glyph.dataUrl]);
+  }
 }
 
-function decodeGlyphKey(key: string): ProjectIconGlyph {
+function svgDataUrlAst(dataUrl: string): JsxAST {
+  const comma = dataUrl.indexOf(",");
+  const content = decodeURIComponent(dataUrl.slice(comma + 1));
+  const xml = dataUrl.slice(0, comma).includes(";base64")
+    ? new TextDecoder().decode(Uint8Array.from(atob(content), (char) => char.charCodeAt(0)))
+    : content;
+  const ast = parse(xml);
+  if (!ast) throw new Error("SVG has no root element");
+  return ast;
+}
+
+function decodeGlyphKey(key: string): TileContent {
   const [kind, text, color] = JSON.parse(key) as [string, string, ProjectIconColor];
-  return kind === "emoji" ? { kind: "emoji", emoji: text } : { kind: "monogram", text, color };
+  switch (kind) {
+    case "emoji":
+      return { kind: "emoji", emoji: text };
+    case "svg":
+      return { kind: "svg", ast: svgDataUrlAst(text) };
+    default:
+      return { kind: "monogram", text, color };
+  }
 }
 
 function rasterize(key: string): Promise<string> {
   const existing = tiles.get(key);
   if (existing) return existing.promise;
+  let glyph: TileContent;
+  try {
+    glyph = decodeGlyphKey(key);
+  } catch (error) {
+    return Promise.reject(error);
+  }
   let resolve!: (uri: string) => void;
   let reject!: () => void;
   const promise = new Promise<string>((done, fail) => {
     resolve = done;
     reject = fail;
   });
-  const tile = { key, glyph: decodeGlyphKey(key), promise, resolve, reject };
+  const tile = { key, glyph, promise, resolve, reject };
   tiles.set(key, tile);
   pendingTiles = [...pendingTiles, tile];
   queueMicrotask(notify);
@@ -98,27 +132,45 @@ function GlyphCapture(props: { readonly tile: PendingTile }) {
     started.current = true;
     requestAnimationFrame(() => captureTile(svg, props.tile));
   };
+  const glyph = props.tile.glyph;
   return (
     <View
       pointerEvents="none"
       style={{ position: "absolute", left: -TILE_SIZE * 4, top: 0, opacity: 0 }}
     >
-      <Svg ref={capture} width={TILE_SIZE} height={TILE_SIZE}>
-        {props.tile.glyph.kind === "emoji" ? (
+      <Svg
+        {...(glyph.kind === "svg" ? svgRootProps(glyph.ast) : {})}
+        ref={capture}
+        width={TILE_SIZE}
+        height={TILE_SIZE}
+      >
+        {glyph.kind === "svg" ? (
+          glyph.ast.children
+        ) : glyph.kind === "emoji" ? (
           <Text
             x={TILE_SIZE / 2}
             y={TILE_SIZE * 0.8}
             textAnchor="middle"
             fontSize={TILE_SIZE * 0.8}
           >
-            {props.tile.glyph.emoji}
+            {glyph.emoji}
           </Text>
         ) : (
-          <MonogramTile text={props.tile.glyph.text} color={props.tile.glyph.color} />
+          <MonogramTile text={glyph.text} color={glyph.color} />
         )}
       </Svg>
     </View>
   );
+}
+
+/** Scales the favicon into the tile; an SVG without a viewBox is sized by its width and height. */
+function svgRootProps(ast: JsxAST) {
+  const size = resolveSvgImageSize(ast.props);
+  const viewBox =
+    typeof ast.props.viewBox === "string"
+      ? ast.props.viewBox
+      : size && `0 0 ${size.width} ${size.height}`;
+  return { ...ast.props, ...(viewBox ? { viewBox } : {}) };
 }
 
 function MonogramTile(props: { readonly text: string; readonly color: ProjectIconColor }) {

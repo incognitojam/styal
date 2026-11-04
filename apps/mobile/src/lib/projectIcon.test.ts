@@ -1,7 +1,7 @@
 import type { ProjectIconOverride } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { projectAutoMonogram, resolveProjectChipIcon } from "./projectIcon";
+import { projectAutoMonogram, projectChipTile, resolveProjectChipIcon } from "./projectIcon";
 
 const project = (title: string, projectIcon?: ProjectIconOverride) => ({
   title,
@@ -77,5 +77,16 @@ describe("projectAutoMonogram", () => {
   it("leaves untitled projects to the folder icon, like desktop", () => {
     expect(projectAutoMonogram("")).toBeNull();
     expect(projectAutoMonogram("   ")).toBeNull();
+  });
+});
+
+describe("projectChipTile", () => {
+  it("rasterizes SVG favicons and passes bitmap favicons through", () => {
+    const svg = "data:image/svg+xml;base64,PHN2Zy8+";
+    expect(projectChipTile({ kind: "favicon", uri: svg })).toEqual({ kind: "svg", dataUrl: svg });
+    expect(
+      projectChipTile({ kind: "favicon", uri: "data:image/png;base64,iVBORw0KGgo=" }),
+    ).toBeNull();
+    expect(projectChipTile({ kind: "favicon", uri: "https://env.example/favicon.png" })).toBeNull();
   });
 });

@@ -95,6 +95,14 @@ export function resolveProjectChipIcon(
   return projectAutoMonogram(project.title);
 }
 
+export type ProjectChipTile = ProjectIconGlyph | { readonly kind: "svg"; readonly dataUrl: string };
+
+/** Native Markdown pills decode bitmaps only, so SVG favicons are rasterized like glyphs. */
+export function projectChipTile(icon: ProjectChipIcon): ProjectChipTile | null {
+  if (icon.kind !== "favicon") return icon;
+  return /^data:image\/svg\+xml[;,]/i.test(icon.uri) ? { kind: "svg", dataUrl: icon.uri } : null;
+}
+
 const PROJECT_ICON_COLOR_CLASSES: Record<
   ProjectIconColor,
   { readonly text: string; readonly tint: string; readonly background: string }
