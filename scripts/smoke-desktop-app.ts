@@ -58,6 +58,12 @@ try {
   try {
     step = `finding "${THREAD_TITLE}" in the sidebar`;
     const thread = page.locator("li[data-thread-item]", { hasText: THREAD_TITLE });
+    // styal files the fixture's idle threads under the collapsed Settled shelf.
+    const settledShelf = page.locator(
+      '[data-testid="sidebar-settled-shelf-toggle"][aria-expanded="false"]',
+    );
+    await thread.or(settledShelf).first().waitFor({ timeout: STEP_TIMEOUT_MS });
+    if (!(await thread.isVisible())) await settledShelf.click();
     await thread.waitFor({ timeout: STEP_TIMEOUT_MS });
     step = "opening the thread";
     await thread.click();
