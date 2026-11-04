@@ -17,6 +17,7 @@ import * as AuthSessions from "./AuthSessions.ts";
 import * as ClerkDirectory from "./ClerkDirectory.ts";
 import * as EmailSender from "./EmailSender.ts";
 import * as EmailSignInCodes from "./EmailSignInCodes.ts";
+import * as CloudMintSigner from "./CloudMintSigner.ts";
 import * as RelayTokens from "./RelayTokens.ts";
 
 const keyPair = NodeCrypto.generateKeyPairSync("ed25519", {
@@ -87,7 +88,7 @@ function makeLayer(input?: {
   const layer = AccountAuth.layer.pipe(
     Layer.provideMerge(
       Layer.mergeAll(
-        RelayTokens.layer,
+        RelayTokens.layer.pipe(Layer.provideMerge(CloudMintSigner.layer)),
         sender,
         AccountAuth.layerSignInRateLimiterUnlimited,
         input?.directory === "production"

@@ -10,6 +10,7 @@ import * as Accounts from "./auth/Accounts.ts";
 import * as ClerkDirectory from "./auth/ClerkDirectory.ts";
 import * as AuthSessions from "./auth/AuthSessions.ts";
 import * as EmailSignInCodes from "./auth/EmailSignInCodes.ts";
+import * as CloudMintSigner from "./auth/CloudMintSigner.ts";
 import * as RelayTokens from "./auth/RelayTokens.ts";
 import * as DpopProofs from "./auth/DpopProofs.ts";
 import * as MobileRegistrations from "./agentActivity/MobileRegistrations.ts";
@@ -94,7 +95,7 @@ export const layerServices = Layer.empty.pipe(
   Layer.provideMerge(Layer.mergeAll(LiveActivities.layer, T3ChatAccounts.layer)),
   Layer.provideMerge(Accounts.layer),
   Layer.provideMerge(DeliveryAttempts.layer),
-  Layer.provideMerge(RelayTokens.layer),
+  Layer.provideMerge(RelayTokens.layer.pipe(Layer.provideMerge(CloudMintSigner.layer))),
   Layer.provideMerge(RelayDb.RelayTransactions.layer),
 );
 

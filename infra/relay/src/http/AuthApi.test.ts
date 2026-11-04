@@ -27,6 +27,7 @@ import * as AccountData from "../auth/AccountData.ts";
 import * as Accounts from "../auth/Accounts.ts";
 import * as AuthSessions from "../auth/AuthSessions.ts";
 import * as DpopProofs from "../auth/DpopProofs.ts";
+import * as CloudMintSigner from "../auth/CloudMintSigner.ts";
 import * as RelayTokens from "../auth/RelayTokens.ts";
 import * as Devices from "../agentActivity/Devices.ts";
 import * as RelayConfiguration from "../Config.ts";
@@ -185,7 +186,12 @@ function makeApp(
     Layer.mock(T3ChatAccounts.T3ChatAccounts, { available: false }),
     Layer.mock(ManagedTunnelLimits.ManagedTunnelLimits, {}),
   ).pipe(
-    Layer.provideMerge(RelayTokens.layer.pipe(Layer.provide(RelayConfiguration.layer(config)))),
+    Layer.provideMerge(
+      RelayTokens.layer.pipe(
+        Layer.provideMerge(CloudMintSigner.layer),
+        Layer.provide(Layer.mergeAll(RelayConfiguration.layer(config), NodeCryptoLayer.layer)),
+      ),
+    ),
   );
 
   const handlers = Layer.mergeAll(RelayHttpApi.layerClientApi, RelayHttpApi.layerAuthApi).pipe(
@@ -218,7 +224,14 @@ const issueAccessToken = (
       scopes,
       sessionId: "session-current",
     });
-  }).pipe(Effect.provide(RelayTokens.layer.pipe(Layer.provide(RelayConfiguration.layer(config)))));
+  }).pipe(
+    Effect.provide(
+      RelayTokens.layer.pipe(
+        Layer.provideMerge(CloudMintSigner.layer),
+        Layer.provide(Layer.mergeAll(RelayConfiguration.layer(config), NodeCryptoLayer.layer)),
+      ),
+    ),
+  );
 
 const withApp = <A, E>(
   accountAuth: Partial<AccountAuth.AccountAuth["Service"]>,
