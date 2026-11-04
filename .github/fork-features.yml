@@ -1574,6 +1574,25 @@ features:
       tracking: []
       retire_when: Upstream's composer effort tooltip names the menu and its shortcut.
 
+  - id: failed-edit-summary-count
+    title: Count only applied edits in tool group summaries
+    status: maintained
+    prs: [1259]
+    invariants:
+      - A tool group summary on web and mobile counts a file as changed only when its edit was not failed or declined; a blocked or declined edit never reads as "Changed N files".
+      - A group in which no edit applied reads "Tried to change N files", while the group's failure marker still shows.
+    rationale: Upstream counts every edit attempt as a changed file, so an edit that Auto mode blocked or the user declined is summarised as a change that never happened.
+    implementation_paths:
+      - packages/client-runtime/src/work-log/presentation.ts
+    upstream_paths:
+      - packages/client-runtime/src/work-log/presentation.ts
+    tests:
+      - packages/client-runtime/src/work-log/presentation.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream excludes failed and declined edits from the changed-file count in tool group summaries.
+
   - id: first-turn-unread-state
     title: Mark first thread completions unread
     status: review-needed
