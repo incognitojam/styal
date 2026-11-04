@@ -4378,6 +4378,26 @@ features:
         - https://github.com/pingdotgg/t3code/pull/19219
       retire_when: Upstream classifies publish push failures from the effective push URL of the selected remote rather than the requested protocol.
 
+  - id: pull-request-aggregate-draft-state
+    title: Show linked pull request counts as draft when only drafts remain open
+    status: maintained
+    prs: [1263]
+    invariants:
+      - A stack or linked count with at least one open pull request shows draft when every open pull request is a draft, regardless of merged or closed links beside them, and open otherwise; a link without a synced snapshot counts as open and not draft.
+      - With no open pull requests, the count shows merged when every link is merged and closed otherwise.
+    rationale: Upstream shows draft only when every linked pull request is an open draft, so one merged pull request beside a draft turns the count green even though nothing is ready for review.
+    implementation_paths:
+      - packages/source-control-core/src/shared/threadPullRequests.ts
+    upstream_paths:
+      - packages/source-control-core/src/shared/threadPullRequests.ts
+    tests:
+      - packages/client-runtime/src/threadPullRequests.test.ts
+    upstream:
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/11180
+      retire_when: Upstream's aggregate pull request state ignores merged and closed links while any pull request remains open.
+
   - id: pull-request-association-continuity
     title: Keep worktrees associated with the correct pull request
     status: maintained
