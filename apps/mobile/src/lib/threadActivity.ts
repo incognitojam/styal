@@ -1,6 +1,9 @@
 import { ProjectScriptIcon } from "@t3tools/contracts";
 import { type ToolFileChangeLineStat } from "@t3tools/shared/toolActivity";
-import { workEntryReviewFindings } from "@t3tools/client-runtime/work-log/presentation";
+import {
+  workEntryIsMemoryBookkeeping,
+  workEntryReviewFindings,
+} from "@t3tools/client-runtime/work-log/presentation";
 import type { ReviewFindingsReport } from "@t3tools/shared/reviewFindings";
 import {
   setupScriptActivityLabel,
@@ -1232,6 +1235,37 @@ export function messageFoldRunId(
   return null;
 }
 
+/**
+ * Claude often answers, saves a memory, then ends with a shorter note about it.
+ * That answer stays visible beside the note instead of folding as work.
+ */
+function answerBeforeMemoryNoteEntryId(
+  entries: ReadonlyArray<ThreadFeedEntry>,
+  terminalAssistantId: string | undefined,
+): string | null {
+  const terminalIndex = entries.findIndex((entry) => entry.id === terminalAssistantId);
+  const terminalEntry = entries[terminalIndex];
+  if (terminalEntry?.type !== "message") return null;
+  let savedMemory = false;
+  for (let index = terminalIndex - 1; index >= 0; index -= 1) {
+    const entry = entries[index];
+    if (entry?.type === "activity-group") {
+      for (const activity of entry.activities) {
+        if (activity.workEntry.itemType === "reasoning") continue;
+        if (!workEntryIsMemoryBookkeeping(activity.workEntry)) return null;
+        savedMemory = true;
+      }
+      continue;
+    }
+    if (entry?.type !== "message" || entry.message.role !== "assistant") return null;
+    return savedMemory &&
+      entry.message.text.trim().length > terminalEntry.message.text.trim().length
+      ? entry.id
+      : null;
+  }
+  return null;
+}
+
 function deriveThreadFeedRunFolds(
   feed: ReadonlyArray<ThreadFeedEntry>,
   latestRun: ThreadFeedLatestRun | null,
@@ -1330,11 +1364,16 @@ function deriveThreadFeedRunFolds(
       continue;
     }
     const terminalAssistantId = terminalAssistantMessageIdByRun.get(runId);
+    const answerBeforeMemoryNote = answerBeforeMemoryNoteEntryId(
+      group.entries,
+      terminalAssistantId,
+    );
     const hiddenEntryIds = new Set(
       group.entries
         .filter(
           (entry) =>
             entry.id !== terminalAssistantId &&
+            entry.id !== answerBeforeMemoryNote &&
             entry.type !== "html-render" &&
             entry.type !== "mcp-app" &&
             !(entry.type === "activity-group" && isContextCompactionActivityGroup(entry)) &&

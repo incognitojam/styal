@@ -513,6 +513,19 @@ export function workEntryMemoryFileKind(entry: WorkLogPresentationEntry) {
   );
 }
 
+const MEMORY_DIRECTORY_PATTERN = /\.claude\/projects\/[^/\s'"]+\/memory\//u;
+
+/** Whether the entry only wrote or read Claude memory, including a shell command on its directory. */
+export function workEntryIsMemoryBookkeeping(entry: WorkLogPresentationEntry): boolean {
+  return (
+    workEntryMemoryFileKind(entry) !== undefined ||
+    workEntryReadsMemoryFile(entry) ||
+    (entry.itemType === "command_execution" &&
+      entry.command !== undefined &&
+      MEMORY_DIRECTORY_PATTERN.test(entry.command))
+  );
+}
+
 export function toolGroupAction(entry: WorkLogPresentationEntry): ToolGroupAction {
   if (entry.itemType === "thread_created") return "thread-create";
   const presentation = resolveWorkEntryToolPresentation(entry);
