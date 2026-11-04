@@ -29,6 +29,7 @@ import { AuthOrchestrationOperateScope, type EnvironmentMachineKind } from "@t3t
 import { canSnooze, resolveSnoozePresets } from "@t3tools/client-runtime/state/thread-settled";
 import { settleReasonLabel } from "@t3tools/client-runtime/state/thread-settle-reason";
 import type { MenuAction } from "@react-native-menu/menu";
+import { worktreeNeedsFirstCommit } from "@t3tools/client-runtime/state/vcs";
 import { memo, useCallback, useMemo, useState, type ComponentProps } from "react";
 import { Pressable, useWindowDimensions, View } from "react-native";
 import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
@@ -48,9 +49,12 @@ import { useEnvironmentScope } from "../../state/session";
 import type { PendingNewTask } from "../../state/use-pending-new-tasks";
 import {
   pendingDraftBranchNeedsRefs,
+  pendingDraftMayUseWorktree,
   resolvePendingDraftBranch,
 } from "../../state/pending-new-tasks-model";
 import { useBranches } from "../../state/queries";
+import { useEnvironmentQuery } from "../../state/query";
+import { vcsEnvironment } from "../../state/vcs";
 import { useNewTaskProjectDefaults } from "./use-new-task-project-defaults";
 import {
   resolveThreadPrBadgeAction,
@@ -442,11 +446,20 @@ export const ThreadListV2PendingRow = memo(function ThreadListV2PendingRow(props
     cwd:
       isDraft && pendingDraftBranchNeedsRefs(pendingTask.draft, draftDefaults) ? projectCwd : null,
   });
+  const draftGitStatus = useEnvironmentQuery(
+    isDraft && projectCwd !== null && pendingDraftMayUseWorktree(pendingTask.draft, draftDefaults)
+      ? vcsEnvironment.status({
+          environmentId: pendingTask.environmentId,
+          input: { cwd: projectCwd },
+        })
+      : null,
+  );
   const branch = isDraft
     ? resolvePendingDraftBranch({
         draft: pendingTask.draft,
         defaults: draftDefaults,
-        isGitRepo: draftBranchRefs.data?.isRepo ?? true,
+        isGitRepo: draftGitStatus.data?.isRepo ?? draftBranchRefs.data?.isRepo ?? true,
+        worktreeNeedsFirstCommit: worktreeNeedsFirstCommit(draftGitStatus.data),
         branches: draftBranchRefs.data?.refs ?? [],
         projectCwd,
       })

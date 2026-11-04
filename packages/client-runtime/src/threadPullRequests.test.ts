@@ -435,6 +435,24 @@ describe("chain selection and badge state", () => {
     expect(resolveThreadPullRequestBadge([link(3, { source: "stack-dismissed" })])).toBeNull();
   });
 
+  it("shows draft when every open pull request is a draft, ignoring finished ones", () => {
+    const merged = link(1, { snapshot: snapshot({ state: "merged", headBranch: "old" }) });
+    const draft = link(2, { snapshot: snapshot({ isDraft: true, headBranch: "new" }) });
+    expect(resolveThreadPullRequestBadge([merged, draft])).toEqual({
+      kind: "pull-request",
+      others: 1,
+      state: "draft",
+    });
+    const ready = link(3, { snapshot: snapshot({ headBranch: "ready" }) });
+    expect(resolveThreadPullRequestBadge([merged, draft, ready])).toMatchObject({
+      state: "open",
+    });
+    const unknown = link(4);
+    expect(resolveThreadPullRequestBadge([merged, draft, unknown])).toMatchObject({
+      state: "open",
+    });
+  });
+
   it("keeps branch matching case-sensitive while ignoring repository case", () => {
     const bottom = link(1, {
       repository: "PingDotGG/T3code",

@@ -1574,6 +1574,25 @@ features:
       tracking: []
       retire_when: Upstream's composer effort tooltip names the menu and its shortcut.
 
+  - id: failed-edit-summary-count
+    title: Count only applied edits in tool group summaries
+    status: maintained
+    prs: [1259]
+    invariants:
+      - A tool group summary on web and mobile counts a file as changed only when its edit was not failed or declined; a blocked or declined edit never reads as "Changed N files".
+      - A group in which no edit applied reads "Tried to change N files", while the group's failure marker still shows.
+    rationale: Upstream counts every edit attempt as a changed file, so an edit that Auto mode blocked or the user declined is summarised as a change that never happened.
+    implementation_paths:
+      - packages/client-runtime/src/work-log/presentation.ts
+    upstream_paths:
+      - packages/client-runtime/src/work-log/presentation.ts
+    tests:
+      - packages/client-runtime/src/work-log/presentation.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream excludes failed and declined edits from the changed-file count in tool group summaries.
+
   - id: first-turn-unread-state
     title: Mark first thread completions unread
     status: review-needed
@@ -1639,7 +1658,7 @@ features:
     status: review-needed
     prs: [192, 233]
     invariants:
-      - Mod+W closes a focused terminal first, then closes the active browser or diff panel tab before the desktop window.
+      - Mod+W closes a focused terminal first, then the active browser or diff panel tab, and never closes the desktop window.
       - Opening a panel menu or launcher preserves panel focus ownership so the next close shortcut targets the panel predictably.
       - Closing a browser tab preserves the relative order of every remaining panel tab so repeated close actions cannot target a tab that moved unexpectedly.
     implementation_paths:
@@ -4378,6 +4397,26 @@ features:
         - https://github.com/pingdotgg/t3code/pull/19219
       retire_when: Upstream classifies publish push failures from the effective push URL of the selected remote rather than the requested protocol.
 
+  - id: pull-request-aggregate-draft-state
+    title: Show linked pull request counts as draft when only drafts remain open
+    status: maintained
+    prs: [1263]
+    invariants:
+      - A stack or linked count with at least one open pull request shows draft when every open pull request is a draft, regardless of merged or closed links beside them, and open otherwise; a link without a synced snapshot counts as open and not draft.
+      - With no open pull requests, the count shows merged when every link is merged and closed otherwise.
+    rationale: Upstream shows draft only when every linked pull request is an open draft, so one merged pull request beside a draft turns the count green even though nothing is ready for review.
+    implementation_paths:
+      - packages/source-control-core/src/shared/threadPullRequests.ts
+    upstream_paths:
+      - packages/source-control-core/src/shared/threadPullRequests.ts
+    tests:
+      - packages/client-runtime/src/threadPullRequests.test.ts
+    upstream:
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/11180
+      retire_when: Upstream's aggregate pull request state ignores merged and closed links while any pull request remains open.
+
   - id: pull-request-association-continuity
     title: Keep worktrees associated with the correct pull request
     status: maintained
@@ -6624,11 +6663,14 @@ features:
     prs: [199, 271]
     invariants:
       - New-thread workspace mode resolves the project override, environment setting, and repository t3.json before the built-in worktree default in PROJECT_FILE_BACKED_SETTINGS.defaultThreadEnvMode.builtIn.
-      - Web and mobile use the built-in worktree default only when the project is a Git repository with a commit; non-repository projects and repositories without a commit run in the current checkout while retaining the worktree default for after the first commit.
+      - Web and mobile use the built-in worktree default only when the project is a Git repository with a commit; non-repository projects and repositories without a commit run in the current checkout while retaining the worktree default for after the first commit. The mobile home-screen draft list resolves the same way, so it shows the branch the send uses.
       - An explicit workspace selection takes precedence over the default; the server rejects an unresolvable requested worktree base with an actionable error instead of silently running in the current checkout.
     rationale: The decision recorded on 7 October 2026 makes worktree, when the project is a Git repository with a commit, and local otherwise the built-in last step of the settings order. Upstream still uses local at this tier as of a6ec88f7a716fc421bd22c2484881c44110f9375. Choosing New worktree means the agent works apart from the user's checkout, so the server refuses an unresolvable requested base rather than letting the agent edit the user's current branch unexpectedly.
     implementation_paths:
+      - apps/mobile/src/features/threads/new-task-context-presentation.ts
       - apps/mobile/src/features/threads/new-task-flow-provider.tsx
+      - apps/mobile/src/features/threads/thread-list-v2-items.tsx
+      - apps/mobile/src/state/pending-new-tasks-model.ts
       - apps/server/src/ws.ts
       - apps/web/src/components/ChatView.logic.ts
       - apps/web/src/hooks/useHandleNewThread.ts
@@ -6638,7 +6680,10 @@ features:
       - packages/contracts/src/t3ProjectFile.ts
       - packages/shared/src/projectSettings.ts
     upstream_paths:
+      - apps/mobile/src/features/threads/new-task-context-presentation.ts
       - apps/mobile/src/features/threads/new-task-flow-provider.tsx
+      - apps/mobile/src/features/threads/thread-list-v2-items.tsx
+      - apps/mobile/src/state/pending-new-tasks-model.ts
       - apps/server/src/ws.ts
       - apps/web/src/components/ChatView.logic.ts
       - apps/web/src/hooks/useHandleNewThread.ts
@@ -6648,6 +6693,8 @@ features:
       - packages/contracts/src/t3ProjectFile.ts
       - packages/shared/src/projectSettings.ts
     tests:
+      - apps/mobile/src/features/threads/new-task-context-presentation.test.ts
+      - apps/mobile/src/state/pending-new-tasks-model.test.ts
       - apps/server/src/orchestration-v2/ThreadLaunchService.test.ts
       - apps/web/src/components/ChatView.logic.test.ts
       - packages/client-runtime/src/state/vcsStatus.test.ts

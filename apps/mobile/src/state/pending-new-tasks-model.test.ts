@@ -16,10 +16,20 @@ const localDefault: PendingDraftProjectDefaults = {
 };
 const worktreeDefault: PendingDraftProjectDefaults = { ...localDefault, defaultMode: "worktree" };
 const resolve = (
-  input: Omit<Parameters<typeof resolvePendingDraftBranch>[0], "defaults" | "isGitRepo"> & {
+  input: Omit<
+    Parameters<typeof resolvePendingDraftBranch>[0],
+    "defaults" | "isGitRepo" | "worktreeNeedsFirstCommit"
+  > & {
     readonly defaults?: PendingDraftProjectDefaults;
+    readonly worktreeNeedsFirstCommit?: boolean;
   },
-) => resolvePendingDraftBranch({ defaults: localDefault, isGitRepo: true, ...input });
+) =>
+  resolvePendingDraftBranch({
+    defaults: localDefault,
+    isGitRepo: true,
+    worktreeNeedsFirstCommit: false,
+    ...input,
+  });
 const branches = [
   { name: "feature", current: true, isDefault: false },
   { name: "origin/main", current: false, isDefault: true, isRemote: true },
@@ -63,6 +73,17 @@ describe("resolvePendingDraftBranch", () => {
     const worktree = draft({ mode: "worktree", branch: null, worktreePath: null });
     expect(pendingDraftBranchNeedsRefs(worktree, localDefault)).toBe(true);
     expect(resolve({ draft: worktree, branches, projectCwd })).toBe("origin/main");
+  });
+
+  it("shows no worktree base for a repository with no first commit, which runs in the checkout", () => {
+    const unborn = { branches, projectCwd, worktreeNeedsFirstCommit: true };
+    expect(resolve({ draft: draft(), defaults: worktreeDefault, ...unborn })).toBeNull();
+    expect(
+      resolve({
+        draft: draft({ mode: "worktree", branch: "origin/main", worktreePath: null }),
+        ...unborn,
+      }),
+    ).toBeNull();
   });
 
   it("shows the current branch for a local draft that follows the checkout", () => {

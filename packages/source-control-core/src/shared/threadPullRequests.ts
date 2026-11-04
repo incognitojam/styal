@@ -347,20 +347,21 @@ export function makeThreadPullRequests(
   ): ThreadPullRequestBadge | null {
     const visible = visibleThreadPullRequests(pullRequests ?? []);
     if (visible.length === 0) return null;
-    const states = visible.map((link) => link.snapshot?.state ?? "open");
-    const state = visible.every((link) => link.snapshot?.state === "open" && link.snapshot.isDraft)
-      ? "draft"
-      : states.includes("open")
-        ? "open"
-        : states.every((entry) => entry === "merged")
+    const remaining = visible
+      .map((link) => link.snapshot)
+      .filter((snapshot) => snapshot === null || snapshot.state === "open");
+    // Finished PRs say nothing about the work left, so they never outvote open drafts.
+    const state =
+      remaining.length > 0
+        ? remaining.every((snapshot) => snapshot?.isDraft)
+          ? "draft"
+          : "open"
+        : visible.every((link) => link.snapshot?.state === "merged")
           ? "merged"
           : "closed";
     const chains = resolveThreadPullRequestChains(visible);
     // A dot on a stack or linked count speaks for every remaining PR. Unknown snapshots
     // therefore keep it off, as does even one open PR with no automatic merge requested.
-    const remaining = visible
-      .map((link) => link.snapshot)
-      .filter((snapshot) => snapshot === null || snapshot.state === "open");
     const mergeIntent: { mergeIntent?: PullRequestMergeIntent } =
       remaining.length > 0 &&
       remaining.every((snapshot) => snapshot && resolvePullRequestMergeIntent(snapshot))
