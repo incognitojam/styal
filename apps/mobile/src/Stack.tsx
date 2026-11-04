@@ -514,7 +514,6 @@ export function workspaceLocationFromState(state: NavigationState) {
     pathname: path.startsWith("/") ? path : `/${path}`,
     routeKey: route?.key,
     routeName: route?.name,
-    routeKeys: effectiveState.routes.map((stackRoute) => stackRoute.key),
   };
 }
 
@@ -567,7 +566,6 @@ function RootStackLayout(props: {
                 pathname={workspaceLocation.pathname}
                 workspaceRouteKey={workspaceLocation.routeKey}
                 workspaceRouteName={workspaceLocation.routeName}
-                workspaceRouteKeys={workspaceLocation.routeKeys}
                 selectedPullRequestKey={selectedPullRequestKey(props.state)}
               >
                 {props.children}
