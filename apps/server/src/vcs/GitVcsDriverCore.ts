@@ -4492,6 +4492,28 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       }),
     );
 
+  const listBranchRenames: GitVcsDriver.GitVcsDriver["Service"]["listBranchRenames"] = (cwd) =>
+    runGitStdout("GitVcsDriver.listBranchRenames", cwd, [
+      "log",
+      "--walk-reflogs",
+      "--date=unix",
+      "--format=%gd%x09%gs",
+      "--max-count=200",
+      "HEAD",
+    ]).pipe(
+      Effect.map((stdout) =>
+        stdout.split("\n").flatMap((line) => {
+          const match =
+            /^HEAD@\{(\d+)\}\tBranch: renamed refs\/heads\/(\S+) to refs\/heads\/(\S+)$/.exec(
+              line.trim(),
+            );
+          return match === null
+            ? []
+            : [{ renamedAtMs: Number(match[1]) * 1000, from: match[2]!, to: match[3]! }];
+        }),
+      ),
+    );
+
   const listWorktreePaths: GitVcsDriver.GitVcsDriver["Service"]["listWorktreePaths"] = (cwd) =>
     executeWorktreeList("GitVcsDriver.listWorktreePaths", cwd, []).pipe(
       // A `prunable` record's directory is gone; another checkout may now sit there.
@@ -4620,6 +4642,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     }),
     initRepo: initRepoWithListRefsInvalidation,
     listLocalBranchNames,
+    listBranchRenames,
     listWorktreePaths,
   });
 });

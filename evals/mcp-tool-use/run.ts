@@ -33,6 +33,8 @@ import { ORCHESTRATOR_MCP_RUNNING_TASK_NEXT } from "@t3tools/contracts";
 import { formatThreadLink } from "@t3tools/shared/threadLinks";
 import { renderStyalProductName } from "@t3tools/provider-core/server/orchestrationInstructions";
 import { buildCodexAdditionalContext } from "../../apps/server/src/provider/CodexDeveloperInstructions.ts";
+import { withTurnContext } from "../../apps/server/src/orchestration-v2/ContextHandoffDelivery.ts";
+import { worktreeBranchNote } from "../../apps/server/src/orchestration-v2/WorktreeBranchNote.ts";
 import { AttachmentToolkit } from "../../apps/server/src/mcp/toolkits/attachment/tools.ts";
 import { DeviceToolkit } from "../../apps/server/src/mcp/toolkits/device/tools.ts";
 import { EnvironmentToolkit } from "../../apps/server/src/mcp/toolkits/environment/tools.ts";
@@ -150,6 +152,8 @@ const McpToolUseWorld = Schema.StructWithRest(
     /** GitHub `owner/name`. Defaults to `acme/app`. */
     repo: Schema.optional(Schema.String),
     branch: Schema.optional(Schema.String),
+    /** The branch when the session started, which T3 renamed to `branch` since. */
+    startBranch: Schema.optional(Schema.String),
     /** `git status --short` lines. */
     status: Schema.optional(Schema.String),
     /** Newest first. On a branch other than main, these are the commits main lacks. */
@@ -188,6 +192,11 @@ export const McpToolUseCase = Schema.Struct({
       ),
     ),
     world: Schema.optional(McpToolUseWorld),
+    /**
+     * The worktree branch note T3 puts before the prompt: `temporary` for a session that started
+     * on a temporary branch, `renamed` after `startBranch` became `branch`.
+     */
+    branchNote: Schema.optional(Schema.Literals(["temporary", "renamed"])),
     /** Canned tool results by bare name, T3 or native. `"default"` uses the runner's result. */
     mocks: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
     /** Regexes on one part of a shell command. A match wins over the shell simulator. */
@@ -652,7 +661,7 @@ const gitStatus = ({ setup }: McpToolUseCase) => {
     "# gitStatus",
     "This is the git status at the start of the conversation. Note that this status is a snapshot in time, and will not update during the conversation.",
     "",
-    `Current branch: ${prior.includes(`Switched to a new branch '${branch}'`) ? "main" : branch}`,
+    `Current branch: ${prior.includes(`Switched to a new branch '${branch}'`) ? "main" : (setup.world?.startBranch ?? branch)}`,
     "",
     "Main branch (you will usually use this for PRs): main",
     "",
@@ -664,6 +673,25 @@ const gitStatus = ({ setup }: McpToolUseCase) => {
     "",
     "Claude Code attached this context automatically; it isn't part of the user's message. It describes the user's own account and workspace, so they don't need it reported back.",
   ].join("\n");
+};
+
+const branchNote = ({ setup }: McpToolUseCase) => {
+  const branch = setup.world?.branch ?? "main";
+  const from = setup.world?.startBranch;
+  if (setup.branchNote === undefined) return "";
+  if (setup.branchNote === "temporary") {
+    return worktreeBranchNote({
+      currentBranch: from ?? branch,
+      previousTurnStartedAtMs: null,
+      renames: [],
+    });
+  }
+  if (from === undefined) throw new Error("A renamed branch note needs world.startBranch.");
+  return worktreeBranchNote({
+    currentBranch: branch,
+    previousTurnStartedAtMs: 0,
+    renames: [{ from, to: branch, renamedAtMs: 0 }],
+  });
 };
 
 const findTool = (base: Base, bare: string) =>
@@ -727,7 +755,7 @@ export const buildMessages = (sample: Sample) => {
     }
     if (turn.text) push(turn.role, text(turn.text));
   }
-  const { prompt } = testCase;
+  const prompt = withTurnContext(branchNote(testCase), testCase.prompt);
   const childPrompt = () => taskPrompt({ task: prompt, role: delegateRole });
   push("user", text(role === "delegated-child" ? childPrompt() : prompt));
   return messages;
@@ -988,6 +1016,11 @@ export const shellRequest = (sample: Sample, call: Omit<ShellEntry, "output">, m
     `Working directory: ${cwd} on ${platform}, a git checkout of github.com/${repo}.${date ? ` Today is ${date}.` : ""}`,
     gitStatus(testCase),
     `World: ${valueText(world ?? {})}`,
+    ...(world?.startBranch
+      ? [
+          `T3 renamed the branch ${world.startBranch} to ${world.branch} after the session started. Git commands see ${world.branch}; ${world.startBranch} no longer exists.`,
+        ]
+      : []),
     ...(shellMocks.length > 0
       ? [`Commands that match these regexes print exactly this output: ${valueText(shellMocks)}`]
       : []),

@@ -152,6 +152,7 @@ function startWithMissingWorktree(
           createWorktree,
           listLocalBranchNames,
         }),
+        Layer.mock(GitVcsDriver.GitVcsDriver)({}),
         Layer.mock(ProjectService.ProjectService)({
           getById: () =>
             Effect.succeedSome({ workspaceRoot: "/tmp/provider-turn-start-project" } as never),
@@ -711,6 +712,7 @@ function makeLocalCommandHarness(input: {
               createWorktree,
             })
           : Layer.succeed(GitWorkflow.GitWorkflowService, input.gitWorkflow),
+        Layer.mock(GitVcsDriver.GitVcsDriver)({}),
         Layer.mock(ProjectService.ProjectService)({
           getById: () =>
             Effect.succeedSome({
@@ -1435,6 +1437,7 @@ effectIt.effect("holds a starting run back until an install of its provider CLI 
           Layer.succeed(FileSystem.FileSystem, {} as never),
           layerWorktreeLocation(),
           Layer.mock(GitWorkflow.GitWorkflowService)({}),
+          Layer.mock(GitVcsDriver.GitVcsDriver)({}),
           Layer.mock(ProjectService.ProjectService)({}),
           Layer.mock(ProjectionStore.ProjectionStoreV2)({
             getThreadRecords: () =>

@@ -1,3 +1,4 @@
+import { isTemporaryWorktreeBranch } from "@t3tools/shared/git";
 import { modelSelectionsEqual } from "@t3tools/shared/model";
 import { projectComposerContextForProvider } from "@t3tools/shared/composerContextReferences";
 import {
@@ -6,6 +7,7 @@ import {
   type OrchestrationV2DomainEvent,
   type OrchestrationV2ExecutionNode,
   type OrchestrationV2ProviderThread,
+  type OrchestrationV2ProviderTurn,
   type OrchestrationV2Run,
   type OrchestrationV2RunAttempt,
   type OrchestrationV2TurnItem,
@@ -27,6 +29,7 @@ import * as Schema from "effect/Schema";
 import * as ServerConfig from "../config.ts";
 import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
+import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderAuthService from "../provider/ProviderAuthService.ts";
 import * as ProviderInstallGate from "../provider/ProviderInstallGate.ts";
@@ -43,7 +46,7 @@ import {
   historicalMessage,
   latestNativeContextUsage,
 } from "@t3tools/provider-core/server/handoffBudget";
-import { deliverContextHandoffs } from "./ContextHandoffDelivery.ts";
+import { deliverContextHandoffs, withTurnContext } from "./ContextHandoffDelivery.ts";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ProjectionStore from "./ProjectionStore.ts";
@@ -60,6 +63,7 @@ import {
   restartCancelledBackgroundWorkNote,
 } from "./RestartBackgroundNote.ts";
 import { FORK_NOTE, shouldSendForkNote } from "./ForkNote.ts";
+import { worktreeBranchNote } from "./WorktreeBranchNote.ts";
 
 export class ProviderTurnStartError extends Schema.TaggedError<ProviderTurnStartError>()(
   "ProviderTurnStartError",
@@ -133,6 +137,7 @@ export const layer: Layer.Layer<
   | ServerConfig.ServerConfig
   | ServerSettings.ServerSettingsService
   | GitWorkflowService.GitWorkflowService
+  | GitVcsDriver.GitVcsDriver
   | ProjectService.ProjectService
   | ProviderAuthService.ProviderAuthService
   | ProviderInstallGate.ProviderInstallGate
@@ -149,6 +154,7 @@ export const layer: Layer.Layer<
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const gitWorkflow = yield* GitWorkflowService.GitWorkflowService;
+    const git = yield* GitVcsDriver.GitVcsDriver;
     const projects = yield* ProjectService.ProjectService;
     const providerAuth = yield* ProviderAuthService.ProviderAuthService;
     const installGate = yield* ProviderInstallGate.ProviderInstallGate;
@@ -157,6 +163,44 @@ export const layer: Layer.Layer<
     const runExecution = yield* RunExecutionService.RunExecutionServiceV2;
     const runtimePolicy = yield* RuntimePolicy.RuntimePolicyV2;
     const isManagedWorktreePath = yield* makeIsManagedWorktreePath;
+    const readWorktreeBranchNote = Effect.fn("ProviderTurnStartService.readWorktreeBranchNote")(
+      function* (input: {
+        readonly worktreePath: string | null;
+        readonly skip: boolean;
+        readonly providerTurns: ReadonlyArray<OrchestrationV2ProviderTurn>;
+      }) {
+        const { worktreePath } = input;
+        // Only worktrees created on a temporary branch keep its name in their folder.
+        if (
+          input.skip ||
+          worktreePath === null ||
+          !isTemporaryWorktreeBranch(path.basename(worktreePath))
+        )
+          return "";
+        const previousTurnStartedAtMs = input.providerTurns.reduce<number | null>(
+          (latest, turn) =>
+            turn.startedAt === null
+              ? latest
+              : Math.max(latest ?? 0, DateTime.toEpochMillis(turn.startedAt)),
+          null,
+        );
+        return worktreeBranchNote({
+          currentBranch: yield* git.resolveBranchName(worktreePath, "HEAD"),
+          // Reflog times are whole seconds.
+          previousTurnStartedAtMs:
+            previousTurnStartedAtMs === null
+              ? null
+              : Math.floor(previousTurnStartedAtMs / 1000) * 1000,
+          renames:
+            previousTurnStartedAtMs === null ? [] : yield* git.listBranchRenames(worktreePath),
+        });
+      },
+      Effect.catchCause((cause) =>
+        Effect.logWarning("provider turn start could not read the worktree branch", { cause }).pipe(
+          Effect.as(""),
+        ),
+      ),
+    );
 
     const recreateMissingWorktree = Effect.fn("ProviderTurnStartService.recreateMissingWorktree")(
       function* (input: {
@@ -1134,8 +1178,24 @@ export const layer: Layer.Layer<
         contextTransfers: projection.contextTransfers,
         providerTurns: projection.providerTurns,
       });
+      const branchNote = yield* readWorktreeBranchNote({
+        worktreePath: projection.thread.worktreePath,
+        // Provider commands must start their text, and continuations resume the interrupted turn.
+        skip:
+          run.restartContinuationOfRunId !== undefined ||
+          (message.attachments.length === 0 && message.text.trimStart().startsWith("/")),
+        // A retried run's earlier attempts may never have reached the agent.
+        providerTurns: projection.providerTurns.filter(
+          (turn) =>
+            turn.providerThreadId === providerThread.id &&
+            !projection.attempts.some(
+              (candidate) => candidate.id === turn.runAttemptId && candidate.runId === run.id,
+            ),
+        ),
+      });
       const turnNote = [
         sendForkNote ? FORK_NOTE : "",
+        branchNote,
         restartCancelledWork.length === 0
           ? ""
           : restartCancelledBackgroundWorkNote(restartCancelledWork),
@@ -1331,10 +1391,7 @@ export const layer: Layer.Layer<
             ...(noteContinuation ? promptedInput : turnInput),
             message: {
               ...turnInput.message,
-              text:
-                context === "" || goalCommand
-                  ? userText
-                  : `${context}\n\nUser message:\n${userText}`,
+              text: goalCommand ? userText : withTurnContext(context, userText),
             },
           }).pipe(
             // Clear pending handoff markers for refused prompts so the next turn retains the native session.

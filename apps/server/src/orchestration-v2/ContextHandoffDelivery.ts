@@ -12,6 +12,10 @@ import {
   selectHistory,
 } from "@t3tools/provider-core/server/handoffBudget";
 
+/** The prompt a turn sends: context such as handoffs and turn notes, then the user's text. */
+export const withTurnContext = (context: string, userText: string): string =>
+  context === "" ? userText : `${context}\n\nUser message:\n${userText}`;
+
 /** Persist around injection; ambiguous delivery requires a fresh native thread. Call unsent if refused before prompt consumption. */
 export const deliverContextHandoffs = Effect.fn("orchestrationV2.deliverContextHandoffs")(
   function* <InjectError = never, PersistError = never, BudgetError = never>(input: {
