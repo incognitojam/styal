@@ -29,6 +29,7 @@ for (const directory of NodeFS.globSync([
   "infra/*/node_modules",
   "scripts/node_modules",
   "e2e/node_modules",
+  "evals/node_modules",
   "oxlint-plugin-t3code/node_modules",
 ])) {
   repairLinks(directory);

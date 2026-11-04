@@ -25,7 +25,7 @@ runs:
         import { createHash } from 'node:crypto';
         import { appendFileSync } from 'node:fs';
         const filters = createHash('sha256').update(process.env.INSTALL_FILTERS).digest('hex');
-        const key = ['installed-deps-v1', process.env.RUNNER_OS, process.env.RUNNER_ARCH,
+        const key = ['installed-deps-v2', process.env.RUNNER_OS, process.env.RUNNER_ARCH,
           process.env.ImageOS, process.arch, process.versions.node, dependencyHash(), filters].join('-');
         appendFileSync(process.env.GITHUB_OUTPUT, `value=${key}\n`);
         JS
@@ -41,6 +41,7 @@ runs:
           infra/*/node_modules
           scripts/node_modules
           e2e/node_modules
+          evals/node_modules
           oxlint-plugin-t3code/node_modules
         # Native dependencies and the patched tsgo binary must match this host
         # and the dependency/patch graph and install filters. Only exact hits skip install.
@@ -83,4 +84,5 @@ runs:
           infra/*/node_modules
           scripts/node_modules
           e2e/node_modules
+          evals/node_modules
           oxlint-plugin-t3code/node_modules
