@@ -1,8 +1,4 @@
-import {
-  AuthPreviewOperateScope,
-  type EnvironmentId,
-  type ScopedThreadRef,
-} from "@t3tools/contracts";
+import { AuthPreviewOperateScope, type EnvironmentId } from "@t3tools/contracts";
 import type { AnyRouter } from "@tanstack/react-router";
 
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
@@ -16,6 +12,11 @@ import { createScratchProjectActions } from "../hooks/useScratchProject";
 import { getClientSettings } from "../hooks/useSettings";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
 import { isRightPanelFocused } from "../lib/rightPanelFocus";
+import {
+  focusPullRequestTab,
+  readThreadPullRequestUrl,
+  viewPullRequest,
+} from "../lib/viewPullRequest";
 import { selectProjectGroupingSettings } from "../logicalProject";
 import { selectActiveRightPanel, useRightPanelStore } from "../rightPanelStore";
 import { appAtomRegistry } from "../rpc/atomRegistry";
@@ -32,24 +33,6 @@ import { useUiStateStore } from "../uiStateStore";
 import { type CommandHandler, registerCommands } from "./dispatcher";
 
 const CHAT_ROUTE_ID = "/_chat";
-
-/** When-clause context for shortcuts that act on the thread a chat route shows. */
-export function readThreadShortcutContext(threadRef: ScopedThreadRef | null) {
-  return {
-    terminalOpen: threadRef
-      ? selectThreadTerminalUiState(
-          useTerminalUiStateStore.getState().terminalUiStateByThreadKey,
-          threadRef,
-        ).terminalOpen
-      : false,
-    rightPanelFocus: isRightPanelFocused(),
-    // Store-only on purpose: the URL-aware arbitration lives in ChatView's
-    // preview toggle, which the action bus reaches.
-    previewOpen: threadRef
-      ? selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, threadRef) === "preview"
-      : false,
-  };
-}
 
 /**
  * New-thread and preview commands, live while a chat route is showing and no
@@ -72,7 +55,14 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
     const target = readRouteTarget();
     return target?.kind === "server" ? target.threadRef : null;
   };
-  const readPreviewOpen = () => readThreadShortcutContext(readRouteThreadRef()).previewOpen;
+  const readPreviewOpen = () => {
+    const threadRef = readRouteThreadRef();
+    // Store-only on purpose: the URL-aware arbitration lives in ChatView's
+    // preview toggle, which the action bus reaches.
+    return threadRef
+      ? selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, threadRef) === "preview"
+      : false;
+  };
   const readProjectGroups = () =>
     buildSidebarProjectSnapshots({
       projects: readProjects(),
@@ -168,6 +158,16 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
         }
         dispatchPreviewAction("toggle-panel");
       },
+      "sourceControl.viewPullRequest": (event) => {
+        claim(event);
+        const threadRef = readRouteThreadRef();
+        if (threadRef) void viewPullRequest(threadRef, readThreadPullRequestUrl(threadRef));
+      },
+      "sourceControl.focusPullRequestTab": (event) => {
+        claim(event);
+        const threadRef = readRouteThreadRef();
+        if (threadRef) void focusPullRequestTab(threadRef, readThreadPullRequestUrl(threadRef));
+      },
       "preview.refresh": previewCommand("refresh"),
       "preview.focusUrl": previewCommand("focus-url"),
       "preview.zoomIn": previewCommand("zoom-in"),
@@ -179,7 +179,19 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
         router.state.matches.some((match) => match.routeId === CHAT_ROUTE_ID) &&
         !router.state.matches.some((match) => isAppModalPage(match.pathname)) &&
         !isCommandPaletteOpen(),
-      context: () => readThreadShortcutContext(readRouteThreadRef()),
+      context: () => {
+        const threadRef = readRouteThreadRef();
+        return {
+          terminalOpen: threadRef
+            ? selectThreadTerminalUiState(
+                useTerminalUiStateStore.getState().terminalUiStateByThreadKey,
+                threadRef,
+              ).terminalOpen
+            : false,
+          rightPanelFocus: isRightPanelFocused(),
+          previewOpen: readPreviewOpen(),
+        };
+      },
       onKeyDown: (event) => {
         if (event.key !== "Escape") return false;
         const selection = useThreadSelectionStore.getState();

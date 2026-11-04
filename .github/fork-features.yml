@@ -4861,7 +4861,7 @@ features:
     prs: [46, 166, 531, 579]
     invariants:
       - Sidebar links and proactive panels reuse the same pull request tab when the linked reference supplies its host through the URL; reopening consolidates existing duplicates without merging different hosts or environments. URL-derived hosts are resolved before rendering and on saved-panel migration, so clicking the same PR link preserves the component and cache identity.
-      - The command palette and keybinding expose provider-appropriate pull request navigation only when the current thread has an associated change request, then open it in the in-app panel.
+      - The command palette and keybinding expose provider-appropriate pull request navigation only when the current thread has an associated change request, the one its sidebar row shows, then open it in the in-app panel; they read it from the thread rather than subscribing to the checkout's status.
       - Pull request result toasts include the created pull request number and open the corresponding in-app panel when available, retaining the external URL as a fallback.
     implementation_paths:
       - apps/server/src/git/GitManager.ts
@@ -4869,7 +4869,7 @@ features:
       - apps/web/src/components/GitActionsControl.tsx
       - apps/web/src/lib/viewPullRequest.ts
       - apps/web/src/rightPanelStore.ts
-      - apps/web/src/routes/_chat.tsx
+      - apps/web/src/shortcuts/chatRouteCommands.ts
       - packages/contracts/src/git.ts
       - packages/contracts/src/keybindings.ts
       - packages/shared/src/keybindings.ts
@@ -4878,7 +4878,7 @@ features:
       - apps/web/src/components/CommandPalette.tsx
       - apps/web/src/components/GitActionsControl.tsx
       - apps/web/src/rightPanelStore.ts
-      - apps/web/src/routes/_chat.tsx
+      - apps/web/src/shortcuts/chatRouteCommands.ts
       - packages/contracts/src/git.ts
       - packages/contracts/src/keybindings.ts
       - packages/shared/src/keybindings.ts
@@ -4887,7 +4887,9 @@ features:
       - apps/web/src/components/CommandPalette.logic.test.ts
       - apps/web/src/components/GitActionsControl.logic.test.ts
       - apps/web/src/keybindings.test.ts
+      - apps/web/src/lib/viewPullRequest.test.ts
       - apps/web/src/rightPanelStore.test.ts
+      - apps/web/src/shortcuts/chatRouteCommands.browser.test.ts
       - packages/contracts/src/keybindings.test.ts
     upstream:
       status: partial
