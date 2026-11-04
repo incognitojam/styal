@@ -4,7 +4,7 @@
 [.[].actions_caches[]
  | select(.ref == "refs/heads/main")
  | . as $cache
- | ((.key | capture("^(?<host>installed-deps-v1-.+)-(?<dependency>[a-f0-9]{64})-(?<filter>[a-f0-9]{64})$")) as $slot
+ | ((.key | capture("^(?<host>installed-deps-v[0-9]+-.+)-(?<dependency>[a-f0-9]{64})-(?<filter>[a-f0-9]{64})$")) as $slot
     | $cache + {slot: ($slot.host + "-" + $slot.filter), dependency: $slot.dependency, current: $current})?,
    ((.key | capture("^(?<host>vite-plus-[^-]+-[^-]+-pnpm)-(?<dependency>[a-f0-9]{64})$")) as $slot
     | $cache + {slot: $slot.host, dependency: $slot.dependency, current: $current_pnpm})?]
