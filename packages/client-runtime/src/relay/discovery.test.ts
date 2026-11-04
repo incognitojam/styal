@@ -59,7 +59,7 @@ function status(
 }
 
 function token(accountId: string): string {
-  return `e30.${btoa(JSON.stringify({ sub: accountId }))}.signature`;
+  return `${btoa(JSON.stringify({ alg: "RS256" }))}.${btoa(JSON.stringify({ sub: accountId })).replace(/=+$/u, "")}.c2lnbmF0dXJl`;
 }
 
 const makeHarness = Effect.fn("RelayDiscoveryTest.makeHarness")(function* () {

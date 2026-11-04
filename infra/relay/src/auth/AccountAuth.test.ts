@@ -243,7 +243,6 @@ describe("AccountAuth.verifyEmailSignIn", () => {
       ]);
       const claims = yield* tokens.verifyDpopAccessToken({
         token: grant.accessToken,
-        nowEpochSeconds: Math.floor((yield* DateTime.now).epochMilliseconds / 1_000),
       });
       expect(claims?.sub).toBe("usr_new");
       expect(claims?.cnf.jkt).toBe("thumb-1");
