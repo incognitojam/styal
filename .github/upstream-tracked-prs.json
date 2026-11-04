@@ -199,6 +199,14 @@
     {
       "pr": 29146,
       "reason": "Preloads notification sounds on the unlocking gesture and drops the completion grace, rewriting the same threadNotifications.ts functions as fork #1242. Fork #1242 suspends the AudioContext between sounds so each one plays on the current output device after a Bluetooth switch, and replaces a context that fails to resume. Combine at chronological intake: keep upstream's preloading, but keep the fork's per-sound resume and idle suspend and its event sound choices (ledger completion-sounds). Do not take upstream's always-running context."
+    },
+    {
+      "pr": 30096,
+      "reason": "Imported provisionally as one snapshot: a new mobile draft keeps the project the draft screen selected, instead of being saved under the fallback project when the provider's draft-creation effect runs after the screen's (fixes #30095; a regression from #25812). The fork imports only the provider change; the PR's regression test lives in new-task-flow-provider.test.tsx, which arrives with #25254. When it merges, compare the frozen base-to-head diff with the final upstream change, take its regression test once #25254 is in, verify on a device that a draft started from the project picker stays in the chosen project after Back and reopening, then clear the snapshot marker with that intake. If it closes without merging, review whether to remove the change or retain it as maintained fork behavior and record that decision before clearing the marker.",
+      "snapshot": {
+        "base": "cefb544af3c98224874419198c0359b652ca3c94",
+        "head": "e587c135894ea9c2a9885afdcfc8c0c9ad42cb54"
+      }
     }
   ]
 }
