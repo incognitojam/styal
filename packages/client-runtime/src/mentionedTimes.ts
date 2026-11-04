@@ -28,6 +28,8 @@ export type MentionedTime =
       readonly zone?: MentionedTimeZone;
       /** The zone was not written next to this time but used throughout the message. */
       readonly zoneFromMessage?: boolean;
+      /** The date came from a model's reading of the message, not from text beside the time. */
+      readonly dateFromCheck?: boolean;
       /** Which way the sentence points when the text gives no date: "next at 07:00" is ahead,
           "finished at 22:07" is behind. */
       readonly tense?: "past" | "future";
@@ -729,7 +731,7 @@ export function applyMentionedTimeCheck(
       continue;
     }
     const { weekday: _weekday, dayOffset: _dayOffset, tense: _tense, ...time } = match.time;
-    result.push({ ...match, time: { ...time, date } });
+    result.push({ ...match, time: { ...time, date, dateFromCheck: true } });
   }
   for (const candidate of located) {
     const { span } = candidate;
@@ -754,7 +756,7 @@ export function applyMentionedTimeCheck(
         kind: "clock",
         hour: Number(clock[1]),
         minute: Number(clock[2]),
-        ...(date === undefined ? {} : { date }),
+        ...(date === undefined ? {} : { date, dateFromCheck: true }),
         ...(zone !== undefined
           ? { zone }
           : messageZone === null

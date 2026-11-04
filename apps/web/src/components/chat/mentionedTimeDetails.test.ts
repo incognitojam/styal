@@ -76,6 +76,20 @@ describe("describeMentionedTime", () => {
     expect(details.note).toBe("Converted from UTC+13:45");
   });
 
+  it("shows a day a model read from the reply and says where it came from", () => {
+    const time: MentionedTime = {
+      kind: "clock",
+      hour: 19,
+      minute: 30,
+      date: { year: 2026, month: 11, day: 1 },
+      dateFromCheck: true,
+    };
+    const details = describe_(time, anchor, local(4, 1, 5));
+    expect(details.lead).toBe("2 days ago");
+    expect(details.detail).not.toBeNull();
+    expect(details.note).toBe("Day from the reply");
+  });
+
   it("gives the moment an offset lands on rather than the offset again", () => {
     const time: MentionedTime = { kind: "offset", milliseconds: -49 * 60_000 };
     const details = describe_(time, anchor, local(4, 1, 5));

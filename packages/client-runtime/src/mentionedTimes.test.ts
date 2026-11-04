@@ -283,7 +283,13 @@ describe("applyMentionedTimeCheck", () => {
       {
         start: text.indexOf("8:05"),
         end: text.indexOf("8:05") + 4,
-        time: { kind: "clock", hour: 20, minute: 5, date: { year: 2026, month: 10, day: 20 } },
+        time: {
+          kind: "clock",
+          hour: 20,
+          minute: 5,
+          date: { year: 2026, month: 10, day: 20 },
+          dateFromCheck: true,
+        },
       },
     ]);
   });

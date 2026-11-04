@@ -52,8 +52,11 @@ export function describeMentionedTime(
 
   const local = new Date(resolved.instantMs);
   const timeChanged = local.getHours() !== time.hour || local.getMinutes() !== time.minute;
+  // A day the model read from the story is news to someone looking at the time alone.
   const dayStated =
-    time.date !== undefined || time.dayOffset !== undefined || time.weekday !== undefined;
+    (time.date !== undefined && time.dateFromCheck !== true) ||
+    time.dayOffset !== undefined ||
+    time.weekday !== undefined;
   const day = formatMentionedDayLabel(resolved.instantMs, nowMs);
   const detail = timeChanged ? label : dayStated || day === "Today" ? null : day;
 
@@ -80,6 +83,9 @@ export function describeMentionedTime(
       ? `Converted from ${convertedFrom}, assumed date`
       : `Converted from ${convertedFrom}`;
   else if (assumedDate) note = "Assumed date";
+  if (time.dateFromCheck === true) {
+    note = note === null ? "Day from the reply" : `${note}, day from the reply`;
+  }
   // "yesterday" in the text already says what a day-scale relative time would.
   if (time.dayOffset !== undefined && Math.abs(resolved.instantMs - nowMs) >= 86_400_000) {
     return { lead: timeChanged ? label : day, detail: null, note };
