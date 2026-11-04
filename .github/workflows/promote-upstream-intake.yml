@@ -105,6 +105,20 @@ jobs:
             args:
               - --filter=@t3tools/scripts...
 
+      # Saved from main's scope, so every intake branch's Fork CI audit can restore it.
+      - id: intake_target
+        name: Read the intake target
+        run: echo "sha=$(git show "${{ steps.candidate.outputs.base_sha }}:.github/upstream-intake.json" | jq -r .target)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore upstream PR associations
+        uses: actions/cache/restore@v6
+        with:
+          path: .scratch/upstream-queue-*-prs.json
+          key: upstream-associations-${{ steps.intake_target.outputs.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            upstream-associations-${{ steps.intake_target.outputs.sha }}-
+            upstream-associations-
+
       - id: audit
         name: Audit candidate with trusted main code
         env:
@@ -126,6 +140,13 @@ jobs:
             echo "- Compare: [\`main...$CANDIDATE_BRANCH\`]($compare_url)"
             echo "- Fork CI: $CI_RUN_URL"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Save upstream PR associations
+        if: hashFiles('.scratch/upstream-queue-*-prs.json') != ''
+        uses: actions/cache/save@v6
+        with:
+          path: .scratch/upstream-queue-*-prs.json
+          key: upstream-associations-${{ steps.intake_target.outputs.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Download the native fingerprint verdict
         continue-on-error: true
