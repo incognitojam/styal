@@ -19,7 +19,8 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import { useRef, useState, type RefObject } from "react";
+import { create } from "zustand";
+import { useRef, useState, type RefObject, type SetStateAction } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { type DraftId, useComposerDraftStore } from "../../composerDraftStore";
 import { useStableCallback } from "../../hooks/useStableCallback";
@@ -34,11 +35,6 @@ import {
   togglePendingUserInputOptionSelection,
   type PendingUserInputDraftAnswer,
 } from "../../pendingUserInput";
-import {
-  setPendingUserInputQuestionIndex,
-  updatePendingUserInputAnswer,
-  usePendingUserInputDrafts,
-} from "../../pendingUserInputDrafts";
 import {
   questionAttachmentDraftId,
   useQuestionAttachmentPreparation,
@@ -55,6 +51,10 @@ import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 import type { ChatComposerHandle } from "./ChatComposer";
 
 const EMPTY_PENDING_USER_INPUT_ANSWERS: Record<string, PendingUserInputDraftAnswer> = {};
+const usePendingUserInputAnswers = create<
+  Record<string, Record<string, PendingUserInputDraftAnswer>>
+>(() => ({}));
+const usePendingUserInputQuestionIndex = create<Record<string, number>>(() => ({}));
 const NO_PENDING_REQUESTS = { approvals: [], userInputs: [] } as const;
 const NO_PENDING_APPROVALS: ReturnType<typeof derivePendingApprovals> = [];
 const NO_PENDING_USER_INPUTS: ReturnType<typeof derivePendingUserInputs> = [];
@@ -63,33 +63,28 @@ const NO_PENDING_USER_INPUTS: ReturnType<typeof derivePendingUserInputs> = [];
 // ending, or a thread that is not open. Question attachment drafts are pruned
 // by questionAttachments.ts, which owns them.
 onThreadRequestsResolved(({ environmentId, threadId, pendingRequestIds }) => {
-  usePendingUserInputDrafts.setState((existing) => {
-    const answersByRequestKey = pruneResolvedUserInputDrafts(
-      existing.answersByRequestKey,
-      environmentId,
-      threadId,
-      pendingRequestIds,
-    );
-    const questionIndexByRequestKey = pruneResolvedUserInputDrafts(
-      existing.questionIndexByRequestKey,
-      environmentId,
-      threadId,
-      pendingRequestIds,
-    );
-    return answersByRequestKey === existing.answersByRequestKey &&
-      questionIndexByRequestKey === existing.questionIndexByRequestKey
-      ? existing
-      : { answersByRequestKey, questionIndexByRequestKey };
-  });
+  usePendingUserInputAnswers.setState(
+    (existing) =>
+      pruneResolvedUserInputDrafts(existing, environmentId, threadId, pendingRequestIds),
+    true,
+  );
+  usePendingUserInputQuestionIndex.setState(
+    (existing) =>
+      pruneResolvedUserInputDrafts(existing, environmentId, threadId, pendingRequestIds),
+    true,
+  );
 });
 
 function makePendingCustomAnswerSetter(input: {
   readonly activePendingUserInput: PendingUserInput | null;
   readonly activePendingRequestKey: string;
   readonly writePrompt: (prompt: string) => void;
+  readonly setPendingUserInputAnswersByRequestId: (
+    update: SetStateAction<Record<string, Record<string, PendingUserInputDraftAnswer>>>,
+  ) => void;
 }) {
-  const { activePendingUserInput, activePendingRequestKey } = input;
   return (questionId: string, value: string) => {
+    const { activePendingUserInput, activePendingRequestKey } = input;
     if (!activePendingUserInput) {
       return;
     }
@@ -98,9 +93,17 @@ function makePendingCustomAnswerSetter(input: {
       return;
     }
     input.writePrompt(value);
-    updatePendingUserInputAnswer(activePendingRequestKey, questionId, (draft) =>
-      setPendingUserInputCustomAnswer(draft, value, question),
-    );
+    input.setPendingUserInputAnswersByRequestId((existing) => ({
+      ...existing,
+      [activePendingRequestKey]: {
+        ...existing[activePendingRequestKey],
+        [questionId]: setPendingUserInputCustomAnswer(
+          existing[activePendingRequestKey]?.[questionId],
+          value,
+          question,
+        ),
+      },
+    }));
     // Resetting selection before rendering can re-enter Lexical with stale skill-token offsets.
   };
 }
@@ -141,6 +144,8 @@ export function usePendingThreadRequests(input: {
   const [respondingUserInputRequestIds, setRespondingUserInputRequestIds] = useState<
     RuntimeRequestId[]
   >([]);
+  const setPendingUserInputAnswersByRequestId = usePendingUserInputAnswers.setState;
+  const setPendingUserInputQuestionIndexByRequestId = usePendingUserInputQuestionIndex.setState;
   const pendingRequests =
     serverProjection !== null && serverProjection.thread.id === activeThreadId
       ? derivePendingThreadRequests(serverProjection)
@@ -161,17 +166,16 @@ export function usePendingThreadRequests(input: {
     activeThreadId,
     activePendingUserInput?.requestId,
   );
-  const storedPendingAnswerDrafts = usePendingUserInputDrafts(
-    (state) =>
-      state.answersByRequestKey[activePendingRequestKey] ?? EMPTY_PENDING_USER_INPUT_ANSWERS,
+  const storedPendingAnswerDrafts = usePendingUserInputAnswers(
+    (state) => state[activePendingRequestKey] ?? EMPTY_PENDING_USER_INPUT_ANSWERS,
   );
   // Suggested answers are shown until the user edits them; only edits are stored.
   const activePendingAnswerDrafts: Record<string, PendingUserInputDraftAnswer> =
     activePendingUserInput
       ? seedUserInputDraftAnswers(activePendingUserInput.questions, storedPendingAnswerDrafts)
       : storedPendingAnswerDrafts;
-  const activePendingStoredQuestionIndex = usePendingUserInputDrafts(
-    (state) => state.questionIndexByRequestKey[activePendingRequestKey],
+  const activePendingQuestionIndex = usePendingUserInputQuestionIndex(
+    (state) => state[activePendingRequestKey] ?? 0,
   );
   const pendingQuestionDraftKeys = activeThreadId
     ? pendingUserInputs.flatMap((request) =>
@@ -235,9 +239,6 @@ export function usePendingThreadRequests(input: {
             ];
           }),
         );
-  const activePendingQuestionIndex = activePendingUserInput
-    ? (activePendingStoredQuestionIndex ?? 0)
-    : 0;
   const activePendingProgress = activePendingUserInput
     ? derivePendingUserInputProgress(
         activePendingUserInput.questions,
@@ -382,34 +383,39 @@ export function usePendingThreadRequests(input: {
     if (!activePendingUserInput) {
       return;
     }
-    setPendingUserInputQuestionIndex(activePendingRequestKey, nextQuestionIndex);
+    setPendingUserInputQuestionIndexByRequestId((existing) => ({
+      ...existing,
+      [activePendingRequestKey]: nextQuestionIndex,
+    }));
   };
 
   const onSelectActivePendingUserInputOption = (questionId: string, optionValue: string) => {
     if (!activePendingUserInput) {
       return;
     }
-    // A multi-select option is added alongside the custom answer.
+    // A multi-select option is added alongside the custom answer, starting from
+    // the suggested answer when the user has not edited this question.
     const multiSelectQuestion = activePendingUserInput.questions.find(
       (entry) => entry.id === questionId && entry.multiSelect,
     );
     if (multiSelectQuestion) {
-      updatePendingUserInputAnswer(activePendingRequestKey, questionId, (draft) =>
-        togglePendingUserInputOptionSelection(
-          multiSelectQuestion,
-          draft ?? activePendingAnswerDrafts[questionId],
-          optionValue,
-        ),
-      );
+      setPendingUserInputAnswersByRequestId((existing) => ({
+        ...existing,
+        [activePendingRequestKey]: {
+          ...existing[activePendingRequestKey],
+          [questionId]: togglePendingUserInputOptionSelection(
+            multiSelectQuestion,
+            existing[activePendingRequestKey]?.[questionId] ??
+              activePendingAnswerDrafts[questionId],
+            optionValue,
+          ),
+        },
+      }));
       return;
     }
     // The option replaces the custom answer. Anything typed there is the
     // user's text, so it goes back to the thread draft instead of vanishing.
-    const displacedAnswer = (
-      usePendingUserInputDrafts.getState().answersByRequestKey[activePendingRequestKey]?.[
-        questionId
-      ] ?? activePendingAnswerDrafts[questionId]
-    )?.customAnswer;
+    const displacedAnswer = activePendingAnswerDrafts[questionId]?.customAnswer;
     const currentPrompt =
       useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.prompt ?? "";
     const nextPrompt = carryDisplacedCustomAnswerIntoPrompt(currentPrompt, displacedAnswer);
@@ -433,19 +439,27 @@ export function usePendingThreadRequests(input: {
         );
       }
     }
-    const question =
-      (activePendingProgress?.activeQuestion?.id === questionId
-        ? activePendingProgress.activeQuestion
-        : undefined) ?? activePendingUserInput.questions.find((entry) => entry.id === questionId);
-    if (question) {
-      updatePendingUserInputAnswer(activePendingRequestKey, questionId, (draft) =>
-        togglePendingUserInputOptionSelection(
-          question,
-          draft ?? activePendingAnswerDrafts[questionId],
-          optionValue,
-        ),
-      );
-    }
+    setPendingUserInputAnswersByRequestId((existing) => {
+      const question =
+        (activePendingProgress?.activeQuestion?.id === questionId
+          ? activePendingProgress.activeQuestion
+          : undefined) ?? activePendingUserInput.questions.find((entry) => entry.id === questionId);
+      if (!question) {
+        return existing;
+      }
+
+      return {
+        ...existing,
+        [activePendingRequestKey]: {
+          ...existing[activePendingRequestKey],
+          [questionId]: togglePendingUserInputOptionSelection(
+            question,
+            existing[activePendingRequestKey]?.[questionId],
+            optionValue,
+          ),
+        },
+      };
+    });
     promptRef.current = "";
     composerRef.current?.resetCursorState({ cursor: 0 });
   };
@@ -460,6 +474,7 @@ export function usePendingThreadRequests(input: {
     activePendingUserInput,
     activePendingRequestKey,
     writePrompt,
+    setPendingUserInputAnswersByRequestId,
   });
 
   const onAdvanceActivePendingUserInput = () => {

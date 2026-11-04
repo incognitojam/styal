@@ -1,17 +1,13 @@
 import type { ThreadUserInputQuestion as UserInputQuestion } from "@t3tools/client-runtime/state/thread-requests";
-import { beforeEach, describe, expect, it } from "vite-plus/test";
+import { describe, expect, it } from "vite-plus/test";
 
 import {
   buildPendingUserInputAnswers,
   derivePendingUserInputProgress,
   setPendingUserInputCustomAnswer,
   togglePendingUserInputOptionSelection,
+  type PendingUserInputDraftAnswer,
 } from "./pendingUserInput";
-import {
-  setPendingUserInputQuestionIndex,
-  updatePendingUserInputAnswer,
-  usePendingUserInputDrafts,
-} from "./pendingUserInputDrafts";
 
 const areas: UserInputQuestion = {
   id: "areas",
@@ -80,27 +76,19 @@ describe("multi-select answers with a typed addition", () => {
 });
 
 describe("multi-select drafts", () => {
-  const request = JSON.stringify(["env-1", "thread-1", "request-a"]);
+  it("keeps the addition when another question is answered in between", () => {
+    let drafts: Record<string, PendingUserInputDraftAnswer> = {};
+    drafts = {
+      ...drafts,
+      areas: togglePendingUserInputOptionSelection(areas, drafts.areas, "Server"),
+    };
+    drafts = { ...drafts, areas: typeAnswer(drafts.areas, "Mobile too") };
+    drafts = { ...drafts, ttl: togglePendingUserInputOptionSelection(ttl, drafts.ttl, "1 hour") };
+    drafts = {
+      ...drafts,
+      areas: togglePendingUserInputOptionSelection(areas, drafts.areas, "Web"),
+    };
 
-  beforeEach(() => {
-    usePendingUserInputDrafts.setState({ answersByRequestKey: {}, questionIndexByRequestKey: {} });
-  });
-
-  it("keeps the addition when moving between questions", () => {
-    updatePendingUserInputAnswer(request, areas.id, (draft) =>
-      togglePendingUserInputOptionSelection(areas, draft, "Server"),
-    );
-    updatePendingUserInputAnswer(request, areas.id, (draft) => typeAnswer(draft, "Mobile too"));
-    setPendingUserInputQuestionIndex(request, 1);
-    updatePendingUserInputAnswer(request, ttl.id, (draft) =>
-      togglePendingUserInputOptionSelection(ttl, draft, "1 hour"),
-    );
-    setPendingUserInputQuestionIndex(request, 0);
-    updatePendingUserInputAnswer(request, areas.id, (draft) =>
-      togglePendingUserInputOptionSelection(areas, draft, "Web"),
-    );
-
-    const drafts = usePendingUserInputDrafts.getState().answersByRequestKey[request] ?? {};
     expect(buildPendingUserInputAnswers([areas, ttl], drafts)).toEqual({
       areas: ["Server", "Web", "Mobile too"],
       ttl: "1 hour",
