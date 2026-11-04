@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
-import { Pressable, View } from "react-native";
+import { Platform, Pressable, View } from "react-native";
 import { AppText as Text } from "../../components/ui/AppText";
-import { SymbolView } from "../../components/ui/AppSymbol";
+import { type AppSymbolName, SymbolView } from "../../components/ui/AppSymbol";
 import { cn } from "../../lib/cn";
 import type { ModelOption } from "../../lib/modelOptions";
 
@@ -19,6 +19,7 @@ export type ModelRowProps = {
 };
 
 export type ChoiceRowProps = {
+  readonly icon?: AppSymbolName;
   readonly label: string;
   readonly description?: string;
   readonly selected: boolean;
@@ -149,6 +150,17 @@ export function ChoiceRowContent(props: ChoiceRowProps & RowSelectionProps) {
       )}
     >
       {props.leadingSelection}
+      {props.icon ? (
+        <View className="size-6 items-center justify-center">
+          <SymbolView
+            name={props.icon}
+            size={Platform.OS === "android" ? 24 : 22}
+            tintColorClassName="accent-icon"
+            type="monochrome"
+            weight="regular"
+          />
+        </View>
+      ) : null}
       <View className="min-w-0 flex-1 gap-0.5">
         <Text className="text-base font-t3-medium text-foreground">{props.label}</Text>
         {props.description ? (

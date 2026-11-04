@@ -2,12 +2,13 @@ import { Platform, View } from "react-native";
 import { useResolveClassNames } from "uniwind";
 
 import { cn } from "../../lib/cn";
-import { SymbolView } from "./AppSymbol";
+import { type AppSymbolName, SymbolView } from "./AppSymbol";
 import { ListRowLayout } from "./ListRowLayout";
 import { RadioIndicator } from "./RadioIndicator";
 import { RowPressable } from "./RowPressable";
 
 export function ListChoiceRow(props: {
+  readonly icon?: AppSymbolName;
   readonly label: string;
   readonly description?: string;
   readonly selected: boolean;
@@ -32,6 +33,7 @@ export function ListChoiceRow(props: {
       )}
     >
       <ListRowLayout
+        icon={props.icon}
         label={props.label}
         description={props.description}
         disabled={props.disabled}

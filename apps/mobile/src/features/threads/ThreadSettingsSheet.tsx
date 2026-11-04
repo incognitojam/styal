@@ -1116,6 +1116,7 @@ function ThreadSettingsChoiceContent(props: {
       ? {
           rows: session.runtimeModeChoices.map((choice) => ({
             id: choice.mode,
+            icon: choice.icon,
             label: choice.label,
             description: choice.description,
             selected: choice.mode === session.runtimeMode,
@@ -1130,6 +1131,7 @@ function ThreadSettingsChoiceContent(props: {
         ? {
             rows: selectableChoices(activeDescriptor).map((choice) => ({
               id: choice.id,
+              icon: undefined,
               label: choice.label,
               description: choice.description,
               selected:
@@ -1185,6 +1187,7 @@ function ThreadSettingsChoiceContent(props: {
         {submenuContent.rows.map((row, index) => (
           <ChoiceRow
             key={row.id}
+            icon={row.icon}
             description={row.description}
             isLast={index === submenuContent.rows.length - 1}
             label={row.label}
