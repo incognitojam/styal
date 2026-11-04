@@ -389,6 +389,90 @@ function assistantMessage(updatedAt = "2026-06-20T00:00:03.000Z") {
 }
 
 describe("buildThreadFeed", () => {
+  describe("an answer followed by saving memory", () => {
+    const answerText =
+      "I've opened the PR and started the follow-up on a branch stacked on top of it. The PR has before and after screenshots at desktop and phone sizes.";
+    const note = "I also saved a note to memory about that.";
+    const reply = (id: string, text: string, ordinal: number) => ({
+      ...base(id, `2026-06-20T00:00:${String(ordinal).padStart(2, "0")}.000Z`, ordinal),
+      type: "assistant_message" as const,
+      messageId: MessageId.make(id),
+      text,
+      streaming: false,
+    });
+    const work = (id: string, ordinal: number, input: string) => ({
+      ...base(id, `2026-06-20T00:00:${String(ordinal).padStart(2, "0")}.000Z`, ordinal),
+      type: "command_execution" as const,
+      input,
+      output: "",
+      exitCode: 0,
+    });
+    const saveMemory = (ordinal: number) => [
+      {
+        ...base(
+          "memory-write",
+          `2026-06-20T00:00:${String(ordinal).padStart(2, "0")}.000Z`,
+          ordinal,
+        ),
+        type: "file_change" as const,
+        fileName: "/home/user/.claude/projects/-home-user-app/memory/branch-rename.md",
+        diffStr: "",
+      },
+      work(
+        "memory-index",
+        ordinal + 1,
+        "cat >> /home/user/.claude/projects/-home-user-app/memory/MEMORY.md <<'EOF'\n- [Branch rename](branch-rename.md)\nEOF",
+      ),
+    ];
+    const settledShape = (items: ReadonlyArray<OrchestrationV2TurnItem>) =>
+      deriveThreadFeedPresentation(
+        buildThreadFeed(items.map((item, position) => projected(item, position))),
+        null,
+        new Set(),
+      ).map((entry) =>
+        entry.type === "run-fold"
+          ? "fold"
+          : entry.type === "message"
+            ? `${entry.message.role}:${entry.message.text}`
+            : entry.type,
+      );
+
+    it("keeps the answer visible above a shorter note about the saved memory", () => {
+      expect(
+        settledShape([
+          userMessage("2026-06-20T00:00:00.000Z"),
+          work("build", 1, "vp run build"),
+          reply("answer", answerText, 2),
+          ...saveMemory(3),
+          reply("note", note, 5),
+        ]),
+      ).toEqual(["user:Run checks", "fold", `assistant:${answerText}`, `assistant:${note}`]);
+    });
+
+    it("folds a short note announcing the memory before the answer", () => {
+      expect(
+        settledShape([
+          userMessage("2026-06-20T00:00:00.000Z"),
+          reply("preamble", "Saving that to memory, then I'll answer.", 1),
+          ...saveMemory(2),
+          reply("answer", answerText, 4),
+        ]),
+      ).toEqual(["user:Run checks", "fold", `assistant:${answerText}`]);
+    });
+
+    it("folds the answer when other work follows it", () => {
+      expect(
+        settledShape([
+          userMessage("2026-06-20T00:00:00.000Z"),
+          reply("answer", answerText, 1),
+          ...saveMemory(2),
+          work("cleanup", 4, "rm -rf build"),
+          reply("note", note, 5),
+        ]),
+      ).toEqual(["user:Run checks", "fold", `assistant:${note}`]);
+    });
+  });
+
   it.each(["running", "completed"] as const)(
     "keeps submitted answers visible outside neighboring work and turn folds when %s",
     (status) => {

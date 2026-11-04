@@ -1623,6 +1623,91 @@ describe("deriveMessagesTimelineRows", () => {
     ).toBeDefined();
   });
 
+  describe("an answer followed by saving memory", () => {
+    const runId = RunId.make("turn-memory-postscript");
+    const message = (id: string, role: "user" | "assistant", text: string, second: number) => ({
+      id: `${id}-entry`,
+      kind: "message" as const,
+      createdAt: `2026-01-01T00:00:${String(second).padStart(2, "0")}Z`,
+      message: {
+        id: id as never,
+        role,
+        text,
+        runId: role === "user" ? null : runId,
+        createdAt: `2026-01-01T00:00:${String(second).padStart(2, "0")}Z`,
+        updatedAt: `2026-01-01T00:00:${String(second).padStart(2, "0")}Z`,
+        streaming: false,
+      },
+    });
+    const work = (id: string, second: number, entry: Record<string, unknown>) => ({
+      id: `${id}-entry`,
+      kind: "work" as const,
+      createdAt: `2026-01-01T00:00:${String(second).padStart(2, "0")}Z`,
+      entry: {
+        id,
+        createdAt: `2026-01-01T00:00:${String(second).padStart(2, "0")}Z`,
+        runId,
+        label: "Tool",
+        tone: "tool" as const,
+        ...entry,
+      },
+    });
+    const memoryFile = "/home/user/.claude/projects/-home-user-app/memory/branch-rename.md";
+    const saveMemory = (second: number) => [
+      work("memory-write", second, { itemType: "file_change", changedFiles: [memoryFile] }),
+      work("memory-index", second + 1, {
+        itemType: "command_execution",
+        command:
+          "cat >> /home/user/.claude/projects/-home-user-app/memory/MEMORY.md <<'EOF'\n- [Branch rename](branch-rename.md)\nEOF",
+      }),
+    ];
+    const answer =
+      "I've opened the PR and started the follow-up on a branch stacked on top of it. The PR has before and after screenshots at desktop and phone sizes.";
+    const collapsedRowIds = (timelineEntries: ReadonlyArray<TimelineEntry>) =>
+      deriveMessagesTimelineRows({
+        timelineEntries,
+        isWorking: false,
+        activeTurnStartedAt: null,
+        turnDiffSummaries: [],
+        supportsConversationRollback: false,
+      }).map((row) => row.id);
+
+    it("keeps the answer visible above a shorter note about the saved memory", () => {
+      expect(
+        collapsedRowIds([
+          message("user", "user", "Open the PR", 0),
+          work("build", 1, { itemType: "command_execution", command: "vp run build" }),
+          message("answer", "assistant", answer, 10),
+          ...saveMemory(11),
+          message("postscript", "assistant", "I also saved a note to memory about that.", 13),
+        ]),
+      ).toEqual(["user-entry", `turn-fold:${runId}`, "answer-entry", "postscript-entry"]);
+    });
+
+    it("folds a short note announcing the memory before the answer", () => {
+      expect(
+        collapsedRowIds([
+          message("user", "user", "Open the PR", 0),
+          message("preamble", "assistant", "Saving that to memory, then I'll answer.", 1),
+          ...saveMemory(2),
+          message("answer", "assistant", answer, 10),
+        ]),
+      ).toEqual(["user-entry", `turn-fold:${runId}`, "answer-entry"]);
+    });
+
+    it("folds the answer when other work follows it", () => {
+      expect(
+        collapsedRowIds([
+          message("user", "user", "Open the PR", 0),
+          message("answer", "assistant", answer, 1),
+          ...saveMemory(2),
+          work("cleanup", 4, { itemType: "command_execution", command: "rm -rf build" }),
+          message("postscript", "assistant", "I also saved a note to memory about that.", 5),
+        ]),
+      ).toEqual(["user-entry", `turn-fold:${runId}`, "postscript-entry"]);
+    });
+  });
+
   it.each([1, 2, 3])("folds %i completed activities after the terminal response", (count) => {
     const runId = RunId.make("turn-1");
     const timelineEntries = [
