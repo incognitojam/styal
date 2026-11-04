@@ -434,7 +434,11 @@ export function workEntryToolRefusalSummary(
   if (denial === undefined) return null;
   const summary =
     denial.source === "auto_mode" ? "Blocked by Auto mode" : "Blocked by permission settings";
-  const reason = denial.reason?.trim();
+  // Claude Code brackets classifier reasons: "[Unauthorized Persistence]".
+  const reason = denial.reason
+    ?.trim()
+    .replace(/^\[(.*)\]$/s, "$1")
+    .trim();
   return reason ? `${summary}: ${reason}` : summary;
 }
 

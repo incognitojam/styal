@@ -136,6 +136,10 @@ describe("workEntryToolRefusalSummary", () => {
       { source: "auto_mode", reason: "External System Writes" },
       "Blocked by Auto mode: External System Writes",
     ],
+    [
+      { source: "auto_mode", reason: "[Unauthorized Persistence]" },
+      "Blocked by Auto mode: Unauthorized Persistence",
+    ],
     [{ source: "auto_mode" }, "Blocked by Auto mode"],
     [{ source: "settings", reason: " " }, "Blocked by permission settings"],
     [undefined, null],
