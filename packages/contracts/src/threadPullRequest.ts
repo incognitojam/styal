@@ -140,7 +140,8 @@ export type ThreadWorkflowRunReview = typeof ThreadWorkflowRunReview.Type;
 
 /**
  * A CI workflow run the server watches for a thread's agent, present only while watched. The
- * server wakes the agent once when the run completes and drops the watch in the same step.
+ * server wakes the agent when a job fails, and once more when the run completes, dropping the
+ * watch in the same step.
  */
 export const ThreadWorkflowRunWatch = Schema.Struct({
   host: TrimmedNonEmptyString,
@@ -152,6 +153,8 @@ export const ThreadWorkflowRunWatch = Schema.Struct({
   startedAt: IsoDateTime,
   /** Present while the run waits for the user's deployment review. */
   review: Schema.optional(ThreadWorkflowRunReview),
+  /** Names of failed jobs the agent was already told about, so each wakes it once. */
+  failedJobs: Schema.optional(Schema.Array(Schema.String)),
 });
 export type ThreadWorkflowRunWatch = typeof ThreadWorkflowRunWatch.Type;
 

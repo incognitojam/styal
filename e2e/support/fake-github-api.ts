@@ -38,6 +38,7 @@ export interface FakeGitHubWorkflowRun {
   status: "waiting" | "in_progress" | "completed";
   conclusion?: "success" | "failure";
   environments: ReadonlyArray<{ id: number; name: string; canApprove?: boolean }>;
+  /** Jobs that fail when the run completes; until then they are still running. */
   failedJobs?: ReadonlyArray<{ name: string; conclusion: string }>;
   reviewError?: { status: number; message: string };
 }
@@ -317,6 +318,7 @@ export async function startFakeGitHubApi(
         body: {
           jobs: (run.failedJobs ?? []).map((job) => ({
             ...job,
+            conclusion: run.status === "completed" ? job.conclusion : null,
             html_url: `${url}/job/1`,
           })),
         },

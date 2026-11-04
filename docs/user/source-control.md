@@ -376,8 +376,9 @@ out from the matching organization and repository.
 
 For GitHub Actions runs that no watched pull request covers, such as CI on a branch after a merge, a
 deploy, or a workflow the agent started, ask the agent to watch the run and it calls
-`watch_workflow_run`. The server checks the run about every 30 seconds and wakes the agent once when it
-completes, with its result and the jobs that did not pass. A run that has already finished is reported
+`watch_workflow_run`. The server checks the run about every 30 seconds. It wakes the agent as soon as a
+job fails, without waiting for the rest of the run, and again when the run completes, with its result
+and any jobs that did not pass. A run that has already finished is reported
 straight away instead of watched. The thread stays in the **Working** section while it waits. Watching
 ends when the run completes, after 8 failed reads in a row, when the thread settles or is archived,
 or when you press Stop. A rate limit pauses checks until requests are allowed again.

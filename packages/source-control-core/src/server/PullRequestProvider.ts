@@ -292,7 +292,10 @@ export interface ProviderWorkflowRun {
    * is held for review.
    */
   readonly reviewableEnvironments: ReadonlyArray<{ readonly id: number; readonly name: string }>;
-  /** Jobs of the latest attempt that did not succeed or skip; read only once the run completed. */
+  /**
+   * Jobs of the latest attempt that finished without succeeding or skipping. Read once the run
+   * completed, or while it runs when the read asked for `runningJobs`.
+   */
   readonly failedJobs: ReadonlyArray<{
     readonly name: string;
     readonly conclusion: string | null;
@@ -425,7 +428,11 @@ export interface PullRequestProviderApi {
 
   /** A CI workflow run, for watching it. Optional: only GitHub Actions is read. */
   readonly getWorkflowRun?: (
-    input: ProviderRepositoryRef & { readonly runId: number },
+    input: ProviderRepositoryRef & {
+      readonly runId: number;
+      /** Also read the jobs of a run that is still going, to find the ones that already failed. */
+      readonly runningJobs?: boolean;
+    },
   ) => Effect.Effect<ProviderWorkflowRun, PullRequestProviderError>;
 
   /** Optional, like `getWorkflowRun`. */

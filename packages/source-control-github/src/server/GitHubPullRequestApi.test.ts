@@ -2948,6 +2948,42 @@ layer("GitHubPullRequestApi.layer", (it) => {
       }),
   );
 
+  it.effect(
+    "reads the jobs of a running run only when asked, keeping those that finished failing",
+    () =>
+      Effect.gen(function* () {
+        const running = { ...waitingWorkflow, status: "in_progress" };
+        mockedExecute
+          .mockReturnValueOnce(Effect.succeed(output(encodeJson(running))))
+          .mockReturnValueOnce(Effect.succeed(output(encodeJson(running))))
+          .mockReturnValueOnce(
+            Effect.succeed(
+              output(
+                encodeJson({
+                  jobs: [
+                    {
+                      name: "Typecheck",
+                      conclusion: "failure",
+                      html_url: `${running.html_url}/job/1`,
+                    },
+                    { name: "Lint", conclusion: "success", html_url: null },
+                    { name: "Test", conclusion: null, html_url: null },
+                  ],
+                }),
+              ),
+            ),
+          );
+        const cli = yield* GitHubPullRequestApi.GitHubPullRequestApi;
+        expect((yield* cli.getWorkflowRun(workflowTarget)).failedJobs).toEqual([]);
+        expect(restCallsTo("/jobs")).toEqual([]);
+        const run = yield* cli.getWorkflowRun({ ...workflowTarget, runningJobs: true });
+        expect(run.completed).toBe(false);
+        expect(run.failedJobs).toEqual([
+          { name: "Typecheck", conclusion: "failure", url: `${running.html_url}/job/1` },
+        ]);
+      }),
+  );
+
   it.effect("finds and approves every workflow waiting on a maintainer", () =>
     Effect.gen(function* () {
       workflowApprovalRoutes(() => crossRepositoryDetail(), heads([7]), workflowRuns([10, 11]));

@@ -26,7 +26,12 @@ import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
 import * as WorkflowRunWatchUsage from "../telemetry/WorkflowRunWatchUsage.ts";
 import * as Orchestrator from "./Orchestrator.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
-import { workflowRunCompletedMessage, workflowRunUnreadableMessage } from "./workflowRunWatch.ts";
+import {
+  newlyFailedJobs,
+  workflowRunCompletedMessage,
+  workflowRunJobsFailedMessage,
+  workflowRunUnreadableMessage,
+} from "./workflowRunWatch.ts";
 
 /** Active runs need prompt completion/review detection; shared host policy bounds REST use. */
 const SWEEP_SECONDS = 30;
@@ -58,10 +63,9 @@ const reviewKey = (review: ThreadWorkflowRunReview | null | undefined) =>
   "";
 
 /**
- * Wakes a thread's agent once when a CI workflow run it watches (`watch_workflow_run`)
- * completes, and ends the watch in the same step. A pass every 30 seconds reads each watched
- * run, and records on the watch when the run waits for the user's deployment review. Settling,
- * archiving, or stopping a thread ends its watches in the orchestrator.
+ * Every 30 seconds, reads each watched run (`watch_workflow_run`). Wakes the agent once per newly
+ * failed job and once when the run completes, ending the watch then; records deployment reviews.
+ * Settling, archiving, or stopping a thread ends its watches in the orchestrator.
  */
 export class WorkflowRunWatchReactor extends Context.Service<
   WorkflowRunWatchReactor,
@@ -135,6 +139,7 @@ export const make = Effect.gen(function* () {
         host: target.watch.host,
         repository: target.watch.repository,
         runId: target.watch.runId,
+        runningJobs: true,
       }),
     );
     if (Exit.isFailure(read)) {
@@ -157,10 +162,11 @@ export const make = Effect.gen(function* () {
       const [first, ...rest] = read.value.reviewableEnvironments;
       const review: ThreadWorkflowRunReview | null =
         first === undefined ? null : { environments: [first, ...rest] };
-      if (reviewKey(review) === reviewKey(target.watch.review)) return;
+      const failed = newlyFailedJobs(target.watch, read.value);
+      if (failed.length === 0 && reviewKey(review) === reviewKey(target.watch.review)) return;
       const uuid = yield* crypto.randomUUIDv4();
       return yield* engine.dispatch({
-        type: "thread.workflow-run-watch.review",
+        type: "thread.workflow-run-watch.sync",
         commandId: CommandId.make(`server:workflow-run-watch:${target.thread.id}:${uuid}`),
         threadId: target.thread.id,
         host: target.watch.host,
@@ -168,6 +174,15 @@ export const make = Effect.gen(function* () {
         runId: target.watch.runId,
         startedAt: target.watch.startedAt,
         review,
+        failedJobs: [...(target.watch.failedJobs ?? []), ...failed.map((job) => job.name)],
+        ...(failed.length === 0
+          ? {}
+          : {
+              wake: {
+                ...workflowRunJobsFailedMessage(target.watch, read.value, failed),
+                messageId: MessageId.make(`message:workflow-run-watch:${uuid}`),
+              },
+            }),
       });
     }
     yield* finish(target, workflowRunCompletedMessage(target.watch, read.value));

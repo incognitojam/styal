@@ -2925,7 +2925,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       let reads = 0;
       const { reactor, usage } = yield* workflowRunReactor((input) => {
         reads += 1;
-        assert.deepEqual(input, { projectId, ...key });
+        assert.deepEqual(input, { projectId, ...key, runningJobs: true });
         return Effect.succeed(
           hostRun(9001, {
             completed,
@@ -2964,6 +2964,60 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
           watchedMinutes: 0,
         },
       ]);
+    }),
+  );
+
+  it.effect("wakes the agent once for each job that fails while a watched run is going", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const { threadId } = yield* watchRunFromNewThread("job-fails", 9006);
+      const url = runUrl(9006);
+      const typecheck = { name: "Typecheck", conclusion: "failure", url: `${url}/job/1` };
+      const tests = { name: "Test", conclusion: "failure", url: `${url}/job/2` };
+      let read = hostRun(9006);
+      const runningJobs: Array<boolean | undefined> = [];
+      const { reactor } = yield* workflowRunReactor((input) => {
+        runningJobs.push(input.runningJobs);
+        return Effect.succeed(read);
+      });
+      const messages = () =>
+        orchestrator
+          .getThreadRecords(threadId, ["messages"])
+          .pipe(Effect.map(({ messages }) => messages.map((message) => message.text)));
+
+      yield* reactor.sweep;
+      assert.deepEqual(runningJobs, [true]);
+      assert.deepEqual(yield* notificationsOf(threadId), []);
+
+      read = hostRun(9006, { failedJobs: [typecheck] });
+      yield* reactor.sweep;
+      assert.deepEqual(yield* notificationsOf(threadId), ["CI #9006: a job failed"]);
+      assert.include((yield* messages())[0] ?? "", `- Typecheck ${url}/job/1`);
+      const watched = (yield* orchestrator.getThreadShell(threadId))?.workflowRuns;
+      assert.deepEqual(
+        watched?.map((run) => run.failedJobs),
+        [["Typecheck"]],
+      );
+
+      // The same failure on the next pass wakes no one.
+      yield* reactor.sweep;
+      assert.lengthOf(yield* notificationsOf(threadId), 1);
+
+      read = hostRun(9006, {
+        completed: true,
+        conclusion: "failure",
+        failedJobs: [typecheck, tests],
+      });
+      yield* reactor.sweep;
+      // Both wakes share the test clock's instant, so their order is not asserted.
+      assert.sameMembers(yield* notificationsOf(threadId), [
+        "CI #9006: a job failed",
+        "CI #9006: failure",
+      ]);
+      const completion = (yield* messages()).find((text) => text.includes("finished:")) ?? "";
+      assert.include(completion, `- Test ${url}/job/2`);
+      assert.notInclude(completion, "- Typecheck");
+      assert.deepEqual((yield* orchestrator.getThreadShell(threadId))?.workflowRuns, []);
     }),
   );
 
@@ -3026,11 +3080,11 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         assert.isUndefined(yield* reviewOf());
         assert.deepEqual(dispatched, []);
         yield* TestClock.adjust("1 second");
-        assert.equal(yield* Queue.take(committed), "thread.workflow-run-watch.review");
+        assert.equal(yield* Queue.take(committed), "thread.workflow-run-watch.sync");
         assert.deepEqual(yield* reviewOf(), { environments: [environment] });
         // A pass that sees the same review records nothing new.
         yield* reactor.sweep;
-        assert.deepEqual(dispatched, ["thread.workflow-run-watch.review"]);
+        assert.deepEqual(dispatched, ["thread.workflow-run-watch.sync"]);
 
         yield* reactor.review({
           threadId,
@@ -3051,8 +3105,8 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         // The review reads the run again at once, so the banner does not wait for a pass.
         assert.isUndefined(yield* reviewOf());
         assert.deepEqual(dispatched, [
-          "thread.workflow-run-watch.review",
-          "thread.workflow-run-watch.review",
+          "thread.workflow-run-watch.sync",
+          "thread.workflow-run-watch.sync",
         ]);
         assert.lengthOf((yield* orchestrator.getThreadShell(threadId))?.workflowRuns ?? [], 1);
         assert.deepEqual(yield* notificationsOf(threadId), []);

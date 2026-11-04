@@ -3512,14 +3512,25 @@ const OrchestrationV2InternalCommand = Schema.Union([
       }),
     ),
   }),
-  /** Records the deployment review a watched run waits on, or that it no longer waits. */
+  /**
+   * Records what a read of a running watched run found: the deployment review it waits on, and
+   * the failed jobs reported so far, waking the agent in the same transaction when `wake` is set.
+   */
   Schema.Struct({
-    type: Schema.Literal("thread.workflow-run-watch.review"),
+    type: Schema.Literal("thread.workflow-run-watch.sync"),
     commandId: CommandId,
     threadId: ThreadId,
     ...ThreadWorkflowRunKey.fields,
     startedAt: IsoDateTime,
     review: Schema.NullOr(ThreadWorkflowRunReview),
+    failedJobs: Schema.Array(Schema.String),
+    wake: Schema.optional(
+      Schema.Struct({
+        messageId: MessageId,
+        text: Schema.String,
+        notification: OrchestrationV2Notification,
+      }),
+    ),
   }),
   Schema.Struct({
     type: Schema.Literal("checkpoint.rollback.fail"),
