@@ -50,6 +50,14 @@ jobs:
             !/.repos/
           sparse-checkout-cone-mode: false
 
+      # Sparse checkout implies --filter=blob:none, and the upstream scripts read file
+      # contents across history. One refetch replaces hundreds of on-demand blob fetches.
+      - name: Fetch full file contents
+        run: |
+          git config --unset remote.origin.promisor || true
+          git config --unset remote.origin.partialclonefilter || true
+          git fetch --refetch --no-tags origin
+
       # The Fork CI run that started this workflow tested the candidate SHA. A
       # candidate cannot change fork-ci.yml, so that run used main's jobs.
       - id: candidate

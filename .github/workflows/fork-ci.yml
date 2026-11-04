@@ -117,6 +117,14 @@ jobs:
             !/.repos/
           sparse-checkout-cone-mode: false
 
+      # Sparse checkout implies --filter=blob:none, and the upstream scripts read file
+      # contents across history. One refetch replaces hundreds of on-demand blob fetches.
+      - name: Fetch full file contents
+        run: |
+          git config --unset remote.origin.promisor || true
+          git config --unset remote.origin.partialclonefilter || true
+          git fetch --refetch --no-tags origin
+
       - name: Fetch main and upstream
         run: |
           git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
