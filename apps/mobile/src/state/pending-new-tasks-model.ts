@@ -66,11 +66,24 @@ export function pendingDraftBranchNeedsRefs(
   return selection === undefined ? defaults.defaultMode === "worktree" : selection.branch === null;
 }
 
+/**
+ * True when the draft may start in a new worktree, so the list must load the checkout's status
+ * to know whether a first commit exists.
+ */
+export function pendingDraftMayUseWorktree(
+  draft: ComposerDraft,
+  defaults: PendingDraftProjectDefaults,
+): boolean {
+  const selection = defaults.canChooseWorkspace ? draft.workspaceSelection : undefined;
+  return (selection?.mode ?? defaults.defaultMode) === "worktree";
+}
+
 /** The branch a draft will start on, derived the same way the new-task flow and send path do. */
 export function resolvePendingDraftBranch(input: {
   readonly draft: ComposerDraft;
   readonly defaults: PendingDraftProjectDefaults;
   readonly isGitRepo: boolean;
+  readonly worktreeNeedsFirstCommit: boolean;
   readonly branches: Parameters<typeof resolveNewTaskDraftWorkspace>[0]["branches"];
   readonly projectCwd: string | null;
 }): string | null {
@@ -80,6 +93,7 @@ export function resolvePendingDraftBranch(input: {
     defaultMode: input.defaults.defaultMode,
     defaultModeSettled: input.defaults.defaultModeSettled,
     isGitRepo: input.isGitRepo,
+    worktreeNeedsFirstCommit: input.worktreeNeedsFirstCommit,
     branches: input.branches,
     projectCwd: input.projectCwd,
   }).branch;

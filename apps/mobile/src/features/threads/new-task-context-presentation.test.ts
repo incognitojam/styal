@@ -4,6 +4,7 @@ import {
   fillNewTaskWorkspaceBranch,
   resolveNewTaskBranchLabel,
   resolveNewTaskBranchWorktreePath,
+  resolveNewTaskDraftWorkspace,
   resolveNewTaskLocalWorkspaceSelection,
   resolveNewTaskWorkspaceSelection,
 } from "./new-task-context-presentation";
@@ -45,6 +46,34 @@ describe("resolveNewTaskWorkspaceSelection", () => {
     expect(
       resolveNewTaskWorkspaceSelection({ selection: undefined, fallback, isGitRepo: true }),
     ).toBe(fallback);
+  });
+});
+
+describe("resolveNewTaskDraftWorkspace", () => {
+  const draftWorkspace = (
+    selection: Parameters<typeof resolveNewTaskDraftWorkspace>[0]["selection"],
+  ) =>
+    resolveNewTaskDraftWorkspace({
+      selection,
+      canChooseWorkspace: true,
+      defaultMode: "worktree",
+      defaultModeSettled: true,
+      isGitRepo: true,
+      worktreeNeedsFirstCommit: true,
+      branches: [{ name: "origin/main", current: false, isDefault: true, isRemote: true }],
+      projectCwd: "/repo",
+    });
+
+  it("runs a repository with no first commit in the checkout, not on a worktree base", () => {
+    expect(draftWorkspace(undefined)).toEqual({ mode: "local", branch: null, worktreePath: null });
+    expect(draftWorkspace({ mode: "worktree", branch: "origin/main", worktreePath: null })).toEqual(
+      { mode: "local", branch: null, worktreePath: null },
+    );
+  });
+
+  it("keeps a local selection in a repository with no first commit", () => {
+    const local = { mode: "local", branch: "work", worktreePath: null } as const;
+    expect(draftWorkspace(local)).toBe(local);
   });
 });
 

@@ -9,10 +9,18 @@ export function resolveNewTaskWorkspaceSelection(input: {
   readonly selection: ComposerDraftWorkspaceSelection | undefined;
   readonly fallback: ComposerDraftWorkspaceSelection;
   readonly isGitRepo: boolean;
+  readonly worktreeNeedsFirstCommit?: boolean;
 }): ComposerDraftWorkspaceSelection {
   const selection = input.selection ?? input.fallback;
-  const mode = resolveSendEnvMode({ requestedEnvMode: selection.mode, isGitRepo: input.isGitRepo });
-  return input.isGitRepo ? selection : { mode, branch: null, worktreePath: null };
+  const mode = resolveSendEnvMode({
+    requestedEnvMode: selection.mode,
+    isGitRepo: input.isGitRepo,
+    worktreeNeedsFirstCommit: input.worktreeNeedsFirstCommit,
+  });
+  // A worktree's base branch is not a checkout branch, so the fallback names none.
+  return input.isGitRepo && mode === selection.mode
+    ? selection
+    : { mode, branch: null, worktreePath: null };
 }
 
 export function resolveNewTaskWorkspaceLabel(input: {
@@ -153,10 +161,9 @@ export function fillNewTaskWorkspaceBranch(input: {
 }
 
 /**
- * The workspace a new-task draft starts in: its own selection, else the
- * project's default mode, with the branch filled in as above. The new-task
- * flow, its send path and the home pending-drafts list all resolve through
- * this, so what each shows is what is sent.
+ * The workspace a new-task draft starts in. The new-task flow, its send path and the home
+ * drafts list all resolve through this, so what each shows is what is sent. A repository with
+ * no first commit runs in the checkout; the stored worktree choice applies after that commit.
  */
 export function resolveNewTaskDraftWorkspace(input: {
   readonly selection: ComposerDraftWorkspaceSelection | undefined;
@@ -164,6 +171,7 @@ export function resolveNewTaskDraftWorkspace(input: {
   readonly defaultMode: WorkspaceMode;
   readonly defaultModeSettled: boolean;
   readonly isGitRepo: boolean;
+  readonly worktreeNeedsFirstCommit: boolean;
   readonly branches: Parameters<typeof fillNewTaskWorkspaceBranch>[0]["branches"];
   readonly projectCwd: string | null;
 }): ComposerDraftWorkspaceSelection {
@@ -173,6 +181,7 @@ export function resolveNewTaskDraftWorkspace(input: {
       selection,
       fallback: { mode: input.defaultMode, branch: null, worktreePath: null },
       isGitRepo: input.isGitRepo,
+      worktreeNeedsFirstCommit: input.worktreeNeedsFirstCommit,
     }),
     branches: input.branches,
     projectCwd: input.projectCwd,
