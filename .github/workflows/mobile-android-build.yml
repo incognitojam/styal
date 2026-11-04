@@ -384,5 +384,19 @@ jobs:
             --environment production \
             --platform android \
             --message "$OTA_MESSAGE" \
+            --emit-metadata \
             --non-interactive
           echo ":white_check_mark: android: built ${{ needs.build.outputs.version }} (${{ needs.build.outputs.code }}), published its release and the OTA update (fingerprint \`$FINGERPRINT\`)" >> "$GITHUB_STEP_SUMMARY"
+
+      # Lets the relay symbolicate crash stacks from the update published
+      # above. A step of its own so the R2 credentials reach only this script,
+      # not `eas update` and the dependencies it runs. Never fails the job.
+      - name: Upload OTA source maps
+        if: ${{ !cancelled() }}
+        working-directory: apps/mobile
+        env:
+          MOBILE_SOURCEMAPS_R2: ${{ secrets.MOBILE_SOURCEMAPS_R2 }}
+        run: |
+          if [ -f dist/eas-update-metadata.json ]; then
+            node scripts/upload-sourcemaps.mts ota dist
+          fi
