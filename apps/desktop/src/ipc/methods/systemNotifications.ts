@@ -7,6 +7,7 @@ import {
   type DesktopSystemNotificationResult,
 } from "@t3tools/contracts";
 
+import { macNotificationsDenied } from "../../permissions/MacNotificationAuthorization.ts";
 import * as DesktopIpc from "../DesktopIpc.ts";
 import {
   CLOSE_SYSTEM_NOTIFICATION_CHANNEL,
@@ -27,44 +28,53 @@ export const installSystemNotifications = Effect.fn("desktop.ipc.installSystemNo
       notification?.close();
     };
 
+    const showNotification = (
+      title: string,
+      body: string,
+      tag: string,
+      senderId: number | undefined,
+    ) =>
+      Effect.callback<DesktopSystemNotificationResult>((resume) => {
+        const key = `${senderId}:${tag}`;
+        close(key);
+        const notification = new Electron.Notification({ title, body, silent: true });
+        shown.set(key, notification);
+        notification.once("show", () => resume(Effect.succeed("shown")));
+        // macOS rejects every request while the app's notifications are off in System Settings.
+        notification.once("failed", (_event, error) => {
+          if (shown.get(key) === notification) shown.delete(key);
+          resume(Effect.logWarning("System notification failed", error).pipe(Effect.as("blocked")));
+        });
+        notification.on("close", () => {
+          if (shown.get(key) === notification) shown.delete(key);
+        });
+        notification.on("click", () => {
+          if (shown.get(key) === notification) shown.delete(key);
+          const contents = senderId === undefined ? null : Electron.webContents.fromId(senderId);
+          if (!contents || contents.isDestroyed()) return;
+          const window = Electron.BrowserWindow.fromWebContents(contents);
+          if (window && !window.isDestroyed()) {
+            if (window.isMinimized()) window.restore();
+            window.show();
+            window.focus();
+          }
+          contents.send(SYSTEM_NOTIFICATION_CLICK_CHANNEL, tag);
+        });
+        notification.show();
+      });
+
     yield* ipc.handle(
       DesktopIpc.makeIpcMethod({
         channel: SHOW_SYSTEM_NOTIFICATION_CHANNEL,
         payload: DesktopSystemNotificationSchema,
         result: DesktopSystemNotificationResultSchema,
-        handler: ({ title, body, tag }, event) =>
-          Effect.callback<DesktopSystemNotificationResult>((resume) => {
-            const senderId = event?.sender.id;
-            const key = `${senderId}:${tag}`;
-            close(key);
-            const notification = new Electron.Notification({ title, body, silent: true });
-            shown.set(key, notification);
-            notification.once("show", () => resume(Effect.succeed("shown")));
-            // macOS rejects every request while the app's notifications are off in System Settings.
-            notification.once("failed", (_event, error) => {
-              if (shown.get(key) === notification) shown.delete(key);
-              resume(
-                Effect.logWarning("System notification failed", error).pipe(Effect.as("blocked")),
-              );
-            });
-            notification.on("close", () => {
-              if (shown.get(key) === notification) shown.delete(key);
-            });
-            notification.on("click", () => {
-              if (shown.get(key) === notification) shown.delete(key);
-              const contents =
-                senderId === undefined ? null : Electron.webContents.fromId(senderId);
-              if (!contents || contents.isDestroyed()) return;
-              const window = Electron.BrowserWindow.fromWebContents(contents);
-              if (window && !window.isDestroyed()) {
-                if (window.isMinimized()) window.restore();
-                window.show();
-                window.focus();
-              }
-              contents.send(SYSTEM_NOTIFICATION_CLICK_CHANNEL, tag);
-            });
-            notification.show();
-          }),
+        handler: Effect.fn("desktop.ipc.showSystemNotification")(function* (
+          { title, body, tag },
+          event,
+        ) {
+          if (yield* macNotificationsDenied()) return "blocked" as const;
+          return yield* showNotification(title, body, tag, event?.sender.id);
+        }),
       }),
     );
     yield* ipc.handle(

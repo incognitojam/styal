@@ -218,6 +218,9 @@ catalogs:
     micromark-util-types:
       specifier: 2.0.2
       version: 2.0.2
+    objc-js:
+      specifier: 1.5.0
+      version: 1.5.0
     plist:
       specifier: 3.1.1
       version: 3.1.1
@@ -470,6 +473,9 @@ importers:
       ffi-rs:
         specifier: 1.3.2
         version: 1.3.2
+      objc-js:
+        specifier: 'catalog:'
+        version: 1.5.0
       playwright-core:
         specifier: 1.60.0
         version: 1.60.0
@@ -22030,8 +22036,7 @@ snapshots:
 
   node-addon-api@7.1.1: {}
 
-  node-addon-api@8.9.2:
-    optional: true
+  node-addon-api@8.9.2: {}
 
   node-api-version@0.2.1:
     dependencies:
@@ -22051,8 +22056,7 @@ snapshots:
 
   node-forge@1.4.0: {}
 
-  node-gyp-build@4.8.4:
-    optional: true
+  node-gyp-build@4.8.4: {}
 
   node-gyp@12.4.0:
     dependencies:
@@ -22155,7 +22159,6 @@ snapshots:
     dependencies:
       node-addon-api: 8.9.2
       node-gyp-build: 4.8.4
-    optional: true
 
   object-assign@4.1.1: {}
 

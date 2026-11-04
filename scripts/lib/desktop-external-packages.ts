@@ -6,6 +6,7 @@ export const DESKTOP_RUNTIME_EXTERNAL_PREFIXES = [
   "electron-webauthn",
   "ffi-rs",
   "@yuuang/",
+  "objc-js",
   // Playwright reads its runtime bundle/driver from disk; inlining cannot replace those files.
   "playwright-core",
 ] as const;
