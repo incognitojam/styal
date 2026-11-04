@@ -97,6 +97,26 @@ export type ReviewGuideGenerationResult = Omit<
   "headSha" | "generatedAt" | "modelSelection"
 >;
 
+export interface MentionedTimesCheckInput {
+  cwd: string;
+  /** The message with each clock-like span tagged as `[s1]⟦17:25⟧`. */
+  markedMessage: string;
+  /** When the message was sent, as wall-clock text in `timeZone`. */
+  writtenAt: string;
+  timeZone: string;
+  modelSelection: ModelSelection;
+}
+
+export interface MentionedTimesCheckResult {
+  readonly spans: ReadonlyArray<{
+    readonly span: number;
+    readonly kind: "moment" | "length" | "other";
+    readonly time: string | null;
+    readonly zone: string | null;
+    readonly date: string | null;
+  }>;
+}
+
 export interface ProviderTextGeneration {
   readonly generateCommitMessage: (
     input: CommitMessageGenerationInput,
@@ -117,4 +137,8 @@ export interface ProviderTextGeneration {
   readonly generateReviewGuide: (
     input: ReviewGuideGenerationInput,
   ) => Effect.Effect<ReviewGuideGenerationResult, TextGenerationError>;
+
+  readonly checkMentionedTimes: (
+    input: MentionedTimesCheckInput,
+  ) => Effect.Effect<MentionedTimesCheckResult, TextGenerationError>;
 }

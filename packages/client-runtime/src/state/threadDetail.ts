@@ -1,6 +1,8 @@
 import {
   OrchestrationV2AppThread,
   OrchestrationV2TurnItem,
+  type MessageId,
+  type OrchestrationV2MentionedTimes,
   type OrchestrationV2ThreadProjection,
   type ScopedThreadRef,
 } from "@t3tools/contracts";
@@ -41,6 +43,23 @@ const EMPTY_VISIBLE_TURN_ITEMS: OrchestrationV2ThreadProjection["visibleTurnItem
 const EMPTY_THREAD_STRUCTURE_TURN_ITEMS: ReadonlyArray<ThreadStructureVisibleTurnItem> =
   Object.freeze([]);
 const EMPTY_CHECKPOINT_SUMMARIES: ReadonlyArray<ThreadCheckpointSummary> = Object.freeze([]);
+const EMPTY_MENTIONED_TIMES: ReadonlyMap<MessageId, OrchestrationV2MentionedTimes> = new Map();
+
+/** Each message's model check, keeping the previous map while no check changed. */
+function deriveMentionedTimesByMessage(
+  messages: OrchestrationV2ThreadProjection["messages"],
+  previous: ReadonlyMap<MessageId, OrchestrationV2MentionedTimes>,
+): ReadonlyMap<MessageId, OrchestrationV2MentionedTimes> {
+  const next = new Map<MessageId, OrchestrationV2MentionedTimes>();
+  for (const message of messages) {
+    if (message.mentionedTimes !== undefined) next.set(message.id, message.mentionedTimes);
+  }
+  if (next.size === 0) return EMPTY_MENTIONED_TIMES;
+  const unchanged =
+    next.size === previous.size &&
+    [...next].every(([messageId, check]) => previous.get(messageId) === check);
+  return unchanged ? previous : next;
+}
 
 type TurnItem = OrchestrationV2ThreadProjection["turnItems"][number];
 type VisibleTurnItem = OrchestrationV2ThreadProjection["visibleTurnItems"][number];
@@ -415,6 +434,19 @@ export function createEnvironmentThreadDetailAtoms<E>(
       Atom.withLabel(`environment-thread-error:${key}`),
     ),
   );
+  const mentionedTimesAtomFamily = Atom.family((key: string) => {
+    let previousMessages: OrchestrationV2ThreadProjection["messages"] | null = null;
+    let value = EMPTY_MENTIONED_TIMES;
+    return Atom.make((get) => {
+      const messages = Option.getOrNull(get(threadStateValueAtomFamily(key)).data)?.messages;
+      if (messages === undefined) return EMPTY_MENTIONED_TIMES;
+      if (messages !== previousMessages) {
+        value = deriveMentionedTimesByMessage(messages, value);
+        previousMessages = messages;
+      }
+      return value;
+    }).pipe(Atom.setIdleTTL(0), Atom.withLabel(`environment-thread-mentioned-times:${key}`));
+  });
   const historyAtomFamily = Atom.family((key: string) =>
     Atom.make((get) => get(threadStateValueAtomFamily(key)).history).pipe(
       Atom.setIdleTTL(0),
@@ -441,5 +473,6 @@ export function createEnvironmentThreadDetailAtoms<E>(
     statusAtom: (ref: ScopedThreadRef) => statusAtomFamily(threadKey(ref)),
     errorAtom: (ref: ScopedThreadRef) => errorAtomFamily(threadKey(ref)),
     historyAtom: (ref: ScopedThreadRef) => historyAtomFamily(threadKey(ref)),
+    mentionedTimesAtom: (ref: ScopedThreadRef) => mentionedTimesAtomFamily(threadKey(ref)),
   };
 }

@@ -1,4 +1,5 @@
 import { pendingGuestMessageCount } from "@t3tools/contracts";
+import { keepMentionedTimes } from "@t3tools/shared/mentionedTimeSpans";
 import { applyThreadPullRequestLinkUpdate } from "../sourceControl/threadPullRequests.ts";
 import { projectTurnItemForWire } from "./WireProjection.ts";
 import * as Stream from "effect/Stream";
@@ -55,6 +56,7 @@ import {
   OrchestrationV2ContextHandoffJson as OrchestrationV2ContextHandoffJsonSchema,
   OrchestrationV2ContextTransferJson as OrchestrationV2ContextTransferJsonSchema,
   OrchestrationV2ConversationMessageJson as OrchestrationV2ConversationMessageJsonSchema,
+  OrchestrationV2MentionedTimes,
   OrchestrationV2ExecutionNodeJson as OrchestrationV2ExecutionNodeJsonSchema,
   OrchestrationV2PlanArtifact as OrchestrationV2PlanArtifactSchema,
   OrchestrationV2ProviderSessionJson as OrchestrationV2ProviderSessionJsonSchema,
@@ -1006,8 +1008,26 @@ export function applyToProjection(
     case "message.updated":
       return {
         ...base,
-        messages: upsertById(base.messages, event.payload),
+        messages: upsertById(
+          base.messages,
+          keepMentionedTimes(
+            base.messages.find((message) => message.id === event.payload.id),
+            event.payload,
+          ),
+        ),
       };
+    case "message.mentioned-times-checked": {
+      const message = base.messages.find((candidate) => candidate.id === event.payload.messageId);
+      return message === undefined
+        ? base
+        : {
+            ...base,
+            messages: upsertById(base.messages, {
+              ...message,
+              mentionedTimes: event.payload.mentionedTimes,
+            }),
+          };
+    }
     case "turn-item.updated":
       return withLocalVisibleTurnItems({
         ...base,
@@ -1265,6 +1285,9 @@ const encodeRuntimeRequestPayload = Schema.encodeEffect(
 );
 const encodeMessagePayload = Schema.encodeEffect(
   Schema.fromJsonString(OrchestrationV2ConversationMessageJsonSchema),
+);
+const encodeMentionedTimes = Schema.encodeEffect(
+  Schema.fromJsonString(OrchestrationV2MentionedTimes),
 );
 const encodePlanPayload = Schema.encodeEffect(
   Schema.fromJsonString(OrchestrationV2PlanArtifactSchema),
@@ -2695,7 +2718,31 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                 streaming = excluded.streaming,
                 created_at = excluded.created_at,
                 updated_at = excluded.updated_at,
-                payload_json = excluded.payload_json
+                payload_json = CASE
+                  WHEN json_extract(excluded.payload_json, '$.mentionedTimes') IS NULL
+                    AND json_extract(orchestration_v2_projection_messages.payload_json, '$.mentionedTimes') IS NOT NULL
+                    AND json_extract(excluded.payload_json, '$.text')
+                      = json_extract(orchestration_v2_projection_messages.payload_json, '$.text')
+                  THEN json_set(
+                    excluded.payload_json,
+                    '$.mentionedTimes',
+                    json_extract(orchestration_v2_projection_messages.payload_json, '$.mentionedTimes')
+                  )
+                  ELSE excluded.payload_json
+                END
+            `;
+              break;
+            }
+            case "message.mentioned-times-checked": {
+              const mentionedTimesJson = yield* encodeMentionedTimes(event.payload.mentionedTimes);
+              yield* sql`
+              UPDATE orchestration_v2_projection_messages
+              SET payload_json = json_set(
+                payload_json,
+                '$.mentionedTimes',
+                json(${mentionedTimesJson})
+              )
+              WHERE message_id = ${event.payload.messageId} AND thread_id = ${event.threadId}
             `;
               break;
             }

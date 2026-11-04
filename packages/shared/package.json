@@ -8,6 +8,10 @@
       "import": "./src/brandAssets.ts",
       "default": "./src/brandAssets.ts"
     },
+    "./mentionedTimeSpans": {
+      "types": "./src/mentionedTimeSpans.ts",
+      "import": "./src/mentionedTimeSpans.ts"
+    },
     "./changedFileKind": {
       "types": "./src/changedFileKind.ts",
       "import": "./src/changedFileKind.ts"

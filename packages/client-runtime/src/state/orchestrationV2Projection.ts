@@ -1,4 +1,5 @@
 import { applyThreadPullRequestLinkUpdate } from "../threadPullRequests.ts";
+import { keepMentionedTimes } from "@t3tools/shared/mentionedTimeSpans";
 import type {
   OrchestrationV2DomainEvent,
   OrchestrationV2Run,
@@ -395,7 +396,27 @@ export function applyOrchestrationV2ProjectionEvent(
     case "runtime-request.updated":
       return { ...base, runtimeRequests: upsertEntity(base.runtimeRequests, event.payload) };
     case "message.updated":
-      return { ...base, messages: upsertEntity(base.messages, event.payload) };
+      return {
+        ...base,
+        messages: upsertEntity(
+          base.messages,
+          keepMentionedTimes(
+            base.messages.find((message) => message.id === event.payload.id),
+            event.payload,
+          ),
+        ),
+      };
+    case "message.mentioned-times-checked": {
+      const message = base.messages.find((candidate) => candidate.id === event.payload.messageId);
+      if (message === undefined) return projection;
+      return {
+        ...base,
+        messages: upsertEntity(base.messages, {
+          ...message,
+          mentionedTimes: event.payload.mentionedTimes,
+        }),
+      };
+    }
     case "plan.updated":
       return { ...base, plans: upsertEntity(base.plans, event.payload) };
     case "turn-item.updated": {

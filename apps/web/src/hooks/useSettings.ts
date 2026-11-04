@@ -523,10 +523,12 @@ export function useEnvironmentModelPreferences(environmentId: EnvironmentId | nu
 }
 
 export function useEnvironmentSettings<T = UnifiedSettings>(
-  environmentId: EnvironmentId,
+  environmentId: EnvironmentId | null,
   selector?: (settings: UnifiedSettings) => T,
 ): T {
-  const serverSettings = useAtomValue(serverEnvironment.settingsValueAtom(environmentId));
+  const serverSettings = useAtomValue(
+    environmentId ? serverEnvironment.settingsValueAtom(environmentId) : noEnvironmentSettingsAtom,
+  );
   return useMergedSettings(serverSettings ?? DEFAULT_SERVER_SETTINGS, selector);
 }
 

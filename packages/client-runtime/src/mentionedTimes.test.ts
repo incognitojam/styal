@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  applyMentionedTimeCheck,
   findMentionedTimes,
   findMessageZone,
   type MentionedTimeAnchor,
@@ -238,5 +239,74 @@ describe("resolveMentionedTime", () => {
 
   it("rejects dates that do not exist", () => {
     expect(resolveAll("on 31 September at 10:00 UTC", LONDON_AFTERNOON)).toEqual([null]);
+  });
+});
+
+describe("applyMentionedTimeCheck", () => {
+  const spanOf = (text: string, needle: string) => {
+    const start = text.indexOf(needle);
+    return { start, end: start + needle.length, text: needle };
+  };
+
+  it("drops a time the model reads as a length or an example", () => {
+    const text = "Recording b ran 17:25; the format looks like 14:30.";
+    const result = applyMentionedTimeCheck(text, 0, findMentionedTimes(text), [
+      { ...spanOf(text, "17:25"), kind: "length" },
+      { ...spanOf(text, "14:30"), kind: "other" },
+    ]);
+    expect(result).toEqual([]);
+  });
+
+  it("gives a moment the day the message implies instead of the nearest one", () => {
+    const text = "The stall on terra at 19:08 hit one of these steps.";
+    const [result] = applyMentionedTimeCheck(text, 0, findMentionedTimes(text), [
+      { ...spanOf(text, "19:08"), kind: "moment", time: "19:08", date: "2026-09-29" },
+    ]);
+    const resolved = resolveMentionedTime(result!.time, {
+      writtenAtMs: Date.parse("2026-09-30T10:18:00Z"),
+      environmentTimeZone: "Europe/London",
+    });
+    expect(new Date(resolved!.instantMs).toISOString()).toBe("2026-09-29T18:08:00.000Z");
+    expect(resolved!.assumedDay).toBe(false);
+  });
+
+  it("adds a time the rules skipped when the model gives its time of day", () => {
+    const text = "The pill still read Working at 8:05, so it is stale.";
+    expect(findMentionedTimes(text)).toEqual([]);
+    const result = applyMentionedTimeCheck(
+      text,
+      0,
+      [],
+      [{ ...spanOf(text, "8:05"), kind: "moment", time: "20:05", date: "2026-10-20" }],
+    );
+    expect(result).toEqual([
+      {
+        start: text.indexOf("8:05"),
+        end: text.indexOf("8:05") + 4,
+        time: { kind: "clock", hour: 20, minute: 5, date: { year: 2026, month: 10, day: 20 } },
+      },
+    ]);
+  });
+
+  it("does not add a time in a zone it cannot read", () => {
+    const text = "Around 20:00 UK time the watch is due.";
+    const span = {
+      ...spanOf(text, "20:00"),
+      kind: "moment" as const,
+      time: "20:00",
+      zone: "UK time",
+    };
+    expect(applyMentionedTimeCheck(text, 0, [], [span])).toEqual([]);
+  });
+
+  it("finds a span in text that starts later in the message", () => {
+    const message = "**Recording b:** 17:25, then 14:30.";
+    const text = " 17:25, then 14:30.";
+    const offset = message.indexOf(text);
+    expect(findMentionedTimes(text)).toHaveLength(2);
+    const result = applyMentionedTimeCheck(text, offset, findMentionedTimes(text), [
+      { ...spanOf(message, "17:25"), kind: "length" },
+    ]);
+    expect(result.map((match) => text.slice(match.start, match.end))).toEqual(["14:30"]);
   });
 });

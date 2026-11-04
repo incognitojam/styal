@@ -283,6 +283,7 @@ function createTextGeneration(
         title: "Update workflow",
       }),
     generateReviewGuide: () => Effect.succeed({ stops: [] }),
+    checkMentionedTimes: () => Effect.succeed({ spans: [] }),
     ...overrides,
   };
 
@@ -332,6 +333,7 @@ function createTextGeneration(
         ),
       ),
     generateReviewGuide: (input) => implementation.generateReviewGuide(input),
+    checkMentionedTimes: (input) => implementation.checkMentionedTimes(input),
   };
 }
 

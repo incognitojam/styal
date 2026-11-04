@@ -252,6 +252,52 @@ export function resolveReviewGuideModelSelection(
   return resolveSourceControlWriterModelSelection(settings, providers, projectId);
 }
 
+/**
+ * Models that read mentioned times as well as a careful person in our evaluation, tried in order
+ * when none is chosen. Reasoning did not help, so each runs at low effort.
+ */
+const MENTIONED_TIME_CHECK_MODELS: ReadonlyArray<{
+  readonly driver: string;
+  readonly model: string;
+}> = [
+  { driver: "codex", model: "gpt-6.1-terra" },
+  { driver: "claudeAgent", model: "claude-haiku-5-5" },
+];
+
+export function resolveMentionedTimeCheckModelSelection(
+  settings: ServerSettings,
+  providers: ReadonlyArray<ServerProvider> | undefined,
+  projectId: ProjectId | null,
+): ModelSelection {
+  const selection = settings.mentionedTimeCheckModelSelection;
+  const usable = (provider: ServerProvider | undefined) =>
+    provider !== undefined &&
+    canProviderGenerateText(provider) &&
+    resolveProjectProviderInstanceEnabled(settings, projectId, provider.instanceId);
+  if (selection) {
+    const provider = providers?.find((candidate) => candidate.instanceId === selection.instanceId);
+    if (providers === undefined || usable(provider)) return selection;
+  }
+  for (const preferred of MENTIONED_TIME_CHECK_MODELS) {
+    const provider = providers?.find(
+      (candidate) =>
+        candidate.driver === preferred.driver &&
+        usable(candidate) &&
+        candidate.models.some((model) => model.slug === preferred.model),
+    );
+    if (provider === undefined) continue;
+    const effortOption = TEXT_GENERATION_EFFORT_OPTION_BY_DRIVER[preferred.driver];
+    return createModelSelection(
+      provider.instanceId,
+      preferred.model,
+      effortOption ? [{ id: effortOption, value: "low" }] : [],
+    );
+  }
+  return providers === undefined
+    ? settings.textGenerationModelSelection
+    : resolveTextGenerationModelSelection(settings, providers);
+}
+
 export interface PersistedServerObservabilitySettings {
   readonly otlpTracesUrl: string | undefined;
   readonly otlpMetricsUrl: string | undefined;

@@ -18,6 +18,7 @@ import {
   resolveModelPreferences,
   isModelSelectionProviderEnabled,
   parsePersistedServerObservabilitySettings,
+  resolveMentionedTimeCheckModelSelection,
   resolveSourceControlWriterModelSelection,
   resolveProjectAgentBrowserAccess,
   resolveProjectAutoPull,
@@ -775,6 +776,62 @@ describe("serverSettings helpers", () => {
         providerHealthRefreshInterval: Duration.minutes(4),
       },
     });
+  });
+});
+
+describe("resolveMentionedTimeCheckModelSelection", () => {
+  const provider = (instance: string, driver: string, models: ReadonlyArray<string>) =>
+    ({
+      instanceId: ProviderInstanceId.make(instance),
+      driver: ProviderDriverKind.make(driver),
+      enabled: true,
+      installed: true,
+      version: null,
+      status: "ready",
+      auth: { status: "authenticated" },
+      checkedAt: "2026-11-04T00:00:00.000Z",
+      availability: "available",
+      models: models.map((slug) => ({ slug, name: slug, isCustom: false, capabilities: null })),
+      slashCommands: [],
+      skills: [],
+    }) satisfies ServerProvider;
+
+  it("picks a model that reads times well when none is chosen", () => {
+    const codex = provider("codex", "codex", ["gpt-6-luna", "gpt-6.1-terra"]);
+    const claude = provider("claudeAgent", "claudeAgent", ["claude-haiku-5-5"]);
+    expect(
+      resolveMentionedTimeCheckModelSelection(DEFAULT_SERVER_SETTINGS, [claude, codex], null),
+    ).toEqual(
+      createModelSelection(codex.instanceId, "gpt-6.1-terra", [
+        { id: "reasoningEffort", value: "low" },
+      ]),
+    );
+    expect(
+      resolveMentionedTimeCheckModelSelection(DEFAULT_SERVER_SETTINGS, [claude], null),
+    ).toEqual(
+      createModelSelection(claude.instanceId, "claude-haiku-5-5", [{ id: "effort", value: "low" }]),
+    );
+  });
+
+  it("keeps a chosen model and falls back to the text generation model otherwise", () => {
+    const cursor = provider("cursor", "cursor", ["composer-2"]);
+    const chosen = createModelSelection(cursor.instanceId, "composer-2");
+    expect(
+      resolveMentionedTimeCheckModelSelection(
+        {
+          ...DEFAULT_SERVER_SETTINGS,
+          providerInstances: {
+            [cursor.instanceId]: { driver: cursor.driver, enabled: true, config: {} },
+          },
+          mentionedTimeCheckModelSelection: chosen,
+        },
+        [cursor],
+        null,
+      ),
+    ).toBe(chosen);
+    expect(resolveMentionedTimeCheckModelSelection(DEFAULT_SERVER_SETTINGS, undefined, null)).toBe(
+      DEFAULT_SERVER_SETTINGS.textGenerationModelSelection,
+    );
   });
 });
 

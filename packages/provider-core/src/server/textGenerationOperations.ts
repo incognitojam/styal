@@ -9,6 +9,7 @@ import type { ProviderTextGeneration } from "./textGeneration.ts";
 import {
   buildBranchNamePrompt,
   buildCommitMessagePrompt,
+  buildMentionedTimesPrompt,
   buildPrContentPrompt,
   buildReviewGuidePrompt,
   buildThreadTitlePrompt,
@@ -167,11 +168,23 @@ export function fromRunner(name: string, run: Runner): ProviderTextGeneration {
     });
   });
 
+  const checkMentionedTimes: ProviderTextGeneration["checkMentionedTimes"] = Effect.fn(
+    `${name}.checkMentionedTimes`,
+  )(function* (input) {
+    return yield* run({
+      operation: "checkMentionedTimes",
+      cwd: input.cwd,
+      modelSelection: input.modelSelection,
+      ...buildMentionedTimesPrompt(input),
+    });
+  });
+
   return {
     generateCommitMessage,
     generatePrContent,
     generateBranchName,
     generateThreadTitle,
     generateReviewGuide,
+    checkMentionedTimes,
   } satisfies ProviderTextGeneration;
 }

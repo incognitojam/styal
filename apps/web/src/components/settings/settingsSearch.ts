@@ -1077,6 +1077,22 @@ export const SETTINGS_SEARCH_ITEMS = [
     scope: "project-defaults",
   },
   {
+    id: "mentioned-time-check",
+    title: "Check mentioned times with a model (beta)",
+    to: "/settings/source-control",
+    searchTerms: ["time chips times of day duration length day yesterday today zone clock"],
+    environmentOnly: true,
+  },
+  {
+    id: "mentioned-time-check-model",
+    title: "Time check model",
+    to: "/settings/source-control",
+    // Hidden until the check is on, so a search lands on the switch that shows it.
+    targetId: "mentioned-time-check",
+    searchTerms: ["time chips model haiku terra small fast"],
+    environmentOnly: true,
+  },
+  {
     id: "project-actions",
     title: "Actions",
     to: "/settings/projects",

@@ -34,6 +34,7 @@ import * as SqlError from "effect/sql/SqlError";
 import * as KeyedLock from "@t3tools/shared/KeyedLock";
 import { AgentScope } from "@t3tools/shared/AgentScope";
 import { isTemporaryWorktreeBranch } from "@t3tools/shared/git";
+import { findMentionedTimeSpans } from "@t3tools/shared/mentionedTimeSpans";
 import { getModelSelectionStringOptionValue, modelSelectionsEqual } from "@t3tools/shared/model";
 import { addThreadTokenUsage, sumThreadTokenUsage } from "@t3tools/shared/turnUsage";
 import { UsageService } from "../usage/UsageService.ts";
@@ -41,6 +42,7 @@ import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
+import * as EffectOutbox from "./EffectOutbox.ts";
 import * as EventSink from "./EventSink.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
@@ -49,6 +51,31 @@ import { makeProviderFailureTurnItem } from "@t3tools/provider-core/server/failu
 import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
 import { stripUnservedToolOutputImageBytes } from "./toolOutputImageBytes.ts";
 import { boundFileChangeForStorage } from "./WireProjection.ts";
+
+/**
+ * A finished assistant reply that names a clock time queues a model check of those times. The
+ * effect id is per message, so a re-sent final update queues nothing new; the check itself does
+ * nothing unless the setting is on.
+ */
+function mentionedTimesCheckEffects(
+  events: ReadonlyArray<OrchestrationV2DomainEvent>,
+): EffectOutbox.PendingOrchestrationEffectV2[] {
+  return events.flatMap((event) =>
+    event.type === "message.updated" &&
+    event.payload.role === "assistant" &&
+    !event.payload.streaming &&
+    findMentionedTimeSpans(event.payload.text).length > 0
+      ? [
+          {
+            id: `effect:message.mentioned-times.check:${event.payload.id}`,
+            commandId: CommandId.make(`command:message.mentioned-times.check:${event.payload.id}`),
+            threadId: event.threadId,
+            request: { type: "message.mentioned-times.check", messageId: event.payload.id },
+          },
+        ]
+      : [],
+  );
+}
 
 export class ProviderEventNormalizeError extends Schema.TaggedError<ProviderEventNormalizeError>()(
   "ProviderEventNormalizeError",
@@ -896,6 +923,7 @@ export const layer: Layer.Layer<
             if (events.length === 0) {
               return [];
             }
+            const effects = mentionedTimesCheckEffects(events);
             const mapWriteError = (cause: unknown) =>
               new ProviderEventPublishError({
                 providerSessionId: input.providerSessionId,
@@ -914,13 +942,16 @@ export const layer: Layer.Layer<
               return ownerResult.storedEvents;
             }
             if (input.writeIfRunCurrent === undefined) {
-              return yield* eventSink
-                .write({
-                  guardPendingUserInputCancellations: true,
-                  ...(input.commandId === undefined ? {} : { commandId: input.commandId }),
-                  events,
-                })
-                .pipe(retryLockTimeout, Effect.mapError(mapWriteError));
+              const write = {
+                guardPendingUserInputCancellations: true,
+                ...(input.commandId === undefined ? {} : { commandId: input.commandId }),
+                events,
+              };
+              return yield* (
+                effects.length === 0
+                  ? eventSink.write(write)
+                  : eventSink.writeWithEffects({ ...write, effects })
+              ).pipe(retryLockTimeout, Effect.mapError(mapWriteError));
             }
             const result = yield* eventSink
               .writeIfRunCurrent({
@@ -929,6 +960,7 @@ export const layer: Layer.Layer<
                 threadId: input.threadId,
                 ...input.writeIfRunCurrent,
                 events,
+                ...(effects.length === 0 ? {} : { effects }),
               })
               .pipe(retryLockTimeout, Effect.mapError(mapWriteError));
             return result.storedEvents;

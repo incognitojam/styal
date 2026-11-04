@@ -21,6 +21,8 @@ import {
 import type { ScopedProjectRef, ScopedThreadRef } from "@t3tools/contracts";
 import type {
   EnvironmentId,
+  MessageId,
+  OrchestrationV2MentionedTimes,
   OrchestrationV2ProjectedTurnItem,
   OrchestrationV2ThreadProjection,
   OrchestrationV2ThreadShell,
@@ -64,6 +66,9 @@ const EMPTY_THREAD_STATUS_ATOM = Atom.make<EnvironmentThreadStatus>("empty").pip
 const EMPTY_VISIBLE_TURN_ITEMS_ATOM = Atom.make(EMPTY_VISIBLE_TURN_ITEMS).pipe(
   Atom.withLabel("web-thread-visible-turn-items:empty"),
 );
+const EMPTY_MENTIONED_TIMES_ATOM = Atom.make<ReadonlyMap<MessageId, OrchestrationV2MentionedTimes>>(
+  new Map(),
+).pipe(Atom.withLabel("web-thread-mentioned-times:empty"));
 const EMPTY_CHECKPOINT_SUMMARIES_ATOM = Atom.make<ReadonlyArray<ThreadCheckpointSummary>>(
   Object.freeze([]),
 ).pipe(Atom.withLabel("web-thread-checkpoint-summaries:empty"));
@@ -214,6 +219,13 @@ export function resolveThreadDetailRef(
   },
 ): ScopedThreadRef | null {
   return ref !== null && (!options.waitForShell || options.shellExists) ? ref : null;
+}
+
+/** Model checks of the times each message mentions, keyed by message id. */
+export function useThreadMentionedTimes(ref: ScopedThreadRef | null) {
+  return useAtomValue(
+    ref === null ? EMPTY_MENTIONED_TIMES_ATOM : environmentThreadDetails.mentionedTimesAtom(ref),
+  );
 }
 
 export function useThreadVisibleTurnItems(

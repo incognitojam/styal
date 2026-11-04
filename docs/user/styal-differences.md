@@ -317,7 +317,8 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   checked September 28, 2026.
 - **Times in your time zone.** Times an agent writes, such as `14:20 UTC` or `49 minutes ago`,
   show the moment in your own time zone and how far it is from now when you hover them. This helps
-  when the agent's machine runs in another zone. Compared with
+  when the agent's machine runs in another zone. An optional model check of each reply keeps
+  lengths and example times plain and uses the day the reply describes. Compared with
   [T3 Code revision 5cc99e1](https://github.com/pingdotgg/t3code/tree/5cc99e1c23980d7995a13c47f969b47cb68ed1be),
   checked October 1, 2026, which shows these times as plain text.
   [Reading the chat timeline](./chat-timeline.md).
