@@ -1013,7 +1013,7 @@ const RootStackConfig = createWorkspaceStackNavigator({
       screen: ConnectOnboardingRouteScreen,
       linking: "connect-onboarding",
       options: {
-        // Android root formSheets lack a native stack bar; the route provides AndroidSheetHeader.
+        // Android root formSheets lack a native stack bar; the route provides its own sheet AppBar.
         ...(Platform.OS === "android" ? { headerShown: false } : SHEET_SOLID_HEADER_OPTIONS),
         title: "Set up styal Link",
         gestureEnabled: true,

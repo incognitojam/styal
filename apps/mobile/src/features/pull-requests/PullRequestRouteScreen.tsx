@@ -66,7 +66,7 @@ import { NativeScrollViewMarker as ScrollViewMarker } from "../../native/NativeS
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText as Text } from "../../components/ui/AppText";
-import { AndroidScreenHeader } from "../../components/ui/AndroidScreenHeader";
+import { AppBar } from "../../components/ui/AppBar";
 import { useAndroidControlSizing } from "../../components/ui/useAndroidControlSizing";
 import { useAdaptiveWorkspaceLayout } from "../layout/AdaptiveWorkspaceLayout";
 import { AndroidWorkspaceSidebarButton } from "../layout/workspace-sidebar-toolbar";
@@ -504,7 +504,9 @@ export function PullRequestRouteScreen({ route }: StaticScreenProps<PullRequestP
           optionsVersion={[layout.usesSplitView, sidebarHeaderItem]}
         />
         {Platform.OS === "android" ? (
-          <AndroidScreenHeader
+          <AppBar
+            embedded
+            sidebar={false}
             title={`#${params.number}${connected ? "" : " · Offline"}`}
             subtitle={params.repository}
             onBack={layout.usesSplitView ? undefined : returnToList}
@@ -975,7 +977,7 @@ export function PullRequestFileRouteScreen(props: PullRequestFileRouteProps) {
     <View className="flex-1 bg-screen">
       <NativeStackScreenOptions options={{ title, headerTitle: title }} />
       {Platform.OS === "android" ? (
-        <AndroidScreenHeader title={title} onBack={() => navigation.goBack()} />
+        <AppBar embedded sidebar={false} title={title} onBack={() => navigation.goBack()} />
       ) : null}
       <View className="flex-1 items-center justify-center">
         <AppActivityIndicator accessibilityLabel="Loading changes" />
@@ -1203,7 +1205,9 @@ function PullRequestFileRouteContent({ route }: PullRequestFileRouteProps) {
         }}
       />
       {Platform.OS === "android" ? (
-        <AndroidScreenHeader
+        <AppBar
+          embedded
+          sidebar={false}
           title={title}
           onBack={() => navigation.goBack()}
           trailing={

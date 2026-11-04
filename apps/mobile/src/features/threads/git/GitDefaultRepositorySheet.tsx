@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AsyncResult } from "effect/reactivity";
 import * as Cause from "effect/Cause";
 
-import { AndroidSheetHeader } from "../../../components/ui/AndroidScreenHeader";
+import { AppBar } from "../../../components/ui/AppBar";
 import { SymbolView } from "../../../components/ui/AppSymbol";
 import { AppText as Text } from "../../../components/ui/AppText";
 import { ErrorBanner } from "../../../components/ui/ErrorBanner";
@@ -116,7 +116,7 @@ export function GitDefaultRepositorySheet(_props: GitDefaultRepositorySheetProps
   return (
     <View collapsable={false} className="flex-1 bg-sheet">
       {Platform.OS === "android" ? (
-        <AndroidSheetHeader title="Default repository" onBack={() => navigation.goBack()} />
+        <AppBar sheet title="Default repository" onBack={() => navigation.goBack()} />
       ) : null}
       <ScrollView
         className="flex-1"

@@ -28,7 +28,7 @@ import { SettingsSection } from "./components/SettingsSection";
 import { SettingsSwitchRow } from "./components/SettingsSwitchRow";
 import { SettingsScreen } from "./components/SettingsScreen";
 import {
-  AndroidSettingsEnvironmentFilter,
+  useSettingsEnvironmentMenu,
   SettingsEnvironmentFilterHeader,
 } from "./components/SettingsEnvironmentFilterHeader";
 import { useSettingsEnvironmentFilter } from "./settings-environment-filter";
@@ -39,6 +39,7 @@ type SharingEnvironment = ReturnType<
 >["availableTargets"][number];
 
 export function SettingsDevicesRouteScreen() {
+  const environmentMenu = useSettingsEnvironmentMenu();
   const [offlineError, setOfflineError] = useState<string | null>(null);
   const insets = useSafeAreaInsets();
   const { selectedTargets, availableTargets, selectedIds, selectedProjectKey } =
@@ -48,7 +49,7 @@ export function SettingsDevicesRouteScreen() {
   return (
     <>
       <SettingsEnvironmentFilterHeader />
-      <SettingsScreen title="Devices" trailing={<AndroidSettingsEnvironmentFilter />}>
+      <SettingsScreen title="Devices" menus={[environmentMenu]}>
         <ScreenScrollView
           contentInsetAdjustmentBehavior="automatic"
           className="flex-1"

@@ -5,7 +5,7 @@ import { useNavigation } from "@react-navigation/native";
 import { Platform, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { AndroidScreenHeader } from "../../components/ui/AndroidScreenHeader";
+import { AppBar } from "../../components/ui/AppBar";
 import { PullRequestRoutingSettings } from "./PullRequestRoutingSettings";
 import { WorkTogetherSection } from "./WorkTogetherSection";
 
@@ -16,7 +16,9 @@ export function ConnectionsRouteScreen() {
   return (
     <View collapsable={false} className="flex-1 bg-sheet">
       {Platform.OS === "android" ? (
-        <AndroidScreenHeader
+        <AppBar
+          embedded
+          sidebar={false}
           title="Machines"
           onBack={() => navigation.goBack()}
           actions={[
