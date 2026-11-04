@@ -44,6 +44,12 @@ vi.mock(import("~/state/device"), async (original) => ({
   ...(await original()),
   useDeviceState: (() => ({ state: { devices: [], hosts: [] } })) as never,
 }));
+const reportForkClientUsage = vi.fn();
+vi.mock(import("~/forkClientUsage"), async (original) => ({
+  ...(await original()),
+  reportForkClientUsage: ((...args: unknown[]) => reportForkClientUsage(...args)) as never,
+}));
+import { PREVIEW_MINI_PLAYER_EDGE_GAP } from "./previewMiniPlayerLayout";
 import { ThreadPreviewMiniPlayer } from "./ThreadPreviewMiniPlayer";
 
 const threadRef = {
@@ -81,6 +87,16 @@ function Player() {
           container,
           preview: { ...miniPlayer, key, source: sourceSizes[miniPlayer.source.kind] },
         }),
+        resolvePreviewFrame: (position) =>
+          resolveChatCanvasLayout({
+            container,
+            preview: {
+              ...miniPlayer,
+              position,
+              key,
+              source: sourceSizes[miniPlayer.source.kind],
+            },
+          }).frame,
         reportPreview: () => {},
         clearPreview: () => {},
         registerTimeline: () => {},
@@ -94,6 +110,8 @@ function Player() {
 }
 
 async function mount(source = browserSource) {
+  // Reduced motion makes a release settle immediately instead of over animation frames.
+  vi.stubGlobal("matchMedia", (query: string) => ({ matches: query.includes("reduced-motion") }));
   usePreviewMiniPlayerStore.setState({ byThreadKey: {} });
   usePreviewMiniPlayerStore.getState().open(threadRef, source);
   const screen = await render(<Player />);
@@ -122,10 +140,15 @@ async function mount(source = browserSource) {
       await act(() => {
         const event = new MouseEvent(type, { bubbles: true, button: 0, clientX: x, clientY: y });
         Object.defineProperty(event, "pointerId", { value: 1 });
+        // Back-to-back synthetic events would otherwise read as a flick.
+        Object.defineProperty(event, "timeStamp", { value: 1 });
         element.dispatchEvent(event);
       });
     },
-    [Symbol.asyncDispose]: () => screen[Symbol.asyncDispose](),
+    [Symbol.asyncDispose]: async () => {
+      await screen[Symbol.asyncDispose]();
+      vi.unstubAllGlobals();
+    },
   };
 }
 
@@ -142,6 +165,45 @@ describe("floating browser preview gestures", () => {
     const released = player.frame();
     await player.pointer(surface, "pointermove", 300, 300);
     expect(player.frame()).toEqual(released);
+  });
+
+  it("settles flush against an edge it is dropped near and reports how it settled", async () => {
+    reportForkClientUsage.mockClear();
+    await using player = await mount();
+    const start = player.frame();
+    const surface = player.shield();
+    const target = { x: 700 - (start.x - 300), y: 550 - (start.y - 30) };
+    await player.pointer(surface, "pointerdown", 700, 550);
+    await player.pointer(surface, "pointermove", target.x, target.y);
+    expect(player.frame()).toMatchObject({ x: 300, y: 30 });
+    await player.pointer(surface, "pointerup", target.x, target.y);
+    expect(player.frame()).toMatchObject({ x: 300, y: PREVIEW_MINI_PLAYER_EDGE_GAP });
+    expect(reportForkClientUsage.mock.calls).toEqual([
+      [
+        threadRef.environmentId,
+        { feature: "floating-preview", action: "released", settle: "edge", preview: "browser" },
+      ],
+    ]);
+  });
+
+  it("lands a settling preview before resizing it from a grabbed edge", async () => {
+    await using player = await mount();
+    vi.stubGlobal("matchMedia", () => ({ matches: false }));
+    const start = player.frame();
+    const surface = player.shield();
+    const target = { x: 700 - (start.x - 300), y: 550 - (start.y - 30) };
+    await player.pointer(surface, "pointerdown", 700, 550);
+    await player.pointer(surface, "pointermove", target.x, target.y);
+    await player.pointer(surface, "pointerup", target.x, target.y);
+    expect(player.frame().y).toBe(30);
+    const edge = player.host.querySelector("[data-preview-mini-player-resize='west']")!;
+    await player.pointer(edge, "pointerdown", 300, 100);
+    const landed = player.frame();
+    expect(landed).toMatchObject({ x: 300, y: PREVIEW_MINI_PLAYER_EDGE_GAP });
+    await player.pointer(edge, "pointermove", 260, 100);
+    expect(player.frame().width).toBe(landed.width + 40);
+    expect(player.frame().x + player.frame().width).toBe(landed.x + landed.width);
+    await player.pointer(edge, "pointerup", 260, 100);
   });
 
   it("keeps anchored edge resizing usable and stops a cancelled gesture", async () => {

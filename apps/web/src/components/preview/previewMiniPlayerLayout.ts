@@ -230,6 +230,105 @@ export function clampPreviewMiniPlayerPosition(
   return best;
 }
 
+export interface PreviewMiniPlayerPointerSample extends PreviewMiniPlayerPosition {
+  readonly time: number;
+}
+
+const VELOCITY_WINDOW_MS = 80;
+const RELEASE_PAUSE_MS = 100;
+const FLICK_MIN_SPEED = 0.5;
+// An axis carrying this share of a flick's speed follows the throw; a weaker
+// axis takes the corner nearest where the flick would have carried it.
+const FLICK_AXIS_SHARE = 0.4;
+const FLICK_PROJECTION_MS = 300;
+const EDGE_SNAP_DISTANCE = 40;
+
+/**
+ * Pixels per millisecond over the moves leading up to the last one, or at
+ * least the move before it when frames are slow. The release event repeats the
+ * last position, so it is not a sample; only a gap clearly longer than the
+ * pointer's own pace before `releaseTime` reads as a pause.
+ */
+export function estimatePreviewMiniPlayerVelocity(
+  samples: ReadonlyArray<PreviewMiniPlayerPointerSample>,
+  releaseTime: number,
+): PreviewMiniPlayerPosition {
+  const last = samples.at(-1);
+  const previous = samples.at(-2);
+  if (!last || !previous || last.time <= previous.time) return { x: 0, y: 0 };
+  const pace = last.time - previous.time;
+  if (releaseTime - last.time > Math.max(RELEASE_PAUSE_MS, pace * 2)) return { x: 0, y: 0 };
+  const first =
+    samples.find((sample) => last.time - sample.time <= VELOCITY_WINDOW_MS && sample !== last) ??
+    previous;
+  const elapsed = last.time - first.time;
+  return { x: (last.x - first.x) / elapsed, y: (last.y - first.y) / elapsed };
+}
+
+/** The positions a player can reach, by its top-left corner. */
+export interface PreviewMiniPlayerBounds {
+  readonly left: number;
+  readonly top: number;
+  readonly right: number;
+  readonly bottom: number;
+}
+
+/** Where a dragged player settles: a flick lands in the corner it was thrown toward; a drop near an edge sits flush against it. */
+export function resolvePreviewMiniPlayerRelease(input: {
+  readonly position: PreviewMiniPlayerPosition;
+  readonly velocity: PreviewMiniPlayerPosition;
+  readonly bounds: PreviewMiniPlayerBounds;
+}): PreviewMiniPlayerPosition & { readonly settle: "corner" | "edge" | "free" } {
+  const { position, velocity, bounds } = input;
+  const speed = Math.hypot(velocity.x, velocity.y);
+  const flicked = speed >= FLICK_MIN_SPEED;
+  const settle = (value: number, axisVelocity: number, near: number, far: number) => {
+    if (flicked) {
+      if (Math.abs(axisVelocity) >= speed * FLICK_AXIS_SHARE) return axisVelocity < 0 ? near : far;
+      const projected = value + axisVelocity * FLICK_PROJECTION_MS;
+      return Math.abs(projected - near) <= Math.abs(projected - far) ? near : far;
+    }
+    if (value - near <= EDGE_SNAP_DISTANCE) return near;
+    if (far - value <= EDGE_SNAP_DISTANCE) return far;
+    return value;
+  };
+  const x = settle(position.x, velocity.x, bounds.left, Math.max(bounds.left, bounds.right));
+  const y = settle(position.y, velocity.y, bounds.top, Math.max(bounds.top, bounds.bottom));
+  return {
+    x,
+    y,
+    settle: flicked ? "corner" : x !== position.x || y !== position.y ? "edge" : "free",
+  };
+}
+
+/**
+ * Where a released player comes to rest. Corners and edges come from the
+ * canvas itself; obstacles reshape the reachable area per position, so only the
+ * chosen target goes through `resolveFrame`. Resolving the corners first would
+ * let one blocked corner shrink the others.
+ */
+export function resolvePreviewMiniPlayerSettleTarget(input: {
+  readonly frame: PreviewMiniPlayerFrame;
+  readonly velocity: PreviewMiniPlayerPosition;
+  readonly container: PreviewMiniPlayerSize;
+  readonly resolveFrame: (position: PreviewMiniPlayerPosition) => PreviewMiniPlayerPosition | null;
+}): PreviewMiniPlayerPosition & { readonly settle: "corner" | "edge" | "free" } {
+  const { frame, velocity, container, resolveFrame } = input;
+  const gap = PREVIEW_MINI_PLAYER_EDGE_GAP;
+  const release = resolvePreviewMiniPlayerRelease({
+    position: frame,
+    velocity,
+    bounds: {
+      left: gap,
+      top: gap,
+      right: container.width - frame.width - gap,
+      bottom: container.height - frame.height - gap,
+    },
+  });
+  const resolved = resolveFrame(release) ?? release;
+  return { x: resolved.x, y: resolved.y, settle: release.settle };
+}
+
 /** Clamp per layout without persisting so narrow containers preserve the chosen width. */
 export function resolvePreviewMiniPlayerFrame(input: {
   readonly width: number | null;

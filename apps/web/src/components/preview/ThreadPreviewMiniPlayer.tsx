@@ -38,12 +38,14 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { cn } from "~/lib/utils";
 import { setActivePreviewTab, useThreadPreviewState } from "~/previewStateStore";
 import {
+  type PreviewMiniPlayerPosition,
   type PreviewMiniPlayerSize,
   type PreviewMiniPlayerSource,
   type PreviewMiniPlayerState,
   previewMiniPlayerSourceKey,
   usePreviewMiniPlayerStore,
 } from "~/previewMiniPlayerStore";
+import { reportForkClientUsage } from "~/forkClientUsage";
 import { useRightPanelStore } from "~/rightPanelStore";
 import { useDeviceState } from "~/state/device";
 
@@ -54,12 +56,15 @@ import { previewBridge } from "./previewBridge";
 import { showPreviewPopup } from "./showPreviewPopup";
 import {
   clampPreviewMiniPlayerPosition,
+  estimatePreviewMiniPlayerVelocity,
   NO_PREVIEW_MINI_PLAYER_OBSTACLES,
   PREVIEW_MINI_PLAYER_WEBVIEW_Z_INDEX,
   type PreviewMiniPlayerFrame,
+  type PreviewMiniPlayerPointerSample,
   resizePreviewMiniPlayer,
   resolveDeviceMiniPlayerCornerRadius,
   resolveDeviceMiniPlayerSourceSize,
+  resolvePreviewMiniPlayerSettleTarget,
   resolvePreviewMiniPlayerSourceSize,
 } from "./previewMiniPlayerLayout";
 
@@ -71,9 +76,12 @@ interface PointerGesture {
   readonly frame: PreviewMiniPlayerFrame;
   readonly direction: BrowserViewportResizeDirection | null;
   moved: boolean;
+  readonly samples: PreviewMiniPlayerPointerSample[];
 }
 
 const HANDLE_TAP_SLOP_PX = 6;
+const SETTLE_MIN_MS = 160;
+const SETTLE_MAX_MS = 260;
 
 interface Props {
   readonly threadRef: ScopedThreadRef;
@@ -353,6 +361,20 @@ function MiniPlayerShell({
 }) {
   const canvas = useChatCanvas();
   const gestureRef = useRef<PointerGesture | null>(null);
+  const settleRef = useRef<{ frame: number; to: PreviewMiniPlayerPosition } | null>(null);
+  const stopSettling = () => {
+    const settling = settleRef.current;
+    if (settling) cancelAnimationFrame(settling.frame);
+    settleRef.current = null;
+    return settling?.to ?? null;
+  };
+  // oxlint-disable-next-line t3code/react-effect-budget -- no handler runs at unmount, and a settle's animation frame loop must not outlive the player
+  useEffect(
+    () => () => {
+      if (settleRef.current) cancelAnimationFrame(settleRef.current.frame);
+    },
+    [],
+  );
   // Touch toggles the pill after the tap's click so that click cannot land on the newly opened pill.
   const [pillOpen, setPillOpen] = useState(false);
   const handleTappedRef = useRef(false);
@@ -407,14 +429,24 @@ function MiniPlayerShell({
     direction: BrowserViewportResizeDirection | null,
   ) => {
     if (event.button !== 0 || !frame) return;
+    const settleTarget = stopSettling();
+    let start = frame;
+    // A drag picks a settling player up where it is, still free of obstacles.
+    // A resize lands it first, so it resizes from where it rests under them.
+    if (settleTarget && direction !== null) {
+      usePreviewMiniPlayerStore.getState().move(threadRef, sourceKey, settleTarget);
+      setDragging(false);
+      start = { ...frame, ...settleTarget };
+    }
     gestureRef.current = {
       pointerId: event.pointerId,
       pointerType: event.pointerType,
       pointerX: event.clientX,
       pointerY: event.clientY,
-      frame,
+      frame: start,
       direction,
       moved: false,
+      samples: [{ x: event.clientX, y: event.clientY, time: event.timeStamp }],
     };
     event.currentTarget.setPointerCapture(event.pointerId);
     event.preventDefault();
@@ -425,6 +457,7 @@ function MiniPlayerShell({
     const gesture = gestureRef.current;
     if (!gesture || gesture.pointerId !== event.pointerId || !container) return;
     const delta = { x: event.clientX - gesture.pointerX, y: event.clientY - gesture.pointerY };
+    gesture.samples.push({ x: event.clientX, y: event.clientY, time: event.timeStamp });
     if (!gesture.moved && Math.hypot(delta.x, delta.y) < HANDLE_TAP_SLOP_PX) return;
     gesture.moved = true;
     const store = usePreviewMiniPlayerStore.getState();
@@ -457,7 +490,6 @@ function MiniPlayerShell({
     const gesture = gestureRef.current;
     if (gesture?.pointerId !== event.pointerId) return;
     gestureRef.current = null;
-    setDragging(false);
     handleTappedRef.current =
       event.type === "pointerup" &&
       gesture.direction === null &&
@@ -466,6 +498,60 @@ function MiniPlayerShell({
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
+    if (
+      event.type === "pointerup" &&
+      gesture.direction === null &&
+      gesture.moved &&
+      container &&
+      frame
+    ) {
+      // The animation ends where the frame comes to rest, clear of the
+      // composer and details card.
+      const target = resolvePreviewMiniPlayerSettleTarget({
+        frame,
+        velocity: estimatePreviewMiniPlayerVelocity(gesture.samples, event.timeStamp),
+        container,
+        resolveFrame: (position) => canvas?.resolvePreviewFrame(position) ?? null,
+      });
+      void reportForkClientUsage(threadRef.environmentId, {
+        feature: "floating-preview",
+        action: "released",
+        settle: target.settle,
+        preview: miniPlayer.source.kind,
+      });
+      settle(frame, { x: target.x, y: target.y });
+      return;
+    }
+    setDragging(false);
+  };
+
+  // Steps through the store rather than a CSS transition so the desktop's native
+  // webview, positioned from the frame, travels with the DOM. Both ends are
+  // resting positions, so the player stays free of obstacles until it lands.
+  const settle = (from: PreviewMiniPlayerPosition, to: PreviewMiniPlayerPosition) => {
+    const move = (position: PreviewMiniPlayerPosition) =>
+      usePreviewMiniPlayerStore.getState().move(threadRef, sourceKey, position);
+    const distance = Math.hypot(to.x - from.x, to.y - from.y);
+    if (distance < 1 || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      move(to);
+      setDragging(false);
+      return;
+    }
+    const duration = Math.min(SETTLE_MAX_MS, SETTLE_MIN_MS + distance * 0.15);
+    const start = performance.now();
+    const step = (now: number) => {
+      // A frame's timestamp can precede the start, which would ease backwards.
+      const progress = Math.min(1, Math.max(0, (now - start) / duration));
+      const eased = 1 - (1 - progress) ** 4;
+      move({ x: from.x + (to.x - from.x) * eased, y: from.y + (to.y - from.y) * eased });
+      if (progress < 1) {
+        settleRef.current = { frame: requestAnimationFrame(step), to };
+      } else {
+        settleRef.current = null;
+        setDragging(false);
+      }
+    };
+    settleRef.current = { frame: requestAnimationFrame(step), to };
   };
 
   return (
