@@ -49,6 +49,7 @@ import {
   resolveMacWebAuthnEntitlements,
   resolveMacPasskeySigningConfiguration,
   resolveMergedStageDependencies,
+  resolveDesktopRuntimeDependencies,
   resolveBuildOptions,
   resolveDesktopBuildIconAssets,
   resolveDesktopPackageIdentity,
@@ -841,6 +842,25 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         "@ff-labs/fff-bin-linux-x64-musl": "0.9.4",
       },
     );
+  });
+
+  it("stages the macOS-only Objective-C bridge on macOS alone", () => {
+    const desktopDependencies = {
+      "objc-js": "catalog:",
+      "@napi-rs/keyring": "1.3.0",
+      electron: "44.9.3",
+    };
+    const catalog = { "objc-js": "1.5.0" };
+    assert.deepStrictEqual(resolveDesktopRuntimeDependencies(desktopDependencies, catalog, "mac"), {
+      "objc-js": "1.5.0",
+      "@napi-rs/keyring": "1.3.0",
+    });
+    for (const platform of ["linux", "win"] as const) {
+      assert.deepStrictEqual(
+        resolveDesktopRuntimeDependencies(desktopDependencies, catalog, platform),
+        { "@napi-rs/keyring": "1.3.0" },
+      );
+    }
   });
 
   it.effect("ships Cursor platform assets outside asar for spawning and native loading", () =>

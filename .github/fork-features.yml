@@ -1147,11 +1147,13 @@ features:
       - Turning on System notifications in the desktop app on macOS sends a confirmation notification; if macOS rejects it, the setting stays on and the row says macOS is blocking notifications, with a button that opens the app's own page under Notifications in System Settings.
       - The first rejected thread notification in a session shows an in-app warning toast with the same System Settings action.
       - Clicking a main-process notification brings its window to the front and opens the thread or guide it was about.
+      - The UserNotifications bridge (objc-js) is staged and read on macOS only; Linux and Windows builds neither install nor rebuild it, and treat notifications as never blocked by it.
     rationale: Electron reports the Chromium notification permission as granted on macOS, and its own notifications emit `show` rather than `failed` while macOS discards them, so upstream's settings show notifications as on while none arrive.
     implementation_paths:
       - apps/desktop/src/ipc/methods/systemNotifications.ts
       - apps/desktop/src/permissions/MacNotificationAuthorization.ts
       - apps/web/src/systemNotifications.ts
+      - scripts/build-desktop-artifact.ts
     upstream_paths:
       - apps/desktop/src/electron/ElectronShell.ts
       - apps/desktop/src/ipc/DesktopIpcHandlers.ts

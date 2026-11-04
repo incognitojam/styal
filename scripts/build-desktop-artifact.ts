@@ -2782,19 +2782,23 @@ const validateBundledClientAssets = Effect.fn("build-desktop-artifact.validateBu
   },
 );
 
+// Native addons that only build on macOS. electron-builder rebuilds staged native modules from
+// source on Linux, and objc-js's binding.gyp shells out to Homebrew.
+const MAC_ONLY_DESKTOP_DEPENDENCIES = new Set(["objc-js"]);
+
 export function resolveDesktopRuntimeDependencies(
   dependencies: Record<string, string> | undefined,
   catalog: Record<string, string>,
+  platform: typeof BuildPlatform.Type,
 ): Record<string, string> {
   if (!dependencies || Object.keys(dependencies).length === 0) {
     return {};
   }
 
-  return resolveCatalogDependencies(
-    selectDesktopRuntimeExternalDependencies(dependencies),
-    catalog,
-    "apps/desktop",
+  const external = Object.entries(selectDesktopRuntimeExternalDependencies(dependencies)).filter(
+    ([name]) => platform === "mac" || !MAC_ONLY_DESKTOP_DEPENDENCIES.has(name),
   );
+  return resolveCatalogDependencies(Object.fromEntries(external), catalog, "apps/desktop");
 }
 
 export const resolveGitHubPublishConfig = Effect.fn("resolveGitHubPublishConfig")(function* (
@@ -3816,7 +3820,12 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
     resolvedServerDependencies,
   );
   const resolvedDesktopRuntimeDependencies = yield* Effect.try({
-    try: () => resolveDesktopRuntimeDependencies(desktopPackageJson.dependencies, workspaceCatalog),
+    try: () =>
+      resolveDesktopRuntimeDependencies(
+        desktopPackageJson.dependencies,
+        workspaceCatalog,
+        options.platform,
+      ),
     catch: (cause) =>
       new DesktopBuildDependencyResolutionError({
         kind: "desktop-runtime",
