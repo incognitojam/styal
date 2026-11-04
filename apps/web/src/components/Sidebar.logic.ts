@@ -970,6 +970,7 @@ export function shouldRecedeSidebarThread(input: {
   isWoke: boolean;
   isActive: boolean;
   isSelected: boolean;
+  isFailureSeen?: boolean;
 }): boolean {
   if (
     input.isActive ||
@@ -983,6 +984,9 @@ export function shouldRecedeSidebarThread(input: {
   if (input.status === "working" || input.status === "waiting") return true;
   if (input.status === "ready") {
     return !input.isUnread && !input.isWoke;
+  }
+  if (input.status === "failed" || input.status === "limited") {
+    return input.isFailureSeen === true;
   }
   return false;
 }

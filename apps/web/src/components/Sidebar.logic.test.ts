@@ -304,6 +304,15 @@ describe("shouldRecedeSidebarThread", () => {
     ).toBe(false);
   });
 
+  it.each(["failed", "limited"] as const)(
+    "recedes a %s thread once the failure is seen, and keeps it prominent until then",
+    (status) => {
+      const input = { status, isUnread: false, isWoke: false, isActive: false, isSelected: false };
+      expect(shouldRecedeSidebarThread({ ...input, isFailureSeen: true })).toBe(true);
+      expect(shouldRecedeSidebarThread({ ...input, isFailureSeen: false })).toBe(false);
+    },
+  );
+
   it("recedes a read ready thread", () => {
     expect(
       shouldRecedeSidebarThread({
