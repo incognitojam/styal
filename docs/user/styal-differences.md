@@ -140,7 +140,7 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   [revision e340aae](https://github.com/pingdotgg/t3code/tree/e340aaeeb98bc6ac623c2e70ac8eca8bcbddfe1b).
 - **New threads start in a worktree.** Both apps support isolated Git worktrees. After project,
   environment, and project file settings, styal defaults to a worktree when the project is a Git
-  repository with a commit, and the current checkout otherwise. T3 Code defaults to the local
+  repository with a commit or a default branch, and the current checkout otherwise. T3 Code defaults to the local
   checkout at this last step as of
   [revision a6ec88f](https://github.com/pingdotgg/t3code/tree/a6ec88f7a716fc421bd22c2484881c44110f9375).
   Once a newly initialized repository has its first commit, the worktree default takes effect.

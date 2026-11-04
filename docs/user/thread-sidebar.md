@@ -6,7 +6,8 @@ change the thread's workspace mode before sending, or change the default in
 **Settings → Threads → New threads**.
 
 A repository with no commits runs its first threads in **Current checkout**, even if the default is
-**New worktree**. After the first commit, the worktree default takes effect again.
+**New worktree**, unless it has a default branch to start from, such as a fetched `origin/main`.
+After the first commit, the worktree default takes effect again.
 
 ## Start a thread
 

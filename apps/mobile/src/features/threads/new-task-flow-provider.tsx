@@ -465,7 +465,10 @@ export function NewTaskFlowProvider(
     Arr.filter((branch) => !branch.isRemote),
   );
 
-  const worktreeUnavailable = worktreeNeedsFirstCommit(projectGitStatus.data);
+  const worktreeUnavailable = worktreeNeedsFirstCommit(
+    projectGitStatus.data,
+    branchState.data === null ? null : allBranchRefs,
+  );
   const resolveWorkspaceSelection = (selection: ComposerDraftWorkspaceSelection | undefined) =>
     resolveNewTaskDraftWorkspace({
       selection,

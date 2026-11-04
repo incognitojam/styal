@@ -234,6 +234,7 @@ import { type TerminalContextDraft } from "../lib/terminalContext";
 import { collectInlineContextIds } from "../lib/composerContextReferences";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { useKnownTerminalSessions, useThreadRunningTerminalIds } from "../state/terminalSessions";
+import { usePaginatedBranches } from "../state/queries";
 import { useEnvironmentQuery } from "../state/query";
 import { useEnvironmentScope } from "~/state/session";
 import {
@@ -2183,7 +2184,15 @@ export default function ChatView(props: ChatViewProps) {
       ? (pendingServerThreadStartFromOriginByThreadId[activeThread?.id ?? ""] ??
         activeProjectSettings.settings.newWorktreesStartFromOrigin)
       : false;
-  const firstCommitNeededForWorktree = worktreeNeedsFirstCommit(gitStatusQuery.data);
+  // With no commit, a worktree depends on a default branch existing, so refs decide it.
+  const unbornBranchRefs = usePaginatedBranches({
+    environmentId,
+    cwd: gitStatusQuery.data?.hasHeadCommit === false ? gitStatusCwd : null,
+  });
+  const firstCommitNeededForWorktree = worktreeNeedsFirstCommit(
+    gitStatusQuery.data,
+    unbornBranchRefs.data?.refs ?? null,
+  );
   const worktreeUnavailableReason = firstCommitNeededForWorktree ? "Needs a first commit" : null;
   const sendEnvMode = resolveSendEnvMode({
     requestedEnvMode: envMode,

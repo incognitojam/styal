@@ -2,6 +2,7 @@ import {
   type EnvironmentId,
   type VcsListRefsInput,
   type VcsListRefsResult,
+  type VcsRef,
   type VcsStatusResult,
   WS_METHODS,
 } from "@t3tools/contracts";
@@ -35,11 +36,19 @@ import {
 
 const OFFLINE_BRANCH_LIST_LIMIT = 100;
 
-/** Whether a worktree needs an initial commit in the current checkout. */
+/**
+ * Whether a worktree needs an initial commit in the current checkout: HEAD has none and no
+ * default branch (such as `origin/main`) exists to start from. Unloaded refs count as none.
+ */
 export function worktreeNeedsFirstCommit(
   status: Pick<VcsStatusResult, "isRepo" | "hasHeadCommit"> | null | undefined,
+  refs: ReadonlyArray<Pick<VcsRef, "isDefault">> | null,
 ): boolean {
-  return status?.isRepo === true && status.hasHeadCommit === false;
+  return (
+    status?.isRepo === true &&
+    status.hasHeadCommit === false &&
+    !(refs?.some((ref) => ref.isDefault) ?? false)
+  );
 }
 
 const VCS_REFS_IDLE_TTL_MS = 30_000;
