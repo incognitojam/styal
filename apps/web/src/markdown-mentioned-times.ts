@@ -165,6 +165,7 @@ export function readMentionedTime(encoded: unknown): MentionedTime | null {
   if (time.dayOffset !== undefined && !isWholeNumber(time.dayOffset, -1, 1)) return null;
   if (time.tense !== undefined && time.tense !== "past" && time.tense !== "future") return null;
   if (time.zoneFromMessage !== undefined && typeof time.zoneFromMessage !== "boolean") return null;
+  if (time.dateFromCheck !== undefined && typeof time.dateFromCheck !== "boolean") return null;
   if (time.date !== undefined) {
     const date = time.date as Record<string, unknown> | null;
     if (typeof date !== "object" || date === null) return null;

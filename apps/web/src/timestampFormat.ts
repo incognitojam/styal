@@ -335,6 +335,24 @@ const mentionedDateWithYearFormatter = new Intl.DateTimeFormat(timestampLocale, 
  * `Tomorrow at 08:00`, `Sun 20 Sep, 08:00`, or `25 Dec 2025, 00:00` once the year differs.
  * Day boundaries are local calendar days.
  */
+/** The day of an instant as the reader says it: `Today`, `Yesterday`, `Sun, Nov 1`. */
+export function formatMentionedDayLabel(instantMs: number, nowMs: number = Date.now()): string {
+  const date = new Date(instantMs);
+  const now = new Date(nowMs);
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const startOfDay = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  // Round so DST-shifted 23/25 hour days still count as whole days.
+  const dayDiff = Math.round((startOfDay - startOfToday) / 86_400_000);
+  if (dayDiff === 0) return "Today";
+  if (dayDiff === 1) return "Tomorrow";
+  if (dayDiff === -1) return "Yesterday";
+  return (
+    date.getFullYear() === now.getFullYear()
+      ? mentionedDateFormatter
+      : mentionedDateWithYearFormatter
+  ).format(date);
+}
+
 export function formatMentionedTimeLabel(
   instantMs: number,
   timestampFormat: TimestampFormat,

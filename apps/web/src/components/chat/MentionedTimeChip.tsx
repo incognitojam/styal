@@ -1,7 +1,6 @@
 import {
   type MentionedTime,
   type MentionedTimeAnchor,
-  mentionedTimeZoneName,
   resolveMentionedTime,
   type ResolvedMentionedTime,
 } from "@t3tools/client-runtime/mentioned-times";
@@ -10,17 +9,10 @@ import type { EnvironmentId } from "@t3tools/contracts";
 
 import { reportForkClientUsage } from "../../forkClientUsage";
 import { useClientSettings } from "../../hooks/useSettings";
-import { formatMentionedTimeLabel, formatRelativeToNow } from "../../timestampFormat";
+import { describeMentionedTime } from "./mentionedTimeDetails";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 const READER_TIME_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
-
-const readerDayFormatter = new Intl.DateTimeFormat("en-CA", { dateStyle: "short" });
-
-/** The inferred day only needs pointing out when it is not the day the message was sent. */
-function isSameReaderDay(leftMs: number, rightMs: number): boolean {
-  return readerDayFormatter.format(leftMs) === readerDayFormatter.format(rightMs);
-}
 
 /**
  * A time an agent wrote, kept as written and marked so hovering it says when that is for the
@@ -58,52 +50,30 @@ export function MentionedTimeChip(props: {
         {props.children}
       </TooltipTrigger>
       <TooltipPopup side="top">
-        <MentionedTimeDetails
-          instantMs={resolved.instantMs}
-          includeSeconds={time.kind === "clock" && time.second !== undefined}
-          note={assumptionNote(time, anchor, resolved)}
-        />
+        <MentionedTimeDetails time={time} anchor={anchor} resolved={resolved} />
       </TooltipPopup>
     </Tooltip>
   );
 }
 
-/** One short line saying what the tooltip had to assume, or nothing when it assumed nothing. */
-function assumptionNote(
-  time: MentionedTime,
-  anchor: MentionedTimeAnchor,
-  resolved: ResolvedMentionedTime,
-): string | null {
-  if (resolved.fromWrittenAt) return "Counted from when sent";
-  let zone: string | null = null;
-  if (resolved.zoneFromMessage && time.kind === "clock" && time.zone) {
-    zone = mentionedTimeZoneName(time.zone);
-  } else if (resolved.assumedEnvironmentZone && anchor.environmentTimeZone !== READER_TIME_ZONE) {
-    zone = anchor.environmentTimeZone;
-  }
-  const date = resolved.assumedDay && !isSameReaderDay(resolved.instantMs, anchor.writtenAtMs);
-  if (zone !== null) return date ? `Assumed ${zone} and date` : `Assumed ${zone}`;
-  return date ? "Assumed date" : null;
-}
-
 /** Mounted only while the tooltip is open, so "in 3 hours" is computed then and never ticks. */
 function MentionedTimeDetails(props: {
-  instantMs: number;
-  includeSeconds: boolean;
-  note: string | null;
+  time: MentionedTime;
+  anchor: MentionedTimeAnchor;
+  resolved: ResolvedMentionedTime;
 }) {
   const timestampFormat = useClientSettings((settings) => settings.timestampFormat);
+  const { lead, detail, note } = describeMentionedTime(props.time, props.anchor, props.resolved, {
+    timestampFormat,
+    readerTimeZone: READER_TIME_ZONE,
+  });
   return (
     <div className="flex flex-col gap-0.5">
       <span>
-        <span className="font-medium">
-          {formatMentionedTimeLabel(props.instantMs, timestampFormat, props.includeSeconds)}
-        </span>
-        <span className="text-muted-foreground"> · {formatRelativeToNow(props.instantMs)}</span>
+        <span className="font-medium">{lead}</span>
+        {detail === null ? null : <span className="text-muted-foreground"> · {detail}</span>}
       </span>
-      {props.note === null ? null : (
-        <span className="text-muted-foreground text-xs">{props.note}</span>
-      )}
+      {note === null ? null : <span className="text-muted-foreground text-xs">{note}</span>}
     </div>
   );
 }
