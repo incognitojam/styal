@@ -498,24 +498,32 @@ jobs:
             node apps/server/node_modules/playwright-core/cli.js install-deps chromium
           fi
 
+      # Neither cache evicts old entries, so the key starts over each month.
+      - name: Resolve server test cache month
+        id: test_cache_month
+        run: echo "value=$(date -u +%Y-%m)" >> "$GITHUB_OUTPUT"
+
       # Each test file is a Vite Task whose fingerprint is every file it read, so a
       # file whose inputs match a passing result is replayed. Failures are never stored.
+      # Vitest's module cache lets each per-file process skip transforms done in earlier runs.
       # Entries are immutable, so every run that stored a new result saves a fresh one.
       - name: Restore server test cache
         id: test_cache
         uses: actions/cache/restore@v6
         with:
-          path: node_modules/.vite/task-cache
-          key: fork-server-tests-v1-${{ runner.os }}-${{ runner.arch }}-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            node_modules/.vite/task-cache
+            node_modules/.vitest-cache
+          key: fork-server-tests-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.test_cache_month.outputs.value }}-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            fork-server-tests-v1-${{ runner.os }}-${{ runner.arch }}-${{ matrix.shard }}-
+            fork-server-tests-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.test_cache_month.outputs.value }}-${{ matrix.shard }}-
 
       # Tests create these in the checkout; a fresh one must list the same entries.
       - name: Create test scratch directories
         run: mkdir -p .scratch apps/server/tmp
 
-      # --concurrency replaces vitest's --maxWorkers=3. Grouping four files per task
-      # keeps Vitest startup from dominating runs that mostly miss.
+      # --concurrency replaces vitest's --maxWorkers=3. One file per task, so a change
+      # reruns only the files that read it.
       - name: Test server
         id: test
         env:
@@ -523,7 +531,7 @@ jobs:
           T3CODE_TRANSFER_BUDGET_RESULT_PATH: ${{ runner.temp }}/thread-transfer-result.json
         run: >-
           vp run test:cached -- --shard ${{ matrix.shard }}/${{ strategy.job-total }}
-          --concurrency 3 --group-size 4
+          --concurrency 3
           --uncached apps/server/integration/transferBudgetV2.integration.test.ts
           --verify-hits 1 --report "${{ runner.temp }}/server-test-cache.json" apps/server
 
@@ -542,7 +550,9 @@ jobs:
         if: ${{ !cancelled() && steps.test_cache_misses.outputs.save == 'true' }}
         uses: actions/cache/save@v6
         with:
-          path: node_modules/.vite/task-cache
+          path: |
+            node_modules/.vite/task-cache
+            node_modules/.vitest-cache
           key: ${{ steps.test_cache.outputs.cache-primary-key }}
 
       - name: Upload server test cache report
