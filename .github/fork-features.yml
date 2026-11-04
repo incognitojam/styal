@@ -3312,6 +3312,30 @@ features:
         - https://github.com/pingdotgg/t3code/commit/86534db4d3525a070589a234d660a3e0373a42ea
       retire_when: Upstream floating status icons resolve their tint from the active theme foreground using a valid accent color utility.
 
+  - id: mobile-svg-thread-link-icons
+    title: Show SVG project favicons on mobile thread links
+    status: maintained
+    prs: [1271]
+    invariants:
+      - A mobile thread link in chat shows the linked project's favicon when that favicon is a cached SVG, drawn from a PNG that the chip icon rasterizer produces.
+      - Bitmap favicons reach the link unchanged, without passing through the rasterizer.
+      - An SVG that fails to parse leaves the link with the generic thread icon, not an empty icon slot.
+    rationale: The native Markdown pill decodes bitmaps only (BitmapFactory on Android, UIImage on iOS), while the favicon cache keeps small SVGs as SVG data URLs. Passing one to the pill left the icon slot empty. SVG favicons over the 32 KB cache limit stay remote URLs and are not covered.
+    implementation_paths:
+      - apps/mobile/src/lib/projectIcon.ts
+      - apps/mobile/src/native/ProjectChipIconImages.tsx
+      - apps/mobile/src/state/entities.ts
+    upstream_paths:
+      - apps/mobile/src/lib/projectIcon.ts
+      - apps/mobile/src/native/ProjectChipIconImages.tsx
+      - apps/mobile/src/state/entities.ts
+    tests:
+      - apps/mobile/src/lib/projectIcon.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream thread links show SVG project favicons on mobile.
+
   - id: mobile-unsent-draft-markers
     title: Mark mobile threads that hold an unsent draft
     status: maintained
