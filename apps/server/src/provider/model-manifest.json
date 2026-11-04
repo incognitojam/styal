@@ -42,7 +42,7 @@
     {
       "driver": "claudeAgent",
       "t3CodeRange": ">=0.0.42",
-      "recommendedRange": ">=2.1.280",
+      "recommendedRange": ">=2.1.301",
       "autoUpdates": [
         {
           "version": "2.1.322",
