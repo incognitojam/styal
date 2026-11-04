@@ -4,7 +4,8 @@ import { worktreeNeedsFirstCommit } from "@t3tools/client-runtime/state/vcs";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import { ScrollToEndButton, WorkspaceFileDropOverlay } from "./chat/TimelineOverlays";
 import { usePasteToFocusComposer } from "./chat/usePasteToFocusComposer";
-import { ChatGithubRepositoryContext, githubRepositoryOf } from "./chat/githubReferenceLinks";
+import { githubRepositoryOf } from "@t3tools/client-runtime/github-references";
+import { ChatGithubRepositoryContext } from "./chat/githubReferenceLinks";
 import { announcedRun, isDetailBehindShell } from "./chat/threadActivityAnnouncement";
 import {
   deriveAvailableRevertTurnCounts,

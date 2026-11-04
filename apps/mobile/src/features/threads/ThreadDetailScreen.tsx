@@ -11,7 +11,14 @@ import * as Dialog from "../../components/ui/Dialog";
 import { useAtomMount, useAtomValue } from "@effect/atom-react";
 import { parseThreadKey, threadKey } from "@t3tools/client-runtime/state/entities";
 import { createThreadVisitTracker } from "@t3tools/client-runtime/state/thread-visits";
-import { useChildThreadInputs, useThreadReportedModelSelection } from "../../state/entities";
+import {
+  useChildThreadInputs,
+  useProject,
+  useThreadReportedModelSelection,
+} from "../../state/entities";
+import { scopeProjectRef } from "@t3tools/client-runtime/environment";
+import { githubRepositoryOf } from "@t3tools/client-runtime/github-references";
+import { ThreadGithubRepositoryContext } from "./githubReferenceUrlLabels";
 import { UsageLimitRecoveryCard } from "./UsageLimitRecoveryCard";
 import { ChatGptUsageLimitNotice } from "./ChatGptUsageLimitNotice";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
@@ -351,11 +358,14 @@ const COMPOSER_HEIGHT_SETTLE_MS = 220;
 // Anchors, the submitted message, follow state and pending scrolls belong to
 // one thread, so the body remounts when the thread changes.
 export function ThreadDetailScreen(props: ThreadDetailScreenProps) {
+  const project = useProject(scopeProjectRef(props.environmentId, props.selectedThread.projectId));
   return (
-    <ThreadDetailBody
-      key={scopedThreadKey(props.environmentId, props.selectedThread.id)}
-      {...props}
-    />
+    <ThreadGithubRepositoryContext value={githubRepositoryOf(project?.repositoryIdentity)}>
+      <ThreadDetailBody
+        key={scopedThreadKey(props.environmentId, props.selectedThread.id)}
+        {...props}
+      />
+    </ThreadGithubRepositoryContext>
   );
 }
 

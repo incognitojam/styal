@@ -5,17 +5,14 @@
  */
 import type {
   EnvironmentId,
-  RepositoryIdentity,
   ScopedThreadRef,
   SourceControlResolvedReference,
 } from "@t3tools/contracts";
 import { createContext } from "react";
 
-import {
-  collectGithubReferences,
-  formatGithubReferenceKey,
-  type GithubReferenceContext,
-} from "~/markdown-github-references";
+import type { GithubReferenceContext } from "@t3tools/client-runtime/github-references";
+
+import { collectGithubReferences, formatGithubReferenceKey } from "~/markdown-github-references";
 import { sourceControlEnvironment } from "~/state/sourceControl";
 import { useEnvironmentQuery } from "~/state/query";
 
@@ -33,14 +30,6 @@ export const GithubReferenceThreadContext = createContext<ScopedThreadRef | unde
 export const ChatGithubRepositoryContext = createContext<GithubReferenceContext | undefined>(
   undefined,
 );
-
-export function githubRepositoryOf(
-  identity: RepositoryIdentity | null | undefined,
-): GithubReferenceContext | undefined {
-  if (identity?.provider !== "github") return undefined;
-  const [host, ...path] = identity.canonicalKey.split("/");
-  return host && path.length === 2 ? { host, repository: path.join("/") } : undefined;
-}
 
 export type GithubReferenceResolution =
   /** No answer: on its way, never asked for, or asked and not given. Nothing is claimed. */

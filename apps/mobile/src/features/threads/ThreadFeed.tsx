@@ -102,6 +102,10 @@ import { useNativeWorkspaceColumnsSupported } from "../../native/NativeWorkspace
 import { useDeviceType } from "../../native/native-layout-metrics";
 import { isDuoDevice } from "../../lib/device-type";
 import {
+  labelGithubReferenceUrls,
+  ThreadGithubRepositoryContext,
+} from "./githubReferenceUrlLabels";
+import {
   memo,
   useCallback,
   useContext,
@@ -958,7 +962,12 @@ const AssistantMarkdownContent = memo(function AssistantMarkdownContent(props: {
   readonly renderImage: MarkdownImageRenderer;
   readonly skills?: ReadonlyArray<SelectableMarkdownSkill> | undefined;
 }) {
-  const liveMarkdown = useLiveThreadLinkLabels(props.markdown, props.environmentId);
+  const githubRepository = useContext(ThreadGithubRepositoryContext);
+  const threadLinkedMarkdown = useLiveThreadLinkLabels(props.markdown, props.environmentId);
+  const liveMarkdown = useMemo(
+    () => labelGithubReferenceUrls(threadLinkedMarkdown, githubRepository),
+    [threadLinkedMarkdown, githubRepository],
+  );
   const segments = useMemo(() => splitCodexArtifactTemplateMarkdown(liveMarkdown), [liveMarkdown]);
   const threadIcons = useThreadChipIcons(props.environmentId, liveMarkdown);
   const linkHandlers: MarkdownLinkHandlers = {
@@ -2088,7 +2097,12 @@ function UserMessageContent(props: UserMessageContentProps) {
   const navigation = useNavigation();
   const openLinkedThread = useOpenLinkedThread();
   const { selectedThread } = useThreadSelection();
-  const liveText = useLiveThreadLinkLabels(props.text, props.environmentId);
+  const githubRepository = useContext(ThreadGithubRepositoryContext);
+  const threadLinkedText = useLiveThreadLinkLabels(props.text, props.environmentId);
+  const liveText = useMemo(
+    () => labelGithubReferenceUrls(threadLinkedText, githubRepository),
+    [threadLinkedText, githubRepository],
+  );
   const threadIcons = useThreadChipIcons(props.environmentId, liveText, props.context?.records);
   const text = replaceComposerContextReferences(liveText, (ref) => {
     const available = props.context?.records.some((record) => record.contextId === ref.contextId);
