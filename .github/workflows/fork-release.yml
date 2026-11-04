@@ -232,10 +232,24 @@ jobs:
     permissions:
       contents: write
     steps:
+      # GITHUB_TOKEN cannot write a ref at a commit whose workflow files differ
+      # from main's, which a release commit behind main can have.
+      - id: ref_token
+        name: Mint ref-writing token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.NIGHTLY_APP_CLIENT_ID }}
+          private-key: ${{ secrets.NIGHTLY_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+          permission-workflows: write
+
       - name: Checkout promoted commit
         uses: actions/checkout@v7
         with:
           ref: ${{ needs.prepare.outputs.ref }}
+          token: ${{ steps.ref_token.outputs.token }}
           fetch-depth: 0
 
       # Release scripts come from this workflow's commit, not the released
@@ -298,8 +312,8 @@ jobs:
           } > release-notes.md
           cat release-notes.md
 
-      # The promoted commit is behind main, and GITHUB_TOKEN cannot create a
-      # release tag at a commit whose workflow files differ from main's.
+      # Pushed with the checkout's app token before the release, which would
+      # otherwise create the tag with GITHUB_TOKEN.
       - name: Create release tag
         if: inputs.dry_run != true
         shell: bash
