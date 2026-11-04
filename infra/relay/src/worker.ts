@@ -4,6 +4,7 @@ import * as Drizzle from "@alchemy.run/drizzle/Postgres";
 import * as Config from "effect/Config";
 import * as Cause from "effect/Cause";
 import * as Digest from "effect/crypto/Digest";
+import * as Mac from "effect/crypto/Mac";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Signature from "effect/crypto/Signature";
 import * as Effect from "effect/Effect";
@@ -55,9 +56,11 @@ import * as HookInbox from "./hooks/HookInbox.ts";
 import * as HookInboxObject from "./hooks/HookInboxObject.ts";
 import * as CloudflareApiPause from "./environments/CloudflareApiPause.ts";
 
-const layerWebcrypto = Layer.mergeAll(Digest.layerWebCrypto, Signature.layerWebCrypto).pipe(
-  Layer.provideMerge(SecureRandom.layerWebCrypto),
-);
+const layerWebcrypto = Layer.mergeAll(
+  Digest.layerWebCrypto,
+  Mac.layerWebCrypto,
+  Signature.layerWebCrypto,
+).pipe(Layer.provideMerge(SecureRandom.layerWebCrypto));
 
 const layerHttpPlatformNotSupported = Layer.succeed(HttpPlatform.HttpPlatform, {
   platform: "web",

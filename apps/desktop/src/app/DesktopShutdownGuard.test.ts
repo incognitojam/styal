@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { assert, describe, it } from "@effect/vitest";
 import { ThreadId, type ConfirmDialogThreadActivity, type HostActivity } from "@t3tools/contracts";
 import {
@@ -97,7 +98,11 @@ function harness(
             request.body._tag === "Uint8Array" ? new TextDecoder().decode(request.body.body) : "";
           const credential = new URLSearchParams(body).get("subject_token") ?? "";
           const now = yield* Clock.currentTimeMillis;
-          if (!isValidDesktopBootstrapToken(options.secret, credential, now)) {
+          if (
+            !(yield* isValidDesktopBootstrapToken(options.secret, credential, now).pipe(
+              Effect.provide(NodeCrypto.layerMac),
+            ))
+          ) {
             return HttpClientResponse.fromWeb(request, Response.json({}, { status: 401 }));
           }
         }
@@ -139,7 +144,7 @@ function harness(
     checks: () => checks,
     overrideChecks: () => overrideChecks,
     exchanges: () => exchanges,
-    layer: Guard.layer.pipe(Layer.provide(Layer.mergeAll(pool, http, dialog))),
+    layer: Guard.layer.pipe(Layer.provide(Layer.mergeAll(pool, http, dialog, NodeCrypto.layerMac))),
   };
 }
 

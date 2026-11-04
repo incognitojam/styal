@@ -3,6 +3,7 @@ import { bootstrapRemoteBearerSession } from "@t3tools/client-runtime/authorizat
 import { currentDesktopBootstrapToken } from "@t3tools/shared/desktopBootstrapToken";
 import { describeHostActivity, hostActivityQuestion } from "@t3tools/shared/hostActivity";
 import type { HostActivityCheck } from "@t3tools/shared/hostActivity";
+import * as Mac from "effect/crypto/Mac";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -68,6 +69,7 @@ export class DesktopShutdownGuard extends Context.Service<
 >()("@t3tools/desktop/app/DesktopShutdownGuard") {}
 
 const make = Effect.gen(function* () {
+  const mac = yield* Mac.Mac;
   const pool = yield* DesktopBackendPool.DesktopBackendPool;
   const http = yield* HttpClient.HttpClient;
   const dialog = yield* DesktopShutdownConfirmation.DesktopShutdownConfirmation;
@@ -105,7 +107,11 @@ const make = Effect.gen(function* () {
             const session = yield* bootstrapRemoteBearerSession({
               httpBaseUrl: key,
               credential:
-                secret === undefined ? credential : currentDesktopBootstrapToken(secret, now),
+                secret === undefined
+                  ? credential
+                  : yield* currentDesktopBootstrapToken(secret, now).pipe(
+                      Effect.provideService(Mac.Mac, mac),
+                    ),
               clientMetadata: { label: "Desktop shutdown check", deviceType: "desktop" },
             }).pipe(Effect.provideService(HttpClient.HttpClient, http));
             token = {
