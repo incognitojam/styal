@@ -1,6 +1,7 @@
 import { SourceControlProviderKind } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import {
+  type VcsStatusResult,
   OrchestrationDispatchCommandError,
   ProjectId,
   projectCloneProgressSummary,
@@ -14,6 +15,7 @@ import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 
 import * as SourceControlRepositoryService from "../sourceControl/SourceControlRepositoryService.ts";
+import * as VcsStatusBroadcaster from "../vcs/VcsStatusBroadcaster.ts";
 import * as ProjectCloneTracker from "./ProjectCloneTracker.ts";
 import { parseGitCloneProgressLine } from "./gitCloneProgress.ts";
 
@@ -26,8 +28,15 @@ const startInput = {
   destinationPath: "/workspace/t3code",
 };
 
+function statusLayer(onRefresh: (cwd: string) => Effect.Effect<void> = () => Effect.void) {
+  return Layer.mock(VcsStatusBroadcaster.VcsStatusBroadcaster)({
+    refreshStatus: (cwd) => onRefresh(cwd).pipe(Effect.as({} as VcsStatusResult)),
+  });
+}
+
 function makeHarness(options?: {
   readonly clone?: SourceControlRepositoryService.SourceControlRepositoryService["Service"]["cloneRepository"];
+  readonly onStatusRefresh?: (cwd: string) => Effect.Effect<void>;
 }) {
   const created: Array<{ projectId: ProjectId; workspaceRoot: string }> = [];
   const cloned: Array<ProjectId> = [];
@@ -62,6 +71,7 @@ function makeHarness(options?: {
         discardClone: (destination) => Effect.sync(() => void discarded.push(destination)),
       }),
     ),
+    Layer.provide(statusLayer(options?.onStatusRefresh)),
   );
   return { layer, hooks, created, cloned, discarded, wiredForks };
 }
@@ -105,6 +115,30 @@ describe("ProjectCloneTracker", () => {
 
       yield* TestClock.adjust("31 seconds");
       expect(yield* tracker.get(projectId)).toBeNull();
+    }).pipe(Effect.provide(harness.layer));
+  });
+
+  it.effect("refreshes the checkout's git status before reporting the clone done", () => {
+    const refreshPhases: Array<string> = [];
+    let tracker: ProjectCloneTracker.ProjectCloneTracker["Service"] | null = null;
+    const harness = makeHarness({
+      onStatusRefresh: (cwd) =>
+        Effect.gen(function* () {
+          const clone = tracker === null ? null : yield* tracker.get(projectId);
+          refreshPhases.push(`${cwd}:${clone?.phase ?? "missing"}`);
+        }),
+    });
+    return Effect.gen(function* () {
+      tracker = yield* ProjectCloneTracker.ProjectCloneTracker;
+      const collected = yield* tracker.stream.pipe(
+        Stream.takeUntil((clones) => clones[0]?.phase === "done"),
+        Stream.runDrain,
+        Effect.forkChild,
+      );
+      yield* Effect.yieldNow;
+      yield* tracker.start(startInput, harness.hooks);
+      yield* Fiber.join(collected);
+      expect(refreshPhases).toEqual(["/workspace/t3code:running"]);
     }).pipe(Effect.provide(harness.layer));
   });
 
@@ -319,6 +353,7 @@ describe("ProjectCloneTracker", () => {
           discardClone: () => Effect.void,
         }),
       ),
+      Layer.provide(statusLayer()),
     );
     return Effect.gen(function* () {
       const tracker = yield* ProjectCloneTracker.ProjectCloneTracker;
@@ -374,6 +409,7 @@ describe("ProjectCloneTracker", () => {
             ),
         }),
       ),
+      Layer.provide(statusLayer()),
     );
     return Effect.gen(function* () {
       const tracker = yield* ProjectCloneTracker.ProjectCloneTracker;

@@ -34,6 +34,7 @@ import { readLocalApi } from "../localApi";
 import { useOpenPrLink } from "../lib/openPullRequestLink";
 import { usePaginatedBranches } from "../state/queries";
 import { useProject, useQuietThreadShell } from "../state/entities";
+import { useProjectClone } from "../state/projectClones";
 import { useEnvironmentQuery } from "../state/query";
 import { readEnvironmentScope, useEnvironmentScope } from "~/state/session";
 import { threadEnvironment } from "../state/threads";
@@ -155,7 +156,10 @@ export function BranchToolbarBranchSelector({
   const activeWorktreePath = forceNewWorktree
     ? null
     : (serverThread?.worktreePath ?? draftThread?.worktreePath ?? null);
-  const activeProjectCwd = activeProject?.workspaceRoot ?? null;
+  const activeProjectClone = useProjectClone(activeProjectRef);
+  // Mid-clone HEAD is Git's init default branch, which the remote may not have; wait for the clone.
+  const repositoryReady = activeProjectClone === null || activeProjectClone.phase === "done";
+  const activeProjectCwd = repositoryReady ? (activeProject?.workspaceRoot ?? null) : null;
   const branchCwd = activeWorktreePath ?? activeProjectCwd;
   const hasServerThread = serverThread !== null;
   const canUpdateThreadBranch = !hasServerThread || canOperateThread;

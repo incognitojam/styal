@@ -32,6 +32,7 @@ import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 
 import * as SourceControlRepositoryService from "../sourceControl/SourceControlRepositoryService.ts";
+import * as VcsStatusBroadcaster from "../vcs/VcsStatusBroadcaster.ts";
 
 export class ProjectCloneTracker extends Context.Service<
   ProjectCloneTracker,
@@ -96,6 +97,7 @@ interface TrackedClone {
 /** @public */
 export const make = Effect.gen(function* () {
   const repositories = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+  const vcsStatus = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
   const clones = yield* Ref.make(new Map<ProjectId, TrackedClone>());
   const changes = yield* PubSub.unbounded<ReadonlyArray<ProjectCloneSnapshot>>();
   const retentionFibers = new Map<ProjectId, Fiber.Fiber<unknown, never>>();
@@ -242,7 +244,10 @@ export const make = Effect.gen(function* () {
     cloneWatchingForStall(projectId, tracked).pipe(
       Effect.onExit((exit) =>
         Exit.isSuccess(exit)
-          ? finish(projectId, "done", null)
+          ? // Status read mid-clone shows Git's init default branch, not the remote's HEAD.
+            vcsStatus
+              .refreshStatus(tracked.input.destinationPath, { localOnly: true })
+              .pipe(Effect.ignore, Effect.andThen(finish(projectId, "done", null)))
           : Cause.hasInterruptsOnly(exit.cause)
             ? finish(projectId, "cancelled", null)
             : finish(projectId, "failed", describeCloneFailure(exit.cause)),
