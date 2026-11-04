@@ -18,6 +18,11 @@ nightly waits for it, since it is newer than any green commit below. The one che
 repeat is the previous-nightly schema upgrade test, because the `nightly` branch it upgrades from may
 have moved since the pull request ran.
 
+Every packaged macOS and Linux desktop build, nightly or stable, is opened against a seeded database
+before it can publish (`scripts/smoke-desktop-app.ts`, run from `fork-desktop-build.yml`). An app
+that packages but cannot open fails its build job, and the failed job uploads a window screenshot
+and the app's logs as `desktop-launch-check-<target>`.
+
 `Fork Release` promotes a nightly tag and refuses any commit without a successful Fork CI run, which
 every commit the nightly tagged already has. Without a `source_tag` it promotes the newest published
 nightly. The stable version is the one in the nightly's tag, so `v0.1.1-nightly.*` ships as `0.1.1`.
