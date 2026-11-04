@@ -2,7 +2,11 @@ import { describe, expect, it } from "vite-plus/test";
 import { ThreadId, TurnItemId, type OrchestrationV2TurnItem } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 
-import { turnItemOutputImages, turnItemOutputText } from "./itemDetail.ts";
+import {
+  turnItemMayHaveChangedFiles,
+  turnItemOutputImages,
+  turnItemOutputText,
+} from "./itemDetail.ts";
 
 function toolItem(output: unknown): OrchestrationV2TurnItem {
   return {
@@ -51,4 +55,14 @@ describe("tool image output parsing", () => {
       expect(turnItemOutputText(overflow)).toBe("Two additional screenshots:\n[image]\n[image]");
     },
   );
+});
+
+describe("turnItemMayHaveChangedFiles", () => {
+  it("treats failed and cancelled edits as unchanged, but not interrupted ones", () => {
+    const edit = (status: OrchestrationV2TurnItem["status"]) => ({ ...toolItem(null), status });
+    expect(turnItemMayHaveChangedFiles(edit("completed"))).toBe(true);
+    expect(turnItemMayHaveChangedFiles(edit("interrupted"))).toBe(true);
+    expect(turnItemMayHaveChangedFiles(edit("failed"))).toBe(false);
+    expect(turnItemMayHaveChangedFiles(edit("cancelled"))).toBe(false);
+  });
 });
