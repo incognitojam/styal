@@ -23,6 +23,7 @@ import {
   resolveSidebarThreadStatus,
   resolveSidebarThreadAttention,
   resolveNextAttentionThread,
+  isLatestFailureSeen,
   isSidebarThreadWoke,
   resolveSidebarV2TopStatus,
   resolveThreadStatusPill,
@@ -397,6 +398,23 @@ describe("next unread thread", () => {
     expect(
       resolveNextAttentionThread([{ key: "a", attention: null, waitingSince: 0 }], null),
     ).toBeNull();
+  });
+
+  it("counts a failure as seen once the thread is opened after the run ends", () => {
+    const latestRun = makeLatestRun({ completedAt: "2026-03-09T10:05:00.000Z" });
+    expect(isLatestFailureSeen({ latestRun, lastVisitedAt: "2026-03-09T10:06:00.000Z" })).toBe(
+      true,
+    );
+    expect(isLatestFailureSeen({ latestRun, lastVisitedAt: "2026-03-09T10:04:00.000Z" })).toBe(
+      false,
+    );
+    expect(isLatestFailureSeen({ latestRun, lastVisitedAt: undefined })).toBe(false);
+    expect(
+      isLatestFailureSeen({
+        latestRun: makeLatestRun({ completedAt: null }),
+        lastVisitedAt: "2026-03-09T10:06:00.000Z",
+      }),
+    ).toBe(false);
   });
 
   it("treats a thread as woke until it is visited after waking", () => {

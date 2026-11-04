@@ -224,6 +224,7 @@ import {
   resolveSidebarDropVerb,
   resolveSidebarThreadSection,
   resolveSidebarThreadStatus,
+  isLatestFailureSeen,
   resolveSidebarThreadAttention,
   resolveNextAttentionThread,
   isSidebarThreadWoke,
@@ -3093,7 +3094,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       threadLastVisitedAtById[key],
     );
     const wokeAt = threadWokeAt(thread, { now: snoozeNow });
-    const attention = resolveSidebarThreadAttention({
+    const rowAttention = resolveSidebarThreadAttention({
       status: resolveSidebarThreadStatus(thread),
       isUnread: hasUnseenCompletion({ ...thread, lastVisitedAt }),
       isWoke: isSidebarThreadWoke({
@@ -3102,6 +3103,12 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
         settled: thread.settledOverride === "settled",
       }),
     });
+    // A failure stays on the row, but once read it is not something to return to.
+    const attention =
+      (rowAttention === "failed" || rowAttention === "limited") &&
+      isLatestFailureSeen({ latestRun: thread.latestRun, lastVisitedAt })
+        ? null
+        : rowAttention;
     // A woken thread waits from its wake, not from its last run.
     const waitingSince =
       attention === "woke" && wokeAt !== null
