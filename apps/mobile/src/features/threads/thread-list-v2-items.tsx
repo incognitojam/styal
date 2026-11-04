@@ -442,11 +442,6 @@ export const ThreadListV2PendingRow = memo(function ThreadListV2PendingRow(props
     defaultMode: projectDefaults.defaultWorkspaceMode,
     defaultModeSettled: projectDefaults.defaultWorkspaceModeSettled,
   };
-  const draftBranchRefs = useBranches({
-    environmentId: pendingTask.environmentId,
-    cwd:
-      isDraft && pendingDraftBranchNeedsRefs(pendingTask.draft, draftDefaults) ? projectCwd : null,
-  });
   const draftGitStatus = useEnvironmentQuery(
     isDraft && projectCwd !== null && pendingDraftMayUseWorktree(pendingTask.draft, draftDefaults)
       ? vcsEnvironment.status({
@@ -455,12 +450,25 @@ export const ThreadListV2PendingRow = memo(function ThreadListV2PendingRow(props
         })
       : null,
   );
+  // With no commit, a worktree depends on a default branch existing, so refs decide it.
+  const draftBranchRefs = useBranches({
+    environmentId: pendingTask.environmentId,
+    cwd:
+      isDraft &&
+      (pendingDraftBranchNeedsRefs(pendingTask.draft, draftDefaults) ||
+        draftGitStatus.data?.hasHeadCommit === false)
+        ? projectCwd
+        : null,
+  });
   const branch = isDraft
     ? resolvePendingDraftBranch({
         draft: pendingTask.draft,
         defaults: draftDefaults,
         isGitRepo: draftGitStatus.data?.isRepo ?? draftBranchRefs.data?.isRepo ?? true,
-        worktreeNeedsFirstCommit: worktreeNeedsFirstCommit(draftGitStatus.data),
+        worktreeNeedsFirstCommit: worktreeNeedsFirstCommit(
+          draftGitStatus.data,
+          draftBranchRefs.data?.refs ?? null,
+        ),
         branches: draftBranchRefs.data?.refs ?? [],
         projectCwd,
       })
