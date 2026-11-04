@@ -1522,6 +1522,56 @@ describe("deriveMessagesTimelineRows", () => {
     });
   });
 
+  it("does not count failed or declined edits as edited files in the turn fold", () => {
+    const message = (id: string, role: "user" | "assistant", createdAt: string) => ({
+      id: `${id}-entry`,
+      kind: "message" as const,
+      createdAt,
+      message: {
+        id: id as never,
+        role,
+        text: role === "user" ? "Edit both files" : "Done",
+        runId: role === "user" ? null : ("turn-edits" as never),
+        createdAt,
+        updatedAt: createdAt,
+        streaming: false,
+      },
+    });
+    const edit = (index: number, toolLifecycleStatus: "completed" | "failed" | "declined") => ({
+      id: `work-entry-${index}`,
+      kind: "work" as const,
+      createdAt: `2026-01-01T00:00:0${index + 1}Z`,
+      entry: {
+        id: `work-${index}`,
+        createdAt: `2026-01-01T00:00:0${index + 1}Z`,
+        runId: "turn-edits" as never,
+        label: "Changed file",
+        tone: "tool" as const,
+        itemType: "file_change" as const,
+        changedFiles: [`/synthetic/src/file-${index}.ts`],
+        toolLifecycleStatus,
+      },
+    });
+
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries: [
+        message("user-edits", "user", "2026-01-01T00:00:00Z"),
+        edit(1, "completed"),
+        edit(2, "failed"),
+        edit(3, "declined"),
+        message("assistant-edits", "assistant", "2026-01-01T00:00:06Z"),
+      ],
+      isWorking: false,
+      activeTurnStartedAt: null,
+      turnDiffSummaries: [],
+      supportsConversationRollback: false,
+    });
+
+    expect(rows.find((row) => row.kind === "turn-fold")).toMatchObject({
+      activitySummary: [{ kind: "file-change", count: 1 }],
+    });
+  });
+
   it("folds the first assistant message and settled work before the terminal response", () => {
     const timelineEntries = [
       {

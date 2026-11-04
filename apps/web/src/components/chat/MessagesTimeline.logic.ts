@@ -34,6 +34,7 @@ import {
   workEntryIsMemoryBookkeeping,
   workEntryMemoryFileKind,
   workEntryMemoryFilePath,
+  workEntryEditDidNotApply,
   contextCompactionTokenCounts,
   type ToolGroupSummaryKind,
 } from "@t3tools/client-runtime/work-log/presentation";
@@ -886,6 +887,8 @@ function summarizeTurnFoldActivity(entries: ReadonlyArray<TimelineEntry>) {
       } else if (path) {
         memoryPaths.add(path);
       }
+    } else if (kind === "file-change" && workEntryEditDidNotApply(entry.entry)) {
+      continue;
     } else if (kind) {
       counts.set(kind, (counts.get(kind) ?? 0) + 1);
     }
