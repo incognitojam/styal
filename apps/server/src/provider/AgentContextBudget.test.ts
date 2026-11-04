@@ -111,25 +111,36 @@ const codexAdditionalContext = () =>
 
 // CI rejects a PR that raises any value above main's agentContextBudget.json, so growth
 // needs the agent-context-increase label. Lower the values when the text shrinks.
+// Refresh agentContextTools.json with `vp test run AgentContextBudget -u`. The PR comment
+// reads it to name the tools behind a change in the tool list size.
 it.effect("agent context matches the committed budget", () =>
   Effect.gen(function* () {
     const mcp = yield* McpServer.McpServer;
+    const toolEntries = mcp.tools.map(({ tool }) => ({
+      name: tool.name,
+      description: tool.description,
+      inputSchema: tool.inputSchema,
+    }));
     const measured = {
       claudeSystemAppendBytes: utf8Bytes(claudeSystemAppend()),
       codexAdditionalContextBytes: utf8Bytes(codexAdditionalContext()),
       // The model sees these fields. outputSchema and annotations are protocol metadata.
-      mcpToolListJsonBytes: utf8Bytes(
-        JSON.stringify(
-          mcp.tools.map(({ tool }) => ({
-            name: tool.name,
-            description: tool.description,
-            inputSchema: tool.inputSchema,
-          })),
-        ),
-      ),
+      mcpToolListJsonBytes: utf8Bytes(JSON.stringify(toolEntries)),
     };
+    // Each size includes the comma after the tool, so adding or removing a tool changes
+    // mcpToolListJsonBytes by exactly its size here.
+    const toolSizes = Object.fromEntries(
+      toolEntries
+        .map((entry) => [entry.name, utf8Bytes(JSON.stringify(entry)) + 1] as const)
+        .toSorted(([left], [right]) => (left < right ? -1 : 1)),
+    );
 
     expect(measured).toEqual(budget);
+    yield* Effect.promise(() =>
+      expect(`${JSON.stringify(toolSizes, null, 2)}\n`).toMatchFileSnapshot(
+        "./agentContextTools.json",
+      ),
+    );
   }).pipe(
     Effect.provide(
       McpHttpServer.layerTools.pipe(

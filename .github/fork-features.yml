@@ -81,6 +81,31 @@ features:
         - https://github.com/pingdotgg/t3code/pull/16268
       retire_when: Upstream opens the Add Project browser in ~/Developer on macOS when that folder exists and no base directory is configured.
 
+  - id: agent-context-growth-comment
+    title: PR comment names the tools and text behind agent context growth
+    status: maintained
+    prs: [1273]
+    invariants:
+      - AgentContextBudget.test.ts keeps agentContextTools.json equal to the measured size of each MCP tool, and each size includes one separator byte so the tool changes add up to the change in mcpToolListJsonBytes.
+      - When a budget value is above main's, the PR gets one bot comment with the before and after values and each added, removed or changed tool. The comment is updated in place, including when the growth goes away; a PR that never grew gets none.
+      - The comment job runs on pull_request_target from main's script, so it also works for fork PRs. It reads the PR's two JSON files as git data, validates their keys and values before rendering, and never installs dependencies or runs PR code.
+      - The comment never decides pass or fail and never adds the agent-context-increase label. agent-context-budget.yml remains the gate.
+    rationale: Upstream's gate prints only totals in the job log. A committed per-tool file gives the breakdown for both sides without an install on every PR.
+    implementation_paths:
+      - .github/scripts/agent-context-report.cjs
+      - .github/workflows/agent-context-comment.yml
+      - apps/server/src/provider/agentContextTools.json
+    upstream_paths:
+      - .github/workflows/agent-context-budget.yml
+      - apps/server/src/provider/AgentContextBudget.test.ts
+    tests:
+      - .github/scripts/agent-context-report.test.cjs
+      - apps/server/src/provider/AgentContextBudget.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream's budget check reports which tools and text caused the growth.
+
   - id: android-notification-settings
     title: Android notification settings match Android's categories
     status: maintained
