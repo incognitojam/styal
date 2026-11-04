@@ -636,10 +636,12 @@ function toolGroupActionCount(
     return memoryPaths.size;
   }
   if (action !== "edit") return entries.length;
-  return countChangedFiles(entries.filter((entry) => !editDidNotApply(entry)));
+  return countChangedFiles(entries.filter((entry) => !workEntryEditDidNotApply(entry)));
 }
 
-function editDidNotApply(entry: WorkLogPresentationEntry): boolean {
+export function workEntryEditDidNotApply(
+  entry: Pick<WorkLogPresentationEntry, "toolLifecycleStatus">,
+): boolean {
   return entry.toolLifecycleStatus === "failed" || entry.toolLifecycleStatus === "declined";
 }
 
