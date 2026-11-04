@@ -1,3 +1,4 @@
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
 
 const UN_AUTHORIZATION_STATUS_DENIED = 1;
@@ -9,6 +10,7 @@ const UN_AUTHORIZATION_STATUS_DENIED = 1;
  */
 export const macNotificationsDenied = Effect.fn("desktop.macNotificationsDenied")(
   function* () {
+    if ((yield* HostProcess.Platform) !== "darwin") return false;
     // Loaded on first use: the module and its native addon ship on macOS alone.
     const objc = yield* Effect.tryPromise(() => import("objc-js"));
     const status = yield* Effect.callback<unknown>((resume) => {
