@@ -2638,6 +2638,7 @@ features:
   - id: settle-action-last-open-thread
     title: Run a worktree's settle action when its last open thread settles
     status: maintained
+    prs: [1281]
     invariants:
       - A settling thread does not run the settle action while another thread in the same worktree is unsettled and not a subagent, or is working, waiting on a request, or has queued work.
       - An idle subagent that never settled does not hold the action back, so a settling parent still runs it.
