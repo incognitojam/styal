@@ -160,8 +160,9 @@ pnpm dev -- --port "$STYAL_WORKSPACE_PORT" &
 pnpm run api -- --port "$((STYAL_WORKSPACE_PORT + 1))"
 ```
 
-Settling a thread leaves running dev servers open. To stop them when the last open thread in the
-worktree settles, use an action that runs on settle and stops whatever listens on the ports, for
+A dev server running in a terminal stays open when a thread settles, and one an agent started can
+too, depending on the provider and platform. To stop them when the last open thread in the worktree
+settles, use an action that runs on settle and stops whatever listens on the ports, for
 example on macOS or Linux:
 
 ```sh
