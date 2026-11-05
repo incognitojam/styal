@@ -1017,13 +1017,15 @@ export function resolveSidebarThreadStatus(thread: SidebarThreadStatusInput): Si
 }
 
 // What a thread is waiting on the user for, matching the precedence of a
-// row's status slot. Running and idle work is not attention.
+// row's status slot. Running and idle work is not attention, except an async
+// question: the agent keeps going, so it ranks below threads stalled on the user.
 export type SidebarThreadAttention =
   | "approval"
   | "input"
   | "request"
   | "limited"
   | "failed"
+  | "question"
   | "woke"
   | "done";
 
@@ -1033,6 +1035,7 @@ const SIDEBAR_THREAD_ATTENTION_ORDER: readonly SidebarThreadAttention[] = [
   "request",
   "limited",
   "failed",
+  "question",
   "woke",
   "done",
 ];
@@ -1054,6 +1057,7 @@ export function resolveSidebarThreadAttention(input: {
   status: SidebarThreadStatus;
   isUnread: boolean;
   isWoke: boolean;
+  hasPendingQuestion?: boolean;
 }): SidebarThreadAttention | null {
   switch (input.status) {
     case "approval":
@@ -1064,7 +1068,7 @@ export function resolveSidebarThreadAttention(input: {
       return input.status;
     case "working":
     case "waiting":
-      return null;
+      return input.hasPendingQuestion === true ? "question" : null;
   }
   if (input.isWoke) return "woke";
   return input.isUnread ? "done" : null;

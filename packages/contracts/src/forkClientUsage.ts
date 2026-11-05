@@ -281,6 +281,7 @@ export const ForkClientUsageInput = Schema.Union([
       "request",
       "limited",
       "failed",
+      "question",
       "woke",
       "done",
     ]),

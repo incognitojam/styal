@@ -17,6 +17,7 @@ export const SIDEBAR_ATTENTION_STATUS = {
   request: { label: "Request", icon: "request", className: "text-guest-foreground" },
   limited: { label: "Limited", icon: "failed", className: "text-warning-foreground" },
   failed: { label: "Failed", icon: "failed", className: "text-error-foreground" },
+  question: { label: "Question", icon: "input", className: "text-indigo-600 dark:text-indigo-300" },
   woke: { label: "Woke", icon: "woke", className: "text-warning-foreground" },
   done: { label: "Done", icon: "done", className: "text-success-foreground" },
 } as const satisfies Record<

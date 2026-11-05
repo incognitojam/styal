@@ -389,6 +389,22 @@ describe("next unread thread", () => {
     expect(
       resolveSidebarThreadAttention({ status: "waiting", isUnread: true, isWoke: false }),
     ).toBe(null);
+    expect(
+      resolveSidebarThreadAttention({
+        status: "working",
+        isUnread: false,
+        isWoke: false,
+        hasPendingQuestion: true,
+      }),
+    ).toBe("question");
+    expect(
+      resolveSidebarThreadAttention({
+        status: "waiting",
+        isUnread: false,
+        isWoke: false,
+        hasPendingQuestion: true,
+      }),
+    ).toBe("question");
     expect(resolveSidebarThreadAttention({ status: "ready", isUnread: true, isWoke: true })).toBe(
       "woke",
     );
@@ -409,6 +425,15 @@ describe("next unread thread", () => {
       { key: "e", attention: "failed" as const, waitingSince: 10 },
     ];
     expect(resolveNextAttentionThread(candidates, null)).toEqual({ key: "d", attention: "input" });
+  });
+
+  it("ranks an async question below stalled threads and above woken and finished ones", () => {
+    const question = { key: "q", attention: "question" as const, waitingSince: 500 };
+    const failed = { key: "f", attention: "failed" as const, waitingSince: 900 };
+    const woke = { key: "w", attention: "woke" as const, waitingSince: 100 };
+    const done = { key: "d", attention: "done" as const, waitingSince: 100 };
+    expect(resolveNextAttentionThread([question, failed], null)?.key).toBe("f");
+    expect(resolveNextAttentionThread([done, woke, question], null)?.key).toBe("q");
   });
 
   it("keeps sidebar order between threads waiting since the same time", () => {
