@@ -396,28 +396,37 @@ export const DeploymentConnection = Schema.Struct({
 })
 export interface DeploymentConnection extends Schema.Struct.Type<typeof DeploymentConnection.fields> {}
 
+/** Information about pagination in a connection. */
+export const ContextsPageInfoPageInfo = Schema.Struct({
+  /** When paginating forwards, are there more items? */
+  hasNextPage: Schema.Boolean,
+  /** When paginating forwards, the cursor to continue. */
+  endCursor: Schema.NullOr(Schema.String)
+})
+export interface ContextsPageInfoPageInfo extends Schema.Struct.Type<typeof ContextsPageInfoPageInfo.fields> {}
+
 /** The connection type for StatusCheckRollupContext. */
-export const PullRequestCoreRepositoryPullRequestCommitsNodesCommitStatusCheckRollupContextsStatusCheckRollupContextConnection = Schema.Struct({
+export const StatusCheckRollupContextConnection = Schema.Struct({
   /** A list of nodes. */
   nodes: Schema.NullOr(Schema.Array(Schema.NullOr(CheckContext))),
   /** Information to aid in pagination. */
-  pageInfo: DeploymentsPageInfoPageInfo
+  pageInfo: ContextsPageInfoPageInfo
 })
-export interface PullRequestCoreRepositoryPullRequestCommitsNodesCommitStatusCheckRollupContextsStatusCheckRollupContextConnection extends Schema.Struct.Type<typeof PullRequestCoreRepositoryPullRequestCommitsNodesCommitStatusCheckRollupContextsStatusCheckRollupContextConnection.fields> {}
+export interface StatusCheckRollupContextConnection extends Schema.Struct.Type<typeof StatusCheckRollupContextConnection.fields> {}
 
 /** Represents the rollup for both the check runs and status for a commit. */
-export const PullRequestCoreRepositoryPullRequestCommitsNodesCommitStatusCheckRollupStatusCheckRollup = Schema.Struct({
+export const StatusCheckRollup = Schema.Struct({
   /** A list of status contexts and check runs for this commit. */
-  contexts: PullRequestCoreRepositoryPullRequestCommitsNodesCommitStatusCheckRollupContextsStatusCheckRollupContextConnection
+  contexts: StatusCheckRollupContextConnection
 })
-export interface PullRequestCoreRepositoryPullRequestCommitsNodesCommitStatusCheckRollupStatusCheckRollup extends Schema.Struct.Type<typeof PullRequestCoreRepositoryPullRequestCommitsNodesCommitStatusCheckRollupStatusCheckRollup.fields> {}
+export interface StatusCheckRollup extends Schema.Struct.Type<typeof StatusCheckRollup.fields> {}
 
 /** Represents a Git commit. */
 export const PullRequestCoreRepositoryPullRequestCommitsNodesCommitCommit = Schema.Struct({
   /** The deployments associated with a commit. */
   deployments: Schema.optionalKey(Schema.NullOr(DeploymentConnection)),
   /** Check and Status rollup information for this commit. */
-  statusCheckRollup: Schema.NullOr(PullRequestCoreRepositoryPullRequestCommitsNodesCommitStatusCheckRollupStatusCheckRollup)
+  statusCheckRollup: Schema.NullOr(StatusCheckRollup)
 })
 export interface PullRequestCoreRepositoryPullRequestCommitsNodesCommitCommit extends Schema.Struct.Type<typeof PullRequestCoreRepositoryPullRequestCommitsNodesCommitCommit.fields> {}
 
@@ -554,7 +563,7 @@ export const PullRequestCore = GraphQL.query("PullRequestCore", {
       { name: "requestedReviewers", body: "Int!" }
     ],
     selections: [
-      { name: "repository", body: ["(owner:$", "owner", " name:$", "name", "){mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed autoMergeAllowed viewerPermission pullRequest(number:$", "number", "){isInMergeQueue@include(if:$", "required", ")mergeStateStatus viewerCanEnableAutoMerge@include(if:$", "required", ")viewerCanDisableAutoMerge@include(if:$", "required", ")viewerCanMergeAsAdmin@include(if:$", "required", ")isMergeQueueEnabled@include(if:$", "required", ")number title url body state isDraft mergeable reviewDecision additions deletions changedFiles createdAt updatedAt mergedAt closedAt headRefName baseRefName headRefOid maintainerCanModify isCrossRepository headRepositoryOwner{__typename login}headRepository{nameWithOwner viewerPermission}headRef{id}author{__typename login avatarUrl...on User{id name}}autoMergeRequest{mergeMethod}viewerCanUpdate viewerDidAuthor viewerCanUpdateBranch baseRef{compare(headRef:$", "headRef", "){behindBy}}reviewRequests(first:$", "requestedReviewers", "){nodes{requestedReviewer{__typename...on User{login name}...on Bot{login}...on Team{slug combinedSlug teamName:name teamAvatarUrl:avatarUrl}}}}labels(first:100){nodes{name color}}timelineItems(last:100 itemTypes:[DEPLOYED_EVENT])@include(if:$", "deployments", "){nodes{__typename...on DeployedEvent{deployment{...Deployment}}}pageInfo{hasPreviousPage}}commits(last:1){nodes{commit{deployments(first:100 orderBy:{field:CREATED_AT direction:DESC})@include(if:$", "deployments", "){nodes{...Deployment}pageInfo{hasNextPage}}statusCheckRollup{contexts(first:100){nodes{__typename...", "CheckContext", "}pageInfo{hasNextPage}}}}}}}}"] }
+      { name: "repository", body: ["(owner:$", "owner", " name:$", "name", "){mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed autoMergeAllowed viewerPermission pullRequest(number:$", "number", "){isInMergeQueue@include(if:$", "required", ")mergeStateStatus viewerCanEnableAutoMerge@include(if:$", "required", ")viewerCanDisableAutoMerge@include(if:$", "required", ")viewerCanMergeAsAdmin@include(if:$", "required", ")isMergeQueueEnabled@include(if:$", "required", ")number title url body state isDraft mergeable reviewDecision additions deletions changedFiles createdAt updatedAt mergedAt closedAt headRefName baseRefName headRefOid maintainerCanModify isCrossRepository headRepositoryOwner{__typename login}headRepository{nameWithOwner viewerPermission}headRef{id}author{__typename login avatarUrl...on User{id name}}autoMergeRequest{mergeMethod}viewerCanUpdate viewerDidAuthor viewerCanUpdateBranch baseRef{compare(headRef:$", "headRef", "){behindBy}}reviewRequests(first:$", "requestedReviewers", "){nodes{requestedReviewer{__typename...on User{login name}...on Bot{login}...on Team{slug combinedSlug teamName:name teamAvatarUrl:avatarUrl}}}}labels(first:100){nodes{name color}}timelineItems(last:100 itemTypes:[DEPLOYED_EVENT])@include(if:$", "deployments", "){nodes{__typename...on DeployedEvent{deployment{...Deployment}}}pageInfo{hasPreviousPage}}commits(last:1){nodes{commit{deployments(first:100 orderBy:{field:CREATED_AT direction:DESC})@include(if:$", "deployments", "){nodes{...Deployment}pageInfo{hasNextPage}}statusCheckRollup{contexts(first:100){nodes{__typename...", "CheckContext", "}pageInfo{hasNextPage endCursor}}}}}}}}"] }
     ],
     fragments: [
       { name: "Deployment", body: ["on Deployment{id environment state commitOid createdAt updatedAt latestStatus{state updatedAt description environmentUrl logUrl}}"] },
@@ -583,7 +592,7 @@ export declare namespace PullRequestCore {
 /** Represents a Git commit. */
 export const PullRequestCoreWithoutDeploymentsRepositoryPullRequestCommitsNodesCommitCommit = Schema.Struct({
   /** Check and Status rollup information for this commit. */
-  statusCheckRollup: Schema.NullOr(PullRequestCoreRepositoryPullRequestCommitsNodesCommitStatusCheckRollupStatusCheckRollup)
+  statusCheckRollup: Schema.NullOr(StatusCheckRollup)
 })
 export interface PullRequestCoreWithoutDeploymentsRepositoryPullRequestCommitsNodesCommitCommit extends Schema.Struct.Type<typeof PullRequestCoreWithoutDeploymentsRepositoryPullRequestCommitsNodesCommitCommit.fields> {}
 
@@ -717,7 +726,7 @@ export const PullRequestCoreWithoutDeployments = GraphQL.query("PullRequestCoreW
       { name: "requestedReviewers", body: "Int!" }
     ],
     selections: [
-      { name: "repository", body: ["(owner:$", "owner", " name:$", "name", "){mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed autoMergeAllowed viewerPermission pullRequest(number:$", "number", "){isInMergeQueue@include(if:$", "required", ")mergeStateStatus viewerCanEnableAutoMerge@include(if:$", "required", ")viewerCanDisableAutoMerge@include(if:$", "required", ")viewerCanMergeAsAdmin@include(if:$", "required", ")isMergeQueueEnabled@include(if:$", "required", ")number title url body state isDraft mergeable reviewDecision additions deletions changedFiles createdAt updatedAt mergedAt closedAt headRefName baseRefName headRefOid maintainerCanModify isCrossRepository headRepositoryOwner{__typename login}headRepository{nameWithOwner viewerPermission}headRef{id}author{__typename login avatarUrl...on User{id name}}autoMergeRequest{mergeMethod}viewerCanUpdate viewerDidAuthor viewerCanUpdateBranch baseRef{compare(headRef:$", "headRef", "){behindBy}}reviewRequests(first:$", "requestedReviewers", "){nodes{requestedReviewer{__typename...on User{login name}...on Bot{login}...on Team{slug combinedSlug teamName:name teamAvatarUrl:avatarUrl}}}}labels(first:100){nodes{name color}}commits(last:1){nodes{commit{statusCheckRollup{contexts(first:100){nodes{__typename...", "CheckContext", "}pageInfo{hasNextPage}}}}}}}}"] }
+      { name: "repository", body: ["(owner:$", "owner", " name:$", "name", "){mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed autoMergeAllowed viewerPermission pullRequest(number:$", "number", "){isInMergeQueue@include(if:$", "required", ")mergeStateStatus viewerCanEnableAutoMerge@include(if:$", "required", ")viewerCanDisableAutoMerge@include(if:$", "required", ")viewerCanMergeAsAdmin@include(if:$", "required", ")isMergeQueueEnabled@include(if:$", "required", ")number title url body state isDraft mergeable reviewDecision additions deletions changedFiles createdAt updatedAt mergedAt closedAt headRefName baseRefName headRefOid maintainerCanModify isCrossRepository headRepositoryOwner{__typename login}headRepository{nameWithOwner viewerPermission}headRef{id}author{__typename login avatarUrl...on User{id name}}autoMergeRequest{mergeMethod}viewerCanUpdate viewerDidAuthor viewerCanUpdateBranch baseRef{compare(headRef:$", "headRef", "){behindBy}}reviewRequests(first:$", "requestedReviewers", "){nodes{requestedReviewer{__typename...on User{login name}...on Bot{login}...on Team{slug combinedSlug teamName:name teamAvatarUrl:avatarUrl}}}}labels(first:100){nodes{name color}}commits(last:1){nodes{commit{statusCheckRollup{contexts(first:100){nodes{__typename...", "CheckContext", "}pageInfo{hasNextPage endCursor}}}}}}}}"] }
     ],
     fragments: [
       { name: "CheckContext", body: ["on StatusCheckRollupContext{__typename...on StatusContext{context state targetUrl createdAt description isRequired(pullRequestNumber:$", "number", ")@include(if:$", "required", ")}...on CheckRun{name status conclusion startedAt completedAt detailsUrl isRequired(pullRequestNumber:$", "number", ")@include(if:$", "required", ")checkSuite{workflowRun{workflow{name}}}}}"] }
@@ -850,7 +859,7 @@ export const PullRequestCoreEnterprise = GraphQL.query("PullRequestCoreEnterpris
       { name: "requestedReviewers", body: "Int!" }
     ],
     selections: [
-      { name: "repository", body: ["(owner:$", "owner", " name:$", "name", "){mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed autoMergeAllowed viewerPermission pullRequest(number:$", "number", "){mergeStateStatus number title url body state isDraft mergeable reviewDecision additions deletions changedFiles createdAt updatedAt mergedAt closedAt headRefName baseRefName headRefOid maintainerCanModify isCrossRepository headRepositoryOwner{__typename login}headRepository{nameWithOwner viewerPermission}headRef{id}author{__typename login avatarUrl...on User{id name}}autoMergeRequest{mergeMethod}viewerCanUpdate viewerDidAuthor viewerCanUpdateBranch baseRef{compare(headRef:$", "headRef", "){behindBy}}reviewRequests(first:$", "requestedReviewers", "){nodes{requestedReviewer{__typename...on User{login name}...on Bot{login}...on Team{slug combinedSlug teamName:name teamAvatarUrl:avatarUrl}}}}labels(first:100){nodes{name color}}timelineItems(last:100 itemTypes:[DEPLOYED_EVENT])@include(if:$", "deployments", "){nodes{__typename...on DeployedEvent{deployment{...Deployment}}}pageInfo{hasPreviousPage}}commits(last:1){nodes{commit{deployments(first:100 orderBy:{field:CREATED_AT direction:DESC})@include(if:$", "deployments", "){nodes{...Deployment}pageInfo{hasNextPage}}statusCheckRollup{contexts(first:100){nodes{__typename...", "CheckContext", "}pageInfo{hasNextPage}}}}}}}}"] }
+      { name: "repository", body: ["(owner:$", "owner", " name:$", "name", "){mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed autoMergeAllowed viewerPermission pullRequest(number:$", "number", "){mergeStateStatus number title url body state isDraft mergeable reviewDecision additions deletions changedFiles createdAt updatedAt mergedAt closedAt headRefName baseRefName headRefOid maintainerCanModify isCrossRepository headRepositoryOwner{__typename login}headRepository{nameWithOwner viewerPermission}headRef{id}author{__typename login avatarUrl...on User{id name}}autoMergeRequest{mergeMethod}viewerCanUpdate viewerDidAuthor viewerCanUpdateBranch baseRef{compare(headRef:$", "headRef", "){behindBy}}reviewRequests(first:$", "requestedReviewers", "){nodes{requestedReviewer{__typename...on User{login name}...on Bot{login}...on Team{slug combinedSlug teamName:name teamAvatarUrl:avatarUrl}}}}labels(first:100){nodes{name color}}timelineItems(last:100 itemTypes:[DEPLOYED_EVENT])@include(if:$", "deployments", "){nodes{__typename...on DeployedEvent{deployment{...Deployment}}}pageInfo{hasPreviousPage}}commits(last:1){nodes{commit{deployments(first:100 orderBy:{field:CREATED_AT direction:DESC})@include(if:$", "deployments", "){nodes{...Deployment}pageInfo{hasNextPage}}statusCheckRollup{contexts(first:100){nodes{__typename...", "CheckContext", "}pageInfo{hasNextPage endCursor}}}}}}}}"] }
     ],
     fragments: [
       { name: "Deployment", body: ["on Deployment{id environment state commitOid createdAt updatedAt latestStatus{state updatedAt description environmentUrl logUrl}}"] },
@@ -982,7 +991,7 @@ export const PullRequestCoreEnterpriseWithoutDeployments = GraphQL.query("PullRe
       { name: "requestedReviewers", body: "Int!" }
     ],
     selections: [
-      { name: "repository", body: ["(owner:$", "owner", " name:$", "name", "){mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed autoMergeAllowed viewerPermission pullRequest(number:$", "number", "){mergeStateStatus number title url body state isDraft mergeable reviewDecision additions deletions changedFiles createdAt updatedAt mergedAt closedAt headRefName baseRefName headRefOid maintainerCanModify isCrossRepository headRepositoryOwner{__typename login}headRepository{nameWithOwner viewerPermission}headRef{id}author{__typename login avatarUrl...on User{id name}}autoMergeRequest{mergeMethod}viewerCanUpdate viewerDidAuthor viewerCanUpdateBranch baseRef{compare(headRef:$", "headRef", "){behindBy}}reviewRequests(first:$", "requestedReviewers", "){nodes{requestedReviewer{__typename...on User{login name}...on Bot{login}...on Team{slug combinedSlug teamName:name teamAvatarUrl:avatarUrl}}}}labels(first:100){nodes{name color}}commits(last:1){nodes{commit{statusCheckRollup{contexts(first:100){nodes{__typename...", "CheckContext", "}pageInfo{hasNextPage}}}}}}}}"] }
+      { name: "repository", body: ["(owner:$", "owner", " name:$", "name", "){mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed autoMergeAllowed viewerPermission pullRequest(number:$", "number", "){mergeStateStatus number title url body state isDraft mergeable reviewDecision additions deletions changedFiles createdAt updatedAt mergedAt closedAt headRefName baseRefName headRefOid maintainerCanModify isCrossRepository headRepositoryOwner{__typename login}headRepository{nameWithOwner viewerPermission}headRef{id}author{__typename login avatarUrl...on User{id name}}autoMergeRequest{mergeMethod}viewerCanUpdate viewerDidAuthor viewerCanUpdateBranch baseRef{compare(headRef:$", "headRef", "){behindBy}}reviewRequests(first:$", "requestedReviewers", "){nodes{requestedReviewer{__typename...on User{login name}...on Bot{login}...on Team{slug combinedSlug teamName:name teamAvatarUrl:avatarUrl}}}}labels(first:100){nodes{name color}}commits(last:1){nodes{commit{statusCheckRollup{contexts(first:100){nodes{__typename...", "CheckContext", "}pageInfo{hasNextPage endCursor}}}}}}}}"] }
     ],
     fragments: [
       { name: "CheckContext", body: ["on StatusCheckRollupContext{__typename...on StatusContext{context state targetUrl createdAt description isRequired(pullRequestNumber:$", "number", ")@include(if:$", "required", ")}...on CheckRun{name status conclusion startedAt completedAt detailsUrl isRequired(pullRequestNumber:$", "number", ")@include(if:$", "required", ")checkSuite{workflowRun{workflow{name}}}}}"] }
@@ -1006,58 +1015,12 @@ export declare namespace PullRequestCoreEnterpriseWithoutDeployments {
   export type Result = typeof PullRequestCoreEnterpriseWithoutDeployments.result.Type
 }
 
-/** Information about pagination in a connection. */
-export const ContextsPageInfoPageInfo = Schema.Struct({
-  /** When paginating forwards, are there more items? */
-  hasNextPage: Schema.Boolean,
-  /** When paginating forwards, the cursor to continue. */
-  endCursor: Schema.NullOr(Schema.String)
-})
-export interface ContextsPageInfoPageInfo extends Schema.Struct.Type<typeof ContextsPageInfoPageInfo.fields> {}
-
-/** The connection type for StatusCheckRollupContext. */
-export const PullRequestCheckContextsRepositoryPullRequestCommitsNodesCommitStatusCheckRollupContextsStatusCheckRollupContextConnection = Schema.Struct({
-  /** A list of nodes. */
-  nodes: Schema.NullOr(Schema.Array(Schema.NullOr(CheckContext))),
-  /** Information to aid in pagination. */
-  pageInfo: ContextsPageInfoPageInfo
-})
-export interface PullRequestCheckContextsRepositoryPullRequestCommitsNodesCommitStatusCheckRollupContextsStatusCheckRollupContextConnection extends Schema.Struct.Type<typeof PullRequestCheckContextsRepositoryPullRequestCommitsNodesCommitStatusCheckRollupContextsStatusCheckRollupContextConnection.fields> {}
-
-/** Represents the rollup for both the check runs and status for a commit. */
-export const PullRequestCheckContextsRepositoryPullRequestCommitsNodesCommitStatusCheckRollupStatusCheckRollup = Schema.Struct({
-  /** A list of status contexts and check runs for this commit. */
-  contexts: PullRequestCheckContextsRepositoryPullRequestCommitsNodesCommitStatusCheckRollupContextsStatusCheckRollupContextConnection
-})
-export interface PullRequestCheckContextsRepositoryPullRequestCommitsNodesCommitStatusCheckRollupStatusCheckRollup extends Schema.Struct.Type<typeof PullRequestCheckContextsRepositoryPullRequestCommitsNodesCommitStatusCheckRollupStatusCheckRollup.fields> {}
-
-/** Represents a Git commit. */
-export const PullRequestCheckContextsRepositoryPullRequestCommitsNodesCommitCommit = Schema.Struct({
-  /** Check and Status rollup information for this commit. */
-  statusCheckRollup: Schema.NullOr(PullRequestCheckContextsRepositoryPullRequestCommitsNodesCommitStatusCheckRollupStatusCheckRollup)
-})
-export interface PullRequestCheckContextsRepositoryPullRequestCommitsNodesCommitCommit extends Schema.Struct.Type<typeof PullRequestCheckContextsRepositoryPullRequestCommitsNodesCommitCommit.fields> {}
-
-/** Represents a Git commit part of a pull request. */
-export const PullRequestCheckContextsRepositoryPullRequestCommitsNodesPullRequestCommit = Schema.Struct({
-  /** The Git commit object */
-  commit: PullRequestCheckContextsRepositoryPullRequestCommitsNodesCommitCommit
-})
-export interface PullRequestCheckContextsRepositoryPullRequestCommitsNodesPullRequestCommit extends Schema.Struct.Type<typeof PullRequestCheckContextsRepositoryPullRequestCommitsNodesPullRequestCommit.fields> {}
-
-/** The connection type for PullRequestCommit. */
-export const PullRequestCheckContextsRepositoryPullRequestCommitsPullRequestCommitConnection = Schema.Struct({
-  /** A list of nodes. */
-  nodes: Schema.NullOr(Schema.Array(Schema.NullOr(PullRequestCheckContextsRepositoryPullRequestCommitsNodesPullRequestCommit)))
-})
-export interface PullRequestCheckContextsRepositoryPullRequestCommitsPullRequestCommitConnection extends Schema.Struct.Type<typeof PullRequestCheckContextsRepositoryPullRequestCommitsPullRequestCommitConnection.fields> {}
-
 /** A repository pull request. */
 export const PullRequestCheckContextsRepositoryPullRequestPullRequest = Schema.Struct({
   /** Identifies the oid of the head ref associated with the pull request, even if the ref has been deleted. */
   headRefOid: Shared.GitObjectID,
   /** A list of commits present in this pull request's head branch not present in the base branch. */
-  commits: PullRequestCheckContextsRepositoryPullRequestCommitsPullRequestCommitConnection
+  commits: PullRequestCoreWithoutDeploymentsRepositoryPullRequestCommitsPullRequestCommitConnection
 })
 export interface PullRequestCheckContextsRepositoryPullRequestPullRequest extends Schema.Struct.Type<typeof PullRequestCheckContextsRepositoryPullRequestPullRequest.fields> {}
 

@@ -183,6 +183,7 @@ query PullRequestCore(
                 }
                 pageInfo {
                   hasNextPage
+                  endCursor
                 }
               }
             }
@@ -304,6 +305,7 @@ query PullRequestCoreWithoutDeployments(
                 }
                 pageInfo {
                   hasNextPage
+                  endCursor
                 }
               }
             }
@@ -440,6 +442,7 @@ query PullRequestCoreEnterprise(
                 }
                 pageInfo {
                   hasNextPage
+                  endCursor
                 }
               }
             }
@@ -555,6 +558,7 @@ query PullRequestCoreEnterpriseWithoutDeployments(
                 }
                 pageInfo {
                   hasNextPage
+                  endCursor
                 }
               }
             }
