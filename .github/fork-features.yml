@@ -5659,6 +5659,34 @@ features:
       tracking: []
       retire_when: Upstream reports which server and client settings differ from their defaults with structural values only.
 
+  - id: settle-action-last-open-thread
+    title: Run a worktree's settle action when its last open thread settles
+    status: maintained
+    prs: [1281]
+    invariants:
+      - A settling thread does not run the settle action while another thread in the same worktree is unsettled and not a subagent, or is working, waiting on a request, or has queued work.
+      - An idle subagent that never settled does not hold the action back, so a settling parent still runs it.
+      - A delegated child settling inside its active parent's worktree does not run the action.
+    rationale: Settle actions delete worktree state and stop dev servers, so running them for one thread can destroy another thread's work. Upstream's open fix only excludes subagents sharing a parent's worktree, which leaves sibling threads and running children exposed.
+    implementation_paths:
+      - apps/server/src/orchestration-v2/ThreadSettlementService.ts
+      - scripts/dev-runner.ts
+      - scripts/teardown-worktree.ts
+    upstream_paths:
+      - apps/server/src/orchestration-v2/ThreadSettlementService.ts
+      - scripts/dev-runner.ts
+    tests:
+      - apps/server/src/orchestration-v2/ThreadSettlementService.test.ts
+      - scripts/dev-runner.test.ts
+      - scripts/teardown-worktree.test.ts
+    upstream:
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/issues/17548
+        - https://github.com/pingdotgg/t3code/pull/19665
+        - https://github.com/pingdotgg/t3code/pull/23215
+      retire_when: Upstream holds a shared worktree's settle action until no other thread there is open or working.
+
   - id: settled-shelf-auto-collapse
     title: Close the settled shelf once the user moves on
     status: maintained

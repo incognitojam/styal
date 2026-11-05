@@ -506,6 +506,39 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
       });
     });
 
+    it.effect("registers the runner in its worktree only while the dev stack runs", () => {
+      const worktree = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "dev-runner-worktree-"));
+      NodeFS.writeFileSync(
+        NodePath.join(worktree, ".git"),
+        "gitdir: /repo/.git/worktrees/dev-runner-worktree\n",
+      );
+      const registration = NodePath.join(worktree, ".styal/dev-runners", String(process.pid));
+      let registeredDuringRun = false;
+      const spawnerLayer = Layer.succeed(
+        ChildProcessSpawner.ChildProcessSpawner,
+        ChildProcessSpawner.make(() => {
+          registeredDuringRun = NodeFS.existsSync(registration);
+          return Effect.succeed(mockProcess(0));
+        }),
+      );
+
+      return Effect.gen(function* () {
+        yield* runDevRunnerWithInput(devServerInput).pipe(
+          Effect.scoped,
+          Effect.provide(Layer.mergeAll(emptyConfigLayer, netServiceLayer, spawnerLayer)),
+          Effect.provideService(HostProcess.WorkingDirectory, worktree),
+          Effect.provideService(HostProcess.Platform, "linux"),
+        );
+
+        assert.isTrue(registeredDuringRun);
+        assert.isFalse(NodeFS.existsSync(registration));
+      }).pipe(
+        Effect.ensuring(
+          Effect.sync(() => NodeFS.rmSync(worktree, { recursive: true, force: true })),
+        ),
+      );
+    });
+
     it.effect("preserves process spawn context and the exact platform cause", () => {
       const cause = PlatformError.systemError({
         _tag: "NotFound",

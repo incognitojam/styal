@@ -165,6 +165,12 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   Compared with
   [T3 Code revision 680152e](https://github.com/pingdotgg/t3code/tree/680152e27b2a961686389ca69a1557cbb2c55f08),
   checked October 21, 2026, which reads only `t3.json` and imports its scripts as copies.
+- **Settle actions wait for the last thread in a worktree.** A worktree shared by several threads
+  runs its settle action when the last open thread settles, and never while a thread there is
+  working. An idle subagent does not hold it back. [Project actions](./project-scripts.md).
+  Compared with
+  [T3 Code revision b9522c8](https://github.com/pingdotgg/t3code/tree/b9522c845b06cb8c852c28e9fa747c6335e9f6b3),
+  checked November 5, 2026, which runs the action whenever any thread in the worktree settles.
 
 ## GitHub and code review
 

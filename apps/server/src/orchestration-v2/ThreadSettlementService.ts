@@ -171,6 +171,22 @@ export function isAutoSettlementCandidate(
   return !isSnoozed(thread, nowMs);
 }
 
+/**
+ * Whether a thread still needs its worktree, so another thread settling there must not clean it
+ * up. An idle subagent does not count: most never settle, and their parent decides.
+ */
+function threadHoldsWorktree(thread: OrchestrationV2ThreadShell, nowMs: number): boolean {
+  if (
+    thread.activeRunId !== null ||
+    thread.pendingRuntimeRequest !== null ||
+    backgroundWorkHoldsCompletion(thread.pendingBackgroundTasks ?? []) ||
+    threadHasQueuedTurnStart(thread, nowMs)
+  ) {
+    return true;
+  }
+  return thread.settledOverride !== "settled" && thread.lineage.relationshipToParent !== "subagent";
+}
+
 /** Match client effectiveSnoozed so agents and sidebar agree. */
 export function isSnoozed(
   thread: Pick<
@@ -620,7 +636,7 @@ export const make = Effect.gen(function* () {
       return sweepThread(threadId).pipe(FiberSet.run(threadSweeps), Effect.asVoid);
     });
 
-  // Skip settle scripts in shared checkouts where other threads may still work.
+  // A settle script deletes worktree state, so it waits for the last thread still using the worktree.
   const cleanUpSettledThread = Effect.fn("ThreadSettlementServiceV2.cleanUpSettledThread")(
     function* (threadId: ThreadId) {
       const settled = yield* projections.getThread(threadId);
@@ -628,6 +644,14 @@ export const make = Effect.gen(function* () {
       yield* terminals.closeIdle({ threadId });
       const worktreePath = settled.worktreePath;
       if (worktreePath === null || !(yield* fileSystem.exists(worktreePath))) return;
+      const sharers = (yield* projections.getThreadWorktreePaths()).filter(
+        (entry) => entry.worktreePath === worktreePath && entry.threadId !== threadId,
+      );
+      const sharerShells = yield* Effect.forEach(sharers, (entry) =>
+        projections.getThreadShell(entry.threadId),
+      );
+      const nowMs = DateTime.toEpochMillis(yield* DateTime.now);
+      if (sharerShells.some((shell) => shell !== null && threadHoldsWorktree(shell, nowMs))) return;
       // Recheck after closing and worktree I/O; re-engaged threads must not be cleaned up.
       const thread = yield* projections.getThread(threadId);
       if (thread.settledOverride !== "settled") return;

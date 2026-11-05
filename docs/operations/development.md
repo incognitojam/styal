@@ -40,6 +40,13 @@ substantial disk space before pruning.
 Never run a development server against the live `~/.styal/userdata`.
 See [test data](../../AGENTS.md#test-data) for copying a consistent database snapshot.
 
+A worktree's settle action can run `node scripts/teardown-worktree.ts`. When the last open thread
+there settles, it stops the worktree's `dev-runner` processes and anything else from the worktree
+listening on the workspace's ports, then deletes `.styal/userdata` and `.styal/caches`, the paths
+listed in the script. Other servers on other ports keep running.
+`.styal/worktrees` and `.scratch` stay. Older worktrees lack the script, so save the action as
+`if [ -f scripts/teardown-worktree.ts ]; then node scripts/teardown-worktree.ts; fi`.
+
 Read ports from the `[dev-runner]` output. Worktrees derive stable preferences from their paths,
 but occupied ports can shift them. `T3CODE_PORT_OFFSET` or `T3CODE_DEV_INSTANCE` can select a
 different preference when needed.
