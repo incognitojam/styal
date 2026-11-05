@@ -5,12 +5,14 @@ import {
   CommandId,
   FEEDBACK_REPORT_TOOL_NAME,
   FEEDBACK_REPOSITORY,
+  PROVIDER_DISPLAY_NAMES,
   RuntimeRequestId,
   type FeedbackAgentReportResult,
   type FeedbackApprovalReport,
   type FeedbackDraft,
   type FeedbackSubmitResult,
   type NodeId,
+  type ProviderDriverKind,
   type RunId,
   type ThreadId,
 } from "@t3tools/contracts";
@@ -161,11 +163,13 @@ const make = Effect.gen(function* () {
       .pipe(Effect.orElseSucceed(() => null));
     const run = records === null ? undefined : ThreadManagementService.latestActiveRun(records);
     const model = records?.thread.modelSelection;
+    // A custom instance's id is the user's own name for it, so it stays out of the public issue.
+    const provider = PROVIDER_DISPLAY_NAMES[model?.instanceId as ProviderDriverKind];
     const body = composeBody(
       draft,
       model === undefined
         ? "Written by an agent and approved by the user."
-        : `Written by an agent (${model.instanceId}, ${model.model}) and approved by the user.`,
+        : `Written by an agent (${provider === undefined ? "" : `${provider}, `}${model.model}) and approved by the user.`,
     );
     const login = yield* account;
     if (login === null) {

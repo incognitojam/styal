@@ -16,6 +16,7 @@ function harness(input: {
   readonly decision?: "accept" | "decline";
   readonly filing?: { readonly status: "refused"; readonly reason: string };
   readonly activeRun?: boolean;
+  readonly instanceId?: string;
 }) {
   const filed: Array<Record<string, string>> = [];
   const approvals: Array<{
@@ -27,7 +28,12 @@ function harness(input: {
   const threads = Layer.mock(ThreadManagementService.ThreadManagementService)({
     getThreadRecords: () =>
       Effect.succeed({
-        thread: { modelSelection: { instanceId: "claudeAgent", model: "claude-opus-5-5" } },
+        thread: {
+          modelSelection: {
+            instanceId: input.instanceId ?? "claudeAgent",
+            model: "claude-opus-5-5",
+          },
+        },
         runs:
           input.activeRun === false
             ? []
@@ -85,7 +91,7 @@ describe("reportFromAgent", () => {
       expect(filed).toHaveLength(1);
       expect(filed[0]).toMatchObject({ host: "github.com", repository: "incognitojam/styal" });
       expect(filed[0]?.body).toContain(draft.body);
-      expect(filed[0]?.body).toContain("Written by an agent (claudeAgent, claude-opus-5-5)");
+      expect(filed[0]?.body).toContain("Written by an agent (Claude, claude-opus-5-5)");
       // The card shows the text that gets posted, under the account that posts it.
       expect(approvals[0]?.prompt).toContain("as @octocat");
       expect(approvals[0]?.prompt).toContain(filed[0]?.body);
@@ -96,6 +102,16 @@ describe("reportFromAgent", () => {
         repository: "incognitojam/styal",
         account: "octocat",
       });
+    }).pipe(Effect.provide(layer));
+  });
+
+  it.effect("leaves a custom provider instance's name out of the footer", () => {
+    const { filed, layer } = harness({ instanceId: "acme_work_claude" });
+    return Effect.gen(function* () {
+      const feedback = yield* FeedbackService.FeedbackService;
+      yield* feedback.reportFromAgent(threadId, draft);
+      expect(filed[0]?.body).toContain("Written by an agent (claude-opus-5-5)");
+      expect(filed[0]?.body).not.toContain("acme_work_claude");
     }).pipe(Effect.provide(layer));
   });
 
