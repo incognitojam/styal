@@ -83,6 +83,7 @@ organizedLayer("ForkMigrations project pins from fork migration 11", (it) => {
       yield* sql`DELETE FROM effect_sql_migrations WHERE migration_id >= 76`;
       yield* sql`DROP INDEX orchestration_v2_projection_threads_subagent_result_idx`;
       yield* sql`DROP INDEX orchestration_v2_projection_runs_delegated_delivery_idx`;
+      yield* sql`ALTER TABLE scheduled_tasks DROP COLUMN thread_mode`;
       yield* sql`
         INSERT INTO projection_projects (
           project_id, title, workspace_root, scripts_json, created_at, updated_at,
@@ -99,6 +100,7 @@ organizedLayer("ForkMigrations project pins from fork migration 11", (it) => {
         [77, "RepairBooleanSettledOverride"],
         [78, "DropOrchestrationEventCorrelationIndex"],
         [79, "DelegatedRecoveryIndexes"],
+        [80, "ScheduledTaskThreadMode"],
       ]);
       assert.deepStrictEqual(
         yield* sql`
