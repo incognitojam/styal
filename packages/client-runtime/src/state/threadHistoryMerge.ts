@@ -89,6 +89,8 @@ export function mergeOlderHistoryIntoProjection(
       (row.visibility === "local" || row.sourceThreadId === projection.thread.id)
     ) {
       const currentItem = turnItemById.get(String(row.sourceItemId));
+      // Hidden live items stay hidden. Snapshots also retain interrupt requests and
+      // pending request cards outside the visible window; their history page shows them.
       if (currentItem !== undefined) {
         // A live event may have hidden the item while the page was in flight; do not
         // resurrect the stale page copy.

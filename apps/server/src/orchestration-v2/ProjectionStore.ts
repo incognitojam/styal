@@ -3288,21 +3288,6 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                     )
                     AND request.type = 'run_interrupt_request'
                   UNION
-                  -- An open question or approval stays in the window: clients
-                  -- build the answer panel from its row, and a run that kept
-                  -- working pushes the row out of the newest turns.
-                  SELECT question.rowid AS item_rowid, question.ordinal, question.turn_item_id
-                  FROM orchestration_v2_projection_runtime_requests AS pending
-                  JOIN orchestration_v2_projection_turn_items AS question
-                    ON question.node_id = pending.node_id
-                  WHERE pending.thread_id = ${threadId}
-                    AND pending.status = 'pending'
-                    AND question.thread_id = ${threadId}
-                    AND question.type IN ('user_input_request', 'approval_request')
-                    AND ${window.rowLimit} > 0
-                    AND ${window.anchorItemId ?? null} IS NULL
-                    AND ${window.requiredRunId ?? null} IS NULL
-                  UNION
                   SELECT latest.item_rowid, latest.ordinal, latest.turn_item_id
                   FROM (
                     SELECT rowid AS item_rowid, ordinal, turn_item_id
@@ -6407,6 +6392,39 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             const missingBackgroundItems = pendingBackgroundItems.filter(
               (item) => !loadedItemIds.has(item.id),
             );
+            // Pending requests outlive their turn's window; clients read their prompt from the card.
+            const retainedIds = new Set(
+              [...projection.turnItems, ...missingBackgroundItems].map((item) => item.id),
+            );
+            const pendingCards = (yield* decodeRows(
+              decodeTurnItemPayload,
+              threadId,
+            )(
+              yield* sql<PayloadRow>`
+                SELECT item.payload_json
+                FROM orchestration_v2_projection_runtime_requests AS request
+                CROSS JOIN orchestration_v2_projection_turn_items AS item
+                  ON item.node_id = request.node_id
+                  AND item.type IN ('approval_request', 'user_input_request')
+                  AND json_extract(item.payload_json, '$.requestId') = request.runtime_request_id
+                WHERE request.thread_id = ${threadId} AND request.status = 'pending'
+                  AND item.thread_id = ${threadId}
+              `,
+            )).filter((item) => !retainedIds.has(item.id));
+            const windowProjection =
+              pendingCards.length === 0 && missingBackgroundItems.length === 0
+                ? projection
+                : {
+                    ...projection,
+                    turnItems: [
+                      ...projection.turnItems,
+                      ...missingBackgroundItems,
+                      ...pendingCards,
+                    ].toSorted(
+                      (left, right) =>
+                        left.ordinal - right.ordinal || left.id.localeCompare(right.id),
+                    ),
+                  };
             const rows = yield* sql<{ readonly snapshot_sequence: number | null }>`
               SELECT MAX(sequence) AS snapshot_sequence
               FROM orchestration_events
@@ -6420,15 +6438,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                 rows[0]?.snapshot_sequence ?? 0,
                 yield* readHistoryRewriteFence(sql),
               ),
-              projection:
-                missingBackgroundItems.length === 0
-                  ? projection
-                  : {
-                      ...projection,
-                      turnItems: [...missingBackgroundItems, ...projection.turnItems].toSorted(
-                        (left, right) => left.ordinal - right.ordinal,
-                      ),
-                    },
+              projection: windowProjection,
             };
           }),
         )
