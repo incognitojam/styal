@@ -55,6 +55,8 @@ import {
   sortProvidersForAccounts,
   supportsInAppSignIn,
 } from "./providerAccountStatus";
+import { AddClaudeAccount, ClaudeAccount } from "./ClaudeAccounts";
+import { CLAUDE_DRIVER } from "./claude-accounts";
 import { useSettingsEnvironmentFilter, type SettingsTarget } from "./settings-environment-filter";
 
 export function SettingsProviderAccountsRouteScreen() {
@@ -86,37 +88,63 @@ export function SettingsProviderAccountsRouteScreen() {
                     </Text>
                   </View>
                 ) : (
-                  <>
-                    {sortProvidersForAccounts(
-                      managedProviders(environment, providersByEnvironment),
-                    ).map((provider, index) =>
-                      supportsInAppSignIn(provider) ? (
-                        <ProviderAccount
-                          key={provider.instanceId}
-                          environment={environment}
-                          divider={index > 0}
-                          provider={provider}
-                        />
-                      ) : (
-                        <ExternalProviderAccount
-                          key={provider.instanceId}
-                          provider={provider}
-                          divider={index > 0}
-                        />
-                      ),
-                    )}
-                    {managedProviders(environment, providersByEnvironment).length === 0 ? (
-                      <Text className="p-4 text-foreground-muted">
-                        Add a provider in web or desktop Settings.
-                      </Text>
-                    ) : null}
-                  </>
+                  <EnvironmentProviders
+                    environment={environment}
+                    providers={managedProviders(environment, providersByEnvironment)}
+                  />
                 )}
               </SettingsSection>
             ))
           )}
         </ScreenScrollView>
       </SettingsScreen>
+    </>
+  );
+}
+
+function EnvironmentProviders({
+  environment,
+  providers,
+}: {
+  readonly environment: SettingsTarget;
+  readonly providers: ReadonlyArray<ServerProvider>;
+}) {
+  const canAddClaude = isManagedDriverAllowed(
+    environment.serverConfig.managedPolicy,
+    CLAUDE_DRIVER,
+  );
+  return (
+    <>
+      {sortProvidersForAccounts(providers).map((provider, index) =>
+        supportsInAppSignIn(provider) ? (
+          <ProviderAccount
+            key={provider.instanceId}
+            environment={environment}
+            provider={provider}
+            divider={index > 0}
+          />
+        ) : provider.driver === CLAUDE_DRIVER ? (
+          <ClaudeAccount key={provider.instanceId} environment={environment} provider={provider}>
+            {provider.auth.status === "authenticated" &&
+            !providerUnavailableReason(provider) &&
+            provider.auth.email?.trim() ? (
+              <ProviderAccountEmail key={provider.auth.email} email={provider.auth.email.trim()} />
+            ) : null}
+          </ClaudeAccount>
+        ) : (
+          <ExternalProviderAccount
+            key={provider.instanceId}
+            provider={provider}
+            divider={index > 0}
+          />
+        ),
+      )}
+      {providers.length === 0 ? (
+        <Text className="p-4 text-foreground-muted">
+          Add a provider in web or desktop Settings.
+        </Text>
+      ) : null}
+      {canAddClaude ? <AddClaudeAccount environment={environment} /> : null}
     </>
   );
 }

@@ -582,6 +582,10 @@
     "./coordinator-reports": {
       "types": "./src/coordinatorReports.ts",
       "default": "./src/coordinatorReports.ts"
+    },
+    "./provider-instance-ids": {
+      "types": "./src/providerInstanceIds.ts",
+      "default": "./src/providerInstanceIds.ts"
     }
   },
   "scripts": {
