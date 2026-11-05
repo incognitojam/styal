@@ -35,7 +35,7 @@ const TRANSITIONS: Readonly<
   reserving: { reserved: "attaching", failed: "failed" },
   attaching: { attached: "consuming", failed: "failed" },
   consuming: { consumed: "done", failed: "failed" },
-  done: {},
+  done: { cancel: "cancelling" },
   // "start" from failed is a retry.
   failed: { start: "reserving", cancel: "cancelling" },
   cancelling: { cancelled: "cancelled", cancelFailed: "failed" },
@@ -246,7 +246,6 @@ export function makeIncomingShareImports(deps: ShareImportDeps) {
         { flowKey: entry.target.flowKey, shareId },
       ]);
       advance(entry, "consumed");
-      entry.backup = null;
       settle(key, entry);
       if (stopped()) return;
       const warnings = [...share.warnings, ...selected.warnings];
@@ -314,7 +313,7 @@ export function makeIncomingShareImports(deps: ShareImportDeps) {
   async function cancel(target: ShareImportTarget): Promise<void> {
     const key = keyOf(target);
     const entry = entries.get(key);
-    if (!entry || entry.phase !== "failed") return;
+    if (!entry || (entry.phase !== "failed" && entry.phase !== "done")) return;
     const { draftKey, shareId } = entry.target;
     advance(entry, "cancel");
     // Cancelling finishes even if the route leaves meanwhile: it only undoes
@@ -384,7 +383,10 @@ export function makeIncomingShareImports(deps: ShareImportDeps) {
       const stopping: Array<Promise<void>> = [];
       for (const [key, entry] of entries) {
         if (liveFlowKeys.has(entry.target.flowKey)) continue;
-        if (entry.phase === "failed" || entry.phase === "cancelling") {
+        if (entry.phase === "done") {
+          entry.detached = true;
+          stopping.push(cancel(entry.target));
+        } else if (entry.phase === "failed" || entry.phase === "cancelling") {
           entry.detached = true;
         } else {
           abandon(key, entry);

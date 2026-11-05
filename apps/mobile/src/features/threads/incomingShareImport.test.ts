@@ -228,6 +228,26 @@ describe("incoming share imports", () => {
     expect(deps.leave).toHaveBeenCalledTimes(1);
   });
 
+  it.each([false, true])(
+    "cleans up a completed share after leaving (submitted: %s)",
+    async (submitted) => {
+      const { drafts, inbox, imports, watch } = setup();
+      inbox.set("share-1", share([fileAttachment("shared-image")]));
+      const target = importTarget();
+      const watched = watch(target);
+      await imports.settled(target);
+      expect(watched.phase()).toBe("done");
+      watched.unmount();
+      if (submitted) drafts.set("draft-a", { text: "", attachments: [] });
+
+      await imports.prune(new Set());
+
+      expect(drafts.get("draft-a")).toEqual(
+        submitted ? undefined : { text: "mine", attachments: [] },
+      );
+    },
+  );
+
   it("stops before consuming once its route leaves the stack", async () => {
     const mergeStarted = Promise.withResolvers<void>();
     const merged = Promise.withResolvers<{ readonly skippedAttachmentCount: number }>();
