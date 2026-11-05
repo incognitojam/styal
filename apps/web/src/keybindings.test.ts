@@ -227,6 +227,60 @@ describe("settle thread shortcut", () => {
   });
 });
 
+describe("shortcuts overview shortcut", () => {
+  const resolve = (input: Partial<ShortcutEventLike>, platform: string) =>
+    resolveShortcutCommand(event(input), DEFAULT_RESOLVED_KEYBINDINGS, { platform });
+
+  it("matches ? on any layout, and on a Mac that reports the unshifted key", () => {
+    const shifted = { shiftKey: true, ctrlKey: true };
+    assert.equal(
+      resolve({ ...shifted, key: "?", code: "Slash" }, "Win32"),
+      "shortcutsOverview.toggle",
+    );
+    assert.equal(
+      resolve({ ...shifted, key: "?", code: "Minus" }, "Linux x86_64"),
+      "shortcutsOverview.toggle",
+    );
+    assert.equal(
+      resolve({ shiftKey: true, metaKey: true, key: "/", code: "Slash" }, "MacIntel"),
+      "shortcutsOverview.toggle",
+    );
+  });
+
+  it("matches Mod+/, and leaves preview zoom alone where that key types -", () => {
+    assert.equal(
+      resolve({ ctrlKey: true, key: "/", code: "Slash" }, "Win32"),
+      "shortcutsOverview.toggle",
+    );
+    assert.equal(
+      resolveShortcutCommand(
+        event({ ctrlKey: true, key: "-", code: "Slash" }),
+        DEFAULT_RESOLVED_KEYBINDINGS,
+        { platform: "Win32", context: { previewFocus: true } },
+      ),
+      "preview.zoomOut",
+    );
+  });
+
+  it("is labelled with ? and stays out of terminals", () => {
+    assert.equal(
+      shortcutLabelForCommand(DEFAULT_RESOLVED_KEYBINDINGS, "shortcutsOverview.toggle", "Win32"),
+      "Ctrl+?",
+    );
+    assert.equal(
+      shortcutLabelForCommand(DEFAULT_RESOLVED_KEYBINDINGS, "shortcutsOverview.toggle", "MacIntel"),
+      "\u2318?",
+    );
+    assert.isNull(
+      resolveShortcutCommand(
+        event({ shiftKey: true, ctrlKey: true, key: "?", code: "Slash" }),
+        DEFAULT_RESOLVED_KEYBINDINGS,
+        { platform: "Win32", context: { terminalFocus: true } },
+      ),
+    );
+  });
+});
+
 describe("thread undo shortcut", () => {
   it("leaves native undo alone inside text fields and terminals", () => {
     assert.isNull(

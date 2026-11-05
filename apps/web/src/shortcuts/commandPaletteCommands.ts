@@ -7,11 +7,17 @@ import {
 } from "../commandPaletteStore";
 import { overlayModeForCommand } from "../components/CommandPalette.logic";
 import { APPEARANCE_OPTIONS, notifyThemeSaveFailure } from "../components/CommandPaletteThemeItems";
+import { openShortcutsOverview, toggleShortcutsOverview } from "../components/ShortcutsOverview";
 import { toggleThemeEditorForTheme } from "../components/settings/themeEditorStore";
 import { toastManager } from "../components/ui/toast";
 import { getThemeSnapshot, setAppearanceMode } from "../hooks/useTheme";
 import { selectActiveRightPanel, useRightPanelStore } from "../rightPanelStore";
-import { type CommandHandler, type CommandScopeOptions, registerCommands } from "./dispatcher";
+import {
+  type CommandHandler,
+  type CommandScopeOptions,
+  registerCommands,
+  registerMenuAction,
+} from "./dispatcher";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { resolveThreadRouteTarget } from "../threadRoutes";
 
@@ -92,6 +98,14 @@ export function installCommandPaletteCommands(
         dispatchCommandPalette({ _tag: "SetOpen", open: false });
         void router.navigate({ to: "/usage" });
       },
+      "shortcutsOverview.toggle": (event) => {
+        // Keys also match by position, and many layouts type "-" on the "/" key.
+        if (event.code === "Slash" && event.key !== "/" && event.key !== "?") return false;
+        consume(event);
+        if (event.repeat) return;
+        dispatchCommandPalette({ _tag: "SetOpen", open: false });
+        toggleShortcutsOverview();
+      },
       "commandPalette.toggle": toggleOverlay("commandPalette.toggle"),
       "filePicker.toggle": toggleOverlay("filePicker.toggle"),
       "projectSearch.toggle": toggleOverlay("projectSearch.toggle"),
@@ -118,8 +132,15 @@ export function installCommandPaletteCommands(
     },
   );
 
+  const disposeMenuAction = registerMenuAction("shortcuts-overview", () => {
+    if (!isCommandPaletteMounted()) return;
+    dispatchCommandPalette({ _tag: "SetOpen", open: false });
+    openShortcutsOverview("help_menu");
+  });
+
   return () => {
     disposeEscape();
     disposeCommands();
+    disposeMenuAction();
   };
 }

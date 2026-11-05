@@ -139,6 +139,9 @@ export const make = Effect.gen(function* () {
     const checkForUpdatesClick = () => {
       runMenuEffect("check-for-updates", handleCheckForUpdatesMenuClick);
     };
+    const shortcutsOverviewClick = () => {
+      runMenuEffect("shortcuts-overview", dispatchMenuAction("shortcuts-overview"));
+    };
     const settingsClick = () => {
       runMenuEffect("open-settings", dispatchMenuAction("open-settings"));
     };
@@ -306,6 +309,10 @@ export const make = Effect.gen(function* () {
       {
         role: "help",
         submenu: [
+          {
+            label: "Keyboard Shortcuts",
+            click: shortcutsOverviewClick,
+          },
           {
             label: "Check for Updates...",
             click: checkForUpdatesClick,

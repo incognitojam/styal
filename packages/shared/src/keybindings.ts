@@ -164,6 +164,12 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "mod+w", command: "rightPanel.close", when: "!terminalFocus" },
   { key: "mod+shift+t", command: "view.reopenClosed" },
   { key: "mod+d", command: "diff.toggle", when: "!terminalFocus" },
+  // "?" is typed with Shift. "mod+shift+/" covers browsers that report the unshifted glyph while
+  // Command is held; "mod+shift+?" covers layouts with "?" on another key, and supplies the label.
+  // These stay above the zoom rules: where the "/" key types "-", the zoom rule must win.
+  { key: "mod+/", command: "shortcutsOverview.toggle", when: "!terminalFocus" },
+  { key: "mod+shift+/", command: "shortcutsOverview.toggle", when: "!terminalFocus" },
+  { key: "mod+shift+?", command: "shortcutsOverview.toggle", when: "!terminalFocus" },
   { key: "mod+shift+j", command: "preview.toggle" },
   { key: "mod+r", command: "preview.refresh", when: "previewFocus" },
   { key: "mod+l", command: "preview.focusUrl", when: "previewFocus" },

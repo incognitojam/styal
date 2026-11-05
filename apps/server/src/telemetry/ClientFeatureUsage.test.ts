@@ -276,6 +276,38 @@ it.effect("records allowlisted client interactions with socket attribution and n
   }),
 );
 
+it.effect("records one event per shortcuts overview open with its entry point", () =>
+  Effect.gen(function* () {
+    const events: Array<unknown> = [];
+    const report = yield* ClientFeatureUsage.reporter({ surface: "web" }).pipe(
+      Effect.provideService(AnalyticsService.AnalyticsService, {
+        record: (event: string, properties: Record<string, unknown> | undefined) =>
+          Effect.sync(() => {
+            events.push({ event, properties });
+          }),
+        flush: Effect.void,
+        recordOwners: () => Effect.void,
+      }),
+    );
+    yield* report(
+      yield* decode({ feature: "shortcuts-overview", action: "opened", entryPoint: "shortcut" }),
+    );
+    expect(events).toEqual([
+      {
+        event: "feature.used",
+        properties: {
+          feature: "shortcuts-overview",
+          action: "opened",
+          entryPoint: "shortcut",
+          source: "user",
+          forkClientUsageVersion: FORK_CLIENT_USAGE_VERSION,
+          surface: "web",
+        },
+      },
+    ]);
+  }),
+);
+
 it.effect("records the desktop update notice only from the desktop app", () =>
   Effect.gen(function* () {
     const events: Array<unknown> = [];

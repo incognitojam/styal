@@ -74,7 +74,7 @@ mentioned time's explanation, which automatic settling rules you keep when finis
 you change the sidebar's project filter or start a thread while it is applied, when you reorder,
 pin, unpin, or archive a project from its header in the grouped sidebar, whether a project
 action you run is saved in styal or comes from the project's `styal.json`, and whether the project
-has a `styal.json`, a `t3.json` or neither. The web app records when a new-build notice is visible and
+has a `styal.json`, a `t3.json` or neither, and when you open the keyboard shortcuts overview and from where. The web app records when a new-build notice is visible and
 when you choose Refresh. The desktop app records when its notice
 naming the version it updated to is shown and when you open that version's release notes. These events use the relevant paired environment's telemetry setting.
 File paths, written times, deployment identifiers, project names, action names and commands, and composer drafts are not collected.
