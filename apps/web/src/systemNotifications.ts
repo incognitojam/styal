@@ -51,6 +51,7 @@ function warnBlockedOnce() {
   blockedToastShown = true;
   const toastId = toastManager.add({
     type: "warning",
+    timeout: 0,
     title: "macOS is blocking styal notifications",
     description: "Allow notifications for styal in System Settings to get thread alerts.",
     actionProps: {
