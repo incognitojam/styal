@@ -63,3 +63,43 @@ describe("startKeybindingsUpdateToasts", () => {
     }
   });
 });
+
+import { createKeybindingsUpdateToastController } from "./KeybindingsUpdateToast.logic";
+
+describe("keybindings issue changes", () => {
+  it("compares the whole problem set and records changes hidden on Settings", () => {
+    let onSettings = false;
+    const controller = createKeybindingsUpdateToastController({
+      isKeybindingsPage: () => onSettings,
+    });
+    const first = { kind: "keybindings.malformed-config", message: "Unexpected token" };
+    const second = { kind: "keybindings.invalid-entry", message: "Unknown command" };
+    expect(
+      controller.handle({ type: "snapshot", config: { issues: [second] } } as never),
+    ).toBeNull();
+    expect(controller.handle(keybindingsUpdated([second]))).toBeNull();
+    expect(controller.handle(keybindingsUpdated([first]))?._tag).toBe("InvalidConfiguration");
+    expect(controller.handle(keybindingsUpdated([first]))).toBeNull();
+    expect(controller.handle(keybindingsUpdated([first, second]))?._tag).toBe(
+      "InvalidConfiguration",
+    );
+    expect(controller.handle(keybindingsUpdated([second, first, first]))).toBeNull();
+    onSettings = true;
+    expect(controller.handle(keybindingsUpdated([second]))).toBeNull();
+    onSettings = false;
+    expect(controller.handle(keybindingsUpdated([second]))).toBeNull();
+    expect(controller.handle(keybindingsUpdated([first]))?._tag).toBe("InvalidConfiguration");
+  });
+
+  it("keeps successful reloads and their cooldown, including on Settings", () => {
+    let now = 0;
+    const controller = createKeybindingsUpdateToastController({
+      now: () => now,
+      isKeybindingsPage: () => true,
+    });
+    expect(controller.handle(keybindingsUpdated([]))).toEqual({ _tag: "Success" });
+    expect(controller.handle(keybindingsUpdated([]))).toBeNull();
+    now = 2000;
+    expect(controller.handle(keybindingsUpdated([]))).toEqual({ _tag: "Success" });
+  });
+});
