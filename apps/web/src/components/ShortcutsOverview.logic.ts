@@ -1,11 +1,12 @@
 import type {
+  ClientSettings,
   KeybindingCommand,
   KeybindingWhenNode,
   ResolvedKeybindingRule,
   ResolvedKeybindingsConfig,
 } from "@t3tools/contracts";
 
-import { formatShortcutLabel, shortcutConflictKey } from "../keybindings";
+import { formatShortcutLabel, shortcutConflictKey, shortcutForContext } from "../keybindings";
 import {
   buildKeybindingRows,
   commandLabel,
@@ -68,28 +69,82 @@ function liveBindings(
   });
 }
 
+/** The send setting moves Mod+Enter's alternate send to Mod+Shift+Enter, always or for multiline. */
+function shortcutsForBinding(
+  binding: ResolvedKeybindingRule,
+  sendShortcut: ClientSettings["sendShortcut"],
+) {
+  const requiring = shortcutForContext(binding, { composerRequiresModifier: true });
+  if (sendShortcut === "enter") return [binding.shortcut];
+  return sendShortcut === "mod-enter" ? [requiring] : [binding.shortcut, requiring];
+}
+
+const JUMP_COMMAND = /^(.+\.jump)\.(\d)$/;
+
+/** One row for a run of jump commands, unless the keys were rebound out of step with the digits. */
+function collapseJumpRun(
+  run: ReadonlyArray<ShortcutsOverviewEntry>,
+): ShortcutsOverviewEntry | null {
+  const first = run[0];
+  const last = run.at(-1);
+  if (!first || !last || run.length < 2) return null;
+  const digit = (entry: ShortcutsOverviewEntry) => Number(entry.command.at(-1));
+  if (digit(last) - digit(first) + 1 !== run.length) return null;
+  const keyPrefix = first.shortcuts[0]?.slice(0, -1);
+  const inStep = run.every(
+    (entry) => entry.shortcuts.length === 1 && entry.shortcuts[0] === `${keyPrefix}${digit(entry)}`,
+  );
+  if (!inStep) return null;
+  const range = `${digit(first)}–${digit(last)}`;
+  return {
+    command: first.command,
+    label: first.label.replace(/\d$/, range),
+    shortcuts: [`${keyPrefix}${range}`],
+  };
+}
+
+function collapseJumps(
+  entries: ReadonlyArray<ShortcutsOverviewEntry>,
+): ReadonlyArray<ShortcutsOverviewEntry> {
+  const jumpFamily = (entry: ShortcutsOverviewEntry) => JUMP_COMMAND.exec(entry.command)?.[1];
+  return entries.flatMap((entry) => {
+    const family = jumpFamily(entry);
+    if (!family) return [entry];
+    const run = entries.filter((candidate) => jumpFamily(candidate) === family);
+    const collapsed = collapseJumpRun(run);
+    if (!collapsed) return [entry];
+    return entry === run[0] ? [collapsed] : [];
+  });
+}
+
 export function buildShortcutsOverview(
   keybindings: ResolvedKeybindingsConfig,
-  options: { readonly platform: string; readonly isDesktop: boolean },
+  options: {
+    readonly platform: string;
+    readonly isDesktop: boolean;
+    readonly sendShortcut: ClientSettings["sendShortcut"];
+  },
 ): ReadonlyArray<ShortcutsOverviewGroup> {
   const rows = buildKeybindingRows(liveBindings(keybindings, options.platform, options.isDesktop));
   return groupKeybindingRows(rows).map((group) => {
     const shortcutsByCommand = new Map<KeybindingCommand, Set<string>>();
     for (const row of group.rows) {
       const shortcuts = shortcutsByCommand.get(row.command) ?? new Set();
-      shortcutsByCommand.set(
-        row.command,
-        shortcuts.add(formatShortcutLabel(row.binding.shortcut, options.platform)),
-      );
+      for (const shortcut of shortcutsForBinding(row.binding, options.sendShortcut)) {
+        shortcuts.add(formatShortcutLabel(shortcut, options.platform));
+      }
+      shortcutsByCommand.set(row.command, shortcuts);
     }
     return {
       id: group.id,
       title: group.title,
-      entries: [...shortcutsByCommand].map(([command, shortcuts]) => ({
-        command,
-        label: commandLabel(command),
-        shortcuts: [...shortcuts],
-      })),
+      entries: collapseJumps(
+        [...shortcutsByCommand].map(([command, shortcuts]) => ({
+          command,
+          label: commandLabel(command),
+          shortcuts: [...shortcuts],
+        })),
+      ),
     };
   });
 }

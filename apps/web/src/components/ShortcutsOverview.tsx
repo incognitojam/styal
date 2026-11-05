@@ -4,6 +4,7 @@ import { useRef } from "react";
 import { create } from "zustand";
 
 import { isElectron } from "../env";
+import { useClientSettings } from "../hooks/useSettings";
 import { reportForkClientUsage } from "../forkClientUsage";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { primaryEnvironmentIdAtom } from "../state/primaryEnvironment";
@@ -39,9 +40,11 @@ export function toggleShortcutsOverview(): void {
 
 function ShortcutsOverviewGroups() {
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  const sendShortcut = useClientSettings((settings) => settings.sendShortcut);
   const groups = buildShortcutsOverview(keybindings, {
     platform: navigator.platform,
     isDesktop: isElectron,
+    sendShortcut,
   });
   return (
     <div className="gap-8 sm:columns-2">
