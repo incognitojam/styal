@@ -53,18 +53,22 @@ export function FeedbackReportApprovalCard(props: {
       {reviewing ? (
         <Sheet title="Review report" onClose={() => setReviewing(false)}>
           <ScrollView
+            nestedScrollEnabled
             contentInsetAdjustmentBehavior="automatic"
             contentContainerClassName="gap-3 px-5 pt-3 pb-8"
           >
-            <Text className="font-t3-bold text-lg text-foreground">{props.report.title}</Text>
             <Text className="font-sans text-sm text-foreground-secondary">
               This will be public on {props.report.repository}, posted as @{props.report.account}.
             </Text>
-            <PendingQuestionText
-              text={props.report.body}
-              threadRef={props.threadRef}
-              workspaceRoot={null}
-            />
+            <View className="gap-3 rounded-[20px] border border-border bg-card-alt p-4">
+              <Text className="font-t3-bold text-2xl text-foreground">{props.report.title}</Text>
+              <View className="h-px bg-border" />
+              <PendingQuestionText
+                text={props.report.body}
+                threadRef={props.threadRef}
+                workspaceRoot={null}
+              />
+            </View>
             <View className="flex-row flex-wrap gap-2.5 pt-2">{props.options?.map(button)}</View>
           </ScrollView>
         </Sheet>
