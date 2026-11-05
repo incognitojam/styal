@@ -275,13 +275,13 @@ function BetaSettingsSection() {
   );
   const writable = useEnvironmentsWithScope(supported, AuthSettingsWriteScope);
   const updateSettings = useAtomCommand(serverEnvironment.updateSettings, {
-    label: "linked environments beta update",
+    label: "work with other machines update",
     reportFailure: true,
   });
   if (supported.length === 0) return null;
   return (
     <View className="gap-3">
-      <SettingsSection title="Beta: Linked environments">
+      <SettingsSection title="Beta: Work with your other machines">
         {supported.map((environment) => (
           <SettingsSwitchRow
             key={environment.environmentId}
@@ -300,7 +300,8 @@ function BetaSettingsSection() {
       </SettingsSection>
       <Text className="px-2 text-sm text-foreground-muted">
         Let agents on a machine work on your other machines, and theirs on it. Turn it on for each
-        machine. While it is off, nothing new starts over a link; tasks already running finish.
+        machine. While it is off, agents start nothing new on another machine; tasks already running
+        finish.
       </Text>
     </View>
   );

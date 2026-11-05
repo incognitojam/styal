@@ -30,7 +30,6 @@ import { useEnvironmentScope, usePreparedConnection } from "../../state/session"
 import { mintPairingCodeOn } from "../../state/peerPairingCode";
 import { peerLinkEnvironment, useLinkableMachines } from "../../state/peerLinks";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { accessConfig } from "../auth/ConnectAgentSurface";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import { LinkAccessPicker } from "../settings/LinkAccessPicker";
 import { ANOTHER_ADDRESS, LinkMachineBadge } from "../settings/LinkMachineSelect";
@@ -40,8 +39,6 @@ import { Input } from "../ui/input";
 import { Radio, RadioGroup } from "../ui/radio-group";
 import { WizardFooter, WizardHeader, WizardPanel, WizardPopup, WizardSteps } from "../ui/wizard";
 import { WorkLogRow } from "./WorkLog";
-
-const accessLabel = (access: AuthMcpClientAccess) => accessConfig[access].label;
 
 /** Whether the agent left the machine for the user to pick. */
 const picksMachine = (item: LinkRequestItem) =>
@@ -58,7 +55,7 @@ export function LinkRequestCard(props: {
   readonly visibility: OrchestrationV2ProjectedTurnItem["visibility"];
 }) {
   const { item } = props;
-  const display = linkRequestDisplay(item, props.visibility, accessLabel);
+  const display = linkRequestDisplay(item, props.visibility);
   if (display.kind === "answered" || display.kind === "pending-elsewhere") {
     const Icon =
       display.kind === "pending-elsewhere"
@@ -118,8 +115,8 @@ function PendingLinkRequest(props: {
       <div className="flex min-w-0 flex-col gap-1">
         <p className="text-sm font-medium text-foreground">
           {picksMachine(item)
-            ? "Link a machine to this environment"
-            : `Link ${target} to this environment`}
+            ? "Let agents here use another machine"
+            : `Let agents here use ${target}`}
         </p>
         {item.reason.trim() ? <p className="text-sm text-muted-foreground">{item.reason}</p> : null}
         {item.label !== undefined && item.url !== undefined ? (
@@ -143,7 +140,7 @@ function PendingLinkRequest(props: {
             Decline
           </Button>
           <Button type="button" size="xs" disabled={declining} onClick={() => setOpen(true)}>
-            {picksMachine(item) ? "Choose machine…" : "Review link…"}
+            {picksMachine(item) ? "Choose machine…" : "Review…"}
           </Button>
         </div>
       ) : (
@@ -196,7 +193,7 @@ function resolveTarget(
   };
 }
 
-/** The dialog's steps: where to link, then what agents may do there. */
+/** The dialog's steps: which machine, then what agents may do there. */
 type LinkStep = "machine" | "access";
 
 function LinkRequestDialog(props: {
@@ -330,8 +327,8 @@ function LinkRequestDialog(props: {
     >
       <WizardPopup>
         <WizardHeader
-          title={pickMachine ? "Link a machine" : `Link ${targetName}`}
-          description="Agents here can then launch, message and wait on threads there. Revoke it in that machine's Connections."
+          title={pickMachine ? "Add a machine" : `Add ${targetName}`}
+          description="Agents here can then start, message and wait on threads there. Revoke it in that machine's Connections."
         >
           {steps.length > 1 && !useExisting ? (
             <WizardSteps
@@ -425,8 +422,8 @@ function LinkRequestDialog(props: {
             )}
             {useExisting ? (
               <p className="text-xs text-muted-foreground">
-                This environment is already linked to {targetName}. The agent can use that link as
-                it is; change its access in Settings → Connections.
+                Agents here can already work on {targetName}. The agent can carry on with the access
+                it has; change it in Settings → Connections.
               </p>
             ) : null}
             {error !== null ? (
@@ -459,7 +456,13 @@ function LinkRequestDialog(props: {
             type="submit"
             disabled={busy || (finishesHere ? !ready : !machineReady)}
           >
-            {busy ? "Linking…" : useExisting ? "Use this link" : finishesHere ? "Link" : "Continue"}
+            {busy
+              ? "Adding…"
+              : useExisting
+                ? "Use this machine"
+                : finishesHere
+                  ? "Add"
+                  : "Continue"}
           </Button>
         </WizardFooter>
       </WizardPopup>

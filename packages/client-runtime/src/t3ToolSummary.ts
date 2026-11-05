@@ -337,16 +337,16 @@ export function summarizeT3ToolCalls(
       label = phrase("Updated", "update", `environment preferences ${times}`);
       break;
     case "environment-links":
-      label = phrase("Listed", "list", `linked environments ${times}`);
+      label = phrase("Listed", "list", `your machines ${times}`);
       break;
     case "environment-link":
-      label = phrase("Asked to link", "ask to link", quantity(selected.length, "environment"));
+      label = phrase("Asked to add", "ask to add", quantity(selected.length, "machine"));
       break;
     case "environment-unlink":
       label = phrase(
         "Forgot",
         "forget",
-        quantity(countEntities(entityIds("environmentId")), "linked environment"),
+        quantity(countEntities(entityIds("environmentId")), "machine"),
       );
       break;
     case "attachment-prepare":

@@ -99,6 +99,28 @@ describe("renameUpstreamNames", () => {
   });
 });
 
+describe("Linked environment", () => {
+  const source = 'const title = "Linked environments"; const row = "Linked environment settings";';
+
+  it("is renamed in client strings", () => {
+    expect(names("apps/web/src/example.ts", source)).toEqual([
+      "1:Linked environment",
+      "1:Linked environment",
+    ]);
+    expect(renameUpstreamNames("packages/client-runtime/src/example.ts", source).text).toBe(
+      'const title = "Your machines"; const row = "Your machine settings";',
+    );
+  });
+
+  it("stays in server strings, which reach agents, while other names there still change", () => {
+    const server = 'const a = "Linked environments is off in T3 Code.";';
+    expect(names("apps/server/src/peer/example.ts", server)).toEqual(["1:T3 Code"]);
+    expect(renameUpstreamNames("apps/server/src/peer/example.ts", server).text).toBe(
+      'const a = "Linked environments is off in styal.";',
+    );
+  });
+});
+
 describe("renameTestStrings", () => {
   it("renames assertions that quote a renamed string and keeps short test data", () => {
     const source = [

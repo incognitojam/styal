@@ -418,7 +418,7 @@ export const ChatHeader = memo(function ChatHeader({
                 From {activeThreadLinkOrigin}
               </TooltipTrigger>
               <TooltipPopup side="top">
-                Started by an agent on {activeThreadLinkOrigin} through a linked environment.
+                Started by an agent on {activeThreadLinkOrigin}.
               </TooltipPopup>
             </Tooltip>
           ) : null}

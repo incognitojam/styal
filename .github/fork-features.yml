@@ -6996,3 +6996,35 @@ features:
       status: unassessed
       tracking: []
       retire_when: Upstream tells the agent when the worktree branch it started on is renamed.
+
+  - id: your-machines-wording
+    title: Name pairs of machines "your machines", and link only styal Link
+    status: maintained
+    prs: []
+    invariants:
+      - Clients call pairs of machines "your machines"; "link" in client text means styal Link. Server, contract and agent-facing text, including t3_environment_link, peerLink and --access, keeps "linked environment" until it changes with the mcp-tool-use eval.
+      - Upstream strings naming "Linked environment" in client sources are renamed at intake or fail naming:check.
+      - Pickers offer Everything (full-access), Only its own threads (auto) and Look only (read-only), opening on Everything. Stored values do not change, and a link at Supervised or Auto-accept edits shows as Only its own threads with that mode.
+    rationale: One word for two things made styal Link and machine pairs hard to tell apart, and thread mode names read as a question of trust rather than what the other machine can reach.
+    implementation_paths:
+      - apps/mobile/src/features/connection/LinkedEnvironmentsSection.tsx
+      - apps/mobile/src/features/settings/ThreadSettingsSections.tsx
+      - apps/mobile/src/features/threads/LinkRequestCard.tsx
+      - apps/web/src/components/chat/LinkRequestCard.tsx
+      - apps/web/src/components/settings/LabsSettingsPanel.tsx
+      - apps/web/src/components/settings/LinkAccessPicker.tsx
+      - apps/web/src/components/settings/LinkedEnvironmentsSettings.tsx
+      - packages/client-runtime/src/linkRequest.ts
+      - scripts/upstream-naming.ts
+    upstream_paths:
+      - apps/web/src/components/settings/LinkAccessPicker.tsx
+      - apps/web/src/components/settings/LinkedEnvironmentsSettings.tsx
+      - packages/client-runtime/src/linkRequest.ts
+    tests:
+      - packages/client-runtime/src/linkRequest.test.ts
+      - scripts/upstream-naming.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/28907
+      retire_when: Upstream stops using "link" for pairs of machines and offers the same three access choices.
