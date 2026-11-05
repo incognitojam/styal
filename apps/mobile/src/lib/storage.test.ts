@@ -106,14 +106,6 @@ describe("mobile connection storage", () => {
     vi.clearAllMocks();
   });
 
-  it("preserves an explicit opt-out of unpin confirmation across preference writes", async () => {
-    await savePreferencesPatch({ confirmThreadUnpin: false });
-    await savePreferencesPatch({ themeMode: "system" });
-    await expect(loadPreferences()).resolves.toMatchObject({ confirmThreadUnpin: false });
-    await savePreferencesPatch({ confirmThreadUnpin: true });
-    await expect(loadPreferences()).resolves.toMatchObject({ confirmThreadUnpin: true });
-  });
-
   it("persists tab order locally and retains it when another preference changes", async () => {
     const navigationTabOrder = ["usage", "threads", "pullRequests"];
     const hiddenNavigationTabs = ["issues", "home"];

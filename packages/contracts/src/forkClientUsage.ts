@@ -160,7 +160,6 @@ export const MobileSettingsSnapshot = Schema.Struct({
   planModeEnabled: Schema.Boolean,
   turnUsageEnabled: Schema.Boolean,
   turnUsageFigure: Schema.Literals(["tokens", "cost"]),
-  confirmThreadUnpin: Schema.Boolean,
   threadTimestampMode: SidebarThreadTimestampMode,
   threadGrouping: SidebarThreadGrouping,
   projectGroupingMode: SidebarProjectGroupingMode,

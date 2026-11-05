@@ -6,8 +6,6 @@ import { canSnooze } from "@t3tools/client-runtime/state/thread-settled";
 import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Haptics from "expo-haptics";
-import { AsyncResult } from "effect/reactivity";
-import { mobilePreferencesAtom } from "../../state/preferences";
 import { useRef } from "react";
 
 import { withThreadDismissal } from "./thread-dismissal";
@@ -408,21 +406,6 @@ export function useThreadListActions(): {
     for (const shell of shells) {
       if (shell.pinnedAt == null || shell.pinOrderKey == null) continue;
       if (firstKey === null || shell.pinOrderKey < firstKey) firstKey = shell.pinOrderKey;
-    }
-    const preferences = appAtomRegistry.get(mobilePreferencesAtom);
-    if (!AsyncResult.isSuccess(preferences) || preferences.value.confirmThreadUnpin !== false) {
-      const confirmed = await new Promise<boolean>((resolve) => {
-        const title = "Unpin thread?";
-        const message = `“${thread.title}” will move out of your pinned section.`;
-        Dialog.confirm({
-          title,
-          message,
-          confirmText: "Unpin",
-          onConfirm: () => resolve(true),
-          onCancel: () => resolve(false),
-        });
-      });
-      if (!confirmed) return false;
     }
     const orderKey = restoreOrderKey ?? pinOrderKeyBetween(null, firstKey) ?? undefined;
     ThreadUndo.invalidate("pin", scopedThreadKey(thread.environmentId, thread.id));

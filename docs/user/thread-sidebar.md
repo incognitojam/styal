@@ -61,9 +61,6 @@ Pin a thread from its menu to keep it above your active work.
 
 On web and desktop, unpinning proceeds immediately by default. To ask first, enable
 **Settings → General → Unpin confirmation**. Your saved choice is preserved.
-Mobile still asks for confirmation by default because it does not offer Undo;
-turn this off in **Settings → General**. The preference is saved separately
-on each device.
 
 On web and desktop, unpinning, settling, snoozing, and archiving a thread each show
 a notification with **Undo** for five seconds. Undo restores the thread's previous
