@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, it } from "vite-plus/test";
 
 import {
+  sidebarThread,
   type App,
   addProject,
   expectConversation,
@@ -30,8 +31,8 @@ describe("move between threads", () => {
     const { page } = app;
     const sidebar = page.getByRole("navigation", { name: "Threads" });
     // Each project's thread gets the same generated title, so the project tells them apart.
-    const alphaThread = sidebar.getByRole("button", { name: "Fake Codex thread, alpha-app" });
-    const betaThread = sidebar.getByRole("button", { name: "Fake Codex thread, beta-app" });
+    const alphaThread = sidebarThread(page, "Fake Codex thread", "alpha-app");
+    const betaThread = sidebarThread(page, "Fake Codex thread", "beta-app");
 
     await addProject(page, environment.createProject("alpha-app", { git: false }));
     await sendMessage(app, "Alpha task");
@@ -43,6 +44,11 @@ describe("move between threads", () => {
     for (let round = 0; round < 2; round += 1) {
       await alphaThread.click();
       await expectConversation(page, "Alpha task", "Beta task");
+      await betaThread.click({ button: "right" });
+      await page.getByRole("menuitem", { name: "Mark unread", exact: true }).click();
+      await sidebar
+        .getByRole("button", { name: "Fake Codex thread, Done, beta-app", exact: true })
+        .waitFor();
       await betaThread.click();
       await expectConversation(page, "Beta task", "Alpha task");
     }

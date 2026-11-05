@@ -1,7 +1,7 @@
 import type { Locator } from "playwright-core";
 import { afterAll, beforeAll, describe, expect, it } from "vite-plus/test";
 
-import { type App, addProject, openApp, sendMessage } from "../support/browser.ts";
+import { sidebarThread, type App, addProject, openApp, sendMessage } from "../support/browser.ts";
 import { type Environment, startEnvironment } from "../support/environment.ts";
 
 /** Whether `row` sits above `header` in the sidebar, which puts it outside the shelf. */
@@ -34,9 +34,9 @@ describe("settle a thread", () => {
     // The New design shows the count beside the label rather than in it, so match state, not text.
     const collapsedShelf = settledHeader.locator('button[aria-expanded="false"]', { hasText: "1" });
     const expandedShelf = settledHeader.locator('button[aria-expanded="true"]');
-    const settledThread = sidebar.getByRole("button", { name: "Fake Codex thread, second-app" });
+    const settledThread = sidebarThread(page, "Fake Codex thread", "second-app");
     // The empty thread the server starts with in its bootstrap project.
-    const otherThread = sidebar.getByRole("button", { name: "New thread, demo-app" });
+    const otherThread = sidebarThread(page, "New thread", "demo-app");
 
     // These checks need no checkpoints, so the second project is a plain folder.
     await addProject(page, environment.createProject("second-app", { git: false }));

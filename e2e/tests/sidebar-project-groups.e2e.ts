@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vite-plus/test";
 
-import { type App, addProject, openApp, sendMessage } from "../support/browser.ts";
+import { sidebarThread, type App, addProject, openApp, sendMessage } from "../support/browser.ts";
 import { type Environment, startEnvironment } from "../support/environment.ts";
 
 describe("group sidebar threads by project", () => {
@@ -51,7 +51,7 @@ describe("group sidebar threads by project", () => {
     await header("second-app").waitFor();
     expect(await headerOrder()).toEqual(["second-app", "demo-app"]);
     // The empty thread the server starts with in its bootstrap project.
-    const demoThread = sidebar.getByRole("button", { name: "New thread, demo-app" });
+    const demoThread = sidebarThread(page, "New thread", "demo-app");
     expect(await demoThread.innerText()).not.toContain("demo-app");
 
     // Pinned projects lead the list and show a pin icon.
@@ -64,7 +64,7 @@ describe("group sidebar threads by project", () => {
     const toast = page.getByRole("dialog", { name: "Archived second-app" });
     await toast.waitFor();
     await header("second-app").waitFor({ state: "detached" });
-    await sidebar.getByRole("button", { name: "Fake Codex thread, second-app" }).waitFor({
+    await sidebarThread(page, "Fake Codex thread", "second-app").waitFor({
       state: "detached",
     });
     await toast.getByRole("button", { name: "Undo" }).click();

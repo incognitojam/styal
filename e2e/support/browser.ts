@@ -20,6 +20,14 @@ export function allowOrigin(page: Page, origin: string): void {
   origins.add(new URL(origin).origin);
 }
 
+export function sidebarThread(page: Page, title: string, project: string): Locator {
+  const escape = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const sidebar = page.getByRole("navigation", { name: "Threads" });
+  return sidebar
+    .getByRole("button", { name: new RegExp(`^${escape(title)},`) })
+    .and(sidebar.getByRole("button", { name: new RegExp(`, ${escape(project)}$`) }));
+}
+
 export interface App {
   readonly browser: Browser;
   readonly page: Page;

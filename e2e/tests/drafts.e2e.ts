@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vite-plus/test";
 
 import {
+  sidebarThread,
   type App,
   addProject,
   expectConversation,
@@ -29,9 +30,8 @@ describe("keep unsent drafts", () => {
 
   it("keeps each thread's draft across switches and gives a new thread its own", async () => {
     const { page, composer } = app;
-    const sidebar = page.getByRole("navigation", { name: "Threads" });
-    const demoThread = sidebar.getByRole("button", { name: `Fake Codex thread, ${PROJECT_NAME}` });
-    const otherThread = sidebar.getByRole("button", { name: "Fake Codex thread, other-app" });
+    const demoThread = sidebarThread(page, "Fake Codex thread", PROJECT_NAME);
+    const otherThread = sidebarThread(page, "Fake Codex thread", "other-app");
     const composerText = async () => (await composer.innerText()).trim();
 
     await sendMessage(app, "Demo task");
