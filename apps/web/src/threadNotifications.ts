@@ -129,11 +129,21 @@ function discardContext(context: AudioContext) {
   void context.close().catch(() => undefined);
 }
 
+/**
+ * The first AudioContext in a renderer blocks for tens of milliseconds, so it is built while the
+ * app is idle instead of in the first input handler. Electron allows autoplay, so it starts running.
+ */
+export function prepareNotificationAudio() {
+  if (audioContext) return;
+  audioContext = new AudioContext();
+  if (audioContext.state === "running") releaseOutputWhenIdle(audioContext);
+}
+
 /** Called from a gesture so browsers allow later background playback. */
 export async function unlockNotificationAudio() {
-  if (audioContext) return;
-  const context = new AudioContext();
-  audioContext = context;
+  if (unlocked) return;
+  audioContext ??= new AudioContext();
+  const context = audioContext;
   try {
     await context.resume();
     unlocked = true;

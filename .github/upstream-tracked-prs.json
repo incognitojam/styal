@@ -198,7 +198,7 @@
     },
     {
       "pr": 29146,
-      "reason": "Preloads notification sounds on the unlocking gesture and drops the completion grace, rewriting the same threadNotifications.ts functions as fork #1242. Fork #1242 suspends the AudioContext between sounds so each one plays on the current output device after a Bluetooth switch, and replaces a context that fails to resume. Combine at chronological intake: keep upstream's preloading, but keep the fork's per-sound resume and idle suspend and its event sound choices (ledger completion-sounds). Do not take upstream's always-running context."
+      "reason": "Preloads notification sounds on the unlocking gesture and drops the completion grace, rewriting the same threadNotifications.ts functions as fork #1242. Fork #1242 suspends the AudioContext between sounds so each one plays on the current output device after a Bluetooth switch, and replaces a context that fails to resume. Combine at chronological intake: keep upstream's preloading, but keep the fork's per-sound resume and idle suspend and its event sound choices (ledger completion-sounds). Do not take upstream's always-running context. The fork creates the context while idle (prepareNotificationAudio), so run upstream's preload on the first unlock, tracked by `unlocked`, not by the context being undefined."
     },
     {
       "pr": 30096,
