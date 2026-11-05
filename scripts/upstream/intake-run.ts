@@ -2314,24 +2314,33 @@ const VERIFY_CONCURRENCY = 2;
  * only tests related to the batch run; whole suites run in Fork CI, which every candidate must
  * pass before promotion.
  */
-async function verify(
+export async function verify(
   cwd: string,
   base: string,
-  options: { readonly allTests?: boolean; readonly quick?: boolean } = {},
+  options: {
+    readonly allTests?: boolean;
+    readonly quick?: boolean;
+    readonly changedPaths?: readonly string[];
+    readonly onResults?: (results: readonly VerificationResult[]) => void;
+    readonly quiet?: boolean;
+    readonly env?: NodeJS.ProcessEnv;
+  } = {},
 ): Promise<boolean> {
-  const changed = lines(git(cwd, ["diff", "--name-only", "--no-renames", `${base}...HEAD`])).filter(
-    (path) => !path.startsWith(".repos/") && NodeFS.existsSync(NodePath.join(cwd, path)),
-  );
+  const changed = (
+    options.changedPaths ??
+    lines(git(cwd, ["diff", "--name-only", "--no-renames", `${base}...HEAD`]))
+  ).filter((path) => !path.startsWith(".repos/") && NodeFS.existsSync(NodePath.join(cwd, path)));
   const packages = typecheckPackages(cwd, changed);
-  const env = verificationEnvironment(process.env);
+  const env = verificationEnvironment(options.env ?? process.env);
   const started = performance.now();
   const elapsed = (since: number) => `${((performance.now() - since) / 1000).toFixed(1)}s`;
   const runStep = async (step: VerifyStep) => {
     const stepStarted = performance.now();
     const result = await runAsync(step.directory, step.command, step.args, env);
-    process.stdout.write(
-      `${result.status === 0 ? "ok  " : "FAIL"} ${step.name} (${elapsed(stepStarted)})\n`,
-    );
+    if (!options.quiet)
+      process.stdout.write(
+        `${result.status === 0 ? "ok  " : "FAIL"} ${step.name} (${elapsed(stepStarted)})\n`,
+      );
     return {
       name: step.name,
       ok: result.status === 0,
@@ -2342,8 +2351,10 @@ async function verify(
   const testRuns = options.quick
     ? []
     : verifyTestRuns(cwd, changed, options.allTests ? "all" : "related");
-  if (options.quick) process.stdout.write("--   tests skipped; Fork CI runs them\n");
-  else if (testRuns.length === 0) process.stdout.write("--   no tests related to the batch\n");
+  if (options.quick && !options.quiet)
+    process.stdout.write("--   tests skipped; Fork CI runs them\n");
+  else if (testRuns.length === 0 && !options.quiet)
+    process.stdout.write("--   no tests related to the batch\n");
   const sources = changed.filter((path) => /\.(ts|tsx|mts|mjs|js)$/u.test(path));
   const queue: Array<VerifyStep> = [
     ...testRuns.map((test) => ({ ...test, directory: NodePath.join(cwd, test.directory) })),
@@ -2394,7 +2405,8 @@ async function verify(
     }),
   );
   const steps = [install, ...results];
-  for (const failed of steps.filter((entry) => !entry.ok)) {
+  options.onResults?.(steps);
+  for (const failed of steps.filter((entry) => !entry.ok && !options.quiet)) {
     const relevant = failed.output
       .split("\n")
       .filter((line) => /error|fail|×|✗/iu.test(line))
@@ -2402,8 +2414,14 @@ async function verify(
       .join("\n");
     process.stdout.write(`\n--- ${failed.name}\n${relevant || failed.output.slice(-4000)}\n`);
   }
-  process.stdout.write(`\nverify took ${elapsed(started)}\n`);
+  if (!options.quiet) process.stdout.write(`\nverify took ${elapsed(started)}\n`);
   return steps.every((entry) => entry.ok);
+}
+
+export interface VerificationResult {
+  readonly name: string;
+  readonly ok: boolean;
+  readonly output: string;
 }
 
 interface VerifyStep {
