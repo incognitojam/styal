@@ -3,7 +3,6 @@ import { Link } from "@tanstack/react-router";
 import { useRef } from "react";
 import { create } from "zustand";
 
-import { useComposerHandleContext } from "../composerHandleContext";
 import { isElectron } from "../env";
 import { useClientSettings } from "../hooks/useSettings";
 import { reportForkClientUsage } from "../forkClientUsage";
@@ -78,21 +77,10 @@ function ShortcutsOverviewGroups() {
 export function ShortcutsOverview() {
   const open = useShortcutsOverviewStore((state) => state.open);
   const popupRef = useRef<HTMLDivElement>(null);
-  const composerHandleRef = useComposerHandleContext();
   return (
     <Dialog open={open} onOpenChange={(next) => !next && close()}>
       {/* The dialog opens from the keyboard, where focusing the link would draw its focus ring. */}
-      <DialogPopup
-        className="max-w-4xl"
-        finalFocus={() => {
-          const composer = composerHandleRef?.current;
-          if (!composer) return true;
-          composer.focusAtEnd();
-          return false;
-        }}
-        initialFocus={popupRef}
-        ref={popupRef}
-      >
+      <DialogPopup className="max-w-4xl" initialFocus={popupRef} ref={popupRef}>
         <DialogHeader>
           <DialogTitle>Keyboard shortcuts</DialogTitle>
           <DialogDescription>
