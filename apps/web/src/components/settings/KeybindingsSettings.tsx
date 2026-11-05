@@ -1,10 +1,8 @@
-import { useEnvironmentScope } from "../../state/session";
 import { useEnvironmentsWithScope, readEnvironmentScope } from "../../state/session";
 import {
   ChevronDownIcon,
   CircleXIcon,
   EllipsisIcon,
-  FileJsonIcon,
   MinusIcon,
   PlusIcon,
   SearchIcon,
@@ -22,7 +20,6 @@ import {
 } from "react";
 import { flushSync } from "react-dom";
 import {
-  AuthOrchestrationOperateScope,
   AuthSettingsWriteScope,
   type KeybindingCommand,
   type KeybindingWhenNode,
@@ -40,7 +37,7 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 
 import { isElectron } from "../../env";
-import { useOpenInPreferredEditor } from "../../editorPreferences";
+import { OpenInPicker } from "../chat/OpenInPicker";
 import { formatShortcutLabel } from "../../keybindings";
 import { cn } from "../../lib/utils";
 import { serverEnvironment } from "../../state/server";
@@ -1341,10 +1338,6 @@ function KeybindingsConfigIssues({ issues }: { issues: readonly ServerConfigIssu
 
 export function KeybindingsSettingsPanel() {
   const { environment: primaryEnvironment, connectedEnvironments } = useSettingsScope();
-  const canOpenKeybindingsFile = useEnvironmentScope(
-    primaryEnvironment?.environmentId ?? null,
-    AuthOrchestrationOperateScope,
-  );
   const writableIds = useEnvironmentsWithScope(connectedEnvironments, AuthSettingsWriteScope);
   const canWriteSettings =
     connectedEnvironments.length > 0 &&
@@ -1358,10 +1351,6 @@ export function KeybindingsSettingsPanel() {
   const removeKeybindingMutation = useAtomCommand(serverEnvironment.removeKeybinding, {
     reportFailure: false,
   });
-  const openInPreferredEditor = useOpenInPreferredEditor(
-    primaryEnvironment?.environmentId ?? null,
-    availableEditors,
-  );
   const [query, setQuery] = useState("");
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [savingCommand, setSavingCommand] = useState<KeybindingCommand | null>(null);
@@ -1378,28 +1367,6 @@ export function KeybindingsSettingsPanel() {
   const rows = filterKeybindingRows(allRows, query);
   const groups = groupKeybindingRows(rows);
   const anchorIds = keybindingAnchorIds(rows);
-
-  const openKeybindingsFile = () => {
-    if (
-      !keybindingsConfigPath ||
-      !primaryEnvironment ||
-      !readEnvironmentScope(primaryEnvironment.environmentId, AuthOrchestrationOperateScope)
-    )
-      return;
-    void (async () => {
-      const result = await openInPreferredEditor(keybindingsConfigPath);
-      if (result._tag === "Success" || isAtomCommandInterrupted(result)) {
-        return;
-      }
-      const error = squashAtomCommandFailure(result);
-      toastManager.add({
-        title: "Unable to open keybindings file",
-        description:
-          error instanceof Error ? error.message : "The keybindings file was not opened.",
-        type: "error",
-      });
-    })();
-  };
 
   const saveKeybinding = (input: ServerUpsertKeybindingInput) => {
     if (
@@ -1511,23 +1478,26 @@ export function KeybindingsSettingsPanel() {
             <PlusIcon aria-hidden className="size-4" />
             Add keybinding
           </Button>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  disabled={!keybindingsConfigPath || !canOpenKeybindingsFile}
-                  onClick={openKeybindingsFile}
-                  aria-label="Open keybindings.json"
-                >
-                  <FileJsonIcon aria-hidden className="size-4" />
-                </Button>
-              }
-            />
-            <TooltipPopup side="top">Open keybindings.json</TooltipPopup>
-          </Tooltip>
+          {primaryEnvironment ? (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <span>
+                    <OpenInPicker
+                      environmentId={primaryEnvironment.environmentId}
+                      keybindings={primaryEnvironment.serverConfig?.keybindings ?? []}
+                      availableEditors={availableEditors}
+                      openInCwd={keybindingsConfigPath}
+                      openInCwdIsFile
+                      compact
+                      enableShortcut={false}
+                    />
+                  </span>
+                }
+              />
+              <TooltipPopup side="top">Open keybindings.json</TooltipPopup>
+            </Tooltip>
+          ) : null}
         </div>
         <KeybindingsConfigIssues issues={configIssues} />
       </SettingsSection>
