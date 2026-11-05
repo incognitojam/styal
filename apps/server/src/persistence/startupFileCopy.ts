@@ -1,18 +1,19 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeWorkerThreads from "node:worker_threads";
-import * as Data from "effect/Data";
+import * as Schema from "effect/Schema";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Queue from "effect/Queue";
 import * as Option from "effect/Option";
 import type { ServerStartupCopyProgress } from "@t3tools/contracts";
 
-export class StartupCopyLimit extends Data.TaggedError("StartupCopyLimit")<{
-  readonly reason: "stalled" | "deadline";
-}> {}
-export class StartupCopyIoError extends Data.TaggedError("StartupCopyIoError")<{
-  readonly cause: unknown;
-}> {}
+export class StartupCopyLimit extends Schema.TaggedError<StartupCopyLimit>()("StartupCopyLimit", {
+  reason: Schema.Literals(["stalled", "deadline"]),
+}) {}
+export class StartupCopyIoError extends Schema.TaggedError<StartupCopyIoError>()(
+  "StartupCopyIoError",
+  { cause: Schema.Defect() },
+) {}
 
 // Stop after 60 s without bytes; total budget is max(15 min, size at 20,000,000 bytes/s).
 const copyBudgetMs = (bytes: number) => Math.max(15 * 60_000, (bytes / 20_000_000) * 1000);

@@ -5,7 +5,7 @@ import * as NodePath from "node:path";
 import * as NodeCrypto from "node:crypto";
 import * as NodeWorkerThreads from "node:worker_threads";
 import * as Effect from "effect/Effect";
-import * as Data from "effect/Data";
+import * as Schema from "effect/Schema";
 import * as Clock from "effect/Clock";
 import * as DateTime from "effect/DateTime";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -33,8 +33,11 @@ export class Progress extends Context.Reference<
   (progress: ServerStartupCopyProgress | null) => Effect.Effect<void>
 >("styal/PrePruneProgress", { defaultValue: () => () => Effect.void }) {}
 
-class SafetyCopyError extends Data.TaggedError("SafetyCopyError")<{ readonly cause: unknown }> {}
+class SafetyCopyError extends Schema.TaggedError<SafetyCopyError>()("SafetyCopyError", {
+  cause: Schema.Defect(),
+}) {}
 
+const isSafetyCopyError = Schema.is(SafetyCopyError);
 const GENERATION = "pre-event-prune-generation";
 const COPY_ID = "pre-event-prune-copy";
 const RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
@@ -231,7 +234,7 @@ const attempt = <A>(run: (signal: AbortSignal) => Promise<A>) =>
 const warn = (cause: unknown) =>
   Effect.logWarning(
     "Pre-pruning safety copy failed; history pruning is disabled until the next successful startup",
-    { cause: cause instanceof SafetyCopyError ? String(cause.cause) : cause },
+    { cause: isSafetyCopyError(cause) ? String(cause.cause) : cause },
   );
 
 const writeDurably = Effect.fn("PreEventPruneSafety.writeDurably")(function* (

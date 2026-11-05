@@ -145,10 +145,14 @@ const PICTURE_IN_PICTURE_ASPECT_RATIO_EPSILON = 0.002;
 const isAbortedNavigationError = (error: unknown): boolean =>
   typeof error === "object" && error !== null && "code" in error && error.code === "ERR_ABORTED";
 
-class PreviewCaptureTimeoutError extends Error {
+class PreviewCaptureTimeoutError extends Schema.TaggedError<PreviewCaptureTimeoutError>()(
+  "PreviewCaptureTimeoutError",
+  { message: Schema.String },
+) {
   // Reported to agents as the allowlisted TimeoutError reason.
   override name = "TimeoutError";
 }
+const isPreviewCaptureTimeoutError = Schema.is(PreviewCaptureTimeoutError);
 const MAX_ARTIFACT_SITE_SLUG_LENGTH = 80;
 const requestRecordingCaptureExpression = (tabId: string): string =>
   `globalThis[${JSON.stringify(DESKTOP_PREVIEW_RECORDING_CAPTURE_TRIGGER)}]?.(${JSON.stringify(tabId)}) === true`;
@@ -666,9 +670,9 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
                     operation,
                     tabId,
                     webContentsId: wc.id,
-                    cause: new PreviewCaptureTimeoutError(
-                      `Preview capture timed out after ${timeoutMs}ms.`,
-                    ),
+                    cause: new PreviewCaptureTimeoutError({
+                      message: `Preview capture timed out after ${timeoutMs}ms.`,
+                    }),
                   }),
                 ),
               ),
@@ -692,9 +696,9 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
               operation,
               tabId,
               webContentsId: wc.id,
-              cause: new PreviewCaptureTimeoutError(
-                `Preview capture timed out after ${CAPTURE_PAGE_TIMEOUT_MS}ms.`,
-              ),
+              cause: new PreviewCaptureTimeoutError({
+                message: `Preview capture timed out after ${CAPTURE_PAGE_TIMEOUT_MS}ms.`,
+              }),
             }),
           ),
       }),
@@ -3036,7 +3040,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         if (
           consumer !== "picture-in-picture" &&
           isPreviewOperationError(error) &&
-          error.cause instanceof PreviewCaptureTimeoutError
+          isPreviewCaptureTimeoutError(error.cause)
         ) {
           return stopFrameCapture(tabId, consumer).pipe(Effect.andThen(Effect.fail(error)));
         }

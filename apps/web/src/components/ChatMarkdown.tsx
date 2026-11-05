@@ -197,7 +197,7 @@ import {
   isBrowserPreviewFile,
   openFileInPreview,
   BrowserPreviewUnavailableError,
-  BrowserSettingsReadError,
+  isBrowserSettingsReadError,
 } from "../browser/openFileInPreview";
 import { resolveLinkTarget } from "../browser/browserLinkTarget";
 import { PullRequestLinkPreview } from "./pullRequest/PullRequestLinkPreview";
@@ -727,7 +727,7 @@ function useChatMarkdownState({
     const result = await openExternalLinkInPreview(url);
     if (result._tag !== "Failure" || isAtomCommandInterrupted(result)) return;
     reportMarkdownActionFailure({ operation: "open-link-in-preview", target: url }, result.cause);
-    if (squashAtomCommandFailure(result) instanceof BrowserSettingsReadError) return;
+    if (isBrowserSettingsReadError(squashAtomCommandFailure(result))) return;
     try {
       await readLocalApi()?.shell.openExternal(url);
     } catch (cause) {

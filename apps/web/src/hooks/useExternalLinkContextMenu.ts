@@ -13,7 +13,7 @@ import * as Cause from "effect/Cause";
 
 import {
   BrowserPreviewUnavailableError,
-  BrowserSettingsReadError,
+  isBrowserSettingsReadError,
   openUrlInPreview,
 } from "~/browser/openFileInPreview";
 import { recordVisitForThread } from "~/browserHistoryStore";
@@ -59,7 +59,7 @@ export function useExternalLinkContextMenu(threadRef?: ScopedThreadRef) {
       if (result._tag === "Success") recordVisitForThread(threadRef, url);
       else if (!isAtomCommandInterrupted(result)) {
         const error = squashAtomCommandFailure(result);
-        if (error instanceof BrowserSettingsReadError) {
+        if (isBrowserSettingsReadError(error)) {
           toastManager.add(
             stackedThreadToast({
               type: "error",

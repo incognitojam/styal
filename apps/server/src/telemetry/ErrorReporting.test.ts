@@ -3,7 +3,7 @@ import * as NodeURL from "node:url";
 import { assert, describe, it } from "@effect/vitest";
 import * as Cause from "effect/Cause";
 import * as ConfigProvider from "effect/ConfigProvider";
-import * as Data from "effect/Data";
+import * as Schema from "effect/Schema";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
@@ -13,9 +13,9 @@ import * as TestClock from "effect/testing/TestClock";
 import { AnalyticsService } from "./AnalyticsService.ts";
 import * as ErrorReporting from "./ErrorReporting.ts";
 
-class TerminalStartError extends Data.TaggedError("TerminalStartError")<{
-  readonly message: string;
-}> {}
+class TerminalStartError extends Schema.TaggedError<TerminalStartError>()("TerminalStartError", {
+  message: Schema.String,
+}) {}
 
 const scrub = ErrorReporting.makeScrubber({ appRoot: "/opt/styal", homeDir: "/Users/alex" });
 // Frames from this test file, made relative to the real server package root.

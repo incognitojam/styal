@@ -16,7 +16,7 @@ import {
   WS_METHODS,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
-import * as Data from "effect/Data";
+import * as Schema from "effect/Schema";
 import * as Effect from "effect/Effect";
 import type * as HttpClient from "effect/http/HttpClient";
 import * as Option from "effect/Option";
@@ -472,9 +472,10 @@ export const runWorkTogetherLines = Effect.fnUntraced(function* <E, R>(
 });
 
 /** A step this client could not start, such as a machine with no address. */
-class WorkTogetherStepError extends Data.TaggedError("WorkTogetherStepError")<{
-  readonly message: string;
-}> {}
+class WorkTogetherStepError extends Schema.TaggedError<WorkTogetherStepError>()(
+  "WorkTogetherStepError",
+  { message: Schema.String },
+) {}
 
 /** Failures whose message is written for people and never carries a pairing code. */
 const USER_FACING_FAILURE_TAGS = new Set([

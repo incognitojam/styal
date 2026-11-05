@@ -9,7 +9,6 @@ import { injectMcpAppCookieBootstrap, injectMcpAppThemeBootstrap } from "@t3tool
 import { decodeOtlpTraceRecords } from "@t3tools/shared/observability";
 import { normalizePreviewUrl } from "@t3tools/shared/preview";
 import * as ByteSize from "effect/ByteSize";
-import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Etag from "effect/http/Etag";
 import * as FileSystem from "effect/FileSystem";
@@ -367,9 +366,10 @@ export const layerServerEnvironmentHttpApi = HttpApiBuilder.group(
   }),
 );
 
-class DecodeOtlpTraceRecordsError extends Data.TaggedError("DecodeOtlpTraceRecordsError")<{
-  readonly cause: unknown;
-}> {}
+class DecodeOtlpTraceRecordsError extends Schema.TaggedError<DecodeOtlpTraceRecordsError>()(
+  "DecodeOtlpTraceRecordsError",
+  { cause: Schema.Defect() },
+) {}
 
 // Tracing once-per-second renderer exports would create more spans than it forwards.
 export const layerOtlpTracesProxyRoute = HttpRouter.add(

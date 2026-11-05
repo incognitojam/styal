@@ -297,10 +297,12 @@ const scenarios: Array<ScenarioResult> = SCENARIOS.map((name) => ({
 const scenario = (name: ScenarioName) => scenarios.find((entry) => entry.name === name)!;
 let reportedVersion: string | null = null;
 
-class ScenarioFailure extends Error {}
+class ScenarioFailure extends Schema.TaggedError<ScenarioFailure>()("ScenarioFailure", {
+  message: Schema.String,
+}) {}
 
 function fail(detail: string): never {
-  throw new ScenarioFailure(detail);
+  throw new ScenarioFailure({ message: detail });
 }
 
 function writeEvidence(name: string, value: unknown) {

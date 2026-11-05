@@ -12,7 +12,7 @@ import {
 } from "@t3tools/contracts";
 import { expect, it } from "@effect/vitest";
 import * as Cause from "effect/Cause";
-import * as Data from "effect/Data";
+import * as Schema from "effect/Schema";
 import * as Deferred from "effect/Deferred";
 import * as Fiber from "effect/Fiber";
 import * as Effect from "effect/Effect";
@@ -55,7 +55,7 @@ const trustedRouting = {
   forget: () => Effect.void,
 };
 
-class MutationRefused extends Data.TaggedError("MutationRefused") {}
+class MutationRefused extends Schema.TaggedError<MutationRefused>()("MutationRefused", {}) {}
 
 for (const scenario of [
   "prefers the local environment with the same github account",

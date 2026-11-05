@@ -12,7 +12,6 @@ import type { ProviderUpdateRecord } from "./ProviderUpdateJournal.ts";
 import * as Clock from "effect/Clock";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
-import * as Data from "effect/Data";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -102,10 +101,13 @@ export class ProviderMaintenanceRunner extends Context.Service<
   ProviderMaintenanceRunnerShape
 >()("@styal/cli/provider/providerMaintenanceRunner") {}
 
-class ProviderMaintenanceCommandError extends Data.TaggedError("ProviderMaintenanceCommandError")<{
-  readonly message: string;
-  readonly cause?: unknown;
-}> {}
+class ProviderMaintenanceCommandError extends Schema.TaggedError<ProviderMaintenanceCommandError>()(
+  "ProviderMaintenanceCommandError",
+  {
+    message: Schema.String,
+    cause: Schema.optional(Schema.Defect()),
+  },
+) {}
 
 interface VerifiedProviderRefresh {
   readonly providers: ReadonlyArray<ServerProvider>;
@@ -773,7 +775,7 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
               }),
               Cause.hasInterruptsOnly(cause)
                 ? "interrupted"
-                : failure instanceof ProviderMaintenanceCommandError
+                : isProviderMaintenanceCommandError(failure)
                   ? "spawn_failed"
                   : "internal_error",
             );
@@ -864,3 +866,5 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
 });
 
 export const layer = Layer.effect(ProviderMaintenanceRunner, make());
+
+const isProviderMaintenanceCommandError = Schema.is(ProviderMaintenanceCommandError);

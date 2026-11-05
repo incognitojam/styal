@@ -1,3 +1,4 @@
+import * as Schema from "effect/Schema";
 import { assert, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as FileSystem from "effect/FileSystem";
@@ -22,7 +23,7 @@ it.effect("gives up on a pending read even when its promise never returns", () =
     if (result !== undefined && Exit.isFailure(result)) {
       const error = Cause.squash(result.cause);
       assert.instanceOf(error, Copy.StartupCopyLimit);
-      if (error instanceof Copy.StartupCopyLimit) assert.equal(error.reason, "stalled");
+      if (isStartupCopyLimit(error)) assert.equal(error.reason, "stalled");
     }
   }),
 );
@@ -48,7 +49,7 @@ it.effect.each([
     if (result !== undefined && Exit.isFailure(result)) {
       const error = Cause.squash(result.cause);
       assert.instanceOf(error, Copy.StartupCopyLimit);
-      if (error instanceof Copy.StartupCopyLimit) assert.equal(error.reason, "deadline");
+      if (isStartupCopyLimit(error)) assert.equal(error.reason, "deadline");
     }
   }),
 );
@@ -71,3 +72,5 @@ it.effect("streams exact bytes across chunk boundaries before reporting completi
     assert.equal(progress.at(-1), bytes.length);
   }).pipe(Effect.provide(NodeServices.layer)),
 );
+
+const isStartupCopyLimit = Schema.is(Copy.StartupCopyLimit);

@@ -53,6 +53,7 @@ await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
 });
 
 // Shaped like the SDK's minified class: the constructor is not named after the error.
+// @effect-diagnostics-next-line extendsNativeError:off - mimics the Cursor SDK's own native Error class.
 class o extends Error {
   override name = "WriteIterableClosedError";
 }
