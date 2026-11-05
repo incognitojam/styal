@@ -62,6 +62,7 @@ export function PullRequestMarkdown({
   threadRef,
   lineBreaks,
   className,
+  onTaskListChange,
 }: {
   text: string;
   detail: PullRequestDetailView;
@@ -69,6 +70,8 @@ export function PullRequestMarkdown({
   threadRef?: ScopedThreadRef | null;
   lineBreaks?: boolean;
   className?: string;
+  /** `markerOffset` is into `text`. Checkboxes stay read-only without it. */
+  onTaskListChange?: ((input: { markerOffset: number; checked: boolean }) => void) | undefined;
 }) {
   const cwd = detail.workspaceRoot;
   // A relative image names a file at the pull request head, not in the local checkout.
@@ -130,6 +133,15 @@ export function PullRequestMarkdown({
               {...(context ? { extraRemarkPlugins: context.remarkPlugins } : {})}
               lineBreaks={lineBreaks ?? context?.lineBreaks ?? false}
               sourceControlMedia
+              onTaskListChange={
+                onTaskListChange && segment.kind === "markdown"
+                  ? ({ markerOffset, checked }) =>
+                      onTaskListChange({
+                        markerOffset: segment.sourceOffset + markerOffset,
+                        checked,
+                      })
+                  : undefined
+              }
             />
           );
         }
