@@ -9,7 +9,7 @@ import { openAttachmentInViewer } from "../lib/attachmentDownload";
 import type { ResolvedFilePreviewDocument, FilePreviewViewerProps } from "./FilePreviewModal.types";
 import { imageViewingProps, MediaImagePreview } from "./MediaImagePreview";
 import { PdfPreview } from "./PdfPreview";
-import { ControlPill } from "./ui/ControlPill";
+import { SheetHeader } from "./ui/SheetHeader";
 import { AppText as Text } from "./ui/AppText";
 
 function PdfDocumentPreview(props: {
@@ -28,12 +28,11 @@ function PdfDocumentPreview(props: {
         className="flex-1 bg-card"
         style={{ paddingTop: insets.top, paddingBottom: insets.bottom }}
       >
-        <View className="flex-row items-center gap-3 border-b border-border px-4 py-2">
-          <Text className="flex-1 font-t3-semibold text-foreground" numberOfLines={1}>
-            {props.source.name ?? "PDF"}
-          </Text>
-          <ControlPill label="Close" variant="pill" onPress={props.onRequestClose} />
-        </View>
+        <SheetHeader
+          presentation="inline"
+          title={props.source.name ?? "PDF"}
+          onClose={props.onRequestClose}
+        />
         <PdfPreview uri={props.source.uri} />
       </View>
     </Modal>

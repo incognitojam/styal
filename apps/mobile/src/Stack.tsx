@@ -655,7 +655,7 @@ const RootStackConfig = createWorkspaceStackNavigator({
     ThreadReviewComment: createNativeStackScreen({
       screen: ReviewCommentComposerSheet,
       linking: `${THREAD_LINKING_PREFIX}/review-comment`,
-      options: sheetRoute({ detent: 0.55, header: "none", android: "fullScreen" }),
+      options: sheetRoute({ detent: 0.55, android: "fullScreen" }),
     }),
     ThreadFiles: createNativeStackScreen({
       screen: ThreadFilesTreeScreen,
@@ -670,7 +670,7 @@ const RootStackConfig = createWorkspaceStackNavigator({
     ThreadMcpApp: createNativeStackScreen({
       screen: McpAppFullscreenScreen,
       linking: `${THREAD_LINKING_PREFIX}/apps/:itemId`,
-      options: immersiveRoute(),
+      options: { ...modalRoute({ header: "solid" }), gestureEnabled: false },
     }),
     ThreadAttachment: createNativeStackScreen({
       screen: AttachmentFileScreen,
@@ -716,12 +716,12 @@ const RootStackConfig = createWorkspaceStackNavigator({
     GitDefaultRepository: createNativeStackScreen({
       screen: GitDefaultRepositorySheet,
       linking: `${THREAD_LINKING_PREFIX}/git/default-repository`,
-      options: sheetRoute({ header: "none", detent: 0.4, maxDetent: 0.7 }),
+      options: sheetRoute({ detent: 0.4, maxDetent: 0.7 }),
     }),
     GitConfirm: createNativeStackScreen({
       screen: GitConfirmSheet,
       linking: `${THREAD_LINKING_PREFIX}/git-confirm`,
-      options: sheetRoute({ detent: 0.55, maxDetent: 0.7, header: "none", androidFit: true }),
+      options: sheetRoute({ detent: 0.55, maxDetent: 0.7, androidFit: true }),
     }),
     ...SETTINGS_SCREENS,
     SettingsLegal: createNativeStackScreen({

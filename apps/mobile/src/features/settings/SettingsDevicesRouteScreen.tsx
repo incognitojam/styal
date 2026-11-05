@@ -27,10 +27,7 @@ import { ListRowLayout } from "../../components/ui/ListRowLayout";
 import { SettingsSection } from "./components/SettingsSection";
 import { SettingsSwitchRow } from "./components/SettingsSwitchRow";
 import { SettingsScreen } from "./components/SettingsScreen";
-import {
-  useSettingsEnvironmentMenu,
-  SettingsEnvironmentFilterHeader,
-} from "./components/SettingsEnvironmentFilterHeader";
+import { useSettingsEnvironmentMenu } from "./components/SettingsEnvironmentFilterHeader";
 import { useSettingsEnvironmentFilter } from "./settings-environment-filter";
 import { SimulatorMemorySettings } from "./SimulatorMemorySettings";
 
@@ -47,53 +44,50 @@ export function SettingsDevicesRouteScreen() {
   const disabled = selectedProjectKey !== null;
   const offlineShares = offlineDeviceShares(availableTargets, selectedIds);
   return (
-    <>
-      <SettingsEnvironmentFilterHeader />
-      <SettingsScreen title="Devices" menus={[environmentMenu]}>
-        <ScreenScrollView
-          contentInsetAdjustmentBehavior="automatic"
-          className="flex-1"
-          contentContainerClassName="gap-4 px-5 pt-4"
-          contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
-        >
-          {selectedProjectKey !== null ? (
-            <AppText className="text-sm text-foreground-muted">
-              Select All projects to change environment device access.
-            </AppText>
-          ) : null}
-          <SimulatorMemorySettings />
-          {offlineShares.map(({ agent, host }) => (
-            <OfflineShare
-              key={`${agent.environmentId}:${host.id}`}
-              agent={agent}
-              host={host}
-              disabled={disabled}
-              onError={setOfflineError}
-            />
-          ))}
-          {offlineError ? (
-            <AppText accessibilityRole="alert" className="px-2 text-sm text-danger-foreground">
-              {offlineError}
-            </AppText>
-          ) : null}
-          {selectedTargets.map((device) => (
-            <EnvironmentDevices
-              key={device.environmentId}
-              device={device}
-              agents={availableTargets.filter(
-                (entry) => entry.environmentId !== device.environmentId,
-              )}
-              disabled={disabled}
-            />
-          ))}
-          <AppText className="px-2 text-sm text-foreground-muted">
-            {availableTargets.length < 2
-              ? "Connect another environment to share simulators and emulators with it."
-              : "Sharing lets agents on another environment use these simulators and emulators. It turns on device hub and agent device access on both, and keeps working when you close the app."}
+    <SettingsScreen title="Devices" menus={[environmentMenu]}>
+      <ScreenScrollView
+        contentInsetAdjustmentBehavior="automatic"
+        className="flex-1"
+        contentContainerClassName="gap-4 px-5 pt-4"
+        contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
+      >
+        {selectedProjectKey !== null ? (
+          <AppText className="text-sm text-foreground-muted">
+            Select All projects to change environment device access.
           </AppText>
-        </ScreenScrollView>
-      </SettingsScreen>
-    </>
+        ) : null}
+        <SimulatorMemorySettings />
+        {offlineShares.map(({ agent, host }) => (
+          <OfflineShare
+            key={`${agent.environmentId}:${host.id}`}
+            agent={agent}
+            host={host}
+            disabled={disabled}
+            onError={setOfflineError}
+          />
+        ))}
+        {offlineError ? (
+          <AppText accessibilityRole="alert" className="px-2 text-sm text-danger-foreground">
+            {offlineError}
+          </AppText>
+        ) : null}
+        {selectedTargets.map((device) => (
+          <EnvironmentDevices
+            key={device.environmentId}
+            device={device}
+            agents={availableTargets.filter(
+              (entry) => entry.environmentId !== device.environmentId,
+            )}
+            disabled={disabled}
+          />
+        ))}
+        <AppText className="px-2 text-sm text-foreground-muted">
+          {availableTargets.length < 2
+            ? "Connect another environment to share simulators and emulators with it."
+            : "Sharing lets agents on another environment use these simulators and emulators. It turns on device hub and agent device access on both, and keeps working when you close the app."}
+        </AppText>
+      </ScreenScrollView>
+    </SettingsScreen>
   );
 }
 

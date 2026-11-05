@@ -1,6 +1,4 @@
 import type { StaticScreenProps } from "@react-navigation/native";
-import { NativeStackScreenOptions } from "../../native/StackHeader";
-
 import { AddProjectLocalFolderScreen } from "./AddProjectScreen";
 
 type AddProjectLocalRouteParams = {
@@ -10,10 +8,5 @@ type AddProjectLocalRouteParams = {
 export function AddProjectLocalRoute({
   route,
 }: StaticScreenProps<AddProjectLocalRouteParams | undefined>) {
-  return (
-    <>
-      <NativeStackScreenOptions options={{ title: "Local Folder" }} />
-      <AddProjectLocalFolderScreen {...(route.params ?? {})} />
-    </>
-  );
+  return <AddProjectLocalFolderScreen {...(route.params ?? {})} />;
 }

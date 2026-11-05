@@ -1,12 +1,12 @@
 import type { SourceControlDefaultRepositoryState } from "@t3tools/contracts";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { useCallback, useEffect, useState } from "react";
-import { Platform, Pressable, ScrollView, View } from "react-native";
+import { Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AsyncResult } from "effect/reactivity";
 import * as Cause from "effect/Cause";
 
-import { AppBar } from "../../../components/ui/AppBar";
+import { SheetHeader } from "../../../components/ui/SheetHeader";
 import { SymbolView } from "../../../components/ui/AppSymbol";
 import { AppText as Text } from "../../../components/ui/AppText";
 import { ErrorBanner } from "../../../components/ui/ErrorBanner";
@@ -115,11 +115,10 @@ export function GitDefaultRepositorySheet(_props: GitDefaultRepositorySheetProps
 
   return (
     <View collapsable={false} className="flex-1 bg-sheet">
-      {Platform.OS === "android" ? (
-        <AppBar sheet title="Default repository" onBack={() => navigation.goBack()} />
-      ) : null}
+      <SheetHeader title="Default repository" onClose={() => navigation.goBack()} />
       <ScrollView
         className="flex-1"
+        contentInsetAdjustmentBehavior="automatic"
         showsVerticalScrollIndicator={false}
         contentInset={{ bottom: Math.max(insets.bottom, 18) + 18 }}
         contentContainerClassName="gap-4 px-5 pt-2"

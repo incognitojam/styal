@@ -2,11 +2,9 @@ import { formatFilePathForClipboard } from "@t3tools/client-runtime/media-action
 import { resolvePathLinkTarget } from "@t3tools/shared/fileLinks";
 import { resolveFilesystemReadAccess } from "@t3tools/client-runtime/state/filesystem";
 import { environmentSession } from "../../state/session";
-import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { StackActions, useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { type ReactNode, useId, useState } from "react";
 import { Platform, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 import { EnvironmentId, type ProjectReadFileResult, ThreadId } from "@t3tools/contracts";
 import { videoMimeType } from "@t3tools/shared/video";
@@ -42,9 +40,9 @@ import { FileTreeBrowser } from "./FileTreeBrowser";
 import { useFileTreeEntries } from "./useFileTreeEntries";
 import { preloadWorkspaceFileContents } from "./preload-workspace-file";
 import { SourceFileSurface } from "./SourceFileSurface";
-import { useNativeColumnLayoutMetrics } from "../../native/native-layout-metrics";
 import { ThreadFileNavigatorPane } from "./thread-file-navigator-pane";
 import { AppBar } from "../../components/ui/AppBar";
+import { useContentTopInset } from "../../components/ui/useBarInset";
 import { WorkspaceFileImagePreview } from "./WorkspaceFileImagePreview";
 import { WorkspaceFilePreviewError } from "./WorkspaceFilePreviewError";
 import { WorkspaceFileVideoPreview } from "./WorkspaceFileVideoPreview";
@@ -86,17 +84,7 @@ function FilesBrowserHeader(props: {
         closeAccessibilityLabel: "Close file search",
         clearAccessibilityLabel: "Clear file search",
       }}
-      menus={
-        Platform.OS === "android"
-          ? [
-              {
-                title: "File options",
-                icon: "ellipsis",
-                items: [{ id: "refresh", title: "Refresh files", onPress: props.onRefresh }],
-              },
-            ]
-          : undefined
-      }
+      refresh={{ accessibilityLabel: "Refresh files", onPress: props.onRefresh }}
     />
   );
 }
@@ -104,7 +92,6 @@ function FilesBrowserHeader(props: {
 function FileHeader(props: {
   readonly title: string;
   readonly subtitle: string;
-  readonly iconColor: string;
   readonly activeMode: string;
   readonly fileInspectorSupported: boolean;
   readonly onBack: () => void;
@@ -125,7 +112,6 @@ function FileHeader(props: {
       subtitle={props.subtitle}
       onBack={props.onBack}
       hideBottomBorder
-      options={{ headerTintColor: props.iconColor, headerTitle: props.title }}
       backInSplitView={
         props.fileInspectorSupported
           ? {
@@ -229,10 +215,8 @@ function FileContent(props: {
 }) {
   // Reopening a mutable host file must not reuse a poster from an earlier visit.
   const thumbnailInstanceId = useId();
-  const insets = useSafeAreaInsets();
-  const columnMetrics = useNativeColumnLayoutMetrics();
-  const reservedHeaderInset =
-    Platform.OS === "ios" && props.truncated ? (columnMetrics?.safeArea.top ?? insets.top) : 0;
+  const barOverlap = useContentTopInset();
+  const reservedHeaderInset = props.truncated ? barOverlap : 0;
   const isMarkdown = isMarkdownPreviewFile(props.relativePath);
   const delimiter = filePreviewDelimiter({ name: props.relativePath });
   const isBrowserFile = isBrowserPreviewFile(props.relativePath);
@@ -384,14 +368,22 @@ function useThreadFilesWorkspace(params: {
 }
 
 function FilesUnavailable({
+  title = "Files unavailable",
   detail = "This thread does not have an active workspace path.",
+  onBack,
 }: {
+  title?: string;
   detail?: string;
+  onBack: () => void;
 }) {
   return (
-    <View className="flex-1 items-center justify-center bg-sheet px-6">
-      <NativeStackScreenOptions options={{ title: "Files" }} />
-      <EmptyState title="Files unavailable" detail={detail} />
+    <View className="flex-1 bg-sheet">
+      <AppBar title="Files" onBack={onBack} onBackToList={onBack} hideBottomBorder />
+      <ScreenContent>
+        <View className="flex-1 items-center justify-center px-6">
+          <EmptyState title={title} detail={detail} />
+        </View>
+      </ScreenContent>
     </View>
   );
 }
@@ -426,7 +418,7 @@ function FilesToolbarBottomFade() {
 
 export function ThreadFilesTreeScreen(props: ThreadFilesRouteScreenProps) {
   const navigation = useNavigation();
-  const { fileInspector, layout } = useAdaptiveWorkspaceLayout();
+  const { fileInspector } = useAdaptiveWorkspaceLayout();
   const [searchQuery, setSearchQuery] = useState("");
   const { themeAppearance: highlightTheme } = useAppearancePreferences();
   const { cwd, environmentId, projectName, selectedThread, threadId } = useThreadFilesWorkspace(
@@ -522,11 +514,14 @@ export function ThreadFilesTreeScreen(props: ThreadFilesRouteScreenProps) {
       return <LoadingScreen message="Checking file access..." messagePlacement="above-spinner" />;
     }
     return (
-      <FilesUnavailable detail={fileAccess.error ?? "This connection cannot read host files."} />
+      <FilesUnavailable
+        detail={fileAccess.error ?? "This connection cannot read host files."}
+        onBack={handleReturnToThread}
+      />
     );
   }
   if (cwd === null) {
-    return <FilesUnavailable />;
+    return <FilesUnavailable onBack={handleReturnToThread} />;
   }
 
   if (hasFileInspector) {
@@ -539,8 +534,8 @@ export function ThreadFilesTreeScreen(props: ThreadFilesRouteScreenProps) {
     );
   }
 
-  const content = (
-    <>
+  return (
+    <View className="flex-1">
       <FilesBrowserHeader
         projectName={projectName}
         searchQuery={searchQuery}
@@ -548,7 +543,7 @@ export function ThreadFilesTreeScreen(props: ThreadFilesRouteScreenProps) {
         onRefresh={entriesQuery.refresh}
         onBack={handleReturnToThread}
       />
-      <ScreenContent insetHorizontal={layout.usesSplitView}>
+      <ScreenContent>
         <FileTreeBrowser
           key={JSON.stringify([environmentId, cwd])}
           revealSelection={entriesQuery.revealSelection}
@@ -573,17 +568,14 @@ export function ThreadFilesTreeScreen(props: ThreadFilesRouteScreenProps) {
         />
         <FilesToolbarBottomFade />
       </ScreenContent>
-    </>
+    </View>
   );
-
-  return Platform.OS === "android" ? <View className="flex-1 bg-header">{content}</View> : content;
 }
 
 export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
   const navigation = useNavigation();
   const { fileInspector } = useAdaptiveWorkspaceLayout();
   const { appearance, setCodeWordBreak } = useAppearancePreferences();
-  const iconColor = useUniwindTheme()["--color-icon"];
   const params = props.route.params;
   const targetLine = normalizeRouteLine(firstRouteParam(params.line));
   const { cwd, environmentId, projectName, relativePath, selectedThread, threadId } =
@@ -908,19 +900,23 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
       );
     }
     return withInspector(
-      <FilesUnavailable detail={fileAccess.error ?? "This connection cannot read host files."} />,
+      <FilesUnavailable
+        detail={fileAccess.error ?? "This connection cannot read host files."}
+        onBack={handleBack}
+      />,
     );
   }
   if (cwd === null) {
-    return withInspector(<FilesUnavailable />);
+    return withInspector(<FilesUnavailable onBack={handleBack} />);
   }
 
   if (relativePath === null) {
     return withInspector(
-      <View className="flex-1 items-center justify-center bg-sheet px-6">
-        <NativeStackScreenOptions options={{ title: "Files" }} />
-        <EmptyState title="File unavailable" detail="This file path is invalid." />
-      </View>,
+      <FilesUnavailable
+        title="File unavailable"
+        detail="This file path is invalid."
+        onBack={handleBack}
+      />,
     );
   }
 
@@ -931,7 +927,7 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
   }
   if (directoryPath !== null) {
     return withInspector(
-      <View className={Platform.OS === "android" ? "flex-1 bg-header" : "flex-1 bg-sheet"}>
+      <View className="flex-1 bg-sheet">
         <FilesBrowserHeader
           projectName={directoryPath}
           searchQuery={searchQuery}
@@ -974,7 +970,6 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
       <FileHeader
         title={basename(relativePath)}
         subtitle={headerSubtitle}
-        iconColor={iconColor}
         activeMode={resolvedActiveMode}
         fileInspectorSupported={fileInspector.supported}
         onBack={handleBack}
