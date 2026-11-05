@@ -598,6 +598,7 @@ describe("device setup consent", () => {
 });
 
 const layerSecretResolver = Layer.succeed(SecretResolver.SecretResolver, {
+  label: (provider) => Effect.succeed(provider),
   read: (references) => Effect.succeed(references.map(() => undefined)),
   invalidate: () => Effect.void,
 });
