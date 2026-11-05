@@ -77,6 +77,51 @@ describe("shortcuts overview shortcut", () => {
     await userEvent.keyboard("{Control>}{Shift>}?{/Shift}{/Control}");
     expect(useShortcutsOverviewStore.getState().open).toBe(false);
   });
+
+  it("also toggles with Ctrl+/", async () => {
+    setup();
+    useShortcutsOverviewStore.setState({ open: false });
+    using _platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("Linux x86_64");
+    await using screen = await render(<MountedPalette />, { router: "/" });
+    using commands = new DisposableStack();
+    commands.defer(
+      installCommandPaletteCommands(screen.router!, {
+        keybindings: () => DEFAULT_RESOLVED_KEYBINDINGS,
+      }),
+    );
+
+    await userEvent.keyboard("{Control>}/{/Control}");
+    expect(useShortcutsOverviewStore.getState().open).toBe(true);
+
+    await userEvent.keyboard("{Control>}/{/Control}");
+    expect(useShortcutsOverviewStore.getState().open).toBe(false);
+  });
+});
+
+describe("shortcuts overview on layouts with - on the / key", () => {
+  it("leaves Ctrl+- to the browser", async () => {
+    setup();
+    useShortcutsOverviewStore.setState({ open: false });
+    using _platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("Linux x86_64");
+    await using screen = await render(<MountedPalette />, { router: "/" });
+    using commands = new DisposableStack();
+    commands.defer(
+      installCommandPaletteCommands(screen.router!, {
+        keybindings: () => DEFAULT_RESOLVED_KEYBINDINGS,
+      }),
+    );
+
+    const zoomOut = new KeyboardEvent("keydown", {
+      key: "-",
+      code: "Slash",
+      ctrlKey: true,
+      cancelable: true,
+    });
+    window.dispatchEvent(zoomOut);
+
+    expect(useShortcutsOverviewStore.getState().open).toBe(false);
+    expect(zoomOut.defaultPrevented).toBe(false);
+  });
 });
 
 describe("openCommandPalette", () => {

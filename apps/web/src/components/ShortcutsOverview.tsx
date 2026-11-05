@@ -24,7 +24,9 @@ export const useShortcutsOverviewStore = create(() => ({ open: false }));
 
 const close = () => useShortcutsOverviewStore.setState({ open: false });
 
-export function openShortcutsOverview(entryPoint: "shortcut" | "command_palette"): void {
+export function openShortcutsOverview(
+  entryPoint: "shortcut" | "command_palette" | "help_menu",
+): void {
   useShortcutsOverviewStore.setState({ open: true });
   void reportForkClientUsage(appAtomRegistry.get(primaryEnvironmentIdAtom), {
     feature: "shortcuts-overview",

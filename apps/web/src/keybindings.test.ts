@@ -247,6 +247,21 @@ describe("shortcuts overview shortcut", () => {
     );
   });
 
+  it("matches Mod+/, and leaves preview zoom alone where that key types -", () => {
+    assert.equal(
+      resolve({ ctrlKey: true, key: "/", code: "Slash" }, "Win32"),
+      "shortcutsOverview.toggle",
+    );
+    assert.equal(
+      resolveShortcutCommand(
+        event({ ctrlKey: true, key: "-", code: "Slash" }),
+        DEFAULT_RESOLVED_KEYBINDINGS,
+        { platform: "Win32", context: { previewFocus: true } },
+      ),
+      "preview.zoomOut",
+    );
+  });
+
   it("is labelled with ? and stays out of terminals", () => {
     assert.equal(
       shortcutLabelForCommand(DEFAULT_RESOLVED_KEYBINDINGS, "shortcutsOverview.toggle", "Win32"),

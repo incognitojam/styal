@@ -316,7 +316,7 @@ export const ForkClientUsageInput = Schema.Union([
   Schema.Struct({
     feature: Schema.Literal("shortcuts-overview"),
     action: Schema.Literal("opened"),
-    entryPoint: Schema.Literals(["shortcut", "command_palette"]),
+    entryPoint: Schema.Literals(["shortcut", "command_palette", "help_menu"]),
   }),
   ReportedClientSettingsSnapshot,
   ReportedMobileSettingsSnapshot,

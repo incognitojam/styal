@@ -133,6 +133,29 @@ const configureMenu = (
   );
 
 describe("DesktopApplicationMenu", () => {
+  it.effect("opens the shortcuts overview from the Help menu", () =>
+    Effect.gen(function* () {
+      for (const platform of ["darwin", "linux"] as const) {
+        const selectedAction = yield* Deferred.make<string>();
+        const applicationMenuTemplate =
+          yield* Deferred.make<readonly Electron.MenuItemConstructorOptions[]>();
+
+        yield* configureMenu(selectedAction, applicationMenuTemplate, platform);
+
+        const helpMenu = (yield* Deferred.await(applicationMenuTemplate)).find(
+          (item) => item.role === "help",
+        );
+        if (!Array.isArray(helpMenu?.submenu)) {
+          throw new Error("Expected Help menu submenu to be an array.");
+        }
+        const item = helpMenu.submenu.find((entry) => entry.label === "Keyboard Shortcuts");
+        item?.click?.({} as Electron.MenuItem, undefined, {} as Electron.KeyboardEvent);
+
+        assert.equal(yield* Deferred.await(selectedAction), "shortcuts-overview");
+      }
+    }),
+  );
+
   it.effect("does not register CmdOrCtrl+W as a window-close accelerator", () =>
     Effect.gen(function* () {
       for (const platform of ["darwin", "linux"] as const) {

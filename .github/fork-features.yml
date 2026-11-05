@@ -2941,12 +2941,13 @@ features:
     prs:
       - 1276
     invariants:
-      - "`shortcutsOverview.toggle` (`mod+shift+?` and `mod+shift+/` by default, outside terminals) and the command palette's Show keyboard shortcuts open one dialog on web and desktop; the key closes it again."
+      - "`shortcutsOverview.toggle` (`mod+shift+?`, `mod+shift+/` and `mod+/` by default, outside terminals), the command palette's Show keyboard shortcuts and the desktop Help menu's Keyboard Shortcuts open one dialog on web and desktop; the key closes it again. On layouts that type `-` on the `/` key, Mod+- stays with zoom."
       - The list is built from the primary environment's resolved keybindings, with the groups and labels of Settings → Keybindings, and links there to change them.
       - It shows bindings for every focus context, leaves out rules only the other client can use and rules a later rule overrides, and lists no command without a binding. Jump commands collapse to one row while their keys follow the digits, and the alternate send shows the key the send setting makes effective. A key whose glyph implies Shift is labelled without Shift, and its unshifted alias is not listed.
       - Each open emits a bounded `shortcuts-overview` client-usage event through the primary environment with the entry point, never with keybindings.
     rationale: Shortcuts could only be found one at a time beside palette items, in the Settings editor, or in the user guide.
     implementation_paths:
+      - apps/desktop/src/window/DesktopApplicationMenu.ts
       - apps/web/src/components/CommandPalette.tsx
       - apps/web/src/components/ShortcutsOverview.logic.ts
       - apps/web/src/components/ShortcutsOverview.tsx
