@@ -167,6 +167,20 @@ describe("resolveProjectConfig", () => {
     });
   });
 
+  it("reports a dropped duplicate action id as partial", () => {
+    const state = resolveProjectConfig({
+      styal: json({
+        actions: [
+          { id: "x", name: "First", command: "first" },
+          { id: "x", name: "Second", command: "second" },
+        ],
+      }),
+      t3: null,
+    });
+    expect(state.status).toBe("partial");
+    expect(state.config?.actions.map((action) => action.name)).toEqual(["First"]);
+  });
+
   it("fills in action ids and icons, keeping the first of duplicate ids", () => {
     const state = resolveProjectConfig({
       styal: json({

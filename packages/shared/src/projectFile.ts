@@ -106,8 +106,8 @@ export function parseStyalProjectFileResult(contents: string): StyalProjectFileP
 
 /**
  * An invalid `styal.json` still hides `t3.json`, so the old file never silently replaces the
- * new one. `partial` means invalid or unknown fields were ignored. `legacyScripts` are never
- * run; the migration to `styal.json` offers them.
+ * new one. `partial` means invalid or unknown fields, or actions with a duplicate id, were
+ * ignored. `legacyScripts` are never run; the migration to `styal.json` offers them.
  */
 export type ProjectConfigState =
   | { readonly status: "missing"; readonly config: null; readonly legacyScripts: readonly [] }
@@ -146,10 +146,11 @@ export function resolveProjectConfig(files: {
       };
     }
     const { $schema: _schema, actions, ...settings } = parsed.file;
+    const actionsWithIds = withActionIds(actions);
     return {
-      status: parsed.status,
+      status: actionsWithIds.length < (actions?.length ?? 0) ? "partial" : parsed.status,
       source: STYAL_PROJECT_FILE_NAME,
-      config: { ...settings, source: STYAL_PROJECT_FILE_NAME, actions: withActionIds(actions) },
+      config: { ...settings, source: STYAL_PROJECT_FILE_NAME, actions: actionsWithIds },
       legacyScripts: [],
     };
   }

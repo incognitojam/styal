@@ -6091,7 +6091,7 @@ features:
       - styal.json at the project root is the project file; a t3.json is read only when there is no styal.json, including when styal.json is invalid.
       - A t3.json contributes its settings and icon but never runs or lists its scripts; they are only offered for import or migration.
       - File-backed settings resolve project override, environment setting, project file, then built-in, and report the file they came from.
-      - Every styal.json action has an id; missing ids derive from the name and a later duplicate of an explicit id is dropped.
+      - Every styal.json action has an id; missing ids derive from the name and a later duplicate of an explicit id is dropped, and the file reports as `partial` so Settings warns about it.
       - styal.json actions are read live from the registered project root, never a thread worktree, and listed after saved actions in every client's actions menu, shortcuts and project settings.
       - A saved action with a styal.json action's id overrides it; removing the override restores the file's action and keeps its shortcut, and a file-only action cannot be deleted in styal.
       - styal.json actions never run on worktree creation or settle until the user approves their exact command; any change to the command, or a newly declared role, voids the approval until approved again.

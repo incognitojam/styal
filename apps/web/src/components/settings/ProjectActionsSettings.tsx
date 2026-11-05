@@ -316,7 +316,7 @@ function CheckoutActions({
       {projectConfig.status === "partial" ? (
         <SettingsRow
           title={`Some ${projectConfig.source} values were ignored`}
-          description="Invalid or unrecognized fields and actions were skipped. Valid project settings and actions remain available."
+          description="Invalid or unrecognized fields, and invalid actions or actions that repeat an id, were skipped. Valid project settings and actions remain available."
           className="text-warning"
         />
       ) : null}
