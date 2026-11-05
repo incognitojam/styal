@@ -2346,6 +2346,24 @@ async function verify(
   else if (testRuns.length === 0) process.stdout.write("--   no tests related to the batch\n");
   const sources = changed.filter((path) => /\.(ts|tsx|mts|mjs|js)$/u.test(path));
   const queue: Array<VerifyStep> = [
+    {
+      name: "web build",
+      directory: cwd,
+      command: "vp",
+      args: ["run", "--filter", "@t3tools/web", "build"],
+    },
+    {
+      name: "relay Worker default export",
+      directory: cwd,
+      command: "node",
+      args: ["scripts/upstream/check-worker-export.ts"],
+    },
+    {
+      name: "Expo config introspection",
+      directory: NodePath.join(cwd, "apps/mobile"),
+      command: "vp",
+      args: ["exec", "expo", "config", "--type", "introspect", "--json"],
+    },
     ...testRuns.map((test) => ({ ...test, directory: NodePath.join(cwd, test.directory) })),
     ...packages.map((directory) => ({
       name: `typecheck ${directory}`,
