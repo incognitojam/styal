@@ -334,7 +334,8 @@ comment: the DMG is unsigned and macOS will not open it until the quarantine att
   `desktop-preview` prerelease. It needs no setup beyond the repository variables in
   [styal Link](./styal-link.md#github-actions-configuration). The preview installs as a separate
   app, `styal (Preview)`, with its own empty state in `~/.styal/preview`, so it never reads or
-  migrates a stable or nightly install's data.
+  migrates a stable or nightly install's data. The desktop app on an Apple Silicon Mac can install
+  it from the pull request panel; see [Try a pull request's preview](../user/updating.md#try-a-pull-requests-preview).
 - `preview:windows` builds an unsigned Windows x64 installer, including the WSL runtime, and
   attaches it to the same `desktop-preview` prerelease. It installs as `styal (Preview)` with its
   own state in `%USERPROFILE%\.styal\preview`, and in `~/.styal/preview` inside WSL. SmartScreen

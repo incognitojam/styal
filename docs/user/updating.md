@@ -173,6 +173,26 @@ Only one server can use a styal home directory at a time. If startup reports tha
 another server owns it, stop that server before retrying, or use a separate home
 directory and pair with the running server.
 
+## Try a pull request's preview
+
+On an Apple Silicon Mac, the desktop app can install the unsigned preview build of a pull request in
+this project's repository that has the `preview:mac` label. Open the pull request and choose
+**Install and open** once its build has finished. styal downloads the build, checks it against the
+digest GitHub published, installs `styal (Preview)` in `~/Applications`, and opens it. It runs beside
+your main app with its own projects, threads, and sign-ins in `~/.styal/preview`.
+
+There is one preview at a time, and every preview shares that data. Installing another build quits
+the running preview and replaces it. If it has work to confirm and does not quit, finish that and try
+again; your previous build stays installed until then.
+
+When the pull request closes, styal removes the app the next time the preview is not running. To
+remove it sooner, use the menu beside the button or **Settings → About**. Removing the app keeps its
+data. If a preview misbehaves after switching between pull requests, choose **Reset preview data** in
+the same places to delete that data and start empty. Your main styal app's data is never touched.
+
+If macOS quarantines a build, styal says so and does not install it. Use the DMG link and `xattr`
+command from the pull request's preview comment instead.
+
 ## If the desktop app does not start
 
 If the desktop app's server keeps failing at startup, styal shows a "styal

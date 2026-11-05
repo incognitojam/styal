@@ -240,6 +240,7 @@ export const make = Effect.gen(function* () {
           settingsSnapshotUsageVersion: 1,
           simulatorMemoryUsageVersion: 1,
           desktopUpdateIdleRestartUsageVersion: 1,
+          desktopPreviewAppUsageVersion: 1,
           delegatedWakeUsageVersion: 1,
           mentionedTimeCheckUsageVersion: 1,
           ...buildContext,

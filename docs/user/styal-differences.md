@@ -405,6 +405,13 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   [T3 Code revision 18656a3](https://github.com/pingdotgg/t3code/tree/18656a3402459d9d145bb3fa5767723531b27ac7),
   checked October 11, 2026, which reopens a full-screen window at its normal size.
 
+- **Install a pull request's preview build from its panel.** On an Apple Silicon Mac, **Install and
+  open** downloads the build, checks its digest, installs `styal (Preview)`, and opens it, with no
+  disk image to mount or quarantine to clear. A newer build replaces it and closing the pull request
+  removes it. T3 Code builds macOS previews but has no in-app install as of
+  [revision 25b5329](https://github.com/pingdotgg/t3code/tree/25b53299b7).
+  [Try a pull request's preview](./updating.md#try-a-pull-requests-preview).
+
 ## Provider updates
 
 - **styal managed updates.** Each environment manages its provider CLI versions: it installs new

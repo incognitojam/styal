@@ -8,7 +8,7 @@ import {
 } from "./baseSchemas.ts";
 import { HostPowerSnapshot } from "./background.ts";
 import { HostActivity } from "./environmentHttp.ts";
-import { DesktopUpdateStateSchema } from "./ipc.ts";
+import { DesktopPreviewAppFailureReason, DesktopUpdateStateSchema } from "./ipc.ts";
 
 export const RESOURCE_MONITOR_PROTOCOL_VERSION = 3 as const;
 
@@ -345,7 +345,7 @@ export type DesktopLaunchTimingReport = typeof DesktopLaunchTimingReport.Type;
 
 /**
  * Desktop main -> server: an observation the server records as an analytics
- * event, `feature.used` for idle restart and `desktop.launched` for launch
+ * event, `feature.used` for idle restart and preview installs and `desktop.launched` for launch
  * timing. Delivered once, to one attached backend.
  */
 export const DesktopFeatureUsageReport = Schema.Union([
@@ -356,6 +356,15 @@ export const DesktopFeatureUsageReport = Schema.Union([
     action: Schema.Literal("would_restart"),
     updateVersion: TrimmedNonEmptyString,
     delayBucket: DesktopIdleRestartDelayBucket,
+  }),
+  Schema.Struct({
+    version: Schema.Literal(1),
+    type: Schema.Literal("desktopFeatureUsage"),
+    feature: Schema.Literal("desktop-preview-app"),
+    action: Schema.Literals(["install", "open", "remove", "reset"]),
+    source: Schema.Literals(["user", "system"]),
+    outcome: Schema.Literals(["completed", "cancelled", "failed"]),
+    failureReason: Schema.optionalKey(DesktopPreviewAppFailureReason),
   }),
   DesktopLaunchTimingReport,
 ]);

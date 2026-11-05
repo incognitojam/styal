@@ -95,6 +95,7 @@ import {
 import { PullRequestCopyableCode } from "./PullRequestCopyableCode";
 import { pullRequestRefKey, usePullRequestDetail } from "./usePullRequestDetail";
 import { PullRequestActionsMenu } from "./PullRequestActionsMenu";
+import { PullRequestPreviewAppControl } from "./PullRequestPreviewAppControl";
 import {
   PullRequestApproveWorkflowsButton,
   PullRequestCheckoutMenu,
@@ -1483,6 +1484,7 @@ function PullRequestDetailPanelBody({
                 resolveConflicts={resolveConflictsControl}
               />
               {checkoutControl}
+              <PullRequestPreviewAppControl detail={detail} repository={reference.repository} />
               <PullRequestActionsMenu
                 environmentId={environmentId}
                 reference={reference}

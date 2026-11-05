@@ -19,6 +19,18 @@ const toAnalyticsEvent = (report: DesktopFeatureUsageReport) => {
       },
     };
   }
+  if (report.feature === "desktop-preview-app") {
+    return {
+      event: "feature.used",
+      properties: {
+        feature: report.feature,
+        action: report.action,
+        source: report.source,
+        outcome: report.outcome,
+        ...(report.failureReason === undefined ? {} : { failureReason: report.failureReason }),
+      },
+    };
+  }
   return {
     event: "desktop.launched",
     properties: {

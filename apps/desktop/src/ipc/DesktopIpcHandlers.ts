@@ -88,6 +88,15 @@ import {
   installCliCommand,
   uninstallCliCommand,
 } from "./methods/cliCommand.ts";
+import {
+  cancelPreviewAppInstall,
+  findPreviewAppBuild,
+  getPreviewAppState,
+  installPreviewApp,
+  openPreviewApp,
+  removePreviewApp,
+  resetPreviewAppData,
+} from "./methods/previewApp.ts";
 
 export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers")(function* () {
   const ipc = yield* DesktopIpc.DesktopIpc;
@@ -175,6 +184,13 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(getCliCommandState);
   yield* ipc.handle(installCliCommand);
   yield* ipc.handle(uninstallCliCommand);
+  yield* ipc.handle(getPreviewAppState);
+  yield* ipc.handle(findPreviewAppBuild);
+  yield* ipc.handle(installPreviewApp);
+  yield* ipc.handle(cancelPreviewAppInstall);
+  yield* ipc.handle(openPreviewApp);
+  yield* ipc.handle(removePreviewApp);
+  yield* ipc.handle(resetPreviewAppData);
   for (const previewMethod of PreviewIpc.methods) {
     // Explicit types preserve the error/service union of these heterogeneous preview methods.
     yield* ipc.handle<

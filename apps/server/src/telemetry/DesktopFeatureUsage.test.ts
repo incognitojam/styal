@@ -38,7 +38,15 @@ it.effect("records each desktop usage report as one feature.used event", () =>
       DesktopFeatureUsage.layer.pipe(
         Layer.provide(
           DesktopTelemetryReceiver.layerTest({
-            desktopFeatureUsage: Stream.make(report("1.2.4", "1-8h"), report("1.2.3", "never")),
+            desktopFeatureUsage: Stream.make(report("1.2.4", "1-8h"), {
+              version: 1,
+              type: "desktopFeatureUsage",
+              feature: "desktop-preview-app",
+              action: "install",
+              source: "user",
+              outcome: "failed",
+              failureReason: "quarantined",
+            }),
           }),
         ),
         Layer.provide(Layer.succeed(AnalyticsService.AnalyticsService, analytics)),
@@ -59,11 +67,11 @@ it.effect("records each desktop usage report as one feature.used event", () =>
       {
         event: "feature.used",
         properties: {
-          feature: "desktop-update-idle-restart",
-          action: "would_restart",
-          source: "system",
-          updateVersion: "1.2.3",
-          delayBucket: "never",
+          feature: "desktop-preview-app",
+          action: "install",
+          source: "user",
+          outcome: "failed",
+          failureReason: "quarantined",
         },
       },
     ]);

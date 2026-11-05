@@ -330,6 +330,80 @@ export const DesktopCliCommandStateSchema = Schema.Struct({
 });
 export type DesktopCliCommandState = typeof DesktopCliCommandStateSchema.Type;
 
+/** Pull request preview builds come from this repository's releases only. */
+export const DESKTOP_PREVIEW_APP_REPOSITORY = "incognitojam/styal";
+
+const DesktopPreviewAppFailureReasonValues = [
+  "busy",
+  "unsupported",
+  "not_allowed",
+  "no_build",
+  "download",
+  "digest_mismatch",
+  "mount",
+  "copy",
+  "wrong_app",
+  "quarantined",
+  "quit_timeout",
+  "slot_occupied",
+  "replace",
+  "open",
+  "remove",
+  "reset",
+  "unexpected",
+] as const;
+export const DesktopPreviewAppFailureReason = Schema.Literals(DesktopPreviewAppFailureReasonValues);
+export type DesktopPreviewAppFailureReason = typeof DesktopPreviewAppFailureReason.Type;
+
+export const DesktopPreviewAppBuildSchema = Schema.Struct({
+  pullRequestNumber: Schema.Number,
+  runNumber: Schema.Number,
+  version: Schema.String,
+  sizeBytes: Schema.Number,
+  publishedAt: Schema.String,
+});
+export type DesktopPreviewAppBuild = typeof DesktopPreviewAppBuildSchema.Type;
+
+export const DesktopPreviewAppActivitySchema = Schema.Union([
+  Schema.Struct({ status: Schema.Literal("idle") }),
+  Schema.Struct({
+    status: Schema.Literal("installing"),
+    pullRequestNumber: Schema.Number,
+    phase: Schema.Literals(["downloading", "copying", "quitting", "opening"]),
+    /** Whole percent of the download; null outside the download. */
+    progress: Schema.NullOr(Schema.Number),
+  }),
+  Schema.Struct({ status: Schema.Literals(["opening", "removing", "resetting"]) }),
+]);
+export type DesktopPreviewAppActivity = typeof DesktopPreviewAppActivitySchema.Type;
+
+export const DesktopPreviewAppStateSchema = Schema.Struct({
+  supported: Schema.Boolean,
+  installed: Schema.NullOr(
+    Schema.Struct({
+      version: Schema.String,
+      pullRequestNumber: Schema.Number,
+      runNumber: Schema.Number,
+    }),
+  ),
+  /** False in a preview app, which cannot quit and reopen itself under the same identity. */
+  opensAfterInstall: Schema.Boolean,
+  canInstall: Schema.Boolean,
+  canOpen: Schema.Boolean,
+  canRemove: Schema.Boolean,
+  canReset: Schema.Boolean,
+  activity: DesktopPreviewAppActivitySchema,
+});
+export type DesktopPreviewAppState = typeof DesktopPreviewAppStateSchema.Type;
+
+export const DesktopPreviewAppActionResultSchema = Schema.Struct({
+  outcome: Schema.Literals(["completed", "cancelled", "failed"]),
+  /** What went wrong, written for the person who clicked. Null unless the action failed. */
+  message: Schema.NullOr(Schema.String),
+  state: DesktopPreviewAppStateSchema,
+});
+export type DesktopPreviewAppActionResult = typeof DesktopPreviewAppActionResultSchema.Type;
+
 export interface DesktopUpdateActionResult {
   accepted: boolean;
   completed: boolean;
@@ -1194,6 +1268,17 @@ export interface DesktopBridge {
     getState: () => Promise<DesktopCliCommandState>;
     install: () => Promise<DesktopCliCommandState>;
     uninstall: () => Promise<DesktopCliCommandState>;
+  };
+  /** Pull request preview builds on macOS. Optional: older desktop builds lack it. */
+  previewApp?: {
+    getState: () => Promise<DesktopPreviewAppState>;
+    findBuild: (pullRequestNumber: number) => Promise<DesktopPreviewAppBuild | null>;
+    install: (pullRequestNumber: number) => Promise<DesktopPreviewAppActionResult>;
+    cancelInstall: () => Promise<void>;
+    open: () => Promise<DesktopPreviewAppActionResult>;
+    remove: () => Promise<DesktopPreviewAppActionResult>;
+    resetData: () => Promise<DesktopPreviewAppActionResult>;
+    onState: (listener: (state: DesktopPreviewAppState) => void) => () => void;
   };
   webLinks: {
     setReady: (ready: boolean) => Promise<void>;
