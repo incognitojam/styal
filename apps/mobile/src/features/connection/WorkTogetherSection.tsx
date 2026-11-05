@@ -6,7 +6,9 @@ import {
   planWorkTogether,
   type WorkTogetherLine,
   type WorkTogetherMachine,
+  workTogetherDefaultAccess,
   workTogetherFailureMessage,
+  workTogetherMissingShares,
   workTogetherOutcome,
   workTogetherSharedDevices,
   workTogetherStatus,
@@ -87,6 +89,7 @@ function useWorkTogetherMachine(environment: Environment, other: Environment): W
     label: environment.label,
     ownLabel: serverConfig?.environment.label ?? null,
     connected,
+    loaded: connected && links.data !== null && device.loaded,
     canManage: mayManageAccess && mayChangeSettings,
     allowsLinks: serverConfig?.settings.linkedEnvironmentsEnabled === true,
     links: connected ? (links.data?.links ?? null) : null,
@@ -115,6 +118,8 @@ function MachinePair(props: { readonly a: Environment; readonly b: Environment }
   const [run, setRun] = useState<Run | null>(null);
   const status = workTogetherStatus(a, b);
   const absent = [a, b].find((machine) => !machine.connected);
+  const loading = [a, b].some((machine) => machine.connected && !machine.loaded);
+  const missingShares = workTogetherMissingShares(a, b);
   const unmanaged = [a, b].find((machine) => machine.connected && !machine.canManage);
   const running = run !== null && !run.finished;
   const waiting =
@@ -122,7 +127,10 @@ function MachinePair(props: { readonly a: Environment; readonly b: Environment }
 
   const openSheet = (kind: RunKind) => {
     // A run left waiting stays on screen only for the same action.
-    if (run?.kind !== kind && !running) setRun(null);
+    if (run?.kind !== kind && !running) {
+      setRun(null);
+      if (kind === "start") setAccess(workTogetherDefaultAccess(a, b));
+    }
     setSheet(kind);
   };
   const closeSheet = () => {
@@ -132,7 +140,7 @@ function MachinePair(props: { readonly a: Environment; readonly b: Environment }
   };
 
   const start = async (kind: RunKind) => {
-    const lines = kind === "start" ? planWorkTogether(a, b) : planStopWorkingTogether(a, b);
+    const lines = kind === "start" ? planWorkTogether(a, b, access) : planStopWorkingTogether(a, b);
     setRun({ kind, lines, finished: false });
     const result = await execute({
       lines,
@@ -164,19 +172,21 @@ function MachinePair(props: { readonly a: Environment; readonly b: Environment }
   const resume = useEffectEvent(() => {
     if (run !== null) void start(run.kind);
   });
-  const bothConnected = a.connected && b.connected;
+  const bothLoaded = a.loaded && b.loaded;
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- a machine that wakes while this screen is open finishes the run that was waiting for it
   useEffect(() => {
     // oxlint-disable-next-line react/set-state-in-effect -- the run starts on a connection change outside React
-    if (waiting && bothConnected) resume();
-  }, [waiting, bothConnected]);
+    if (waiting && bothLoaded) resume();
+  }, [waiting, bothLoaded]);
 
   const summary =
     unmanaged !== undefined
       ? `This app can't change access on ${unmanaged.label}. Pair it again from there to manage it.`
       : status === "together"
         ? absent === undefined
-          ? "Working together"
+          ? missingShares.length > 0
+            ? `Working together · Sharing isn't set up for ${missingShares.map(({ device }) => device.label).join(" or ")}`
+            : "Working together"
           : `Working together · ${absent.label} isn't connected`
         : status === "partial"
           ? absent === undefined
@@ -196,15 +206,21 @@ function MachinePair(props: { readonly a: Environment; readonly b: Environment }
       </View>
       {unmanaged !== undefined ? null : (
         <View className="flex-row flex-wrap gap-2">
-          {status === "together" ? null : (
+          {status === "together" && missingShares.length === 0 ? null : (
             <Button
-              label={status === "partial" ? "Finish" : "Work together"}
+              label={status === "separate" ? "Work together" : "Finish"}
               tone="primary"
+              disabled={loading}
               onPress={() => openSheet("start")}
             />
           )}
           {status === "separate" ? null : (
-            <Button label="Stop working together" tone="danger" onPress={() => openSheet("stop")} />
+            <Button
+              label="Stop working together"
+              tone="danger"
+              disabled={loading}
+              onPress={() => openSheet("stop")}
+            />
           )}
         </View>
       )}

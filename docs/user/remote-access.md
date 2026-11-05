@@ -300,6 +300,9 @@ left. If a machine isn't connected, for example because it's asleep, steps that 
 wait and finish when it's back if this page is still open. Otherwise the row shows
 **Partly set up** and **Finish** when you return.
 
+If a link already exists at other access than you pick, it's replaced. A row that says
+sharing isn't set up also offers **Finish**.
+
 **Stop working together** undoes it: both machines stop using each other's devices and
 forget each other, and each ends the sessions it gave the other. Tasks one has delegated
 to the other fail. **Work with your other machines** and device access stay on, since

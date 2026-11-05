@@ -5,7 +5,9 @@ import {
   planWorkTogether,
   type WorkTogetherLine,
   type WorkTogetherMachine,
+  workTogetherDefaultAccess,
   workTogetherFailureMessage,
+  workTogetherMissingShares,
   workTogetherOutcome,
   workTogetherSharedDevices,
   workTogetherStatus,
@@ -86,6 +88,7 @@ function useWorkTogetherMachine(environment: Environment, other: Environment): W
     label: environment.label,
     ownLabel: serverConfig?.environment.label ?? null,
     connected,
+    loaded: connected && links.data !== null && device.loaded,
     canManage: mayManageAccess && mayChangeSettings,
     allowsLinks: serverConfig?.settings.linkedEnvironmentsEnabled === true,
     links: connected ? (links.data?.links ?? null) : null,
@@ -123,6 +126,8 @@ function MachinePair({
   const status = workTogetherStatus(a, b);
   const label = `${a.label} and ${b.label}`;
   const absent = [a, b].find((machine) => !machine.connected);
+  const loading = [a, b].some((machine) => machine.connected && !machine.loaded);
+  const missingShares = workTogetherMissingShares(a, b);
   const unmanaged = [a, b].find((machine) => machine.connected && !machine.canManage);
   const running = run !== null && !run.finished;
   const waiting =
@@ -130,12 +135,15 @@ function MachinePair({
 
   const openDialog = (kind: RunKind) => {
     // A run left waiting stays on screen only for the same action.
-    if (run?.kind !== kind && !running) setRun(null);
+    if (run?.kind !== kind && !running) {
+      setRun(null);
+      if (kind === "start") setAccess(workTogetherDefaultAccess(a, b));
+    }
     setDialog(kind);
   };
 
   const start = async (kind: RunKind) => {
-    const lines = kind === "start" ? planWorkTogether(a, b) : planStopWorkingTogether(a, b);
+    const lines = kind === "start" ? planWorkTogether(a, b, access) : planStopWorkingTogether(a, b);
     setRun({ kind, lines, finished: false });
     const result = await execute({
       lines,
@@ -167,12 +175,12 @@ function MachinePair({
   const resume = useEffectEvent(() => {
     if (run !== null) void start(run.kind);
   });
-  const bothConnected = a.connected && b.connected;
+  const bothLoaded = a.loaded && b.loaded;
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- a machine that wakes while this page is open finishes the run that was waiting for it
   useEffect(() => {
     // oxlint-disable-next-line react/set-state-in-effect -- the run starts on a connection change outside React
-    if (waiting && bothConnected) resume();
-  }, [waiting, bothConnected]);
+    if (waiting && bothLoaded) resume();
+  }, [waiting, bothLoaded]);
 
   return (
     <>
@@ -181,7 +189,9 @@ function MachinePair({
         status={
           status === "together"
             ? absent === undefined
-              ? "Working together"
+              ? missingShares.length > 0
+                ? `Working together · Sharing isn't set up for ${missingShares.map(({ device }) => device.label).join(" or ")}`
+                : "Working together"
               : `Working together · ${absent.label} isn't connected`
             : status === "partial"
               ? absent === undefined
@@ -204,13 +214,18 @@ function MachinePair({
           unmanaged !== undefined ? null : (
             <div className="flex items-center gap-2">
               {status === "separate" ? null : (
-                <Button size="xs" variant="destructive-outline" onClick={() => openDialog("stop")}>
+                <Button
+                  size="xs"
+                  variant="destructive-outline"
+                  disabled={loading}
+                  onClick={() => openDialog("stop")}
+                >
                   Stop working together
                 </Button>
               )}
-              {status === "together" ? null : (
-                <Button size="xs" onClick={() => openDialog("start")}>
-                  {status === "partial" ? "Finish" : "Work together"}
+              {status === "together" && missingShares.length === 0 ? null : (
+                <Button size="xs" disabled={loading} onClick={() => openDialog("start")}>
+                  {status === "separate" ? "Work together" : "Finish"}
                 </Button>
               )}
             </div>

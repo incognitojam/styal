@@ -4,7 +4,8 @@
  * still changing; this is the one place to swap.
  */
 import {
-  type AuthMcpClientAccess,
+  AuthMcpClientAccess,
+  type AuthSessionId,
   type DeviceHostId,
   type EnvironmentId,
   type PeerLinkCreateInput,
@@ -22,6 +23,7 @@ import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 
 import * as RemoteEnvironmentAuthorization from "../authorization/service.ts";
+import { LINK_DEFAULT_ACCESS } from "../linkRequest.ts";
 import { EnvironmentRegistry } from "../connection/registry.ts";
 import * as EnvironmentSupervisor from "../connection/supervisor.ts";
 import * as ManagedRelay from "../relay/managedRelay.ts";
@@ -45,11 +47,15 @@ export interface WorkTogetherMachine {
   /** What the machine calls itself, which names its sessions on other machines. */
   readonly ownLabel: string | null;
   readonly connected: boolean;
+  /** Its links and device abilities have arrived, so a plan will not miss anything. */
+  readonly loaded: boolean;
   /** This client's session there may change settings and access. */
   readonly canManage: boolean;
   readonly allowsLinks: boolean;
   /** Null until the machine answers. */
-  readonly links: ReadonlyArray<Pick<PeerLinkSummary, "environmentId" | "status">> | null;
+  readonly links: ReadonlyArray<
+    Pick<PeerLinkSummary, "environmentId" | "status" | "access">
+  > | null;
   /** Addresses another machine can try, for a link. */
   readonly urls: ReadonlyArray<string>;
   /** Addresses another machine can try, for its devices. Null without one. */
@@ -91,6 +97,8 @@ type Step =
       readonly kind: "revoke";
       readonly on: WorkTogetherMachine;
       readonly of: WorkTogetherMachine;
+      /** `of` has a link there, so a session should be found. */
+      readonly expected: boolean;
     };
 
 export type WorkTogetherLineState =
@@ -127,12 +135,11 @@ const line = (
   status: { state: done ? "done" : "pending" },
 });
 
+const activeLink = (from: WorkTogetherMachine, to: WorkTogetherMachine) =>
+  from.links?.find((link) => link.environmentId === to.environmentId && link.status !== "expired");
+
 const hasLink = (from: WorkTogetherMachine, to: WorkTogetherMachine): boolean | null =>
-  from.links === null
-    ? null
-    : from.links.some(
-        (link) => link.environmentId === to.environmentId && link.status !== "expired",
-      );
+  from.links === null ? null : activeLink(from, to) !== undefined;
 
 const sharedHost = (agent: WorkTogetherMachine, device: WorkTogetherMachine) =>
   agent.sharedDeviceHosts.find((host) => host.environmentId === device.environmentId);
@@ -150,10 +157,31 @@ export const workTogetherSharedDevices = (
     { device: b, agent: a },
   ].filter(({ device, agent }) => canShare(device, agent) || sharedHost(agent, device));
 
-/** Every line of turning it on. What is already true starts done, so a rerun only finishes. */
+/** Shares that could exist but do not, because one failed or was turned off in Devices. */
+export const workTogetherMissingShares = (a: WorkTogetherMachine, b: WorkTogetherMachine) =>
+  workTogetherSharedDevices(a, b).filter(({ device, agent }) => !sharedHost(agent, device));
+
+/** What the picker opens on: the narrowest access already given, so Finish never widens it unasked. */
+export function workTogetherDefaultAccess(
+  a: WorkTogetherMachine,
+  b: WorkTogetherMachine,
+): AuthMcpClientAccess {
+  const existing = [activeLink(a, b), activeLink(b, a)].flatMap((link) =>
+    link === undefined ? [] : [link.access],
+  );
+  return (
+    AuthMcpClientAccess.literals.find((access) => existing.includes(access)) ?? LINK_DEFAULT_ACCESS
+  );
+}
+
+/**
+ * Every line of turning it on. What is already true starts done, so a rerun only finishes.
+ * A link at other access than the one chosen is replaced, so the choice holds both ways.
+ */
 export function planWorkTogether(
   a: WorkTogetherMachine,
   b: WorkTogetherMachine,
+  access: AuthMcpClientAccess,
 ): ReadonlyArray<WorkTogetherLine> {
   const allow = (machine: WorkTogetherMachine) =>
     line(
@@ -167,7 +195,7 @@ export function planWorkTogether(
       `link:${from.environmentId}`,
       `Agents on ${from.label} can work on ${to.label}`,
       { kind: "link", from, to },
-      hasLink(from, to) === true,
+      activeLink(from, to)?.access === access,
       [`allow:${from.environmentId}`, `allow:${to.environmentId}`],
     );
   return [
@@ -218,7 +246,7 @@ export function planStopWorkingTogether(
     line(
       `revoke:${on.environmentId}`,
       `${on.label} ends the sessions it gave ${of.label}`,
-      { kind: "revoke", on, of },
+      { kind: "revoke", on, of, expected: hasLink(of, on) === true },
       false,
     );
   return [
@@ -340,43 +368,59 @@ export function workTogetherOutcome(
   return lines.every((entry) => entry.status.state === "done") ? "complete" : "waiting";
 }
 
-/** Ends the link and device sessions `machine` was given on the environment this runs in. */
-const revokeLinkSessions = Effect.fn("clientRuntime.state.workTogether.revokeLinkSessions")(
-  function* (machine: WorkTogetherMachine) {
-    const names = [machine.label, ...(machine.ownLabel === null ? [] : [machine.ownLabel])];
-    const labels = new Set(names.flatMap((name) => [`styal · ${name}`, `Devices for ${name}`]));
-    const access = yield* subscribe(WS_METHODS.subscribeAuthAccess, {}).pipe(Stream.runHead);
-    if (Option.isNone(access) || access.value.type !== "snapshot") {
-      return yield* new WorkTogetherStepError({
-        message: "Could not read this machine's connections. Try again.",
-      });
-    }
-    const supervisor = yield* EnvironmentSupervisor.EnvironmentSupervisor;
-    const prepared = yield* SubscriptionRef.get(supervisor.prepared);
-    if (Option.isNone(prepared)) {
-      return yield* new WorkTogetherStepError({ message: "The machine is not connected." });
-    }
-    const signer = yield* Effect.serviceOption(ManagedRelay.ManagedRelayDpopSigner);
-    const remoteAuthorization = yield* Effect.serviceOption(
-      RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization,
-    );
-    const sessions = access.value.payload.clientSessions.filter(
-      ({ client: { label: name }, current }) => name !== undefined && labels.has(name) && !current,
-    );
-    for (const { sessionId } of sessions) {
-      yield* executeAuthenticatedEnvironmentHttpRequest({
-        prepared: prepared.value,
-        signer,
-        remoteAuthorization,
-        group: "auth",
-        method: "POST",
-        url: (urls) => urls.revokeClient(),
-        timeoutMs: 8_000,
-        request: ({ client, headers }) => client.revokeClient({ headers, payload: { sessionId } }),
-      });
-    }
-  },
-);
+/** What the server issues a peer link under; the machine's name is the only other mark on it. */
+const PEER_LINK_SUBJECT = "mcp-client";
+
+/** The sessions on the environment this runs in that `machine` holds. */
+const readSessions = Effect.fn("clientRuntime.state.workTogether.readSessions")(function* (
+  machine: WorkTogetherMachine,
+) {
+  const access = yield* subscribe(WS_METHODS.subscribeAuthAccess, {}).pipe(Stream.runHead);
+  if (Option.isNone(access) || access.value.type !== "snapshot") {
+    return yield* new WorkTogetherStepError({
+      message: "Could not read this machine's connections. Try again.",
+    });
+  }
+  const linkLabel = machine.ownLabel === null ? null : `styal · ${machine.ownLabel}`;
+  const sessions = access.value.payload.clientSessions.filter(({ current }) => !current);
+  return {
+    link: sessions
+      .filter(
+        ({ subject, client: { label } }) => subject === PEER_LINK_SUBJECT && label === linkLabel,
+      )
+      .map(({ sessionId }) => sessionId),
+    device: sessions
+      .filter(({ subject }) => subject === `device-host:${machine.environmentId}`)
+      .map(({ sessionId }) => sessionId),
+  };
+});
+
+const revokeSessions = Effect.fn("clientRuntime.state.workTogether.revokeSessions")(function* (
+  sessionIds: ReadonlyArray<AuthSessionId>,
+) {
+  if (sessionIds.length === 0) return;
+  const supervisor = yield* EnvironmentSupervisor.EnvironmentSupervisor;
+  const prepared = yield* SubscriptionRef.get(supervisor.prepared);
+  if (Option.isNone(prepared)) {
+    return yield* new WorkTogetherStepError({ message: "The machine is not connected." });
+  }
+  const signer = yield* Effect.serviceOption(ManagedRelay.ManagedRelayDpopSigner);
+  const remoteAuthorization = yield* Effect.serviceOption(
+    RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization,
+  );
+  for (const sessionId of sessionIds) {
+    yield* executeAuthenticatedEnvironmentHttpRequest({
+      prepared: prepared.value,
+      signer,
+      remoteAuthorization,
+      group: "auth",
+      method: "POST",
+      url: (urls) => urls.revokeClient(),
+      timeoutMs: 8_000,
+      request: ({ client, headers }) => client.revokeClient({ headers, payload: { sessionId } }),
+    });
+  }
+});
 
 /** The link commands, which check this client's permissions and refresh what each lists. */
 interface PeerLinkCommands {
@@ -428,6 +472,8 @@ const executeStep = (
             message: `${step.from.label} has no address for ${step.to.label}. On ${step.to.label}, turn on styal Link or network access in Connections.`,
           });
         }
+        // A link replaced at other access must not leave its old session usable.
+        const replaced = yield* environments.run(step.to.environmentId, readSessions(step.from));
         const pairingCode = yield* environments.run(
           step.to.environmentId,
           mintPeerPairingCode(access).pipe(
@@ -455,6 +501,7 @@ const executeStep = (
             },
           }),
         );
+        yield* environments.run(step.to.environmentId, revokeSessions(replaced.link));
         return;
       }
       case "share":
@@ -493,9 +540,19 @@ const executeStep = (
           }),
         );
         return;
-      case "revoke":
-        yield* environments.run(step.on.environmentId, revokeLinkSessions(step.of));
+      case "revoke": {
+        const found = yield* environments.run(step.on.environmentId, readSessions(step.of));
+        yield* environments.run(
+          step.on.environmentId,
+          revokeSessions([...found.link, ...found.device]),
+        );
+        if (step.expected && found.link.length === 0) {
+          return yield* new WorkTogetherStepError({
+            message: `Could not find ${step.of.label}'s session. If it was renamed, revoke its session in ${step.on.label}'s Connections.`,
+          });
+        }
         return;
+      }
     }
   });
 
