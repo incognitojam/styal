@@ -83,7 +83,12 @@ export function resolveUserMessagePresentation(message: {
 /** How a user message reached its turn, for the label beside its timestamp. */
 export function resolveUserMessageIntent(
   intent: OrchestrationV2UserMessageInputIntent | undefined,
+  messageId?: string,
 ) {
+  // The server records approval replies as steers but routes them only to the requesting tool.
+  if (intent === "steer" && messageId?.startsWith("approval-feedback:")) {
+    return { label: "Approval feedback", steer: false, description: "Replied to a tool approval" };
+  }
   switch (intent) {
     case "queued_turn":
       return { label: "From queue", steer: false, description: "Queued while the agent was busy" };

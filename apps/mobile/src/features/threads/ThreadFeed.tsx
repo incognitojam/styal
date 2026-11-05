@@ -1658,7 +1658,7 @@ function renderFeedEntry(
       const foldRowId = presentation.attribution === "agent" ? `agent:${message.id}` : null;
       const foldExpanded = foldRowId !== null && (props.expandedWorkRows[foldRowId] ?? false);
       const bubbleBodyVisible = foldRowId === null || foldExpanded;
-      const intent = resolveUserMessageIntent(message.inputIntent);
+      const intent = resolveUserMessageIntent(message.inputIntent, message.id);
       const { gridImages, listedAttachments } = userMessageAttachmentLayout({
         text: message.text,
         context: message.context,
