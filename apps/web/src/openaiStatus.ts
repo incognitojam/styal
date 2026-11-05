@@ -54,6 +54,7 @@ const OPENAI_IGNORED_COMPONENTS = [
  * the same product or workflow still surfaces.
  */
 const OPENAI_IGNORED_INCIDENT_PATTERNS = [
+  /^ChatGPT Work and Dots Errors\.?$/i,
   /^Degraded Performance of Dots on Enterprise\.?$/i,
   /^Delayed support responses\.?$/i,
   /^New Ad Accounts failing to provision admins\.?$/i,

@@ -2527,8 +2527,7 @@ features:
       - Enabled clients distinguish GitHub, Claude, and OpenAI incidents from missing or malformed status responses.
       - Sidebar notices are scoped to relevant projects or providers and remain readable without blocking ordinary work.
       - GitHub, Claude, and OpenAI alerts can each be turned off under Outage alerts in Settings, and a disabled alert stops polling its status page.
-      - Provider-specific filters omit incidents confined to surfaces styal does not use while retaining broader or unattributable disruptions.
-      - OpenAI filters narrowly scoped componentless incidents unrelated to Codex while retaining concurrent API outages and incidents explicitly affecting Codex.
+      - Provider filters hide known unrelated components and componentless incidents; broader, unknown, and explicitly relevant outages remain visible.
     implementation_paths:
       - apps/web/src/claudeStatus.ts
       - apps/web/src/components/settings/SettingsPanels.tsx
