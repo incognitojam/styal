@@ -1658,11 +1658,11 @@ features:
       - Filing uses the server's GitHub credential whichever way it was provided (saved token, GH_TOKEN or gh), not the gh CLI.
     rationale: Users and agents had no way to report a styal bug from inside styal. `styal triage` runs only from a terminal, and analytics events are dropped for anyone who opts out and cannot carry a reply.
     implementation_paths:
+      - apps/mobile/src/features/settings/SettingsFeedbackRouteScreen.tsx
       - apps/server/src/feedback/FeedbackService.ts
       - apps/server/src/mcp/toolkits/feedback/tools.ts
-      - packages/source-control-github/src/server/gitHubIssueFiling.ts
       - apps/web/src/components/settings/FeedbackDialog.tsx
-      - apps/mobile/src/features/settings/SettingsFeedbackRouteScreen.tsx
+      - packages/source-control-github/src/server/gitHubIssueFiling.ts
     upstream_paths:
       - packages/source-control-core/src/server/driver.ts
     tests:
