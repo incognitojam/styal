@@ -22,7 +22,7 @@ The relay currently owns:
 - Listing linked environments and registered mobile devices for an account.
 - Registering mobile notification preferences and APNs or FCM tokens.
 - Receiving published agent activity and delivering notifications or Live Activity updates.
-- Persisting relay state and exposing relay-specific traces for diagnostics.
+- Persisting relay state.
 
 The environment server and relay have separate credentials and trust boundaries. Read
 [Environment Authentication Profile](../../docs/internals/environment-auth.md) before changing token,
@@ -83,8 +83,8 @@ in this directory):
 vp run --filter t3code-relay deploy
 ```
 
-The stack provisions the Cloudflare Worker and queues, managed endpoint resources, database
-connectivity, and relay tracing resources. Copy [`infra/relay/.env.example`](./.env.example) to
+The stack provisions the Cloudflare Worker and queues, managed endpoint resources, and database
+connectivity. Copy [`infra/relay/.env.example`](./.env.example) to
 `infra/relay/.env` and fill in the deployment-specific values before deploying. Alchemy loads that
 file from the relay directory. Runtime secrets include Clerk credentials and optional FCM
 credentials for Android push. APNs credentials are optional as an all-or-nothing group: leave all
@@ -122,9 +122,8 @@ domain override. The production stack also serves the tunnel zone's apex with a 
 styal GitHub repository. This apex Worker is separate from the per-environment tunnel hosts.
 
 The stack's `PublishClientConfig` action ([`src/clientConfig.ts`](./src/clientConfig.ts)) writes the
-deployed relay URL and tracing configuration into the repository-root `.env`, so subsequent source
-builds point at the relay that was just deployed without copying values manually. It runs only when
-one of those outputs changed, and `T3CODE_RELAY_CLIENT_CONFIG_ENV` redirects it to another file.
+deployed relay URL into the repository-root `.env`, so subsequent source builds point at the relay
+that was just deployed without copying values manually. It runs only when the URL changed, and `T3CODE_RELAY_CLIENT_CONFIG_ENV` redirects it to another file.
 
 ### Deployment CI
 
@@ -141,17 +140,13 @@ deploy personal non-production stages locally with any stage name other than `pr
 The repository must define these Actions variables shared by relay deployments:
 
 - `CLOUDFLARE_ACCOUNT_ID`
-- `AXIOM_ORG_ID`
+- `AXIOM_ORG_ID`, only until the [Axiom resources are destroyed](../../docs/operations/relay-observability.md#axiom-resource-removal)
 
 The `production` GitHub environment must define these Actions variables:
 
 - `RELAY_API_ZONE_NAME`
 - `RELAY_TUNNEL_ZONE_NAME`
 - `RELAY_DOMAIN` if overriding the derived production relay domain
-- `RELAY_ALERT_NOTIFIER_ID`, the Axiom notifier that relay alerts page. Without it the deployment
-  creates no monitors or health dashboard. See
-  [Relay alerts](../../docs/operations/relay-observability.md#alerts).
-- `RELAY_WARNING_NOTIFIER_ID`, optional, the Axiom notifier for relay warnings
 - `CLERK_PUBLISHABLE_KEY`
 - `CLERK_JWT_AUDIENCE`
 - `CLERK_JWT_TEMPLATE`
@@ -162,22 +157,19 @@ The `production` GitHub environment must define these Actions secrets:
 
 - `CLOUDFLARE_API_TOKEN`
 - `NEON_API_KEY`
-- `AXIOM_TOKEN`
+- `AXIOM_TOKEN`, only until the Axiom resources are destroyed
 - `CLERK_SECRET_KEY`
 - `CLERK_DEV_SECRET_KEY`, the development Clerk instance's secret key for the `dev` stage
 - `APNS_PRIVATE_KEY` only when enabling mobile push, alongside the `APNS_*` variables above
 - `FCM_SERVICE_ACCOUNT` when Android push is enabled
 
 The account-scoped deployment credentials are consumed by Alchemy while provisioning relay stages;
-they are not bound into the relay Worker. `AXIOM_TOKEN` must be an advanced API token with the
-organization- and dataset-level permissions documented in
-[Relay Observability](../../docs/operations/relay-observability.md#deployment-token-permissions), and
-`AXIOM_ORG_ID` must accompany it. The release workflow reads the production relay's derived public
+they are not bound into the relay Worker. The release workflow reads the production relay's derived public
 URL and Clerk publishable key from the same environment for downstream desktop, CLI, and hosted web
 builds.
 
 See:
 
 - [styal Link Clerk setup](../../docs/operations/connect-setup.md) for Clerk keys, JWT templates, and sign-up restrictions.
-- [Relay Observability](../../docs/operations/relay-observability.md) for deployment tracing and diagnostics.
+- [Relay Observability](../../docs/operations/relay-observability.md) for relay logs, span names and diagnostics.
 - [styal Link architecture](../../docs/internals/t3-connect.md) for environment linking and trust boundaries.

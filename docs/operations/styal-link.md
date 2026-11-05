@@ -109,7 +109,7 @@ described in [infra/relay/README.md](../../infra/relay/README.md). Personal stag
 `dev`, cap their Neon compute at 1 CU.
 
 Relay deployment (`deploy-relay.yml`) has its own set of variables and secrets — Cloudflare, Neon,
-Axiom, optional APNs, `CLERK_SECRET_KEY`, `CLERK_JWT_AUDIENCE=t3-code-relay` — listed in
+optional APNs, `CLERK_SECRET_KEY`, `CLERK_JWT_AUDIENCE=t3-code-relay` — listed in
 [infra/relay/README.md § Deployment CI](../../infra/relay/README.md#deployment-ci). The hosted web
 app (`deploy-web.yml`) needs `CLOUDFLARE_ACCOUNT_ID`, `STYAL_WEB_DOMAIN`, and the
 `CLOUDFLARE_API_TOKEN` secret; see [infra/web/README.md](../../infra/web/README.md).
@@ -130,9 +130,8 @@ requirements:
 - `NEON_API_KEY` must be an **organization** API key. Alchemy adopts the existing project by
   searching the projects list; a project-scoped key cannot list, so adoption misses and the
   deploy falls through to a (refused) create.
-- `AXIOM_TOKEN` must be an **advanced API token**, accompanied by `AXIOM_ORG_ID`. Its exact
-  organization- and dataset-level permissions are documented in
-  [Relay Observability](./relay-observability.md#deployment-token-permissions).
+- `AXIOM_TOKEN` must be an **advanced API token**, accompanied by `AXIOM_ORG_ID`. Both are needed
+  only until the [Axiom resources are destroyed](./relay-observability.md#axiom-resource-removal).
 
 PR web previews (`web-preview.yml`) cannot use that token: they deploy from PR branches, and any
 Alchemy stage shares the account-wide state store with production. They deploy with wrangler and a
