@@ -5145,31 +5145,39 @@ features:
     status: maintained
     prs: []
     invariants:
-      - The relay stack declares no Axiom dataset, token, view, monitor or dashboard, and the Worker exports no spans. `Axiom.providers()`, the `@alchemy.run/axiom` dependency and the `AXIOM_*` workflow values stay only so a deploy can destroy what Alchemy state still holds.
+      - The relay stack declares no Axiom dataset, token, view, monitor or dashboard, and the Worker exports no spans. The relay stack loads no Axiom provider and its package and deploy workflows need no `@alchemy.run/axiom` dependency or `AXIOM_*` values.
       - The relay serves no `/v1/mobile/observe` route, keeps no mobile source map bucket, and its stack has no tracing or mobile telemetry outputs.
       - The stack publishes only `T3CODE_RELAY_URL` through `PublishClientConfig`, and the mobile app config has no default trace URL, so client tracing stays off unless a build supplies its own configuration.
       - The mobile app does not depend on `expo-observe`, has no Send crash reports setting and uploads no source maps. The persisted `crashReportsEnabled` preference stays so an opt-out carries over when crash reports return.
     rationale: styal does not use Axiom. Production's trace dataset held no spans and had no monitors, and the plan's three-dataset limit failed every relay deploy once mobile logs and metrics datasets were added. Crash reports are planned through PostHog as separate work. Upstream keeps Axiom, so intake must keep `infra/relay/src/monitoring.ts`, `infra/relay/src/mobileTelemetry/`, `apps/mobile/src/features/observability/observe.ts`, the mobile source map scripts and `packages/shared/src/mobileSourceMaps.ts` deleted and drop their upstream changes.
     implementation_paths:
+      - .github/workflows/deploy-relay.yml
       - .github/workflows/mobile-eas-production.yml
+      - .github/workflows/relay-preview-cleanup.yml
+      - .github/workflows/relay-preview.yml
       - apps/mobile/app.config.ts
       - apps/mobile/index.ts
       - apps/mobile/package.json
       - apps/mobile/src/components/RenderErrorBoundary.tsx
       - apps/mobile/src/features/diagnostics/SettingsDiagnosticsRouteScreen.tsx
       - infra/relay/alchemy.run.ts
+      - infra/relay/package.json
       - infra/relay/src/clientConfig.ts
       - infra/relay/src/observability.ts
       - infra/relay/src/worker.ts
       - packages/contracts/src/relay.ts
     upstream_paths:
+      - .github/workflows/deploy-relay.yml
       - .github/workflows/mobile-eas-production.yml
+      - .github/workflows/relay-preview-cleanup.yml
+      - .github/workflows/relay-preview.yml
       - apps/mobile/app.config.ts
       - apps/mobile/index.ts
       - apps/mobile/package.json
       - apps/mobile/src/components/RenderErrorBoundary.tsx
       - apps/mobile/src/features/diagnostics/SettingsDiagnosticsRouteScreen.tsx
       - infra/relay/alchemy.run.ts
+      - infra/relay/package.json
       - infra/relay/src/clientConfig.ts
       - infra/relay/src/observability.ts
       - infra/relay/src/worker.ts

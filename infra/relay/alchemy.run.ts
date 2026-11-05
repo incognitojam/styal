@@ -1,6 +1,5 @@
 // @effect-diagnostics anyUnknownInErrorContext:off layerMergeAllWithDependencies:off - Alchemy provider helpers expose framework-owned any requirements.
 import * as Alchemy from "alchemy";
-import * as Axiom from "@alchemy.run/axiom";
 import * as Cloudflare from "@alchemy.run/cloudflare";
 import * as Drizzle from "@alchemy.run/drizzle";
 import * as Effect from "effect/Effect";
@@ -18,8 +17,6 @@ export default Alchemy.Stack(
   "T3CodeRelay",
   {
     providers: Layer.mergeAll(
-      // Removed Axiom resources in Alchemy state need this provider for a deploy to destroy them.
-      Axiom.providers(),
       Cloudflare.providers(),
       Drizzle.providers(),
       Neon.providers(),

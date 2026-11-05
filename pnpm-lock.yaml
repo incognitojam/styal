@@ -1345,9 +1345,6 @@ importers:
 
   infra/relay:
     dependencies:
-      '@alchemy.run/axiom':
-        specifier: 'catalog:'
-        version: 2.0.0-beta.84(74118100341fd69edb1510aa7b7f1bd2)
       '@alchemy.run/cloudflare':
         specifier: 'catalog:'
         version: 2.0.0-beta.84(24ce6902b7189b66a257867375b8f56d)
@@ -12633,13 +12630,6 @@ snapshots:
     dependencies:
       '@distilled.cloud/acme': 1.0.0-rc.17(effect@4.0.5)
       alchemy: 2.0.0-beta.84(patch_hash=824006659fa28ca31e490ce1fc3611f77436005ce9fa0f638be46564133cf042)(@effect/platform-node@4.0.5(bufferutil@4.1.0)(effect@4.0.5)(redis@6.2.1)(utf-8-validate@6.0.6))(@effect/vitest@4.0.5(patch_hash=2731c9c3761c595f25ddc625a7d61ca376b389d5b3049ecb837c8940f21cfa02)(@astrojs/compiler-rs@0.5.1)(@types/node@24.12.4)(@vitest/browser-playwright@5.0.5)(@vitest/ui@5.0.5)(@volar/typescript@2.4.28(typescript@6.0.3))(bufferutil@4.1.0)(effect@4.0.5)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.0(@noble/hashes@1.8.0))(msw@2.12.11(@types/node@24.12.4)(typescript@6.0.3))(playwright@1.60.0)(terser@5.48.0)(typescript@6.0.3)(unrun@0.2.39)(utf-8-validate@6.0.6)(yaml@2.9.0))(@types/react@19.3.0)(effect@4.0.5)(react-devtools-core@6.1.5(bufferutil@4.1.0)(utf-8-validate@6.0.6))(vite@8.2.2(@types/node@24.12.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.48.0)(yaml@2.9.0))(ws@8.22.0(bufferutil@4.1.0)(utf-8-validate@6.0.6))
-      effect: 4.0.5
-
-  '@alchemy.run/axiom@2.0.0-beta.84(74118100341fd69edb1510aa7b7f1bd2)':
-    dependencies:
-      '@distilled.cloud/axiom': 1.0.0-rc.17(effect@4.0.5)
-      '@distilled.cloud/core': 1.0.0-rc.17(effect@4.0.5)
-      alchemy: 2.0.0-beta.84(patch_hash=824006659fa28ca31e490ce1fc3611f77436005ce9fa0f638be46564133cf042)(@effect/platform-node@4.0.5(bufferutil@4.1.0)(effect@4.0.5)(redis@6.2.1)(utf-8-validate@6.0.6))(@effect/vitest@4.0.5(patch_hash=2731c9c3761c595f25ddc625a7d61ca376b389d5b3049ecb837c8940f21cfa02)(@astrojs/compiler-rs@0.5.1)(@tsc-rs/typescript@0.8.0)(@types/node@24.12.4)(@vitest/browser-playwright@5.0.5)(@vitest/ui@5.0.5)(@volar/typescript@2.4.28(@tsc-rs/typescript@0.8.0))(bufferutil@4.1.0)(effect@4.0.5)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.0(@noble/hashes@1.8.0))(playwright@1.60.0)(terser@5.48.0)(unrun@0.2.39)(utf-8-validate@6.0.6)(yaml@2.9.0))(@types/react@19.3.0)(@voidzero-dev/vite-plus-core@1.4.0(@tsc-rs/typescript@0.8.0)(@types/node@24.12.4)(@volar/typescript@2.4.28(@tsc-rs/typescript@0.8.0))(esbuild@0.28.2)(jiti@2.7.0)(terser@5.48.0)(unrun@0.2.39)(yaml@2.9.0))(effect@4.0.5)(react-devtools-core@6.1.5(bufferutil@4.1.0)(utf-8-validate@6.0.6))(ws@8.22.0(bufferutil@4.1.0)(utf-8-validate@6.0.6))
       effect: 4.0.5
 
   '@alchemy.run/axiom@2.0.0-beta.84(alchemy@2.0.0-beta.84(patch_hash=824006659fa28ca31e490ce1fc3611f77436005ce9fa0f638be46564133cf042)(@effect/platform-node@4.0.5(bufferutil@4.1.0)(effect@4.0.5)(redis@6.2.1)(utf-8-validate@6.0.6))(@effect/vitest@4.0.5(patch_hash=2731c9c3761c595f25ddc625a7d61ca376b389d5b3049ecb837c8940f21cfa02)(@astrojs/compiler-rs@0.5.1)(@tsc-rs/typescript@0.8.0)(@types/node@24.12.4)(@vitest/browser-playwright@5.0.5)(@vitest/ui@5.0.5)(@volar/typescript@2.4.28(@tsc-rs/typescript@0.8.0))(bufferutil@4.1.0)(effect@4.0.5)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.0(@noble/hashes@1.8.0))(playwright@1.60.0)(terser@5.48.0)(unrun@0.2.39)(utf-8-validate@6.0.6)(yaml@2.9.0))(@types/react@19.3.0)(effect@4.0.5)(react-devtools-core@6.1.5(bufferutil@4.1.0)(utf-8-validate@6.0.6))(vite@8.2.2(@types/node@24.12.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.48.0)(yaml@2.9.0))(ws@8.22.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)))(effect@4.0.5)':
