@@ -645,7 +645,7 @@ const RootStackConfig = createWorkspaceStackNavigator({
     ThreadBrowserPreview: createNativeStackScreen({
       screen: BrowserPreviewRouteScreen,
       linking: `${THREAD_LINKING_PREFIX}/browser`,
-      options: immersiveRoute(),
+      options: { ...modalRoute({ header: "solid" }), gestureEnabled: false },
     }),
     ThreadReview: createNativeStackScreen({
       screen: ReviewSheet,
@@ -683,15 +683,15 @@ const RootStackConfig = createWorkspaceStackNavigator({
     }),
     ThreadQueue: createNativeStackScreen({
       screen: ThreadQueueSheet,
-      options: sheetRoute({ detent: 0.65, androidMaxDetent: 0.95, header: "none" }),
+      options: sheetRoute({ detent: 0.65, androidMaxDetent: 0.95 }),
     }),
     ThreadBackgroundWork: createNativeStackScreen({
       screen: ThreadBackgroundWorkSheet,
-      options: sheetRoute({ detent: 0.5, androidMaxDetent: 0.9, header: "none" }),
+      options: sheetRoute({ detent: 0.5, androidMaxDetent: 0.9 }),
     }),
     ThreadAgents: createNativeStackScreen({
       screen: ThreadAgentsSheet,
-      options: sheetRoute({ detent: 0.5, androidMaxDetent: 0.9, header: "none" }),
+      options: sheetRoute({ detent: 0.5, androidMaxDetent: 0.9 }),
     }),
     GitOverview: createNativeStackScreen({
       screen: GitOverviewSheet,
