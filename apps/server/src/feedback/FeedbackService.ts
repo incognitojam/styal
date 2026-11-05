@@ -62,6 +62,10 @@ export class FeedbackService extends Context.Service<
   }
 >()("@styal/cli/feedback/FeedbackService") {}
 
+// A custom instance's id is the user's own name for it, so it stays out of the public issue.
+const providerName = (instanceId: string) =>
+  PROVIDER_DISPLAY_NAMES[instanceId as ProviderDriverKind];
+
 const make = Effect.gen(function* () {
   const threads = yield* ThreadManagementService.ThreadManagementService;
   const drivers = yield* SourceControlDrivers;
@@ -163,13 +167,13 @@ const make = Effect.gen(function* () {
       .pipe(Effect.orElseSucceed(() => null));
     const run = records === null ? undefined : ThreadManagementService.latestActiveRun(records);
     const model = records?.thread.modelSelection;
-    // A custom instance's id is the user's own name for it, so it stays out of the public issue.
-    const provider = PROVIDER_DISPLAY_NAMES[model?.instanceId as ProviderDriverKind];
     const body = composeBody(
       draft,
       model === undefined
         ? "Written by an agent and approved by the user."
-        : `Written by an agent (${provider === undefined ? "" : `${provider}, `}${model.model}) and approved by the user.`,
+        : `Written by an agent (${[providerName(model.instanceId), model.model]
+            .filter((part) => part !== undefined)
+            .join(", ")}) and approved by the user.`,
     );
     const login = yield* account;
     if (login === null) {
