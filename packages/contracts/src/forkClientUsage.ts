@@ -33,7 +33,7 @@ import {
 } from "./settings.ts";
 
 /** Bump when extending the vocabulary; clients require the complete version before reporting. */
-export const FORK_CLIENT_USAGE_VERSION = 24;
+export const FORK_CLIENT_USAGE_VERSION = 25;
 
 /**
  * One device's client preferences, reported daily so we can see which defaults
@@ -160,7 +160,6 @@ export const MobileSettingsSnapshot = Schema.Struct({
   planModeEnabled: Schema.Boolean,
   turnUsageEnabled: Schema.Boolean,
   turnUsageFigure: Schema.Literals(["tokens", "cost"]),
-  confirmThreadUnpin: Schema.Boolean,
   threadTimestampMode: SidebarThreadTimestampMode,
   threadGrouping: SidebarThreadGrouping,
   projectGroupingMode: SidebarProjectGroupingMode,

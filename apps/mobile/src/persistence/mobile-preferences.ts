@@ -133,7 +133,6 @@ export interface Preferences {
   readonly projectGroupingMode?: SidebarProjectGroupingMode;
   /** Device-local counterpart of desktop's `sidebarThreadGrouping`; unset means none. */
   readonly threadGrouping?: SidebarThreadGrouping;
-  readonly confirmThreadUnpin?: boolean;
   readonly threadTimestampMode?: "last_prompted" | "last_message";
   readonly planModeEnabled?: boolean;
   /** Device-local counterpart of desktop's `turnUsageEnabled`; unset means on. */
@@ -230,7 +229,6 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     projectGroupingEnabled?: boolean;
     projectGroupingMode?: SidebarProjectGroupingMode;
     threadGrouping?: SidebarThreadGrouping;
-    confirmThreadUnpin?: boolean;
     threadTimestampMode?: "last_prompted" | "last_message";
     planModeEnabled?: boolean;
     turnUsageEnabled?: boolean;
@@ -384,9 +382,6 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   }
   if (parsed.threadGrouping === "none" || parsed.threadGrouping === "project") {
     preferences.threadGrouping = parsed.threadGrouping;
-  }
-  if (typeof parsed.confirmThreadUnpin === "boolean") {
-    preferences.confirmThreadUnpin = parsed.confirmThreadUnpin;
   }
   if (
     parsed.threadTimestampMode === "last_prompted" ||

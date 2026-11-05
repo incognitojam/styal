@@ -6407,33 +6407,6 @@ features:
         - https://github.com/pingdotgg/t3code/pull/7476
       retire_when: Upstream provides equivalent full-snapshot transcript export from every thread action surface with safe clipboard ordering.
 
-  - id: thread-unpin-confirmation
-    title: Confirm unpinning threads by default on mobile
-    status: maintained
-    prs: [672]
-    invariants:
-      - Unpinning a thread asks for confirmation by default on mobile until mobile offers Undo.
-      - Mobile has its own device-local switch under Settings, General, and an explicit opt-out survives later preference writes.
-      - Mobile asks before unpinning from both the home list and the thread sidebar.
-    rationale: The fork's default-on web and desktop confirmation was retired in favor of upstream's opt-in confirmation and Undo (upstream #10744 and #12848). Mobile still has no Undo, so its default-on confirmation remains to guard accidental unpinning. Compared with upstream revision a6ec88f7a716fc421bd22c2484881c44110f9375 on October 8, 2026. The original confirmation was added by fork commit 75082f7ea3 and the fork's import of #7313, without a fork pull request.
-    implementation_paths:
-      - apps/mobile/src/features/home/useThreadListActions.ts
-      - apps/mobile/src/features/settings/SettingsProjectGroupingRouteScreen.tsx
-      - apps/mobile/src/features/settings/ThreadSettingsSections.tsx
-    upstream_paths:
-      - apps/mobile/src/features/home/useThreadListActions.ts
-      - apps/mobile/src/persistence/mobile-preferences.ts
-    tests:
-      - apps/mobile/src/lib/storage.test.ts
-    upstream:
-      status: partial
-      tracking:
-        - https://github.com/pingdotgg/t3code/issues/6009
-        - https://github.com/pingdotgg/t3code/pull/10744
-        - https://github.com/pingdotgg/t3code/pull/12848
-        - https://github.com/pingdotgg/t3code/pull/7313
-      retire_when: Mobile offers Undo that restores an accidentally unpinned thread's previous pinned position, or upstream confirms unpinning by default on mobile.
-
   - id: turn-token-usage
     title: Show the model, token usage, and estimated cost under each agent turn, and the thread's total
     status: review-needed

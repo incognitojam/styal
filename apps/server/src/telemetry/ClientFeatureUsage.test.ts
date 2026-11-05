@@ -644,7 +644,6 @@ const mobileSnapshot = {
   planModeEnabled: false,
   turnUsageEnabled: true,
   turnUsageFigure: "cost",
-  confirmThreadUnpin: true,
   threadTimestampMode: "last_prompted",
   threadGrouping: "none",
   projectGroupingMode: "repository",

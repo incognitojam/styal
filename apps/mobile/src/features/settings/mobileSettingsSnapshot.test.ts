@@ -62,7 +62,6 @@ const EVERY_PREFERENCE: Required<Preferences> = {
   projectGroupingEnabled: false,
   projectGroupingMode: "repository_path",
   threadGrouping: "project",
-  confirmThreadUnpin: false,
   threadTimestampMode: "last_message",
   planModeEnabled: true,
   turnUsageEnabled: false,

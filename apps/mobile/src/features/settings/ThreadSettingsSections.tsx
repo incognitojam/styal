@@ -212,16 +212,6 @@ export function ThreadListDeviceSettingsRows() {
           savePreferences({ threadTimestampMode: value ? "last_message" : "last_prompted" })
         }
       />
-      <SettingsSwitchRow
-        icon="pin"
-        label="Unpin confirmation"
-        subtitle="Ask before removing a thread from the pinned section."
-        value={
-          !AsyncResult.isSuccess(preferencesResult) ||
-          preferencesResult.value.confirmThreadUnpin !== false
-        }
-        onValueChange={(value) => savePreferences({ confirmThreadUnpin: value })}
-      />
     </>
   );
 }

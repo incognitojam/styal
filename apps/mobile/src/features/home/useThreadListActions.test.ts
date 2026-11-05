@@ -60,45 +60,39 @@ vi.mock("../../state/session", () => ({
   readEnvironmentScope: (environmentId: string, scope: string) =>
     state.scopes.get(environmentId)?.has(scope) === true,
 }));
-vi.mock("../../state/preferences", () => ({ mobilePreferencesAtom: "mobile-preferences" }));
 vi.mock("../../state/server", () => ({
   environmentServerConfigsAtom: "server-configs",
 }));
-vi.mock("../../state/atom-registry", async () => {
-  const { AsyncResult } = await import("effect/reactivity");
-  return {
-    appAtomRegistry: {
-      set: (_atom: string, value: boolean) => {
-        state.dropBusy = value;
-      },
-      get: (atom: string) =>
-        atom === "mobile-preferences"
-          ? AsyncResult.success({ confirmThreadUnpin: false })
-          : atom === "thread-drop-busy"
-            ? state.dropBusy
-            : atom === "thread-shells"
-              ? state.shells
-              : atom === "queued-thread-keys"
-                ? new Set<string>()
-                : new Map(
-                    [...state.scopes.keys()].map((environmentId) => [
-                      environmentId,
-                      {
-                        environment: {
-                          capabilities: {
-                            threadSettlement: true,
-                            threadSnooze: true,
-                            threadPinning: true,
-                            threadPinReorder: true,
-                            threadTitleRegeneration: true,
-                          },
-                        },
-                      },
-                    ]),
-                  ),
+vi.mock("../../state/atom-registry", () => ({
+  appAtomRegistry: {
+    set: (_atom: string, value: boolean) => {
+      state.dropBusy = value;
     },
-  };
-});
+    get: (atom: string) =>
+      atom === "thread-drop-busy"
+        ? state.dropBusy
+        : atom === "thread-shells"
+          ? state.shells
+          : atom === "queued-thread-keys"
+            ? new Set<string>()
+            : new Map(
+                [...state.scopes.keys()].map((environmentId) => [
+                  environmentId,
+                  {
+                    environment: {
+                      capabilities: {
+                        threadSettlement: true,
+                        threadSnooze: true,
+                        threadPinning: true,
+                        threadPinReorder: true,
+                        threadTitleRegeneration: true,
+                      },
+                    },
+                  },
+                ]),
+              ),
+  },
+}));
 vi.mock("../../state/use-atom-command", () => ({
   useAtomCommand: (command: unknown) => command,
 }));

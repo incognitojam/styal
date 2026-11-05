@@ -53,7 +53,6 @@ export function mobileSettingsSnapshot(
     planModeEnabled: preferences.planModeEnabled === true,
     turnUsageEnabled: preferences.turnUsageEnabled !== false,
     turnUsageFigure: preferences.turnUsageFigure === "cost" ? "cost" : "tokens",
-    confirmThreadUnpin: preferences.confirmThreadUnpin !== false,
     threadTimestampMode: preferences.threadTimestampMode ?? "last_prompted",
     threadGrouping: preferences.threadGrouping === "project" ? "project" : "none",
     projectGroupingMode:

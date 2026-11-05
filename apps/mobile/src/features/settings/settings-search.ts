@@ -58,7 +58,6 @@ const SETTINGS_SEARCH_TERMS = {
     "sidebar",
     "working section",
     "last message time",
-    "unpin confirmation",
     "new threads",
     "last project",
   ],
