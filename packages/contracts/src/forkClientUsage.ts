@@ -33,7 +33,7 @@ import {
 } from "./settings.ts";
 
 /** Bump when extending the vocabulary; clients require the complete version before reporting. */
-export const FORK_CLIENT_USAGE_VERSION = 24;
+export const FORK_CLIENT_USAGE_VERSION = 25;
 
 /**
  * One device's client preferences, reported daily so we can see which defaults
@@ -312,6 +312,11 @@ export const ForkClientUsageInput = Schema.Union([
     feature: Schema.Literal("incoming-share-thread"),
     action: Schema.Literal("added"),
     outcome: Schema.Literals(["success", "failure"]),
+  }),
+  Schema.Struct({
+    feature: Schema.Literal("shortcuts-overview"),
+    action: Schema.Literal("opened"),
+    entryPoint: Schema.Literals(["shortcut", "command_palette"]),
   }),
   ReportedClientSettingsSnapshot,
   ReportedMobileSettingsSnapshot,

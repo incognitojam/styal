@@ -3,6 +3,10 @@
 Customize shortcuts in **Settings → Keybindings** on web and desktop. That page
 also lists the command IDs and defaults available in your version.
 
+To see every shortcut you have bound, press `mod+?` (`mod+shift+/`), or choose **Show keyboard
+shortcuts** in the command palette. It lists your own bindings for this client, grouped by area, and
+links to the Settings page for changing them.
+
 ## Composer controls
 
 In **Settings → Chat → Send shortcut**, choose whether Enter sends, requires

@@ -339,6 +339,12 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   checked October 25, 2026, which keeps the preview beside the conversation and narrows chat to
   make room.
 
+- **See all your keyboard shortcuts in one place.** Press `mod+?` on web or desktop for a list of
+  your own bindings, grouped by area, with a link to change them. Compared with
+  [T3 Code revision 4b87a45](https://github.com/pingdotgg/t3code/tree/4b87a45770d24a47f7e6bc40e3f19011e41c7724),
+  checked November 5, 2026, which shows shortcuts beside command palette items and in Settings.
+  [Keybindings](./keybindings.md).
+
 ## Bringing your work from T3 Code
 
 - **Setup stays focused on new computers.** The hosted app opens setup on first use, waits for

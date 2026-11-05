@@ -1,10 +1,14 @@
-import { compileResolvedKeybindingsConfig } from "@t3tools/shared/keybindings";
+import {
+  compileResolvedKeybindingsConfig,
+  DEFAULT_RESOLVED_KEYBINDINGS,
+} from "@t3tools/shared/keybindings";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { userEvent } from "vite-plus/test/browser";
 
 import { render } from "../../test/render";
 import { openCommandPalette } from "../commandPaletteBus";
 import { useCommandPaletteMount, useCommandPaletteStore } from "../commandPaletteStore";
+import { useShortcutsOverviewStore } from "../components/ShortcutsOverview";
 import { installCommandPaletteCommands } from "./commandPaletteCommands";
 
 const keybindings = compileResolvedKeybindingsConfig([
@@ -49,6 +53,29 @@ describe("command palette shortcuts", () => {
 
     await screen.rerender(<div />);
     expect(useCommandPaletteStore.getState().open).toBe(false);
+  });
+});
+
+describe("shortcuts overview shortcut", () => {
+  it("toggles with the default Ctrl+Shift+? and closes the palette", async () => {
+    setup();
+    useShortcutsOverviewStore.setState({ open: false });
+    using _platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("Linux x86_64");
+    await using screen = await render(<MountedPalette />, { router: "/" });
+    using commands = new DisposableStack();
+    commands.defer(
+      installCommandPaletteCommands(screen.router!, {
+        keybindings: () => DEFAULT_RESOLVED_KEYBINDINGS,
+      }),
+    );
+    openCommandPalette();
+
+    await userEvent.keyboard("{Control>}{Shift>}?{/Shift}{/Control}");
+    expect(useShortcutsOverviewStore.getState().open).toBe(true);
+    expect(useCommandPaletteStore.getState().open).toBe(false);
+
+    await userEvent.keyboard("{Control>}{Shift>}?{/Shift}{/Control}");
+    expect(useShortcutsOverviewStore.getState().open).toBe(false);
   });
 });
 

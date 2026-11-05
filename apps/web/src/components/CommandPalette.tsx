@@ -82,9 +82,11 @@ import {
   SquarePenIcon,
   TextSearchIcon,
   InboxIcon,
+  KeyboardIcon,
   UserPlusIcon,
 } from "lucide-react";
 import { requestNextUnreadThread } from "./sidebar/nextUnreadThreadBus";
+import { openShortcutsOverview, ShortcutsOverview } from "./ShortcutsOverview";
 import { openThreadFind } from "./chat/threadFindStore";
 import {
   useContext,
@@ -414,6 +416,7 @@ export function CommandPalette({ children }: { children: ReactNode }) {
           initialContext={state.restoredSearch}
         />
       </CommandDialog>
+      <ShortcutsOverview />
     </ComposerHandleContext>
   );
 }
@@ -1850,6 +1853,18 @@ function OpenCommandPaletteDialog(props: {
     shortcutCommand: "usage.open",
     run: async () => {
       await navigate({ to: "/usage" });
+    },
+  });
+
+  actionItems.push({
+    kind: "action",
+    value: "action:shortcuts-overview",
+    searchTerms: ["keyboard", "shortcuts", "keybindings", "hotkeys", "help"],
+    title: "Show keyboard shortcuts",
+    icon: <KeyboardIcon className={ITEM_ICON_CLASS} />,
+    shortcutCommand: "shortcutsOverview.toggle",
+    run: async () => {
+      openShortcutsOverview("command_palette");
     },
   });
 
