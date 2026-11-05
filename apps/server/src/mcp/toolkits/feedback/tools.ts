@@ -17,7 +17,7 @@ const dependencies = [
 
 const ReportIssueTool = Tool.make("report_styal_issue", {
   description:
-    "File a public GitHub issue about styal itself, never the user's project, when the user wants to report a styal bug or send styal feedback. Write what happened, the steps, and what you expected. Leave out paths, secrets, private code and names: it is public under the user's account. The user approves the exact text in a card; do not ask first. If `not_filed`, give the user `manualUrl`.",
+    "File a public GitHub issue about styal itself, never the user's project, when the user wants to report a styal bug or send styal feedback. Write what happened, the steps, and what you expected. Leave out paths, secrets, private code and names: it is public under the user's account. styal adds a footer with the version and author. The user approves the exact text in a card; do not ask first. If `not_filed`, give the user `manualUrl`.",
   parameters: FeedbackDraft,
   success: FeedbackAgentReportResult,
   failure: OrchestratorMcpFailure,
