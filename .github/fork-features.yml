@@ -6718,7 +6718,7 @@ features:
   - id: work-together
     title: Let two machines work together in one step, and stop
     status: maintained
-    prs: []
+    prs: [1301]
     invariants:
       - Work together on web, desktop and mobile settings uses only existing client APIs, from one action in packages/client-runtime, and adds no server protocol.
       - Each step records its result on the machines, so a failed or waiting step keeps what worked and a rerun only does what is left.
