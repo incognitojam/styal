@@ -509,7 +509,7 @@ export function readQueue(input: {
   };
 }
 
-function main() {
+async function main() {
   const { values, positionals } = NodeUtil.parseArgs({
     allowPositionals: true,
     options: {
@@ -518,6 +518,7 @@ function main() {
       "fork-ref": { type: "string", default: "origin/main" },
       "upstream-ref": { type: "string", default: "upstream/main" },
       through: { type: "string" },
+      check: { type: "boolean" },
       json: { type: "boolean" },
       "refresh-metadata": { type: "boolean" },
       help: { type: "boolean" },
@@ -526,7 +527,7 @@ function main() {
   const [command = "status", source] = positionals;
   if (values.help) {
     console.log(
-      "Usage: node scripts/upstream/queue.ts status|next|explain <PR-or-SHA> [--count 20] [--json] [--refresh-metadata]\n       node scripts/upstream/queue.ts early [PR ...] [--count 20] [--through upstream/main] [--json]\n       node scripts/upstream/queue.ts advance <SHA> | target <SHA>\nReads .github/upstream-intake.json and fetched origin/main, upstream/main. Status also reports .github/upstream-tracked-prs.json. No fetch, checkout, cherry-pick, or GitHub writes. advance/target edit only the local state file.",
+      "Usage: node scripts/upstream/queue.ts status|next|explain <PR-or-SHA> [--count 20] [--json] [--refresh-metadata]\n       node scripts/upstream/queue.ts early [PR ...] [--count 20] [--through upstream/main] [--check] [--json]\n       node scripts/upstream/queue.ts advance <SHA> | target <SHA>\nReads .github/upstream-intake.json and fetched origin/main, upstream/main. Status also reports .github/upstream-tracked-prs.json. No fetch, source checkout changes, cherry-pick, or GitHub writes. --check verifies a disposable checkout. advance/target edit only the local state file.",
     );
     return;
   }
@@ -541,6 +542,8 @@ function main() {
     throw new Error(`${command} does not accept a positional argument.`);
   if (values.through && command !== "early")
     throw new Error("--through is only available for early assessments.");
+  if (values.check && (command !== "early" || !source))
+    throw new Error("--check requires early with explicit PR numbers.");
   const requestedPRs =
     command === "early"
       ? positionals
@@ -808,7 +811,22 @@ function main() {
           }
           current = syntheticCommit(tree, current);
         }
+        if (values.check && forkConflict !== null) process.exitCode = 1;
+        const check =
+          values.check && forkConflict === null
+            ? await (
+                await import("./lib/early-check.ts")
+              ).checkEarlyTree({
+                root,
+                scratch: localScratch,
+                objectDirectory,
+                head: current,
+                base: fork,
+              })
+            : null;
+        if (check && check.status !== "passed") process.exitCode = 1;
         const summary = {
+          ...(values.check ? { check } : {}),
           fork,
           through,
           target: state.target,
@@ -837,6 +855,7 @@ function main() {
               ? `${plan.selected.length} selected commits apply cleanly to fork main; ${plan.replayedCommits} upstream integrations replay without conflicts.`
               : `Selected commits conflict on fork main at ${forkConflict.pr === null ? "direct commit" : `#${forkConflict.pr}`} ${shortSha(forkConflict.sha)}.`,
           );
+          if (check) console.log(JSON.stringify(check, null, 2));
           console.log("Review semantic dependencies and validate behavior before importing.");
         }
         return;
@@ -971,7 +990,7 @@ if (
   import.meta.url === NodeURL.pathToFileURL(NodePath.resolve(process.argv[1])).href
 ) {
   try {
-    main();
+    await main();
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 1;
