@@ -282,7 +282,7 @@ export const either = <P, A, E, R, A2, E2, R2>(
 };
 
 const fullAccessRequired =
-  "Changing projects or environment settings needs a live full-access/default calling thread or a full-access client.";
+  "This operation needs a live Full access thread in default interaction mode, or a Full access client.";
 
 /** Recheck after waits before writing; caller modes may have changed. */
 export const writesEnvironment = <P, A, E, R>(
@@ -296,22 +296,41 @@ export const writesEnvironment = <P, A, E, R>(
      * everything already here as it was.
      */
     readonly linkedCallers?: "allowed";
+    readonly auto?: "allowed";
+    readonly validate?: (params: P, caller: Caller) => Effect.Effect<void, OrchestratorMcpFailure>;
   },
 ) => {
+  const checkMode = (caller: Caller) =>
+    options?.auto === "allowed" &&
+    caller.limits.runtimeMode === "auto" &&
+    caller.limits.interactionMode === "default"
+      ? Effect.void
+      : assertFullAccess(
+          caller,
+          options?.auto === "allowed"
+            ? "This operation needs a live Auto or Full access thread in default interaction mode, or an equivalent client."
+            : fullAccessRequired,
+        );
   const check = orchestratingCaller.pipe(
     Effect.tap((caller) =>
       options?.linkedCallers === "allowed"
         ? Effect.void
         : assertNotLinked(caller, "change projects or environment settings"),
     ),
-    Effect.tap((caller) => assertFullAccess(caller, fullAccessRequired)),
+    Effect.tap((caller) => checkMode(caller)),
   );
   return declare(
-    (params: P) => check.pipe(Effect.flatMap(() => handle(params, check))),
+    (params: P) => {
+      const checked = check.pipe(
+        Effect.tap((caller) => options?.validate?.(params, caller) ?? Effect.void),
+      );
+      return checked.pipe(Effect.flatMap(() => handle(params, checked)));
+    },
     // Linked work never reaches a link at all; that is checked as the call goes.
-    () =>
+    (params) =>
       orchestratingCaller.pipe(
-        Effect.tap((caller) => assertFullAccess(caller, fullAccessRequired)),
+        Effect.tap((caller) => checkMode(caller)),
+        Effect.tap((caller) => options?.validate?.(params, caller) ?? Effect.void),
       ),
   );
 };

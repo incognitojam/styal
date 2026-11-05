@@ -249,6 +249,7 @@ export class ScheduledTaskService extends Context.Service<
     /** The dispatched thread, or null if dispatch failed; leaves the task's binding unchanged. */
     readonly runNow: (
       input: ScheduledTaskRunNowInput,
+      expectedModes?: Pick<ScheduledTask, "runtimeMode" | "interactionMode">,
     ) => Effect.Effect<
       ScheduledTaskRunNowResult & { readonly threadId: ThreadId | null },
       ScheduledTaskError
@@ -726,6 +727,7 @@ export const layer = Layer.effect(
         readonly prompt: string;
         readonly dispatched: Ref.Ref<boolean>;
       },
+      expectedModes?: Pick<ScheduledTask, "runtimeMode" | "interactionMode">,
     ) {
       const reserved = yield* Ref.modify(activeRuns, (active) => {
         if (active.has(task.id)) return [false, active] as const;
@@ -786,6 +788,16 @@ export const layer = Layer.effect(
                   : null;
           if (reason !== null) return yield* new WebhookDeliverySkipped({ reason });
         }
+
+        if (
+          expectedModes !== undefined &&
+          (active.runtimeMode !== expectedModes.runtimeMode ||
+            active.interactionMode !== expectedModes.interactionMode)
+        )
+          return yield* taskError(
+            "The scheduled task's modes changed; read it again before running it.",
+            { taskId: task.id },
+          );
 
         if (webhook === undefined) yield* markRunning(active.id, startedAtIso);
         else
@@ -1311,14 +1323,14 @@ export const layer = Layer.effect(
 
     const runNow: ScheduledTaskService["Service"]["runNow"] = Effect.fn(
       "ScheduledTaskService.runNow",
-    )(function* (input: ScheduledTaskRunNowInput) {
+    )(function* (input: ScheduledTaskRunNowInput, expectedModes) {
       const task = yield* loadTask(input.id);
       if (task.schedule.type === "webhook") {
         return yield* taskError("Webhook tasks run when their URL receives a request.", {
           taskId: input.id,
         });
       }
-      return yield* runTask(task, "manual").pipe(
+      return yield* runTask(task, "manual", undefined, expectedModes).pipe(
         Effect.mapError((cause) =>
           taskError("Could not run schedule task.", { taskId: input.id, cause }),
         ),

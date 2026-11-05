@@ -357,6 +357,36 @@ features:
         - https://github.com/pingdotgg/t3code/pull/15818
       retire_when: Upstream offers an equivalent Reply action above the full assistant text selection, with fallback placement near the top edge.
 
+  - id: auto-environment-tools
+    title: Allow bounded environment operations from Auto threads
+    status: maintained
+    prs: []
+    rationale: Auto agents need to prepare projects and request user-approved machine links without gaining machine-wide or destructive permissions.
+    invariants:
+      - Only Auto/default and Full access callers can use the four opted-in environment operations; lower modes remain refused.
+      - Auto project creation refuses scripts and model defaults, and scheduled runs cannot exceed caller modes.
+      - Linked callers retain link-origin fencing and mode ceilings, including forwarded calls.
+    implementation_paths:
+      - apps/server/src/mcp/McpToolAccess.ts
+      - apps/server/src/mcp/toolkits/orchestrator/handlers.ts
+      - apps/server/src/mcp/toolkits/project/handlers.ts
+      - apps/server/src/mcp/toolkits/thread/handlers.ts
+      - apps/server/src/scheduledTasks/ScheduledTaskService.ts
+    upstream_paths:
+      - apps/server/src/mcp/McpToolAccess.ts
+      - apps/server/src/mcp/toolkits/orchestrator/handlers.ts
+      - apps/server/src/mcp/toolkits/project/handlers.ts
+      - apps/server/src/mcp/toolkits/thread/handlers.ts
+      - apps/server/src/scheduledTasks/ScheduledTaskService.ts
+    tests:
+      - apps/server/src/mcp/McpToolAccess.test.ts
+      - apps/server/src/scheduledTasks/ScheduledTaskService.interval.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/28799
+      retire_when: Upstream permits the same bounded Auto operations while retaining mode ceilings and link-origin fencing.
+
   - id: backend-startup-latency
     title: Avoid unused provider work before backend readiness
     status: maintained

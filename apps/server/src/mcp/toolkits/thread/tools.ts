@@ -218,7 +218,7 @@ const ThreadSearchTool = Tool.make("t3_thread_search", {
 const ScheduledTaskRunTool = Tool.make("run_scheduled_task_now", {
   ...commandTool,
   description:
-    "Run one scheduled task now. Needs a full-access or default caller. Returns its thread, or null if not started. Success means started, not finished.",
+    "Run one scheduled task now. Needs Auto or Full access in default interaction mode; the task's stored runtime and interaction modes cannot exceed the caller's limits. Returns its thread, or null if not started. Success means started, not finished.",
   parameters: Schema.Struct({
     environmentId: OrchestratorMcpEnvironmentTarget,
     taskId: ScheduledTaskId,

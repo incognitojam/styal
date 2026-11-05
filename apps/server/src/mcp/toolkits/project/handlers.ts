@@ -75,7 +75,7 @@ const access = Effect.gen(function* () {
   yield* readCaller();
   return yield* Project.ProjectService;
 });
-export const layer = McpToolAccess.toLayer(ProjectToolkit, {
+export const declarations = {
   t3_thread_launch: McpToolAccess.startsThreads(
     (input) => input,
     (input, { runtimeMode, interactionMode, linkOrigin }) =>
@@ -330,7 +330,20 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
       }),
     // Linked work may bring the repository it works in; an existing
     // registered workspace is still refused.
-    { linkedCallers: "allowed" },
+    {
+      linkedCallers: "allowed",
+      auto: "allowed",
+      validate: (input, caller) =>
+        caller.limits.runtimeMode !== "full-access" &&
+        (input.scripts !== undefined || input.defaultModelSelection !== undefined)
+          ? Effect.fail(
+              new OrchestratorMcpFailure({
+                code: "capability_denied",
+                message: "Auto project creation cannot set scripts or a default model.",
+              }),
+            )
+          : Effect.void,
+    },
   ),
   t3_project_update: McpToolAccess.writesEnvironment((input) =>
     Effect.gen(function* () {
@@ -363,6 +376,8 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
         );
       }),
     // An existing destination is never adopted.
-    { linkedCallers: "allowed" },
+    { linkedCallers: "allowed", auto: "allowed" },
   ),
-});
+} satisfies McpToolAccess.Handlers<typeof ProjectToolkit.tools>;
+
+export const layer = McpToolAccess.toLayer(ProjectToolkit, declarations);
