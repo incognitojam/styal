@@ -163,6 +163,7 @@ export interface EnvironmentThreadShell {
   /** A provider approval request, or a watched workflow run's deployment review. */
   readonly hasPendingApprovals: boolean;
   readonly hasPendingUserInput: boolean;
+  readonly pendingUserInputAt?: string | null;
   readonly pendingSubagentRequest?: PendingSubagentRequest | null;
   /** Guest messages waiting for the owner to send or dismiss. */
   readonly pendingGuestMessageCount?: number;
@@ -325,6 +326,10 @@ export function presentThreadShell(
         thread.pendingRuntimeRequest.kind !== "auth_refresh") ||
       (thread.workflowRuns ?? []).some((run) => run.review !== undefined),
     hasPendingUserInput: thread.pendingRuntimeRequest?.kind === "user_input",
+    pendingUserInputAt:
+      thread.pendingRuntimeRequest?.kind === "user_input"
+        ? iso(thread.pendingRuntimeRequest.createdAt)
+        : null,
     pendingSubagentRequest,
     pendingGuestMessageCount: thread.pendingGuestMessageCount ?? 0,
     hasActionableProposedPlan: thread.hasActionableProposedPlan,
