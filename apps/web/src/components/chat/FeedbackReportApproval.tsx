@@ -8,7 +8,7 @@ import type {
 import { useRef, useState } from "react";
 
 import ChatMarkdown from "../ChatMarkdown";
-import { Button } from "../ui/button";
+import { InlineButton } from "../ui/button";
 import {
   Dialog,
   DialogDescription,
@@ -20,19 +20,7 @@ import {
 } from "../ui/dialog";
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
 
-export function FeedbackReportApprovalPanel(props: { readonly report: FeedbackApprovalReport }) {
-  return (
-    <span className="flex min-w-0 flex-1 flex-col items-start gap-1" role="group">
-      <span className="text-2xs font-medium text-muted-foreground">Post a public issue</span>
-      <span className="w-full min-w-0 truncate text-sm text-foreground">{props.report.title}</span>
-      <span className="w-full min-w-0 truncate text-2xs text-muted-foreground">
-        On {props.report.repository} as @{props.report.account}
-      </span>
-    </span>
-  );
-}
-
-/** The banner offers review and decline; posting is only offered beside the full report. */
+/** The row offers review and decline; posting is only offered beside the full report. */
 export function FeedbackReportApprovalActions(props: {
   readonly report: FeedbackApprovalReport;
   readonly requestId: RuntimeRequestId;
@@ -52,6 +40,7 @@ export function FeedbackReportApprovalActions(props: {
   return (
     <>
       <ComposerPendingApprovalActions
+        presentation="inline"
         requestId={props.requestId}
         isResponding={props.isResponding}
         canRespond={props.canRespond}
@@ -59,9 +48,7 @@ export function FeedbackReportApprovalActions(props: {
         options={declineOptions}
         onRespondToApproval={props.onRespondToApproval}
       />
-      <Button size="xs" onClick={() => setOpen(true)}>
-        Review report
-      </Button>
+      <InlineButton onClick={() => setOpen(true)}>Review report</InlineButton>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogPopup ref={popupRef} className="max-w-2xl" initialFocus={popupRef}>
           <DialogHeader>

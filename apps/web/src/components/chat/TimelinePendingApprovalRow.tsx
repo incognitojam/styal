@@ -1,3 +1,4 @@
+import { feedbackReportFromApproval } from "@t3tools/client-runtime/feedback-report";
 import { deriveToolRowPresentation } from "@t3tools/shared/toolRowPresentation";
 import {
   FULL_ACCESS_OVERRIDE_QUESTION,
@@ -9,6 +10,7 @@ import { type PendingApproval } from "../../session-logic";
 import { InlineButton } from "../ui/button";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
+import { FeedbackReportApprovalActions } from "./FeedbackReportApproval";
 import { ToolActivityIconView, type WorkEntryIconName } from "./TimelineToolActivityIcon";
 import { TimelineRowCtx } from "./timelineRowContext";
 import { WorkLogRow } from "./WorkLog";
@@ -48,32 +50,44 @@ export const TimelinePendingApprovalRow = memo(function TimelinePendingApprovalR
   };
   const Detail = approval.requestKind === "mcp-elicitation" ? "span" : "code";
   const canRespond = approval.responseCapability === "live";
+  const report = feedbackReportFromApproval(approval);
   return (
     <WorkLogRow
       role="group"
-      aria-label={presentation.label}
+      aria-label={report ? "Post a public issue" : presentation.label}
       data-v2-item-type="approval_request"
       wrapLabel
       icon={
         <ToolActivityIconView
           icon={undefined}
-          fallbackName={presentation.icon}
+          fallbackName={report ? "bug" : presentation.icon}
           className="block size-4 shrink-0 stroke-2 text-icon-muted"
           muted
         />
       }
       label={
-        <Detail
-          aria-label={presentation.detailLabel}
-          className="block max-h-40 min-w-0 overflow-auto whitespace-pre-wrap font-mono text-xs leading-5 text-foreground select-text! wrap-anywhere [scrollbar-width:thin] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
-          data-approval-detail="complete"
-          tabIndex={0}
-        >
-          {approval.detail || presentation.label}
-        </Detail>
+        report ? (
+          <span className="block min-w-0 text-sm text-foreground select-text wrap-anywhere">
+            {report.title}
+          </span>
+        ) : (
+          <Detail
+            aria-label={presentation.detailLabel}
+            className="block max-h-40 min-w-0 overflow-auto whitespace-pre-wrap font-mono text-xs leading-5 text-foreground select-text! wrap-anywhere [scrollbar-width:thin] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
+            data-approval-detail="complete"
+            tabIndex={0}
+          >
+            {approval.detail || presentation.label}
+          </Detail>
+        )
       }
     >
       <div className="ms-7.5 flex min-w-0 flex-col gap-1 pb-1 text-xs">
+        {report ? (
+          <span className="text-muted-foreground wrap-anywhere">
+            Public issue on {report.repository} as @{report.account}
+          </span>
+        ) : null}
         {approval.appName ? (
           <span className="text-muted-foreground wrap-anywhere">{approval.appName}</span>
         ) : null}
@@ -92,15 +106,27 @@ export const TimelinePendingApprovalRow = memo(function TimelinePendingApprovalR
                   <span aria-hidden className="text-muted-foreground">
                     ·
                   </span>
-                  <ComposerPendingApprovalActions
-                    presentation="inline"
-                    requestId={approval.requestId}
-                    disabled={!canOperateThread}
-                    isResponding={respondingRequestIds.includes(approval.requestId)}
-                    canRespond={canRespond}
-                    options={approval.options}
-                    onRespondToApproval={onRespondToApproval}
-                  />
+                  {report ? (
+                    <FeedbackReportApprovalActions
+                      report={report}
+                      requestId={approval.requestId}
+                      disabled={!canOperateThread}
+                      isResponding={respondingRequestIds.includes(approval.requestId)}
+                      canRespond={canRespond}
+                      options={approval.options}
+                      onRespondToApproval={onRespondToApproval}
+                    />
+                  ) : (
+                    <ComposerPendingApprovalActions
+                      presentation="inline"
+                      requestId={approval.requestId}
+                      disabled={!canOperateThread}
+                      isResponding={respondingRequestIds.includes(approval.requestId)}
+                      canRespond={canRespond}
+                      options={approval.options}
+                      onRespondToApproval={onRespondToApproval}
+                    />
+                  )}
                 </>
               ) : null}
             </>

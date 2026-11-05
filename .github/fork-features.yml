@@ -1664,6 +1664,7 @@ features:
       - apps/server/src/feedback/FeedbackService.ts
       - apps/server/src/mcp/toolkits/feedback/tools.ts
       - apps/web/src/components/chat/FeedbackReportApproval.tsx
+      - apps/web/src/components/chat/TimelinePendingApprovalRow.tsx
       - apps/web/src/components/settings/FeedbackDialog.tsx
       - packages/client-runtime/src/feedbackReport.ts
       - packages/source-control-github/src/server/gitHubIssueFiling.ts
