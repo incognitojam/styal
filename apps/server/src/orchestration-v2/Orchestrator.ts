@@ -743,7 +743,11 @@ function mayStartSubagentFollowup(
     return false;
   if (command.notification !== undefined) return command.notification.source.kind !== "monitor";
   if (command.delegatedCompletion !== undefined) return true;
-  return command.createdBy === "user" || command.creationSource === "mcp";
+  return (
+    command.createdBy === "user" ||
+    command.creationSource === "mcp" ||
+    command.usageLimitContinuationOfRunId !== undefined
+  );
 }
 
 /** Waiting runs only drain post-terminal output; their agent turn is over and still needs a wake. */
@@ -8693,6 +8697,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       (command.notification === undefined &&
         command.delegatedCompletion === undefined &&
         command.createdBy !== "user" &&
+        command.usageLimitContinuationOfRunId === undefined &&
         command.senderThreadId !== parentThreadId)
     )
       return;
