@@ -380,6 +380,8 @@ features:
       - apps/server/src/scheduledTasks/ScheduledTaskService.ts
     tests:
       - apps/server/src/mcp/McpToolAccess.test.ts
+      - apps/server/src/peer/PeerForwarding.test.ts
+      - apps/server/src/peer/PeerLinkRequests.test.ts
       - apps/server/src/scheduledTasks/ScheduledTaskService.interval.test.ts
     upstream:
       status: tracking

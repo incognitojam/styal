@@ -832,15 +832,22 @@ it.live("a code the box refuses fails the request with its reason, and links not
   ),
 );
 
-it.live("an agent below full access may not ask, and no card is shown", () =>
-  withBoth((a, b) =>
-    Effect.gen(function* () {
-      yield* seedThread(a, "auto");
-      const refused = yield* a.call({ url: b.url });
-      expect(errorOf(refused)).toMatchObject({ code: "capability_denied" });
-      expect(yield* cardOf(a)).toBeUndefined();
-    }),
-  ),
+it.live.each(["approval-required", "auto-accept-edits", "auto", "full-access"] as const)(
+  "link request from %s shows a card only from Auto or Full access",
+  (runtimeMode) =>
+    withBoth((a, b) =>
+      Effect.gen(function* () {
+        yield* seedThread(a, runtimeMode);
+        const result = yield* a.call({ url: b.url });
+        if (runtimeMode === "auto" || runtimeMode === "full-access") {
+          expect(result.isError).toBe(false);
+          expect(yield* cardOf(a)).toMatchObject({ status: "waiting", linkStatus: "pending" });
+        } else {
+          expect(errorOf(result)).toMatchObject({ code: "capability_denied" });
+          expect(yield* cardOf(a)).toBeUndefined();
+        }
+      }),
+    ),
 );
 
 it.live("work another environment's link started may not ask, and no card is shown", () =>
