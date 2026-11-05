@@ -91,7 +91,8 @@ It is a JSON array of rules:
 styal creates the file with its defaults and adds new defaults on later startups.
 New defaults do not replace commands you customized. If a new default overlaps one
 of your shortcuts, [rule order](#precedence) decides which runs.
-Invalid rules are ignored; if the file cannot be parsed, styal uses defaults.
+Invalid rules are ignored, and **Settings → Keybindings** lists each one with its
+line and reason. If the file cannot be parsed, styal uses defaults.
 
 ## Rule shape
 

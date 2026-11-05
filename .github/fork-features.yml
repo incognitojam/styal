@@ -2888,6 +2888,29 @@ features:
         - https://github.com/pingdotgg/t3code/pull/9339
       retire_when: Upstream routes local chat and terminal links through an environment-aware integrated browser with an external fallback.
 
+  - id: keybindings-invalid-entry-recovery
+    title: Show invalid keybindings entries and keep syncing defaults around them
+    status: maintained
+    prs: []
+    rationale: One stale or mistyped entry, such as a command removed by a later build, must not stop later default shortcuts from reaching the file, and the user needs to see which entry was ignored without watching for a toast or reading server logs.
+    invariants:
+      - Settings → Keybindings lists every issue the primary environment reports, including ones already present at startup; each invalid entry's message names its file line and reason, and the list clears when the file is fixed.
+      - The startup sync applies late defaults and backfills when individual entries are invalid, and writes every entry it read back to the file unchanged, in order.
+      - A default is not backfilled for a command that an invalid entry names, and invalid entries count towards the entry limit.
+      - A file that is not a JSON array is never rewritten by the startup sync.
+    implementation_paths:
+      - apps/server/src/keybindings.ts
+      - apps/web/src/components/settings/KeybindingsSettings.tsx
+    upstream_paths:
+      - apps/server/src/keybindings.ts
+      - apps/web/src/components/settings/KeybindingsSettings.tsx
+    tests:
+      - apps/server/src/keybindings.test.ts
+    upstream:
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/24494
+      retire_when: Upstream syncs defaults around invalid keybindings entries and lists them in Settings.
   - id: markdown-table-layout
     title: Fit Markdown tables to the available width
     status: review-needed
