@@ -49,6 +49,8 @@ const PREVIEW_IDENTITY = DESKTOP_INSTALL_IDENTITIES.preview;
 const STAGING_DIRECTORY_PREFIX = ".styal-preview-install";
 // Anonymous GitHub requests share 60 an hour per address, and a 304 still counts.
 const RELEASE_LOOKUP_REUSE_MS = 60_000;
+// The HTTP client has no body timeout, and an install holds the action while it looks up its build.
+const GITHUB_LOOKUP_TIMEOUT = Duration.seconds(30);
 const QUARANTINE_ATTRIBUTE = "com.apple.quarantine";
 const CLOSED_PULL_REQUEST_CHECK_INTERVAL = Duration.minutes(15);
 // Longer than DesktopLifecycle's own shutdown budget, so a clean quit always finishes.
@@ -163,7 +165,7 @@ export class DesktopPreviewApp extends Context.Service<
     readonly removeIfPullRequestClosed: Effect.Effect<void>;
     /** Whatever a crash left in this variant's staging directory, including an attached DMG. */
     readonly cleanLeftovers: Effect.Effect<void>;
-    /** False in a preview app, which leaves the installed app to the main styal app. */
+    /** Only the main styal app removes previews on its own, so two variants never race to do it. */
     readonly managesInstalledApp: boolean;
   }
 >()("@t3tools/desktop/previewApp/DesktopPreviewApp") {}
@@ -208,6 +210,7 @@ export const make = Effect.fn("DesktopPreviewApp.make")(function* (options?: {
   const installFiberRef = yield* Ref.make<Fiber.Fiber<unknown, DesktopPreviewAppError> | null>(
     null,
   );
+  const keepBackupRef = yield* Ref.make(false);
   const lastReleaseRef = yield* Ref.make<{
     readonly assets: ReadonlyArray<ReleaseAsset>;
     readonly fetchedAt: number;
@@ -304,7 +307,7 @@ export const make = Effect.fn("DesktopPreviewApp.make")(function* (options?: {
       return yield* new DesktopPreviewAppLookupError({ status: response.status, url });
     }
     return yield* response.json;
-  });
+  }, Effect.timeout(GITHUB_LOOKUP_TIMEOUT));
 
   const fetchReleaseAssets = Effect.gen(function* () {
     const body = yield* getGitHubJson(`${API_ROOT}/releases/tags/${RELEASE_TAG}`);
@@ -412,13 +415,10 @@ export const make = Effect.fn("DesktopPreviewApp.make")(function* (options?: {
   });
 
   // Returns whether the directory is gone. An empty install location means an install stopped
-  // between its renames, so the backup goes back first and is never deleted while it is the only copy.
+  // between its renames, so the backup goes back first, whatever else is stuck. It is kept while
+  // a failed rollback leaves it as the only good copy.
   const cleanStaging = Effect.gen(function* () {
     if (!(yield* exists(stagingDirectory))) return true;
-    if ((yield* exists(mountPoint)) && !(yield* ensureDetached)) {
-      yield* logWarning("preview build is still mounted; leaving staging in place");
-      return false;
-    }
     if ((yield* exists(previousAppPath)) && !(yield* exists(installedAppPath))) {
       const restored = yield* fs.rename(previousAppPath, installedAppPath).pipe(
         Effect.as(true),
@@ -429,6 +429,11 @@ export const make = Effect.fn("DesktopPreviewApp.make")(function* (options?: {
         ),
       );
       if (!restored) return false;
+    }
+    if (yield* Ref.get(keepBackupRef)) return false;
+    if ((yield* exists(mountPoint)) && !(yield* ensureDetached)) {
+      yield* logWarning("preview build is still mounted; leaving staging in place");
+      return false;
     }
     return yield* fs.remove(stagingDirectory, { recursive: true, force: true }).pipe(
       Effect.as(true),
@@ -580,31 +585,45 @@ export const make = Effect.fn("DesktopPreviewApp.make")(function* (options?: {
         Effect.tapError(() =>
           fs
             .rename(installedAppPath, path.join(stagingDirectory, "rejected.app"))
-            .pipe(Effect.ignore),
+            .pipe(
+              Effect.catch((cause) =>
+                Ref.set(keepBackupRef, true).pipe(
+                  Effect.andThen(
+                    logWarning("could not move the rejected preview out", { error: String(cause) }),
+                  ),
+                ),
+              ),
+            ),
         ),
       );
     }
   }, Effect.uninterruptible);
 
-  const confirm = (input: {
-    readonly action: string;
-    readonly message: string;
-    readonly detail: string;
-  }) =>
-    electronDialog
-      .showMessageBox({
-        type: "warning",
-        buttons: [input.action, "Cancel"],
-        // Default to Cancel so an Enter typed while the box appears cannot accept it.
-        defaultId: 1,
-        cancelId: 1,
-        message: input.message,
-        detail: input.detail,
-      })
-      .pipe(
-        Effect.map(({ response }) => response === 0),
-        Effect.orElseSucceed(() => false),
+  const confirm = Effect.fn("DesktopPreviewApp.confirm")(
+    function* (input: {
+      readonly action: string;
+      readonly message: string;
+      readonly detail: string;
+    }) {
+      // On macOS a box without an owner runs modally and blocks the main process until answered.
+      const owner = yield* electronWindow.focusedMainOrFirst;
+      if (Option.isNone(owner)) return false;
+      const { response } = yield* electronDialog.showMessageBox(
+        {
+          type: "warning",
+          buttons: [input.action, "Cancel"],
+          // Default to Cancel so an Enter typed while the box appears cannot accept it.
+          defaultId: 1,
+          cancelId: 1,
+          message: input.message,
+          detail: input.detail,
+        },
+        owner.value,
       );
+      return response === 0;
+    },
+    Effect.orElseSucceed(() => false),
+  );
 
   const runAction = Effect.fn("DesktopPreviewApp.runAction")(function* (
     action: "install" | "open" | "remove" | "reset",
@@ -907,7 +926,7 @@ export const make = Effect.fn("DesktopPreviewApp.make")(function* (options?: {
     resetData,
     removeIfPullRequestClosed,
     cleanLeftovers: supported ? cleanStaging.pipe(Effect.asVoid) : Effect.void,
-    managesInstalledApp: supported && !runningAsPreview,
+    managesInstalledApp: supported && environment.installVariant === "production",
   });
 });
 

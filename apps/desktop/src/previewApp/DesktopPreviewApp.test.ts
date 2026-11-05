@@ -9,6 +9,7 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import type * as Scope from "effect/Scope";
 import * as Sink from "effect/Sink";
@@ -100,6 +101,11 @@ interface Scenario {
   /** Another install replaces the app while the closed pull request lookup is in flight. */
   readonly installedDuringLookup?: string;
   readonly releaseStatus?: number;
+  /** Completed once GitHub starts answering the lookup; the answer then never finishes. */
+  readonly releaseStalled?: Deferred.Deferred<void>;
+  /** The rejected build cannot be moved out of the install location. */
+  readonly rejectedRenameFails?: boolean;
+  readonly noWindow?: boolean;
 }
 
 const writeBundle = (appPath: string, bundle: { identifier: string; version: string }) =>
@@ -134,6 +140,8 @@ const setup = (scenario: Scenario) =>
     let mounted: string | null = null;
     const killChecks: Array<string> = [];
     const dialogs: Array<Electron.MessageBoxOptions> = [];
+    const dialogOwners: Array<unknown> = [];
+    const mainWindow = { id: 1 };
 
     const spawner = ChildProcessSpawner.make((command) =>
       Effect.gen(function* () {
@@ -193,6 +201,12 @@ const setup = (scenario: Scenario) =>
           }
         } else if (name === "/usr/bin/open") {
           exitCode = scenario.openExitCode ?? 0;
+          if (scenario.rejectedRenameFails === true) {
+            // A non-empty destination makes the rename fail on the real filesystem.
+            yield* fs.makeDirectory(path.join(staging, "rejected.app", "occupied"), {
+              recursive: true,
+            });
+          }
         }
         return ChildProcessSpawner.makeHandle({
           pid: ChildProcessSpawner.ProcessId(1),
@@ -219,6 +233,10 @@ const setup = (scenario: Scenario) =>
         const respond = (body: BodyInit, status = 200) =>
           HttpClientResponse.fromWeb(request, new Response(body, { status }));
         if (request.url.endsWith("/releases/tags/desktop-preview")) {
+          if (scenario.releaseStalled !== undefined) {
+            Deferred.doneUnsafe(scenario.releaseStalled, Effect.void);
+            return respond(new ReadableStream({ start: () => undefined }));
+          }
           if (scenario.releaseStatus !== undefined) return respond("", scenario.releaseStatus);
           return respond(JSON.stringify({ assets: scenario.assets ?? [] }));
         }
@@ -266,9 +284,10 @@ const setup = (scenario: Scenario) =>
           Layer.succeed(
             ElectronDialog.ElectronDialog,
             ElectronDialog.ElectronDialog.of({
-              showMessageBox: (options: Electron.MessageBoxOptions) =>
+              showMessageBox: (options: Electron.MessageBoxOptions, owner?: unknown) =>
                 Effect.sync(() => {
                   dialogs.push(options);
+                  dialogOwners.push(owner);
                   return { response: scenario.confirmed === false ? 1 : 0, checkboxChecked: false };
                 }),
             } as unknown as ElectronDialog.ElectronDialog["Service"]),
@@ -278,6 +297,9 @@ const setup = (scenario: Scenario) =>
             ElectronWindow.ElectronWindow.of({
               sendAll: (_channel: string, state: unknown) =>
                 Effect.sync(() => void states.push(state)),
+              focusedMainOrFirst: Effect.succeed(
+                scenario.noWindow === true ? Option.none() : Option.some(mainWindow),
+              ),
             } as unknown as ElectronWindow.ElectronWindow["Service"]),
           ),
           Layer.succeed(
@@ -309,6 +331,8 @@ const setup = (scenario: Scenario) =>
       states,
       urls,
       dialogs,
+      dialogOwners,
+      mainWindow,
       killChecks,
       staging,
       isMounted,
@@ -471,6 +495,7 @@ describe("DesktopPreviewApp", () => {
         assert.strictEqual(result.outcome, "cancelled");
         assert.lengthOf(app.dialogs, 1);
         assert.strictEqual(app.dialogs[0]?.defaultId, 1);
+        assert.deepStrictEqual(app.dialogOwners, [app.mainWindow]);
         assert.include(app.dialogs[0]?.detail, "pull request #99, build 1");
         assert.isFalse(app.urls.some((url) => url.includes("/releases/download/")));
         assert.lengthOf(app.ran("/usr/bin/hdiutil"), 0);
@@ -491,6 +516,70 @@ describe("DesktopPreviewApp", () => {
         assert.lengthOf(app.ran("/usr/bin/open"), 1);
         assert.strictEqual(yield* installedVersion(app.slot), "1.2.3-pr.12.6");
         assert.isTrue(yield* app.stagingIsGone);
+      }),
+    ),
+  );
+
+  it.effect("declines without a window to attach the confirmation to", () =>
+    scoped(
+      Effect.gen(function* () {
+        const app = yield* setup({ assets: [buildAsset], noWindow: true });
+        const result = yield* app.service.install(12);
+        assert.strictEqual(result.outcome, "cancelled");
+        assert.lengthOf(app.dialogs, 0);
+        assert.lengthOf(app.ran("/usr/bin/hdiutil"), 0);
+      }),
+    ),
+  );
+
+  it.effect("keeps the backup when the rejected build cannot be moved out", () =>
+    scoped(
+      Effect.gen(function* () {
+        const app = yield* setup({
+          assets: [buildAsset],
+          openExitCode: 1,
+          rejectedRenameFails: true,
+        });
+        yield* app.installPrevious("1.2.3-pr.12.6");
+
+        const result = yield* app.service.install(12);
+
+        assert.strictEqual(result.outcome, "failed");
+        const backup = app.path.join(app.staging, "previous.app");
+        assert.strictEqual(yield* installedVersion(backup), "1.2.3-pr.12.6");
+      }),
+    ),
+  );
+
+  it.effect("restores the backup even when the volume stays attached", () =>
+    scoped(
+      Effect.gen(function* () {
+        const app = yield* setup({ assets: [buildAsset], openExitCode: 1, detachFails: true });
+        yield* app.installPrevious("1.2.3-pr.12.6");
+
+        const result = yield* app.service.install(12);
+
+        assert.strictEqual(result.outcome, "failed");
+        assert.isTrue(app.isMounted());
+        assert.strictEqual(yield* installedVersion(app.slot), "1.2.3-pr.12.6");
+      }),
+    ),
+  );
+
+  it.effect("gives up on a lookup that never finishes, so later actions can run", () =>
+    scoped(
+      Effect.gen(function* () {
+        const releaseStalled = yield* Deferred.make<void>();
+        const app = yield* setup({ releaseStalled });
+
+        const install = yield* app.service.install(12).pipe(Effect.forkScoped);
+        yield* Deferred.await(releaseStalled);
+        yield* TestClock.adjust("31 seconds");
+        const result = yield* Fiber.join(install);
+
+        assert.strictEqual(result.outcome, "failed");
+        assert.strictEqual(result.state.activity.status, "idle");
+        assert.lengthOf(app.dialogs, 0);
       }),
     ),
   );
