@@ -267,10 +267,8 @@ import {
   resolveComposerDispatchMode,
   type ComposerDispatchMode,
 } from "@t3tools/client-runtime/state/composer-dispatch";
-import {
-  deriveLatestContextWindowSnapshot,
-  formatContextWindowTokens,
-} from "../../lib/contextWindow";
+import { formatContextWindowTokens } from "../../lib/contextWindow";
+import { deriveLatestContextWindowSnapshot } from "@t3tools/client-runtime/state/context-window";
 import {
   resolveProviderSkillsForCwd,
   resolveProviderSlashCommandsForCwd,

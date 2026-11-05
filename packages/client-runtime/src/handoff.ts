@@ -39,7 +39,7 @@ export function shouldShowHandoff(
 export type HandoffEndpoints = ReturnType<typeof resolveHandoffEndpoints>;
 
 export function resolvePendingHandoff(
-  projection: ThreadStructure | null | undefined,
+  projection: Pick<ThreadStructure, "runs" | "visibleTurnItems"> | null | undefined,
   selection: ModelSelection | null | undefined,
   providers: ReadonlyArray<ServerProvider>,
 ): HandoffEndpoints | null {
