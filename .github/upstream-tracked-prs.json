@@ -207,6 +207,14 @@
         "base": "cefb544af3c98224874419198c0359b652ca3c94",
         "head": "e587c135894ea9c2a9885afdcfc8c0c9ad42cb54"
       }
+    },
+    {
+      "pr": 25155,
+      "reason": "Imported provisionally as one snapshot: a Working thread with an unanswered async question shows a question marker in the web sidebar, status pills, command palette and mobile rows (fixes #24914). The fork adapts only the mobile row, whose status now sits in the title row and whose label is built from a list. Mobile rendering is not verified upstream either. The fork's next unread order also reads the hasPendingQuestion flag (ledger next-unread-thread). When it merges, compare the frozen base-to-head diff with the final upstream change, keep the flag name or update the next unread use, verify the marker on a device, then clear the snapshot marker with that intake. If it closes without merging, review whether to remove the change or retain it as maintained fork behavior and record that decision before clearing the marker.",
+      "snapshot": {
+        "base": "b6c326d12f0a455a154e89f98b64f337d2d4a4f0",
+        "head": "3a0a20061ab64109daee62e413771544c48c06e3"
+      }
     }
   ]
 }
