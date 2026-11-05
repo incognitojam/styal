@@ -37,3 +37,14 @@ export const FeedbackAgentReportResult = Schema.Union([
   Schema.Struct({ status: Schema.Literal("not_answered") }),
 ]);
 export type FeedbackAgentReportResult = typeof FeedbackAgentReportResult.Type;
+
+/** The approval card's `toolInput`: exactly what gets posted, and where and as whom. */
+export const FeedbackApprovalReport = Schema.Struct({
+  title: Schema.String,
+  body: Schema.String,
+  repository: Schema.String,
+  account: Schema.String,
+});
+export type FeedbackApprovalReport = typeof FeedbackApprovalReport.Type;
+
+export const FEEDBACK_REPORT_TOOL_NAME = "report_styal_issue";

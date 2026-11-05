@@ -3,9 +3,11 @@ import * as NodeCrypto from "node:crypto";
 
 import {
   CommandId,
+  FEEDBACK_REPORT_TOOL_NAME,
   FEEDBACK_REPOSITORY,
   RuntimeRequestId,
   type FeedbackAgentReportResult,
+  type FeedbackApprovalReport,
   type FeedbackDraft,
   type FeedbackSubmitResult,
   type NodeId,
@@ -99,7 +101,7 @@ const make = Effect.gen(function* () {
     readonly runId: RunId;
     readonly rootNodeId: NodeId;
     readonly prompt: string;
-    readonly toolInput: unknown;
+    readonly toolInput: FeedbackApprovalReport;
   }) {
     const requestId = RuntimeRequestId.make(`runtime-request:feedback:${NodeCrypto.randomUUID()}`);
     const record = (approvalStatus: "pending" | "cancelled") =>
@@ -111,7 +113,7 @@ const make = Effect.gen(function* () {
         nodeId: input.rootNodeId,
         requestId,
         approvalStatus,
-        toolName: "report_styal_issue",
+        toolName: FEEDBACK_REPORT_TOOL_NAME,
         toolInput: input.toolInput,
         prompt: input.prompt,
         options: [
@@ -177,7 +179,12 @@ const make = Effect.gen(function* () {
       runId: run.id,
       rootNodeId: run.rootNodeId,
       prompt: `Post this as a public issue on ${FEEDBACK_REPOSITORY} as @${login}?\n\n${draft.title}\n\n${body}`,
-      toolInput: draft,
+      toolInput: {
+        title: draft.title,
+        body,
+        repository: FEEDBACK_REPOSITORY,
+        account: login,
+      },
     }).pipe(Effect.orElseSucceed(() => "failed" as const));
     switch (decision) {
       case "accept":

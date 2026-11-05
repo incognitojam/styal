@@ -18,7 +18,12 @@ function harness(input: {
   readonly activeRun?: boolean;
 }) {
   const filed: Array<Record<string, string>> = [];
-  const approvals: Array<{ approvalStatus: string; prompt: string; requestId: string }> = [];
+  const approvals: Array<{
+    approvalStatus: string;
+    prompt: string;
+    requestId: string;
+    toolInput: unknown;
+  }> = [];
   const threads = Layer.mock(ThreadManagementService.ThreadManagementService)({
     getThreadRecords: () =>
       Effect.succeed({
@@ -40,7 +45,7 @@ function harness(input: {
           decision: input.decision ?? "accept",
         })),
       }) as never,
-    dispatch: ((command: { approvalStatus: string; prompt: string; requestId: string }) =>
+    dispatch: ((command: (typeof approvals)[number]) =>
       Effect.sync(() => {
         approvals.push(command);
         return {} as never;
@@ -85,6 +90,12 @@ describe("reportFromAgent", () => {
       expect(approvals[0]?.prompt).toContain("as @octocat");
       expect(approvals[0]?.prompt).toContain(filed[0]?.body);
       expect(approvals[0]?.prompt).toContain(draft.title);
+      expect(approvals[0]?.toolInput).toEqual({
+        title: draft.title,
+        body: filed[0]?.body,
+        repository: "incognitojam/styal",
+        account: "octocat",
+      });
     }).pipe(Effect.provide(layer));
   });
 

@@ -1,4 +1,4 @@
-import { useAtomValue } from "@effect/atom-react";
+import { useAtom, useAtomValue } from "@effect/atom-react";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import {
   FEEDBACK_REPOSITORY,
@@ -31,6 +31,12 @@ const feedbackDialogEnvironmentAtom = Atom.make<EnvironmentId | null>(null).pipe
   Atom.withLabel("feedback:dialog-environment"),
 );
 
+// Survives closing the dialog, so a report outlasts a trip to the terminal to fix a sign-in.
+const feedbackDraftAtom = Atom.make({ title: "", body: "" }).pipe(
+  Atom.keepAlive,
+  Atom.withLabel("feedback:draft"),
+);
+
 export function openFeedbackDialog(environmentId: EnvironmentId): void {
   appAtomRegistry.set(feedbackDialogEnvironmentAtom, environmentId);
 }
@@ -55,8 +61,7 @@ function FeedbackDialog(props: {
     label: "submit feedback",
     reportFailure: false,
   });
-  const [title, setTitle] = useState("");
-  const [body, setBody] = useState("");
+  const [draft, setDraft] = useAtom(feedbackDraftAtom);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<FeedbackSubmitResult | null>(null);
@@ -66,11 +71,12 @@ function FeedbackDialog(props: {
     setError(null);
     const outcome = await submit({
       environmentId: props.environmentId,
-      input: { title: title.trim(), body: body.trim() },
+      input: { title: draft.title.trim(), body: draft.body.trim() },
     });
     setPending(false);
     if (outcome._tag === "Success") {
       setResult(outcome.value);
+      if (outcome.value.status === "filed") setDraft({ title: "", body: "" });
       return;
     }
     const failure = squashAtomCommandFailure(outcome);
@@ -78,6 +84,8 @@ function FeedbackDialog(props: {
   };
 
   const openExternal = (url: string) => void ensureLocalApi().shell.openExternal(url);
+  const filed = result?.status === "filed" ? result : null;
+  const notFiled = result?.status === "not_filed" ? result : null;
 
   return (
     <Dialog open onOpenChange={(open) => (open || pending ? undefined : props.onClose())}>
@@ -85,14 +93,12 @@ function FeedbackDialog(props: {
         <DialogHeader>
           <DialogTitle>Send feedback</DialogTitle>
           <DialogDescription>
-            {result === null
-              ? `Report a bug or suggest a change. This posts a public issue on ${FEEDBACK_REPOSITORY} under the GitHub account signed in on this server, with your styal version and operating system added. Leave out anything private.`
-              : result.status === "filed"
-                ? "Your issue is posted."
-                : `Your issue wasn't posted: ${result.reason} You can post it yourself on GitHub.`}
+            {filed
+              ? "Your issue is posted."
+              : `Report a bug or suggest a change. This posts a public issue on ${FEEDBACK_REPOSITORY} under the GitHub account signed in on this server, with your styal version and operating system added. Leave out anything private.`}
           </DialogDescription>
         </DialogHeader>
-        {result === null ? (
+        {filed ? null : (
           <DialogPanel>
             <div className="flex flex-col gap-3">
               <Input
@@ -100,19 +106,25 @@ function FeedbackDialog(props: {
                 aria-label="Title"
                 placeholder="Title"
                 maxLength={200}
-                value={title}
+                value={draft.title}
                 disabled={pending}
-                onChange={(event) => setTitle(event.currentTarget.value)}
+                onChange={(event) => setDraft({ ...draft, title: event.currentTarget.value })}
               />
               <Textarea
                 aria-label="Description"
                 placeholder="What happened, and what did you expect?"
                 rows={6}
                 maxLength={60_000}
-                value={body}
+                value={draft.body}
                 disabled={pending}
-                onChange={(event) => setBody(event.currentTarget.value)}
+                onChange={(event) => setDraft({ ...draft, body: event.currentTarget.value })}
               />
+              {notFiled ? (
+                <p role="alert" className="text-xs text-destructive">
+                  Your issue wasn't posted, and your text is still here. {notFiled.reason} You can
+                  post again, or post it yourself on GitHub.
+                </p>
+              ) : null}
               {error === null ? null : (
                 <p role="alert" className="text-xs text-destructive">
                   {error}
@@ -120,31 +132,27 @@ function FeedbackDialog(props: {
               )}
             </div>
           </DialogPanel>
-        ) : null}
+        )}
         <DialogFooter>
-          {result === null ? (
+          <Button variant="ghost" disabled={pending} onClick={props.onClose}>
+            Close
+          </Button>
+          {filed ? (
+            <Button onClick={() => openExternal(filed.issueUrl)}>View issue</Button>
+          ) : (
             <>
-              <Button variant="ghost" disabled={pending} onClick={props.onClose}>
-                Cancel
-              </Button>
+              {notFiled ? (
+                <Button variant="outline" onClick={() => openExternal(notFiled.manualUrl)}>
+                  Open on GitHub
+                </Button>
+              ) : null}
               <Button
-                disabled={pending || title.trim().length === 0 || body.trim().length === 0}
+                disabled={
+                  pending || draft.title.trim().length === 0 || draft.body.trim().length === 0
+                }
                 onClick={() => void send()}
               >
                 {pending ? "Posting…" : "Post publicly"}
-              </Button>
-            </>
-          ) : (
-            <>
-              <Button variant="ghost" onClick={props.onClose}>
-                Close
-              </Button>
-              <Button
-                onClick={() =>
-                  openExternal(result.status === "filed" ? result.issueUrl : result.manualUrl)
-                }
-              >
-                {result.status === "filed" ? "View issue" : "Open on GitHub"}
               </Button>
             </>
           )}
