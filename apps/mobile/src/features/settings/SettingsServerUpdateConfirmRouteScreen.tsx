@@ -20,7 +20,6 @@ import { ScreenContent } from "../../components/ui/ScreenContent";
 import { ProjectFavicon } from "../../components/ProjectFavicon";
 import { cn } from "../../lib/cn";
 import { environmentThreadShells } from "../../state/threads";
-import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { SheetActionButton } from "../threads/git/gitSheetComponents";
 import {
   confirmServerUpdate,
@@ -152,11 +151,6 @@ export function SettingsServerUpdateConfirmRouteScreen({
       className="bg-sheet ios:flex-1"
       style={Platform.OS === "android" ? { maxHeight: windowHeight * 0.92 } : undefined}
     >
-      {Platform.OS === "android" ? (
-        <NativeStackScreenOptions
-          options={{ sheetCornerRadius: 28, sheetAllowedDetents: "fitToContents" }}
-        />
-      ) : null}
       <View className="min-h-4 pt-2 android:pt-4" />
       <ScreenContent fitToContents>
         <ScrollView

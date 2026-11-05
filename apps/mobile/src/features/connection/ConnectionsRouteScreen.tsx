@@ -1,8 +1,7 @@
-import { Toolbar } from "../../components/ui/Toolbar";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 
 import { useNavigation } from "@react-navigation/native";
-import { Platform, View } from "react-native";
+import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppBar } from "../../components/ui/AppBar";
@@ -15,29 +14,18 @@ export function ConnectionsRouteScreen() {
 
   return (
     <View collapsable={false} className="flex-1 bg-sheet">
-      {Platform.OS === "android" ? (
-        <AppBar
-          embedded
-          title="Machines"
-          onBack={() => navigation.goBack()}
-          actions={[
-            {
-              accessibilityLabel: "Add machine",
-              icon: "plus",
-              onPress: () => navigation.navigate("ConnectionsNew"),
-            },
-          ]}
-        />
-      ) : (
-        <Toolbar placement="right">
-          <Toolbar.Button
-            accessibilityLabel="Add machine"
-            icon="plus"
-            onPress={() => navigation.navigate("ConnectionsNew")}
-            separateBackground
-          />
-        </Toolbar>
-      )}
+      <AppBar
+        title="Machines"
+        onClose={() => navigation.goBack()}
+        closeAccessibilityLabel="Close machines"
+        actions={[
+          {
+            accessibilityLabel: "Add machine",
+            icon: "plus",
+            onPress: () => navigation.navigate("ConnectionsNew"),
+          },
+        ]}
+      />
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
         showsVerticalScrollIndicator={false}
