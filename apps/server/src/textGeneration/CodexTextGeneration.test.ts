@@ -541,6 +541,7 @@ it.effect.each([
           generateBranchName: () => Effect.die("unused"),
           generateReviewGuide: () => Effect.die("unused"),
           checkMentionedTimes: () => Effect.die("unused"),
+          generateTranscriptionPostProcessing: () => Effect.die("unused"),
           generateThreadTitle: (input) =>
             Effect.sync(() => {
               calls.push(input.modelSelection);

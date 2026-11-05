@@ -293,6 +293,8 @@ function createTextGeneration(
       }),
     generateReviewGuide: () => Effect.succeed({ stops: [] }),
     checkMentionedTimes: () => Effect.succeed({ spans: [] }),
+    generateTranscriptionPostProcessing: () =>
+      Effect.succeed({ transcription: "processed transcript" }),
     ...overrides,
   };
 
@@ -343,6 +345,8 @@ function createTextGeneration(
       ),
     generateReviewGuide: (input) => implementation.generateReviewGuide(input),
     checkMentionedTimes: (input) => implementation.checkMentionedTimes(input),
+    generateTranscriptionPostProcessing: (input) =>
+      implementation.generateTranscriptionPostProcessing(input),
   };
 }
 
