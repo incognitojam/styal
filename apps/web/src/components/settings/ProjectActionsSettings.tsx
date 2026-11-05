@@ -41,7 +41,7 @@ import {
   MenuSeparator,
   MenuTrigger,
 } from "../ui/menu";
-import { ConfigFileIssuesAlert } from "./ConfigFileIssuesAlert";
+import { ConfigFileIssuesRow } from "./ConfigFileIssuesRow";
 import { EnvironmentRow } from "./EnvironmentRow";
 import { SettingsGroup } from "./SettingsGroup";
 import { ProjectActionsList } from "./ProjectActionsList";
@@ -309,20 +309,17 @@ function CheckoutActions({
         }
       />
       {projectConfig.status === "invalid" ? (
-        <div className="p-3">
-          <ConfigFileIssuesAlert
-            title={`${projectConfig.source} could not be read, so all of it is ignored`}
-            messages={["Its JSON is malformed or its root is not an object."]}
-          />
-        </div>
+        <ConfigFileIssuesRow
+          title={`${projectConfig.source} is invalid`}
+          description={`A ${projectConfig.source} exists in this checkout but its JSON is malformed or its root is not an object, so the file cannot be read.`}
+        />
       ) : null}
       {projectConfig.status === "partial" ? (
-        <div className="p-3">
-          <ConfigFileIssuesAlert
-            title={`Some ${projectConfig.source} values were ignored`}
-            messages={describeProjectFileIssues(projectConfig.contents ?? "", projectConfig.issues)}
-          />
-        </div>
+        <ConfigFileIssuesRow
+          title={`Some ${projectConfig.source} values were ignored`}
+          description="Invalid or unrecognized fields, and invalid actions or actions that repeat an id, were skipped. Valid project settings and actions remain available."
+          messages={describeProjectFileIssues(projectConfig.contents ?? "", projectConfig.issues)}
+        />
       ) : null}
       {projectConfig.legacyContents !== null ? (
         <ProjectFileMigrationRow

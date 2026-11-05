@@ -2919,13 +2919,13 @@ features:
     prs: [1275]
     rationale: One stale or mistyped entry, such as a command removed by a later build, must not stop later default shortcuts from reaching the file, and the user needs to see which entry was ignored without watching for a toast or reading server logs.
     invariants:
-      - Settings → Keybindings lists every issue the primary environment reports, including ones already present at startup; each invalid entry's message names its file line and reason, and the list clears when the file is fixed.
+      - Settings → Keybindings shows a warning row that expands to list every issue the primary environment reports, including ones already present at startup; each invalid entry's message names its file line and reason, and the row clears when the file is fixed.
       - The startup sync applies late defaults and backfills when individual entries are invalid, and writes every entry it read back to the file unchanged, in order.
       - A default is not backfilled for a command that an invalid entry names, and invalid entries count towards the entry limit.
       - A file that is not a JSON array is never rewritten by the startup sync.
     implementation_paths:
       - apps/server/src/keybindings.ts
-      - apps/web/src/components/settings/ConfigFileIssuesAlert.tsx
+      - apps/web/src/components/settings/ConfigFileIssuesRow.tsx
       - apps/web/src/components/settings/KeybindingsSettings.tsx
     upstream_paths:
       - apps/server/src/keybindings.ts
@@ -4039,12 +4039,12 @@ features:
     invariants:
       - Malformed JSON and non-object project files remain invalid; invalid individual fields are omitted while valid sibling fields and scripts remain available to clients and the server.
       - Invalid optional action values fall back to defaults, while actions missing required fields are dropped.
-      - Unknown keys and invalid values produce a partial-file warning without discarding valid configuration; the warning in Settings → Projects → Actions lists each ignored value and dropped entry of a styal.json or t3.json, with its file line and reason.
+      - Unknown keys and invalid values produce a partial-file warning without discarding valid configuration; the warning row in Settings → Projects → Actions expands to list each ignored value and dropped entry of a styal.json or t3.json, with its file line and reason.
       - Recovery and the warning's list come from one walk of the file, so a value is dropped exactly when it is listed.
       - Recovery and unknown-key detection derive from the project-file contract, so every declared top-level and action field, including ones added later, survives an invalid sibling and a fully valid file is reported as valid.
     implementation_paths:
       - apps/server/src/project/ProjectConfigLoader.ts
-      - apps/web/src/components/settings/ConfigFileIssuesAlert.tsx
+      - apps/web/src/components/settings/ConfigFileIssuesRow.tsx
       - apps/web/src/components/settings/ProjectActionsSettings.tsx
       - apps/web/src/components/settings/ProjectSettingsPanel.tsx
       - apps/web/src/hooks/useProjectConfig.ts
