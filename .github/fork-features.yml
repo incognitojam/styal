@@ -2891,7 +2891,8 @@ features:
   - id: keyboard-shortcuts-overview
     title: Keyboard shortcuts overview
     status: maintained
-    prs: []
+    prs:
+      - 1276
     invariants:
       - "`shortcutsOverview.toggle` (`mod+shift+?` and `mod+shift+/` by default, outside terminals) and the command palette's Show keyboard shortcuts open one dialog on web and desktop; the key closes it again."
       - The list is built from the primary environment's resolved keybindings, with the groups and labels of Settings → Keybindings, and links there to change them.
