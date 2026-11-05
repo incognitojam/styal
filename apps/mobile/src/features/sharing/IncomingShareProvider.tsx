@@ -26,7 +26,7 @@ import { persistComposerAttachmentFile } from "../../lib/composerImages";
 import { subscribeAppActive } from "../../lib/appState";
 import { coalescedRun } from "../../lib/coalescedRun";
 import { rootNavigationRef } from "../../lib/rootNavigation";
-import { selectWorkspaceDetail } from "../workspace/workspace-detail-selection";
+import { selectWorkspaceDetail } from "../layout/workspace/workspace-detail-selection";
 import { makeIncomingShareImports } from "../threads/incomingShareImport";
 import { liveNewTaskFlowKeys } from "../threads/new-task-flow-state";
 import { appAtomRegistry } from "../../state/atom-registry";

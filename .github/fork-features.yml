@@ -3542,13 +3542,13 @@ features:
       - On Android, a pull request opened from a page (a link in a thread or pull request, or a thread's pull request controls) opens over that page, and Back or the app bar's back button returns to it.
       - Selecting a thread or pull request from a list, including a thread row's pull request badge, still replaces the workspace page, and Back from it returns to the list for its tab.
     implementation_paths:
+      - apps/mobile/src/features/layout/workspace/useAndroidWorkspaceNavigation.ts
       - apps/mobile/src/features/threads/use-open-thread-pull-requests.ts
-      - apps/mobile/src/features/workspace/useAndroidWorkspaceNavigation.ts
       - apps/mobile/src/lib/android-workspace-navigation.ts
       - apps/mobile/src/native/useOpenPullRequest.ts
     upstream_paths:
+      - apps/mobile/src/features/layout/workspace/useAndroidWorkspaceNavigation.ts
       - apps/mobile/src/features/threads/use-open-thread-pull-requests.ts
-      - apps/mobile/src/features/workspace/useAndroidWorkspaceNavigation.ts
       - apps/mobile/src/lib/android-workspace-navigation.ts
       - apps/mobile/src/native/useOpenPullRequest.ts
     tests:

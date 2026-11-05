@@ -14,19 +14,15 @@ import type {
 import { threadSearchMatchKey } from "@t3tools/client-runtime/state/thread-search";
 import { AnimatedLegendList } from "@legendapp/list/reanimated";
 import { THREAD_SIDEBAR_ROW_LAYOUT } from "./threadListAnimations";
-import type { MenuAction } from "@react-native-menu/menu";
 import { useAtomValue } from "@effect/atom-react";
 import { useMemo, useRef, useState } from "react";
 import { Platform, StyleSheet, View } from "react-native";
 import { GestureDetector, useNativeGesture } from "react-native-gesture-handler";
 import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
-import { FLOATING_TABS } from "../workspace/floating-workspace-tabs";
+import { FLOATING_TABS } from "../layout/workspace/floating-workspace-tabs";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import type { SearchBarCommands } from "react-native-screens";
 
 import { AppText as Text } from "../../components/ui/AppText";
-import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
-import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { scopedProjectKey, scopedThreadKey } from "../../lib/scopedEntities";
 import { useProjects, useNavigationThreadShells } from "../../state/entities";
 import { useThreadSearch } from "../../state/queries";
@@ -41,13 +37,12 @@ import { useDraftThreadKeys } from "../../state/use-composer-drafts";
 import { useQueuedThreadKeys } from "../../state/use-thread-outbox";
 import { useWorkspaceState } from "../../state/workspace";
 import { useSavedRemoteConnections } from "../../state/use-remote-environment-registry";
-import { useHardwareKeyboardCommand } from "../keyboard/hardwareKeyboardCommands";
 import { useThreadListV2 } from "./useThreadListV2";
 import { useThreadJumpShortcuts } from "../keyboard/threadKeyboardShortcuts";
 import { requestThreadMessageJump } from "./threadMessageJump";
 import { useThreadListSearchMatches } from "./useThreadListSearchMatches";
 import { useHomeListOptions } from "../home/home-list-options";
-import { buildHomeListFilterMenu } from "../home/home-list-filter-menu";
+import { buildHomeListFilterMenuItems } from "../home/home-list-filter-menu";
 import {
   buildHomeProjectScopes,
   buildHomeThreadProjectGrouping,
@@ -56,13 +51,10 @@ import {
 import { SwipeableScrollGateProvider, useSwipeableScrollGate } from "../home/thread-swipe-actions";
 import { usePendingTaskListActions } from "../home/usePendingTaskListActions";
 import { useThreadListActions } from "../home/useThreadListActions";
-import { getConnectionAwareBrandHeaderOptions } from "../home/WorkspaceConnectionTitle";
-import { ThreadListToolbar } from "../home/ThreadListToolbar";
 import { useFabScroll } from "../home/FabScrollContext";
-import { createSidebarHeaderItems } from "./sidebar-native-header-items";
-import { getCompactBrandHeaderOptions } from "../../components/CompactBrandTitle";
-import { StandaloneStack } from "../layout/nested-stacks";
-import { pageRoute } from "../layout/route-options";
+import { WorkspaceListHeader } from "../layout/workspace/WorkspaceListHeader";
+import { WORKSPACE_LIST_SCROLL_INSETS } from "../layout/workspace/workspace-list-insets";
+import { WorkspaceSidebarColumn } from "../layout/workspace/WorkspaceSidebarColumn";
 import {
   ThreadListV2PendingRow,
   ThreadListV2ProjectHeaderRow,
@@ -82,7 +74,7 @@ import {
   THREAD_LIST_V2_SETTLED_PAGE_COUNT,
   type ThreadListV2ListItem,
 } from "./threadListV2";
-import { useSelectWorkspaceDetail } from "../workspace/useSelectWorkspaceDetail";
+import { useSelectWorkspaceDetail } from "../layout/workspace/useSelectWorkspaceDetail";
 import { NativeScrollView } from "../../native/NativeScrollViewMarker";
 
 type SidebarListItem =
@@ -113,41 +105,17 @@ interface ThreadNavigationSidebarProps {
   readonly searchQuery: string;
 }
 
-// The iOS sidebar column hosts its own stack so it gets a native bar with the brand title.
-const SIDEBAR_COLUMN_OPTIONS = {
-  ...pageRoute(),
-  ...getCompactBrandHeaderOptions({ fontSize: 18, fontWeight: "800" }),
-};
-
 export function ThreadNavigationSidebar(props: ThreadNavigationSidebarProps) {
   return (
     <ThreadPrDemandProvider visible={props.visible}>
-      {Platform.OS !== "ios" ? (
-        <ThreadNavigationSidebarPane {...props} nativeChrome={false} />
-      ) : (
-        <NativeSidebarContainer {...props} />
-      )}
+      <WorkspaceSidebarColumn width={props.width}>
+        <ThreadNavigationSidebarPane {...props} />
+      </WorkspaceSidebarColumn>
     </ThreadPrDemandProvider>
   );
 }
 
-function NativeSidebarContainer(props: ThreadNavigationSidebarProps) {
-  return (
-    <View
-      testID="thread-navigation-sidebar"
-      className="flex-1 border-border bg-drawer"
-      style={{ borderRightWidth: StyleSheet.hairlineWidth, width: props.width }}
-    >
-      <StandaloneStack surface="sidebar" options={SIDEBAR_COLUMN_OPTIONS}>
-        <ThreadNavigationSidebarPane {...props} nativeChrome />
-      </StandaloneStack>
-    </View>
-  );
-}
-
-function ThreadNavigationSidebarPane(
-  props: ThreadNavigationSidebarProps & { readonly nativeChrome: boolean },
-) {
+function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
   const floatingTabsEnabled = useAndroidFloatingTabs();
   const { themeVariables: materialTheme } = useAppearancePreferences();
   const drawerColor = materialTheme["--color-drawer"];
@@ -158,7 +126,6 @@ function ThreadNavigationSidebarPane(
   const threads = useNavigationThreadShells();
   const { environments: workspaceEnvironments, state: catalogState } = useWorkspaceState();
   const { savedConnectionsById } = useSavedRemoteConnections();
-  const searchBarRef = useRef<SearchBarCommands>(null);
   const openSwipeableRef = useRef<SwipeableMethods | null>(null);
   const sidebarScrollGesture = useNativeGesture();
   const {
@@ -344,78 +311,6 @@ function ThreadNavigationSidebarPane(
           },
         ]
       : threadListV2Items;
-  const listMenuActions = [
-    {
-      id: "environment",
-      title: "Environment",
-      subactions: [
-        {
-          id: "environment:all",
-          title: "All environments",
-          subtitle: "Show threads from every environment",
-          state: options.selectedEnvironmentId === null ? "on" : "off",
-        },
-        ...environments.map((environment) => ({
-          id: `environment:${environment.environmentId}`,
-          title: environment.label,
-          state:
-            options.selectedEnvironmentId === environment.environmentId
-              ? ("on" as const)
-              : ("off" as const),
-        })),
-      ],
-    },
-    ...(projectFilterOptions.length === 0
-      ? []
-      : ([
-          {
-            id: "project",
-            title: "Project",
-            subactions: [
-              {
-                id: "project:all",
-                title: "All projects",
-                subtitle: "Show threads from every project",
-                state: selectedProjectKey === null ? "on" : "off",
-              },
-              ...projectFilterOptions.map((project) => ({
-                id: `project:${project.key}`,
-                title: project.label,
-                state: selectedProjectKey === project.key ? ("on" as const) : ("off" as const),
-              })),
-            ],
-          },
-        ] satisfies MenuAction[])),
-  ] satisfies MenuAction[];
-  const handleListMenuAction = ({
-    nativeEvent,
-  }: {
-    readonly nativeEvent: { readonly event: string };
-  }) => {
-    const event = nativeEvent.event;
-    if (event === "environment:all") {
-      setSelectedEnvironmentId(null);
-      return;
-    }
-    if (event.startsWith("environment:")) {
-      const environment = environments.find(
-        (candidate) => String(candidate.environmentId) === event.slice("environment:".length),
-      );
-      if (environment) setSelectedEnvironmentId(environment.environmentId);
-      return;
-    }
-    if (event === "project:all") {
-      setSelectedProjectKey(null);
-      return;
-    }
-    if (event.startsWith("project:")) {
-      const projectKey = event.slice("project:".length);
-      if (projectFilterOptions.some((project) => project.key === projectKey)) {
-        setSelectedProjectKey(projectKey);
-      }
-      return;
-    }
-  };
 
   const handleSwipeableWillOpen = (methods: SwipeableMethods) => {
     if (openSwipeableRef.current !== methods) {
@@ -479,18 +374,6 @@ function ThreadNavigationSidebarPane(
     }
     return false;
   };
-  const focusSearch = () => {
-    if (!props.nativeChrome) return false;
-    const focus = () => searchBarRef.current?.focus();
-    if (!props.visible) {
-      props.onRequestVisibility();
-      setTimeout(focus, 240);
-    } else {
-      focus();
-    }
-    return true;
-  };
-  useHardwareKeyboardCommand("focusSearch", focusSearch);
   const renderListItem = ({ item }: { readonly item: SidebarListItem }) => {
     switch (item.type) {
       case "v2-pending": {
@@ -662,23 +545,35 @@ function ThreadNavigationSidebarPane(
         );
     }
   };
-  const filterCustomized = options.selectedEnvironmentId !== null || selectedProjectKey !== null;
-  const filterIcon = filterCustomized
-    ? "line.3.horizontal.decrease.circle.fill"
-    : "line.3.horizontal.decrease.circle";
-  const filterMenu = buildHomeListFilterMenu({
-    environments,
-    projects: projectFilterOptions,
-    selectedEnvironmentId: options.selectedEnvironmentId,
-    selectedProjectKey,
-    onEnvironmentChange: setSelectedEnvironmentId,
-    onProjectChange: setSelectedProjectKey,
-  });
-  const nativeHeaderItems = createSidebarHeaderItems({
-    filterIcon,
-    filterMenu,
-    onOpenSettings: props.onOpenSettings,
-  });
+  const header = (
+    <WorkspaceListHeader
+      accessibilityLabel="styal, Threads"
+      onOpenEnvironments={props.onOpenEnvironmentSettings}
+      onOpenSettings={props.onOpenSettings}
+      search={{
+        value: props.searchQuery,
+        onChangeText: props.onSearchQueryChange,
+        placeholder: "Search",
+        accessibilityLabel: "Search threads",
+      }}
+      filter={{
+        customized: options.selectedEnvironmentId !== null || selectedProjectKey !== null,
+        items: buildHomeListFilterMenuItems({
+          environments,
+          projects: projectFilterOptions,
+          selectedEnvironmentId: options.selectedEnvironmentId,
+          selectedProjectKey,
+          onEnvironmentChange: setSelectedEnvironmentId,
+          onProjectChange: setSelectedProjectKey,
+        }),
+      }}
+      sidebar={{
+        width: props.width,
+        visible: props.visible,
+        onRequestVisibility: props.onRequestVisibility,
+      }}
+    />
+  );
   const listEmpty = (
     <Text
       className={
@@ -701,36 +596,10 @@ function ThreadNavigationSidebarPane(
     </Text>
   );
 
-  if (props.nativeChrome) {
+  if (Platform.OS === "ios") {
     return (
       <>
-        <NativeStackScreenOptions
-          optionsVersion={[nativeHeaderItems, props.width]}
-          options={{
-            ...getConnectionAwareBrandHeaderOptions({
-              headerWidth: props.width,
-              trailingItemCount: nativeHeaderItems.length,
-              onOpenEnvironments: props.onOpenEnvironmentSettings,
-              fallbackTitleStyle: { fontSize: 18, fontWeight: "800" },
-            }),
-            headerSearchBarOptions: {
-              ref: searchBarRef,
-              autoCapitalize: "none",
-              hideNavigationBar: false,
-              hideWhenScrolling: false,
-              obscureBackground: false,
-              placeholder: "Search",
-              placement: "stacked",
-              onCancelButtonPress: () => {
-                props.onSearchQueryChange("");
-              },
-              onChangeText: (event) => {
-                props.onSearchQueryChange(event.nativeEvent.text);
-              },
-            },
-            unstable_headerRightItems: () => nativeHeaderItems,
-          }}
-        />
+        {header}
         <View className="flex-1">
           <SwipeableScrollGateProvider enabled={swipeEnabled}>
             <GestureDetector gesture={sidebarScrollGesture}>
@@ -745,10 +614,7 @@ function ThreadNavigationSidebarPane(
                 itemsAreEqual={sidebarItemsAreEqual}
                 keyExtractor={(item) => item.key}
                 renderItem={renderListItem}
-                automaticallyAdjustsScrollIndicatorInsets={NATIVE_LIQUID_GLASS_SUPPORTED}
-                contentInsetAdjustmentBehavior={
-                  NATIVE_LIQUID_GLASS_SUPPORTED ? "automatic" : "never"
-                }
+                {...WORKSPACE_LIST_SCROLL_INSETS}
                 contentContainerStyle={[
                   styles.threadListContent,
                   {
@@ -773,7 +639,7 @@ function ThreadNavigationSidebarPane(
     );
   }
 
-  // Android: the bar is the floating ThreadListToolbar below the list.
+  // Android: the bar floats below the list.
   return (
     <View testID="thread-navigation-sidebar" className="flex-1 bg-header">
       <View
@@ -822,15 +688,7 @@ function ThreadNavigationSidebarPane(
           </SwipeableScrollGateProvider>
         )}
       </View>
-      <ThreadListToolbar
-        searchQuery={props.searchQuery}
-        onSearchQueryChange={props.onSearchQueryChange}
-        filterActions={listMenuActions}
-        filterCustomized={filterCustomized}
-        onFilterSelect={(event) => handleListMenuAction({ nativeEvent: { event } })}
-        onOpenEnvironments={props.onOpenEnvironmentSettings}
-        onRequestVisibility={props.onRequestVisibility}
-      />
+      {header}
       <ThreadUndoNotice visible={props.visible} />
     </View>
   );

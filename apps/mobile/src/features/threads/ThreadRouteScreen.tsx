@@ -122,7 +122,7 @@ import { resumeThread } from "./resume-thread";
 import {
   useAndroidWorkspaceBack,
   useWorkspaceBackNavigation,
-} from "../workspace/useAndroidWorkspaceNavigation";
+} from "../layout/workspace/useAndroidWorkspaceNavigation";
 import { openSettings } from "../settings/settings-navigation";
 import {
   InspectorContentScope,
@@ -132,7 +132,7 @@ import {
 } from "./thread-inspector-preview";
 import { useStartSideChat } from "./useStartSideChat";
 import type { ThreadInspectorMode, ThreadInspectorTarget } from "./thread-inspector-navigation";
-import { useSelectWorkspaceDetail } from "../workspace/useSelectWorkspaceDetail";
+import { useSelectWorkspaceDetail } from "../layout/workspace/useSelectWorkspaceDetail";
 
 const EMPTY_PROVIDERS: ReadonlyArray<ServerProvider> = [];
 

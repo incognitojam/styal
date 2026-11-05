@@ -41,7 +41,7 @@ import {
   getProjectScopeSelectionTarget,
   resolveNewTaskScratchOption,
 } from "./new-task-project-selection";
-import { useSelectWorkspaceDetail } from "../workspace/useSelectWorkspaceDetail";
+import { useSelectWorkspaceDetail } from "../layout/workspace/useSelectWorkspaceDetail";
 
 type NewTaskRouteParams = {
   readonly incomingShareId?: string | string[];
