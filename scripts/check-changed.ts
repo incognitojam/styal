@@ -340,13 +340,16 @@ const checkChanged = Effect.fn("checkChanged")(function* (input: {
     }
     return hash.digest("hex");
   });
-  const ledgerPaths = yield* Effect.tryPromise(async () => {
-    const { loadForkFeatureLedger } = await import("./fork-feature-ledger.ts");
-    return loadForkFeatureLedger(root).features.flatMap((feature) => [
-      ...feature.upstream_paths,
-      ...feature.implementation_paths,
-      ...feature.tests,
-    ]);
+  const ledgerPaths = yield* Effect.tryPromise({
+    try: async () => {
+      const { loadForkFeatureLedger } = await import("./fork-feature-ledger.ts");
+      return loadForkFeatureLedger(root).features.flatMap((feature) => [
+        ...feature.upstream_paths,
+        ...feature.implementation_paths,
+        ...feature.tests,
+      ]);
+    },
+    catch: (cause) => new ForkLedgerReadError({ cause }),
   }).pipe(Effect.orElseSucceed(() => []));
   const checks = repositoryChecks(files, ledgerPaths);
   // Migration results depend on upstream history, which can change without a local edit.
@@ -715,3 +718,7 @@ if (import.meta.main) {
     NodeRuntime.runMain,
   );
 }
+
+class ForkLedgerReadError extends Schema.TaggedError<ForkLedgerReadError>()("ForkLedgerReadError", {
+  cause: Schema.Defect(),
+}) {}

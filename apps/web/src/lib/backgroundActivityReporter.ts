@@ -1,3 +1,4 @@
+import * as Schema from "effect/Schema";
 import { EnvironmentRegistry } from "@t3tools/client-runtime/connection";
 import {
   EnvironmentRpcSubscriptionObserver,
@@ -91,7 +92,10 @@ function wasRecentlyInteracted(lastInteractionAtMs: number, observedAtMs: number
 export const readSystemActive = Effect.suspend(() => {
   const getSystemActive = window.desktopBridge?.getSystemActive;
   if (!getSystemActive) return Effect.succeed(Option.none<boolean>());
-  return Effect.tryPromise(() => getSystemActive()).pipe(
+  return Effect.tryPromise({
+    try: () => getSystemActive(),
+    catch: (cause) => new SystemActivityReadError({ cause }),
+  }).pipe(
     Effect.timeoutOption(SYSTEM_ACTIVE_TIMEOUT),
     Effect.orElseSucceed(() => Option.none<boolean>()),
   );
@@ -277,3 +281,8 @@ export const layer = Layer.effectDiscard(
     );
   }),
 );
+
+class SystemActivityReadError extends Schema.TaggedError<SystemActivityReadError>()(
+  "SystemActivityReadError",
+  { cause: Schema.Defect() },
+) {}

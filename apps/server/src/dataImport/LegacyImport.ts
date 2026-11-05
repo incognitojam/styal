@@ -858,7 +858,11 @@ const readDestinationState = Effect.fn("LegacyImport.readDestinationState")(func
   if (!NodeFS.existsSync(currentDatabasePath)) return emptyLegacyImportDestinationState();
   return yield* Effect.acquireUseRelease(
     openReadonlyDatabase(currentDatabasePath),
-    (database) => Effect.try(() => inspectLegacyImportDestinationState(database)),
+    (database) =>
+      Effect.try({
+        try: () => inspectLegacyImportDestinationState(database),
+        catch: () => sourceFailure("read-failed", "The destination environment could not be read."),
+      }),
     (database) => Effect.sync(() => database.close()).pipe(Effect.ignore),
   ).pipe(
     Effect.mapError(() =>

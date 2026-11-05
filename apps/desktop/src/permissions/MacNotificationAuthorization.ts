@@ -1,5 +1,11 @@
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as Schema from "effect/Schema";
 import * as Effect from "effect/Effect";
+
+class MacNotificationAuthorizationLoadError extends Schema.TaggedError<MacNotificationAuthorizationLoadError>()(
+  "MacNotificationAuthorizationLoadError",
+  { cause: Schema.Defect() },
+) {}
 
 const UN_AUTHORIZATION_STATUS_DENIED = 1;
 
@@ -12,7 +18,10 @@ export const macNotificationsDenied = Effect.fn("desktop.macNotificationsDenied"
   function* () {
     if ((yield* HostProcess.Platform) !== "darwin") return false;
     // Loaded on first use: the module and its native addon ship on macOS alone.
-    const objc = yield* Effect.tryPromise(() => import("objc-js"));
+    const objc = yield* Effect.tryPromise({
+      try: () => import("objc-js"),
+      catch: (cause) => new MacNotificationAuthorizationLoadError({ cause }),
+    });
     const status = yield* Effect.callback<unknown>((resume) => {
       try {
         const userNotifications = new objc.NobjcLibrary(

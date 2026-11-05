@@ -1,3 +1,4 @@
+import * as Schema from "effect/Schema";
 import { useAtomValue } from "@effect/atom-react";
 import type {
   DesktopBridge,
@@ -36,9 +37,10 @@ const desktopPreviewAppStateAtom = Atom.make(
         ),
         (unsubscribe) => Effect.sync(unsubscribe),
       );
-      const initial = yield* Effect.tryPromise(() => bridge.getState()).pipe(
-        Effect.orElseSucceed(() => null),
-      );
+      const initial = yield* Effect.tryPromise({
+        try: () => bridge.getState(),
+        catch: (cause) => new DesktopPreviewAppStateReadError({ cause }),
+      }).pipe(Effect.orElseSucceed(() => null));
       if (!receivedUpdate && initial !== null) Queue.offerUnsafe(queue, initial);
       return yield* Effect.never;
     }),
@@ -90,3 +92,8 @@ export function useDesktopPreviewAppBuild(
   }, [pullRequestNumber, refreshKey]);
   return found !== null && found.pullRequestNumber === pullRequestNumber ? found.lookup : NO_LOOKUP;
 }
+
+class DesktopPreviewAppStateReadError extends Schema.TaggedError<DesktopPreviewAppStateReadError>()(
+  "DesktopPreviewAppStateReadError",
+  { cause: Schema.Defect() },
+) {}

@@ -215,7 +215,7 @@ it.layer(layer)("V2 source history import", (it) => {
               yield* encodeJson(record),
             );
         }
-        const snapshot = yield* Effect.try(() =>
+        const snapshot = yield* Effect.sync(() =>
           readV2SourceProjection(
             {
               exec: (sql) => db.exec(sql),

@@ -1,5 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
+import * as Schema from "effect/Schema";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
@@ -73,9 +74,10 @@ describe("copyFileBytesPromise", () => {
       yield* fileSystem.writeFileString(kept, "kept");
 
       yield* Effect.promise(() => copyFileBytesPromise(source, target, { flags: "wx" }));
-      const exclusive = yield* Effect.tryPromise(() =>
-        copyFileBytesPromise(source, kept, { flags: "wx" }),
-      ).pipe(Effect.exit);
+      const exclusive = yield* Effect.tryPromise({
+        try: () => copyFileBytesPromise(source, kept, { flags: "wx" }),
+        catch: (cause) => new CopyFileError({ cause }),
+      }).pipe(Effect.exit);
 
       assert.isTrue(Buffer.from(contents).equals(yield* fileSystem.readFile(target)));
       assert.isTrue(Exit.isFailure(exclusive));
@@ -83,3 +85,7 @@ describe("copyFileBytesPromise", () => {
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 });
+
+class CopyFileError extends Schema.TaggedError<CopyFileError>()("CopyFileError", {
+  cause: Schema.Defect(),
+}) {}
