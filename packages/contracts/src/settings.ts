@@ -1910,6 +1910,10 @@ export function requiredScopesForServerSettingsPatch(
       changesSettings = true;
     }
   }
+  // Removing a secret provider also clears the settings fields that read from it.
+  if (Object.values(patch.secretProviders ?? {}).some((entry) => entry === null)) {
+    changesSettings = true;
+  }
   return [
     ...(changesSettings || (!changesProviders && !changesMachineAccess)
       ? [AuthSettingsWriteScope]
