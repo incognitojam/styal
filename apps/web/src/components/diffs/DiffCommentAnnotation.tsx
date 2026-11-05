@@ -1,8 +1,14 @@
+import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import { MessageCircle, Pencil, Trash2 } from "lucide-react";
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import { Button } from "~/components/ui/button";
 import { Textarea } from "~/components/ui/textarea";
+import {
+  SpeechTextField,
+  TextFieldSpeechControls,
+  type TextFieldSpeech,
+} from "~/speech/useTextFieldSpeech";
 import { textDirection } from "~/textDirection";
 
 import { isCommentSubmitShortcut } from "./commentSubmitShortcut";
@@ -24,6 +30,10 @@ interface DiffCommentEditState {
 }
 
 interface DiffCommentAnnotationProps {
+  /** With an environment, the draft can be dictated; its project supplies vocabulary. */
+  environmentId?: EnvironmentId | undefined;
+  projectId?: ProjectId | null | undefined;
+  ownerKey?: string;
   kind: "draft" | "comment";
   rangeLabel: string;
   text: string;
@@ -40,6 +50,9 @@ interface DiffCommentAnnotationProps {
 }
 
 export function DiffCommentAnnotation({
+  environmentId,
+  projectId,
+  ownerKey,
   kind,
   rangeLabel,
   text,
@@ -62,13 +75,9 @@ export function DiffCommentAnnotation({
       ? localDraftText
       : text;
   const trimmedText = displayedText.trim();
-  const submit = () => {
-    if (isEditingComment) {
-      edit.onSave(trimmedText);
-    } else {
-      onComment(trimmedText);
-    }
-  };
+  const changeText = isEditingComment ? edit.onChange : (onTextChange ?? setLocalDraftText);
+  const cancel = isEditingComment ? edit.onCancel : onCancel;
+  const primaryAction = isEditingComment ? edit.onSave : onComment;
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- focuses the draft textarea on the next animation frame after mount
@@ -123,8 +132,20 @@ export function DiffCommentAnnotation({
     );
   }
 
+  const submit = (
+    speech: TextFieldSpeech | undefined,
+    action: (text: string) => void,
+    allowEmpty = false,
+  ) => {
+    const finish = (value: string) => {
+      if (!pending && (allowEmpty || value.trim())) action(value.trim());
+    };
+    if (speech) speech.submitAfterDictation(finish);
+    else finish(displayedText);
+  };
+
   // Pierre hides native carets and selection; textarea comments need their own visible feedback.
-  return (
+  const renderDraft = (speech?: TextFieldSpeech) => (
     <div
       data-diff-comment-annotation
       className="px-3 py-2 font-sans text-foreground caret-foreground selection:bg-primary selection:text-primary-foreground"
@@ -133,17 +154,14 @@ export function DiffCommentAnnotation({
     >
       <Textarea
         ref={textareaRef}
+        readOnly={speech?.freezesEditor}
         autoFocus={focusOnMount}
         size="sm"
         value={displayedText}
         dir={textDirection(displayedText)}
         placeholder={placeholder}
         aria-label={`${isEditingComment ? "Edit comment" : "Comment"} on lines ${rangeLabel}`}
-        onChange={(event) =>
-          (isEditingComment ? edit.onChange : (onTextChange ?? setLocalDraftText))(
-            event.target.value,
-          )
-        }
+        onChange={(event) => changeText(event.target.value)}
         onFocus={(event) => {
           const end = event.currentTarget.value.length;
           event.currentTarget.setSelectionRange(end, end);
@@ -151,50 +169,62 @@ export function DiffCommentAnnotation({
         onKeyDown={(event) => {
           if (event.key === "Escape") {
             event.preventDefault();
-            if (isEditingComment) {
-              edit.onCancel();
-            } else {
-              onCancel();
-            }
+            if (speech && speech.state.phase !== "idle") speech.cancel();
+            else cancel();
           }
-          if (isCommentSubmitShortcut(event, trimmedText, pending)) {
+          if (isCommentSubmitShortcut(event, trimmedText, pending, speech?.blocksSubmission)) {
             event.preventDefault();
-            submit();
+            submit(speech, primaryAction);
           }
         }}
       />
-      <div className="mt-1.5 flex items-center gap-1">
+      <div className="mt-1.5 flex flex-wrap items-center gap-1">
         <span className="mr-auto text-3xs text-muted-foreground/70">
           ⌘/Ctrl Enter to {isEditingComment ? "save" : "send"}
         </span>
-        <Button
-          variant="ghost-muted"
-          size="xs"
-          onClick={() => {
-            if (isEditingComment) {
-              edit.onCancel();
-            } else {
-              onCancel();
-            }
-          }}
-        >
+        {speech ? <TextFieldSpeechControls speech={speech} disabled={pending} /> : null}
+        <Button variant="ghost-muted" size="xs" onClick={cancel}>
           Cancel
         </Button>
         {secondaryAction ? (
           <Button
             size="xs"
             variant="outline"
-            disabled={!secondaryAction.allowEmpty && !trimmedText}
-            onClick={() => secondaryAction.onAction(trimmedText)}
+            disabled={
+              speech?.preparing ||
+              pending ||
+              (!speech?.blocksSubmission && !secondaryAction.allowEmpty && !trimmedText)
+            }
+            onClick={() => submit(speech, secondaryAction.onAction, secondaryAction.allowEmpty)}
           >
             {secondaryAction.icon}
             {secondaryAction.label}
           </Button>
         ) : null}
-        <Button size="xs" disabled={pending || !trimmedText} onClick={submit}>
+        <Button
+          size="xs"
+          disabled={speech?.preparing || pending || (!speech?.blocksSubmission && !trimmedText)}
+          onClick={() => submit(speech, primaryAction)}
+        >
           {isEditingComment ? "Save" : submitLabel}
         </Button>
       </div>
     </div>
+  );
+
+  return environmentId ? (
+    <SpeechTextField
+      environmentId={environmentId}
+      projectId={projectId}
+      ownerKey={ownerKey ?? rangeLabel}
+      text={displayedText}
+      textareaRef={textareaRef}
+      onTextChange={changeText}
+      disabled={pending}
+    >
+      {renderDraft}
+    </SpeechTextField>
+  ) : (
+    renderDraft()
   );
 }

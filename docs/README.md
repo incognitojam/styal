@@ -16,6 +16,7 @@
 - [Reading the chat timeline](./user/chat-timeline.md)
 - [How diffs order their files](./user/diff-file-order.md)
 - [Discord Rich Presence](./user/discord-rich-presence.md)
+- [Voice input](./user/voice-input.md)
 - [SnapShots](./user/snap-shot.md)
 - [Visual replies](./user/html-renders.md)
 - [Import browser sessions](./user/browser-import.md)

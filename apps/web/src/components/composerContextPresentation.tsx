@@ -10,8 +10,8 @@ import type {
 import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments";
 import { videoMimeType } from "@t3tools/shared/video";
 import { MessageCircleIcon, MousePointerClickIcon } from "lucide-react";
-import { createContext, type MouseEvent, type ReactElement, type ReactNode, use } from "react";
-import type { EnvironmentId } from "@t3tools/contracts";
+import { createContext, type ReactElement, type ReactNode, use } from "react";
+import { ComposerContextActionsContext } from "./composerContextActions";
 
 import type { ComposerFileAttachment, ComposerImageAttachment } from "~/composerDraftStore";
 import { composerFileNeedsReattach } from "~/composerDraftStore";
@@ -71,26 +71,10 @@ export type ComposerDraftContextRecord =
   | { kind: "issue"; record: IssueContextRecord }
   | { kind: "environment"; record: EnvironmentContextRecord };
 
-export interface ComposerContextActions {
-  environmentId: EnvironmentId | null;
-  cwd?: string | undefined;
-  expandImage: (imageId: string) => void;
-  expandVideo: (fileId: string) => void;
-  openFile: (fileId: string) => void;
-  openMention: (path: string) => void;
-  openPullRequest: (event: MouseEvent<HTMLElement>, url: string) => void;
-  onExternalLinkContextMenu: (event: MouseEvent<HTMLElement>, url: string) => void;
-}
-
-export const ComposerContextActionsContext = createContext<ComposerContextActions>({
-  environmentId: null,
-  expandImage: () => {},
-  expandVideo: () => {},
-  openFile: () => {},
-  openMention: () => {},
-  openPullRequest: () => {},
-  onExternalLinkContextMenu: () => {},
-});
+export {
+  ComposerContextActionsContext,
+  type ComposerContextActions,
+} from "./composerContextActions";
 
 export type ComposerDraftContextRecords = ReadonlyMap<string, ComposerDraftContextRecord>;
 
