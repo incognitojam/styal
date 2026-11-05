@@ -42,7 +42,7 @@ import { formatShortcutLabel } from "../../keybindings";
 import { cn } from "../../lib/utils";
 import { serverEnvironment } from "../../state/server";
 import { useSettingsScope } from "./SettingsScopeContext";
-import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
+import { ConfigFileIssuesRow } from "./ConfigFileIssuesRow";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -1316,28 +1316,19 @@ function useKeybindingCatalog() {
 
 function KeybindingsConfigIssues({ issues }: { issues: readonly ServerConfigIssue[] }) {
   if (issues.length === 0) return null;
-  const malformed = issues.some((issue) => issue.kind === "keybindings.malformed-config");
-  return (
-    <Alert variant="warning">
-      <TriangleAlertIcon aria-hidden />
-      <AlertTitle>
-        {malformed
-          ? "keybindings.json could not be read, so default shortcuts are in use"
-          : "Some keybindings.json entries were ignored"}
-      </AlertTitle>
-      <AlertDescription>
-        <ul className="flex flex-col gap-1">
-          {issues.map((issue) => (
-            <li
-              key={issue.kind === "keybindings.invalid-entry" ? issue.index : -1}
-              className="whitespace-pre-wrap break-words"
-            >
-              {issue.message}
-            </li>
-          ))}
-        </ul>
-      </AlertDescription>
-    </Alert>
+  const messages = issues.map((issue) => issue.message);
+  return issues.some((issue) => issue.kind === "keybindings.malformed-config") ? (
+    <ConfigFileIssuesRow
+      title="keybindings.json could not be read"
+      description="Default shortcuts are in use until the file is fixed."
+      messages={messages}
+    />
+  ) : (
+    <ConfigFileIssuesRow
+      title="Some keybindings.json entries were ignored"
+      description="Invalid entries were skipped. The file's other shortcuts remain available."
+      messages={messages}
+    />
   );
 }
 
@@ -1498,7 +1489,6 @@ export function KeybindingsSettingsPanel() {
 
   return (
     <SettingsPageContainer>
-      <KeybindingsConfigIssues issues={configIssues} />
       <SettingsSection
         {...searchableSetting("keybindings")}
         headerAction={!isElectron ? <BrowserKeybindingNotice /> : null}
@@ -1532,6 +1522,7 @@ export function KeybindingsSettingsPanel() {
             <TooltipPopup side="top">Open keybindings.json</TooltipPopup>
           </Tooltip>
         </div>
+        <KeybindingsConfigIssues issues={configIssues} />
       </SettingsSection>
 
       {!canWriteSettings ? (

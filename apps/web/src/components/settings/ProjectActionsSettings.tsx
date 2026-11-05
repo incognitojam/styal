@@ -15,6 +15,7 @@ import {
 } from "@t3tools/shared/projectScripts";
 import { ChevronDownIcon, PlusIcon } from "lucide-react";
 import { type ReactNode, useState } from "react";
+import { describeProjectFileIssues } from "../../lib/projectFileIssues";
 import type { SidebarProjectGroupMember } from "../../sidebarProjectGrouping";
 import { projectConfigRoot, useProjectConfigState } from "../../hooks/useProjectConfig";
 import { type EnvironmentPresentation, useEnvironments } from "../../state/environments";
@@ -40,6 +41,7 @@ import {
   MenuSeparator,
   MenuTrigger,
 } from "../ui/menu";
+import { ConfigFileIssuesRow } from "./ConfigFileIssuesRow";
 import { EnvironmentRow } from "./EnvironmentRow";
 import { SettingsGroup } from "./SettingsGroup";
 import { ProjectActionsList } from "./ProjectActionsList";
@@ -307,17 +309,16 @@ function CheckoutActions({
         }
       />
       {projectConfig.status === "invalid" ? (
-        <SettingsRow
+        <ConfigFileIssuesRow
           title={`${projectConfig.source} is invalid`}
           description={`A ${projectConfig.source} exists in this checkout but its JSON is malformed or its root is not an object, so the file cannot be read.`}
-          className="text-warning"
         />
       ) : null}
       {projectConfig.status === "partial" ? (
-        <SettingsRow
+        <ConfigFileIssuesRow
           title={`Some ${projectConfig.source} values were ignored`}
           description="Invalid or unrecognized fields, and invalid actions or actions that repeat an id, were skipped. Valid project settings and actions remain available."
-          className="text-warning"
+          messages={describeProjectFileIssues(projectConfig.contents ?? "", projectConfig.issues)}
         />
       ) : null}
       {projectConfig.legacyContents !== null ? (

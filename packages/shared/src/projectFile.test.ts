@@ -57,13 +57,18 @@ describe("parseStyalProjectFileResult", () => {
     expect(parseStyalProjectFileResult(json(VALID_FILE))).toEqual({
       status: "valid",
       file: VALID_FILE,
+      issues: [],
     });
     expect(
       parseStyalProjectFileResult(`{
         // shared actions
         "actions": [{ "name": "Test", "command": "vp test", },],
       }`),
-    ).toEqual({ status: "valid", file: { actions: [{ name: "Test", command: "vp test" }] } });
+    ).toEqual({
+      status: "valid",
+      file: { actions: [{ name: "Test", command: "vp test" }] },
+      issues: [],
+    });
   });
 
   it("is invalid for malformed JSON and non-object roots", () => {
@@ -76,12 +81,28 @@ describe("parseStyalProjectFileResult", () => {
     const result = parseStyalProjectFileResult(
       json({ ...VALID_FILE, scripts: [], previewUrl: "http://localhost" }),
     );
-    expect(result).toEqual({ status: "partial", file: VALID_FILE });
+    expect(result).toEqual({
+      status: "partial",
+      file: VALID_FILE,
+      issues: [
+        { path: ["scripts"], message: '"scripts" is not a known field' },
+        { path: ["previewUrl"], message: '"previewUrl" is not a known field' },
+      ],
+    });
     expect(
       parseStyalProjectFileResult(
         json({ actions: [{ name: "Dev", command: "vp dev", previewUrl: "http://localhost" }] }),
       ),
-    ).toEqual({ status: "partial", file: { actions: [{ name: "Dev", command: "vp dev" }] } });
+    ).toEqual({
+      status: "partial",
+      file: { actions: [{ name: "Dev", command: "vp dev" }] },
+      issues: [
+        {
+          path: ["actions", 0, "previewUrl"],
+          message: 'Action "Dev": "previewUrl" is not a known field',
+        },
+      ],
+    });
   });
 
   it.each(Object.entries(INVALID_FILE_FIELDS))(
@@ -91,6 +112,12 @@ describe("parseStyalProjectFileResult", () => {
       expect(parseStyalProjectFileResult(json({ ...VALID_FILE, [key]: invalid }))).toEqual({
         status: "partial",
         file: rest,
+        issues: [
+          {
+            path: [key],
+            message: expect.stringContaining(`"${key}" is invalid: Expected`),
+          },
+        ],
       });
     },
   );
@@ -109,6 +136,19 @@ describe("parseStyalProjectFileResult", () => {
           ...VALID_FILE,
           actions: REQUIRED_ACTION_FIELDS.has(key) ? [clean] : [setupWithout, clean],
         },
+        issues: [
+          REQUIRED_ACTION_FIELDS.has(key)
+            ? {
+                path: ["actions", 0],
+                message: expect.stringMatching(
+                  / was dropped: "(name|command)" is invalid: Expected/,
+                ),
+              }
+            : {
+                path: ["actions", 0, key],
+                message: expect.stringMatching(/^Action "Setup": ".+" is invalid: Expected/),
+              },
+        ],
       });
     },
   );
@@ -121,6 +161,23 @@ describe("parseStyalProjectFileResult", () => {
     const result = parseStyalProjectFileResult(json({ actions }));
     expect(result.status).toBe("partial");
     expect(result.file?.actions).toEqual(actions.slice(0, STYAL_PROJECT_FILE_MAX_ACTIONS));
+    expect(result.status !== "invalid" && result.issues).toEqual([
+      {
+        path: ["actions", STYAL_PROJECT_FILE_MAX_ACTIONS],
+        message: `Only the first ${STYAL_PROJECT_FILE_MAX_ACTIONS} actions are used, so this one and any after it were dropped`,
+      },
+    ]);
+  });
+
+  it("names a dropped action when it has a name and numbers it when it does not", () => {
+    const result = parseStyalProjectFileResult(
+      json({ actions: ["not an object", { name: "No command" }, { command: "true" }] }),
+    );
+    expect(result.status !== "invalid" && result.issues).toEqual([
+      { path: ["actions", 0], message: "Action 1 was dropped: it is not an object" },
+      { path: ["actions", 1], message: 'Action "No command" was dropped: "command" is missing' },
+      { path: ["actions", 2], message: 'Action 3 was dropped: "name" is missing' },
+    ]);
   });
 });
 
@@ -146,6 +203,7 @@ describe("resolveProjectConfig", () => {
       source: "styal.json",
       config: { source: "styal.json", iconPath: "styal.svg", actions: [] },
       legacyScripts: [],
+      issues: [],
     });
   });
 
@@ -164,6 +222,7 @@ describe("resolveProjectConfig", () => {
       source: "t3.json",
       config: { source: "t3.json", iconPath: "t3.svg", defaultThreadEnvMode: "local", actions: [] },
       legacyScripts: [{ name: "Old", command: "make" }],
+      issues: [],
     });
   });
 
@@ -172,13 +231,23 @@ describe("resolveProjectConfig", () => {
       styal: json({
         actions: [
           { id: "x", name: "First", command: "first" },
+          // Dropped without claiming its id, and the issue below still counts it.
+          { id: "y", name: "Broken" },
           { id: "x", name: "Second", command: "second" },
+          { id: "y", name: "Third", command: "third" },
         ],
       }),
       t3: null,
     });
     expect(state.status).toBe("partial");
-    expect(state.config?.actions.map((action) => action.name)).toEqual(["First"]);
+    expect(state.config?.actions.map((action) => action.name)).toEqual(["First", "Third"]);
+    expect(state.status === "partial" && state.issues).toEqual([
+      { path: ["actions", 1], message: 'Action "Broken" was dropped: "command" is missing' },
+      {
+        path: ["actions", 2, "id"],
+        message: 'Action "Second" was dropped: id "x" is already used',
+      },
+    ]);
   });
 
   it("fills in action ids and icons, keeping the first of duplicate ids", () => {
