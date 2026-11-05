@@ -1650,7 +1650,7 @@ features:
   - id: feedback-reports
     title: Report styal bugs and feedback as GitHub issues from an agent or the app
     status: maintained
-    prs: []
+    prs: [1278]
     invariants:
       - Reports only go to incognitojam/styal, never upstream or the repository a thread works in.
       - An agent's report posts only after the user approves the exact text in an approval card that names the posting account; agents cannot answer that card, and it appears in every runtime mode.
