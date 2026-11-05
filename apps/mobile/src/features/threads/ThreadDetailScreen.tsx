@@ -29,7 +29,6 @@ import { githubRepositoryOf } from "@t3tools/client-runtime/github-references";
 import { ThreadGithubRepositoryContext } from "./githubReferenceUrlLabels";
 import { UsageLimitRecoveryCard } from "./UsageLimitRecoveryCard";
 import { ProviderSignInCard } from "./ProviderSignInCard";
-import { ChatGptUsageLimitNotice } from "./ChatGptUsageLimitNotice";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import {
   effectiveSnoozed,
@@ -1719,10 +1718,6 @@ function ThreadDetailBody(
                       key={props.selectedThread.latestRun?.runId}
                       thread={props.selectedThread}
                       environmentId={props.environmentId}
-                    />
-                    <ChatGptUsageLimitNotice
-                      key={`chatgpt-limit:${props.selectedThread.latestRun?.runId}`}
-                      thread={props.selectedThread}
                     />
                     <ChildThreadApprovals
                       threadRef={props.selectedThreadDetailRef}
