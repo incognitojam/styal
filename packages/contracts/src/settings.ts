@@ -902,7 +902,7 @@ export const AntigravitySettings = makeProviderSettingsSchema(
         },
       }),
     ),
-    apiKey: TrimmedString.pipe(
+    apiKey: SettingsSecretValue.pipe(
       secretSetting,
       Schema.withDecodingDefault(Effect.succeed("")),
       Schema.annotateKey({

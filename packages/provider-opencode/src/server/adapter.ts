@@ -34,6 +34,7 @@ import {
   type ProviderSessionId,
   type RuntimeRequestId,
   type ThreadId,
+  settingsSecretLiteral,
 } from "@t3tools/contracts";
 import { OpenCodeSettings } from "../settings.ts";
 import * as Cause from "effect/Cause";
@@ -948,8 +949,8 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
           binaryPath: options.settings.binaryPath,
           directory: cwd,
           serverUrl: options.settings.serverUrl,
-          ...(options.settings.serverPassword
-            ? { serverPassword: options.settings.serverPassword }
+          ...(settingsSecretLiteral(options.settings.serverPassword)
+            ? { serverPassword: settingsSecretLiteral(options.settings.serverPassword) }
             : {}),
           environment: McpProviderSession.withAgentDeviceEnvironment(
             { ...options.environment, ...input.runtimePolicy.workspaceEnvironment },
