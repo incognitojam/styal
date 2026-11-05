@@ -72,6 +72,7 @@ export type T3McpToolSummaryAction =
   | "browser"
   | "device"
   | "hardware"
+  | "feedback-report"
   | "html-preview"
   | "html-render";
 
@@ -283,6 +284,7 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
     "device",
   ),
   device_close: tool(["Close", "Closing", "Closed", "a device"], "device", "device"),
+  report_styal_issue: tool(["Report", "Reporting", "Reported", "a styal issue"], "feedback-report"),
   hardware_list: tool(["List", "Listing", "Listed", "hardware devices"], "hardware", "device"),
   hardware_acquire: tool(
     ["Acquire", "Acquiring", "Acquired", "a hardware lease"],

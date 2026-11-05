@@ -1,3 +1,4 @@
+import { useAtomValue } from "@effect/atom-react";
 import { NotificationSettings } from "./NotificationSettings";
 import { PRIVACY_POLICY_URL } from "../../legalLinks";
 import { DiscordPresencePreview } from "./DiscordPresencePreview";
@@ -73,8 +74,10 @@ import {
 import { providerInstanceEntriesFor } from "../../providerInstances";
 import { ensureLocalApi, readLocalApi } from "../../localApi";
 import { isMacPlatform } from "../../lib/utils";
-import { useEnvironmentProviders } from "../../state/environments";
+import { useEnvironmentProviders, usePrimaryEnvironmentId } from "../../state/environments";
+import { serverEnvironment } from "../../state/server";
 import { EMPTY_SERVER_PROVIDERS } from "../../state/server";
+import { openFeedbackDialog } from "./FeedbackDialog";
 import { Button } from "../ui/button";
 import { DraftInput } from "../ui/draft-input";
 import { Input } from "../ui/input";
@@ -2239,6 +2242,23 @@ export function MaintenanceSettingsPanel() {
   );
 }
 
+function SendFeedbackRow() {
+  const environmentId = usePrimaryEnvironmentId();
+  const allowed = useAtomValue(serverEnvironment.submitFeedback.permissionAtom(environmentId));
+  if (environmentId === null || !allowed) return null;
+  return (
+    <SettingsRow
+      {...searchableSetting("send-feedback")}
+      description="Report a bug or suggest a change with a public GitHub issue."
+      control={
+        <Button size="sm" variant="outline" onClick={() => openFeedbackDialog(environmentId)}>
+          Send feedback
+        </Button>
+      }
+    />
+  );
+}
+
 export function AboutSettingsPanel() {
   return (
     <SettingsPageContainer>
@@ -2254,6 +2274,7 @@ export function AboutSettingsPanel() {
           />
         )}
         <MobileAppSettingsRow />
+        <SendFeedbackRow />
       </SettingsSection>
 
       <SettingsSection id="legal" title="Legal">

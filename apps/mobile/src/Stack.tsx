@@ -96,6 +96,7 @@ import { NewTaskRouteScreen } from "./features/threads/NewTaskRouteScreen";
 import { SettingsNavigationRouteScreen } from "./features/settings/SettingsNavigationRouteScreen";
 import { SettingsAppearanceRouteScreen } from "./features/settings/SettingsAppearanceRouteScreen";
 import { SettingsClientStorageRouteScreen } from "./features/settings/SettingsClientStorageRouteScreen";
+import { SettingsFeedbackRouteScreen } from "./features/settings/SettingsFeedbackRouteScreen";
 import { SettingsDiagnosticsRouteScreen } from "./features/diagnostics/SettingsDiagnosticsRouteScreen";
 import { SettingsProviderAccountsRouteScreen } from "./features/settings/SettingsProviderAccountsRouteScreen";
 import { SettingsAuthRouteScreen } from "./features/settings/SettingsAuthRouteScreen";
@@ -434,6 +435,11 @@ const SETTINGS_SCREENS = {
             ...THREAD_SETTINGS_SHEET_OPTIONS,
           }),
     },
+  }),
+  SettingsFeedback: createNativeStackScreen({
+    screen: SettingsFeedbackRouteScreen,
+    linking: "settings/environments/:environmentId/feedback",
+    options: { ...SETTINGS_PAGE_OPTIONS, title: "Send feedback" },
   }),
   SettingsClientStorage: createNativeStackScreen({
     screen: SettingsClientStorageRouteScreen,

@@ -767,6 +767,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["about check for updates download install upgrade release"],
   },
   {
+    id: "send-feedback",
+    title: "Send feedback",
+    to: "/settings/about",
+    searchTerms: ["report a bug issue suggestion github"],
+  },
+  {
     id: "update-track",
     title: "Update track",
     to: "/settings/about",

@@ -11,6 +11,7 @@ import { definition } from "../shared/definition.ts";
 
 import * as GitHubAppAccess from "./GitHubAppAccess.ts";
 import * as GitHubAppSignIn from "./GitHubAppSignIn.ts";
+import * as GitHubIssueFiling from "./gitHubIssueFiling.ts";
 import * as GitHubMediaFetch from "./gitHubMediaFetch.ts";
 import * as GitHubPullRequestApi from "./GitHubPullRequestApi.ts";
 import * as GitHubPullRequestProvider from "./GitHubPullRequestProvider.ts";
@@ -59,6 +60,7 @@ const makeInstance = Effect.all({
   pullRequests: GitHubPullRequestProvider.make,
   fetchMedia: GitHubMediaFetch.make,
   signIn: makeSignIn,
+  issueFiling: GitHubIssueFiling.make,
 });
 
 export const driver = defineSourceControlDriver({

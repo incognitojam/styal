@@ -450,6 +450,9 @@ export function summarizeT3ToolCalls(
     case "hardware":
       label = phrase("Used", "use", `hardware ${times}`);
       break;
+    case "feedback-report":
+      label = phrase("Reported", "report", quantity(selected.length, "styal issue"));
+      break;
     case "html-preview":
       label = phrase("Previewed", "preview", quantity(selected.length, "HTML page"));
       break;

@@ -1551,6 +1551,10 @@ export function createServerEnvironmentAtoms<R, E>(
       label: "environment-data:server:guest-share:create",
       tag: WS_METHODS.guestShareCreate,
     }),
+    submitFeedback: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:feedback:submit",
+      tag: WS_METHODS.feedbackSubmit,
+    }),
     // Off the config lane: answering a card must not queue behind settings
     // edits. One answer per card at a time.
     answerSecretRequest: createEnvironmentRpcCommand(runtime, {

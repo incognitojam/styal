@@ -108,6 +108,7 @@ import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
 import * as ServerConfigModule from "./config.ts";
 import * as Keybindings from "./keybindings.ts";
 import * as DeviceSharing from "./device/DeviceSharing.ts";
+import * as FeedbackService from "./feedback/FeedbackService.ts";
 import * as HardwareService from "./hardware/HardwareService.ts";
 import * as LegacyImport from "./dataImport/LegacyImport.ts";
 import * as LegacyImportPreview from "./dataImport/LegacyImportPreview.ts";
@@ -588,6 +589,7 @@ const layerUnusedConfigRpcServices = Layer.mergeAll(
   Layer.mock(WorktreeSetupTracker.WorktreeSetupTracker)({}),
   Layer.mock(DeviceSharing.DeviceSharing)({}),
   Layer.mock(HardwareService.HardwareService)({}),
+  Layer.mock(FeedbackService.FeedbackService)({}),
   Layer.mock(LegacyImport.LegacyImportService)({}),
   Layer.mock(LegacyImportPreview.LegacyImportPreviewService)({}),
   Layer.mock(ProjectFileActionApprovals.ProjectFileActionApprovals)({}),

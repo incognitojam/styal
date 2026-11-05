@@ -118,6 +118,8 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.serverReportNetworkConditions]: AuthOrchestrationReadScope,
   [WS_METHODS.scheduledTasksSubscribe]: AuthOrchestrationReadScope,
   [WS_METHODS.secretsAnswerRequest]: AuthOrchestrationOperateScope,
+  // Files under the server's GitHub sign-in, like the other source control writes.
+  [WS_METHODS.feedbackSubmit]: AuthSourceControlWriteScope,
   // Delivery logs hold request bodies, so they need the same scope as the URL.
   [WS_METHODS.scheduledTasksListWebhookDeliveries]: AuthOrchestrationOperateScope,
   [WS_METHODS.scheduledTasksGetWebhookDelivery]: AuthOrchestrationOperateScope,
