@@ -88,7 +88,7 @@ function useWorkTogetherMachine(environment: Environment, other: Environment): W
     label: environment.label,
     ownLabel: serverConfig?.environment.label ?? null,
     connected,
-    loaded: connected && links.data !== null && device.loaded,
+    loaded: connected && (links.data !== null || links.error !== null) && device.settled,
     canManage: mayManageAccess && mayChangeSettings,
     allowsLinks: serverConfig?.settings.linkedEnvironmentsEnabled === true,
     links: connected ? (links.data?.links ?? null) : null,

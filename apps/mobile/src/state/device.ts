@@ -55,5 +55,9 @@ export function useDeviceState(environmentId: EnvironmentId | null) {
   const query = useEnvironmentQuery(
     environmentId === null ? null : deviceEnvironment.state({ environmentId, input: {} }),
   );
-  return { state: query.data ?? emptyDeviceState, loaded: query.data !== null };
+  return {
+    state: query.data ?? emptyDeviceState,
+    loaded: query.data !== null,
+    settled: query.data !== null || query.error !== null,
+  };
 }
