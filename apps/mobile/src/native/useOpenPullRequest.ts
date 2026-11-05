@@ -7,6 +7,7 @@ import { useProjects, useThreadShell } from "../state/entities";
 import { tryOpenExternalUrl } from "../lib/openExternalUrl";
 import { appAtomRegistry } from "../state/atom-registry";
 import { environmentServerConfigsAtom } from "../state/server";
+import { withKnownPullRequestSummary } from "../state/use-thread-pr";
 
 type PullRequestContext = { readonly environmentId: string; readonly projectId: string };
 
@@ -27,10 +28,11 @@ export function useNavigateToPullRequest(options?: {
   return async (url: string, context: PullRequestContext | null) => {
     // Read at press time so a config push does not hand every link a new handler.
     const serverConfigs = appAtomRegistry.get(environmentServerConfigsAtom);
-    const params = nativePullRequestDestination(url, context, projects, (environmentId) =>
+    const destination = nativePullRequestDestination(url, context, projects, (environmentId) =>
       serverConfigs.has(environmentId),
     );
-    if (!params) return tryOpenExternalUrl(url, "pull-request");
+    if (!destination) return tryOpenExternalUrl(url, "pull-request");
+    const params = withKnownPullRequestSummary(destination);
     if (Platform.OS === "android" && selectInWorkspace)
       selectDetail({ name: "PullRequest", params });
     else if (replace) navigation.dispatch(StackActions.replace("PullRequest", params));

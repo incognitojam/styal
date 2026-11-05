@@ -61,6 +61,7 @@ import { environmentThreadShells } from "../../state/threads";
 import { savedConnectionsByIdAtom } from "../../state/use-remote-environment-registry";
 import { workspaceConnections } from "../../state/workspace";
 import { buildHomeProjectScopes, resolveHomeProjectFilterScope } from "../home/homeThreadList";
+import { withKnownPullRequestSummary } from "../../state/use-thread-pr";
 import { mobilePreferencesAtom } from "../../state/preferences";
 import {
   DEFAULT_MOBILE_PROJECT_GROUPING_SETTINGS,
@@ -592,6 +593,7 @@ function AdaptiveWorkspaceLayoutContent(
         columns: workspaceTabColumns(Platform.OS, tab, options?.columns ?? layout.usesSplitView),
         check: workspaceSelectionCheck,
         overlays,
+        seedPullRequest: withKnownPullRequestSummary,
       },
     );
     if (layout.variant === "medium") {
