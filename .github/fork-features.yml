@@ -360,7 +360,7 @@ features:
   - id: auto-environment-tools
     title: Allow bounded environment operations from Auto threads
     status: maintained
-    prs: []
+    prs: [1293]
     rationale: Auto agents need to prepare projects and request user-approved machine links without gaining machine-wide or destructive permissions.
     invariants:
       - Only Auto/default and Full access callers can use the four opted-in environment operations; lower modes remain refused.
