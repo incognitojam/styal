@@ -222,6 +222,7 @@ describe("OpenAI status notice", () => {
 
   describe.each([
     ["ChatGPT Work", "Elevated errors in ChatGPT Work"],
+    ["ChatGPT Work", "ChatGPT Work and Dots Errors"],
     ["ChatGPT Space Pages", "Elevated errors in ChatGPT Space Pages"],
     ["Compliance API", "Delayed Costs data in the Compliance API"],
     ["dots", "Degraded Performance of Dots on Enterprise"],
