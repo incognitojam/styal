@@ -2635,6 +2635,28 @@ features:
         - https://github.com/pingdotgg/t3code/pull/8812
       retire_when: Upstream resolves equivalent environment-scoped GitHub references in chat and pull request Markdown with the same navigation behavior.
 
+  - id: settle-action-last-open-thread
+    title: Run a worktree's settle action when its last open thread settles
+    status: maintained
+    invariants:
+      - A settling thread does not run the settle action while another thread in the same worktree is unsettled and not a subagent, or is working, waiting on a request, or has queued work.
+      - An idle subagent that never settled does not hold the action back, so a settling parent still runs it.
+      - A delegated child settling inside its active parent's worktree does not run the action.
+    rationale: Settle actions delete worktree state and stop dev servers, so running them for one thread can destroy another thread's work. Upstream's open fix only excludes subagents sharing a parent's worktree, which leaves sibling threads and running children exposed.
+    implementation_paths:
+      - apps/server/src/orchestration-v2/ThreadSettlementService.ts
+      - apps/server/src/orchestration-v2/ThreadSettlementService.test.ts
+      - scripts/teardown-worktree.ts
+      - scripts/teardown-worktree.test.ts
+      - scripts/dev-runner.ts
+    upstream:
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/issues/17548
+        - https://github.com/pingdotgg/t3code/pull/23215
+        - https://github.com/pingdotgg/t3code/pull/19665
+      retire_when: Upstream holds a shared worktree's settle action until no other thread there is open or working.
+
   - id: grok-prompt-settlement
     title: Settle Grok fallback completions after reply output quiets
     status: review-needed

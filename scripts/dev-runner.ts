@@ -597,6 +597,22 @@ export const resolveModePortOffsets = Effect.fn("dev-runner.resolveModePortOffse
   return { serverOffset: sharedOffset, webOffset: sharedOffset };
 });
 
+/** Lets `scripts/teardown-worktree.ts` stop this runner. Best effort: it can still use the ports. */
+const registerDevRunner = Effect.fn("dev-runner.registerDevRunner")(function* (
+  worktreeHome: string,
+) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const directory = path.join(worktreeHome, "dev-runners");
+  const file = path.join(directory, String(process.pid));
+  yield* Effect.acquireRelease(
+    fs
+      .makeDirectory(directory, { recursive: true })
+      .pipe(Effect.andThen(fs.writeFileString(file, "")), Effect.ignore),
+    () => fs.remove(file, { force: true }).pipe(Effect.ignore),
+  );
+});
+
 /** Best effort: a failed first-start step warns, and dev still starts. */
 const runRepoScript = Effect.fn("dev-runner.runRepoScript")(function* (
   script: string,
@@ -882,6 +898,8 @@ export const runDevRunnerWithInput = Effect.fn("dev-runner.runDevRunnerWithInput
     worktreeHome: baseDir === worktreeHome ? worktreeHome : undefined,
     env,
   });
+
+  if (worktreeHome !== undefined) yield* registerDevRunner(worktreeHome);
 
   const args = [...(built ? BUILT_DEV_ARGS : MODE_ARGS[input.mode]), ...input.runArgs];
   const spawnCommand = yield* resolveSpawnCommand("vp", args, { env });

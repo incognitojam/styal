@@ -27,6 +27,7 @@
         "knip-schemas.ts",
         "mobile-native-client.ts",
         "setup-worktree.ts",
+        "teardown-worktree.ts",
         "verify-cli-package.mjs",
         "sign-macos.ts",
         "smoke-desktop-app.ts",

@@ -60,7 +60,7 @@ export const StyalProjectFileAction = Schema.Struct({
   runOnSettle: Schema.optionalKey(
     Schema.Boolean.annotate({
       description:
-        "When true, the action runs in the thread's worktree each time the thread settles, for example to delete build output, once you approve its command in styal. Threads without their own worktree skip it.",
+        "When true, the action runs in a worktree each time the last open thread using it settles, for example to delete build output, once you approve its command in styal. Threads without their own worktree skip it.",
     }),
   ),
   async: Schema.optionalKey(

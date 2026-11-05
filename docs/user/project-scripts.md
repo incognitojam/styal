@@ -16,7 +16,7 @@ Each action has:
 - A shell command.
 - An optional keyboard shortcut.
 - An option to run automatically after T3 Code creates a worktree for a new thread.
-- An option to run in a thread's worktree each time the thread settles, for example to delete
+- An option to run in a worktree each time the last open thread using it settles, for example to delete
   build output. See [Settle finished work](./thread-sidebar.md#settle-finished-work).
 
 Actions are saved for one checkout, not for every checkout in its project group. When a project has
@@ -73,7 +73,7 @@ Each action supports these fields:
 - `icon` (optional): `play`, `test`, `lint`, `configure`, `build`, `debug`, `desktop`, `database`,
   or `deploy`. The default is `play`.
 - `runOnWorktreeCreate` and `runOnSettle` (optional): run the action automatically after a
-  worktree is created for a new thread, or each time a thread with its own worktree settles. These
+  worktree is created for a new thread, or each time the last open thread in a worktree settles. These
   take effect only once you approve the command, as described below.
 - `async` (optional): only for `runOnWorktreeCreate` actions. `false` holds the agent until the
   action exits.
@@ -160,8 +160,9 @@ pnpm dev -- --port "$STYAL_WORKSPACE_PORT" &
 pnpm run api -- --port "$((STYAL_WORKSPACE_PORT + 1))"
 ```
 
-Settling a thread leaves running dev servers open. To stop them when the thread settles, use an
-action that runs on settle and stops whatever listens on the ports, for example on macOS or Linux:
+Settling a thread leaves running dev servers open. To stop them when the last open thread in the
+worktree settles, use an action that runs on settle and stops whatever listens on the ports, for
+example on macOS or Linux:
 
 ```sh
 for port in "$STYAL_WORKSPACE_PORT" "$((STYAL_WORKSPACE_PORT + 1))"; do

@@ -647,6 +647,7 @@ interface HarnessOptions {
   ) => Effect.Effect<void>;
   readonly onCloseIdle?: () => Effect.Effect<void>;
   readonly currentThreads?: ReadonlyArray<OrchestrationV2AppThread>;
+  readonly workingThreadIds?: ReadonlyArray<ThreadId>;
 }
 
 const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options: HarnessOptions) {
@@ -759,6 +760,29 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
         return thread
           ? Effect.succeed(thread)
           : Effect.die(new Error(`Unexpected thread read: ${threadId}`));
+      },
+      getThreadWorktreePaths: () =>
+        Effect.succeed(
+          (options.currentThreads ?? []).flatMap((thread) =>
+            thread.worktreePath === null
+              ? []
+              : [{ threadId: thread.id, worktreePath: thread.worktreePath }],
+          ),
+        ),
+      getThreadShell: (threadId) => {
+        const thread = options.currentThreads?.find((candidate) => candidate.id === threadId);
+        return Effect.succeed(
+          thread === undefined
+            ? null
+            : shell({
+                id: thread.id,
+                lineage: thread.lineage,
+                settledOverride: thread.settledOverride,
+                activeRunId: options.workingThreadIds?.includes(threadId)
+                  ? RunId.make(`run:${threadId}`)
+                  : null,
+              }),
+        );
       },
     }),
     Layer.mock(Orchestrator.OrchestratorV2)({
@@ -1501,6 +1525,95 @@ describe("ThreadSettlementServiceV2 terminals", () => {
           yield* fixture.publishEvent(settledEvent(repeated));
           yield* fixture.publishEvent(settledEvent(marker));
           assert.strictEqual((yield* Queue.take(fixture.scriptRuns)).threadId, repeated.id);
+          assert.strictEqual((yield* Queue.take(fixture.scriptRuns)).threadId, marker.id);
+        }).pipe(Effect.provide(fixture.layer));
+      }),
+    ),
+  );
+
+  const subagentOf = (
+    parent: OrchestrationV2AppThread,
+    id: string,
+    settledOverride: OrchestrationV2AppThread["settledOverride"],
+  ): OrchestrationV2AppThread => ({
+    ...appThread(id, settledOverride, parent.worktreePath),
+    lineage: {
+      parentThreadId: parent.id,
+      relationshipToParent: "subagent",
+      rootThreadId: parent.id,
+    },
+  });
+
+  it.effect("leaves a shared worktree's settle script to the last open thread", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const settled = appThread("settled-first", "settled", "/worktrees/shared");
+        const stillOpen = appThread("still-open", null, "/worktrees/shared");
+        const marker = appThread("marker-thread", "settled", "/worktrees/marker");
+        const currentThreads = [settled, stillOpen, marker];
+        const fixture = yield* makeHarness({
+          snapshot: makeSnapshot([]),
+          currentThreads,
+          existingWorktreePaths: ["/worktrees/shared", "/worktrees/marker"],
+        });
+
+        yield* Effect.gen(function* () {
+          const service = yield* ThreadSettlementService.ThreadSettlementServiceV2;
+          yield* startHarness(service, fixture.activation, fixture.snapshotReads);
+          yield* fixture.publishEvent(settledEvent(settled));
+          yield* fixture.publishEvent(settledEvent(marker));
+          assert.strictEqual((yield* Queue.take(fixture.scriptRuns)).threadId, marker.id);
+
+          const last = appThread("still-open", "settled", "/worktrees/shared");
+          currentThreads[1] = last;
+          yield* fixture.publishEvent(settledEvent(last));
+          const run = yield* Queue.take(fixture.scriptRuns);
+          assert.strictEqual(run.threadId, last.id);
+          assert.strictEqual(run.worktreePath, "/worktrees/shared");
+        }).pipe(Effect.provide(fixture.layer));
+      }),
+    ),
+  );
+
+  it.effect("runs the settle script past an idle subagent that never settled", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const parent = appThread("parent-thread", "settled", "/worktrees/parent");
+        const idleChild = subagentOf(parent, "idle-child", null);
+        const fixture = yield* makeHarness({
+          snapshot: makeSnapshot([]),
+          currentThreads: [parent, idleChild],
+          existingWorktreePaths: ["/worktrees/parent"],
+        });
+
+        yield* Effect.gen(function* () {
+          const service = yield* ThreadSettlementService.ThreadSettlementServiceV2;
+          yield* startHarness(service, fixture.activation, fixture.snapshotReads);
+          yield* fixture.publishEvent(settledEvent(parent));
+          assert.strictEqual((yield* Queue.take(fixture.scriptRuns)).threadId, parent.id);
+        }).pipe(Effect.provide(fixture.layer));
+      }),
+    ),
+  );
+
+  it.effect("holds the settle script while a subagent in the worktree is working", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const parent = appThread("parent-thread", "settled", "/worktrees/parent");
+        const workingChild = subagentOf(parent, "working-child", null);
+        const marker = appThread("marker-thread", "settled", "/worktrees/marker");
+        const fixture = yield* makeHarness({
+          snapshot: makeSnapshot([]),
+          currentThreads: [parent, workingChild, marker],
+          existingWorktreePaths: ["/worktrees/parent", "/worktrees/marker"],
+          workingThreadIds: [workingChild.id],
+        });
+
+        yield* Effect.gen(function* () {
+          const service = yield* ThreadSettlementService.ThreadSettlementServiceV2;
+          yield* startHarness(service, fixture.activation, fixture.snapshotReads);
+          yield* fixture.publishEvent(settledEvent(parent));
+          yield* fixture.publishEvent(settledEvent(marker));
           assert.strictEqual((yield* Queue.take(fixture.scriptRuns)).threadId, marker.id);
         }).pipe(Effect.provide(fixture.layer));
       }),

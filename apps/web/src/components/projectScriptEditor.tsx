@@ -567,7 +567,7 @@ function ProjectScriptEditorForm({
               <p className="text-sm text-muted-foreground">
                 {replacedSettleScript
                   ? `Saving will replace “${replacedSettleScript.name}” as the action that runs when a thread settles.`
-                  : "Saving will run this action in a thread's worktree each time the thread settles."}
+                  : "Saving will run this action in a worktree each time the last open thread using it settles."}
               </p>
             )}
             {validationError && <p className="text-sm text-destructive">{validationError}</p>}

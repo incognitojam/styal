@@ -209,9 +209,10 @@ terminals that wait at an idle prompt, and keeps their output. A terminal that
 runs a command, such as a dev server, stays open.
 
 To reclaim disk space from settled work, turn on **Run in the thread's worktree when the
-thread settles** for one of the project's saved actions, for example `cargo clean`. It runs each time a thread in its own
-worktree settles, manually or automatically, even if a terminal there still runs a
-command such as a dev server. Threads in the project's main checkout skip it. Its terminal,
+thread settles** for one of the project's saved actions, for example `cargo clean`. It runs
+each time the last open thread in a worktree settles, manually or automatically, even if a
+terminal there still runs a command such as a dev server. A worktree shared with a thread that
+is still open or working waits for that thread. Threads in the project's main checkout skip it. Its terminal,
 named after the action, keeps its output after the command exits, and the thread's work log
 shows whether it completed or failed.
 
