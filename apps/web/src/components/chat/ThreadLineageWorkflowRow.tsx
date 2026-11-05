@@ -1,6 +1,7 @@
-import type {
-  SubagentWorkflowGroup,
-  RuntimeSubagent,
+import {
+  workflowMemberModelSelection,
+  type SubagentWorkflowGroup,
+  type RuntimeSubagent,
 } from "@t3tools/client-runtime/state/subagentRuntime";
 import type {
   OrchestrationV2ThreadShell,
@@ -109,6 +110,7 @@ function WorkflowMemberRow({
             model={member.model}
             providerInstanceId={providerInstanceId}
             origin="provider_native"
+            modelSelection={workflowMemberModelSelection(member, providerInstanceId)}
             provider={provider}
             providers={providers}
             driver={driver}

@@ -1,6 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import {
   isTerminalSubagentStatus,
+  workflowMemberModelSelection,
   workflowOpeningHeadline,
   type RuntimeSubagent,
   type WorkflowOpening,
@@ -201,6 +202,7 @@ function WorkflowMemberTooltip(props: Parameters<typeof WorkflowMemberRow>[0]) {
       model={member.model}
       providerInstanceId={props.providerInstanceId}
       origin="provider_native"
+      modelSelection={workflowMemberModelSelection(member, props.providerInstanceId)}
       provider={props.providers.find(
         (provider) => provider.instanceId === props.providerInstanceId,
       )}
