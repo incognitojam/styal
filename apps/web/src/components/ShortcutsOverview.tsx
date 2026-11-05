@@ -103,7 +103,7 @@ export function ShortcutsOverview() {
             .
           </DialogDescription>
         </DialogHeader>
-        <DialogPanel scrollFade={false}>
+        <DialogPanel>
           <ShortcutsOverviewGroups />
         </DialogPanel>
       </DialogPopup>
