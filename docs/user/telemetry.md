@@ -110,14 +110,10 @@ LAN, or Tailscale. It does not include network or carrier names, IP addresses, o
 server receives only the summaries of its own connections and sends them as usage events. The mobile
 app keeps its own copy in **Settings → About → Diagnostics** either way.
 
-styal also sends styal Link connection traces to Axiom to diagnose styal Link connectivity.
-
-To disable product events and styal Link tracing, set `T3CODE_TELEMETRY_ENABLED=false` in the
-server's environment before starting it. This stops product events from being recorded or sent.
-Test and CI processes default to product event collection disabled;
-`T3CODE_TELEMETRY_ENABLED=true` explicitly enables it. styal Link tracing also stops when
-`T3CODE_OTEL_SDK_DISABLED` or `OTEL_SDK_DISABLED` turns OpenTelemetry export off. The web app in a
-browser, including one the `styal` CLI opens, does not read these variables.
+To disable product events, set `T3CODE_TELEMETRY_ENABLED=false` in the server's environment before
+starting it. This stops product events from being recorded or sent. Test and CI processes default
+to product event collection disabled; `T3CODE_TELEMETRY_ENABLED=true` explicitly enables it. The web
+app in a browser, including one the `styal` CLI opens, does not read this variable.
 To send events to your own PostHog project instead, set `T3CODE_POSTHOG_HOST` and
 `T3CODE_POSTHOG_KEY`.
 
@@ -138,16 +134,6 @@ Disabling telemetry with `T3CODE_TELEMETRY_ENABLED=false` stops both.
 
 The desktop app reads `T3CODE_TELEMETRY_ENABLED` from your shell profile (for example `~/.zshrc`) on macOS and
 Linux, so export it there and restart the app. On Windows, set it as a user environment variable.
-
-## Mobile app crash reports
-
-When the iOS or Android app crashes or hits an error, it sends a report to styal's maintainers: the
-error message, the stack trace, the app version, and the device model and OS version. Each launch
-also sends startup timings, and every report carries a random ID for the install. Reports go through
-the styal Link relay to styal's own Axiom organization, not to T3 Code's. They do not include your
-threads, prompts, or connection details, but an error message can quote a value the app was handling.
-
-To stop sending them, turn off **Send crash reports** in **Settings > About > Diagnostics**.
 
 ## Export diagnostics to your own receiver
 

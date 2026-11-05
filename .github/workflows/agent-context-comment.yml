@@ -1,0 +1,68 @@
+name: Agent context comment
+
+# Explains growth that agent-context-budget.yml reports, so a maintainer can decide on the
+# agent-context-increase label. The gate lives there; this workflow never decides pass or fail.
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+jobs:
+  comment:
+    name: Comment agent context growth
+    if: >-
+      github.repository == 'incognitojam/styal' &&
+      ((github.event.action != 'labeled' && github.event.action != 'unlabeled') ||
+      github.event.label.name == 'agent-context-increase')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    concurrency:
+      group: agent-context-comment-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    steps:
+      # This pull_request_target job runs main's report and reads the pull request's two
+      # measurement files only as git data. Do not install dependencies or run PR code here.
+      - name: Checkout trusted report
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: .github/scripts
+
+      - name: Read measurements from main and the pull request
+        id: read
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          directory=apps/server/src/provider
+          extract() {
+            mkdir -p "$RUNNER_TEMP/agent-context/$1"
+            for file in agentContextBudget.json agentContextTools.json; do
+              if git cat-file -e "$2:$directory/$file" 2>/dev/null; then
+                git show "$2:$directory/$file" > "$RUNNER_TEMP/agent-context/$1/$file"
+              fi
+            done
+          }
+          git fetch --quiet --no-tags --depth=1 origin main
+          main_sha=$(git rev-parse FETCH_HEAD)
+          extract main "$main_sha"
+          git fetch --quiet --no-tags --depth=1 origin "refs/pull/${PR_NUMBER}/head"
+          pr_sha=$(git rev-parse FETCH_HEAD)
+          extract pr "$pr_sha"
+          echo "main_sha=$main_sha" >> "$GITHUB_OUTPUT"
+          echo "pr_sha=$pr_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Update comment
+        uses: actions/github-script@v9
+        env:
+          AGENT_CONTEXT_DIR: ${{ runner.temp }}/agent-context
+          MAIN_SHA: ${{ steps.read.outputs.main_sha }}
+          PR_SHA: ${{ steps.read.outputs.pr_sha }}
+        with:
+          script: |
+            const reporter = require("./.github/scripts/agent-context-report.cjs");
+            await reporter.publish({ github, context, core });

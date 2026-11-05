@@ -1,6 +1,6 @@
 import {
+  KeybindingCommand,
   KeybindingRule,
-  KeybindingsConfig,
   KeybindingsConfigError,
   KeybindingShortcut,
   KeybindingWhenNode,
@@ -60,7 +60,7 @@ export const ResolvedKeybindingFromConfig = KeybindingRule.pipe(
             Predicate.isNotNull,
             () =>
               new SchemaIssue.InvalidValue({
-                message: "Invalid keybinding rule",
+                message: "Invalid shortcut or when expression",
               }),
           ),
           Effect.map((resolved) => resolved),
@@ -176,11 +176,12 @@ function encodeWhenAst(node: KeybindingWhenNode): string {
 }
 
 const RawKeybindingsEntries = fromLenientJson(Schema.Array(Schema.Unknown));
-const KeybindingsConfigPrettyJson = fromJsonStringPretty(KeybindingsConfig);
+const RawKeybindingsEntriesPrettyJson = fromJsonStringPretty(Schema.Array(Schema.Unknown));
+const isKeybindingCommand = Schema.is(KeybindingCommand);
 const decodeKeybindingRuleExit = Schema.decodeUnknownExit(KeybindingRule);
 const decodeResolvedKeybindingFromConfigExit = Schema.decodeExit(ResolvedKeybindingFromConfig);
 const decodeRawKeybindingsEntriesExit = Schema.decodeUnknownExit(RawKeybindingsEntries);
-const encodeKeybindingsConfigPrettyJson = Schema.encodeEffect(KeybindingsConfigPrettyJson);
+const encodeRawKeybindingsEntriesPrettyJson = Schema.encodeEffect(RawKeybindingsEntriesPrettyJson);
 
 export interface KeybindingsConfigState {
   readonly keybindings: ResolvedKeybindingsConfig;
@@ -204,12 +205,41 @@ function malformedConfigIssue(detail: string): ServerConfigIssue {
   };
 }
 
-function invalidEntryIssue(index: number, detail: string): ServerConfigIssue {
+function invalidEntryIssue(index: number, line: number, detail: string): ServerConfigIssue {
   return {
     kind: "keybindings.invalid-entry",
     index,
-    message: trimIssueMessage(detail),
+    message: `Line ${line}: ${trimIssueMessage(detail.replace(/^SchemaError: /, ""))}`,
   };
+}
+
+/** The 1-based line each top-level entry starts on. Expects a file `fromLenientJson` accepted. */
+function topLevelEntryLines(rawConfig: string): readonly number[] {
+  const lines: number[] = [];
+  let line = 1;
+  let depth = 0;
+  let awaitingEntry = false;
+  for (const [token] of rawConfig.matchAll(/"(?:[^"\\]|\\.)*"|\/\/[^\n]*|\/\*[\s\S]*?\*\/|\s|./g)) {
+    if (token.startsWith("/")) {
+      line += token.split("\n").length - 1;
+    } else if (token === "\n") {
+      line += 1;
+    } else if (token.trim() !== "") {
+      if (awaitingEntry && token !== "]") {
+        lines.push(line);
+        awaitingEntry = false;
+      }
+      if (token === "[" || token === "{") {
+        depth += 1;
+        awaitingEntry = depth === 1;
+      } else if (token === "]" || token === "}") {
+        depth -= 1;
+      } else if (token === "," && depth === 1) {
+        awaitingEntry = true;
+      }
+    }
+  }
+  return lines;
 }
 
 export class Keybindings extends Context.Service<
@@ -333,11 +363,12 @@ const make = Effect.gen(function* () {
     {
       readonly keybindings: readonly KeybindingRule[];
       readonly issues: readonly ServerConfigIssue[];
+      readonly entries: readonly unknown[];
     },
     KeybindingsConfigError
   > {
     if (!(yield* readConfigExists)) {
-      return { keybindings: [], issues: [] };
+      return { keybindings: [], issues: [], entries: [] };
     }
 
     const rawConfig = yield* readRawConfig;
@@ -347,16 +378,22 @@ const make = Effect.gen(function* () {
       return {
         keybindings: [],
         issues: [malformedConfigIssue(detail)],
+        entries: [],
       };
     }
 
     const keybindings: KeybindingRule[] = [];
     const issues: ServerConfigIssue[] = [];
+    const entryLines = topLevelEntryLines(rawConfig);
     for (const [index, entry] of decodedEntries.value.entries()) {
       const decodedRule = decodeKeybindingRuleExit(entry);
       if (decodedRule._tag === "Failure") {
-        const detail = Cause.pretty(decodedRule.cause);
-        issues.push(invalidEntryIssue(index, detail));
+        // The schema's own error for a bad command lists every command there is.
+        const detail =
+          Predicate.hasProperty(entry, "command") && !isKeybindingCommand(entry.command)
+            ? `Unknown command "${String(entry.command)}"`
+            : Cause.pretty(decodedRule.cause);
+        issues.push(invalidEntryIssue(index, entryLines[index] ?? 1, detail));
         yield* Effect.logWarning("ignoring invalid keybinding entry", {
           path: keybindingsConfigPath,
           index,
@@ -369,7 +406,7 @@ const make = Effect.gen(function* () {
       const resolvedRule = decodeResolvedKeybindingFromConfigExit(decodedRule.value);
       if (resolvedRule._tag === "Failure") {
         const detail = Cause.pretty(resolvedRule.cause);
-        issues.push(invalidEntryIssue(index, detail));
+        issues.push(invalidEntryIssue(index, entryLines[index] ?? 1, detail));
         yield* Effect.logWarning("ignoring invalid keybinding entry", {
           path: keybindingsConfigPath,
           index,
@@ -381,7 +418,7 @@ const make = Effect.gen(function* () {
       keybindings.push(decodedRule.value);
     }
 
-    return { keybindings, issues };
+    return { keybindings, issues, entries: decodedEntries.value };
   });
 
   const appliedMigrationsPath = path.join(
@@ -409,8 +446,8 @@ const make = Effect.gen(function* () {
       ),
     );
 
-  const writeConfigAtomically = (rules: readonly KeybindingRule[]) => {
-    return encodeKeybindingsConfigPrettyJson(rules).pipe(
+  const writeConfigAtomically = (entries: ReadonlyArray<unknown>) => {
+    return encodeRawKeybindingsEntriesPrettyJson(entries).pipe(
       Effect.map((encoded) => `${encoded}\n`),
       Effect.flatMap((encoded) =>
         writeFileStringAtomically({
@@ -478,9 +515,9 @@ const make = Effect.gen(function* () {
       }
 
       const runtimeConfig = yield* loadRuntimeCustomKeybindingsConfig();
-      if (runtimeConfig.issues.length > 0) {
+      if (runtimeConfig.issues.some((issue) => issue.kind === "keybindings.malformed-config")) {
         yield* Effect.logWarning(
-          "skipping startup keybindings default sync because config has issues",
+          "skipping startup keybindings default sync because config cannot be parsed",
           {
             path: keybindingsConfigPath,
             issues: runtimeConfig.issues,
@@ -490,7 +527,12 @@ const make = Effect.gen(function* () {
         return;
       }
       const customConfig = runtimeConfig.keybindings;
-      const existingCommands = new Set(customConfig.map((entry) => entry.command));
+      // A broken rule still customizes its command: fixing it must not leave a default beside it.
+      const existingCommands = new Set(
+        runtimeConfig.entries.map((entry) =>
+          Predicate.hasProperty(entry, "command") ? entry.command : null,
+        ),
+      );
       const missingDefaults: KeybindingRule[] = [];
       const shortcutConflictWarnings: Array<{
         defaultCommand: KeybindingRule["command"];
@@ -549,7 +591,7 @@ const make = Effect.gen(function* () {
       }
 
       // Put defaults before persisted rules so custom shortcuts win overlapping conditions.
-      const availableSlots = Math.max(0, MAX_KEYBINDINGS_COUNT - customConfig.length);
+      const availableSlots = Math.max(0, MAX_KEYBINDINGS_COUNT - runtimeConfig.entries.length);
       const defaultsToAppend = missingDefaults.slice(0, availableSlots);
       const skippedDefaults = missingDefaults.slice(availableSlots);
       if (skippedDefaults.length > 0) {
@@ -560,7 +602,7 @@ const make = Effect.gen(function* () {
         });
       }
       if (defaultsToAppend.length > 0) {
-        yield* writeConfigAtomically([...defaultsToAppend, ...customConfig]);
+        yield* writeConfigAtomically([...defaultsToAppend, ...runtimeConfig.entries]);
       }
       const settledLateDefaults = pendingLateDefaults.filter(
         (late) => !skippedDefaults.includes(late.rule),

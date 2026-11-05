@@ -319,6 +319,113 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
     }).pipe(Effect.provide(layerKeybindings())),
   );
 
+  it.effect("syncs defaults around invalid entries and keeps them in the file", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const { keybindingsConfigPath } = yield* ServerConfig.ServerConfig;
+      const keybindings = yield* Keybindings.Keybindings;
+      const when = "composerFocus && draftThreadRoute";
+      const existing = { key: "mod+alt+enter", command: "composer.sendBackground", when };
+      const unknownCommand = { key: "mod+x", command: "invalid.command", note: "keep me" };
+      const badShortcut = { key: "mod+shift+d+o", command: "terminal.new" };
+      const notARule = 42;
+      yield* fs.writeFileString(
+        keybindingsConfigPath,
+        JSON.stringify([unknownCommand, existing, badShortcut, notARule]),
+      );
+
+      yield* keybindings.syncDefaultKeybindingsOnStartup;
+
+      const raw = yield* fs.readFileString(keybindingsConfigPath);
+      const persisted: ReadonlyArray<{ key?: string; command?: string; when?: string }> =
+        JSON.parse(raw);
+      assert.deepEqual<unknown>(persisted.slice(-4), [
+        unknownCommand,
+        existing,
+        badShortcut,
+        notARule,
+      ]);
+      assert.isTrue(persisted.some((entry) => entry.key === "mod+enter" && entry.when === when));
+      assert.isTrue(persisted.some((entry) => entry.command === "chat.new"));
+      // Fixing the typo must not leave a backfilled default beside the user's own shortcut.
+      assert.deepEqual(
+        persisted.filter((entry) => entry.command === "terminal.new"),
+        [badShortcut],
+      );
+
+      yield* keybindings.syncDefaultKeybindingsOnStartup;
+      assert.equal(yield* fs.readFileString(keybindingsConfigPath), raw);
+    }).pipe(Effect.provide(layerKeybindings())),
+  );
+
+  it.effect.each(["{ not-json", '{ "key": "mod+j" }'])(
+    "leaves a file that is not a JSON array untouched when syncing: %s",
+    (contents) =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const { keybindingsConfigPath } = yield* ServerConfig.ServerConfig;
+        const keybindings = yield* Keybindings.Keybindings;
+        yield* fs.writeFileString(keybindingsConfigPath, contents);
+
+        yield* keybindings.syncDefaultKeybindingsOnStartup;
+
+        assert.equal(yield* fs.readFileString(keybindingsConfigPath), contents);
+      }).pipe(Effect.provide(layerKeybindings())),
+  );
+
+  it.effect("counts invalid entries towards the entry limit when backfilling", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const { keybindingsConfigPath } = yield* ServerConfig.ServerConfig;
+      const keybindings = yield* Keybindings.Keybindings;
+      const invalidEntries = Array.from({ length: MAX_KEYBINDINGS_COUNT }, (_, index) => ({
+        key: "mod+x",
+        command: `invalid.command-${index}`,
+      }));
+      yield* fs.writeFileString(keybindingsConfigPath, JSON.stringify(invalidEntries));
+
+      yield* keybindings.syncDefaultKeybindingsOnStartup;
+
+      assert.deepEqual(JSON.parse(yield* fs.readFileString(keybindingsConfigPath)), invalidEntries);
+    }).pipe(Effect.provide(layerKeybindings())),
+  );
+
+  it.effect("reports the file line of each invalid entry", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const { keybindingsConfigPath } = yield* ServerConfig.ServerConfig;
+      const keybindings = yield* Keybindings.Keybindings;
+      yield* fs.writeFileString(
+        keybindingsConfigPath,
+        [
+          "// [not, an, entry]",
+          "[",
+          '  { "key": "mod+j", "command": "terminal.toggle", "when": "!terminalFocus" },',
+          "  /* { multi-line",
+          "     comment } */",
+          "  {",
+          '    "key": "mod+[,",',
+          '    "command": "invalid.first"',
+          "  },",
+          '  { "key": "mod+shift+d+o", "command": "terminal.new" }, 42,',
+          "  // trailing comma",
+          "]",
+        ].join("\n"),
+      );
+
+      const { issues } = yield* keybindings.loadConfigState;
+
+      assert.deepEqual(
+        issues.map((issue) => issue.message),
+        [
+          'Line 6: Unknown command "invalid.first"',
+          "Line 10: Invalid shortcut or when expression",
+          "Line 10: Expected object",
+        ],
+      );
+    }).pipe(Effect.provide(layerKeybindings())),
+  );
+
   it.effect("skips conflicting default keybindings on startup and logs a detailed warning", () => {
     const messages: string[] = [];
     const logger = Logger.make(({ message }) => {

@@ -81,6 +81,31 @@ features:
         - https://github.com/pingdotgg/t3code/pull/16268
       retire_when: Upstream opens the Add Project browser in ~/Developer on macOS when that folder exists and no base directory is configured.
 
+  - id: agent-context-growth-comment
+    title: PR comment names the tools and text behind agent context growth
+    status: maintained
+    prs: [1273]
+    invariants:
+      - AgentContextBudget.test.ts keeps agentContextTools.json equal to the measured size of each MCP tool, and each size includes one separator byte so the tool changes add up to the change in mcpToolListJsonBytes.
+      - When a budget value is above main's, the PR gets one bot comment with the before and after values and each added, removed or changed tool. The comment is updated in place, including when the growth goes away; a PR that never grew gets none.
+      - The comment job runs on pull_request_target from main's script, so it also works for fork PRs. It reads the PR's two JSON files as git data, validates their keys and values before rendering, and never installs dependencies or runs PR code.
+      - The comment never decides pass or fail and never adds the agent-context-increase label. agent-context-budget.yml remains the gate.
+    rationale: Upstream's gate prints only totals in the job log. A committed per-tool file gives the breakdown for both sides without an install on every PR.
+    implementation_paths:
+      - .github/scripts/agent-context-report.cjs
+      - .github/workflows/agent-context-comment.yml
+      - apps/server/src/provider/agentContextTools.json
+    upstream_paths:
+      - .github/workflows/agent-context-budget.yml
+      - apps/server/src/provider/AgentContextBudget.test.ts
+    tests:
+      - .github/scripts/agent-context-report.test.cjs
+      - apps/server/src/provider/AgentContextBudget.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream's budget check reports which tools and text caused the growth.
+
   - id: android-notification-settings
     title: Android notification settings match Android's categories
     status: maintained
@@ -2199,7 +2224,6 @@ features:
       - The relay uses the fork's independently deployed database and permits installations without APNs, and managed tunnel hosts remain outside the product origin's registrable domain.
       - The managed tunnel zone apex redirects to the styal repository while environment-specific tunnel hosts remain available for remote connections.
       - With managed tunnel cleanup off, relay maintenance runs hourly so idle database compute can suspend; dry-run and enabled cleanup use the upstream five-minute recovery cadence.
-      - The fork-operated relay Worker reports its traces as service `styal-relay-worker`.
     implementation_paths:
       - .github/workflows/deploy-relay.yml
       - .github/workflows/deploy-web.yml
@@ -2888,6 +2912,29 @@ features:
         - https://github.com/pingdotgg/t3code/pull/9339
       retire_when: Upstream routes local chat and terminal links through an environment-aware integrated browser with an external fallback.
 
+  - id: keybindings-invalid-entry-recovery
+    title: Show invalid keybindings entries and keep syncing defaults around them
+    status: maintained
+    prs: [1275]
+    rationale: One stale or mistyped entry, such as a command removed by a later build, must not stop later default shortcuts from reaching the file, and the user needs to see which entry was ignored without watching for a toast or reading server logs.
+    invariants:
+      - Settings → Keybindings lists every issue the primary environment reports, including ones already present at startup; each invalid entry's message names its file line and reason, and the list clears when the file is fixed.
+      - The startup sync applies late defaults and backfills when individual entries are invalid, and writes every entry it read back to the file unchanged, in order.
+      - A default is not backfilled for a command that an invalid entry names, and invalid entries count towards the entry limit.
+      - A file that is not a JSON array is never rewritten by the startup sync.
+    implementation_paths:
+      - apps/server/src/keybindings.ts
+      - apps/web/src/components/settings/KeybindingsSettings.tsx
+    upstream_paths:
+      - apps/server/src/keybindings.ts
+      - apps/web/src/components/settings/KeybindingsSettings.tsx
+    tests:
+      - apps/server/src/keybindings.test.ts
+    upstream:
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/24494
+      retire_when: Upstream syncs defaults around invalid keybindings entries and lists them in Settings.
   - id: keyboard-shortcuts-overview
     title: Keyboard shortcuts overview
     status: maintained
@@ -5126,6 +5173,49 @@ features:
       tracking:
         - https://github.com/pingdotgg/t3code/pull/15990
       retire_when: Upstream hides archived projects' pull requests on its Pull Requests page.
+
+  - id: relay-mobile-axiom-removal
+    title: The relay and mobile app run without Axiom and its crash reporting
+    status: maintained
+    prs: []
+    invariants:
+      - The relay stack declares no Axiom dataset, token, view, monitor or dashboard, and the Worker exports no spans. `Axiom.providers()`, the `@alchemy.run/axiom` dependency and the `AXIOM_*` workflow values stay only so a deploy can destroy what Alchemy state still holds.
+      - The relay serves no `/v1/mobile/observe` route, keeps no mobile source map bucket, and its stack has no tracing or mobile telemetry outputs.
+      - The stack publishes only `T3CODE_RELAY_URL` through `PublishClientConfig`, and the mobile app config has no default trace URL, so client tracing stays off unless a build supplies its own configuration.
+      - The mobile app does not depend on `expo-observe`, has no Send crash reports setting and uploads no source maps. The persisted `crashReportsEnabled` preference stays so an opt-out carries over when crash reports return.
+    rationale: styal does not use Axiom. Production's trace dataset held no spans and had no monitors, and the plan's three-dataset limit failed every relay deploy once mobile logs and metrics datasets were added. Crash reports are planned through PostHog as separate work. Upstream keeps Axiom, so intake must keep `infra/relay/src/monitoring.ts`, `infra/relay/src/mobileTelemetry/`, `apps/mobile/src/features/observability/observe.ts`, the mobile source map scripts and `packages/shared/src/mobileSourceMaps.ts` deleted and drop their upstream changes.
+    implementation_paths:
+      - .github/workflows/mobile-eas-production.yml
+      - apps/mobile/app.config.ts
+      - apps/mobile/index.ts
+      - apps/mobile/package.json
+      - apps/mobile/src/components/RenderErrorBoundary.tsx
+      - apps/mobile/src/features/diagnostics/SettingsDiagnosticsRouteScreen.tsx
+      - infra/relay/alchemy.run.ts
+      - infra/relay/src/clientConfig.ts
+      - infra/relay/src/observability.ts
+      - infra/relay/src/worker.ts
+      - packages/contracts/src/relay.ts
+    upstream_paths:
+      - .github/workflows/mobile-eas-production.yml
+      - apps/mobile/app.config.ts
+      - apps/mobile/index.ts
+      - apps/mobile/package.json
+      - apps/mobile/src/components/RenderErrorBoundary.tsx
+      - apps/mobile/src/features/diagnostics/SettingsDiagnosticsRouteScreen.tsx
+      - infra/relay/alchemy.run.ts
+      - infra/relay/src/clientConfig.ts
+      - infra/relay/src/observability.ts
+      - infra/relay/src/worker.ts
+      - packages/contracts/src/relay.ts
+    tests:
+      - infra/relay/src/clientConfig.test.ts
+      - infra/relay/src/http/Api.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/19093
+      retire_when: styal adopts Axiom again, or upstream removes Axiom from its relay and mobile app.
 
   - id: restart-stopped-tool-calls
     title: Show tool calls a server restart killed as stopped
