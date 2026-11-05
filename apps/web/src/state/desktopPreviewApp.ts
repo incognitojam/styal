@@ -1,7 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import type {
   DesktopBridge,
-  DesktopPreviewAppBuild,
+  DesktopPreviewAppBuildLookup,
   DesktopPreviewAppState,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
@@ -11,7 +11,8 @@ import * as AsyncResult from "effect/reactivity/AsyncResult";
 import { Atom } from "effect/reactivity";
 import { useEffect, useState } from "react";
 
-const BUILD_LOOKUP_INTERVAL_MS = 60_000;
+// Anonymous GitHub requests share 60 an hour per address; `refreshKey` covers a finished build.
+const BUILD_LOOKUP_INTERVAL_MS = 300_000;
 
 export function getDesktopPreviewAppBridge(): NonNullable<DesktopBridge["previewApp"]> | undefined {
   return typeof window === "undefined" ? undefined : window.desktopBridge?.previewApp;
@@ -49,15 +50,20 @@ export function useDesktopPreviewAppState(): DesktopPreviewAppState | null {
   return AsyncResult.getOrElse(useAtomValue(desktopPreviewAppStateAtom), () => null);
 }
 
+const NO_LOOKUP: DesktopPreviewAppBuildLookup = { build: null, lookupFailed: false };
+
 /**
- * The pull request's published build, or null. Looks again every minute while mounted, and at
- * once when `refreshKey` changes, because the release has no push signal for a finished build.
+ * The pull request's published build. Looks again every few minutes while mounted, and at once
+ * when `refreshKey` changes, because the release has no push signal for a finished build.
  */
 export function useDesktopPreviewAppBuild(
   pullRequestNumber: number | null,
   refreshKey: string,
-): DesktopPreviewAppBuild | null {
-  const [found, setFound] = useState<DesktopPreviewAppBuild | null>(null);
+): DesktopPreviewAppBuildLookup {
+  const [found, setFound] = useState<{
+    readonly pullRequestNumber: number;
+    readonly lookup: DesktopPreviewAppBuildLookup;
+  } | null>(null);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- polls GitHub's release assets through the desktop bridge while the pull request is on screen
   useEffect(() => {
     const bridge = getDesktopPreviewAppBridge();
@@ -66,10 +72,14 @@ export function useDesktopPreviewAppBuild(
     const look = () =>
       void bridge
         .findBuild(pullRequestNumber)
-        .then((build) => {
-          if (!cancelled) setFound(build);
+        .then((lookup) => {
+          if (!cancelled) setFound({ pullRequestNumber, lookup });
         })
-        .catch(() => undefined);
+        .catch(() => {
+          if (!cancelled) {
+            setFound({ pullRequestNumber, lookup: { build: null, lookupFailed: true } });
+          }
+        });
     look();
     const timer = window.setInterval(look, BUILD_LOOKUP_INTERVAL_MS);
     return () => {
@@ -78,5 +88,5 @@ export function useDesktopPreviewAppBuild(
     };
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- refreshKey only restarts the lookup when a build may have finished
   }, [pullRequestNumber, refreshKey]);
-  return found !== null && found.pullRequestNumber === pullRequestNumber ? found : null;
+  return found !== null && found.pullRequestNumber === pullRequestNumber ? found.lookup : NO_LOOKUP;
 }

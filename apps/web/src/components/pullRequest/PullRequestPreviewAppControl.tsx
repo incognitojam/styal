@@ -32,7 +32,7 @@ export function PullRequestPreviewAppControl({
     state?.supported === true &&
     pullRequestCanHavePreviewApp(detail, repository);
   const buildRunning = previewBuildIsRunning(detail);
-  const build = useDesktopPreviewAppBuild(
+  const { build, lookupFailed } = useDesktopPreviewAppBuild(
     available ? detail.number : null,
     `${detail.headSha ?? ""}:${buildRunning}`,
   );
@@ -43,6 +43,7 @@ export function PullRequestPreviewAppControl({
     state,
     build,
     buildRunning,
+    lookupFailed,
   });
   if (view.kind === "hidden") return null;
 
@@ -77,6 +78,14 @@ export function PullRequestPreviewAppControl({
     return (
       <Button size="xs" variant="outline" disabled>
         Building preview…
+      </Button>
+    );
+  }
+
+  if (view.kind === "lookup-failed") {
+    return (
+      <Button size="xs" variant="outline" disabled>
+        Can't check for a preview
       </Button>
     );
   }

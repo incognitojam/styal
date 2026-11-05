@@ -33,6 +33,7 @@ export type PreviewAppControlView =
   | { readonly kind: "hidden" }
   | { readonly kind: "busy"; readonly label: string; readonly canCancel: boolean }
   | { readonly kind: "building" }
+  | { readonly kind: "lookup-failed" }
   | {
       readonly kind: "install";
       readonly label: string;
@@ -48,8 +49,9 @@ export function previewAppControlView(input: {
   readonly state: DesktopPreviewAppState | null;
   readonly build: DesktopPreviewAppBuild | null;
   readonly buildRunning: boolean;
+  readonly lookupFailed: boolean;
 }): PreviewAppControlView {
-  const { pullRequestNumber, state, build, buildRunning } = input;
+  const { pullRequestNumber, state, build, buildRunning, lookupFailed } = input;
   if (state === null || !state.supported) return { kind: "hidden" };
   const { activity, installed } = state;
   const installedHere = installed?.pullRequestNumber === pullRequestNumber ? installed : null;
@@ -63,6 +65,8 @@ export function previewAppControlView(input: {
       };
     }
     switch (activity.phase) {
+      case "confirming":
+        return { kind: "busy", label: "Waiting for confirmation…", canCancel: false };
       case "downloading":
         return { kind: "busy", label: `Downloading ${activity.progress ?? 0}%`, canCancel: true };
       case "copying":
@@ -92,5 +96,6 @@ export function previewAppControlView(input: {
     }
   }
   if (installedHere !== null) return { kind: "open", canOpen: state.canOpen };
-  return buildRunning ? { kind: "building" } : { kind: "hidden" };
+  if (buildRunning) return { kind: "building" };
+  return lookupFailed ? { kind: "lookup-failed" } : { kind: "hidden" };
 }

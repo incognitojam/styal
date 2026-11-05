@@ -344,6 +344,7 @@ const DesktopPreviewAppFailureReasonValues = [
   "copy",
   "wrong_app",
   "quarantined",
+  "quarantine_check",
   "quit_timeout",
   "slot_occupied",
   "replace",
@@ -364,12 +365,19 @@ export const DesktopPreviewAppBuildSchema = Schema.Struct({
 });
 export type DesktopPreviewAppBuild = typeof DesktopPreviewAppBuildSchema.Type;
 
+export const DesktopPreviewAppBuildLookupSchema = Schema.Struct({
+  build: Schema.NullOr(DesktopPreviewAppBuildSchema),
+  /** GitHub did not answer, so a null `build` says nothing about whether one exists. */
+  lookupFailed: Schema.Boolean,
+});
+export type DesktopPreviewAppBuildLookup = typeof DesktopPreviewAppBuildLookupSchema.Type;
+
 export const DesktopPreviewAppActivitySchema = Schema.Union([
   Schema.Struct({ status: Schema.Literal("idle") }),
   Schema.Struct({
     status: Schema.Literal("installing"),
     pullRequestNumber: Schema.Number,
-    phase: Schema.Literals(["downloading", "copying", "quitting", "opening"]),
+    phase: Schema.Literals(["confirming", "downloading", "copying", "quitting", "opening"]),
     /** Whole percent of the download; null outside the download. */
     progress: Schema.NullOr(Schema.Number),
   }),
@@ -1272,7 +1280,7 @@ export interface DesktopBridge {
   /** Pull request preview builds on macOS. Optional: older desktop builds lack it. */
   previewApp?: {
     getState: () => Promise<DesktopPreviewAppState>;
-    findBuild: (pullRequestNumber: number) => Promise<DesktopPreviewAppBuild | null>;
+    findBuild: (pullRequestNumber: number) => Promise<DesktopPreviewAppBuildLookup>;
     install: (pullRequestNumber: number) => Promise<DesktopPreviewAppActionResult>;
     cancelInstall: () => Promise<void>;
     open: () => Promise<DesktopPreviewAppActionResult>;

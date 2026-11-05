@@ -3,6 +3,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeCrypto from "node:crypto";
 import { assert, describe, it } from "@effect/vitest";
 import type { DesktopFeatureUsageReport } from "@t3tools/contracts";
+import type * as Electron from "electron";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -12,11 +13,13 @@ import * as Path from "effect/Path";
 import type * as Scope from "effect/Scope";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
+import * as TestClock from "effect/testing/TestClock";
 import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
+import * as ElectronDialog from "../electron/ElectronDialog.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as DesktopTelemetryPublisher from "../telemetry/DesktopTelemetryPublisher.ts";
 import * as DesktopPreviewApp from "./DesktopPreviewApp.ts";
@@ -87,6 +90,16 @@ interface Scenario {
   readonly runningFromSlot?: boolean;
   /** Completed once the download starts; the download then never finishes. */
   readonly downloadStarted?: Deferred.Deferred<void>;
+  /** The person's answer to the main-process confirmation. */
+  readonly confirmed?: boolean;
+  readonly detachFails?: boolean;
+  readonly psFails?: boolean;
+  readonly xattrFails?: boolean;
+  /** An attribute listing for a nested file, as `xattr -r` prints it. */
+  readonly xattrOutput?: string;
+  /** Another install replaces the app while the closed pull request lookup is in flight. */
+  readonly installedDuringLookup?: string;
+  readonly releaseStatus?: number;
 }
 
 const writeBundle = (appPath: string, bundle: { identifier: string; version: string }) =>
@@ -108,12 +121,19 @@ const setup = (scenario: Scenario) =>
     const baseDir = path.join(home, ".styal");
     const appData = path.join(home, "Library", "Application Support");
     const slot = path.join(home, "Applications", APP);
-    const staging = path.join(home, "Applications", ".styal-preview-install");
+    const staging = path.join(
+      home,
+      "Applications",
+      `.styal-preview-install-${scenario.variant ?? "production"}`,
+    );
     const commands: Array<ReadonlyArray<string>> = [];
     const reports: Array<DesktopFeatureUsageReport> = [];
     const states: Array<unknown> = [];
     const urls: Array<string> = [];
     let signalled = false;
+    let mounted: string | null = null;
+    const killChecks: Array<string> = [];
+    const dialogs: Array<Electron.MessageBoxOptions> = [];
 
     const spawner = ChildProcessSpawner.make((command) =>
       Effect.gen(function* () {
@@ -135,6 +155,7 @@ const setup = (scenario: Scenario) =>
           }
         } else if (name === "/usr/bin/hdiutil" && args[0] === "attach") {
           exitCode = scenario.attachExitCode ?? 0;
+          if (exitCode === 0) mounted = args[args.length - 1]!;
           if (exitCode === 0 && scenario.dmgHasApp !== false) {
             yield* writeBundle(
               path.join(args[args.length - 1]!, APP),
@@ -142,13 +163,27 @@ const setup = (scenario: Scenario) =>
             );
           }
         } else if (name === "/usr/bin/hdiutil" && args[0] === "detach") {
-          yield* fs.remove(args[1]!, { recursive: true, force: true });
+          if (scenario.detachFails === true) {
+            exitCode = 1;
+          } else {
+            yield* fs.remove(args[1]!, { recursive: true, force: true });
+            mounted = null;
+          }
+        } else if (name === "/sbin/mount") {
+          if (mounted !== null) stdout = `/dev/disk9s1 on ${mounted} (hfs, local, read-only)\n`;
         } else if (name === "/usr/bin/ditto") {
           yield* fs.copy(args[0]!, args[1]!);
         } else if (name === "/usr/bin/xattr") {
-          exitCode = scenario.quarantined === true ? 0 : 1;
+          if (scenario.xattrFails === true) exitCode = 1;
+          if (scenario.quarantined === true) stdout = `${args[2]}: com.apple.quarantine\n`;
+          if (scenario.xattrOutput !== undefined) stdout = scenario.xattrOutput;
+        } else if (name === "/bin/kill" && args[0] === "-0") {
+          killChecks.push(args[1]!);
+          exitCode = args[1] === "4242" ? 0 : 1;
         } else if (name === "/bin/kill") {
           signalled = true;
+        } else if (name === "/bin/ps" && scenario.psFails === true) {
+          exitCode = 1;
         } else if (name === "/bin/ps") {
           if (
             scenario.runningPreview === "stuck" ||
@@ -179,14 +214,25 @@ const setup = (scenario: Scenario) =>
     );
 
     const http = HttpClient.make((request) =>
-      Effect.sync(() => {
+      Effect.gen(function* () {
         urls.push(request.url);
         const respond = (body: BodyInit, status = 200) =>
           HttpClientResponse.fromWeb(request, new Response(body, { status }));
         if (request.url.endsWith("/releases/tags/desktop-preview")) {
+          if (scenario.releaseStatus !== undefined) return respond("", scenario.releaseStatus);
           return respond(JSON.stringify({ assets: scenario.assets ?? [] }));
         }
         if (/\/pulls\/\d+$/.test(request.url)) {
+          if (scenario.installedDuringLookup !== undefined) {
+            yield* writeBundle(slot, {
+              identifier: PREVIEW_ID,
+              version: scenario.installedDuringLookup,
+            }).pipe(
+              Effect.provideService(FileSystem.FileSystem, fs),
+              Effect.provideService(Path.Path, path),
+              Effect.orDie,
+            );
+          }
           return respond(JSON.stringify({ state: scenario.pullRequestState ?? "open" }));
         }
         if (scenario.downloadStarted !== undefined) {
@@ -218,6 +264,16 @@ const setup = (scenario: Scenario) =>
           Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner),
           Layer.succeed(HttpClient.HttpClient, http),
           Layer.succeed(
+            ElectronDialog.ElectronDialog,
+            ElectronDialog.ElectronDialog.of({
+              showMessageBox: (options: Electron.MessageBoxOptions) =>
+                Effect.sync(() => {
+                  dialogs.push(options);
+                  return { response: scenario.confirmed === false ? 1 : 0, checkboxChecked: false };
+                }),
+            } as unknown as ElectronDialog.ElectronDialog["Service"]),
+          ),
+          Layer.succeed(
             ElectronWindow.ElectronWindow,
             ElectronWindow.ElectronWindow.of({
               sendAll: (_channel: string, state: unknown) =>
@@ -239,6 +295,7 @@ const setup = (scenario: Scenario) =>
     const installPrevious = (version: string, identifier = PREVIEW_ID) =>
       writeBundle(slot, { identifier, version });
     const stagingIsGone = fs.exists(staging).pipe(Effect.map((present) => !present));
+    const isMounted = () => mounted !== null;
     return {
       service,
       fs,
@@ -251,6 +308,10 @@ const setup = (scenario: Scenario) =>
       reports,
       states,
       urls,
+      dialogs,
+      killChecks,
+      staging,
+      isMounted,
       ran,
       installPrevious,
       stagingIsGone,
@@ -352,6 +413,23 @@ describe("DesktopPreviewApp", () => {
       scenario: { quarantined: true },
       reason: "quarantined",
     },
+    {
+      name: "a quarantine attribute on a file inside the build",
+      scenario: {
+        xattrOutput: `/staging/${APP}/Contents/MacOS/styal (Preview): com.apple.quarantine\n`,
+      },
+      reason: "quarantined",
+    },
+    {
+      name: "attributes that cannot be read",
+      scenario: { xattrFails: true },
+      reason: "quarantine_check",
+    },
+    {
+      name: "a process list that cannot be read",
+      scenario: { psFails: true },
+      reason: "quit_timeout",
+    },
   ] as const)("keeps the installed build after $name", ({ scenario, reason }) =>
     scoped(
       Effect.gen(function* () {
@@ -375,8 +453,98 @@ describe("DesktopPreviewApp", () => {
         }
         assert.lengthOf(app.ran("/usr/bin/open"), 0);
         assert.lengthOf(app.ran("/bin/kill"), 0);
+        assert.isFalse(app.isMounted());
         // The attribute is reported, never cleared.
         assert.isFalse(app.ran("/usr/bin/xattr").some((command) => command.includes("-d")));
+      }),
+    ),
+  );
+
+  it.effect("does nothing but look up the build until the person accepts in the main process", () =>
+    scoped(
+      Effect.gen(function* () {
+        const app = yield* setup({ assets: [buildAsset], confirmed: false });
+        yield* app.installPrevious("1.2.3-pr.99.1");
+
+        const result = yield* app.service.install(12);
+
+        assert.strictEqual(result.outcome, "cancelled");
+        assert.lengthOf(app.dialogs, 1);
+        assert.strictEqual(app.dialogs[0]?.defaultId, 1);
+        assert.include(app.dialogs[0]?.detail, "pull request #99, build 1");
+        assert.isFalse(app.urls.some((url) => url.includes("/releases/download/")));
+        assert.lengthOf(app.ran("/usr/bin/hdiutil"), 0);
+        assert.strictEqual(yield* installedVersion(app.slot), "1.2.3-pr.99.1");
+      }),
+    ),
+  );
+
+  it.effect("puts the previous build back when macOS refuses to open the new one", () =>
+    scoped(
+      Effect.gen(function* () {
+        const app = yield* setup({ assets: [buildAsset], openExitCode: 1 });
+        yield* app.installPrevious("1.2.3-pr.12.6");
+
+        const result = yield* app.service.install(12);
+
+        assert.strictEqual(result.outcome, "failed");
+        assert.lengthOf(app.ran("/usr/bin/open"), 1);
+        assert.strictEqual(yield* installedVersion(app.slot), "1.2.3-pr.12.6");
+        assert.isTrue(yield* app.stagingIsGone);
+      }),
+    ),
+  );
+
+  it.effect("leaves nothing installed when the first install cannot open", () =>
+    scoped(
+      Effect.gen(function* () {
+        const app = yield* setup({ assets: [buildAsset], openExitCode: 1 });
+        const result = yield* app.service.install(12);
+        assert.strictEqual(result.outcome, "failed");
+        assert.isNull(result.state.installed);
+        assert.isFalse(yield* app.fs.exists(app.slot));
+      }),
+    ),
+  );
+
+  it.effect("restores a backup a crash left behind instead of deleting the only copy", () =>
+    scoped(
+      Effect.gen(function* () {
+        const app = yield* setup({});
+        yield* writeBundle(app.path.join(app.staging, "previous.app"), {
+          identifier: PREVIEW_ID,
+          version: "1.2.3-pr.12.6",
+        });
+
+        yield* app.service.cleanLeftovers;
+
+        assert.strictEqual(yield* installedVersion(app.slot), "1.2.3-pr.12.6");
+        assert.isTrue(yield* app.stagingIsGone);
+      }),
+    ),
+  );
+
+  it.effect("never removes staging while the volume stays attached", () =>
+    scoped(
+      Effect.gen(function* () {
+        const app = yield* setup({ assets: [buildAsset], detachFails: true });
+        yield* app.installPrevious("1.2.3-pr.12.6");
+
+        const first = yield* app.service.install(12);
+
+        // The copy succeeded, so the install finishes even though the volume could not detach.
+        assert.strictEqual(first.outcome, "completed");
+        assert.isTrue(app.isMounted());
+        assert.isTrue(yield* app.fs.exists(app.path.join(app.staging, "mount", APP)));
+        assert.isTrue(
+          app
+            .ran("/usr/bin/hdiutil")
+            .some((command) => command[1] === "detach" && command.includes("-force")),
+        );
+
+        const second = yield* app.service.install(12);
+        assert.strictEqual(second.outcome, "failed");
+        assert.include(second.message, "still attached");
       }),
     ),
   );
@@ -430,7 +598,7 @@ describe("DesktopPreviewApp", () => {
         const app = yield* setup({ assets: [asset("styal-1.2.3-pr.123.1-arm64.dmg")] });
         const result = yield* app.service.install(12);
         assert.strictEqual(result.outcome, "failed");
-        assert.strictEqual(yield* app.service.findBuild(12), null);
+        assert.isNull((yield* app.service.findBuild(12)).build);
         assert.lengthOf(app.ran("/usr/bin/hdiutil"), 0);
       }),
     ),
@@ -514,6 +682,48 @@ describe("DesktopPreviewApp", () => {
     ),
   );
 
+  it.effect("keeps preview data when another server is using it or the person declines", () =>
+    scoped(
+      Effect.gen(function* () {
+        const declined = yield* setup({ confirmed: false });
+        const declinedData = declined.path.join(declined.baseDir, "preview");
+        yield* declined.fs.makeDirectory(declinedData, { recursive: true });
+        assert.strictEqual((yield* declined.service.resetData).outcome, "cancelled");
+        assert.isTrue(yield* declined.fs.exists(declinedData));
+        assert.lengthOf(declined.ran("/bin/ps"), 0);
+
+        const app = yield* setup({});
+        const state = app.path.join(app.baseDir, "preview", "userdata");
+        yield* app.fs.makeDirectory(state, { recursive: true });
+        yield* app.fs.writeFileString(
+          app.path.join(state, "server-runtime.json"),
+          JSON.stringify({ pid: 4242 }),
+        );
+        const result = yield* app.service.resetData;
+        assert.strictEqual(result.outcome, "failed");
+        assert.include(result.message, "process 4242");
+        assert.isTrue(yield* app.fs.exists(state));
+      }),
+    ),
+  );
+
+  it.effect("deletes data whose recorded server has already exited", () =>
+    scoped(
+      Effect.gen(function* () {
+        const app = yield* setup({});
+        const state = app.path.join(app.baseDir, "preview", "userdata");
+        yield* app.fs.makeDirectory(state, { recursive: true });
+        yield* app.fs.writeFileString(
+          app.path.join(state, "server-runtime.json"),
+          JSON.stringify({ pid: 7 }),
+        );
+        assert.strictEqual((yield* app.service.resetData).outcome, "completed");
+        assert.deepStrictEqual(app.killChecks, ["7"]);
+        assert.isFalse(yield* app.fs.exists(state));
+      }),
+    ),
+  );
+
   it.effect("does not reset data from inside a preview app", () =>
     scoped(
       Effect.gen(function* () {
@@ -553,12 +763,67 @@ describe("DesktopPreviewApp", () => {
       ),
   );
 
+  it.effect("does not remove a build installed while the closed lookup was in flight", () =>
+    scoped(
+      Effect.gen(function* () {
+        const app = yield* setup({
+          pullRequestState: "closed",
+          installedDuringLookup: "1.2.3-pr.99.1",
+        });
+        yield* app.installPrevious("1.2.3-pr.12.7");
+
+        yield* app.service.removeIfPullRequestClosed;
+
+        assert.strictEqual(yield* installedVersion(app.slot), "1.2.3-pr.99.1");
+        assert.lengthOf(app.reports, 0);
+      }),
+    ),
+  );
+
+  it.effect("reuses a recent lookup and says when GitHub did not answer", () =>
+    scoped(
+      Effect.gen(function* () {
+        const app = yield* setup({ assets: [buildAsset] });
+        assert.strictEqual((yield* app.service.findBuild(12)).build?.runNumber, 7);
+        yield* app.service.findBuild(12);
+        yield* app.service.findBuild(13);
+        assert.lengthOf(app.urls, 1);
+        yield* TestClock.adjust("61 seconds");
+        yield* app.service.findBuild(12);
+        assert.lengthOf(app.urls, 2);
+
+        const limited = yield* setup({ releaseStatus: 403 });
+        assert.deepStrictEqual(yield* limited.service.findBuild(12), {
+          build: null,
+          lookupFailed: true,
+        });
+      }),
+    ),
+  );
+
+  it.effect("keeps each variant's staging apart so one cannot clean up after another", () =>
+    scoped(
+      Effect.gen(function* () {
+        const preview = yield* setup({ variant: "preview" });
+        const fs = preview.fs;
+        const other = preview.path.join(
+          preview.home,
+          "Applications",
+          ".styal-preview-install-production",
+        );
+        yield* fs.makeDirectory(other, { recursive: true });
+        yield* preview.service.cleanLeftovers;
+        assert.isTrue(yield* fs.exists(other));
+      }),
+    ),
+  );
+
   it.effect("does nothing and asks GitHub nothing off macOS or with nothing installed", () =>
     scoped(
       Effect.gen(function* () {
         const linux = yield* setup({ platform: "linux", assets: [buildAsset] });
         assert.isFalse((yield* linux.service.state).supported);
-        assert.strictEqual(yield* linux.service.findBuild(12), null);
+        assert.isNull((yield* linux.service.findBuild(12)).build);
         const result = yield* linux.service.install(12);
         assert.strictEqual(result.outcome, "failed");
         assert.lengthOf(linux.urls, 0);

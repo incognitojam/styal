@@ -84,6 +84,7 @@ describe("previewAppControlView", () => {
         state: inputState,
         build: inputBuild,
         buildRunning,
+        lookupFailed: false,
       }).kind,
     ).toBe(kind);
   });
@@ -94,6 +95,7 @@ describe("previewAppControlView", () => {
       state: state({ installed: installed(99, 1) }),
       build: build(7),
       buildRunning: true,
+      lookupFailed: false,
     });
     expect(view).toMatchObject({
       kind: "install",
@@ -109,11 +111,13 @@ describe("previewAppControlView", () => {
       state: state({ opensAfterInstall: false }),
       build: build(7),
       buildRunning: false,
+      lookupFailed: false,
     });
     expect(view).toMatchObject({ label: "Install" });
   });
 
   it.each([
+    ["confirming", null, "Waiting for confirmation…", false],
     ["downloading", 42, "Downloading 42%", true],
     ["copying", null, "Copying…", true],
     ["quitting", null, "Quitting preview…", true],
@@ -127,8 +131,22 @@ describe("previewAppControlView", () => {
         }),
         build: build(7),
         buildRunning: false,
+        lookupFailed: false,
       }),
     ).toEqual({ kind: "busy", label, canCancel });
+  });
+
+  it("says when GitHub did not answer, but a known build still wins", () => {
+    const view = (inputBuild: DesktopPreviewAppBuild | null) =>
+      previewAppControlView({
+        pullRequestNumber: 12,
+        state: state(),
+        build: inputBuild,
+        buildRunning: false,
+        lookupFailed: true,
+      }).kind;
+    expect(view(null)).toBe("lookup-failed");
+    expect(view(build(7))).toBe("install");
   });
 
   it("does not offer another pull request's install for cancelling here", () => {
@@ -145,6 +163,7 @@ describe("previewAppControlView", () => {
         }),
         build: build(7),
         buildRunning: false,
+        lookupFailed: false,
       }),
     ).toEqual({ kind: "busy", label: "Installing #99", canCancel: false });
   });

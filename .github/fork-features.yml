@@ -1212,10 +1212,11 @@ features:
     prs: []
     invariants:
       - A preview build is only found from finished release assets of the hard-coded fork repository whose names carry the pull request's full `-pr.<n>.` marker, and pull request comments are never read.
-      - A preview is installed only in response to a person's click; a closed pull request removes the installed app automatically, and only while the preview is not running.
+      - A preview is installed and its data reset only after a person accepts a confirmation shown by the main process, so renderer code alone cannot start either; a closed pull request removes the installed app automatically, only while the preview is not running and only if it is still the build whose pull request was checked.
+      - A failed install, including a build macOS refuses to open and a crash between renames, restores the previous build, and staging is never removed while the build's volume stays attached.
       - A download that does not match GitHub's published digest, or an app whose bundle identifier or version differs from the published preview, is discarded before it replaces anything or runs.
-      - A build carrying macOS's quarantine attribute fails visibly with the `quarantined` reason; the attribute is never cleared.
-      - Removing the app keeps preview data; resetting deletes only the preview's own state directories and never a stable, nightly, or development install's data.
+      - A build with macOS's quarantine attribute anywhere inside it fails visibly with the `quarantined` reason, a check that cannot complete fails too, and the attribute is never cleared.
+      - Removing the app keeps preview data; resetting deletes only the preview's own state directories, and refuses while any live server records using them.
       - A preview app never quits, opens, resets, or replaces the copy it is running from.
     rationale: Testing a preview otherwise takes eight manual steps per build, including clearing quarantine and unmounting a disk image.
     implementation_paths:

@@ -1,6 +1,6 @@
 import {
   DesktopPreviewAppActionResultSchema,
-  DesktopPreviewAppBuildSchema,
+  DesktopPreviewAppBuildLookupSchema,
   DesktopPreviewAppStateSchema,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
@@ -26,7 +26,7 @@ export const getPreviewAppState = makeIpcMethod({
 export const findPreviewAppBuild = makeIpcMethod({
   channel: IpcChannels.PREVIEW_APP_FIND_BUILD_CHANNEL,
   payload: PullRequestPayload,
-  result: Schema.NullOr(DesktopPreviewAppBuildSchema),
+  result: DesktopPreviewAppBuildLookupSchema,
   handler: Effect.fn("desktop.ipc.previewApp.findBuild")(function* ({ pullRequestNumber }) {
     return yield* (yield* DesktopPreviewApp.DesktopPreviewApp).findBuild(pullRequestNumber);
   }),

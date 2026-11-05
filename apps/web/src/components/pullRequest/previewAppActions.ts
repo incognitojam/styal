@@ -1,6 +1,5 @@
 import type { DesktopPreviewAppActionResult } from "@t3tools/contracts";
 
-import { readLocalApi } from "~/localApi";
 import { getDesktopPreviewAppBridge } from "~/state/desktopPreviewApp";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 
@@ -34,13 +33,6 @@ export const previewAppActions = {
   },
   resetData: () => {
     const bridge = getDesktopPreviewAppBridge();
-    if (!bridge) return;
-    void readLocalApi()
-      ?.dialogs.confirm(
-        "Reset preview data?\n\nThis quits styal (Preview) and deletes its projects, threads, settings, and sign-ins. Your main styal app is not affected.",
-      )
-      .then((confirmed) => {
-        if (confirmed) settle("Could not reset preview data", bridge.resetData());
-      });
+    if (bridge) settle("Could not reset preview data", bridge.resetData());
   },
 };

@@ -177,7 +177,7 @@ directory and pair with the running server.
 
 On an Apple Silicon Mac, the desktop app can install the unsigned preview build of a pull request in
 this project's repository that has the `preview:mac` label. Open the pull request and choose
-**Install and open** once its build has finished. styal downloads the build, checks it against the
+**Install and open** once its build has finished, then confirm. styal downloads the build, checks it against the
 digest GitHub published, installs `styal (Preview)` in `~/Applications`, and opens it. It runs beside
 your main app with its own projects, threads, and sign-ins in `~/.styal/preview`.
 
