@@ -1665,11 +1665,12 @@ export const layerQueryRunner: Layer.Layer<
           ),
       ),
       readSessionHistory: Effect.fn("ClaudeAgentSdkQueryRunner.readSessionHistory")(
-        function (input) {
-          return Effect.tryPromise({
+        function* (input) {
+          const env = yield* HostProcess.Environment;
+          return yield* Effect.tryPromise({
             try: async () =>
               input.environment?.CLAUDE_CONFIG_DIR === undefined ||
-              input.environment.CLAUDE_CONFIG_DIR === process.env.CLAUDE_CONFIG_DIR
+              input.environment.CLAUDE_CONFIG_DIR === env.CLAUDE_CONFIG_DIR
                 ? readClaudeSessionHistory(input.sessionId, input.options)
                 : decodeClaudeHistory(await runScopedClaudeHistory(input, "readSessionHistory")),
             catch: (cause) => queryRunnerError(cause, "readSessionHistory"),

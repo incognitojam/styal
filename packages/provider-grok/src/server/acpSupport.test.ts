@@ -1,3 +1,4 @@
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
@@ -33,23 +34,8 @@ describe("grokAcpSpawnArgs", () => {
 describe("buildGrokAcpSpawnInput", () => {
   it.effect("does not hand the server's own variables to the Grok process", () =>
     Effect.gen(function* () {
-      yield* Effect.acquireRelease(
-        Effect.sync(() => {
-          const previous = {
-            T3CODE_PORT: process.env.T3CODE_PORT,
-            GROK_TEST_INHERITED: process.env.GROK_TEST_INHERITED,
-          };
-          process.env.T3CODE_PORT = "3773";
-          process.env.GROK_TEST_INHERITED = "kept";
-          return previous;
-        }),
-        (previous) =>
-          Effect.sync(() => {
-            for (const [name, value] of Object.entries(previous)) {
-              if (value === undefined) delete process.env[name];
-              else process.env[name] = value;
-            }
-          }),
+      yield* Effect.acquireRelease(Effect.sync(setAmbientTestEnvironment), (restore) =>
+        Effect.sync(restore),
       );
       const fileSystem = yield* FileSystem.FileSystem;
       const directory = yield* fileSystem.makeTempDirectoryScoped();
@@ -77,7 +63,7 @@ describe("buildGrokAcpSpawnInput", () => {
         yield* fileSystem.readFileString(output),
       );
       expect(childEnvironment.T3CODE_PORT).toBeUndefined();
-      expect(childEnvironment.PATH).toBe(process.env.PATH);
+      expect(childEnvironment.PATH).toBe((yield* HostProcess.Environment).PATH);
       expect(childEnvironment.GROK_TEST_INHERITED).toBe("kept");
       expect(childEnvironment.XAI_API_KEY).toBe("configured");
     }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
@@ -202,3 +188,19 @@ describe("applyGrokAcpModelSelection", () => {
     }),
   );
 });
+
+// The spawner extends the real environment; this test must set ambient values outside Effect code.
+function setAmbientTestEnvironment() {
+  const previous = {
+    T3CODE_PORT: process.env.T3CODE_PORT,
+    GROK_TEST_INHERITED: process.env.GROK_TEST_INHERITED,
+  };
+  process.env.T3CODE_PORT = "3773";
+  process.env.GROK_TEST_INHERITED = "kept";
+  return () => {
+    for (const [name, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  };
+}

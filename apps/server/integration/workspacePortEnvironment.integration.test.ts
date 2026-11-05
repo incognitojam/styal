@@ -101,7 +101,7 @@ integrationLayer("workspace port environment integration", (it) => {
       assert.include(observedOutput, `PORT_PROOF=${recoveredPort}:${recoveredPort}`);
       assert.strictEqual(yield* reloadedAllocator.getBasePort(workspacePath), allocatedPort);
 
-      if (process.env.T3CODE_PRINT_WORKSPACE_PORT_PROOF === "1") {
+      if ((yield* HostProcess.Environment).T3CODE_PRINT_WORKSPACE_PORT_PROOF === "1") {
         yield* Effect.sync(() =>
           process.stdout.write(
             `workspace port proof: allocated=${allocatedPort} persisted=${persistedPort} recovered=${recoveredPort} child=${observedOutput.trim()}\n`,
