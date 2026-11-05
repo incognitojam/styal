@@ -8,6 +8,8 @@ const SETTINGS_SEARCH_TERMS = {
   SettingsEnvironments: [
     "servers",
     "connections",
+    "work together",
+    "your machines",
     "pair",
     "add environment",
     "remote",

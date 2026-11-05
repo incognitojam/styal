@@ -318,6 +318,11 @@ export const ForkClientUsageInput = Schema.Union([
     action: Schema.Literal("opened"),
     entryPoint: Schema.Literals(["shortcut", "command_palette", "help_menu"]),
   }),
+  Schema.Struct({
+    feature: Schema.Literal("work-together"),
+    action: Schema.Literals(["start", "stop"]),
+    outcome: Schema.Literals(["complete", "waiting", "failed"]),
+  }),
   ReportedClientSettingsSnapshot,
   ReportedMobileSettingsSnapshot,
 ]);

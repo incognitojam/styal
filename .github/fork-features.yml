@@ -6715,6 +6715,35 @@ features:
         - https://github.com/pingdotgg/t3code/commit/42da166d131017335a1158d0b379dd68b8985796
       retire_when: Upstream detects new static web deployments from the page's origin and offers a manual refresh independently of desktop and paired-server updates.
 
+  - id: work-together
+    title: Let two machines work together in one step, and stop
+    status: maintained
+    prs: []
+    invariants:
+      - Work together on web, desktop and mobile settings uses only existing client APIs, from one action in packages/client-runtime, and adds no server protocol.
+      - Each step records its result on the machines, so a failed or waiting step keeps what worked and a rerun only does what is left.
+      - A step that needs a machine this client is not connected to waits, and finishes when the machine returns while the settings page is open.
+      - Stop working together removes both links, ends the link and device sessions each machine gave the other, and stops device sharing. It leaves the links and device settings as they are.
+      - Pairing codes never appear in the progress list; only known errors show their own message.
+    rationale: Linking in each direction, device sharing and agent device access each took separate steps per machine, which the fork removes for someone who controls both machines. Upstream's mesh (#24863) was not imported, and this action is where it would be swapped in.
+    implementation_paths:
+      - apps/mobile/src/features/connection/WorkTogetherSection.tsx
+      - apps/web/src/components/settings/WorkTogetherSettings.tsx
+      - packages/client-runtime/src/state/workTogether.ts
+    upstream_paths:
+      - apps/server/src/peer/PeerLinks.ts
+      - apps/web/src/components/settings/LinkedEnvironmentsSettings.tsx
+      - packages/client-runtime/src/state/peerPairingCode.ts
+    tests:
+      - packages/client-runtime/src/state/workTogether.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/16758
+        - https://github.com/pingdotgg/t3code/pull/24863
+        - https://github.com/pingdotgg/t3code/pull/28907
+      retire_when: Upstream sets up both directions and device sharing in one step, with a way to undo it.
+
   - id: workflow-approvals-same-repository
     title: Surface and approve GitHub workflow runs waiting on same-repository pull requests
     status: maintained
@@ -7000,7 +7029,7 @@ features:
   - id: your-machines-wording
     title: Name pairs of machines "your machines", and link only styal Link
     status: maintained
-    prs: []
+    prs: [1294]
     invariants:
       - Clients call pairs of machines "your machines"; "link" in client text means styal Link. Server, contract and agent-facing text, including t3_environment_link, peerLink and --access, keeps "linked environment" until it changes with the mcp-tool-use eval.
       - Upstream strings naming "Linked environment" in client sources are renamed at intake or fail naming:check.

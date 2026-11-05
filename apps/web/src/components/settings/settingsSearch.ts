@@ -1276,6 +1276,15 @@ export const SETTINGS_SEARCH_ITEMS = [
     ],
   },
   {
+    id: "work-together",
+    title: "Work together",
+    to: "/settings/connections",
+    targetId: "work-together",
+    searchTerms: [
+      "your machines stop working together link laptop server simulators share devices pair",
+    ],
+  },
+  {
     id: "linked-environments",
     peerLinksOnly: true,
     title: "Your machines",

@@ -45,6 +45,43 @@ export function offlineDeviceShares<
   );
 }
 
+/**
+ * Shares the target's devices with the agent environment this runs in, turning on the device
+ * hub and agent access on both.
+ */
+export const connectDeviceEnvironment = Effect.fn("device.connectEnvironment")(function* (
+  environmentId: EnvironmentId,
+  input: {
+    readonly targetEnvironmentId: EnvironmentId;
+    readonly targetLabel: string;
+    readonly urls: readonly [string, ...string[]];
+    readonly sourceLabel: string;
+  },
+) {
+  const environments = yield* EnvironmentRegistry;
+  const onTarget = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+    environments.run(input.targetEnvironmentId, effect);
+  yield* onTarget(request(WS_METHODS.deviceConfigure, { enabled: true, agentAccessEnabled: true }));
+  const grant = yield* onTarget(
+    request(WS_METHODS.deviceCreateHostGrant, {
+      sourceEnvironmentId: environmentId,
+      sourceLabel: input.sourceLabel,
+    }),
+  );
+  yield* request(WS_METHODS.deviceConnectEnvironment, {
+    label: input.targetLabel,
+    urls: input.urls,
+    grant,
+  }).pipe(
+    Effect.onError(() =>
+      onTarget(request(WS_METHODS.deviceRevokeHostGrant, { sessionId: grant.sessionId })).pipe(
+        Effect.ignore,
+      ),
+    ),
+  );
+  yield* request(WS_METHODS.deviceConfigure, { enabled: true, agentAccessEnabled: true });
+});
+
 export function createDeviceEnvironmentAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
 ) {
@@ -77,41 +114,8 @@ export function createDeviceEnvironmentAtoms<R, E>(
       label: "environment-data:device:connect-environment",
       scheduler,
       concurrency,
-      execute: Effect.fn("device.connectEnvironment")(function* (
-        input: {
-          targetEnvironmentId: EnvironmentId;
-          targetLabel: string;
-          urls: readonly [string, ...string[]];
-          sourceLabel: string;
-        },
-        _registry,
-        environmentId,
-      ) {
-        const environments = yield* EnvironmentRegistry;
-        const onTarget = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-          environments.run(input.targetEnvironmentId, effect);
-        yield* onTarget(
-          request(WS_METHODS.deviceConfigure, { enabled: true, agentAccessEnabled: true }),
-        );
-        const grant = yield* onTarget(
-          request(WS_METHODS.deviceCreateHostGrant, {
-            sourceEnvironmentId: environmentId,
-            sourceLabel: input.sourceLabel,
-          }),
-        );
-        yield* request(WS_METHODS.deviceConnectEnvironment, {
-          label: input.targetLabel,
-          urls: input.urls,
-          grant,
-        }).pipe(
-          Effect.onError(() =>
-            onTarget(
-              request(WS_METHODS.deviceRevokeHostGrant, { sessionId: grant.sessionId }),
-            ).pipe(Effect.ignore),
-          ),
-        );
-        yield* request(WS_METHODS.deviceConfigure, { enabled: true, agentAccessEnabled: true });
-      }),
+      execute: (input: Parameters<typeof connectDeviceEnvironment>[1], _registry, environmentId) =>
+        connectDeviceEnvironment(environmentId, input),
     }),
     disconnectEnvironment: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:device:disconnect-environment",

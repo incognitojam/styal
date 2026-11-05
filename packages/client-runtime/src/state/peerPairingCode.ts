@@ -34,7 +34,7 @@ export class PeerPairingCodeError extends Data.TaggedError("PeerPairingCodeError
   }
 }
 
-const mintPeerPairingCode = Effect.fn("clientRuntime.state.mintPeerPairingCode")(function* (
+const mintPeerPairingCodeWith = Effect.fn("clientRuntime.state.mintPeerPairingCode")(function* (
   prepared: PreparedConnection,
   access: AuthMcpClientAccess,
 ): Effect.fn.Return<string, PeerPairingCodeError, HttpClient.HttpClient> {
@@ -75,21 +75,23 @@ const mintPeerPairingCode = Effect.fn("clientRuntime.state.mintPeerPairingCode")
  * Mints a code on the environment it runs in. Each run mints its own: a code
  * is one-use, so two overlapping answers must never share one.
  */
+export const mintPeerPairingCode = Effect.fn(function* (access: AuthMcpClientAccess) {
+  const supervisor = yield* EnvironmentSupervisor.EnvironmentSupervisor;
+  const prepared = yield* SubscriptionRef.get(supervisor.prepared);
+  if (Option.isNone(prepared)) {
+    return yield* new PeerPairingCodeError({
+      reason: "unavailable",
+      cause: "The environment is not connected.",
+    });
+  }
+  return yield* mintPeerPairingCodeWith(prepared.value, access);
+});
+
 export function createPeerPairingCodeCommand<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | HttpClient.HttpClient | R, E>,
 ) {
   return createEnvironmentCommand(runtime, {
     label: "environment-data:peer-pairing-code:mint",
-    execute: Effect.fn(function* (access: AuthMcpClientAccess) {
-      const supervisor = yield* EnvironmentSupervisor.EnvironmentSupervisor;
-      const prepared = yield* SubscriptionRef.get(supervisor.prepared);
-      if (Option.isNone(prepared)) {
-        return yield* new PeerPairingCodeError({
-          reason: "unavailable",
-          cause: "The environment is not connected.",
-        });
-      }
-      return yield* mintPeerPairingCode(prepared.value, access);
-    }),
+    execute: mintPeerPairingCode,
   });
 }
