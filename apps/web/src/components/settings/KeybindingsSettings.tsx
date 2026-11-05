@@ -30,7 +30,10 @@ import {
   type ServerRemoveKeybindingInput,
   type ServerUpsertKeybindingInput,
 } from "@t3tools/contracts";
-import { mergeWithDefaultKeybindings } from "@t3tools/shared/keybindings";
+import {
+  mergeWithDefaultKeybindings,
+  US_SHIFTED_TO_UNSHIFTED_KEYS,
+} from "@t3tools/shared/keybindings";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -82,11 +85,15 @@ import { useAtomCommand } from "../../state/use-atom-command";
 function KeybindingPill({ value }: { value: string }) {
   // Keys dedupe repeated parts; a literal "+" in a shortcut splits into empty strings.
   const seenParts = new Map<string, number>();
-  const parts = value.split("+").map((part) => {
-    const seen = seenParts.get(part) ?? 0;
-    seenParts.set(part, seen + 1);
-    return { part, key: seen === 0 ? part : `${part}-${seen}` };
-  });
+  const tokens = value.split("+");
+  const glyphImpliesShift = US_SHIFTED_TO_UNSHIFTED_KEYS.has(tokens.at(-1) ?? "");
+  const parts = tokens
+    .filter((part) => !(glyphImpliesShift && part === "shift"))
+    .map((part) => {
+      const seen = seenParts.get(part) ?? 0;
+      seenParts.set(part, seen + 1);
+      return { part, key: seen === 0 ? part : `${part}-${seen}` };
+    });
   return (
     <KbdGroup>
       {parts.map(({ part, key }) => (

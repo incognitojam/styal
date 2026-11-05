@@ -17,6 +17,7 @@ import {
   resolveEventKeys,
   type ShortcutEventLike,
   type ShortcutModifierStateLike,
+  US_SHIFTED_TO_UNSHIFTED_KEYS,
 } from "@t3tools/shared/keybindings";
 import { isElectron } from "./env";
 import { projectScriptIdFromCommand } from "./projectScripts";
@@ -230,7 +231,8 @@ export function formatShortcutLabel(
   const showMeta = shortcut.metaKey || (shortcut.modKey && useMetaForMod);
   const showCtrl = shortcut.ctrlKey || (shortcut.modKey && !useMetaForMod);
   const showAlt = shortcut.altKey;
-  const showShift = shortcut.shiftKey;
+  // A glyph such as "?" already says Shift.
+  const showShift = shortcut.shiftKey && !US_SHIFTED_TO_UNSHIFTED_KEYS.has(shortcut.key);
 
   if (useMetaForMod) {
     return `${showCtrl ? "\u2303" : ""}${showAlt ? "\u2325" : ""}${showShift ? "\u21e7" : ""}${showMeta ? "\u2318" : ""}${keyLabel}`;

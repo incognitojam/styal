@@ -94,4 +94,17 @@ describe("buildShortcutsOverview", () => {
     const rebound = overview(jumps((digit) => (digit === 4 ? "mod+shift+x" : `mod+${digit}`)));
     expect(rebound[0]?.entries).toHaveLength(9);
   });
+
+  it("lists a shifted glyph once, without naming Shift", () => {
+    expect(
+      overview([
+        { key: "mod+shift+/", command: "shortcutsOverview.toggle" },
+        { key: "mod+shift+?", command: "shortcutsOverview.toggle" },
+        { key: "mod+shift+/", command: "chat.new", when: "previewFocus" },
+      ]).flatMap((group) => group.entries.map((entry) => [entry.command, entry.shortcuts])),
+    ).toEqual([
+      ["shortcutsOverview.toggle", ["Ctrl+?"]],
+      ["chat.new", ["Ctrl+Shift+/"]],
+    ]);
+  });
 });

@@ -57,7 +57,7 @@ describe("command palette shortcuts", () => {
 });
 
 describe("shortcuts overview shortcut", () => {
-  it("toggles with the default Ctrl+Shift+? and closes the palette", async () => {
+  it("toggles with the default ? shortcut and closes the palette", async () => {
     setup();
     useShortcutsOverviewStore.setState({ open: false });
     using _platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("Linux x86_64");

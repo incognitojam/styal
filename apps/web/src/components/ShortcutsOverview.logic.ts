@@ -6,6 +6,8 @@ import type {
   ResolvedKeybindingsConfig,
 } from "@t3tools/contracts";
 
+import { US_SHIFTED_TO_UNSHIFTED_KEYS } from "@t3tools/shared/keybindings";
+
 import { formatShortcutLabel, shortcutConflictKey, shortcutForContext } from "../keybindings";
 import {
   buildKeybindingRows,
@@ -79,6 +81,24 @@ function shortcutsForBinding(
   return sendShortcut === "mod-enter" ? [requiring] : [binding.shortcut, requiring];
 }
 
+/** `mod+shift+/` beside `mod+shift+?` is the same keypress, so only the glyph is worth listing. */
+function isUnshiftedAlias(
+  binding: ResolvedKeybindingRule,
+  bindings: ReadonlyArray<ResolvedKeybindingRule>,
+  platform: string,
+): boolean {
+  const keys = shortcutConflictKey(binding.shortcut, platform);
+  return bindings.some(({ command, shortcut }) => {
+    const unshifted = US_SHIFTED_TO_UNSHIFTED_KEYS.get(shortcut.key);
+    return (
+      command === binding.command &&
+      unshifted !== undefined &&
+      shortcut.shiftKey &&
+      shortcutConflictKey({ ...shortcut, key: unshifted }, platform) === keys
+    );
+  });
+}
+
 const JUMP_COMMAND = /^(.+\.jump)\.(\d)$/;
 
 /** One row for a run of jump commands, unless the keys were rebound out of step with the digits. */
@@ -125,10 +145,12 @@ export function buildShortcutsOverview(
     readonly sendShortcut: ClientSettings["sendShortcut"];
   },
 ): ReadonlyArray<ShortcutsOverviewGroup> {
-  const rows = buildKeybindingRows(liveBindings(keybindings, options.platform, options.isDesktop));
+  const bindings = liveBindings(keybindings, options.platform, options.isDesktop);
+  const rows = buildKeybindingRows(bindings);
   return groupKeybindingRows(rows).map((group) => {
     const shortcutsByCommand = new Map<KeybindingCommand, Set<string>>();
     for (const row of group.rows) {
+      if (isUnshiftedAlias(row.binding, bindings, options.platform)) continue;
       const shortcuts = shortcutsByCommand.get(row.command) ?? new Set();
       for (const shortcut of shortcutsForBinding(row.binding, options.sendShortcut)) {
         shortcuts.add(formatShortcutLabel(shortcut, options.platform));

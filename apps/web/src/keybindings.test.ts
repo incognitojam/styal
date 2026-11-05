@@ -250,7 +250,11 @@ describe("shortcuts overview shortcut", () => {
   it("is labelled with ? and stays out of terminals", () => {
     assert.equal(
       shortcutLabelForCommand(DEFAULT_RESOLVED_KEYBINDINGS, "shortcutsOverview.toggle", "Win32"),
-      "Ctrl+Shift+?",
+      "Ctrl+?",
+    );
+    assert.equal(
+      shortcutLabelForCommand(DEFAULT_RESOLVED_KEYBINDINGS, "shortcutsOverview.toggle", "MacIntel"),
+      "\u2318?",
     );
     assert.isNull(
       resolveShortcutCommand(
