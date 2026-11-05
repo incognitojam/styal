@@ -458,17 +458,6 @@ function workEntryIsStoppedToolCall(entry: WorkLogPresentationEntry): boolean {
   return workLogEntryIsToolLike(entry) && entry.toolLifecycleStatus === "stopped";
 }
 
-export function workEntryIndicatesToolSuccess(entry: WorkLogPresentationEntry): boolean {
-  return (
-    workLogEntryIsToolLike(entry) &&
-    !workEntryIndicatesToolFailure(entry) &&
-    entry.tone !== "thinking" &&
-    entry.toolLifecycleStatus !== "idle" &&
-    entry.toolLifecycleStatus !== "inProgress" &&
-    entry.toolLifecycleStatus !== "stopped"
-  );
-}
-
 function workLogEntryIsLocalCodeSearch(entry: WorkLogPresentationEntry): boolean {
   return (
     entry.itemType === "file_search" ||

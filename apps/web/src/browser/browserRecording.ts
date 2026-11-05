@@ -154,8 +154,6 @@ interface ActiveRecording {
   stream: MediaStream | null;
   recorder: MediaRecorder | null;
   compositor: Awaited<ReturnType<typeof createRecordingCompositor>>;
-  savedBlob?: Blob;
-  uploadPromise?: Promise<string>;
   lifecycle: BrowserRecordingLifecycle;
 }
 
@@ -232,7 +230,7 @@ const publishActiveRecordingTabIds = (): void => {
 export const BROWSER_RECORDING_MEDIA_CAPTURE_TIMEOUT_MS = 5_000;
 export const BROWSER_RECORDING_STARTUP_SETTLE_TIMEOUT_MS =
   BROWSER_CAPTURE_SURFACE_TIMEOUT_MS + BROWSER_RECORDING_MEDIA_CAPTURE_TIMEOUT_MS + 2_000;
-export const BROWSER_RECORDING_PAINT_SETTLE_TIMEOUT_MS = 250;
+const BROWSER_RECORDING_PAINT_SETTLE_TIMEOUT_MS = 250;
 
 export function readActiveBrowserRecordingTabIds(threadRef?: ScopedThreadRef): ReadonlySet<string> {
   const tabIds = new Set<string>();
@@ -777,7 +775,6 @@ const finalizeBrowserRecording = async (
           mimeType,
           new Uint8Array(await blob.arrayBuffer()),
         );
-        recording.savedBlob = blob;
         result = { _tag: "Success", artifact };
       } catch (cause) {
         throw new BrowserRecordingOperationError({
@@ -880,16 +877,4 @@ export function stopBrowserRecording(
     });
   recording.lifecycle = { phase: "stopping", stopPromise };
   return stopPromise;
-}
-
-export async function stopBrowserRecordingForUpload(
-  tabId: string,
-  upload: (artifact: DesktopPreviewRecordingArtifact, blob: Blob) => Promise<string>,
-): Promise<(DesktopPreviewRecordingArtifact & { uploadedAttachmentId: string }) | null> {
-  const recording = activeRecordings.get(tabId);
-  if (!recording) return null;
-  const artifact = await stopBrowserRecording(tabId);
-  if (!artifact || !recording.savedBlob) return null;
-  recording.uploadPromise ??= upload(artifact, recording.savedBlob);
-  return { ...artifact, uploadedAttachmentId: await recording.uploadPromise };
 }

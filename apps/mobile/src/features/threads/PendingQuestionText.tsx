@@ -10,6 +10,7 @@ import { FONT_FAMILIES } from "../../lib/fontFamilies";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { SelectableMarkdownText } from "../../native/SelectableMarkdownText";
 import { useOpenPullRequest } from "../../native/useOpenPullRequest";
+import { useLiveThreadLinkLabels } from "../../state/entities";
 
 export function PendingQuestionText(props: {
   readonly text: string;
@@ -17,6 +18,7 @@ export function PendingQuestionText(props: {
   readonly workspaceRoot: string | null;
 }) {
   const navigation = useNavigation();
+  const markdown = useLiveThreadLinkLabels(props.text, props.threadRef.environmentId);
   // Pull request links open in the app; other links open in the system browser.
   const openLink = useOpenPullRequest();
   const theme = useUniwindTheme();
@@ -67,7 +69,7 @@ export function PendingQuestionText(props: {
 
   return (
     <SelectableMarkdownText
-      markdown={props.text}
+      markdown={markdown}
       textStyle={textStyle}
       preserveSoftBreaks
       parseRawHtml={false}

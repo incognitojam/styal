@@ -99,7 +99,6 @@ GitHub Actions environment before building desktop, CLI, or hosted web artifacts
 Required repository variables shared by relay deployments:
 
 - `CLOUDFLARE_ACCOUNT_ID`
-- `AXIOM_ORG_ID`, only until the [Axiom resources are destroyed](relay-observability.md#axiom-resource-removal)
 
 Required `production` environment variables:
 
@@ -125,7 +124,6 @@ Required `production` environment secrets:
 
 - `CLOUDFLARE_API_TOKEN`
 - `NEON_API_KEY`
-- `AXIOM_TOKEN`, only until the [Axiom resources are destroyed](relay-observability.md#axiom-resource-removal)
 - `CLERK_SECRET_KEY`
 
 Optional `production` environment secrets:

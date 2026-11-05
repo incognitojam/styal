@@ -43,24 +43,3 @@ forwards. The details are on the child spans: `HookInboxStore.hold` carries
 the consecutive failures behind the retry delay, the longest time a delivered request waited, and
 the backlog left. A run that errored outright has `relay.inbox.run_result = failed` on the root
 `relay.inbox.deliver` span instead.
-
-## Axiom resource removal
-
-styal removed Axiom from the relay, but Alchemy state for `prod`, `dev`, personal stages and PR
-previews still holds the datasets, ingest tokens, view, monitors and dashboards earlier deploys
-created. The next successful deploy of each stage destroys them, along with the mobile source map R2
-bucket and its upload token.
-
-The stack keeps `Axiom.providers()` and the deploy workflows keep `AXIOM_TOKEN` and `AXIOM_ORG_ID`
-only until those resources are destroyed, because Alchemy cannot delete a resource without its
-provider. While the provider stays, every stage needs Axiom credentials to plan, including a new one
-with nothing to destroy, and `AXIOM_TOKEN` must stay an advanced API token that can read and delete
-API tokens, datasets and views, in the `production` GitHub environment.
-
-R2 refuses to delete a bucket with objects in it. If a production deploy fails with `BucketNotEmpty`
-on `t3-code-mobile-sourcemaps-prod`, empty that bucket and run the deploy again. Other stages empty
-theirs on the way out.
-
-Earlier deploys also wrote `T3CODE_MOBILE_OTLP_TRACES_*` and `T3CODE_RELAY_CLIENT_OTLP_TRACES_*` into
-the repository-root `.env`. Delete those lines from a checkout that has them: their tokens stop working
-once the stage's resources are destroyed, and source builds would keep trying to use them.

@@ -35,10 +35,10 @@ export function threadPullRequestUrl(
 export function readThreadPullRequestUrl(threadRef: ScopedThreadRef): string | null {
   const thread = readThreadShell(threadRef);
   if (thread === null) return null;
-  const capabilities = appAtomRegistry
+  const configLoaded = appAtomRegistry
     .get(environmentServerConfigsAtom)
-    .get(threadRef.environmentId)?.environment.capabilities;
-  return threadPullRequestUrl(thread, capabilities?.threadPullRequests === true);
+    .has(threadRef.environmentId);
+  return threadPullRequestUrl(thread, configLoaded);
 }
 
 async function openInBrowser(threadRef: ScopedThreadRef, url: string | null) {

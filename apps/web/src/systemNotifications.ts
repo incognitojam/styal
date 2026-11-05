@@ -51,6 +51,7 @@ function warnBlockedOnce() {
   blockedToastShown = true;
   const toastId = toastManager.add({
     type: "warning",
+    timeout: 0,
     title: "macOS is blocking styal notifications",
     description: "Allow notifications for styal in System Settings to get thread alerts.",
     actionProps: {
@@ -103,7 +104,7 @@ export function showSystemNotification({
     notification.addEventListener("click", () => {
       notification.close();
       window.focus();
-      void window.desktopBridge?.revealWindow?.().catch(() => undefined);
+      void window.desktopBridge?.revealWindow().catch(() => undefined);
       onClick?.();
     });
     return notification;

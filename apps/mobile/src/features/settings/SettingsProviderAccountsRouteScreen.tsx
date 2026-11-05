@@ -33,7 +33,7 @@ import { serverEnvironment } from "../../state/server";
 import { useEnvironmentsWithScope } from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useAppearancePreferences } from "./appearance/AppearancePreferencesProvider";
-import { SettingsActionRow } from "./components/SettingsActionRow";
+import { ListActionRow as SettingsActionRow } from "../../components/ui/ListActionRow";
 import {
   AndroidSettingsEnvironmentFilter,
   SettingsEnvironmentFilterHeader,

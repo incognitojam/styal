@@ -54,7 +54,6 @@ export const ProviderAdapterV2RuntimePolicy = Schema.Struct({
   workspaceEnvironment: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   approvalPolicy: Schema.optional(Schema.Unknown),
   sandboxPolicy: Schema.optional(Schema.Unknown),
-  reasoningEffort: Schema.optional(Schema.String),
 });
 export type ProviderAdapterV2RuntimePolicy = typeof ProviderAdapterV2RuntimePolicy.Type;
 
@@ -467,7 +466,6 @@ export interface ProviderAdapterV2RuntimeRequestResponseInput {
   readonly decision?: ProviderApprovalDecision;
   readonly feedback?: string;
   readonly answers?: ProviderUserInputAnswers;
-  readonly response?: unknown;
 }
 
 export interface ProviderAdapterV2ThreadSnapshot {

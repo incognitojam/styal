@@ -129,6 +129,7 @@ import { useLocation, useNavigate } from "@tanstack/react-router";
 import { assistantCitationFromLocation } from "../lib/assistantCitationNavigation";
 import type { AssistantCitationSourceAnchor } from "~/lib/assistantTextSelection";
 import { useStore } from "zustand";
+import { shallow } from "zustand/vanilla/shallow";
 import { useShallow } from "zustand/react/shallow";
 import {
   isAtomCommandInterrupted,
@@ -219,7 +220,7 @@ import { isRightPanelFocused } from "../lib/rightPanelFocus";
 import {
   deriveLogicalProjectKeyFromSettings,
   selectProjectGroupingSettings,
-} from "../logicalProject";
+} from "@t3tools/client-runtime/state/project-grouping";
 import {
   isSameSidebarThreadRef,
   useSidebarPendingFileDropStore,
@@ -682,7 +683,6 @@ export default function ChatView(props: ChatViewProps) {
   const [localServerErrorsByThreadKey, setLocalServerErrorsByThreadKey] = useState<
     Record<string, LocalThreadErrorEntry>
   >({});
-  const [isConnecting, _setIsConnecting] = useState(false);
   const isRevertingCheckpoint = useComposerDraftStore((store) =>
     store.rewindingThreadKeys.has(routeThreadKey),
   );
@@ -1223,13 +1223,11 @@ export default function ChatView(props: ChatViewProps) {
   });
   const modelPickerLockedProvider = supportsProviderSwitchingViaHandoff ? null : lockedProvider;
   const pullRequestsCapabilityKnown = serverConfig !== null;
-  const supportsPullRequests = serverConfig?.environment.capabilities.pullRequests === true;
+  const supportsPullRequests = serverConfig !== null;
   const attachmentEnvironmentConfig = environmentById.get(environmentId)?.serverConfig ?? null;
   const attachmentUploadsCapabilityKnown = attachmentEnvironmentConfig !== null;
-  const supportsQuestionAttachments =
-    attachmentEnvironmentConfig?.environment.capabilities.questionAttachments === true;
-  const supportsAttachmentUploads =
-    attachmentEnvironmentConfig?.environment.capabilities.attachmentUploads === true;
+  const supportsQuestionAttachments = attachmentEnvironmentConfig !== null;
+  const supportsAttachmentUploads = attachmentEnvironmentConfig !== null;
   const advertisedFileAttachmentBytes =
     attachmentEnvironmentConfig?.environment.capabilities.fileAttachments?.maxUploadBytes ?? null;
   const maxFileAttachmentBytes =
@@ -1363,6 +1361,12 @@ export default function ChatView(props: ChatViewProps) {
     composerRef,
     setThreadError,
   });
+  const [heldApprovalRequestIds, setHeldApprovalRequestIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const onHeldRequestIdsChange = useStableCallback((requestIds: ReadonlySet<string>) => {
+    setHeldApprovalRequestIds((current) => (shallow(current, requestIds) ? current : requestIds));
+  });
   const activeProposedPlan = (() => {
     if (!latestRunSettled) {
       return null;
@@ -1450,11 +1454,7 @@ export default function ChatView(props: ChatViewProps) {
     (isSendBusy || phase === "connecting" || phase === "running") &&
     (compactionRunning || (compactRequestIsActive && !compactionSettled));
   const isWorking =
-    phase === "running" ||
-    isSendBusy ||
-    isConnecting ||
-    isCompacting ||
-    runlessWorkStartedAt !== null;
+    phase === "running" || isSendBusy || isCompacting || runlessWorkStartedAt !== null;
   const activeContextWindow = deriveLatestContextWindowSnapshot(
     serverVisibleTurnItems ?? [],
     activeThreadLiveTokenUsage,
@@ -1982,8 +1982,7 @@ export default function ChatView(props: ChatViewProps) {
       threadPanelPresentation,
     ),
   );
-  const supportsThreadPullRequests =
-    serverConfig?.environment.capabilities.threadPullRequests === true;
+  const supportsThreadPullRequests = serverConfig !== null;
   const visiblePullRequests = visibleThreadPullRequests(
     (activeThreadShell ?? activeThread)?.pullRequests ?? [],
   );
@@ -2786,31 +2785,26 @@ export default function ChatView(props: ChatViewProps) {
   }, [toggleRightPanelStable, toggleRightPanelMaximizedStable]);
 
   usePasteToFocusComposer(activeThreadId, composerRef);
-  const {
-    onConfirmRevertStable,
-    onForkFromRunStable,
-    onRevertTimelineTurnStable,
-    onTimelineRollbackCheckpointStable,
-  } = useTimelineRewind({
-    environmentId,
-    routeThreadRef,
-    routeThreadKey,
-    currentRouteThreadKeyRef,
-    serverProjection,
-    activeThread,
-    timelineMessages,
-    phase,
-    isConnecting,
-    isSendBusy,
-    isRevertingCheckpoint,
-    supportsConversationRollback,
-    activeEnvironmentUnavailable,
-    activeEnvironmentUnavailableLabel,
-    promptRef,
-    composerRef,
-    composerDraftTarget,
-    setThreadError,
-  });
+  const { onConfirmRevertStable, onForkFromRunStable, onRevertTimelineTurnStable } =
+    useTimelineRewind({
+      environmentId,
+      routeThreadRef,
+      routeThreadKey,
+      currentRouteThreadKeyRef,
+      serverProjection,
+      activeThread,
+      timelineMessages,
+      phase,
+      isSendBusy,
+      isRevertingCheckpoint,
+      supportsConversationRollback,
+      activeEnvironmentUnavailable,
+      activeEnvironmentUnavailableLabel,
+      promptRef,
+      composerRef,
+      composerDraftTarget,
+      setThreadError,
+    });
 
   const {
     getModelDisabledReason,
@@ -2851,7 +2845,6 @@ export default function ChatView(props: ChatViewProps) {
     resumableRunId,
     hasHeldQueuedRuns,
     isSendBusy,
-    isConnecting,
     isRevertingCheckpoint,
     threadDetailLoading,
     activeEnvironmentUnavailable,
@@ -2872,7 +2865,6 @@ export default function ChatView(props: ChatViewProps) {
     activeProposedPlan,
     isServerThread,
     isSendBusy,
-    isConnecting,
     composerRef,
     beginLocalDispatch,
     resetLocalDispatch,
@@ -2911,7 +2903,6 @@ export default function ChatView(props: ChatViewProps) {
     composerTerminalContextsRef,
     feedbackUploadsInFlightRef,
     queuedRunEdit,
-    isConnecting,
     isRevertingCheckpoint,
     threadDetailLoading,
     activeEnvironmentUnavailable,
@@ -3040,7 +3031,6 @@ export default function ChatView(props: ChatViewProps) {
     workLocallyResendDraftId === draftId &&
     isLocalDraftThread &&
     !isSendBusy &&
-    !isConnecting &&
     !isRevertingCheckpoint &&
     !threadDetailLoading &&
     clientSettingsHydrated &&
@@ -3378,6 +3368,11 @@ export default function ChatView(props: ChatViewProps) {
               className="relative flex min-h-0 flex-1 flex-col bg-background"
             >
               <ThreadTimeline
+                pendingApprovals={pendingApprovals}
+                heldApprovalRequestIds={heldApprovalRequestIds}
+                respondingRequestIds={respondingRequestIds}
+                onRespondToApproval={onRespondToApprovalStable}
+                canOperateThread={canOperateThread}
                 threadDetailRef={routeThreadDetailRef}
                 entriesInput={timelineEntriesInput}
                 draftEntries={isServerThread ? null : draftTimelineEntries}
@@ -3390,7 +3385,6 @@ export default function ChatView(props: ChatViewProps) {
                 {...(activeProject ? { onRunShellCommand: runShellCommandStable } : {})}
                 isWorking={isWorking}
                 runlessWorkActive={runlessWorkStartedAt !== null}
-                activeTurnInProgress={isWorking || !latestRunSettled}
                 isCompacting={isCompacting}
                 awaitingUser={
                   activePendingApproval !== null
@@ -3438,7 +3432,6 @@ export default function ChatView(props: ChatViewProps) {
                 parentThreadLink={parentThreadLink}
                 workflowOpening={workflowOpening}
                 onForkFromRun={onForkFromRunStable}
-                onRollbackCheckpoint={onTimelineRollbackCheckpointStable}
                 supportsConversationRollback={supportsConversationRollback}
                 threadStartCheckpointReady={threadStartCheckpointReady}
                 availableRevertTurnCounts={availableRevertTurnCounts}
@@ -3589,12 +3582,9 @@ export default function ChatView(props: ChatViewProps) {
                               routeThreadRef={routeThreadRef}
                               draftId={draftId}
                               activeThreadId={activeThreadId}
-                              activeThreadEnvironmentId={activeThread?.environmentId}
                               activeThread={activeThread}
                               activeThreadShell={activeThreadShell}
                               promptHistoryMessages={timelineMessages}
-                              isServerThread={isServerThread}
-                              isLocalDraftThread={isLocalDraftThread}
                               forceExpandedOnMobile={
                                 forceExpandedMobileComposer && isDraftHeroState
                               }
@@ -3604,7 +3594,6 @@ export default function ChatView(props: ChatViewProps) {
                               phase={phase}
                               isCompacting={isCompacting}
                               canInterrupt={canInterruptRunningThread}
-                              isConnecting={isConnecting}
                               isSendBusy={
                                 (isSendBusy && !sendQueuesBehindSetup) ||
                                 (setupQueueSendThreadKey !== null &&
@@ -3644,6 +3633,7 @@ export default function ChatView(props: ChatViewProps) {
                               environmentUnavailable={activeEnvironmentUnavailableState}
                               activePendingApproval={activePendingApproval}
                               pendingApprovals={pendingApprovals}
+                              onHeldRequestIdsChange={onHeldRequestIdsChange}
                               pendingUserInputs={pendingUserInputs}
                               workflowRuns={activeThreadShell?.workflowRuns}
                               workflowRunReviewActions={
@@ -3714,7 +3704,6 @@ export default function ChatView(props: ChatViewProps) {
                               onResume={onComposerResumeStable}
                               onInterrupt={onInterruptStable}
                               onImplementPlanInNewThread={onImplementPlanInNewThreadStable}
-                              onRespondToApproval={onRespondToApprovalStable}
                               onSelectActivePendingUserInputOption={
                                 onSelectActivePendingUserInputOptionStable
                               }

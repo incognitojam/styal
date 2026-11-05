@@ -740,7 +740,7 @@ export const make = Effect.gen(function* () {
 
     // Each thread has one terminal per lifecycle script. A later run restarts
     // the exited session in place, so settling repeatedly does not pile up tabs.
-    const terminalId = input.preferredTerminalId ?? `${trigger}-${script.id}`;
+    const terminalId = `${trigger}-${script.id}`;
     const cwd = input.worktreePath;
 
     if (trigger === "settle") {

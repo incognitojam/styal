@@ -140,7 +140,6 @@ deploy personal non-production stages locally with any stage name other than `pr
 The repository must define these Actions variables shared by relay deployments:
 
 - `CLOUDFLARE_ACCOUNT_ID`
-- `AXIOM_ORG_ID`, only until the [Axiom resources are destroyed](../../docs/operations/relay-observability.md#axiom-resource-removal)
 
 The `production` GitHub environment must define these Actions variables:
 
@@ -157,11 +156,13 @@ The `production` GitHub environment must define these Actions secrets:
 
 - `CLOUDFLARE_API_TOKEN`
 - `NEON_API_KEY`
-- `AXIOM_TOKEN`, only until the Axiom resources are destroyed
 - `CLERK_SECRET_KEY`
 - `CLERK_DEV_SECRET_KEY`, the development Clerk instance's secret key for the `dev` stage
 - `APNS_PRIVATE_KEY` only when enabling mobile push, alongside the `APNS_*` variables above
 - `FCM_SERVICE_ACCOUNT` when Android push is enabled
+- `T3CHAT_LINK_SECRET`, optional, shared with T3 Chat's `T3CODE_LINK_SECRET`. Without it the
+  T3 Chat account link is off. Local and preview stages can set `T3CHAT_URL` to point
+  at another T3 Chat deployment; production uses `https://t3.chat`.
 
 The account-scoped deployment credentials are consumed by Alchemy while provisioning relay stages;
 they are not bound into the relay Worker. The release workflow reads the production relay's derived public

@@ -51,15 +51,16 @@ function setup() {
   support(firstId);
 }
 
-function dialog(open: boolean, summary = "Update synthetic computers") {
+function dialog(open: boolean, label = "Synthetic computer") {
   return (
     <StrictMode>
       <UpdateEverythingDialog
         open={open}
         onOpenChange={onOpenChange}
-        summary={summary}
-        lines={["Synthetic machine update"]}
-        skipped={[]}
+        version="1.2.0"
+        providerCount={0}
+        rows={[{ environmentId: firstId, label, app: "server", providers: [], skipped: null }]}
+        restarts={[]}
         activity={{
           lines: [],
           threadActivity: [],

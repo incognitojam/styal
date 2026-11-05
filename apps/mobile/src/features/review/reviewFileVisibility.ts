@@ -27,7 +27,7 @@ export function getValidReviewFileIds(
   return fileIds.filter((id) => fileIdSet.has(id));
 }
 
-export function getValidExplicitReviewFileIds(
+function getValidExplicitReviewFileIds(
   files: ReadonlyArray<ReviewRenderableFile>,
   fileIds: ReadonlyArray<string> | undefined,
 ): ReadonlyArray<string> {
@@ -38,17 +38,11 @@ export function getValidExplicitReviewFileIds(
   return getValidReviewFileIds(files, fileIds);
 }
 
-export function toggleReviewFileId(
-  fileIds: ReadonlyArray<string>,
-  fileId: string,
-): ReadonlyArray<string> {
+function toggleReviewFileId(fileIds: ReadonlyArray<string>, fileId: string): ReadonlyArray<string> {
   return fileIds.includes(fileId) ? fileIds.filter((id) => id !== fileId) : [...fileIds, fileId];
 }
 
-export function removeReviewFileId(
-  fileIds: ReadonlyArray<string>,
-  fileId: string,
-): ReadonlyArray<string> {
+function removeReviewFileId(fileIds: ReadonlyArray<string>, fileId: string): ReadonlyArray<string> {
   return fileIds.includes(fileId) ? fileIds.filter((id) => id !== fileId) : fileIds;
 }
 

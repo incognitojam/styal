@@ -250,7 +250,6 @@ const makeHarness = Effect.fn("TestConnectionHarness.make")(function* (options?:
       ConnectionDriver.ConnectionDriver,
       ConnectionDriver.ConnectionDriver.of({
         connect,
-        checkRoute: (_entry, route) => checkRoute(route),
         preflight: (_entry, route) =>
           checkRoute(route).pipe(Effect.map((check) => check === "answered")),
         checkHost: (prepared) =>
@@ -395,6 +394,9 @@ const makeRelayAuthorization = Effect.fn("TestRelayAuthorization.make")(function
     createEnvironmentLinkChallenge: unused,
     linkEnvironment: unused,
     unlinkEnvironment: unused,
+    getT3ChatLink: unused,
+    createT3ChatLinkRequest: unused,
+    unlinkT3Chat: unused,
     getEnvironmentStatus: unused,
     connectEnvironment: () =>
       Ref.update(bootstrapCalls, (count) => count + 1).pipe(
@@ -423,7 +425,7 @@ const makeRelayAuthorization = Effect.fn("TestRelayAuthorization.make")(function
         Layer.succeed(ClientCapabilities.RelayDeviceIdentity, {
           deviceId: Effect.succeedNone,
         }),
-        TokenStore.layer({
+        Layer.succeed(TokenStore.RemoteDpopAccessTokenStore, {
           get: () => Ref.get(token),
           put: (value) => Ref.set(token, Option.some(value)),
           remove: () => Ref.set(token, Option.none()),
@@ -1103,25 +1105,13 @@ describe("EnvironmentSupervisor", () => {
     }).pipe(Effect.provide(TestClock.layer())),
   );
 
-  it.effect.each([
-    { name: "the host does not answer a fresh request", check: "silent", capable: true },
-    {
-      name: "an older host answers probes with its full config",
-      check: "answered",
-      capable: false,
-    },
-  ] as const)("waits out a LAN resume probe when $name", ({ check, capable }) =>
+  it.effect("waits out a LAN resume probe when the host does not answer a fresh request", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness({
         prepare: (_attempt, target) => Effect.succeed(preparedFor(target)),
-        initialConfig: () =>
-          Effect.succeed(
-            capable
-              ? PROBE_CAPABLE_CONFIG
-              : ({ environment: { capabilities: {} } } as ServerConfig),
-          ),
+        initialConfig: () => Effect.succeed(PROBE_CAPABLE_CONFIG),
         probe: (attempt) => (attempt === 1 ? Effect.never : Effect.void),
-        checkHost: () => Effect.succeed(check),
+        checkHost: () => Effect.succeed("silent"),
       });
       const supervisor = yield* EnvironmentSupervisor.make(LAN_ENTRY, {
         initiallyDesired: true,

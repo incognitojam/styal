@@ -6,7 +6,10 @@ import { userEvent } from "vite-plus/test/browser";
 
 import { render } from "../../test/render";
 
-import { ComposerPromptEditor, type ComposerPromptEditorHandle } from "./ComposerPromptEditor";
+import {
+  ComposerPromptEditorTiptap as ComposerPromptEditor,
+  type ComposerPromptEditorHandle,
+} from "./ComposerPromptEditorTiptap";
 
 const draft =
   "A sample note.\n\n> The preview uses `.sample` data.\nThread reference: sample-thread";

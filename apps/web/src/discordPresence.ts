@@ -3,11 +3,7 @@ import type {
   EnvironmentThreadShell,
 } from "@t3tools/client-runtime/state/shell";
 import { effectiveSnoozed } from "@t3tools/client-runtime/state/thread-settled";
-import type {
-  DesktopDiscordPresenceActivity,
-  EnvironmentId,
-  ServerConfig,
-} from "@t3tools/contracts";
+import type { DesktopDiscordPresenceActivity, EnvironmentId } from "@t3tools/contracts";
 
 /** Counts the active inbox across environments, independent of the current sidebar filter. */
 export function deriveDiscordPresence({
@@ -17,17 +13,7 @@ export function deriveDiscordPresence({
   now,
 }: {
   threads: ReadonlyArray<EnvironmentThreadShell>;
-  serverConfigs: ReadonlyMap<
-    EnvironmentId,
-    {
-      environment: {
-        capabilities: Pick<
-          ServerConfig["environment"]["capabilities"],
-          "threadSettlement" | "threadSnooze"
-        >;
-      };
-    }
-  >;
+  serverConfigs: ReadonlyMap<EnvironmentId, unknown>;
   shellStatuses: ReadonlyMap<EnvironmentId, EnvironmentShellStatus>;
   now: string;
 }): { activity: DesktopDiscordPresenceActivity | null; nextWakeAt: number | null } {
@@ -39,14 +25,14 @@ export function deriveDiscordPresence({
     if (thread.archivedAt !== null || shellStatuses.get(thread.environmentId) !== "live") continue;
     // Subagent threads are hidden from the sidebar; their parent already counts.
     if (thread.lineage.relationshipToParent === "subagent") continue;
-    const capabilities = serverConfigs.get(thread.environmentId)?.environment.capabilities;
-    if (capabilities?.threadSnooze && effectiveSnoozed(thread, { now })) {
+    const configLoaded = serverConfigs.has(thread.environmentId);
+    if (configLoaded && effectiveSnoozed(thread, { now })) {
       const wakeAt = Date.parse(thread.snoozedUntil!);
       nextWakeAt = nextWakeAt === null ? wakeAt : Math.min(nextWakeAt, wakeAt);
       continue;
     }
     if (
-      capabilities?.threadSettlement &&
+      configLoaded &&
       thread.settledOverride === "settled" &&
       !thread.hasPendingApprovals &&
       !thread.hasPendingUserInput

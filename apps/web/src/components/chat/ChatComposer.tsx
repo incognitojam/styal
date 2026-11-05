@@ -20,7 +20,6 @@ import type {
   ModelSelection,
   ProjectId,
   PreviewAnnotationPayload,
-  ProviderApprovalDecision,
   ThreadContextRecord,
   IssueContextRecord,
   EnvironmentContextRecord,
@@ -150,8 +149,8 @@ import {
 import {
   type ComposerCitationCommentRequest,
   type ComposerPromptEditorHandle,
-  ComposerPromptEditor,
-} from "../ComposerPromptEditor";
+  ComposerPromptEditorTiptap as ComposerPromptEditor,
+} from "../ComposerPromptEditorTiptap";
 import {
   ComposerContextActionsContext,
   composerContextRecordsFromDraft,
@@ -192,7 +191,6 @@ import {
   ComposerCommandMenu,
   composerSuggestionOptionId,
 } from "./ComposerCommandMenu";
-import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
 import {
   ComposerAttachButton,
   ComposerAttachmentFileList,
@@ -203,7 +201,6 @@ import {
 } from "./ComposerAttachmentStrip";
 import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
 import { ComposerFooterPrimaryActions } from "./ComposerFooterControls";
-import { ComposerPendingApprovalPanel } from "./ComposerPendingApprovalPanel";
 import { WorkflowRunReviewPanel } from "./WorkflowRunReviewPanel";
 import { ComposerPendingUserInputPanel } from "./ComposerPendingUserInputPanel";
 import { ComposerPlanFollowUpBanner } from "./ComposerPlanFollowUpBanner";
@@ -250,7 +247,7 @@ const COMPOSER_SCROLL_COLLAPSE_THRESHOLD_PX = 24;
 const COMPOSER_SCROLL_GESTURE_RESET_MS = 120;
 import { Button } from "../ui/button";
 import { toastManager } from "../ui/toast";
-import { HistoryIcon, PlayIcon, ShieldIcon } from "lucide-react";
+import { HistoryIcon, PlayIcon } from "lucide-react";
 import { proposedPlanTitle } from "@t3tools/shared/proposedPlanText";
 import { hasProviderSetup } from "./ProviderStatusBanner";
 import { type AppModelOption, getAppModelOptionsForInstance } from "../../modelSelection";
@@ -357,7 +354,6 @@ export interface ChatComposerHandle {
     threadContexts: ThreadContextRecord[];
     environmentContexts: EnvironmentContextRecord[];
     selectedPromptEffort: string | null;
-    selectedModelOptionsForDispatch: unknown;
     selectedModelSelection: ModelSelection;
     multipleModelSelections: ReadonlyArray<ModelSelection> | null;
     providerAvailable: boolean;
@@ -390,18 +386,14 @@ export interface ChatComposerProps {
   >;
 
   activeThreadId: ThreadId | null;
-  activeThreadEnvironmentId: EnvironmentId | undefined;
   activeThread: Thread | undefined;
   activeThreadShell: ThreadShell | null;
   promptHistoryMessages: ReadonlyArray<ChatMessage>;
-  isServerThread: boolean;
-  isLocalDraftThread: boolean;
   forceExpandedOnMobile: boolean;
   projectSelectionRequired: boolean;
 
   phase: SessionPhase;
   canInterrupt: boolean;
-  isConnecting: boolean;
   isSendBusy: boolean;
   canResume: boolean;
   isRevertingCheckpoint?: boolean;
@@ -420,6 +412,7 @@ export interface ChatComposerProps {
 
   activePendingApproval: PendingApproval | null;
   pendingApprovals: PendingApproval[];
+  onHeldRequestIdsChange: (requestIds: ReadonlySet<string>) => void;
   pendingUserInputs: PendingUserInput[];
   /** Watched workflow runs; one waiting for a deployment review takes the question slot. */
   workflowRuns?: ReadonlyArray<ThreadWorkflowRunWatch> | undefined;
@@ -509,10 +502,6 @@ export interface ChatComposerProps {
   onResume: () => void;
   onInterrupt: () => void;
   onImplementPlanInNewThread: () => void;
-  onRespondToApproval: (
-    requestId: RuntimeRequestId,
-    decision: ProviderApprovalDecision,
-  ) => Promise<unknown>;
   onSelectActivePendingUserInputOption: (questionId: string, optionValue: string) => void;
   onAdvanceActivePendingUserInput: () => void;
   onDismissActivePendingUserInput: (requestId: RuntimeRequestId) => void;
@@ -562,16 +551,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     supportsMultipleModels,
     onMultipleModelSelectionsChange: setMultipleModelSelections,
     activeThreadId,
-    activeThreadEnvironmentId: _activeThreadEnvironmentId,
     activeThread,
     promptHistoryMessages,
-    isServerThread: _isServerThread,
-    isLocalDraftThread: _isLocalDraftThread,
     forceExpandedOnMobile,
     projectSelectionRequired,
     phase,
     canInterrupt,
-    isConnecting,
     isSendBusy,
     canResume,
     isRevertingCheckpoint = false,
@@ -581,6 +566,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     environmentUnavailable,
     activePendingApproval: incomingPendingApproval,
     pendingApprovals,
+    onHeldRequestIdsChange,
     pendingUserInputs: incomingPendingUserInputs,
     workflowRuns,
     activePendingProgress: incomingPendingProgress,
@@ -636,7 +622,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     onResume,
     onInterrupt,
     onImplementPlanInNewThread,
-    onRespondToApproval,
     onSelectActivePendingUserInputOption,
     onAdvanceActivePendingUserInput,
     onDismissActivePendingUserInput,
@@ -668,6 +653,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     ...pendingApprovals.map((request) => request.requestId),
     ...incomingPendingUserInputs.map((request) => request.requestId),
   ]);
+  // A layout effect so the timeline never paints a held approval as answerable.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- publishes held requests to the timeline without lifting per-keystroke typing state
+  useLayoutEffect(() => {
+    onHeldRequestIdsChange(heldRequestIds);
+  }, [heldRequestIds, onHeldRequestIdsChange]);
   const activePendingApproval =
     incomingPendingApproval && !heldRequestIds.has(incomingPendingApproval.requestId)
       ? incomingPendingApproval
@@ -1321,7 +1311,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     : "Type your own answer, or leave this blank to use the selected option";
   const hasWorkflowRunReview = (workflowRuns ?? []).some((run) => run.review !== undefined);
   const showComposerTopDrawer =
-    isComposerApprovalState ||
     pendingUserInputs.length > 0 ||
     hasWorkflowRunReview ||
     (!isComposerCollapsedMobile && showPlanFollowUpPrompt && activeProposedPlan !== null);
@@ -1384,7 +1373,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     phase === "running" ||
     isSendBusy ||
     isSendDisabled ||
-    isConnecting ||
     noProviderAvailable ||
     projectSelectionRequired ||
     environmentUnavailable !== null ||
@@ -2241,7 +2229,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     if (
       isSendBusy ||
       isSendDisabled ||
-      isConnecting ||
       noProviderAvailable ||
       environmentUnavailable !== null ||
       phase === "running"
@@ -2358,7 +2345,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       pendingUserInputs.length > 0 ||
       phase === "running" ||
       isSendBusy ||
-      isConnecting ||
       !activeThreadId
     ) {
       return;
@@ -2466,8 +2452,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     importContextRecords,
     expandMobileComposer: expandMobileComposerStable,
   });
-  const hasBlockingComposerTopDrawer =
-    activePendingApproval !== null || pendingUserInputs.length > 0 || hasWorkflowRunReview;
+  const hasBlockingComposerTopDrawer = pendingUserInputs.length > 0 || hasWorkflowRunReview;
   const hasImageAttachmentAttention = standaloneComposerImages.some((image) => {
     const upload = uploadsByImageId[image.id];
     const failedInCurrentEnvironment =
@@ -2726,7 +2711,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       getModelDisabledReason={getModelDisabledReason}
     />
   );
-  // An open approval or question owns the space above the composer. Only a machine problem,
+  // An open question owns the space above the composer. Only a machine problem,
   // which is why an answer could not go through, stays beside it.
   const shelfItems = hasBlockingComposerTopDrawer
     ? bannerItems.filter(
@@ -2746,7 +2731,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   ): boolean => {
     if (
       text.length === 0 ||
-      isConnecting ||
       activePendingIsResponding ||
       (pendingUserInputs.length > 0 && !activePendingProgress?.activeQuestion) ||
       projectSelectionRequired ||
@@ -2819,7 +2803,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       pendingUserInputs,
       supportsQuestionAttachments,
       isLiteralPendingAnswer,
-      isConnecting,
       projectSelectionRequired,
       questionAttachmentTarget,
       attachmentTargetKey,
@@ -3034,7 +3017,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     if (questionAttachmentTarget !== null) {
       const canAnswer =
         canOperateThread &&
-        !isConnecting &&
         !activePendingIsResponding &&
         activePendingProgress?.activeQuestion?.allowCustomAnswer !== false;
       const text = `${records
@@ -3358,7 +3340,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         threadContexts: composerThreadContexts,
         environmentContexts: composerEnvironmentContexts,
         selectedPromptEffort,
-        selectedModelOptionsForDispatch,
         selectedModelSelection,
         multipleModelSelections:
           routeKind === "draft" && multipleModelSelections !== null
@@ -3418,7 +3399,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       focusComposer,
       environmentId,
       primaryEnvironmentId,
-      isConnecting,
       isChoiceOnlyPendingQuestion,
       isLiteralPendingAnswer,
       pendingUserInputs.length,
@@ -3433,7 +3413,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       selectedInstanceId,
       reportedModelSelection,
       settings.planModeEnabled,
-      selectedModelOptionsForDispatch,
       selectedModelSelection,
       multipleModelSelections,
       setMultipleModelSelections,
@@ -3599,37 +3578,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             <ComposerBanner.Attachment>
               <ComposerBanner.Root
                 data-chat-composer-top-drawer="true"
-                variant={activePendingApproval || hasWorkflowRunReview ? "warning" : "info"}
-                density={activePendingApproval ? "spacious" : "default"}
+                variant={hasWorkflowRunReview ? "warning" : "info"}
               >
-                {activePendingApproval ? (
-                  <ComposerBanner.Row
-                    layout="approval"
-                    data-chat-composer-collapsed-controls="true"
-                  >
-                    <ComposerBanner.Icon>
-                      <ShieldIcon />
-                    </ComposerBanner.Icon>
-                    <ComposerBanner.Content>
-                      <ComposerPendingApprovalPanel
-                        approval={activePendingApproval}
-                        pendingCount={pendingApprovals.length}
-                      />
-                    </ComposerBanner.Content>
-                    <ComposerBanner.Actions>
-                      <ComposerPendingApprovalActions
-                        requestId={activePendingApproval.requestId}
-                        disabled={!canOperateThread}
-                        isResponding={respondingRequestIds.includes(
-                          activePendingApproval.requestId,
-                        )}
-                        options={activePendingApproval.options}
-                        canRespond={activePendingApproval.responseCapability === "live"}
-                        onRespondToApproval={onRespondToApproval}
-                      />
-                    </ComposerBanner.Actions>
-                  </ComposerBanner.Row>
-                ) : hasWorkflowRunReview && activeThreadId && workflowRuns ? (
+                {hasWorkflowRunReview && activeThreadId && workflowRuns ? (
                   <WorkflowRunReviewPanel
                     environmentId={environmentId}
                     threadId={activeThreadId}
@@ -3891,7 +3842,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                                 : DEFAULT_COMPOSER_PLACEHOLDER
                     }
                     disabled={
-                      isConnecting ||
                       projectSelectionRequired ||
                       isChoiceOnlyPendingQuestion ||
                       activePendingIsResponding
@@ -3914,7 +3864,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       promptHasText={false}
                       isSendBusy={isSendBusy}
                       sendDisabledReason={sendDisabledReason}
-                      isConnecting={isConnecting}
                       isEnvironmentUnavailable={
                         environmentUnavailable !== null ||
                         noProviderAvailable ||
@@ -4017,7 +3966,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     promptHasText={prompt.trim().length > 0}
                     isSendBusy={isSendBusy}
                     sendDisabledReason={sendDisabledReason}
-                    isConnecting={isConnecting}
                     isEnvironmentUnavailable={
                       environmentUnavailable !== null ||
                       noProviderAvailable ||
@@ -4036,9 +3984,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     compactBeforeSendTokens={props.resumeCompactionTokens}
                     keepFullHistory={props.keepFullHistory}
                     onToggleKeepFullHistory={props.onToggleKeepFullHistory}
-                    compactDisabled={
-                      compactDisabled || noProviderAvailable || isSendBusy || isConnecting
-                    }
+                    compactDisabled={compactDisabled || noProviderAvailable || isSendBusy}
                     compactDisabledReason={resolvedCompactDisabledReason}
                     {...(compactCommandAvailable ? { onCompactContext } : {})}
                   />

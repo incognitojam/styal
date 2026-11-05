@@ -115,18 +115,6 @@ function fileProjectAction(
   };
 }
 
-export function projectScriptsInheritDefaults(
-  settings: ProjectScriptSettings,
-  project: { id: ProjectId; scripts: readonly ProjectScript[] },
-): boolean {
-  if (settings.projectSettingsOverrides[project.id]?.defaultProjectScripts !== undefined) {
-    return false;
-  }
-  if (settings.projectSettingsFolded) return true;
-  const legacy = settings.projectScriptOverrides[project.id];
-  return legacy === null || (legacy === undefined && project.scripts.length === 0);
-}
-
 interface ProjectScriptRuntimeEnvInput {
   project: {
     cwd: string;

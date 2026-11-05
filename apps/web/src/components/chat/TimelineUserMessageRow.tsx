@@ -528,6 +528,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
                           ctx.onImageExpand(preview);
                         }}
                       >
+                        {/* Isolate the thumbnail raster from nearby activity repaints in Chromium. */}
                         <AttachmentImage
                           name={image.name}
                           mimeType={image.mimeType}
@@ -535,7 +536,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
                           alt={image.name}
                           decoding="async"
                           loading="lazy"
-                          className="block size-full object-cover"
+                          className="block size-full transform-gpu object-cover"
                         />
                       </button>
                     ) : (
@@ -769,7 +770,6 @@ const CollapsibleUserMessageBody = memo(function CollapsibleUserMessageBody(prop
   skills: ReadonlyArray<ServerProviderSkill>;
   markdownCwd: string | undefined;
   collapsible?: boolean;
-  footer?: ReactNode;
 }) {
   const [expanded, setExpanded] = useState(false);
   const revealForFind = () => setExpanded(true);
@@ -809,14 +809,8 @@ const CollapsibleUserMessageBody = memo(function CollapsibleUserMessageBody(prop
           />
         </div>
       ) : null}
-      {showCollapseControl || props.footer ? (
-        <div
-          className={cn(
-            "mt-1.5 flex items-center gap-2",
-            showCollapseControl && props.footer ? "justify-between" : "justify-end",
-          )}
-          data-user-message-footer="true"
-        >
+      {showCollapseControl ? (
+        <div className="mt-1.5 flex items-center justify-end gap-2" data-user-message-footer="true">
           {showCollapseControl ? (
             <Button
               type="button"
@@ -829,9 +823,6 @@ const CollapsibleUserMessageBody = memo(function CollapsibleUserMessageBody(prop
             >
               {expanded ? "Show less" : "Show full message"}
             </Button>
-          ) : null}
-          {props.footer ? (
-            <div className="ml-auto flex items-center gap-2">{props.footer}</div>
           ) : null}
         </div>
       ) : null}

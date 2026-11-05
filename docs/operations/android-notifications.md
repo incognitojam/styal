@@ -84,7 +84,7 @@ After Android prebuild, run the native presentation regression tests from `apps/
 
 ### Local verification with existing styal services
 
-You do not need to duplicate styal Link's hosted infrastructure to develop Android push. Keep the normal Clerk login and environment connections. `scripts/android-push-watch.ts` subscribes to one paired environment's shell stream, uses the shared agent-awareness projection, and sends updates through the new FCM client. It holds transient state in memory and needs no hosted database or Clerk secret.
+You do not need to duplicate styal Link's hosted infrastructure to develop Android push. Keep the normal Clerk login and environment connections. `infra/relay/scripts/android-push-watch.ts` subscribes to one paired environment's shell stream, uses the shared agent-awareness projection, and sends updates through the new FCM client. It holds transient state in memory and needs no hosted database or Clerk secret.
 
 Create a private `connection.json` containing `wsUrl` (the environment's `/ws` URL) and `bearerToken` (a normal paired environment access token). Use a separate pairing credential for this watcher. Supply the same device file described above, then run from `infra/relay`:
 
@@ -102,7 +102,7 @@ The existing Alchemy deployment provisions Cloudflare Workers, delivery queues, 
 
 A maintainer with access to the existing Alchemy state and deployment credentials can deploy the Android changes to a personal stage. Non-production stages reference the retained database and DNS zones owned by the `prod` stage, create a separate PlanetScale branch, and apply migrations to that branch. A personal stage is therefore not a standalone deployment into an unrelated account.
 
-1. Apply the Android changes to a checkout with the existing deployment credentials. Create a private `infra/relay/.env.android-dev` using the existing Cloudflare, PlanetScale, Axiom (only until the [Axiom resources are destroyed](relay-observability.md#axiom-resource-removal)), domain, and Clerk configuration described in the [relay README](../../infra/relay/README.md#deployment-ci). Keep `CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, and `CLERK_JWT_AUDIENCE` on the same Clerk instance used by the test clients.
+1. Apply the Android changes to a checkout with the existing deployment credentials. Create a private `infra/relay/.env.android-dev` using the existing Cloudflare, PlanetScale, domain, and Clerk configuration described in the [relay README](../../infra/relay/README.md#deployment-ci). Keep `CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, and `CLERK_JWT_AUDIENCE` on the same Clerk instance used by the test clients.
 2. Add the Firebase service-account JSON as `FCM_SERVICE_ACCOUNT` and set `APNS_ENABLED=false` for this Android-only stage. Leave `RELAY_DOMAIN` unset so the deployment derives a hostname for the personal stage instead of using the production hostname.
 3. From the repository root, inspect the deployment plan, then deploy the same stage:
 
@@ -114,7 +114,7 @@ A maintainer with access to the existing Alchemy state and deployment credential
 4. Give the tester the deployed relay URL and matching public Clerk configuration. The deploy wrapper also writes the relay URL into that checkout's root `.env`. Rebuild the private APK with this `T3CODE_RELAY_URL`, the existing Firebase Android file, and OTA updates disabled. If using the separate development package, authorize its Clerk callback as described above.
 5. Configure one isolated T3 server with the same relay URL and link that test environment through the new relay. Existing production relay links do not automatically move to a personal stage. Enable activity publishing for the test environment, enable notifications on the phone, and verify a real agent turn produces a running update and completion alert while the phone is locked.
 
-The maintainer can perform deployment themselves and return only the public client configuration; the tester does not need copies of their hosting or Clerk server credentials. A fully independent deployment needs its own initial Cloudflare stack, PostgreSQL database, Firebase project, and a Clerk instance the operator can configure. Its Alchemy deployment needs PlanetScale credentials, and Axiom credentials only until the stack drops its [Axiom provider](relay-observability.md#axiom-resource-removal).
+The maintainer can perform deployment themselves and return only the public client configuration; the tester does not need copies of their hosting or Clerk server credentials. A fully independent deployment needs its own initial Cloudflare stack, PostgreSQL database, Firebase project, and a Clerk instance the operator can configure. Its Alchemy deployment needs PlanetScale credentials.
 
 Build the host client and mobile app with the same relay URL and Clerk public configuration. A source server or desktop development build can host the test environment; keep its T3 home separate from an existing installation. Signing into the phone alone does not link a host environment. Use the host client's styal Link settings to link it and enable activity publishing. A private Clerk instance also needs its own CLI OAuth application before using `t3 connect login`; the repository's production CLI client ID belongs to the maintainers' instance.
 

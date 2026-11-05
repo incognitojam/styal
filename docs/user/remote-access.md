@@ -62,6 +62,10 @@ On a computer with the desktop app, you can open the printed `styal://pair`
 app link instead. The desktop app asks you to confirm the server address, then
 adds it.
 
+If your HTTPS endpoint uses a certificate from your own certificate authority,
+install that CA on Android as a **CA certificate** in its security settings; the
+Android app then trusts it.
+
 Pairing authorizes that device for future connections. Use a fresh one-time link
 for each new device; you do not need the original token to reconnect. Links
 created in Settings can only be copied from the client that created them while
@@ -75,9 +79,10 @@ URL, SSH, or styal Link. Tailscale shares its `100.64.0.0/10` address range with
 other VPNs such as Cloudflare WARP, so an address in that range shows as VPN
 unless the machine confirms it is on Tailscale. To add a route, choose **Add
 route** in the machine's route list, or next to it in the styal Link list.
-Pairing the same machine again over another address also adds a route instead
-of a second machine. A new route is placed by speed, in that order, and you can
-reorder routes at any time.
+A pairing link for a saved machine is refused when it comes from an address
+that machine does not have yet; add that address with **Add route** instead.
+Pairing again over an address the machine already has still works. A new route
+is placed by speed, in that order, and you can reorder routes at any time.
 
 While connected through styal Link or a paired address, styal also learns the
 machine's current LAN and Tailscale addresses and adds them as routes, so

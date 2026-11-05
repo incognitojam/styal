@@ -1176,7 +1176,7 @@ features:
       - On macOS, the desktop app presents thread and review-guide notifications from the main process and reports whether macOS showed or rejected each one.
       - A notification counts as blocked while the app's UserNotifications authorization is denied (Allow notifications off in System Settings), even though Electron still reports it as shown.
       - Turning on System notifications in the desktop app on macOS sends a confirmation notification; if macOS rejects it, the setting stays on and the row says macOS is blocking notifications, with a button that opens the app's own page under Notifications in System Settings.
-      - The first rejected thread notification in a session shows an in-app warning toast with the same System Settings action.
+      - The first rejected thread notification in a session shows an in-app warning toast with the same System Settings action; it stays until dismissed or the action is clicked.
       - Clicking a main-process notification brings its window to the front and opens the thread or guide it was about.
       - The UserNotifications bridge (objc-js) is staged and read on macOS only; Linux and Windows builds neither install nor rebuild it, and treat notifications as never blocked by it.
     rationale: Electron reports the Chromium notification permission as granted on macOS, and its own notifications emit `show` rather than `failed` while macOS discards them, so upstream's settings show notifications as on while none arrive.
@@ -2834,6 +2834,7 @@ features:
       - apps/server/src/orchestration-v2/legacy/LegacyV1ThreadImporter.ts
       - apps/server/src/persistence/ForkMigrations.ts
       - apps/web/src/components/chat/MessagesTimeline.logic.ts
+      - apps/web/src/components/chat/TimelinePendingApprovalRow.tsx
       - apps/web/src/components/chat/TimelineWorkEntryRow.logic.ts
       - apps/web/src/components/chat/TimelineWorkEntryRow.tsx
       - apps/web/src/components/chat/TimelineWorkGroupRows.tsx
@@ -5145,31 +5146,39 @@ features:
     status: maintained
     prs: []
     invariants:
-      - The relay stack declares no Axiom dataset, token, view, monitor or dashboard, and the Worker exports no spans. `Axiom.providers()`, the `@alchemy.run/axiom` dependency and the `AXIOM_*` workflow values stay only so a deploy can destroy what Alchemy state still holds.
+      - The relay stack declares no Axiom dataset, token, view, monitor or dashboard, and the Worker exports no spans. The relay stack loads no Axiom provider and its package and deploy workflows need no `@alchemy.run/axiom` dependency or `AXIOM_*` values.
       - The relay serves no `/v1/mobile/observe` route, keeps no mobile source map bucket, and its stack has no tracing or mobile telemetry outputs.
       - The stack publishes only `T3CODE_RELAY_URL` through `PublishClientConfig`, and the mobile app config has no default trace URL, so client tracing stays off unless a build supplies its own configuration.
       - The mobile app does not depend on `expo-observe`, has no Send crash reports setting and uploads no source maps. The persisted `crashReportsEnabled` preference stays so an opt-out carries over when crash reports return.
     rationale: styal does not use Axiom. Production's trace dataset held no spans and had no monitors, and the plan's three-dataset limit failed every relay deploy once mobile logs and metrics datasets were added. Crash reports are planned through PostHog as separate work. Upstream keeps Axiom, so intake must keep `infra/relay/src/monitoring.ts`, `infra/relay/src/mobileTelemetry/`, `apps/mobile/src/features/observability/observe.ts`, the mobile source map scripts and `packages/shared/src/mobileSourceMaps.ts` deleted and drop their upstream changes.
     implementation_paths:
+      - .github/workflows/deploy-relay.yml
       - .github/workflows/mobile-eas-production.yml
+      - .github/workflows/relay-preview-cleanup.yml
+      - .github/workflows/relay-preview.yml
       - apps/mobile/app.config.ts
       - apps/mobile/index.ts
       - apps/mobile/package.json
       - apps/mobile/src/components/RenderErrorBoundary.tsx
       - apps/mobile/src/features/diagnostics/SettingsDiagnosticsRouteScreen.tsx
       - infra/relay/alchemy.run.ts
+      - infra/relay/package.json
       - infra/relay/src/clientConfig.ts
       - infra/relay/src/observability.ts
       - infra/relay/src/worker.ts
       - packages/contracts/src/relay.ts
     upstream_paths:
+      - .github/workflows/deploy-relay.yml
       - .github/workflows/mobile-eas-production.yml
+      - .github/workflows/relay-preview-cleanup.yml
+      - .github/workflows/relay-preview.yml
       - apps/mobile/app.config.ts
       - apps/mobile/index.ts
       - apps/mobile/package.json
       - apps/mobile/src/components/RenderErrorBoundary.tsx
       - apps/mobile/src/features/diagnostics/SettingsDiagnosticsRouteScreen.tsx
       - infra/relay/alchemy.run.ts
+      - infra/relay/package.json
       - infra/relay/src/clientConfig.ts
       - infra/relay/src/observability.ts
       - infra/relay/src/worker.ts
@@ -5182,6 +5191,31 @@ features:
       tracking:
         - https://github.com/pingdotgg/t3code/pull/19093
       retire_when: styal adopts Axiom again, or upstream removes Axiom from its relay and mobile app.
+
+  - id: relay-no-t3-chat
+    title: styal Link does not offer T3 Chat account linking
+    status: maintained
+    prs: []
+    invariants:
+      - Account pages expose no T3 Chat linking page or client-only linking commands.
+      - Tunnel limit errors offer unlinking an environment without advertising T3 Chat plans.
+      - Fork relay deployment workflows do not set T3CHAT_LINK_SECRET, leaving upstream account linking disabled.
+    rationale: styal operates an independent relay and has no T3 Chat integration. Keep upstream relay and shared protocol support dormant to simplify future intake without offering an unavailable product.
+    implementation_paths:
+      - .github/workflows/deploy-relay.yml
+      - .github/workflows/relay-preview.yml
+      - apps/web/src/cloud/managedRelayState.ts
+      - apps/web/src/components/clerk/T3ConnectAccountPages.tsx
+      - packages/client-runtime/src/relay/errorPresentation.ts
+    upstream_paths:
+      - apps/web/src/components/clerk/T3ConnectAccountPages.tsx
+    tests:
+      - infra/relay/src/environments/ManagedTunnelLimits.test.ts
+      - infra/relay/src/t3chat/T3ChatAccounts.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: styal offers an account linking integration compatible with the upstream product.
 
   - id: restart-stopped-tool-calls
     title: Show tool calls a server restart killed as stopped
@@ -5748,7 +5782,7 @@ features:
     status: maintained
     prs: [935]
     invariants:
-      - Web and desktop setup ends with a Workflow step that offers automatic settlement when a selected computer supports it; computers without the capability are left out, and when none support it the import steps finish setup as before.
+      - Web and desktop setup ends with a Workflow step that offers automatic settlement on selected computers whose configuration has loaded; other computers are left out, and when none remain the import steps finish setup as before.
       - The step starts from the first selected computer's current settings, and Finish writes merge and inactivity settlement only to computers whose values differ, keeping each computer's own inactivity threshold when turning it on.
       - A failed save keeps the user on the step; the import steps' actions read as continuing while the step follows them, and setup still lands on the project the import chose.
       - Finishing records one setup-thread-settlement usage event with only the two chosen booleans.
@@ -6114,13 +6148,13 @@ features:
   - id: styal-project-file
     title: Read project configuration and shared actions from styal.json
     status: maintained
-    prs: [1128]
+    prs: [1128, 1280]
     rationale: styal owns its checked-in project file so its schema can drop T3 Code fields the fork removed and add stable action ids, while repositories that only have a t3.json keep their settings.
     invariants:
       - styal.json at the project root is the project file; a t3.json is read only when there is no styal.json, including when styal.json is invalid.
       - A t3.json contributes its settings and icon but never runs or lists its scripts; they are only offered for import or migration.
       - File-backed settings resolve project override, environment setting, project file, then built-in, and report the file they came from.
-      - Every styal.json action has an id; missing ids derive from the name and a later duplicate of an explicit id is dropped.
+      - Every styal.json action has an id; missing ids derive from the name and a later duplicate of an explicit id is dropped, and the file reports as `partial` so Settings warns about it.
       - styal.json actions are read live from the registered project root, never a thread worktree, and listed after saved actions in every client's actions menu, shortcuts and project settings.
       - A saved action with a styal.json action's id overrides it; removing the override restores the file's action and keeps its shortcut, and a file-only action cannot be deleted in styal.
       - styal.json actions never run on worktree creation or settle until the user approves their exact command; any change to the command, or a newly declared role, voids the approval until approved again.

@@ -206,7 +206,6 @@ interface LiveSessionEntry {
   readonly idleGeneration: number;
   readonly busyTurns: ReadonlySet<string>;
   readonly sendContexts: Map<ProviderThreadId, ProviderSendContext>;
-  readonly lastActivityAtMs: number;
   readonly idleFiber: Fiber.Fiber<void, never> | null;
   readonly pinnedSinceMs: number | null;
   readonly idleThreadUnloads: ReadonlyMap<ThreadId, IdleThreadUnload>;
@@ -1239,7 +1238,6 @@ export const layerWithOptions = (
           Effect.andThen(releaseIfStillIdle({ providerSessionId, generation })),
           Effect.forkIn(layerScope),
         );
-        const lastActivityAtMs = yield* Clock.currentTimeMillis;
         yield* Ref.update(sessions, (latest) => {
           const latestEntry = latest.get(key);
           if (latestEntry === undefined || latestEntry.busyTurns.size > 0) {
@@ -1250,7 +1248,6 @@ export const layerWithOptions = (
             ...latestEntry,
             idleGeneration: generation,
             idleFiber,
-            lastActivityAtMs,
             ...(options?.providerActivity === true ? { pinnedSinceMs: null } : {}),
           });
           return updated;
@@ -1266,22 +1263,7 @@ export const layerWithOptions = (
       ) =>
         withActivityError(
           providerSessionId,
-          Effect.gen(function* () {
-            const lastActivityAtMs = yield* Clock.currentTimeMillis;
-            yield* Ref.update(sessions, (current) => {
-              const entry = current.get(sessionKey(providerSessionId));
-              if (entry === undefined) {
-                return current;
-              }
-              const updated = new Map(current);
-              updated.set(sessionKey(providerSessionId), {
-                ...entry,
-                lastActivityAtMs,
-              });
-              return updated;
-            });
-            yield* scheduleIdleReleaseInternal(providerSessionId, options);
-          }),
+          scheduleIdleReleaseInternal(providerSessionId, options),
         );
 
       const attachThread = (input: {
@@ -1458,7 +1440,6 @@ export const layerWithOptions = (
           providerSessionId,
           Effect.gen(function* () {
             const key = sessionKey(providerSessionId);
-            const now = yield* Clock.currentTimeMillis;
             const idleFiber = yield* Ref.modify(sessions, (current) => {
               const entry = current.get(key);
               if (entry === undefined) {
@@ -1469,7 +1450,6 @@ export const layerWithOptions = (
                 ...entry,
                 busyTurns: new Set(entry.busyTurns).add(turnKey),
                 idleFiber: null,
-                lastActivityAtMs: now,
                 pinnedSinceMs: null,
               });
               return [entry.idleFiber, updated] as const;
@@ -1487,7 +1467,6 @@ export const layerWithOptions = (
           providerSessionId,
           Effect.gen(function* () {
             const key = sessionKey(providerSessionId);
-            const now = yield* Clock.currentTimeMillis;
             yield* Ref.update(sessions, (current) => {
               const entry = current.get(key);
               if (entry === undefined) {
@@ -1502,7 +1481,6 @@ export const layerWithOptions = (
               updated.set(key, {
                 ...entry,
                 busyTurns,
-                lastActivityAtMs: now,
               });
               return updated;
             });
@@ -2283,7 +2261,6 @@ export const layerWithOptions = (
               >(new Map());
               const sendContexts = new Map<ProviderThreadId, ProviderSendContext>();
               const exposedRuntime = decorateRuntime(runtime, eventSubscribers, sendContexts);
-              const now = yield* Clock.currentTimeMillis;
               const entry: LiveSessionEntry = {
                 attachedThreadIds: new Set([input.threadId]),
                 loadedProviderThreadKeyByThread: new Map(),
@@ -2302,7 +2279,6 @@ export const layerWithOptions = (
                 idleGeneration: 0,
                 busyTurns: new Set(),
                 sendContexts,
-                lastActivityAtMs: now,
                 idleFiber: null,
                 pinnedSinceMs: null,
                 idleThreadUnloads: new Map(),

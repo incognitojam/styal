@@ -95,6 +95,7 @@ import { sourceControlClients } from "@t3tools/client-runtime/source-control-cli
 import { ThemedSwitch } from "../../components/ui/ThemedSwitch";
 import { uuidv4 } from "../../lib/uuid";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { suggestAppAccessForRemote } from "./suggestAppAccess";
 import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
 import {
   useRemoteConnectionStatus,
@@ -119,7 +120,6 @@ interface EnvironmentOption {
   readonly connectionState: EnvironmentConnectionPhase;
   readonly connectionError: string | null;
   readonly connectionErrorTraceId: string | null;
-  readonly supportsCloneTracking: boolean;
 }
 
 const isSourceControlRepositoryError = Schema.is(SourceControlRepositoryError);
@@ -505,7 +505,6 @@ function useEnvironmentOptions(
         connectionState: runtime?.connectionState ?? "available",
         connectionError: runtime?.connectionError ?? null,
         connectionErrorTraceId: runtime?.connectionErrorTraceId ?? null,
-        supportsCloneTracking: config?.environment.capabilities.projectCloneTracking === true,
       };
     });
     return Arr.sort(
@@ -1113,6 +1112,10 @@ export function AddProjectNewScreen(props: { readonly environmentId?: string | s
   );
   const environment = resolveAddProjectEnvironment(environmentOptions, selectedEnvironmentId);
   const createNew = useAtomCommand(projectEnvironment.createNew, { reportFailure: false });
+  const checkPublishedAppAccess = useAtomCommand(sourceControlEnvironment.checkAppAccess, {
+    reportFailure: false,
+    reportDefect: false,
+  });
   const publishRepository = useAtomCommand(sourceControlEnvironment.publishRepository, {
     reportFailure: false,
   });
@@ -1210,6 +1213,12 @@ export function AddProjectNewScreen(props: { readonly environmentId?: string | s
           Dialog.alert(
             `Could not create the ${publishTarget.definition.label} repository`,
             errorMessage(Cause.squash(publishResult.cause)),
+          );
+        } else {
+          void suggestAppAccessForRemote(
+            checkPublishedAppAccess,
+            environment.environmentId,
+            publishResult.value.remoteUrl,
           );
         }
       });
@@ -1537,11 +1546,12 @@ export function AddProjectDestinationScreen(props: {
   readonly prompt?: string | string[];
 }) {
   const openNewTaskDraft = useOpenNewTaskDraft();
-  const cloneRepository = useAtomCommand(sourceControlEnvironment.cloneRepository, {
-    reportFailure: false,
-  });
   const startProjectClone = useAtomCommand(sourceControlEnvironment.startProjectClone, {
     reportFailure: false,
+  });
+  const checkAppAccess = useAtomCommand(sourceControlEnvironment.checkAppAccess, {
+    reportFailure: false,
+    reportDefect: false,
   });
   const navigation = useNavigation();
   const environment = useEnvironmentFromParam(props.environmentId);
@@ -1554,7 +1564,6 @@ export function AddProjectDestinationScreen(props: {
     AuthOrchestrationOperateScope,
   );
   const canCloneProject = canWriteSourceControl && canCreateProject;
-  const createProject = useCreateProject(environment);
   const remoteUrl = stringParam(props.remoteUrl);
   const provider = addProjectRemoteSourceProvider(sourceFromParam(props.source));
   const repository = stringParam(props.repository);
@@ -1600,58 +1609,14 @@ export function AddProjectDestinationScreen(props: {
 
     const originRoute = getActiveRoute(navigation);
     setIsSubmitting(true);
-    if (environment.supportsCloneTracking) {
-      const projectId = ProjectId.make(uuidv4());
-      const title = inferProjectTitleFromPath(resolved.path);
-      const startResult = await startProjectClone({
-        environmentId: environment.environmentId,
-        input: {
-          projectId,
-          title,
-          createdAt: new Date().toISOString(),
-          ...(isForkClone ? { provider, repository, defaultRepository } : {}),
-          remoteUrl,
-          destinationPath: resolved.path,
-        },
-      });
-      if (AsyncResult.isFailure(startResult)) {
-        const error = Cause.squash(startResult.cause);
-        const detail = isSourceControlRepositoryError(error) ? error.detail : errorMessage(error);
-        setError(`Clone failed on ${environment.label}. ${detail}`);
-      } else {
-        // Wait for the create event; the client store otherwise falls back to the project picker and loses clone controls.
-        const project = await waitForProject(
-          { environmentId: environment.environmentId, projectId },
-          15_000,
-        );
-        if (project === null) {
-          setError(
-            "The project was created but has not reached this device yet. It will appear in the project list once the connection catches up.",
-          );
-        } else {
-          openNewTaskDraft(
-            {
-              environmentId: environment.environmentId,
-              projectId,
-              title,
-              cloning: "1",
-              ...(prompt
-                ? await draftWithPrompt(environment.environmentId, projectId, prompt).then(
-                    (draftId) => ({ draftId }),
-                    () => ({}),
-                  )
-                : {}),
-            },
-            originRoute,
-          );
-        }
-      }
-      setIsSubmitting(false);
-      return;
-    }
-    const cloneResult = await cloneRepository({
+    const projectId = ProjectId.make(uuidv4());
+    const title = inferProjectTitleFromPath(resolved.path);
+    const startResult = await startProjectClone({
       environmentId: environment.environmentId,
       input: {
+        projectId,
+        title,
+        createdAt: new Date().toISOString(),
         // Only a fork needs naming: it is what lets the server wire up the
         // upstream remote. Every other clone stays a plain URL clone, with no
         // second repository lookup on the server.
@@ -1660,22 +1625,37 @@ export function AddProjectDestinationScreen(props: {
         destinationPath: resolved.path,
       },
     });
-    if (AsyncResult.isFailure(cloneResult)) {
-      const error = Cause.squash(cloneResult.cause);
+    if (AsyncResult.isFailure(startResult)) {
+      const error = Cause.squash(startResult.cause);
       const detail = isSourceControlRepositoryError(error) ? error.detail : errorMessage(error);
       setError(`Clone failed on ${environment.label}. ${detail}`);
     } else {
-      // The clone itself succeeded, so this is a warning rather than a failure:
-      // the repository is on disk, just without the remote that was asked for.
-      if (isForkClone && !cloneResult.value.upstream) {
-        Dialog.alert(
-          "Upstream remote not added",
-          `Cloned, but ${parentRepository} could not be wired up as a remote.`,
+      void suggestAppAccessForRemote(checkAppAccess, environment.environmentId, remoteUrl);
+      // Wait for the create event; the client store otherwise falls back to the project picker and loses clone controls.
+      const project = await waitForProject(
+        { environmentId: environment.environmentId, projectId },
+        15_000,
+      );
+      if (project === null) {
+        setError(
+          "The project was created but has not reached this device yet. It will appear in the project list once the connection catches up.",
         );
-      }
-      const createResult = await createProject(cloneResult.value.cwd, originRoute);
-      if (createResult && AsyncResult.isFailure(createResult)) {
-        setError(errorMessage(Cause.squash(createResult.cause)));
+      } else {
+        openNewTaskDraft(
+          {
+            environmentId: environment.environmentId,
+            projectId,
+            title,
+            cloning: "1",
+            ...(prompt
+              ? await draftWithPrompt(environment.environmentId, projectId, prompt).then(
+                  (draftId) => ({ draftId }),
+                  () => ({}),
+                )
+              : {}),
+          },
+          originRoute,
+        );
       }
     }
     setIsSubmitting(false);

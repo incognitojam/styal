@@ -20,11 +20,12 @@
       // Knip loads its preprocessor through a CLI option; native verification and
       // worktree setup (from t3.json) run directly. CI uses the reporter and CLI check.
       // electron-builder loads the macOS signer by path, and the desktop launch check
-      // runs against packaged builds by path.
+      // runs against packaged builds by path. mobile-behavior.ts spawns its runner by path.
       "entry": [
         // These fixture scripts are injected into a browser page by path.
         "fixtures/*/*.js",
         "knip-schemas.ts",
+        "mobile-behavior/run.ts",
         "mobile-native-client.ts",
         "setup-worktree.ts",
         "teardown-worktree.ts",
@@ -149,7 +150,8 @@
       ],
     },
     "infra/relay": {
-      "entry": ["alchemy.run.ts!", "src/persistence/schema.ts!"],
+      // Alchemy loads src/worker.ts as the Worker entry and reads its default export.
+      "entry": ["alchemy.run.ts!", "src/persistence/schema.ts!", "src/worker.ts!"],
     },
     "infra/web": {
       // Alchemy loads the stack, and the stack names its worker by path.

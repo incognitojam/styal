@@ -47,7 +47,7 @@ import {
 
 import { formatRelativeTime } from "../../timestampFormat";
 import { useClientSettings, useEnvironmentSettings } from "../../hooks/useSettings";
-import { selectProjectGroupingSettings } from "../../logicalProject";
+import { selectProjectGroupingSettings } from "@t3tools/client-runtime/state/project-grouping";
 import { getCustomModelOptionsByInstance } from "../../modelSelection";
 import {
   applyProviderInstanceSettings,
@@ -452,7 +452,6 @@ export function ScheduledTasksSettings(target: {
               <ScheduledTaskEnvironmentSection
                 key={entry.environmentId}
                 environment={entry}
-                showEnvironmentHeading={environments.length > 1}
                 taskId={linkedEnvironmentId === entry.environmentId ? target.taskId : undefined}
                 onEdit={openForEdit}
               />
@@ -607,12 +606,10 @@ function ScheduledTaskEnvironmentList({
 
 function ScheduledTaskEnvironmentSection({
   environment,
-  showEnvironmentHeading,
   taskId,
   onEdit,
 }: {
   readonly environment: EnvironmentPresentation;
-  readonly showEnvironmentHeading: boolean;
   readonly taskId?: ScheduledTaskId | undefined;
   readonly onEdit: (environmentId: EnvironmentId, task: ScheduledTask) => void;
 }) {
@@ -634,7 +631,7 @@ function ScheduledTaskEnvironmentSection({
   return (
     <SettingsSection
       title={environment.label}
-      hideTitle={!showEnvironmentHeading}
+      hideTitle
       icon={
         <EnvironmentMachineIcon
           kind={resolveEnvironmentMachineKind(environment.serverConfig)}

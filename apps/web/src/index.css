@@ -290,10 +290,8 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --color-card-foreground: var(--contrast-card-foreground);
   --color-card: var(--card);
   --color-code: var(--code-background);
-  --color-code-foreground: var(--code-foreground);
   --color-foreground: var(--contrast-foreground);
   --color-background: var(--background);
-  --color-surface-raised: var(--surface-raised);
   --color-message: var(--message-surface);
   --color-message-foreground: var(--contrast-message-foreground);
   --color-message-action: var(--message-action);
@@ -977,10 +975,6 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
      focus outline takes over, so exactly one indicator shows at a time. */
   [data-settings-page-scroll] .settings-search-target-pulse:focus {
     outline: none;
-  }
-
-  .surface-subheader {
-    @apply flex h-10 min-h-10 shrink-0 items-center border-b border-border/60 bg-background;
   }
 
   [data-preview-panel-mode="inline"] [data-right-panel-surface-content] [data-surface-subheader] {

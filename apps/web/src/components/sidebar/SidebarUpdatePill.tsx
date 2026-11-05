@@ -281,9 +281,10 @@ function SidebarUpdateControl() {
       onOpenChange={(open) => (open ? setIsConfirmingEverything(true) : closeConfirmation())}
       checking={isCheckingActivity}
       contentUpdatedAt={activityUpdatedAt}
-      summary={everything.summary}
-      lines={everything.lines}
-      skipped={everything.skipped}
+      version={everything.version}
+      providerCount={everything.providerCount}
+      rows={everything.rows}
+      restarts={everything.restarts}
       activity={activityCheck}
       onConfirm={() => void runEverything(activityCheck, true)}
     />

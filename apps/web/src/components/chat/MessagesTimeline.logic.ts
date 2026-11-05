@@ -1,7 +1,6 @@
 import type { ReviewFindingsReport } from "@t3tools/shared/reviewFindings";
 import { isPreviewToolName, isWorkspaceSearchInput } from "@t3tools/shared/toolRowPresentation";
 import { worktreeSetupAgentStarted } from "@t3tools/client-runtime/worktree-setup";
-export { worktreeSetupAgentStarted } from "@t3tools/client-runtime/worktree-setup";
 import { isLiveSubagentTurnItem } from "@t3tools/client-runtime/state/subagentRuntime";
 import * as DateTime from "effect/DateTime";
 import * as Equal from "effect/Equal";
@@ -38,10 +37,6 @@ import {
   contextCompactionTokenCounts,
   type ToolGroupSummaryKind,
 } from "@t3tools/client-runtime/work-log/presentation";
-export {
-  normalizeCompactToolLabel,
-  toolGroupAction,
-} from "@t3tools/client-runtime/work-log/presentation";
 import {
   deriveRevertTurnCountByUserMessageId,
   formatDuration,
@@ -71,15 +66,13 @@ import {
   type OrchestrationV2TurnItem,
   type ProjectId,
   type RunAttemptId,
+  type RuntimeRequestId,
   RunId,
   type ThreadId,
   type TurnItemId,
 } from "@t3tools/contracts";
 import type { ThreadRunSummary } from "@t3tools/client-runtime/state/shell";
-import {
-  resolveT3McpToolDefinition,
-  type T3McpToolPresentation,
-} from "@t3tools/shared/t3McpToolPresentation";
+import { resolveT3McpToolDefinition } from "@t3tools/shared/t3McpToolPresentation";
 import { compactDynamicToolOutput } from "@t3tools/shared/toolOutput";
 import { htmlRenderReferencesEqual, type HtmlRenderReference } from "@t3tools/shared/htmlRender";
 import { mcpAppReferencesEqual, type McpAppReference } from "@t3tools/shared/mcpApp";
@@ -338,7 +331,7 @@ export function shouldFollowWorkGroupAppend(
   );
 }
 
-export interface TimelineEndState {
+interface TimelineEndState {
   readonly isAtEnd?: boolean;
   readonly isNearEnd?: boolean;
   readonly contentLength?: number;
@@ -514,14 +507,6 @@ function maxIsoTimestamp(a: string | null, b: string | null): string | null {
   return bMs > aMs ? b : a;
 }
 
-export interface TimelineDurationMessage {
-  id: string;
-  role: "user" | "assistant" | "system";
-  createdAt: string;
-  updatedAt: string;
-  streaming: boolean;
-}
-
 export type TimelineLatestRun = Pick<
   ThreadRunSummary,
   "runId" | "status" | "startedAt" | "completedAt" | "turnEnded"
@@ -586,7 +571,7 @@ type MessagesTimelineRowContent =
       id: string;
       createdAt: string | null;
       /** A running compaction owns the working row, so its divider appears only once it ends. */
-      compacting?: string;
+      compacting?: true;
     }
   | {
       kind: "thinking";
@@ -607,7 +592,6 @@ type MessagesTimelineRowContent =
       summaryKind: ToolGroupSummaryKind;
       toolSurface?: WorkLogEntry["toolSurface"];
       toolIcon?: WorkLogEntry["toolIcon"];
-      summaryToolIcon?: "browser" | "device" | "t3-code" | "pull-request";
       hasFailure: boolean;
       summaryEntry?: WorkLogEntry;
       fileChangeStat?: NonNullable<WorkLogEntry["fileChangeStat"]>;
@@ -651,7 +635,6 @@ type MessagesTimelineRowContent =
       createdAt: string;
       message: ChatMessage;
       projectedItem?: OrchestrationV2ProjectedTurnItem;
-      durationStart: string;
       showAssistantMeta: boolean;
       showAssistantCopyButton: boolean;
       assistantCopyStreaming: boolean;
@@ -702,30 +685,9 @@ export interface StableMessagesTimelineRowsState {
   result: MessagesTimelineRow[];
 }
 
-export function computeMessageDurationStart(
-  messages: ReadonlyArray<TimelineDurationMessage>,
-): Map<string, string> {
-  const result = new Map<string, string>();
-  let lastBoundary: string | null = null;
-
-  for (const message of messages) {
-    if (message.role === "user") {
-      lastBoundary = message.createdAt;
-    }
-    result.set(message.id, lastBoundary ?? message.createdAt);
-    if (message.role === "assistant" && !message.streaming) {
-      lastBoundary = message.updatedAt;
-    }
-  }
-
-  return result;
-}
-
 function workGroupId(timelineEntryId: string): string {
   return `work-group:${timelineEntryId}`;
 }
-
-export type TimelineToolPresentation = T3McpToolPresentation;
 
 function expandedWorkGroupRow(
   groupId: string,
@@ -1608,6 +1570,7 @@ function deriveTimelineTurnFolds(
 
 export function deriveMessagesTimelineRows(input: {
   timelineEntries: ReadonlyArray<TimelineEntry>;
+  pendingApprovalRequestIds?: ReadonlySet<RuntimeRequestId>;
   latestRun?: TimelineLatestRun | null;
   runs?: ReadonlyArray<{
     id: RunId;
@@ -1627,10 +1590,16 @@ export function deriveMessagesTimelineRows(input: {
   supportsConversationRollback: boolean;
   threadStartCheckpointReady?: boolean;
   availableRevertTurnCounts?: ReadonlySet<number> | undefined;
-  liveAgentTaskIds?: ReadonlySet<string> | undefined;
   worktreeSetup?: WorktreeSetupSnapshot | null;
 }): MessagesTimelineRow[] {
   const timelineEntries = timelineRowEntries(input.timelineEntries, input.runs);
+  const isPendingApproval = (entry: WorkLogEntry) => {
+    const item = entry.projectedItem?.item;
+    return (
+      item?.type === "approval_request" &&
+      input.pendingApprovalRequestIds?.has(item.requestId) === true
+    );
+  };
   const turnDiffSummaryByAssistantMessageId = new Map<MessageId, TurnDiffSummary>();
   for (const summary of input.turnDiffSummaries) {
     if (summary.assistantMessageId) {
@@ -1648,9 +1617,6 @@ export function deriveMessagesTimelineRows(input: {
       })
     : new Map<MessageId, number>();
   const nextRows: MessagesTimelineRow[] = [];
-  const durationStartByMessageId = computeMessageDurationStart(
-    timelineEntries.flatMap((entry) => (entry.kind === "message" ? [entry.message] : [])),
-  );
   const continuedTurnRoots = deriveContinuedRunRoots(input.runs ?? []);
   const terminalAssistantMessageIds = deriveTerminalAssistantMessageIds(
     timelineEntries,
@@ -1705,6 +1671,14 @@ export function deriveMessagesTimelineRows(input: {
       }
     }
   }
+  if (input.pendingApprovalRequestIds?.size) {
+    for (const entry of timelineEntries) {
+      if (entry.kind === "work" && isPendingApproval(entry.entry)) {
+        collapsedEntryIds.delete(entry.id);
+        collapsedSupersededEntryIds.delete(entry.id);
+      }
+    }
+  }
   const runIdIsActiveResponse = (runId: RunId | null | undefined) =>
     runId == null ? runlessWorkActive : activeVisualResponseRunIds.has(runId);
   const workEntryIsInActiveRun = (entry: WorkLogEntry) =>
@@ -1728,6 +1702,7 @@ export function deriveMessagesTimelineRows(input: {
         entry.entry.itemType === "system_notice" ||
         entry.entry.itemType === "notification" ||
         entry.entry.questionAnswer !== undefined ||
+        isPendingApproval(entry.entry) ||
         !runIdIsActiveResponse(entry.entry.runId) ||
         entry.entry.sourceActivityKind === "context-compaction" ||
         collapsedEntryIds.has(entry.id) ||
@@ -1757,7 +1732,8 @@ export function deriveMessagesTimelineRows(input: {
   const latestToolKeepsActivityLive =
     latestRunningToolEntry !== undefined ||
     (latestVisibleToolEntry !== undefined &&
-      workEntryIndicatesToolSuccess(latestVisibleToolEntry.entry));
+      workEntryIndicatesToolSuccess(latestVisibleToolEntry.entry) &&
+      !input.pendingApprovalRequestIds?.size);
   const latestToolFailed =
     latestRunningToolEntry === undefined &&
     latestVisibleToolEntry !== undefined &&
@@ -1851,28 +1827,28 @@ export function deriveMessagesTimelineRows(input: {
     activeRunIsCompaction && !compactionRunFinished ? unsettledRunId : null;
   // Compacting on return holds back the message the user just sent, so the working row says why
   // it is waiting. Any other compaction shows only its live divider, never both.
-  const activeCompactionRunId =
-    runningCompactionRunId !== null && compactionRuns.get(runningCompactionRunId) === "onReturn"
-      ? runningCompactionRunId
-      : activeCompactionEntry?.entry.runId != null &&
-          resumeCompactionAgeByEntryId.has(activeCompactionEntry.id)
-        ? activeCompactionEntry.entry.runId
-        : null;
-  const compactingLabel = (() => {
-    if (activeCompactionRunId === null) return undefined;
-    const age = activeCompactionEntry
-      ? resumeCompactionAgeByEntryId.get(activeCompactionEntry.id)
+  const compactsOnReturn =
+    runningCompactionRunId !== null && compactionRuns.get(runningCompactionRunId) === "onReturn";
+  // The question is answered mid-turn, so the row times this compaction, not the turn.
+  const resumeCompactionEntry =
+    activeCompactionEntry?.entry.runId != null &&
+    resumeCompactionAgeByEntryId.has(activeCompactionEntry.id)
+      ? activeCompactionEntry
       : undefined;
-    return age ? `Compacting after ${age} idle…` : IDLE_COMPACTING_LABELS.onReturn;
-  })();
+  const activeCompactionRunId = compactsOnReturn
+    ? runningCompactionRunId
+    : (resumeCompactionEntry?.entry.runId ?? null);
   const appendWorkingRow = () => {
     if (compactionOnlyRunFinished) return;
     if (runningCompactionRunId !== null && activeCompactionRunId === null) return;
     nextRows.push({
       kind: "working",
       id: "working-indicator-row",
-      createdAt: input.activeTurnStartedAt ?? null,
-      ...(compactingLabel ? { compacting: compactingLabel } : {}),
+      createdAt:
+        (compactsOnReturn ? undefined : resumeCompactionEntry?.entry.createdAt) ??
+        input.activeTurnStartedAt ??
+        null,
+      ...(activeCompactionRunId !== null ? { compacting: true as const } : {}),
     });
   };
   let hasActivityRow = false;
@@ -2027,6 +2003,7 @@ export function deriveMessagesTimelineRows(input: {
         continue;
       }
       if (
+        isPendingApproval(timelineEntry.entry) ||
         (timelineEntry.entry.runId != null && failedRunIds.has(timelineEntry.entry.runId)) ||
         (timelineEntry.entry.itemType === "error" &&
           timelineEntry.entry.toolLifecycleStatus === "failed") ||
@@ -2060,6 +2037,7 @@ export function deriveMessagesTimelineRows(input: {
           nextEntry.entry.sourceActivityKind === "runtime.error" ||
           nextEntry.entry.itemType === "system_notice" ||
           nextEntry.entry.itemType === "notification" ||
+          isPendingApproval(nextEntry.entry) ||
           activeWorkEntryIds.has(nextEntry.id) ||
           collapsedEntryIds.has(nextEntry.id) ||
           collapsedSupersededEntryIds.has(nextEntry.id) ||
@@ -2153,13 +2131,6 @@ export function deriveMessagesTimelineRows(input: {
           const latestToolEntry = visibleGroupedEntries.findLast(workLogEntryIsToolLike);
           const singleEntry =
             visibleGroupedEntries.length === 1 ? (visibleGroupedEntries[0] ?? null) : null;
-          const usesSingleToolCallLabel =
-            singleEntry !== null &&
-            workLogEntryIsToolLike(singleEntry) &&
-            toolGroupAction(singleEntry) !== "edit";
-          const summaryToolIcon = usesSingleToolCallLabel
-            ? resolveWorkEntryToolPresentation(singleEntry, "completed")?.icon
-            : undefined;
           nextRows.push({
             kind: "work-toggle",
             id: `work-toggle:${timelineEntry.id}`,
@@ -2168,15 +2139,13 @@ export function deriveMessagesTimelineRows(input: {
             groupId,
             hiddenCount: visibleGroupedEntries.length,
             expanded,
-            summary: usesSingleToolCallLabel
-              ? singleToolCallLabel(singleEntry)
-              : singleEntry !== null && !workLogEntryIsToolLike(singleEntry)
+            summary:
+              singleEntry !== null && !workLogEntryIsToolLike(singleEntry)
                 ? singleEntry.label
                 : summarizeToolGroup(visibleGroupedEntries).summary,
             summaryKind,
             ...(groupToolSurface ? { toolSurface: groupToolSurface } : {}),
             ...(groupToolIcon ? { toolIcon: groupToolIcon } : {}),
-            ...(summaryToolIcon ? { summaryToolIcon } : {}),
             hasFailure:
               latestToolEntry !== undefined &&
               workEntryDisplayIndicatesToolFailure(latestToolEntry),
@@ -2283,9 +2252,6 @@ export function deriveMessagesTimelineRows(input: {
       timelineEntry.message.role === "assistant" &&
       runIdIsActiveResponse(timelineEntry.message.runId);
 
-    const durationStart =
-      durationStartByMessageId.get(timelineEntry.message.id) ?? timelineEntry.message.createdAt;
-
     const showAssistantMeta =
       timelineEntry.message.role === "assistant" &&
       terminalAssistantMessageIds.has(timelineEntry.message.id) &&
@@ -2299,7 +2265,6 @@ export function deriveMessagesTimelineRows(input: {
       ...(timelineEntry.projectedItem === undefined
         ? {}
         : { projectedItem: timelineEntry.projectedItem }),
-      durationStart,
       showAssistantMeta,
       showAssistantCopyButton: showAssistantMeta,
       assistantCopyStreaming: timelineEntry.message.streaming || assistantResponseStillInProgress,
@@ -2367,7 +2332,7 @@ export function deriveMessagesTimelineRows(input: {
     !setupOwnsWorkingSlot &&
     !hasActiveCompaction &&
     !compactionOnlyRunFinished &&
-    (!hasActivityRow || latestToolFailed)
+    (latestToolFailed || (!hasActivityRow && !input.pendingApprovalRequestIds?.size))
   ) {
     const failedGroupAnchor = latestToolFailed ? activeWorkAnchor : undefined;
     if (failedGroupAnchor) {
@@ -2472,7 +2437,7 @@ const WORKTREE_SETUP_ROW_ID = "worktree-setup-row";
 
 export type MessagesTimelineRowsInput = Parameters<typeof deriveMessagesTimelineRows>[0];
 
-export interface MessagesTimelineRowsProjection {
+interface MessagesTimelineRowsProjection {
   readonly input: MessagesTimelineRowsInput;
   readonly rows: MessagesTimelineRow[];
 }
@@ -2481,16 +2446,6 @@ export interface MessagesTimelineRowsProjection {
  * Runless (imported V1) turns and work after a steer fold under synthetic
  * keys, so the entry's own run id is not enough to open them.
  */
-export function timelineEntryTurnFoldRunId(
-  input: Pick<
-    MessagesTimelineRowsInput,
-    "timelineEntries" | "runs" | "latestRun" | "isWorking" | "runlessWorkActive" | "runningRunId"
-  >,
-  entryId: string,
-): RunId | null {
-  return timelineTurnFoldRunIdsByEntryId(input).get(entryId) ?? null;
-}
-
 export function timelineTurnFoldRunIdsByEntryId(
   input: Pick<
     MessagesTimelineRowsInput,
@@ -2527,6 +2482,7 @@ function replaceStreamingMessageRows(
     expandedRunIds: previousExpandedRuns,
     expandedAttemptIds: previousExpandedAttempts,
     expandedWorkGroupIds: previousExpandedGroups,
+    pendingApprovalRequestIds: previousPendingApprovalRequestIds,
     availableRevertTurnCounts: previousAvailableRevertTurnCounts,
     ...previousContext
   } = previous.input;
@@ -2537,6 +2493,7 @@ function replaceStreamingMessageRows(
     expandedRunIds,
     expandedAttemptIds,
     expandedWorkGroupIds,
+    pendingApprovalRequestIds,
     availableRevertTurnCounts,
     ...context
   } = input;
@@ -2548,6 +2505,7 @@ function replaceStreamingMessageRows(
     !shallow(previousExpandedRuns, expandedRunIds) ||
     !shallow(previousExpandedAttempts, expandedAttemptIds) ||
     !shallow(previousExpandedGroups, expandedWorkGroupIds) ||
+    !shallow(previousPendingApprovalRequestIds, pendingApprovalRequestIds) ||
     !shallow(previousAvailableRevertTurnCounts, availableRevertTurnCounts) ||
     !sameCheckpointSummaries(previousCheckpoints, turnDiffSummaries)
   ) {
@@ -2757,7 +2715,6 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
       return (
         a.message === bm.message &&
         a.projectedItem === bm.projectedItem &&
-        a.durationStart === bm.durationStart &&
         a.showAssistantMeta === bm.showAssistantMeta &&
         a.showAssistantCopyButton === bm.showAssistantCopyButton &&
         a.assistantCopyStreaming === bm.assistantCopyStreaming &&

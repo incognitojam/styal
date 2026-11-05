@@ -26,7 +26,6 @@ it("explains why sending is disabled while feedback is uploading", async () => {
       promptHasText
       isSendBusy={false}
       sendDisabledReason="Sending feedback"
-      isConnecting={false}
       isEnvironmentUnavailable={false}
       isPreparingWorktree={false}
       hasSendableContent
