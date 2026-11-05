@@ -14,13 +14,14 @@ import {
 
 import { nextProjectScriptId } from "./projectScripts.ts";
 import {
-  hasUnknownKeys,
   makeFieldValidators,
-  pickValidFields,
-  type JsonRecord,
+  recoverProjectFile,
+  type ProjectFileIssue,
 } from "./projectFileRecovery.ts";
 import { fromLenientJson } from "./schemaJson.ts";
 import { parseT3ProjectFileResult } from "./t3ProjectFile.ts";
+
+export type { ProjectFileIssue };
 
 /**
  * Codec between the raw `styal.json` file contents (lenient JSONC string) and
@@ -29,64 +30,33 @@ import { parseT3ProjectFileResult } from "./t3ProjectFile.ts";
 export const StyalProjectFileFromJson = fromLenientJson(StyalProjectFile);
 
 export type StyalProjectFileParseResult =
-  | { readonly status: "valid"; readonly file: StyalProjectFile }
-  | { readonly status: "partial"; readonly file: StyalProjectFile }
+  | {
+      readonly status: "valid" | "partial";
+      readonly file: StyalProjectFile;
+      readonly issues: ReadonlyArray<ProjectFileIssue>;
+    }
   | { readonly status: "invalid"; readonly file: null };
 
 const decodeStyalProjectFile = Schema.decodeUnknownExit(StyalProjectFile);
-const decodeStyalProjectFileAction = Schema.decodeUnknownExit(StyalProjectFileAction);
 const decodeJsonObject = Schema.decodeUnknownExit(Schema.Record(Schema.String, Schema.Unknown));
-const decodeJsonArray = Schema.decodeUnknownExit(Schema.Array(Schema.Unknown));
 const decodeLenientJson = Schema.decodeExit(fromLenientJson(Schema.Unknown));
 
-const FILE_FIELDS = makeFieldValidators(StyalProjectFile.fields);
-const ACTION_FIELDS = makeFieldValidators(StyalProjectFileAction.fields);
-
-/** An action without its invalid optional fields, or null when a required field is invalid. */
-function recoverAction(input: unknown): JsonRecord | null {
-  const decodedRecord = decodeJsonObject(input);
-  if (Exit.isFailure(decodedRecord)) {
-    return null;
-  }
-  const candidate = pickValidFields(decodedRecord.value, ACTION_FIELDS);
-  return Exit.isSuccess(decodeStyalProjectFileAction(candidate)) ? candidate : null;
-}
-
-function recoverFile(record: JsonRecord): StyalProjectFile {
-  // Actions recover one by one, so a bad action or an over-long list does not
-  // discard the valid ones.
-  const { actions: rawActions, ...fields } = record;
-  const decodedActions = decodeJsonArray(rawActions);
-  const actions = Exit.isSuccess(decodedActions)
-    ? decodedActions.value
-        .map(recoverAction)
-        .filter((action) => action !== null)
-        .slice(0, STYAL_PROJECT_FILE_MAX_ACTIONS)
-    : undefined;
-  const candidate = {
-    ...pickValidFields(fields, FILE_FIELDS),
-    ...(actions === undefined ? {} : { actions }),
-  };
-  // Every field in the candidate validated alone, and the struct has no
-  // cross-field rules, so this decode only applies the field transformations.
-  const decoded = decodeStyalProjectFile(candidate);
-  return Exit.isSuccess(decoded) ? decoded.value : {};
-}
-
-function hasUnknownFileKeys(record: JsonRecord): boolean {
-  if (hasUnknownKeys(record, FILE_FIELDS)) return true;
-  const decodedActions = decodeJsonArray(record.actions);
-  if (Exit.isFailure(decodedActions)) return false;
-  return decodedActions.value.some((action) => {
-    const decodedAction = decodeJsonObject(action);
-    return Exit.isSuccess(decodedAction) && hasUnknownKeys(decodedAction.value, ACTION_FIELDS);
-  });
-}
+const FILE_SHAPE = {
+  fields: makeFieldValidators(StyalProjectFile.fields),
+  list: {
+    key: "actions",
+    label: "Action",
+    fields: makeFieldValidators(StyalProjectFileAction.fields),
+    max: STYAL_PROJECT_FILE_MAX_ACTIONS,
+    // Two actions sharing an id cannot both be bound or overridden.
+    uniqueKey: "id",
+  },
+};
 
 /**
- * Decode raw `styal.json` contents and report whether invalid or unrecognized
- * fields had to be discarded. Syntax errors and non-object roots are invalid
- * because their fields cannot be recovered independently.
+ * Decode raw `styal.json` contents and report each invalid or unrecognized
+ * value and each action that had to be discarded. Syntax errors and non-object
+ * roots are invalid because their fields cannot be recovered independently.
  */
 export function parseStyalProjectFileResult(contents: string): StyalProjectFileParseResult {
   const decodedJson = decodeLenientJson(contents);
@@ -94,20 +64,21 @@ export function parseStyalProjectFileResult(contents: string): StyalProjectFileP
   const decodedRecord = decodeJsonObject(decodedJson.value);
   if (Exit.isFailure(decodedRecord)) return { status: "invalid", file: null };
 
-  const decoded = decodeStyalProjectFile(decodedRecord.value);
-  if (Exit.isSuccess(decoded)) {
-    return {
-      status: hasUnknownFileKeys(decodedRecord.value) ? "partial" : "valid",
-      file: decoded.value,
-    };
-  }
-  return { status: "partial", file: recoverFile(decodedRecord.value) };
+  const { candidate, issues } = recoverProjectFile(decodedRecord.value, FILE_SHAPE);
+  // Every value in the candidate validated alone, and the struct has no
+  // cross-field rules, so this decode only applies the field transformations.
+  const decoded = decodeStyalProjectFile(candidate);
+  return {
+    status: issues.length === 0 ? "valid" : "partial",
+    file: Exit.isSuccess(decoded) ? decoded.value : {},
+    issues,
+  };
 }
 
 /**
  * An invalid `styal.json` still hides `t3.json`, so the old file never silently replaces the
  * new one. `partial` means invalid or unknown fields, or actions with a duplicate id, were
- * ignored. `legacyScripts` are never run; the migration to `styal.json` offers them.
+ * ignored, and `issues` lists them. `legacyScripts` are never run; the migration to `styal.json` offers them.
  */
 export type ProjectConfigState =
   | { readonly status: "missing"; readonly config: null; readonly legacyScripts: readonly [] }
@@ -122,6 +93,7 @@ export type ProjectConfigState =
       readonly source: ProjectConfig["source"];
       readonly config: ProjectConfig;
       readonly legacyScripts: ReadonlyArray<T3ProjectFileScript>;
+      readonly issues: ReadonlyArray<ProjectFileIssue>;
     };
 
 const MISSING: ProjectConfigState = { status: "missing", config: null, legacyScripts: [] };
@@ -146,12 +118,12 @@ export function resolveProjectConfig(files: {
       };
     }
     const { $schema: _schema, actions, ...settings } = parsed.file;
-    const actionsWithIds = withActionIds(actions);
     return {
-      status: actionsWithIds.length < (actions?.length ?? 0) ? "partial" : parsed.status,
+      status: parsed.status,
       source: STYAL_PROJECT_FILE_NAME,
-      config: { ...settings, source: STYAL_PROJECT_FILE_NAME, actions: actionsWithIds },
+      config: { ...settings, source: STYAL_PROJECT_FILE_NAME, actions: withActionIds(actions) },
       legacyScripts: [],
+      issues: parsed.issues,
     };
   }
   if (files.t3 !== null) {
@@ -165,30 +137,23 @@ export function resolveProjectConfig(files: {
       source: "t3.json",
       config: { ...settings, source: "t3.json", actions: [] },
       legacyScripts: scripts ?? [],
+      issues: parsed.issues,
     };
   }
   return MISSING;
 }
 
 /**
- * File actions with every id filled in. An explicit id is kept as written;
- * the first action to claim an id keeps it and a later duplicate is dropped,
- * because two actions sharing an id cannot both be bound or overridden.
- * Missing ids derive from the name, avoiding ids already taken.
+ * File actions with every id filled in. An explicit id is kept as written, and
+ * parsing has already dropped duplicates of it. Missing ids derive from the
+ * name, avoiding ids already taken.
  */
 function withActionIds(
   actions: ReadonlyArray<StyalProjectFileAction> | undefined,
 ): ReadonlyArray<ProjectConfigAction> {
   if (actions === undefined) return [];
-  const explicit = new Set<string>();
-  const kept = actions.filter((action) => {
-    if (action.id === undefined) return true;
-    if (explicit.has(action.id)) return false;
-    explicit.add(action.id);
-    return true;
-  });
-  const taken = new Set(explicit);
-  return kept.map((action) => {
+  const taken = new Set(actions.flatMap((action) => action.id ?? []));
+  return actions.map((action) => {
     const id = action.id ?? nextProjectScriptId(action.name, taken);
     taken.add(id);
     return { ...action, id, icon: action.icon ?? "play" };

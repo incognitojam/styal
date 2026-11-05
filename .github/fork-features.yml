@@ -2925,6 +2925,7 @@ features:
       - A file that is not a JSON array is never rewritten by the startup sync.
     implementation_paths:
       - apps/server/src/keybindings.ts
+      - apps/web/src/components/settings/ConfigFileIssuesAlert.tsx
       - apps/web/src/components/settings/KeybindingsSettings.tsx
     upstream_paths:
       - apps/server/src/keybindings.ts
@@ -4033,17 +4034,21 @@ features:
   - id: project-file-partial-recovery
     title: Preserve valid project file values when siblings are invalid
     status: maintained
-    prs: [286]
-    rationale: A malformed optional value must not hide unrelated actions, defaults, or project icons; ignored values remain visible as a warning so configuration mistakes can be corrected.
+    prs: [286, 1285]
+    rationale: A malformed optional value must not hide unrelated actions, defaults, or project icons; ignored values remain visible as a warning that names each one so configuration mistakes can be corrected.
     invariants:
       - Malformed JSON and non-object project files remain invalid; invalid individual fields are omitted while valid sibling fields and scripts remain available to clients and the server.
       - Invalid optional action values fall back to defaults, while actions missing required fields are dropped.
-      - Unknown keys and invalid values produce a partial-file warning without discarding valid configuration.
+      - Unknown keys and invalid values produce a partial-file warning without discarding valid configuration; the warning in Settings → Projects → Actions lists each ignored value and dropped entry of a styal.json or t3.json, with its file line and reason.
+      - Recovery and the warning's list come from one walk of the file, so a value is dropped exactly when it is listed.
       - Recovery and unknown-key detection derive from the project-file contract, so every declared top-level and action field, including ones added later, survives an invalid sibling and a fully valid file is reported as valid.
     implementation_paths:
       - apps/server/src/project/ProjectConfigLoader.ts
+      - apps/web/src/components/settings/ConfigFileIssuesAlert.tsx
+      - apps/web/src/components/settings/ProjectActionsSettings.tsx
       - apps/web/src/components/settings/ProjectSettingsPanel.tsx
       - apps/web/src/hooks/useProjectConfig.ts
+      - apps/web/src/lib/projectFileIssues.ts
       - packages/contracts/src/t3ProjectFile.ts
       - packages/shared/src/projectFile.ts
       - packages/shared/src/projectFileRecovery.ts
@@ -4056,6 +4061,7 @@ features:
       - packages/shared/src/t3ProjectFile.ts
     tests:
       - apps/server/src/project/ProjectConfigLoader.test.ts
+      - apps/web/src/lib/projectFileIssues.test.ts
       - packages/shared/src/projectFile.test.ts
       - packages/shared/src/t3ProjectFile.test.ts
     upstream:

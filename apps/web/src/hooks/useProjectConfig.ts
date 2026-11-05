@@ -5,11 +5,12 @@ import {
   type ProjectConfig,
   type T3ProjectFileScript,
 } from "@t3tools/contracts";
-import { resolveProjectConfig } from "@t3tools/shared/projectFile";
+import { resolveProjectConfig, type ProjectFileIssue } from "@t3tools/shared/projectFile";
 
 import { useProjectFileQuery } from "~/components/files/projectFilesQueryState";
 
 const NO_SCRIPTS: ReadonlyArray<T3ProjectFileScript> = [];
+const NO_ISSUES: ReadonlyArray<ProjectFileIssue> = [];
 
 export interface ProjectConfigState {
   /**
@@ -26,6 +27,10 @@ export interface ProjectConfigState {
   legacyScripts: ReadonlyArray<T3ProjectFileScript>;
   /** A legacy t3.json's raw contents while it is the file in effect, for migrating it. */
   legacyContents: string | null;
+  /** What was ignored when status is `partial`. */
+  issues: ReadonlyArray<ProjectFileIssue>;
+  /** The raw contents of the file in effect, which `issues` paths point into. */
+  contents: string | null;
 }
 
 const contentsOf = (query: ReturnType<typeof useProjectFileQuery>) =>
@@ -60,6 +65,8 @@ export function useProjectConfigState(
       config: null,
       legacyScripts: NO_SCRIPTS,
       legacyContents: null,
+      issues: NO_ISSUES,
+      contents: null,
     };
   }
   const state = resolveProjectConfig({ styal, t3 });
@@ -69,6 +76,8 @@ export function useProjectConfigState(
     config: state.config,
     legacyScripts: state.legacyScripts.length === 0 ? NO_SCRIPTS : state.legacyScripts,
     legacyContents: state.status !== "missing" && state.source === "t3.json" ? t3 : null,
+    issues: state.status === "partial" ? state.issues : NO_ISSUES,
+    contents: styal ?? t3,
   };
 }
 

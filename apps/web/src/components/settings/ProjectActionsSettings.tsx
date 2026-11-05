@@ -15,6 +15,7 @@ import {
 } from "@t3tools/shared/projectScripts";
 import { ChevronDownIcon, PlusIcon } from "lucide-react";
 import { type ReactNode, useState } from "react";
+import { describeProjectFileIssues } from "../../lib/projectFileIssues";
 import type { SidebarProjectGroupMember } from "../../sidebarProjectGrouping";
 import { projectConfigRoot, useProjectConfigState } from "../../hooks/useProjectConfig";
 import { type EnvironmentPresentation, useEnvironments } from "../../state/environments";
@@ -40,6 +41,7 @@ import {
   MenuSeparator,
   MenuTrigger,
 } from "../ui/menu";
+import { ConfigFileIssuesAlert } from "./ConfigFileIssuesAlert";
 import { EnvironmentRow } from "./EnvironmentRow";
 import { SettingsGroup } from "./SettingsGroup";
 import { ProjectActionsList } from "./ProjectActionsList";
@@ -307,18 +309,20 @@ function CheckoutActions({
         }
       />
       {projectConfig.status === "invalid" ? (
-        <SettingsRow
-          title={`${projectConfig.source} is invalid`}
-          description={`A ${projectConfig.source} exists in this checkout but its JSON is malformed or its root is not an object, so the file cannot be read.`}
-          className="text-warning"
-        />
+        <div className="p-3">
+          <ConfigFileIssuesAlert
+            title={`${projectConfig.source} could not be read, so all of it is ignored`}
+            messages={["Its JSON is malformed or its root is not an object."]}
+          />
+        </div>
       ) : null}
       {projectConfig.status === "partial" ? (
-        <SettingsRow
-          title={`Some ${projectConfig.source} values were ignored`}
-          description="Invalid or unrecognized fields, and invalid actions or actions that repeat an id, were skipped. Valid project settings and actions remain available."
-          className="text-warning"
-        />
+        <div className="p-3">
+          <ConfigFileIssuesAlert
+            title={`Some ${projectConfig.source} values were ignored`}
+            messages={describeProjectFileIssues(projectConfig.contents ?? "", projectConfig.issues)}
+          />
+        </div>
       ) : null}
       {projectConfig.legacyContents !== null ? (
         <ProjectFileMigrationRow

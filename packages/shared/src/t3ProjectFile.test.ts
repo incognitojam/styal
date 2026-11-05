@@ -104,10 +104,17 @@ describe("parseT3ProjectFile", () => {
     expect(parseT3ProjectFileResult('{ "defaultThreadEnvMode": "spaceship" }')).toEqual({
       status: "partial",
       file: {},
+      issues: [
+        {
+          path: ["defaultThreadEnvMode"],
+          message: '"defaultThreadEnvMode" is invalid: Expected "local" | "worktree"',
+        },
+      ],
     });
     expect(parseT3ProjectFileResult('{ "defaultThreadEnvMode": "local" }')).toEqual({
       status: "valid",
       file: { defaultThreadEnvMode: "local" },
+      issues: [],
     });
     expect(parseT3ProjectFileResult("{ not json")).toEqual({
       status: "invalid",
@@ -124,6 +131,12 @@ describe("parseT3ProjectFile", () => {
     ).toEqual({
       status: "partial",
       file: { iconPath: "assets/logo.svg" },
+      issues: [
+        {
+          path: ["defaultThreadEnvironmentMode"],
+          message: '"defaultThreadEnvironmentMode" is not a known field',
+        },
+      ],
     });
   });
 
@@ -139,6 +152,12 @@ describe("parseT3ProjectFile", () => {
     ).toEqual({
       status: "partial",
       file: { scripts: [{ name: "Setup", command: "pnpm install" }] },
+      issues: [
+        {
+          path: ["scripts", 0, "runOnWorktreeCreation"],
+          message: 'Script "Setup": "runOnWorktreeCreation" is not a known field',
+        },
+      ],
     });
   });
 });
@@ -198,6 +217,7 @@ describe("parseT3ProjectFileResult field recovery", () => {
     expect(parseT3ProjectFileResult(JSON.stringify(validFile))).toEqual({
       status: "valid",
       file: validFile,
+      issues: [],
     });
   });
 
@@ -206,7 +226,11 @@ describe("parseT3ProjectFileResult field recovery", () => {
     (key, invalidValue) => {
       expect(
         parseT3ProjectFileResult(JSON.stringify({ ...validFile, [key]: invalidValue })),
-      ).toEqual({ status: "partial", file: omit(validFile, key) });
+      ).toEqual({
+        status: "partial",
+        file: omit(validFile, key),
+        issues: [{ path: [key], message: expect.stringContaining("is invalid: Expected") }],
+      });
     },
   );
 
@@ -225,6 +249,12 @@ describe("parseT3ProjectFileResult field recovery", () => {
       expect(parseT3ProjectFileResult(contents)).toEqual({
         status: "partial",
         file: { ...validFile, scripts: recoveredScripts },
+        issues: [
+          {
+            path: requiredScriptFields.has(key) ? ["scripts", 0] : ["scripts", 0, key],
+            message: expect.stringContaining("is invalid: Expected"),
+          },
+        ],
       });
     },
   );

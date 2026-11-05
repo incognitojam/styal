@@ -59,6 +59,7 @@ it.layer(layerTest)("ProjectConfigLoader", (it) => {
             actions: [{ id: "dev", name: "Dev", command: "pnpm dev", icon: "play" }],
           },
           legacyScripts: [],
+          issues: [],
         });
       }),
     );
@@ -78,6 +79,7 @@ it.layer(layerTest)("ProjectConfigLoader", (it) => {
           source: "t3.json",
           config: { source: "t3.json", iconPath: "t3.svg", actions: [] },
           legacyScripts: [{ name: "Dev", command: "pnpm dev" }],
+          issues: [],
         });
       }),
     );
