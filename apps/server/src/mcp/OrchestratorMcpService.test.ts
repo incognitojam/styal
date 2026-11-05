@@ -3389,6 +3389,68 @@ describe("OrchestratorMcpService thread lookup", () => {
         ),
       ),
     );
+  it.effect("fresh-context sends to a launcher require ordinary target rights", () =>
+    Effect.gen(function* () {
+      const reporterId = ThreadId.make("thread:reporter");
+      const reporter = {
+        ...liveThreadShell(reporterId, { runtimeMode: "approval-required" }),
+        reportTo: { threadId: launched.id },
+      };
+      const sent = yield* Ref.make(0);
+      const scope: McpInvocationScope = {
+        ...client,
+        client: undefined,
+        thread: {
+          threadId: reporterId,
+          providerSessionId: "session:reporter",
+          providerInstanceId: reporter.providerInstanceId,
+        },
+      };
+      yield* Effect.gen(function* () {
+        const mcp = yield* OrchestratorMcpService.OrchestratorMcpService;
+        for (const mode of ["auto", "queue"] as const) {
+          const report = yield* mcp.sendToThread(scope, {
+            threadId: launched.id,
+            message: "Report",
+            mode,
+          });
+          assert.isTrue(report.report);
+          const refused = yield* mcp
+            .sendToThread(scope, {
+              threadId: launched.id,
+              message: "Reset",
+              mode,
+              freshContext: true,
+            })
+            .pipe(Effect.flip);
+          assert.equal(refused.code, "runtime_mode_escalation_denied");
+        }
+        reporter.runtimeMode = "full-access";
+        const reset = yield* mcp.sendToThread(scope, {
+          threadId: launched.id,
+          message: "Reset",
+          freshContext: true,
+        });
+        assert.isUndefined(reset.report);
+        assert.equal(yield* Ref.get(sent), 3);
+      }).pipe(
+        Effect.provide(
+          service([reporter, launched], sent, {
+            getThreadRecords: () => Effect.succeed(idleThreadProjection(reporter)),
+            getProjectThreadRecords: () => Effect.succeed(idleThreadProjection(launched)),
+            sendToThread: () =>
+              Ref.update(sent, (count) => count + 1).pipe(
+                Effect.as({
+                  run: { id: RunId.make("run:sent"), status: "queued" },
+                  delivery: "queued",
+                } as never),
+              ),
+          }),
+        ),
+      );
+    }),
+  );
+
   const failuresFor = (shells: ReadonlyArray<OrchestrationV2ThreadShell>) =>
     Effect.gen(function* () {
       const sent = yield* Ref.make(0);

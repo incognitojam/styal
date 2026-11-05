@@ -3168,6 +3168,7 @@ const make = Effect.gen(function* () {
       const mode = input.mode ?? "auto";
       // The launcher asked to hear back, so this is the report it opted in to, not driving it.
       const isReport =
+        input.freshContext !== true &&
         parent?.thread.reportTo?.threadId === input.threadId &&
         (mode === "auto" || mode === "queue");
       if (!isReport) {
@@ -3198,6 +3199,7 @@ const make = Effect.gen(function* () {
           ...(parent === undefined ? {} : { senderThreadId: parent.thread.id }),
           messageId,
           attachments: [],
+          ...(input.freshContext ? { freshContext: true } : {}),
           createdBy: "agent",
           ...(isReport
             ? {

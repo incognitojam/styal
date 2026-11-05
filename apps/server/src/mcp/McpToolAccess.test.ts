@@ -28,6 +28,7 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 import { McpSchema, McpServer, Tool, Toolkit } from "effect/ai";
 
 import { OrchestratorProjectionError } from "../orchestration-v2/Orchestrator.ts";
@@ -818,5 +819,52 @@ it.effect.each(
     );
     expect(result.isError === true).toBe(outcome !== "success");
     expect(events).toEqual([]);
+  }),
+);
+
+const SendToolkit = Toolkit.make(OrchestratorToolkit.tools.t3_thread_send);
+
+it.effect.each([
+  [reporter, undefined, "queued"],
+  [reporter, false, "queued"],
+  [reporter, true, "runtime_mode_escalation_denied"],
+  [fullAccess, true, "queued"],
+] as const)("launcher send %s freshContext=%s", ([scope, freshContext, expected]) =>
+  Effect.gen(function* () {
+    const dependencies = Layer.mergeAll(
+      NodeCrypto.layer,
+      Layer.succeed(McpInvocationContext.McpInvocationContext, scope),
+      Layer.mock(ThreadManagement.ThreadManagementService)({
+        getThreadShell: (threadId) => Effect.succeed(shells.get(threadId) ?? null),
+      }),
+      Layer.mock(OrchestratorMcpService.OrchestratorMcpService)({
+        sendToThread: () =>
+          Effect.succeed({
+            threadId: fullAccessThreadId,
+            link: "synthetic",
+            messageId: "message:report",
+            runId: "run:report",
+            status: "queued",
+            delivery: "queued",
+          } as never),
+      }),
+    );
+    const toolkit = yield* SendToolkit.pipe(
+      Effect.provide(
+        McpToolAccess.HandlersLayer.layer(
+          McpToolAccess.toLayer(SendToolkit, {
+            t3_thread_send: OrchestratorHandlers.handlers.t3_thread_send,
+          }),
+        ).pipe(Layer.provide(dependencies)),
+      ),
+    );
+    const result = yield* toolkit
+      .handle("t3_thread_send", {
+        threadId: fullAccessThreadId,
+        message: "Report",
+        ...(freshContext === undefined ? {} : { freshContext }),
+      })
+      .pipe(Stream.unwrap, Stream.runCollect, Effect.provide(dependencies));
+    expect(JSON.stringify(result)).toContain(expected);
   }),
 );

@@ -82,14 +82,17 @@ import {
   clearComposerDraftContent,
   composerContextImportsAtom,
   getComposerDraftSnapshot,
+  isFreshSessionPending,
   mergeComposerDraftContent,
   removeComposerDraftAttachment,
   scheduleUnusedComposerAttachmentCleanup,
   setComposerDraftText,
+  setFreshSessionPending,
   updateComposerDraftSettings,
   useComposerDraft,
   useComposerDraftSettings,
 } from "./use-composer-drafts";
+import { isClearComposerCommand } from "@t3tools/shared/composerTrigger";
 import {
   resolveComposerDispatchMode,
   type ActiveTurnComposerAction,
@@ -466,11 +469,10 @@ export function useThreadComposerState() {
         })
       : null;
   const nowMinuteMs = useNowMinuteMs();
-  const compactTokens = resumeCompactionTokens(
-    modelSelection,
-    "",
-    new Date(nowMinuteMs).toISOString(),
-  );
+  const compactTokens =
+    selectedDraft.freshContext === true
+      ? null
+      : resumeCompactionTokens(modelSelection, "", new Date(nowMinuteMs).toISOString());
   const fullHistoryThreadKeys = useAtomValue(fullHistoryThreadKeysAtom);
   const keepFullHistory =
     selectedThreadKey !== null && fullHistoryThreadKeys[selectedThreadKey] === true;
@@ -642,6 +644,20 @@ export function useThreadComposerState() {
     if (text.length === 0 && attachments.length === 0) {
       return null;
     }
+    // A redirect's text answers its approval, so /clear there is that text, not the command.
+    if (
+      !reply &&
+      beforeDispatch === undefined &&
+      selectedEnvironmentRuntime?.serverConfig?.environment.capabilities.freshContext === true &&
+      thread.latestRun != null &&
+      attachments.length === 0 &&
+      draft.context === undefined &&
+      isClearComposerCommand(text)
+    ) {
+      setFreshSessionPending(threadKey, true);
+      clearComposerDraftContent(threadKey);
+      return null;
+    }
     // Recovery preserves over-cap attachments; require trimming or outbox delivery would reject indefinitely.
     if (attachments.length > PROVIDER_SEND_TURN_MAX_ATTACHMENTS) {
       Dialog.alert(
@@ -760,12 +776,15 @@ export function useThreadComposerState() {
           ? "queue"
           : "auto";
 
+    // A redirect belongs to the approval it answers; the armed session waits for the next message.
+    const freshContext =
+      !reportResponse && beforeDispatch === undefined && isFreshSessionPending(threadKey);
     const metadata = makeQueuedMessageMetadata();
     // A fresh session drops the context a compaction would summarize. Only a send the notice
     // announced compacts, since the notice's minute clock can trail the exact deadline.
-
     const compactBeforeSend =
       compactTokens !== null &&
+      !freshContext &&
       followUpDispatchMode === null &&
       appAtomRegistry.get(fullHistoryThreadKeysAtom)[threadKey] !== true &&
       resumeCompactionTokens(modelSelection, text, metadata.createdAt) !== null;
@@ -796,6 +815,7 @@ export function useThreadComposerState() {
         : followUpDispatchMode === null
           ? {}
           : { dispatchMode: followUpDispatchMode }),
+      ...(freshContext ? { freshContext: true } : {}),
       createdAt: metadata.createdAt,
     });
     if (reportResponse) {
@@ -804,6 +824,7 @@ export function useThreadComposerState() {
     }
     clearComposerDraftContent(threadKey, { deferAttachmentCleanup: true });
     setReportReply(null);
+    if (freshContext) setFreshSessionPending(threadKey, false);
     enqueuePromise.then(
       () => {
         setKeepFullHistory(threadKey, false);
@@ -818,6 +839,7 @@ export function useThreadComposerState() {
           attachments: [],
         });
         appendComposerDraftAttachments(threadKey, attachments, { allowOverflow: true });
+        if (freshContext) setFreshSessionPending(threadKey, true);
         setThreadComposerError(
           threadKey,
           error instanceof Error ? error.message : "Failed to save the queued message.",

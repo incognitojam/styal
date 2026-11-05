@@ -27,6 +27,7 @@ const state = vi.hoisted(() => ({
   connectionState: "connected",
   draft: {
     text: "Keep my draft",
+    freshContext: undefined as boolean | undefined,
     attachments: [] as DraftComposerImageAttachment[],
     modelSelection: undefined as ModelSelection | undefined,
   },
@@ -37,6 +38,8 @@ const state = vi.hoisted(() => ({
   pendingRequests: { approvals: [], userInputs: [] } as PendingThreadRequests,
   enqueue: vi.fn(async () => undefined),
 
+  freshPending: false,
+  setFreshPending: vi.fn(),
   clearDraft: vi.fn(),
   approve: vi.fn(),
   answer: vi.fn(),
@@ -57,7 +60,7 @@ const state = vi.hoisted(() => ({
     runtimeMode: "full-access",
     interactionMode: "default",
     runtime: null,
-    latestRun: null,
+    latestRun: null as unknown,
   },
 }));
 
@@ -158,6 +161,8 @@ vi.mock("./use-composer-drafts", async () => {
     composerDraftsAtom: Atom.make({}),
     composerContextImportsAtom: Atom.make({}),
     getComposerDraftSnapshot: () => state.draft,
+    isFreshSessionPending: () => state.freshPending,
+    setFreshSessionPending: state.setFreshPending,
     clearComposerDraftContent: state.clearDraft,
     clearComposerDraft: state.clearDraft,
     setComposerDraftText: (_key: string, text: string) => {
@@ -197,10 +202,17 @@ import { useSelectedThreadRequests } from "./use-selected-thread-requests";
 beforeEach(() => {
   state.grantedEnvironments = new Set(["primary"]);
   state.connectionState = "connected";
-  state.draft = { text: "Keep my draft", attachments: [], modelSelection: undefined };
+  state.draft = {
+    text: "Keep my draft",
+    attachments: [],
+    modelSelection: undefined,
+    freshContext: undefined,
+  };
   state.compactModel = null;
   state.compactDueAt = "";
 
+  state.freshPending = false;
+  state.thread.latestRun = null;
   state.projection = null;
   state.serverConfig = {
     providers: [{ instanceId: "codex", driver: "codex", enabled: true }],
@@ -224,24 +236,42 @@ beforeEach(() => {
 });
 
 describe("mobile task permissions", () => {
-  it("queues a report answer with its reference and preserves the composer draft", async () => {
-    state.grantedEnvironments.add("secondary");
-    const composer = useThreadComposerState();
-    const ref = { messageId: MessageId.make("report"), key: "build", version: 2 };
-    expect(
-      await composer.onSendMessage(undefined, undefined, undefined, {
-        text: "Ship",
-        reply: { ref, title: "Build" },
-      }),
-    ).toBe("message");
-    expect(state.enqueue).toHaveBeenCalledWith(
-      expect.objectContaining({
-        text: "[Build, version 2] Ship",
-        reportAnswer: ref,
-      }),
-    );
-    expect(state.clearDraft).not.toHaveBeenCalled();
-  });
+  it.each(["Ship", "/clear"])(
+    "queues report answer %s independently of the composer draft",
+    async (text) => {
+      state.grantedEnvironments.add("secondary");
+      state.freshPending = true;
+      state.serverConfig = {
+        ...state.serverConfig,
+        environment: { capabilities: { freshContext: true } },
+      } as ServerConfig;
+      state.thread.latestRun = { runId: "run" };
+      const composer = useThreadComposerState();
+      const ref = { messageId: MessageId.make("report"), key: "build", version: 2 };
+      expect(
+        await composer.onSendMessage(undefined, undefined, undefined, {
+          text,
+          reply: { ref, title: "Build" },
+        }),
+      ).toBe("message");
+      expect(state.enqueue).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: `[Build, version 2] ${text}`,
+          reportAnswer: ref,
+        }),
+      );
+      expect(state.enqueue).toHaveBeenLastCalledWith(
+        expect.not.objectContaining({ freshContext: true }),
+      );
+      expect(state.clearDraft).not.toHaveBeenCalled();
+      expect(state.setFreshPending).not.toHaveBeenCalled();
+      await composer.onSendMessage();
+      expect(state.enqueue).toHaveBeenLastCalledWith(
+        expect.objectContaining({ freshContext: true }),
+      );
+      expect(state.setFreshPending).toHaveBeenCalledWith("secondary:thread", false);
+    },
+  );
 
   it("consumes an approval reply without queueing a parent message", async () => {
     state.grantedEnvironments.add("secondary");
@@ -293,7 +323,7 @@ describe("mobile task permissions", () => {
     });
   });
 
-  it("compacts a stale thread before sending unless kept", async () => {
+  it("compacts a stale thread before sending unless kept or a fresh session is armed", async () => {
     state.grantedEnvironments.add("secondary");
     state.projection = {
       thread: {
@@ -354,6 +384,43 @@ describe("mobile task permissions", () => {
     );
     // Keeping covers one send, as on web.
     expect(useThreadComposerState().compactBeforeSend?.tokens).toBe(248_000);
+    state.freshPending = true;
+    state.draft = { ...state.draft, freshContext: true };
+    expect(useThreadComposerState().compactBeforeSend).toBeNull();
+    await composer.onSendMessage();
+    expect(state.enqueue).toHaveBeenLastCalledWith(
+      expect.not.objectContaining({ compactBeforeSend: true }),
+    );
+    expect(state.enqueue).toHaveBeenLastCalledWith(expect.objectContaining({ freshContext: true }));
+  });
+
+  it("keeps an armed fresh session for the message after an approval redirect", async () => {
+    state.grantedEnvironments.add("secondary");
+    state.freshPending = true;
+    const composer = useThreadComposerState();
+    expect(await composer.onSendMessage(undefined, async () => true)).toBe("message");
+    expect(state.enqueue).toHaveBeenLastCalledWith(
+      expect.not.objectContaining({ freshContext: true }),
+    );
+    expect(state.setFreshPending).not.toHaveBeenCalled();
+    expect(await composer.onSendMessage()).toBe("message");
+    expect(state.enqueue).toHaveBeenLastCalledWith(expect.objectContaining({ freshContext: true }));
+    expect(state.setFreshPending).toHaveBeenCalledWith("secondary:thread", false);
+  });
+
+  it("sends a typed /clear with an approval redirect as that reply's text", async () => {
+    state.grantedEnvironments.add("secondary");
+    state.serverConfig = {
+      ...state.serverConfig,
+      environment: { capabilities: { freshContext: true } },
+    } as ServerConfig;
+    state.thread.latestRun = { runId: "run" };
+    state.draft = { ...state.draft, text: "/clear" };
+    const composer = useThreadComposerState();
+    const beforeDispatch = vi.fn(async () => "responded" as const);
+    expect(await composer.onSendMessage(undefined, beforeDispatch)).toBeNull();
+    expect(beforeDispatch).toHaveBeenCalledWith("/clear", false);
+    expect(state.setFreshPending).not.toHaveBeenCalled();
   });
 
   it("rechecks a retained send callback before clearing or queueing the draft", async () => {

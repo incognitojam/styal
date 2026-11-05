@@ -179,7 +179,8 @@ export const handlers = {
     {
       // Steering or restarting a turn stays a normal send, under the normal limits.
       reportTarget: (input) =>
-        input.mode === undefined || input.mode === "auto" || input.mode === "queue"
+        input.freshContext !== true &&
+        (input.mode === undefined || input.mode === "auto" || input.mode === "queue")
           ? input.threadId
           : undefined,
     },
