@@ -54,8 +54,7 @@ interface ManualReviewRule {
 const migrationReviewRule: ManualReviewRule = {
   description: "a database migration changed",
   matches: (path) =>
-    path === "apps/server/src/persistence/Migrations.ts" ||
-    path === "apps/server/src/persistence/ForkMigrations.ts" ||
+    /^apps\/server\/src\/persistence\/[^/]*migration[^/]*$/iu.test(path) ||
     [
       "apps/server/src/persistence/Migrations/",
       "apps/server/src/persistence/ForkMigrations/",

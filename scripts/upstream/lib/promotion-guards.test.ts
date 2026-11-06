@@ -6,14 +6,26 @@ import { assert, it } from "@effect/vitest";
 import { parse } from "yaml";
 
 it("blocks moved base and candidate refs before pushing, and promotes an unchanged pair", () => {
+  const env = {
+    ...Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith("GIT_"))),
+    GIT_CONFIG_NOSYSTEM: "1",
+    GIT_CONFIG_GLOBAL: "/dev/null",
+    GIT_CONFIG_COUNT: "2",
+    GIT_CONFIG_KEY_0: "core.hooksPath",
+    GIT_CONFIG_VALUE_0: "/dev/null",
+    GIT_CONFIG_KEY_1: "commit.gpgSign",
+    GIT_CONFIG_VALUE_1: "false",
+  };
   const root = NodePath.resolve(import.meta.dirname, "../../..");
-  NodeChildProcess.execFileSync("git", ["check-ignore", "-q", ".scratch/"], { cwd: root });
+  NodeChildProcess.execFileSync("git", ["check-ignore", "-q", ".scratch/"], { cwd: root, env });
+  NodeFS.mkdirSync(NodePath.join(root, ".scratch"), { recursive: true });
   const directory = NodeFS.mkdtempSync(NodePath.join(root, ".scratch/intake-followup-guards-"));
   const cwd = NodePath.join(directory, "checkout");
   const remote = NodePath.join(directory, "remote.git");
   const git = (...args: string[]) =>
     NodeChildProcess.execFileSync("git", args, {
       cwd,
+      env,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
     }).trim();
@@ -49,7 +61,7 @@ it("blocks moved base and candidate refs before pushing, and promotes an unchang
         cwd,
         encoding: "utf8",
         env: {
-          ...process.env,
+          ...env,
           EXPECTED_BASE_SHA: base,
           CANDIDATE_SHA: head,
           CANDIDATE_BRANCH: "intake/fixture",

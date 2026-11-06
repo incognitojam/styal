@@ -199,6 +199,8 @@ describe("upstream intake audit", () => {
       "apps/server/src/persistence/Migrations.ts",
       "apps/server/src/persistence/ForkMigrations/001_Initial.ts",
       "apps/server/src/persistence/ForkMigrations.ts",
+      "apps/server/src/persistence/reconcileV2PreviewMigration.ts",
+      "apps/server/src/persistence/databaseMigrationHead.ts",
       "infra/relay/migrations/postgres/001/migration.sql",
       "infra/task-cache/migrations/savings/001.sql",
       "infra/task-cache/vendor/vite-plus-remote-cache-cloudflare/migrations/001.sql",
