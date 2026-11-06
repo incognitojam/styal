@@ -3250,37 +3250,6 @@ features:
       status: unassessed
       tracking: []
       retire_when: Upstream lists resolved keybindings in one overview opened from the keyboard.
-  - id: machine-access
-    title: Each machine sets one level for what the user's other machines can do there
-    status: maintained
-    prs: [1343]
-    invariants:
-      - "`incomingMachineAccess` (`everything`, `view-only`, `nothing`) is enforced by the receiving machine on every `/mcp` request from a machine, and for device sharing. It defaults to `everything`, which is what a new connection already allowed."
-      - It caps and never widens. A session paired with less stays narrow until it is paired again, and Finish offers that.
-      - New connections are always paired at full access with no picker in any client, so the receiving machine's setting is the only control. Agents can't choose access or change the setting.
-      - Moving to `view-only` or `nothing` stops threads other machines started with `thread.stop`, not an interrupt, so queued messages are held and pull request and workflow watches end, and closes devices they hold. Clients show how many threads will stop and ask first. Raising the setting restarts nothing, and a person resumes each thread on that machine.
-      - Refused requests are not failures of the connection, so they don't show as failing on the calling machine.
-      - The wording states two limits. Can control means the same reach as that machine's user. Nothing doesn't isolate the machine from what comes back when its own agents work elsewhere.
-    rationale: Access per pair of machines was the noisiest part of setting up several machines and offered no real boundary, because agents run as the machine's user. Per-pair exceptions were cut on purpose.
-    implementation_paths:
-      - apps/server/src/device/DeviceSharing.ts
-      - apps/server/src/mcp/McpHttpServer.ts
-      - apps/server/src/peer/IncomingMachineAccess.ts
-      - apps/web/src/components/settings/MachineAccessSetting.tsx
-      - packages/client-runtime/src/linkRequest.ts
-      - packages/contracts/src/settings.ts
-    upstream_paths:
-      - apps/server/src/peer/PeerLinks.ts
-      - apps/server/src/peer/PeerMcpClient.ts
-    tests:
-      - apps/server/src/orchestration-v2/ThreadStop.test.ts
-      - apps/server/src/peer/IncomingMachineAccess.test.ts
-      - apps/server/src/peer/PeerMcpClient.test.ts
-    upstream:
-      status: tracking
-      tracking:
-        - https://github.com/pingdotgg/t3code/pull/24863
-      retire_when: Upstream lets a machine set one limit for every machine connected to it.
   - id: launched-thread-reports
     title: A thread an agent launches reports back to the thread that launched it
     status: maintained
@@ -3321,6 +3290,38 @@ features:
         - https://github.com/pingdotgg/t3code/issues/26293
         - https://github.com/pingdotgg/t3code/pull/15975
       retire_when: Upstream wakes the launcher of a launched thread on its result, failure or blocked request.
+
+  - id: machine-access
+    title: Each machine sets one level for what the user's other machines can do there
+    status: maintained
+    prs: [1343]
+    invariants:
+      - "`incomingMachineAccess` (`everything`, `view-only`, `nothing`) is enforced by the receiving machine on every `/mcp` request from a machine, and for device sharing. It defaults to `everything`, which is what a new connection already allowed."
+      - It caps and never widens. A session paired with less stays narrow until it is paired again, and Finish offers that.
+      - New connections are always paired at full access with no picker in any client, so the receiving machine's setting is the only control. Agents can't choose access or change the setting.
+      - Moving to `view-only` or `nothing` stops threads other machines started with `thread.stop`, not an interrupt, so queued messages are held and pull request and workflow watches end, and closes devices they hold. Clients show how many threads will stop and ask first. Raising the setting restarts nothing, and a person resumes each thread on that machine.
+      - Refused requests are not failures of the connection, so they don't show as failing on the calling machine.
+      - The wording states two limits. Can control means the same reach as that machine's user. Nothing doesn't isolate the machine from what comes back when its own agents work elsewhere.
+    rationale: Access per pair of machines was the noisiest part of setting up several machines and offered no real boundary, because agents run as the machine's user. Per-pair exceptions were cut on purpose.
+    implementation_paths:
+      - apps/server/src/device/DeviceSharing.ts
+      - apps/server/src/mcp/McpHttpServer.ts
+      - apps/server/src/peer/IncomingMachineAccess.ts
+      - apps/web/src/components/settings/MachineAccessSetting.tsx
+      - packages/client-runtime/src/linkRequest.ts
+      - packages/contracts/src/settings.ts
+    upstream_paths:
+      - apps/server/src/peer/PeerLinks.ts
+      - apps/server/src/peer/PeerMcpClient.ts
+    tests:
+      - apps/server/src/orchestration-v2/ThreadStop.test.ts
+      - apps/server/src/peer/IncomingMachineAccess.test.ts
+      - apps/server/src/peer/PeerMcpClient.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/24863
+      retire_when: Upstream lets a machine set one limit for every machine connected to it.
 
   - id: mentioned-time-chips
     title: Explain times mentioned in agent messages in the reader's time zone
