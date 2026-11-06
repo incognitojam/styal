@@ -903,11 +903,12 @@ features:
   - id: completion-sounds
     title: Configurable thread notification sounds
     status: maintained
-    prs: [5, 7, 19, 72, 249, 250, 742]
+    prs: [5, 7, 19, 72, 249, 250, 742, 1357]
     invariants:
       - Users can independently select, preview, and disable sounds for completion, input, and approval events; the sound choices are nested under the Notification sounds switch and disabled while it is off.
       - System notifications, in-app notifications, and notification sounds are independent switches; the system notification and sound switches together set the persisted notification mode.
       - Playback follows the persisted notification mode and event sound choice without repeating the same turn state.
+      - Completion sounds are suppressed only for the matching routed thread and environment while the tab is visible and the window focused, including a recheck after audio loads; input and approval sounds are unchanged.
       - Completion sounds that overlap play once, but a completion never silences an input or approval alert, even when both events use the same sample.
       - The audio context is suspended between sounds, so idle notifications hold no output device and each sound plays on the current default output device.
       - The audio context is created while the app is idle rather than in the first input handler, so the first key press or click does not pay for it.
@@ -929,6 +930,7 @@ features:
       - packages/contracts/src/settings.ts
     tests:
       - apps/desktop/src/settings/DesktopClientSettings.test.ts
+      - apps/web/src/components/ThreadNotificationCoordinator.browser.test.ts
       - apps/web/src/components/ThreadNotificationSounds.browser.test.ts
       - apps/web/src/threadNotifications.test.ts
       - packages/contracts/src/settings.test.ts
@@ -936,7 +938,7 @@ features:
       status: partial
       tracking:
         - https://github.com/pingdotgg/t3code/pull/11481
-      retire_when: Upstream provides independent event sound choices and previews with equivalent preference migration and playback behavior.
+      retire_when: Upstream provides independent event sound choices and previews with equivalent preference migration, playback behavior, and viewed-thread completion suppression.
 
   - id: composer-pending-approvals
     title: Answer pending approvals on the composer on web and desktop

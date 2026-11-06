@@ -32,7 +32,8 @@ const state = vi.hoisted(() => ({
   ),
   close: vi.fn(),
   navigate: vi.fn(),
-  sound: vi.fn(),
+  usage: vi.fn(),
+  sound: vi.fn<(kind: string, shouldPlay: () => boolean) => Promise<void>>(),
   notification: vi.fn(function (_title: string, options: NotificationOptions) {
     return Object.assign(new EventTarget(), { tag: options.tag, close: vi.fn() });
   }),
@@ -164,6 +165,7 @@ vi.mock(import("../hooks/useSettings"), async (original) => ({
     return () => state.settingsListeners.delete(listener);
   }) as never,
 }));
+vi.mock(import("../forkClientUsage"), () => ({ reportForkClientUsage: state.usage }));
 vi.mock(import("../threadNotifications"), async (original) => ({
   ...(await original()),
   playNotificationSound: state.sound,
@@ -249,6 +251,68 @@ function setup() {
 }
 
 describe("thread notifications", () => {
+  it.each([
+    ["viewed route", "env-1", "thread-1", "visible", true, 0],
+    ["background tab", "env-1", "thread-1", "hidden", false, 1],
+    ["unfocused window", "env-1", "thread-1", "visible", false, 1],
+    ["another thread", "env-1", "other-thread", "visible", true, 1],
+    ["another environment", "env-2", "thread-1", "visible", true, 1],
+  ])(
+    "completion sound for %s",
+    async (_label, environmentId, threadId, visible, focused, count) => {
+      await using app = setup();
+      state.mode = "sound";
+      state.active = { environmentId, threadId };
+      state.visible = visible;
+      state.focused = focused;
+      await app.render();
+      await app.complete();
+      expect(state.sound).toHaveBeenCalledTimes(count);
+      expect(state.usage.mock.calls).toEqual(
+        count === 0
+          ? [
+              [
+                "env-1",
+                {
+                  feature: "completion-sounds",
+                  action: "viewed_completion_suppressed",
+                },
+              ],
+            ]
+          : [],
+      );
+    },
+  );
+
+  it.each([false, true])("keeps viewed attention sounds (approval=%s)", async (approval) => {
+    await using app = setup();
+    state.mode = "sound";
+    state.active.threadId = "thread-1";
+    await app.render();
+    state.approval = approval;
+    state.input = !approval;
+    await app.render();
+    expect(state.sound).toHaveBeenCalledTimes(1);
+  });
+
+  it("rechecks viewing after audio loads and never replays a suppressed completion", async () => {
+    await using app = setup();
+    state.mode = "sound";
+    state.active.threadId = "thread-1";
+    state.focused = false;
+    await app.render();
+    await app.complete();
+    const shouldPlay = state.sound.mock.lastCall![1] as () => boolean;
+    expect(shouldPlay()).toBe(true);
+    state.focused = true;
+    expect(shouldPlay()).toBe(false);
+    expect(shouldPlay()).toBe(false);
+    expect(state.usage).toHaveBeenCalledTimes(1);
+    state.focused = false;
+    await app.render();
+    expect(state.sound).toHaveBeenCalledTimes(1);
+  });
+
   it("alerts once for a workflow review that stays pending across agent runs", async () => {
     await using app = setup();
     state.mode = "sound";

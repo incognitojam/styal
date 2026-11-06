@@ -317,7 +317,7 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   [revision 35be904](https://github.com/pingdotgg/t3code/tree/35be904f2fc40aa6d7a42778b6895e8274f3097f).
   styal lets you independently select and preview those sounds, Avanti, or Departures for
   completion, input, and approval alerts, or silence an event. Sounds are on by default; T3 Code
-  starts with alerts off. [Completion sounds](./thread-sidebar.md#completion-sounds).
+  starts with alerts off. Completion sounds stay quiet for the thread open in a visible, focused window; background tabs and unfocused windows still sound. Upstream sounds viewed completions as of [revision b90e554](https://github.com/pingdotgg/t3code/tree/b90e554e0a942605c4de2d4ff5d4654caf998e27), checked November 6, 2026. [Completion sounds](./thread-sidebar.md#completion-sounds).
 - **Relevant outage notices.** Sidebar notices surface GitHub, Claude, and OpenAI incidents relevant
   to your projects and providers. Alerts are configurable.
   [GitHub](./source-control.md), [Claude](./providers-claude.md),

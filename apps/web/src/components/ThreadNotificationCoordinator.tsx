@@ -17,7 +17,9 @@ import {
   ShieldQuestionIcon,
 } from "lucide-react";
 
+import { reportForkClientUsage } from "../forkClientUsage";
 import { getClientSettings, subscribeClientSettings } from "../hooks/useSettings";
+import { getDocumentActivity } from "../lib/documentActivity";
 import { isWindowsPlatform } from "../lib/utils";
 import { environmentSummaries } from "../state/presentation";
 import { environmentShell } from "../state/shell";
@@ -141,6 +143,17 @@ export function startThreadNotifications(
       environmentId?: string;
       threadId?: string;
     };
+    const isViewed = () => {
+      const activity = getDocumentActivity();
+      const params = router.state.matches.at(-1)?.params as typeof active;
+      return (
+        activity.visible &&
+        activity.focused &&
+        params?.environmentId === environmentId &&
+        params?.threadId === thread.id
+      );
+    };
+    const shouldSound = () => kind !== "completion" || !isViewed();
     const title =
       kind === "completion"
         ? "Thread completed"
@@ -153,13 +166,26 @@ export function startThreadNotifications(
               : status === "request"
                 ? "Guest request"
                 : "Input needed";
-    if (hasNotificationSound(mode)) {
+    let suppressionReported = false;
+    const allowSound = () => {
+      if (shouldSound()) return true;
+      if (!suppressionReported && getClientSettings().completionSound !== "none") {
+        suppressionReported = true;
+        void reportForkClientUsage(environmentId, {
+          feature: "completion-sounds",
+          action: "viewed_completion_suppressed",
+        });
+      }
+      return false;
+    };
+    if (hasNotificationSound(mode) && allowSound()) {
       const event = status === "approval" ? "approval" : kind;
       const sound = notificationSoundForEvent(getClientSettings(), event);
       void playNotificationSound(
         kind,
         () =>
           hasNotificationSound(getClientSettings().notificationMode) &&
+          allowSound() &&
           notificationSoundForEvent(getClientSettings(), event) === sound,
         sound,
       );

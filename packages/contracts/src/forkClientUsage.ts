@@ -33,7 +33,7 @@ import {
 } from "./settings.ts";
 
 /** Bump when extending the vocabulary; clients require the complete version before reporting. */
-export const FORK_CLIENT_USAGE_VERSION = 28;
+export const FORK_CLIENT_USAGE_VERSION = 29;
 
 /**
  * One device's client preferences, reported daily so we can see which defaults
@@ -330,6 +330,10 @@ export const ForkClientUsageInput = Schema.Union([
     feature: Schema.Literal("provider-sign-in"),
     action: Schema.Literal("start"),
     entryPoint: Schema.Literals(["settings", "thread"]),
+  }),
+  Schema.Struct({
+    feature: Schema.Literal("completion-sounds"),
+    action: Schema.Literal("viewed_completion_suppressed"),
   }),
   ReportedClientSettingsSnapshot,
   ReportedMobileSettingsSnapshot,
