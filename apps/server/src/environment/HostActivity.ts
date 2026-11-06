@@ -8,6 +8,7 @@ import {
   type OrchestrationV2ThreadShell,
 } from "@t3tools/contracts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
+import { isWatchTask } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
 import * as Effect from "effect/Effect";
 import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 import { requireEnvironmentScope, failEnvironmentInternal } from "../auth/http.ts";
@@ -34,13 +35,17 @@ type AffectedThread = {
   readonly thread: HostActivityThread;
 };
 
+function stoppableBackgroundTasks(thread: HostThread) {
+  return (thread.pendingBackgroundTasks ?? []).filter((task) => !isWatchTask(task));
+}
+
 function isActiveHostThread(thread: HostThread): boolean {
   if (thread.pendingRuntimeRequest !== null || thread.status === "waiting") return false;
   return (
     thread.status === "preparing" ||
     thread.status === "starting" ||
     thread.status === "running" ||
-    (thread.pendingBackgroundTasks?.length ?? 0) > 0
+    stoppableBackgroundTasks(thread).length > 0
   );
 }
 
@@ -76,7 +81,7 @@ export function summarizeHostSessions(
     ) {
       reasons.push(thread.status);
     }
-    for (const task of thread.pendingBackgroundTasks ?? []) {
+    for (const task of stoppableBackgroundTasks(thread)) {
       if (!reasons.includes(task.kind)) reasons.push(task.kind);
     }
     if (reasons.length === 0) continue;
