@@ -1,10 +1,15 @@
-import { AuthMcpClientAccess } from "@t3tools/contracts";
+import {
+  LINK_ACCESS_CHOICES,
+  linkAccessChoice,
+  linkAccessLabel,
+} from "@t3tools/client-runtime/link-request";
+import type { AuthMcpClientAccess } from "@t3tools/contracts";
 import { useId } from "react";
 
 import { accessConfig } from "../auth/ConnectAgentSurface";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 
-/** What agents here may do in an environment being linked, with what that does not allow. */
+/** What agents here may do on another machine, with what that does not allow. */
 export function LinkAccessPicker({
   value,
   onChange,
@@ -15,14 +20,15 @@ export function LinkAccessPicker({
   readonly disabled?: boolean;
 }) {
   const labelId = useId();
-  const selected = accessConfig[value];
+  const selected = linkAccessChoice(value);
+  const SelectedIcon = accessConfig[selected.access].icon;
   return (
     <div className="space-y-1.5">
       <span id={labelId} className="block text-xs font-medium">
         What agents here may do there
       </span>
       <Select
-        value={value}
+        value={selected.access}
         disabled={disabled}
         onValueChange={(next) => {
           if (next !== null) onChange(next as AuthMcpClientAccess);
@@ -31,16 +37,16 @@ export function LinkAccessPicker({
         <SelectTrigger aria-labelledby={labelId}>
           <SelectValue>
             <span className="flex items-center gap-2">
-              <selected.icon aria-hidden className="size-4" />
-              {selected.label}
+              <SelectedIcon aria-hidden className="size-4" />
+              {linkAccessLabel(value)}
             </span>
           </SelectValue>
         </SelectTrigger>
         <SelectPopup alignItemWithTrigger={false}>
-          {AuthMcpClientAccess.literals.map((option) => {
-            const { label, description, icon: Icon } = accessConfig[option];
+          {LINK_ACCESS_CHOICES.map(({ access, label, description }) => {
+            const Icon = accessConfig[access].icon;
             return (
-              <SelectItem key={option} value={option} hideIndicator>
+              <SelectItem key={access} value={access} hideIndicator>
                 <span className="grid min-w-0 gap-0.5 py-0.5">
                   <span className="inline-flex items-center gap-1.5 font-medium text-foreground">
                     <Icon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
@@ -54,9 +60,7 @@ export function LinkAccessPicker({
         </SelectPopup>
       </Select>
       <p className="text-xs text-muted-foreground">
-        {selected.description} An agent never gets more access there than its own mode here. Below
-        full access, it can change only threads this link started, not that machine's own threads,
-        projects or settings.
+        {selected.description} An agent never gets more access there than its own mode here.
       </p>
     </div>
   );

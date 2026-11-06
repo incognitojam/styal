@@ -12,14 +12,29 @@ import ts from "typescript-legacy";
  * T3 Chat, T3 Tools and the T3 Stack are other products and the company.
  */
 const BARE_T3 = String.raw`\bT3(?! Chat\b| Tools\b| Stack\b)(?=[ '’]|-[a-z])`;
-const UPSTREAM_NAME = new RegExp(String.raw`T3 Code|T3 Connect|t3\.codes|${BARE_T3}`, "u");
+const PRODUCT_NAME = String.raw`T3 Code|T3 Connect|t3\.codes|${BARE_T3}`;
+const UPSTREAM_NAME = new RegExp(String.raw`${PRODUCT_NAME}|Linked environment`, "u");
+
+/**
+ * "Link" means only styal Link to people, so pairs of machines are "your machines" in clients.
+ * Servers and contracts keep "linked environment": what they say reaches agents, unchanged for now.
+ */
+const CLIENT_SURFACE = /^(?:apps\/(?:web|mobile|desktop)\/|packages\/client-runtime\/)/u;
+const upstreamNameIn = (path: string) =>
+  CLIENT_SURFACE.test(path) ? UPSTREAM_NAME : new RegExp(PRODUCT_NAME, "u");
 
 /** The fork's name for each upstream name. t3.codes has none yet, so it stays for a person. */
-const renameText = (text: string) =>
-  text
+const renameText = (path: string, text: string) => {
+  const renamed = text
     .replaceAll("T3 Connect", "styal Link")
     .replaceAll("T3 Code", "styal")
     .replaceAll(new RegExp(BARE_T3, "gu"), "styal");
+  return CLIENT_SURFACE.test(path)
+    ? renamed
+        .replaceAll("Linked environments", "Your machines")
+        .replaceAll("Linked environment", "Your machine")
+    : renamed;
+};
 
 /**
  * Files whose strings may keep an upstream name, each with the reason. A path
@@ -200,7 +215,8 @@ function isIdentityString(node: ts.Node, text: string): boolean {
 
 /** The string literals, template text and JSX text of one source file that name upstream. */
 function namedSpans(path: string, source: string): ReadonlyArray<StringSpan> {
-  if (!UPSTREAM_NAME.test(source)) return [];
+  const upstreamName = upstreamNameIn(path);
+  if (!upstreamName.test(source)) return [];
   const spans: Array<StringSpan> = [];
 
   if (NATIVE_FILE.test(path)) {
@@ -210,7 +226,7 @@ function namedSpans(path: string, source: string): ReadonlyArray<StringSpan> {
         for (const literal of line.matchAll(/"(?:[^"\\]|\\.)*"/gu)) {
           const text = literal[0].slice(1, -1);
           const start = offset + literal.index + 1;
-          if (UPSTREAM_NAME.test(text)) {
+          if (upstreamName.test(text)) {
             spans.push({
               start,
               end: start + text.length,
@@ -253,7 +269,7 @@ function namedSpans(path: string, source: string): ReadonlyArray<StringSpan> {
       const start = node.getStart(file) + (jsx ? 0 : 1);
       const end =
         node.getEnd() - (jsx ? 0 : ts.isTemplateHead(node) || ts.isTemplateMiddle(node) ? 2 : 1);
-      if (UPSTREAM_NAME.test(node.text)) {
+      if (upstreamName.test(node.text)) {
         spans.push({
           start,
           end,
@@ -278,19 +294,20 @@ export function findUpstreamNames(
   return namedSpans(path, source).map(({ line, text }) => ({
     path,
     line,
-    name: UPSTREAM_NAME.exec(text)![0],
+    name: upstreamNameIn(path).exec(text)![0],
     text: text.replace(/\s+/gu, " ").trim(),
   }));
 }
 
 function renameSpans(
+  path: string,
   source: string,
   spans: ReadonlyArray<StringSpan>,
 ): { readonly text: string; readonly renames: ReadonlyArray<UpstreamNameRename> } {
   const renames: Array<UpstreamNameRename> = [];
   let text = source;
   for (const span of spans.toReversed()) {
-    const after = renameText(span.text);
+    const after = renameText(path, span.text);
     if (after === span.text) continue;
     text = text.slice(0, span.start) + after + text.slice(span.end);
     renames.unshift({ line: span.line, before: span.text, after });
@@ -313,6 +330,7 @@ const onLines = (span: StringSpan, lines: LineFilter) => {
  */
 export function renameUpstreamNames(path: string, source: string, lines?: LineFilter) {
   return renameSpans(
+    path,
     source,
     namedSpans(path, source).filter((span) => !span.identity && onLines(span, lines)),
   );
@@ -333,9 +351,10 @@ export function renameTestStrings(
     renamed.some(
       (before) =>
         text.includes(before) ||
-        (before.includes(text) && text.length >= UPSTREAM_NAME.exec(text)![0].length + 12),
+        (before.includes(text) && text.length >= upstreamNameIn(path).exec(text)![0].length + 12),
     );
   return renameSpans(
+    path,
     source,
     namedSpans(path, source).filter(
       (span) => !span.identity && onLines(span, lines) && quotes(span.text),
@@ -424,6 +443,7 @@ export function upstreamNamesRenamed(
   for (const { before } of renames) {
     if (before.includes("T3 Connect")) found.add("T3 Connect -> styal Link");
     if (before.includes("T3 Code")) found.add("T3 Code -> styal");
+    if (before.includes("Linked environment")) found.add("Linked environment -> Your machine");
     if (new RegExp(BARE_T3, "u").test(before.replaceAll(/T3 Code|T3 Connect/gu, ""))) {
       found.add("T3 -> styal");
     }

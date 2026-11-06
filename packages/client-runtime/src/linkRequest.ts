@@ -16,7 +16,7 @@ import type { RelayDiscoveredEnvironment } from "./relay/discovery.ts";
 
 export type LinkRequestItem = Extract<OrchestrationV2TurnItem, { readonly type: "link_request" }>;
 
-/** Whether an environment offers links: it supports them and its Linked environments beta is on. */
+/** Whether an environment offers links: it supports them and `linkedEnvironmentsEnabled` is on. */
 export const offersLinkedEnvironments = (
   config: Pick<ServerConfig, "environment" | "settings"> | null | undefined,
 ): boolean =>
@@ -45,10 +45,56 @@ export function linkedEnvironmentNames(input: {
   );
 }
 
-/** The access a request opens with: the agent's suggestion, else supervised. */
+/** What a client's picker opens on when nothing asked for less. */
+export const LINK_DEFAULT_ACCESS: AuthMcpClientAccess = "full-access";
+
+/** The access levels a picker offers for a machine, broadest first. */
+export const LINK_ACCESS_CHOICES = [
+  {
+    access: "full-access",
+    label: "Everything",
+    description: "Works like agents on that machine, including your own threads there.",
+  },
+  {
+    access: "auto",
+    label: "Only its own threads",
+    description: "Reads everything. Changes only threads it started, and skips setup scripts.",
+  },
+  {
+    access: "read-only",
+    label: "Look only",
+    description: "Reads everything. Starts and changes nothing.",
+  },
+] as const satisfies ReadonlyArray<{
+  readonly access: AuthMcpClientAccess;
+  readonly label: string;
+  readonly description: string;
+}>;
+
+/**
+ * The picker choice a stored level falls under. Supervised and Auto-accept edits are no
+ * longer offered, but links made with them keep them, and they limit a link the same way.
+ */
+export const linkAccessChoice = (access: AuthMcpClientAccess) =>
+  LINK_ACCESS_CHOICES.find((choice) => choice.access === access) ?? LINK_ACCESS_CHOICES[1];
+
+/** Names a stored level for people. A level no longer offered also names its mode. */
+export const linkAccessLabel = (access: AuthMcpClientAccess): string => {
+  const { label } = linkAccessChoice(access);
+  switch (access) {
+    case "approval-required":
+      return `${label} · Supervised`;
+    case "auto-accept-edits":
+      return `${label} · Auto-accept edits`;
+    default:
+      return label;
+  }
+};
+
+/** The access a request opens with: the agent's suggestion, else the default. */
 export const linkRequestDefaultAccess = (
   item: Pick<LinkRequestItem, "requestedAccess">,
-): AuthMcpClientAccess => item.requestedAccess ?? "approval-required";
+): AuthMcpClientAccess => item.requestedAccess ?? LINK_DEFAULT_ACCESS;
 
 /** What the card calls the other environment: its own name, else the address asked for. */
 export const linkRequestTargetName = (item: Pick<LinkRequestItem, "label" | "url">): string =>
@@ -204,8 +250,7 @@ export type LinkRequestDisplay =
 
 /**
  * `visibility` is the projected row's: a request inherited from another
- * thread (a fork) can only be answered where it was asked. `accessLabel`
- * names an access level the way the client's access picker does.
+ * thread (a fork) can only be answered where it was asked.
  */
 export function linkRequestDisplay(
   item: Pick<
@@ -213,7 +258,6 @@ export function linkRequestDisplay(
     "linkStatus" | "label" | "url" | "linkedLabel" | "linkedAccess" | "failure"
   >,
   visibility: "local" | "inherited" | "synthetic",
-  accessLabel: (access: AuthMcpClientAccess) => string,
 ): LinkRequestDisplay {
   switch (item.linkStatus) {
     case "pending":
@@ -224,8 +268,8 @@ export function linkRequestDisplay(
       return {
         kind: "answered",
         outcome: "linked",
-        label: `Linked ${item.linkedLabel ?? linkRequestTargetName(item)}${
-          item.linkedAccess === undefined ? "" : ` · ${accessLabel(item.linkedAccess)}`
+        label: `Added ${item.linkedLabel ?? linkRequestTargetName(item)}${
+          item.linkedAccess === undefined ? "" : ` · ${linkAccessLabel(item.linkedAccess)}`
         }`,
       };
     case "declined":
@@ -234,7 +278,7 @@ export function linkRequestDisplay(
       return {
         kind: "answered",
         outcome: "failed",
-        label: `Could not link: ${item.failure ?? "the other environment refused"}`,
+        label: `Could not add the machine: ${item.failure ?? "the other machine refused"}`,
       };
     case "cancelled":
       return { kind: "answered", outcome: "ended", label: "Request ended" };

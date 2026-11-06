@@ -1,6 +1,6 @@
 # Mobile notifications
 
-Sign in to styal Link, link your environments, and enable **Device Notifications** (**Agent alerts** on Android) in **Settings → Notifications** to receive alerts when an agent finishes, fails, needs approval, or asks for input. Tap a notification to open its thread. Your environment must have agent activity publishing enabled.
+Sign in to styal Link, add your machines, and enable **Device Notifications** (**Agent alerts** on Android) in **Settings → Notifications** to receive alerts when an agent finishes, fails, needs approval, or asks for input. Tap a notification to open its thread. Your environment must have agent activity publishing enabled.
 
 Use the switches under **Notify me when an agent** to choose which of those alerts reach this device, for example only approvals and input requests. Each device keeps its own choice.
 

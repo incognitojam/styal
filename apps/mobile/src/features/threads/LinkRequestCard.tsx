@@ -2,6 +2,9 @@ import { pipe } from "effect/Function";
 import { useAtomValue } from "@effect/atom-react";
 import {
   type LinkableMachine,
+  LINK_ACCESS_CHOICES,
+  linkAccessChoice,
+  linkAccessLabel,
   linkRequestAnswerInput,
   linkRequestDefaultAccess,
   linkRequestDisplay,
@@ -37,27 +40,10 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { ListChoiceRow as SettingsChoiceRow } from "../../components/ui/ListChoiceRow";
 import { SettingsSection } from "../settings/components/SettingsSection";
 import { Button } from "../../components/ui/Button";
-import { RUNTIME_MODE_CHOICES } from "./thread-settings-options";
-
-/** The same five levels as web's access picker: read-only, then the runtime modes. */
-const ACCESS_CHOICES: ReadonlyArray<{
-  readonly access: AuthMcpClientAccess;
-  readonly label: string;
-  readonly description: string;
-}> = [
-  {
-    access: "read-only",
-    label: "Read only",
-    description: "Read projects and threads. Cannot start, message or change anything.",
-  },
-  ...RUNTIME_MODE_CHOICES.map((choice) => ({ ...choice, access: choice.mode })),
-];
-const accessLabel = (access: AuthMcpClientAccess) =>
-  ACCESS_CHOICES.find((choice) => choice.access === access)?.label ?? access;
 
 const LINK_SYMBOL: AppSymbolName = { ios: "link", android: "desktop_windows" };
 
-/** The machine list's row for linking by an address typed in. */
+/** The machine list's row for adding one by an address typed in. */
 const ANOTHER_ADDRESS = "another-address";
 
 /** Whether the agent left the machine for the user to pick. */
@@ -76,7 +62,7 @@ export function LinkRequestCard(props: {
 }) {
   const { item, visibility } = props.projectedItem;
   if (item.type !== "link_request") return null;
-  const display = linkRequestDisplay(item, visibility, accessLabel);
+  const display = linkRequestDisplay(item, visibility);
   if (display.kind === "pending") {
     return <PendingLinkRequest environmentId={props.environmentId} item={item} />;
   }
@@ -134,8 +120,8 @@ function PendingLinkRequest(props: {
       <View className="gap-1">
         <Text className="font-t3-bold text-base text-foreground">
           {picksMachine(item)
-            ? "Link a machine to this environment"
-            : `Link ${target} to this environment`}
+            ? "Let agents here use another machine"
+            : `Let agents here use ${target}`}
         </Text>
         {item.reason.trim() ? (
           <Text className="font-sans text-sm leading-5 text-foreground-muted">{item.reason}</Text>
@@ -158,7 +144,7 @@ function PendingLinkRequest(props: {
       {canAnswer ? (
         <>
           <Button
-            label={picksMachine(item) ? "Choose machine…" : "Review link…"}
+            label={picksMachine(item) ? "Choose machine…" : "Review…"}
             disabled={declining}
             onPress={() => setOpen(true)}
             tone="primary"
@@ -332,10 +318,10 @@ function LinkRequestSheet(props: {
       >
         <View className="gap-1">
           <Text className="font-t3-bold text-lg text-foreground">
-            {pickMachine ? "Link a machine" : `Link ${targetName}`}
+            {pickMachine ? "Add a machine" : `Add ${targetName}`}
           </Text>
           <Text className="font-sans text-sm leading-5 text-foreground-muted">
-            Agents here can then launch, message and wait on threads there. It appears in that
+            Agents here can then start, message and wait on threads there. It appears in that
             machine's Connections, where it can be revoked.
           </Text>
           {!pickMachine && item.url !== undefined ? (
@@ -361,7 +347,7 @@ function LinkRequestSheet(props: {
             ))}
             <SettingsChoiceRow
               label="Another address…"
-              description="Link a machine this app does not know, by its https or Tailscale address."
+              description="Add a machine this app does not know, by its https or Tailscale address."
               selected={selected === ANOTHER_ADDRESS}
               separated={machines.length > 0}
               disabled={busy}
@@ -395,8 +381,8 @@ function LinkRequestSheet(props: {
         ) : null}
         {useExisting ? (
           <Text className="font-sans text-sm leading-5 text-foreground-muted">
-            This environment is already linked to {targetName}. The agent can use that link as it
-            is; change its access in Settings → Connections.
+            Agents here can already work on {targetName}. The agent can carry on with the access it
+            has; change it in Settings → Connections.
           </Text>
         ) : target.kind === "none" ? null : (
           <>
@@ -421,12 +407,16 @@ function LinkRequestSheet(props: {
               </View>
             )}
             <SettingsSection title="What agents here may do there">
-              {ACCESS_CHOICES.map((choice, index) => (
+              {LINK_ACCESS_CHOICES.map((choice, index) => (
                 <SettingsChoiceRow
                   key={choice.access}
-                  label={choice.label}
+                  label={
+                    choice.access === linkAccessChoice(access).access
+                      ? linkAccessLabel(access)
+                      : choice.label
+                  }
                   description={choice.description}
-                  selected={choice.access === access}
+                  selected={choice.access === linkAccessChoice(access).access}
                   separated={index > 0}
                   disabled={busy}
                   onPress={() => setAccess(choice.access)}
@@ -434,8 +424,7 @@ function LinkRequestSheet(props: {
               ))}
             </SettingsSection>
             <Text className="font-sans text-xs text-foreground-muted">
-              An agent here never gets more there than its own mode here either. Threads it starts
-              there cannot change that environment's own threads, projects or settings.
+              An agent never gets more access there than its own mode here.
             </Text>
           </>
         )}
@@ -449,7 +438,7 @@ function LinkRequestSheet(props: {
           </Text>
         ) : null}
         <Button
-          label={busy ? "Linking…" : useExisting ? "Use this link" : "Link"}
+          label={busy ? "Adding…" : useExisting ? "Use this machine" : "Add"}
           disabled={busy || !ready}
           onPress={() => void submit()}
           tone="primary"
@@ -461,7 +450,7 @@ function LinkRequestSheet(props: {
   );
 }
 
-/** One machine in the sheet's list: its glyph, name, and whether it is linked or reachable. */
+/** One machine in the sheet's list: its glyph, name, and whether it is added or reachable. */
 function MachineRow(props: {
   readonly machine: LinkableMachine;
   readonly selected: boolean;

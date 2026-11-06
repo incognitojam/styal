@@ -463,10 +463,10 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "linked-environments-beta",
-    title: "Linked environments",
+    title: "Work with your other machines",
     to: "/settings/labs",
     scope: "environment",
-    searchTerms: ["beta link another machine vps peer agents work there delegate"],
+    searchTerms: ["beta linked environments another machine vps peer agents work there delegate"],
   },
   {
     id: "auto-settle-inactive-threads",
@@ -1286,10 +1286,12 @@ export const SETTINGS_SEARCH_ITEMS = [
   {
     id: "linked-environments",
     peerLinksOnly: true,
-    title: "Linked environments",
+    title: "Your machines",
     to: "/settings/connections",
     targetId: "linked-environments",
-    searchTerms: ["link peer another machine vps agents work there handoff pairing code"],
+    searchTerms: [
+      "linked environments peer another machine vps agents work there handoff pairing code",
+    ],
   },
   {
     id: "remote-environments",

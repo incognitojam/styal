@@ -9,6 +9,10 @@ import type { EnvironmentPresentation } from "./connection/presentation.ts";
 import type { RelayDiscoveredEnvironment } from "./relay/discovery.ts";
 import {
   linkableMachines,
+  LINK_ACCESS_CHOICES,
+  linkAccessChoice,
+  linkAccessLabel,
+  linkRequestDefaultAccess,
   linkedEnvironmentNames,
   linkRequestAnswerInput,
   linkRequestDisplay,
@@ -22,7 +26,23 @@ const item = {
   threadId: ThreadId.make("thread-1"),
 };
 const asked = { url: "https://box.example.ts.net", label: "Box" };
-const accessLabel = (access: string) => `<${access}>`;
+describe("link access", () => {
+  it("opens on Everything unless the agent suggested something else", () => {
+    expect(linkRequestDefaultAccess({})).toBe("full-access");
+    expect(linkRequestDefaultAccess({ requestedAccess: "read-only" })).toBe("read-only");
+  });
+
+  it("shows levels no longer offered under the choice that limits a link the same way", () => {
+    expect(linkAccessLabel("approval-required")).toBe("Only its own threads · Supervised");
+    expect(linkAccessLabel("auto-accept-edits")).toBe("Only its own threads · Auto-accept edits");
+    expect(linkAccessChoice("approval-required").access).toBe("auto");
+    expect(LINK_ACCESS_CHOICES.map(({ access }) => linkAccessLabel(access))).toEqual([
+      "Everything",
+      "Only its own threads",
+      "Look only",
+    ]);
+  });
+});
 
 describe("linkRequestDisplay", () => {
   it("names the environment linked and the access the user chose", () => {
@@ -30,9 +50,8 @@ describe("linkRequestDisplay", () => {
       linkRequestDisplay(
         { ...asked, linkStatus: "linked", linkedLabel: "Box", linkedAccess: "auto" },
         "local",
-        accessLabel,
       ),
-    ).toEqual({ kind: "answered", outcome: "linked", label: "Linked Box · <auto>" });
+    ).toEqual({ kind: "answered", outcome: "linked", label: "Added Box · Only its own threads" });
   });
 
   it("shows why a link failed, and never offers the actions outside the asking thread", () => {
@@ -40,12 +59,14 @@ describe("linkRequestDisplay", () => {
       linkRequestDisplay(
         { ...asked, linkStatus: "failed", failure: "Pairing code expired." },
         "local",
-        accessLabel,
       ),
-    ).toMatchObject({ outcome: "failed", label: "Could not link: Pairing code expired." });
-    expect(
-      linkRequestDisplay({ ...asked, linkStatus: "pending" }, "inherited", accessLabel),
-    ).toMatchObject({ kind: "pending-elsewhere" });
+    ).toMatchObject({
+      outcome: "failed",
+      label: "Could not add the machine: Pairing code expired.",
+    });
+    expect(linkRequestDisplay({ ...asked, linkStatus: "pending" }, "inherited")).toMatchObject({
+      kind: "pending-elsewhere",
+    });
   });
 });
 

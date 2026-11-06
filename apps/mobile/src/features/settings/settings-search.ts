@@ -119,7 +119,14 @@ const SETTINGS_SEARCH_TERMS = {
     "submodules",
     "start from remote",
   ],
-  SettingsLabs: ["legacy", "plan mode", "beta", "linked environments", "link machine"],
+  SettingsLabs: [
+    "legacy",
+    "plan mode",
+    "beta",
+    "your machines",
+    "other machines",
+    "linked environments",
+  ],
   SettingsEnvironmentMaintenance: [
     "updates",
     "provider updates",

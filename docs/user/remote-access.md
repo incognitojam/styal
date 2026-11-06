@@ -274,47 +274,57 @@ Claude Code, Codex, ChatGPT and other agents styal did not start can drive
 threads on an environment through its MCP server. See
 [outside agents](./outside-agents.md) for setup.
 
-## Link another environment
+## Your machines
 
-Link two machines, such as your laptop and a VPS, and agents on one can work on
-the other: launch, message, wait on and stop its threads, answer their
+Add your other machines, such as your laptop and a VPS, and agents on one can
+work on the other: start, message, wait on and stop its threads, answer their
 questions, and manage its queues, projects and scheduled tasks.
 
-Linked environments is a beta. Turn it on for both machines in **Settings →
-Labs**; on mobile, **Settings → Labs** lists each connected machine. While it is
-off on either machine, agents start nothing over a link between them. A task
-already running on the other machine still finishes, and if that machine has it
-off, its result arrives once it is back on.
+This is a beta. Turn on **Work with your other machines** for both machines in
+**Settings → Labs**; on mobile, **Settings → Labs** lists each connected machine.
+While it is off on either machine, agents there start nothing on the other. A
+task already running on the other machine still finishes, and if that machine
+has it off, its result arrives once it is back on.
 
-On the machine you will work from, open **Settings → Connections → Linked environments**,
-choose **Link**, and pick the other machine or enter its address. The list
+On the machine you will work from, open **Settings → Connections → Your machines**,
+choose **Add machine**, and pick the other machine or enter its address. The list
 holds the machines this app knows and those on your styal Link account. If this
 app is connected to that machine with a session that manages access there, it
 makes the pairing code itself; otherwise paste one from that machine's
 **Settings → Connections**. From a terminal, use
 `styal environment link <address> --pairing-code <code> --access <mode>`.
 
-You can also ask an agent to link a machine by name, such as "delegate this to
+You can also ask an agent to use a machine by name, such as "delegate this to
 my vps". It shows a card in the thread where you pick the machine the same way
 and the access, then approve.
 
-- The access you pick is the most agents from this machine may do there. An
-  agent also never gets more there than its own mode here.
-- Threads a link starts are marked **From** and this machine's name there.
-- A full-access link works there like that machine's own agents. Below full
-  access, the link's agents can change only threads it started, not that
-  machine's own threads, projects or settings, and they skip its project setup
+Choose what agents from this machine may do there:
+
+- **Everything** works there like that machine's own agents, including threads
+  you started there.
+- **Only its own threads** reads everything, but changes only threads it started,
+  not that machine's own threads, projects or settings. It skips project setup
   scripts.
-- The link shows up in that machine's **Settings → Connections** like any
+- **Look only** reads everything and starts or changes nothing.
+
+Machines added earlier with Supervised or Auto-accept edits show as **Only its own
+threads** with that mode. `--access` takes `full-access`, `auto` or `read-only` for
+these three, and the older values still work.
+
+- An agent never gets more there than its own mode here. This limits what it can
+  do through styal, not what a shell on this machine can do, so don't add a
+  machine you want to protect from agents here.
+- Threads started this way are marked **From** and this machine's name there.
+- The connection shows up in that machine's **Settings → Connections** like any
   outside agent. Revoke it there to end it. **Forget** on this machine only
   removes it here.
-- Links last 30 days. Link again with a new pairing code to renew one.
+- It lasts 30 days. Add the machine again with a new pairing code to renew it.
 
-An agent can also hand a task to a linked machine with `delegate_task`: it runs
+An agent can also hand a task to another of your machines with `delegate_task`: it runs
 there as an ordinary thread, in the project with the same repository (or the
 one `target.projectId` names), and this thread wakes with its result when it
 ends, as for any delegated task. It keeps following the task across restarts.
-If the other machine revokes the link, or the link is removed here, the task
+If the other machine revokes it, or you forget that machine here, the task
 fails with that reason.
 
 ## Manage or revoke access
