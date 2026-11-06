@@ -86,6 +86,8 @@ The server also counts when someone uses a feature from any client, such as laun
 
 Each call an agent makes to one of styal's own tools records the tool's name, the provider type of the calling agent, whether the call succeeded with a fixed error code when it failed, and how long it took. When the tool hands work to another thread, such as delegating a task, launching a thread or sending it a message, the event also records settings the agent chose, such as the workspace type or how many threads it started, and the provider type, model and modes of each agent involved. When a delegated task finishes, its final status, both agents' provider types and models, and its run time are recorded. Models are recorded only when they come from a provider's published list, not models you added yourself or from tools like OpenCode that list your own configuration. Provider instance names, thread identifiers, prompts, titles and tool arguments are not collected.
 
+Auto environment tool usage records which operation an Auto agent attempted (request a machine link, create or clone a project, or run a scheduled task), whether it succeeded, failed or was cancelled, its duration, and whether a failure was a refusal or an operation error. It does not include tool arguments or results, paths, machine names, task names or model selections.
+
 Web and desktop apps record when the sidebar's combined update confirmation shows affected
 work and whether you confirm or cancel it. Checks and updates that need no confirmation
 are not recorded. These events follow one paired environment's telemetry setting.

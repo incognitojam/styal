@@ -92,6 +92,18 @@ it.effect.each([
       const resumed = yield* service.setEnabled({ id: created.task.id, enabled: true });
       expect(resumed.task.nextRunAt).toBe(expected);
 
+      const stale = yield* service
+        .runNow(
+          { id: created.task.id },
+          {
+            runtimeMode: "auto",
+            interactionMode: "default",
+          },
+        )
+        .pipe(Effect.flip);
+      expect(stale.message).toBe("Could not run schedule task.");
+      expect((yield* service.list()).tasks[0]?.runCount).toBe(0);
+
       // Exercise completion rescheduling without starting any provider process.
       const completed = yield* service.runNow({ id: created.task.id });
       expect(completed.task.lastRunStatus).toBe("failed");

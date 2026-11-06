@@ -57,7 +57,7 @@ const EnvironmentReadTool = Tool.make("t3_environment_read", {
 const EnvironmentPreferencesTool = Tool.make("t3_environment_preferences_update", {
   ...shared,
   description:
-    "Update environment-wide preferences. Live full-access or default caller thread only. Omitted fields are unchanged; `customInstructions: ''` clears it. `autoUpdateProviders`: styal installs only provider CLI versions it has tested, in place of the providers' own updaters.",
+    "Update environment-wide preferences. Full-access non-plan thread/client only. Omitted fields are unchanged; `customInstructions: ''` clears it. `autoUpdateProviders`: styal installs only provider CLI versions it has tested, in place of the providers' own updaters.",
   parameters: Schema.Struct({
     environmentId: OrchestratorMcpEnvironmentTarget,
     defaultThreadEnvMode: ServerSettingsPatch.fields.defaultThreadEnvMode,

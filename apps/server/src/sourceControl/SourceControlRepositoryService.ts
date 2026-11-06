@@ -133,6 +133,7 @@ export interface SourceControlClonedForkInput {
 }
 
 export interface SourceControlCloneOptions {
+  readonly requireNewDestination?: boolean;
   readonly onProgress?: (line: GitCloneProgressLine) => Effect.Effect<void>;
   /** Overrides the default clone budget; `null` disables the deadline. */
   readonly timeoutMs?: number | null;
@@ -419,10 +420,24 @@ export const make = Effect.gen(function* () {
   );
 
   const prepareDestination = Effect.fn("SourceControlRepositoryService.prepareDestination")(
-    function* (destinationPath: string) {
+    function* (destinationPath: string, requireNewDestination = false) {
       const normalizedDestination = yield* normalizeDestinationPath(destinationPath);
       const parentPath = path.dirname(normalizedDestination);
-      if (yield* fileSystem.exists(normalizedDestination)) {
+      if (requireNewDestination) {
+        if (!(yield* fileSystem.exists(parentPath)))
+          yield* fileSystem.makeDirectory(parentPath, { recursive: true });
+        yield* fileSystem.makeDirectory(normalizedDestination).pipe(
+          Effect.mapError(
+            (cause) =>
+              new SourceControlRepositoryError({
+                operation: "claimCloneDestination",
+                provider: SourceControlProviderKind.make("unknown"),
+                detail: "Destination path already exists or could not be claimed for cloning.",
+                cause,
+              }),
+          ),
+        );
+      } else if (yield* fileSystem.exists(normalizedDestination)) {
         const entries = yield* fileSystem
           .readDirectory(normalizedDestination, { recursive: false })
           .pipe(
@@ -616,8 +631,12 @@ export const make = Effect.gen(function* () {
 
   const prepareClone = Effect.fn("SourceControlRepositoryService.prepareClone")(function* (
     input: SourceControlCloneRepositoryInput,
+    requireNewDestination = false,
   ) {
-    const preparedDestination = yield* prepareDestination(input.destinationPath);
+    const preparedDestination = yield* prepareDestination(
+      input.destinationPath,
+      requireNewDestination,
+    );
     let repository: SourceControlRepositoryInfo | null = null;
     let remoteUrl = input.remoteUrl?.trim() ?? null;
     let provider: SourceControlProviderKind =
@@ -707,7 +726,7 @@ export const make = Effect.gen(function* () {
     input: SourceControlCloneRepositoryInput,
     options?: SourceControlCloneOptions,
   ) {
-    const prepared = yield* prepareClone(input);
+    const prepared = yield* prepareClone(input, options?.requireNewDestination);
     const httpsUrl = httpsFallbackUrl(input, prepared);
     const cloneUrl = yield* runClone(
       input,

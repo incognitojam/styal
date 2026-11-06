@@ -9,6 +9,10 @@ styal is in active development. The hosted web app at [app.styal.build](https://
 live, with rough edges and incomplete functionality. Importing T3 Code projects and preferences
 works. This overview focuses on desktop and web; the mobile app is a work in progress.
 
+## Agent permissions
+
+- **Auto agents can prepare work on another machine.** Auto threads can request a link for you to approve, clone repositories, and create projects without scripts or a default model. They can run a scheduled task only within their own mode limits. Changing or deleting projects and changing machine settings still need Full access. Upstream requires Full access for all these operations as of [revision 4bfb896](https://github.com/pingdotgg/t3code/tree/4bfb896d00a130ecf155ac55c24577b32ea49e2e), checked November 5, 2026. [Link another environment](./remote-access.md#link-another-environment).
+
 ## Devices
 
 - **Save a simulator memory mode per project.** Low memory prepares unused iOS simulators with a fixed preset before starting them; Standard restores managed services on the next unused start. Web, desktop, mobile, and agents inherit the same project preference. T3 Code has no simulator memory modes as of [revision 725ada6](https://github.com/pingdotgg/t3code/tree/725ada6eaa32d4a32c361ee42a1717a3e65568d1), checked October 25, 2026. [Simulator memory](./devices.md#simulator-memory).

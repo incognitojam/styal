@@ -1,3 +1,18 @@
+import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
+import * as OrchestratorHandlers from "./toolkits/orchestrator/handlers.ts";
+import { OrchestratorToolkit } from "./toolkits/orchestrator/tools.ts";
+import * as OrchestratorMcpService from "./OrchestratorMcpService.ts";
+import * as PeerLinkRequests from "../peer/PeerLinkRequests.ts";
+import * as PeerLinks from "../peer/PeerLinks.ts";
+import * as Repositories from "../sourceControl/SourceControlRepositoryService.ts";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
+import * as ProjectHandlers from "./toolkits/project/handlers.ts";
+import { ProjectToolkit } from "./toolkits/project/tools.ts";
+import * as ThreadHandlers from "./toolkits/thread/handlers.ts";
+import { ThreadToolkit } from "./toolkits/thread/tools.ts";
+import * as ProjectService from "../project/ProjectService.ts";
+import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
+import * as ScheduledTasks from "../scheduledTasks/ScheduledTaskService.ts";
 import { expect, it } from "@effect/vitest";
 import {
   EnvironmentId,
@@ -23,6 +38,7 @@ import * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as McpToolAccess from "./McpToolAccess.ts";
 import { liveThreadShell } from "./McpToolAccess.testkit.ts";
 
+const autoThreadId = ThreadId.make("thread:auto");
 const supervisedThreadId = ThreadId.make("thread:supervised");
 const planThreadId = ThreadId.make("thread:plan");
 const fullAccessThreadId = ThreadId.make("thread:full-access");
@@ -40,6 +56,7 @@ const backgroundShell = (threadId: ThreadId, providerInstanceId: ProviderInstanc
 });
 
 const shells = new Map([
+  [autoThreadId, liveThreadShell(autoThreadId, { runtimeMode: "auto" })],
   [supervisedThreadId, liveThreadShell(supervisedThreadId, { runtimeMode: "approval-required" })],
   [
     planThreadId,
@@ -129,6 +146,14 @@ const ProbeToolkit = Toolkit.make(
     }),
   }),
   Tool.make("writes_environment", probe),
+  Tool.make("t3_environment_link", probe),
+  Tool.make("run_scheduled_task_now", probe),
+  Tool.make("t3_project_create", probe),
+  Tool.make("t3_project_clone", probe),
+  Tool.make("t3_project_update", probe),
+  Tool.make("t3_project_delete", probe),
+  Tool.make("t3_environment_unlink", probe),
+  Tool.make("t3_environment_preferences_update", probe),
 );
 const ran = Effect.succeed({ ran: "ran" });
 const probeHandlers: McpToolAccess.Handlers<typeof ProbeToolkit.tools> = {
@@ -147,6 +172,14 @@ const probeHandlers: McpToolAccess.Handlers<typeof ProbeToolkit.tools> = {
     "stamped",
   ),
   writes_environment: McpToolAccess.writesEnvironment(() => ran),
+  t3_environment_link: McpToolAccess.writesEnvironment(() => ran, { auto: "allowed" }),
+  run_scheduled_task_now: McpToolAccess.writesEnvironment(() => ran, { auto: "allowed" }),
+  t3_project_create: McpToolAccess.writesEnvironment(() => ran, { auto: "allowed" }),
+  t3_project_clone: McpToolAccess.writesEnvironment(() => ran, { auto: "allowed" }),
+  t3_project_update: McpToolAccess.writesEnvironment(() => ran, {}),
+  t3_project_delete: McpToolAccess.writesEnvironment(() => ran, {}),
+  t3_environment_unlink: McpToolAccess.writesEnvironment(() => ran, {}),
+  t3_environment_preferences_update: McpToolAccess.writesEnvironment(() => ran, {}),
 };
 const layerProbeHandlers = McpToolAccess.toLayer(ProbeToolkit, probeHandlers);
 
@@ -186,6 +219,14 @@ export const refusedAtCompileTime = () => {
       writes_threads: unchecked,
       starts_threads: unchecked,
       writes_environment: unchecked,
+      t3_environment_link: unchecked,
+      run_scheduled_task_now: unchecked,
+      t3_project_create: unchecked,
+      t3_project_clone: unchecked,
+      t3_project_update: unchecked,
+      t3_project_delete: unchecked,
+      t3_environment_unlink: unchecked,
+      t3_environment_preferences_update: unchecked,
     }),
   );
 };
@@ -244,6 +285,31 @@ const fullAccessLinkedClient: McpInvocationContext.McpInvocationScope = {
 const previewOnly = { ...fullAccess, capabilities: new Set(["preview"] as const) };
 
 it.effect.each([
+  ["t3_environment_link", threadCaller(autoThreadId), {}, "ran"],
+  ["t3_environment_link", supervised, {}, "capability_denied"],
+  ["t3_environment_link", fullAccess, {}, "ran"],
+  ["run_scheduled_task_now", threadCaller(autoThreadId), {}, "ran"],
+  ["run_scheduled_task_now", supervised, {}, "capability_denied"],
+  ["run_scheduled_task_now", fullAccess, {}, "ran"],
+  ["t3_project_create", threadCaller(autoThreadId), {}, "ran"],
+  ["t3_project_create", supervised, {}, "capability_denied"],
+  ["t3_project_create", fullAccess, {}, "ran"],
+  ["t3_project_clone", threadCaller(autoThreadId), {}, "ran"],
+  ["t3_project_clone", supervised, {}, "capability_denied"],
+  ["t3_project_clone", fullAccess, {}, "ran"],
+  ["t3_project_update", threadCaller(autoThreadId), {}, "capability_denied"],
+  ["t3_project_update", supervised, {}, "capability_denied"],
+  ["t3_project_update", fullAccess, {}, "ran"],
+  ["t3_project_delete", threadCaller(autoThreadId), {}, "capability_denied"],
+  ["t3_project_delete", supervised, {}, "capability_denied"],
+  ["t3_project_delete", fullAccess, {}, "ran"],
+  ["t3_environment_unlink", threadCaller(autoThreadId), {}, "capability_denied"],
+  ["t3_environment_unlink", supervised, {}, "capability_denied"],
+  ["t3_environment_unlink", fullAccess, {}, "ran"],
+  ["t3_environment_preferences_update", threadCaller(autoThreadId), {}, "capability_denied"],
+  ["t3_environment_preferences_update", supervised, {}, "capability_denied"],
+  ["t3_environment_preferences_update", fullAccess, {}, "ran"],
+
   ["reads", ended, {}, "ran"],
   ["reads", supervisedClient, {}, "ran"],
   ["reads", readOnlyClient, {}, "ran"],
@@ -376,6 +442,7 @@ const LinkedProbeToolkit = Toolkit.make(
   Tool.make("writes_threads", linkedProbe),
   Tool.make("starts_threads", linkedProbe),
   Tool.make("writes_environment", linkedProbe),
+  Tool.make("writes_environment_auto", linkedProbe),
 );
 /** Runs here, and tells whether `environmentId` reached the handler. */
 const ranHere = <P extends object>(params: P) =>
@@ -390,6 +457,7 @@ const linkedProbeServer = McpHttpServer.toolkitRegistration(
     writes_threads: McpToolAccess.writesThreads((input) => [input.threadId], ranHere),
     starts_threads: McpToolAccess.startsThreads((input) => input, ranHere, "stamped"),
     writes_environment: McpToolAccess.writesEnvironment(ranHere),
+    writes_environment_auto: McpToolAccess.writesEnvironment(ranHere, { auto: "allowed" }),
   }),
 ).pipe(
   Layer.provideMerge(McpServer.McpServer.layer),
@@ -408,6 +476,19 @@ const linkedProbeServer = McpHttpServer.toolkitRegistration(
 );
 
 it.effect.each([
+  [
+    "writes_environment_auto",
+    threadCaller(autoThreadId),
+    { environmentId: box },
+    "writes_environment_auto in environment-box",
+  ],
+  ["writes_environment_auto", supervised, { environmentId: box }, "capability_denied"],
+  [
+    "writes_environment_auto",
+    { ...clientCaller("auto"), client: { ...clientCaller("auto").client!, linked: true } },
+    {},
+    "capability_denied",
+  ],
   ["reads", supervised, { environmentId: box }, "reads in environment-box"],
   ["reads", supervised, { environmentId: here }, "here"],
   ["reads", supervised, {}, "here"],
@@ -464,5 +545,275 @@ it.effect("refuses a linked environment to a tool that acts as its calling threa
       ),
     ).pipe(Effect.scoped, Effect.exit);
     expect(Exit.isFailure(built) && Cause.hasDies(built.cause)).toBe(true);
+  }),
+);
+
+const CreateToolkit = Toolkit.make(ProjectToolkit.tools.t3_project_create);
+const RunToolkit = Toolkit.make(ThreadToolkit.tools.run_scheduled_task_now);
+
+it.effect.each([
+  ["auto", {}, "created"],
+  ["auto", { scripts: [] }, "capability_denied"],
+  ["auto", { scripts: [], environmentId: box }, "capability_denied"],
+  ["auto", { defaultModelSelection: { instanceId: "codex", model: "test" } }, "capability_denied"],
+  ["approval-required", {}, "capability_denied"],
+  ["full-access", { scripts: [] }, "created"],
+] as const)("project create from %s with %o", ([runtimeMode, extra, expected]) =>
+  Effect.gen(function* () {
+    const server = yield* McpServer.McpServer;
+    const result = yield* server.callTool({
+      name: "t3_project_create",
+      arguments: {
+        title: "Synthetic project",
+        workspaceRoot: "/projects/synthetic",
+        ...extra,
+      },
+    });
+    const text = result.content.map((part) => (part.type === "text" ? part.text : "")).join("");
+    expect(text).toContain(expected);
+  }).pipe(
+    Effect.provideService(McpInvocationContext.McpInvocationContext, clientCaller(runtimeMode)),
+    Effect.provideService(McpSchema.McpServerClient, mcpClient),
+    Effect.provide(
+      McpHttpServer.toolkitRegistration(
+        CreateToolkit,
+        McpToolAccess.toLayer(CreateToolkit, {
+          t3_project_create: ProjectHandlers.declarations.t3_project_create,
+        }),
+      ).pipe(
+        Layer.provideMerge(McpServer.McpServer.layer),
+        Layer.provide(Layer.mock(ThreadManagement.ThreadManagementService)({})),
+        Layer.provide(
+          Layer.mock(ProjectService.ProjectService)({
+            create: () =>
+              Effect.succeed({
+                id: "created",
+                title: "Synthetic project",
+                workspaceRoot: "/projects/synthetic",
+                scripts: [],
+                defaultModelSelection: null,
+                createdAt: "2026-01-01T00:00:00.000Z",
+                updatedAt: "2026-01-01T00:00:00.000Z",
+                deletedAt: null,
+              } as never),
+          }),
+        ),
+        Layer.provide(
+          Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
+            namedProjectsRoot: "/projects",
+          }),
+        ),
+        Layer.provide(NodeCrypto.layer),
+      ),
+    ),
+  ),
+);
+
+it.effect.each([
+  ["auto", "auto", "running"],
+  ["auto", "full-access", "runtime_mode_escalation_denied"],
+  ["approval-required", "approval-required", "capability_denied"],
+  ["full-access", "full-access", "running"],
+] as const)("scheduled run from %s with task %s", ([runtimeMode, taskMode, expected]) =>
+  Effect.gen(function* () {
+    const server = yield* McpServer.McpServer;
+    const result = yield* server.callTool({
+      name: "run_scheduled_task_now",
+      arguments: { taskId: "task:test" },
+    });
+    expect(
+      result.content.map((part) => (part.type === "text" ? part.text : "")).join(""),
+    ).toContain(expected);
+  }).pipe(
+    Effect.provideService(McpInvocationContext.McpInvocationContext, clientCaller(runtimeMode)),
+    Effect.provideService(McpSchema.McpServerClient, mcpClient),
+    Effect.provide(
+      McpHttpServer.toolkitRegistration(
+        RunToolkit,
+        McpToolAccess.toLayer(RunToolkit, {
+          run_scheduled_task_now: ThreadHandlers.declarations.run_scheduled_task_now,
+        }),
+      ).pipe(
+        Layer.provideMerge(McpServer.McpServer.layer),
+        Layer.provide(NodeCrypto.layer),
+        Layer.provide(Layer.mock(ThreadManagement.ThreadManagementService)({})),
+        Layer.provide(
+          Layer.mock(ScheduledTasks.ScheduledTaskService)({
+            list: () =>
+              Effect.succeed({
+                tasks: [{ id: "task:test", runtimeMode: taskMode, interactionMode: "default" }],
+              } as never),
+            runNow: () =>
+              Effect.succeed({
+                task: { id: "task:test", lastRunStatus: "running", runCount: 1, nextRunAt: null },
+                threadId: null,
+              } as never),
+          }),
+        ),
+      ),
+    ),
+  ),
+);
+
+const AutoUsageToolkit = Toolkit.make(
+  ProjectToolkit.tools.t3_project_create,
+  ProjectToolkit.tools.t3_project_clone,
+  ThreadToolkit.tools.run_scheduled_task_now,
+  OrchestratorToolkit.tools.t3_environment_link,
+);
+
+it.effect.each(
+  (
+    [
+      [
+        "t3_project_create",
+        "project_create",
+        { title: "Synthetic private title", workspaceRoot: "/projects/synthetic-private" },
+      ],
+      [
+        "t3_project_clone",
+        "project_clone",
+        {
+          remoteUrl: "https://example.test/synthetic-private.git",
+          destinationPath: "/projects/synthetic-private",
+        },
+      ],
+      ["run_scheduled_task_now", "scheduled_run", { taskId: "task:synthetic-private" }],
+      ["t3_environment_link", "link", { hint: "synthetic private machine" }],
+    ] as const
+  ).flatMap(([tool, action, args]) =>
+    (["success", "refused", "failure"] as const).map((outcome) => ({
+      tool,
+      action,
+      args,
+      outcome,
+    })),
+  ),
+)("records Auto $tool $outcome once without operation data", ({ tool, action, args, outcome }) =>
+  Effect.gen(function* () {
+    const events: Array<unknown> = [];
+    const success = <A>(value: A) =>
+      outcome === "failure" ? Effect.die("synthetic private failure") : Effect.succeed(value);
+    const scope = clientCaller("auto");
+    const result = yield* McpServer.McpServer.pipe(
+      Effect.flatMap((server) => server.callTool({ name: String(tool), arguments: args })),
+      Effect.provideService(McpInvocationContext.McpInvocationContext, {
+        ...scope,
+        client: {
+          ...scope.client!,
+          narrowedTo: {
+            runtimeMode: "auto",
+            interactionMode: outcome === "refused" ? "plan" : "default",
+          },
+        },
+      }),
+      Effect.provideService(McpSchema.McpServerClient, mcpClient),
+      Effect.provide(
+        McpHttpServer.toolkitRegistration(
+          AutoUsageToolkit,
+          McpToolAccess.toLayer(AutoUsageToolkit, {
+            t3_project_create: ProjectHandlers.declarations.t3_project_create,
+            t3_project_clone: ProjectHandlers.declarations.t3_project_clone,
+            run_scheduled_task_now: ThreadHandlers.declarations.run_scheduled_task_now,
+            t3_environment_link: OrchestratorHandlers.handlers.t3_environment_link,
+          }),
+        ).pipe(
+          Layer.provideMerge(McpServer.McpServer.layer),
+          Layer.provide(NodeCrypto.layer),
+          Layer.provide(
+            Layer.succeed(
+              AnalyticsService.AnalyticsService,
+              AnalyticsService.AnalyticsService.of({
+                recordOwners: () => Effect.void,
+                flush: Effect.void,
+                record: (event, properties) =>
+                  Effect.sync(() => {
+                    if (event === "feature.used") events.push({ event, properties });
+                  }),
+              }),
+            ),
+          ),
+          Layer.provide(Layer.mock(ThreadManagement.ThreadManagementService)({})),
+          Layer.provide(Layer.mock(OrchestratorMcpService.OrchestratorMcpService)({})),
+          Layer.provide(Layer.mock(PeerLinks.PeerLinks)({})),
+          Layer.provide(
+            Layer.mock(PeerLinkRequests.PeerLinkRequests)({
+              request: () => success({ status: "pending", turnItemId: "card:synthetic" } as never),
+            }),
+          ),
+          Layer.provide(
+            Layer.mock(Repositories.SourceControlRepositoryService)({
+              cloneRepository: () =>
+                success({
+                  cwd: "/projects/synthetic",
+                  remoteUrl: "https://example.test/repo.git",
+                  repository: null,
+                }),
+            }),
+          ),
+          Layer.provide(
+            Layer.mock(ProjectService.ProjectService)({
+              create: () =>
+                success({
+                  id: "created",
+                  title: "Synthetic",
+                  workspaceRoot: "/projects/synthetic",
+                  scripts: [],
+                  defaultModelSelection: null,
+                  createdAt: "2026-01-01T00:00:00.000Z",
+                  updatedAt: "2026-01-01T00:00:00.000Z",
+                  deletedAt: null,
+                } as never),
+            }),
+          ),
+          Layer.provide(
+            Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
+              namedProjectsRoot: "/projects",
+            }),
+          ),
+          Layer.provide(
+            Layer.mock(ScheduledTasks.ScheduledTaskService)({
+              list: () =>
+                Effect.succeed({
+                  tasks: [
+                    {
+                      id: "task:synthetic-private",
+                      runtimeMode: "auto",
+                      interactionMode: "default",
+                      threadId: null,
+                    },
+                  ],
+                } as never),
+              runNow: () =>
+                success({
+                  task: {
+                    id: "task:synthetic-private",
+                    lastRunStatus: "running",
+                    runCount: 1,
+                    nextRunAt: null,
+                  },
+                  threadId: null,
+                } as never),
+            }),
+          ),
+        ),
+      ),
+    );
+    expect(result.isError === true).toBe(outcome !== "success");
+    expect(events).toEqual([
+      {
+        event: "feature.used",
+        properties: {
+          feature: "auto-environment-tools",
+          action,
+          source: "agent",
+          durationMs: 0,
+          outcome: outcome === "refused" ? "failure" : outcome,
+          ...(outcome === "success"
+            ? {}
+            : { failureReason: outcome === "refused" ? "refused" : "operation_failed" }),
+        },
+      },
+    ]);
   }),
 );

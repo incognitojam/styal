@@ -12,7 +12,7 @@ import * as OrchestratorMcpService from "../../OrchestratorMcpService.ts";
 import * as ThreadMetadataMcpService from "../../ThreadMetadataMcpService.ts";
 import * as DelegatedWakeUsage from "../../../telemetry/DelegatedWakeUsage.ts";
 
-const handlers = {
+export const handlers = {
   orchestrator_capabilities: McpToolAccess.reads((input) =>
     Effect.gen(function* () {
       const scope = yield* McpInvocationContext.McpInvocationContext;
@@ -192,14 +192,15 @@ const handlers = {
       return yield* forwarding.links(scope);
     }),
   ),
-  // A link lets every agent here reach the other environment, so it is an
-  // environment setting: full access, and never for linked work.
-  t3_environment_link: McpToolAccess.writesEnvironment((input) =>
-    Effect.gen(function* () {
-      const scope = yield* McpInvocationContext.McpInvocationContext;
-      const requests = yield* PeerLinkRequests.PeerLinkRequests;
-      return yield* requests.request(scope, input);
-    }),
+  // The user approves the link card; fenced linked work still cannot request one.
+  t3_environment_link: McpToolAccess.writesEnvironment(
+    (input) =>
+      Effect.gen(function* () {
+        const scope = yield* McpInvocationContext.McpInvocationContext;
+        const requests = yield* PeerLinkRequests.PeerLinkRequests;
+        return yield* requests.request(scope, input);
+      }),
+    { auto: "allowed", autoUsage: "link" },
   ),
   t3_environment_unlink: McpToolAccess.writesEnvironment(({ environmentId }) =>
     Effect.gen(function* () {

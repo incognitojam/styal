@@ -181,12 +181,15 @@ it.effect("clones a looked-up repository after creating missing parent directori
 
     yield* Effect.gen(function* () {
       const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
-      const result = yield* service.cloneRepository({
-        provider: SourceControlProviderKind.make("github"),
-        repository: "octocat/t3code",
-        destinationPath,
-        protocol: "https",
-      });
+      const result = yield* service.cloneRepository(
+        {
+          provider: SourceControlProviderKind.make("github"),
+          repository: "octocat/t3code",
+          destinationPath,
+          protocol: "https",
+        },
+        { requireNewDestination: true },
+      );
 
       assert.deepStrictEqual(result, {
         cwd: destinationPath,
@@ -231,12 +234,17 @@ it.effect.each(["--bare", "source.git"])(
         args: ["init", "--bare", path.join(parent, repositoryName)],
       });
       const destinationPath = path.join(parent, "checkout");
+      const requireNewDestination = repositoryName === "--bare";
+      if (!requireNewDestination) yield* fs.makeDirectory(destinationPath);
       yield* Effect.gen(function* () {
         const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
-        const result = yield* service.cloneRepository({
-          remoteUrl: repositoryName,
-          destinationPath,
-        });
+        const result = yield* service.cloneRepository(
+          {
+            remoteUrl: repositoryName,
+            destinationPath,
+          },
+          { requireNewDestination },
+        );
         assert.strictEqual(result.cwd, destinationPath);
         assert.isTrue(yield* fs.exists(path.join(destinationPath, ".git")));
       }).pipe(Effect.provide(layer({ git: { execute: git.execute } })));
@@ -1550,3 +1558,42 @@ it.effect("publish succeeds with status remote_added when the local repo has no 
     ),
   );
 });
+
+it.effect.each(["empty", "file", "symlink"] as const)(
+  "requires a new clone destination instead of an existing %s",
+  (existing) =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const parent = yield* fs.makeTempDirectoryScoped({ prefix: "t3-clone-new-destination-" });
+      const destinationPath = path.join(parent, "workspace");
+      if (existing === "empty") yield* fs.makeDirectory(destinationPath);
+      else if (existing === "file")
+        yield* fs.writeFileString(destinationPath, "synthetic workspace data");
+      else yield* fs.symlink(parent, destinationPath);
+      let clones = 0;
+      yield* Effect.gen(function* () {
+        const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+        const refused = yield* service
+          .cloneRepository(
+            { remoteUrl: CLONE_URLS.url, destinationPath },
+            { requireNewDestination: true },
+          )
+          .pipe(Effect.flip);
+        assert.include(refused.detail, "Destination path already exists");
+        assert.equal(clones, 0);
+        assert.isTrue(yield* fs.exists(destinationPath));
+      }).pipe(
+        Effect.provide(
+          layer({
+            git: {
+              execute: () => {
+                clones += 1;
+                return Effect.succeed(processOutput());
+              },
+            },
+          }),
+        ),
+      );
+    }).pipe(Effect.provide(NodeServices.layer)),
+);

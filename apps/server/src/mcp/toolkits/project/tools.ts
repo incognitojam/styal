@@ -76,7 +76,7 @@ const ProjectReadTool = Tool.make("t3_project_read", {
 const ProjectCreateTool = Tool.make("t3_project_create", {
   ...shared,
   description:
-    "Register a project folder. `createWorkspaceRootIfMissing` creates it; a registered folder is rejected. No `workspaceRoot`: makes a git repo from `title` with README, icon, first commit (`commitError` on failure; project still exists). Clone first with `t3_project_clone` if needed.",
+    "Register a folder; registered folders fail. Auto cannot set scripts/model defaults. `createWorkspaceRootIfMissing` creates it. No `workspaceRoot`: repo from `title` with README, icon, commit (`commitError` on failure; repo stays). Clone first with `t3_project_clone`.",
   parameters: Schema.Struct({
     environmentId: OrchestratorMcpEnvironmentTarget,
     ...ProjectCreatePayload.fields,
@@ -108,7 +108,7 @@ const ProjectDeleteTool = Tool.make("t3_project_delete", {
 const ProjectCloneTool = Tool.make("t3_project_clone", {
   ...shared,
   description:
-    "Clone a repository (`destinationPath` new or empty). Register after with `t3_project_create`, with the same `environmentId`.",
+    "Clone a repository (`destinationPath` must be new). Register after with `t3_project_create`, with the same `environmentId`.",
   parameters: Schema.Struct({
     environmentId: OrchestratorMcpEnvironmentTarget,
     ...SourceControlCloneRepositoryInput.fields,

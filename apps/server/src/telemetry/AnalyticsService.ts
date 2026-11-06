@@ -227,6 +227,7 @@ export const make = Effect.gen(function* () {
           t3CodeVersion: packageJson.version,
           t3CodeRepository: T3_CODE_REPOSITORY,
           featureUsageVersion: 1,
+          autoEnvironmentToolsUsageVersion: 1,
           agentGuidesUsageVersion: 1,
           browserToolsUsageVersion: 1,
           deviceUsageVersion: 2,

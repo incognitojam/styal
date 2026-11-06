@@ -1,3 +1,5 @@
+import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
+import * as FeatureUsage from "../telemetry/FeatureUsage.ts";
 import {
   type EnvironmentId,
   type OrchestrationV2LinkOrigin,
@@ -19,6 +21,7 @@ import type { Tool, Toolkit } from "effect/ai";
 import {
   DispatchModeLimit,
   type DispatchModeRefusal,
+  type DispatchModes,
 } from "../orchestration-v2/DispatchModeLimit.ts";
 import * as PeerForwarding from "../peer/PeerForwarding.ts";
 import { assertNotLinked, assertSameLink, callerLinkOrigin } from "./linkOrigin.ts";
@@ -173,6 +176,25 @@ export const writesWithCapability = <P, A, E, R>(handle: (params: P) => Effect.E
     () => writingCaller,
   );
 
+export const withDispatchModeLimit = Effect.fn("McpToolAccess.withDispatchModeLimit")(function* <
+  A,
+  E,
+  R,
+>(limits: DispatchModes, effect: Effect.Effect<A, E, R>) {
+  // Dispatch can refuse under lock after preflight, even when a service records the failure as a result.
+  const refused = yield* Ref.make<DispatchModeRefusal | undefined>(undefined);
+  const verify = Ref.get(refused).pipe(
+    Effect.flatMap((refusal) =>
+      refusal === undefined ? Effect.void : Effect.fail(escalationDenied(refusal)),
+    ),
+  );
+  return yield* effect.pipe(
+    Effect.provideService(DispatchModeLimit, { ...limits, refused }),
+    Effect.tap(() => verify),
+    Effect.tapError(() => verify),
+  );
+});
+
 export const writesThreads = <P, A, E, R>(
   threads: (params: P) => ReadonlyArray<ThreadId | undefined>,
   handle: (params: P) => Effect.Effect<A, E, R>,
@@ -191,18 +213,7 @@ export const writesThreads = <P, A, E, R>(
             yield* assertSameLink(caller, target);
           }
         }
-        // Modes can rise after this check; the orchestrator rechecks under lock and records refusal before handlers wrap errors.
-        const refused = yield* Ref.make<DispatchModeRefusal | undefined>(undefined);
-        return yield* handle(params).pipe(
-          Effect.provideService(DispatchModeLimit, { ...caller.limits, refused }),
-          Effect.catch((error) =>
-            Effect.flatMap(Ref.get(refused), (refusal) =>
-              Effect.fail<E | OrchestratorMcpFailure>(
-                refusal === undefined ? error : escalationDenied(refusal),
-              ),
-            ),
-          ),
-        );
+        return yield* withDispatchModeLimit(caller.limits, handle(params));
       }),
     () => writingCaller,
   );
@@ -281,8 +292,24 @@ export const either = <P, A, E, R, A2, E2, R2>(
   );
 };
 
+const observeAutoEnvironment = Effect.fn("McpToolAccess.observeAutoEnvironment")(function* <
+  A,
+  E,
+  R,
+>(action: FeatureUsage.AutoEnvironmentAction | undefined, effect: Effect.Effect<A, E, R>) {
+  if (action === undefined) return yield* effect;
+  const analytics = yield* Effect.serviceOption(AnalyticsService.AnalyticsService);
+  if (Option.isNone(analytics)) return yield* effect;
+  const caller = yield* loadCaller().pipe(Effect.option);
+  if (Option.isNone(caller) || caller.value.limits.runtimeMode !== "auto") return yield* effect;
+  return yield* FeatureUsage.observe(
+    { feature: "auto-environment-tools", action, source: "agent" },
+    effect,
+  ).pipe(Effect.provideService(AnalyticsService.AnalyticsService, analytics.value));
+});
+
 const fullAccessRequired =
-  "Changing projects or environment settings needs a live full-access/default calling thread or a full-access client.";
+  "This operation needs a live Full access thread in default interaction mode, or a Full access client.";
 
 /** Recheck after waits before writing; caller modes may have changed. */
 export const writesEnvironment = <P, A, E, R>(
@@ -296,22 +323,46 @@ export const writesEnvironment = <P, A, E, R>(
      * everything already here as it was.
      */
     readonly linkedCallers?: "allowed";
+    readonly auto?: "allowed";
+    readonly autoUsage?: FeatureUsage.AutoEnvironmentAction;
+    readonly validate?: (params: P, caller: Caller) => Effect.Effect<void, OrchestratorMcpFailure>;
   },
 ) => {
+  const checkMode = (caller: Caller) =>
+    options?.auto === "allowed" &&
+    caller.limits.runtimeMode === "auto" &&
+    caller.limits.interactionMode === "default"
+      ? Effect.void
+      : assertFullAccess(
+          caller,
+          options?.auto === "allowed"
+            ? "This operation needs a live Auto or Full access thread in default interaction mode, or an equivalent client."
+            : fullAccessRequired,
+        );
   const check = orchestratingCaller.pipe(
     Effect.tap((caller) =>
       options?.linkedCallers === "allowed"
         ? Effect.void
         : assertNotLinked(caller, "change projects or environment settings"),
     ),
-    Effect.tap((caller) => assertFullAccess(caller, fullAccessRequired)),
+    Effect.tap((caller) => checkMode(caller)),
   );
   return declare(
-    (params: P) => check.pipe(Effect.flatMap(() => handle(params, check))),
+    (params: P) => {
+      const checked = check.pipe(
+        Effect.tap((caller) => options?.validate?.(params, caller) ?? Effect.void),
+      );
+      return observeAutoEnvironment(
+        options?.autoUsage,
+        checked.pipe(Effect.flatMap(() => handle(params, checked))),
+      );
+    },
     // Linked work never reaches a link at all; that is checked as the call goes.
-    () =>
+    (params) =>
       orchestratingCaller.pipe(
-        Effect.tap((caller) => assertFullAccess(caller, fullAccessRequired)),
+        Effect.tap((caller) => checkMode(caller)),
+        Effect.tap((caller) => options?.validate?.(params, caller) ?? Effect.void),
+        Effect.catch((error) => observeAutoEnvironment(options?.autoUsage, Effect.fail(error))),
       ),
   );
 };
