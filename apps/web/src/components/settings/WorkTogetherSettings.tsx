@@ -327,7 +327,7 @@ function MachineStatusRow({
     machineNames(list.map((entry) => entry.label));
   const parts = [
     named("everything").length > 0 ? `can control ${names(named("everything"))}` : "",
-    named("look-only").length > 0 ? `can look at ${names(named("look-only"))}` : "",
+    named("view-only").length > 0 ? `can view ${names(named("view-only"))}` : "",
     unconnected.length > 0 ? `can work on ${names(unconnected)}` : "",
     refusing.length > 0
       ? `can't reach ${names(refusing)}, which accept${refusing.length === 1 ? "s" : ""} nothing`
