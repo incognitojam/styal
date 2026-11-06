@@ -91,12 +91,6 @@ export function UpdateEverythingDialog({
   );
 }
 
-const APP_LABELS = {
-  "this-app": "This app",
-  server: "Server",
-  "desktop-app": "Desktop app",
-} as const;
-
 function UpdateEverythingDialogContent({
   version,
   providerCount,
@@ -155,56 +149,57 @@ function UpdateEverythingDialogContent({
               {note}
             </p>
           ))}
-          {updating.map((row) => (
-            <section
-              aria-label={row.label}
-              key={row.environmentId ?? "this-app"}
-              className="min-w-0 border-t pt-3 text-sm"
-            >
-              <div className="flex items-center gap-2">
-                <EnvironmentMachineIcon
-                  aria-hidden
-                  kind={
-                    (row.environmentId && machines.get(row.environmentId)) ||
-                    (row.app === "this-app" ? "desktop" : "server")
-                  }
-                  className="size-4 shrink-0 text-muted-foreground"
-                />
-                <h3 className="flex min-w-0 font-semibold text-foreground">
-                  <MiddleTruncate value={row.label} />
-                </h3>
-                <span className="shrink-0 text-muted-foreground text-xs">
-                  {row.app !== null
-                    ? APP_LABELS[row.app]
-                    : row.skipped !== null
-                      ? "styal skipped"
-                      : "No restart"}
-                </span>
-                {row.app === "this-app" && othersRestart ? (
-                  <span className="ms-auto shrink-0 text-muted-foreground text-xs">
-                    Restarts last
-                  </span>
+          {updating.map((row) => {
+            const note =
+              row.app === "this-app" && othersRestart
+                ? "Restarts last"
+                : row.app !== null
+                  ? null
+                  : row.skipped !== null
+                    ? "styal skipped"
+                    : "No restart";
+            return (
+              <section
+                aria-label={row.label}
+                key={row.environmentId ?? "this-app"}
+                className="min-w-0 border-t pt-3 text-sm"
+              >
+                <div className="flex items-center gap-2">
+                  <EnvironmentMachineIcon
+                    aria-hidden
+                    kind={
+                      (row.environmentId && machines.get(row.environmentId)) ||
+                      (row.app === "this-app" ? "desktop" : "server")
+                    }
+                    className="size-4 shrink-0 text-muted-foreground"
+                  />
+                  <h3 className="flex min-w-0 font-semibold text-foreground">
+                    <MiddleTruncate value={row.label} />
+                  </h3>
+                  {note !== null ? (
+                    <span className="ms-auto shrink-0 text-muted-foreground text-xs">{note}</span>
+                  ) : null}
+                </div>
+                {row.providers.length > 0 ? (
+                  <p className="mt-1 text-muted-foreground text-xs">
+                    Updates{" "}
+                    {row.providers.map((provider, index) => (
+                      <Fragment key={provider}>
+                        <span className="whitespace-nowrap">{provider}</span>
+                        {index < row.providers.length - 1 ? ", " : null}
+                      </Fragment>
+                    ))}
+                  </p>
                 ) : null}
-              </div>
-              {row.providers.length > 0 ? (
-                <p className="mt-1 text-muted-foreground text-xs">
-                  Updates{" "}
-                  {row.providers.map((provider, index) => (
-                    <Fragment key={provider}>
-                      <span className="whitespace-nowrap">{provider}</span>
-                      {index < row.providers.length - 1 ? ", " : null}
-                    </Fragment>
-                  ))}
-                </p>
-              ) : null}
-              {activity.threadActivity.some((item) => belongsTo(item, row)) ? (
-                <HostActivityThreadList
-                  withinMachine
-                  activity={activity.threadActivity.filter((item) => belongsTo(item, row))}
-                />
-              ) : null}
-            </section>
-          ))}
+                {activity.threadActivity.some((item) => belongsTo(item, row)) ? (
+                  <HostActivityThreadList
+                    withinMachine
+                    activity={activity.threadActivity.filter((item) => belongsTo(item, row))}
+                  />
+                ) : null}
+              </section>
+            );
+          })}
           {skipped.length > 0 ? (
             <Collapsible>
               <CollapsibleTrigger className="flex items-center gap-1 text-muted-foreground text-xs hover:text-foreground data-panel-open:[&_svg]:rotate-90">
