@@ -51,7 +51,7 @@ const readonlyBrowserTool = <T extends Tool.Any>(tool: T): T =>
 
 const PreviewStatusTool = Tool.make("preview_status", {
   description:
-    "Report preview tab state: owner, pending dialog, URL, title, loading, viewport, size, and whether the user sees it. Preview tools work on tabs the user cannot see. `tabs` lists this thread's tabs. `profiles` lists logins for `preview_open`. Read any listed tab. Act only on your tab, or an unclaimed tab with no human in control.",
+    "Report tab state: owner, dialog, URL, title, loading and viewport. No tab (`tabId:null`): try `preview_open`. `tabs`: thread tabs; `profiles`: logins. Read any tab; act on yours or unclaimed tabs without human control.",
   parameters: PreviewAutomationTabTargetInput,
   success: PreviewAutomationStatus,
   failure: PreviewToolFailure,

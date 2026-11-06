@@ -245,6 +245,8 @@ export const McpToolUseCase = Schema.Struct({
     /** delegate_task `role` for a delegated child. T3 builds the child's first message from it. */
     delegateRole: Schema.optional(OrchestratorMcpTaskRole),
     context: Schema.optional(Schema.String),
+    /** Reads current guidance before Link sign-in, excluding unrelated account instructions. */
+    appTestingSkill: Schema.optional(Schema.Boolean),
     priorTurns: Schema.optional(
       Schema.Array(
         Schema.Struct({
@@ -1990,7 +1992,24 @@ const main = Effect.gen(function* () {
       .filter((name) => name.endsWith(".ndjson"))
       .toSorted()
       .map((name) => path.join(casesDir, name));
-  const cases = (yield* Effect.forEach(caseFiles, (file) => readNdjson(file, decodeCase))).flat();
+  const loadedCases = (yield* Effect.forEach(caseFiles, (file) =>
+    readNdjson(file, decodeCase),
+  )).flat();
+  const cases = yield* Effect.forEach(loadedCases, (testCase) =>
+    Effect.gen(function* () {
+      if (!testCase.setup.appTestingSkill) return testCase;
+      const skill = yield* fs.readFileString(
+        path.resolve(import.meta.dirname, "../../.agents/skills/test-styal-app/SKILL.md"),
+      );
+      return {
+        ...testCase,
+        setup: {
+          ...testCase.setup,
+          context: `${testCase.setup.context ?? ""}\n\nThe repository app-testing skill has already been loaded:\n${skill.split("## Sign in to styal Link")[0]}`,
+        },
+      };
+    }),
+  );
   const wanted = flags.case?.flatMap((ids) => ids.split(","));
   const codex = isCodex(flags.model);
   const harness = codex ? "codex" : "claude";

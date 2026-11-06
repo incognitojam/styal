@@ -5,14 +5,17 @@ description: Test styal's web and desktop UI through its built-in Browser panel 
 
 # Test styal web and desktop
 
-Use styal's built-in Browser panel for verification. If its tools are absent or
-the panel reports unavailable, explain the blocker and stop verification.
-Do not install or switch to another automation system. For native mobile
-testing, use [test-styal-mobile](../test-styal-mobile/SKILL.md).
+Use styal's built-in Browser panel for verification. A status with no tab
+(`tabId: null`) means you should try `preview_open`, even when an older server
+reports `available: false`. Do not stop on that empty status alone.
+If the tools are absent, opening reports unsupported, or two panel attempts fail
+at the same step, use headless Chromium through `playwright-core` against the same isolated dev server and disclose the
+fallback. For native mobile testing, use
+[test-styal-mobile](../test-styal-mobile/SKILL.md).
 
 ## Start the app
 
-Reuse this task's healthy dev server. Otherwise run `vp run dev` from the
+Reuse this task's healthy dev server. Otherwise run `T3CODE_DEV_SEED=0 vp run dev` from the
 repository root and retain its terminal session. Use the worktree's ignored
 `.styal` state and read the actual ports and pairing URL from the dev-runner output.
 Never run against `~/.styal/userdata` or set `VITE_HTTP_URL` or `VITE_WS_URL`.
@@ -28,6 +31,18 @@ closed. Navigate to the complete startup pairing URL once with
 `preview_navigate`, then use `preview_snapshot` and styal's interaction tools.
 If the token was consumed or expired, run `node apps/server/src/bin.ts pair`
 for a fresh one. Keep using the same tab.
+
+## When the Browser panel cannot open
+
+Use the existing `playwright-core` package and an installed Chromium executable.
+Launch headless with a fresh browser context; keep any scripts, captures and
+persistent test profile under the worktree's ignored `.scratch/`. Never attach
+to a user's browser or reuse their profile. Use the same isolated server and
+startup pairing URL, with synthetic fixtures and the origin rules above. Do
+not point the fallback at an installed server or copy live state to make it work.
+Inspect the affected flow, browser console and failed requests, and capture the
+result. Close the headless browser you started when finished, and say in your
+report that verification used a headless fallback.
 
 ## Sign in to styal Link
 
