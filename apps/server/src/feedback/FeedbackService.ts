@@ -125,7 +125,7 @@ const make = Effect.gen(function* () {
         attention: "input",
         options: [
           { decision: "accept", label: "Post publicly" },
-          { decision: "decline", label: "Don't post" },
+          { decision: "decline", label: "Don't send" },
         ],
       });
     const wait = Effect.gen(function* () {

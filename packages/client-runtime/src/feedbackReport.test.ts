@@ -57,8 +57,8 @@ describe("feedbackReportDeclineOptions", () => {
     expect(
       feedbackReportDeclineOptions([
         { decision: "accept", label: "Post publicly" },
-        { decision: "decline", label: "Don't post" },
+        { decision: "decline", label: "Don't send" },
       ]),
-    ).toEqual([{ decision: "decline", label: "Don't post" }]);
+    ).toEqual([{ decision: "decline", label: "Don't send" }]);
   });
 });
