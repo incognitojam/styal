@@ -32,13 +32,11 @@ Add `--browser` to open a browser automatically.
 
 Linked worktrees default to their own `.styal/userdata`, even when `STYAL_HOME` is set.
 The main checkout defaults to `~/.styal/dev/userdata`. An explicit `--home-dir` wins in both cases.
-The first start in a worktree seeds its empty database from a read-only copy of
-`~/.styal/userdata/statev2.sqlite` if the source is at most 500 MiB. Larger sources warn
-and dev starts with an empty database. `--no-seed` or `T3CODE_DEV_SEED=0` skips seeding.
-To copy a larger source, run `vp run migrate-dev-db` with dev stopped. It may use
-substantial disk space before pruning.
-Never run a development server against the live `~/.styal/userdata`.
-See [test data](../../AGENTS.md#test-data) for copying a consistent database snapshot.
+The first start copies the shared offline `~/.styal/dev-seed/statev2.sqlite` when the worktree has no database and the seed is at most 500 MiB. Missing or oversized seeds start empty with a message. Old seeds are acceptable. `--no-seed` or `T3CODE_DEV_SEED=0` skips seeding. Dev startup never reads the live database.
+
+Run `vp run build-dev-seed` explicitly on a POSIX host with Python 3 to refresh the seed, from a checkout matching the installed server's migrations. It serializes builders across worktrees and attempts at most one refresh per day. Its read-only incremental backup releases the source read lock between 256-page steps, and the snapshot subprocess is killed after 30 seconds. All pruning, migration and compaction happen on the offline snapshot. A failed refresh retains the old seed. The seed keeps recent stopped thread families and removes scheduled tasks, pending work, auth sessions and environment links.
+
+With dev stopped, `vp run migrate-dev-db` refreshes a worktree from that seed. `--source` is for offline databases, never the live install. Data only flows into the sandbox; never run a dev server against `~/.styal/userdata` or copy data back there. See [test data](../../AGENTS.md#test-data).
 
 A worktree's settle action can run `node scripts/teardown-worktree.ts`. When the last open thread
 there settles, it stops the worktree's `dev-runner` processes and anything else from the worktree

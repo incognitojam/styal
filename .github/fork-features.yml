@@ -3763,6 +3763,31 @@ features:
       tracking: []
       retire_when: Upstream adds a command that opens the next thread waiting on the user in the same precedence.
 
+  - id: offline-dev-seed
+    title: Seed worktrees without routine live database reads
+    status: maintained
+    prs: []
+    invariants:
+      - Dev startup and migrate-dev-db consume only an offline seed; a missing seed never falls back to the live database.
+      - Explicit seed refreshes are serialized across output directories, attempted at most daily, and bound live incremental backup work to a 30-second child process deadline.
+      - Seeds retain stopped thread families and remove scheduled tasks, pending work, auth sessions, and environment links before atomic publication.
+    rationale: Long live read transactions can pin the WAL and block the maintainer server's write admission.
+    implementation_paths:
+      - apps/server/scripts/migrate-dev-db.ts
+      - scripts/build-dev-seed.py
+      - scripts/dev-runner.ts
+    upstream_paths:
+      - scripts/dev-runner.ts
+    tests:
+      - apps/server/scripts/migrate-dev-db.test.ts
+      - scripts/build-dev-seed.test.py
+      - scripts/build-dev-seed.test.ts
+      - scripts/dev-runner.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream provides bounded offline dev seeds with equivalent isolation and pruning guarantees.
+
   - id: pair-cli-startup
     title: Avoid redundant CLI loading and Tailscale pairing probes
     status: maintained
