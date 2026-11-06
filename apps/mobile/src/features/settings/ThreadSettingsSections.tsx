@@ -301,8 +301,8 @@ function BetaSettingsSection() {
       </SettingsSection>
       <Text className="px-2 text-sm text-foreground-muted">
         Let agents on a machine work on your other machines, and theirs on it. Work together in
-        Connections turns this on for you. While it is off, agents start nothing new on another
-        machine; tasks already running finish.
+        Connections turns this on for you. While off, agents start nothing new on another machine;
+        running tasks finish.
       </Text>
     </View>
   );
@@ -340,9 +340,8 @@ function ToolCallVisibilitySection() {
         ))}
       </SettingsSection>
       <Text className="px-2 text-sm text-foreground-muted">
-        Hide the commands, edits, and searches agents run, so a thread reads like a conversation.
-        Hide successful keeps calls that fail. Zen also hides the agent&apos;s in-between messages
-        and shows only final answers. Approvals, questions, and errors always show.
+        Hide the commands, edits, and searches agents run. Hide successful keeps failures. Zen shows
+        only final answers. Approvals, questions, and errors always show.
       </Text>
     </View>
   );

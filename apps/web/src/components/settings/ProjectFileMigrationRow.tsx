@@ -57,7 +57,7 @@ export function ProjectFileMigrationRow(props: {
       description={
         state === "failed"
           ? "Could not write styal.json. Check that the project folder is writable, then try again."
-          : `Writes styal.json to ${props.projectRoot}${props.environmentLabel ? ` on ${props.environmentLabel}` : ""} with t3.json's settings, and turns its scripts into shared actions. Nothing is committed: review the file, commit it, then delete t3.json. Actions that run automatically need your approval first.`
+          : `Writes styal.json to ${props.projectRoot}${props.environmentLabel ? ` on ${props.environmentLabel}` : ""} with t3.json's settings, and turns its scripts into shared actions. Review and commit the file, then delete t3.json. Actions that run automatically need your approval first.`
       }
       control={
         <Button

@@ -395,7 +395,7 @@ export function DeviceSourcesSettings(props: {
       title="Device sources"
       serverScoped
       settingKeys={["easDeviceHosts", "simlockDeviceHosts"]}
-      description="Run iOS Simulators in Expo's cloud from this environment. Sessions bill the Expo account until they stop, so each host limits how many run and for how long. Editing or removing a host stops its running sessions."
+      description="Run iOS Simulators in Expo's cloud. Sessions bill the Expo account until they stop, so each host limits how many run and for how long. Editing or removing a host stops its running sessions."
       control={addMenu}
     >
       {rows.map((row) => (

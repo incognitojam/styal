@@ -91,7 +91,7 @@ function ToolCallVisibilityRow() {
   return (
     <SettingsRow
       {...searchableSetting("tool-call-visibility")}
-      description="Hide the commands, edits, and searches agents run, so a thread reads like a conversation. Hide successful keeps calls that fail. Zen also hides the agent's in-between messages and shows only final answers. Approvals, questions, and errors always show."
+      description="Hide the commands, edits, and searches agents run. Hide successful keeps failures. Zen shows only final answers. Approvals, questions, and errors always show."
       control={
         <div className="w-full sm:w-40">
           <Select
@@ -125,7 +125,7 @@ function GuestLinksRowWithSignIn() {
   return (
     <SettingsRow
       {...searchableSetting("guest-links")}
-      description="Share a thread with a guest who watches it live in their browser and sends messages you approve. Sign in to styal Link to use guest links."
+      description="Share a thread with a guest who watches it live in a browser and sends messages you approve. Sign in to styal Link to use guest links."
       control={
         <Button size="sm" variant="outline" onClick={openAuthPrompt}>
           Sign in
@@ -156,12 +156,12 @@ function GuestLinksRow() {
       managed={settings.guestSharingEnabled ? undefined : connectDenial}
       description={
         <>
-          Share a thread with a guest who watches it live in their browser and sends messages you
+          Share a thread with a guest who watches it live in a browser and sends messages you
           approve. Needs styal Link: sign in and link this machine in{" "}
           <Link to="/settings/access" className="underline underline-offset-2">
             Sharing & access
           </Link>
-          . While it is off, every guest link stops working.
+          . Turning it off stops every guest link.
         </>
       }
       control={
@@ -190,8 +190,8 @@ function LinkedEnvironmentsRow() {
           <Link to="/settings/connections" className="underline underline-offset-2">
             Connections
           </Link>{" "}
-          turns this on for you. While it is off, agents start nothing new on another machine; tasks
-          already running finish.
+          turns this on for you. While off, agents start nothing new on another machine; running
+          tasks finish.
         </>
       }
       control={
