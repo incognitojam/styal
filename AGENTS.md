@@ -151,7 +151,7 @@ An empty database is a bad test. Seed your worktree's `.styal` with a copy of re
   });
   ```
 
-- Verify user-visible frontend changes with one integrated pass in a real client: `test-styal-app` for web, `test-styal-mobile` for mobile. The primary agent does this once after integrating. Subagents do not launch their own dev servers.
+- Verify user-visible frontend changes with one integrated pass in a real client: `test-styal-app` for web, `test-styal-mobile` for mobile. A component mounted in a separate harness doesn't count as evidence; synthetic data in the real client is fine. The primary agent does this once after integrating. Subagents do not launch their own dev servers.
 
 - Real agent turns cost money. To watch a turn stream through the pipeline and UI, use the free `Replay (dev)` provider that `vp run dev` registers; [test-styal-app](.agents/skills/test-styal-app/SKILL.md) shows how to start one. Use a real provider only when the change depends on that provider's behavior, and then pick its cheapest model, such as Haiku for Claude or Luna for Codex.
 
