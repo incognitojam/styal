@@ -1,4 +1,9 @@
+// @effect-diagnostics nodeBuiltinImport:off
+import * as NodeChildProcess from "node:child_process";
+import * as NodeFS from "node:fs";
+import * as NodePath from "node:path";
 import { assert, describe, it } from "@effect/vitest";
+import { parse } from "yaml";
 
 import {
   adaptationErrors,
@@ -60,6 +65,23 @@ describe("compareWithUpstream", () => {
     assert.deepEqual(compareWithUpstream({ upstreamPatches: [upstream], forkPatch: fork }), []);
   });
 
+  it("distinguishes modes, binary content, order and context", () => {
+    for (const [upstream, fork] of [
+      ["index 111..222 100644\n+x", "index 111..222 100755\n+x"],
+      ["old mode 100644\nnew mode 100755", "old mode 100644\nnew mode 100644"],
+      ["GIT binary patch\nliteral 1\nA", "GIT binary patch\nliteral 1\nB"],
+      ["@@ -1,2 +1,2 @@\n+a\n+b", "@@ -1,2 +1,2 @@\n+b\n+a"],
+      ["@@ -1 +1 @@\n context-a\n+x", "@@ -1 +1 @@\n context-b\n+x"],
+    ]) {
+      assert.isNotEmpty(
+        compareWithUpstream({
+          upstreamPatches: [patch("file", [upstream!])],
+          forkPatch: patch("file", [fork!]),
+        }),
+      );
+    }
+  });
+
   it("combines several upstream sources", () => {
     const first = patch("src/a.ts", ["@@ -1 +1 @@", "-a", "+b"]);
     const second = patch("src/b.ts", ["@@ -1 +1 @@", "-c", "+d"]);
@@ -79,10 +101,38 @@ describe("compareWithUpstream", () => {
     assert.deepEqual(compareWithUpstream({ upstreamPatches: [upstream], forkPatch: fork }), [
       {
         path: "src/a.ts",
-        upstreamLines: ["-one", "-two", "+uno", "+dos"],
-        forkLines: ["-one", "-two", "+uno", "+zwei"],
+        upstreamLines: [
+          "index 100644",
+          "--- a/src/a.ts",
+          "+++ b/src/a.ts",
+          "@@ -,2 +,2 @@",
+          "-one",
+          "-two",
+          "+uno",
+          "+dos",
+        ],
+        forkLines: [
+          "index 100644",
+          "--- a/src/a.ts",
+          "+++ b/src/a.ts",
+          "@@ -,2 +,2 @@",
+          "-one",
+          "-two",
+          "+uno",
+          "+zwei",
+        ],
       },
-      { path: "src/fork.ts", upstreamLines: [], forkLines: ["+fork only"] },
+      {
+        path: "src/fork.ts",
+        upstreamLines: [],
+        forkLines: [
+          "index 100644",
+          "--- a/src/fork.ts",
+          "+++ b/src/fork.ts",
+          "@@ -,0 + @@",
+          "+fork only",
+        ],
+      },
     ]);
   });
 });
@@ -276,5 +326,101 @@ describe("renderCommitReviews", () => {
 
     assert.include(summary, "… 21 more lines");
     assert.include(summary, "````diff");
+  });
+});
+
+describe("intake fixture histories", () => {
+  it("accounts for binary, mode, reordered, renamed and earlier-push changes", () => {
+    const root = NodePath.resolve(import.meta.dirname, "../../../.scratch");
+    NodeFS.mkdirSync(root, { recursive: true });
+    const cwd = NodeFS.mkdtempSync(NodePath.join(root, "intake-holes-history-"));
+    const git = (...args: string[]) =>
+      NodeChildProcess.execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
+    const commit = () => {
+      git("add", "-A");
+      git(
+        "-c",
+        "user.name=Synthetic",
+        "-c",
+        "user.email=synthetic@example.invalid",
+        "commit",
+        "-qm",
+        "fixture",
+      );
+      return git("rev-parse", "HEAD");
+    };
+    const diff = (base: string, head: string) =>
+      git("diff", "--binary", "--full-index", "--no-renames", "-U3", base, head);
+    try {
+      git("init", "-q");
+      NodeFS.writeFileSync(NodePath.join(cwd, "native.swift"), "a\nb\n");
+      NodeFS.writeFileSync(NodePath.join(cwd, "binary"), Buffer.from([0, 1]));
+      const base = commit();
+      NodeFS.chmodSync(NodePath.join(cwd, "native.swift"), 0o755);
+      const mode = commit();
+      NodeFS.writeFileSync(NodePath.join(cwd, "binary"), Buffer.from([0, 2]));
+      const binary = commit();
+      NodeFS.writeFileSync(NodePath.join(cwd, "native.swift"), "b\na\n");
+      const reordered = commit();
+      git("mv", "native.swift", "renamed.swift");
+      const rename = commit();
+      NodeFS.writeFileSync(NodePath.join(cwd, "README.md"), "last push");
+      const head = commit();
+      for (const [before, after] of [
+        [base, mode],
+        [mode, binary],
+        [binary, reordered],
+        [reordered, rename],
+      ]) {
+        assert.isNotEmpty(
+          compareWithUpstream({ upstreamPatches: [], forkPatch: diff(before!, after!) }),
+        );
+      }
+      const paths = git("diff", "--name-only", "--no-renames", base, head).split("\n");
+      assert.includeMembers(paths, ["native.swift", "renamed.swift", "binary", "README.md"]);
+      assert.equal(git("diff", "--name-only", rename, head), "README.md");
+      const workflow = parse(
+        NodeFS.readFileSync(
+          NodePath.resolve(import.meta.dirname, "../../../.github/workflows/fork-macos.yml"),
+          "utf8",
+        ),
+      );
+      const detector = workflow.jobs.changes.steps.find(
+        (step: { id?: string }) => step.id === "detect",
+      ).run;
+      const bin = NodePath.join(cwd, "bin");
+      NodeFS.mkdirSync(bin);
+      NodeFS.writeFileSync(
+        NodePath.join(bin, "gh"),
+        [
+          "#!/bin/bash",
+          'case "$2" in',
+          `*/git/ref/heads/main) echo '${base}' ;;`,
+          `*/compare/${base}...*) printf 'apps/mobile/Test.swift\\nREADME.md\\n' ;;`,
+          "*/compare/*) echo README.md ;;",
+          "*) exit 1 ;;",
+          "esac",
+        ].join("\n"),
+        { mode: 0o755 },
+      );
+      const output = NodePath.join(cwd, "outputs");
+      NodeChildProcess.execFileSync("bash", ["-c", detector], {
+        cwd,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          PATH: `${bin}:${process.env.PATH}`,
+          GITHUB_OUTPUT: output,
+          GITHUB_REPOSITORY: "synthetic/fork",
+          GITHUB_REF: "refs/heads/intake/fixture",
+          PR_NUMBER: "",
+          BEFORE_SHA: rename,
+          GITHUB_SHA: head,
+        },
+      });
+      assert.include(NodeFS.readFileSync(output, "utf8"), "mobile_native=true");
+    } finally {
+      NodeFS.rmSync(cwd, { recursive: true, force: true });
+    }
   });
 });

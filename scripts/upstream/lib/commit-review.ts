@@ -82,26 +82,49 @@ function linesMissingFrom(
   });
 }
 
-/**
- * Compares what the upstream sources change with what the picked commit changes, file by file.
- * Line numbers and context are ignored, so a clean cherry-pick onto moved code still matches.
- */
+/** Compare ordered patches, retaining context, modes and binary payloads. */
 export function compareWithUpstream(input: {
   readonly upstreamPatches: ReadonlyArray<string>;
   readonly forkPatch: string;
 }): ReadonlyArray<FileDifference> {
-  const upstream = changedLinesByFile(input.upstreamPatches);
-  const fork = changedLinesByFile([input.forkPatch]);
-  const paths = [...new Set([...upstream.keys(), ...fork.keys()])].toSorted((left, right) =>
-    left.localeCompare(right),
-  );
-  return paths.flatMap((path) => {
+  const read = (patches: ReadonlyArray<string>) => {
+    const files = new Map<string, string[]>();
+    for (const patch of patches) {
+      let current: string[] | undefined;
+      for (const line of patch.split("\n")) {
+        const header = /^diff --git a\/(.+) b\/(.+)$/u.exec(line);
+        if (line.startsWith("diff --") && !header) {
+          throw new Error("Unsupported diff header; upstream comparison is incomplete.");
+        }
+        if (header) {
+          const path = header[2]!;
+          current = files.get(path) ?? [];
+          files.set(path, current);
+        } else if (current && line !== "") {
+          if (line.startsWith("index ")) {
+            current.push(line.replace(/^index [0-9a-f]+\.\.[0-9a-f]+/u, "index"));
+            continue;
+          }
+          current.push(line.replace(/^@@ -\d+(,\d+)? \+\d+(,\d+)? @@/u, "@@ -$1 +$2 @@"));
+        }
+      }
+    }
+    return files;
+  };
+  const upstream = read(input.upstreamPatches);
+  const fork = read([input.forkPatch]);
+  return [...new Set([...upstream.keys(), ...fork.keys()])].toSorted().flatMap((path) => {
     const upstreamLines = upstream.get(path) ?? [];
     const forkLines = fork.get(path) ?? [];
-    return linesMissingFrom(upstreamLines, forkLines).length === 0 &&
-      linesMissingFrom(forkLines, upstreamLines).length === 0
+    return JSON.stringify(upstreamLines) === JSON.stringify(forkLines)
       ? []
-      : [{ path, upstreamLines, forkLines }];
+      : [
+          {
+            path,
+            upstreamLines,
+            forkLines,
+          },
+        ];
   });
 }
 

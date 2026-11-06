@@ -162,21 +162,32 @@ function commitExists(sha: string): boolean {
 function patch(sha: string, base = `${sha}^`): string {
   const result = NodeChildProcess.spawnSync(
     "git",
-    ["diff", "--no-color", "--no-renames", "--no-ext-diff", "-U0", base, sha],
+    [
+      "diff",
+      "--no-color",
+      "--no-renames",
+      "--no-ext-diff",
+      "--no-textconv",
+      "--binary",
+      "--full-index",
+      "-U3",
+      base,
+      sha,
+    ],
     { cwd: repoRoot, encoding: "utf8", maxBuffer: 256 * 1024 * 1024 },
   );
   if (result.status !== 0) throw new Error(result.stderr.trim() || `git diff ${sha} failed.`);
   return result.stdout;
 }
 
-/** The blob a path has at a revision, or null when the path does not exist there. */
-function blobAt(revision: string, path: string): string | null {
-  const result = NodeChildProcess.spawnSync(
-    "git",
-    ["rev-parse", "--verify", "--quiet", `${revision}:${path}`],
-    { cwd: repoRoot, encoding: "utf8" },
-  );
-  return result.status === 0 ? result.stdout.trim() : null;
+/** Mode, type and object identity at a path; null only when the path is absent. */
+function treeEntryAt(revision: string, path: string): string | null {
+  const result = NodeChildProcess.spawnSync("git", ["ls-tree", revision, "--", path], {
+    cwd: repoRoot,
+    encoding: "utf8",
+  });
+  if (result.status !== 0) throw new Error(result.stderr || "Could not read tree entry.");
+  return result.stdout.trim() || null;
 }
 
 /** A diff between two lists of changed lines, keeping one line of context. */
@@ -217,7 +228,9 @@ function reviewCommits(input: {
     const snapshots = input.tracked
       .filter((pr) => pr.snapshot && provenance.pullRequestNumbers.includes(pr.number))
       .map((pr) => pr.snapshot!);
-    const paths = lines(git(["diff-tree", "--no-commit-id", "--name-only", "-r", sha]));
+    const paths = git(["diff", "--name-only", "--no-renames", "-z", `${sha}^1`, sha])
+      .split("\0")
+      .filter(Boolean);
     const trackingOnly = paths.length === 1 && paths[0] === ".github/upstream-tracked-prs.json";
     const featureIds = findForkFeatureOverlaps(input.ledger, paths).map(
       ({ feature }) => feature.id,
@@ -259,13 +272,32 @@ function reviewCommits(input: {
                     );
                     return (
                       lastSource === -1 ||
-                      blobAt(sha, file.path) !== blobAt(sourceHeads[lastSource]!, file.path)
+                      treeEntryAt(sha, file.path) !==
+                        treeEntryAt(sourceHeads[lastSource]!, file.path)
                     );
                   })
                   .map((file) => ({
                     ...file,
                     interdiff: interdiff(input.scratch, file.upstreamLines, file.forkLines),
                   }));
+                const editsOnly = (value: string) =>
+                  value
+                    .split("\n")
+                    .filter((line) => !line.startsWith(" ") && !line.startsWith("@@"))
+                    .join("\n");
+                if (
+                  files.length > 0 &&
+                  compareWithUpstream({
+                    upstreamPatches: upstreamPatches.map(editsOnly),
+                    forkPatch: editsOnly(patch(sha)),
+                  }).length === 0
+                ) {
+                  return {
+                    status: "unavailable" as const,
+                    reason:
+                      "ordered edits match, but surrounding fork context differs; review the full diff.",
+                  };
+                }
                 return files.length === 0
                   ? { status: "matches" as const }
                   : { status: "adapted" as const, files };
@@ -565,7 +597,9 @@ try {
     ),
     mainIsAncestor: isAncestor(baseSha, headSha),
     mainCommitsMissing: lines(git(["log", "--format=%h %s", "-20", `${headSha}..${baseSha}`])),
-    changedPaths: lines(git(["diff", "--name-only", "--no-renames", `${baseSha}...${headSha}`])),
+    changedPaths: git(["diff", "--name-only", "--no-renames", "-z", `${baseSha}...${headSha}`])
+      .split("\0")
+      .filter(Boolean),
     ledger,
     commitPullRequests: upstreamCommitPullRequests(ledger.upstream_repository, commitMessages),
     candidateLedgerErrors: candidateLedger.errors,

@@ -54,11 +54,45 @@ function audit(overrides: Partial<Parameters<typeof auditUpstreamIntakeCandidate
     changedPaths: ["apps/server/src/usage/usageReports.ts"],
     ledger,
     commitPullRequests: new Map(),
+    commitReviews: [
+      {
+        sha: "b".repeat(40),
+        subject: "synthetic",
+        pullRequestNumbers: [1234],
+        sourceCommits: [],
+        listedCommits: [],
+        adaptationNote: null,
+        preservedFeatureIds: [],
+        featureIds: [],
+        comparison: { status: "matches" },
+      },
+    ],
     ...overrides,
   });
 }
 
 describe("upstream intake audit", () => {
+  it("requires complete available comparisons before automatic promotion", () => {
+    assert.isFalse(audit({ commitReviews: [] }).automaticEligible);
+    assert.isFalse(
+      audit({
+        commitReviews: [
+          {
+            sha: "b".repeat(40),
+            subject: "synthetic",
+            pullRequestNumbers: [1234],
+            sourceCommits: [],
+            listedCommits: [],
+            adaptationNote: null,
+            preservedFeatureIds: [],
+            featureIds: [],
+            comparison: { status: "unavailable", reason: "source missing" },
+          },
+        ],
+      }).automaticEligible,
+    );
+  });
+
   it("marks a structurally valid low-risk candidate as automatically eligible", () => {
     const result = audit();
 
@@ -491,13 +525,13 @@ describe("upstream intake audit", () => {
     const download = workflow.jobs.validate.steps.find(
       (step) => step.name === "Download the native fingerprint verdict",
     );
-    assert.equal(download?.with?.["run-id"], "${{ github.event.workflow_run.id }}");
+    assert.isUndefined(download);
 
     const fingerprint = workflow.jobs.validate.steps.find(
-      (step) => step.name === "Read the native fingerprint verdict",
+      (step) => step.name === "Determine native evidence from trusted policy",
     );
-    assert.include(fingerprint?.run ?? "", '"$CANDIDATE_SHA"');
-    assert.include(fingerprint?.run ?? "", "verdict=unknown");
+    assert.include(fingerprint?.run ?? "", "process.env.CANDIDATE_SHA");
+    assert.include(fingerprint?.run ?? "", "touchesNativeFingerprint(paths)");
 
     const lane = workflow.jobs.validate.steps.find(
       (step) => step.name === "Choose the promotion lane",

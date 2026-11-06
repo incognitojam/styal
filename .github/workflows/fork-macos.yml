@@ -114,6 +114,10 @@ jobs:
               fail_open "GitHub listed only ${listed} of ${expected} changed files."
             fi
           else
+            if [[ "$GITHUB_REF" == refs/heads/intake/* ]]; then
+              BEFORE_SHA=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha') \
+                || fail_open "Could not resolve the intake base."
+            fi
             rows=$(gh api "repos/${GITHUB_REPOSITORY}/compare/${BEFORE_SHA}...${GITHUB_SHA}" --jq ".files[]? | ${row}") \
               || fail_open "Could not resolve changed files."
 
