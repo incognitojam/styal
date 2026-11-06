@@ -106,7 +106,7 @@ function useWorkTogetherMachine(
       linkUrl,
     }),
     hasDevices:
-      serverConfig?.settings.incomingMachineAccess !== "look-only" &&
+      serverConfig?.settings.incomingMachineAccess !== "view-only" &&
       serverConfig?.settings.incomingMachineAccess !== "nothing" &&
       device.state.supportsEnvironmentHosts === true &&
       device.state.hosts.some(

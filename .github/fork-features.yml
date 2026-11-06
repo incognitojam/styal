@@ -3255,10 +3255,10 @@ features:
     status: maintained
     prs: [1343]
     invariants:
-      - "`incomingMachineAccess` (`everything`, `look-only`, `nothing`) is enforced by the receiving machine on every `/mcp` request from a machine, and for device sharing. It defaults to `everything`, which is what a new connection already allowed."
+      - "`incomingMachineAccess` (`everything`, `view-only`, `nothing`) is enforced by the receiving machine on every `/mcp` request from a machine, and for device sharing. It defaults to `everything`, which is what a new connection already allowed."
       - It caps and never widens. A session paired with less stays narrow until it is paired again, and Finish offers that.
       - New connections are always paired at full access with no picker in any client, so the receiving machine's setting is the only control. Agents can't choose access or change the setting.
-      - Moving to `look-only` or `nothing` interrupts running threads other machines started and closes devices they hold. Clients show how many threads will stop and ask first. Each thread stays readable and continuable on that machine.
+      - Moving to `view-only` or `nothing` interrupts running threads other machines started and closes devices they hold. Clients show how many threads will stop and ask first. Each thread stays readable and continuable on that machine.
       - Refused requests are not failures of the connection, so they don't show as failing on the calling machine.
       - The wording states two limits. Can control means the same reach as that machine's user. Nothing doesn't isolate the machine from what comes back when its own agents work elsewhere.
     rationale: Access per pair of machines was the noisiest part of setting up several machines and offered no real boundary, because agents run as the machine's user. Per-pair exceptions were cut on purpose.

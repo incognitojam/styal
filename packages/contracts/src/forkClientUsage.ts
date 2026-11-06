@@ -338,7 +338,7 @@ export const ForkClientUsageInput = Schema.Union([
   Schema.Struct({
     feature: Schema.Literal("machine-access"),
     action: Schema.Literal("set"),
-    level: Schema.Literals(["everything", "look-only", "nothing"]),
+    level: Schema.Literals(["everything", "view-only", "nothing"]),
     stoppedThreads: Schema.Boolean,
   }),
   ReportedClientSettingsSnapshot,

@@ -128,7 +128,7 @@ it.effect("caps every incoming machine at the machine's setting, and never widen
 
       yield* linkTo(links, b, "full-access");
       expect(yield* accessIs).toBe("full-access");
-      yield* b.settings.updateSettings({ incomingMachineAccess: "look-only" });
+      yield* b.settings.updateSettings({ incomingMachineAccess: "view-only" });
       expect(yield* accessIs).toBe("read-only");
       yield* b.settings.updateSettings({ incomingMachineAccess: "nothing" });
       expect(yield* access.pipe(Effect.flip)).toMatchObject({
@@ -146,7 +146,7 @@ it.effect("caps every incoming machine at the machine's setting, and never widen
       expect(yield* accessIs).toBe("read-only");
       yield* linkTo(links, b, "auto");
       expect(yield* accessIs).toBe("auto");
-      yield* b.settings.updateSettings({ incomingMachineAccess: "look-only" });
+      yield* b.settings.updateSettings({ incomingMachineAccess: "view-only" });
       expect(yield* accessIs).toBe("read-only");
       yield* b.settings.updateSettings({ incomingMachineAccess: "everything" });
       yield* linkTo(links, b, "full-access");

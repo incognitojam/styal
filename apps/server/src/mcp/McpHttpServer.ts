@@ -212,12 +212,12 @@ const machineAcceptsNothing = HttpServerResponse.jsonUnsafe(
   { status: 403, headers: { "cache-control": "no-store" } },
 );
 
-/** Look only caps a machine's session; a session paired with less keeps what it has. */
+/** View only caps a machine's session; a session paired with less keeps what it has. */
 const capLinkedClient = (
   invocation: McpInvocationContext.McpInvocationScope,
   incoming: IncomingMachineAccess,
 ): McpInvocationContext.McpInvocationScope =>
-  invocation.client?.linked === true && incoming === "look-only"
+  invocation.client?.linked === true && incoming === "view-only"
     ? { ...invocation, client: { ...invocation.client, access: "read-only" } }
     : invocation;
 

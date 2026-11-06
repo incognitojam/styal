@@ -1346,7 +1346,9 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "What your other machines can do",
     to: "/settings/connections",
     targetId: "machine-access",
-    searchTerms: ["can control look only nothing incoming access one way sensitive machine"],
+    searchTerms: [
+      "can control view only read only nothing incoming access one way sensitive machine",
+    ],
   },
   {
     id: "linked-environments",

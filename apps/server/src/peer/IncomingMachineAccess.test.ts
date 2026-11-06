@@ -68,7 +68,7 @@ it.effect("counts running threads other machines started, and only those", () =>
   }).pipe(Effect.provide(layer));
 });
 
-it.effect.each(["look-only", "nothing"] as const)(
+it.effect.each(["view-only", "nothing"] as const)(
   "stops that work and closes shared devices when set to %s, past a thread that fails",
   (level) => {
     const { interrupted, devicesClosed, layer } = fixture();

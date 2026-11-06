@@ -65,7 +65,7 @@ import { PullRequestMergeMethod } from "./pullRequest.ts";
  * What this machine lets a person's other machines do here. It caps every incoming machine, and
  * never widens a session paired with less.
  */
-export const IncomingMachineAccess = Schema.Literals(["everything", "look-only", "nothing"]);
+export const IncomingMachineAccess = Schema.Literals(["everything", "view-only", "nothing"]);
 export type IncomingMachineAccess = typeof IncomingMachineAccess.Type;
 
 export const TimestampFormat = Schema.Literals(["locale", "12-hour", "24-hour"]);

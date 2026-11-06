@@ -1030,7 +1030,7 @@ it.effect("forwards agent requests to the device environment's current daemon", 
     });
     yield* f.targetSettings.service.updateSettings({ enableAgentDeviceAccess: true });
     expect(yield* f.target.agentTarget(issued.token)).toBeNull();
-    yield* f.targetSettings.service.updateSettings({ incomingMachineAccess: "look-only" });
+    yield* f.targetSettings.service.updateSettings({ incomingMachineAccess: "view-only" });
     expect(yield* f.target.hubTarget.pipe(Effect.flip)).toMatchObject({
       reason: expect.stringContaining("isn't letting other machines"),
     });

@@ -55,7 +55,7 @@ const LINK_ACCESS_LABELS: Record<AuthMcpClientAccess, string> = {
   auto: "Only its own threads",
   "auto-accept-edits": "Only its own threads · Auto-accept edits",
   "approval-required": "Only its own threads · Supervised",
-  "read-only": "Look only",
+  "read-only": "View only",
 };
 
 /** Names a stored level for people, including ones new connections no longer use. */
@@ -71,9 +71,9 @@ export const MACHINE_ACCESS_CHOICES = [
       "Agents on your other machines can do anything here that this machine's user can: read and change files, run commands, start threads and use its devices.",
   },
   {
-    level: "look-only",
-    label: "Look only",
-    status: "Look only",
+    level: "view-only",
+    label: "View only",
+    status: "View only",
     description:
       "Your other machines can read threads and projects here. They can't start or change anything, or use its devices.",
   },

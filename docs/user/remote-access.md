@@ -379,13 +379,13 @@ can change it, not agents.
 - **Can control this machine** is the default. Agents on your other machines can do anything
   there that its user can: read and change files, run commands, start threads and use its
   devices. Choose it only for machines you'd trust with each other's agents.
-- **Look only** lets them read threads and projects there. They can't start or change
+- **View only** lets them read threads and projects there. They can't start or change
   anything, or use its devices.
 - **Nothing** refuses them. Agents on that machine can still work on your other machines, so
   this gives you one-way control. It doesn't isolate the machine: what those machines send
   back still reaches its agents.
 
-Moving to **Look only** or **Nothing** stops threads your other machines started there. You
+Moving to **View only** or **Nothing** stops threads your other machines started there. You
 see how many first and can cancel. Each running turn is interrupted where it is, so work it
 hadn't finished stays unfinished. Files it already changed stay, and each thread stays so you
 can read or continue it on that machine. The machine that started it can't continue it unless

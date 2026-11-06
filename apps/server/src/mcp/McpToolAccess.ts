@@ -101,7 +101,7 @@ const refuseReadOnlyClient = McpInvocationContext.McpInvocationContext.pipe(
             code: "capability_denied",
             message:
               scope.client.linked === true
-                ? "This tool changes that machine, and it lets this machine look only. Changing that is up to the person, in its settings."
+                ? "This tool changes that machine, and it gives this machine view-only access. Changing that is up to the person, in its settings."
                 : "This tool changes the environment, and this MCP client was approved for read-only access.",
           }),
         )
