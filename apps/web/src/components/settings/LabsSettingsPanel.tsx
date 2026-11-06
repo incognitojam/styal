@@ -1,8 +1,8 @@
-import { useAuth } from "@clerk/react";
 import { Link } from "@tanstack/react-router";
 
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
-import { useT3ConnectAuthPrompt } from "../clerk/useT3ConnectAuthPrompt";
+import { useRelayAccount } from "../../cloud/useRelayAccount";
+import { openRelaySignIn } from "../relay-auth/relayAuthDialogs";
 import { Button } from "../ui/button";
 import { Switch } from "../ui/switch";
 import { ScopedSwitch } from "./ScopedSwitch";
@@ -18,7 +18,7 @@ export function LabsSettingsPanel() {
       <SettingsSection id="beta" title="Beta">
         <BoringSidebarRow />
         <BoringSidebarMultilineRow />
-        {/* Clerk is only mounted when this build has T3 Connect. */}
+        {/* A build without styal Link has no sign-in to offer. */}
         {hasCloudPublicConfig() ? <GuestLinksRowWithSignIn /> : <GuestLinksRow />}
         <LinkedEnvironmentsRow />
         <SimlockHostsRow />
@@ -71,16 +71,14 @@ function BoringSidebarMultilineRow() {
 
 /** Signed out of T3 Connect, the row offers to sign in instead of its switch. */
 function GuestLinksRowWithSignIn() {
-  const { isSignedIn } = useAuth();
-  const { openAuthPrompt } = useT3ConnectAuthPrompt();
-  // `isSignedIn` is undefined until Clerk loads.
-  if (isSignedIn !== false) return <GuestLinksRow />;
+  const { isLoaded, isSignedIn } = useRelayAccount();
+  if (!isLoaded || isSignedIn) return <GuestLinksRow />;
   return (
     <SettingsRow
       {...searchableSetting("guest-links")}
       description="Share a thread with a guest who watches it live in their browser and sends messages you approve. Sign in to styal Link to use guest links."
       control={
-        <Button size="sm" variant="outline" onClick={openAuthPrompt}>
+        <Button size="sm" variant="outline" onClick={openRelaySignIn}>
           Sign in
         </Button>
       }

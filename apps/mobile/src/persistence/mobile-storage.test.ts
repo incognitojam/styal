@@ -18,7 +18,11 @@ const { values, getItemAsync, setItemAsync, uuidv4 } = vi.hoisted(() => {
   };
 });
 
-vi.mock("expo-secure-store", () => ({ getItemAsync, setItemAsync }));
+vi.mock("expo-secure-store", () => ({
+  AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY: "after-first-unlock-this-device-only",
+  getItemAsync,
+  setItemAsync,
+}));
 vi.mock("expo-crypto", () => ({ randomUUID: uuidv4 }));
 
 import "../lib/uuid";

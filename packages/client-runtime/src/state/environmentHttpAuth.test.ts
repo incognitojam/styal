@@ -874,7 +874,8 @@ describe("session refresh permissions", () => {
         const signIn = (accountId: string) =>
           setManagedRelaySession(registry, {
             accountId,
-            readClerkToken: () => Promise.resolve("clerk-token"),
+            email: `${accountId}@example.com`,
+            credential: { accountId, refreshToken: `styal_rt_${accountId}` },
           });
         signIn("account-a");
         const replacementRequested = Promise.withResolvers<void>();

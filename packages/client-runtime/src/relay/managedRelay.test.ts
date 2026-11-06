@@ -1,5 +1,6 @@
 import { EnvironmentId } from "@t3tools/contracts";
 import {
+  RelayAccountScope,
   RelayEnvironmentConnectScope,
   RelayEnvironmentStatusScope,
 } from "@t3tools/contracts/relay";
@@ -17,6 +18,7 @@ function layerManagedRelayTest(
   fetchFn: typeof globalThis.fetch,
   relayUrl = "https://relay.example.test",
   accessTokenStore?: ManagedRelay.ManagedRelayAccessTokenStore,
+  onSessionEnded?: ManagedRelay.ManagedRelayClientLayerOptions["onSessionEnded"],
 ) {
   const layerHttpClient = RpcHttp.layerRemoteHttpClient(fetchFn);
   const layerSigner = Layer.succeed(
@@ -31,14 +33,50 @@ function layerManagedRelayTest(
     relayUrl,
     clientId: "t3-mobile",
     ...(accessTokenStore ? { accessTokenStore } : {}),
+    ...(onSessionEnded ? { onSessionEnded } : {}),
   }).pipe(Layer.provide(layerSigner), Layer.provide(layerHttpClient));
 }
 
-function clerkToken(subject: string, nonce: string): string {
-  const encode = (value: unknown) =>
-    btoa(JSON.stringify(value)).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
-  return `${encode({ alg: "none" })}.${encode({ sub: subject, nonce })}.signature`;
+function credential(accountId: string): ManagedRelay.ManagedRelayCredential {
+  return { accountId, refreshToken: `styal_rt_${accountId}` };
 }
+
+/** A store already holding a usable account token, so a request skips the refresh. */
+function seededAccountTokenStore(accessToken = "seeded-account-token") {
+  let entries: ReadonlyArray<ManagedRelay.ManagedRelayAccessTokenCacheEntry> = [
+    {
+      accountId: "user-1",
+      clientId: "t3-mobile",
+      relayUrl: "https://relay.example.test",
+      thumbprint: "client-thumbprint",
+      scopes: [RelayAccountScope],
+      accessToken,
+      expiresAtMillis: Number.MAX_SAFE_INTEGER,
+    },
+  ];
+  return {
+    store: {
+      load: Effect.sync(() => entries),
+      save: (next) =>
+        Effect.sync(() => {
+          entries = next;
+        }),
+      clear: Effect.sync(() => {
+        entries = [];
+      }),
+    } satisfies ManagedRelay.ManagedRelayAccessTokenStore,
+    entries: () => entries,
+  };
+}
+
+const accessTokenResponse = (accessToken: string, scope: string, expiresIn = 1_800) =>
+  Response.json({
+    access_token: accessToken,
+    token_type: "DPoP",
+    expires_in: expiresIn,
+    scope,
+    user: { id: "user-1", email: "someone@example.com" },
+  });
 
 describe("ManagedRelayClient", () => {
   it.effect("rejects unsafe relay URLs before sending credentials", () => {
@@ -51,7 +89,7 @@ describe("ManagedRelayClient", () => {
     return Effect.gen(function* () {
       const relayClient = yield* ManagedRelay.ManagedRelayClient;
       const error = yield* relayClient
-        .listEnvironments({ clerkToken: "clerk-token" })
+        .listEnvironments({ credential: credential("user-1") })
         .pipe(Effect.flip);
 
       expect(error).toMatchObject({
@@ -90,17 +128,15 @@ describe("ManagedRelayClient", () => {
       }),
     };
     const fetchFn = ((input, init) => {
-      if (String(input).endsWith("/v1/client/dpop-token")) {
+      if (String(input).endsWith("/v1/auth/token")) {
         tokenExchangeCount += 1;
         exchangeStarted.resolve();
         return releaseExchange.promise.then(() =>
-          Response.json({
-            access_token: "expanded-scope-token",
-            issued_token_type: "urn:ietf:params:oauth:token-type:access_token",
-            token_type: "DPoP",
-            expires_in: 1_800,
-            scope: `${RelayEnvironmentStatusScope} ${RelayEnvironmentConnectScope}`,
-          }),
+          accessTokenResponse(
+            "expanded-scope-token",
+            `${RelayEnvironmentStatusScope} ${RelayEnvironmentConnectScope}`,
+            1_800,
+          ),
         );
       }
       statusTokens.push(new Headers(init?.headers).get("authorization"));
@@ -121,7 +157,7 @@ describe("ManagedRelayClient", () => {
     return Effect.gen(function* () {
       const relayClient = yield* ManagedRelay.ManagedRelayClient;
       const statusInput = {
-        clerkToken: clerkToken("user-1", "session-1"),
+        credential: credential("user-1"),
         scopes: [RelayEnvironmentStatusScope],
         environmentId: EnvironmentId.make("env-1"),
       } as const;
@@ -145,10 +181,8 @@ describe("ManagedRelayClient", () => {
       yield* Fiber.join(firstMiss);
       yield* Fiber.join(secondMiss);
       expect(tokenExchangeCount).toBe(1);
-      expect(persistedTokens.map((token) => token.accessToken)).toEqual([
-        "cached-status-token",
-        "expanded-scope-token",
-      ]);
+      // One token per account: the wider one replaces the narrower one.
+      expect(persistedTokens.map((token) => token.accessToken)).toEqual(["expanded-scope-token"]);
       yield* relayClient.resetTokenCache;
       expect(persistedTokens).toEqual([]);
       yield* relayClient.getEnvironmentStatus(expandedScopeInput);
@@ -159,7 +193,7 @@ describe("ManagedRelayClient", () => {
     );
   });
 
-  it.effect("reuses a persisted token across runtimes and Clerk session token rotation", () => {
+  it.effect("reuses a persisted token across runtimes", () => {
     let tokenExchangeCount = 0;
     let persistedTokens: ReadonlyArray<ManagedRelay.ManagedRelayAccessTokenCacheEntry> = [];
     const accessTokenStore: ManagedRelay.ManagedRelayAccessTokenStore = {
@@ -174,16 +208,10 @@ describe("ManagedRelayClient", () => {
     };
     const fetchFn = ((input) => {
       const url = String(input);
-      if (url.endsWith("/v1/client/dpop-token")) {
+      if (url.endsWith("/v1/auth/token")) {
         tokenExchangeCount += 1;
         return Promise.resolve(
-          Response.json({
-            access_token: "persisted-relay-token",
-            issued_token_type: "urn:ietf:params:oauth:token-type:access_token",
-            token_type: "DPoP",
-            expires_in: 1_800,
-            scope: RelayEnvironmentStatusScope,
-          }),
+          accessTokenResponse("persisted-relay-token", RelayEnvironmentStatusScope, 1_800),
         );
       }
       return Promise.resolve(
@@ -206,9 +234,9 @@ describe("ManagedRelayClient", () => {
         }),
       );
     }) satisfies typeof globalThis.fetch;
-    const statusInput = (token: string) =>
+    const statusInput = (accountId: string) =>
       ({
-        clerkToken: token,
+        credential: credential(accountId),
         scopes: [RelayEnvironmentStatusScope],
         environmentId: EnvironmentId.make("env-1"),
       }) as const;
@@ -216,7 +244,7 @@ describe("ManagedRelayClient", () => {
     return Effect.gen(function* () {
       yield* Effect.gen(function* () {
         const relayClient = yield* ManagedRelay.ManagedRelayClient;
-        yield* relayClient.getEnvironmentStatus(statusInput(clerkToken("user-1", "session-1")));
+        yield* relayClient.getEnvironmentStatus(statusInput("user-1"));
       }).pipe(Effect.provide(layerManagedRelayTest(fetchFn, undefined, accessTokenStore)));
 
       expect(tokenExchangeCount).toBe(1);
@@ -224,7 +252,7 @@ describe("ManagedRelayClient", () => {
 
       yield* Effect.gen(function* () {
         const relayClient = yield* ManagedRelay.ManagedRelayClient;
-        yield* relayClient.getEnvironmentStatus(statusInput(clerkToken("user-1", "session-2")));
+        yield* relayClient.getEnvironmentStatus(statusInput("user-1"));
       }).pipe(Effect.provide(layerManagedRelayTest(fetchFn, undefined, accessTokenStore)));
 
       expect(tokenExchangeCount).toBe(1);
@@ -257,16 +285,10 @@ describe("ManagedRelayClient", () => {
     };
     const fetchFn = ((input, init) => {
       const url = String(input);
-      if (url.endsWith("/v1/client/dpop-token")) {
+      if (url.endsWith("/v1/auth/token")) {
         tokenExchangeCount += 1;
         return Promise.resolve(
-          Response.json({
-            access_token: "fresh-relay-token",
-            issued_token_type: "urn:ietf:params:oauth:token-type:access_token",
-            token_type: "DPoP",
-            expires_in: 1_800,
-            scope: RelayEnvironmentStatusScope,
-          }),
+          accessTokenResponse("fresh-relay-token", RelayEnvironmentStatusScope, 1_800),
         );
       }
 
@@ -309,7 +331,7 @@ describe("ManagedRelayClient", () => {
     return Effect.gen(function* () {
       const relayClient = yield* ManagedRelay.ManagedRelayClient;
       const result = yield* relayClient.getEnvironmentStatus({
-        clerkToken: clerkToken("user-1", "session-1"),
+        credential: credential("user-1"),
         scopes: [RelayEnvironmentStatusScope],
         environmentId: EnvironmentId.make("env-1"),
       });
@@ -325,62 +347,6 @@ describe("ManagedRelayClient", () => {
     }).pipe(Effect.provide(layerManagedRelayTest(fetchFn, undefined, accessTokenStore)));
   });
 
-  it.effect("does not persist tokens when the Clerk subject cannot be decoded", () => {
-    let persistedTokens: ReadonlyArray<ManagedRelay.ManagedRelayAccessTokenCacheEntry> = [];
-    const accessTokenStore: ManagedRelay.ManagedRelayAccessTokenStore = {
-      load: Effect.succeed([]),
-      save: (entries) =>
-        Effect.sync(() => {
-          persistedTokens = entries;
-        }),
-      clear: Effect.void,
-    };
-    const fetchFn = ((input) => {
-      const url = String(input);
-      if (url.endsWith("/v1/client/dpop-token")) {
-        return Promise.resolve(
-          Response.json({
-            access_token: "relay-token",
-            issued_token_type: "urn:ietf:params:oauth:token-type:access_token",
-            token_type: "DPoP",
-            expires_in: 1_800,
-            scope: RelayEnvironmentStatusScope,
-          }),
-        );
-      }
-      return Promise.resolve(
-        Response.json({
-          environmentId: "env-1",
-          endpoint: {
-            httpBaseUrl: "https://desktop.example.test/",
-            wsBaseUrl: "wss://desktop.example.test/ws",
-            providerKind: "cloudflare_tunnel",
-          },
-          status: "online",
-          checkedAt: "2026-06-05T20:00:00.000Z",
-          descriptor: {
-            environmentId: "env-1",
-            label: "Desktop",
-            platform: { os: "darwin", arch: "arm64" },
-            serverVersion: "0.0.0-test",
-            capabilities: { repositoryIdentity: true },
-          },
-        }),
-      );
-    }) satisfies typeof globalThis.fetch;
-
-    return Effect.gen(function* () {
-      const relayClient = yield* ManagedRelay.ManagedRelayClient;
-      yield* relayClient.getEnvironmentStatus({
-        clerkToken: "not-a-jwt",
-        scopes: [RelayEnvironmentStatusScope],
-        environmentId: EnvironmentId.make("env-1"),
-      });
-
-      expect(persistedTokens).toEqual([]);
-    }).pipe(Effect.provide(layerManagedRelayTest(fetchFn, undefined, accessTokenStore)));
-  });
-
   it.effect("omits cookies on relay requests even when the caller includes them", () => {
     const sentCredentials: Array<RequestCredentials | undefined> = [];
     const fetchFn = ((_input, init) => {
@@ -390,7 +356,7 @@ describe("ManagedRelayClient", () => {
     return Effect.gen(function* () {
       const relayClient = yield* ManagedRelay.ManagedRelayClient;
       yield* relayClient
-        .listEnvironments({ clerkToken: "clerk-token" })
+        .listEnvironments({ credential: credential("user-1") })
         .pipe(
           Effect.provideService(FetchHttpClient.RequestInit, { credentials: "include" }),
           Effect.flip,
@@ -417,7 +383,7 @@ describe("ManagedRelayClient", () => {
       const relayClient = yield* ManagedRelay.ManagedRelayClient;
       const error = yield* relayClient
         .linkEnvironment({
-          clerkToken: "clerk-token",
+          credential: credential("user-1"),
           payload: {
             proof: "link-proof",
             notificationsEnabled: true,
@@ -435,7 +401,9 @@ describe("ManagedRelayClient", () => {
       expect(
         error._tag === "ManagedRelayRequestFailedError" ? relayRequestFailureDetail(error) : null,
       ).toBe(RELAY_GATEWAY_TIMEOUT_MESSAGE);
-    }).pipe(Effect.provide(layerManagedRelayTest(fetchFn)));
+    }).pipe(
+      Effect.provide(layerManagedRelayTest(fetchFn, undefined, seededAccountTokenStore().store)),
+    );
   });
 
   it.effect("accepts generic DPoP errors from relays without the optional reason", () => {
@@ -455,7 +423,7 @@ describe("ManagedRelayClient", () => {
     return Effect.gen(function* () {
       const relayClient = yield* ManagedRelay.ManagedRelayClient;
       const error = yield* relayClient
-        .listEnvironments({ clerkToken: "clerk-token" })
+        .listEnvironments({ credential: credential("user-1") })
         .pipe(Effect.flip);
 
       expect(error).toMatchObject({
@@ -472,6 +440,255 @@ describe("ManagedRelayClient", () => {
       ) {
         expect(error.relayError.dpopFailureReason).toBeUndefined();
       }
+    }).pipe(
+      Effect.provide(layerManagedRelayTest(fetchFn, undefined, seededAccountTokenStore().store)),
+    );
+  });
+
+  it.effect("lists account devices through the v2 endpoint with a DPoP account token", () => {
+    const fetchFn = ((input, init) => {
+      expect(String(input)).toBe("https://relay.example.test/v2/client/devices");
+      expect(init?.headers).toMatchObject({
+        authorization: "DPoP seeded-account-token",
+        dpop: "proof:https://relay.example.test/v2/client/devices",
+      });
+      return Promise.resolve(
+        Response.json({
+          devices: [
+            {
+              deviceId: "device-1",
+              label: "Julius's iPhone",
+              platform: "ios",
+              iosMajorVersion: 18,
+              appVersion: "1.0.0",
+              notifications: {
+                enabled: false,
+                notifyOnApproval: true,
+                notifyOnInput: true,
+                notifyOnCompletion: true,
+                notifyOnFailure: true,
+              },
+              liveActivities: {
+                enabled: true,
+              },
+              updatedAt: "2026-06-01T00:00:00.000Z",
+            },
+            {
+              deviceId: "device-2",
+              label: "Android phone",
+              platform: "android",
+              iosMajorVersion: null,
+              androidApiLevel: 36,
+              appVersion: "1.0.0",
+              notifications: {
+                enabled: true,
+                notifyOnApproval: true,
+                notifyOnInput: true,
+                notifyOnCompletion: true,
+                notifyOnFailure: true,
+              },
+              liveActivities: { enabled: true },
+              updatedAt: "2026-06-01T00:00:00.000Z",
+            },
+          ],
+        }),
+      );
+    }) satisfies typeof globalThis.fetch;
+
+    return Effect.gen(function* () {
+      const relayClient = yield* ManagedRelay.ManagedRelayClient;
+      const devices = yield* relayClient.listDevices({ credential: credential("user-1") });
+      expect(devices).toMatchObject([
+        {
+          deviceId: "device-1",
+          label: "Julius's iPhone",
+          notifications: {
+            enabled: false,
+          },
+        },
+        {
+          deviceId: "device-2",
+          platform: "android",
+          iosMajorVersion: null,
+          androidApiLevel: 36,
+        },
+      ]);
+    }).pipe(
+      Effect.provide(layerManagedRelayTest(fetchFn, undefined, seededAccountTokenStore().store)),
+    );
+  });
+
+  it.effect("refreshes one access token for all of the client's scopes", () => {
+    const refreshBodies: Array<unknown> = [];
+    const authorizations: Array<string | null> = [];
+    const fetchFn = ((input, init) => {
+      const url = String(input);
+      if (url.endsWith("/v1/auth/token")) {
+        refreshBodies.push(JSON.parse(String(init?.body)));
+        expect(new Headers(init?.headers).get("dpop")).toBe(
+          "proof:https://relay.example.test/v1/auth/token",
+        );
+        return Promise.resolve(
+          accessTokenResponse(
+            "session-token",
+            "environment:connect environment:status mobile:registration account",
+          ),
+        );
+      }
+      authorizations.push(new Headers(init?.headers).get("authorization"));
+      if (url.endsWith("/v1/environments")) {
+        return Promise.resolve(Response.json({ environments: [] }));
+      }
+      return Promise.resolve(Response.json({ ok: true }));
+    }) satisfies typeof globalThis.fetch;
+
+    return Effect.gen(function* () {
+      const relayClient = yield* ManagedRelay.ManagedRelayClient;
+      yield* relayClient.listEnvironments({ credential: credential("user-1") });
+      yield* relayClient.unregisterDevice({ credential: credential("user-1"), deviceId: "phone" });
+
+      expect(refreshBodies).toEqual([{ refresh_token: "styal_rt_user-1" }]);
+      expect(authorizations).toEqual(["DPoP session-token", "DPoP session-token"]);
     }).pipe(Effect.provide(layerManagedRelayTest(fetchFn)));
+  });
+
+  it.effect("reports an ended session and forgets its tokens", () => {
+    const ended: Array<string> = [];
+    const seeded = seededAccountTokenStore();
+    const fetchFn = (() =>
+      Promise.resolve(
+        Response.json(
+          {
+            _tag: "RelayAuthInvalidError",
+            code: "auth_invalid",
+            reason: "invalid_session",
+            traceId: "trace-ended",
+          },
+          { status: 401 },
+        ),
+      )) satisfies typeof globalThis.fetch;
+
+    return Effect.gen(function* () {
+      const relayClient = yield* ManagedRelay.ManagedRelayClient;
+      const error = yield* relayClient
+        .unregisterDevice({ credential: credential("user-1"), deviceId: "phone" })
+        .pipe(Effect.flip);
+
+      expect(ManagedRelay.isManagedRelaySessionEnded(error)).toBe(true);
+      expect(ended).toEqual(["user-1"]);
+      expect(seeded.entries()).toEqual([]);
+    }).pipe(
+      Effect.provide(
+        layerManagedRelayTest(fetchFn, undefined, seeded.store, (ended_) =>
+          Effect.sync(() => {
+            ended.push(ended_.accountId);
+          }),
+        ),
+      ),
+    );
+  });
+
+  it.effect("signs out when a request with a cached token learns its session ended", () => {
+    const ended: Array<string> = [];
+    const requested: Array<string> = [];
+    const seeded = seededAccountTokenStore();
+    const fetchFn = ((input) => {
+      requested.push(String(input));
+      return Promise.resolve(
+        Response.json(
+          {
+            _tag: "RelayAuthInvalidError",
+            code: "auth_invalid",
+            reason: "invalid_session",
+            traceId: "trace-revoked",
+          },
+          { status: 401 },
+        ),
+      );
+    }) satisfies typeof globalThis.fetch;
+
+    return Effect.gen(function* () {
+      const relayClient = yield* ManagedRelay.ManagedRelayClient;
+      const error = yield* relayClient
+        .listDevices({ credential: credential("user-1") })
+        .pipe(Effect.flip);
+
+      expect(ManagedRelay.isManagedRelaySessionEnded(error)).toBe(true);
+      expect(requested).toEqual(["https://relay.example.test/v2/client/devices"]);
+      expect(ended).toEqual(["user-1"]);
+      expect(seeded.entries()).toEqual([]);
+    }).pipe(
+      Effect.provide(
+        layerManagedRelayTest(fetchFn, undefined, seeded.store, (ended_) =>
+          Effect.sync(() => {
+            ended.push(ended_.accountId);
+          }),
+        ),
+      ),
+    );
+  });
+
+  it.effect("signs in with a code and uses the returned access token straight away", () => {
+    const requests: Array<{ readonly url: string; readonly body: unknown }> = [];
+    const fetchFn = ((input, init) => {
+      const url = String(input);
+      requests.push({ url, body: init?.body ? JSON.parse(String(init.body)) : null });
+      if (url.endsWith("/v1/auth/email/verify")) {
+        return Promise.resolve(
+          Response.json({
+            access_token: "sign-in-token",
+            token_type: "DPoP",
+            expires_in: 1_800,
+            scope: "environment:connect environment:status mobile:registration account",
+            user: { id: "usr_new", email: "someone@example.com" },
+            refresh_token: "styal_rt_new",
+            session_id: "session-1",
+          }),
+        );
+      }
+      return Promise.resolve(Response.json({ environments: [] }));
+    }) satisfies typeof globalThis.fetch;
+
+    return Effect.gen(function* () {
+      const relayClient = yield* ManagedRelay.ManagedRelayClient;
+      const signIn = yield* relayClient.verifyEmailSignIn({
+        email: "someone@example.com",
+        code: "12345678",
+        label: "Phone",
+      });
+      yield* relayClient.listEnvironments({ credential: signIn.credential });
+
+      expect(signIn).toEqual({
+        credential: { accountId: "usr_new", refreshToken: "styal_rt_new" },
+        email: "someone@example.com",
+      });
+      expect(requests.map((request) => request.url)).toEqual([
+        "https://relay.example.test/v1/auth/email/verify",
+        "https://relay.example.test/v1/environments",
+      ]);
+      expect(requests[0]?.body).toEqual({
+        email: "someone@example.com",
+        code: "12345678",
+        client_id: "t3-mobile",
+        label: "Phone",
+      });
+    }).pipe(Effect.provide(layerManagedRelayTest(fetchFn)));
+  });
+
+  it.effect("signing out forgets cached tokens before telling the relay", () => {
+    const seeded = seededAccountTokenStore();
+    const bodies: Array<unknown> = [];
+    const fetchFn = ((input, init) => {
+      expect(String(input)).toBe("https://relay.example.test/v1/auth/sign-out");
+      expect(seeded.entries()).toEqual([]);
+      bodies.push(JSON.parse(String(init?.body)));
+      return Promise.resolve(Response.json({ ok: true }));
+    }) satisfies typeof globalThis.fetch;
+
+    return Effect.gen(function* () {
+      const relayClient = yield* ManagedRelay.ManagedRelayClient;
+      yield* relayClient.signOut({ credential: credential("user-1") });
+      expect(bodies).toEqual([{ refresh_token: "styal_rt_user-1" }]);
+    }).pipe(Effect.provide(layerManagedRelayTest(fetchFn, undefined, seeded.store)));
   });
 });

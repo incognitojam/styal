@@ -1,7 +1,5 @@
 import type { EnvironmentId } from "@t3tools/contracts";
-import { decodeRelayJwt } from "@t3tools/shared/relayJwt";
 import * as Cause from "effect/Cause";
-import * as Clock from "effect/Clock";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -15,23 +13,13 @@ import { relayProtectedErrorMessage } from "./errorPresentation.ts";
 
 const DEFAULT_STALE_TIME_MS = 15_000;
 const DEFAULT_IDLE_TTL_MS = 5 * 60_000;
-const CLERK_TOKEN_EXPIRY_SKEW_MS = 5_000;
 const isManagedRelayRequestFailedError = Schema.is(ManagedRelay.ManagedRelayRequestFailedError);
 
 export interface ManagedRelaySession {
   readonly accountId: string;
-  readonly readClerkToken: () => Effect.Effect<string | null, ManagedRelaySessionError>;
-}
-
-export interface ManagedRelaySessionInput {
-  readonly accountId: string;
-  readonly readClerkToken: () => Promise<string | null>;
-}
-
-interface ManagedRelaySessionControl {
-  readonly updateReadClerkToken: (
-    readClerkToken: ManagedRelaySessionInput["readClerkToken"],
-  ) => void;
+  /** Null for accounts moved from Clerk whose email the relay does not know. */
+  readonly email: string | null;
+  readonly credential: ManagedRelay.ManagedRelayCredential;
 }
 
 export interface ManagedRelaySnapshotState<A> {
@@ -43,7 +31,7 @@ export interface ManagedRelaySnapshotState<A> {
 
 export interface ManagedRelayQueryEvent {
   readonly operation: "environments" | "devices" | "t3chat-link";
-  readonly stage: "clerk-token" | "relay-request";
+  readonly stage: "session" | "relay-request";
   readonly phase: "start" | "success" | "failure";
   readonly accountId: string;
   readonly environmentId?: string;
@@ -62,8 +50,8 @@ export const managedRelaySessionAtom = Atom.make<ManagedRelaySession | null>(nul
 );
 
 /**
- * Progress of the cloud sign-in SDK. Until it loads there is no session either
- * way, so this tells "still loading" and "unreachable" apart from signed out.
+ * Progress of loading the saved sign-in. Until it loads there is no session
+ * either way, so this tells "still loading" and "unreadable" apart from signed out.
  */
 export type ManagedRelayAuthLoadState = "loading" | "failed" | "loaded";
 
@@ -82,84 +70,19 @@ export function managedRelayMissingSessionError(
       loadState === "loading"
         ? "Waiting for the styal Link sign-in to load."
         : loadState === "failed"
-          ? "Can't reach styal Link sign-in. Check your connection."
+          ? "Couldn't read the saved styal Link sign-in. Try again, or sign in again."
           : "Sign in to styal Link to connect this environment.",
   });
 }
 
-const managedRelaySessionControls = new WeakMap<ManagedRelaySession, ManagedRelaySessionControl>();
-
-export function createManagedRelaySession(input: ManagedRelaySessionInput): ManagedRelaySession {
-  let cachedToken: { readonly token: string; readonly expiresAtMillis: number } | null = null;
-  let pendingToken: Promise<string | null> | null = null;
-  let readClerkToken = input.readClerkToken;
-  let tokenProviderGeneration = 0;
-
-  const readCachedClerkToken = async (nowMillis: number): Promise<string | null> => {
-    if (cachedToken && cachedToken.expiresAtMillis > nowMillis + CLERK_TOKEN_EXPIRY_SKEW_MS) {
-      return cachedToken.token;
-    }
-    if (pendingToken) {
-      return await pendingToken;
-    }
-
-    const operationGeneration = tokenProviderGeneration;
-    const operation = readClerkToken().then((token) => {
-      if (operationGeneration !== tokenProviderGeneration) {
-        return token;
-      }
-      if (!token) {
-        cachedToken = null;
-        return null;
-      }
-      try {
-        const expiresAtSeconds = decodeRelayJwt(token).exp;
-        cachedToken =
-          typeof expiresAtSeconds === "number"
-            ? { token, expiresAtMillis: expiresAtSeconds * 1_000 }
-            : null;
-      } catch {
-        cachedToken = null;
-      }
-      return token;
-    });
-    pendingToken = operation;
-    try {
-      return await operation;
-    } finally {
-      if (pendingToken === operation) {
-        pendingToken = null;
-      }
-    }
-  };
-
-  const session: ManagedRelaySession = {
-    accountId: input.accountId,
-    readClerkToken: Effect.fn("clientRuntime.managedRelaySession.readClerkToken")(function* () {
-      const nowMillis = yield* Clock.currentTimeMillis;
-      return yield* Effect.tryPromise({
-        try: () => readCachedClerkToken(nowMillis),
-        catch: (cause) =>
-          new ManagedRelaySessionError({
-            message: "Could not obtain the styal Link session token.",
-            cause,
-          }),
-      });
-    }),
-  };
-  managedRelaySessionControls.set(session, {
-    updateReadClerkToken: (nextReadClerkToken) => {
-      readClerkToken = nextReadClerkToken;
-      tokenProviderGeneration += 1;
-      pendingToken = null;
-    },
-  });
-  return session;
-}
-
+/**
+ * Publishes the signed-in session, or null when signed out. Setting the same
+ * account and credential again keeps the current object, so queries and
+ * connection leases keyed on it are not reset.
+ */
 export function setManagedRelaySession(
   registry: AtomRegistry.AtomRegistry,
-  input: ManagedRelaySessionInput | null,
+  input: ManagedRelaySession | null,
 ): void {
   const current = registry.get(managedRelaySessionAtom);
   if (input === null) {
@@ -168,16 +91,18 @@ export function setManagedRelaySession(
     }
     return;
   }
-  if (current?.accountId === input.accountId) {
-    const control = managedRelaySessionControls.get(current);
-    if (control) {
-      // Clerk can replace its token reader during routine same-account refreshes.
-      // Keep the session stable so those refreshes do not invalidate queries or reconnect leases.
-      control.updateReadClerkToken(input.readClerkToken);
-      return;
-    }
+  if (
+    current?.accountId === input.accountId &&
+    current.credential.refreshToken === input.credential.refreshToken &&
+    current.email === input.email
+  ) {
+    return;
   }
-  registry.set(managedRelaySessionAtom, createManagedRelaySession(input));
+  registry.set(managedRelaySessionAtom, {
+    accountId: input.accountId,
+    email: input.email,
+    credential: input.credential,
+  });
 }
 
 export function managedRelayAccountChanges(
@@ -200,54 +125,30 @@ export function managedRelayAuthLoadChanges(
   );
 }
 
-function readSessionClerkToken(
-  session: ManagedRelaySession,
-): Effect.Effect<string, ManagedRelaySessionError> {
-  return session.readClerkToken().pipe(
-    Effect.filterOrFail(
-      (token): token is string => Boolean(token),
-      () =>
-        new ManagedRelaySessionError({
-          message: "The styal Link session token is unavailable.",
-        }),
-    ),
-  );
-}
-
-function requireSessionClerkToken(
-  registry: AtomRegistry.AtomRegistry,
-  accountId: string,
-  action: string,
-): Effect.Effect<string, ManagedRelaySessionError> {
-  const session = registry.get(managedRelaySessionAtom);
-  if (!session || session.accountId !== accountId) {
-    return Effect.fail(
-      new ManagedRelaySessionError({ message: `Sign in to styal Link before ${action}.` }),
-    );
-  }
-  return readSessionClerkToken(session);
-}
-
+/** Removes an environment from the signed-in account without contacting that environment. */
 export const deregisterManagedRelayEnvironment = Effect.fn(
   "clientRuntime.managedRelaySession.deregisterEnvironment",
 )(function* (
   registry: AtomRegistry.AtomRegistry,
   input: { readonly accountId: string; readonly environmentId: EnvironmentId },
 ) {
-  const clerkToken = yield* requireSessionClerkToken(
-    registry,
-    input.accountId,
-    "deregistering an environment",
-  );
-
+  const session = registry.get(managedRelaySessionAtom);
+  if (!session || session.accountId !== input.accountId) {
+    return yield* new ManagedRelaySessionError({
+      message: "Sign in to styal Link before deregistering an environment.",
+    });
+  }
   const relay = yield* ManagedRelay.ManagedRelayClient;
-  yield* relay.unlinkEnvironment({ clerkToken, environmentId: input.environmentId });
+  yield* relay.unlinkEnvironment({
+    credential: session.credential,
+    environmentId: input.environmentId,
+  });
 });
 
-function requireClerkToken(
+function requireCredential(
   get: Atom.AtomContext,
   accountId: string,
-): Effect.Effect<string, ManagedRelaySessionError> {
+): Effect.Effect<ManagedRelay.ManagedRelayCredential, ManagedRelaySessionError> {
   const session = get(managedRelaySessionAtom);
   if (!session || session.accountId !== accountId) {
     return Effect.fail(
@@ -256,7 +157,7 @@ function requireClerkToken(
       }),
     );
   }
-  return readSessionClerkToken(session);
+  return Effect.succeed(session.credential);
 }
 
 function describeManagedRelayFailure(cause: Cause.Cause<unknown>): {
@@ -341,14 +242,14 @@ export function createManagedRelayQueryManager(
       .atom((get) =>
         Effect.gen(function* () {
           const base = { operation: "environments" as const, accountId };
-          const clerkToken = yield* observe(
-            { ...base, stage: "clerk-token" },
-            requireClerkToken(get, accountId),
+          const credential = yield* observe(
+            { ...base, stage: "session" },
+            requireCredential(get, accountId),
           );
           const relay = yield* ManagedRelay.ManagedRelayClient;
           return yield* observe(
             { ...base, stage: "relay-request" },
-            relay.listEnvironments({ clerkToken }),
+            relay.listEnvironments({ credential }),
           );
         }).pipe(logListingFailure("environment")),
       )
@@ -364,14 +265,14 @@ export function createManagedRelayQueryManager(
       .atom((get) =>
         Effect.gen(function* () {
           const base = { operation: "devices" as const, accountId };
-          const clerkToken = yield* observe(
-            { ...base, stage: "clerk-token" },
-            requireClerkToken(get, accountId),
+          const credential = yield* observe(
+            { ...base, stage: "session" },
+            requireCredential(get, accountId),
           );
           const relay = yield* ManagedRelay.ManagedRelayClient;
           return yield* observe(
             { ...base, stage: "relay-request" },
-            relay.listDevices({ clerkToken }),
+            relay.listDevices({ credential }),
           );
         }).pipe(logListingFailure("device")),
       )
@@ -387,14 +288,14 @@ export function createManagedRelayQueryManager(
       .atom((get) =>
         Effect.gen(function* () {
           const base = { operation: "t3chat-link" as const, accountId };
-          const clerkToken = yield* observe(
-            { ...base, stage: "clerk-token" },
-            requireClerkToken(get, accountId),
+          const credential = yield* observe(
+            { ...base, stage: "session" },
+            requireCredential(get, accountId),
           );
           const relay = yield* ManagedRelay.ManagedRelayClient;
           return yield* observe(
             { ...base, stage: "relay-request" },
-            relay.getT3ChatLink({ clerkToken }),
+            relay.getT3ChatLink({ credential }),
           );
         }),
       )

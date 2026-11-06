@@ -1,4 +1,3 @@
-import { useAuth } from "@clerk/react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { Link } from "@tanstack/react-router";
 import { CheckIcon } from "lucide-react";
@@ -9,7 +8,8 @@ import { hasCloudPublicConfig } from "~/cloud/publicConfig";
 import { isElectron } from "../env";
 import { isLocalEnvironmentDisabled } from "../localEnvironment";
 import { CommandBlock } from "./CommandBlock";
-import { useT3ConnectAuthPrompt } from "./clerk/useT3ConnectAuthPrompt";
+import { useRelayAccount } from "../cloud/useRelayAccount";
+import { openRelaySignIn } from "./relay-auth/relayAuthDialogs";
 import { CloudEnvironmentConnectRows } from "./cloud/CloudEnvironmentConnectList";
 import { Button } from "./ui/button";
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "./ui/empty";
@@ -63,8 +63,7 @@ export function HostedEmptyState() {
 }
 
 export function T3ConnectSteps() {
-  const { isLoaded, isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
-  const { openAuthPrompt } = useT3ConnectAuthPrompt();
+  const { isLoaded, isSignedIn } = useRelayAccount();
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<EnvironmentId>>(() => new Set());
   return (
     <>
@@ -75,7 +74,7 @@ export function T3ConnectSteps() {
             Signed in
           </p>
         ) : (
-          <Button size="sm" disabled={!isLoaded} onClick={openAuthPrompt}>
+          <Button size="sm" disabled={!isLoaded} onClick={openRelaySignIn}>
             Sign in
           </Button>
         )}

@@ -4,6 +4,8 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as SecureStore from "expo-secure-store";
 
+import { RELAY_KEYCHAIN_OPTIONS } from "./relayKeychain";
+
 const MANAGED_RELAY_TOKEN_CACHE_KEY = "styal.cloud.relay-access-tokens";
 const MANAGED_RELAY_TOKEN_CACHE_VERSION = 1;
 
@@ -52,7 +54,7 @@ function logStoreFailure(error: ManagedRelayTokenStoreError) {
 }
 
 const loadManagedRelayAccessTokens = Effect.tryPromise({
-  try: () => SecureStore.getItemAsync(MANAGED_RELAY_TOKEN_CACHE_KEY),
+  try: () => SecureStore.getItemAsync(MANAGED_RELAY_TOKEN_CACHE_KEY, RELAY_KEYCHAIN_OPTIONS),
   catch: (cause) =>
     new ManagedRelayTokenStoreError({
       operation: "read",
@@ -94,7 +96,8 @@ const saveManagedRelayAccessTokens = (
     ),
     Effect.flatMap((encoded) =>
       Effect.tryPromise({
-        try: () => SecureStore.setItemAsync(MANAGED_RELAY_TOKEN_CACHE_KEY, encoded),
+        try: () =>
+          SecureStore.setItemAsync(MANAGED_RELAY_TOKEN_CACHE_KEY, encoded, RELAY_KEYCHAIN_OPTIONS),
         catch: (cause) =>
           new ManagedRelayTokenStoreError({
             operation: "write",
@@ -106,7 +109,7 @@ const saveManagedRelayAccessTokens = (
   );
 
 const clearManagedRelayAccessTokens = Effect.tryPromise({
-  try: () => SecureStore.deleteItemAsync(MANAGED_RELAY_TOKEN_CACHE_KEY),
+  try: () => SecureStore.deleteItemAsync(MANAGED_RELAY_TOKEN_CACHE_KEY, RELAY_KEYCHAIN_OPTIONS),
   catch: (cause) =>
     new ManagedRelayTokenStoreError({
       operation: "clear",
