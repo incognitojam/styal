@@ -73,6 +73,15 @@ NodeAssert.match(
   new RegExp(`styal v${manifest.version.replaceAll(".", "\\.")}\\s*$`),
 );
 NodeAssert.match(runCli("--help"), /styal/);
+// The service launcher loads outside the embedded CLI; without STYAL_HOME it exits right away.
+const launcher = NodeChildProcess.spawnSync(cli, ["__service-launcher"], {
+  cwd: project,
+  env: { ...env, STYAL_HOME: "" },
+  encoding: "utf8",
+  timeout: 60_000,
+});
+NodeAssert.equal(launcher.status, 1, `${launcher.stdout}${launcher.stderr}`);
+NodeAssert.match(launcher.stderr, /STYAL_HOME is required/);
 const preflight = (protocol) =>
   JSON.parse(
     runCli(

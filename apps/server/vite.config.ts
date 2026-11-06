@@ -1,4 +1,6 @@
 import "vite-plus/test/config";
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- tsdown needs the asset path when it reads this config.
+import * as NodePath from "node:path";
 import { defineConfig, mergeConfig } from "vite-plus";
 
 import baseConfig from "../../vite.config.ts";
@@ -27,10 +29,14 @@ if (!TELEMETRY_CHANNELS.includes(telemetryChannel)) {
   );
 }
 
+// "bundle" emits the embedded CLI. "1" builds dist-exe/styal from the bootstrap.
 // TEMPORARY one-time Node fix. Remove when fixed: https://github.com/nodejs/node/issues/67048
-// "bundle" leaves bin.mjs for native Linux ARM64 injection with postject.
+// "bootstrap" stops at bin.mjs for scripts/cli.ts to inject (linux-arm64).
 const packMode = process.env.STYAL_PACK_EXE;
-const packExecutable = packMode === "1" || packMode === "bundle";
+const packBootstrap = packMode === "1" || packMode === "bootstrap";
+const packExecutable = packBootstrap || packMode === "bundle";
+const cliAssetDir = process.env.STYAL_CLI_ASSET_DIR ?? "";
+if (packExecutable && !cliAssetDir) throw new Error("Build the executable with build:exe.");
 const cliNodeVersion = rootPackageJson.engines.node;
 if (packExecutable && process.versions.node !== cliNodeVersion) {
   throw new Error(
@@ -57,23 +63,40 @@ export default mergeConfig(
       },
     },
     pack: {
-      entry: packExecutable ? ["src/bin.ts"] : ["src/bin.ts", "src/claude-history-worker.ts"],
-      outDir: packExecutable ? "dist-exe" : "dist",
+      entry: packBootstrap
+        ? ["src/bin.ts"]
+        : packExecutable
+          ? ["src/binMain.ts"]
+          : ["src/bin.ts", "src/claude-history-worker.ts"],
+      outDir: packBootstrap ? "dist-exe" : packExecutable ? cliAssetDir : "dist",
       sourcemap: !packExecutable,
       plugins: posthogSourcemapPlugins({
         version: packageJson.version,
         executable: packExecutable,
       }),
-      // SEA can only resolve built-ins; keep dynamic imports inside its one module.
+      // SEA can only resolve built-ins; keep dynamic imports inside each emitted module.
       ...(packExecutable ? { outputOptions: { codeSplitting: false } } : {}),
       ...(packMode === "1"
-        ? { exe: { fileName: "styal", outDir: "dist-exe", seaConfig: { useCodeCache: false } } }
+        ? {
+            exe: {
+              fileName: "styal",
+              outDir: "dist-exe",
+              // Node SEA useCodeCache breaks import(), which the server needs.
+              seaConfig: {
+                useCodeCache: false,
+                // The bootstrap loads the embedded CLI with require(esm).
+                execArgv: ["--require-module"],
+                assets: { "binMain.mjs": NodePath.join(cliAssetDir, "binMain.mjs") },
+              },
+            },
+          }
         : {}),
       clean: true,
       deps: {
         // alwaysBundle=false has no opinion; neverBundle must retain transitive native acceleration.
         alwaysBundle: shouldBundleCliDependency,
-        neverBundle: (id: string) => isExternalCliDependency(id),
+        neverBundle: (id: string) =>
+          (packBootstrap && id === "./binMain.ts") || isExternalCliDependency(id),
         onlyBundle: false,
       },
       banner: {

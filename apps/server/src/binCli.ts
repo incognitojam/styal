@@ -24,7 +24,7 @@ import { threadCommand } from "./cli/thread.ts";
 import { serveCommand, startCommand } from "./cli/server.ts";
 import { updateCommand } from "./cli/update.ts";
 import { uninstallCommand } from "./cli/uninstall.ts";
-import { serviceLauncherCommand } from "./cli/serviceLauncher.ts";
+import { runServiceLauncherCli } from "./cli/serviceLauncher.ts";
 import { speechWorkerCommand } from "./cli/speechWorker.ts";
 import { serviceCommand } from "./cli/service.ts";
 import { servicePreflightCommand } from "./cli/servicePreflight.ts";
@@ -88,7 +88,12 @@ export const makeCli = ({ cloudEnabled = hasCloudPublicConfig } = {}) =>
       serviceCommand,
       updateCommand,
       uninstallCommand,
-      serviceLauncherCommand,
+      // bin.ts runs the bare service invocation; this keeps flags and help working like other commands.
+      Command.make("__service-launcher").pipe(
+        Command.unlisted,
+        // The launcher owns shutdown until its child exits; `runMain` would interrupt that shutdown.
+        Command.withHandler(() => Effect.sync(() => void runServiceLauncherCli())),
+      ),
       speechWorkerCommand,
       sshHelperCommand,
       servicePreflightCommand,
