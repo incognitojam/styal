@@ -5343,6 +5343,26 @@ features:
       tracking:
         - https://github.com/pingdotgg/t3code/pull/15990
       retire_when: Upstream hides archived projects' pull requests on its Pull Requests page.
+  - id: quiet-workflow-reports
+    title: Quiet routine workflow reports
+    status: maintained
+    prs: []
+    rationale: Routine report edits must not spend agent turns or exhaust the comment wake limit.
+    invariants:
+      - Only github-actions bot issue comments on incognitojam/styal may suppress a wake with the styal-report quiet marker; human and review comments still wake.
+      - Quiet remarks advance the watch watermark without consuming comment-only wakes; removing the marker on a later edit wakes normally.
+    implementation_paths:
+      - apps/server/src/orchestration-v2/pullRequestWatch.ts
+    upstream_paths:
+      - apps/server/src/orchestration-v2/pullRequestWatch.ts
+    tests:
+      - apps/server/src/orchestration-v2/pullRequestWatch.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/30674
+      retire_when: Upstream supports trusted workflow reports opting out of comment wakes.
+
   - id: relay-email-sign-in
     title: Sign in to styal Link with an emailed code and a relay-owned session
     status: maintained
@@ -5392,26 +5412,6 @@ features:
       status: unassessed
       tracking: []
       retire_when: Upstream replaces Clerk with relay-owned sessions that stay valid while used, on every client.
-
-  - id: quiet-workflow-reports
-    title: Quiet routine workflow reports
-    status: maintained
-    prs: []
-    rationale: Routine report edits must not spend agent turns or exhaust the comment wake limit.
-    invariants:
-      - Only github-actions bot issue comments on incognitojam/styal may suppress a wake with the styal-report quiet marker; human and review comments still wake.
-      - Quiet remarks advance the watch watermark without consuming comment-only wakes; removing the marker on a later edit wakes normally.
-    implementation_paths:
-      - apps/server/src/orchestration-v2/pullRequestWatch.ts
-    upstream_paths:
-      - apps/server/src/orchestration-v2/pullRequestWatch.ts
-    tests:
-      - apps/server/src/orchestration-v2/pullRequestWatch.test.ts
-    upstream:
-      status: tracking
-      tracking:
-        - https://github.com/pingdotgg/t3code/pull/30674
-      retire_when: Upstream supports trusted workflow reports opting out of comment wakes.
 
   - id: relay-mobile-axiom-removal
     title: The relay and mobile app run without Axiom and its crash reporting
