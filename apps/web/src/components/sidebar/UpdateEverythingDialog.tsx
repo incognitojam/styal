@@ -112,8 +112,8 @@ function UpdateEverythingDialogContent({
     .toSorted((a, b) => Number(a.app === "this-app") - Number(b.app === "this-app"));
   const skipped = rows.filter((row) => row.skipped !== null);
   const restartsAll = updating.length > 0 && updating.every((row) => row.app !== null);
-  // Servers hand off together in no fixed order; only this app waits for the others.
-  const othersRestart = updating.some((row) => row.app !== null && row.app !== "this-app");
+  // Provider installs and server handoffs run in no fixed order; only this app waits for the rest.
+  const othersUpdate = updating.some((row) => row.app !== "this-app");
   // Older servers report no environment id, only the label this client gave their check.
   const belongsTo = (item: ConfirmDialogThreadActivity, row: UpdateEverythingRow) =>
     item.environmentId === undefined
@@ -143,7 +143,7 @@ function UpdateEverythingDialogContent({
         </AlertDialogDescription>
       </AlertDialogHeader>
       <ScrollArea scrollFade>
-        <div className="flex flex-col gap-3 px-6 pb-4">
+        <div className="flex flex-col gap-6 px-6 pb-4">
           {notes.map((note) => (
             <p key={note} className="text-muted-foreground text-sm">
               {note}
@@ -151,7 +151,7 @@ function UpdateEverythingDialogContent({
           ))}
           {updating.map((row) => {
             const note =
-              row.app === "this-app" && othersRestart
+              row.app === "this-app" && othersUpdate
                 ? "Restarts last"
                 : row.app !== null
                   ? null
@@ -162,7 +162,7 @@ function UpdateEverythingDialogContent({
               <section
                 aria-label={row.label}
                 key={row.environmentId ?? "this-app"}
-                className="min-w-0 border-t pt-3 text-sm"
+                className="min-w-0 text-sm"
               >
                 <div className="flex items-center gap-2">
                   <EnvironmentMachineIcon
