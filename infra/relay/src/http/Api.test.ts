@@ -5,6 +5,9 @@ import {
   type RelayClientDeviceRecord,
 } from "@t3tools/contracts/relay";
 import * as EnvironmentLinker from "../environments/EnvironmentLinker.ts";
+import * as AccountData from "../auth/AccountData.ts";
+import * as Accounts from "../auth/Accounts.ts";
+import * as AuthSessions from "../auth/AuthSessions.ts";
 import * as RelayTokens from "../auth/RelayTokens.ts";
 import * as Devices from "../agentActivity/Devices.ts";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Effect's Crypto has no generateKeyPairSync.
@@ -86,6 +89,7 @@ const relaySettings: RelayConfiguration.RelayConfiguration["Service"] = {
   clerkSecretKey: Redacted.make("clerk-secret-key"),
   clerkPublishableKey: "pk_test_test",
   clerkJwtAudience: "t3-code-relay",
+  signInCodeSecret: Redacted.make("test-sign-in-code-secret"),
   apnsDeliveryJobSigningSecret: Redacted.make("apns-delivery-secret"),
   cloudMintPrivateKey: Redacted.make("cloud-mint-private-key"),
   cloudMintPublicKey: "cloud-mint-public-key",
@@ -102,6 +106,7 @@ describe("managed endpoint provisioning errors", () => {
     const handlers = RelayHttpApi.layerClientApi.pipe(
       HttpRouter.provideRequest(
         Layer.mergeAll(
+          NodeCryptoLayer.layer,
           Layer.mock(EnvironmentCredentials.EnvironmentCredentials, {}),
           Layer.mock(EnvironmentLinks.EnvironmentLinks, {}),
           Layer.mock(ManagedEndpointProvider.ManagedEndpointProvider, {}),
@@ -132,6 +137,9 @@ describe("managed endpoint provisioning errors", () => {
           Layer.mock(Devices.Devices, {}),
           Layer.mock(T3ChatAccounts.T3ChatAccounts, { available: false }),
           Layer.mock(ManagedTunnelLimits.ManagedTunnelLimits, {}),
+          Layer.mock(Accounts.Accounts, {}),
+          Layer.mock(AccountData.AccountData, {}),
+          Layer.mock(AuthSessions.AuthSessions, {}),
         ),
       ),
       Layer.provideMerge(
@@ -141,6 +149,7 @@ describe("managed endpoint provisioning errors", () => {
               userId: "user-1",
               token: "test-token",
             }),
+          accountDpop: () => Effect.die("unused DPoP scheme"),
         }),
       ),
     );
@@ -221,6 +230,7 @@ describe("device listing compatibility", () => {
     const layerHandlers = RelayHttpApi.layerClientApi.pipe(
       HttpRouter.provideRequest(
         Layer.mergeAll(
+          NodeCryptoLayer.layer,
           Layer.mock(EnvironmentCredentials.EnvironmentCredentials, {}),
           Layer.mock(EnvironmentLinks.EnvironmentLinks, {}),
           Layer.mock(ManagedEndpointProvider.ManagedEndpointProvider, {}),
@@ -244,6 +254,9 @@ describe("device listing compatibility", () => {
           }),
           Layer.mock(T3ChatAccounts.T3ChatAccounts, { available: false }),
           Layer.mock(ManagedTunnelLimits.ManagedTunnelLimits, {}),
+          Layer.mock(Accounts.Accounts, {}),
+          Layer.mock(AccountData.AccountData, {}),
+          Layer.mock(AuthSessions.AuthSessions, {}),
         ),
       ),
       Layer.provideMerge(
@@ -253,6 +266,7 @@ describe("device listing compatibility", () => {
               userId: "user-1",
               token: "test-token",
             }),
+          accountDpop: () => Effect.die("unused DPoP scheme"),
         }),
       ),
     );
@@ -308,6 +322,7 @@ describe("Cloudflare rate-limit retry hint", () => {
     const layerHandlers = RelayHttpApi.layerClientApi.pipe(
       HttpRouter.provideRequest(
         Layer.mergeAll(
+          NodeCryptoLayer.layer,
           Layer.mock(EnvironmentCredentials.EnvironmentCredentials, {}),
           Layer.mock(EnvironmentLinks.EnvironmentLinks, {}),
           Layer.mock(ManagedEndpointProvider.ManagedEndpointProvider, {}),
@@ -326,6 +341,9 @@ describe("Cloudflare rate-limit retry hint", () => {
           Layer.mock(Devices.Devices, {}),
           Layer.mock(T3ChatAccounts.T3ChatAccounts, { available: false }),
           Layer.mock(ManagedTunnelLimits.ManagedTunnelLimits, {}),
+          Layer.mock(Accounts.Accounts, {}),
+          Layer.mock(AccountData.AccountData, {}),
+          Layer.mock(AuthSessions.AuthSessions, {}),
         ),
       ),
       Layer.provideMerge(
@@ -335,6 +353,7 @@ describe("Cloudflare rate-limit retry hint", () => {
               userId: "user-1",
               token: "test-token",
             }),
+          accountDpop: () => Effect.die("unused DPoP scheme"),
         }),
       ),
     );
@@ -522,6 +541,7 @@ function layerRelayUnlinkTest(input?: {
   readonly clearInbox?: HookInbox.HookInbox["Service"]["clear"];
 }) {
   return Layer.mergeAll(
+    NodeCryptoLayer.layer,
     Layer.mock(HookInbox.HookInbox, {
       clear: input?.clearInbox ?? (() => Effect.void),
     }),

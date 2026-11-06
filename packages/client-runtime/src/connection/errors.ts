@@ -57,6 +57,12 @@ function relayProtectedError(error: RelayProtectedError): ConnectionAttemptError
         traceId,
         hop: "relay",
       });
+    case "RelaySignInCodeInvalidError":
+      return new ConnectionBlockedError({
+        reason: "authentication",
+        detail: relayProtectedErrorMessage(error),
+        traceId: error.traceId,
+      });
     case "RelayEnvironmentConnectNotAuthorizedError":
       // A host swapping in a new tunnel leaves its allocation unready until
       // the tunnel is up, and nothing on the client changes when it is.
@@ -121,6 +127,8 @@ function relayProtectedError(error: RelayProtectedError): ConnectionAttemptError
         traceId,
         hop: "tunnel",
       });
+    case "RelayAuthRateLimitedError":
+    case "RelayEmailSignInUnavailableError":
     case "RelayEnvironmentLinkFailedError":
     case "RelayInternalError":
       return new ConnectionTransientError({

@@ -1,4 +1,5 @@
 import { ManagedRelay } from "@t3tools/client-runtime/relay";
+import { RelayDpopAccessTokenScope, RelayPublicClientId } from "@t3tools/contracts/relay";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as SecureStore from "expo-secure-store";
@@ -8,12 +9,10 @@ const MANAGED_RELAY_TOKEN_CACHE_VERSION = 1;
 
 const ManagedRelayAccessTokenCacheEntrySchema = Schema.Struct({
   accountId: Schema.String,
-  clientId: Schema.Literals(["t3-mobile", "t3-web"]),
+  clientId: RelayPublicClientId,
   relayUrl: Schema.String,
   thumbprint: Schema.String,
-  scopes: Schema.Array(
-    Schema.Literals(["environment:connect", "environment:status", "mobile:registration"]),
-  ),
+  scopes: Schema.Array(RelayDpopAccessTokenScope),
   accessToken: Schema.String,
   expiresAtMillis: Schema.Number,
 });

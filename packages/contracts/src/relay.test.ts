@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vite-plus/test";
 import * as Schema from "effect/Schema";
 
-import { RelayDeviceRegistrationRequest } from "./relay.ts";
+import { RelayDeviceRegistrationRequest, RelaySignInCode } from "./relay.ts";
 
+const decodeSignInCode = Schema.decodeUnknownExit(RelaySignInCode);
 const decodeDevice = Schema.decodeUnknownExit(RelayDeviceRegistrationRequest);
 const device = {
   deviceId: "device",
@@ -31,4 +32,16 @@ describe("mobile device platforms", () => {
       })._tag,
     ).toBe("Failure");
   });
+});
+
+describe("email sign-in codes", () => {
+  it.each(["00000000", "12345678", "99999999"])("accepts eight digits: %s", (code) => {
+    expect(decodeSignInCode(code)._tag).toBe("Success");
+  });
+  it.each(["123456", "1234567", "123456789", "1234abcd", "１２３４５６７８"])(
+    "rejects invalid code: %s",
+    (code) => {
+      expect(decodeSignInCode(code)._tag).toBe("Failure");
+    },
+  );
 });

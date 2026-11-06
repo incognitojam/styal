@@ -3,7 +3,7 @@ import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
 import * as Redacted from "effect/Redacted";
 
-import { apnsCredentialsConfig } from "./Config.ts";
+import { apnsCredentialsConfig, emailSignInConfig } from "./Config.ts";
 
 const resolve = (env: Record<string, string>) =>
   apnsCredentialsConfig.pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(env))));
@@ -75,5 +75,53 @@ describe("apnsCredentialsConfig", () => {
       const error = yield* resolve({ ...fullEnv, APNS_ENVIRONMENT: "staging" }).pipe(Effect.flip);
       expect(error._tag).toBe("ConfigError");
     }),
+  );
+});
+
+const resolveEmailSignIn = (stage: string, env: Record<string, string>) =>
+  emailSignInConfig(stage).pipe(
+    Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(env))),
+  );
+
+describe("emailSignInConfig", () => {
+  it.effect("stays off until a sender address is set, including empty CI values", () =>
+    Effect.gen(function* () {
+      expect(yield* resolveEmailSignIn("prod", {})).toEqual({
+        delivery: { kind: "disabled" },
+        testSignInCode: undefined,
+      });
+      expect(
+        (yield* resolveEmailSignIn("prod", {
+          RELAY_EMAIL_FROM_ADDRESS: "",
+          RELAY_EMAIL_DELIVERY: "",
+        })).delivery,
+      ).toEqual({ kind: "disabled" });
+    }),
+  );
+
+  it.effect("sends through Cloudflare from the configured address", () =>
+    Effect.gen(function* () {
+      expect(
+        (yield* resolveEmailSignIn("prod", { RELAY_EMAIL_FROM_ADDRESS: "sign-in@example.com" }))
+          .delivery,
+      ).toEqual({ kind: "cloudflare", fromAddress: "sign-in@example.com", fromName: "styal" });
+    }),
+  );
+
+  it.effect("refuses log delivery and test codes on prod", () =>
+    Effect.gen(function* () {
+      yield* Effect.flip(resolveEmailSignIn("prod", { RELAY_EMAIL_DELIVERY: "log" }));
+      yield* Effect.flip(resolveEmailSignIn("prod", { RELAY_TEST_SIGN_IN_CODE: "42424242" }));
+      expect(
+        yield* resolveEmailSignIn("dev", {
+          RELAY_EMAIL_DELIVERY: "log",
+          RELAY_TEST_SIGN_IN_CODE: "42424242",
+        }),
+      ).toEqual({ delivery: { kind: "log" }, testSignInCode: "42424242" });
+    }),
+  );
+
+  it.effect("rejects a test code that is not eight digits", () =>
+    Effect.flip(resolveEmailSignIn("dev", { RELAY_TEST_SIGN_IN_CODE: "1234" })),
   );
 });

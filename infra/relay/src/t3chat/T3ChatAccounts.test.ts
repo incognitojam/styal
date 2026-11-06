@@ -4,10 +4,12 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as TestClock from "effect/testing/TestClock";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
 import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
 
+import * as Accounts from "../auth/Accounts.ts";
 import * as RelayConfiguration from "../Config.ts";
 import * as T3ChatAccounts from "./T3ChatAccounts.ts";
 
@@ -29,6 +31,7 @@ const relaySettings = (
   clerkPublishableKey: "pk_test_test",
   clerkJwtAudience: "t3-code-relay",
   apnsDeliveryJobSigningSecret: Redacted.make("apns-delivery-secret"),
+  signInCodeSecret: Redacted.make("sign-in-code-secret"),
   cloudMintPrivateKey: Redacted.make("cloud-mint-private-key"),
   cloudMintPublicKey: "cloud-mint-public-key",
   managedEndpointBaseDomain: undefined,
@@ -66,11 +69,20 @@ const provide = (
     baseUrl: "https://chat.example.test",
     linkSecret: Redacted.make(SECRET),
   },
+  relayEmail: string | null = null,
 ) =>
   Effect.provide(
     T3ChatAccounts.layer.pipe(
       Layer.provide(RelayConfiguration.layer(relaySettings(t3Chat))),
       Layer.provide(Layer.succeed(HttpClient.HttpClient, client)),
+      Layer.provide(
+        Layer.mock(Accounts.Accounts, {
+          get: (userId) =>
+            Effect.succeed(
+              relayEmail === null ? Option.none() : Option.some({ userId, email: relayEmail }),
+            ),
+        }),
+      ),
     ),
   );
 
@@ -108,6 +120,23 @@ describe("T3ChatAccounts", () => {
       });
     }).pipe(provide(fakeT3Chat({}).client)),
   );
+
+  it.effect("uses the relay account's email without asking Clerk", () => {
+    const getUser = vi.spyOn(clerk, "getUser");
+    return Effect.gen(function* () {
+      const accounts = yield* T3ChatAccounts.T3ChatAccounts;
+      const url = new URL(yield* accounts.createLinkUrl({ userId: "usr_relay" }));
+      const [payload = ""] = (url.searchParams.get("token") ?? "").split(".");
+      expect(JSON.parse(Buffer.from(payload, "base64url").toString())).toMatchObject({
+        sub: "usr_relay",
+        email: "relay@example.test",
+      });
+      expect(getUser).not.toHaveBeenCalled();
+    }).pipe(
+      provide(fakeT3Chat({}).client, undefined, "relay@example.test"),
+      Effect.ensuring(Effect.sync(() => getUser.mockRestore())),
+    );
+  });
 
   it.effect("asks T3 Chat for the link with the shared secret", () => {
     const t3Chat = fakeT3Chat({ link: { email: "theo@t3.chat", plan: "premier", linkedAt: 1 } });

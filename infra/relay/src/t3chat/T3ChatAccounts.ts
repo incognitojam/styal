@@ -5,6 +5,7 @@ import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 import * as Base64Url from "effect/encoding/Base64Url";
@@ -13,6 +14,7 @@ import * as HttpClientRequest from "effect/http/HttpClientRequest";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import { RelayT3ChatLink } from "@t3tools/contracts/relay";
 
+import * as Accounts from "../auth/Accounts.ts";
 import * as RelayConfiguration from "../Config.ts";
 
 const LINK_TOKEN_TTL_SECONDS = 10 * 60;
@@ -89,6 +91,7 @@ export const signLinkToken = (
 export const make = Effect.gen(function* () {
   const config = yield* RelayConfiguration.RelayConfiguration;
   const client = yield* HttpClient.HttpClient;
+  const accounts = yield* Accounts.Accounts;
   const settings = config.t3Chat;
 
   const requireSettings = settings
@@ -111,6 +114,15 @@ export const make = Effect.gen(function* () {
       Effect.timeout(T3CHAT_REQUEST_TIMEOUT),
       Effect.mapError((cause) => new T3ChatRequestFailed({ operation, cause })),
     );
+  });
+
+  const accountEmail = Effect.fn("relay.t3chat.account_email")(function* (userId: string) {
+    const account = yield* accounts
+      .get(userId)
+      .pipe(Effect.mapError((cause) => new ClerkUserLookupFailed({ cause })));
+    return Option.isSome(account) && account.value.email !== null
+      ? account.value.email
+      : yield* lookupClerkPrimaryEmail(userId);
   });
 
   const lookupClerkPrimaryEmail = Effect.fn("relay.t3chat.lookup_clerk_primary_email")(function* (
@@ -139,7 +151,7 @@ export const make = Effect.gen(function* () {
     available: settings !== undefined,
     createLinkUrl: Effect.fn("relay.t3chat.create_link_url")(function* (input) {
       const { baseUrl, linkSecret } = yield* requireSettings;
-      const email = yield* lookupClerkPrimaryEmail(input.userId);
+      const email = yield* accountEmail(input.userId);
       const now = yield* DateTime.now;
       const token = signLinkToken(Redacted.value(linkSecret), {
         sub: input.userId,
