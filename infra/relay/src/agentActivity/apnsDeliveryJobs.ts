@@ -61,6 +61,8 @@ export const ApnsDeliveryJobPayload = Schema.Struct({
   aggregate: Schema.NullOr(RelayAgentActivityAggregateState),
   notification: Schema.NullOr(ApnsNotificationPayload),
   alert: Schema.optional(Schema.NullOr(ApnsLiveActivityAlert)),
+  // Signed authorization to end a removed registration's specific card.
+  registrationRemoved: Schema.optional(Schema.Literal(true)),
   createdAt: Schema.String,
   expiresAt: Schema.String,
 });
@@ -238,6 +240,7 @@ export function makeApnsDeliveryJobPayload(input: {
   readonly aggregate: ApnsDeliveryJobPayload["aggregate"];
   readonly notification?: ApnsNotificationPayload | null;
   readonly alert?: ApnsLiveActivityAlert | null | undefined;
+  readonly registrationRemoved?: true;
   readonly createdAt: string;
   readonly expiresAt: string;
   readonly jobId: string;
@@ -257,6 +260,7 @@ export function makeApnsDeliveryJobPayload(input: {
     notification: input.notification ?? null,
     // Omit absent fields to preserve signatures from older relay builds.
     ...(input.alert ? { alert: input.alert } : {}),
+    ...(input.registrationRemoved ? { registrationRemoved: true as const } : {}),
     createdAt: input.createdAt,
     expiresAt: input.expiresAt,
   };
