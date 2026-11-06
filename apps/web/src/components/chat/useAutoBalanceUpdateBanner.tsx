@@ -99,8 +99,8 @@ export function useAutoBalanceUpdateBanner(
         >
           <span className="min-w-0 truncate">{title}</span>
         </PopoverTrigger>
-        <PopoverPopup side="top" align="start" width="md">
-          <div className="space-y-3 text-xs">
+        <PopoverPopup side="top" align="start" className="max-w-[min(20rem,calc(100vw-2rem))]">
+          <div className="space-y-3 text-xs wrap-anywhere">
             {machines.map((machine) => (
               <div key={machine.environmentId} className="space-y-1">
                 <div className="font-medium">{machine.serverLabel}</div>
