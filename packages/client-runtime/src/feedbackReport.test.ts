@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { feedbackReportDeclineOptions, feedbackReportFromApproval } from "./feedbackReport.ts";
+import {
+  feedbackReportDeclineOptions,
+  feedbackReportFromApproval,
+  isAnsweredFeedbackReportApproval,
+} from "./feedbackReport.ts";
 
 const report = {
   title: "A title",
@@ -22,6 +26,29 @@ describe("feedbackReportFromApproval", () => {
       feedbackReportFromApproval({ toolName: "report_styal_issue", toolInput: { title: "x" } }),
     ).toBeNull();
     expect(feedbackReportFromApproval({})).toBeNull();
+  });
+});
+
+describe("isAnsweredFeedbackReportApproval", () => {
+  it.each([
+    { status: "completed", toolName: "report_styal_issue", expected: true },
+    { status: "cancelled", toolName: "report_styal_issue", expected: true },
+    { status: "waiting", toolName: "report_styal_issue", expected: false },
+    { status: "completed", toolName: "hardware_call", expected: false },
+  ])("$toolName $status is $expected", ({ status, toolName, expected }) => {
+    expect(isAnsweredFeedbackReportApproval({ type: "approval_request", status, toolName })).toBe(
+      expected,
+    );
+  });
+
+  it("ignores the report tool's own row", () => {
+    expect(
+      isAnsweredFeedbackReportApproval({
+        type: "dynamic_tool",
+        status: "completed",
+        toolName: "report_styal_issue",
+      }),
+    ).toBe(false);
   });
 });
 
