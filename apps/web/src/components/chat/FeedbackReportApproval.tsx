@@ -61,6 +61,7 @@ export function FeedbackReportApprovalActions(props: {
             <DialogDescription>{feedbackReportDescription(props.report)}</DialogDescription>
           </DialogHeader>
           <DialogPanel>
+            <hr className="mb-4 border-t border-dashed border-border" />
             <h3 className="mb-3 text-xl font-semibold wrap-break-word">{props.report.title}</h3>
             <ChatMarkdown
               text={props.report.body}
