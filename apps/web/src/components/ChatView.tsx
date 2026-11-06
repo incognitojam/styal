@@ -1,3 +1,4 @@
+import { projectFileActions } from "~/state/projectFileActions";
 import { continuedResponseWorkStartedAt } from "@t3tools/client-runtime/work-log/presentation";
 import { managedRelayAuthLoadAtom, managedRelaySessionAtom } from "@t3tools/client-runtime/relay";
 import { worktreeNeedsFirstCommit } from "@t3tools/client-runtime/state/vcs";
@@ -1987,11 +1988,15 @@ export default function ChatView(props: ChatViewProps) {
       .filter((action) => action.awaitingApproval !== undefined)
       .map((action) => action.id),
   );
+  const runFileAction = useAtomCommand(projectFileActions.run);
+  const canRunFileAction = useAtomValue(projectFileActions.run.permissionAtom(environmentId));
   const runReviewedFileAction = () => {
     const request = fileActionReview;
-    const action = activeProjectActions.find((candidate) => candidate.id === request?.actionId);
-    if (!request || !action) return;
-    void runProjectScriptStable(action, { worktreePath: request.worktreePath });
+    if (!request || !activeThreadId || !canRunFileAction) return;
+    void runFileAction({
+      environmentId,
+      input: { threadId: activeThreadId, turnItemId: request.turnItemId },
+    });
   };
   const runReviewedFileActionStable = useStableCallback(runReviewedFileAction);
   const {

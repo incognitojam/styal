@@ -2995,6 +2995,7 @@ export function shouldCollapseUserMessage(text: string): boolean {
 
 /** A styal.json setup action that waits for approval, as the work log offers to review it. */
 export interface FileActionReviewRequest {
+  readonly turnItemId: OrchestrationV2TurnItem["id"];
   readonly projectId: ProjectId;
   readonly actionId: string;
   readonly worktreePath: string;
@@ -3008,6 +3009,7 @@ export function fileActionReviewRequestOf(
   const awaiting = item.setupScript?.awaitingApproval;
   if (!item.setupScript || !awaiting) return null;
   return {
+    turnItemId: item.id,
     projectId: awaiting.projectId,
     actionId: awaiting.actionId,
     worktreePath: item.setupScript.worktreePath,

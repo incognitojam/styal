@@ -1,5 +1,5 @@
 import { assert, describe, it, vi } from "@effect/vitest";
-import { ProjectId, ThreadId } from "@t3tools/contracts";
+import { ProjectId, ThreadId, TurnItemId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -364,6 +364,8 @@ describe("styal.json setup actions", () => {
       runOnWorktreeCreate: boolean;
     }>;
     readonly approved: boolean;
+    readonly approveAfterWaiting?: boolean;
+    readonly exitCode?: number;
   }) => {
     const openCommand = vi.fn(
       (input: Parameters<TerminalManager.TerminalManager["Service"]["openCommand"]>[0]) =>
@@ -381,8 +383,16 @@ describe("styal.json setup actions", () => {
           updatedAt: "2026-06-20T00:00:00.000Z",
         }),
     );
-    const subscribe: TerminalManager.TerminalManager["Service"]["subscribe"] = () =>
-      Effect.succeed(() => {});
+    const listeners = new Set<
+      Parameters<TerminalManager.TerminalManager["Service"]["subscribe"]>[0]
+    >();
+    const subscribe: TerminalManager.TerminalManager["Service"]["subscribe"] = (listener) =>
+      Effect.sync(() => {
+        listeners.add(listener);
+        return () => {
+          listeners.delete(listener);
+        };
+      });
     const projectId = ProjectId.make(`project:file-${options.suffix}`);
     const threadId = ThreadId.make(`thread:file-${options.suffix}`);
     const project = {
@@ -426,15 +436,47 @@ describe("styal.json setup actions", () => {
       yield* (yield* LegacyImporter.LegacyV1ThreadImporter).reconcileShells;
       const service = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
       const projections = yield* ProjectionStore.ProjectionStoreV2;
-      const result = yield* service.runForThread({
-        threadId,
-        projectId,
-        worktreePath: "/synthetic/repo-worktree",
-      });
+      const runInput = { threadId, projectId, worktreePath: "/synthetic/repo-worktree" };
+      const initial = yield* service.runForThread(runInput);
+      let waitingId: string | undefined;
+      if (options.approveAfterWaiting) {
+        const waiting = (yield* projections.getThreadProjection(threadId)).turnItems.find(
+          (item) => item.type === "command_execution",
+        );
+        waitingId = waiting?.id;
+        const denied = yield* service
+          .runPending({ threadId, turnItemId: TurnItemId.make(waitingId!) })
+          .pipe(Effect.flip);
+        assert.equal(denied.reason, "run-failed");
+        assert.equal(openCommand.mock.calls.length, 0);
+        yield* (yield* ServerSettings.ServerSettingsService).updateSettings({
+          projectFileActionApprovals: { [`project:${projectId}`]: { [fileSetup.id]: approval } },
+        });
+      }
+      if (options.approveAfterWaiting) {
+        yield* service.runPending({ threadId, turnItemId: TurnItemId.make(waitingId!) });
+        const repeated = yield* service
+          .runPending({ threadId, turnItemId: TurnItemId.make(waitingId!) })
+          .pipe(Effect.flip);
+        assert.equal(repeated.reason, "run-failed");
+        assert.equal(openCommand.mock.calls.length, 1);
+        if (options.exitCode !== undefined) {
+          yield* Effect.forEach([...listeners], (listener) =>
+            listener({
+              type: "exited",
+              threadId,
+              terminalId: "setup-file-setup",
+              exitCode: options.exitCode!,
+              exitSignal: null,
+            }),
+          );
+        }
+      }
+      const result = initial;
       const rows = (yield* projections.getThreadProjection(threadId)).turnItems.filter(
         (item) => item.type === "command_execution",
       );
-      return { result, rows, openCommand, projectId };
+      return { result, rows, openCommand, projectId, waitingId };
     }).pipe(Effect.provide(Layer.mergeAll(dependencies, runner)));
   };
 
@@ -461,16 +503,28 @@ describe("styal.json setup actions", () => {
     }),
   );
 
-  it.effect("runs a file action whose exact command was approved", () =>
-    Effect.gen(function* () {
-      const { result, openCommand } = yield* runWith({
-        suffix: "approved",
-        localScripts: [],
-        approved: true,
-      });
-      assert.equal(result.status, "started");
-      assert.equal(openCommand.mock.calls[0]?.[0].command, "./scripts/bootstrap.sh");
-    }),
+  it.effect.each([0, 7])(
+    "resumes the approved file action in its waiting row with exit %s",
+    (exitCode) =>
+      Effect.gen(function* () {
+        const { result, rows, openCommand, waitingId } = yield* runWith({
+          suffix: "approved",
+          localScripts: [],
+          approved: false,
+          approveAfterWaiting: true,
+          exitCode,
+        });
+        assert.equal(result.status, "awaiting-approval");
+        assert.equal(openCommand.mock.calls[0]?.[0].command, "./scripts/bootstrap.sh");
+        assert.equal(rows.length, 1);
+        assert.equal(rows[0]?.id, waitingId);
+        assert.equal(rows[0]?.status, exitCode === 0 ? "completed" : "failed");
+        assert.equal(rows[0]?.type === "command_execution" && rows[0].exitCode, exitCode);
+        assert.equal(
+          rows[0]?.type === "command_execution" && rows[0].setupScript?.awaitingApproval,
+          undefined,
+        );
+      }),
   );
 
   it.effect("prefers a saved setup action over an approved file one", () =>

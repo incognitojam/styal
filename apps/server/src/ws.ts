@@ -1,3 +1,4 @@
+import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts";
 import { OrchestrationGetCommandOutputError } from "@t3tools/contracts";
 import { resolveAddProjectDefaultDirectory } from "./project/AddProjectDefaultDirectory.ts";
 import { OrchestrationDispatchCommandError } from "@t3tools/contracts";
@@ -1409,6 +1410,7 @@ export const layerWsRpc = (
       const startup = yield* ServerRuntimeStartup.ServerRuntimeStartup;
       const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
       const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+      const projectScriptRunner = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
       const fileActionApprovals =
         yield* ClientFeatureUsage.projectFileApprovals(clientAnalyticsProps);
       const observeWorkflowApprovals =
@@ -2850,6 +2852,7 @@ export const layerWsRpc = (
                 }),
             ),
           ),
+        [WS_METHODS.projectsFileActionRun]: (input) => projectScriptRunner.runPending(input),
         [WS_METHODS.projectsFileActionReview]: (input) => fileActionApprovals.review(input),
         [WS_METHODS.projectsFileActionApprovalSet]: (input) =>
           fileActionApprovals.setApproved(input),

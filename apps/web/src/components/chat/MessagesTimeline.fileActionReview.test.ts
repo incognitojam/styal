@@ -42,6 +42,7 @@ const setupRow = (status: CommandItem["status"], awaiting: boolean): CommandItem
 describe("fileActionReviewRequestOf", () => {
   it("offers a review for an idle setup row awaiting approval, in its worktree", () => {
     expect(fileActionReviewRequestOf(setupRow("idle", true))).toEqual({
+      turnItemId: setupRow("idle", true).id,
       projectId,
       actionId: "install",
       worktreePath: "/worktrees/feature",

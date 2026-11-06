@@ -1,5 +1,6 @@
 import {
   EventId,
+  ProjectFileActionApprovalError,
   linkOriginIsFenced,
   ProjectId,
   ProjectScriptIcon,
@@ -209,6 +210,8 @@ export interface ProjectSetupScriptRunnerInput {
     readonly scripts: ReadonlyArray<ProjectScript>;
   };
   readonly preferredTerminalId?: string;
+  readonly expectedActionId?: string;
+  readonly resumeRunId?: string;
   /**
    * Report the script's exit through `completion`, and forward cleaned output
    * lines while it runs. The bootstrap flow uses this to drive the worktree
@@ -258,6 +261,10 @@ export type ProjectSetupScriptRunnerError = typeof ProjectSetupScriptRunnerError
 export class ProjectSetupScriptRunner extends Context.Service<
   ProjectSetupScriptRunner,
   {
+    readonly runPending: (input: {
+      readonly threadId: ThreadId;
+      readonly turnItemId: TurnItemId;
+    }) => Effect.Effect<void, ProjectFileActionApprovalError>;
     readonly runForThread: (
       input: ProjectSetupScriptRunnerInput,
     ) => Effect.Effect<ProjectSetupScriptRunnerResult, ProjectSetupScriptRunnerError>;
@@ -361,7 +368,10 @@ export const make = Effect.gen(function* () {
                       ? // Not "waiting": nothing runs, so the thread must not look busy.
                         "idle"
                       : "pending",
-            startedAt: previous?.startedAt == null ? at : DateTime.makeUnsafe(previous.startedAt),
+            startedAt:
+              previous?.startedAt == null || previous.status === "idle"
+                ? at
+                : DateTime.makeUnsafe(previous.startedAt),
             completedAt: finished ? at : null,
             updatedAt: at,
             ...(typeof input.payload.exitCode === "number"
@@ -691,8 +701,13 @@ export const make = Effect.gen(function* () {
       project,
       yield* fileActionApprovals.automationConfig(project),
     );
+    const eligible =
+      input.expectedActionId === undefined
+        ? scripts
+        : scripts.filter((script) => script.id === input.expectedActionId);
     const script =
-      trigger === "settle" ? settleProjectScript(scripts) : setupProjectScript(scripts);
+      trigger === "settle" ? settleProjectScript(eligible) : setupProjectScript(eligible);
+    if (!script && input.expectedActionId !== undefined) return { status: "no-script" } as const;
     if (!script) {
       // A styal.json action asking for this role runs only once its command is
       // approved; until then the thread says so instead of silently skipping.
@@ -770,7 +785,8 @@ export const make = Effect.gen(function* () {
     }
     const requestedAt = yield* nowIso;
     nextRunSequence += 1;
-    const runId = `${input.threadId}:${script.id}:${requestedAt}:${nextRunSequence}`;
+    const runId =
+      input.resumeRunId ?? `${input.threadId}:${script.id}:${requestedAt}:${nextRunSequence}`;
 
     // The script was written for a fresh worktree, so running it over the project
     // root is destructive rather than merely useless: a setup line that links
@@ -978,7 +994,56 @@ export const make = Effect.gen(function* () {
     } as const;
   });
 
-  return ProjectSetupScriptRunner.of({ runForThread });
+  const runPending = Effect.fn("ProjectSetupScriptRunner.runPending")(
+    function* (input: { readonly threadId: ThreadId; readonly turnItemId: TurnItemId }) {
+      const rows = yield* sql<{ readonly payload_json: string }>`
+      SELECT payload_json FROM orchestration_v2_projection_turn_items
+      WHERE thread_id = ${input.threadId} AND turn_item_id = ${input.turnItemId}
+    `;
+      const item =
+        rows[0] === undefined ? undefined : yield* decodeTurnItemJson(rows[0].payload_json);
+      if (
+        item?.type !== "command_execution" ||
+        item.status !== "idle" ||
+        !item.setupScript?.awaitingApproval
+      ) {
+        return yield* new ProjectFileActionApprovalError({
+          reason: "run-failed",
+          message: "This action is no longer waiting for approval.",
+        });
+      }
+      const shell = yield* threads.getThreadShell(input.threadId);
+      if (shell?.projectId !== item.setupScript.awaitingApproval.projectId) {
+        return yield* new ProjectFileActionApprovalError({
+          reason: "run-failed",
+          message: "This action does not belong to the thread's project.",
+        });
+      }
+      const result = yield* runForThread({
+        threadId: input.threadId,
+        projectId: shell.projectId,
+        worktreePath: item.setupScript.worktreePath,
+        trigger: triggerForTerminalId(item.setupScript.terminalId),
+        expectedActionId: item.setupScript.awaitingApproval.actionId,
+        resumeRunId: item.setupScript.runId,
+      });
+      if (result.status !== "started") {
+        return yield* new ProjectFileActionApprovalError({
+          reason: "run-failed",
+          message: "The action could not run. Review its current command and approval.",
+        });
+      }
+    },
+    Effect.mapError(
+      (cause) =>
+        new ProjectFileActionApprovalError({
+          reason: "run-failed",
+          message: cause instanceof Error ? cause.message : "Could not run the approved action.",
+        }),
+    ),
+  );
+
+  return ProjectSetupScriptRunner.of({ runForThread, runPending });
 });
 
 export const layer = Layer.effect(ProjectSetupScriptRunner, make);

@@ -42,7 +42,13 @@ import * as Schema from "effect/Schema";
 import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
 import * as RpcMiddleware from "effect/rpc/RpcMiddleware";
-import { AuthSessionId, NonNegativeInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import {
+  ThreadId,
+  TurnItemId,
+  AuthSessionId,
+  NonNegativeInt,
+  TrimmedNonEmptyString,
+} from "./baseSchemas.ts";
 import {
   ProviderAuthCancelInput,
   ProviderAuthCompleteInput,
@@ -457,6 +463,7 @@ export const WS_METHODS = {
   projectsSearchContents: "projects.searchContents",
   projectsSearchEntries: "projects.searchEntries",
   projectsWriteFile: "projects.writeFile",
+  projectsFileActionRun: "projects.fileActionRun",
   projectsFileActionReview: "projects.fileActionReview",
   projectsFileActionApprovalSet: "projects.fileActionApprovalSet",
   projectsMutate: "projects.mutate",
@@ -1468,6 +1475,11 @@ const WsProjectsFileActionReviewRpc = Rpc.make(WS_METHODS.projectsFileActionRevi
   error: ProjectFileActionRpcError,
 });
 /** Approve what the server reads now, or revoke; user-only, never exposed to agents. */
+const WsProjectsFileActionRunRpc = Rpc.make(WS_METHODS.projectsFileActionRun, {
+  payload: Schema.Struct({ threadId: ThreadId, turnItemId: TurnItemId }),
+  success: Schema.Void,
+  error: ProjectFileActionRpcError,
+});
 const WsProjectsFileActionApprovalSetRpc = Rpc.make(WS_METHODS.projectsFileActionApprovalSet, {
   payload: Schema.Struct({ ...ProjectFileActionApprovalInput.fields, approved: Schema.Boolean }),
   success: ProjectFileActionReview,
@@ -2410,6 +2422,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsHardwareAuditListRpc,
   WsProjectsFileActionReviewRpc,
   WsProjectsFileActionApprovalSetRpc,
+  WsProjectsFileActionRunRpc,
   WsSubscribeHardwareStateRpc,
   WsSubscribeServerConfigRpc,
   WsSubscribeServerLifecycleRpc,
