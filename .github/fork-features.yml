@@ -938,6 +938,35 @@ features:
         - https://github.com/pingdotgg/t3code/pull/11481
       retire_when: Upstream provides independent event sound choices and previews with equivalent preference migration and playback behavior.
 
+  - id: composer-pending-approvals
+    title: Answer pending approvals on the composer on web and desktop
+    status: maintained
+    prs: [1347]
+    invariants:
+      - Web and desktop answer every pending approval in a banner attached to the composer, the surface pending questions use; timeline rows have no approval buttons.
+      - The request's timeline row stays out of collapsed work and says it is waiting, and a request whose row is paged out still gets a row at the end of the timeline.
+      - The banner shows the complete command, wrapping and scrolling past a fixed height, never truncating, together with the reason, app name and full-access explanation.
+      - An approval that arrives while the user is typing stays hidden from the banner and the row until the typing guard releases it.
+      - Several pending approvals are answered one at a time, oldest first, with a count on the banner.
+      - Subagent approvals keep appearing above a parent's composer, using the same buttons.
+    rationale: Upstream #26255 moved approvals onto timeline rows with inline text buttons. The maintainer considers an approval no different from a question or a secret request, which stay above the composer, and does not want larger buttons in the timeline. Upstream's row logic is kept, so the fork only stops passing the respond callback to the timeline in ChatView and adds one banner to ChatComposer.
+    implementation_paths:
+      - apps/web/src/components/chat/ComposerPendingApprovalBanner.tsx
+    upstream_paths:
+      - apps/web/src/components/ChatView.tsx
+      - apps/web/src/components/chat/ChatComposer.tsx
+      - apps/web/src/components/chat/ChildThreadApprovals.tsx
+      - apps/web/src/components/chat/TimelinePendingApprovalRow.tsx
+    tests:
+      - apps/web/src/components/chat/ComposerPendingApprovalBanner.browser.test.tsx
+      - apps/web/src/components/chat/MessagesTimeline.browser.test.tsx
+      - apps/web/src/components/chat/composerTypingGuard.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/26255
+      retire_when: The maintainer accepts upstream's timeline-row approvals, or upstream moves approvals back above the composer.
+
   - id: data-import-from-t3-code
     title: T3 Code migration in setup and Settings
     status: review-needed
@@ -1842,7 +1871,7 @@ features:
       - Reports only go to incognitojam/styal, never upstream or the repository a thread works in.
       - An agent's report posts only after the user approves it; clients offer posting only beside the full report and the posting account, agents cannot answer that card, and it appears in every runtime mode.
       - While an agent's report waits, thread lists show the thread as asking for input rather than as a permission approval; every other server approval keeps the Approval status.
-      - On web the request stays in a banner attached to the composer while it waits, separate from the timeline-row surface other approvals use, so a thread keeps showing it however far the timeline has scrolled.
+      - On web the request stays in a banner attached to the composer while it waits.
       - A form report that was not posted keeps its text, in the form and after closing it, so the user can fix the sign-in and post again.
       - Without a usable GitHub credential, or when GitHub refuses, the report is not lost; the caller gets a link to the issue form with the report filled in.
       - Filing uses the server's GitHub credential whichever way it was provided (saved token, GH_TOKEN or gh), not the gh CLI.
@@ -1852,7 +1881,6 @@ features:
       - apps/mobile/src/features/threads/FeedbackReportApprovalCard.tsx
       - apps/server/src/feedback/FeedbackService.ts
       - apps/server/src/mcp/toolkits/feedback/tools.ts
-      - apps/web/src/components/chat/ChatComposer.tsx
       - apps/web/src/components/chat/FeedbackReportApproval.tsx
       - apps/web/src/components/chat/TimelinePendingApprovalRow.tsx
       - apps/web/src/components/settings/FeedbackDialog.tsx

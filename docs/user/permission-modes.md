@@ -22,7 +22,8 @@ keep it for one thread. Existing threads and modes you choose in a draft keep th
 An administrator can cap the modes available on a machine with a
 [managed policy](./managed-policy.md#permission-modes); modes above the cap show who manages them.
 
-Approve or reject requests in the conversation to let the agent continue. Permission modes do
+Approve or reject requests above the message box to let the agent continue; the request's row in
+the conversation shows that it is waiting. Permission modes do
 not prevent the agent from asking questions about the task. Subagent approval requests appear in
 the parent conversation with the subagent's name, so you can respond without switching threads.
 

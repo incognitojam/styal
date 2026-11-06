@@ -3551,7 +3551,6 @@ export default function ChatView(props: ChatViewProps) {
                 pendingApprovals={pendingApprovals}
                 heldApprovalRequestIds={heldApprovalRequestIds}
                 respondingRequestIds={respondingRequestIds}
-                onRespondToApproval={onRespondToApprovalStable}
                 canOperateThread={canOperateThread}
                 threadDetailRef={routeThreadDetailRef}
                 entriesInput={timelineEntriesInput}

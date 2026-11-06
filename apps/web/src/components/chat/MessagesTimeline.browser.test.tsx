@@ -1435,6 +1435,9 @@ it("keeps concurrent approvals actionable outside collapsed work and restores se
   await expect
     .element(screen.getByRole("button", { name: "Allow once", exact: true }))
     .toBeEnabled();
+  await screen.rerender(ui({ onRespondToApproval: undefined }));
+  await expect.element(screen.getByText("Waiting for approval").first()).toBeVisible();
+  await vi.waitFor(() => expect(screen.buttons("Approve")).toHaveLength(0));
   await screen.rerender(
     ui({ pendingApprovals: [{ ...approvals[0]!, responseCapability: "not_resumable" }] }),
   );

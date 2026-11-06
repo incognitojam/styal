@@ -242,6 +242,13 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 
 ## Staying oriented while agents work
 
+- **Approvals stay above the message box.** On web and desktop, a pending approval sits above the
+  composer with the full command and clearly sized buttons, the same place as an agent's questions,
+  so it stays in view however far the conversation scrolls. Its row in the conversation shows that
+  it is waiting. T3 Code answers approvals with text buttons on the conversation row. Compared with
+  [T3 Code revision 6577c6b](https://github.com/pingdotgg/t3code/tree/6577c6b6185167c0e502fa01f9e8e8f2dee6ff25),
+  checked November 6, 2026.
+
 - **Warnings for agents that may be stuck.** styal records prolonged startup or inactivity in
   the thread's activity log and shows the warning on web, desktop, and mobile. The notice updates
   when activity resumes or the turn ends; the agent is never automatically retried. Compared
