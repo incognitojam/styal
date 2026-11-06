@@ -3,6 +3,7 @@ import { useNavigation, type StaticScreenProps } from "@react-navigation/native"
 import {
   AuthProvidersManageScope,
   AuthOrchestrationReadScope,
+  AuthSourceControlWriteScope,
   type EnvironmentId,
   type ServerProvider,
 } from "@t3tools/contracts";
@@ -103,6 +104,7 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
     ) ?? false;
   const canManageProviders = useEnvironmentScope(environmentId, AuthProvidersManageScope);
   const canRead = useEnvironmentScope(environmentId, AuthOrchestrationReadScope);
+  const canFileFeedback = useEnvironmentScope(environmentId, AuthSourceControlWriteScope);
   const busy = !connected || pending !== null || running || providerBusy;
   const disabled = !allowed || busy;
   const version = config?.environment.serverVersion;
@@ -313,6 +315,14 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
                       disabled={disabled}
                       loading={pending === "server" || running}
                       onPress={requestServerUpdate}
+                    />
+                  ) : null}
+                  {canFileFeedback ? (
+                    <SettingsActionRow
+                      icon="exclamationmark.circle"
+                      label="Send feedback"
+                      disabled={disabled}
+                      onPress={() => navigation.navigate("SettingsFeedback", { environmentId })}
                     />
                   ) : null}
                 </SettingsSection>

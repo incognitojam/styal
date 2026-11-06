@@ -88,6 +88,7 @@ import * as DeviceService from "./device/DeviceService.ts";
 import * as DeviceHubProxy from "./device/DeviceHubProxy.ts";
 import * as DeviceIdle from "./device/DeviceIdle.ts";
 import * as HardwareHttp from "./hardware/HardwareHttp.ts";
+import * as FeedbackService from "./feedback/FeedbackService.ts";
 import * as HardwareService from "./hardware/HardwareService.ts";
 import * as DeviceSharing from "./device/DeviceSharing.ts";
 import {
@@ -637,6 +638,7 @@ const ProviderAutoUpdaterLive = Layer.effectDiscard(
 
 const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   AgentAwarenessRelay.layer,
+  FeedbackService.layer,
   HardwareService.layer,
   HeldHooksWaker.layer,
   layerThreadSettlementWorker,

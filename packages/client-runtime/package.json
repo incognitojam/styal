@@ -67,6 +67,10 @@
       "types": "./src/promptLinks.ts",
       "default": "./src/promptLinks.ts"
     },
+    "./feedback-report": {
+      "types": "./src/feedbackReport.ts",
+      "default": "./src/feedbackReport.ts"
+    },
     "./secret-request": {
       "types": "./src/secretRequest.ts",
       "default": "./src/secretRequest.ts"

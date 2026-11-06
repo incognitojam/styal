@@ -423,6 +423,13 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 
 ## Error reports
 
+- **Report a bug from inside the app.** Ask an agent or use **Send feedback**. It posts a public
+  issue on styal's repository under your GitHub sign-in, and an agent's report needs your approval
+  first. Compared with
+  [T3 Code revision 6524a8d437](https://github.com/pingdotgg/t3code/tree/6524a8d43795dc543f7cfb572388cdea3662ad48),
+  checked November 5, 2026 by searching its pull requests and issues, which has no such route for
+  its own bugs.
+
 - **Server errors reach the styal maintainers.** Release builds report server errors, scrubbed of
   personal paths and secrets, alongside product usage data so bugs can be found and fixed. Turn
   them off with `T3CODE_ERROR_REPORTING_ENABLED=false`. Compared with

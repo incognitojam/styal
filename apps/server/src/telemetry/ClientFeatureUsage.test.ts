@@ -3,6 +3,7 @@ import { FORK_CLIENT_USAGE_VERSION, ForkClientUsageInput, ProjectId } from "@t3t
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
+import * as FeedbackService from "../feedback/FeedbackService.ts";
 import * as ProjectFileActionApprovals from "../project/ProjectFileActionApprovals.ts";
 import * as AnalyticsService from "./AnalyticsService.ts";
 import * as ClientFeatureUsage from "./ClientFeatureUsage.ts";
@@ -776,4 +777,53 @@ it.effect("records stream quality summaries from web and mobile as their own eve
     }
     expect(isUsage({ ...summary, decoderResets: -1 })).toBe(false);
   }),
+);
+
+it.effect(
+  "observes feedback once with its outcome and none of the report, only from a surface",
+  () =>
+    Effect.gen(function* () {
+      const events: unknown[] = [];
+      const analytics = AnalyticsService.AnalyticsService.of({
+        recordOwners: () => Effect.void,
+        record: (event, properties) => Effect.sync(() => void events.push({ event, properties })),
+        flush: Effect.void,
+      });
+      const service = FeedbackService.FeedbackService.of({
+        submit: () =>
+          Effect.succeed({
+            status: "not_filed",
+            reason: "Synthetic reason",
+            manualUrl: "https://example.com/synthetic",
+          }),
+        reportFromAgent: () => Effect.die("unused"),
+      });
+      const provided = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+        effect.pipe(
+          Effect.provideService(AnalyticsService.AnalyticsService, analytics),
+          Effect.provideService(FeedbackService.FeedbackService, service),
+        );
+      const draft = { title: "Synthetic title", body: "Synthetic body" };
+
+      const relayed = yield* provided(ClientFeatureUsage.feedback({}));
+      yield* relayed.submit(draft);
+      expect(events).toEqual([]);
+
+      const fromWeb = yield* provided(ClientFeatureUsage.feedback({ surface: "web" }));
+      yield* fromWeb.submit(draft);
+      expect(events).toEqual([
+        {
+          event: "feature.used",
+          properties: {
+            feature: "feedback",
+            action: "submit",
+            source: "user",
+            feedbackStatus: "not_filed",
+            surface: "web",
+            outcome: "success",
+            durationMs: expect.any(Number),
+          },
+        },
+      ]);
+    }),
 );

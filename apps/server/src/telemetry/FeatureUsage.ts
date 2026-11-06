@@ -163,6 +163,11 @@ type ObservedUsage =
       readonly hardwareTier?: HardwareTier | undefined;
     }
   | {
+      readonly feature: "feedback";
+      readonly action: "submit" | "report";
+      readonly source: "user" | "agent";
+    }
+  | {
       readonly feature: "project-file-approvals";
       readonly action: "review" | "approve" | "revoke";
       readonly source: "user";
@@ -204,13 +209,14 @@ type ObservedUsage =
 
 /**
  * Agent tools that report each call as `feature.used` with the fork's vocabulary and
- * outcomes. Every tool in the browser, device and hardware toolkits is observed, so
+ * outcomes. Every tool in the browser, device, hardware and feedback toolkits is observed, so
  * upstream's generic `mcp.tool.invoked` skips them to report each call once.
  */
 export const toolReportedAsFeatureUsage = (tool: string) =>
   tool.startsWith("preview_") ||
   tool.startsWith("device_") ||
   tool.startsWith("hardware_") ||
+  tool === "report_styal_issue" ||
   tool === "watch_workflow_run" ||
   tool === "unwatch_workflow_run";
 

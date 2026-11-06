@@ -46,6 +46,7 @@ import { worktreeBranchNote } from "../../apps/server/src/orchestration-v2/Workt
 import { AttachmentToolkit } from "../../apps/server/src/mcp/toolkits/attachment/tools.ts";
 import { DeviceToolkit } from "../../apps/server/src/mcp/toolkits/device/tools.ts";
 import { EnvironmentToolkit } from "../../apps/server/src/mcp/toolkits/environment/tools.ts";
+import { FeedbackToolkit } from "../../apps/server/src/mcp/toolkits/feedback/tools.ts";
 import { HardwareToolkit } from "../../apps/server/src/mcp/toolkits/hardware/tools.ts";
 import { HtmlToolkit } from "../../apps/server/src/mcp/toolkits/html/tools.ts";
 import { OrchestratorToolkit } from "../../apps/server/src/mcp/toolkits/orchestrator/tools.ts";
@@ -381,6 +382,7 @@ const t3SourceTools: ReadonlyArray<Tool.Any> = [
   PreviewToolkit,
   DeviceToolkit,
   HardwareToolkit,
+  FeedbackToolkit,
   HtmlToolkit,
 ].flatMap((toolkit): ReadonlyArray<Tool.Any> => Object.values(toolkit.tools));
 const t3Tools: ReadonlyArray<ApiTool> = t3SourceTools.map((tool) => ({
@@ -1017,6 +1019,8 @@ const t3Default = (sample: Sample, name: string, input: Readonly<Record<string, 
       sample.linked.add(pr().url);
       return { ...pr(), alreadyLinked };
     }
+    case "report_styal_issue":
+      return { status: "filed", issueUrl: "https://github.com/incognitojam/styal/issues/9999" };
     case "request_secret": {
       // T3 names both a ref and a file with 32 hex characters, and keeps files in its secrets dir.
       const id = "5f0c9e2a7b4d4183a6e1c8d2b9f07a64";

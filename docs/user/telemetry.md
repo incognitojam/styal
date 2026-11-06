@@ -24,6 +24,8 @@ Hardware tools and the hardware lease controls in Settings and the thread header
 operation, its outcome, and for an agent's device call the action's access tier. Device names,
 addresses, action names, arguments, responses and uploaded files are not collected, and calls
 scripts make through a lease's proxy are not recorded.
+Sending feedback, from the form or through an agent, records how it ended: posted, not posted,
+declined or not answered. The report itself and the GitHub account are not collected.
 Reviewing, approving and revoking a `styal.json` action that runs on its own records which of the
 three it was and its outcome. Projects, action names, commands and file paths are not collected.
 Approving a pull request's waiting workflows records that you did and its outcome. Repositories,

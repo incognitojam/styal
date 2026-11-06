@@ -244,6 +244,7 @@ import { ProjectFilePicker } from "./files/ProjectFilePicker";
 import { openLinkPullRequestDialog } from "./pullRequest/LinkPullRequestDialog";
 import { canShareWithGuestAtom } from "./chat/guestShareAvailability";
 import { openGuestShareDialog } from "./chat/guestShareDialogState";
+import { FeedbackDialogHost, openFeedbackDialog } from "./settings/FeedbackDialog";
 import { ProjectContentSearchDialog } from "./search/ProjectContentSearchDialog";
 import { settingsForThisPlatform, SETTINGS_SECTION_LABELS } from "./settings/settingsSearch";
 import { primaryServerKeybindingsAtom } from "../state/server";
@@ -403,6 +404,7 @@ export function CommandPalette({ children }: { children: ReactNode }) {
 
   return (
     <ComposerHandleContext value={composerHandleRef}>
+      <FeedbackDialogHost />
       <CommandDialog
         open={state.open}
         onOpenChange={(open, eventDetails) => {
@@ -571,6 +573,9 @@ function OpenCommandPaletteDialog(props: {
   const { environments } = useEnvironments();
   const desktopLocalBootstraps = useDesktopLocalBootstraps();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const canSubmitFeedback = useAtomValue(
+    serverEnvironment.submitFeedback.permissionAtom(primaryEnvironmentId),
+  );
   const availableSettingsSearchItems = useAvailableSettingsSearchItems();
   const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread } =
     useHandleNewThread();
@@ -1708,6 +1713,19 @@ function OpenCommandPaletteDialog(props: {
           },
         });
         if (refreshed._tag === "Failure") throw squashAtomCommandFailure(refreshed);
+      },
+    });
+  }
+
+  if (primaryEnvironmentId !== null && canSubmitFeedback) {
+    actionItems.push({
+      kind: "action",
+      value: "action:send-feedback",
+      searchTerms: ["send feedback", "report a bug", "report issue", "suggestion", "github issue"],
+      title: "Send feedback",
+      icon: <MessageSquareIcon className={ITEM_ICON_CLASS} />,
+      run: async () => {
+        openFeedbackDialog(primaryEnvironmentId);
       },
     });
   }

@@ -1648,6 +1648,38 @@ features:
       tracking: []
       retire_when: Upstream excludes failed and declined edits from the changed-file count in tool group summaries.
 
+  - id: feedback-reports
+    title: Report styal bugs and feedback as GitHub issues from an agent or the app
+    status: maintained
+    prs: [1278]
+    invariants:
+      - Reports only go to incognitojam/styal, never upstream or the repository a thread works in.
+      - An agent's report posts only after the user approves it; clients offer posting only beside the full report and the posting account, agents cannot answer that card, and it appears in every runtime mode.
+      - A form report that was not posted keeps its text, in the form and after closing it, so the user can fix the sign-in and post again.
+      - Without a usable GitHub credential, or when GitHub refuses, the report is not lost; the caller gets a link to the issue form with the report filled in.
+      - Filing uses the server's GitHub credential whichever way it was provided (saved token, GH_TOKEN or gh), not the gh CLI.
+    rationale: Users and agents had no way to report a styal bug from inside styal. `styal triage` runs only from a terminal, and analytics events are dropped for anyone who opts out and cannot carry a reply.
+    implementation_paths:
+      - apps/mobile/src/features/settings/SettingsFeedbackRouteScreen.tsx
+      - apps/mobile/src/features/threads/FeedbackReportApprovalCard.tsx
+      - apps/server/src/feedback/FeedbackService.ts
+      - apps/server/src/mcp/toolkits/feedback/tools.ts
+      - apps/web/src/components/chat/FeedbackReportApproval.tsx
+      - apps/web/src/components/chat/TimelinePendingApprovalRow.tsx
+      - apps/web/src/components/settings/FeedbackDialog.tsx
+      - packages/client-runtime/src/feedbackReport.ts
+      - packages/source-control-github/src/server/gitHubIssueFiling.ts
+    upstream_paths:
+      - packages/source-control-core/src/server/driver.ts
+    tests:
+      - apps/server/src/feedback/FeedbackService.test.ts
+      - packages/client-runtime/src/feedbackReport.test.ts
+      - packages/source-control-github/src/server/gitHubIssueFiling.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream ships a way to report bugs from inside the app that can target the fork's repository.
+
   - id: first-turn-unread-state
     title: Mark first thread completions unread
     status: review-needed

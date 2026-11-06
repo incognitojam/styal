@@ -46,6 +46,20 @@ export interface SourceControlSignIn {
   ) => Effect.Effect<SourceControlAppAccess["status"]>;
 }
 
+export interface SourceControlIssueFiling {
+  /** The account an issue would be filed as. Null when the host has no usable credential. */
+  readonly account: (host: string) => Effect.Effect<string | null>;
+  readonly file: (input: {
+    readonly host: string;
+    readonly repository: string;
+    readonly title: string;
+    readonly body: string;
+  }) => Effect.Effect<
+    | { readonly status: "filed"; readonly url: string }
+    | { readonly status: "refused"; readonly reason: string }
+  >;
+}
+
 export interface SourceControlDriverInstance {
   readonly sourceControl: SourceControlProvider.SourceControlProvider["Service"];
   readonly discovery: SourceControlProviderDiscoverySpec;
@@ -63,6 +77,8 @@ export interface SourceControlDriverInstance {
     Scope.Scope
   >;
   readonly signIn?: SourceControlSignIn;
+  /** Files issues on the user's behalf. Only GitHub, where styal's own issues live. */
+  readonly issueFiling?: SourceControlIssueFiling;
 }
 
 /** What the server gives every driver. A driver builds anything else it needs itself. */

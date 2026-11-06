@@ -3,7 +3,9 @@ import type {
   ProviderApprovalDecision,
   ProviderApprovalOption,
   RuntimeRequestId,
+  ScopedThreadRef,
 } from "@t3tools/contracts";
+import { feedbackReportFromApproval } from "@t3tools/client-runtime/feedback-report";
 import {
   FULL_ACCESS_OVERRIDE_QUESTION,
   fullAccessOverrideExplanation,
@@ -13,8 +15,10 @@ import { Pressable, View } from "react-native";
 
 import { AppText as Text } from "../../components/ui/AppText";
 import type { PendingApproval } from "../../lib/threadActivity";
+import { FeedbackReportApprovalCard } from "./FeedbackReportApprovalCard";
 
 export interface PendingApprovalCardProps {
+  readonly threadRef: ScopedThreadRef;
   readonly canOperateThread: boolean;
   readonly approval: PendingApproval;
   readonly respondingApprovalId: RuntimeRequestId | null;
@@ -37,6 +41,19 @@ export function PendingApprovalCard(props: PendingApprovalCardProps) {
   const canRespond = props.approval.responseCapability === "live";
   const disabled = !canRespond || props.respondingApprovalId === props.approval.requestId;
   const [explanationOpen, setExplanationOpen] = useState(false);
+  const report = feedbackReportFromApproval(props.approval);
+  if (report !== null) {
+    return (
+      <FeedbackReportApprovalCard
+        report={report}
+        threadRef={props.threadRef}
+        requestId={props.approval.requestId}
+        options={props.approval.options}
+        disabled={disabled || !props.canOperateThread}
+        onRespond={props.onRespond}
+      />
+    );
+  }
   return (
     <View className="gap-2.5 rounded-[20px] border border-border bg-card-alt p-4">
       <Text className="font-t3-bold text-2xs uppercase tracking-[1.1px] text-foreground-secondary">

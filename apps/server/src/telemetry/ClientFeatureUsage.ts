@@ -6,6 +6,7 @@ import {
 import * as Effect from "effect/Effect";
 
 import * as DeviceService from "../device/DeviceService.ts";
+import * as FeedbackService from "../feedback/FeedbackService.ts";
 import * as HardwareService from "../hardware/HardwareService.ts";
 import * as ProjectFileActionApprovals from "../project/ProjectFileActionApprovals.ts";
 import * as AnalyticsService from "./AnalyticsService.ts";
@@ -137,6 +138,24 @@ export const devices = Effect.fnUntraced(function* (client: FeatureUsage.ClientD
 });
 
 /** Observe the user's hardware lease and device controls from a client with a surface. */
+export const feedback = Effect.fnUntraced(function* (client: FeatureUsage.ClientDimensions) {
+  const service = yield* FeedbackService.FeedbackService;
+  const analytics = yield* AnalyticsService.AnalyticsService;
+  if (!client.surface) return service;
+  return FeedbackService.FeedbackService.of({
+    ...service,
+    // Forwarder retains the underlying operation span.
+    submit: Effect.fnUntraced(function* (draft) {
+      return yield* FeatureUsage.observe(
+        { feature: "feedback", action: "submit", source: "user" },
+        service.submit(draft),
+        client,
+        (result) => ({ feedbackStatus: result.status }),
+      ).pipe(Effect.provideService(AnalyticsService.AnalyticsService, analytics));
+    }),
+  });
+});
+
 export const hardware = Effect.fnUntraced(function* (client: FeatureUsage.ClientDimensions) {
   const service = yield* HardwareService.HardwareService;
   const analytics = yield* AnalyticsService.AnalyticsService;

@@ -73,6 +73,8 @@ import * as WorktreeMcpService from "./WorktreeMcpService.ts";
 import * as PullRequestsHandlers from "./toolkits/pullRequests/handlers.ts";
 import { PullRequestsToolkit } from "./toolkits/pullRequests/tools.ts";
 import * as DeviceHandlers from "./toolkits/device/handlers.ts";
+import * as FeedbackHandlers from "./toolkits/feedback/handlers.ts";
+import { FeedbackToolkit } from "./toolkits/feedback/tools.ts";
 import * as HardwareHandlers from "./toolkits/hardware/handlers.ts";
 import { HardwareToolkit } from "./toolkits/hardware/tools.ts";
 import {
@@ -1186,6 +1188,8 @@ export const layerDeviceToolkit = Layer.mergeAll(
 
 const layerHardwareToolkit = toolkitRegistration(HardwareToolkit, HardwareHandlers.layer);
 
+const layerFeedbackToolkit = toolkitRegistration(FeedbackToolkit, FeedbackHandlers.layer);
+
 export const layerMcpTransport = McpServer.layerHttp({
   name: "styal",
   version: packageJson.version,
@@ -1207,6 +1211,7 @@ export const layerTools = Layer.mergeAll(
   layerPullRequestsToolkit,
   layerDeviceToolkit,
   layerHardwareToolkit,
+  layerFeedbackToolkit,
   layerHtmlToolkit,
 );
 

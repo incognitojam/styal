@@ -54,6 +54,10 @@ On iPhone, yes. You need iOS 26 or later. Tap the mic in the composer, talk, che
 
 Yes: Apple Silicon Macs, Linux, and Windows, with the desktop app and the `styal` CLI. Intel Macs are not supported. On Windows, you can also run agents inside WSL. [Install](./install.md)
 
+## How do I report a bug or send feedback?
+
+Ask your agent to report it to styal, or choose **Send feedback** in the command palette or Settings → About. On mobile it is under Settings → Environments, on the environment you want to post from. The report becomes a public issue on [incognitojam/styal](https://github.com/incognitojam/styal/issues), posted under the GitHub account signed in on that environment, so leave out anything private. An agent's report is shown to you first and is posted only if you approve it. If that environment has no working GitHub sign-in, you get a link to post it yourself.
+
 ## Why is my provider not showing up?
 
 Almost always, the CLI is not installed or not on the `PATH` of the machine that runs the server. (Not your phone. The computer.) Log in on that machine first, like `codex login` or `claude auth login`. Still missing? Point **Binary path** at it in provider settings. Version managers love to cause this one. [Provider setup](./install.md#providers)
