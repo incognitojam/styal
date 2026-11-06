@@ -28,9 +28,7 @@ describe("FeedbackReportApprovalBanner", () => {
       />,
     );
 
-    await expect
-      .element(screen.getByText("Your agent wants your approval before submitting feedback"))
-      .toBeVisible();
+    await expect.element(screen.getByText("Review feedback before posting")).toBeVisible();
     await expect.element(screen.getByRole("button", { name: "Don't send" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Post publicly" }).query()).toBeNull();
 
