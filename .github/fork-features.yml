@@ -316,6 +316,7 @@ features:
       - apps/web/src/components/files/AttachmentFilePreview.browser.test.tsx
       - apps/web/src/composerDraftStore.test.ts
       - apps/web/src/lib/threadTranscript.test.ts
+      - e2e/tests/chat-smoke.e2e.ts
       - packages/contracts/src/orchestrationV2.test.ts
       - packages/provider-core/src/server/attachmentPrompt.test.ts
     upstream:
