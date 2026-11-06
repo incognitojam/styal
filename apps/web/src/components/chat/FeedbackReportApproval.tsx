@@ -13,6 +13,7 @@ import type {
 import { useRef, useState } from "react";
 
 import ChatMarkdown from "../ChatMarkdown";
+import { StyalToolIcon } from "../StyalToolIcon";
 import { InlineButton } from "../ui/button";
 import {
   Dialog,
@@ -57,7 +58,10 @@ export function FeedbackReportApprovalActions(props: {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogPopup ref={popupRef} className="max-w-2xl" initialFocus={popupRef}>
           <DialogHeader>
-            <DialogTitle>{FEEDBACK_REPORT_TITLE}</DialogTitle>
+            <div className="flex items-center gap-2">
+              <StyalToolIcon className="size-5 shrink-0 text-icon-muted" />
+              <DialogTitle>{FEEDBACK_REPORT_TITLE}</DialogTitle>
+            </div>
             <DialogDescription>{feedbackReportDescription(props.report)}</DialogDescription>
           </DialogHeader>
           <DialogPanel>
