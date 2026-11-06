@@ -9232,7 +9232,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         nativeRequestRef: null,
         kind: "permission",
         status: pending ? "pending" : "cancelled",
-        responseCapability: { type: "server" },
+        responseCapability: {
+          type: "server",
+          ...(command.attention === undefined ? {} : { attention: command.attention }),
+        },
         createdAt: existing?.createdAt ?? now,
         resolvedAt: pending ? null : now,
       };

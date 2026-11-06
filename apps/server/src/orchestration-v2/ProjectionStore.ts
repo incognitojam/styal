@@ -1,4 +1,8 @@
-import { DeferredWorkTypeCounts, pendingGuestMessageCount } from "@t3tools/contracts";
+import {
+  DeferredWorkTypeCounts,
+  pendingGuestMessageCount,
+  pendingRuntimeRequestKind,
+} from "@t3tools/contracts";
 import { keepMentionedTimes } from "@t3tools/shared/mentionedTimeSpans";
 import { applyThreadPullRequestLinkUpdate } from "../sourceControl/threadPullRequests.ts";
 import { projectTurnItemForWire } from "./WireProjection.ts";
@@ -1508,7 +1512,7 @@ function pendingRuntimeRequestSummary(
   if (request === null) return null;
   return {
     id: request.id,
-    kind: request.kind,
+    kind: pendingRuntimeRequestKind(request),
     createdAt: request.createdAt,
     blocking: request.responseCapability.type !== "message",
   };

@@ -1284,7 +1284,11 @@ export const OrchestrationV2RuntimeRequest = Schema.Struct({
     }),
     Schema.Struct({ type: Schema.Literal("message") }),
     /** Answered in place by a server service, such as a hardware call waiting on approval. */
-    Schema.Struct({ type: Schema.Literal("server") }),
+    Schema.Struct({
+      type: Schema.Literal("server"),
+      /** Thread lists show it as the agent asking something, not a permission decision. */
+      attention: Schema.optional(Schema.Literal("input")),
+    }),
     Schema.Struct({ type: Schema.Literal("not_resumable"), reason: Schema.String }),
   ]),
   createdAt: Schema.DateTimeUtc,
@@ -2226,6 +2230,14 @@ export const OrchestrationV2ShellThreadStatus = Schema.Union([
   OrchestrationV2RunStatus,
 ]);
 export type OrchestrationV2ShellThreadStatus = typeof OrchestrationV2ShellThreadStatus.Type;
+
+/** What a thread's status reports for a pending request. */
+export const pendingRuntimeRequestKind = (
+  request: Pick<OrchestrationV2RuntimeRequest, "kind" | "responseCapability">,
+): OrchestrationV2RuntimeRequest["kind"] =>
+  request.responseCapability.type === "server" && request.responseCapability.attention === "input"
+    ? "user_input"
+    : request.kind;
 
 export const OrchestrationV2PendingRuntimeRequestSummary = Schema.Struct({
   id: RuntimeRequestId,
@@ -3837,6 +3849,7 @@ const OrchestrationV2InternalCommand = Schema.Union([
     toolInput: Schema.optional(Schema.Unknown),
     prompt: Schema.String,
     options: Schema.optional(Schema.Array(ProviderApprovalOption)),
+    attention: Schema.optional(Schema.Literal("input")),
   }),
   /**
    * Records or updates a link an agent asked the user to make. Internal so no

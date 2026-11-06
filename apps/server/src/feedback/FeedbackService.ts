@@ -122,6 +122,7 @@ const make = Effect.gen(function* () {
         toolName: FEEDBACK_REPORT_TOOL_NAME,
         toolInput: input.toolInput,
         prompt: input.prompt,
+        attention: "input",
         options: [
           { decision: "accept", label: "Post publicly" },
           { decision: "decline", label: "Don't post" },

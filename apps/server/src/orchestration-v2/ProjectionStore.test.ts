@@ -4564,9 +4564,14 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
       assert.isNull(shell?.latestRunCompletedAt);
 
       const requestId = RuntimeRequestId.make("request:projection-shell-question");
-      for (const [responseCapability, blocking] of [
-        [{ type: "message" }, false],
-        [{ type: "live", providerSessionId: ProviderSessionId.make("session:question") }, true],
+      for (const [responseCapability, blocking, kind] of [
+        [{ type: "message" }, false, "user_input"],
+        [
+          { type: "live", providerSessionId: ProviderSessionId.make("session:question") },
+          true,
+          "user_input",
+        ],
+        [{ type: "server", attention: "input" }, true, "permission"],
       ] as const) {
         yield* projectionStore.apply({
           id: EventId.make(`event:projection-shell-question:${responseCapability.type}`),
@@ -4580,7 +4585,7 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
             nodeId: rootNodeId,
             providerTurnId: null,
             nativeRequestRef: null,
-            kind: "user_input",
+            kind,
             status: "pending",
             responseCapability,
             createdAt: now,
