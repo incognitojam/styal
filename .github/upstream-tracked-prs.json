@@ -219,6 +219,10 @@
     {
       "pr": 28492,
       "reason": "Adds Settings → Skills with bundled skills installed into Codex and Claude provider homes, including a worktree setup skill that still teaches t3.json. The fork serves its agent guides through the `read_styal_guide` MCP tool instead (ledger agent-guides). When it merges, decide whether styal's guides move into bundled skills: rewrite its worktree setup skill for styal.json, and keep `read_styal_guide` for providers the bundle does not cover."
+    },
+    {
+      "pr": 26958,
+      "reason": "Fork PR ported its one-line ComposerSurface change early: the composer host hides its glass while a banner is attached, which removes the extra card behind the banner when the context row shows. Expect that hunk to be already applied at intake. The rest of the PR, which moves new-thread notices below the composer so they never shift it, has not been imported and arrives with it. Remove this entry once recorded."
     }
   ]
 }
