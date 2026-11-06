@@ -209,7 +209,7 @@ function AutomationMessageRow({ row }: { row: Extract<TimelineRow, { kind: "mess
                 Open automation
               </Link>
             ) : null}
-            <UserMessageIntentMarker intent={row.message.inputIntent} />
+            <UserMessageIntentMarker intent={row.message.inputIntent} messageId={row.message.id} />
             <TimelineRowTimestamp
               createdAt={row.message.createdAt}
               timestampFormat={ctx.timestampFormat}
@@ -666,7 +666,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
                 Open thread
               </InlineButton>
             ) : null}
-            <UserMessageIntentMarker intent={row.message.inputIntent} />
+            <UserMessageIntentMarker intent={row.message.inputIntent} messageId={row.message.id} />
             <Tooltip>
               <TooltipTrigger render={<p className="text-muted-foreground text-xs tabular-nums" />}>
                 {formatDayAwareTimestamp(row.message.createdAt, ctx.timestampFormat)}
@@ -708,8 +708,14 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
   );
 }
 
-function UserMessageIntentMarker({ intent }: { readonly intent: ChatMessage["inputIntent"] }) {
-  const presentation = resolveUserMessageIntent(intent);
+function UserMessageIntentMarker({
+  intent,
+  messageId,
+}: {
+  readonly intent: ChatMessage["inputIntent"];
+  readonly messageId: string;
+}) {
+  const presentation = resolveUserMessageIntent(intent, messageId);
   if (!presentation) return null;
   return (
     <Tooltip>

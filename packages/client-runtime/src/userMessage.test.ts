@@ -87,6 +87,15 @@ describe("resolveUserMessageIntent", () => {
     expect(resolveUserMessageIntent(undefined)).toBe(null);
   });
 
+  it("distinguishes approval feedback from a steer", () => {
+    expect(resolveUserMessageIntent("steer", "approval-feedback:request-1")).toEqual({
+      label: "Approval feedback",
+      steer: false,
+      description: "Replied to a tool approval",
+    });
+    expect(resolveUserMessageIntent("steer", "message-1")?.label).toBe("Steer");
+  });
+
   it("labels a promoted queued message as a steer and keeps its origin in the description", () => {
     expect(resolveUserMessageIntent("promoted_queued_to_steer")).toEqual({
       label: "Steer",
