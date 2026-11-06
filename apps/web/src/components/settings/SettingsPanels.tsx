@@ -36,6 +36,7 @@ import {
   HOSTED_APP_CHANNEL_LABEL,
 } from "../../branding";
 import { CliCommandSettingsRow } from "./CliCommandSettingsRow";
+import { PreviewAppSettingsRow } from "./PreviewAppSettingsRow";
 import { MobileAppSettingsRow } from "./MobileAppSettingsRow";
 import {
   canCheckForUpdate,
@@ -386,6 +387,7 @@ function AboutVersionSection() {
         />
       ) : null}
       {hasDesktopBridge ? <CliCommandSettingsRow /> : null}
+      {hasDesktopBridge ? <PreviewAppSettingsRow /> : null}
     </>
   );
 }

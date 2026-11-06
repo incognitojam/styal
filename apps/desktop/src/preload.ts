@@ -1,6 +1,7 @@
 import type {
   DesktopBridge,
   DesktopShutdownConfirmationRequest,
+  DesktopPreviewAppState,
   DesktopPreviewOpenLinkEvent,
   DesktopPreviewPointerEvent,
   DesktopPreviewRecordingInputEvent,
@@ -324,6 +325,27 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     getState: () => ipcRenderer.invoke(IpcChannels.CLI_COMMAND_GET_STATE_CHANNEL),
     install: () => ipcRenderer.invoke(IpcChannels.CLI_COMMAND_INSTALL_CHANNEL),
     uninstall: () => ipcRenderer.invoke(IpcChannels.CLI_COMMAND_UNINSTALL_CHANNEL),
+  },
+  previewApp: {
+    getState: () => ipcRenderer.invoke(IpcChannels.PREVIEW_APP_GET_STATE_CHANNEL),
+    findBuild: (pullRequestNumber) =>
+      ipcRenderer.invoke(IpcChannels.PREVIEW_APP_FIND_BUILD_CHANNEL, { pullRequestNumber }),
+    install: (pullRequestNumber) =>
+      ipcRenderer.invoke(IpcChannels.PREVIEW_APP_INSTALL_CHANNEL, { pullRequestNumber }),
+    cancelInstall: () => ipcRenderer.invoke(IpcChannels.PREVIEW_APP_CANCEL_INSTALL_CHANNEL),
+    open: () => ipcRenderer.invoke(IpcChannels.PREVIEW_APP_OPEN_CHANNEL),
+    remove: () => ipcRenderer.invoke(IpcChannels.PREVIEW_APP_REMOVE_CHANNEL),
+    resetData: () => ipcRenderer.invoke(IpcChannels.PREVIEW_APP_RESET_DATA_CHANNEL),
+    onState: (listener) => {
+      const wrappedListener = (_event: Electron.IpcRendererEvent, state: unknown) => {
+        if (typeof state !== "object" || state === null) return;
+        listener(state as DesktopPreviewAppState);
+      };
+      ipcRenderer.on(IpcChannels.PREVIEW_APP_STATE_CHANNEL, wrappedListener);
+      return () => {
+        ipcRenderer.removeListener(IpcChannels.PREVIEW_APP_STATE_CHANNEL, wrappedListener);
+      };
+    },
   },
   onUpdateState: (listener) => {
     const wrappedListener = (_event: Electron.IpcRendererEvent, state: unknown) => {

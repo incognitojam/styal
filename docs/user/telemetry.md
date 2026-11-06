@@ -93,6 +93,8 @@ Computer, provider and thread names, update versions and confirmation text are n
 
 Each automatic thread settlement records its rule (a merged or closed pull request, or inactivity with the configured number of days), and un-settling a thread records which of those rules, or a manual settle, had settled it. Thread titles, pull request numbers and links are not collected.
 
+When you install, open, remove, or reset a pull request preview on macOS, or styal removes one after its pull request closes, the desktop app records which action ran, whether you or styal started it, and whether it completed, was cancelled, or failed with a fixed reason. It does not record the pull request, the version, or any path.
+
 On macOS, the desktop app records how long after an update was ready the computer first sat idle or locked with no threads waiting on you, as a rough range, so we can learn whether installing updates while you are away would work. It does not record when you were idle, what you were doing, or any thread details.
 
 Each time the desktop app starts, it records how long its local server and window took to become ready. After an update restart it also records how long the old version took to close and the new one to start, so we can tell whether update restarts are quick enough to go unnoticed. These durations are the only details recorded.

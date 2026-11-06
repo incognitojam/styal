@@ -787,6 +787,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     desktopOnly: true,
   },
   {
+    id: "preview-app",
+    title: "Pull request preview",
+    to: "/settings/about",
+    searchTerms: ["preview build install remove reset unsigned dmg pull request"],
+    desktopOnly: true,
+  },
+  {
     id: "mobile-app",
     title: "Mobile app",
     to: "/settings/about",
