@@ -37,10 +37,16 @@ the watched deletion and a new addition.
 
 ## Workflow
 
-Add a ledger entry when a pull request creates a new maintained divergence, and record its reason in
-`rationale` unless the invariants already state it. Add follow-up pull request numbers, invariants,
-paths, and test evidence to the existing entry when repairing or extending one. Keep implementation
-and upstream paths distinct, entries sorted by ID, and values within structured lists sorted.
+Add a ledger entry when a pull request changes behavior upstream also has, and we would want to keep
+ours if upstream rewrote that code. A deliberate product decision qualifies. An ordinary bug fix or
+polish does not, because taking upstream's version would be fine and the pull request still explains
+the change. The exception is a fix that intake has already undone once, which gets an entry so it
+stays fixed.
+
+Record the reason in `rationale` unless the invariants already state it. Add follow-up pull request
+numbers, invariants, paths, and test evidence to the existing entry when repairing or extending one.
+Keep implementation and upstream paths distinct, entries sorted by ID, and values within structured
+lists sorted.
 
 When a change adds, materially changes, or removes a notable user-facing difference, update
 `docs/user/styal-differences.md` in the same pull request. Use the ledger's invariants and the relevant
