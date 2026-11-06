@@ -883,13 +883,12 @@ export const layer: Layer.Layer<
           },
           (effect, input) =>
             effect.pipe(
+              // Only turn usage totals read and rewrite a thread's provider turns. Snapshots run on
+              // the shared commit worker, which a lock holder can be waiting on.
               (effect) =>
-                ingestExecutor.withLock(
-                  input.event.type === "provider_turn.updated"
-                    ? (input.event.threadId ?? input.threadId)
-                    : input.threadId,
-                  effect,
-                ),
+                input.event.type === "provider_turn.updated"
+                  ? ingestExecutor.withLock(input.event.threadId ?? input.threadId, effect)
+                  : effect,
               Effect.tap((storedEvents) =>
                 Effect.gen(function* () {
                   if (
