@@ -47,6 +47,7 @@ import { projectComposerContextForProvider } from "@t3tools/shared/composerConte
 import { formatThreadLink } from "@t3tools/shared/threadLinks";
 import { renderStyalProductName } from "@t3tools/provider-core/server/orchestrationInstructions";
 import { buildCodexAdditionalContext } from "../../apps/server/src/provider/CodexDeveloperInstructions.ts";
+import { threadReportNote } from "../../apps/server/src/orchestration-v2/ThreadReports.ts";
 import { worktreeBranchNote } from "../../apps/server/src/orchestration-v2/WorktreeBranchNote.ts";
 import { makeSideChatContext } from "../../apps/server/src/orchestration-v2/ContextHandoffService.ts";
 import { withInlineContext } from "../../apps/server/src/orchestration-v2/ContextHandoffDelivery.ts";
@@ -285,6 +286,8 @@ export const McpToolUseCase = Schema.Struct({
      * on a temporary branch, `renamed` after `startBranch` became `branch`.
      */
     branchNote: Schema.optional(Schema.Literals(["temporary", "renamed"])),
+    /** This launcher asked to hear back: its note goes on the thread's first user turn, as in T3. */
+    reportTo: Schema.optional(Schema.String),
     /**
      * Canned tool results by bare name, T3 or native. `"default"` uses the runner's result. For a
      * device tool, a T3 `DeviceError` (`{"_tag": ..., "cause": null}`) fails it inside T3.
@@ -977,7 +980,17 @@ export const buildMessages = (sample: Sample) => {
           : (sample.priorResults.get(prior) ?? result);
       push("user", toolResult(id, replayed));
     }
-    if (turn.text) push(turn.role, text(turn.text));
+    if (turn.text) {
+      const first = turn === priorTurns[0] && testCase.setup.reportTo !== undefined;
+      push(
+        turn.role,
+        text(
+          first
+            ? withInlineContext(threadReportNote(ThreadId.make(testCase.setup.reportTo!)), turn.text)
+            : turn.text,
+        ),
+      );
+    }
   }
   const userText = withInlineContext(
     branchNote(testCase),

@@ -7,6 +7,7 @@ import {
   type ProviderInteractionMode,
   type RuntimeMode,
   ThreadId,
+  type OrchestrationV2AppThread,
   type OrchestrationV2ThreadShell,
 } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
@@ -209,3 +210,25 @@ export const newCommandId = Effect.fn("mcp.newCommandId")(function* () {
   const crypto = yield* Crypto.Crypto;
   return CommandId.make(`mcp:${yield* crypto.randomUUIDv4().pipe(Effect.orDie)}`);
 });
+
+/** Reports go to a thread that outlives this one; a delegated child already reports to its parent. */
+export const reportTargetFor = (
+  launcher: Pick<OrchestrationV2AppThread, "id" | "lineage"> | null | undefined,
+) =>
+  launcher === null || launcher === undefined
+    ? Effect.fail(
+        new OrchestratorMcpFailure({
+          code: "invalid_request",
+          message:
+            "reportBack needs a calling thread on this machine, and a thread launched on another machine can't report back yet. For a result from that machine, use delegate_task with target.environmentId, which wakes you when it finishes.",
+        }),
+      )
+    : launcher.lineage.relationshipToParent === "subagent"
+      ? Effect.fail(
+          new OrchestratorMcpFailure({
+            code: "invalid_request",
+            message:
+              "A delegated task reports to its parent and may be finished when a report arrives. Omit reportBack, or have the parent launch this thread.",
+          }),
+        )
+      : Effect.succeed({ threadId: launcher.id });

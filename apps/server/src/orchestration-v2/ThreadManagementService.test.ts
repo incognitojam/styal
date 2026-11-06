@@ -1,4 +1,4 @@
-import { expect, it } from "@effect/vitest";
+import { assert, expect, it } from "@effect/vitest";
 import {
   CommandId,
   EnvironmentId,
@@ -768,4 +768,63 @@ it.effect("Force stop refuses once a newer run has started, before killing anyth
     expect(error.reason).toBe("superseded");
     expect(killed).toBe(false);
   }),
+);
+
+it.effect(
+  "a notification sent to a thread reports its run, which records no user message item",
+  () => {
+    const threadId = ThreadId.make("thread:thread-management:report");
+    const projectId = ProjectId.make("project:thread-management:report");
+    const messageId = MessageId.make("message:thread-management:report");
+    const run = (status: "starting" | "queued") =>
+      ({ id: "run:report", status, userMessageId: messageId }) as never;
+    const layerFor = (status: "starting" | "queued") =>
+      ThreadManagementService.layer.pipe(
+        Layer.provide(Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({})),
+        Layer.provide(
+          Layer.mock(Orchestrator.OrchestratorV2)({
+            getThreadRecords: () =>
+              Effect.succeed({
+                thread: {
+                  id: threadId,
+                  projectId,
+                  archivedAt: null,
+                  deletedAt: null,
+                  modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "test" },
+                },
+                runs: [run(status)],
+                providerTurns: [],
+                messages: [{ id: messageId, runId: "run:report" }],
+                turnItems: [],
+              } as unknown as OrchestrationV2ThreadProjection),
+            dispatch: () => Effect.succeed({ sequence: 1, storedEvents: [] } as never),
+          }),
+        ),
+        Layer.provide(ServerSettings.layerTest()),
+        Layer.provideMerge(layerReceiptsTest),
+      );
+    const send = Effect.gen(function* () {
+      const threads = yield* ThreadManagementService.ThreadManagementService;
+      return yield* threads.sendToThread({
+        projectId,
+        commandId: CommandId.make("command:thread-management:report"),
+        threadId,
+        messageId,
+        text: "Report",
+        attachments: [],
+        mode: "queue",
+        createdBy: "agent",
+        creationSource: "server",
+        notification: {
+          source: { kind: "launched_thread", childThreadId: threadId },
+          outcome: "updated",
+          summary: "Launched thread sent a report",
+        },
+      });
+    });
+    return Effect.gen(function* () {
+      assert.equal((yield* send.pipe(Effect.provide(layerFor("starting")))).delivery, "started");
+      assert.equal((yield* send.pipe(Effect.provide(layerFor("queued")))).delivery, "queued");
+    });
+  },
 );

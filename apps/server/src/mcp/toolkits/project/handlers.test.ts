@@ -665,3 +665,36 @@ it.effect("deleting a project through MCP also discards its clone record", () =>
     expect(discarded).toEqual([harness.projectId]);
   }),
 );
+
+it.effect("reportBack needs a calling thread here, so it never starts unreported work", () =>
+  Effect.gen(function* () {
+    const launched: Array<ThreadLaunch.ThreadLaunchInput> = [];
+    const { projectId, dependencies } = clientLaunchHarness({
+      runtimeModeCeiling: "full-access",
+      launched,
+    });
+    const toolkit = yield* ProjectToolkit.pipe(
+      Effect.provide(
+        McpToolAccess.HandlersLayer.layer(ProjectHandlers.layer).pipe(Layer.provide(dependencies)),
+      ),
+    );
+    const launch = (args: { readonly environmentId?: EnvironmentId }) =>
+      toolkit
+        .handle("t3_thread_launch", { title: "Fix", projectId, reportBack: true, ...args })
+        .pipe(Stream.unwrap, Stream.runCollect, Effect.provide(dependencies));
+    // The harness calls from outside a thread.
+    const outsideThread = (yield* launch({})).at(-1)?.result;
+    expect(outsideThread).toMatchObject({
+      code: "invalid_request",
+      message: expect.stringContaining("reportBack"),
+    });
+    const onLinked = (yield* launch({ environmentId: EnvironmentId.make("environment-mac") })).at(
+      -1,
+    )?.result;
+    expect(onLinked).toMatchObject({
+      code: "invalid_request",
+      message: expect.stringContaining("another machine"),
+    });
+    expect(launched).toEqual([]);
+  }),
+);

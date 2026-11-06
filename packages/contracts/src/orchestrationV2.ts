@@ -147,6 +147,16 @@ export const OrchestrationV2DelegatedFrom = Schema.Struct({
 });
 export type OrchestrationV2DelegatedFrom = typeof OrchestrationV2DelegatedFrom.Type;
 
+/**
+ * The thread this one reports to: the one that launched it and asked to hear back. Runs on the
+ * same server. `sentInRunId` is the last run that already sent a report of its own.
+ */
+export const OrchestrationV2ThreadReportTarget = Schema.Struct({
+  threadId: ThreadId,
+  sentInRunId: Schema.optional(RunId),
+});
+export type OrchestrationV2ThreadReportTarget = typeof OrchestrationV2ThreadReportTarget.Type;
+
 export const OrchestrationV2NativeRefStrength = Schema.Literals(["strong", "weak", "none"]);
 export type OrchestrationV2NativeRefStrength = typeof OrchestrationV2NativeRefStrength.Type;
 
@@ -512,6 +522,7 @@ export const OrchestrationV2AppThread = Schema.Struct({
   forkHistoryMaterialized: Schema.optionalKey(Schema.Boolean),
   linkOrigin: Schema.optional(OrchestrationV2LinkOrigin),
   delegatedFrom: Schema.optional(OrchestrationV2DelegatedFrom),
+  reportTo: Schema.optional(Schema.NullOr(OrchestrationV2ThreadReportTarget)),
   lineage: OrchestrationV2AppThreadLineage,
   forkedFrom: Schema.NullOr(
     Schema.Union([
@@ -1352,6 +1363,7 @@ export const OrchestrationV2NotificationSource = kindUnionWithFallback(
     Schema.Struct({ kind: Schema.Literal("background_command").transform("command") }),
     SubagentNotificationSource,
     CommandNotificationSource,
+    Schema.Struct({ kind: Schema.Literal("launched_thread"), childThreadId: ThreadId }),
     Schema.Struct({ kind: Schema.Literal("monitor") }),
     Schema.Struct({ kind: Schema.Literal("background_task") }),
     Schema.Struct({ kind: Schema.Literal("system") }),
@@ -2307,6 +2319,7 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
   tokenUsage: Schema.optional(ThreadTokenUsage),
   linkOrigin: Schema.optional(OrchestrationV2LinkOrigin),
   delegatedFrom: Schema.optional(OrchestrationV2DelegatedFrom),
+  reportTo: Schema.optional(Schema.NullOr(OrchestrationV2ThreadReportTarget)),
   latestRunId: Schema.NullOr(RunId),
   latestRunRequestedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   latestRunStartedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
@@ -3178,6 +3191,8 @@ export const OrchestrationV2Command = Schema.Union([
     linkOrigin: Schema.optional(OrchestrationV2LinkOrigin),
     /** Only the server sets this, with `linkOrigin`, for a linked environment's delegated task. */
     delegatedFrom: Schema.optional(OrchestrationV2DelegatedFrom),
+    /** Only the server sets this, for an agent that launched the thread and asked to hear back. */
+    reportTo: Schema.optional(OrchestrationV2ThreadReportTarget),
     importedNativeThread: Schema.optional(
       Schema.Struct({
         ref: Schema.Struct({
@@ -3298,6 +3313,12 @@ export const OrchestrationV2Command = Schema.Union([
   }),
   Schema.Struct({
     type: Schema.Literal("thread.mark-unread"),
+    commandId: CommandId,
+    threadId: ThreadId,
+  }),
+  /** The thread stops reporting to the thread that launched it. */
+  Schema.Struct({
+    type: Schema.Literal("thread.report-target.clear"),
     commandId: CommandId,
     threadId: ThreadId,
   }),
@@ -3911,6 +3932,13 @@ const OrchestrationV2InternalCommand = Schema.Union([
         notification: OrchestrationV2Notification,
       }),
     ),
+  }),
+  /** Starts a thread reporting to `reportTo`, or records that this run already sent a report. */
+  Schema.Struct({
+    type: Schema.Literal("thread.report-target.set"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    reportTo: OrchestrationV2ThreadReportTarget,
   }),
 ]);
 export type OrchestrationV2InternalCommand = typeof OrchestrationV2InternalCommand.Type;

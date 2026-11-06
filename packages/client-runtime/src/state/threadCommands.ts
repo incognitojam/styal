@@ -30,6 +30,7 @@ import {
   forkSideChat,
   forkThreadFromRun,
   markThreadUnread,
+  stopThreadReports,
   mergeThreadBack,
   promoteQueuedRun,
   resumeThreadQueue,
@@ -218,6 +219,12 @@ export function createThreadEnvironmentAtoms<R, E>(
     markUnread: createEnvironmentCommand(runtime, {
       label: "environment-data:commands:thread:mark-unread",
       execute: markThreadUnread,
+      scheduler,
+      concurrency,
+    }),
+    stopReports: createEnvironmentCommand(runtime, {
+      label: "environment-data:commands:thread:stop-reports",
+      execute: stopThreadReports,
       scheduler,
       concurrency,
     }),

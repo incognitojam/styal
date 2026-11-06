@@ -150,6 +150,8 @@ export interface EnvironmentThreadShell {
   readonly linkOrigin: OrchestrationV2ThreadShell["linkOrigin"] | null;
   /** The thread in a linked environment that delegated this one, if one did. */
   readonly delegatedFrom: OrchestrationV2ThreadShell["delegatedFrom"] | null;
+  /** The thread that launched this one and asked to hear back, while it still does. */
+  readonly reportTo: NonNullable<OrchestrationV2ThreadShell["reportTo"]> | null;
   readonly activeProviderThreadId: OrchestrationV2ThreadShell["activeProviderThreadId"];
   readonly tokenUsage?: OrchestrationV2ThreadShell["tokenUsage"];
   readonly latestRun: ThreadRunSummary | null;
@@ -306,6 +308,7 @@ export function presentThreadShell(
     forkedFrom: thread.forkedFrom,
     linkOrigin: thread.linkOrigin ?? null,
     delegatedFrom: thread.delegatedFrom ?? null,
+    reportTo: thread.reportTo ?? null,
     activeProviderThreadId: thread.activeProviderThreadId,
     ...(thread.tokenUsage === undefined ? {} : { tokenUsage: thread.tokenUsage }),
     latestRun,

@@ -177,6 +177,13 @@ export const handlers = {
         const service = yield* OrchestratorMcpService.OrchestratorMcpService;
         return yield* service.sendToThread(scope, input);
       }),
+    {
+      // Steering or restarting a turn stays a normal send, under the normal limits.
+      reportTarget: (input) =>
+        input.mode === undefined || input.mode === "auto" || input.mode === "queue"
+          ? input.threadId
+          : undefined,
+    },
   ),
   t3_thread_wait: McpToolAccess.reads((input) =>
     Effect.gen(function* () {

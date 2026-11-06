@@ -2,7 +2,8 @@ import {
   CommandId,
   OrchestratorMcpFailure,
   type OrchestrationV2AppThread,
-  type OrchestrationV2Command,
+  type OrchestrationV2ServerCommand,
+  type OrchestrationV2ThreadReportTarget,
   type ThreadMetadataMcpAction,
   type ThreadMetadataMcpUpdateInput,
   type ThreadMetadataMcpUpdateResult,
@@ -16,7 +17,7 @@ import * as Layer from "effect/Layer";
 
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import type { McpInvocationScope } from "./McpInvocationContext.ts";
-import { threadNotFound } from "./threadAccess.ts";
+import { reportTargetFor, threadNotFound } from "./threadAccess.ts";
 
 export class ThreadMetadataMcpService extends Context.Service<
   ThreadMetadataMcpService,
@@ -63,7 +64,8 @@ function metadataCommand(input: {
   readonly commandId: CommandId;
   readonly threadId: ThreadId;
   readonly update: ThreadMetadataMcpUpdateInput;
-}): Extract<OrchestrationV2Command, { readonly type: "thread.metadata.update" }> {
+  readonly reportTo: OrchestrationV2ThreadReportTarget | undefined;
+}): OrchestrationV2ServerCommand {
   switch (input.update.action) {
     case "rename":
       return {
@@ -78,6 +80,19 @@ function metadataCommand(input: {
         commandId: input.commandId,
         threadId: input.threadId,
         regenerateTitle: true,
+      };
+    case "report_to_me":
+      return {
+        type: "thread.report-target.set",
+        commandId: input.commandId,
+        threadId: input.threadId,
+        reportTo: input.reportTo!,
+      };
+    case "stop_reports":
+      return {
+        type: "thread.report-target.clear",
+        commandId: input.commandId,
+        threadId: input.threadId,
       };
   }
 }
@@ -144,6 +159,24 @@ const make = Effect.gen(function* () {
     if (shell === null || shell.deletedAt !== null) {
       return yield* threadNotFound(threadManagement, threadId, `Thread ${threadId} was not found.`);
     }
+    let reportTo: OrchestrationV2ThreadReportTarget | undefined;
+    if (input.action === "report_to_me") {
+      if (scope.thread?.threadId === threadId) {
+        return yield* failure(
+          "invalid_request",
+          "A thread cannot report to itself. Pass threadId.",
+        );
+      }
+      const launcher =
+        scope.thread === undefined
+          ? null
+          : yield* threadManagement
+              .getThreadShell(scope.thread.threadId)
+              .pipe(
+                Effect.mapError((error) => failure("orchestration_error", errorMessage(error))),
+              );
+      reportTo = yield* reportTargetFor(launcher);
+    }
     const requestKey =
       input.clientRequestId === undefined
         ? yield* crypto.randomUUIDv4().pipe(Effect.orDie)
@@ -160,6 +193,7 @@ const make = Effect.gen(function* () {
           commandId: updateCommandId,
           threadId,
           update: input,
+          reportTo,
         }),
       )
       .pipe(

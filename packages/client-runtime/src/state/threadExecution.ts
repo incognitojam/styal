@@ -514,6 +514,7 @@ export function notificationChildThreadId(
   switch (source.kind) {
     case "subagent":
     case "delegated_task":
+    case "launched_thread":
       return source.childThreadId;
     case "command":
     case "monitor":

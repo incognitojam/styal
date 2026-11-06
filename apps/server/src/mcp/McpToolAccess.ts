@@ -200,11 +200,19 @@ export const withDispatchModeLimit = Effect.fn("McpToolAccess.withDispatchModeLi
 export const writesThreads = <P, A, E, R>(
   threads: (params: P) => ReadonlyArray<ThreadId | undefined>,
   handle: (params: P) => Effect.Effect<A, E, R>,
+  options?: {
+    /** A thread may always report to the launcher it reports to, whatever that thread's modes. */
+    readonly reportTarget?: (params: P) => ThreadId | undefined;
+  },
 ) =>
   declare(
     (params: P) =>
       Effect.gen(function* () {
         const caller = yield* writingCaller;
+        const reportTarget = options?.reportTarget?.(params);
+        if (reportTarget !== undefined && caller.caller?.reportTo?.threadId === reportTarget) {
+          return yield* handle(params);
+        }
         for (const threadId of threads(params)) {
           if (threadId === undefined || threadId === caller.scope.thread?.threadId) continue;
           const target = yield* caller.threads
@@ -248,6 +256,10 @@ export const startsThreads = <P, A, E, R>(
   },
   handle: (params: P, modes: StartedModes) => Effect.Effect<A, E, R>,
   linked: "stamped" | { readonly refused: string },
+  options?: {
+    /** Why this call cannot run in a linked environment, if it cannot. */
+    readonly refuseRemote?: (params: P) => string | undefined;
+  },
 ) => {
   const started = Effect.fn("McpToolAccess.started")(function* (caller: Caller, params: P) {
     const requested = modes(params);
@@ -267,7 +279,14 @@ export const startsThreads = <P, A, E, R>(
         if (linked !== "stamped") yield* assertNotLinked(caller, linked.refused);
         return yield* handle(params, yield* started(caller, params));
       }),
-    (params: P) => Effect.flatMap(writingCaller, (caller) => started(caller, params)),
+    (params: P) =>
+      Effect.gen(function* () {
+        const refused = options?.refuseRemote?.(params);
+        if (refused !== undefined) {
+          return yield* new OrchestratorMcpFailure({ code: "invalid_request", message: refused });
+        }
+        return yield* started(yield* writingCaller, params);
+      }),
   );
 };
 

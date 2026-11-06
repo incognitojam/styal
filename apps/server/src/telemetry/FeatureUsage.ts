@@ -214,6 +214,11 @@ type ObservedUsage =
       readonly wakeAfter: boolean;
     }
   | {
+      readonly feature: "thread-reports";
+      readonly action: "opt_in" | "stop" | "restart";
+      readonly source: "agent";
+    }
+  | {
       readonly feature: "workflow-run-watch";
       readonly action: "watch" | "unwatch";
       readonly source: "agent";
@@ -466,3 +471,18 @@ export const observe = Effect.fnUntraced(function* <A, E, R>(
     ),
   );
 });
+
+/** One report owed to a launcher. Thread text, titles and ids are never reported. */
+export const recordThreadReport = (report: {
+  readonly kind: "result" | "failed" | "stopped" | "blocked" | "sent";
+  readonly outcome: "delivered" | "dropped";
+}) =>
+  Effect.flatMap(AnalyticsService.AnalyticsService, (analytics) =>
+    analytics.record("feature.used", {
+      feature: "thread-reports",
+      action: "report",
+      source: report.kind === "sent" ? "agent" : "system",
+      reportKind: report.kind,
+      reportOutcome: report.outcome,
+    }),
+  );

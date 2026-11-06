@@ -67,6 +67,7 @@ import {
   restartCancelledBackgroundWorkNote,
 } from "./RestartBackgroundNote.ts";
 import { FORK_NOTE, shouldSendForkNote } from "./ForkNote.ts";
+import { threadReportNote } from "./ThreadReports.ts";
 import { worktreeBranchNote } from "./WorktreeBranchNote.ts";
 
 export class ProviderTurnStartError extends Schema.TaggedError<ProviderTurnStartError>()(
@@ -945,6 +946,9 @@ export const layer: Layer.Layer<
       });
       const turnNote = [
         sendForkNote ? FORK_NOTE : "",
+        projection.thread.reportTo != null && run.ordinal === 1
+          ? threadReportNote(projection.thread.reportTo.threadId)
+          : "",
         branchNote,
         restartCancelledWork.length === 0
           ? ""

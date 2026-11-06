@@ -117,7 +117,8 @@ import {
   runtimeModeRank,
   taskPrompt,
 } from "./delegatedTaskModes.ts";
-import { isLiveCallerShell, threadNotFound } from "./threadAccess.ts";
+import { isLiveCallerShell, reportTargetFor, threadNotFound } from "./threadAccess.ts";
+import { launcherTakesReports, sentReport } from "../orchestration-v2/ThreadReports.ts";
 import * as SecretRequests from "../secrets/SecretRequests.ts";
 import * as PeerForwarding from "../peer/PeerForwarding.ts";
 import * as RemoteDelegation from "../peer/RemoteDelegation.ts";
@@ -2823,6 +2824,9 @@ const make = Effect.gen(function* () {
                   ...(parent.thread.linkOrigin === undefined
                     ? {}
                     : { linkOrigin: parent.thread.linkOrigin }),
+                  ...(request.reportBack === true
+                    ? { reportTo: yield* reportTargetFor(parent.thread) }
+                    : {}),
                 })
                 .pipe(
                   Effect.mapError((error) =>
@@ -3075,10 +3079,21 @@ const make = Effect.gen(function* () {
     sendToThread: Effect.fn("OrchestratorMcpService.sendToThread")(function* (scope, input) {
       const { parent, limits, target } = yield* loadScopedThread(scope, input.threadId);
       yield* assertLiveCallerForOtherThread(scope, parent, target);
-      yield* resolveRuntimeMode(limits.runtimeMode, target.thread.runtimeMode);
-      yield* resolveInteractionMode(limits.interactionMode, target.thread.interactionMode);
-
       const mode = input.mode ?? "auto";
+      // The launcher asked to hear back, so this is the report it opted in to, not driving it.
+      const isReport =
+        parent?.thread.reportTo?.threadId === input.threadId &&
+        (mode === "auto" || mode === "queue");
+      if (!isReport) {
+        yield* resolveRuntimeMode(limits.runtimeMode, target.thread.runtimeMode);
+        yield* resolveInteractionMode(limits.interactionMode, target.thread.interactionMode);
+      } else if (!launcherTakesReports(target.thread)) {
+        return yield* failure(
+          "invalid_request",
+          "The thread that launched this one was settled or archived on purpose, so it is not taking reports. Tell the user in this thread instead.",
+        );
+      }
+
       const key = yield* requestKey(input.clientRequestId);
       const messageId = stableOperationMessageId({
         scope,
@@ -3096,11 +3111,19 @@ const make = Effect.gen(function* () {
           threadId: input.threadId,
           ...(parent === undefined ? {} : { senderThreadId: parent.thread.id }),
           messageId,
-          text: input.message,
           attachments: [],
-          mode,
           createdBy: "agent",
-          creationSource: "mcp",
+          ...(isReport
+            ? {
+                ...sentReport({
+                  environmentId: scope.environmentId,
+                  thread: parent.thread,
+                  message: input.message,
+                }),
+                mode: "queue" as const,
+                creationSource: "server" as const,
+              }
+            : { text: input.message, mode, creationSource: "mcp" as const }),
         })
         .pipe(
           Effect.mapError((error) =>
@@ -3112,6 +3135,31 @@ const make = Effect.gen(function* () {
                 ),
           ),
         );
+      if (isReport) {
+        const senderRun = ThreadManagementService.latestActiveRun(parent);
+        if (senderRun !== undefined && parent.thread.reportTo != null) {
+          // Failing here would report the send as failed after it was delivered.
+          yield* threadManagement
+            .dispatch({
+              type: "thread.report-target.set",
+              commandId: stableCommandId({ scope, requestKey: key, operation: "thread-report" }),
+              threadId: parent.thread.id,
+              reportTo: { ...parent.thread.reportTo, sentInRunId: senderRun.id },
+            })
+            .pipe(
+              Effect.catchCause((cause) =>
+                Effect.logWarning("recording a sent thread report failed", {
+                  threadId: parent.thread.id,
+                  cause,
+                }),
+              ),
+            );
+        } else {
+          yield* Effect.logWarning("sent thread report has no active run", {
+            threadId: parent.thread.id,
+          });
+        }
+      }
       return {
         threadId: input.threadId,
         link: threadLinkFor(scope, input.threadId),
@@ -3120,6 +3168,7 @@ const make = Effect.gen(function* () {
         ...(result.run.delegatedTaskId === undefined ? {} : { taskId: result.run.delegatedTaskId }),
         status: result.run.status,
         delivery: result.delivery,
+        ...(isReport ? { report: true } : {}),
       } satisfies OrchestratorMcpThreadSendResult;
     }),
     waitForThread: Effect.fn("OrchestratorMcpService.waitForThread")(function* (scope, input) {
