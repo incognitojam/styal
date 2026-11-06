@@ -215,6 +215,7 @@ it.effect("reports changed values without names, paths, ids or record contents",
 // Settings the snapshot deliberately leaves out. A new server setting must be
 // reported or listed here, so the snapshot does not silently fall behind.
 const NOT_REPORTED: Record<string, string> = {
+  incomingMachineAccess: "Changes are counted by the machine-access feature event.",
   secretProviders: "Account names and provider configurations are private.",
   fallbackModelSelection: "Contains free-text model and provider instance identifiers.",
   favorites: "per-user records",
