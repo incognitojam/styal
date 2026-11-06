@@ -28,6 +28,7 @@ import {
   deriveMessagesTimelineRows,
   deriveContinuedRunRoots,
   timelineTurnFoldRunIdsByEntryId,
+  liveAnswerPreview,
   deriveMessagesTimelineRowsWithState,
   shouldCollapseUserMessage,
   resolveAssistantMessageCopyState,
@@ -997,8 +998,13 @@ describe("deriveMessagesTimelineRows", () => {
       entry: { id, createdAt, runId, tone: "tool" as const, ...extra },
     });
     const findings = [{ file: "src/a.ts", line: 3, summary: "Off by one" }];
-    const derive = (latestRunId: string, expandedWorkGroupIds?: ReadonlySet<string>) =>
+    const derive = (
+      latestRunId: string,
+      expandedWorkGroupIds?: ReadonlySet<string>,
+      toolCallVisibility?: "hideAll" | "zen",
+    ) =>
       deriveMessagesTimelineRows({
+        ...(toolCallVisibility ? { toolCallVisibility } : {}),
         timelineEntries: [
           ...Array.from({ length: 160 }, (_, index) =>
             work(`historical-read-${index}`, "2026-01-01T00:00:01Z", {
@@ -1061,6 +1067,16 @@ describe("deriveMessagesTimelineRows", () => {
     expect(findingsRow(derive("turn-1", toggled))).toMatchObject({ expanded: false });
     expect(findingsRow(derive("turn-2"))).toMatchObject({ expanded: false });
     expect(findingsRow(derive("turn-2", toggled))).toMatchObject({ expanded: true });
+    // Hiding tool calls keeps the card the closing message refers to.
+    expect(derive("turn-1", undefined, "hideAll").map((row) => row.kind)).toEqual([
+      "turn-fold",
+      "review-findings",
+      "message",
+    ]);
+    expect(derive("turn-1", undefined, "zen").map((row) => row.kind)).toEqual([
+      "review-findings",
+      "message",
+    ]);
   });
 
   describe("a turn continued after a server restart", () => {
@@ -3716,6 +3732,129 @@ describe("v2 run and attempt history", () => {
       expect.objectContaining({ id: "provider-recovered" }),
     ]);
   });
+  it("hides tool calls or everything but the final answer", () => {
+    const runId = RunId.make("turn-1");
+    const at = (second: number) => `2026-01-01T00:00:${String(second).padStart(2, "0")}Z`;
+    const message = (
+      id: string,
+      role: "user" | "assistant",
+      second: number,
+      inputIntent?: "steer",
+    ): TimelineEntry => ({
+      id,
+      kind: "message",
+      createdAt: at(second),
+      message: {
+        id: MessageId.make(id),
+        role,
+        text: id,
+        runId: role === "user" ? null : runId,
+        createdAt: at(second),
+        updatedAt: at(second),
+        streaming: false,
+        ...(inputIntent ? { inputIntent } : {}),
+      },
+    });
+    const command = (
+      id: string,
+      status: "completed" | "failed",
+      second: number,
+    ): TimelineEntry => ({
+      id,
+      kind: "work",
+      createdAt: at(second),
+      entry: {
+        id,
+        createdAt: at(second),
+        runId,
+        label: "Ran command",
+        tone: "tool",
+        itemType: "command_execution",
+        toolLifecycleStatus: status,
+      },
+    });
+    const [user, step, passed, failed, final] = [
+      message("user", "user", 0),
+      message("step", "assistant", 5),
+      command("passed", "completed", 8),
+      command("failed", "failed", 9),
+      message("final", "assistant", 20),
+    ];
+    const running = { runId, status: "running" as const, startedAt: at(0), completedAt: null };
+    const ended = { ...running, turnEnded: true };
+    const rows = (
+      timelineEntries: ReadonlyArray<TimelineEntry>,
+      toolCallVisibility: "hideSuccessful" | "hideAll" | "zen",
+      latestRun?: typeof ended | typeof running,
+    ) =>
+      deriveMessagesTimelineRows({
+        timelineEntries,
+        expandedRunIds: new Set([runId]),
+        isWorking: latestRun !== undefined,
+        ...(latestRun ? { latestRun } : {}),
+        turnDiffSummaries: [],
+        supportsConversationRollback: false,
+        toolCallVisibility,
+      }).map((row) => row.id);
+
+    const turn = [user, step, passed, failed, final];
+    expect(rows(turn, "hideSuccessful")).toEqual([
+      "user",
+      "turn-fold:turn-1",
+      "step",
+      "failed",
+      "final",
+    ]);
+    expect(rows([user, failed, final], "hideAll")).toEqual(["user", "final"]);
+    expect(rows(turn, "zen")).toEqual(["user", "final"]);
+    const [steer, answer] = [
+      message("steer", "user", 4, "steer"),
+      message("answer", "assistant", 7),
+    ];
+    expect(rows([user, steer, answer, final], "zen")).toEqual(["user", "steer", "answer", "final"]);
+    expect(rows([user, steer, step, passed, final], "zen")).toEqual(["user", "steer", "final"]);
+    expect(rows([user, steer, answer, step], "zen", running)).toEqual([
+      "user",
+      "working-indicator-row",
+      "steer",
+      "answer",
+      "live-activity-row",
+    ]);
+    expect(rows([user, step, passed], "zen", running)).toEqual([
+      "user",
+      "working-indicator-row",
+      "live-activity-row",
+    ]);
+    expect(liveAnswerPreview([user, step, passed])).toBe("step");
+    expect(rows(turn, "zen", ended)).toEqual(["user", "final"]);
+    const followUp = message("follow-up", "user", 30);
+    expect(rows([...turn, followUp], "zen", ended)).toEqual([
+      "user",
+      "final",
+      "follow-up",
+      "working-indicator-row",
+    ]);
+    const wake: TimelineEntry = {
+      id: "wake",
+      kind: "work",
+      createdAt: at(30),
+      entry: {
+        id: "wake",
+        createdAt: at(30),
+        runId: RunId.make("wake"),
+        label: "Task finished",
+        tone: "info",
+        itemType: "notification",
+      },
+    };
+    expect(rows([user, final, wake], "zen", { ...running, runId: RunId.make("wake") })).toEqual([
+      "user",
+      "final",
+      "wake",
+      "working-indicator-row",
+      "live-activity-row",
+    ]);
+  });
   it("collapses only output from a superseded V2 attempt within the active logical run", () => {
     const runId = "run-steered" as never;
     const supersededAttemptId = "attempt-1" as never;
@@ -5177,6 +5316,9 @@ describe("V2 restart response identity", () => {
     expect(
       expanded.filter((row) => row.kind === "message" && row.message.role === "user"),
     ).toHaveLength(1);
+    expect(
+      deriveMessagesTimelineRows({ ...input, toolCallVisibility: "zen" }).map((row) => row.id),
+    ).toEqual(["prompt", recovery, "answer"]);
   });
 
   it("keeps a settled response's answer and starts a new response for its restart note", () => {

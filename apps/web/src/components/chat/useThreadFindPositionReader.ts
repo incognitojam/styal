@@ -1,5 +1,6 @@
 import { useLayoutEffect } from "react";
 import type { RunId } from "@t3tools/contracts";
+import type { ToolCallVisibility } from "@t3tools/contracts/settings";
 import type { TimelineEntry } from "../../session-logic";
 import {
   timelineTurnFoldRunIdsByEntryId,
@@ -23,6 +24,7 @@ export function useThreadFindPositionReader({
   runningRunId,
   isWorking,
   runlessWorkActive,
+  toolCallVisibility,
   rows,
   contentInsetEndAdjustment,
 }: {
@@ -36,6 +38,7 @@ export function useThreadFindPositionReader({
   readonly runningRunId: RunId | null;
   readonly isWorking: boolean;
   readonly runlessWorkActive: boolean;
+  readonly toolCallVisibility: ToolCallVisibility;
   readonly rows: MessagesTimelineRow[];
   readonly contentInsetEndAdjustment: number;
 }) {
@@ -53,6 +56,7 @@ export function useThreadFindPositionReader({
           runningRunId,
           isWorking,
           runlessWorkActive,
+          toolCallVisibility,
         });
       const entryById = new Map(timelineEntries.map((entry) => [entry.id, entry]));
       return readThreadFindPosition(
@@ -104,5 +108,6 @@ export function useThreadFindPositionReader({
     runningRunId,
     timelineEntries,
     timelineViewportElement,
+    toolCallVisibility,
   ]);
 }

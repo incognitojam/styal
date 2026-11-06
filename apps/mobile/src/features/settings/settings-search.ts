@@ -143,6 +143,12 @@ const SETTINGS_SEARCH_TERMS = {
     "your machines",
     "other machines",
     "linked environments",
+    "tool calls in chat",
+    "hide tool calls",
+    "commands edits searches",
+    "work log",
+    "zen",
+    "final answers only",
   ],
   SettingsEnvironmentMaintenance: [
     "updates",

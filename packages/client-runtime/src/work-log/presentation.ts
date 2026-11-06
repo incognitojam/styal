@@ -25,6 +25,7 @@ import {
   type RunId,
   type ThreadId,
 } from "@t3tools/contracts";
+import type { ToolCallVisibility } from "@t3tools/contracts/settings";
 import {
   resolveT3McpSummaryAction,
   resolveT3McpToolDefinition,
@@ -475,6 +476,25 @@ export function workEntryDisplayIndicatesToolFailure(entry: WorkLogPresentationE
  */
 function workEntryIsStoppedToolCall(entry: WorkLogPresentationEntry): boolean {
   return workLogEntryIsToolLike(entry) && entry.toolLifecycleStatus === "stopped";
+}
+
+const HIDEABLE_TOOL_CALL_ITEM_TYPES: ReadonlySet<WorkLogPresentationEntry["itemType"]> = new Set([
+  "command_execution",
+  "file_change",
+  "file_search",
+  "web_search",
+  "dynamic_tool",
+]);
+
+export function workEntryHiddenByToolCallVisibility(
+  entry: WorkLogPresentationEntry,
+  visibility: ToolCallVisibility,
+): boolean {
+  if (visibility === "showAll" || !HIDEABLE_TOOL_CALL_ITEM_TYPES.has(entry.itemType)) return false;
+  // An accepted findings report renders as a card the agent's reply refers to, not a tool row.
+  if (workEntryReviewFindings(entry)) return false;
+  if (visibility !== "hideSuccessful") return true;
+  return entry.toolLifecycleStatus === "completed" && !workEntryDisplayIndicatesToolFailure(entry);
 }
 
 function workLogEntryIsLocalCodeSearch(entry: WorkLogPresentationEntry): boolean {

@@ -15,6 +15,7 @@ import {
   type SidebarProjectGroupingMode,
   type SidebarThreadGrouping,
 } from "@t3tools/contracts";
+import { ToolCallVisibility } from "@t3tools/contracts/settings";
 import type { AndroidNavigationStyle } from "../lib/androidNavigationStyle";
 import type { ComposerEnterBehavior } from "../lib/composerEnterBehavior";
 import type { FollowUpBehavior } from "../lib/followUpBehavior";
@@ -140,6 +141,7 @@ export interface Preferences {
   readonly turnUsageEnabled?: boolean;
   /** Device-local counterpart of desktop's `turnUsageFigure`; unset means tokens. */
   readonly turnUsageFigure?: "tokens" | "cost";
+  readonly toolCallVisibility?: ToolCallVisibility;
   readonly workingShelfEnabled?: boolean;
   readonly lastThreadProject?: typeof ThreadProject.Type;
   readonly modelFavorites?: ReadonlyArray<{
@@ -197,6 +199,8 @@ export class MobilePreferencesStore extends Context.Service<
   }
 >()("@t3tools/mobile/persistence/mobile-preferences/MobilePreferencesStore") {}
 
+const isToolCallVisibility = Schema.is(ToolCallVisibility);
+
 function sanitizePreferences(parsed: Preferences): Preferences {
   const preferences: {
     navigationTabOrder?: readonly string[];
@@ -233,6 +237,7 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     threadGrouping?: SidebarThreadGrouping;
     threadTimestampMode?: "last_prompted" | "last_message";
     planModeEnabled?: boolean;
+    toolCallVisibility?: ToolCallVisibility;
     turnUsageEnabled?: boolean;
     turnUsageFigure?: "tokens" | "cost";
     lastThreadProject?: typeof ThreadProject.Type;
@@ -398,6 +403,9 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   }
   if (parsed.turnUsageFigure === "tokens" || parsed.turnUsageFigure === "cost") {
     preferences.turnUsageFigure = parsed.turnUsageFigure;
+  }
+  if (isToolCallVisibility(parsed.toolCallVisibility)) {
+    preferences.toolCallVisibility = parsed.toolCallVisibility;
   }
   if (typeof parsed.workingShelfEnabled === "boolean") {
     preferences.workingShelfEnabled = parsed.workingShelfEnabled;
