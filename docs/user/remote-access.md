@@ -379,17 +379,22 @@ can change it, not agents.
 - **Can control this machine** is the default. Agents on your other machines can do anything
   there that its user can: read and change files, run commands, start threads and use its
   devices. Choose it only for machines you'd trust with each other's agents.
-- **View only** lets them read threads and projects there. They can't start or change
-  anything, or use its devices.
+- **View only** lets them read every thread there, including command output and diffs, and its
+  projects. They can't browse files, open terminals, start or change anything, or use its
+  devices.
 - **Nothing** refuses them. Agents on that machine can still work on your other machines, so
   this gives you one-way control. It doesn't isolate the machine: what those machines send
   back still reaches its agents.
 
 Moving to **View only** or **Nothing** stops threads your other machines started there. You
 see how many first and can cancel. Each running turn is interrupted where it is, so work it
-hadn't finished stays unfinished. Files it already changed stay, and each thread stays so you
-can read or continue it on that machine. The machine that started it can't continue it unless
-you allow control again, and any device it was using closes. Moving back doesn't restart them.
+hadn't finished stays unfinished. Files it already changed stay, and any device it was using
+closes. Queued messages are kept but held, and pull request and CI watches end.
+
+Moving back to **Can control this machine** restarts nothing, and ended watches don't come back.
+Each stopped thread stays on that machine. Resume it there, or send a message in it, to start
+its held messages. Your other machines can send it new messages again, which start right away,
+but that leaves held messages held.
 
 Connections made before this setting keep the access they were paired with if that's less.
 **Only its own threads** and the older Supervised and Auto-accept edits levels show that way

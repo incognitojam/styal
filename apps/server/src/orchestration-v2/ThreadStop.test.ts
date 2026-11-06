@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { assert, it } from "@effect/vitest";
 import {
   CommandId,
@@ -27,6 +28,8 @@ import * as Stream from "effect/Stream";
 import * as EventStore from "./EventStore.ts";
 import * as TestClock from "effect/testing/TestClock";
 
+import * as DeviceSharing from "../device/DeviceSharing.ts";
+import * as IncomingMachineAccess from "../peer/IncomingMachineAccess.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { CLAUDE_PROVIDER } from "./Adapters/ClaudeAdapterV2.ts";
@@ -1209,6 +1212,81 @@ it.effect("a delegated task that cannot be stopped fails the walk after its sibl
     assert.isTrue(Exit.isFailure(walked));
     assert.deepEqual((yield* threadState(childThreadId)).runs, ["interrupted"]);
   }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect(
+  "allowing other machines less holds what they queued and ends their watches, and raising it restarts nothing",
+  () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const access = yield* IncomingMachineAccess.IncomingMachineAccess;
+      const create = (threadId: ThreadId, linkOrigin?: { sessionId: string; label: string }) =>
+        orchestrator.dispatch({
+          type: "thread.create",
+          commandId: CommandId.make(`create:${threadId}`),
+          threadId,
+          projectId: ProjectId.make("project:thread-stop"),
+          title: threadId,
+          modelSelection,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+          createdBy: "agent",
+          creationSource: "mcp",
+          ...(linkOrigin === undefined ? {} : { linkOrigin }),
+        });
+      const origin = { sessionId: "session:sol", label: "styal · sol" };
+      const queued = ThreadId.make("thread:machine-queued");
+      const watching = ThreadId.make("thread:machine-watching");
+      const yours = ThreadId.make("thread:machine-yours");
+
+      yield* create(queued, origin);
+      yield* send(queued, "first", "start_immediately");
+      yield* send(queued, "second", "queue_after_active");
+
+      yield* create(watching, origin);
+      yield* watch(watching, 21);
+      yield* orchestrator.dispatch({
+        type: "thread.workflow-run.watch",
+        commandId: CommandId.make("watch-run:machine"),
+        threadId: watching,
+        host: "github.com",
+        repository: "pingdotgg/t3code",
+        runId: 700,
+        watching: true,
+        run: { url: "https://github.com/pingdotgg/t3code/actions/runs/700", name: "CI #1" },
+      });
+
+      yield* create(yours);
+      yield* send(yours, "first", "start_immediately");
+      yield* send(yours, "second", "queue_after_active");
+      const yoursBefore = yield* threadState(yours);
+
+      assert.deepEqual(yield* access.work, { threads: 2 });
+      yield* access.settingChanged("view-only");
+
+      const held = yield* threadState(queued);
+      assert.equal(held.runs.at(-1), "queued:held");
+      assert.deepEqual((yield* threadState(watching)).watched, []);
+      const watchedRuns = (yield* orchestrator.getThreadProjection(watching)).thread.workflowRuns;
+      assert.deepEqual(watchedRuns ?? [], []);
+      assert.deepEqual(yield* threadState(yours), yoursBefore);
+      assert.deepEqual(yield* access.work, { threads: 0 });
+
+      yield* access.settingChanged("everything");
+      assert.equal((yield* threadState(queued)).runs.at(-1), "queued:held");
+    }).pipe(
+      Effect.provide(
+        IncomingMachineAccess.layer.pipe(
+          Layer.provideMerge(layerTest),
+          Layer.provide(
+            Layer.mock(DeviceSharing.DeviceSharing)({ closePeerSessions: Effect.void }),
+          ),
+          Layer.provide(NodeCrypto.layer),
+        ),
+      ),
+    ),
 );
 
 it.effect("thread.stop ends workflow run watches and refuses a late one", () =>

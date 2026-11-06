@@ -75,7 +75,7 @@ export const MACHINE_ACCESS_CHOICES = [
     label: "View only",
     status: "View only",
     description:
-      "Your other machines can read threads and projects here. They can't start or change anything, or use its devices.",
+      "Your other machines can read every thread here, including command output and diffs, and its projects. They can't browse files, open terminals, start or change anything, or use its devices.",
   },
   {
     level: "nothing",
@@ -98,9 +98,9 @@ const machineAccessChoice = (level: IncomingMachineAccess) =>
 export const machineAccessStopNotice = (
   machine: string,
   level: IncomingMachineAccess,
-  runningThreads: number,
+  threads: number,
 ): string =>
-  `Change ${machine} to ${machineAccessChoice(level).label}? ${runningThreads === 1 ? "1 thread" : `${runningThreads} threads`} your other machines started here will stop. Each running turn is interrupted where it is, so work it hadn't finished stays unfinished. Files it already changed stay on ${machine}, and each thread stays so you can read or continue it here. The machine that started it can't continue it unless you allow control again.`;
+  `Change ${machine} to ${machineAccessChoice(level).label}? ${threads === 1 ? "1 thread" : `${threads} threads`} your other machines started here will stop. Each running turn is interrupted where it is, so work it hadn't finished stays unfinished, and files it already changed stay on ${machine}. Queued messages are kept but held, and pull request and CI watches end.\n\nRaising this setting again restarts nothing, and ended watches don't come back. You can read each thread here, and resume it to send its held messages. Your other machines can send it new messages once you allow control again, but that leaves held messages held.`;
 
 /** What the card calls the other environment: its own name, else the address asked for. */
 export const linkRequestTargetName = (item: Pick<LinkRequestItem, "label" | "url">): string =>

@@ -242,6 +242,11 @@ export function QueuedRunsControl({
       <span className="sr-only" aria-live="polite">
         {items.length} queued
       </span>
+      {workflow?.isHeld ? (
+        <p className="me-1 self-end text-xs text-muted-foreground">
+          Queue paused. Resume the thread or send a message to start these.
+        </p>
+      ) : null}
       <ol className="flex flex-col items-end gap-3" id={queueListId}>
         {visibleItems.map((item, position) => {
           const previewText = isAttachmentOnlyBootstrapPrompt(item.text)

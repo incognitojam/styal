@@ -47,7 +47,7 @@ export function MachineAccessSetting({
   const choose = async (next: IncomingMachineAccess) => {
     if (next === level) return;
     setBusy(true);
-    let runningThreads = 0;
+    let threads = 0;
     if (next !== "everything") {
       const work = await incomingWork({ environmentId, input: {} });
       // Without a count, nobody can agree to what would stop.
@@ -56,11 +56,11 @@ export function MachineAccessSetting({
         fail(`Could not check what's running on ${machineLabel}. Try again.`);
         return;
       }
-      runningThreads = work.value.runningThreads;
+      threads = work.value.threads;
     }
-    if (runningThreads > 0) {
+    if (threads > 0) {
       const confirmed = await (requestConfirmDialog(
-        machineAccessStopNotice(machineLabel, next, runningThreads),
+        machineAccessStopNotice(machineLabel, next, threads),
         { variant: "destructive" },
       ) ?? Promise.resolve(false));
       if (!confirmed) {
@@ -81,7 +81,7 @@ export function MachineAccessSetting({
       feature: "machine-access",
       action: "set",
       level: next,
-      stoppedThreads: runningThreads > 0,
+      stoppedThreads: threads > 0,
     });
   };
 

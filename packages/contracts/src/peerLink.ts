@@ -7,7 +7,7 @@ import { EnvironmentId, ThreadId, TrimmedNonEmptyString, TurnItemId } from "./ba
 export const MACHINE_ACCEPTS_NOTHING = "machine_accepts_nothing";
 
 /** Threads other machines started here that are running now. */
-export const PeerIncomingWork = Schema.Struct({ runningThreads: Schema.Number });
+export const PeerIncomingWork = Schema.Struct({ threads: Schema.Number });
 export type PeerIncomingWork = typeof PeerIncomingWork.Type;
 
 /**
