@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   imageGridTileSize,
+  loneImageDisplaySize,
   messageImageLayout,
   userMessageAttachmentLayout,
 } from "./messageImageGrid";
@@ -75,6 +76,28 @@ describe("imageGridTileSize", () => {
   it("caps tiles on wide layouts and never goes negative", () => {
     expect(imageGridTileSize(1200)).toBe(240);
     expect(imageGridTileSize(4)).toBe(0);
+  });
+});
+
+describe("loneImageDisplaySize", () => {
+  it("keeps the fixed height while the width follows the image, within the phone's limits", () => {
+    expect(loneImageDisplaySize({ width: 300, height: 200 }, 330)).toEqual({
+      height: 192,
+      width: 288,
+    });
+    expect(loneImageDisplaySize({ width: 1600, height: 500 }, 330)).toEqual({
+      height: 192,
+      width: 330,
+    });
+    expect(loneImageDisplaySize({ width: 100, height: 2000 }, 330)).toEqual({
+      height: 192,
+      width: 96,
+    });
+  });
+
+  it("holds the same height before the image has loaded", () => {
+    expect(loneImageDisplaySize(null, 200)).toEqual({ height: 192, width: 200 });
+    expect(loneImageDisplaySize({ width: 0, height: 0 }, 200)).toEqual({ height: 192, width: 200 });
   });
 });
 

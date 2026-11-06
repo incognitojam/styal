@@ -10,12 +10,31 @@ export const IMAGE_GRID_GAP = 8;
 // Phones fill the bubble; this only bounds tiles on tablets, where half a bubble is huge.
 const IMAGE_GRID_MAX_TILE = 240;
 const IMAGE_GRID_MAX_TILES = 4;
+const LONE_IMAGE_HEIGHT = 192;
+const LONE_IMAGE_MIN_WIDTH = 96;
 
 export function imageGridTileSize(availableWidth: number) {
   return Math.max(
     0,
     Math.min(IMAGE_GRID_MAX_TILE, Math.floor((availableWidth - IMAGE_GRID_GAP) / 2)),
   );
+}
+
+// A lone image keeps its own shape at a fixed height, as on web, so a tall screenshot stays short
+// and the row does not change height when the image loads.
+export function loneImageDisplaySize(
+  source: { readonly width: number; readonly height: number } | null,
+  availableWidth: number,
+) {
+  const aspectRatio =
+    source && source.width > 0 && source.height > 0 ? source.width / source.height : 1.3;
+  return {
+    height: LONE_IMAGE_HEIGHT,
+    width: Math.min(
+      availableWidth,
+      Math.max(LONE_IMAGE_MIN_WIDTH, LONE_IMAGE_HEIGHT * aspectRatio),
+    ),
+  };
 }
 
 export type MessageImageLayout<T> =
