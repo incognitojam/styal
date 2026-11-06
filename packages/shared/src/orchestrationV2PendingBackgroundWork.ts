@@ -298,10 +298,21 @@ export function derivePendingBackgroundWork(input: {
   return Array.from(byTaskId.values());
 }
 
+const WORKFLOW_RUN_WATCH_TASK_PREFIX = "workflow-run-watch:";
+const PULL_REQUEST_WATCH_TASK_PREFIX = "pull-request-watch:";
+
+/** Watches are saved on the thread and polled by the server, so they outlive a restart. */
+export function isWatchTask(task: Pick<PendingBackgroundWorkTask, "taskId">): boolean {
+  return (
+    task.taskId.startsWith(WORKFLOW_RUN_WATCH_TASK_PREFIX) ||
+    task.taskId.startsWith(PULL_REQUEST_WATCH_TASK_PREFIX)
+  );
+}
+
 export function workflowRunWatchTaskId(
   run: Pick<ThreadWorkflowRunWatch, "host" | "repository" | "runId">,
 ): string {
-  return `workflow-run-watch:${run.host.toLowerCase()}/${run.repository.toLowerCase()}/${run.runId}`;
+  return `${WORKFLOW_RUN_WATCH_TASK_PREFIX}${run.host.toLowerCase()}/${run.repository.toLowerCase()}/${run.runId}`;
 }
 
 /** Pull request and workflow run watches the server holds for the thread's agent. */
@@ -331,7 +342,7 @@ function pullRequestWatchTasks(
           {
             // Links store their normalized identity, and this id only has to be unique within the
             // thread, so it reads those fields instead of parsing the URL.
-            taskId: `pull-request-watch:${link.host.toLowerCase()}/${link.repository.toLowerCase()}#${link.number}`,
+            taskId: `${PULL_REQUEST_WATCH_TASK_PREFIX}${link.host.toLowerCase()}/${link.repository.toLowerCase()}#${link.number}`,
             description: `Watching pull request #${link.number}`,
             kind: "monitor" as const,
             awaited: true as const,

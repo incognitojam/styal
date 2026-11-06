@@ -11,6 +11,7 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import { describe, expect, it } from "@effect/vitest";
+import { derivePendingBackgroundWork } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
 import { DeviceSharing } from "../device/DeviceSharing.ts";
 import {
   ProjectionStoreV2,
@@ -73,6 +74,48 @@ describe("host session activity", () => {
         { ...thread("monitor"), pendingBackgroundTasks: [{ taskId: "monitor", kind: "monitor" }] },
       ]),
     ).toMatchObject({ activeSessions: 1, continuableSessions: 0, waitingSessions: 2 });
+  });
+  it("does not count pull request and workflow watches, which outlive a restart", () => {
+    const watches = derivePendingBackgroundWork({
+      latestRun: null,
+      providerThreads: [],
+      turnItems: [],
+      pullRequests: [
+        {
+          host: "github.com",
+          repository: "acme/app",
+          number: 7,
+          url: "https://github.com/acme/app/pull/7",
+          source: "agent",
+          snapshot: null,
+          watch: {
+            startedAt: "2026-10-05T00:00:00.000Z",
+            headSha: null,
+            failedChecks: [],
+            passed: false,
+            passedChecks: [],
+            remarksThrough: "2026-10-05T00:00:00.000Z",
+            remarkIds: [],
+            conflicting: false,
+            wakes: 0,
+          },
+        },
+      ],
+      workflowRuns: [{ host: "github.com", repository: "acme/app", runId: 9, name: "CI" }],
+    });
+    expect(watches).toHaveLength(2);
+    const summary = summarizeHostSessions([
+      { ...thread("watching"), status: "completed", pendingBackgroundTasks: watches },
+      {
+        ...thread("both"),
+        status: "completed",
+        pendingBackgroundTasks: [...watches, { taskId: "shell", kind: "command" }],
+      },
+    ]);
+    expect(summary).toMatchObject({ activeSessions: 1, waitingSessions: 0 });
+    expect(summary.affected.map(({ thread }) => [thread.threadId, thread.reasons])).toEqual([
+      ["both", ["command"]],
+    ]);
   });
   it("protects dispatched turns while preparing or starting", () => {
     expect(
