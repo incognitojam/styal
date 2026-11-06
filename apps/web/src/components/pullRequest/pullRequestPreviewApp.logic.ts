@@ -65,8 +65,6 @@ export function previewAppControlView(input: {
       };
     }
     switch (activity.phase) {
-      case "confirming":
-        return { kind: "busy", label: "Waiting for confirmation…", canCancel: false };
       case "downloading":
         return { kind: "busy", label: `Downloading ${activity.progress ?? 0}%`, canCancel: true };
       case "copying":

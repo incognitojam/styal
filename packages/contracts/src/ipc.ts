@@ -377,7 +377,7 @@ export const DesktopPreviewAppActivitySchema = Schema.Union([
   Schema.Struct({
     status: Schema.Literal("installing"),
     pullRequestNumber: Schema.Number,
-    phase: Schema.Literals(["confirming", "downloading", "copying", "quitting", "opening"]),
+    phase: Schema.Literals(["downloading", "copying", "quitting", "opening"]),
     /** Whole percent of the download; null outside the download. */
     progress: Schema.NullOr(Schema.Number),
   }),

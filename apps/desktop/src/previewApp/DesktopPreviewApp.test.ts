@@ -370,6 +370,7 @@ describe("DesktopPreviewApp", () => {
           pullRequestNumber: 12,
           runNumber: 7,
         });
+        assert.lengthOf(app.dialogs, 0);
         assert.strictEqual(yield* installedVersion(app.slot), "1.2.3-pr.12.7");
         assert.isTrue(yield* app.stagingIsGone);
 
@@ -484,26 +485,6 @@ describe("DesktopPreviewApp", () => {
     ),
   );
 
-  it.effect("does nothing but look up the build until the person accepts in the main process", () =>
-    scoped(
-      Effect.gen(function* () {
-        const app = yield* setup({ assets: [buildAsset], confirmed: false });
-        yield* app.installPrevious("1.2.3-pr.99.1");
-
-        const result = yield* app.service.install(12);
-
-        assert.strictEqual(result.outcome, "cancelled");
-        assert.lengthOf(app.dialogs, 1);
-        assert.strictEqual(app.dialogs[0]?.defaultId, 1);
-        assert.deepStrictEqual(app.dialogOwners, [app.mainWindow]);
-        assert.include(app.dialogs[0]?.detail, "pull request #99, build 1");
-        assert.isFalse(app.urls.some((url) => url.includes("/releases/download/")));
-        assert.lengthOf(app.ran("/usr/bin/hdiutil"), 0);
-        assert.strictEqual(yield* installedVersion(app.slot), "1.2.3-pr.99.1");
-      }),
-    ),
-  );
-
   it.effect("puts the previous build back when macOS refuses to open the new one", () =>
     scoped(
       Effect.gen(function* () {
@@ -516,18 +497,6 @@ describe("DesktopPreviewApp", () => {
         assert.lengthOf(app.ran("/usr/bin/open"), 1);
         assert.strictEqual(yield* installedVersion(app.slot), "1.2.3-pr.12.6");
         assert.isTrue(yield* app.stagingIsGone);
-      }),
-    ),
-  );
-
-  it.effect("declines without a window to attach the confirmation to", () =>
-    scoped(
-      Effect.gen(function* () {
-        const app = yield* setup({ assets: [buildAsset], noWindow: true });
-        const result = yield* app.service.install(12);
-        assert.strictEqual(result.outcome, "cancelled");
-        assert.lengthOf(app.dialogs, 0);
-        assert.lengthOf(app.ran("/usr/bin/hdiutil"), 0);
       }),
     ),
   );
@@ -579,7 +548,6 @@ describe("DesktopPreviewApp", () => {
 
         assert.strictEqual(result.outcome, "failed");
         assert.strictEqual(result.state.activity.status, "idle");
-        assert.lengthOf(app.dialogs, 0);
       }),
     ),
   );
@@ -780,6 +748,15 @@ describe("DesktopPreviewApp", () => {
         assert.strictEqual((yield* declined.service.resetData).outcome, "cancelled");
         assert.isTrue(yield* declined.fs.exists(declinedData));
         assert.lengthOf(declined.ran("/bin/ps"), 0);
+        assert.strictEqual(declined.dialogs[0]?.defaultId, 1);
+        assert.deepStrictEqual(declined.dialogOwners, [declined.mainWindow]);
+
+        const noWindow = yield* setup({ noWindow: true });
+        const noWindowData = noWindow.path.join(noWindow.baseDir, "preview");
+        yield* noWindow.fs.makeDirectory(noWindowData, { recursive: true });
+        assert.strictEqual((yield* noWindow.service.resetData).outcome, "cancelled");
+        assert.lengthOf(noWindow.dialogs, 0);
+        assert.isTrue(yield* noWindow.fs.exists(noWindowData));
 
         const app = yield* setup({});
         const state = app.path.join(app.baseDir, "preview", "userdata");

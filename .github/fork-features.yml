@@ -1212,7 +1212,7 @@ features:
     prs: []
     invariants:
       - A preview build is only found from finished release assets of the hard-coded fork repository whose names carry the pull request's full `-pr.<n>.` marker, and pull request comments are never read.
-      - A preview is installed and its data reset only after a person accepts a confirmation shown by the main process, so renderer code alone cannot start either; a closed pull request removes the installed app automatically, only while the preview is not running and only if it is still the build whose pull request was checked.
+      - A preview is installed only from the pull request panel's button, with no agent tool, and its data is reset only after a person accepts a confirmation shown by the main process; a closed pull request removes the installed app automatically, only while the preview is not running and only if it is still the build whose pull request was checked.
       - A failed install, including a build macOS refuses to open and a crash between renames, restores the previous build, and staging is never removed while the build's volume stays attached.
       - A download that does not match GitHub's published digest, or an app whose bundle identifier or version differs from the published preview, is discarded before it replaces anything or runs.
       - A build with macOS's quarantine attribute anywhere inside it fails visibly with the `quarantined` reason, a check that cannot complete fails too, and the attribute is never cleared.

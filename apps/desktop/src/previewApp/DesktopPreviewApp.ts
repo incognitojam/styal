@@ -36,10 +36,9 @@ import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as IpcChannels from "../ipc/channels.ts";
 import * as DesktopTelemetryPublisher from "../telemetry/DesktopTelemetryPublisher.ts";
 
-// Installs a pull request's unsigned macOS build as `styal (Preview)`. The main process asks the
-// person, so renderer code alone can never start it. The app in ~/Applications is the only record
-// of what is installed. Files this process writes should not be quarantined; a build that is
-// fails with `quarantined` and is never stripped.
+// Installs a pull request's unsigned macOS build as `styal (Preview)`. The app in ~/Applications is
+// the only record of what is installed. Files this process writes should not be quarantined; a
+// build that is fails with `quarantined` and is never stripped.
 
 const RELEASE_TAG = "desktop-preview";
 const API_ROOT = `https://api.github.com/repos/${DESKTOP_PREVIEW_APP_REPOSITORY}`;
@@ -703,7 +702,7 @@ export const make = Effect.fn("DesktopPreviewApp.make")(function* (options?: {
     runAction(
       "install",
       "user",
-      { status: "installing", pullRequestNumber, phase: "confirming", progress: null },
+      { status: "installing", pullRequestNumber, phase: "downloading", progress: 0 },
       Effect.gen(function* () {
         if (!supported) {
           return yield* fail("unsupported", "Preview builds need an Apple Silicon Mac.");
@@ -727,28 +726,6 @@ export const make = Effect.fn("DesktopPreviewApp.make")(function* (options?: {
             `Pull request #${pullRequestNumber} has no preview build.`,
           );
         }
-        const installed = yield* readInstalled;
-        const action = runningAsPreview ? "Install" : "Install and open";
-        const confirmed = yield* confirm({
-          action,
-          message: `${action} pull request #${pullRequestNumber}'s preview?`,
-          detail: [
-            `Build ${asset.runNumber} is unsigned.`,
-            ...(installed === null
-              ? []
-              : [
-                  `It replaces pull request #${installed.pullRequestNumber}, build ${installed.runNumber}.`,
-                ]),
-          ].join(" "),
-        });
-        if (!confirmed) return yield* Effect.interrupt;
-        yield* setActivity({
-          status: "installing",
-          pullRequestNumber,
-          phase: "downloading",
-          progress: 0,
-        });
-
         if (!(yield* cleanStaging)) {
           return yield* fail(
             "mount",

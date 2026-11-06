@@ -124,7 +124,6 @@ describe("previewAppControlView", () => {
   });
 
   it.each([
-    ["confirming", null, "Waiting for confirmation…", false],
     ["downloading", 42, "Downloading 42%", true],
     ["copying", null, "Copying…", true],
     ["quitting", null, "Quitting preview…", true],
