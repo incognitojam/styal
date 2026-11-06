@@ -10,6 +10,7 @@ import { EnvironmentToolkit } from "../environment/tools.ts";
 import { FeedbackToolkit } from "../feedback/tools.ts";
 import { HardwareToolkit } from "../hardware/tools.ts";
 import { ProjectToolkit } from "../project/tools.ts";
+import { OrchestratorToolkit } from "../orchestrator/tools.ts";
 import { AGENT_GUIDES, type AgentGuideTopic } from "./guides.ts";
 import { renderStyalSkillFiles } from "./skill.ts";
 import { GuideToolkit } from "./tools.ts";
@@ -21,6 +22,7 @@ const toolNames = new Set(
     FeedbackToolkit,
     HardwareToolkit,
     ProjectToolkit,
+    OrchestratorToolkit,
     GuideToolkit,
   ].flatMap((toolkit) => Object.keys(toolkit.tools)),
 );

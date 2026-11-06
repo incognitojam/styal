@@ -12,6 +12,8 @@ export const STYAL_SKILL_DESCRIPTION =
 const TOPIC_SUMMARIES: Record<AgentGuideTopic, string> = {
   "project-setup":
     "styal.json, actions, worktree setup and settle actions, t3.json migration. `t3.json` scripts do not run, so read this before adding or changing project actions.",
+  orchestration:
+    "delegated tasks versus independent threads, PR watches, reporting back and stopping reports.",
   devices: "simulators, emulators and physical devices, device tools, agent-device.",
   hardware: "hardware leases and hardware definitions.",
   "data-import": "importing T3 Code projects, Claude Code and Codex history, and browser sessions.",

@@ -30,10 +30,10 @@ it.effect("returns the guide and records the topic only", () => {
   return Effect.gen(function* () {
     const server = yield* McpServer.McpServer;
     const result = yield* server
-      .callTool({ name: "read_styal_guide", arguments: { topic: "hardware" } })
+      .callTool({ name: "read_styal_guide", arguments: { topic: "orchestration" } })
       .pipe(Effect.provideService(McpSchema.McpServerClient, client));
     expect(result.isError).toBe(false);
-    expect(result.structuredContent).toEqual({ guide: AGENT_GUIDES.hardware });
+    expect(result.structuredContent).toEqual({ guide: AGENT_GUIDES.orchestration });
     expect(recorded).toEqual([
       {
         event: "feature.used",
@@ -41,7 +41,7 @@ it.effect("returns the guide and records the topic only", () => {
           feature: "agent-guides",
           action: "read",
           source: "agent",
-          guideTopic: "hardware",
+          guideTopic: "orchestration",
           guideRoute: "tool",
           outcome: "success",
           durationMs: expect.any(Number),
