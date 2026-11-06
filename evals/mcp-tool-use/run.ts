@@ -986,7 +986,10 @@ export const buildMessages = (sample: Sample) => {
         turn.role,
         text(
           first
-            ? withInlineContext(threadReportNote(ThreadId.make(testCase.setup.reportTo!)), turn.text)
+            ? withInlineContext(
+                threadReportNote(ThreadId.make(testCase.setup.reportTo!)),
+                turn.text,
+              )
             : turn.text,
         ),
       );
