@@ -85,6 +85,10 @@ behavior in Settings → Keyboard.
 
 Keybindings live on the environment's machine, in
 `~/.styal/userdata/keybindings.json` by default. You can edit this file directly.
+In Settings → Keybindings, use the file opener to open it in your preferred editor;
+the adjacent menu lets you choose another app. Remote environments use the same
+SSH editor links as the chat file opener.
+
 It is a JSON array of rules:
 
 ```json
