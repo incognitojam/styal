@@ -86,8 +86,8 @@ import { PullRequestCommentBody } from "./PullRequestCommentBody";
 import { PullRequestMoreReplies } from "./PullRequestMoreReplies";
 import { PullRequestMarkdownEditor } from "./PullRequestMarkdownEditor";
 import {
-  type PullRequestMentionScope,
-  pullRequestMentionScope,
+  type PullRequestCompletionScope,
+  pullRequestCompletionScope,
 } from "./PullRequestMarkdownTextarea";
 import { PullRequestReactionBar } from "./PullRequestReactions";
 import { PullRequestConversationGhost } from "./PullRequestGhosts";
@@ -168,7 +168,7 @@ function reviewStateLabel(state: string): string {
 interface CommentEditing {
   readonly detail: PullRequestDetailView;
   readonly environmentId: EnvironmentId;
-  readonly mentionScope: PullRequestMentionScope | null;
+  readonly completionScope: PullRequestCompletionScope | null;
   readonly threadRef: ScopedThreadRef | null;
   readonly canEdit: (comment: PullRequestComment) => boolean;
   readonly editingId: string | null;
@@ -193,7 +193,7 @@ function CommentBody({
         value={comment.body}
         detail={editing.detail}
         environmentId={editing.environmentId}
-        mentionScope={editing.mentionScope}
+        completionScope={editing.completionScope}
         threadRef={editing.threadRef}
         label="Edit comment"
         saving={editing.saving}
@@ -569,11 +569,11 @@ export function PullRequestSummaryTab({
     if (body !== description) void saveDescription(body);
   };
 
-  const mentionScope = pullRequestMentionScope(detail, environmentId, reference);
+  const completionScope = pullRequestCompletionScope(detail, environmentId, reference);
   const commentEditing: CommentEditing = {
     detail,
     environmentId,
-    mentionScope,
+    completionScope,
     threadRef,
     canEdit: (comment) => canEditPullRequestComment(detail, comment),
     editingId: editingCommentId,
@@ -846,7 +846,7 @@ export function PullRequestSummaryTab({
               value={bodyScope.body}
               detail={detail}
               environmentId={environmentId}
-              mentionScope={mentionScope}
+              completionScope={completionScope}
               threadRef={threadRef}
               label={`${capitalizeTerm(terminology.singular)} description`}
               placeholder={`Describe this ${terminology.singular}`}

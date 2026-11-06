@@ -33,7 +33,7 @@ import { PullRequestReactionBar } from "./PullRequestReactions";
 import type { PendingReviewComment } from "./pullRequestReviewStore";
 import {
   PullRequestMarkdownTextarea,
-  type PullRequestMentionScope,
+  type PullRequestCompletionScope,
 } from "./PullRequestMarkdownTextarea";
 
 const CARD_CLASS =
@@ -118,7 +118,7 @@ export function ReviewThreadCard({
   canResolve,
   canReact,
   reference,
-  mentionScope,
+  completionScope,
   pending,
   fixPending,
   fixLabel = "Fix in a thread",
@@ -138,7 +138,7 @@ export function ReviewThreadCard({
   canResolve: boolean;
   canReact: boolean;
   reference: PullRequestRef;
-  mentionScope: PullRequestMentionScope | null;
+  completionScope: PullRequestCompletionScope | null;
   pending: boolean;
   fixPending?: boolean;
   fixLabel?: string;
@@ -311,7 +311,7 @@ export function ReviewThreadCard({
                     value={comment.body}
                     detail={detail}
                     environmentId={environmentId}
-                    mentionScope={mentionScope}
+                    completionScope={completionScope}
                     label="Edit comment"
                     saving={savingEdit}
                     onSave={(body) => void saveEdit(comment.id, body)}
@@ -367,7 +367,7 @@ export function ReviewThreadCard({
                       readOnly={speech.freezesEditor}
                       autoFocus
                       size="sm"
-                      mentionScope={mentionScope}
+                      completionScope={completionScope}
                       value={reply}
                       placeholder="Reply"
                       aria-label="Reply to this conversation"
