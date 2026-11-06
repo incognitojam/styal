@@ -113,6 +113,11 @@ describe("serverUpdateConfirmation", () => {
       host({ serverLabel: "Laptop", activity, continueRunningThreads: true }),
       host({ serverLabel: "Lab server", activity, continueRunningThreads: false }),
     ]);
+    expect(
+      serverUpdateActivity([host({ serverLabel: "Lab server", activity })], true).threadActivity,
+    ).toEqual([
+      { thread: activity.threads[0], hostLabel: "Lab server", continuesAfterRestart: false },
+    ]);
     expect(message?.message).not.toMatch(/\d+ threads? will (be interrupted|continue)/);
     expect(message?.threadActivity).toEqual([
       { thread: activity.threads[0], hostLabel: "Laptop", continuesAfterRestart: true },
