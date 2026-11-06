@@ -191,7 +191,6 @@ import { useThreadContextDrop, threadContextDropTargetProps } from "./threadCont
 import { readThreadShell } from "~/state/entities";
 import { useLinkedEnvironments } from "~/state/peerLinks";
 import { encodeComposerContextFragment } from "@t3tools/shared/composerContextClipboard";
-import { feedbackReportFromApproval } from "@t3tools/client-runtime/feedback-report";
 import type {
   ComposerContextRecord,
   ProviderApprovalDecision,
@@ -215,7 +214,7 @@ import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
 import { ComposerFooterPrimaryActions } from "./ComposerFooterControls";
 import { WorkflowRunReviewPanel } from "./WorkflowRunReviewPanel";
 import { ComposerPendingUserInputPanel } from "./ComposerPendingUserInputPanel";
-import { FeedbackReportApprovalBanner } from "./FeedbackReportApproval";
+import { ComposerPendingApprovalBanner } from "./ComposerPendingApprovalBanner";
 import { ComposerPlanFollowUpBanner } from "./ComposerPlanFollowUpBanner";
 import { resolveComposerMenuActiveItemId } from "./composerMenuHighlight";
 import { buildPullRequestReferenceContext } from "../pullRequest/pullRequestDetail.logic";
@@ -1307,13 +1306,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   });
 
   const isComposerApprovalState = activePendingApproval !== null;
-  const feedbackReportApproval = pendingApprovals.find(
-    (approval) =>
-      !heldRequestIds.has(approval.requestId) && feedbackReportFromApproval(approval) !== null,
+  const shownPendingApprovals = pendingApprovals.filter(
+    (approval) => !heldRequestIds.has(approval.requestId),
   );
-  const feedbackReport = feedbackReportApproval
-    ? feedbackReportFromApproval(feedbackReportApproval)
-    : null;
   // A send declines the approvals shown here to redirect the agent, so it steers the waiting
   // turn instead of queueing behind it. Approvals the typing guard holds stay unseen and pending.
   const followUpBehavior = pendingApprovals.some(
@@ -2432,7 +2427,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     importContextRecords,
     expandMobileComposer: expandMobileComposerStable,
   });
-  const hasBlockingComposerTopDrawer = pendingUserInputs.length > 0 || hasWorkflowRunReview;
+  const hasBlockingComposerTopDrawer =
+    shownPendingApprovals.length > 0 || pendingUserInputs.length > 0 || hasWorkflowRunReview;
   const composerControlsCollapsed = isComposerCollapsedMobile;
   // The collapsed mobile web composer keeps a second controls row inside the card.
   const showInlineRestingControls = isComposerCollapsedMobile;
@@ -2521,7 +2517,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       getModelDisabledReason={getModelDisabledReason}
     />
   );
-  // An open question owns the space above the composer. Only a machine problem,
+  // An open approval or question owns the space above the composer. Only a machine problem,
   // which is why an answer could not go through, stays beside it.
   const shelfBannerItems: readonly ComposerBannerStackItem[] =
     runtimeModeCeilingDenial === undefined || activePendingProgress
@@ -3388,15 +3384,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               </ComposerBanner.Root>
             </ComposerBanner.Attachment>
           ) : null}
-          {feedbackReportApproval && feedbackReport ? (
-            <FeedbackReportApprovalBanner
-              key={feedbackReportApproval.requestId}
-              report={feedbackReport}
-              requestId={feedbackReportApproval.requestId}
-              isResponding={respondingRequestIds.includes(feedbackReportApproval.requestId)}
-              canRespond={feedbackReportApproval.responseCapability === "live"}
+          {shownPendingApprovals[0] ? (
+            <ComposerPendingApprovalBanner
+              approval={shownPendingApprovals[0]}
+              pendingCount={shownPendingApprovals.length}
+              isResponding={respondingRequestIds.includes(shownPendingApprovals[0].requestId)}
               disabled={!canOperateThread}
-              options={feedbackReportApproval.options}
               onRespondToApproval={onRespondToApproval}
             />
           ) : null}
