@@ -8,6 +8,7 @@ import { parse } from "yaml";
 import {
   adaptationErrors,
   cherryPickSources,
+  changedLinesByFile,
   type CommitReview,
   compareWithUpstream,
   forkAdaptationNote,
@@ -84,6 +85,14 @@ describe("compareWithUpstream", () => {
         }),
       );
     }
+  });
+
+  it("keeps ambiguous spaces and Git quoted paths intact", () => {
+    const spaced = "apps/web/src/a b/fixture.ts";
+    assert.deepEqual([...changedLinesByFile([patch(spaced, ["+x"])]).keys()], [spaced]);
+    const quoted = 'diff --git "a/a\\tfile" "b/a\\tfile"\n+x';
+    assert.deepEqual([...changedLinesByFile([quoted]).keys()], ["a\tfile"]);
+    assert.deepEqual(compareWithUpstream({ upstreamPatches: [quoted], forkPatch: quoted }), []);
   });
 
   it("combines several upstream sources", () => {

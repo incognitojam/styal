@@ -250,55 +250,59 @@ function reviewCommits(input: {
                 reason: `upstream ${missing.map((source) => source.slice(0, 10)).join(", ")} not fetched.`,
               }
             : (() => {
-                const sourceHeads = [
-                  ...sourceCommits,
-                  ...snapshots.map((snapshot) => snapshot.head),
-                ];
-                const upstreamPatches = trackingOnly
-                  ? []
-                  : [
-                      ...sourceCommits.map((source) => patch(source)),
-                      ...snapshots.map((snapshot) => patch(snapshot.head, snapshot.base)),
-                    ];
-                const files = compareWithUpstream({
-                  upstreamPatches,
-                  forkPatch: patch(sha),
-                })
-                  .filter((file) => {
-                    // A commit whose file ends identical to upstream's has nothing to explain,
-                    // even when an earlier fork difference made its patch differ.
-                    const lastSource = upstreamPatches.findLastIndex((source) =>
-                      changedLinesByFile([source]).has(file.path),
-                    );
-                    return (
-                      lastSource === -1 ||
-                      treeEntryAt(sha, file.path) !==
-                        treeEntryAt(sourceHeads[lastSource]!, file.path)
-                    );
+                try {
+                  const sourceHeads = [
+                    ...sourceCommits,
+                    ...snapshots.map((snapshot) => snapshot.head),
+                  ];
+                  const upstreamPatches = trackingOnly
+                    ? []
+                    : [
+                        ...sourceCommits.map((source) => patch(source)),
+                        ...snapshots.map((snapshot) => patch(snapshot.head, snapshot.base)),
+                      ];
+                  const files = compareWithUpstream({
+                    upstreamPatches,
+                    forkPatch: patch(sha),
                   })
-                  .map((file) => ({
-                    ...file,
-                    interdiff: interdiff(input.scratch, file.upstreamLines, file.forkLines),
-                  }));
-                const editsOnly = (value: ReadonlyArray<string>) =>
-                  value.filter((line) => !line.startsWith(" ") && !line.startsWith("@@"));
-                if (
-                  files.length > 0 &&
-                  files.every(
-                    (file) =>
-                      JSON.stringify(editsOnly(file.upstreamLines)) ===
-                      JSON.stringify(editsOnly(file.forkLines)),
-                  )
-                ) {
-                  return {
-                    status: "unavailable" as const,
-                    reason:
-                      "ordered edits match, but surrounding fork context differs; review the full diff.",
-                  };
+                    .filter((file) => {
+                      // A commit whose file ends identical to upstream's has nothing to explain,
+                      // even when an earlier fork difference made its patch differ.
+                      const lastSource = upstreamPatches.findLastIndex((source) =>
+                        changedLinesByFile([source]).has(file.path),
+                      );
+                      return (
+                        lastSource === -1 ||
+                        treeEntryAt(sha, file.path) !==
+                          treeEntryAt(sourceHeads[lastSource]!, file.path)
+                      );
+                    })
+                    .map((file) => ({
+                      ...file,
+                      interdiff: interdiff(input.scratch, file.upstreamLines, file.forkLines),
+                    }));
+                  const editsOnly = (value: ReadonlyArray<string>) =>
+                    value.filter((line) => !line.startsWith(" ") && !line.startsWith("@@"));
+                  if (
+                    files.length > 0 &&
+                    files.every(
+                      (file) =>
+                        JSON.stringify(editsOnly(file.upstreamLines)) ===
+                        JSON.stringify(editsOnly(file.forkLines)),
+                    )
+                  ) {
+                    return {
+                      status: "unavailable" as const,
+                      reason:
+                        "ordered edits match, but surrounding fork context differs; review the full diff.",
+                    };
+                  }
+                  return files.length === 0
+                    ? { status: "matches" as const }
+                    : { status: "adapted" as const, files };
+                } catch (error) {
+                  return { status: "unavailable" as const, reason: String(error) };
                 }
-                return files.length === 0
-                  ? { status: "matches" as const }
-                  : { status: "adapted" as const, files };
               })();
     return {
       sha,
