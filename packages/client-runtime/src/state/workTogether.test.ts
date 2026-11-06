@@ -1,5 +1,11 @@
-import { type AuthMcpClientAccess, EnvironmentId } from "@t3tools/contracts";
+import {
+  type AuthMcpClientAccess,
+  EnvironmentId,
+  type EnvironmentMachineKind,
+} from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
+import { PrimaryConnectionTarget, RelayConnectionTarget } from "../connection/model.ts";
 import { describe, expect, it } from "@effect/vitest";
 
 import {
@@ -7,6 +13,7 @@ import {
   planWorkTogether,
   runWorkTogetherLines,
   workTogetherDefaultAccess,
+  workTogetherLabels,
   workTogetherFailureMessage,
   workTogetherMissingShares,
   workTogetherOutcome,
@@ -304,4 +311,68 @@ describe("workTogetherFailureMessage", () => {
       workTogetherFailureMessage({ _tag: "RpcClientError", message: "pairingCode=ABC123" }),
     ).toBe("This step did not finish. Try again.");
   });
+});
+
+it("identifies duplicate names with connection details and preserves unique names", () => {
+  const presentation = (
+    environmentId: string,
+    label: string,
+    url: string | null,
+    kind: EnvironmentMachineKind = "server",
+  ) => ({
+    environmentId,
+    label,
+    entry: {
+      target:
+        url === null
+          ? new RelayConnectionTarget({ environmentId: EnvironmentId.make(environmentId), label })
+          : new PrimaryConnectionTarget({
+              environmentId: EnvironmentId.make(environmentId),
+              label,
+              httpBaseUrl: url,
+              wsBaseUrl: url.replace("http", "ws"),
+            }),
+      profile: Option.none(),
+      enabled: true,
+    },
+    serverConfig: {
+      environment: { platform: { os: "linux" as const, arch: "x64" as const, machine: kind } },
+    },
+  });
+  const machines = [
+    presentation("atlas-one", "Atlas", "http://localhost:4311"),
+    presentation("atlas-two", "Atlas", "http://localhost:4312"),
+    presentation("orion", "Orion", "https://orion.example"),
+  ];
+  const named = workTogetherLabels(machines);
+  expect(named.map(({ label }) => label)).toEqual([
+    "Atlas (Local · localhost:4311)",
+    "Atlas (Local · localhost:4312)",
+    "Orion",
+  ]);
+  expect(named[2]?.identityDetail).toBeNull();
+  expect(machines[0]?.label).toBe("Atlas");
+  const icons = workTogetherLabels([
+    presentation("one", "Atlas", null, "laptop"),
+    presentation("two", "Atlas", null, "mac-mini"),
+  ]);
+  expect(icons.map(({ identityIcon }) => identityIcon)).toEqual(["laptop", "mac-mini"]);
+  expect(icons.map(({ label }) => label)).toEqual([
+    "Atlas (styal Link · Laptop)",
+    "Atlas (styal Link · Mini PC)",
+  ]);
+  const fallback = workTogetherLabels([
+    presentation("aaaaaaaa-1111-4000-8000-000000000001", "Atlas", null),
+    presentation("aaaaaaaa-1111-4000-8000-000000000002", "Atlas", null),
+  ]);
+  expect(fallback.map(({ label }) => label)).toEqual([
+    "Atlas (styal Link · …000001)",
+    "Atlas (styal Link · …000002)",
+  ]);
+  const long = workTogetherLabels([
+    presentation("one", "Atlas", `https://${"long".repeat(20)}.example:4311`),
+    presentation("two", "Atlas", "https://short.example:4312"),
+  ]);
+  expect(long[0]?.label).toContain("…");
+  expect(long[0]?.identityDetail).toContain(`${"long".repeat(20)}.example:4311`);
 });

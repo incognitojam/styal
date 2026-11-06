@@ -7040,6 +7040,7 @@ features:
       - Stop working together removes both links, ends the link and device sessions each machine gave the other, and stops device sharing. It leaves the links and device settings as they are.
       - A link at other access than the one chosen is replaced and its old session ended. The picker opens on the narrowest access already given.
       - Pairing codes never appear in the progress list; only known errors show their own message.
+      - Duplicate machine names use known connection addresses and types, differing machine icons, and only a short ID as a last resort in pair rows, confirmations and progress on every client; long values have details and unique names stay concise.
     rationale: Linking in each direction, device sharing and agent device access each took separate steps per machine, which the fork removes for someone who controls both machines. Upstream's mesh (#24863) was not imported, and this action is where it would be swapped in.
     implementation_paths:
       - apps/mobile/src/features/connection/WorkTogetherSection.tsx
