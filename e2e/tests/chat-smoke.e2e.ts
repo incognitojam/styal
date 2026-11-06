@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vite-plus/test";
 
-import { type App, addProject, openApp, sendMessage } from "../support/browser.ts";
+import { sidebarThread, type App, addProject, openApp, sendMessage } from "../support/browser.ts";
 import { type Environment, startEnvironment } from "../support/environment.ts";
 
 describe("chat with an agent", () => {
@@ -39,8 +39,7 @@ describe("chat with an agent", () => {
     await sendMessage(app, "Thanks, now list the files");
 
     // The generated title replaces "New thread" in the sidebar and the header.
-    const sidebar = page.getByRole("navigation", { name: "Threads" });
-    await sidebar.getByRole("button", { name: "Fake Codex thread, notes-app" }).waitFor();
+    await sidebarThread(page, "Fake Codex thread", "notes-app").waitFor();
     await page.getByRole("heading", { name: "Fake Codex thread", level: 2 }).waitFor();
     expect(await page.locator("[data-message-role=user]").count()).toBe(2);
 

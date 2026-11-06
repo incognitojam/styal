@@ -1,6 +1,13 @@
 import { afterAll, beforeAll, describe, expect, it } from "vite-plus/test";
 
-import { type App, addProject, openApp, sendMessage, startNewThread } from "../support/browser.ts";
+import {
+  sidebarThread,
+  type App,
+  addProject,
+  openApp,
+  sendMessage,
+  startNewThread,
+} from "../support/browser.ts";
 import { type Environment, PROJECT_NAME, startEnvironment } from "../support/environment.ts";
 
 describe("filter the sidebar by project", () => {
@@ -23,8 +30,8 @@ describe("filter the sidebar by project", () => {
   it("lists only the chosen project's threads and starts new threads in it", async () => {
     const { page } = app;
     const sidebar = page.getByRole("navigation", { name: "Threads" });
-    const demoThreads = sidebar.getByRole("button", { name: `Fake Codex thread, ${PROJECT_NAME}` });
-    const otherThread = sidebar.getByRole("button", { name: "Fake Codex thread, other-app" });
+    const demoThreads = sidebarThread(page, "Fake Codex thread", PROJECT_NAME);
+    const otherThread = sidebarThread(page, "Fake Codex thread", "other-app");
     const chooseFilter = async (current: string, option: string) => {
       await sidebar.getByRole("combobox", { name: current, exact: true }).click();
       await page.getByRole("option", { name: option }).click();
