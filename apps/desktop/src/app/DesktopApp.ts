@@ -1,7 +1,6 @@
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Config from "effect/Config";
-import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
@@ -20,6 +19,7 @@ import * as DesktopClerk from "./DesktopClerk.ts";
 import * as DesktopApplicationMenu from "../window/DesktopApplicationMenu.ts";
 import * as DesktopWindow from "../window/DesktopWindow.ts";
 import * as PreviewPasskeys from "../preview/Passkeys.ts";
+import * as DesktopBackendManager from "../backend/DesktopBackendManager.ts";
 import * as DesktopBackendPool from "../backend/DesktopBackendPool.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
 import * as DesktopLifecycle from "./DesktopLifecycle.ts";
@@ -170,7 +170,7 @@ const stopAllPoolInstances = Effect.fn("desktop.app.stopAllPoolInstances")(
         Effect.gen(function* () {
           const stopStartedAt = yield* Clock.currentTimeMillis;
           yield* logShutdownInfo("stopping desktop backend", { instanceId: instance.id });
-          yield* instance.stop({ timeout: Duration.seconds(5) });
+          yield* instance.stop({ timeout: DesktopBackendManager.BACKEND_QUIT_STOP_TIMEOUT });
           yield* logShutdownInfo("desktop backend stopped", {
             instanceId: instance.id,
             elapsedMs: (yield* Clock.currentTimeMillis) - stopStartedAt,
