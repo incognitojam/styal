@@ -1,4 +1,9 @@
-import { feedbackReportDeclineOptions } from "@t3tools/client-runtime/feedback-report";
+import {
+  FEEDBACK_REPORT_OPEN_ACTION,
+  FEEDBACK_REPORT_TITLE,
+  feedbackReportDeclineOptions,
+  feedbackReportDescription,
+} from "@t3tools/client-runtime/feedback-report";
 import type {
   FeedbackApprovalReport,
   ProviderApprovalDecision,
@@ -15,7 +20,7 @@ import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScroll
 import { Sheet } from "../../components/ui/Sheet";
 import { PendingQuestionText } from "./PendingQuestionText";
 
-/** The card offers review and decline; posting is only offered beside the full report. */
+/** The card offers opening the report and declining; posting is only offered beside the full report. */
 export function FeedbackReportApprovalCard(props: {
   readonly report: FeedbackApprovalReport;
   readonly threadRef: ScopedThreadRef;
@@ -47,18 +52,22 @@ export function FeedbackReportApprovalCard(props: {
         On {props.report.repository} as @{props.report.account}
       </Text>
       <View className="flex-row flex-wrap gap-2.5">
-        <Button label="Review report" tone="primary" onPress={() => setReviewing(true)} />
+        <Button
+          label={FEEDBACK_REPORT_OPEN_ACTION}
+          tone="primary"
+          onPress={() => setReviewing(true)}
+        />
         {feedbackReportDeclineOptions(props.options).map(button)}
       </View>
       {reviewing ? (
-        <Sheet title="Review report" onClose={() => setReviewing(false)}>
+        <Sheet title={FEEDBACK_REPORT_TITLE} onClose={() => setReviewing(false)}>
           <ScrollView
             nestedScrollEnabled
             contentInsetAdjustmentBehavior="automatic"
             contentContainerClassName="gap-3 px-5 pt-3 pb-8"
           >
             <Text className="font-sans text-sm text-foreground-secondary">
-              This will be public on {props.report.repository}, posted as @{props.report.account}.
+              {feedbackReportDescription(props.report)}
             </Text>
             <View className="gap-3 rounded-[20px] border border-border bg-card-alt p-4">
               <Text className="font-t3-bold text-2xl text-foreground">{props.report.title}</Text>
