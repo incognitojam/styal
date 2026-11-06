@@ -62,23 +62,18 @@ export const peerLinkHealthText = (health: PeerLinkHealth) =>
           ? `Expires in ${health.expiresInDays} ${health.expiresInDays === 1 ? "day" : "days"}. Add it again to renew.`
           : "Reachable";
 
-const ADD_FIRST_DESCRIPTION =
-  "Add one under Environments so your machines can work on each other and share simulators.";
-
-/**
- * Machines the selected one works with that this app isn't connected to, so they can't have a
- * tab of their own. With none of those and no other tabs, it asks for another machine.
- */
+/** Machines this one works with that this app isn't connected to, so they have no tab. */
 export function OtherMachineLinks({
   environmentId,
   environmentLabel,
+  showHost,
   knownIds,
-  hasOtherTabs,
 }: {
   readonly environmentId: EnvironmentId;
   readonly environmentLabel: string;
+  /** With several machines, says which one a row belongs to. */
+  readonly showHost: boolean;
   readonly knownIds: ReadonlySet<EnvironmentId>;
-  readonly hasOtherTabs: boolean;
 }) {
   const links = useEnvironmentQuery(peerLinkEnvironment.list({ environmentId, input: {} }));
   if (links.error) {
@@ -89,33 +84,25 @@ export function OtherMachineLinks({
       />
     );
   }
-  if (!links.data) return null;
-  const others = links.data.links.filter((link) => !knownIds.has(link.environmentId));
-  if (others.length === 0) {
-    return hasOtherTabs ? null : <AddAnotherMachineRow />;
-  }
-  return (
-    <>
-      <SettingsRow
-        title={`Other machines ${environmentLabel} works with`}
-        description="This app isn't connected to these. Add one under Environments to give it a tab here."
+  return (links.data?.links ?? [])
+    .filter((link) => !knownIds.has(link.environmentId))
+    .map((link) => (
+      <LinkedEnvironmentRow
+        key={link.environmentId}
+        environmentId={environmentId}
+        hostLabel={showHost ? environmentLabel : null}
+        link={link}
       />
-      {others.map((link) => (
-        <LinkedEnvironmentRow key={link.environmentId} environmentId={environmentId} link={link} />
-      ))}
-    </>
-  );
-}
-
-export function AddAnotherMachineRow() {
-  return <SettingsRow title="Add another machine first" description={ADD_FIRST_DESCRIPTION} />;
+    ));
 }
 
 function LinkedEnvironmentRow({
   environmentId,
+  hostLabel,
   link,
 }: {
   readonly environmentId: EnvironmentId;
+  readonly hostLabel: string | null;
   readonly link: PeerLinkSummary;
 }) {
   const nowMinute = useNowMinute();
@@ -158,9 +145,13 @@ function LinkedEnvironmentRow({
             <h3 className="text-sm font-medium text-foreground">{link.label}</h3>
           </div>
           <p className="text-xs text-muted-foreground">
-            {link.access === LINK_DEFAULT_ACCESS
-              ? status
-              : `${status} · ${linkAccessLabel(link.access)}`}
+            {[
+              hostLabel === null ? null : `From ${hostLabel}`,
+              status,
+              link.access === LINK_DEFAULT_ACCESS ? null : linkAccessLabel(link.access),
+            ]
+              .filter(Boolean)
+              .join(" · ")}
           </p>
           <p className="truncate text-xs text-muted-foreground/80">{link.urls.join(", ")}</p>
         </div>

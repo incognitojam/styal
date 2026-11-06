@@ -39,6 +39,7 @@ import {
   CircleIcon,
   ClockIcon,
   MinusIcon,
+  PlusIcon,
 } from "lucide-react";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 
@@ -72,7 +73,6 @@ import {
 import { Spinner } from "../ui/spinner";
 import { useDeviceSharingAddresses } from "./EnvironmentDeviceHostsSettings";
 import {
-  AddAnotherMachineRow,
   AddMachineAction,
   OtherMachineLinks,
   peerLinkHealthText,
@@ -92,7 +92,7 @@ type RunKind = "start" | "stop";
 export function WorkTogetherSettings() {
   const { environments } = useEnvironments();
   const hosts = usePeerLinkHosts();
-  const [chosenId, setChosenId] = useState<EnvironmentId | null>(null);
+  const [chosenTab, setChosenTab] = useState<string | null>(null);
   const [attention, setAttention] = useState<ReadonlyMap<string, boolean>>(new Map());
   const [showOthers, setShowOthers] = useState(false);
   const machines = workTogetherLabels(
@@ -110,53 +110,61 @@ export function WorkTogetherSettings() {
         attention.get(key) === true,
     );
   const selected =
-    machines.find((machine) => machine.environmentId === chosenId) ??
-    machines.find((machine) => needsAttention(machine.environmentId)) ??
-    machines[0];
-  const selectedHost = hosts.find((host) => host.environmentId === selected?.environmentId);
+    chosenTab === OTHER_MACHINES_TAB
+      ? undefined
+      : (machines.find((machine) => machine.environmentId === chosenTab) ??
+        machines.find((machine) => needsAttention(machine.environmentId)) ??
+        machines[0]);
+  const currentTab = selected?.environmentId ?? OTHER_MACHINES_TAB;
   const knownIds = new Set<EnvironmentId>(machines.map((machine) => machine.environmentId));
   const tabListRef = useRef<HTMLDivElement>(null);
-  const selectedId = selected?.environmentId;
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- on a narrow page the default tab can start scrolled out of the strip, and scroll position lives in the DOM
   useEffect(() => {
     const list = tabListRef.current;
-    const tab = list?.querySelector<HTMLElement>(`[data-machine-id="${selectedId}"]`);
+    const tab = list?.querySelector<HTMLElement>(`[data-machine-id="${currentTab}"]`);
     if (!list || !tab) return;
     const start = tab.offsetLeft - list.offsetLeft;
     const end = start + tab.offsetWidth;
     if (start < list.scrollLeft) list.scrollLeft = start;
     else if (end > list.scrollLeft + list.clientWidth) list.scrollLeft = end - list.clientWidth;
-  }, [selectedId]);
+  }, [currentTab]);
   return (
-    <SettingsSection
-      id="work-together"
-      title="Your machines"
-      variant="plain"
-      headerAction={<AddMachineAction hosts={hosts} />}
-    >
-      {selected === undefined ? null : (
-        <Tabs.Root
-          value={selected.environmentId}
-          onValueChange={(value: EnvironmentId) => setChosenId(value)}
+    <SettingsSection id="work-together" title="Your machines" variant="plain">
+      <Tabs.Root value={currentTab} onValueChange={(value: string) => setChosenTab(value)}>
+        <Tabs.List
+          ref={tabListRef}
+          activateOnFocus
+          aria-label="Your machines"
+          className="relative z-10 -mb-px flex items-end gap-1 overflow-x-auto [scrollbar-width:none]"
         >
-          <Tabs.List
-            ref={tabListRef}
-            activateOnFocus
-            aria-label="Your machines"
-            className="relative z-10 -mb-px flex items-end gap-1 overflow-x-auto [scrollbar-width:none]"
+          {machines.map((machine) => (
+            <MachineTab
+              key={machine.environmentId}
+              machine={machine}
+              machines={machines}
+              isSelected={machine.environmentId === currentTab}
+              needsAttention={needsAttention(machine.environmentId)}
+            />
+          ))}
+          <Tabs.Tab
+            value={OTHER_MACHINES_TAB}
+            data-machine-id={OTHER_MACHINES_TAB}
+            className={machineTabClassName(currentTab === OTHER_MACHINES_TAB)}
           >
-            {machines.map((machine) => (
-              <MachineTab
-                key={machine.environmentId}
-                machine={machine}
-                machines={machines}
-                isSelected={machine.environmentId === selected.environmentId}
-                needsAttention={needsAttention(machine.environmentId)}
-              />
-            ))}
-          </Tabs.List>
-          <Tabs.Panel value={selected.environmentId}>
-            <SettingsGroup className="min-h-12 rounded-t-none bg-card">
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+              <PlusIcon aria-hidden className="size-4" />
+            </span>
+            <span className="min-w-0">
+              <span className="block truncate text-sm font-medium text-foreground">
+                Other machines
+              </span>
+              <span className="block truncate text-xs text-muted-foreground">Add or manage</span>
+            </span>
+          </Tabs.Tab>
+        </Tabs.List>
+        <Tabs.Panel value={currentTab}>
+          <SettingsGroup className="min-h-12 rounded-t-none bg-card">
+            {selected === undefined ? null : (
               <SettingsRow
                 id="machine-access"
                 forkFeature="machine-access"
@@ -171,14 +179,30 @@ export function WorkTogetherSettings() {
                   }
                 />
               </SettingsRow>
+            )}
+            {selected === undefined || pairs.length === 0 ? null : (
+              <div className="px-3 py-2 sm:px-4">
+                <Button
+                  size="xs"
+                  variant="ghost-muted"
+                  aria-expanded={showOthers}
+                  onClick={() => setShowOthers((shown) => !shown)}
+                >
+                  <ChevronRightIcon className={showOthers ? "size-3 rotate-90" : "size-3"} />
+                  Each machine
+                </Button>
+              </div>
+            )}
+            {/* Every pair stays mounted, even on another tab, so a run in progress keeps going. */}
+            <SettingsGroup className="m-3 empty:hidden sm:mx-4">
               {pairs.map(({ a, b, key }) => (
                 <MachinePair
                   key={key}
                   a={a}
                   b={b}
-                  selectedId={selected.environmentId}
+                  selectedId={selected?.environmentId ?? null}
                   expanded={showOthers}
-                  onOpen={() => setChosenId(selected.environmentId)}
+                  onOpen={() => setChosenTab(currentTab)}
                   onAttentionChange={(value) =>
                     setAttention((current) =>
                       current.get(key) === value ? current : new Map(current).set(key, value),
@@ -186,38 +210,48 @@ export function WorkTogetherSettings() {
                   }
                 />
               ))}
-              {selectedHost !== undefined ? (
-                <OtherMachineLinks
-                  environmentId={selectedHost.environmentId}
-                  environmentLabel={selectedHost.label}
-                  knownIds={knownIds}
-                  hasOtherTabs={pairs.length > 0}
-                />
-              ) : pairs.length === 0 ? (
-                <AddAnotherMachineRow />
-              ) : null}
-              <MachineDevicesRow machine={selected} machines={machines} />
-              <MachineStatusRow machine={selected} machines={machines} />
-              {pairs.length === 0 ? null : (
-                <div className="px-3 py-2 sm:px-4">
-                  <Button
-                    size="xs"
-                    variant="ghost-muted"
-                    aria-expanded={showOthers}
-                    onClick={() => setShowOthers((shown) => !shown)}
-                  >
-                    <ChevronRightIcon className={showOthers ? "size-3 rotate-90" : "size-3"} />
-                    Each machine
-                  </Button>
-                </div>
-              )}
             </SettingsGroup>
-          </Tabs.Panel>
-        </Tabs.Root>
-      )}
+            {selected === undefined ? (
+              <>
+                <SettingsRow
+                  title="Machines this app isn't connected to"
+                  description="Your machines can work with these, but this app can't show or change their settings. Add one under Environments to give it a tab."
+                  control={<AddMachineAction hosts={hosts} />}
+                />
+                <SettingsGroup className="m-3 empty:hidden sm:mx-4">
+                  {hosts.map((host) => (
+                    <OtherMachineLinks
+                      key={host.environmentId}
+                      environmentId={host.environmentId}
+                      environmentLabel={host.label}
+                      showHost={hosts.length > 1}
+                      knownIds={knownIds}
+                    />
+                  ))}
+                </SettingsGroup>
+              </>
+            ) : (
+              <>
+                <MachineDevicesRow machine={selected} machines={machines} />
+                <MachineStatusRow machine={selected} machines={machines} />
+              </>
+            )}
+          </SettingsGroup>
+        </Tabs.Panel>
+      </Tabs.Root>
     </SettingsSection>
   );
 }
+
+const OTHER_MACHINES_TAB = "other-machines";
+
+const machineTabClassName = (isSelected: boolean) =>
+  cn(
+    "flex min-w-52 flex-1 basis-0 cursor-pointer items-center gap-3 rounded-t-xl border border-b-0 px-3 py-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+    isSelected
+      ? "border-border/60 bg-card pb-3 pt-3"
+      : "mb-px border-border/60 bg-muted/60 hover:bg-muted",
+  );
 
 const PLATFORM_NAMES: Record<string, string> = {
   ios: "iOS simulators",
@@ -304,10 +338,10 @@ function MachineStatusRow({
       title="Status"
       description={
         !connected
-          ? `${machine.label} isn't connected. Its setting applies whether or not this app can reach it.`
+          ? `This app can't reach ${machine.label} right now. Its setting still applies.`
           : parts.length === 0
-            ? "Connected. Agents here aren't working on other machines yet."
-            : `Connected. Agents here ${machineNames(parts)}.`
+            ? "Agents here aren't working on other machines yet."
+            : `Agents here ${machineNames(parts)}.`
       }
     />
   );
@@ -368,12 +402,7 @@ function MachineTab({
     <Tabs.Tab
       value={machine.environmentId}
       data-machine-id={machine.environmentId}
-      className={cn(
-        "flex min-w-52 flex-1 basis-0 cursor-pointer items-center gap-3 rounded-t-xl border border-b-0 px-3 py-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-        isSelected
-          ? "border-border/60 bg-card pb-3 pt-3"
-          : "mb-px border-border/60 bg-muted/60 hover:bg-muted",
-      )}
+      className={machineTabClassName(isSelected)}
     >
       <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
         <EnvironmentMachineIcon
@@ -458,7 +487,7 @@ function MachinePair({
 }: {
   readonly a: NamedEnvironment;
   readonly b: NamedEnvironment;
-  readonly selectedId: EnvironmentId;
+  readonly selectedId: EnvironmentId | null;
   /** Shows the pair even when nothing needs doing, so it can be stopped. */
   readonly expanded: boolean;
   /** Keeps this tab selected through a run, even once the pair no longer needs attention. */

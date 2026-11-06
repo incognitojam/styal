@@ -360,7 +360,7 @@ task already running on the other machine still finishes, and if that machine
 has it off, its result arrives once it is back on.
 
 On the machine you will work from, open **Settings → Environments → Your machines**,
-choose **Add machine**, and pick the other machine or enter its address. The list
+the **Other machines** tab, choose **Add machine**, and pick the other machine or enter its address. The list
 holds the machines this app knows and those on your styal Link account. If this
 app is connected to that machine with a session that manages access there, it
 makes the pairing code itself; otherwise paste one from that machine's
