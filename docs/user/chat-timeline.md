@@ -37,7 +37,7 @@ taken as the one nearest to when the message was sent, unless the sentence makes
 to come or already past. The tooltip says when it relied on these assumptions.
 
 These rules can mistake a length such as `17:25` for a time of day, or pick the wrong day. To have
-a model check them, turn on **Check mentioned times with a model** in Settings → Source control.
+a model check them, turn on **Check mentioned times with a model** in Settings → Threads.
 When an agent finishes a reply that names a clock time, the model reads the whole reply: lengths
 and example times stop being highlighted, and a time takes the day the reply describes, such as
 "last night". Each such reply costs one short model call. Unless you choose a model there, it uses

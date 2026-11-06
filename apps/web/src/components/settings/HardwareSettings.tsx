@@ -111,6 +111,7 @@ function AgentHardwareAccessSetting() {
   return (
     <SettingsRow
       {...searchableSetting("agent-hardware-access")}
+      forkFeature="hardware-leases"
       serverScoped
       settingKeys={["enableAgentHardwareAccess"]}
       description={

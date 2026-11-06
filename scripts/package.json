@@ -7,6 +7,7 @@
     "ledger:check": "node check-fork-feature-ledger.ts",
     "migrations:check": "node upstream/check-migrations.ts",
     "naming:check": "node check-upstream-naming.ts",
+    "settings:badges": "node check-settings-fork-badges.ts",
     "typecheck": "tsc --noEmit",
     "test": "vp test run --config ../vite.config.ts --dir ."
   },
