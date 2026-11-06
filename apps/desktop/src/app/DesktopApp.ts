@@ -383,6 +383,7 @@ const scopedProgram = Effect.scoped(
         Effect.andThen(DesktopObservability.flushTrace),
         Effect.ensuring(rendererHistory.shutdown),
         Effect.ensuring(shutdown.markComplete),
+        Effect.withSpan("desktop.app.shutdown"),
       ),
     );
 
