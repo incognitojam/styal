@@ -16,6 +16,8 @@ import type { ProviderAuthFlowContext } from "./providerAuthFlow.ts";
 const MAX_TRANSCRIPT_LENGTH = 16_384;
 const CODE_FIELD = "code";
 const TERMINAL_SETTLE = "300 millis";
+const PASTE_CODE_PROMPT = /paste (?:the |your )?code/i;
+const CODE_REJECTED = /invalid|incorrect|expired/i;
 
 const plainText = (output: string) =>
   output.replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b\[[0-?]*[ -/]*[@-~]/g, "");
@@ -43,7 +45,7 @@ const loopbackRedirect = (authorizeUrl: string): URL | undefined => {
 };
 
 export type LoginPrompt =
-  | { readonly type: "pasteCode"; readonly url: string }
+  | { readonly type: "pasteCode"; readonly url: string; readonly label: string }
   | { readonly type: "deviceCode"; readonly url: string; readonly userCode: string }
   | { readonly type: "redirect"; readonly url: string; readonly redirect: URL };
 
@@ -55,7 +57,13 @@ export const readLoginPrompt = (output: string): LoginPrompt | null => {
   const url = latestLoginUrl(output);
   if (url === undefined) return null;
   const plain = plainText(output);
-  if (/paste (?:the |your )?code/i.test(plain)) return { type: "pasteCode", url };
+  const pastePrompt = plain
+    .split(/[\r\n]+/)
+    .filter((line) => PASTE_CODE_PROMPT.test(line))
+    .at(-1);
+  if (pastePrompt !== undefined) {
+    return { type: "pasteCode", url, label: pastePrompt.replace(/[\s>:]+$/, "").trim() };
+  }
   for (const line of plain.split(/\r?\n/)) {
     if (line.includes("://")) continue;
     const userCode = /\bcode\b[^:\n]*:\s*([A-Z0-9]{2,}(?:-[A-Z0-9]{2,})+|[A-Z0-9]{6,})\b/.exec(
@@ -175,7 +183,7 @@ export const run: (input: {
             })
           : Effect.void,
     );
-  const showCodeForm = (promptUrl: string, rejected: boolean) => {
+  const showCodeForm = (promptUrl: string, label: string) => {
     const interaction: ProviderAuthInteraction = {
       type: "credentials",
       id: `code-${submissions}`,
@@ -183,9 +191,7 @@ export const run: (input: {
       fields: [
         {
           name: CODE_FIELD,
-          label: rejected
-            ? "That code was not accepted. Paste the full code."
-            : "Code from the sign-in page",
+          label,
           secret: true,
         },
       ],
@@ -208,7 +214,7 @@ export const run: (input: {
   const showPrompt = (prompt: LoginPrompt): Effect.Effect<void> => {
     switch (prompt.type) {
       case "pasteCode":
-        return showCodeForm(prompt.url, false);
+        return showCodeForm(prompt.url, prompt.label);
       case "deviceCode":
         return input.context.setInteraction({
           type: "deviceCode",
@@ -261,11 +267,15 @@ export const run: (input: {
       if (answer.length === 0) return Effect.void;
       if (/success|logged in|signed in/i.test(answer)) return Effect.void;
       checkingCode = false;
-      if (/invalid|incorrect|expired/i.test(answer) && url !== undefined) {
+      const rejection = answer
+        .split(/[\r\n]+/)
+        .map((line) => line.trim())
+        .find((line) => CODE_REJECTED.test(line));
+      if (rejection !== undefined && url !== undefined) {
         shown = `rejected:${submissions}`;
         terminalGeneration++;
         terminalShown = false;
-        return showCodeForm(url, true);
+        return showCodeForm(url, rejection);
       }
       shown = "";
     }

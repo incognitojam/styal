@@ -4581,6 +4581,7 @@ features:
     invariants:
       - Claude, Grok Build, OpenCode, Pi, fx and Muse Code sign in by running their own CLI login under the provider instance's environment, on the machine that runs the provider. Credentials stay where that CLI keeps them and no client or other machine receives them.
       - A login's printed prompt becomes a form when it is recognized as a pasted code, a device code or a localhost redirect. Anything else stays in the terminal, so an unfamiliar or changed CLI can still finish. A pasted redirect is only replayed to the listener and state of that sign-in.
+      - A client on another machine opens a pasted-code or redirect login's link once per sign-in. On the login's own machine the CLI opens the browser itself, so the client does not open a second tab. The code field uses the prompt and rejection text the CLI prints.
       - Signing in leaves running sessions alone and only replaces idle sessions of threads whose latest failure needed a sign-in, never a shared process that is doing other work.
       - An instance using an API key, or OpenCode on an external server, does not offer the login.
       - A thread stopped by an authentication failure offers Sign in on web, desktop and mobile. Authentication failures are recognized from each provider's structured signal, never from error text.

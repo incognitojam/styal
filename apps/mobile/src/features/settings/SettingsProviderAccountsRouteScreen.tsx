@@ -13,7 +13,7 @@ import {
 import { applyMaskedEdit, maskCode } from "@t3tools/shared/maskedCode";
 import { redactedPlaceholder } from "@t3tools/shared/redactedText";
 import { useAtomValue } from "@effect/atom-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { BlurView } from "expo-blur";
 import * as Clipboard from "expo-clipboard";
 import {
@@ -30,6 +30,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import type { MenuAction } from "@react-native-menu/menu";
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
+import { Button } from "../../components/ui/Button";
 import { ControlPill } from "../../components/ui/ControlPill";
 import { Menu } from "../../components/ui/Menu";
 import { AppText as Text } from "../../components/ui/AppText";
@@ -178,6 +179,9 @@ function ProviderAccountSummary({
   );
 }
 
+// Outlives the row so returning to this screen mid-sign-in does not open the browser again.
+let autoOpenedFlowId: string | null = null;
+
 function ProviderAccount({
   environment,
   provider,
@@ -200,7 +204,6 @@ function ProviderAccount({
   // Matches ListRowLayout: large text stacks the action below instead of squeezing the status.
   const stacked = useWindowDimensions().fontScale >= 1.5;
   const [pending, setPending] = useState(false);
-  const [revealedFlowId, setRevealedFlowId] = useState<string | null>(null);
   const pendingRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState({ id: "", values: {} as Record<string, string> });
@@ -273,27 +276,28 @@ function ProviderAccount({
   }
   function codeField(name: string, label: string) {
     return (
-      <TextInput
-        accessibilityLabel={label}
-        className="rounded-lg border border-border-subtle px-3 py-2 text-base text-foreground"
-        placeholderTextColorClassName="accent-foreground-muted"
-        placeholder={label}
-        autoCapitalize="none"
-        autoCorrect={false}
-        autoComplete="off"
-        textContentType="none"
-        importantForAutofill="no"
-        spellCheck={false}
-        editable={!disabled}
-        maxLength={16_384}
-        value={maskCode(values[name] ?? "")}
-        onChangeText={(masked) =>
-          setDraft({
-            id: draftId,
-            values: { ...values, [name]: applyMaskedEdit(values[name] ?? "", masked) },
-          })
-        }
-      />
+      <View className="gap-1.5">
+        <Text className="text-sm text-foreground">{label}</Text>
+        <TextInput
+          accessibilityLabel={label}
+          className="rounded-lg border border-border-subtle px-3 py-2 text-base text-foreground"
+          autoCapitalize="none"
+          autoCorrect={false}
+          autoComplete="off"
+          textContentType="none"
+          importantForAutofill="no"
+          spellCheck={false}
+          editable={!disabled}
+          maxLength={16_384}
+          value={maskCode(values[name] ?? "")}
+          onChangeText={(masked) =>
+            setDraft({
+              id: draftId,
+              values: { ...values, [name]: applyMaskedEdit(values[name] ?? "", masked) },
+            })
+          }
+        />
+      </View>
     );
   }
   const name = provider.displayName ?? provider.driver;
@@ -319,10 +323,16 @@ function ProviderAccount({
     provider.driver === "antigravity" &&
     (provider.auth.type === "gemini-api-key" || provider.auth.type === "agent-platform");
 
-  // A CLI login's answer only exists after its page has been opened, here or on another device.
-  const answerWaitsForLink =
-    usesCliLogin && (interaction?.id === "code-0" || interaction?.id === "browser");
-  const answerRevealed = !answerWaitsForLink || revealedFlowId === state?.flowId;
+  const browserFlowId =
+    usesCliLogin && (interaction?.type === "credentials" || interaction?.type === "browser")
+      ? (state?.flowId ?? null)
+      : null;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- opens the user's browser, once per sign-in.
+  useEffect(() => {
+    if (!browserFlowId || !url || autoOpenedFlowId === browserFlowId) return;
+    autoOpenedFlowId = browserFlowId;
+    void Linking.openURL(url).catch(() => undefined);
+  }, [browserFlowId, url]);
   const status =
     active || state?.phase === "failed" || state?.phase === "cancelled"
       ? state.message
@@ -483,7 +493,6 @@ function ProviderAccount({
           label="Open sign-in page"
           disabled={disabled}
           onPress={() => {
-            setRevealedFlowId(state?.flowId ?? null);
             void (async () => {
               if (
                 interaction?.type === "browser" &&
@@ -502,7 +511,6 @@ function ProviderAccount({
           label="Copy sign-in link"
           disabled={disabled}
           onPress={() => {
-            setRevealedFlowId(state?.flowId ?? null);
             void Clipboard.setStringAsync(url).catch(() =>
               setError("Could not copy the sign-in link."),
             );
@@ -511,7 +519,8 @@ function ProviderAccount({
       ) : null}
       {interaction?.type === "deviceCode" ||
       interaction?.type === "terminal" ||
-      (answerRevealed && (interaction?.type === "credentials" || showCallback)) ||
+      interaction?.type === "credentials" ||
+      showCallback ||
       error ||
       auth.error ? (
         <View className="gap-2 px-4 pb-3">
@@ -543,19 +552,23 @@ function ProviderAccount({
                 ))}
               </View>
               {field("input", "Terminal response", true)}
-              <SettingsActionRow
-                icon="arrow.up"
-                label="Send response"
-                disabled={disabled}
-                onPress={() => {
-                  void send({ type: "terminal", data: `${values.input ?? ""}\r` }).then((sent) => {
-                    if (sent) setDraft({ id: "", values: {} });
-                  });
-                }}
-              />
+              <View className="flex-row justify-end">
+                <Button
+                  label="Send response"
+                  tone="primary"
+                  disabled={disabled}
+                  onPress={() => {
+                    void send({ type: "terminal", data: `${values.input ?? ""}\r` }).then(
+                      (sent) => {
+                        if (sent) setDraft({ id: "", values: {} });
+                      },
+                    );
+                  }}
+                />
+              </View>
             </>
           ) : null}
-          {interaction?.type === "credentials" && answerRevealed ? (
+          {interaction?.type === "credentials" ? (
             <>
               {interaction.fields.map((entry) => (
                 <View key={entry.name}>
@@ -564,37 +577,41 @@ function ProviderAccount({
                     : field(entry.name, entry.label, entry.secret)}
                 </View>
               ))}
-              <SettingsActionRow
-                icon="person.crop.circle"
-                label={interaction.url ? "Continue" : "Connect"}
-                disabled={disabled || !Object.values(values).some((value) => value.trim())}
-                onPress={() => {
-                  void send({ type: "credentials", values }).then((sent) => {
-                    if (sent) setDraft({ id: "", values: {} });
-                  });
-                }}
-              />
+              <View className="flex-row justify-end">
+                <Button
+                  label={interaction.url ? "Continue" : "Connect"}
+                  tone="primary"
+                  disabled={disabled || !Object.values(values).some((value) => value.trim())}
+                  onPress={() => {
+                    void send({ type: "credentials", values }).then((sent) => {
+                      if (sent) setDraft({ id: "", values: {} });
+                    });
+                  }}
+                />
+              </View>
             </>
           ) : null}
-          {showCallback && answerRevealed ? (
+          {showCallback ? (
             <>
               {field("callback", "Final localhost URL", false)}
-              <SettingsActionRow
-                icon="arrow.right"
-                label="Continue"
-                disabled={disabled || !values.callback?.trim()}
-                onPress={() => {
-                  if (!state?.flowId) return;
-                  void run(() =>
-                    complete({
-                      environmentId,
-                      input: { instanceId, flowId: state.flowId!, callbackUrl: values.callback! },
-                    }),
-                  ).then((sent) => {
-                    if (sent) setDraft({ id: "", values: {} });
-                  });
-                }}
-              />
+              <View className="flex-row justify-end">
+                <Button
+                  label="Continue"
+                  tone="primary"
+                  disabled={disabled || !values.callback?.trim()}
+                  onPress={() => {
+                    if (!state?.flowId) return;
+                    void run(() =>
+                      complete({
+                        environmentId,
+                        input: { instanceId, flowId: state.flowId!, callbackUrl: values.callback! },
+                      }),
+                    ).then((sent) => {
+                      if (sent) setDraft({ id: "", values: {} });
+                    });
+                  }}
+                />
+              </View>
             </>
           ) : null}
           {error || auth.error ? (

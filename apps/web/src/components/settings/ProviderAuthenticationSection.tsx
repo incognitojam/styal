@@ -10,9 +10,10 @@ import type {
   ProviderInstanceId,
   ServerProvider,
 } from "@t3tools/contracts";
-import { lazy, Suspense, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { CopyIcon } from "lucide-react";
 
+import { sharesMachineWithEnvironment } from "../../browser/browserTargetResolver";
 import { writeTextToClipboard } from "../../hooks/useCopyToClipboard";
 import { reportForkClientUsage } from "../../forkClientUsage";
 import { ensureLocalApi } from "../../localApi";
@@ -30,6 +31,9 @@ import { SettingsRow } from "./settingsLayout";
 import { RedactedSensitiveText } from "./RedactedSensitiveText";
 
 const ProviderAuthTerminal = lazy(() => import("./ProviderAuthTerminal"));
+
+// Outlives the component so reopening the dialog or settings row mid-sign-in opens no second tab.
+let autoOpenedFlowId: string | null = null;
 
 export function ProviderAuthenticationSection({
   environmentId,
@@ -63,7 +67,6 @@ export function ProviderAuthenticationSection({
   const [draft, setDraft] = useState({ id: "", values: {} as Record<string, string> });
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  const [revealedFlowId, setRevealedFlowId] = useState<string | null>(null);
   const pendingRef = useRef(false);
   const terminalQueue = useRef<ProviderAuthRespondInput[]>([]);
   const terminalSending = useRef(false);
@@ -88,6 +91,14 @@ export function ProviderAuthenticationSection({
   const usesCredentials =
     provider.driver === "antigravity" &&
     (provider.auth.type === "gemini-api-key" || provider.auth.type === "agent-platform");
+  // A CLI login's status check can pass while its login is rejected, so signed-in rows offer it too.
+  const usesCliLogin = auth?.methods?.length === 1 && auth.methods[0]?.id === "cli";
+  const url =
+    interaction?.type === "browser" || interaction?.type === "deviceCode"
+      ? interaction.url
+      : auth?.authorizationUrl;
+  const opensBrowser =
+    usesCliLogin && (interaction?.type === "credentials" || interaction?.type === "browser");
   const accountDescription = active
     ? !auth?.flowId
       ? (auth?.message ?? "Sign-in is in progress in another client.")
@@ -99,13 +110,11 @@ export function ProviderAuthenticationSection({
             : "Checking your account…"
           : interaction?.type === "terminal"
             ? "Complete sign-in in the terminal below."
-            : interaction?.type === "credentials"
-              ? interaction.url
-                ? revealedFlowId === auth?.flowId || interaction.id !== "code-0"
-                  ? "Sign in on that page, then paste the code it gives you."
-                  : "Open the sign-in page to sign in. It gives you a code to paste here."
-                : "Enter your credentials below."
-              : "Finish signing in in your browser."
+            : opensBrowser && url
+              ? "If the browser didn't open, visit:"
+              : interaction?.type === "credentials"
+                ? "Enter your credentials below."
+                : "Finish signing in in your browser."
     : signedIn
       ? "Signed in."
       : isDiscovering
@@ -116,15 +125,20 @@ export function ProviderAuthenticationSection({
             ? `Connect on ${environmentLabel} to load models.`
             : `Sign in on ${environmentLabel}.`;
   const statusMessage = auth?.phase === "failed" ? auth.message : null;
-  // A CLI's login can pass its status check and still be rejected, so signed-in rows offer it too.
-  const usesCliLogin = auth?.methods?.length === 1 && auth.methods[0]?.id === "cli";
   const disabled = readOnly || pending || query.error !== null || isDiscovering;
   const draftId = `${auth?.flowId ?? ""}:${interaction?.id ?? ""}`;
   const values = draft.id === draftId ? draft.values : {};
-  const url =
-    interaction?.type === "browser" || interaction?.type === "deviceCode"
-      ? interaction.url
-      : auth?.authorizationUrl;
+  const browserFlowId = opensBrowser && !readOnly ? (auth?.flowId ?? null) : null;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- opens the user's browser, once per sign-in.
+  useEffect(() => {
+    if (!browserFlowId || !url || autoOpenedFlowId === browserFlowId) return;
+    autoOpenedFlowId = browserFlowId;
+    // On its own machine the login opens a browser itself, and only that one can finish on localhost.
+    if (sharesMachineWithEnvironment(environmentId)) return;
+    void ensureLocalApi()
+      .shell.openExternal(url)
+      .catch(() => undefined);
+  }, [browserFlowId, environmentId, url]);
 
   async function run(command: () => Promise<AtomCommandResult<unknown, unknown>>) {
     if (pendingRef.current) return false;
@@ -161,7 +175,6 @@ export function ProviderAuthenticationSection({
 
   async function openBrowser() {
     if (!url || readOnly) return;
-    setRevealedFlowId(auth?.flowId ?? null);
     const requiresConsent = interaction?.type === "browser" && interaction.requiresConsent;
     // Reserve tabs before awaiting consent; browsers block later opens.
     const pending = requiresConsent && !window.desktopBridge ? window.open("", "_blank") : null;
@@ -181,10 +194,6 @@ export function ProviderAuthenticationSection({
   }
 
   const formId = `provider-sign-in-${instanceId}`;
-  // A CLI login's answer only exists after its page has been opened, here or on another device.
-  const answerWaitsForLink =
-    usesCliLogin && (interaction?.id === "code-0" || interaction?.id === "browser");
-  const answerRevealed = !answerWaitsForLink || revealedFlowId === auth?.flowId;
   const hasValues = Object.values(values).some((value) => value.trim().length > 0);
   const showCallback = Boolean(
     url && (interaction?.type === "browser" ? interaction.acceptsCallback : !interaction),
@@ -235,48 +244,60 @@ export function ProviderAuthenticationSection({
       ) : null}
     </>
   );
-  const linkControls = (
-    <>
-      {url ? (
-        <>
+  const copyLinkControl = url ? (
+    <Tooltip>
+      <TooltipTrigger
+        render={
           <Button
-            size="sm"
-            variant={dialog && !answerRevealed ? "default" : "outline"}
+            aria-label="Copy sign-in link"
+            size="icon-sm"
+            variant="ghost-muted"
             disabled={disabled}
-            onClick={() => void openBrowser()}
+            onClick={() => {
+              // Copy during the click to retain clipboard activation; consent must still be
+              // recorded before use.
+              const copied = writeTextToClipboard(url, "Provider sign-in link");
+              void (async () => {
+                await copied;
+                if (interaction?.type === "browser" && interaction.requiresConsent)
+                  await send({ type: "browser", action: "accept" });
+              })().catch(() => setError("Could not copy the sign-in link."));
+            }}
           >
-            {dialog ? "Open sign-in page" : "Open browser"}
+            <CopyIcon />
           </Button>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  aria-label="Copy sign-in link"
-                  size="icon-sm"
-                  variant="ghost-muted"
-                  disabled={disabled}
-                  onClick={() => {
-                    // Copy during the click to retain clipboard activation; consent must still be
-                    // recorded before use.
-                    setRevealedFlowId(auth?.flowId ?? null);
-                    const copied = writeTextToClipboard(url, "Provider sign-in link");
-                    void (async () => {
-                      await copied;
-                      if (interaction?.type === "browser" && interaction.requiresConsent)
-                        await send({ type: "browser", action: "accept" });
-                    })().catch(() => setError("Could not copy the sign-in link."));
-                  }}
-                >
-                  <CopyIcon />
-                </Button>
-              }
-            />
-            <TooltipPopup>Copy sign-in link</TooltipPopup>
-          </Tooltip>
-        </>
-      ) : null}
-    </>
-  );
+        }
+      />
+      <TooltipPopup>Copy sign-in link</TooltipPopup>
+    </Tooltip>
+  ) : null;
+  const linkControls =
+    url && !usesCliLogin ? (
+      <>
+        <Button size="sm" variant="outline" disabled={disabled} onClick={() => void openBrowser()}>
+          {dialog ? "Open sign-in page" : "Open browser"}
+        </Button>
+        {copyLinkControl}
+      </>
+    ) : null;
+  const cliLoginLink =
+    url && usesCliLogin ? (
+      <div className="flex min-w-0 items-center gap-1">
+        <a
+          href={url}
+          target="_blank"
+          rel="noreferrer"
+          className="min-w-0 truncate text-sm text-foreground underline underline-offset-2"
+          onClick={(event) => {
+            event.preventDefault();
+            void openBrowser();
+          }}
+        >
+          {url}
+        </a>
+        {copyLinkControl}
+      </div>
+    ) : null;
   const flowControl = (
     <>
       {needsExternalSetup && provider.setup?.documentationUrl ? (
@@ -367,9 +388,11 @@ export function ProviderAuthenticationSection({
       interaction?.type === "credentials" ||
       interaction?.type === "deviceCode" ||
       showCallback ||
+      cliLoginLink ||
       error ||
       query.error ? (
         <>
+          {dialog ? null : cliLoginLink}
           {interaction?.type === "deviceCode" ? (
             <p className="py-2 text-sm text-muted-foreground">
               Enter code{" "}
@@ -440,7 +463,7 @@ export function ProviderAuthenticationSection({
               </Suspense>
             </div>
           ) : null}
-          {interaction?.type === "credentials" && answerRevealed ? (
+          {interaction?.type === "credentials" ? (
             <form
               id={formId}
               className={cn("grid gap-2 text-sm leading-normal", !dialog && "py-2")}
@@ -511,7 +534,7 @@ export function ProviderAuthenticationSection({
               )}
             </form>
           ) : null}
-          {showCallback && answerRevealed ? (
+          {showCallback ? (
             <form
               id={formId}
               className={cn("grid gap-2 text-sm leading-normal", !dialog && "py-2")}
@@ -566,19 +589,21 @@ export function ProviderAuthenticationSection({
   );
   if (dialog) {
     const hasForm =
-      answerRevealed &&
-      (interaction?.type === "credentials" || (interaction?.type === "browser" && showCallback));
+      interaction?.type === "credentials" || (interaction?.type === "browser" && showCallback);
     return (
       <>
         <DialogPanel>
           <div className="grid gap-4">
-            <p className="text-sm text-muted-foreground">{description}</p>
+            <div className="grid gap-1">
+              <p className="text-sm text-muted-foreground">{description}</p>
+              {cliLoginLink}
+            </div>
             {statusMessage ? (
               <p role="status" className="text-sm [overflow-wrap:anywhere]">
                 {statusMessage}
               </p>
             ) : null}
-            {url ? <div className="flex items-center gap-1.5">{linkControls}</div> : null}
+            {linkControls ? <div className="flex items-center gap-1.5">{linkControls}</div> : null}
             {details}
           </div>
         </DialogPanel>

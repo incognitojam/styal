@@ -108,6 +108,9 @@ it.effect("signs in by pasting a code, then checks status and replaces signed-ou
     const waiting = yield* harness.until((state) => state.interaction?.type === "credentials");
     assert.include(waiting.authorizationUrl, "https://example.test/oauth");
     assert.equal(waiting.interaction?.id, "code-0");
+    if (waiting.interaction?.type === "credentials") {
+      assert.equal(waiting.interaction.fields[0]?.label, "Paste code here if prompted");
+    }
     yield* harness.controller.respond!("owner", {
       instanceId,
       flowId: waiting.flowId!,
@@ -122,7 +125,10 @@ it.effect("signs in by pasting a code, then checks status and replaces signed-ou
     const retry = yield* harness.until((state) => state.interaction?.id === "code-1");
     assert.equal(retry.interaction?.type, "credentials");
     if (retry.interaction?.type === "credentials") {
-      assert.include(retry.interaction.fields[0]?.label, "not accepted");
+      assert.equal(
+        retry.interaction.fields[0]?.label,
+        "Invalid code. Please make sure the full code was copied.",
+      );
     }
     yield* harness.controller.respond!("owner", {
       instanceId,
