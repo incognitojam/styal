@@ -1,3 +1,4 @@
+import { AgentScope } from "@t3tools/shared/AgentScope";
 import { pruneLocalDeviceTools } from "./deviceToolMaintenance.ts";
 import { deviceToolInstallMessage } from "@t3tools/contracts";
 // The hub runs at origin root; T3 strips its prefix and the Device panel derives stream URLs from it.
@@ -261,6 +262,7 @@ const hubPlatformArguments = (hostPlatform: NodeJS.Platform) =>
 
 export const make = Effect.fn("LocalDeviceHost.make")(function* () {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+  const agentScope = yield* AgentScope;
   const config = yield* ServerConfig.ServerConfig;
   const path = yield* Path.Path;
   const fs = yield* FileSystem.FileSystem;
@@ -420,34 +422,37 @@ export const make = Effect.fn("LocalDeviceHost.make")(function* () {
     const scope = yield* Scope.make("sequential");
     // The hub is not recorded yet; stop it on failure or interruption from spawn onward.
     return yield* Effect.gen(function* () {
+      const launch = yield* agentScope.wrap({
+        command: nodePath,
+        args: [
+          hubTool.entryPath,
+          "--port",
+          String(port),
+          "--host",
+          "127.0.0.1",
+          "--hide-sidebar",
+          "--hide-boot-device",
+          ...hubPlatformArguments(hostPlatform),
+        ],
+        name: "device-hub",
+        env: hostEnvironment,
+        shared: true,
+      });
       const child = yield* spawner
         .spawn(
-          ChildProcess.make(
-            nodePath,
-            [
-              hubTool.entryPath,
-              "--port",
-              String(port),
-              "--host",
-              "127.0.0.1",
-              "--hide-sidebar",
-              "--hide-boot-device",
-              ...hubPlatformArguments(hostPlatform),
-            ],
-            {
-              cwd: workingDirectory,
-              detached: false,
-              shell: false,
-              stdout: "pipe",
-              stderr: "pipe",
-              env: yield* hubEnvironment(hostEnvironment).pipe(
-                Effect.provideService(FileSystem.FileSystem, fs),
-                Effect.provideService(Path.Path, path),
-                Effect.provideService(ProcessRunner.ProcessRunner, runner),
-                Effect.provideService(HostProcess.Platform, hostPlatform),
-              ),
-            },
-          ),
+          ChildProcess.make(launch.command, launch.args, {
+            cwd: workingDirectory,
+            detached: false,
+            shell: false,
+            stdout: "pipe",
+            stderr: "pipe",
+            env: yield* hubEnvironment(hostEnvironment).pipe(
+              Effect.provideService(FileSystem.FileSystem, fs),
+              Effect.provideService(Path.Path, path),
+              Effect.provideService(ProcessRunner.ProcessRunner, runner),
+              Effect.provideService(HostProcess.Platform, hostPlatform),
+            ),
+          }),
         )
         .pipe(
           Effect.provideService(Scope.Scope, scope),
@@ -574,10 +579,17 @@ export const make = Effect.fn("LocalDeviceHost.make")(function* () {
       yield* fs.remove(daemonFilePath(), { force: true }).pipe(Effect.ignore);
     }
     // No `daemon start` exists; `devices` is the cheapest command that starts and awaits it.
+    const launch = yield* agentScope.wrap({
+      command: nodePath,
+      args: [agentTool.entryPath, "devices", "--json"],
+      name: "agent-device",
+      env: daemonEnvironment,
+      shared: true,
+    });
     const runResult = yield* runner
       .run({
-        command: nodePath,
-        args: [agentTool.entryPath, "devices", "--json"],
+        command: launch.command,
+        args: launch.args,
         env: daemonEnvironment,
         timeout: Duration.millis(DAEMON_READY_TIMEOUT_MS),
         timeoutBehavior: "timedOutResult",

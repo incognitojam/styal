@@ -1547,6 +1547,26 @@ features:
       tracking: []
       retire_when: Upstream keeps a panel tab for every live device session, including floating ones.
 
+  - id: device-resource-isolation
+    title: Keep device helpers out of the server resource group
+    status: maintained
+    prs: []
+    invariants:
+      - Newly launched local device hubs and agent-device daemons use shared agent scopes so emulator and helper descendants inherit agent CPU priority on supported Linux hosts.
+      - Existing device lifecycle ownership and non-systemd fallbacks remain unchanged.
+    rationale: Direct server launches give heavy emulator descendants the server service's elevated CPU weight.
+    implementation_paths:
+      - apps/server/src/device/LocalDeviceHost.ts
+    upstream_paths:
+      - apps/server/src/device/LocalDeviceHost.ts
+    tests:
+      - apps/server/src/device/LocalDeviceHost.test.ts
+      - apps/server/src/process/agentScope.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream launches shared local device helpers through its agent resource scopes.
+
   - id: device-stream-stats
     title: Stream stats for device viewers
     status: maintained
