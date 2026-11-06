@@ -33,7 +33,7 @@ import {
 } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import * as Option from "effect/Option";
-import { useEffect, useEffectEvent, useState } from "react";
+import { type ComponentRef, useEffect, useEffectEvent, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -80,6 +80,12 @@ export function WorkTogetherSection() {
   const [chosenId, setChosenId] = useState<EnvironmentId | null>(null);
   const [attention, setAttention] = useState<ReadonlyMap<string, boolean>>(new Map());
   const [showOthers, setShowOthers] = useState(false);
+  const tabStrip = useRef<ComponentRef<typeof ScrollView>>(null);
+  const tabOffsets = useRef(new Map<string, number>());
+  const revealTab = (id: string) => {
+    const x = tabOffsets.current.get(id);
+    if (x !== undefined) tabStrip.current?.scrollTo({ x: Math.max(0, x - 16), animated: true });
+  };
   const machines = workTogetherLabels(
     environments.filter(
       (environment) => environment.serverConfig?.environment.capabilities.peerLinks !== false,
@@ -103,6 +109,7 @@ export function WorkTogetherSection() {
     <View className="mt-5 gap-2">
       <Text className="px-4 font-t3-bold text-base text-foreground">Your machines</Text>
       <ScrollView
+        ref={tabStrip}
         horizontal
         showsHorizontalScrollIndicator={false}
         accessibilityRole="tablist"
@@ -116,7 +123,16 @@ export function WorkTogetherSection() {
               isSelected={machine.environmentId === selected.environmentId}
               needsAttention={needsAttention(machine.environmentId)}
               machineCount={machines.length}
-              onPress={() => setChosenId(machine.environmentId)}
+              onPress={() => {
+                setChosenId(machine.environmentId);
+                revealTab(machine.environmentId);
+              }}
+              onLayout={(x) => {
+                tabOffsets.current.set(machine.environmentId, x);
+                if (machine.environmentId === selected.environmentId) {
+                  revealTab(machine.environmentId);
+                }
+              }}
             />
           ))}
         </View>
@@ -160,6 +176,7 @@ function MachineTab(props: {
   readonly needsAttention: boolean;
   readonly machineCount: number;
   readonly onPress: () => void;
+  readonly onLayout: (x: number) => void;
 }) {
   const { machine } = props;
   const level = machineAccessChoice(
@@ -175,14 +192,15 @@ function MachineTab(props: {
     !connected || level.level === "nothing"
       ? "bg-foreground-muted"
       : props.needsAttention
-        ? "bg-warning"
-        : "bg-success";
+        ? "bg-warning-foreground"
+        : "bg-adaptive-emerald-600-400";
   return (
     <Pressable
       accessibilityRole="tab"
       accessibilityState={{ selected: props.isSelected }}
       accessibilityLabel={`${machine.label}, ${status}`}
       onPress={props.onPress}
+      onLayout={(event) => props.onLayout(event.nativeEvent.layout.x)}
       className={cn(
         "min-w-44 flex-1 flex-row items-center gap-2 rounded-t-2xl border border-b-0 border-border px-3",
         props.isSelected ? "bg-grouped-card py-3" : "mb-px bg-subtle py-2.5",
@@ -198,7 +216,8 @@ function MachineTab(props: {
           {machine.label}
         </Text>
         <View className="flex-row items-center gap-1.5">
-          <View className={cn("size-2 rounded-full", dot)} />
+          {/* rounded-full draws a square at this size on Android. */}
+          <View className={cn("size-2", dot)} style={{ borderRadius: 4 }} />
           <Text numberOfLines={1} className="flex-1 text-xs text-foreground-muted">
             {status}
           </Text>
