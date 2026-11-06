@@ -14,7 +14,6 @@ import { useSelectWorkspaceTab } from "../workspace/useSelectWorkspaceTab";
 import { useWorkspaceTabs } from "../workspace/WorkspaceTabsContext";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { EmptyState } from "../../components/ui/EmptyState";
-import { useAuth, useUser } from "@clerk/expo";
 import { useNavigation, useNavigationState } from "@react-navigation/native";
 import { use, type ComponentProps } from "react";
 import { Platform, View } from "react-native";
@@ -24,6 +23,7 @@ import { deriveProjectGroupLabel } from "@t3tools/client-runtime/state/project-g
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { hasCloudPublicConfig } from "../cloud/publicConfig";
+import { useRelayAuth } from "../cloud/useRelayAuth";
 import { useAdaptiveWorkspaceLayout } from "../layout/adaptive-workspace-context";
 import { useSavedRemoteConnections } from "../../state/use-remote-environment-registry";
 import { SettingsRow } from "./components/SettingsRow";
@@ -107,14 +107,9 @@ interface SettingsListSection {
 
 function ConfiguredSettingsRouteScreen() {
   const navigation = useNavigation();
-  const { isLoaded, isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
-  const { user } = useUser();
+  const { isLoaded, isSignedIn, email } = useRelayAuth();
   const { savedConnectionsById } = useSavedRemoteConnections();
-  const accountLabel = !isLoaded
-    ? "Checking"
-    : !isSignedIn
-      ? "Sign in"
-      : (user?.primaryEmailAddress?.emailAddress ?? "Signed in");
+  const accountLabel = !isLoaded ? "Checking" : !isSignedIn ? "Sign in" : (email ?? "Signed in");
 
   return (
     <SettingsList

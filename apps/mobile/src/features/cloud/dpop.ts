@@ -11,6 +11,8 @@ import { p256 } from "@noble/curves/nist";
 import { DpopPublicJwk, normalizeDpopHtu } from "@t3tools/shared/dpopCommon";
 import * as Layer from "effect/Layer";
 
+import { RELAY_KEYCHAIN_OPTIONS } from "./relayKeychain";
+
 export class CloudDpopError extends Data.TaggedError("CloudDpopError")<{
   readonly message: string;
   readonly cause?: unknown;
@@ -190,7 +192,7 @@ export const generateDpopProofKeyPair = Effect.fn("dpop.generateDpopProofKeyPair
 export const loadOrCreateDpopProofKeyPair = Effect.fn("dpop.loadOrCreateDpopProofKeyPair")(
   function* (): Effect.fn.Return<DpopProofKeyPair, CloudDpopError, Crypto.Crypto> {
     const stored = yield* Effect.tryPromise({
-      try: () => SecureStore.getItemAsync(DPOP_PROOF_KEY_STORAGE_KEY),
+      try: () => SecureStore.getItemAsync(DPOP_PROOF_KEY_STORAGE_KEY, RELAY_KEYCHAIN_OPTIONS),
       catch: cloudDpopError("Could not read the DPoP proof key."),
     });
     if (stored) {
@@ -221,7 +223,12 @@ export const loadOrCreateDpopProofKeyPair = Effect.fn("dpop.loadOrCreateDpopProo
       Effect.mapError(cloudDpopError("Could not encode the DPoP proof key.")),
     );
     yield* Effect.tryPromise({
-      try: () => SecureStore.setItemAsync(DPOP_PROOF_KEY_STORAGE_KEY, encodedPrivateJwk),
+      try: () =>
+        SecureStore.setItemAsync(
+          DPOP_PROOF_KEY_STORAGE_KEY,
+          encodedPrivateJwk,
+          RELAY_KEYCHAIN_OPTIONS,
+        ),
       catch: cloudDpopError("Could not store the DPoP proof key."),
     });
     return generated;

@@ -21,7 +21,11 @@ const testState = vi.hoisted(() => ({
   snapshot: null as EnvironmentCloudLinkStateResult | null,
   renderedSnapshot: null as EnvironmentCloudLinkStateResult | null,
   relayProviderKind: null as RelayManagedEndpointProviderKind | null,
-  getToken: vi.fn<() => Promise<string | null>>(),
+  session: null as {
+    readonly accountId: string;
+    readonly email: string | null;
+    readonly credential: { readonly accountId: string; readonly refreshToken: string };
+  } | null,
   link: vi.fn(),
   unlink: vi.fn(),
   preferences: vi.fn(),
@@ -30,25 +34,27 @@ const testState = vi.hoisted(() => ({
   toast: vi.fn(),
 }));
 
-vi.mock(import("@effect/atom-react"), async (original) => ({
-  ...(await original()),
-  useAtomValue: (() => ({
-    environments: new Map(
-      testState.relayProviderKind === null
-        ? []
-        : [
-            [
-              "primary",
-              { environment: { endpoint: { providerKind: testState.relayProviderKind } } },
-            ],
-          ],
-    ),
-  })) as never,
-}));
-vi.mock(import("@clerk/react"), async (original) => ({
-  ...(await original()),
-  useAuth: (() => ({ getToken: testState.getToken, isSignedIn: true })) as never,
-}));
+vi.mock(import("@effect/atom-react"), async (original) => {
+  const { managedRelaySessionAtom } = await import("@t3tools/client-runtime/relay");
+  return {
+    ...(await original()),
+    useAtomValue: ((atom: unknown) =>
+      atom === managedRelaySessionAtom
+        ? testState.session
+        : {
+            environments: new Map(
+              testState.relayProviderKind === null
+                ? []
+                : [
+                    [
+                      "primary",
+                      { environment: { endpoint: { providerKind: testState.relayProviderKind } } },
+                    ],
+                  ],
+            ),
+          }) as never,
+  };
+});
 vi.mock(import("../components/ui/toast"), async (original) => {
   const actual = await original();
   return { ...actual, toastManager: { ...actual.toastManager, add: testState.toast } as never };
@@ -88,13 +94,11 @@ vi.mock(import("./primaryCloudLinkState"), async (original) => ({
     refresh: testState.refreshLink,
   })) as never,
 }));
-vi.mock(import("./publicConfig"), async (original) => ({
-  ...(await original()),
-  resolveRelayClerkTokenOptions: () => ({}) as never,
-}));
 
 import { CloudEnvironmentLinkError } from "./linkEnvironment";
 import { useCloudLinkController, type CloudLinkDesiredState } from "./useCloudLinkController";
+
+const SESSION_CREDENTIAL = { accountId: "account-1", refreshToken: "styal_rt_account-1" };
 
 const target = {
   environmentId: EnvironmentId.make("primary"),
@@ -155,7 +159,11 @@ function setup() {
   testState.snapshot = linkedState;
   testState.renderedSnapshot = linkedState;
   testState.relayProviderKind = null;
-  testState.getToken.mockReset().mockResolvedValue("clerk-token");
+  testState.session = {
+    accountId: "account-1",
+    email: "someone@example.com",
+    credential: SESSION_CREDENTIAL,
+  };
   for (const command of [
     testState.link,
     testState.unlink,
@@ -178,7 +186,6 @@ describe("useCloudLinkController", () => {
       testState.scopes.delete(scope);
 
       expect(await screen.reconcile({ managedTunnel: true, publish: true })).toBe(false);
-      expect(testState.getToken).not.toHaveBeenCalled();
       expectNoMutations();
     },
   );
@@ -189,44 +196,16 @@ describe("useCloudLinkController", () => {
     await using screen = await mountController();
 
     expect(await screen.reconcile({ managedTunnel: false, publish: true })).toBe(false);
-    expect(testState.getToken).not.toHaveBeenCalled();
     expectNoMutations();
   });
 
-  it.each([AuthRelayReadScope, AuthRelayWriteScope])(
-    "rechecks %s after requesting the cloud token",
-    async (scope) => {
-      using _setup = setup();
-      await using screen = await mountController();
-      testState.getToken.mockImplementationOnce(async () => {
-        testState.scopes.delete(scope);
-        return "clerk-token";
-      });
-
-      expect(await screen.reconcile({ managedTunnel: false, publish: false })).toBe(false);
-      expectNoMutations();
-    },
-  );
-
-  it("stops if the link-state read fails while requesting the cloud token", async () => {
+  it("still lets an authorized user unlink while signed out of styal Link", async () => {
     using _setup = setup();
+    testState.session = null;
     await using screen = await mountController();
-    testState.getToken.mockImplementationOnce(async () => {
-      testState.snapshot = null;
-      return "clerk-token";
-    });
-
-    expect(await screen.reconcile({ managedTunnel: true, publish: true })).toBe(false);
-    expectNoMutations();
-  });
-
-  it("still lets an authorized user unlink when the cloud token is unavailable", async () => {
-    using _setup = setup();
-    await using screen = await mountController();
-    testState.getToken.mockRejectedValueOnce(new Error("Cloud sign-in unavailable"));
 
     expect(await screen.reconcile({ managedTunnel: false, publish: false })).toBe(true);
-    expect(testState.unlink).toHaveBeenCalledExactlyOnceWith({ target, clerkToken: null });
+    expect(testState.unlink).toHaveBeenCalledExactlyOnceWith({ target, credential: null });
     expect(testState.link).not.toHaveBeenCalled();
     expect(testState.preferences).not.toHaveBeenCalled();
   });
@@ -258,5 +237,26 @@ describe("useCloudLinkController", () => {
     expect(screen.controller()?.tunnelLimit).toBe(3);
     expect(screen.controller()?.operationError).toBeNull();
     expect(testState.toast).not.toHaveBeenCalled();
+  });
+
+  it("links with the signed-in session and refuses to link while signed out", async () => {
+    using _setup = setup();
+    testState.snapshot = { ...linkedState, linked: false, managedTunnelActive: false };
+    testState.renderedSnapshot = testState.snapshot;
+    {
+      await using screen = await mountController();
+      expect(await screen.reconcile({ managedTunnel: true, publish: false })).toBe(true);
+      expect(testState.link).toHaveBeenCalledExactlyOnceWith({
+        target,
+        credential: SESSION_CREDENTIAL,
+        mode: "managed",
+      });
+    }
+
+    testState.link.mockClear();
+    testState.session = null;
+    await using screen = await mountController();
+    expect(await screen.reconcile({ managedTunnel: true, publish: false })).toBe(false);
+    expect(testState.link).not.toHaveBeenCalled();
   });
 });
