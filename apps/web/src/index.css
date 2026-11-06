@@ -2248,8 +2248,11 @@ code {
   }
 }
 
-/* Tables fit the available width when wrapping is enabled. Dense tables can
-   switch to single-line cells in a horizontal scroll container. */
+/* Diagnostics-style tables: row separators only, and a scroll-fade container
+   for horizontal overflow. Cells wrap and the table fits its lane. The root
+   chat-markdown wrapping rules (overflow-wrap: anywhere) would let columns
+   shrink to single characters, so restore word-boundary wrapping: the min
+   column width is the longest word, and only wider content scrolls. */
 .chat-markdown table {
   width: 100%;
   border-collapse: collapse;
