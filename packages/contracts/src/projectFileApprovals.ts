@@ -64,6 +64,7 @@ export class ProjectFileActionApprovalError extends Schema.TaggedError<ProjectFi
       "action-not-found",
       "nothing-to-approve",
       "save-failed",
+      "run-failed",
     ]),
     message: Schema.String,
   },

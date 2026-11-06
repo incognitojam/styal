@@ -17,6 +17,10 @@ export function createProjectFileActionAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
 ) {
   return {
+    run: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:project-file-action:run",
+      tag: WS_METHODS.projectsFileActionRun,
+    }),
     /** What approving one action would cover, read by the server from the project root. */
     review: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:project-file-action:review",
