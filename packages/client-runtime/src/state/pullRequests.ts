@@ -573,6 +573,16 @@ export function createPullRequestEnvironmentAtoms<R, E>(
       },
     ),
   );
+  // Pages read the strict detail and other surfaces the default one; patch whichever is loaded
+  // without starting a read of the other.
+  const loadedDetails = (
+    registry: AtomRegistry.AtomRegistry,
+    target: { readonly environmentId: EnvironmentId; readonly input: PullRequestRef },
+  ) =>
+    [
+      detail({ ...target, input: { ...target.input, allowStale: undefined } }),
+      detail({ ...target, input: { ...target.input, allowStale: false } }),
+    ].filter((atom) => registry.getNodes().has(atom));
   const detailReadVersions = Atom.family((source: ReturnType<typeof detail>) =>
     Atom.family((answer: ReturnType<typeof detailAnswers>) =>
       Atom.make((get) => {
@@ -692,6 +702,11 @@ export function createPullRequestEnvironmentAtoms<R, E>(
   const pendingLabelEdits = Atom.family((_source: ReturnType<typeof detail>) =>
     Atom.make<ReadonlyArray<PendingLabelEdit>>([]).pipe(Atom.setIdleTTL(5 * 60_000)),
   );
+  // The strict and default detail reads share one list, so either shows a submitted edit.
+  const labelEditsFor = (target: {
+    readonly environmentId: EnvironmentId;
+    readonly input: PullRequestRef;
+  }) => pendingLabelEdits(detail({ ...target, input: { ...target.input, allowStale: undefined } }));
   function withPendingLabelEdits<A, E>(
     family: (target: {
       readonly environmentId: EnvironmentId;
@@ -716,7 +731,7 @@ export function createPullRequestEnvironmentAtoms<R, E>(
       ),
     );
     return (target: Parameters<typeof family>[0]) =>
-      overlays(family(target))(pendingLabelEdits(detail(target)));
+      overlays(family(target))(labelEditsFor(target));
   }
   const optimisticDetail = withPendingLabelEdits(detail, (value, edit) => ({
     ...value,
@@ -757,7 +772,7 @@ export function createPullRequestEnvironmentAtoms<R, E>(
         })),
         applied,
       };
-      const pending = pendingLabelEdits(detail(target));
+      const pending = labelEditsFor(target);
       // Submission must update the UI even when an earlier mutation owns the RPC lane.
       registry.update(pending, (edits) => [...edits, edit]);
       try {
@@ -770,10 +785,12 @@ export function createPullRequestEnvironmentAtoms<R, E>(
               names.has(candidate.name) ? { ...candidate, isApplied: applied } : candidate,
             ),
           }));
-          updateCached(registry, detail(target), (value) => ({
-            ...value,
-            labels: applyLabelEdit(value.labels, edit),
-          }));
+          for (const atom of loadedDetails(registry, target)) {
+            updateCached(registry, atom, (value) => ({
+              ...value,
+              labels: applyLabelEdit(value.labels, edit),
+            }));
+          }
         }
         return result;
       } finally {
@@ -1206,15 +1223,17 @@ export function createPullRequestEnvironmentAtoms<R, E>(
               : actors.filter(
                   (actor) => !selectedLogins.has(actor.login.toLowerCase()) || keep(actor),
                 );
-          updateCached(
-            registry,
-            detail(target),
-            (value) => ({
-              ...value,
-              reviewers: updateReviewers(value.reviewers),
-            }),
-            missingIdentities,
-          );
+          for (const atom of loadedDetails(registry, target)) {
+            updateCached(
+              registry,
+              atom,
+              (value) => ({
+                ...value,
+                reviewers: updateReviewers(value.reviewers),
+              }),
+              missingIdentities,
+            );
+          }
           updateCached(
             registry,
             activity(target),

@@ -2239,7 +2239,7 @@ it.effect("updates cached labels after successful edits without rereading the ho
           host: "github.example.com",
         },
       };
-      const detail = atoms.detail(target);
+      const detail = atoms.detail({ ...target, input: { ...target.input, allowStale: false } });
       const candidates = atoms.labelCandidates(target);
       registry.mount(detail);
       const unmountCandidates = registry.mount(candidates);
@@ -2402,10 +2402,11 @@ it.effect("uses cached label colors for optimistic edits without changing anothe
         input: { projectId: ProjectId.make("project-1"), repository: "acme/web", number: 1 },
       };
       const second = { ...first, input: { ...first.input, number: 2 } };
+      const strictSecond = { ...second, input: { ...second.input, allowStale: false } };
       const firstCandidates = atoms.labelCandidates(first);
       registry.mount(firstCandidates);
       yield* AtomRegistry.getResult(registry, firstCandidates, { suspendOnWaiting: true });
-      for (const target of [first, second]) {
+      for (const target of [first, second, strictSecond]) {
         registry.mount(atoms.detail(target));
         yield* AtomRegistry.getResult(registry, atoms.detail(target), { suspendOnWaiting: true });
       }
@@ -2424,6 +2425,9 @@ it.effect("uses cached label colors for optimistic edits without changing anothe
       );
       yield* started.await;
       expect((yield* AtomRegistry.getResult(registry, atoms.detail(second))).labels).toEqual([
+        label,
+      ]);
+      expect((yield* AtomRegistry.getResult(registry, atoms.detail(strictSecond))).labels).toEqual([
         label,
       ]);
       expect((yield* AtomRegistry.getResult(registry, atoms.detail(first))).labels).toEqual([]);
