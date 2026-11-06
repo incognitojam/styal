@@ -377,10 +377,10 @@ function MachineStatus(props: {
     <View className="gap-1 border-t border-border p-4">
       <Text className="text-xs text-foreground-muted">
         {!connected
-          ? `${machine.label} isn't connected. Its setting applies whether or not this app can reach it.`
+          ? `This app can't reach ${machine.label} right now. Its setting still applies.`
           : parts.length === 0
-            ? "Connected. Agents here aren't working on other machines yet."
-            : `Connected. Agents here ${machineNames(parts)}.`}
+            ? "Agents here aren't working on other machines yet."
+            : `Agents here ${machineNames(parts)}.`}
       </Text>
       {connected && devices.length > 0 ? (
         <Text className="text-xs text-foreground-muted">
