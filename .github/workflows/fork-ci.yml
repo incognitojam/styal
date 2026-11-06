@@ -292,7 +292,7 @@ jobs:
           if git diff --quiet "$BASE_SHA...HEAD" -- apps/web/src/components/settings/settingsSearch.ts; then
             exit 0
           fi
-          git fetch --no-tags --depth=1 https://github.com/pingdotgg/t3code.git '+refs/heads/main:refs/remotes/upstream/main'
+          git fetch --no-tags https://github.com/pingdotgg/t3code.git '+refs/heads/main:refs/remotes/upstream/main'
           vp run --filter @t3tools/scripts settings:badges
 
       - name: Setup Rust
