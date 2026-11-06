@@ -28,6 +28,11 @@ See the [mobile README](../../apps/mobile/README.md) for native builds and Metro
 Flags go directly after the task name, for example `vp run dev --home-dir /tmp/styal-dev`.
 Add `--browser` to open a browser automatically.
 
+To stop a worktree's dev stack when its thread settles, start it through the **Dev** action from
+`styal.json`, in the thread's action menu or with its keybinding. Its `stopOnSettle` option lets
+styal stop the terminal and its child processes. Running `vp run dev` through an agent's own shell
+tool does not attach it to this lifecycle.
+
 ### State and ports
 
 Linked worktrees default to their own `.styal/userdata`, even when `STYAL_HOME` is set.

@@ -109,6 +109,7 @@ function fileProjectAction(
     icon: action.icon,
     runOnWorktreeCreate: setup,
     ...(approved.includes("settle") ? { runOnSettle: true } : {}),
+    ...(action.stopOnSettle === true ? { stopOnSettle: true } : {}),
     ...(setup && action.async === false ? { async: false } : {}),
     source: "file",
     ...(awaiting.length > 0 ? { awaitingApproval: awaiting } : {}),

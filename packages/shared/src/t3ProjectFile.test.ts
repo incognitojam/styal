@@ -17,12 +17,12 @@ describe("T3ProjectFileFromJson", () => {
       // team scripts
       "iconPath": "assets/logo.svg",
       "scripts": [
-        { "name": "Dev", "command": "pnpm dev", },
+        { "name": "Dev", "command": "pnpm dev", "stopOnSettle": true, },
       ],
     }`);
 
     expect(decoded.iconPath).toBe("assets/logo.svg");
-    expect(decoded.scripts?.[0]).toEqual({ name: "Dev", command: "pnpm dev" });
+    expect(decoded.scripts?.[0]).toEqual({ name: "Dev", command: "pnpm dev", stopOnSettle: true });
   });
 });
 
@@ -171,6 +171,7 @@ describe("parseT3ProjectFileResult field recovery", () => {
     icon: "configure",
     runOnWorktreeCreate: true,
     runOnSettle: true,
+    stopOnSettle: true,
     async: false,
   } as const satisfies Required<T3ProjectFileScript>;
   const siblingScript = { name: "Dev", command: "pnpm dev" } as const;
@@ -195,6 +196,7 @@ describe("parseT3ProjectFileResult field recovery", () => {
     icon: "spaceship",
     runOnWorktreeCreate: "yes",
     runOnSettle: "yes",
+    stopOnSettle: "yes",
     async: "no",
   } satisfies Record<keyof T3ProjectFileScript, unknown>;
   const requiredScriptFields: ReadonlySet<string> = new Set(["name", "command"]);

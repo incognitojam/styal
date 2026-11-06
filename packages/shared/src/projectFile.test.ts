@@ -48,6 +48,7 @@ const INVALID_ACTION_FIELDS: Record<keyof typeof StyalProjectFileAction.fields, 
   icon: "rocket",
   runOnWorktreeCreate: "yes",
   runOnSettle: 1,
+  stopOnSettle: "always",
   async: "no",
 };
 const REQUIRED_ACTION_FIELDS = new Set(["name", "command"]);
@@ -354,7 +355,7 @@ describe("styalProjectFileFromT3", () => {
       "worktreeSubmodules": "none",
       "scripts": [
         { "name": "Install", "command": "pnpm i", "runOnWorktreeCreate": true },
-        { "name": "Install", "command": "pnpm i --frozen-lockfile" },
+        { "name": "Install", "command": "pnpm i --frozen-lockfile", "stopOnSettle": true },
         { "name": "Bad" }
       ]
     }`);
@@ -364,7 +365,12 @@ describe("styalProjectFileFromT3", () => {
       worktreeSubmodules: "none",
       actions: [
         { id: "install", name: "Install", command: "pnpm i", runOnWorktreeCreate: true },
-        { id: "install-2", name: "Install", command: "pnpm i --frozen-lockfile" },
+        {
+          id: "install-2",
+          name: "Install",
+          command: "pnpm i --frozen-lockfile",
+          stopOnSettle: true,
+        },
       ],
     });
     expect(migrated && parseStyalProjectFileResult(migrated).status).toBe("valid");

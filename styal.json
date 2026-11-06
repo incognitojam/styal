@@ -6,7 +6,8 @@
       "id": "dev",
       "name": "Dev",
       "command": "vp run dev",
-      "icon": "play"
+      "icon": "play",
+      "stopOnSettle": true
     },
     {
       "id": "dev-desktop",

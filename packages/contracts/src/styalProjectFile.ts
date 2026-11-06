@@ -63,6 +63,12 @@ export const StyalProjectFileAction = Schema.Struct({
         "When true, the action runs in a worktree each time the last open thread using it settles, for example to delete build output, once you approve its command in styal. Threads without their own worktree skip it.",
     }),
   ),
+  stopOnSettle: Schema.optionalKey(
+    Schema.Boolean.annotate({
+      description:
+        "When true, styal stops this action's terminal and child processes when its thread settles.",
+    }),
+  ),
   async: Schema.optionalKey(
     Schema.Boolean.annotate({
       description:

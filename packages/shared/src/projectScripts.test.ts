@@ -162,16 +162,19 @@ describe("resolveProjectActions", () => {
           icon: "configure",
           runOnWorktreeCreate: true,
           runOnSettle: true,
+          stopOnSettle: true,
           async: false,
         },
       ],
     });
+    // Stopping on settle runs nothing, so it needs no approval.
     expect(setup).toEqual({
       id: "setup",
       name: "Setup",
       command: "vp i",
       icon: "configure",
       runOnWorktreeCreate: false,
+      stopOnSettle: true,
       source: "file",
       awaitingApproval: ["setup", "settle"],
     });

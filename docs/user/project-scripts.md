@@ -75,6 +75,8 @@ Each action supports these fields:
 - `runOnWorktreeCreate` and `runOnSettle` (optional): run the action automatically after a
   worktree is created for a new thread, or each time the last open thread in a worktree settles. These
   take effect only once you approve the command, as described below.
+- `stopOnSettle` (optional): stop the action's terminal and its child processes, such as a dev
+  server, when the thread that started it settles. This needs no approval.
 - `async` (optional): only for `runOnWorktreeCreate` actions. `false` holds the agent until the
   action exits.
 

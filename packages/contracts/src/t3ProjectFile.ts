@@ -46,6 +46,12 @@ export const T3ProjectFileScript = Schema.Struct({
         "Marks the script to run in a worktree each time the last open thread using it settles. Scripts in t3.json do not run until they are imported or migrated to styal.json.",
     }),
   ),
+  stopOnSettle: Schema.optionalKey(
+    Schema.Boolean.annotate({
+      description:
+        "Marks the script to have styal stop its terminal and child processes when its thread settles. Scripts in t3.json do not run until they are imported or migrated to styal.json.",
+    }),
+  ),
   async: Schema.optionalKey(
     Schema.Boolean.annotate({
       description:
