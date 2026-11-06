@@ -106,6 +106,51 @@ features:
       tracking: []
       retire_when: Upstream's budget check reports which tools and text caused the growth.
 
+  - id: agent-guides
+    title: Agents read styal how-to guides through an MCP tool
+    status: maintained
+    prs: [1265]
+    invariants:
+      - "`read_styal_guide` returns a bundled guide for a fixed topic (`project-setup`, `devices`, `hardware`, `data-import`, `troubleshooting`) with no capability gate, so every provider session that has the styal MCP server can read it. It is read-only and Claude pre-approves it."
+      - Guides name only tools the server publishes and topics that exist.
+      - Always-on instructions tell agents to read `project-setup` before adding or changing project actions, because `read_styal_guide` is a deferred tool whose description they do not see first.
+      - Each read records `feature.used` with `feature = agent-guides` and the topic, and no other argument or result.
+    rationale: Gives agents styal-specific setup knowledge (styal.json, devices, hardware, imports, maintenance) through the MCP server every provider already connects to, so no provider session or desktop packaging changes are needed. Upstream's bundled skills proposal installs files into provider homes instead.
+    implementation_paths:
+      - apps/server/src/mcp/toolkits/guide/guides.ts
+      - apps/server/src/mcp/toolkits/guide/handlers.ts
+      - apps/server/src/mcp/toolkits/guide/tools.ts
+    upstream_paths:
+      - apps/server/src/cli/doctor.ts
+      - apps/server/src/cli/trace.ts
+      - apps/server/src/cli/triage.ts
+      - apps/server/src/device/DeviceService.ts
+      - apps/server/src/mcp/McpHttpServer.ts
+      - apps/server/src/mcp/toolkits/device/handlers.ts
+      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
+      - apps/server/src/orchestration-v2/ThreadSettlementService.ts
+      - apps/server/src/preview/PortScanner.ts
+      - apps/server/src/process/agentScope.ts
+      - apps/server/src/project/ProjectSetupScriptRunner.ts
+      - apps/server/src/provider/agentContextBudget.json
+      - apps/server/src/telemetry/AnalyticsService.ts
+      - apps/server/src/telemetry/FeatureUsage.ts
+      - packages/client-runtime/src/t3ToolSummary.ts
+      - packages/contracts/src/t3ProjectFile.ts
+      - packages/provider-core/src/server/orchestrationInstructions.ts
+      - packages/shared/src/projectScripts.ts
+      - packages/shared/src/t3McpToolPresentation.ts
+    tests:
+      - apps/server/src/mcp/toolkits/guide/guides.test.ts
+      - apps/server/src/mcp/toolkits/guide/handlers.test.ts
+      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.test.ts
+      - apps/server/src/provider/AgentContextBudget.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/28492
+      retire_when: Upstream ships bundled agent skills that every provider loads; move the guides into styal skills in that mechanism.
+
   - id: android-notification-settings
     title: Android notification settings match Android's categories
     status: maintained

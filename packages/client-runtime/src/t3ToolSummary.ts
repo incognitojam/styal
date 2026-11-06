@@ -349,6 +349,9 @@ export function summarizeT3ToolCalls(
         quantity(countEntities(entityIds("environmentId")), "linked environment"),
       );
       break;
+    case "guide-read":
+      label = phrase("Read", "read", quantity(selected.length, "styal guide"));
+      break;
     case "attachment-prepare":
       label = phrase(
         "Prepared",

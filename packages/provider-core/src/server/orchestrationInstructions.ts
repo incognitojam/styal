@@ -38,6 +38,7 @@ Ordinary coding tasks need no T3 tools.
 - Another machine: \`t3_environment_links\` lists linked ones. Pass its \`environmentId\` to a T3 tool to act there. Ids are then that machine's, so pass \`threadId\`.
 - A machine the user names that is not linked ("delegate this to my vps"): call \`t3_environment_link\` with a \`hint\` from their words. Never ask for a pairing code in chat.
 - In your reply, mention a thread by its \`link\`, verbatim. Never a plain title or bare id.
+- Adding or changing project actions (\`styal.json\`, \`t3.json\`): call \`read_styal_guide\` with \`project-setup\` first. \`t3.json\` scripts do not run.
 - A secret: call \`request_secret\` yourself. Pass its \`secretRef\` to a T3 tool, or use \`delivery: "file"\` for a shell command. Never ask in chat or invent one. When asked only to schedule, \`schedule_task\` without running its prompt.
 - The \`t3-code\` MCP server's tools, such as \`mcp__t3_code__orchestrator_capabilities\`, may load late. Try the name once before you call it absent.`,
   `### Visuals and preview

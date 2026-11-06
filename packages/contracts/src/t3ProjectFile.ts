@@ -37,13 +37,13 @@ export const T3ProjectFileScript = Schema.Struct({
   runOnWorktreeCreate: Schema.optionalKey(
     Schema.Boolean.annotate({
       description:
-        "When true, the script runs automatically after a worktree is created for a new thread.",
+        "Marks the script to run after a worktree is created for a new thread. Scripts in t3.json do not run until they are imported or migrated to styal.json.",
     }),
   ),
   runOnSettle: Schema.optionalKey(
     Schema.Boolean.annotate({
       description:
-        "When true, the script runs in a worktree each time the last open thread using it settles, for example to delete build output. Threads without their own worktree skip it.",
+        "Marks the script to run in a worktree each time the last open thread using it settles. Scripts in t3.json do not run until they are imported or migrated to styal.json.",
     }),
   ),
   async: Schema.optionalKey(

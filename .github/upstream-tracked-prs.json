@@ -215,6 +215,10 @@
         "base": "b6c326d12f0a455a154e89f98b64f337d2d4a4f0",
         "head": "3a0a20061ab64109daee62e413771544c48c06e3"
       }
+    },
+    {
+      "pr": 28492,
+      "reason": "Adds Settings → Skills with bundled skills installed into Codex and Claude provider homes, including a worktree setup skill that still teaches t3.json. The fork serves its agent guides through the `read_styal_guide` MCP tool instead (ledger agent-guides). When it merges, decide whether styal's guides move into bundled skills: rewrite its worktree setup skill for styal.json, and keep `read_styal_guide` for providers the bundle does not cover."
     }
   ]
 }

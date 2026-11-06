@@ -49,6 +49,8 @@ import * as OrchestratorMcpService from "./OrchestratorMcpService.ts";
 import { PreviewControlsToolkit } from "./toolkits/previewControls/tools.ts";
 import * as PreviewControlsHandlers from "./toolkits/previewControls/handlers.ts";
 import { EnvironmentToolkit } from "./toolkits/environment/tools.ts";
+import { GuideToolkit } from "./toolkits/guide/tools.ts";
+import * as GuideHandlers from "./toolkits/guide/handlers.ts";
 import * as EnvironmentHandlers from "./toolkits/environment/handlers.ts";
 import { ProjectToolkit } from "./toolkits/project/tools.ts";
 import * as ProjectHandlers from "./toolkits/project/handlers.ts";
@@ -1189,6 +1191,7 @@ export const layerDeviceToolkit = Layer.mergeAll(
 const layerHardwareToolkit = toolkitRegistration(HardwareToolkit, HardwareHandlers.layer);
 
 const layerFeedbackToolkit = toolkitRegistration(FeedbackToolkit, FeedbackHandlers.layer);
+export const layerGuideToolkit = toolkitRegistration(GuideToolkit, GuideHandlers.layer);
 
 export const layerMcpTransport = McpServer.layerHttp({
   name: "styal",
@@ -1213,6 +1216,7 @@ export const layerTools = Layer.mergeAll(
   layerHardwareToolkit,
   layerFeedbackToolkit,
   layerHtmlToolkit,
+  layerGuideToolkit,
 );
 
 export const layer = layerTools.pipe(Layer.provideMerge(layerMcpTransport));

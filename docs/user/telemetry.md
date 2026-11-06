@@ -26,6 +26,7 @@ addresses, action names, arguments, responses and uploaded files are not collect
 scripts make through a lease's proxy are not recorded.
 Sending feedback, from the form or through an agent, records how it ended: posted, not posted,
 declined or not answered. The report itself and the GitHub account are not collected.
+When an agent reads one of styal's built-in setup guides, the guide's topic is recorded.
 Reviewing, approving and revoking a `styal.json` action that runs on its own records which of the
 three it was and its outcome. Projects, action names, commands and file paths are not collected.
 Approving a pull request's waiting workflows records that you did and its outcome. Repositories,

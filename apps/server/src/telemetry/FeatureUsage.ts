@@ -14,6 +14,7 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Option from "effect/Option";
 
+import type { AgentGuideTopic } from "../mcp/toolkits/guide/guides.ts";
 import * as AnalyticsService from "./AnalyticsService.ts";
 
 export interface FeatureUsage {
@@ -168,6 +169,12 @@ type ObservedUsage =
       readonly source: "user" | "agent";
     }
   | {
+      readonly feature: "agent-guides";
+      readonly action: "read";
+      readonly source: "agent";
+      readonly guideTopic: AgentGuideTopic;
+    }
+  | {
       readonly feature: "project-file-approvals";
       readonly action: "review" | "approve" | "revoke";
       readonly source: "user";
@@ -209,7 +216,7 @@ type ObservedUsage =
 
 /**
  * Agent tools that report each call as `feature.used` with the fork's vocabulary and
- * outcomes. Every tool in the browser, device, hardware and feedback toolkits is observed, so
+ * outcomes. Every tool in the browser, device, hardware, feedback and guide toolkits is observed, so
  * upstream's generic `mcp.tool.invoked` skips them to report each call once.
  */
 export const toolReportedAsFeatureUsage = (tool: string) =>
@@ -217,6 +224,7 @@ export const toolReportedAsFeatureUsage = (tool: string) =>
   tool.startsWith("device_") ||
   tool.startsWith("hardware_") ||
   tool === "report_styal_issue" ||
+  tool === "read_styal_guide" ||
   tool === "watch_workflow_run" ||
   tool === "unwatch_workflow_run";
 
@@ -392,6 +400,7 @@ export const observe = Effect.fnUntraced(function* <A, E, R>(
           !Cause.hasInterruptsOnly(exit.cause)
             ? { failureReason: projectFileApprovalFailureReason(exit.cause) }
             : {}),
+          ...(usage.feature === "agent-guides" ? { guideTopic: usage.guideTopic } : {}),
           ...(usage.feature === "hardware" && usage.hardwareTier
             ? { hardwareTier: usage.hardwareTier }
             : {}),
