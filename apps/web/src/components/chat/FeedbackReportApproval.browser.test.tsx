@@ -22,18 +22,26 @@ describe("FeedbackReportApprovalBanner", () => {
         disabled={false}
         options={[
           { decision: "accept", label: "Post publicly" },
-          { decision: "decline", label: "Don't post" },
+          { decision: "decline", label: "Don't send" },
         ]}
         onRespondToApproval={onRespondToApproval}
       />,
     );
 
-    await expect.element(screen.getByRole("button", { name: "Don't post" })).toBeVisible();
+    await expect
+      .element(screen.getByText("Your agent wants your approval before submitting feedback"))
+      .toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "Don't send" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Post publicly" }).query()).toBeNull();
 
-    await userEvent.click(screen.getByRole("button", { name: "Preview" }));
+    await userEvent.click(screen.getByRole("button", { name: "Review" }));
     await expect.element(page.getByText("A title")).toBeVisible();
     await expect.element(page.getByText("The body that gets posted")).toBeVisible();
+    await expect
+      .element(
+        page.getByText(/public GitHub issue on incognitojam\/styal, from the account @octocat/),
+      )
+      .toBeVisible();
     // Base UI's inert backdrop sits over the iframe the test renders in, so a pointer click misses.
     page
       .getByRole("button", { name: "Post publicly" })

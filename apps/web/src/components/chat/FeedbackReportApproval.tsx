@@ -1,5 +1,6 @@
 import {
   FEEDBACK_REPORT_OPEN_ACTION,
+  FEEDBACK_REPORT_REQUEST,
   FEEDBACK_REPORT_TITLE,
   feedbackReportDeclineOptions,
   feedbackReportDescription,
@@ -58,9 +59,7 @@ export function FeedbackReportApprovalBanner(props: {
               <StyalToolIcon className="size-4" />
             </ComposerBanner.Icon>
             <ComposerBanner.Content>
-              <span className="min-w-0 text-sm text-foreground">
-                Your agent wants to post a public issue on {props.report.repository}
-              </span>
+              <span className="min-w-0 text-sm text-foreground">{FEEDBACK_REPORT_REQUEST}</span>
             </ComposerBanner.Content>
             <ComposerBanner.Actions>
               <ComposerPendingApprovalActions

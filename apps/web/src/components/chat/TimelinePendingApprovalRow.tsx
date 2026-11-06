@@ -1,4 +1,7 @@
-import { feedbackReportFromApproval } from "@t3tools/client-runtime/feedback-report";
+import {
+  FEEDBACK_REPORT_TITLE,
+  feedbackReportFromApproval,
+} from "@t3tools/client-runtime/feedback-report";
 import { deriveToolRowPresentation } from "@t3tools/shared/toolRowPresentation";
 import {
   FULL_ACCESS_OVERRIDE_QUESTION,
@@ -53,7 +56,7 @@ export const TimelinePendingApprovalRow = memo(function TimelinePendingApprovalR
   return (
     <WorkLogRow
       role="group"
-      aria-label={report ? "Post a public issue" : presentation.label}
+      aria-label={report ? FEEDBACK_REPORT_TITLE : presentation.label}
       data-v2-item-type="approval_request"
       wrapLabel
       icon={
