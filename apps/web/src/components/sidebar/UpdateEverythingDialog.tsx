@@ -1,9 +1,8 @@
-import { useAtomValue } from "@effect/atom-react";
-import { EnvironmentId } from "@t3tools/contracts";
-import { Atom } from "effect/reactivity";
-import { environmentThreadShells } from "~/state/threads";
+import type { ConfirmDialogThreadActivity } from "@t3tools/contracts";
+import { useEnvironmentMachines } from "~/state/environments";
 import { useCombinedUpdateConfirmationUsage } from "../../combinedUpdateConfirmationUsage";
 import { CONTENT_UPDATE_CLICK_GUARD_MS } from "../../confirmDialog";
+import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import { HostActivityThreadList } from "../HostActivityThreadList";
 import { StableLabel } from "../StableLabel";
 import { Spinner } from "../ui/spinner";
@@ -23,30 +22,7 @@ import { Button } from "../ui/button";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 import { MiddleTruncate } from "../ui/middle-truncate";
 import { ScrollArea } from "../ui/scroll-area";
-import type {
-  RestartingMachine,
-  UpdateEverythingConfirmation,
-  UpdateEverythingRow,
-} from "./updateEverything.logic";
-
-const isRunning = (status: string) =>
-  status === "preparing" || status === "starting" || status === "running";
-
-const runningThreadCountAtom = Atom.family((environmentIds: string) =>
-  Atom.make((get) =>
-    environmentIds
-      .split("\n")
-      .filter((id) => id !== "")
-      .reduce(
-        (count, id) =>
-          count +
-          get(environmentThreadShells.environmentThreadsAtom(EnvironmentId.make(id))).filter(
-            (thread) => isRunning(thread.status),
-          ).length,
-        0,
-      ),
-  ).pipe(Atom.withLabel(`update-everything-running-threads:${environmentIds}`)),
-);
+import type { UpdateEverythingConfirmation, UpdateEverythingRow } from "./updateEverything.logic";
 
 interface UpdateEverythingDialogProps {
   readonly open: boolean;
@@ -54,16 +30,15 @@ interface UpdateEverythingDialogProps {
   readonly version: string | null;
   readonly providerCount: number;
   readonly rows: ReadonlyArray<UpdateEverythingRow>;
-  readonly restarts: ReadonlyArray<RestartingMachine>;
   readonly activity: UpdateEverythingConfirmation;
   readonly checking: boolean;
   readonly contentUpdatedAt?: number | null;
   readonly onConfirm: () => void;
-  /** Overrides the "Update N machines?" title, for an update-track switch. */
+  /** Overrides the default title, for an update-track switch. */
   readonly title?: string;
   readonly confirmLabel?: string;
   readonly notes?: ReadonlyArray<string>;
-  /** Shown in place of running-thread counts; disables the confirm button. */
+  /** Disables the confirm button and says why. */
   readonly disabledReason?: string | null;
   /** The confirmed work is starting; it cannot be cancelled from here. */
   readonly busy?: boolean;
@@ -127,7 +102,6 @@ function UpdateEverythingDialogContent({
   providerCount,
   rows,
   activity,
-  restarts,
   checking,
   contentUpdatedAt = null,
   onConfirm,
@@ -138,15 +112,29 @@ function UpdateEverythingDialogContent({
   disabledReason = null,
   busy = false,
 }: UpdateEverythingDialogContentProps) {
-  const restarting = new Set(restarts.map((machine) => machine.environmentId));
-  const updating = rows.filter((row) => row.app !== null || row.providers.length > 0);
+  const machines = useEnvironmentMachines();
+  const updating = rows
+    .filter((row) => row.app !== null || row.providers.length > 0)
+    .toSorted((a, b) => Number(a.app === "this-app") - Number(b.app === "this-app"));
   const skipped = rows.filter((row) => row.skipped !== null);
+  const restartsAll = updating.length > 0 && updating.every((row) => row.app !== null);
+  // Servers hand off together in no fixed order; only this app waits for the others.
+  const othersRestart = updating.some((row) => row.app !== null && row.app !== "this-app");
+  // Older servers report no environment id, only the label this client gave their check.
+  const belongsTo = (item: ConfirmDialogThreadActivity, row: UpdateEverythingRow) =>
+    item.environmentId === undefined
+      ? item.hostLabel === row.label
+      : item.environmentId === row.environmentId;
+  const otherActivity = activity.threadActivity.filter(
+    (item) => !updating.some((row) => belongsTo(item, row)),
+  );
+  const count = `${updating.length} ${updating.length === 1 ? "machine" : "machines"}`;
 
   return (
     <>
       <AlertDialogHeader className="shrink-0">
         <AlertDialogTitle>
-          {title ?? `Update ${updating.length} ${updating.length === 1 ? "machine" : "machines"}?`}
+          {title ?? `${restartsAll ? "Update and restart" : "Update"} ${count}?`}
         </AlertDialogTitle>
         <AlertDialogDescription>
           {version !== null ? (
@@ -167,47 +155,56 @@ function UpdateEverythingDialogContent({
               {note}
             </p>
           ))}
-          {/* Machine names truncate first. Provider lists wrap between names, never inside one. */}
-          <div className="grid grid-cols-[minmax(4rem,max-content)_max-content_minmax(min-content,1fr)_max-content] gap-x-4 text-sm">
-            <div className="col-span-full grid grid-cols-subgrid border-b pb-1.5 text-muted-foreground text-xs">
-              <span>Machine</span>
-              <span>styal</span>
-              <span>Providers</span>
-              <span />
-            </div>
-            {updating.map((row) => (
-              <div
-                key={row.environmentId ?? "this-app"}
-                className="col-span-full grid grid-cols-subgrid border-b border-border/50 py-1.5 last:border-b-0"
-              >
-                <span className="max-w-32 min-w-0">
+          {updating.map((row) => (
+            <section
+              aria-label={row.label}
+              key={row.environmentId ?? "this-app"}
+              className="min-w-0 border-t pt-3 text-sm"
+            >
+              <div className="flex items-center gap-2">
+                <EnvironmentMachineIcon
+                  aria-hidden
+                  kind={
+                    (row.environmentId && machines.get(row.environmentId)) ||
+                    (row.app === "this-app" ? "desktop" : "server")
+                  }
+                  className="size-4 shrink-0 text-muted-foreground"
+                />
+                <h3 className="flex min-w-0 font-semibold text-foreground">
                   <MiddleTruncate value={row.label} />
+                </h3>
+                <span className="shrink-0 text-muted-foreground text-xs">
+                  {row.app !== null
+                    ? APP_LABELS[row.app]
+                    : row.skipped !== null
+                      ? "styal skipped"
+                      : "No restart"}
                 </span>
-                <span>
-                  {row.app !== null ? APP_LABELS[row.app] : null}
-                  {row.app === null && row.skipped !== null ? (
-                    <span className="text-muted-foreground">Skipped</span>
-                  ) : null}
-                  {row.app === "this-app" ? (
-                    <span className="block text-muted-foreground text-xs">restarts last</span>
-                  ) : null}
-                </span>
-                <span>
+                {row.app === "this-app" && othersRestart ? (
+                  <span className="ms-auto shrink-0 text-muted-foreground text-xs">
+                    Restarts last
+                  </span>
+                ) : null}
+              </div>
+              {row.providers.length > 0 ? (
+                <p className="mt-1 text-muted-foreground text-xs">
+                  Updates{" "}
                   {row.providers.map((provider, index) => (
                     <Fragment key={provider}>
                       <span className="whitespace-nowrap">{provider}</span>
                       {index < row.providers.length - 1 ? ", " : null}
                     </Fragment>
                   ))}
-                </span>
-                <span className="text-right">
-                  {row.environmentId !== null && restarting.has(row.environmentId) ? (
-                    <RunningThreads environmentId={row.environmentId} />
-                  ) : null}
-                </span>
-              </div>
-            ))}
-          </div>
+                </p>
+              ) : null}
+              {activity.threadActivity.some((item) => belongsTo(item, row)) ? (
+                <HostActivityThreadList
+                  withinMachine
+                  activity={activity.threadActivity.filter((item) => belongsTo(item, row))}
+                />
+              ) : null}
+            </section>
+          ))}
           {skipped.length > 0 ? (
             <Collapsible>
               <CollapsibleTrigger className="flex items-center gap-1 text-muted-foreground text-xs hover:text-foreground data-panel-open:[&_svg]:rotate-90">
@@ -235,9 +232,7 @@ function UpdateEverythingDialogContent({
             <p className="whitespace-pre-line text-sm">{activity.lines.join("\n")}</p>
           </div>
         ) : null}
-        {activity.threadActivity.length > 0 ? (
-          <HostActivityThreadList activity={activity.threadActivity} />
-        ) : null}
+        {otherActivity.length > 0 ? <HostActivityThreadList activity={otherActivity} /> : null}
       </ScrollArea>
       <AlertDialogFooter>
         {disabledReason !== null ? (
@@ -251,7 +246,7 @@ function UpdateEverythingDialogContent({
         <Button disabled={disabledReason !== null || busy} onClick={onConfirm}>
           {confirmLabel ?? (
             <StableLabel
-              label={checking ? "Update anyway" : "Update"}
+              label={checking ? "Update anyway" : restartsAll ? "Update and restart" : "Update"}
               previous={contentUpdatedAt === null ? undefined : "Update anyway"}
             />
           )}
@@ -259,9 +254,4 @@ function UpdateEverythingDialogContent({
       </AlertDialogFooter>
     </>
   );
-}
-
-function RunningThreads({ environmentId }: { readonly environmentId: EnvironmentId }) {
-  const count = useAtomValue(runningThreadCountAtom(environmentId));
-  return count > 0 ? <span className="whitespace-nowrap text-warning">{count} running</span> : null;
 }

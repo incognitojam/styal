@@ -30,6 +30,7 @@ vi.mock("./state/server", () => ({
   },
 }));
 vi.mock("./components/HostActivityThreadList", () => ({ HostActivityThreadList: () => null }));
+vi.mock("./state/environments", () => ({ useEnvironmentMachines: () => new Map() }));
 
 const firstId = EnvironmentId.make("synthetic-first-environment");
 const secondId = EnvironmentId.make("synthetic-second-environment");
@@ -60,7 +61,6 @@ function dialog(open: boolean, label = "Synthetic computer") {
         version="1.2.0"
         providerCount={0}
         rows={[{ environmentId: firstId, label, app: "server", providers: [], skipped: null }]}
-        restarts={[]}
         activity={{
           lines: [],
           threadActivity: [],
@@ -98,10 +98,10 @@ it("counts one opening through StrictMode and rerenders, and one confirmation in
   await screen.rerender(dialog(true, "Updated synthetic summary"));
   await screen.rerender(dialog(true));
   expect(reports()).toEqual([report("shown")]);
-  await click("Update");
+  await click("Update and restart");
   expect(onConfirm).toHaveBeenCalledOnce();
   // A repeated click or subsequent close notification must not add a second decision.
-  await click("Update");
+  await click("Update and restart");
   await click("Cancel");
   await screen.rerender(dialog(false));
   expect(reports()).toEqual([report("shown"), report("confirmed")]);
@@ -135,7 +135,7 @@ it("keeps the decision on the exposure's environment, then reselects on reopenin
   await using screen = await render(dialog(true));
   state.primaryId = secondId;
   await screen.rerender(dialog(true));
-  await click("Update");
+  await click("Update and restart");
   await screen.rerender(dialog(false));
   await screen.rerender(dialog(true));
   await click("Cancel");
@@ -153,7 +153,7 @@ it("uses one supported paired environment on hosted web without a primary", asyn
   support(firstId, FORK_CLIENT_USAGE_VERSION - 1);
   support(secondId);
   await using _screen = await render(dialog(true));
-  await click("Update");
+  await click("Update and restart");
   expect(reports()).toEqual([report("shown", secondId), report("confirmed", secondId)]);
   expect(onConfirm).toHaveBeenCalledOnce();
 });
@@ -166,14 +166,14 @@ it("keeps older and disconnected servers usable, and reports when support arrive
   await screen.rerender(dialog(false));
   support(firstId, FORK_CLIENT_USAGE_VERSION - 1);
   await screen.rerender(dialog(true));
-  await click("Update");
+  await click("Update and restart");
   expect(onConfirm).toHaveBeenCalledOnce();
   expect(reports()).toEqual([]);
   await screen.rerender(dialog(false));
   await screen.rerender(dialog(true));
   support(firstId);
   await screen.rerender(dialog(true));
-  await click("Update");
+  await click("Update and restart");
   expect(reports()).toEqual([report("shown"), report("confirmed")]);
 });
 
@@ -183,8 +183,8 @@ it("does not delay or retry decisions when reporting fails or remains pending", 
   state.run.mockImplementation(() => new Promise(() => {}));
   await using screen = await render(dialog(true));
   await screen.rerender(dialog(true));
-  await click("Update");
+  await click("Update and restart");
   expect(onConfirm).toHaveBeenCalledOnce();
-  await click("Update");
+  await click("Update and restart");
   expect(reports()).toEqual([report("shown"), report("confirmed")]);
 });

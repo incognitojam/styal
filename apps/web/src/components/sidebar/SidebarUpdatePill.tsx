@@ -284,7 +284,6 @@ function SidebarUpdateControl() {
       version={everything.version}
       providerCount={everything.providerCount}
       rows={everything.rows}
-      restarts={everything.restarts}
       activity={activityCheck}
       onConfirm={() => void runEverything(activityCheck, true)}
     />

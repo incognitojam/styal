@@ -59,11 +59,27 @@ export const hostActivityReasonLabels: Record<HostActivityThread["reasons"][numb
   input: "Needs input",
   approval: "Needs approval",
   waiting: "Waiting",
-  command: "Background command",
-  monitor: "Monitor",
+  command: "Command",
+  monitor: "Watcher",
   subagent: "Subagent",
-  background_task: "Background task",
+  background_task: "Task",
 };
+
+export function hostActivitySectionHeading(continues: boolean): string {
+  return continues ? "Resumes on its own" : "Stops until you message it";
+}
+
+/** A resuming thread's section already says its turn goes on; its tags name only what stops. */
+export function hostActivityShownReasons(
+  reasons: ReadonlyArray<HostActivityThread["reasons"][number]>,
+  continues: boolean,
+): ReadonlyArray<HostActivityThread["reasons"][number]> {
+  return continues
+    ? reasons.filter(
+        (reason) => reason !== "preparing" && reason !== "starting" && reason !== "running",
+      )
+    : reasons;
+}
 
 function singleLine(value: string): string {
   return value.replace(/\s+/gu, " ").trim();

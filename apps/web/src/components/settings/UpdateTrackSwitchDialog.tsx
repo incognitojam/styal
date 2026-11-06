@@ -204,7 +204,6 @@ function SwitchPlan({
           ? ["If styal does not reopen after it restarts, open it again."]
           : []),
       ]}
-      restarts={everything.restarts}
       activity={activity}
       checking={checkedActivity === null && restartsSomething}
       contentUpdatedAt={activityUpdatedAt}

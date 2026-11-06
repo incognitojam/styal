@@ -4,6 +4,8 @@ import type { ConfirmDialogThreadActivity, EnvironmentId } from "@t3tools/contra
 import {
   groupHostActivityThreads,
   hostActivityReasonLabels,
+  hostActivitySectionHeading,
+  hostActivityShownReasons,
   hostActivityReasonTone,
   type HostActivityTone,
 } from "@t3tools/shared/hostActivity";
@@ -42,7 +44,7 @@ function ThreadActivityRow({ activity }: { readonly activity: ConfirmDialogThrea
         {thread.title.trim() || "Untitled thread"}
       </Text>
       <View className="shrink-0 flex-row flex-wrap justify-end gap-1 pt-0.5">
-        {thread.reasons.map((reason) => (
+        {hostActivityShownReasons(thread.reasons, activity.continuesAfterRestart).map((reason) => (
           <Text
             key={reason}
             className={cn(
@@ -76,7 +78,7 @@ function ThreadActivityList({
     return (
       <View key={host.key} className="gap-5">
         {host.sections.map((section) => {
-          const heading = section.continues ? "Continues after restart" : "Will be interrupted";
+          const heading = hostActivitySectionHeading(section.continues);
           return (
             <View key={heading} className="gap-3">
               <Text className="text-base font-t3-medium text-foreground">{heading}</Text>
