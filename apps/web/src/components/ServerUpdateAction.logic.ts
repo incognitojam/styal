@@ -46,7 +46,10 @@ export function serverUpdateQuestion(
   return `Update the ${target}${concern === null ? "?" : hostActivityQuestion[concern]}`;
 }
 
-export function serverUpdateActivity(hosts: ReadonlyArray<ServerUpdateHost>) {
+export function serverUpdateActivity(
+  hosts: ReadonlyArray<ServerUpdateHost>,
+  includeHostLabels = false,
+) {
   const single = hosts.length === 1 ? hosts[0]! : null;
   const checks = hosts.map((host) =>
     host.desktopApp
@@ -61,7 +64,7 @@ export function serverUpdateActivity(hosts: ReadonlyArray<ServerUpdateHost>) {
   const unchecked = hosts.filter((_, index) => checks[index]!.includes(null));
   return describeHostActivity(
     checks.flatMap((hostChecks, index) =>
-      hosts.length > 1
+      hosts.length > 1 || includeHostLabels
         ? hostChecks.map((activity) => {
             const label = [hosts[index]!.serverLabel, activity?.hostLabel].filter(Boolean);
             return activity && { ...activity, hostLabel: label.join(" / ") };

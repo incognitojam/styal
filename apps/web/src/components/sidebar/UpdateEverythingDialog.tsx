@@ -210,16 +210,16 @@ function UpdateEverythingDialogContent({
             </Collapsible>
           ) : null}
         </div>
+        {activity.lines.length > 0 ? (
+          <div className="flex items-start gap-2 px-6 pb-3">
+            {checking ? <Spinner size="sm" tone="muted" aria-label="Checking" /> : null}
+            <p className="whitespace-pre-line text-sm">{activity.lines.join("\n")}</p>
+          </div>
+        ) : null}
+        {activity.threadActivity.length > 0 ? (
+          <HostActivityThreadList activity={activity.threadActivity} />
+        ) : null}
       </ScrollArea>
-      {activity.lines.length > 0 ? (
-        <div className="flex items-start gap-2 px-6 pb-3">
-          {checking ? <Spinner size="sm" tone="muted" aria-label="Checking" /> : null}
-          <p className="whitespace-pre-line text-sm">{activity.lines.join("\n")}</p>
-        </div>
-      ) : null}
-      {activity.threadActivity.length > 0 ? (
-        <HostActivityThreadList activity={activity.threadActivity} />
-      ) : null}
       <AlertDialogFooter>
         <AlertDialogClose ref={cancelRef} render={<Button variant="outline" />}>
           Cancel

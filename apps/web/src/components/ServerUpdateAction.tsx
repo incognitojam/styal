@@ -138,7 +138,7 @@ async function checkServerUpdateHosts(
       };
     }),
   );
-  const activity = serverUpdateActivity(hosts);
+  const activity = serverUpdateActivity(hosts, true);
   return { activity, confirmation: serverUpdateConfirmation(hosts, activity) };
 }
 
