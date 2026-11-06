@@ -249,6 +249,8 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   [T3 Code revision 6577c6b](https://github.com/pingdotgg/t3code/tree/6577c6b6185167c0e502fa01f9e8e8f2dee6ff25),
   checked November 6, 2026.
 
+- **Threads an agent starts can report back.** An agent can start a thread that wakes it when the thread fails, stays stuck on an approval or question for two minutes, or finishes a turn with nothing else pending. Turns you started in that thread and turns still waiting on a pull request stay quiet. A thread started on another of your machines can't report back yet. You can stop reports from the thread's details on web and desktop or its menu on mobile. T3 Code has no equivalent as of [revision 6577c6b](https://github.com/pingdotgg/t3code/tree/6577c6b6185167c0e502fa01f9e8e8f2dee6ff25), checked November 6, 2026.
+
 - **Warnings for agents that may be stuck.** styal records prolonged startup or inactivity in
   the thread's activity log and shows the warning on web, desktop, and mobile. The notice updates
   when activity resumes or the turn ends; the agent is never automatically retried. Compared

@@ -20,6 +20,7 @@ import {
   type OrchestrationV2ForceStopThreadResult,
   type ModelSelection,
   type OrchestrationV2Actor,
+  type OrchestrationV2Notification,
   type OrchestrationV2Command,
   type OrchestrationV2GetTurnItemResult,
   type OrchestrationV2ServerCommand,
@@ -81,7 +82,12 @@ export function withCreationProvenance(
   switch (command.type) {
     case "thread.create": {
       // Only the server stamps a link's origin, so a client cannot set one.
-      const { linkOrigin: _linkOrigin, delegatedFrom: _delegatedFrom, ...rest } = command;
+      const {
+        linkOrigin: _linkOrigin,
+        delegatedFrom: _delegatedFrom,
+        reportTo: _reportTo,
+        ...rest
+      } = command;
       return { ...rest, ...provenance };
     }
     case "message.dispatch":
@@ -106,6 +112,8 @@ function existingThreadIdsForCommand(
     // while a thread is open, so keeping them off the import path matters.
     case "thread.visit":
     case "thread.mark-unread":
+    case "thread.report-target.clear":
+    case "thread.report-target.set":
       return [];
     case "thread.fork":
       return [command.sourceThreadId];
@@ -142,6 +150,7 @@ export interface ThreadManagementSendInput {
   readonly messageId: MessageId;
   readonly scheduledTaskId?: ScheduledTaskId;
   readonly senderThreadId?: ThreadId;
+  readonly notification?: OrchestrationV2Notification;
   readonly text: string;
   readonly attachments: ReadonlyArray<ChatAttachment>;
   readonly modelSelection?: ModelSelection;
@@ -847,6 +856,7 @@ const make = Effect.gen(function* () {
       messageId: input.messageId,
       ...(input.scheduledTaskId === undefined ? {} : { scheduledTaskId: input.scheduledTaskId }),
       ...(input.senderThreadId === undefined ? {} : { senderThreadId: input.senderThreadId }),
+      ...(input.notification === undefined ? {} : { notification: input.notification }),
       text: input.text,
       attachments: input.attachments,
       ...(input.modelSelection === undefined ? {} : { modelSelection: input.modelSelection }),
@@ -873,7 +883,8 @@ const make = Effect.gen(function* () {
     if (
       message === undefined ||
       run === undefined ||
-      (turnItem === null && run.status !== "queued")
+      // A notification records no user message item once its run starts.
+      (turnItem === null && run.status !== "queued" && input.notification === undefined)
     ) {
       return yield* new ThreadManagementDurableRunProjectionError({
         threadId: input.threadId,
@@ -881,13 +892,15 @@ const make = Effect.gen(function* () {
       });
     }
     const delivery: ThreadManagementSendResult["delivery"] =
-      turnItem === null || turnItem.inputIntent === "queued_turn"
-        ? "queued"
-        : turnItem.inputIntent === "turn_start"
-          ? "started"
-          : input.mode === "restart"
-            ? "restarted"
-            : "steered";
+      input.notification !== undefined && run.status !== "queued"
+        ? "started"
+        : turnItem === null || turnItem.inputIntent === "queued_turn"
+          ? "queued"
+          : turnItem.inputIntent === "turn_start"
+            ? "started"
+            : input.mode === "restart"
+              ? "restarted"
+              : "steered";
     return { dispatch: dispatched, projection, message, run, turnItem, delivery };
   });
 

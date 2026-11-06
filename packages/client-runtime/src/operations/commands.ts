@@ -613,6 +613,16 @@ export const markThreadUnread = Effect.fn("EnvironmentCommands.markThreadUnread"
   });
 });
 
+export const stopThreadReports = Effect.fn("EnvironmentCommands.stopThreadReports")(function* (
+  input: ThreadCommandInput,
+) {
+  return yield* dispatch({
+    type: "thread.report-target.clear",
+    commandId: yield* allocateCommandId(input),
+    threadId: input.threadId,
+  });
+});
+
 export const updateThreadMetadata = Effect.fn("EnvironmentCommands.updateThreadMetadata")(
   function* (input: UpdateThreadMetadataInput) {
     const commandId = yield* allocateCommandId(input);

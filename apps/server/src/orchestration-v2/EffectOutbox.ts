@@ -30,6 +30,14 @@ import * as SqlClient from "effect/sql/SqlClient";
 import { forkParked } from "../serverActivation.ts";
 
 export const OrchestrationEffectRequestV2 = Schema.Union([
+  /** Whether a thread with a report target owes its launcher a report for this run or request. */
+  Schema.Struct({
+    type: Schema.Literal("thread-report.check"),
+    trigger: Schema.Union([
+      Schema.Struct({ kind: Schema.Literal("run"), runId: RunId }),
+      Schema.Struct({ kind: Schema.Literal("request"), requestId: RuntimeRequestId }),
+    ]),
+  }),
   Schema.Struct({
     type: Schema.Literal("provider-runtime.continue"),
     sourceRunId: RunId,
@@ -144,6 +152,7 @@ export const REPLAY_SAFE_EFFECT_TYPES_AFTER_PROCESS_LOSS = [
   "message.mentioned-times.check",
   "delegated-tasks.stop",
   "delegated-task.wake-timeout",
+  "thread-report.check",
 ] as const satisfies ReadonlyArray<OrchestrationEffectRequestV2["type"]>;
 
 export const PROCESS_BOUND_EFFECT_TYPES = [
@@ -334,14 +343,14 @@ export const layer: Layer.Layer<EffectOutboxV2, never, SqlClient.SqlClient> = La
         }
         AND candidate.status = 'pending'
         AND (
-          -- A wake timeout waits on its own availableAt, often for many minutes,
-          -- so it neither waits behind the thread's other effects nor holds them up.
-          candidate.effect_type = 'delegated-task.wake-timeout'
+          -- These wait on their own availableAt, often for minutes, and read current state,
+          -- so they neither wait behind the thread's other effects nor hold them up.
+          candidate.effect_type IN ('delegated-task.wake-timeout', 'thread-report.check')
           OR NOT EXISTS (
           SELECT 1
           FROM orchestration_v2_effect_outbox AS active
           WHERE active.thread_id = candidate.thread_id
-            AND active.effect_type != 'delegated-task.wake-timeout'
+            AND active.effect_type NOT IN ('delegated-task.wake-timeout', 'thread-report.check')
             AND (
               active.status = 'running'
               OR (

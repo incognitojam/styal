@@ -1,3 +1,7 @@
+import type { Toolkit } from "effect/ai";
+import * as AnalyticsService from "../../../telemetry/AnalyticsService.ts";
+import * as FeatureUsage from "../../../telemetry/FeatureUsage.ts";
+import { reportTargetFor } from "../../threadAccess.ts";
 import {
   CommandId,
   MessageId,
@@ -93,6 +97,7 @@ export const declarations = {
         // A retry with the same key replays the first launch: the ids derive
         // from the caller and the key, and the launch service replays a
         // command it already accepted.
+        const reportTo = input.reportBack === true ? yield* reportTargetFor(caller) : undefined;
         const commandId =
           input.clientRequestId === undefined
             ? yield* newCommandId()
@@ -248,6 +253,7 @@ export const declarations = {
           ...(linkOrigin === undefined ? {} : { linkOrigin }),
           // Kept only alongside linkOrigin: thread.create drops it otherwise.
           ...(input.delegatedFrom === undefined ? {} : { delegatedFrom: input.delegatedFrom }),
+          ...(reportTo === undefined ? {} : { reportTo }),
         }).pipe(
           Effect.mapError((error) => {
             if (error._tag === "AttachmentClaimError") {
@@ -285,6 +291,12 @@ export const declarations = {
       }),
     // The launched thread carries the caller's link, if it has one.
     "stamped",
+    {
+      refuseRemote: (input) =>
+        input.reportBack === true
+          ? "A thread launched on another machine can't report back yet. For a result from that machine, use delegate_task with target.environmentId, which wakes you when it finishes."
+          : undefined,
+    },
   ),
   t3_project_list: McpToolAccess.reads((input) =>
     Effect.gen(function* () {
@@ -412,4 +424,24 @@ export const declarations = {
   ),
 } satisfies McpToolAccess.Handlers<typeof ProjectToolkit.tools>;
 
-export const layer = McpToolAccess.toLayer(ProjectToolkit, declarations);
+type LaunchHandlers = Toolkit.HandlersFrom<Toolkit.Tools<typeof ProjectToolkit>>;
+
+const observeReportBack = Effect.fnUntraced(function* (inner: LaunchHandlers) {
+  // Optional so a harness without analytics still launches.
+  const analytics = yield* Effect.serviceOption(AnalyticsService.AnalyticsService);
+  return {
+    ...inner,
+    t3_thread_launch: (input, context) =>
+      input.reportBack === true && Option.isSome(analytics)
+        ? FeatureUsage.observe(
+            { feature: "thread-reports", action: "opt_in", source: "agent" },
+            inner.t3_thread_launch(input, context),
+          ).pipe(Effect.provideService(AnalyticsService.AnalyticsService, analytics.value))
+        : inner.t3_thread_launch(input, context),
+  } satisfies LaunchHandlers;
+});
+
+export const layer = McpToolAccess.toLayer(
+  ProjectToolkit,
+  McpToolAccess.wrapHandlers(declarations, observeReportBack),
+);

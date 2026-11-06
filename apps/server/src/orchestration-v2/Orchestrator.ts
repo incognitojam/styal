@@ -583,6 +583,8 @@ function commandThreadId(command: OrchestrationV2ServerCommand): ThreadId {
     case "thread.tag.set":
     case "thread.visit":
     case "thread.mark-unread":
+    case "thread.report-target.clear":
+    case "thread.report-target.set":
     case "thread.metadata.update":
     case "thread.pull-request.link":
     case "thread.pull-request.unlink":
@@ -2920,6 +2922,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       ...(command.linkOrigin === undefined || command.delegatedFrom === undefined
         ? {}
         : { delegatedFrom: command.delegatedFrom }),
+      ...(command.reportTo === undefined ? {} : { reportTo: command.reportTo }),
       lineage: {
         parentThreadId: null,
         relationshipToParent: null,
@@ -3209,6 +3212,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           | "thread.tag.set"
           | "thread.active.reorder"
           | "thread.mark-unread"
+          | "thread.report-target.clear"
+          | "thread.report-target.set"
           | "thread.metadata.update"
           | "thread.pull-request.link"
           | "thread.pull-request.unlink"
@@ -3789,6 +3794,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
               : {}),
           };
         }
+        case "thread.report-target.clear":
+          return { ...thread, reportTo: null, updatedAt: now };
+        case "thread.report-target.set":
+          return { ...thread, reportTo: command.reportTo, updatedAt: now };
         case "thread.metadata.update": {
           const previousRecovery =
             thread.limitRecovery?.runId === command.limitRecovery?.runId &&
@@ -4230,6 +4239,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         case "thread.workflow-run-watch.finish":
         case "thread.workflow-run-watch.sync":
           return "thread.pull-request-synced" as const;
+        case "thread.report-target.clear":
+        case "thread.report-target.set":
+          return "thread.metadata-updated" as const;
         case "thread.runtime-mode.set":
           return "thread.runtime-mode-updated" as const;
         case "thread.interaction-mode.set":
@@ -13820,6 +13832,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       case "thread.pin.reorder":
       case "thread.active.reorder":
       case "thread.tag.set":
+      case "thread.report-target.clear":
+      case "thread.report-target.set":
       case "thread.mark-unread":
       case "thread.metadata.update":
       case "thread.pull-request.link":

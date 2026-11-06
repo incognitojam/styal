@@ -13,6 +13,7 @@ import {
   type OrchestrationV2LinkOrigin,
   type OrchestrationV2ProviderThreadNativeMetadata,
   type OrchestrationV2ThreadProjection,
+  type OrchestrationV2ThreadReportTarget,
   type ProviderDriverKind,
   type ProviderInteractionMode,
   ProjectId,
@@ -104,6 +105,8 @@ export interface ThreadLaunchInput {
   readonly linkOrigin?: OrchestrationV2LinkOrigin;
   /** The parent there, when that environment's agent delegated this as a task. */
   readonly delegatedFrom?: OrchestrationV2DelegatedFrom;
+  /** The thread that launched this one and asked to hear back. */
+  readonly reportTo?: OrchestrationV2ThreadReportTarget;
 }
 
 type PreparationInput = Pick<
@@ -959,6 +962,7 @@ const make = Effect.gen(function* () {
                 ...(input.delegatedFrom === undefined
                   ? {}
                   : { delegatedFrom: input.delegatedFrom }),
+                ...(input.reportTo === undefined ? {} : { reportTo: input.reportTo }),
                 createdBy: input.createdBy,
                 creationSource: input.creationSource,
               });

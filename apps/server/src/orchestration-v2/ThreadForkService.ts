@@ -108,6 +108,8 @@ export const layer: Layer.Layer<ThreadForkServiceV2> = Layer.succeed(
           ({ watch: _watch, ...link }) => link,
         ),
         workflowRuns: [],
+        // Whoever launched the source asked to hear from that thread, not its forks.
+        reportTo: null,
         createdBy: input.createdBy,
         creationSource: input.creationSource,
         id: input.targetThreadId,

@@ -2,7 +2,9 @@ import {
   CommandId,
   OrchestratorMcpFailure,
   type OrchestrationV2AppThread,
-  type OrchestrationV2Command,
+  type OrchestrationV2ServerCommand,
+  type OrchestrationV2ThreadReportTarget,
+  type OrchestrationV2ThreadShell,
   type ThreadMetadataMcpAction,
   type ThreadMetadataMcpUpdateInput,
   type ThreadMetadataMcpUpdateResult,
@@ -16,7 +18,7 @@ import * as Layer from "effect/Layer";
 
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import type { McpInvocationScope } from "./McpInvocationContext.ts";
-import { threadNotFound } from "./threadAccess.ts";
+import { reportTargetFor, threadNotFound } from "./threadAccess.ts";
 
 export class ThreadMetadataMcpService extends Context.Service<
   ThreadMetadataMcpService,
@@ -59,11 +61,15 @@ function commandId(input: {
   );
 }
 
+/** Longer than any real chain of threads; it only bounds the walk on damaged data. */
+const MAX_REPORT_CHAIN = 32;
+
 function metadataCommand(input: {
   readonly commandId: CommandId;
   readonly threadId: ThreadId;
   readonly update: ThreadMetadataMcpUpdateInput;
-}): Extract<OrchestrationV2Command, { readonly type: "thread.metadata.update" }> {
+  readonly reportTo: OrchestrationV2ThreadReportTarget | undefined;
+}): OrchestrationV2ServerCommand {
   switch (input.update.action) {
     case "rename":
       return {
@@ -78,6 +84,19 @@ function metadataCommand(input: {
         commandId: input.commandId,
         threadId: input.threadId,
         regenerateTitle: true,
+      };
+    case "report_to_me":
+      return {
+        type: "thread.report-target.set",
+        commandId: input.commandId,
+        threadId: input.threadId,
+        reportTo: input.reportTo!,
+      };
+    case "stop_reports":
+      return {
+        type: "thread.report-target.clear",
+        commandId: input.commandId,
+        threadId: input.threadId,
       };
   }
 }
@@ -144,6 +163,37 @@ const make = Effect.gen(function* () {
     if (shell === null || shell.deletedAt !== null) {
       return yield* threadNotFound(threadManagement, threadId, `Thread ${threadId} was not found.`);
     }
+    let reportTo: OrchestrationV2ThreadReportTarget | undefined;
+    if (input.action === "report_to_me") {
+      if (scope.thread?.threadId === threadId) {
+        return yield* failure(
+          "invalid_request",
+          "A thread cannot report to itself. Pass threadId.",
+        );
+      }
+      const launcher =
+        scope.thread === undefined
+          ? null
+          : yield* threadManagement
+              .getThreadShell(scope.thread.threadId)
+              .pipe(
+                Effect.mapError((error) => failure("orchestration_error", errorMessage(error))),
+              );
+      reportTo = yield* reportTargetFor(launcher);
+      // Two threads reporting to each other would wake each other without end.
+      let next: OrchestrationV2ThreadShell | null = launcher;
+      for (let hops = 0; next?.reportTo != null && hops < MAX_REPORT_CHAIN; hops++) {
+        if (next.reportTo.threadId === threadId) {
+          return yield* failure(
+            "invalid_request",
+            `Thread ${threadId} already gets reports from this thread, so it cannot report back to it.`,
+          );
+        }
+        next = yield* threadManagement
+          .getThreadShell(next.reportTo.threadId)
+          .pipe(Effect.mapError((error) => failure("orchestration_error", errorMessage(error))));
+      }
+    }
     const requestKey =
       input.clientRequestId === undefined
         ? yield* crypto.randomUUIDv4().pipe(Effect.orDie)
@@ -160,6 +210,7 @@ const make = Effect.gen(function* () {
           commandId: updateCommandId,
           threadId,
           update: input,
+          reportTo,
         }),
       )
       .pipe(

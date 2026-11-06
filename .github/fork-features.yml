@@ -3250,6 +3250,47 @@ features:
       status: unassessed
       tracking: []
       retire_when: Upstream lists resolved keybindings in one overview opened from the keyboard.
+  - id: launched-thread-reports
+    title: A thread an agent launches reports back to the thread that launched it
+    status: maintained
+    prs: [1326]
+    invariants:
+      - "`reportBack` on `t3_thread_launch` and `create_threads` records the caller as the launched thread's report target; a client's `thread.create` cannot set one, forks do not inherit it, and a delegated child or a launch with `environmentId` is refused."
+      - A failed run always reports. A blocking approval or question reports after two minutes and is withdrawn while still queued if it is answered. A stopped run reports after 30 seconds unless a newer run took over.
+      - A completed run reports only when a person did not start it, the thread has no later run, open delegated task, background work or active watch, and that run did not already send a report.
+      - The check is an outbox row committed with the run end or request, so a restart cannot lose it, and a fixed command id delivers each report once.
+      - "The launched thread's `t3_thread_send` to its launcher in `auto` or `queue` mode is delivered as a report, past the mode limit a normal send has. `steer` and `restart` stay under that limit."
+      - A launcher that is archived, deleted or settled on purpose takes no reports. A launcher settled automatically gets the report and is unsettled.
+      - "Either side stops reports with `t3_thread_update` `stop_reports`, and a person stops them from the thread details on web and the thread menu on mobile."
+    rationale: A `delegate_task` child wakes its parent, but PR work needs a top-level thread, because delegated children cannot watch PRs. Coordinators relied on agents remembering to send a message, and a thread stuck on an approval or an expired sign-in told nobody for hours.
+    implementation_paths:
+      - apps/mobile/src/features/threads/thread-list-v2-items.tsx
+      - apps/server/src/mcp/McpToolAccess.ts
+      - apps/server/src/mcp/OrchestratorMcpService.ts
+      - apps/server/src/mcp/ThreadMetadataMcpService.ts
+      - apps/server/src/mcp/toolkits/project/handlers.ts
+      - apps/server/src/orchestration-v2/EffectWorker.ts
+      - apps/server/src/orchestration-v2/EventSink.ts
+      - apps/server/src/orchestration-v2/ThreadReports.ts
+      - apps/web/src/components/chat/ThreadRelationshipsControl.tsx
+    upstream_paths:
+      - apps/server/src/mcp/McpToolAccess.ts
+      - apps/server/src/mcp/OrchestratorMcpService.ts
+      - apps/server/src/mcp/toolkits/project/tools.ts
+      - apps/server/src/orchestration-v2/EffectWorker.ts
+      - apps/server/src/orchestration-v2/EventSink.ts
+    tests:
+      - apps/server/src/mcp/McpToolAccess.test.ts
+      - apps/server/src/mcp/toolkits/project/handlers.test.ts
+      - apps/server/src/orchestration-v2/ThreadReports.integration.test.ts
+      - apps/server/src/orchestration-v2/ThreadReports.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/issues/26293
+        - https://github.com/pingdotgg/t3code/pull/15975
+      retire_when: Upstream wakes the launcher of a launched thread on its result, failure or blocked request.
+
   - id: machine-access
     title: Each machine sets one level for what the user's other machines can do there
     status: maintained

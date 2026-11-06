@@ -377,6 +377,73 @@ function DelegatedFromRow(props: {
   );
 }
 
+/** The launcher this thread wakes when it finishes, fails or gets stuck, and the way to stop that. */
+function ReportsToRow(props: {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
+  readonly launcherId: ThreadId;
+}) {
+  const navigate = useNavigate();
+  const launcherRef = scopeThreadRef(props.environmentId, props.launcherId);
+  const launcher = useQuietThreadShell(launcherRef);
+  const stopReports = useAtomCommand(threadEnvironment.stopReports);
+  return (
+    <li className="group relative flex h-8 items-center rounded-lg">
+      <Tooltip>
+        <TooltipTrigger
+          delay={200}
+          render={
+            <ThreadDetailsControl
+              size="sm"
+              variant="ghost"
+              part="row"
+              onClick={() =>
+                void navigate({
+                  to: "/$environmentId/$threadId",
+                  params: buildThreadRouteParams(launcherRef),
+                })
+              }
+            />
+          }
+        >
+          <ThreadRelationshipIcon fallbackIcon={CornerLeftUpIcon} status={null} />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-left text-sm font-medium leading-4 text-foreground/90">
+              Reports to {launcher?.title ?? "the thread that launched it"}
+            </span>
+          </span>
+        </TooltipTrigger>
+        <TooltipPopup side="left">Open the thread this one reports to</TooltipPopup>
+      </Tooltip>
+      <div className="pointer-events-none absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <ThreadDetailsControl
+                size="icon-xs"
+                variant="ghost"
+                part="icon"
+                aria-label="Stop reporting to this thread"
+                onClick={() =>
+                  void stopReports({
+                    environmentId: props.environmentId,
+                    input: { threadId: props.threadId },
+                  }).catch(() => {
+                    toastManager.add({ type: "error", title: "Could not stop reports" });
+                  })
+                }
+              />
+            }
+          >
+            <UnplugIcon aria-hidden className="size-3" />
+          </TooltipTrigger>
+          <TooltipPopup side="left">Stop reporting to this thread</TooltipPopup>
+        </Tooltip>
+      </div>
+    </li>
+  );
+}
+
 export function ThreadRelationshipsPanel(props: {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
@@ -533,6 +600,7 @@ export function ThreadRelationshipsPanel(props: {
 
   // A linked environment's agent may have delegated this thread from there.
   const delegatedFrom = currentThread?.delegatedFrom;
+  const reportsTo = currentThread?.reportTo?.threadId;
 
   const lineageVisible =
     props.showLineage &&
@@ -542,6 +610,7 @@ export function ThreadRelationshipsPanel(props: {
       runningCount > 0 ||
       remoteSubagents.length > 0 ||
       delegatedFrom !== undefined ||
+      reportsTo !== undefined ||
       // Disconnect lives in this heading, so a thread with only side chats still shows it.
       (canDetach && sideChats.length > 0));
   const sideChatsVisible = props.showSideChats && sideChats.length > 0;
@@ -899,7 +968,8 @@ export function ThreadRelationshipsPanel(props: {
             canDetach ||
             related.length > 0 ||
             active.length > 0 ||
-            delegatedFrom !== undefined
+            delegatedFrom !== undefined ||
+            reportsTo !== undefined
           }
           data-thread-relationships-panel
           actions={
@@ -933,6 +1003,15 @@ export function ThreadRelationshipsPanel(props: {
               <DelegatedFromRow
                 delegatedFrom={delegatedFrom}
                 fallbackLabel={currentThread?.linkOrigin?.label}
+              />
+            </ThreadLineageRowList>
+          )}
+          {reportsTo === undefined ? null : (
+            <ThreadLineageRowList hiddenCount={0} onShowMore={() => {}}>
+              <ReportsToRow
+                environmentId={props.environmentId}
+                threadId={props.threadId}
+                launcherId={reportsTo}
               />
             </ThreadLineageRowList>
           )}

@@ -12,6 +12,7 @@ import {
   type ProjectId,
   ThreadId,
 } from "@t3tools/contracts";
+import { threadReportEffect } from "./ThreadReports.ts";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -251,12 +252,18 @@ const layerBase: Layer.Layer<
       events: ReadonlyArray<OrchestrationV2StoredEvent>,
       outcomes: ReadonlyArray<RunOutcome>,
     ) =>
-      runOutcomes
-        .record(outcomes)
-        .pipe(
-          Effect.andThen(eventStore.publishCommitted(events)),
-          Effect.andThen(publishLiveEvents(events)),
-        );
+      runOutcomes.record(outcomes).pipe(
+        Effect.andThen(eventStore.publishCommitted(events)),
+        Effect.andThen(publishLiveEvents(events)),
+        Effect.andThen(
+          // A report check may be owed; the worker finds nothing to do if none was enqueued.
+          Effect.flatMap(DateTime.now, (now) =>
+            events.some((stored) => threadReportEffect(stored.event, now) !== null)
+              ? effectOutbox.notifyAvailable(1)
+              : Effect.void,
+          ),
+        ),
+      );
 
     // Serialize commit and publish; reordered publication makes clients drop earlier sequences.
     const publishLane = yield* Semaphore.make(1);
@@ -356,12 +363,33 @@ const layerBase: Layer.Layer<
       );
     };
 
+    // Every write path comes through here, so a run end or request can never commit without the
+    // check it owes a thread that reports back, and a crash after the commit cannot lose it.
+    const enqueueThreadReportChecks = Effect.fnUntraced(function* (
+      storedEvents: ReadonlyArray<OrchestrationV2StoredEvent>,
+    ) {
+      const now = yield* DateTime.now;
+      const owed = storedEvents.flatMap((stored) => {
+        const effect = threadReportEffect(stored.event, now);
+        return effect === null ? [] : [effect];
+      });
+      for (const threadId of new Set(owed.map((effect) => effect.threadId))) {
+        const thread = yield* projectionStore.getThread(threadId).pipe(
+          // An event ordered before its thread exists must not fail the commit.
+          Effect.catchTags({ ProjectionStoreThreadNotFoundError: () => Effect.succeed(null) }),
+        );
+        if (thread?.reportTo == null) continue;
+        yield* effectOutbox.enqueue(owed.filter((effect) => effect.threadId === threadId));
+      }
+    });
+
     const applyStoredEvents =
       /* This helper runs for individual orchestration events; the enclosing operation owns the span. */
       Effect.fnUntraced(function* (storedEvents: ReadonlyArray<OrchestrationV2StoredEvent>) {
         yield* Effect.forEach(storedEvents, (stored) => projectionStore.apply(stored.event), {
           concurrency: 1,
         });
+        yield* enqueueThreadReportChecks(storedEvents);
         const sequence = storedEvents.at(-1)?.sequence;
         if (sequence !== undefined) {
           const now = DateTime.formatIso(yield* DateTime.now);

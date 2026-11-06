@@ -1132,7 +1132,7 @@ const ThreadWorkLogRow = function ThreadWorkLogRow(
         }
         accessibilityHint={
           notifiedSubagentThreadId !== undefined
-            ? "Opens this agent's thread. Long press to copy."
+            ? "Opens that thread. Long press to copy."
             : canExpand
               ? `Double tap to ${expanded ? "hide" : "show"} full details. Long press to copy.`
               : "Long press to copy."

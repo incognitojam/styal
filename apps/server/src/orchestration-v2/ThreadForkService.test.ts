@@ -160,6 +160,7 @@ it.effect("resets a fork's pin, snooze, settle and delegation state but keeps it
     });
 
     assert.isNull(result.targetThread.snoozedUntil);
+    assert.isNull(result.targetThread.reportTo);
     assert.isNull(result.targetThread.snoozedAt);
     assert.isNull(result.targetThread.lastSnoozeWakeAt);
     assert.isNull(result.targetThread.pinnedAt);

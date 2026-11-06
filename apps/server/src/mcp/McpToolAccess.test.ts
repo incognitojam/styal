@@ -40,6 +40,7 @@ import { liveThreadShell } from "./McpToolAccess.testkit.ts";
 
 const autoThreadId = ThreadId.make("thread:auto");
 const supervisedThreadId = ThreadId.make("thread:supervised");
+const reporterThreadId = ThreadId.make("thread:reporter");
 const planThreadId = ThreadId.make("thread:plan");
 const fullAccessThreadId = ThreadId.make("thread:full-access");
 const endedThreadId = ThreadId.make("thread:ended");
@@ -58,6 +59,13 @@ const backgroundShell = (threadId: ThreadId, providerInstanceId: ProviderInstanc
 const shells = new Map([
   [autoThreadId, liveThreadShell(autoThreadId, { runtimeMode: "auto" })],
   [supervisedThreadId, liveThreadShell(supervisedThreadId, { runtimeMode: "approval-required" })],
+  [
+    reporterThreadId,
+    {
+      ...liveThreadShell(reporterThreadId, { runtimeMode: "approval-required" }),
+      reportTo: { threadId: ThreadId.make("thread:full-access") },
+    },
+  ],
   [
     planThreadId,
     liveThreadShell(planThreadId, { runtimeMode: "approval-required", interactionMode: "plan" }),
@@ -165,6 +173,7 @@ const probeHandlers: McpToolAccess.Handlers<typeof ProbeToolkit.tools> = {
   writes_threads: McpToolAccess.writesThreads(
     (input) => [input.threadId],
     () => ran,
+    { reportTarget: (input) => input.threadId },
   ),
   starts_threads: McpToolAccess.startsThreads(
     (input) => input,
@@ -259,6 +268,7 @@ const call = (
   );
 
 const supervised = threadCaller(supervisedThreadId);
+const reporter = threadCaller(reporterThreadId);
 const plan = threadCaller(planThreadId);
 const fullAccess = threadCaller(fullAccessThreadId);
 const ended = threadCaller(endedThreadId);
@@ -365,6 +375,13 @@ it.effect.each([
     "runtime_mode_escalation_denied",
   ],
   ["writes_threads", supervised, { threadId: "thread:missing" }, "ran"],
+  ["writes_threads", reporter, { threadId: fullAccessThreadId }, "ran"],
+  [
+    "writes_threads",
+    supervised,
+    { threadId: fullAccessThreadId },
+    "runtime_mode_escalation_denied",
+  ],
 
   ["starts_threads", supervised, {}, "approval-required/default"],
   ["starts_threads", supervised, { runtimeMode: "full-access" }, "runtime_mode_escalation_denied"],

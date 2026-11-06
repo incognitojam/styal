@@ -2184,6 +2184,16 @@ it.layer(layerTest)("orchestration V2 foundation persistence", (it) => {
           availableAt: DateTime.add(now, { minutes: 10 }),
         },
         {
+          id: "effect:foundation-wake-timeout-lane:a-report-check",
+          commandId,
+          threadId,
+          request: {
+            type: "thread-report.check",
+            trigger: { kind: "run", runId: RunId.make("run:wake-timeout-lane") },
+          },
+          availableAt: DateTime.add(now, { minutes: 30 }),
+        },
+        {
           id: "effect:foundation-wake-timeout-lane:c-turn",
           commandId,
           threadId,
@@ -2205,7 +2215,7 @@ it.layer(layerTest)("orchestration V2 foundation persistence", (it) => {
       yield* outbox.succeed({ effectId: early.id, workerId: "wake-timeout-worker" });
       yield* outbox.cancelUnsettled({
         threadId,
-        effectTypes: ["delegated-task.wake-timeout"],
+        effectTypes: ["delegated-task.wake-timeout", "thread-report.check"],
         reason: "test cleanup",
       });
     }),
@@ -2970,6 +2980,7 @@ it.layer(layerTest)("orchestration V2 foundation persistence", (it) => {
   it.effect.each([
     { type: "terminal.cleanup" },
     { type: "provider-runtime.continue", sourceRunId: RunId.make("run:restart-replay") },
+    { type: "thread-report.check", trigger: { kind: "run", runId: RunId.make("run:report") } },
   ] as const)(
     "retires live provider effects and requeues $type after process loss",
     (replayRequest) =>

@@ -562,6 +562,12 @@ function ThreadRouteContent(
       : scopeThreadRef(delegatedFrom.environmentId, delegatedFrom.threadId);
   // The title it had at delegation, until this client sees the parent itself.
   const delegatedFromThread = useThreadShell(delegatedFromRef);
+  const reportsToId = selectedThread?.reportTo?.threadId ?? null;
+  const reportsToThread = useThreadShell(
+    selectedThread === null || reportsToId === null
+      ? null
+      : scopeThreadRef(selectedThread.environmentId, reportsToId),
+  );
   const headerSubtitle = [
     selectedThreadProject?.title ?? null,
     selectedEnvironmentConnection?.environmentLabel ?? null,
@@ -572,6 +578,7 @@ function ThreadRouteContent(
       : selectedThread?.linkOrigin
         ? `From ${selectedThread.linkOrigin.label}`
         : null,
+    reportsToId === null ? null : `Reports to ${reportsToThread?.title ?? "its launcher"}`,
   ]
     .filter(Boolean)
     .join(" · ");
