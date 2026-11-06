@@ -3047,12 +3047,13 @@ features:
       - Meaningful running-command interactions are shown with fixed sanitized summaries while empty polls and raw terminal input remain hidden.
       - Claude, Codex, and OpenCode file edits retain structured paths, line statistics, lifecycle state, and provider-independent presentation without eagerly sending full diffs to clients.
       - Folded completed turns summarize the categories of tools used with recognizable icons; reasoning stays inspectable without counting as a tool call, and web and desktop keep the activity counts and disclosure chevron aligned to the end of the row.
+      - On web and desktop, a completed context compaction in a folded turn shows as a themed icon in the fold's summary, stays visible when the other counts clip, and replaces its separate rule until the fold opens; its tooltip states the token change. Failed or stopped compactions and compactions in a run with no other folded work keep their own rule, and mobile keeps its divider because its folds have no summary.
       - Folded turn rows show no hover timestamp of their own, since the user message that starts the turn already reveals the same time.
       - Claude project memory writes and index updates form a distinct work-log category on web and mobile, read as "Updated memory" rows, and count separately in group and folded-turn summaries, including projected file changes that name no tool; reads of those files are titled "Read memory" with the memory name but still count as file reads; similarly named repository files remain ordinary edits and reads.
       - When a settled turn's final message follows only memory writes or reads and is shorter than the assistant message before them, web and mobile keep that earlier message visible beside the final one instead of folding it as work.
       - Page fetches read as "Fetched page" with their URL for Claude and ACP providers, and ACP workspace searches read and count as code searches rather than web lookups, including in historical threads.
       - Claude's ToolSearch calls read as "Loaded tools" with the loaded tool names or "Searched tools" with the query, and ListAgents reads as "Listed agents" with the agent icon, including in historical threads.
-    rationale: Upstream V2 owns native item vocabulary, provider-attempt folds, read-path punctuation, and standalone compaction rows; the obsolete V1 aliases and activity inference are retired. The fork retains shared action labels, structured edit counts, findings cards, group summaries, approval details, and on-demand raw command output. Historical provider payloads remain frozen on V2 items so output lookup preserves imported details without reading the retired V1 activity projection.
+    rationale: Upstream V2 owns native item vocabulary, provider-attempt folds, read-path punctuation, and standalone compaction rows, which the fork moves into the fold summary on web and desktop when a compaction belongs to a fold; the obsolete V1 aliases and activity inference are retired. The fork retains shared action labels, structured edit counts, findings cards, group summaries, approval details, and on-demand raw command output. Historical provider payloads remain frozen on V2 items so output lookup preserves imported details without reading the retired V1 activity projection.
     implementation_paths:
       - apps/mobile/src/features/threads/thread-work-log.tsx
       - apps/mobile/src/lib/threadActivity.ts
@@ -3062,6 +3063,7 @@ features:
       - apps/server/src/orchestration-v2/threadHistoryPaging.ts
       - apps/server/src/persistence/ForkMigrations.ts
       - apps/web/src/components/chat/MessagesTimeline.logic.ts
+      - apps/web/src/components/chat/MessagesTimeline.tsx
       - apps/web/src/components/chat/TimelinePendingApprovalRow.tsx
       - apps/web/src/components/chat/TimelineWorkEntryRow.logic.ts
       - apps/web/src/components/chat/TimelineWorkEntryRow.tsx

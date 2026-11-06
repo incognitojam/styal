@@ -1652,6 +1652,7 @@ const TURN_FOLD_ACTIVITY_LABELS: Record<TurnFoldActivityKind, { one: string; oth
   web: { one: "web lookup", other: "web lookups" },
   tool: { one: "tool call", other: "tool calls" },
   image: { one: "image viewed", other: "images viewed" },
+  "context-compaction": { one: "context compaction", other: "context compactions" },
 };
 
 function TurnFoldActivityIcon({
@@ -1676,6 +1677,8 @@ function TurnFoldActivityIcon({
       return <WrenchIcon className={className} aria-hidden />;
     case "image":
       return <ImageIcon className={className} aria-hidden />;
+    case "context-compaction":
+      return <Minimize2Icon className={className} aria-hidden />;
   }
 }
 
@@ -1686,13 +1689,24 @@ function TurnFoldActivityIcon({
  */
 function TurnFoldActivityStat({ stat }: { stat: TurnFoldActivitySummary }) {
   const labels = TURN_FOLD_ACTIVITY_LABELS[stat.kind];
-  const label = `${stat.count} ${stat.count === 1 ? labels.one : labels.other}`;
+  const label = stat.label ?? `${stat.count} ${stat.count === 1 ? labels.one : labels.other}`;
+  const isCompaction = stat.kind === "context-compaction";
 
   return (
     <Tooltip>
-      <TooltipTrigger render={<span className="flex shrink-0 items-center gap-1" />}>
+      <TooltipTrigger
+        render={
+          <span
+            className={cn(
+              "flex shrink-0 items-center gap-1",
+              // Not --primary: that solid-control fill reads below 3:1 as text on the canvas.
+              isCompaction && "ms-1 text-update-foreground",
+            )}
+          />
+        }
+      >
         <TurnFoldActivityIcon kind={stat.kind} className="size-3" />
-        <span aria-hidden>{stat.count}</span>
+        {isCompaction && stat.count === 1 ? null : <span aria-hidden>{stat.count}</span>}
         <span className="sr-only">{`, ${label}`}</span>
       </TooltipTrigger>
       <TooltipPopup>{label}</TooltipPopup>
@@ -1760,6 +1774,9 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
   const { loading, error, toggle } = useDeferredWorkLoading(row, () =>
     ctx.onToggleTurnFold(row.runId),
   );
+  // Compaction sits outside the clipped list, so it stays visible in narrow panes.
+  const compactionStat = row.activitySummary.find((stat) => stat.kind === "context-compaction");
+  const activityStats = row.activitySummary.filter((stat) => stat !== compactionStat);
 
   return (
     <div className="border-b border-border/60 pb-2 pe-0.5 pt-1">
@@ -1780,10 +1797,11 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
             <>
               <span aria-hidden className="min-w-3 flex-1" />
               <span className="flex min-w-0 items-center gap-2 overflow-hidden">
-                {row.activitySummary.map((stat) => (
+                {activityStats.map((stat) => (
                   <TurnFoldActivityStat key={stat.kind} stat={stat} />
                 ))}
               </span>
+              {compactionStat ? <TurnFoldActivityStat stat={compactionStat} /> : null}
             </>
           ) : null}
           <MorphIcon

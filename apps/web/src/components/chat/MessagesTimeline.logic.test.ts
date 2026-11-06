@@ -766,7 +766,7 @@ describe("deriveMessagesTimelineRows", () => {
   });
 
   it.each(["/compact", "Continue"])(
-    "keeps a completed compaction divider visible while other settled work folds for %s",
+    "moves a completed compaction into its fold's summary for %s",
     (promptText) => {
       const fixture = makeStreamingTimelineFixture();
       const [, , , liveUser, liveWork, liveAssistant] = fixture.visibleTurnItems;
@@ -776,45 +776,121 @@ describe("deriveMessagesTimelineRows", () => {
         !liveWork
       )
         throw new Error("Expected live fixture items");
-      const rows = deriveMessagesTimelineRows({
-        timelineEntries: deriveTimelineEntriesFromVisibleTurnItems({
-          visibleTurnItems: [
-            { ...liveUser, item: { ...liveUser.item, text: promptText } },
-            liveWork,
-            {
-              ...liveAssistant,
-              item: {
-                ...liveAssistant.item,
-                type: "compaction",
-                driver: null,
-                status: "completed",
-                beforeTokenCount: 100_000,
-                afterTokenCount: 20_000,
-              },
-            },
-          ],
-          optimisticMessages: [],
-        }),
-        isWorking: false,
-        latestRun: {
-          runId: fixture.runId,
-          status: "completed",
-          startedAt: fixture.time(5),
-          completedAt: fixture.time(8),
+      const userItem = liveUser.item;
+      const assistantItem = liveAssistant.item;
+      const compaction = (
+        id: string,
+        status: "completed" | "failed",
+      ): OrchestrationV2ProjectedTurnItem => ({
+        ...liveAssistant,
+        sourceItemId: id as never,
+        item: {
+          ...assistantItem,
+          id: id as never,
+          type: "compaction" as const,
+          driver: null,
+          status,
+          beforeTokenCount: 100_000,
+          afterTokenCount: 20_000,
         },
-        turnDiffSummaries: [],
-        supportsConversationRollback: false,
       });
+      const rowsFor = (
+        compactions: ReadonlyArray<OrchestrationV2ProjectedTurnItem>,
+        expandedRunIds?: ReadonlySet<RunId>,
+      ) =>
+        deriveMessagesTimelineRows({
+          timelineEntries: deriveTimelineEntriesFromVisibleTurnItems({
+            visibleTurnItems: [
+              { ...liveUser, item: { ...userItem, text: promptText } },
+              liveWork,
+              ...compactions,
+            ],
+            optimisticMessages: [],
+          }),
+          isWorking: false,
+          latestRun: {
+            runId: fixture.runId,
+            status: "completed",
+            startedAt: fixture.time(5),
+            completedAt: fixture.time(8),
+          },
+          turnDiffSummaries: [],
+          supportsConversationRollback: false,
+          ...(expandedRunIds ? { expandedRunIds } : {}),
+        });
+      const compactionStat = (rows: ReadonlyArray<MessagesTimelineRow>) =>
+        rows
+          .find((row) => row.kind === "turn-fold")
+          ?.activitySummary.find((stat) => stat.kind === "context-compaction");
+
+      const completed = compaction("compaction-1", "completed");
+      const rows = rowsFor([completed]);
       expect(rows.filter((row) => row.kind === "turn-fold")).toHaveLength(1);
       expect(rows.some((row) => row.kind === "work")).toBe(false);
-      expect(rows.filter((row) => row.kind === "standalone-activity")).toMatchObject([
-        { active: false, tokenCounts: { before: "100K", after: "20K" } },
-      ]);
+      expect(rows.some((row) => row.kind === "standalone-activity")).toBe(false);
+      expect(compactionStat(rows)).toEqual({
+        kind: "context-compaction",
+        count: 1,
+        label: "Context compacted 100K → 20K tokens",
+      });
       if (promptText === "/compact") {
         expect(rows.some((row) => row.kind === "message")).toBe(false);
       }
+
+      expect(compactionStat(rowsFor([completed, compaction("compaction-2", "completed")]))).toEqual(
+        { kind: "context-compaction", count: 2 },
+      );
+
+      // The summary keeps the icon while the open fold shows the full row in place.
+      const expanded = rowsFor([completed], new Set([fixture.runId]));
+      expect(compactionStat(expanded)).toMatchObject({ count: 1 });
+      expect(expanded.filter((row) => row.kind === "standalone-activity")).toMatchObject([
+        { active: false, tokenCounts: { before: "100K", after: "20K" } },
+      ]);
+
+      // A failure carries a reason the user has to see, so it never folds away.
+      const failedRows = rowsFor([compaction("compaction-failed", "failed")]);
+      expect(compactionStat(failedRows)).toBeUndefined();
+      expect(failedRows.filter((row) => row.kind === "standalone-activity")).toMatchObject([
+        { failed: true },
+      ]);
     },
   );
+
+  it("keeps a completed compaction visible when its run hides no other work", () => {
+    const fixture = makeStreamingTimelineFixture();
+    const [, , , liveUser, , liveAssistant] = fixture.visibleTurnItems;
+    if (liveUser?.item.type !== "user_message" || liveAssistant?.item.type !== "assistant_message")
+      throw new Error("Expected live fixture items");
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries: deriveTimelineEntriesFromVisibleTurnItems({
+        visibleTurnItems: [
+          liveUser,
+          {
+            ...liveAssistant,
+            item: {
+              ...liveAssistant.item,
+              type: "compaction",
+              driver: null,
+              status: "completed",
+            },
+          },
+        ],
+        optimisticMessages: [],
+      }),
+      isWorking: false,
+      latestRun: {
+        runId: fixture.runId,
+        status: "completed",
+        startedAt: fixture.time(5),
+        completedAt: fixture.time(8),
+      },
+      turnDiffSummaries: [],
+      supportsConversationRollback: false,
+    });
+    expect(rows.some((row) => row.kind === "turn-fold")).toBe(false);
+    expect(rows.filter((row) => row.kind === "standalone-activity")).toHaveLength(1);
+  });
 
   it("folds an answered compact-on-return question into its compaction row", () => {
     const fixture = makeStreamingTimelineFixture();
@@ -4067,6 +4143,10 @@ it.each([
   expect(
     computeStableMessagesTimelineRows([{ ...nextRow, deferredWorkItemIds: [...after] }], next),
   ).toBe(next);
+
+  const activitySummary = [{ kind: "context-compaction" as const, count: 1 }];
+  const summarized = computeStableMessagesTimelineRows([{ ...nextRow, activitySummary }], next);
+  expect(summarized.result[0]).toMatchObject({ activitySummary });
 });
 
 describe("streaming v2 row projection", () => {
