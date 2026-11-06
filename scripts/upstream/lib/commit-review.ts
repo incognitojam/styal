@@ -91,6 +91,7 @@ export function compareWithUpstream(input: {
     const files = new Map<string, string[]>();
     for (const patch of patches) {
       let current: string[] | undefined;
+      let indexLine = "";
       for (const line of patch.split("\n")) {
         const header = /^diff --git a\/(.+) b\/(.+)$/u.exec(line);
         if (line.startsWith("diff --") && !header) {
@@ -102,8 +103,19 @@ export function compareWithUpstream(input: {
           files.set(path, current);
         } else if (current && line !== "") {
           if (line.startsWith("index ")) {
+            indexLine = line;
+            if (line === "GIT binary patch") {
+              const index = current.findIndex((entry) => entry.startsWith("index"));
+              if (index === -1) throw new Error("Binary patch has no object identities.");
+              current[index] = indexLine;
+            }
             current.push(line.replace(/^index [0-9a-f]+\.\.[0-9a-f]+/u, "index"));
             continue;
+          }
+          if (line === "GIT binary patch") {
+            const index = current.findIndex((entry) => entry.startsWith("index"));
+            if (index === -1) throw new Error("Binary patch has no object identities.");
+            current[index] = indexLine;
           }
           current.push(line.replace(/^@@ -\d+(,\d+)? \+\d+(,\d+)? @@/u, "@@ -$1 +$2 @@"));
         }

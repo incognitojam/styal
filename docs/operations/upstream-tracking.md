@@ -97,7 +97,7 @@ Upstream's direct release commits (`chore(release): prepare vX.Y.Z`) bump packag
 
 When an upstream change adds, removes, or bumps dependencies and the lockfile conflicts, keep the fork's lockfile and regenerate it with `pnpm install --lockfile-only`. In the `Fork adaptation:` note, name any package that resolves to a different version than upstream's.
 
-Upstream's release workflows (`.github/workflows/release.yml` and `release-desktop.yml`) and the scripts only they ran are deleted from the fork, which releases through its own `fork-*` workflows. When an upstream commit edits one of them, the intake driver removes it again and records a `fork-deletion` adaptation; no other resolution is needed. Keep other upstream files the fork does not use identical to upstream. When an import adapts an upstream change into a fork-owned file instead of the file upstream changed, apply upstream's change to its own file too. Otherwise that file drifts, and later upstream commits to it conflict. The disabled `.github/workflows/ci.yml` is the exception: Fork CI (`fork-ci.yml`) runs its checks, and promotion rejects candidates that change `fork-ci.yml`. When a batch changes a check in `ci.yml`, port it to `fork-ci.yml` in a separate maintainer pull request after promotion.
+Upstream's release workflows (`.github/workflows/release.yml` and `release-desktop.yml`) and the scripts only they ran are deleted from the fork, which releases through its own `fork-*` workflows. When an upstream commit edits one of them, the intake driver removes it again and records a `fork-deletion` adaptation; no other resolution is needed. Keep other upstream files the fork does not use identical to upstream. When an import adapts an upstream change into a fork-owned file instead of the file upstream changed, apply upstream's change to its own file too. Otherwise that file drifts, and later upstream commits to it conflict. The disabled `.github/workflows/ci.yml` is the exception: Fork CI (`fork-ci.yml`) runs its checks, and promotion rejects candidates that change `fork-ci.yml` or its `.github/scripts/ci-changes.cjs` job selector. When a batch changes a check in `ci.yml`, port it to `fork-ci.yml` in a separate maintainer pull request after promotion.
 
 ## 3. Validate the final batch
 
@@ -151,7 +151,7 @@ If `main` moves before the promote job runs, it fails without changing anything.
 
 To retry a promotion, re-run Fork CI for the candidate; a successful run starts a new one.
 
-**Current exception:** promotion rejects candidates changing `.github/workflows/fork-ci.yml`. Stop and arrange a separately authorized maintainer change; do not open a PR containing the upstream batch as a workaround.
+**Current exception:** promotion rejects candidates changing `.github/workflows/fork-ci.yml` or `.github/scripts/ci-changes.cjs`. Stop and arrange a separately authorized maintainer change; do not open a PR containing the upstream batch as a workaround.
 
 Styal Porter's write credential lives only in the two environments, which accept deployments from `main` alone. `upstream-intake-manual` requires a reviewer; `upstream-intake-automatic` has no reviewer and holds the same `STYAL_INTAKE_APP_PRIVATE_KEY` secret. Without that secret the automatic lane fails before it can push.
 

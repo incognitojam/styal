@@ -67,6 +67,10 @@ describe("compareWithUpstream", () => {
 
   it("distinguishes modes, binary content, order and context", () => {
     for (const [upstream, fork] of [
+      [
+        "index aaa..bbb\nGIT binary patch\ndelta 4\ncopy",
+        "index ccc..ddd\nGIT binary patch\ndelta 4\ncopy",
+      ],
       ["index 111..222 100644\n+x", "index 111..222 100755\n+x"],
       ["old mode 100644\nnew mode 100755", "old mode 100644\nnew mode 100644"],
       ["GIT binary patch\nliteral 1\nA", "GIT binary patch\nliteral 1\nB"],
@@ -353,16 +357,17 @@ describe("intake fixture histories", () => {
       git("diff", "--binary", "--full-index", "--no-renames", "-U3", base, head);
     try {
       git("init", "-q");
-      NodeFS.writeFileSync(NodePath.join(cwd, "native.swift"), "a\nb\n");
+      NodeFS.mkdirSync(NodePath.join(cwd, "apps/mobile"), { recursive: true });
+      NodeFS.writeFileSync(NodePath.join(cwd, "apps/mobile/Test.swift"), "a\nb\n");
       NodeFS.writeFileSync(NodePath.join(cwd, "binary"), Buffer.from([0, 1]));
       const base = commit();
-      NodeFS.chmodSync(NodePath.join(cwd, "native.swift"), 0o755);
+      NodeFS.chmodSync(NodePath.join(cwd, "apps/mobile/Test.swift"), 0o755);
       const mode = commit();
       NodeFS.writeFileSync(NodePath.join(cwd, "binary"), Buffer.from([0, 2]));
       const binary = commit();
-      NodeFS.writeFileSync(NodePath.join(cwd, "native.swift"), "b\na\n");
+      NodeFS.writeFileSync(NodePath.join(cwd, "apps/mobile/Test.swift"), "b\na\n");
       const reordered = commit();
-      git("mv", "native.swift", "renamed.swift");
+      git("mv", "apps/mobile/Test.swift", "relocated.swift");
       const rename = commit();
       NodeFS.writeFileSync(NodePath.join(cwd, "README.md"), "last push");
       const head = commit();
@@ -377,7 +382,12 @@ describe("intake fixture histories", () => {
         );
       }
       const paths = git("diff", "--name-only", "--no-renames", base, head).split("\n");
-      assert.includeMembers(paths, ["native.swift", "renamed.swift", "binary", "README.md"]);
+      assert.includeMembers(paths, [
+        "apps/mobile/Test.swift",
+        "relocated.swift",
+        "binary",
+        "README.md",
+      ]);
       assert.equal(git("diff", "--name-only", rename, head), "README.md");
       const workflow = parse(
         NodeFS.readFileSync(
@@ -396,7 +406,7 @@ describe("intake fixture histories", () => {
           "#!/bin/bash",
           'case "$2" in',
           `*/git/ref/heads/main) echo '${base}' ;;`,
-          `*/compare/${base}...*) printf 'apps/mobile/Test.swift\\nREADME.md\\n' ;;`,
+          `*/compare/${base}...*) git diff --name-only --no-renames ${base} ${head} ;;`,
           "*/compare/*) echo README.md ;;",
           "*) exit 1 ;;",
           "esac",

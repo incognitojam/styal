@@ -280,17 +280,15 @@ function reviewCommits(input: {
                     ...file,
                     interdiff: interdiff(input.scratch, file.upstreamLines, file.forkLines),
                   }));
-                const editsOnly = (value: string) =>
-                  value
-                    .split("\n")
-                    .filter((line) => !line.startsWith(" ") && !line.startsWith("@@"))
-                    .join("\n");
+                const editsOnly = (value: ReadonlyArray<string>) =>
+                  value.filter((line) => !line.startsWith(" ") && !line.startsWith("@@"));
                 if (
                   files.length > 0 &&
-                  compareWithUpstream({
-                    upstreamPatches: upstreamPatches.map(editsOnly),
-                    forkPatch: editsOnly(patch(sha)),
-                  }).length === 0
+                  files.every(
+                    (file) =>
+                      JSON.stringify(editsOnly(file.upstreamLines)) ===
+                      JSON.stringify(editsOnly(file.forkLines)),
+                  )
                 ) {
                   return {
                     status: "unavailable" as const,

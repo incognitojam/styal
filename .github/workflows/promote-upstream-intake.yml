@@ -85,8 +85,8 @@ jobs:
             echo "::error::The intake branch moved after Fork CI tested it; its new push starts its own promotion."
             exit 1
           fi
-          if ! git diff --quiet "$base_sha" "$candidate_sha" -- .github/workflows/fork-ci.yml; then
-            echo "::error::Candidates that change Fork CI must land through a pull request."
+          if ! git diff --quiet "$base_sha" "$candidate_sha" -- .github/workflows/fork-ci.yml .github/scripts/ci-changes.cjs; then
+            echo "::error::Candidates that change Fork CI or its job selector must land through a pull request."
             exit 1
           fi
 
