@@ -46,6 +46,8 @@ export const SETTINGS_BADGED: Readonly<Record<string, SettingsForkFeature>> = {
 };
 
 export const SETTINGS_NOT_BADGED: Readonly<Record<string, string>> = {
+  "preview-app": "An install action, not a persistent setting.",
+  "work-together": "A connection setup section with no setting row to badge.",
   "approval-sound": "Refines upstream notification sounds.",
   "completion-sound": "Refines upstream notification sounds.",
   "input-sound": "Refines upstream notification sounds.",
