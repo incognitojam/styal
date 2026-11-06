@@ -185,7 +185,7 @@ jobs:
           const verdict = touchesNativeFingerprint(paths) ? 'unknown' : 'unchanged';
           appendFileSync(process.env.GITHUB_OUTPUT, `verdict=${verdict}\n`);
           appendFileSync(process.env.GITHUB_STEP_SUMMARY,
-            `\n## Native fingerprint\n\nTrusted input comparison: ${verdict}. Candidate artifacts are informational only; changed inputs require manual comparison.\n`);
+            `\n## Native fingerprint\n\nTrusted input comparison: ${verdict}. This is a conservative path screen, including JS and tests, not a computed native fingerprint. Candidate artifacts are informational only; potential input changes require manual comparison.\n`);
           JS
 
       - id: lane
