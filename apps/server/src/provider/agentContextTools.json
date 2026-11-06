@@ -1,6 +1,6 @@
 {
   "create_threads": 1396,
-  "delegate_task": 2345,
+  "delegate_task": 2414,
   "delete_scheduled_task": 323,
   "device_close": 358,
   "device_list": 469,
@@ -55,7 +55,7 @@
   "t3_queue": 867,
   "t3_thread_configure": 486,
   "t3_thread_interrupt": 447,
-  "t3_thread_launch": 2689,
+  "t3_thread_launch": 2758,
   "t3_thread_list": 691,
   "t3_thread_organize": 548,
   "t3_thread_read": 971,
