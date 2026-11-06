@@ -23,6 +23,7 @@ import {
   loadOpenCode2Workspace,
   type OpenCode2Model,
   type OpenCode2Workspace,
+  openCode2SkillsToServerProviderSkills,
 } from "./status.ts";
 import { readOpenCodeGoUsageLimits } from "./usageLimits.ts";
 import { probeOpenCodeRuntime } from "./versionProbe.ts";
@@ -1075,3 +1076,14 @@ it.effect("reads a fresh OpenCode 2 directory again once its scan has ended", ()
     NodeAssert.deepEqual(yield* Fiber.join(load), scanned);
   }),
 );
+
+it("keeps the session's styal skill out of the composer picker", () => {
+  const skill = { id: "deploy", name: "deploy", description: "Ship it.", path: "/skills/deploy" };
+  NodeAssert.deepStrictEqual(
+    openCode2SkillsToServerProviderSkills([
+      skill,
+      { ...skill, id: "styal-guides", name: "styal-guides" },
+    ] as never).map(({ name }) => name),
+    ["deploy"],
+  );
+});

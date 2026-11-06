@@ -53,6 +53,7 @@ import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 
 import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
+import { STYAL_GUIDE_TOOL } from "@t3tools/provider-core/server/styalSkill";
 import * as OpenCode2Client from "./OpenCode2Client.ts";
 import * as OpenCode2Server from "./OpenCode2Server.ts";
 import * as OpenCodeRuntime from "../OpenCodeRuntime.ts";
@@ -394,11 +395,24 @@ const mcpRules = (mcpServerName: string | null): ReadonlyArray<Rule> =>
         { action: `${mcpServerName}_*`, resource: "*", effect: "allow" },
       ];
 
+/** The skill's guide files sit outside the project, and reading them should not ask. */
+export const styalSkillRules = (
+  skillDirectory: string | undefined,
+  mcpServerName: string | null,
+): ReadonlyArray<Rule> =>
+  skillDirectory === undefined
+    ? []
+    : [
+        { action: "external_directory", resource: `${skillDirectory}/*`, effect: "allow" },
+        ...(mcpServerName === null ? [] : [rule(`${mcpServerName}_${STYAL_GUIDE_TOOL}`, "deny")]),
+      ];
+
 const sessionRules = (
   policy: RulesPolicy,
   paths: ReadonlyArray<Rule>,
   grants: ReadonlyArray<Rule>,
   mcpServerName: string | null,
+  styalSkillDirectory: string | undefined,
 ): ReadonlyArray<Rule> => [
   ...(policy.runtimeMode === "full-access"
     ? [rule("*", "allow")]
@@ -412,6 +426,7 @@ const sessionRules = (
   ...(policy.interactionMode === "plan" ? [rule("edit", "deny")] : []),
   ...paths,
   ...mcpRules(mcpServerName),
+  ...styalSkillRules(styalSkillDirectory, mcpServerName),
 ];
 
 const sameRules = (left: ReadonlyArray<Rule> | undefined, right: ReadonlyArray<Rule>) =>
@@ -711,7 +726,11 @@ const turnTokenUsage = (turn: ActiveTurn, status: OrchestrationV2ProviderTurn["s
   };
 };
 
-export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: ProviderInstanceId) {
+export const make = Effect.fn("OpenCode2Adapter.make")(function* (
+  instanceId: ProviderInstanceId,
+  /** Set only when this instance's server was started with the styal skill. */
+  styalSkillDirectory?: string,
+) {
   const server = yield* OpenCode2Server.OpenCode2Server;
   const idAllocator = yield* IdAllocator.IdAllocatorV2;
   const host = yield* ProviderHost.ProviderHost;
@@ -2839,6 +2858,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
         paths,
         policy.runtimeMode === "full-access" ? [] : thread.grants,
         appThreadId === null ? null : yield* mcpServerNameFor(appThreadId),
+        styalSkillDirectory,
       );
     });
 
@@ -3135,6 +3155,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
           mcpAvailable,
           mcpSession?.capabilities?.has("device") === true,
           mcpSession?.mcpServerName,
+          styalSkillDirectory !== undefined,
         ),
       ]
         .filter((part) => part !== undefined && part.length > 0)

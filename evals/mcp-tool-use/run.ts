@@ -26,6 +26,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as NodePath from "node:path";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
@@ -54,7 +55,16 @@ import { DeviceToolkit } from "../../apps/server/src/mcp/toolkits/device/tools.t
 import { EnvironmentToolkit } from "../../apps/server/src/mcp/toolkits/environment/tools.ts";
 import { FeedbackToolkit } from "../../apps/server/src/mcp/toolkits/feedback/tools.ts";
 import { AGENT_GUIDES } from "../../apps/server/src/mcp/toolkits/guide/guides.ts";
+import {
+  renderStyalSkillFiles,
+  STYAL_SKILL_DESCRIPTION,
+} from "../../apps/server/src/mcp/toolkits/guide/skill.ts";
 import { GuideToolkit } from "../../apps/server/src/mcp/toolkits/guide/tools.ts";
+import {
+  STYAL_GUIDE_TOOL,
+  STYAL_SKILL_NAME,
+  styalSkillPaths,
+} from "../../packages/provider-core/src/server/styalSkill.ts";
 import { HardwareToolkit } from "../../apps/server/src/mcp/toolkits/hardware/tools.ts";
 import { HtmlToolkit } from "../../apps/server/src/mcp/toolkits/html/tools.ts";
 import { OrchestratorToolkit } from "../../apps/server/src/mcp/toolkits/orchestrator/tools.ts";
@@ -437,9 +447,14 @@ const enabledWhen = (predicate: () => boolean) =>
 const hiddenFromSubagents = enabledWhen(McpInvocationContext.hiddenFromSubagents);
 // The Linked environments beta starts off, and T3 lists its tools only while it is on.
 const hiddenWhileLinksOff = enabledWhen(McpInvocationContext.hiddenWhileLinksOff);
-const visibleT3Tools = (options: { readonly subagent?: boolean; readonly links?: boolean }) =>
+const visibleT3Tools = (options: {
+  readonly subagent?: boolean;
+  readonly links?: boolean;
+  readonly styalSkill?: boolean;
+}) =>
   t3Tools.filter(
     (tool) =>
+      !(options.styalSkill === true && tool.name === `${T3_PREFIX}${STYAL_GUIDE_TOOL}`) &&
       (options.links === true || !hiddenWhileLinksOff.has(tool.name)) &&
       !(options.subagent === true && hiddenFromSubagents.has(tool.name)),
   );
@@ -448,7 +463,7 @@ const visibleT3Tools = (options: { readonly subagent?: boolean; readonly links?:
  * T3's Claude Code options for an eval thread: its system prompt append and its hooks. `device` says
  * whether the thread holds the `device` capability, as agent device access decides.
  */
-const claudeQueryOptions = (model: Model, device = true) => {
+const claudeQueryOptions = (model: Model, device = true, styalSkill = false) => {
   // Refs whose device text follows the capability read deviceToolsAvailable; older ones ignore it.
   const input: Parameters<typeof makeClaudeQueryOptions>[0] & {
     readonly deviceToolsAvailable?: boolean;
@@ -459,13 +474,14 @@ const claudeQueryOptions = (model: Model, device = true) => {
     cwd: null,
     mcpServers: { [T3_SERVER]: { type: "http", url: "http://127.0.0.1/mcp" } },
     deviceToolsAvailable: device,
+    ...(styalSkill ? { styalSkillPluginRoot: STYAL_SKILL_PATHS.pluginRoot } : {}),
   };
   return makeClaudeQueryOptions(input);
 };
 
 /** Text T3 appends to Claude Code's system prompt. Delegated children get the same text. */
-export const t3SystemAppend = (model: Model, device = true) => {
-  const { systemPrompt } = claudeQueryOptions(model, device);
+export const t3SystemAppend = (model: Model, device = true, styalSkill = false) => {
+  const { systemPrompt } = claudeQueryOptions(model, device, styalSkill);
   if (isRecord(systemPrompt) && systemPrompt.type === "preset" && systemPrompt.append) {
     return systemPrompt.append;
   }
@@ -552,6 +568,8 @@ export const buildBase = (
     readonly nativeSubagent?: boolean;
     /** false: the thread has no agent device access, so T3's text leaves devices out. */
     readonly deviceAccess?: boolean;
+    /** Claude Code lists the session's skills in a reminder; this adds the styal skill to it. */
+    readonly styalSkill?: boolean;
   },
 ) => {
   const t3 = visibleT3Tools(options);
@@ -570,7 +588,9 @@ export const buildBase = (
   const nativeDeferred = deferredList.split("\n").filter((name) => name && !isT3Name(name));
   const names = [...nativeDeferred, ...t3.map((tool) => tool.name)].toSorted().join("\n");
   const { model } = options;
-  const append = options.nativeSubagent ? "" : t3SystemAppend(model, options.deviceAccess);
+  const append = options.nativeSubagent
+    ? ""
+    : t3SystemAppend(model, options.deviceAccess, options.styalSkill);
   const modelLine = `You are powered by the model named ${MODELS[model]}. The exact model ID is ${model}.`;
   const joined = systemTexts.join("\n");
   // The capture's home directory names its user. Cases use `/home/user` paths instead.
@@ -601,8 +621,12 @@ export const buildBase = (
     NATIVE_SCHEMAS[name] ?? { description: name, input_schema: open };
   return {
     model,
+    ...(options.styalSkill === true ? { styalSkill: true as const } : {}),
     system: system.map(text),
-    reminders: reminders.filter((_, i) => i !== gitStatusAt).map((value) => text(anonymize(value))),
+    reminders: [
+      ...reminders.filter((_, i) => i !== gitStatusAt).map((value) => text(anonymize(value))),
+      ...(options.styalSkill === true ? [text(STYAL_SKILL_REMINDER)] : []),
+    ],
     gitStatusAt: gitStatusAt === -1 ? reminders.length : gitStatusAt,
     /** The shell simulator's cwd and OS follow the template's environment section. */
     environment: {
@@ -1263,6 +1287,26 @@ const searchTools = (base: Base, query: string, max: number) => {
 const SUBAGENT_WATCH_ERROR =
   "This thread is a subagent, so it cannot watch pull requests. Its parent thread owns the pull request: finish your task and report back instead.";
 
+const STYAL_SKILL_STATE_DIR = "/home/user/.styal/userdata";
+const STYAL_SKILL_PATHS = styalSkillPaths(NodePath.posix, STYAL_SKILL_STATE_DIR);
+const STYAL_SKILL_REMINDER = `The following skills are available for use with the Skill tool:\n\n- styal:${STYAL_SKILL_NAME}: ${STYAL_SKILL_DESCRIPTION}`;
+
+/** The skill and its guides come from this checkout, like every other text under test. */
+const styalSkillResult = (name: string, input: Readonly<Record<string, unknown>>) => {
+  const files = new Map(renderStyalSkillFiles(NodePath.posix, STYAL_SKILL_STATE_DIR));
+  if (name === "Skill" && valueText(input.skill).includes(STYAL_SKILL_NAME)) {
+    return `Launching skill: styal:${STYAL_SKILL_NAME}\n\n${files.get(STYAL_SKILL_PATHS.skillFile)}`;
+  }
+  // Only a plain read: anything else goes to the shell simulator so its grading still sees it.
+  const file =
+    name === "Read"
+      ? valueText(input.file_path)
+      : name === "Bash"
+        ? /^\s*cat\s+(\S+)\s*$/.exec(valueText(input.command))?.[1]
+        : undefined;
+  return file === undefined ? undefined : files.get(file);
+};
+
 /** Result for a native tool the case does not mock, other than shell, file, and web tools. */
 const nativeResult = (name: string, input: Readonly<Record<string, unknown>>) => {
   const skill = valueText(input.skill);
@@ -1460,6 +1504,8 @@ const answerToolCall = Effect.fn("evaluateMcpToolUse.answerToolCall")(function* 
     return toolResult(call.id, {
       current_time: `${base.environment.date ?? "2026-01-01"} 12:00:00 UTC`,
     });
+  const guide = base.styalSkill === true ? styalSkillResult(name, input) : undefined;
+  if (guide !== undefined) return toolResult(call.id, guide);
   if (!SHELL_TOOLS.has(name)) return toolResult(call.id, nativeResult(name, input));
   const output = yield* simulate(sample, config, { tool: name, input });
   // Claude Code marks a failed command or file call as an error.
@@ -2015,6 +2061,7 @@ const Flags = Schema.Struct({
   "shell-model": Schema.Literals(Object.keys(PRICES) as Array<PricedModel>),
   "user-instructions": Schema.Literals(["keep", "drop"]),
   "dry-run": Schema.Boolean,
+  "styal-skill": Schema.Boolean,
   "stop-on-regression": Schema.Boolean,
   "regression-budget": Schema.optional(PositiveIntOrZero),
   context: Schema.Boolean,
@@ -2055,6 +2102,8 @@ const main = Effect.gen(function* () {
       // T3's text must work for every user, so the captured CLAUDE.md is dropped by default.
       "user-instructions": { ...string, default: "drop" },
       "dry-run": { type: "boolean", default: false },
+      // Gives Claude the styal skill in place of `read_styal_guide`, and defaults to cases-skill/.
+      "styal-skill": { type: "boolean", default: false },
       "stop-on-regression": { type: "boolean", default: false },
       "regression-budget": string,
       // Prints the size of T3's text and tool schemas, then exits. Needs no template or key.
@@ -2076,7 +2125,7 @@ const main = Effect.gen(function* () {
       Effect.map((content) => content.split("\n").filter((line) => line.trim() !== "")),
       Effect.flatMap((lines) => Effect.forEach(lines, (line) => decode(line))),
     );
-  const casesDir = path.join(import.meta.dirname, "cases");
+  const casesDir = path.join(import.meta.dirname, flags["styal-skill"] ? "cases-skill" : "cases");
   const caseFiles =
     flags.cases ??
     (yield* fs.readDirectory(casesDir))
@@ -2147,6 +2196,7 @@ const main = Effect.gen(function* () {
               nativeSubagent: role === "native-subagent",
               links,
               deviceAccess,
+              styalSkill: flags["styal-skill"],
             });
             return role === "native-subagent"
               ? Effect.promise(() => t3SubagentContext(flags.model, deviceAccess)).pipe(

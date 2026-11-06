@@ -26,6 +26,8 @@ import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
 import * as HostPowerMonitor from "./background/HostPowerMonitor.ts";
 import * as ServerConfig from "./config.ts";
+import { writeStyalSkill } from "./mcp/toolkits/guide/skill.ts";
+import * as StyalSkillUsage from "./telemetry/StyalSkillUsage.ts";
 import { withUntracedRequests } from "./http.ts";
 import * as ServerHttp from "./http.ts";
 import {
@@ -569,6 +571,7 @@ const layerOrchestrationV2Runtime = RuntimeLayer.layerProduction.pipe(
   Layer.provide(layerWorkspacePortAllocator),
   Layer.provide(layerScheduledTaskWebhookOrigin),
   Layer.provide(ProviderEventIngestor.layerAnalytics),
+  Layer.provide(StyalSkillUsage.layer),
   Layer.provide(layerCheckpointStore),
   Layer.provide(layerGitWorkflow),
   Layer.provide(
@@ -727,6 +730,19 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   Layer.provideMerge(ProviderInstallGate.layer),
   Layer.provideMerge(ProviderRegistry.layer.pipe(traceShutdown("provider-registry"))),
   Layer.provideMerge(ProviderInstanceRegistryHydration.layer),
+  // Provider drivers decide at construction whether the skill exists.
+  Layer.provideMerge(
+    Layer.effectDiscard(
+      ServerConfig.ServerConfig.pipe(
+        Effect.flatMap(({ stateDir }) => writeStyalSkill(stateDir)),
+        Effect.catch((error) =>
+          Effect.logWarning("The styal skill was not written; sessions use read_styal_guide.", {
+            error,
+          }),
+        ),
+      ),
+    ),
+  ),
   // Provider hydration builds the Claude runner, which reports agents to the same scanner the
   // terminal and preview layers share.
   Layer.provideMerge(layerPortScanner),

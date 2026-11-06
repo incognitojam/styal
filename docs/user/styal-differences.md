@@ -178,6 +178,8 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   [T3 Code revision b9522c8](https://github.com/pingdotgg/t3code/tree/b9522c845b06cb8c852c28e9fa747c6335e9f6b3),
   checked November 5, 2026, which runs the action whenever any thread in the worktree settles.
 
+- **Agents know how styal is set up.** Claude, Codex and OpenCode 2 sessions come with a built-in styal skill covering `styal.json`, actions, devices, hardware, imports and troubleshooting, so asking an agent to set these up works without installing anything. It doesn't touch your provider's own skills or settings, and it updates with styal. Other providers read the same guides through a styal tool.
+
 ## GitHub and code review
 
 - **PR deployments at a glance.** The pull request Summary, and the pull request screen on mobile,

@@ -4,7 +4,9 @@ import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
+import * as Option from "effect/Option";
 import * as P from "effect/Predicate";
+import * as Schema from "effect/Schema";
 import * as Redacted from "effect/Redacted";
 import * as HttpClientError from "effect/http/HttpClientError";
 
@@ -164,3 +166,27 @@ export const make = Effect.fn("OpenCode2Server.make")(function* (input: {
     }),
   });
 });
+
+const decodeConfigContent = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown));
+
+/** Keeps the user's OPENCODE_CONFIG_CONTENT. Undefined when it is not a JSON object to extend. */
+export const withOpenCodeSkillPath = (
+  configContent: string | undefined,
+  skillsRoot: string,
+): string | undefined => {
+  const config = Option.getOrUndefined(decodeConfigContent(configContent ?? "{}"));
+  if (typeof config !== "object" || config === null || Array.isArray(config)) return undefined;
+  const { skills } = config as { readonly skills?: unknown };
+  const merged = Array.isArray(skills)
+    ? { paths: [...skills, skillsRoot] }
+    : typeof skills === "object" && skills !== null
+      ? {
+          ...skills,
+          paths: [
+            ...((skills as { readonly paths?: ReadonlyArray<string> }).paths ?? []),
+            skillsRoot,
+          ],
+        }
+      : { paths: [skillsRoot] };
+  return JSON.stringify({ ...config, skills: merged });
+};

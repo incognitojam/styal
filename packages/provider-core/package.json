@@ -147,6 +147,10 @@
       "types": "./src/server/snapshotProbe.ts",
       "import": "./src/server/snapshotProbe.ts"
     },
+    "./server/styalSkill": {
+      "types": "./src/server/styalSkill.ts",
+      "import": "./src/server/styalSkill.ts"
+    },
     "./server/snapshotSettings": {
       "types": "./src/server/snapshotSettings.ts",
       "import": "./src/server/snapshotSettings.ts"

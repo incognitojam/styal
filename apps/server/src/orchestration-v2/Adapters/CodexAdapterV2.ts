@@ -123,6 +123,7 @@ import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEve
 import { codexAppServerArgs, resolveCodexLaunchArgs } from "../../provider/codexLaunchArgs.ts";
 import { mergeProviderInstanceEnvironment } from "@t3tools/provider-core/server/instanceEnvironment";
 import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
+import { STYAL_GUIDE_TOOL, resolveStyalSkill } from "@t3tools/provider-core/server/styalSkill";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import {
   MCP_APP_EXTENSION_ID,
@@ -750,6 +751,7 @@ export const buildCodexTurnStartParams = Effect.fn("CodexAdapterV2.buildCodexTur
     readonly defaultReasoningEffort?: string;
     readonly hasT3Mcp?: boolean;
     readonly browserToolsAvailable?: boolean;
+    readonly hasStyalSkill?: boolean;
     readonly deviceToolsAvailable?: boolean;
     readonly mcpServerName?: McpProviderSession.McpServerName;
     /** ChatGPT token sharing does not accept service tiers. */
@@ -794,6 +796,7 @@ export const buildCodexTurnStartParams = Effect.fn("CodexAdapterV2.buildCodexTur
                 },
             input.runtimePolicy.additionalInstructions,
             input.mcpServerName ?? McpProviderSession.ACTIVE_MCP_SERVER_NAME,
+            input.hasStyalSkill === true,
           )
         : undefined;
     const additionalContext =
@@ -1349,6 +1352,7 @@ function codexThreadRuntimeParams(input: {
   readonly mcpSession: McpProviderSession.McpProviderSessionConfig | undefined;
   readonly modelSelection?: { readonly model: string };
   readonly runtimePolicy?: ProviderAdapter.ProviderAdapterV2RuntimePolicy;
+  readonly hasStyalSkill?: boolean;
 }): {
   readonly cwd?: string;
   readonly model?: string;
@@ -1368,6 +1372,7 @@ function codexThreadRuntimeParams(input: {
             [`mcp_servers.${mcpServerName}`]: {
               url: mcpSession.endpoint,
               tool_timeout_sec: CODEX_T3_MCP_TOOL_TIMEOUT_SEC,
+              ...(input.hasStyalSkill === true ? { disabled_tools: [STYAL_GUIDE_TOOL] } : {}),
               http_headers: {
                 Authorization: mcpSession.authorizationHeader,
               },
@@ -1653,6 +1658,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
     // @effect-diagnostics-next-line effectSucceedWithVoid:off - This optional result requires undefined, not the wider void type.
     threadId === null ? Effect.succeed(undefined) : mcpSessions.read(threadId);
   const { clientFactory, crypto, fileSystem, idAllocator, serverConfig } = adapterOptions;
+  const path = yield* Path.Path;
   const continuationRequests = adapterOptions.continuationRequests;
 
   return ProviderAdapter.ProviderAdapterV2.of({
@@ -1736,6 +1742,14 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
           ),
         );
         const initialized = yield* Ref.make(false);
+        const styalSkill = yield* resolveStyalSkill(serverConfig.stateDir).pipe(
+          Effect.provideService(FileSystem.FileSystem, fileSystem),
+          Effect.provideService(Path.Path, path),
+        );
+        let hasStyalSkill = styalSkill !== undefined;
+        const threadRuntimeParams = (
+          params: Omit<Parameters<typeof codexThreadRuntimeParams>[0], "hasStyalSkill">,
+        ) => codexThreadRuntimeParams({ ...params, hasStyalSkill });
         // Codex rejects a second initialize on the shared app-server.
         const initializePermit = yield* Semaphore.make(1);
         const ensureInitialized = initializePermit.withPermit(
@@ -1775,6 +1789,18 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               });
             }
             yield* client.notify("initialized", undefined);
+            if (styalSkill !== undefined) {
+              yield* client
+                .request("skills/extraRoots/set", { extraRoots: [styalSkill.skillsRoot] })
+                .pipe(
+                  Effect.catch((error) => {
+                    hasStyalSkill = false;
+                    return Effect.logWarning("Codex did not accept the styal skill root.", {
+                      error,
+                    });
+                  }),
+                );
+            }
             yield* Ref.set(initialized, true);
           }),
         );
@@ -6728,6 +6754,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               modelSelection: turnInput.modelSelection,
               ...(defaultReasoningEffort === undefined ? {} : { defaultReasoningEffort }),
               hasT3Mcp: mcpSession !== undefined,
+              hasStyalSkill,
               browserToolsAvailable: mcpSession?.browserToolsAvailable ?? true,
               deviceToolsAvailable: mcpSession?.capabilities?.has("device") ?? false,
               mcpServerName: mcpSession?.mcpServerName ?? McpProviderSession.ACTIVE_MCP_SERVER_NAME,
@@ -7037,7 +7064,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               Effect.flatMap((mcpSession) =>
                 client.request(
                   "thread/start",
-                  codexThreadRuntimeParams({
+                  threadRuntimeParams({
                     mcpSession,
                     modelSelection: threadInput.modelSelection,
                     runtimePolicy: threadInput.runtimePolicy,
@@ -7066,21 +7093,25 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
           resumeThread: Effect.fn("CodexAdapterV2.resumeThread")(
             function* (threadInput) {
               const nativeThreadId = yield* getNativeThreadId(threadInput.providerThread);
-              const resume = client.raw.request("thread/resume", {
-                threadId: nativeThreadId,
-                excludeTurns: true,
-                ...codexThreadRuntimeParams({
-                  mcpSession: yield* readMcpSession(
-                    threadInput.threadId ?? threadInput.providerThread.appThreadId,
-                  ),
-                  ...(threadInput.modelSelection === undefined
-                    ? {}
-                    : { modelSelection: threadInput.modelSelection }),
-                  ...(threadInput.runtimePolicy === undefined
-                    ? {}
-                    : { runtimePolicy: threadInput.runtimePolicy }),
+              const mcpSession = yield* readMcpSession(
+                threadInput.threadId ?? threadInput.providerThread.appThreadId,
+              );
+              // Initializing decides whether this session has the styal skill.
+              const resume = Effect.suspend(() =>
+                client.raw.request("thread/resume", {
+                  threadId: nativeThreadId,
+                  excludeTurns: true,
+                  ...threadRuntimeParams({
+                    mcpSession,
+                    ...(threadInput.modelSelection === undefined
+                      ? {}
+                      : { modelSelection: threadInput.modelSelection }),
+                    ...(threadInput.runtimePolicy === undefined
+                      ? {}
+                      : { runtimePolicy: threadInput.runtimePolicy }),
+                  }),
                 }),
-              });
+              );
               const response = yield* ensureInitialized.pipe(
                 Effect.andThen(
                   resume.pipe(
@@ -7856,7 +7887,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 yield* client.raw.request("thread/resume", {
                   threadId,
                   excludeTurns: true,
-                  ...codexThreadRuntimeParams({
+                  ...threadRuntimeParams({
                     mcpSession: yield* readMcpSession(threadInput.providerThread.appThreadId),
                     modelSelection: input.modelSelection,
                     runtimePolicy: input.runtimePolicy,
@@ -7901,23 +7932,26 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             function* (threadInput) {
               const threadId = yield* getNativeThreadId(threadInput.sourceProviderThread);
               const boundary = yield* resolveCodexForkBoundary(threadInput);
+              const mcpSession = yield* mcpSessions.read(threadInput.targetThreadId);
               const response = yield* ensureInitialized.pipe(
                 Effect.andThen(
-                  client.request("thread/fork", {
-                    threadId,
-                    ...(boundary.lastTurnId === undefined
-                      ? {}
-                      : { lastTurnId: boundary.lastTurnId }),
-                    ...codexThreadRuntimeParams({
-                      mcpSession: yield* mcpSessions.read(threadInput.targetThreadId),
-                      ...(threadInput.modelSelection === undefined
+                  Effect.suspend(() =>
+                    client.request("thread/fork", {
+                      threadId,
+                      ...(boundary.lastTurnId === undefined
                         ? {}
-                        : { modelSelection: threadInput.modelSelection }),
-                      ...(threadInput.runtimePolicy === undefined
-                        ? {}
-                        : { runtimePolicy: threadInput.runtimePolicy }),
+                        : { lastTurnId: boundary.lastTurnId }),
+                      ...threadRuntimeParams({
+                        mcpSession,
+                        ...(threadInput.modelSelection === undefined
+                          ? {}
+                          : { modelSelection: threadInput.modelSelection }),
+                        ...(threadInput.runtimePolicy === undefined
+                          ? {}
+                          : { runtimePolicy: threadInput.runtimePolicy }),
+                      }),
                     }),
-                  }),
+                  ),
                 ),
                 Effect.mapError(
                   (cause) =>

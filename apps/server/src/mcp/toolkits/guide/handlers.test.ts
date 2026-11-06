@@ -42,6 +42,7 @@ it.effect("returns the guide and records the topic only", () => {
           action: "read",
           source: "agent",
           guideTopic: "hardware",
+          guideRoute: "tool",
           outcome: "success",
           durationMs: expect.any(Number),
         },
