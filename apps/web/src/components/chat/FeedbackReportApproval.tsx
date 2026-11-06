@@ -1,4 +1,9 @@
-import { feedbackReportDeclineOptions } from "@t3tools/client-runtime/feedback-report";
+import {
+  FEEDBACK_REPORT_OPEN_ACTION,
+  FEEDBACK_REPORT_TITLE,
+  feedbackReportDeclineOptions,
+  feedbackReportDescription,
+} from "@t3tools/client-runtime/feedback-report";
 import type {
   FeedbackApprovalReport,
   ProviderApprovalDecision,
@@ -20,7 +25,7 @@ import {
 } from "../ui/dialog";
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
 
-/** The row offers review and decline; posting is only offered beside the full report. */
+/** The row offers opening the report and declining; posting is only offered beside the full report. */
 export function FeedbackReportApprovalActions(props: {
   readonly report: FeedbackApprovalReport;
   readonly requestId: RuntimeRequestId;
@@ -48,27 +53,21 @@ export function FeedbackReportApprovalActions(props: {
         options={declineOptions}
         onRespondToApproval={props.onRespondToApproval}
       />
-      <InlineButton onClick={() => setOpen(true)}>Review report</InlineButton>
+      <InlineButton onClick={() => setOpen(true)}>{FEEDBACK_REPORT_OPEN_ACTION}</InlineButton>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogPopup ref={popupRef} className="max-w-2xl" initialFocus={popupRef}>
           <DialogHeader>
-            <DialogTitle>Review report</DialogTitle>
-            <DialogDescription>
-              This will be public on {props.report.repository}, posted as @{props.report.account}.
-            </DialogDescription>
+            <DialogTitle>{FEEDBACK_REPORT_TITLE}</DialogTitle>
+            <DialogDescription>{feedbackReportDescription(props.report)}</DialogDescription>
           </DialogHeader>
           <DialogPanel>
-            <div className="flex flex-col gap-3 rounded-lg border border-border p-4">
-              <h3 className="border-b border-border pb-3 text-xl font-semibold wrap-break-word">
-                {props.report.title}
-              </h3>
-              <ChatMarkdown
-                text={props.report.body}
-                cwd={undefined}
-                lineBreaks
-                parseRawHtml={false}
-              />
-            </div>
+            <h3 className="mb-3 text-xl font-semibold wrap-break-word">{props.report.title}</h3>
+            <ChatMarkdown
+              text={props.report.body}
+              cwd={undefined}
+              lineBreaks
+              parseRawHtml={false}
+            />
           </DialogPanel>
           <DialogFooter>
             <ComposerPendingApprovalActions
