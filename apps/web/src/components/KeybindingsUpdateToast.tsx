@@ -5,9 +5,13 @@ import { KeybindingsConfigWarning } from "./KeybindingsConfigWarning";
 import { createKeybindingsUpdateToastController } from "./KeybindingsUpdateToast.logic";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 
-/** Toasts each keybindings reload the primary server reports. */
-export function startKeybindingsUpdateToasts(): () => void {
-  const controller = createKeybindingsUpdateToastController({});
+export function startKeybindingsUpdateToasts(
+  isKeybindingsPage: () => boolean = () => false,
+): () => void {
+  const controller = createKeybindingsUpdateToastController({
+    isKeybindingsPage,
+    initialIssues: appAtomRegistry.get(primaryServerConfigAtom)?.issues ?? [],
+  });
   return subscribeAtomChanges(primaryServerConfigEventAtom, (event) => {
     const decision = controller.handle(event);
     if (!decision) return;

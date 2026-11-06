@@ -2958,6 +2958,7 @@ features:
     rationale: One stale or mistyped entry, such as a command removed by a later build, must not stop later default shortcuts from reaching the file, and the user needs to see which entry was ignored without watching for a toast or reading server logs.
     invariants:
       - The Settings and warning file openers share the chat editor picker, including editor preference and remote SSH routing.
+      - Invalid-keybindings toasts appear only when the set of problems changes and stay hidden on Keybindings settings; successful reload toasts retain their cooldown.
       - Settings → Keybindings shows a warning row that expands to list every issue the primary environment reports, including ones already present at startup; each invalid entry's message names its file line and reason, and the row clears when the file is fixed.
       - The startup sync applies late defaults and backfills when individual entries are invalid, and writes every entry it read back to the file unchanged, in order.
       - A default is not backfilled for a command that an invalid entry names, and invalid entries count towards the entry limit.

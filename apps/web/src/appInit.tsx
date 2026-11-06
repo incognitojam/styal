@@ -197,7 +197,7 @@ export function startAppServices(): AppRouter {
   startThreadVisitedMigration(appAtomRegistry);
   startSshPasswordPromptQueue();
 
-  startKeybindingsUpdateToasts();
+  startKeybindingsUpdateToasts(() => router.state.location.pathname === "/settings/keybindings");
   startSlowRpcRequestToasts();
   startHostFreezeToasts();
   startLegacyThreadMigrationToast();
