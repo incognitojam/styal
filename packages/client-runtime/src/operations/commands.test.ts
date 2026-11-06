@@ -18,6 +18,7 @@ import {
   type OrchestrationV2ThreadLaunchInput,
   type OrchestrationV2ThreadProjection,
   type ProjectMutation,
+  type ProjectUpdatePayload,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Crypto from "effect/Crypto";
@@ -36,6 +37,7 @@ import * as RpcSession from "../rpc/session.ts";
 import type { WsRpcProtocolClient } from "../rpc/protocol.ts";
 import { v2Now, v2Projection, v2ThreadId } from "../state/orchestrationV2TestFixtures.ts";
 import {
+  updateProject,
   archiveThread,
   interruptThreadTurn,
   revertThreadCheckpoint,
@@ -134,6 +136,55 @@ const makeSupervisor = Effect.fn("TestEnvironmentCommands.makeSupervisor")(funct
 });
 
 describe("V2 environment commands", () => {
+  it.effect("preserves project updates, explicit resets, and omitted fields", () =>
+    Effect.gen(function* () {
+      const projects: ProjectMutation[] = [];
+      const supervisor = yield* makeSupervisor({ commands: [], projects });
+      const metadata = {
+        commandId: CommandId.make("update-project"),
+        projectId: ProjectId.make("project-1"),
+      };
+      const updates = [
+        {
+          title: "Synthetic project",
+          workspaceRoot: "/workspace/synthetic",
+          defaultModelSelection: null,
+          autoPull: true,
+          projectIcon: null,
+          faviconPath: "/workspace/synthetic/favicon.png",
+          additionalInstructions: "Use synthetic fixtures.",
+          defaultThreadEnvMode: "worktree",
+          scripts: [],
+          pinned: true,
+          pinOrderKey: "a0",
+          archived: true,
+        },
+        {
+          title: "Renamed project",
+          workspaceRoot: "/workspace/renamed",
+          defaultModelSelection: null,
+          autoPull: false,
+          projectIcon: null,
+          faviconPath: null,
+          additionalInstructions: null,
+          defaultThreadEnvMode: null,
+          scripts: [],
+          pinned: false,
+          pinOrderKey: null,
+          archived: false,
+        },
+      ] satisfies Array<ProjectUpdatePayload & Record<keyof ProjectUpdatePayload, unknown>>;
+      for (const update of [...updates, {}]) {
+        yield* updateProject({ ...metadata, ...update }).pipe(
+          Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
+        );
+      }
+      expect(projects).toEqual(
+        [...updates, {}].map((update) => ({ type: "project.update", ...metadata, ...update })),
+      );
+    }).pipe(Effect.provide(layerTestCrypto)),
+  );
+
   it.effect("distinguishes sending a selected queued message from resuming queue order", () =>
     Effect.gen(function* () {
       const commands: OrchestrationV2Command[] = [];

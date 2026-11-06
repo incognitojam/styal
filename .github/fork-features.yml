@@ -4206,6 +4206,7 @@ features:
       - Codex receives complete project instructions through additional context even when the model catalog replaces collaboration-mode text, and restores that context after root-thread compaction.
       - Projects without additional instructions preserve the ordinary upstream provider prompt and session behavior.
     implementation_paths:
+      - packages/client-runtime/src/operations/commands.ts
       - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
       - apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts
       - apps/server/src/orchestration-v2/ProjectStore.ts
@@ -4237,6 +4238,7 @@ features:
       - packages/provider-opencode/src/server/v2/adapter.ts
       - packages/provider-pi/src/server/adapter.ts
     tests:
+      - packages/client-runtime/src/operations/commands.test.ts
       - apps/server/src/orchestration-v2/Adapters/AcpAdapterV2.test.ts
       - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.test.ts
       - apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.test.ts
