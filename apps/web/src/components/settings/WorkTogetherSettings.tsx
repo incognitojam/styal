@@ -214,8 +214,8 @@ export function WorkTogetherSettings() {
             {selected === undefined ? (
               <>
                 <SettingsRow
-                  title="Machines this app isn't connected to"
-                  description="Your machines can work with these, but this app can't show or change their settings. Add one under Environments to give it a tab."
+                  title="Not connected to this app"
+                  description="Machines your machines work with appear here if this app isn't connected to them. This app can't show or change their settings. Add one under Environments to give it a tab."
                   control={<AddMachineAction hosts={hosts} />}
                 />
                 <SettingsGroup className="m-3 empty:hidden sm:mx-4">
