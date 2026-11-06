@@ -1492,22 +1492,47 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     ),
   );
 
-  it.effect("rejects a Windows payload that regresses above the file-count budget", () =>
+  it.effect("accepts prepared-cache payloads and rejects growth above the file-count budget", () =>
     Effect.scoped(
       Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
         const fixture = yield* makeWindowsPayloadFixture({ copyUnpackedNatives: true });
+        const input = {
+          stageDistDir: fixture.stageDistDir,
+          appExecutableName: fixture.appExecutableName,
+          targetArch: "x64" as const,
+        };
+        const initial = yield* validateWindowsPackagedPayload(input);
+        for (let count = initial.fileCount; count < 83; count++) {
+          yield* fs.writeFileString(
+            path.join(fixture.packagedAppDir, `cache-${count}`),
+            "bytecode",
+          );
+        }
+        const prepared = yield* validateWindowsPackagedPayload(input);
+        assert.equal(prepared.fileCount, 83);
+        for (let count = 83; count < WINDOWS_PACKAGED_PAYLOAD_FILE_LIMIT; count++) {
+          yield* fs.writeFileString(
+            path.join(fixture.packagedAppDir, `cache-${count}`),
+            "bytecode",
+          );
+        }
+        const boundary = yield* validateWindowsPackagedPayload(input);
+        assert.equal(boundary.fileCount, WINDOWS_PACKAGED_PAYLOAD_FILE_LIMIT);
+        yield* fs.writeFileString(path.join(fixture.packagedAppDir, "over-budget"), "extra");
         const error = yield* validateWindowsPackagedPayload({
           stageDistDir: fixture.stageDistDir,
           appExecutableName: fixture.appExecutableName,
           targetArch: "x64",
-          fileLimit: 2,
         }).pipe(Effect.flip);
 
         assert.instanceOf(error, WindowsPackagedPayloadValidationError);
         assert.equal(error.reason, "file-limit-exceeded");
-        assert.isAbove(error.fileCount ?? 0, 2);
+        assert.equal(error.fileCount, WINDOWS_PACKAGED_PAYLOAD_FILE_LIMIT + 1);
+        assert.equal(error.fileLimit, WINDOWS_PACKAGED_PAYLOAD_FILE_LIMIT);
       }),
-    ),
+    ).pipe(Effect.provideService(HostProcess.Platform, "linux")),
   );
 
   it.effect("rejects a sidecar whose extracted server bundle cannot resolve", () =>
