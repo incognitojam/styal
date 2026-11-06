@@ -5,6 +5,7 @@ import {
 } from "@t3tools/client-runtime/state/setup-script-activity";
 import type { ThreadStructure, ThreadStructureRuntime } from "@t3tools/client-runtime/state/shell";
 import { resolveThreadWorkingStartedAt } from "@t3tools/client-runtime/state/models";
+import { isAnsweredFeedbackReportApproval } from "@t3tools/client-runtime/feedback-report";
 import {
   type AssetResource,
   type OrchestrationV2Checkpoint,
@@ -635,7 +636,7 @@ export function deriveTimelineEntriesFromVisibleTurnItems(
   for (const row of input.visibleTurnItems) {
     const { item } = row;
     if (turnItemIsWorkspacePreparation(item) && !item.deferredWork) continue;
-    if (item.type === "checkpoint") continue;
+    if (item.type === "checkpoint" || isAnsweredFeedbackReportApproval(item)) continue;
     if (
       item.type === "user_message" &&
       item.inputIntent === "queued_turn" &&
