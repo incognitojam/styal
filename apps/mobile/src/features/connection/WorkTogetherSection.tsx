@@ -1,4 +1,10 @@
-import { LINK_DEFAULT_ACCESS } from "@t3tools/client-runtime/link-request";
+import {
+  LINK_DEFAULT_ACCESS,
+  linkAccessLabel,
+  MACHINE_ACCESS_CHOICES,
+  machineAccessChoice,
+  machineAccessStopNotice,
+} from "@t3tools/client-runtime/link-request";
 import { deviceSharingAddresses } from "@t3tools/client-runtime/state/device";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import {
@@ -10,22 +16,41 @@ import {
   workTogetherLabels,
   workTogetherFailureMessage,
   workTogetherHasNarrowerAccess,
+  workTogetherNeedsAttention,
   workTogetherMissingShares,
   workTogetherOutcome,
   workTogetherSharedDevices,
   workTogetherStatus,
 } from "@t3tools/client-runtime/state/workTogether";
-import { AuthAccessWriteScope, AuthSettingsWriteScope } from "@t3tools/contracts";
+import {
+  AuthAccessReadScope,
+  AuthAccessWriteScope,
+  AuthSettingsWriteScope,
+  type EnvironmentId,
+  type IncomingMachineAccess,
+  resolveEnvironmentMachineKind,
+} from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import * as Option from "effect/Option";
 import { useEffect, useEffectEvent, useState } from "react";
-import { ActivityIndicator, Modal, Platform, ScrollView, View } from "react-native";
+import {
+  ActivityIndicator,
+  Alert,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  View,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { EnvironmentMachineSymbol } from "../../components/EnvironmentMachineSymbol";
 import { SymbolView, type AppSymbolName } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
+import { ListChoiceRow } from "../../components/ui/ListChoiceRow";
+import { cn } from "../../lib/cn";
+import { serverEnvironment } from "../../state/server";
 import { useDeviceState } from "../../state/device";
 import { useEnvironments } from "../../state/environments";
 import { reportForkClientUsage } from "../../state/forkClientUsage";
@@ -34,7 +59,6 @@ import { useEnvironmentQuery } from "../../state/query";
 import { relayEnvironmentDiscovery } from "../../state/relay";
 import { useEnvironmentScope, usePreparedConnection } from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { SettingsSection } from "../settings/components/SettingsSection";
 
 type Environment = ReturnType<typeof useEnvironments>["environments"][number];
 type NamedEnvironment = Environment & WorkTogetherIdentity;
@@ -46,25 +70,292 @@ interface Run {
   readonly finished: boolean;
 }
 
-/** Each pair of the machines this app knows. The phone is a client, so it is never one. */
+/**
+ * One tab per machine, joined to a panel with its setting, devices, status and anything to do.
+ * Every pair stays mounted so a run survives switching tabs. The phone is a client, never a tab.
+ */
 export function WorkTogetherSection() {
   const { environments } = useEnvironments();
+  const [chosenId, setChosenId] = useState<EnvironmentId | null>(null);
+  const [attention, setAttention] = useState<ReadonlyMap<string, boolean>>(new Map());
+  const [showOthers, setShowOthers] = useState(false);
   const machines = workTogetherLabels(
     environments.filter(
       (environment) => environment.serverConfig?.environment.capabilities.peerLinks !== false,
     ),
   );
   const pairs = machines.flatMap((a, index) =>
-    machines.slice(index + 1).map((b) => [a, b] as const),
+    machines.slice(index + 1).map((b) => ({ a, b, key: `${a.environmentId}:${b.environmentId}` })),
   );
-  if (pairs.length === 0) return null;
+  const needsAttention = (environmentId: EnvironmentId) =>
+    pairs.some(
+      ({ a, b, key }) =>
+        (a.environmentId === environmentId || b.environmentId === environmentId) &&
+        attention.get(key) === true,
+    );
+  const selected =
+    machines.find((machine) => machine.environmentId === chosenId) ??
+    machines.find((machine) => needsAttention(machine.environmentId)) ??
+    machines[0];
+  if (selected === undefined) return null;
   return (
-    <View className="mt-5 gap-3">
-      <SettingsSection title="Work together">
-        {pairs.map(([a, b]) => (
-          <MachinePair key={`${a.environmentId}:${b.environmentId}`} a={a} b={b} />
+    <View className="mt-5 gap-2">
+      <Text className="px-4 font-t3-bold text-base text-foreground">Your machines</Text>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        accessibilityRole="tablist"
+        className="z-10 -mb-px"
+      >
+        <View className="min-w-full flex-row items-end gap-1">
+          {machines.map((machine) => (
+            <MachineTab
+              key={machine.environmentId}
+              machine={machine}
+              isSelected={machine.environmentId === selected.environmentId}
+              needsAttention={needsAttention(machine.environmentId)}
+              machineCount={machines.length}
+              onPress={() => setChosenId(machine.environmentId)}
+            />
+          ))}
+        </View>
+      </ScrollView>
+      <View className="-mt-2 rounded-b-2xl border border-border bg-grouped-card">
+        <MachineAccessChoices machine={selected} />
+        {pairs.map(({ a, b, key }) => (
+          <MachinePair
+            key={key}
+            a={a}
+            b={b}
+            selectedId={selected.environmentId}
+            expanded={showOthers}
+            onOpen={() => setChosenId(selected.environmentId)}
+            onAttentionChange={(value) =>
+              setAttention((current) =>
+                current.get(key) === value ? current : new Map(current).set(key, value),
+              )
+            }
+          />
         ))}
-      </SettingsSection>
+        <OtherMachineLinks machine={selected} machines={machines} />
+        <MachineStatus machine={selected} machines={machines} />
+        {pairs.length === 0 ? null : (
+          <View className="border-t border-border p-3">
+            <Button
+              label={showOthers ? "Hide other machines" : "Each machine"}
+              tone="secondary"
+              onPress={() => setShowOthers((shown) => !shown)}
+            />
+          </View>
+        )}
+      </View>
+    </View>
+  );
+}
+
+function MachineTab(props: {
+  readonly machine: NamedEnvironment;
+  readonly isSelected: boolean;
+  readonly needsAttention: boolean;
+  readonly machineCount: number;
+  readonly onPress: () => void;
+}) {
+  const { machine } = props;
+  const level = machineAccessChoice(
+    machine.serverConfig?.settings.incomingMachineAccess ?? "everything",
+  );
+  const connected = machine.connection.phase === "connected";
+  const status = !connected
+    ? "Not connected"
+    : props.needsAttention
+      ? "Needs attention"
+      : level.status;
+  const dot =
+    !connected || level.level === "nothing"
+      ? "bg-foreground-muted"
+      : props.needsAttention
+        ? "bg-warning"
+        : "bg-success";
+  return (
+    <Pressable
+      accessibilityRole="tab"
+      accessibilityState={{ selected: props.isSelected }}
+      accessibilityLabel={`${machine.label}, ${status}`}
+      onPress={props.onPress}
+      className={cn(
+        "min-w-44 flex-1 flex-row items-center gap-2 rounded-t-2xl border border-b-0 border-border px-3",
+        props.isSelected ? "bg-grouped-card py-3" : "mb-px bg-subtle py-2.5",
+      )}
+    >
+      <EnvironmentMachineSymbol
+        kind={resolveEnvironmentMachineKind(machine.serverConfig)}
+        size={18}
+        tintColorClassName="accent-foreground-muted"
+      />
+      <View className="min-w-0 flex-1">
+        <Text numberOfLines={1} className="font-t3-bold text-sm text-foreground">
+          {machine.label}
+        </Text>
+        <View className="flex-row items-center gap-1.5">
+          <View className={cn("size-2 rounded-full", dot)} />
+          <Text numberOfLines={1} className="flex-1 text-xs text-foreground-muted">
+            {status}
+          </Text>
+        </View>
+      </View>
+    </Pressable>
+  );
+}
+
+function MachineAccessChoices({ machine }: { readonly machine: NamedEnvironment }) {
+  const { environmentId, label, serverConfig } = machine;
+  const level = serverConfig?.settings.incomingMachineAccess ?? "everything";
+  const supported = serverConfig?.environment.capabilities.incomingMachineAccess === true;
+  const mayChange = useEnvironmentScope(environmentId, AuthAccessWriteScope);
+  const incomingWork = useAtomCommand(peerLinkEnvironment.incomingWork, { reportFailure: false });
+  const update = useAtomCommand(serverEnvironment.updateSettings, { reportFailure: false });
+  const [busy, setBusy] = useState(false);
+  const save = async (next: IncomingMachineAccess, stoppedThreads: boolean) => {
+    const result = await update({
+      environmentId,
+      input: { patch: { incomingMachineAccess: next } },
+    });
+    setBusy(false);
+    if (result._tag === "Failure") {
+      Alert.alert(
+        "Setting not saved",
+        `Could not save on ${label}. Check that it's connected, then try again.`,
+      );
+      return;
+    }
+    void reportForkClientUsage(environmentId, {
+      feature: "machine-access",
+      action: "set",
+      level: next,
+      stoppedThreads,
+    });
+  };
+  const choose = async (next: IncomingMachineAccess) => {
+    if (next === level) return;
+    setBusy(true);
+    if (next === "everything") return save(next, false);
+    const work = await incomingWork({ environmentId, input: {} });
+    // Without a count, nobody can agree to what would stop.
+    if (work._tag === "Failure") {
+      setBusy(false);
+      Alert.alert("Setting not saved", `Could not check what's running on ${label}. Try again.`);
+      return;
+    }
+    const { runningThreads } = work.value;
+    if (runningThreads === 0) return save(next, false);
+    Alert.alert("Stop running threads?", machineAccessStopNotice(label, next, runningThreads), [
+      { text: "Cancel", style: "cancel", onPress: () => setBusy(false) },
+      { text: "Stop them", style: "destructive", onPress: () => void save(next, true) },
+    ]);
+  };
+  const disabled = busy || !supported || !mayChange;
+  return (
+    <View>
+      <Text className="px-4 pt-4 font-t3-bold text-sm text-foreground">
+        What your other machines can do on {label}
+      </Text>
+      {MACHINE_ACCESS_CHOICES.map((choice, index) => (
+        <ListChoiceRow
+          key={choice.level}
+          label={choice.label}
+          description={choice.description}
+          selected={choice.level === level}
+          separated={index > 0}
+          disabled={disabled}
+          onPress={() => void choose(choice.level)}
+        />
+      ))}
+      {!supported ? (
+        <Text className="px-4 pb-3 text-xs text-foreground-muted">
+          Update styal on {label} to choose this.
+        </Text>
+      ) : !mayChange ? (
+        <Text className="px-4 pb-3 text-xs text-foreground-muted">
+          This app can't change access on {label}. Pair it again from there to manage it.
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
+/** Machines this one reaches that the app isn't connected to, which no pair can show. */
+function OtherMachineLinks(props: {
+  readonly machine: NamedEnvironment;
+  readonly machines: ReadonlyArray<NamedEnvironment>;
+}) {
+  const { machine, machines } = props;
+  const connected = machine.connection.phase === "connected";
+  const canRead = useEnvironmentScope(machine.environmentId, AuthAccessReadScope);
+  const links = useEnvironmentQuery(
+    connected && canRead
+      ? peerLinkEnvironment.list({ environmentId: machine.environmentId, input: {} })
+      : null,
+  );
+  const known = new Set<EnvironmentId>(machines.map((other) => other.environmentId));
+  return (links.data?.links ?? [])
+    .filter((link) => !known.has(link.environmentId))
+    .map((link) => (
+      <View key={link.environmentId} className="gap-0.5 border-t border-border p-4">
+        <Text className="font-t3-bold text-sm text-foreground">{link.label}</Text>
+        <Text className="text-xs text-foreground-muted">
+          Agents on {machine.label} · {linkAccessLabel(link.access)}
+        </Text>
+      </View>
+    ));
+}
+
+function MachineStatus(props: {
+  readonly machine: NamedEnvironment;
+  readonly machines: ReadonlyArray<NamedEnvironment>;
+}) {
+  const { machine, machines } = props;
+  const connected = machine.connection.phase === "connected";
+  const { state } = useDeviceState(connected ? machine.environmentId : null);
+  const links = useEnvironmentQuery(
+    connected
+      ? peerLinkEnvironment.list({ environmentId: machine.environmentId, input: {} })
+      : null,
+  );
+  const named = (level: IncomingMachineAccess) =>
+    machines
+      .filter(
+        (other) =>
+          links.data?.links.some(
+            (link) => link.environmentId === other.environmentId && link.status !== "expired",
+          ) && (other.serverConfig?.settings.incomingMachineAccess ?? "everything") === level,
+      )
+      .map((other) => other.label)
+      .join(", ");
+  const parts = [
+    named("everything") && `can control ${named("everything")}`,
+    named("look-only") && `can look at ${named("look-only")}`,
+    named("nothing") && `can't reach ${named("nothing")}`,
+  ].filter(Boolean);
+  const devices = state.hosts
+    .filter((host) => host.kind === "local")
+    .flatMap((host) => host.platforms.filter((platform) => platform.available));
+  const access = machine.serverConfig?.settings.incomingMachineAccess ?? "everything";
+  return (
+    <View className="gap-1 border-t border-border p-4">
+      <Text className="text-xs text-foreground-muted">
+        {!connected
+          ? `${machine.label} isn't connected. Its setting applies whether or not this app can reach it.`
+          : parts.length === 0
+            ? "Connected."
+            : `Connected. Agents here ${parts.join(", and ")}.`}
+      </Text>
+      {connected && devices.length > 0 ? (
+        <Text className="text-xs text-foreground-muted">
+          {access === "everything"
+            ? "Your other machines can use its simulators and emulators."
+            : "Other machines can't use its simulators and emulators at this setting."}
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -117,7 +408,16 @@ function useWorkTogetherMachine(
   };
 }
 
-function MachinePair(props: { readonly a: NamedEnvironment; readonly b: NamedEnvironment }) {
+function MachinePair(props: {
+  readonly a: NamedEnvironment;
+  readonly b: NamedEnvironment;
+  readonly selectedId: EnvironmentId;
+  /** Shows the pair even when nothing needs doing, so it can be stopped. */
+  readonly expanded: boolean;
+  /** Keeps this tab selected through a run, even once the pair no longer needs attention. */
+  readonly onOpen: () => void;
+  readonly onAttentionChange: (needsAttention: boolean) => void;
+}) {
   const a = useWorkTogetherMachine(props.a, props.b);
   const b = useWorkTogetherMachine(props.b, props.a);
   const execute = useAtomCommand(workTogether, { reportFailure: false, reportDefect: false });
@@ -133,7 +433,19 @@ function MachinePair(props: { readonly a: NamedEnvironment; readonly b: NamedEnv
   const waiting =
     run !== null && run.finished && run.lines.some((line) => line.status.state === "waiting");
 
+  const needsAttention = workTogetherNeedsAttention(a, b);
+  const reportAttention = useEffectEvent(props.onAttentionChange);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- each pair reads its two machines through hooks, so the tabs above can only learn the result from here
+  useEffect(() => {
+    reportAttention(needsAttention);
+  }, [needsAttention]);
+  const other = props.a.environmentId === props.selectedId ? b : a;
+  const shown =
+    (props.a.environmentId === props.selectedId || props.b.environmentId === props.selectedId) &&
+    (props.expanded || needsAttention || narrower);
+
   const openSheet = (kind: RunKind) => {
+    props.onOpen();
     // A run left waiting stays on screen only for the same action.
     if (run?.kind !== kind && !running) {
       setRun(null);
@@ -207,31 +519,35 @@ function MachinePair(props: { readonly a: NamedEnvironment; readonly b: NamedEnv
             : `${absent.label} isn't connected. Start now and it finishes when ${absent.label} is back.`;
 
   return (
-    <View className="gap-3 p-4">
-      <View className="gap-0.5">
-        <MachinePairName a={a} b={b} />
-        <Text className="text-xs text-foreground-muted">{summary}</Text>
-      </View>
-      {unmanaged !== undefined ? null : (
-        <View className="flex-row flex-wrap gap-2">
-          {status === "together" && missingShares.length === 0 && !narrower ? null : (
-            <Button
-              label={status === "separate" ? "Work together" : "Finish"}
-              tone="primary"
-              disabled={loading}
-              onPress={() => openSheet("start")}
-            />
-          )}
-          {status === "separate" ? null : (
-            <Button
-              label="Stop working together"
-              tone="danger"
-              disabled={loading}
-              onPress={() => openSheet("stop")}
-            />
+    <>
+      {shown ? (
+        <View className="gap-3 border-t border-border p-4">
+          <View className="gap-0.5">
+            <Text className="font-t3-bold text-base text-foreground">{other.label}</Text>
+            <Text className="text-xs text-foreground-muted">{summary}</Text>
+          </View>
+          {unmanaged !== undefined ? null : (
+            <View className="flex-row flex-wrap gap-2">
+              {status === "together" && missingShares.length === 0 && !narrower ? null : (
+                <Button
+                  label={status === "separate" ? "Work together" : "Finish"}
+                  tone="primary"
+                  disabled={loading}
+                  onPress={() => openSheet("start")}
+                />
+              )}
+              {status === "separate" ? null : (
+                <Button
+                  label="Stop working together"
+                  tone="danger"
+                  disabled={loading}
+                  onPress={() => openSheet("stop")}
+                />
+              )}
+            </View>
           )}
         </View>
-      )}
+      ) : null}
       {sheet === null ? null : (
         <WorkTogetherSheet
           kind={sheet}
@@ -242,7 +558,7 @@ function MachinePair(props: { readonly a: NamedEnvironment; readonly b: NamedEnv
           onClose={closeSheet}
         />
       )}
-    </View>
+    </>
   );
 }
 
