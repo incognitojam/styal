@@ -31,6 +31,53 @@ export function preservedFeatureIds(message: string): ReadonlyArray<string> {
   ];
 }
 
+function diffPath(line: string): string | null {
+  if (!line.startsWith("diff --")) return null;
+  const plain = /^diff --git a\/(.*) b\/\1$/u.exec(line);
+  if (plain) return plain[1]!;
+  const quoted = /^diff --git ("(?:[^"\\]|\\.)*") ("(?:[^"\\]|\\.)*")$/u.exec(line);
+  if (!quoted) throw new Error("Unsupported diff header; upstream comparison is incomplete.");
+  const decode = (value: string) => {
+    const bytes: number[] = [];
+    const escapes: Record<string, number> = {
+      a: 7,
+      b: 8,
+      t: 9,
+      n: 10,
+      v: 11,
+      f: 12,
+      r: 13,
+      '"': 34,
+      "\\": 92,
+    };
+    for (let index = 1; index < value.length - 1; index++) {
+      if (value[index] !== "\\") {
+        const point = value.codePointAt(index)!;
+        bytes.push(...new TextEncoder().encode(String.fromCodePoint(point)));
+        if (point > 0xffff) index++;
+        continue;
+      }
+      const escaped = value[++index]!;
+      if (/[0-7]/u.test(escaped)) {
+        const octal = value.slice(index).match(/^[0-7]{1,3}/u)![0];
+        bytes.push(Number.parseInt(octal, 8));
+        index += octal.length - 1;
+      } else {
+        const byte = escapes[escaped];
+        if (byte === undefined) throw new Error("Unsupported Git path escape.");
+        bytes.push(byte);
+      }
+    }
+    return new TextDecoder("utf-8", { fatal: true }).decode(new Uint8Array(bytes));
+  };
+  const before = decode(quoted[1]!);
+  const after = decode(quoted[2]!);
+  if (!before.startsWith("a/") || !after.startsWith("b/") || before.slice(2) !== after.slice(2)) {
+    throw new Error("Expected a diff with rename detection disabled.");
+  }
+  return after.slice(2);
+}
+
 /** Added and removed lines per file, each starting with "+" or "-", in patch order. */
 type ChangedLines = Map<string, Array<string>>;
 
@@ -40,9 +87,8 @@ export function changedLinesByFile(patches: ReadonlyArray<string>): ChangedLines
   for (const patch of patches) {
     let current: Array<string> | null = null;
     for (const line of patch.split("\n")) {
-      const header = /^diff --git a\/(.+) b\/(.+)$/u.exec(line);
-      if (header) {
-        const path = header[2]!;
+      const path = diffPath(line);
+      if (path !== null) {
         current = files.get(path) ?? [];
         files.set(path, current);
         continue;
@@ -56,9 +102,9 @@ export function changedLinesByFile(patches: ReadonlyArray<string>): ChangedLines
 
 export interface FileDifference {
   readonly path: string;
-  /** Lines upstream's change adds ("+") or removes ("-") in this file, in patch order. */
+  /** Normalized upstream patch lines, including context, modes and binary identities. */
   readonly upstreamLines: ReadonlyArray<string>;
-  /** Lines the picked commit adds or removes in this file, in patch order. */
+  /** Normalized candidate patch lines in patch order. */
   readonly forkLines: ReadonlyArray<string>;
   /**
    * A diff from `upstreamLines` to `forkLines`: "-" marks a line only upstream's change has, "+" a
@@ -82,26 +128,57 @@ function linesMissingFrom(
   });
 }
 
-/**
- * Compares what the upstream sources change with what the picked commit changes, file by file.
- * Line numbers and context are ignored, so a clean cherry-pick onto moved code still matches.
- */
+/** Compare ordered patches, retaining context, modes and binary payloads. */
 export function compareWithUpstream(input: {
   readonly upstreamPatches: ReadonlyArray<string>;
   readonly forkPatch: string;
 }): ReadonlyArray<FileDifference> {
-  const upstream = changedLinesByFile(input.upstreamPatches);
-  const fork = changedLinesByFile([input.forkPatch]);
-  const paths = [...new Set([...upstream.keys(), ...fork.keys()])].toSorted((left, right) =>
-    left.localeCompare(right),
-  );
-  return paths.flatMap((path) => {
+  const read = (patches: ReadonlyArray<string>) => {
+    const files = new Map<string, string[]>();
+    for (const patch of patches) {
+      let current: string[] | undefined;
+      let indexLine = "";
+      for (const line of patch.split("\n")) {
+        const path = diffPath(line);
+        if (path !== null) {
+          current = files.get(path) ?? [];
+          files.set(path, current);
+        } else if (current && line !== "") {
+          if (line.startsWith("index ")) {
+            indexLine = line;
+            if (line === "GIT binary patch") {
+              const index = current.findIndex((entry) => entry.startsWith("index"));
+              if (index === -1) throw new Error("Binary patch has no object identities.");
+              current[index] = indexLine;
+            }
+            current.push(line.replace(/^index [0-9a-f]+\.\.[0-9a-f]+/u, "index"));
+            continue;
+          }
+          if (line === "GIT binary patch") {
+            const index = current.findIndex((entry) => entry.startsWith("index"));
+            if (index === -1) throw new Error("Binary patch has no object identities.");
+            current[index] = indexLine;
+          }
+          current.push(line.replace(/^@@ -\d+(,\d+)? \+\d+(,\d+)? @@/u, "@@ -$1 +$2 @@"));
+        }
+      }
+    }
+    return files;
+  };
+  const upstream = read(input.upstreamPatches);
+  const fork = read([input.forkPatch]);
+  return [...new Set([...upstream.keys(), ...fork.keys()])].toSorted().flatMap((path) => {
     const upstreamLines = upstream.get(path) ?? [];
     const forkLines = fork.get(path) ?? [];
-    return linesMissingFrom(upstreamLines, forkLines).length === 0 &&
-      linesMissingFrom(forkLines, upstreamLines).length === 0
+    return JSON.stringify(upstreamLines) === JSON.stringify(forkLines)
       ? []
-      : [{ path, upstreamLines, forkLines }];
+      : [
+          {
+            path,
+            upstreamLines,
+            forkLines,
+          },
+        ];
   });
 }
 

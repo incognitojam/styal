@@ -4,7 +4,7 @@ run-name: Promote ${{ github.event.workflow_run.head_branch }} at ${{ github.eve
 
 # Starts when Fork CI passes on an intake branch. A workflow_run always runs
 # main's copy of this file, so a candidate cannot change the checks that
-# promote it. A candidate the audit marks eligible, whose native fingerprint is
+# promote it. A candidate the audit marks eligible, whose native fingerprint inputs are
 # unchanged, promotes through upstream-intake-automatic; every other candidate
 # waits for approval on upstream-intake-manual. To retry, re-run Fork CI.
 on:
@@ -85,8 +85,8 @@ jobs:
             echo "::error::The intake branch moved after Fork CI tested it; its new push starts its own promotion."
             exit 1
           fi
-          if ! git diff --quiet "$base_sha" "$candidate_sha" -- .github/workflows/fork-ci.yml; then
-            echo "::error::Candidates that change Fork CI must land through a pull request."
+          if ! git diff --quiet "$base_sha" "$candidate_sha" -- .github/workflows/fork-ci.yml .github/scripts/ci-changes.cjs; then
+            echo "::error::Candidates that change Fork CI or its job selector must land through a pull request."
             exit 1
           fi
 
@@ -141,6 +141,28 @@ jobs:
             echo "- Fork CI: $CI_RUN_URL"
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Require executed Fork CI jobs from the triggering attempt
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CI_RUN_ID: ${{ github.event.workflow_run.id }}
+          CI_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          CANDIDATE_SHA: ${{ steps.candidate.outputs.candidate_sha }}
+        run: |
+          node --input-type=module <<'JS'
+          import { execFileSync } from 'node:child_process';
+          import { requireIntakeJobs } from './scripts/upstream/lib/promotion-evidence.ts';
+          const api = (path) => JSON.parse(execFileSync('gh', ['api', path], { encoding: 'utf8' }));
+          const root = `repos/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.CI_RUN_ID}`;
+          const run = api(`${root}/attempts/${process.env.CI_RUN_ATTEMPT}`);
+          if (run.head_sha !== process.env.CANDIDATE_SHA || run.event !== 'push' ||
+              run.path !== '.github/workflows/fork-ci.yml' || run.conclusion !== 'success') {
+            throw new Error('Fork CI evidence does not identify the tested candidate and workflow.');
+          }
+          const pages = JSON.parse(execFileSync('gh', ['api', '--paginate', '--slurp',
+            `${root}/attempts/${process.env.CI_RUN_ATTEMPT}/jobs?per_page=100`], { encoding: 'utf8' }));
+          requireIntakeJobs(pages.flatMap((page) => page.jobs));
+          JS
+
       - name: Save upstream PR associations
         if: hashFiles('.scratch/upstream-queue-*-prs.json') != ''
         uses: actions/cache/save@v6
@@ -148,40 +170,23 @@ jobs:
           path: .scratch/upstream-queue-*-prs.json
           key: upstream-associations-${{ steps.intake_target.outputs.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
 
-      - name: Download the native fingerprint verdict
-        continue-on-error: true
-        uses: actions/download-artifact@v8
-        with:
-          name: intake-native-fingerprint
-          run-id: ${{ github.event.workflow_run.id }}
-          github-token: ${{ github.token }}
-          path: ${{ runner.temp }}/fingerprint
-
       - id: fingerprint
-        name: Read the native fingerprint verdict
-        shell: bash
+        name: Determine native evidence from trusted policy
         env:
+          BASE_SHA: ${{ steps.candidate.outputs.base_sha }}
           CANDIDATE_SHA: ${{ steps.candidate.outputs.candidate_sha }}
         run: |
-          set -euo pipefail
-          file="$RUNNER_TEMP/fingerprint/intake-native-fingerprint.json"
-          verdict=unknown
-          report="Native fingerprint: Fork CI did not report it. Compare it by hand before relying on an OTA update."
-          if [[ -f "$file" ]] && [[ "$(jq -r .sha "$file")" == "$CANDIDATE_SHA" ]]; then
-            verdict="$(jq -r .verdict "$file")"
-            report="$(jq -r .report "$file")"
-          fi
-          case "$verdict" in
-            unchanged | moved | unknown) ;;
-            *) verdict=unknown ;;
-          esac
-          echo "verdict=$verdict" >> "$GITHUB_OUTPUT"
-          {
-            echo
-            echo "## Native fingerprint"
-            echo
-            echo "$report"
-          } >> "$GITHUB_STEP_SUMMARY"
+          node --input-type=module <<'JS'
+          import { execFileSync } from 'node:child_process';
+          import { appendFileSync } from 'node:fs';
+          import { touchesNativeFingerprint } from './scripts/upstream/intake-run.ts';
+          const paths = execFileSync('git', ['diff', '--name-only', '--no-renames', '-z',
+            process.env.BASE_SHA, process.env.CANDIDATE_SHA], { encoding: 'utf8' }).split('\0').filter(Boolean);
+          const verdict = touchesNativeFingerprint(paths) ? 'unknown' : 'unchanged';
+          appendFileSync(process.env.GITHUB_OUTPUT, `verdict=${verdict}\n`);
+          appendFileSync(process.env.GITHUB_STEP_SUMMARY,
+            `\n## Native fingerprint\n\nTrusted input comparison: ${verdict}. Candidate artifacts are informational only; changed inputs require manual comparison.\n`);
+          JS
 
       - id: lane
         name: Choose the promotion lane

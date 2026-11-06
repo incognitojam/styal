@@ -204,6 +204,14 @@ export function auditUpstreamIntakeCandidate(input: UpstreamIntakeAuditInput): U
   }
 
   const valid = errors.length === 0;
+  if (
+    input.commits.some((sha) => {
+      const reviews = commitReviews.filter((review) => review.sha === sha);
+      return reviews.length !== 1 || reviews[0]!.comparison.status === "unavailable";
+    })
+  ) {
+    manualReviewReasons.push("complete upstream comparisons are required for every commit");
+  }
   const automaticEligible = valid && manualReviewReasons.length === 0;
   const promotion = automaticEligible
     ? "Eligible for automatic promotion"
