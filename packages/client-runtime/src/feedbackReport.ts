@@ -23,19 +23,6 @@ export const feedbackReportFromApproval = (approval: {
     ? approval.toolInput
     : null;
 
-/**
- * An answered request adds no row: its tool row already holds the report text and the outcome,
- * and the request's prompt repeats that text in full.
- */
-export const isAnsweredFeedbackReportApproval = (item: {
-  readonly type: string;
-  readonly status: string;
-  readonly toolName?: string | null | undefined;
-}): boolean =>
-  item.type === "approval_request" &&
-  item.toolName === FEEDBACK_REPORT_TOOL_NAME &&
-  item.status !== "waiting";
-
 /** Posting is offered only where the report is on screen. */
 export const feedbackReportDeclineOptions = (
   options: ReadonlyArray<ProviderApprovalOption> | undefined,

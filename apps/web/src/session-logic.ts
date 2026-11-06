@@ -5,7 +5,7 @@ import {
 } from "@t3tools/client-runtime/state/setup-script-activity";
 import type { ThreadStructure, ThreadStructureRuntime } from "@t3tools/client-runtime/state/shell";
 import { resolveThreadWorkingStartedAt } from "@t3tools/client-runtime/state/models";
-import { isAnsweredFeedbackReportApproval } from "@t3tools/client-runtime/feedback-report";
+import { foldAnsweredToolApprovals } from "@t3tools/client-runtime/work-log/presentation";
 import {
   type AssetResource,
   type OrchestrationV2Checkpoint,
@@ -601,6 +601,7 @@ export interface TimelineEntriesProjection {
 export function deriveTimelineEntriesFromVisibleTurnItems(
   input: TimelineEntriesInput,
 ): TimelineEntry[] {
+  input = { ...input, visibleTurnItems: foldAnsweredToolApprovals(input.visibleTurnItems) };
   const committedMessageIds = new Set<string>();
   const entries: TimelineEntry[] = [];
   const attemptByRootNodeId = new Map(
@@ -636,7 +637,7 @@ export function deriveTimelineEntriesFromVisibleTurnItems(
   for (const row of input.visibleTurnItems) {
     const { item } = row;
     if (turnItemIsWorkspacePreparation(item) && !item.deferredWork) continue;
-    if (item.type === "checkpoint" || isAnsweredFeedbackReportApproval(item)) continue;
+    if (item.type === "checkpoint") continue;
     if (
       item.type === "user_message" &&
       item.inputIntent === "queued_turn" &&
@@ -960,7 +961,11 @@ function reuseTimelineEntries(
   input: TimelineEntriesInput,
   previous: TimelineEntriesProjection,
 ): TimelineEntry[] | null {
-  const before = previous.input;
+  input = { ...input, visibleTurnItems: foldAnsweredToolApprovals(input.visibleTurnItems) };
+  const before = {
+    ...previous.input,
+    visibleTurnItems: foldAnsweredToolApprovals(previous.input.visibleTurnItems),
+  };
   if (
     input.visibleTurnItems.length < before.visibleTurnItems.length ||
     !shallow(input.optimisticMessages, before.optimisticMessages) ||

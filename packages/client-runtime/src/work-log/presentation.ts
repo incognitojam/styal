@@ -19,6 +19,7 @@ import {
   type ToolActivitySource,
   type ToolActivitySurface,
   type ToolActivityIcon,
+  type OrchestrationV2ProjectedTurnItem,
   type OrchestrationV2TurnItem,
   type OrchestrationV2Run,
   type OrchestrationV2ConversationMessage,
@@ -26,6 +27,7 @@ import {
   type ThreadId,
 } from "@t3tools/contracts";
 import {
+  resolveT3McpToolId,
   resolveT3McpSummaryAction,
   resolveT3McpToolDefinition,
   type T3McpToolDefinition,
@@ -49,6 +51,51 @@ import {
   t3ToolResultIndicatesFailure,
   type T3ToolSummaryCall,
 } from "@t3tools/client-runtime/t3ToolSummary";
+
+/** Server approvals have no native call id; match their tool name and lifetime within the source run. */
+export function foldAnsweredToolApprovals(
+  rows: ReadonlyArray<OrchestrationV2ProjectedTurnItem>,
+): ReadonlyArray<OrchestrationV2ProjectedTurnItem> {
+  if (!rows.some(({ item }) => item.type === "approval_request" && item.status !== "waiting"))
+    return rows;
+  const tools = new Map<string, OrchestrationV2ProjectedTurnItem[]>();
+  const key = (row: OrchestrationV2ProjectedTurnItem, name: string) =>
+    JSON.stringify([row.sourceThreadId, row.item.runId, resolveT3McpToolId(name) ?? name]);
+  for (const row of rows) {
+    if (row.item.type !== "dynamic_tool" || !row.item.toolName || row.item.runId === null) continue;
+    const groupKey = key(row, row.item.toolName);
+    const group = tools.get(groupKey);
+    if (group) group.push(row);
+    else tools.set(groupKey, [row]);
+  }
+  const folded = new Set<OrchestrationV2ProjectedTurnItem>();
+  for (const row of rows) {
+    const item = row.item;
+    if (
+      item.type !== "approval_request" ||
+      item.status === "waiting" ||
+      !item.toolName ||
+      item.runId === null
+    )
+      continue;
+    const group = tools.get(key(row, item.toolName));
+    if (!group?.length) continue;
+    const index =
+      item.parentItemId === null
+        ? group.findLastIndex(
+            ({ item: tool }) =>
+              item.startedAt !== null &&
+              tool.startedAt !== null &&
+              DateTime.toEpochMillis(tool.startedAt) <= DateTime.toEpochMillis(item.startedAt) &&
+              (tool.completedAt === null ||
+                DateTime.toEpochMillis(item.startedAt) <= DateTime.toEpochMillis(tool.completedAt)),
+          )
+        : group.findIndex((tool) => tool.sourceItemId === item.parentItemId);
+    if (index === -1) continue;
+    folded.add(row);
+  }
+  return folded.size === 0 ? rows : rows.filter((row) => !folded.has(row));
+}
 
 /**
  * Whether a restart continuation resumes the response of the run it continues.

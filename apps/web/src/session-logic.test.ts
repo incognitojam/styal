@@ -1,3 +1,4 @@
+import { summarizeToolGroup } from "@t3tools/client-runtime/work-log/presentation";
 import {
   MessageId,
   RuntimeRequestId,
@@ -42,6 +43,115 @@ import { makeStreamingTimelineFixture, makeThreadProjectionFixture } from "./tes
 import type { ChatMessage } from "./types";
 
 describe("V2 session presentation", () => {
+  it("folds an answered hardware approval into its tool without inflating the count", () => {
+    const fixture = makeStreamingTimelineFixture("Partial");
+    const base = fixture.visibleTurnItems.find((row) => row.item.id === "live-work")!;
+    if (base.item.type !== "dynamic_tool") throw new Error("Expected tool fixture");
+    const tool: OrchestrationV2ProjectedTurnItem = {
+      ...base,
+      item: {
+        ...base.item,
+        type: "dynamic_tool",
+        toolName: "mcp__styal__hardware_call",
+        input: { device: "fixture-device", action: "start" },
+        output: { ok: true },
+        status: "completed",
+      },
+    };
+    const approval: OrchestrationV2ProjectedTurnItem = {
+      ...base,
+      sourceItemId: TurnItemId.make("approval"),
+      item: {
+        ...base.item,
+        id: TurnItemId.make("approval"),
+        type: "approval_request",
+        requestId: RuntimeRequestId.make("approval"),
+        requestKind: "permission",
+        toolName: "hardware_call",
+        toolInput: { device: "fixture-device", action: "start", query: {} },
+        status: "completed",
+      },
+    };
+    if (approval.item.type !== "approval_request") throw new Error("Expected approval fixture");
+    const derive = (rows: OrchestrationV2ProjectedTurnItem[]) =>
+      deriveTimelineEntriesFromVisibleTurnItems({ visibleTurnItems: rows, optimisticMessages: [] });
+    const entries = derive([tool, approval]);
+    expect(entries).toHaveLength(1);
+    const work = entries.flatMap((entry) => (entry.kind === "work" ? [entry.entry] : []));
+    expect(summarizeToolGroup(work).summary).toBe("Used hardware 1 time");
+    expect(work).toHaveLength(1);
+    expect(derive([approval])).toHaveLength(1);
+    expect(
+      derive([tool, { ...approval, item: { ...approval.item, status: "waiting" } }]),
+    ).toHaveLength(2);
+    expect(
+      derive([tool, { ...approval, item: { ...approval.item, runId: RunId.make("other-run") } }]),
+    ).toHaveLength(2);
+    expect(
+      derive([
+        tool,
+        {
+          ...approval,
+          item: { ...approval.item, startedAt: DateTime.makeUnsafe(fixture.time(60)) },
+        },
+      ]),
+    ).toHaveLength(2);
+    expect(
+      derive([tool, { ...approval, item: { ...approval.item, toolName: "different_tool" } }]),
+    ).toHaveLength(2);
+    expect(
+      derive([tool, { ...approval, item: { ...approval.item, status: "cancelled" } }]),
+    ).toHaveLength(1);
+    const anotherApproval = {
+      ...approval,
+      sourceItemId: TurnItemId.make("another-approval"),
+      item: { ...approval.item, id: TurnItemId.make("another-approval") },
+    };
+    expect(derive([tool, approval, anotherApproval])).toHaveLength(1);
+    const second = {
+      ...tool,
+      sourceItemId: TurnItemId.make("second"),
+      item: { ...tool.item, id: TurnItemId.make("second") },
+    };
+    expect(derive([tool, second, approval])).toHaveLength(2);
+    const answeredInput = { visibleTurnItems: [tool, approval], optimisticMessages: [] };
+    expect(deriveTimelineEntriesFromVisibleTurnItemsWithState(answeredInput).input).toBe(
+      answeredInput,
+    );
+    expect(
+      derive([
+        tool,
+        { ...approval, item: { ...approval.item, parentItemId: TurnItemId.make("missing-tool") } },
+      ]),
+    ).toHaveLength(2);
+    expect(
+      derive([tool, { ...approval, sourceThreadId: ThreadId.make("other-thread") }]),
+    ).toHaveLength(2);
+    const pendingInput = {
+      visibleTurnItems: [
+        tool,
+        { ...approval, item: { ...approval.item, status: "waiting" as const } },
+      ],
+      optimisticMessages: [],
+    };
+    expect(
+      deriveTimelineEntriesFromVisibleTurnItemsWithState(
+        answeredInput,
+        deriveTimelineEntriesFromVisibleTurnItemsWithState(pendingInput),
+      ).entries,
+    ).toHaveLength(1);
+    const previous = deriveTimelineEntriesFromVisibleTurnItemsWithState({
+      visibleTurnItems: [approval],
+      optimisticMessages: [],
+    });
+    expect(
+      deriveTimelineEntriesFromVisibleTurnItemsWithState(
+        { visibleTurnItems: [approval, tool], optimisticMessages: [] },
+        previous,
+      ).entries,
+    ).toHaveLength(1);
+  });
+
   it("uses run status as the settlement boundary", () => {
     const runId = RunId.make("run-1");
     expect(

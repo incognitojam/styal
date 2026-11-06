@@ -13,7 +13,7 @@ import type {
   ThreadPendingApproval,
   ThreadPendingUserInput,
 } from "@t3tools/client-runtime/state/thread-requests";
-import { isAnsweredFeedbackReportApproval } from "@t3tools/client-runtime/feedback-report";
+import { foldAnsweredToolApprovals } from "@t3tools/client-runtime/work-log/presentation";
 import { turnItemIsWorkspacePreparation } from "@t3tools/client-runtime/state/turn-item-presentation";
 import type { ThreadCheckpointSummary } from "@t3tools/client-runtime/state/thread-checkpoints";
 import { formatSubagentDisplayTitle } from "@t3tools/client-runtime/state/subagent-display";
@@ -2230,6 +2230,7 @@ export function buildThreadFeed(
     readonly cache?: ThreadFeedCache;
   },
 ): ThreadFeedEntry[] {
+  visibleTurnItems = foldAnsweredToolApprovals(visibleTurnItems);
   const anchoredMessages = options?.anchoredMessages ?? [];
   const attemptByRootNodeId = new Map(
     (options?.attempts ?? []).map((attempt) => [attempt.rootNodeId, attempt] as const),
@@ -2306,7 +2307,6 @@ export function buildThreadFeed(
     const item = row.item;
     if (turnItemIsWorkspacePreparation(item) && !item.deferredWork) continue;
     if (item.type === "todo_list" || item.type === "checkpoint") continue;
-    if (isAnsweredFeedbackReportApproval(item)) continue;
     if (
       item.type === "user_message" &&
       item.inputIntent === "queued_turn" &&
