@@ -82,6 +82,8 @@ export function NoticeText({
     const banner = text.closest("[data-slot=composer-banner]");
     const range = document.createRange();
     const measure = () => {
+      // An open popover's focus guards sit at the viewport origin and would stretch the range.
+      if (text.querySelector("[data-base-ui-focus-guard]")) return;
       // Ignore the space taken by the details button itself so it cannot
       // sustain its own overflow after the text would otherwise fit.
       const recoveredWidth = detailsRef.current ? detailsRef.current.offsetWidth + 4 : 0;
