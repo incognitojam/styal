@@ -165,6 +165,7 @@ For mobile verification, a missing or outdated native client is an install step,
 
 - This repository is `incognitojam/styal`, a fork of `pingdotgg/t3code`. Treat the upstream repository as read-only: never open a PR against upstream unless the developer explicitly names upstream as the target and authorizes that contribution. A general request to open a PR authorizes a PR against the fork only.
 - Never make a PR unless the developer explicitly asks you to do so.
+- The `agent-context-increase` label is the maintainer's decision; agents report context growth and leave the label to the maintainer.
 - Conventional commit titles, plain language: `fix(web): new threads no longer spike CPU`.
 - Body: the problem in a sentence or two, then how you fixed it. End with the model and harness that did the work.
 - **Upstream intake follows [the upstream intake runbook](docs/operations/upstream-tracking.md).** Upstream is never auto-synced. Intake batches land on `intake/**` branches through the promotion workflow, never through a pull request. Never rebase `main` onto upstream or force-push it.

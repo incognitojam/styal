@@ -51,5 +51,5 @@ jobs:
             echo "Accepted by the agent-context-increase label."
             exit 0
           fi
-          echo "::error file=$BUDGET::Agent context grew compared to main. Cut the added text and rerun the evals that cover it (evals/README.md), or ask a maintainer to add the agent-context-increase label."
+          echo "::error file=$BUDGET::Agent context grew compared to main. Cut the added text and rerun the evals that cover it (evals/README.md), or report the growth and leave the agent-context-increase label to the maintainer."
           exit 1
