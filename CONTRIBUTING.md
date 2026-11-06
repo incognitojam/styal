@@ -71,7 +71,7 @@ its own PR unless it is necessary to solve the same problem. A large diff alone 
 the PR contains unrelated work.
 
 This rule is for outside contributions. Maintainers, the logins in
-[.github/TRIAGE_EXEMPTIONS.td](.github/TRIAGE_EXEMPTIONS.td), may batch related fixes in one PR.
+[.github/TRIAGE_EXEMPTIONS.td](.github/TRIAGE_EXEMPTIONS.td), follow the [one fix or feature per PR](AGENTS.md#pull-requests) rule.
 
 Follow the [documentation rules](AGENTS.md#documentation). Keep internal docs for decisions and
 hard-to-discover constraints. Update user guides when how to use a feature changes; skip descriptions

@@ -177,7 +177,7 @@ For mobile verification, a missing or outdated native client is an install step,
 - UI changes need before/after images. Motion or timing needs a short video.
 - Label a PR `preview:web` for a hosted web preview, `preview:mac` for an unsigned Apple Silicon DMG, `preview:windows` for an unsigned Windows x64 installer, or `preview:android` for an installable APK, rebuilt on every push. See [PR previews](docs/operations/development.md#pr-previews) for setup and for handing a build over.
 - Upload PR evidence to GitHub. Never commit PR-only screenshots or assets such as `.github/pr-assets/`.
-- One request is one PR. Split it only when the maintainer asks. Outside contributions follow the stricter [one problem per PR](CONTRIBUTING.md#one-problem) rule.
+- One fix or feature per PR. Land them in order; don't stack them unless they depend on each other. Outside contributions follow the stricter [one problem per PR](CONTRIBUTING.md#one-problem) rule.
 - When babysitting: call `watch_pull_request` and end your turn. T3 Code wakes you on checks, comments, or conflicts. Do not poll or sleep. Verify each bot finding against the source, fix real ones, dismiss false positives with a written reason. Stay quiet when nothing is new. Stop when the bots are green on the latest commit.
 
 ### Stacked pull requests
