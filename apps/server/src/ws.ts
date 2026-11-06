@@ -8,6 +8,7 @@ import * as ClientFeatureUsage from "./telemetry/ClientFeatureUsage.ts";
 import { recordClientNetworkReports } from "./telemetry/ClientNetworkReports.ts";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
 import * as PeerLinkRequests from "./peer/PeerLinkRequests.ts";
+import * as IncomingMachineAccess from "./peer/IncomingMachineAccess.ts";
 import * as PeerLinks from "./peer/PeerLinks.ts";
 
 import * as DateTime from "effect/DateTime";
@@ -1447,6 +1448,7 @@ export const layerWsRpc = (
       const serverSettings = yield* ServerSettings.ServerSettingsService;
       const secretResolver = yield* SecretResolver.SecretResolver;
       const peerLinks = yield* PeerLinks.PeerLinks;
+      const incomingMachineAccess = yield* IncomingMachineAccess.IncomingMachineAccess;
       const peerLinkRequests = yield* PeerLinkRequests.PeerLinkRequests;
       const startup = yield* ServerRuntimeStartup.ServerRuntimeStartup;
       const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
@@ -2655,6 +2657,7 @@ export const layerWsRpc = (
         [WS_METHODS.serverGetDatabaseStorage]: () => databaseStorage.status,
         [WS_METHODS.peerLinksList]: (_input) =>
           peerLinks.list.pipe(Effect.map((links) => ({ links }))),
+        [WS_METHODS.peerLinksIncomingWork]: () => incomingMachineAccess.work,
         [WS_METHODS.peerLinksLink]: (input) => peerLinks.link(input),
         [WS_METHODS.peerLinksUnlink]: ({ environmentId }) =>
           peerLinks.unlink(environmentId).pipe(Effect.map((removed) => ({ removed }))),
@@ -2674,6 +2677,8 @@ export const layerWsRpc = (
             const settings = yield* providerInstanceMutation === undefined
               ? serverSettings.updateSettings(nextPatch)
               : serverSettings.updateProviderInstance(providerInstanceMutation, nextPatch);
+            if (patch.incomingMachineAccess !== undefined)
+              yield* incomingMachineAccess.settingChanged(patch.incomingMachineAccess);
             return ServerSettings.redactServerSettingsForClient(settings);
           }),
         [WS_METHODS.serverDiscoverSourceControl]: (_input) => sourceControlDiscovery.discover,
@@ -3502,6 +3507,7 @@ export const layer = Layer.unwrap(
     const reviewGuides = yield* PullRequestReviewGuideService.PullRequestReviewGuideService;
     const peerLinks = yield* PeerLinks.PeerLinks;
     const peerLinkRequests = yield* PeerLinkRequests.PeerLinkRequests;
+    const incomingMachineAccess = yield* IncomingMachineAccess.IncomingMachineAccess;
     const sql = yield* SqlClient.SqlClient;
     return HttpRouter.add(
       "GET",
@@ -3588,6 +3594,9 @@ export const layer = Layer.unwrap(
               ),
               Layer.provide(Layer.succeed(PeerLinks.PeerLinks, peerLinks)),
               Layer.provide(Layer.succeed(PeerLinkRequests.PeerLinkRequests, peerLinkRequests)),
+              Layer.provide(
+                Layer.succeed(IncomingMachineAccess.IncomingMachineAccess, incomingMachineAccess),
+              ),
               Layer.provide(
                 SourceControlDiscovery.layer.pipe(
                   Layer.provide(

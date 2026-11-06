@@ -269,9 +269,6 @@ const make = Effect.gen(function* () {
               ? {}
               : { environmentId: input.environmentId }),
           ...(input.hint === undefined ? {} : { hint: input.hint }),
-          ...(input.requestedAccess === undefined
-            ? {}
-            : { requestedAccess: input.requestedAccess }),
         },
         { linkStatus: "pending" },
         CommandId.make(

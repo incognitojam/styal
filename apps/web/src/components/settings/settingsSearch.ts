@@ -1342,6 +1342,15 @@ export const SETTINGS_SEARCH_ITEMS = [
     ],
   },
   {
+    id: "machine-access",
+    title: "What your other machines can do",
+    to: "/settings/connections",
+    targetId: "machine-access",
+    searchTerms: [
+      "can control view only read only nothing incoming access one way sensitive machine",
+    ],
+  },
+  {
     id: "linked-environments",
     peerLinksOnly: true,
     title: "Your machines",

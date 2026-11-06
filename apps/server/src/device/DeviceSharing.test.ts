@@ -79,6 +79,7 @@ const settingsFixture = () => {
           deviceHosts: patch.deviceHosts ?? value.deviceHosts,
           enableDeviceSupport: patch.enableDeviceSupport ?? value.enableDeviceSupport,
           enableAgentDeviceAccess: patch.enableAgentDeviceAccess ?? value.enableAgentDeviceAccess,
+          incomingMachineAccess: patch.incomingMachineAccess ?? value.incomingMachineAccess,
         };
         return Effect.succeed(value);
       }),
@@ -1029,6 +1030,12 @@ it.effect("forwards agent requests to the device environment's current daemon", 
     });
     yield* f.targetSettings.service.updateSettings({ enableAgentDeviceAccess: true });
     expect(yield* f.target.agentTarget(issued.token)).toBeNull();
+    yield* f.targetSettings.service.updateSettings({ incomingMachineAccess: "view-only" });
+    expect(yield* f.target.hubTarget.pipe(Effect.flip)).toMatchObject({
+      reason: expect.stringContaining("isn't letting other machines"),
+    });
+    yield* f.targetSettings.service.updateSettings({ incomingMachineAccess: "everything" });
+    expect(yield* f.target.hubTarget).toBeDefined();
   }).pipe(Effect.scoped),
 );
 

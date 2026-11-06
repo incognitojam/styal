@@ -3,11 +3,17 @@ import * as Schema from "effect/Schema";
 import { AuthMcpClientAccess } from "./auth.ts";
 import { EnvironmentId, ThreadId, TrimmedNonEmptyString, TurnItemId } from "./baseSchemas.ts";
 
+/** The `/mcp` refusal from a machine whose `incomingMachineAccess` is `nothing`. */
+export const MACHINE_ACCEPTS_NOTHING = "machine_accepts_nothing";
+
+/** Threads other machines started here that are running now. */
+export const PeerIncomingWork = Schema.Struct({ threads: Schema.Number });
+export type PeerIncomingWork = typeof PeerIncomingWork.Type;
+
 /**
- * A link from this environment to another one (the peer). This environment
- * signed in to the peer's `/mcp` as an outside agent, with a pairing code from
- * the peer, so its agents can work there. The peer enforces the access chosen
- * at linking, and revokes the link from its own Connections.
+ * A link from this environment to another one (the peer), signed in to its `/mcp` as an
+ * outside agent with a pairing code from it. The peer enforces the lower of the access
+ * stored here and its own `incomingMachineAccess`, and revokes the link from its Connections.
  */
 export const PeerLink = Schema.Struct({
   environmentId: EnvironmentId,

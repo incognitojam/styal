@@ -1,5 +1,6 @@
 import {
   type AuthMcpClientAccess,
+  type IncomingMachineAccess,
   type EnvironmentId,
   type EnvironmentMachineKind,
   type OrchestrationV2TurnItem,
@@ -45,56 +46,61 @@ export function linkedEnvironmentNames(input: {
   );
 }
 
-/** What a client's picker opens on when nothing asked for less. */
+/** What every new connection is paired with. The other machine's setting decides the rest. */
 export const LINK_DEFAULT_ACCESS: AuthMcpClientAccess = "full-access";
 
 /** The access levels a picker offers for a machine, broadest first. */
-export const LINK_ACCESS_CHOICES = [
+const LINK_ACCESS_LABELS: Record<AuthMcpClientAccess, string> = {
+  "full-access": "Everything",
+  auto: "Only its own threads",
+  "auto-accept-edits": "Only its own threads · Auto-accept edits",
+  "approval-required": "Only its own threads · Supervised",
+  "read-only": "View only",
+};
+
+/** Names a stored level for people, including ones new connections no longer use. */
+export const linkAccessLabel = (access: AuthMcpClientAccess): string => LINK_ACCESS_LABELS[access];
+
+/** What a machine lets your other machines do there, with the limit of each stated plainly. */
+export const MACHINE_ACCESS_CHOICES = [
   {
-    access: "full-access",
-    label: "Everything",
-    description: "Works like agents on that machine, including your own threads there.",
+    level: "everything",
+    label: "Can control this machine",
+    status: "Can control",
+    description:
+      "Agents on your other machines can do anything here that this machine's user can: read and change files, run commands, start threads and use its devices.",
   },
   {
-    access: "auto",
-    label: "Only its own threads",
-    description: "Reads everything. Changes only threads it started, and skips setup scripts.",
+    level: "view-only",
+    label: "View only",
+    status: "View only",
+    description:
+      "Your other machines can read every thread here, including command output and diffs, and its projects. They can't browse files, open terminals, start or change anything, or use its devices.",
   },
   {
-    access: "read-only",
-    label: "Look only",
-    description: "Reads everything. Starts and changes nothing.",
+    level: "nothing",
+    label: "Nothing",
+    status: "Nothing",
+    description:
+      "Your other machines can't reach this machine. Its own agents can still work on them, and what those machines send back still reaches this one, so this doesn't isolate it.",
   },
 ] as const satisfies ReadonlyArray<{
-  readonly access: AuthMcpClientAccess;
+  readonly level: IncomingMachineAccess;
   readonly label: string;
+  readonly status: string;
   readonly description: string;
 }>;
 
-/**
- * The picker choice a stored level falls under. Supervised and Auto-accept edits are no
- * longer offered, but links made with them keep them, and they limit a link the same way.
- */
-export const linkAccessChoice = (access: AuthMcpClientAccess) =>
-  LINK_ACCESS_CHOICES.find((choice) => choice.access === access) ?? LINK_ACCESS_CHOICES[1];
+const machineAccessChoice = (level: IncomingMachineAccess) =>
+  MACHINE_ACCESS_CHOICES.find((choice) => choice.level === level) ?? MACHINE_ACCESS_CHOICES[0];
 
-/** Names a stored level for people. A level no longer offered also names its mode. */
-export const linkAccessLabel = (access: AuthMcpClientAccess): string => {
-  const { label } = linkAccessChoice(access);
-  switch (access) {
-    case "approval-required":
-      return `${label} · Supervised`;
-    case "auto-accept-edits":
-      return `${label} · Auto-accept edits`;
-    default:
-      return label;
-  }
-};
-
-/** The access a request opens with: the agent's suggestion, else the default. */
-export const linkRequestDefaultAccess = (
-  item: Pick<LinkRequestItem, "requestedAccess">,
-): AuthMcpClientAccess => item.requestedAccess ?? LINK_DEFAULT_ACCESS;
+/** Asked before lowering a machine's setting stops running threads. */
+export const machineAccessStopNotice = (
+  machine: string,
+  level: IncomingMachineAccess,
+  threads: number,
+): string =>
+  `Change ${machine} to ${machineAccessChoice(level).label}? ${threads === 1 ? "1 thread" : `${threads} threads`} your other machines started here will stop. Each running turn is interrupted where it is, so work it hadn't finished stays unfinished, and files it already changed stay on ${machine}. Queued messages are kept but held, and pull request and CI watches end.\n\nRaising this setting again restarts nothing, and ended watches don't come back. You can read each thread here, and resume it to send its held messages. Your other machines can send it new messages once you allow control again, but that leaves held messages held.`;
 
 /** What the card calls the other environment: its own name, else the address asked for. */
 export const linkRequestTargetName = (item: Pick<LinkRequestItem, "label" | "url">): string =>

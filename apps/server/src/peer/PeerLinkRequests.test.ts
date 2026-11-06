@@ -463,7 +463,6 @@ it.live("the agent asks without waiting, and the user links the box after its tu
       const asked = yield* a.call({
         url: b.url,
         reason: "Run the suite on the box.",
-        requestedAccess: "approval-required",
         clientRequestId: "link-box",
       });
       const card = yield* pendingCard(a);
@@ -476,7 +475,6 @@ it.live("the agent asks without waiting, and the user links the box after its tu
         reason: "Run the suite on the box.",
         environmentId: box.environmentId,
         label: "Box",
-        requestedAccess: "approval-required",
       });
       // The agent waits on the user, so the thread asks for input.
       expect((yield* a.orchestrator.getThreadShell(threadId))?.pendingRuntimeRequest).toMatchObject(

@@ -12,7 +12,7 @@ import {
   planStopWorkingTogether,
   planWorkTogether,
   runWorkTogetherLines,
-  workTogetherDefaultAccess,
+  workTogetherHasNarrowerAccess,
   workTogetherLabels,
   workTogetherFailureMessage,
   workTogetherMissingShares,
@@ -133,16 +133,22 @@ describe("access", () => {
     expect(state("auto", "auto")).toBe("done");
   });
 
-  it("opens the picker on the narrowest access already given", () => {
-    expect(workTogetherDefaultAccess(atlas(), orion())).toBe("full-access");
+  it("offers to finish a pair still paired with less, which stays narrow until then", () => {
+    const fullBack = [
+      { environmentId: atlasId, status: "reachable" as const, access: "full-access" as const },
+    ];
     expect(
-      workTogetherDefaultAccess(
-        atlas({ links: linked("read-only") }),
-        orion({
-          links: [{ environmentId: atlasId, status: "reachable", access: "full-access" }],
-        }),
+      workTogetherHasNarrowerAccess(
+        atlas({ links: linked("full-access") }),
+        orion({ links: fullBack }),
       ),
-    ).toBe("read-only");
+    ).toBe(false);
+    expect(
+      workTogetherHasNarrowerAccess(
+        atlas({ links: linked("read-only") }),
+        orion({ links: fullBack }),
+      ),
+    ).toBe(true);
   });
 });
 

@@ -7481,6 +7481,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
               SELECT 1 FROM json_each(t.payload_json, '$.pullRequests') link
               WHERE json_type(link.value, '$.watch') IS NOT NULL
             )
+            OR COALESCE(json_array_length(t.payload_json, '$.workflowRuns'), 0) > 0
           ) AS may_be_live
         FROM orchestration_v2_projection_threads t
         WHERE t.deleted_at IS NULL

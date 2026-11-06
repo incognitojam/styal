@@ -22,6 +22,7 @@ import {
   McpAppUpdateModelContextInput,
 } from "./mcpApps.ts";
 import {
+  PeerIncomingWork,
   PeerLink,
   PeerLinkCreateInput,
   PeerLinkError,
@@ -574,6 +575,7 @@ export const WS_METHODS = {
   serverGetStorageCleanupReport: "server.getStorageCleanupReport",
   serverGetDatabaseStorage: "server.getDatabaseStorage",
   peerLinksList: "peerLinks.list",
+  peerLinksIncomingWork: "peerLinks.incomingWork",
   peerLinksLink: "peerLinks.link",
   peerLinksUnlink: "peerLinks.unlink",
   peerLinksAnswerRequest: "peerLinks.answerRequest",
@@ -878,6 +880,12 @@ const WsServerGetDatabaseStorageRpc = Rpc.make(WS_METHODS.serverGetDatabaseStora
 const WsPeerLinksListRpc = Rpc.make(WS_METHODS.peerLinksList, {
   payload: Schema.Struct({}),
   success: Schema.Struct({ links: Schema.Array(PeerLinkSummary) }),
+  error: Schema.Union([PeerLinkError, EnvironmentAuthorizationError]),
+});
+
+const WsPeerLinksIncomingWorkRpc = Rpc.make(WS_METHODS.peerLinksIncomingWork, {
+  payload: Schema.Struct({}),
+  success: PeerIncomingWork,
   error: Schema.Union([PeerLinkError, EnvironmentAuthorizationError]),
 });
 
@@ -2254,6 +2262,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerGetDatabaseStorageRpc,
   WsServerUpdateSettingsRpc,
   WsPeerLinksListRpc,
+  WsPeerLinksIncomingWorkRpc,
   WsPeerLinksLinkRpc,
   WsPeerLinksUnlinkRpc,
   WsPeerLinksAnswerRequestRpc,

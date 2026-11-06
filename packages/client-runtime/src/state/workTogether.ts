@@ -272,18 +272,14 @@ export const workTogetherSharedDevices = (
 export const workTogetherMissingShares = (a: WorkTogetherMachine, b: WorkTogetherMachine) =>
   workTogetherSharedDevices(a, b).filter(({ device, agent }) => !sharedHost(agent, device));
 
-/** What the picker opens on: the narrowest access already given, so Finish never widens it unasked. */
-export function workTogetherDefaultAccess(
-  a: WorkTogetherMachine,
-  b: WorkTogetherMachine,
-): AuthMcpClientAccess {
-  const existing = [activeLink(a, b), activeLink(b, a)].flatMap((link) =>
-    link === undefined ? [] : [link.access],
+/**
+ * The pair has a direction paired with less than a new connection gets. It stays that way
+ * until someone finishes it, which pairs it again; the machine's own setting still applies.
+ */
+export const workTogetherHasNarrowerAccess = (a: WorkTogetherMachine, b: WorkTogetherMachine) =>
+  [activeLink(a, b), activeLink(b, a)].some(
+    (link) => link !== undefined && link.access !== LINK_DEFAULT_ACCESS,
   );
-  return (
-    AuthMcpClientAccess.literals.find((access) => existing.includes(access)) ?? LINK_DEFAULT_ACCESS
-  );
-}
 
 /**
  * Every line of turning it on. What is already true starts done, so a rerun only finishes.
