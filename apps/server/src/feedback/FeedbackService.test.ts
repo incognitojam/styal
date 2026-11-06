@@ -21,6 +21,7 @@ function harness(input: {
   const filed: Array<Record<string, string>> = [];
   const approvals: Array<{
     approvalStatus: string;
+    attention?: string;
     prompt: string;
     requestId: string;
     toolInput: unknown;
@@ -93,6 +94,7 @@ describe("reportFromAgent", () => {
       expect(filed[0]?.body).toContain(draft.body);
       expect(filed[0]?.body).toContain("Written by an agent (Claude, claude-opus-5-5)");
       // The card shows the text that gets posted, under the account that posts it.
+      expect(approvals[0]?.attention).toBe("input");
       expect(approvals[0]?.prompt).toContain("as @octocat");
       expect(approvals[0]?.prompt).toContain(filed[0]?.body);
       expect(approvals[0]?.prompt).toContain(draft.title);

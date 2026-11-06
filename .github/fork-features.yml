@@ -1822,6 +1822,7 @@ features:
     invariants:
       - Reports only go to incognitojam/styal, never upstream or the repository a thread works in.
       - An agent's report posts only after the user approves it; clients offer posting only beside the full report and the posting account, agents cannot answer that card, and it appears in every runtime mode.
+      - While an agent's report waits, thread lists show the thread as asking for input rather than as a permission approval; every other server approval keeps the Approval status.
       - A form report that was not posted keeps its text, in the form and after closing it, so the user can fix the sign-in and post again.
       - Without a usable GitHub credential, or when GitHub refuses, the report is not lost; the caller gets a link to the issue form with the report filled in.
       - Filing uses the server's GitHub credential whichever way it was provided (saved token, GH_TOKEN or gh), not the gh CLI.
@@ -1837,9 +1838,13 @@ features:
       - packages/client-runtime/src/feedbackReport.ts
       - packages/source-control-github/src/server/gitHubIssueFiling.ts
     upstream_paths:
+      - apps/server/src/orchestration-v2/Orchestrator.ts
+      - apps/server/src/orchestration-v2/ProjectionStore.ts
+      - packages/contracts/src/orchestrationV2.ts
       - packages/source-control-core/src/server/driver.ts
     tests:
       - apps/server/src/feedback/FeedbackService.test.ts
+      - apps/server/src/orchestration-v2/ProjectionStore.test.ts
       - packages/client-runtime/src/feedbackReport.test.ts
       - packages/source-control-github/src/server/gitHubIssueFiling.test.ts
     upstream:

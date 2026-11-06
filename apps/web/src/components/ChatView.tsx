@@ -2,6 +2,7 @@ import { projectFileActions } from "~/state/projectFileActions";
 import { continuedResponseWorkStartedAt } from "@t3tools/client-runtime/work-log/presentation";
 import { managedRelayAuthLoadAtom, managedRelaySessionAtom } from "@t3tools/client-runtime/relay";
 import { worktreeNeedsFirstCommit } from "@t3tools/client-runtime/state/vcs";
+import { feedbackReportFromApproval } from "@t3tools/client-runtime/feedback-report";
 import { ChildThreadApprovals } from "./chat/ChildThreadApprovals";
 import { workspaceAreaProps } from "../lib/workspaceFocus";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
@@ -3540,9 +3541,11 @@ export default function ChatView(props: ChatViewProps) {
                 runlessWorkActive={runlessWorkStartedAt !== null}
                 isCompacting={isCompacting}
                 awaitingUser={
-                  activePendingApproval !== null
+                  activePendingApproval !== null &&
+                  feedbackReportFromApproval(activePendingApproval) === null
                     ? "approval"
-                    : activePendingUserInput !== null ||
+                    : activePendingApproval !== null ||
+                        activePendingUserInput !== null ||
                         // A secret request has no runtime request; the shell carries it.
                         activeThreadShell?.hasPendingUserInput === true
                       ? "input"

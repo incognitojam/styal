@@ -3,6 +3,7 @@ import { useRoute, type RouteProp } from "@react-navigation/native";
 import { useState } from "react";
 import {
   EnvironmentId,
+  pendingRuntimeRequestKind,
   ThreadId,
   type OrchestrationV2ThreadProjection,
   type OrchestrationV2ThreadShell,
@@ -90,7 +91,11 @@ function threadDetailToShell(
     pendingRuntimeRequest:
       pendingRequest === null
         ? null
-        : { id: pendingRequest.id, kind: pendingRequest.kind, createdAt: pendingRequest.createdAt },
+        : {
+            id: pendingRequest.id,
+            kind: pendingRuntimeRequestKind(pendingRequest),
+            createdAt: pendingRequest.createdAt,
+          },
     latestVisibleMessage: null,
     latestUserMessageAt: latestUserMessageAt(projection),
     hasActionableProposedPlan: false,

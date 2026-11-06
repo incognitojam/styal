@@ -1,4 +1,8 @@
-import { type OrchestrationV2ProviderTurn, type RunAttemptId } from "@t3tools/contracts";
+import {
+  type OrchestrationV2ProviderTurn,
+  pendingRuntimeRequestKind,
+  type RunAttemptId,
+} from "@t3tools/contracts";
 import {
   deriveLatestThreadRun,
   deriveThreadRuntime,
@@ -1552,8 +1556,12 @@ export function presentThreadShellFromProjection(
   const { updatedAt, lastVisitedAt } = live;
   const latestRun = deriveLatestThreadRun(projection);
   const runtime = deriveThreadRuntime({ ...projection, updatedAt });
-  const pendingRuntimeRequest =
+  const pendingRequest =
     projection.runtimeRequests.findLast((request) => request.status === "pending") ?? null;
+  const pendingRuntimeRequest =
+    pendingRequest === null
+      ? null
+      : { ...pendingRequest, kind: pendingRuntimeRequestKind(pendingRequest) };
   // Direct links can hydrate detail before the thread enters the shell index.
   return {
     ...presentThreadShell(environmentId, {
