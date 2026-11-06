@@ -35,7 +35,7 @@ another device asks. Use the update button on that machine to retry.
 
 When all affected work can continue, updating proceeds without another confirmation.
 Otherwise, the combined confirmation lists affected threads by environment and project,
-separating work that will continue from work that will be interrupted. Terminal
+separating work that resumes on its own from work that stops until you message it. Terminal
 commands and activity that could not be checked remain warnings. One confirmation
 covers the matching downloaded app update; older desktop apps can still ask at
 installation. See **Continue threads after restarts** below.

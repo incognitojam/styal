@@ -185,6 +185,7 @@ function thread(
 const localChecks: ReadonlyArray<DesktopHostActivity | null> = [
   {
     ...idle,
+    environmentId: EnvironmentId.make("local"),
     hostLabel: "Local Linux",
     activeSessions: 1,
     continuableSessions: 1,
@@ -220,7 +221,7 @@ const resumableActivity: HostActivity = {
   threads: [thread("Prepare release", "Release", ["running"], true)],
 };
 const safeLocalChecks: ReadonlyArray<DesktopHostActivity> = [
-  { ...resumableActivity, hostLabel: "Local Linux" },
+  { ...resumableActivity, environmentId: EnvironmentId.make("local"), hostLabel: "Local Linux" },
   { ...idle, hostLabel: "Local subsystem" },
 ];
 
@@ -391,7 +392,7 @@ describe("combined sidebar update", () => {
       }),
     );
     expect(readConfirmDialogState().status).toBe("idle");
-    await click(button("Update", dialog()!));
+    await click(button("Update and restart", dialog()!));
     // The remaining server is checked again and its terminal asks before any restart.
     await vi.waitFor(() =>
       expect(readConfirmDialogState()).toMatchObject({ status: "confirming" }),
@@ -482,8 +483,8 @@ describe("combined sidebar update", () => {
       await using screen = await renderPill();
       await openConfirmation(screen);
       expect(dialog()!.textContent).not.toContain("Checking for running work…");
-      expect(button("Update", dialog()!).disabled).toBe(false);
-      expect(dialog()!.querySelector('[aria-label="Will continue"]')!.textContent).toContain(
+      expect(button("Update and restart", dialog()!).disabled).toBe(false);
+      expect(dialog()!.querySelector('[aria-label="Resumes on its own"]')!.textContent).toContain(
         "Prepare release",
       );
       expect(testState.updateServer).not.toHaveBeenCalled();
@@ -513,22 +514,28 @@ describe("combined sidebar update", () => {
     );
     await using screen = await renderPill();
     await openConfirmation(screen);
-    const hosts = [...dialog()!.querySelector('[aria-label="Affected threads"]')!.children];
-    expect(hosts.map((host) => host.querySelector("h3")?.textContent)).toEqual([
-      "Local Linux",
+    const block = (label: string) => dialog()!.querySelector(`section[aria-label="${label}"]`)!;
+    expect([...dialog()!.querySelectorAll("h3")].map((heading) => heading.textContent)).toEqual([
       "Build machine",
       "Test machine",
+      "This computer",
     ]);
-    expect(hosts[1]!.querySelector('[aria-label="Will continue"]')!.textContent).toContain(
-      "Prepare releaseRunning",
-    );
-    expect(hosts[1]!.querySelector('[aria-label="Will be interrupted"]')).toBeNull();
-    expect(hosts[2]!.querySelector('[aria-label="Will be interrupted"]')!.textContent).toContain(
-      "Approve deploymentNeeds approval",
-    );
+    expect(
+      block("Build machine").querySelector('[aria-label="Resumes on its own"]')!.textContent,
+    ).toContain("Prepare release");
+    expect(block("Build machine").textContent).not.toContain("Running");
+    expect(
+      block("Build machine").querySelector('[aria-label="Stops until you message it"]'),
+    ).toBeNull();
+    expect(
+      block("Test machine").querySelector('[aria-label="Stops until you message it"]')!.textContent,
+    ).toContain("Approve deploymentNeeds approval");
+    expect(block("This computer").textContent).toContain("Restarts last");
+    expect(block("Build machine").textContent).not.toContain("Restarts");
+    expect(block("Test machine").textContent).not.toContain("Restarts");
     expect(testState.hostActivity).toHaveBeenCalledTimes(2);
     expect(testState.install).not.toHaveBeenCalled();
-    await click(button("Update", dialog()!));
+    await click(button("Update and restart", dialog()!));
     expect(testState.updateServer).toHaveBeenCalledTimes(2);
     expect(testState.install).toHaveBeenCalledExactlyOnceWith({
       expectedVersion: localVersion,
@@ -567,29 +574,21 @@ describe("combined sidebar update", () => {
         local.resolve(localChecks);
         remote.resolve(AsyncResult.success(remoteActivity));
       });
-      expect(button("Update", dialog()!).disabled).toBe(false);
-      const hosts = [...dialog()!.querySelector('[aria-label="Affected threads"]')!.children];
-      expect(hosts.map((host) => host.querySelector("h3")?.textContent)).toEqual([
-        "Local Linux",
-        "Local subsystem",
-        "Build machine",
-        "Test machine",
-      ]);
+      expect(button("Update and restart", dialog()!).disabled).toBe(false);
+      const block = (label: string) => dialog()!.querySelector(`section[aria-label="${label}"]`)!;
       const sections = (host: Element, heading: string) =>
         host.querySelector(`[aria-label="${heading}"]`)!.textContent;
-      expect(sections(hosts[0]!, "Will continue")).toContain(
-        "CatalogCompile catalogRunningSubagent",
-      );
-      expect(sections(hosts[0]!, "Will be interrupted")).toContain(
+      const resumes = "Resumes on its own";
+      const stops = "Stops until you message it";
+      expect(sections(block("This computer"), resumes)).toContain("CatalogCompile catalogSubagent");
+      expect(sections(block("This computer"), stops)).toContain(
         "CatalogApprove migrationNeeds approval",
       );
-      expect(hosts[1]!.textContent).toContain(
-        "FixturesCheck fixturesNeeds inputBackground command",
-      );
-      expect(sections(hosts[2]!, "Will continue")).toContain("ReleaseBuild releaseRunning");
-      expect(sections(hosts[2]!, "Will be interrupted")).toContain("ReleaseReview releaseWaiting");
-      expect(hosts[3]!.querySelector('[aria-label="Will continue"]')).toBeNull();
-      expect(sections(hosts[3]!, "Will be interrupted")).toContain("Build releaseRunning");
+      expect(dialog()!.textContent).toContain("FixturesCheck fixturesNeeds inputCommand");
+      expect(sections(block("Build machine"), resumes)).toContain("ReleaseBuild release");
+      expect(sections(block("Build machine"), stops)).toContain("ReleaseReview releaseWaiting");
+      expect(block("Test machine").querySelector(`[aria-label="${resumes}"]`)).toBeNull();
+      expect(sections(block("Test machine"), stops)).toContain("Build releaseRunning");
       expect(dialog()!.textContent).not.toMatch(/\d+ threads? will (be interrupted|continue)/);
       expect(testState.install).not.toHaveBeenCalled();
     },
@@ -607,7 +606,7 @@ describe("combined sidebar update", () => {
       await using screen = await renderPill();
       await openConfirmation(screen);
       using _timers = fakeTimers();
-      await click(button("Update", dialog()!));
+      await click(button("Update and restart", dialog()!));
 
       expect(dialog()).toBeNull();
       expect(testState.updateServer.mock.calls.map(([target]) => target)).toEqual([
@@ -659,7 +658,7 @@ describe("combined sidebar update", () => {
     await using screen = await renderPill();
     await openConfirmation(screen);
     expect(dialog()!.textContent).toContain("Codex");
-    await click(button("Update", dialog()!));
+    await click(button("Update and restart", dialog()!));
     expect(testState.updateProvider).toHaveBeenCalledExactlyOnceWith({
       environmentId: "remote-a",
       input: { provider: "codex", instanceId: "codex-build" },
@@ -750,7 +749,7 @@ describe("combined sidebar update", () => {
       testState.hostActivity.mock.calls.map(([target]) => target.environmentId).toSorted(),
     ).toEqual(["local", "remote-a", "remote-b"]);
     expect(dialog()!.textContent).toContain("Build release");
-    await click(button("Update", dialog()!));
+    await click(button("Update and restart", dialog()!));
     expect(testState.install).toHaveBeenCalledExactlyOnceWith();
     expect(readConfirmDialogState().status).toBe("idle");
   });
@@ -777,10 +776,10 @@ describe("combined sidebar update", () => {
     expect(dialog()!.textContent).not.toContain("Still checking");
     expect(dialog()!.textContent).toContain("Build release");
     // A click right after the content changed was aimed at the old content.
-    await click(button("Update", dialog()!));
+    await click(button("Update and restart", dialog()!));
     expect(testState.updateServer).not.toHaveBeenCalled();
     await act(() => vi.advanceTimersByTimeAsync(500));
-    await click(button("Update", dialog()!));
+    await click(button("Update and restart", dialog()!));
     await vi.waitFor(() => expect(testState.updateServer).toHaveBeenCalledTimes(2));
     expect(testState.updateServer.mock.calls.map(([target]) => target.input.confirmed)).toEqual([
       true,
@@ -823,8 +822,8 @@ describe("combined sidebar update", () => {
     await openConfirmation(screen);
     expect(dialog()!.textContent).toContain("Could not check this app for running work.");
     expect(dialog()!.textContent).toContain("Could not check Test machine for running work.");
-    expect(dialog()!.textContent).toContain("Build releaseRunning");
-    expect(button("Update", dialog()!).disabled).toBe(false);
+    expect(dialog()!.textContent).toContain("Build release");
+    expect(button("Update and restart", dialog()!).disabled).toBe(false);
     expect(testState.install).not.toHaveBeenCalled();
     await click(button("Cancel", dialog()!));
     expect(testState.updateServer).not.toHaveBeenCalled();

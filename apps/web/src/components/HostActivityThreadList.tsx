@@ -3,6 +3,8 @@ import {
   groupHostActivityThreads,
   hostActivityReasonLabels,
   hostActivityReasonTone,
+  hostActivitySectionHeading,
+  hostActivityShownReasons,
 } from "@t3tools/shared/hostActivity";
 import { visibleHostActivity } from "@t3tools/client-runtime/state/threads";
 import { deriveProjectIdentity } from "../projectIdentity";
@@ -26,20 +28,23 @@ function ActivityProjectIcon({ activity }: { readonly activity: ConfirmDialogThr
 /** Affected threads under their projects, each with a badge per kind of work it has running. */
 export function HostActivityThreadList({
   activity,
+  withinMachine = false,
 }: {
   readonly activity: ReadonlyArray<ConfirmDialogThreadActivity>;
+  /** Rendered under a machine heading the caller already shows. */
+  readonly withinMachine?: boolean;
 }) {
   const machines = useEnvironmentMachines();
   const hiddenKeys = useHiddenThreadKeys();
   const hidingAnywhere = useAnyEnvironmentHiding();
   const hosts = groupHostActivityThreads(visibleHostActivity(activity, hiddenKeys, hidingAnywhere));
   return (
-    <div className="mx-6 mb-6 min-h-0 overflow-y-auto">
+    <div className={withinMachine ? "mt-3" : "mx-6 mb-6 min-h-0 overflow-y-auto"}>
       <ul aria-label="Affected threads" className="space-y-6">
         {hosts.map((host) => {
           return (
             <li key={host.key}>
-              {host.label ? (
+              {host.label && !withinMachine ? (
                 <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
                   <EnvironmentMachineIcon
                     aria-hidden
@@ -51,7 +56,7 @@ export function HostActivityThreadList({
               ) : null}
               <div className="space-y-5">
                 {host.sections.map((section) => {
-                  const heading = section.continues ? "Will continue" : "Will be interrupted";
+                  const heading = hostActivitySectionHeading(section.continues);
                   return (
                     <section aria-label={heading} key={heading}>
                       <h4 className="mb-2 text-sm font-medium text-foreground">{heading}</h4>
@@ -77,7 +82,10 @@ export function HostActivityThreadList({
                                       {thread.title.trim() || "Untitled thread"}
                                     </span>
                                     <span className="flex shrink-0 flex-wrap justify-end gap-1 pt-0.5">
-                                      {thread.reasons.map((reason) => (
+                                      {hostActivityShownReasons(
+                                        thread.reasons,
+                                        section.continues,
+                                      ).map((reason) => (
                                         <Badge
                                           key={reason}
                                           size="sm"
