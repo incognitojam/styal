@@ -1169,14 +1169,16 @@ export const SETTINGS_SEARCH_ITEMS = [
   {
     id: "mentioned-time-check",
     title: "Check mentioned times with a model (beta)",
-    to: "/settings/source-control",
+    to: "/settings/threads",
+    scope: "project-defaults",
     searchTerms: ["time chips times of day duration length day yesterday today zone clock"],
     environmentOnly: true,
   },
   {
     id: "mentioned-time-check-model",
     title: "Time check model",
-    to: "/settings/source-control",
+    to: "/settings/threads",
+    scope: "project-defaults",
     // Hidden until the check is on, so a search lands on the switch that shows it.
     targetId: "mentioned-time-check",
     searchTerms: ["time chips model haiku terra small fast"],

@@ -1,4 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
+import { MentionedTimeCheckSettings } from "./MentionedTimeCheckSettings";
 import { NotificationSettings } from "./NotificationSettings";
 import { PRIVACY_POLICY_URL } from "../../legalLinks";
 import { DiscordPresencePreview } from "./DiscordPresencePreview";
@@ -2029,6 +2030,7 @@ export function ThreadsSettingsPanel() {
             )
           }
         />
+        <MentionedTimeCheckSettings />
         <AdvancedSettings
           targetIds={[
             searchableSetting("thread-title-instructions").id,
@@ -2249,6 +2251,7 @@ function SendFeedbackRow() {
   return (
     <SettingsRow
       {...searchableSetting("send-feedback")}
+      forkFeature="feedback-reports"
       description="Report a bug or suggest a change with a public GitHub issue."
       control={
         <Button size="sm" variant="outline" onClick={() => openFeedbackDialog(environmentId)}>

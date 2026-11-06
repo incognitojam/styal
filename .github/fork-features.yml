@@ -3123,7 +3123,7 @@ features:
       - apps/web/src/components/chat/MentionedTimeChip.tsx
       - apps/web/src/components/chat/TimelineAssistantRows.tsx
       - apps/web/src/components/chat/mentionedTimeDetails.ts
-      - apps/web/src/components/settings/SourceControlWritingSettings.tsx
+      - apps/web/src/components/settings/MentionedTimeCheckSettings.tsx
       - apps/web/src/components/settings/settingsSearch.ts
       - apps/web/src/forkClientUsage.ts
       - apps/web/src/markdown-mentioned-times.ts
