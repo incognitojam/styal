@@ -52,6 +52,8 @@ export interface ProviderInstance {
   readonly orchestrationAdapter: ProviderAdapter.ProviderAdapterV2["Service"];
   readonly textGeneration: ProviderTextGeneration;
   readonly auth?: ProviderAuthController;
+  /** When the CLI last rewrote its saved login, for a sign-in made outside styal. */
+  readonly credentialsChangedAt?: Effect.Effect<number | null>;
   readonly acpSessionManagement?: {
     readonly listSessions: (input: {
       readonly cwd: string;

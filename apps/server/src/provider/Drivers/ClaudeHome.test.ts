@@ -7,6 +7,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 
 import {
+  claudeCredentialsHoldLogin,
   makeClaudeCapabilitiesCacheKey,
   makeClaudeContinuationGroupKey,
   makeClaudeEnvironment,
@@ -87,4 +88,18 @@ it.layer(NodeServices.layer)("ClaudeHome", (it) => {
         ).toBe("custom");
       }),
   );
+});
+
+it.each([
+  { name: "a refresh token", contents: '{"claudeAiOauth":{"refreshToken":"token"}}', holds: true },
+  // What Claude 2.1.316 writes after a failed refresh.
+  {
+    name: "the blanked tokens of a failed refresh",
+    contents: '{"claudeAiOauth":{"accessToken":"","refreshToken":"","expiresAt":0}}',
+    holds: false,
+  },
+  { name: "no login", contents: "{}", holds: false },
+  { name: "unreadable contents", contents: "not json", holds: false },
+])("claudeCredentialsHoldLogin reads $name", ({ contents, holds }) => {
+  expect(claudeCredentialsHoldLogin(contents)).toBe(holds);
 });

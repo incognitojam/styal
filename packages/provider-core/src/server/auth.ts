@@ -25,6 +25,8 @@ export interface ProviderAuthController {
     stopSessions: Effect.Effect<void, ProviderSetupError>,
   ) => Effect.Effect<ProviderAuthState, ProviderSetupError>;
   readonly isChangingCredentials?: Effect.Effect<boolean>;
+  /** When this server last finished an in-app sign-in, in epoch milliseconds. */
+  readonly lastSignedInAt?: Effect.Effect<number | null>;
   readonly invalidate?: Effect.Effect<void>;
   readonly refreshMethods?: Effect.Effect<void>;
   readonly withAccess?: <A, E, R>(

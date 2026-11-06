@@ -162,7 +162,7 @@ computer.
 | Muse Code   | Install [Muse Code](https://dev.meta.ai/docs/muse-code) on the server, enable it in **Settings → Providers**, then sign in there or run `muse login`.     |
 | fx          | Install [fx](https://fx.sh) with `curl -fsSL https://fx.sh/setup.sh \| bash`, then sign in from **Settings → Providers** or run `fx login`.               |
 
-**Sign in** runs the provider's own login on the machine that runs the server, so it also works from a phone or another machine. Each machine keeps its own login. styal opens the sign-in page and shows a field for the code when it recognizes what the login is asking for, and the login's terminal when it does not. If the page ends on a `localhost` address that does not load, paste that address back into styal. If a thread stops because a provider is signed out, the thread offers the same button.
+**Sign in** runs the provider's own login on the machine that runs the server, so it also works from a phone or another machine. Each machine keeps its own login. styal opens the sign-in page and shows a field for the code when it recognizes what the login is asking for, and the login's terminal when it does not. If the page ends on a `localhost` address that does not load, paste that address back into styal. If a thread stops because a provider is signed out, the thread offers the same button and waits: once you sign in, it continues by itself, one time, and so does a delegated thread, which then reports back to whatever started it. **Stop waiting** on the thread ends the wait.
 
 Provider CLIs must be on the server's `PATH`. If styal cannot find one, set its
 **Binary path** in provider settings, especially when using a version manager.

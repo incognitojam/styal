@@ -182,6 +182,8 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 
 - **Sign in to any provider from styal.** Claude, Grok Build, OpenCode, Pi, fx and Muse Code run their own login from **Settings → Providers**, the mobile provider list, or the thread a signed-out provider stopped. It works from a phone and on a remote environment, and each machine keeps its own login.
 
+- **Threads continue after sign-in.** A thread stopped because its provider is signed out waits, including a delegated thread and whatever is waiting on it. Sign in from styal or that provider's own CLI and it continues once. **Stop waiting** ends the wait, and it never counts as working.
+
 ## GitHub and code review
 
 - **PR deployments at a glance.** The pull request Summary, and the pull request screen on mobile,

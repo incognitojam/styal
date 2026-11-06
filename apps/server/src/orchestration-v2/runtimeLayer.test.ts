@@ -1,4 +1,5 @@
 import { SourceControlProviderKind } from "@t3tools/contracts";
+import { authRecoveryCommand } from "./ProviderAuthRecoveryWorker.ts";
 import { limitRecoveryCommand } from "./UsageLimitRecoveryWorker.ts";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
@@ -8328,6 +8329,285 @@ it.layer(layerSharedApplicationDataPlaneTest)("shared application data plane", (
           (SELECT COUNT(*) FROM orchestration_v2_command_receipts) AS count
       `;
       assert.equal(retiredWrites[0]?.count, 0);
+    }),
+  );
+});
+
+it.layer(layerTest)("sign-in recovery", (it) => {
+  const seedStoppedRun = Effect.fn("seedStoppedRun")(function* (name: string, code: string) {
+    const orchestrator = yield* Orchestrator.OrchestratorV2;
+    const events = yield* EventSink.EventSinkV2;
+    const threadId = ThreadId.make(`auth-recovery:${name}`);
+    const projectId = ProjectId.make(`auth-recovery:project:${name}`);
+    const now = yield* DateTime.now;
+    yield* seedProject({
+      projectId,
+      title: "Sign-in project",
+      workspaceRoot: process.cwd(),
+      defaultModelSelection: modelSelection,
+      createdAt: DateTime.formatIso(now),
+    });
+    yield* orchestrator.dispatch({
+      type: "thread.create",
+      commandId: CommandId.make(`auth-recovery:create:${name}`),
+      threadId,
+      projectId,
+      title: "Signed-out thread",
+      modelSelection,
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      branch: null,
+      worktreePath: null,
+      createdBy: "user",
+      creationSource: "web",
+    });
+    yield* orchestrator.dispatch({
+      type: "message.dispatch",
+      commandId: CommandId.make(`auth-recovery:start:${name}`),
+      threadId,
+      messageId: MessageId.make(`auth-recovery:start:${name}`),
+      text: "Start work.",
+      attachments: [],
+      dispatchMode: { type: "defer_start" },
+      createdBy: "user",
+      creationSource: "web",
+    });
+    const source = (yield* orchestrator.getThreadProjection(threadId)).runs[0]!;
+    yield* events.write({
+      events: [
+        {
+          id: EventId.make(`auth-recovery:stop:${name}`),
+          type: "run.updated",
+          threadId,
+          occurredAt: now,
+          payload: { ...source, status: "failed", completedAt: now },
+        },
+        {
+          id: EventId.make(`auth-recovery:error:${name}`),
+          type: "turn-item.updated",
+          threadId,
+          occurredAt: now,
+          payload: {
+            id: TurnItemId.make(`auth-recovery:error:${name}`),
+            type: "error",
+            threadId,
+            runId: source.id,
+            nodeId: source.rootNodeId,
+            providerThreadId: null,
+            providerTurnId: null,
+            nativeItemRef: null,
+            parentItemId: null,
+            ordinal: 2,
+            status: "failed",
+            title: "Provider error",
+            startedAt: now,
+            completedAt: now,
+            updatedAt: now,
+            failure: { class: "provider_error", message: "Signed out.", code, retryable: null },
+          },
+        },
+      ],
+    });
+    return { threadId, source };
+  });
+
+  const signedInNow = () =>
+    Effect.map(DateTime.now, (now) => ({
+      status: "authenticated" as const,
+      signedInAtMs: DateTime.toEpochMillis(now) + 1,
+      credentialsChangedAtMs: null,
+    }));
+  const signedOut = {
+    status: "unauthenticated" as const,
+    signedInAtMs: null,
+    credentialsChangedAtMs: null,
+  };
+  const candidateFor = (threadId: ThreadId) =>
+    Effect.flatMap(ProjectionStore.ProjectionStoreV2, (store) =>
+      store.getAuthRecoveryCandidates(),
+    ).pipe(Effect.map((rows) => rows.find((row) => row.id === threadId)));
+  const armed = Effect.fn("armed")(function* (threadId: ThreadId) {
+    const orchestrator = yield* Orchestrator.OrchestratorV2;
+    const now = DateTime.toEpochMillis(yield* DateTime.now);
+    const command = authRecoveryCommand((yield* candidateFor(threadId))!, signedOut, now);
+    assert.equal(command?.type, "thread.metadata.update");
+    if (command?.type === "thread.metadata.update" && command.authRecovery) {
+      yield* orchestrator.autoArmAuthRecovery({
+        commandId: command.commandId,
+        threadId,
+        authRecovery: command.authRecovery,
+      });
+    }
+    return (yield* candidateFor(threadId))!;
+  });
+
+  it.effect("resumes a signed-out run once after sign-in, keeping the failed run's thread", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const { threadId, source } = yield* seedStoppedRun("resume", "provider_auth_required");
+      const thread = yield* armed(threadId);
+      assert.deepInclude(thread.authRecovery, {
+        runId: source.id,
+        waiting: true,
+        signedOutSeen: true,
+      });
+      // Waiting is not working.
+      const shell = (yield* orchestrator.getShellSnapshot()).threads.find(
+        (row) => row.id === threadId,
+      )!;
+      assert.equal(shell.status, "failed");
+      assert.isNull(shell.activeRunId);
+
+      const signal = yield* signedInNow();
+      const resume = authRecoveryCommand(thread, signal, signal.signedInAtMs)!;
+      assert.equal(resume.type, "message.dispatch");
+      yield* orchestrator.dispatch(resume);
+      yield* orchestrator.dispatch(resume);
+      const after = yield* orchestrator.getThreadProjection(threadId);
+      assert.lengthOf(after.runs, 2);
+      // The failed run is no longer latest, so nothing is left to resume.
+      assert.isUndefined(yield* candidateFor(threadId));
+    }),
+  );
+
+  it.effect.each(["waiting", "stop", "message", "settle", "archive"] as const)(
+    "does not resume after %s changes the thread",
+    (change) =>
+      Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const { threadId, source } = yield* seedStoppedRun(`guard-${change}`, "unauthorized");
+        const thread = yield* armed(threadId);
+        const signal = yield* signedInNow();
+        const resume = authRecoveryCommand(thread, signal, signal.signedInAtMs)!;
+        const commandId = CommandId.make(`auth-recovery:change:${change}`);
+        switch (change) {
+          case "waiting":
+            yield* orchestrator.dispatch({
+              type: "thread.metadata.update",
+              commandId,
+              threadId,
+              authRecovery: { runId: source.id, waiting: false },
+            });
+            break;
+          case "stop":
+            yield* orchestrator.dispatch({ type: "thread.stop", commandId, threadId });
+            break;
+          case "message":
+            yield* orchestrator.dispatch({
+              type: "message.dispatch",
+              commandId,
+              threadId,
+              messageId: MessageId.make(`auth-recovery:change:${change}`),
+              text: "Do something else.",
+              attachments: [],
+              dispatchMode: { type: "start_immediately" },
+              createdBy: "user",
+              creationSource: "web",
+            });
+            break;
+          case "settle":
+            yield* orchestrator.dispatch({ type: "thread.settle", commandId, threadId });
+            break;
+          case "archive":
+            yield* orchestrator.dispatch({ type: "thread.archive", commandId, threadId });
+            break;
+        }
+        const before = (yield* orchestrator.getThreadProjection(threadId)).runs.length;
+        yield* orchestrator.dispatch(resume);
+        assert.lengthOf((yield* orchestrator.getThreadProjection(threadId)).runs, before);
+      }),
+  );
+
+  it.effect("a Stop before the first sweep is not undone by arming", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const { threadId } = yield* seedStoppedRun("stop-before-arm", "provider_auth_required");
+      yield* orchestrator.dispatch({
+        type: "thread.stop",
+        commandId: CommandId.make("auth-recovery:stop-before-arm:stop"),
+        threadId,
+      });
+      assert.isUndefined(yield* candidateFor(threadId));
+    }),
+  );
+
+  it.effect("counts a failure before the turn started from when it was requested", () =>
+    Effect.gen(function* () {
+      const { threadId, source } = yield* seedStoppedRun("never-started", "provider_auth_required");
+      assert.isNull(source.startedAt);
+      const thread = yield* armed(threadId);
+      assert.isDefined(thread.latestRunStartedAt);
+      assert.isNotNull(thread.latestRunStartedAt);
+      // An old sign-in therefore cannot resume every later attempt.
+      const earlier = DateTime.toEpochMillis(source.requestedAt) - 1;
+      assert.isNull(
+        authRecoveryCommand(
+          { ...thread, authRecovery: { ...thread.authRecovery!, signedOutSeen: false } },
+          { status: "authenticated", signedInAtMs: earlier, credentialsChangedAtMs: null },
+          earlier + 10_000,
+        ),
+      );
+    }),
+  );
+
+  it.effect("proposes again after a snooze wins the race with the resume", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const { threadId } = yield* seedStoppedRun("snooze-race", "provider_auth_required");
+      const thread = yield* armed(threadId);
+      const signal = yield* signedInNow();
+      const resume = authRecoveryCommand(thread, signal, signal.signedInAtMs)!;
+      const now = yield* DateTime.now;
+      yield* orchestrator.dispatch({
+        type: "thread.snooze",
+        commandId: CommandId.make("auth-recovery:snooze-race:snooze"),
+        threadId,
+        snoozedUntil: DateTime.formatIso(DateTime.add(now, { hours: 1 })),
+      });
+      yield* orchestrator.dispatch(resume);
+      assert.lengthOf((yield* orchestrator.getThreadProjection(threadId)).runs, 1);
+      yield* orchestrator.dispatch({
+        type: "thread.unsnooze",
+        commandId: CommandId.make("auth-recovery:snooze-race:unsnooze"),
+        threadId,
+        reason: "user",
+      });
+      const later = authRecoveryCommand(
+        (yield* candidateFor(threadId))!,
+        signal,
+        signal.signedInAtMs,
+      )!;
+      assert.notEqual(later.commandId, resume.commandId);
+      yield* orchestrator.dispatch(later);
+      assert.lengthOf((yield* orchestrator.getThreadProjection(threadId)).runs, 2);
+    }),
+  );
+
+  it.effect("waits again after the user turns continuing back on", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const { threadId, source } = yield* seedStoppedRun("reverse", "provider_auth_required");
+      yield* armed(threadId);
+      for (const waiting of [false, true]) {
+        yield* orchestrator.dispatch({
+          type: "thread.metadata.update",
+          commandId: CommandId.make(`auth-recovery:reverse:${waiting}`),
+          threadId,
+          authRecovery: { runId: source.id, waiting },
+        });
+      }
+      const thread = (yield* candidateFor(threadId))!;
+      assert.equal(thread.authRecovery?.waiting, true);
+      const signal = yield* signedInNow();
+      yield* orchestrator.dispatch(authRecoveryCommand(thread, signal, signal.signedInAtMs)!);
+      assert.lengthOf((yield* orchestrator.getThreadProjection(threadId)).runs, 2);
+    }),
+  );
+
+  it.effect("leaves other failures alone", () =>
+    Effect.gen(function* () {
+      const { threadId } = yield* seedStoppedRun("other-error", "api_error_500");
+      assert.isUndefined(yield* candidateFor(threadId));
     }),
   );
 });

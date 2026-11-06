@@ -427,6 +427,23 @@ export const OrchestrationV2LimitRecoveryUpdate = Schema.Struct({
 );
 export type OrchestrationV2LimitRecoveryUpdate = typeof OrchestrationV2LimitRecoveryUpdate.Type;
 
+/** A run stopped because its provider is signed out, waiting to continue after a sign-in. */
+export const OrchestrationV2AuthRecovery = Schema.Struct({
+  requestId: Schema.optional(CommandId),
+  runId: RunId,
+  waiting: Schema.Boolean,
+  /** The provider has reported itself signed out since this run failed. */
+  signedOutSeen: Schema.Boolean,
+});
+export type OrchestrationV2AuthRecovery = typeof OrchestrationV2AuthRecovery.Type;
+
+export const OrchestrationV2AuthRecoveryUpdate = Schema.Struct({
+  runId: RunId,
+  waiting: Schema.optional(Schema.Boolean),
+  signedOutSeen: Schema.optional(Schema.Boolean),
+});
+export type OrchestrationV2AuthRecoveryUpdate = typeof OrchestrationV2AuthRecoveryUpdate.Type;
+
 /** Why the settlement sweep settled a thread. Exactly one rule decides each automatic settle. */
 export const OrchestrationV2ThreadAutoSettleReason = Schema.Union([
   Schema.Struct({
@@ -523,6 +540,7 @@ export const OrchestrationV2AppThread = Schema.Struct({
   snoozedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   lastSnoozeWakeAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   limitRecovery: Schema.optional(Schema.NullOr(OrchestrationV2LimitRecovery)),
+  authRecovery: Schema.optional(Schema.NullOr(OrchestrationV2AuthRecovery)),
   guestShare: Schema.optional(Schema.NullOr(ThreadGuestShare)),
   pinnedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   autoSettleDisabledAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
@@ -2334,6 +2352,7 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
   snoozedUntil: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   snoozedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   limitRecovery: Schema.optional(Schema.NullOr(OrchestrationV2LimitRecovery)),
+  authRecovery: Schema.optional(Schema.NullOr(OrchestrationV2AuthRecovery)),
   pinnedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   autoSettleDisabledAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   pinOrderKey: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
@@ -3295,6 +3314,7 @@ export const OrchestrationV2Command = Schema.Union([
     /** Reject unless no message or run has landed on this thread. */
     expectedEmpty: Schema.optional(Schema.Boolean),
     limitRecovery: Schema.optional(Schema.NullOr(OrchestrationV2LimitRecoveryUpdate)),
+    authRecovery: Schema.optional(OrchestrationV2AuthRecoveryUpdate),
     /** Link (object) or unlink (null) a pull request; absent leaves it unchanged. */
     linkedPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
   }),
@@ -3417,6 +3437,8 @@ export const OrchestrationV2Command = Schema.Union([
     usageLimitContinuationOfRunId: Schema.optional(RunId),
     manualContinuationOfRunId: Schema.optional(RunId),
     usageLimitRecoveryRequestId: Schema.optional(CommandId),
+    authContinuationOfRunId: Schema.optional(RunId),
+    authRecoveryRequestId: Schema.optional(CommandId),
     deliveryIntent: Schema.optional(Schema.Literals(["auto", "steer", "restart"])),
     delegatedCompletion: Schema.optional(
       Schema.Struct({

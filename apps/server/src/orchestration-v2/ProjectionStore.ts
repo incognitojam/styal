@@ -1,5 +1,6 @@
 import {
   DeferredWorkTypeCounts,
+  isProviderAuthFailureCode,
   pendingGuestMessageCount,
   pendingRuntimeRequestKind,
 } from "@t3tools/contracts";
@@ -194,6 +195,18 @@ export type ProjectionLimitRecoveryCandidate = Pick<
   | "limitRecovery"
   | "snoozedUntil"
 >;
+
+export type ProjectionAuthRecoveryCandidate = Pick<
+  OrchestrationV2ThreadShell,
+  | "id"
+  | "archivedAt"
+  | "settledOverride"
+  | "latestRunId"
+  | "latestRunCompletedAt"
+  | "latestRunStartedAt"
+  | "authRecovery"
+  | "snoozedUntil"
+> & { readonly providerInstanceId: ProviderInstanceId };
 
 export type ProjectionThreadPullRequests = Pick<
   OrchestrationV2AppThread,
@@ -550,6 +563,11 @@ export interface ProjectionStoreV2Shape {
     readonly snooze: boolean;
   }) => Effect.Effect<ReadonlyArray<ProjectionLimitRecoveryCandidate>, ProjectionStoreV2Error>;
   /** Epoch ms of the next armed reset or snooze end after `now`, when a waiting thread becomes a candidate. */
+  /** Latest runs stopped by a signed-out provider, unless Stop or the user ended the wait. */
+  readonly getAuthRecoveryCandidates: () => Effect.Effect<
+    ReadonlyArray<ProjectionAuthRecoveryCandidate>,
+    ProjectionStoreV2Error
+  >;
   readonly getLimitRecoveryWakeAt: (
     now: DateTime.Utc,
   ) => Effect.Effect<number | null, ProjectionStoreV2Error>;
@@ -1724,6 +1742,7 @@ export function threadShellFromProjection(
     opens: projection.thread.opens ?? null,
     titleRegeneration: projection.thread.titleRegeneration ?? null,
     limitRecovery: projection.thread.limitRecovery ?? null,
+    authRecovery: projection.thread.authRecovery ?? null,
     deletedAt: projection.thread.deletedAt,
   };
 }
@@ -2001,6 +2020,7 @@ function shellFromState(input: {
     opens: input.state.thread.opens ?? null,
     titleRegeneration: input.state.thread.titleRegeneration ?? null,
     limitRecovery: input.state.thread.limitRecovery ?? null,
+    authRecovery: input.state.thread.authRecovery ?? null,
     deletedAt: input.state.thread.deletedAt,
   };
 }
@@ -4153,6 +4173,110 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             pendingRuntimeRequest: null,
             limitRecovery: thread.limitRecovery ?? null,
             snoozedUntil: thread.snoozedUntil ?? null,
+          });
+        }
+        return candidates;
+      },
+      Effect.mapError((cause) => new ProjectionStoreSetupError({ cause })),
+    );
+
+    const getAuthRecoveryCandidates = Effect.fn("ProjectionStore.getAuthRecoveryCandidates")(
+      function* () {
+        const rows = yield* sql<{
+          readonly payload_json: string;
+          readonly run_id: string;
+          readonly provider_instance_id: string;
+          readonly started_at: string | null;
+          readonly completed_at: string | null;
+          readonly failure_payload_json: string;
+          readonly last_error: string | null;
+        }>`
+          SELECT t.payload_json, r.run_id, r.completed_at,
+            json_extract(r.payload_json, '$.providerInstanceId') AS provider_instance_id,
+            -- A session-open failure never starts; a later resume must still count as later.
+            COALESCE(json_extract(r.payload_json, '$.startedAt'), r.requested_at) AS started_at,
+            item.payload_json AS failure_payload_json,
+            (
+              SELECT json_extract(session.payload_json, '$.lastError')
+              -- Keep bindings outermost: one provider instance can hold every session.
+              FROM orchestration_v2_projection_provider_session_bindings binding
+              CROSS JOIN orchestration_v2_projection_provider_sessions session
+                ON session.provider_session_id = binding.provider_session_id
+              WHERE binding.thread_id = t.thread_id
+                AND session.provider_instance_id = t.provider_instance_id
+              ORDER BY session.updated_at DESC, session.provider_session_id DESC
+              LIMIT 1
+            ) AS last_error
+          FROM orchestration_v2_projection_threads t
+          INNER JOIN orchestration_v2_projection_runs r ON r.run_id = (
+            SELECT latest.run_id FROM orchestration_v2_projection_runs latest
+            WHERE latest.thread_id = t.thread_id
+              AND latest.status <> 'queued'
+              AND NOT (
+                latest.status = 'cancelled'
+                AND json_extract(latest.payload_json, '$.startedAt') IS NULL
+              )
+            -- latestExecutedRun: the run that ended last (runRanAfter).
+            ORDER BY latest.completed_at IS NULL DESC, latest.completed_at DESC,
+              latest.ordinal DESC, latest.run_id DESC
+            LIMIT 1
+          ) AND r.status = 'failed'
+          INNER JOIN orchestration_v2_projection_turn_items item ON item.turn_item_id = (
+            SELECT error.turn_item_id FROM orchestration_v2_projection_turn_items error
+            WHERE error.thread_id = t.thread_id AND error.run_id = r.run_id
+              AND error.type = 'error' AND error.status = 'failed'
+              AND error.node_id IS json_extract(r.payload_json, '$.rootNodeId')
+            ORDER BY error.updated_at DESC, error.ordinal DESC, error.turn_item_id DESC
+            LIMIT 1
+          )
+          WHERE t.deleted_at IS NULL
+            -- See getLimitRecoveryCandidates: this list keeps the sweep from sorting every run.
+            AND t.thread_id IN (
+              SELECT failure.thread_id FROM orchestration_v2_projection_turn_items failure
+              WHERE failure.type = 'error' AND failure.status = 'failed'
+                AND json_extract(failure.payload_json, '$.failure.code') IN
+                  ('provider_auth_required', 'unauthorized', 'ProviderAuthError')
+            )
+            AND json_extract(t.payload_json, '$.archivedAt') IS NULL
+            AND json_extract(t.payload_json, '$.settledOverride') IS NOT 'settled'
+            AND t.provider_instance_id = json_extract(r.payload_json, '$.providerInstanceId')
+            AND (
+              json_extract(t.payload_json, '$.authRecovery.runId') IS NOT r.run_id
+              OR json_extract(t.payload_json, '$.authRecovery.waiting') = 1
+            )
+            -- An idle compaction is housekeeping; nobody is waiting for it to continue.
+            AND NOT EXISTS (
+              SELECT 1 FROM orchestration_v2_projection_messages message
+              WHERE message.message_id = json_extract(r.payload_json, '$.userMessageId')
+                AND json_extract(message.payload_json, '$.idleCompaction') IS NOT NULL
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM orchestration_v2_projection_runtime_requests request
+              WHERE request.thread_id = t.thread_id AND request.status = 'pending'
+            )
+          ORDER BY t.thread_id
+        `;
+        const candidates: Array<ProjectionAuthRecoveryCandidate> = [];
+        for (const row of rows) {
+          const thread = yield* decodeThreadPayload(row.payload_json);
+          const item = yield* decodeTurnItemPayload(row.failure_payload_json);
+          const summary = threadErrorSummary(
+            item.type === "error" ? item.failure : null,
+            row.last_error,
+          );
+          if (!isProviderAuthFailureCode(summary.lastErrorCode)) continue;
+          candidates.push({
+            id: thread.id,
+            archivedAt: thread.archivedAt,
+            settledOverride: thread.settledOverride,
+            latestRunId: RunId.make(row.run_id),
+            latestRunStartedAt:
+              row.started_at === null ? null : DateTime.makeUnsafe(row.started_at),
+            latestRunCompletedAt:
+              row.completed_at === null ? null : DateTime.makeUnsafe(row.completed_at),
+            authRecovery: thread.authRecovery ?? null,
+            snoozedUntil: thread.snoozedUntil ?? null,
+            providerInstanceId: ProviderInstanceId.make(row.provider_instance_id),
           });
         }
         return candidates;
@@ -7583,6 +7707,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       getProviderControlContext: readOnReader(getProviderControlContext),
       getLimitRecoveryCandidates: readOnReader(getLimitRecoveryCandidates),
       getLimitRecoveryWakeAt: readOnReader(getLimitRecoveryWakeAt),
+      getAuthRecoveryCandidates: readOnReader(getAuthRecoveryCandidates),
       getRecoveryThreadIds: readOnReader(getRecoveryThreadIds),
       getUnreadableThreadIds: readOnReader(getUnreadableThreadIds),
       getThreadSnapshot: readOnReader(getThreadSnapshot),

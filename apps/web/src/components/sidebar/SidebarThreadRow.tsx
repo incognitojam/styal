@@ -413,7 +413,9 @@ function SidebarThreadTooltip({
             <div className="min-w-0 truncate">
               {thread.runtime.lastErrorClass === "usage_limit"
                 ? "Usage limit reached"
-                : "Error occurred"}
+                : thread.authRecovery?.waiting
+                  ? "Waiting for sign-in"
+                  : "Error occurred"}
             </div>
           </div>
         ) : null}

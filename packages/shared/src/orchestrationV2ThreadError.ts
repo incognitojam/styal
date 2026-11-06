@@ -1,7 +1,8 @@
-import type {
-  OrchestrationV2ProviderFailure,
-  OrchestrationV2Run,
-  OrchestrationV2TurnItem,
+import {
+  isProviderAuthFailureCode,
+  type OrchestrationV2ProviderFailure,
+  type OrchestrationV2Run,
+  type OrchestrationV2TurnItem,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 
@@ -87,13 +88,27 @@ export function usageLimitBlockedRun(
   return summary.lastErrorClass === "usage_limit" ? executed : null;
 }
 
+/** A run that stopped because its provider is signed out; later work would only fail the same way. */
+export function signedOutBlockedRun(
+  runs: ReadonlyArray<OrchestrationV2Run>,
+  turnItems: ReadonlyArray<FailureScanTurnItem>,
+  sessionError: string | null,
+): OrchestrationV2Run | null {
+  const executed = latestExecutedRun(runs);
+  if (executed?.status !== "failed") return null;
+  const summary = threadErrorSummary(latestRootProviderFailure(executed, turnItems), sessionError);
+  return isProviderAuthFailureCode(summary.lastErrorCode) ? executed : null;
+}
+
 /** Retains a limited run's outcome when higher-ordinal runs never started. */
 export function usageLimitRunPresentedAsLatest(
   runs: ReadonlyArray<OrchestrationV2Run>,
   turnItems: ReadonlyArray<FailureScanTurnItem>,
   sessionError: string | null,
 ): OrchestrationV2Run | null {
-  const blocked = usageLimitBlockedRun(runs, turnItems, sessionError);
+  const blocked =
+    usageLimitBlockedRun(runs, turnItems, sessionError) ??
+    signedOutBlockedRun(runs, turnItems, sessionError);
   return blocked !== null && runs.some((run) => run.ordinal > blocked.ordinal) ? blocked : null;
 }
 

@@ -1926,6 +1926,40 @@ it.layer(Layer.merge(layerTest, ProviderContinuationRequests.layer))(
                   completedAt: now,
                 },
               },
+              ...(outcome === "failed"
+                ? [
+                    {
+                      id: EventId.make("event:followup-signed-out"),
+                      type: "turn-item.updated" as const,
+                      threadId: child.childThreadId,
+                      runId: run.id,
+                      occurredAt: now,
+                      payload: {
+                        id: TurnItemId.make("turn-item:followup-signed-out"),
+                        type: "error" as const,
+                        threadId: child.childThreadId,
+                        runId: run.id,
+                        nodeId: run.rootNodeId,
+                        providerThreadId: null,
+                        providerTurnId: null,
+                        nativeItemRef: null,
+                        parentItemId: null,
+                        ordinal: 9,
+                        status: "failed" as const,
+                        title: "Provider error",
+                        startedAt: now,
+                        completedAt: now,
+                        updatedAt: now,
+                        failure: {
+                          class: "provider_error" as const,
+                          message: "Signed out.",
+                          code: "provider_auth_required",
+                          retryable: null,
+                        },
+                      },
+                    },
+                  ]
+                : []),
             ],
           });
           yield* orchestrator.recoverDelegatedTasks;
@@ -1982,6 +2016,41 @@ it.layer(Layer.merge(layerTest, ProviderContinuationRequests.layer))(
           yield* orchestrator.recoverDelegatedTasks;
           const recovered = yield* orchestrator.getThreadProjection(parentThreadId);
           assert.equal(recovered.contextTransfers.length, finished.contextTransfers.length);
+          if (outcome === "failed") {
+            // The parent hears it is waiting rather than lost, and hears again when it finishes.
+            assert.include(followup.result, "continues by itself once its provider is signed in");
+            const resumedMessageId = MessageId.make("message:followup-signed-in");
+            yield* orchestrator.dispatch({
+              type: "thread.metadata.update",
+              commandId: CommandId.make("command:followup-signed-out-arm"),
+              threadId: child.childThreadId,
+              authRecovery: { runId: run.id, waiting: true, signedOutSeen: true },
+            });
+            yield* orchestrator.dispatch({
+              type: "message.dispatch",
+              createdBy: "user",
+              creationSource: "server",
+              commandId: CommandId.make("command:followup-signed-in"),
+              threadId: child.childThreadId,
+              authContinuationOfRunId: run.id,
+              authRecoveryRequestId: CommandId.make("command:followup-signed-out-arm"),
+              messageId: resumedMessageId,
+              text: "Continue where you left off.",
+              attachments: [],
+              dispatchMode: { type: "start_immediately" },
+            });
+            const resumed = (yield* orchestrator.getThreadProjection(
+              child.childThreadId,
+            )).runs.find((row) => row.userMessageId === resumedMessageId)!;
+            assert.isDefined(resumed.delegatedTaskId);
+            assert.notEqual(resumed.delegatedTaskId, run.delegatedTaskId);
+            assert.equal(
+              (yield* orchestrator.getThreadProjection(parentThreadId)).subagents.find(
+                (task) => task.id === resumed.delegatedTaskId,
+              )?.completionDelivery?.state,
+              "pending",
+            );
+          }
           if (outcome === "completed") {
             const automaticMessageId = MessageId.make("message:followup-automatic-wake");
             yield* orchestrator.dispatch({

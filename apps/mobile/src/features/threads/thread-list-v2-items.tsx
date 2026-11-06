@@ -1350,7 +1350,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
             )}
             numberOfLines={1}
           >
-            {thread.runtime.lastError}
+            {thread.authRecovery?.waiting ? "Waiting for sign-in" : thread.runtime.lastError}
           </Text>
         ) : props.environmentLabel ? (
           <View className="min-w-0 flex-1 flex-row items-center gap-1">

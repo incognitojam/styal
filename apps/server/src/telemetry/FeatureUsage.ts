@@ -45,6 +45,10 @@ const COMMAND_FEATURES: {
     feature: "checkpoint.rollback",
     variant: command.restoreFiles === false ? "conversation_only" : "with_files",
   }),
+  "thread.metadata.update": (command) =>
+    command.authRecovery?.waiting === undefined || command.authRecovery.signedOutSeen !== undefined
+      ? undefined
+      : use("provider_sign_in.wait", command.authRecovery.waiting ? "on" : "off"),
   "thread.fork": () => ({ feature: "thread.fork" }),
   "thread.merge_back": () => ({ feature: "thread.merge_back" }),
   "provider.switch": () => ({ feature: "provider.switch" }),
