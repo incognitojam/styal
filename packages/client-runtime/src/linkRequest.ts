@@ -91,7 +91,7 @@ export const MACHINE_ACCESS_CHOICES = [
   readonly description: string;
 }>;
 
-const machineAccessChoice = (level: IncomingMachineAccess) =>
+export const machineAccessChoice = (level: IncomingMachineAccess) =>
   MACHINE_ACCESS_CHOICES.find((choice) => choice.level === level) ?? MACHINE_ACCESS_CHOICES[0];
 
 /** Asked before lowering a machine's setting stops running threads. */

@@ -16,6 +16,7 @@ import {
   workTogetherLabels,
   workTogetherFailureMessage,
   workTogetherMissingShares,
+  workTogetherNeedsAttention,
   workTogetherOutcome,
   type WorkTogetherLine,
   type WorkTogetherMachine,
@@ -381,4 +382,41 @@ it("identifies duplicate names with connection details and preserves unique name
   ]);
   expect(long[0]?.label).toContain("…");
   expect(long[0]?.identityDetail).toContain(`${"long".repeat(20)}.example:4311`);
+});
+
+it.each([
+  ["never set up", atlas(), orion(), true],
+  [
+    "one direction missing",
+    atlas({ allowsLinks: true, links: linkedTo(orionId) }),
+    orion({ allowsLinks: true }),
+    true,
+  ],
+  [
+    "working",
+    atlas({ allowsLinks: true, links: linkedTo(orionId) }),
+    orion({ allowsLinks: true, links: linkedTo(atlasId) }),
+    false,
+  ],
+  [
+    "working, with a share missing",
+    atlas({ allowsLinks: true, links: linkedTo(orionId), hasDevices: true }),
+    orion({ allowsLinks: true, links: linkedTo(atlasId) }),
+    true,
+  ],
+  [
+    "working, with one machine asleep",
+    atlas({ allowsLinks: true, links: linkedTo(orionId) }),
+    orion({ connected: false, loaded: false, links: null }),
+    false,
+  ],
+  ["still loading", atlas({ loaded: false }), orion(), false],
+  [
+    "both asleep",
+    atlas({ connected: false, loaded: false, links: null }),
+    orion({ connected: false, loaded: false, links: null }),
+    false,
+  ],
+] as const)("workTogetherNeedsAttention: %s", (_name, a, b, expected) => {
+  expect(workTogetherNeedsAttention(a, b)).toBe(expected);
 });

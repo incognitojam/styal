@@ -380,6 +380,23 @@ export function workTogetherStatus(
   return links.length > 0 && links.every((link) => link) && allowed ? "together" : "partial";
 }
 
+/**
+ * Whether a pair has something to do, so a page can leave out the ones that are fine. A machine
+ * that is asleep is not a reason: nothing can be done from here until it is back.
+ */
+export function workTogetherNeedsAttention(
+  a: WorkTogetherMachine,
+  b: WorkTogetherMachine,
+): boolean {
+  const machines = [a, b];
+  if (machines.some((machine) => machine.connected && !machine.loaded)) return false;
+  if (machines.every((machine) => !machine.connected)) return false;
+  if (workTogetherStatus(a, b) !== "together") return true;
+  return (
+    machines.every((machine) => machine.connected) && workTogetherMissingShares(a, b).length > 0
+  );
+}
+
 /** The machines this client must be connected to before a step can run. */
 const machinesNeeded = (step: Step): ReadonlyArray<WorkTogetherMachine> => {
   switch (step.kind) {

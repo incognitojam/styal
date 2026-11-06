@@ -1355,7 +1355,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     peerLinksOnly: true,
     title: "Your machines",
     to: "/settings/connections",
-    targetId: "linked-environments",
+    targetId: "work-together",
     searchTerms: [
       "linked environments peer another machine vps agents work there handoff pairing code",
     ],
