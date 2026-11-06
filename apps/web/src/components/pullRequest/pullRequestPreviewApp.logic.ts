@@ -95,7 +95,10 @@ export function previewAppControlView(input: {
       };
     }
   }
-  if (installedHere !== null) return { kind: "open", canOpen: state.canOpen };
+  // A preview running from the install location has nothing to offer about its own copy.
+  if (installedHere !== null && (state.canOpen || state.canRemove || state.canReset)) {
+    return { kind: "open", canOpen: state.canOpen };
+  }
   if (buildRunning) return { kind: "building" };
   return lookupFailed ? { kind: "lookup-failed" } : { kind: "hidden" };
 }

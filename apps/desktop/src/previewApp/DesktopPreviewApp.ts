@@ -733,7 +733,7 @@ export const make = Effect.fn("DesktopPreviewApp.make")(function* (options?: {
           action,
           message: `${action} pull request #${pullRequestNumber}'s preview?`,
           detail: [
-            `Build ${asset.runNumber} is unsigned and runs with your account's access.`,
+            `Build ${asset.runNumber} is unsigned.`,
             ...(installed === null
               ? []
               : [

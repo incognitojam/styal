@@ -6,11 +6,11 @@ import { searchableSetting } from "./settingsSearch";
 
 /**
  * Settings → Pull request preview: the way back out once the pull request is closed or out of
- * sight. Hidden until a preview is installed or has left data behind.
+ * sight. Hidden when there is nothing to act on, including inside the installed preview itself.
  */
 export function PreviewAppSettingsRow() {
   const state = useDesktopPreviewAppState();
-  if (!state?.supported || (state.installed === null && !state.canReset)) return null;
+  if (!state?.supported || (!state.canOpen && !state.canRemove && !state.canReset)) return null;
   const busy = state.activity.status !== "idle";
   return (
     <SettingsRow

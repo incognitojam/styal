@@ -75,6 +75,13 @@ describe("previewAppControlView", () => {
       state({ canInstall: false, installed: installed(12, 6) }),
       build(7),
       false,
+      "hidden",
+    ],
+    [
+      "a preview running from its DMG, with the build installed",
+      state({ installed: installed(12, 7), canRemove: true }),
+      build(7),
+      false,
       "open",
     ],
   ] as const)("%s", (_name, inputState, inputBuild, buildRunning, kind) => {
