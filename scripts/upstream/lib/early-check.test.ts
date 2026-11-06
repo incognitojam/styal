@@ -48,6 +48,10 @@ it.live(
         git("config", "user.name", "Fixture");
         git("config", "user.email", "fixture@example.invalid");
         NodeFS.writeFileSync(NodePath.join(root, "fixture.txt"), "base");
+        NodeFS.mkdirSync(NodePath.join(root, "scripts/upstream"), { recursive: true });
+        NodeFS.writeFileSync(NodePath.join(root, "scripts/upstream/check-worker-export.ts"), "");
+        NodeFS.mkdirSync(NodePath.join(root, "apps/mobile"), { recursive: true });
+        NodeFS.writeFileSync(NodePath.join(root, "apps/mobile/.gitkeep"), "");
         git("add", ".");
         git("commit", "-qm", "base");
         const base = git("rev-parse", "HEAD");
