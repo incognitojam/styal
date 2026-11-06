@@ -9,10 +9,7 @@ import type { EnvironmentPresentation } from "./connection/presentation.ts";
 import type { RelayDiscoveredEnvironment } from "./relay/discovery.ts";
 import {
   linkableMachines,
-  LINK_ACCESS_CHOICES,
-  linkAccessChoice,
   linkAccessLabel,
-  linkRequestDefaultAccess,
   linkedEnvironmentNames,
   linkRequestAnswerInput,
   linkRequestDisplay,
@@ -27,20 +24,10 @@ const item = {
 };
 const asked = { url: "https://box.example.ts.net", label: "Box" };
 describe("link access", () => {
-  it("opens on Everything unless the agent suggested something else", () => {
-    expect(linkRequestDefaultAccess({})).toBe("full-access");
-    expect(linkRequestDefaultAccess({ requestedAccess: "read-only" })).toBe("read-only");
-  });
-
-  it("shows levels no longer offered under the choice that limits a link the same way", () => {
+  it("keeps naming levels new connections no longer use", () => {
+    expect(linkAccessLabel("auto")).toBe("Only its own threads");
     expect(linkAccessLabel("approval-required")).toBe("Only its own threads · Supervised");
     expect(linkAccessLabel("auto-accept-edits")).toBe("Only its own threads · Auto-accept edits");
-    expect(linkAccessChoice("approval-required").access).toBe("auto");
-    expect(LINK_ACCESS_CHOICES.map(({ access }) => linkAccessLabel(access))).toEqual([
-      "Everything",
-      "Only its own threads",
-      "Look only",
-    ]);
   });
 });
 

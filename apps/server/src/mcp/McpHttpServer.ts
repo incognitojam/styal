@@ -15,6 +15,8 @@ import { AiError, McpProtocol, McpSchema, McpServer, Tool, Toolkit } from "effec
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
 import {
   DeviceToolError,
+  type IncomingMachineAccess,
+  MACHINE_ACCEPTS_NOTHING,
   OrchestratorMcpFailure,
   PreviewAutomationError,
   ProviderInteractionMode,
@@ -202,14 +204,38 @@ const linkedEnvironmentsOff = HttpServerResponse.jsonUnsafe(
   { status: 403, headers: { "cache-control": "no-store" } },
 );
 
+const machineAcceptsNothing = HttpServerResponse.jsonUnsafe(
+  {
+    error: MACHINE_ACCEPTS_NOTHING,
+    message: "This machine accepts nothing from other machines. Change that in its settings.",
+  },
+  { status: 403, headers: { "cache-control": "no-store" } },
+);
+
+/** Look only caps a machine's session; a session paired with less keeps what it has. */
+const capLinkedClient = (
+  invocation: McpInvocationContext.McpInvocationScope,
+  incoming: IncomingMachineAccess,
+): McpInvocationContext.McpInvocationScope =>
+  invocation.client?.linked === true && incoming === "look-only"
+    ? { ...invocation, client: { ...invocation.client, access: "read-only" } }
+    : invocation;
+
 const makeMcpAuthMiddleware = Effect.gen(function* () {
   const registry = yield* McpSessionRegistry.McpSessionRegistry;
   const clients = yield* Effect.serviceOption(McpClientAuthenticator);
   const serverSettings = yield* ServerSettings.ServerSettingsService;
   const runtimeModeCeiling = serverSettings.managedPolicy?.limits?.maxRuntimeMode;
-  const linksEnabled = serverSettings.getSettings.pipe(
-    Effect.map((settings) => settings.linkedEnvironmentsEnabled),
-    Effect.orElseSucceed(() => false),
+  // An unreadable setting refuses machines rather than letting them in.
+  const incomingSettings = serverSettings.getSettings.pipe(
+    Effect.map((settings) => ({
+      linkedEnvironments: settings.linkedEnvironmentsEnabled,
+      incoming: settings.incomingMachineAccess,
+    })),
+    Effect.orElseSucceed(() => ({
+      linkedEnvironments: false,
+      incoming: "nothing" as IncomingMachineAccess,
+    })),
   );
   return Effect.fn("McpHttpServer.authenticateRequest")(function* (httpEffect) {
     const request = yield* HttpServerRequest.HttpServerRequest;
@@ -243,11 +269,12 @@ const makeMcpAuthMiddleware = Effect.gen(function* () {
     const asked = withModeLimit(invocation, request);
     if (asked === undefined) return invalidModeLimit;
     const limited = McpInvocationContext.withRuntimeModeCeiling(asked, runtimeModeCeiling);
-    const linkedEnvironments = yield* linksEnabled;
+    const { linkedEnvironments, incoming } = yield* incomingSettings;
     if (limited.client?.linked === true && !linkedEnvironments) return linkedEnvironmentsOff;
+    if (limited.client?.linked === true && incoming === "nothing") return machineAcceptsNothing;
     return yield* httpEffect.pipe(
       Effect.provideService(McpInvocationContext.McpInvocationContext, {
-        ...limited,
+        ...capLinkedClient(limited, incoming),
         linkedEnvironments,
       }),
       Effect.map(normalizeMcpHttpResponse),

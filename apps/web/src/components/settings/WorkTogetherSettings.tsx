@@ -6,19 +6,15 @@ import {
   type WorkTogetherLine,
   type WorkTogetherMachine,
   type WorkTogetherIdentity,
-  workTogetherDefaultAccess,
   workTogetherLabels,
   workTogetherFailureMessage,
+  workTogetherHasNarrowerAccess,
   workTogetherMissingShares,
   workTogetherOutcome,
   workTogetherSharedDevices,
   workTogetherStatus,
 } from "@t3tools/client-runtime/state/workTogether";
-import {
-  AuthAccessWriteScope,
-  type AuthMcpClientAccess,
-  AuthSettingsWriteScope,
-} from "@t3tools/contracts";
+import { AuthAccessWriteScope, AuthSettingsWriteScope } from "@t3tools/contracts";
 import { CheckIcon, CircleAlertIcon, CircleIcon, ClockIcon, MinusIcon } from "lucide-react";
 import { useEffect, useEffectEvent, useState } from "react";
 
@@ -43,7 +39,7 @@ import {
 } from "../ui/dialog";
 import { Spinner } from "../ui/spinner";
 import { useDeviceSharingAddresses } from "./EnvironmentDeviceHostsSettings";
-import { LinkAccessPicker } from "./LinkAccessPicker";
+import { MachineAccessSetting } from "./MachineAccessSetting";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
 
 type Environment = ReturnType<typeof useEnvironments>["environments"][number];
@@ -73,6 +69,23 @@ export function WorkTogetherSettings() {
           <MachinePair key={`${a.environmentId}:${b.environmentId}`} a={a} b={b} />
         ))
       )}
+      {machines.map((machine, index) => (
+        <SettingsRow
+          key={machine.environmentId}
+          {...(index === 0 ? { id: "machine-access" } : {})}
+          forkFeature="machine-access"
+          title={`What your other machines can do on ${machine.label}`}
+        >
+          <MachineAccessSetting
+            environmentId={machine.environmentId}
+            machineLabel={machine.label}
+            level={machine.serverConfig?.settings.incomingMachineAccess ?? "everything"}
+            supported={
+              machine.serverConfig?.environment.capabilities.incomingMachineAccess === true
+            }
+          />
+        </SettingsRow>
+      ))}
     </SettingsSection>
   );
 }
@@ -107,6 +120,8 @@ function useWorkTogetherMachine(
     urls: known?.urls ?? [],
     deviceUrls: addresses,
     hasDevices:
+      serverConfig?.settings.incomingMachineAccess !== "look-only" &&
+      serverConfig?.settings.incomingMachineAccess !== "nothing" &&
       device.state.supportsEnvironmentHosts === true &&
       device.state.hosts.some(
         (host) => host.kind === "local" && host.platforms.some((platform) => platform.available),
@@ -133,7 +148,6 @@ function MachinePair({
   const b = useWorkTogetherMachine(second, first);
   const execute = useAtomCommand(workTogether, { reportFailure: false, reportDefect: false });
   const [dialog, setDialog] = useState<RunKind | null>(null);
-  const [access, setAccess] = useState<AuthMcpClientAccess>(LINK_DEFAULT_ACCESS);
   const [run, setRun] = useState<Run | null>(null);
   const status = workTogetherStatus(a, b);
   const label = (
@@ -144,6 +158,7 @@ function MachinePair({
   const absent = [a, b].find((machine) => !machine.connected);
   const loading = [a, b].some((machine) => machine.connected && !machine.loaded);
   const missingShares = workTogetherMissingShares(a, b);
+  const narrower = workTogetherHasNarrowerAccess(a, b);
   const unmanaged = [a, b].find((machine) => machine.connected && !machine.canManage);
   const running = run !== null && !run.finished;
   const waiting =
@@ -153,17 +168,19 @@ function MachinePair({
     // A run left waiting stays on screen only for the same action.
     if (run?.kind !== kind && !running) {
       setRun(null);
-      if (kind === "start") setAccess(workTogetherDefaultAccess(a, b));
     }
     setDialog(kind);
   };
 
   const start = async (kind: RunKind) => {
-    const lines = kind === "start" ? planWorkTogether(a, b, access) : planStopWorkingTogether(a, b);
+    const lines =
+      kind === "start"
+        ? planWorkTogether(a, b, LINK_DEFAULT_ACCESS)
+        : planStopWorkingTogether(a, b);
     setRun({ kind, lines, finished: false });
     const result = await execute({
       lines,
-      access,
+      access: LINK_DEFAULT_ACCESS,
       onUpdate: (next) => setRun({ kind, lines: next, finished: false }),
     });
     if (result._tag === "Failure") {
@@ -239,7 +256,7 @@ function MachinePair({
                   Stop working together
                 </Button>
               )}
-              {status === "together" && missingShares.length === 0 ? null : (
+              {status === "together" && missingShares.length === 0 && !narrower ? null : (
                 <Button size="xs" disabled={loading} onClick={() => openDialog("start")}>
                   {status === "separate" ? "Work together" : "Finish"}
                 </Button>
@@ -270,11 +287,7 @@ function MachinePair({
             ) : null}
           </DialogHeader>
           <DialogPanel>
-            {run !== null ? (
-              <WorkTogetherProgress lines={run.lines} />
-            ) : dialog === "start" ? (
-              <LinkAccessPicker value={access} onChange={setAccess} />
-            ) : null}
+            {run !== null ? <WorkTogetherProgress lines={run.lines} /> : null}
           </DialogPanel>
           <DialogFooter variant="bare">
             <WorkTogetherFooter

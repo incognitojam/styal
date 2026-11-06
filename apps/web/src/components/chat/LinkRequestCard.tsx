@@ -3,7 +3,7 @@ import { useAtomValue } from "@effect/atom-react";
 import {
   type LinkableMachine,
   linkRequestAnswerInput,
-  linkRequestDefaultAccess,
+  LINK_DEFAULT_ACCESS,
   linkRequestDisplay,
   linkRequestFailureMessage,
   linkRequestInitialMachine,
@@ -17,7 +17,6 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import {
   AuthAccessWriteScope,
-  type AuthMcpClientAccess,
   type EnvironmentId,
   type OrchestrationV2ProjectedTurnItem,
 } from "@t3tools/contracts";
@@ -31,7 +30,6 @@ import { mintPairingCodeOn } from "../../state/peerPairingCode";
 import { peerLinkEnvironment, useLinkableMachines } from "../../state/peerLinks";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
-import { LinkAccessPicker } from "../settings/LinkAccessPicker";
 import { ANOTHER_ADDRESS, LinkMachineBadge } from "../settings/LinkMachineSelect";
 import { Button } from "../ui/button";
 import { Dialog } from "../ui/dialog";
@@ -210,7 +208,6 @@ function LinkRequestDialog(props: {
   // Null until the user picks; until then the hint's best match is picked.
   const [choice, setChoice] = useState<string | null>(null);
   const [address, setAddress] = useState(item.url ?? "");
-  const [access, setAccess] = useState<AuthMcpClientAccess>(() => linkRequestDefaultAccess(item));
   const [pairingCode, setPairingCode] = useState("");
   const [step, setStep] = useState<LinkStep>("machine");
   const [busy, setBusy] = useState(false);
@@ -240,7 +237,7 @@ function LinkRequestDialog(props: {
   // An address the agent gave is already filled in; only one the user must type is asked for.
   const asksAddress = needsAddress && !(item.url !== undefined && item.environmentId === undefined);
   const useExisting = target.kind === "machine" && target.linked;
-  // A named machine with an address it answers at has nothing to choose before access.
+  // A named machine with an address it answers at has nothing to choose before the code.
   const steps: ReadonlyArray<LinkStep> =
     pickMachine || asksAddress ? ["machine", "access"] : ["access"];
   const current: LinkStep = steps.includes(step) ? step : "access";
@@ -251,7 +248,6 @@ function LinkRequestDialog(props: {
   const reset = () => {
     setChoice(null);
     setAddress(item.url ?? "");
-    setAccess(linkRequestDefaultAccess(item));
     setPairingCode("");
     setStep("machine");
     setError(null);
@@ -274,7 +270,7 @@ function LinkRequestDialog(props: {
     }
     let code = pairingCode;
     if (canMint && targetId !== null) {
-      const minted = await mintPairingCodeOn(targetId, access);
+      const minted = await mintPairingCodeOn(targetId, LINK_DEFAULT_ACCESS);
       if (Result.isFailure(minted)) {
         setMintFailed((failed) => new Set(failed).add(targetId));
         setError(linkRequestFailureMessage(minted.failure));
@@ -288,7 +284,7 @@ function LinkRequestDialog(props: {
         target.kind === "address"
           ? { url: address }
           : { ...target, urls: needsAddress ? [address.trim()] : target.urls },
-      access,
+      access: LINK_DEFAULT_ACCESS,
       pairingCode: code,
     });
   };
@@ -313,7 +309,7 @@ function LinkRequestDialog(props: {
   };
 
   // The machine step ends the dialog when the machine is linked here already.
-  const finishesHere = current === "access" || useExisting;
+  const finishesHere = current === "access" || useExisting || canMint;
 
   return (
     <Dialog
@@ -332,7 +328,7 @@ function LinkRequestDialog(props: {
         >
           {steps.length > 1 && !useExisting ? (
             <WizardSteps
-              steps={["Machine", "Access"]}
+              steps={["Machine", "Pairing code"]}
               currentStep={steps.indexOf(current)}
               summaries={[target.kind === "none" ? null : targetName, null]}
               showSummaries
@@ -415,15 +411,14 @@ function LinkRequestDialog(props: {
                         </span>
                       </label>
                     )}
-                    <LinkAccessPicker value={access} onChange={setAccess} disabled={busy} />
                   </>
                 )}
               </>
             )}
             {useExisting ? (
               <p className="text-xs text-muted-foreground">
-                Agents here can already work on {targetName}. The agent can carry on with the access
-                it has; change it in Settings → Connections.
+                Agents here can already work on {targetName}. What they can do there is set on{" "}
+                {targetName}.
               </p>
             ) : null}
             {error !== null ? (

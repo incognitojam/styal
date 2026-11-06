@@ -630,7 +630,7 @@ export const OrchestratorMcpEnvironmentLink = Schema.Struct({
   label: Schema.String,
   /** Whether it answered just now. An expired link must be linked again there. */
   status: Schema.Literals(["reachable", "unreachable", "expired"]),
-  /** The most the linked environment lets this one's agents do there. */
+  /** The most this link was paired for. That machine's own setting can allow less. */
   access: AuthMcpClientAccess,
   expiresAt: IsoDateTime,
   lastError: Schema.NullOr(Schema.String),
@@ -804,9 +804,6 @@ export const OrchestratorMcpEnvironmentLinkInput = Schema.Struct({
   }),
   reason: Schema.optional(TrimmedNonEmptyString).annotate({
     description: "One sentence for the card.",
-  }),
-  requestedAccess: Schema.optional(AuthMcpClientAccess).annotate({
-    description: "Suggested access. The user picks; default approval-required.",
   }),
   clientRequestId: Schema.optional(OrchestratorMcpClientRequestId),
 });

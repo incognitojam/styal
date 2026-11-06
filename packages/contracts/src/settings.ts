@@ -10,6 +10,7 @@ import { HardwareDeviceConfigs } from "./hardware.ts";
 import { ProjectFileActionApprovals } from "./projectFileApprovals.ts";
 import {
   AuthOrchestrationOperateScope,
+  AuthAccessWriteScope,
   AuthSettingsWriteScope,
   AuthProvidersManageScope,
   type AuthEnvironmentScope,
@@ -59,6 +60,13 @@ import {
   ProviderDriverKind,
 } from "./providerInstance.ts";
 import { PullRequestMergeMethod } from "./pullRequest.ts";
+
+/**
+ * What this machine lets a person's other machines do here. It caps every incoming machine, and
+ * never widens a session paired with less.
+ */
+export const IncomingMachineAccess = Schema.Literals(["everything", "look-only", "nothing"]);
+export type IncomingMachineAccess = typeof IncomingMachineAccess.Type;
 
 export const TimestampFormat = Schema.Literals(["locale", "12-hour", "24-hour"]);
 export type TimestampFormat = typeof TimestampFormat.Type;
@@ -1405,6 +1413,9 @@ export const ServerSettings = Schema.Struct({
    * and tasks on another machine; tasks already running there finish.
    */
   linkedEnvironmentsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  incomingMachineAccess: IncomingMachineAccess.pipe(
+    Schema.withDecodingDefault(Effect.succeed("everything" as const)),
+  ),
   sidebarAutoSettleKeepPullRequests: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
   ),
@@ -1805,6 +1816,7 @@ export const ServerSettingsPatch = Schema.Struct({
   hideTaggedThreads: Schema.optionalKey(Schema.Boolean),
   guestSharingEnabled: Schema.optionalKey(Schema.Boolean),
   linkedEnvironmentsEnabled: Schema.optionalKey(Schema.Boolean),
+  incomingMachineAccess: Schema.optionalKey(IncomingMachineAccess),
   backgroundActivity: Schema.optionalKey(
     Schema.Struct({
       schemaVersion: Schema.optionalKey(Schema.Literal(1)),
@@ -1876,6 +1888,7 @@ export function requiredScopesForServerSettingsPatch(
 ): ReadonlyArray<AuthEnvironmentScope> {
   let changesProviders = false;
   let changesSettings = false;
+  let changesMachineAccess = false;
   for (const [key, value] of Object.entries(patch)) {
     if (value === undefined) continue;
     if (
@@ -1885,12 +1898,17 @@ export function requiredScopesForServerSettingsPatch(
       key === "secretProviders"
     ) {
       changesProviders = true;
+    } else if (key === "incomingMachineAccess") {
+      changesMachineAccess = true;
     } else {
       changesSettings = true;
     }
   }
   return [
-    ...(changesSettings || !changesProviders ? [AuthSettingsWriteScope] : []),
+    ...(changesSettings || (!changesProviders && !changesMachineAccess)
+      ? [AuthSettingsWriteScope]
+      : []),
+    ...(changesMachineAccess ? [AuthAccessWriteScope] : []),
     ...(changesProviders ? [AuthProvidersManageScope] : []),
   ];
 }

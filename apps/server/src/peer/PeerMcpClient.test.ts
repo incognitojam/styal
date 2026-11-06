@@ -91,6 +91,70 @@ it.effect.each([false, true])(
     ).pipe(Effect.provide(NodeHttpServer.layerTest)),
 );
 
+const AccessResult = Schema.Struct({ access: Schema.String });
+const accessToolkit = Toolkit.make(
+  Tool.make("access", {
+    description: "Returns what this request's caller may do.",
+    success: AccessResult,
+    dependencies: [McpInvocationContext.McpInvocationContext],
+  }),
+);
+
+it.effect("caps every incoming machine at the machine's setting, and never widens a session", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const handlers = McpToolAccess.toLayer(accessToolkit, {
+        access: McpToolAccess.reads(() =>
+          McpInvocationContext.McpInvocationContext.pipe(
+            Effect.map((scope) => ({ access: scope.client?.access ?? "none" })),
+          ),
+        ),
+      });
+      const box = descriptorOf("environment-box", "Box");
+      const b = yield* servePeer(box, McpHttpServer.toolkitRegistration(accessToolkit, handlers));
+      const context = yield* Layer.build(
+        layerLinkingEnvironment(descriptorOf("environment-a", "A")),
+      );
+      const links = Context.get(context, PeerLinks.PeerLinks);
+      const client = Context.get(context, PeerMcpClient.PeerMcpClient);
+      const access = client.call({
+        environmentId: box.environmentId,
+        tool: "access",
+        arguments: {},
+        limits: { runtimeMode: "full-access", interactionMode: "default" },
+        success: AccessResult,
+      });
+      const accessIs = Effect.map(access, (result) => result.access);
+
+      yield* linkTo(links, b, "full-access");
+      expect(yield* accessIs).toBe("full-access");
+      yield* b.settings.updateSettings({ incomingMachineAccess: "look-only" });
+      expect(yield* accessIs).toBe("read-only");
+      yield* b.settings.updateSettings({ incomingMachineAccess: "nothing" });
+      expect(yield* access.pipe(Effect.flip)).toMatchObject({
+        code: "capability_denied",
+        message: expect.stringContaining("accepts nothing"),
+      });
+      // A refusal is an answer, so the link doesn't show as failing.
+      const [stored] = yield* links.list;
+      expect(stored?.lastError).toBeNull();
+      yield* b.settings.updateSettings({ incomingMachineAccess: "everything" });
+      expect(yield* accessIs).toBe("full-access");
+
+      // Raising the setting leaves narrower access narrow until it's paired again.
+      yield* linkTo(links, b, "read-only");
+      expect(yield* accessIs).toBe("read-only");
+      yield* linkTo(links, b, "auto");
+      expect(yield* accessIs).toBe("auto");
+      yield* b.settings.updateSettings({ incomingMachineAccess: "look-only" });
+      expect(yield* accessIs).toBe("read-only");
+      yield* b.settings.updateSettings({ incomingMachineAccess: "everything" });
+      yield* linkTo(links, b, "full-access");
+      expect(yield* accessIs).toBe("full-access");
+    }),
+  ).pipe(Effect.provide(NodeHttpServer.layerTest)),
+);
+
 it.effect("renews a missing peer session once and reuses its replacement", () =>
   Effect.gen(function* () {
     const sessionHeaders: Array<string | undefined> = [];

@@ -1,4 +1,6 @@
 import {
+  AuthAccessWriteScope,
+  requiredScopesForServerSettingsPatch,
   AuthEnvironmentMaintainScope,
   AuthDiagnosticsReadScope,
   AuthFilesystemReadScope,
@@ -210,6 +212,18 @@ describe("settings mutation authorization", () => {
       expect(handled).toBe(2);
     }).pipe(Effect.scoped),
   );
+
+  it("asks for access management to change what other machines can do here", () => {
+    expect(requiredScopesForServerSettingsPatch({ incomingMachineAccess: "nothing" })).toEqual([
+      AuthAccessWriteScope,
+    ]);
+    expect(
+      requiredScopesForServerSettingsPatch({
+        incomingMachineAccess: "nothing",
+        defaultRuntimeMode: "full-access",
+      }),
+    ).toEqual([AuthSettingsWriteScope, AuthAccessWriteScope]);
+  });
 
   it.effect("does not let a settings grant create or remove providers or secret providers", () =>
     Effect.gen(function* () {

@@ -1,5 +1,6 @@
 import {
   type EnvironmentId,
+  MACHINE_ACCEPTS_NOTHING,
   OrchestratorMcpFailure,
   type PeerLinkError,
   type ProviderInteractionMode,
@@ -13,6 +14,7 @@ import * as Schema from "effect/Schema";
 import * as HttpBody from "effect/http/HttpBody";
 import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientRequest from "effect/http/HttpClientRequest";
+import type * as HttpClientResponse from "effect/http/HttpClientResponse";
 
 import * as McpInvocationContext from "../mcp/McpInvocationContext.ts";
 import * as PeerLinks from "./PeerLinks.ts";
@@ -83,6 +85,25 @@ const linkedEnvironmentsOffThere = new OrchestratorMcpFailure({
     "The linked environment has Linked environments turned off. Turn it on in its Settings → Labs.",
 });
 
+/** Final, and not a failing link: the machine answered and said no. */
+const machineAcceptsNothingThere = new OrchestratorMcpFailure({
+  code: "capability_denied",
+  message:
+    "That machine accepts nothing from other machines. Changing that is up to the person, in its settings.",
+});
+
+const forbiddenThere = (response: HttpClientResponse.HttpClientResponse) =>
+  response.text.pipe(
+    Effect.orElseSucceed(() => ""),
+    Effect.flatMap((body) =>
+      Effect.fail(
+        body.includes(MACHINE_ACCEPTS_NOTHING)
+          ? machineAcceptsNothingThere
+          : linkedEnvironmentsOffThere,
+      ),
+    ),
+  );
+
 /** The body of an MCP response: JSON, or a single server-sent event carrying JSON. */
 const responseJson = (contentType: string | undefined, text: string) =>
   contentType?.includes("text/event-stream") === true
@@ -133,7 +154,7 @@ const make = Effect.gen(function* () {
       limitHeader,
     );
     const sessionId = initialized.headers["mcp-session-id"];
-    if (initialized.status === 403) return yield* linkedEnvironmentsOffThere;
+    if (initialized.status === 403) return yield* forbiddenThere(initialized);
     if (initialized.status !== 200 || sessionId === undefined) {
       return yield* new OrchestratorMcpFailure({
         code: initialized.status === 401 ? "capability_denied" : "orchestration_error",
@@ -192,7 +213,7 @@ const make = Effect.gen(function* () {
             "The linked environment no longer accepts this link. It may have been revoked there; link it again.",
         });
       }
-      if (response.status === 403) return yield* linkedEnvironmentsOffThere;
+      if (response.status === 403) return yield* forbiddenThere(response);
       if (response.status !== 200) {
         return yield* new OrchestratorMcpFailure({
           code: "orchestration_error",
@@ -242,7 +263,9 @@ const make = Effect.gen(function* () {
     (effect, input) =>
       effect.pipe(
         Effect.tapError((error) =>
-          links.recordOutcome(input.environmentId, { error: error.message }),
+          links.recordOutcome(input.environmentId, {
+            error: error === machineAcceptsNothingThere ? null : error.message,
+          }),
         ),
         Effect.tap(() => links.recordOutcome(input.environmentId, { error: null })),
         // Recorded above with the transport's own message; the agent hears it plainly.

@@ -79,6 +79,8 @@ export class DeviceSharing extends Context.Service<
     readonly connect: (input: DeviceConnectEnvironmentInput) => Effect.Effect<void, DeviceError>;
     readonly disconnect: (hostId: string) => Effect.Effect<void, DeviceError>;
     readonly hubTarget: Effect.Effect<{ origin: string }, DeviceError>;
+    /** Closes every device another machine holds here, as when this machine stops sharing. */
+    readonly closePeerSessions: Effect.Effect<void, DeviceError>;
     /** Resolves an agent proxy credential. Null means the credential is unknown or revoked. */
     readonly agentTarget: (token: string) => Effect.Effect<
       {
@@ -160,6 +162,8 @@ const make = Effect.gen(function* () {
       return yield* unavailable(
         "Enable device hub and agent device access on the device environment first.",
       );
+    if (value.incomingMachineAccess !== "everything")
+      return yield* unavailable("That machine isn't letting other machines use its devices.");
   });
   const createGrant = Effect.fn("DeviceSharing.createGrant")(function* (
     input: typeof DeviceHostGrantInput.Type,
@@ -449,7 +453,14 @@ const make = Effect.gen(function* () {
       sourceId: entry.sourceId,
     };
   });
+  const closePeerSessions = Effect.gen(function* () {
+    agents.clear();
+    const { sessions } = yield* devices.state;
+    for (const open of sessions.filter((entry) => entry.threadId.startsWith("device-peer-")))
+      yield* devices.close({ threadId: open.threadId, hostId: LOCAL_DEVICE_HOST_ID });
+  });
   return DeviceSharing.of({
+    closePeerSessions,
     createGrant,
     revokeGrant,
     connect,

@@ -2,11 +2,8 @@ import { pipe } from "effect/Function";
 import { useAtomValue } from "@effect/atom-react";
 import {
   type LinkableMachine,
-  LINK_ACCESS_CHOICES,
-  linkAccessChoice,
-  linkAccessLabel,
+  LINK_DEFAULT_ACCESS,
   linkRequestAnswerInput,
-  linkRequestDefaultAccess,
   linkRequestDisplay,
   linkRequestFailureMessage,
   linkRequestInitialMachine,
@@ -20,7 +17,6 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import {
   AuthAccessWriteScope,
-  type AuthMcpClientAccess,
   type EnvironmentId,
   type OrchestrationV2ProjectedTurnItem,
 } from "@t3tools/contracts";
@@ -222,7 +218,6 @@ function LinkRequestSheet(props: {
   const machines = useMemo(() => rankMachinesByHint(listed, item.hint), [listed, item.hint]);
   const [choice, setChoice] = useState<string | null>(null);
   const [address, setAddress] = useState(item.url ?? "");
-  const [access, setAccess] = useState<AuthMcpClientAccess>(() => linkRequestDefaultAccess(item));
   const [pairingCode, setPairingCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -263,7 +258,7 @@ function LinkRequestSheet(props: {
     }
     let code = pairingCode;
     if (canMint && targetId !== null) {
-      const minted = await mintPairingCodeOn(targetId, access);
+      const minted = await mintPairingCodeOn(targetId, LINK_DEFAULT_ACCESS);
       if (Result.isFailure(minted)) {
         setMintFailed((failed) => new Set(failed).add(targetId));
         setError(linkRequestFailureMessage(minted.failure));
@@ -277,7 +272,7 @@ function LinkRequestSheet(props: {
         target.kind === "address"
           ? { url: address }
           : { ...target, urls: needsAddress ? [address.trim()] : target.urls },
-      access,
+      access: LINK_DEFAULT_ACCESS,
       pairingCode: code,
     });
   };
@@ -381,8 +376,8 @@ function LinkRequestSheet(props: {
         ) : null}
         {useExisting ? (
           <Text className="font-sans text-sm leading-5 text-foreground-muted">
-            Agents here can already work on {targetName}. The agent can carry on with the access it
-            has; change it in Settings → Connections.
+            Agents here can already work on {targetName}. What they can do there is set on{" "}
+            {targetName}.
           </Text>
         ) : target.kind === "none" ? null : (
           <>
@@ -406,26 +401,6 @@ function LinkRequestSheet(props: {
                 </Text>
               </View>
             )}
-            <SettingsSection title="What agents here may do there">
-              {LINK_ACCESS_CHOICES.map((choice, index) => (
-                <SettingsChoiceRow
-                  key={choice.access}
-                  label={
-                    choice.access === linkAccessChoice(access).access
-                      ? linkAccessLabel(access)
-                      : choice.label
-                  }
-                  description={choice.description}
-                  selected={choice.access === linkAccessChoice(access).access}
-                  separated={index > 0}
-                  disabled={busy}
-                  onPress={() => setAccess(choice.access)}
-                />
-              ))}
-            </SettingsSection>
-            <Text className="font-sans text-xs text-foreground-muted">
-              An agent never gets more access there than its own mode here.
-            </Text>
           </>
         )}
         {error !== null ? (

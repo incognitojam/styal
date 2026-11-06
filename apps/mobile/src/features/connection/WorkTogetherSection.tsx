@@ -1,4 +1,4 @@
-import { LINK_ACCESS_CHOICES, LINK_DEFAULT_ACCESS } from "@t3tools/client-runtime/link-request";
+import { LINK_DEFAULT_ACCESS } from "@t3tools/client-runtime/link-request";
 import { deviceSharingAddresses } from "@t3tools/client-runtime/state/device";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import {
@@ -7,19 +7,15 @@ import {
   type WorkTogetherLine,
   type WorkTogetherMachine,
   type WorkTogetherIdentity,
-  workTogetherDefaultAccess,
   workTogetherLabels,
   workTogetherFailureMessage,
+  workTogetherHasNarrowerAccess,
   workTogetherMissingShares,
   workTogetherOutcome,
   workTogetherSharedDevices,
   workTogetherStatus,
 } from "@t3tools/client-runtime/state/workTogether";
-import {
-  AuthAccessWriteScope,
-  type AuthMcpClientAccess,
-  AuthSettingsWriteScope,
-} from "@t3tools/contracts";
+import { AuthAccessWriteScope, AuthSettingsWriteScope } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import * as Option from "effect/Option";
 import { useEffect, useEffectEvent, useState } from "react";
@@ -29,7 +25,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { EnvironmentMachineSymbol } from "../../components/EnvironmentMachineSymbol";
 import { SymbolView, type AppSymbolName } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
-import { ListChoiceRow as SettingsChoiceRow } from "../../components/ui/ListChoiceRow";
 import { Button } from "../../components/ui/Button";
 import { useDeviceState } from "../../state/device";
 import { useEnvironments } from "../../state/environments";
@@ -111,6 +106,8 @@ function useWorkTogetherMachine(
       linkUrl,
     }),
     hasDevices:
+      serverConfig?.settings.incomingMachineAccess !== "look-only" &&
+      serverConfig?.settings.incomingMachineAccess !== "nothing" &&
       device.state.supportsEnvironmentHosts === true &&
       device.state.hosts.some(
         (host) => host.kind === "local" && host.platforms.some((platform) => platform.available),
@@ -125,12 +122,12 @@ function MachinePair(props: { readonly a: NamedEnvironment; readonly b: NamedEnv
   const b = useWorkTogetherMachine(props.b, props.a);
   const execute = useAtomCommand(workTogether, { reportFailure: false, reportDefect: false });
   const [sheet, setSheet] = useState<RunKind | null>(null);
-  const [access, setAccess] = useState<AuthMcpClientAccess>(LINK_DEFAULT_ACCESS);
   const [run, setRun] = useState<Run | null>(null);
   const status = workTogetherStatus(a, b);
   const absent = [a, b].find((machine) => !machine.connected);
   const loading = [a, b].some((machine) => machine.connected && !machine.loaded);
   const missingShares = workTogetherMissingShares(a, b);
+  const narrower = workTogetherHasNarrowerAccess(a, b);
   const unmanaged = [a, b].find((machine) => machine.connected && !machine.canManage);
   const running = run !== null && !run.finished;
   const waiting =
@@ -140,7 +137,6 @@ function MachinePair(props: { readonly a: NamedEnvironment; readonly b: NamedEnv
     // A run left waiting stays on screen only for the same action.
     if (run?.kind !== kind && !running) {
       setRun(null);
-      if (kind === "start") setAccess(workTogetherDefaultAccess(a, b));
     }
     setSheet(kind);
   };
@@ -151,11 +147,14 @@ function MachinePair(props: { readonly a: NamedEnvironment; readonly b: NamedEnv
   };
 
   const start = async (kind: RunKind) => {
-    const lines = kind === "start" ? planWorkTogether(a, b, access) : planStopWorkingTogether(a, b);
+    const lines =
+      kind === "start"
+        ? planWorkTogether(a, b, LINK_DEFAULT_ACCESS)
+        : planStopWorkingTogether(a, b);
     setRun({ kind, lines, finished: false });
     const result = await execute({
       lines,
-      access,
+      access: LINK_DEFAULT_ACCESS,
       onUpdate: (next) => setRun({ kind, lines: next, finished: false }),
     });
     if (result._tag === "Failure") {
@@ -215,7 +214,7 @@ function MachinePair(props: { readonly a: NamedEnvironment; readonly b: NamedEnv
       </View>
       {unmanaged !== undefined ? null : (
         <View className="flex-row flex-wrap gap-2">
-          {status === "together" && missingShares.length === 0 ? null : (
+          {status === "together" && missingShares.length === 0 && !narrower ? null : (
             <Button
               label={status === "separate" ? "Work together" : "Finish"}
               tone="primary"
@@ -239,8 +238,6 @@ function MachinePair(props: { readonly a: NamedEnvironment; readonly b: NamedEnv
           a={a}
           b={b}
           run={run}
-          access={access}
-          onAccessChange={setAccess}
           onStart={() => void start(sheet)}
           onClose={closeSheet}
         />
@@ -254,8 +251,6 @@ function WorkTogetherSheet(props: {
   readonly a: WorkTogetherMachine;
   readonly b: WorkTogetherMachine;
   readonly run: Run | null;
-  readonly access: AuthMcpClientAccess;
-  readonly onAccessChange: (access: AuthMcpClientAccess) => void;
   readonly onStart: () => void;
   readonly onClose: () => void;
 }) {
@@ -311,25 +306,6 @@ function WorkTogetherSheet(props: {
               <WorkTogetherLineRow key={line.id} line={line} />
             ))}
           </View>
-        ) : kind === "start" ? (
-          <>
-            <SettingsSection title="What agents may do on the other machine">
-              {LINK_ACCESS_CHOICES.map((choice, index) => (
-                <SettingsChoiceRow
-                  key={choice.access}
-                  label={choice.label}
-                  description={choice.description}
-                  selected={choice.access === props.access}
-                  separated={index > 0}
-                  disabled={false}
-                  onPress={() => props.onAccessChange(choice.access)}
-                />
-              ))}
-            </SettingsSection>
-            <Text className="font-sans text-xs text-foreground-muted">
-              An agent never gets more access there than its own mode here.
-            </Text>
-          </>
         ) : null}
         {run === null ? (
           <>

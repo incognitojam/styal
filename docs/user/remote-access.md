@@ -321,8 +321,8 @@ questions, and manage its queues, projects and scheduled tasks.
 ### Let two machines work together
 
 If this app is connected to both machines, open **Settings → Environments → Work
-together**, on web, desktop or mobile, and choose **Work together** for the pair. You
-pick what agents may do, and styal does the rest in both directions: it turns on
+together**, on web, desktop or mobile, and choose **Work together** for the pair. styal does
+the rest in both directions: it turns on
 **Work with your other machines**, creates a pairing code and adds each machine to the
 other, and shares simulators or emulators from a machine that has them. A list shows
 each step.
@@ -364,28 +364,43 @@ holds the machines this app knows and those on your styal Link account. If this
 app is connected to that machine with a session that manages access there, it
 makes the pairing code itself; otherwise paste one from that machine's
 **Settings → Sharing & access**. From a terminal, use
-`styal environment link <address> --pairing-code <code> --access <mode>`.
+`styal environment link <address> --pairing-code <code>`.
 
 You can also ask an agent to use a machine by name, such as "delegate this to
-my vps". It shows a card in the thread where you pick the machine the same way
-and the access, then approve. Auto threads can request this card; Supervised threads cannot.
+my vps". It shows a card in the thread where you pick the machine the same way, then
+approve. Auto threads can request this card; Supervised threads cannot.
 
-Choose what agents from this machine may do there:
+### Choose what other machines can do
 
-- **Everything** works there like that machine's own agents, including threads
-  you started there.
-- **Only its own threads** reads everything, but changes only threads it started,
-  not that machine's own threads, projects or settings. It skips project setup
-  scripts.
-- **Look only** reads everything and starts or changes nothing.
+Each machine has one setting for what your other machines can do there, under **Settings →
+Environments → Your machines**. It applies to every machine connected to it, and only people
+can change it, not agents.
 
-Machines added earlier with Supervised or Auto-accept edits show as **Only its own
-threads** with that mode. `--access` takes `full-access`, `auto` or `read-only` for
-these three, and the older values still work.
+- **Can control this machine** is the default. Agents on your other machines can do anything
+  there that its user can: read and change files, run commands, start threads and use its
+  devices. Choose it only for machines you'd trust with each other's agents.
+- **Look only** lets them read threads and projects there. They can't start or change
+  anything, or use its devices.
+- **Nothing** refuses them. Agents on that machine can still work on your other machines, so
+  this gives you one-way control. It doesn't isolate the machine: what those machines send
+  back still reaches its agents.
 
-- An agent never gets more there than its own mode here. This limits what it can
-  do through styal, not what a shell on this machine can do, so don't add a
-  machine you want to protect from agents here.
+Moving to **Look only** or **Nothing** stops threads your other machines started there. You
+see how many first and can cancel. Each running turn is interrupted where it is, so work it
+hadn't finished stays unfinished. Files it already changed stay, and each thread stays so you
+can read or continue it on that machine. The machine that started it can't continue it unless
+you allow control again, and any device it was using closes. Moving back doesn't restart them.
+
+Connections made before this setting keep the access they were paired with if that's less.
+**Only its own threads** and the older Supervised and Auto-accept edits levels show that way
+until you choose **Finish** for the pair, which pairs them again. From a terminal,
+`styal environment link <address> --pairing-code <code>` adds a machine, and `--access` still
+takes a narrower level.
+
+The setting only covers your other machines. Browsers and phones you've paired, and outside
+agents, keep the access in **Settings → Sharing & access**.
+
+- An agent never gets more there than its own mode here.
 - Threads started this way are marked **From** and this machine's name there.
 - The connection shows up in that machine's **Settings → Sharing & access** like any
   outside agent. Revoke it there to end it. **Forget** on this machine only

@@ -4,12 +4,7 @@ import {
   linkAccessLabel,
   linkRequestFailureMessage,
 } from "@t3tools/client-runtime/link-request";
-import {
-  AuthAccessWriteScope,
-  type AuthMcpClientAccess,
-  type EnvironmentId,
-  type PeerLinkSummary,
-} from "@t3tools/contracts";
+import { AuthAccessWriteScope, type EnvironmentId, type PeerLinkSummary } from "@t3tools/contracts";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -43,7 +38,6 @@ import {
 import { Input } from "../ui/input";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { ITEM_ROW_CLASSNAME, ITEM_ROW_INNER_CLASSNAME } from "./itemRows";
-import { LinkAccessPicker } from "./LinkAccessPicker";
 import { ANOTHER_ADDRESS, LinkMachineSelect } from "./LinkMachineSelect";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
 import { useNowMinute } from "../../hooks/useNowMinute";
@@ -176,7 +170,6 @@ function LinkEnvironmentAction({ environmentId }: { readonly environmentId: Envi
   const [choice, setChoice] = useState<string | null>(null);
   const [address, setAddress] = useState("");
   const [pairingCode, setPairingCode] = useState("");
-  const [access, setAccess] = useState<AuthMcpClientAccess>(LINK_DEFAULT_ACCESS);
   const [busy, setBusy] = useState(false);
   // Machines whose minting already failed, so the dialog asks for a code instead.
   const [mintFailed, setMintFailed] = useState<ReadonlySet<EnvironmentId>>(new Set());
@@ -204,14 +197,13 @@ function LinkEnvironmentAction({ environmentId }: { readonly environmentId: Envi
       setChoice(null);
       setAddress("");
       setPairingCode("");
-      setAccess(LINK_DEFAULT_ACCESS);
       setMintFailed(new Set());
     }
   };
   // Settles to the code to link with, or null after reporting why there is none.
   const resolvePairingCode = async () => {
     if (!canMint || targetId === null) return pairingCode.trim();
-    const minted = await mintPairingCodeOn(targetId, access);
+    const minted = await mintPairingCodeOn(targetId, LINK_DEFAULT_ACCESS);
     if (Result.isSuccess(minted)) return minted.success;
     setMintFailed((failed) => new Set(failed).add(targetId));
     failureToast("Could not add the machine", linkRequestFailureMessage(minted.failure));
@@ -236,7 +228,7 @@ function LinkEnvironmentAction({ environmentId }: { readonly environmentId: Envi
                 ? {}
                 : { expectedEnvironmentId: machine.environmentId, expectedLabel: machine.label }),
               pairingCode: code,
-              access,
+              access: LINK_DEFAULT_ACCESS,
             },
           });
     inFlight.current = false;
@@ -293,7 +285,7 @@ function LinkEnvironmentAction({ environmentId }: { readonly environmentId: Envi
             ) : null}
             {machine?.linked ? (
               <p className="text-xs text-muted-foreground">
-                Already added. Adding it again renews it with the access you pick.
+                Already added. Adding it again renews it.
               </p>
             ) : null}
             {needsAddress ? (
@@ -344,7 +336,6 @@ function LinkEnvironmentAction({ environmentId }: { readonly environmentId: Envi
                 ) : null}
               </label>
             )}
-            <LinkAccessPicker value={access} onChange={setAccess} disabled={busy} />
           </form>
         </DialogPanel>
         <DialogFooter variant="bare">

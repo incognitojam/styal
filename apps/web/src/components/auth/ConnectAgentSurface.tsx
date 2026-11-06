@@ -26,7 +26,7 @@ import { RadioGroup } from "../ui/radio-group";
 import { Spinner } from "../ui/spinner";
 import { StandalonePage, StandalonePageHeader } from "../ui/standalone-page";
 
-export const accessConfig: Record<
+const accessConfig: Record<
   AuthMcpClientAccess,
   { readonly label: string; readonly description: string; readonly icon: LucideIcon }
 > = {
