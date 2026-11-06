@@ -63,6 +63,8 @@ export const make = Effect.fn("ProviderAuthFlow.make")(function* (options: {
   readonly methods: Effect.Effect<ReadonlyArray<ProviderAuthMethod>, ProviderSetupError>;
   readonly defaultMethodId?: string;
   readonly refreshMethodsAfterAuth?: boolean;
+  /** Runs `stopSessions` once sign-in succeeds instead of before it starts. */
+  readonly stopSessionsAfterSignIn?: boolean;
   /** Fail with ProviderSetupError containing safe text for the user, never native token data. */
   readonly authenticate: (
     methodId: string,
@@ -140,6 +142,7 @@ export const make = Effect.fn("ProviderAuthFlow.make")(function* (options: {
 
   const controller: ProviderAuth.ProviderAuthController = {
     credentialBinding: options.credentialBinding,
+    ...(options.stopSessionsAfterSignIn ? { keepsSessionsDuringSignIn: true } : {}),
     adoptCredentials: Effect.fn("providerAuthFlow.adoptCredentials")(function* (
       update,
       stopSessions,
@@ -275,7 +278,9 @@ export const make = Effect.fn("ProviderAuthFlow.make")(function* (options: {
                 operation: "start",
                 detail: "The provider did not advertise this sign-in method.",
               });
-            yield* stopSessions.pipe(Effect.ensuring(stopOwnedSessions));
+            if (!options.stopSessionsAfterSignIn) {
+              yield* stopSessions.pipe(Effect.ensuring(stopOwnedSessions));
+            }
             yield* options.authenticate(methodId, {
               flowId: id,
               expiresAt: flow.expiresAt,
@@ -290,8 +295,11 @@ export const make = Effect.fn("ProviderAuthFlow.make")(function* (options: {
                   phase: "waiting",
                   interaction,
                   authorizationUrl:
-                    interaction.type === "browser" || interaction.type === "deviceCode"
-                      ? interaction.url
+                    interaction.type === "browser" ||
+                    interaction.type === "deviceCode" ||
+                    interaction.type === "terminal" ||
+                    interaction.type === "credentials"
+                      ? (interaction.url ?? null)
                       : null,
                   message: "Complete sign-in to continue.",
                 });
@@ -307,6 +315,7 @@ export const make = Effect.fn("ProviderAuthFlow.make")(function* (options: {
                 });
               }),
             });
+            if (options.stopSessionsAfterSignIn) yield* stopSessions;
           }).pipe(
             Effect.scoped,
             Effect.timeoutOrElse({

@@ -44,10 +44,12 @@ export const ProviderAuthInteraction = Schema.Union([
     id: SetupOperationId,
     output: Schema.String.check(Schema.isMaxLength(16_384)),
     outputOffset: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
+    url: Schema.optionalKey(TrimmedNonEmptyString.check(Schema.isMaxLength(16_384))),
   }),
   Schema.Struct({
     type: Schema.Literal("credentials"),
     id: SetupOperationId,
+    url: Schema.optionalKey(TrimmedNonEmptyString.check(Schema.isMaxLength(16_384))),
     fields: Schema.Array(
       Schema.Struct({
         name: SetupOperationId,

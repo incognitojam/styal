@@ -125,6 +125,12 @@ const makeHarness = Effect.fn("ProviderAuthService.test.makeHarness")(function* 
     sessions?: ReadonlyMap<ThreadId, ReadonlyArray<OrchestrationV2ProviderSession>>;
     shellError?: boolean;
     stopError?: boolean;
+    readonly cliLogin?: boolean;
+    readonly otherWorkingThreads?: ReadonlyArray<ThreadId>;
+    readonly failedRuns?: ReadonlyMap<
+      ThreadId,
+      { readonly runs: unknown[]; readonly turnItems: unknown[] }
+    >;
     logoutError?: ProviderSetupError;
     sharedCredentials?: boolean;
     sharedBusy?: boolean;
@@ -164,6 +170,7 @@ const makeHarness = Effect.fn("ProviderAuthService.test.makeHarness")(function* 
   });
 
   const auth: ProviderAuthService.ProviderAuthController = {
+    ...(input.cliLogin ? { keepsSessionsDuringSignIn: true } : {}),
     ...(input.sharedCredentials
       ? { credentialBinding: { owner: "provider" as const, key: "shared" } }
       : {}),
@@ -271,10 +278,18 @@ const makeHarness = Effect.fn("ProviderAuthService.test.makeHarness")(function* 
               actions.push(`sessions:${threadId}`);
               return {
                 providerSessions: sessions.get(threadId) ?? [],
+                runs: input.failedRuns?.get(threadId)?.runs ?? [],
+                turnItems: input.failedRuns?.get(threadId)?.turnItems ?? [],
               } as never;
             }),
         }),
         Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({
+          otherWorkingThreads: () => Effect.succeed(input.otherWorkingThreads ?? []),
+          releaseUnlessBusy: ({ providerSessionId }) =>
+            Effect.sync(() => {
+              released.push(providerSessionId);
+              return true;
+            }),
           release: ({ providerSessionId, reason }) =>
             Effect.gen(function* () {
               assert.isTrue(gateClosed);
@@ -595,6 +610,62 @@ describe("ProviderAuthService", () => {
         assert.include(error.detail, detail);
       }
       assert.deepStrictEqual(actions, []);
+    }),
+  );
+
+  it.effect("a CLI sign-in only replaces idle sessions whose thread needed the sign-in", () =>
+    Effect.gen(function* () {
+      const failedRun = (id: string, code: string) => ({
+        runs: [
+          {
+            id,
+            status: "failed",
+            rootNodeId: "root",
+            requestedAt: DateTime.makeUnsafe(now),
+            completedAt: DateTime.makeUnsafe(now),
+            ordinal: 1,
+          },
+        ],
+        turnItems: [
+          {
+            id: `error:${id}`,
+            type: "error",
+            status: "failed",
+            runId: id,
+            nodeId: "root",
+            ordinal: 1,
+            updatedAt: DateTime.makeUnsafe(now),
+            failure: { class: "provider_error", message: "failed", code, retryable: null },
+          },
+        ],
+      });
+      const { service, released } = yield* makeHarness({
+        cliLogin: true,
+        threads: [makeThread("signed-out"), makeThread("still-running"), makeThread("other-error")],
+        sessions: new Map([
+          [ThreadId.make("signed-out"), [makeSession("signed-out-session")]],
+          [ThreadId.make("still-running"), [makeSession("running-session", "running")]],
+          [ThreadId.make("other-error"), [makeSession("other-error-session")]],
+        ]),
+        failedRuns: new Map([
+          [ThreadId.make("signed-out"), failedRun("run-signed-out", "provider_auth_required")],
+          [ThreadId.make("still-running"), failedRun("run-running", "provider_auth_required")],
+          [ThreadId.make("other-error"), failedRun("run-other", "api_error_500")],
+        ]),
+      });
+      yield* service.start({ instanceId }, owner);
+      assert.deepStrictEqual(released, ["signed-out-session"]);
+      const shared = yield* makeHarness({
+        cliLogin: true,
+        otherWorkingThreads: [ThreadId.make("another-thread")],
+        threads: [makeThread("signed-out")],
+        sessions: new Map([[ThreadId.make("signed-out"), [makeSession("shared-session")]]]),
+        failedRuns: new Map([
+          [ThreadId.make("signed-out"), failedRun("run-shared", "provider_auth_required")],
+        ]),
+      });
+      yield* shared.service.start({ instanceId }, owner);
+      assert.deepStrictEqual(shared.released, []);
     }),
   );
 

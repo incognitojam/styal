@@ -1,6 +1,7 @@
 // User-wide ~/.pi/agent state makes continuation identity use default instance grouping.
 import { ProviderDriverKind, type ServerProvider } from "@t3tools/contracts";
 import { PiSettings } from "../settings.ts";
+import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -21,6 +22,7 @@ import {
   enrichPiSnapshot,
 } from "./status.ts";
 import { makeManagedServerProvider } from "@t3tools/provider-core/server/managedProvider";
+import * as ProviderCliLogin from "@t3tools/provider-core/server/providerCliLogin";
 import {
   defaultProviderContinuationIdentity,
   type ProviderDriver,
@@ -55,7 +57,8 @@ export type PiDriverEnv =
   | FileSystem.FileSystem
   | HttpClient.HttpClient
   | ProviderLatestVersions.ProviderLatestVersions
-  | Path.Path;
+  | Path.Path
+  | Crypto.Crypto;
 
 const withInstanceIdentity =
   (input: {
@@ -102,12 +105,14 @@ export const PiDriver: ProviderDriver<PiSettings, PiDriverEnv, Path.Path> = {
       driverKind: DRIVER_KIND,
       instanceId,
     });
-    const stampIdentity = withInstanceIdentity({
-      instanceId,
-      displayName,
-      accentColor,
-      continuationGroupKey: continuationIdentity.continuationKey,
-    });
+    const stampIdentity = ProviderCliLogin.withCliLoginSetup(
+      withInstanceIdentity({
+        instanceId,
+        displayName,
+        accentColor,
+        continuationGroupKey: continuationIdentity.continuationKey,
+      }),
+    );
     const effectiveConfig = { ...config, enabled } satisfies PiSettings;
     const resolveMaintenance = yield* makeCachedProviderMaintenanceResolution(
       resolveProviderMaintenanceCapabilitiesEffect(UPDATE, {
@@ -179,6 +184,15 @@ export const PiDriver: ProviderDriver<PiSettings, PiDriverEnv, Path.Path> = {
       ),
     );
 
+    const auth = yield* ProviderCliLogin.make({
+      instanceId,
+      credentialKey: `${DRIVER_KIND}:login`,
+      command: Effect.succeed({ binary: effectiveConfig.binaryPath, args: [] }),
+      environment: processEnv,
+      hint: "Type /login and follow the prompts, then type /quit to finish.",
+      refresh: snapshot.refresh,
+    });
+
     return {
       instanceId,
       driverKind: DRIVER_KIND,
@@ -186,6 +200,7 @@ export const PiDriver: ProviderDriver<PiSettings, PiDriverEnv, Path.Path> = {
       displayName,
       accentColor,
       enabled,
+      auth,
       snapshot,
       snapshotForCwd: (workspaceCwd) =>
         !effectiveConfig.enabled

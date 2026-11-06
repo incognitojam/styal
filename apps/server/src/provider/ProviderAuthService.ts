@@ -1,4 +1,5 @@
 import {
+  isProviderAuthFailureCode,
   ProviderSetupError,
   type ChatGptReconnectProfile,
   type ChatGptTransferredProfile,
@@ -15,6 +16,10 @@ import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
 import * as Semaphore from "effect/Semaphore";
 
+import {
+  latestExecutedRun,
+  latestRootProviderFailure,
+} from "@t3tools/shared/orchestrationV2ThreadError";
 import * as ProviderSessionManager from "../orchestration-v2/ProviderSessionManager.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ProviderInstanceRegistry from "./ProviderInstanceRegistry.ts";
@@ -168,6 +173,62 @@ export const makeProviderAuthService = Effect.gen(function* () {
     }
   });
 
+  // A process that failed to authenticate can keep its stale credentials; replace it unless it is
+  // doing other work. A new login is no reason to interrupt work that is still running.
+  const replaceSignedOutSessions = Effect.fn("ProviderAuthService.replaceSignedOutSessions")(
+    function* (instanceId: ProviderInstanceId) {
+      const failure = () =>
+        new ProviderSetupError({
+          instanceId,
+          operation: "stopSessions",
+          detail: "Signed in, but could not restart this provider's sessions. Try again.",
+        });
+      const threadIds = yield* projections
+        .getRecoveryThreadIds("runtime")
+        .pipe(Effect.mapError(failure));
+      yield* Effect.forEach(
+        threadIds,
+        (threadId) =>
+          Effect.gen(function* () {
+            const projection = yield* projections.getThreadRecords(
+              threadId,
+              ["providerSessions", "runs", "turnItems"],
+              { turnItemTypes: ["error"] },
+            );
+            const latest = latestExecutedRun(projection.runs);
+            if (
+              !isProviderAuthFailureCode(
+                latestRootProviderFailure(latest, projection.turnItems)?.code,
+              )
+            )
+              return;
+            yield* Effect.forEach(
+              projection.providerSessions.filter(
+                (session) =>
+                  session.providerInstanceId === instanceId && session.status === "ready",
+              ),
+              (session) =>
+                Effect.gen(function* () {
+                  const others = yield* providerSessions.otherWorkingThreads({
+                    providerSessionId: session.id,
+                    threadId,
+                  });
+                  if (others.length > 0) return;
+                  yield* providerSessions.releaseUnlessBusy({
+                    providerSessionId: session.id,
+                    ownProviderThreadIds: [],
+                    reason: "manual_shutdown",
+                    detail: "Provider sign-in changed.",
+                  });
+                }),
+              { discard: true },
+            );
+          }).pipe(Effect.mapError(failure)),
+        { discard: true },
+      );
+    },
+  );
+
   const checkSharedBinding = Effect.fnUntraced(function* (
     instanceId: ProviderInstanceId,
     operation: "start" | "logout",
@@ -230,7 +291,9 @@ export const makeProviderAuthService = Effect.gen(function* () {
           yield* checkSharedBinding(input.instanceId, "start", auth);
           return yield* auth.start(
             ownerSessionId,
-            stopSessions(input.instanceId, auth.credentialBinding),
+            auth.keepsSessionsDuringSignIn
+              ? replaceSignedOutSessions(input.instanceId)
+              : stopSessions(input.instanceId, auth.credentialBinding),
             input.methodId,
             input.returnUrl,
             input.callbackMode,

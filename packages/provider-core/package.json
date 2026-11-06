@@ -19,6 +19,18 @@
       "types": "./src/server/attachmentPrompt.ts",
       "import": "./src/server/attachmentPrompt.ts"
     },
+    "./server/loopbackCallback": {
+      "types": "./src/server/loopbackCallback.ts",
+      "import": "./src/server/loopbackCallback.ts"
+    },
+    "./server/providerCliLogin": {
+      "types": "./src/server/providerCliLogin.ts",
+      "import": "./src/server/providerCliLogin.ts"
+    },
+    "./server/providerAuthTerminal": {
+      "types": "./src/server/providerAuthTerminal.ts",
+      "import": "./src/server/providerAuthTerminal.ts"
+    },
     "./server/auth": {
       "types": "./src/server/auth.ts",
       "import": "./src/server/auth.ts"

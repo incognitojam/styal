@@ -1,6 +1,7 @@
 import { ProviderDriverKind } from "@t3tools/contracts";
 import { MuseSettings } from "../settings.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -20,6 +21,7 @@ import * as ProviderContinuationRequests from "@t3tools/provider-core/server/Pro
 import { checkMuseProviderStatus, makePendingMuseProvider } from "./status.ts";
 import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
 import { makeManagedServerProvider } from "@t3tools/provider-core/server/managedProvider";
+import * as ProviderCliLogin from "@t3tools/provider-core/server/providerCliLogin";
 import { enrichMuseSnapshot, latestMuseVersion, museMaintenance } from "./maintenance.ts";
 import { makeMuseEnvironment } from "./sdk.ts";
 import { museUsageReader } from "./usage.ts";
@@ -56,7 +58,8 @@ export type MuseDriverEnv =
   | HttpClient.HttpClient
   | ProviderLatestVersions.ProviderLatestVersions
   | Path.Path
-  | ProviderEventLoggers.ProviderEventLoggers;
+  | ProviderEventLoggers.ProviderEventLoggers
+  | Crypto.Crypto;
 
 export const MuseDriver: ProviderDriver<
   MuseSettings,
@@ -100,13 +103,16 @@ export const MuseDriver: ProviderDriver<
       driverKind: DRIVER_KIND,
       instanceId,
     });
-    const stampIdentity = withInstanceIdentity({
-      instanceId,
-      driverKind: DRIVER_KIND,
-      displayName,
-      accentColor,
-      continuationGroupKey: continuationIdentity.continuationKey,
-    });
+    const stampIdentity = ProviderCliLogin.withCliLoginSetup(
+      withInstanceIdentity({
+        instanceId,
+        driverKind: DRIVER_KIND,
+        displayName,
+        accentColor,
+        continuationGroupKey: continuationIdentity.continuationKey,
+      }),
+      () => Boolean(processEnvironment.META_API_KEY?.trim()),
+    );
     const snapshotSettings = yield* makeProviderSnapshotSettingsSource(effectiveConfig);
     const resolveInstallation = yield* makeCachedProviderMaintenanceResolution(
       resolveProviderMaintenanceCapabilitiesEffect(museMaintenance, {
@@ -192,6 +198,13 @@ export const MuseDriver: ProviderDriver<
       environment: processEnvironment,
       modelCatalog,
     });
+    const auth = yield* ProviderCliLogin.make({
+      instanceId,
+      credentialKey: `${DRIVER_KIND}:login`,
+      command: Effect.succeed({ binary: effectiveConfig.binaryPath, args: ["login"] }),
+      environment: processEnvironment,
+      refresh: snapshot.refresh,
+    });
     return {
       instanceId,
       driverKind: DRIVER_KIND,
@@ -199,6 +212,7 @@ export const MuseDriver: ProviderDriver<
       displayName,
       accentColor,
       enabled,
+      auth,
       snapshot: { ...snapshot, resolveMaintenance },
       orchestrationAdapter,
       textGeneration,

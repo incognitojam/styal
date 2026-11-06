@@ -17,6 +17,7 @@ import {
   fxDefaultModelId,
 } from "./status.ts";
 import { makeManagedServerProvider } from "@t3tools/provider-core/server/managedProvider";
+import * as ProviderCliLogin from "@t3tools/provider-core/server/providerCliLogin";
 import {
   defaultProviderContinuationIdentity,
   type ProviderDriver,
@@ -96,13 +97,15 @@ export const FxDriver: ProviderDriver<FxSettings, FxDriverEnv> = {
       driverKind: FX_DRIVER_KIND,
       instanceId,
     });
-    const stampIdentity = withInstanceIdentity({
-      instanceId,
-      driverKind: FX_DRIVER_KIND,
-      displayName,
-      accentColor,
-      continuationGroupKey: continuationIdentity.continuationKey,
-    });
+    const stampIdentity = ProviderCliLogin.withCliLoginSetup(
+      withInstanceIdentity({
+        instanceId,
+        driverKind: FX_DRIVER_KIND,
+        displayName,
+        accentColor,
+        continuationGroupKey: continuationIdentity.continuationKey,
+      }),
+    );
     const effectiveConfig = { ...config, enabled } satisfies FxSettings;
     const snapshotSettings = yield* makeProviderSnapshotSettingsSource(effectiveConfig);
     const snapshot = yield* makeManagedServerProvider<ProviderSnapshotSettings<FxSettings>>({
@@ -145,9 +148,18 @@ export const FxDriver: ProviderDriver<FxSettings, FxDriverEnv> = {
         ),
       );
 
+    const auth = yield* ProviderCliLogin.make({
+      instanceId,
+      credentialKey: `${FX_DRIVER_KIND}:login`,
+      command: Effect.succeed({ binary: effectiveConfig.binaryPath, args: ["login"] }),
+      environment: processEnv,
+      refresh: snapshot.refresh,
+    });
+
     return {
       instanceId,
       driverKind: FX_DRIVER_KIND,
+      auth,
       continuationIdentity,
       displayName,
       accentColor,

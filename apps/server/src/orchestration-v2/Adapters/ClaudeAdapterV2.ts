@@ -126,6 +126,7 @@ import {
   type ThreadId,
   type TurnTokenUsage,
   resolveIdleCompaction,
+  PROVIDER_AUTH_REQUIRED_FAILURE_CODE,
 } from "@t3tools/contracts";
 
 import { FILE_HEADERS_ONLY, formatPatch, structuredPatch } from "diff";
@@ -9963,10 +9964,16 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                     code: "compaction_failed",
                   })
                 : providerFailureFromResult(message, completedAt, failureHint, usageLimited);
+            const signInRequired =
+              !permissionDenied &&
+              (context.authenticationFailureMessage !== undefined ||
+                (message.subtype === "success" && message.api_error_status === 401));
             const terminalFailure =
               resultFailure?.class === "usage_limit"
                 ? { ...resultFailure, resetAt: resetAt ?? resultFailure.resetAt ?? null }
-                : resultFailure;
+                : resultFailure && signInRequired
+                  ? { ...resultFailure, code: PROVIDER_AUTH_REQUIRED_FAILURE_CODE }
+                  : resultFailure;
             yield* finalizeActiveTurn({
               context,
               status: interrupted

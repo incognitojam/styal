@@ -11,6 +11,8 @@ import type * as Stream from "effect/Stream";
 
 export interface ProviderAuthController {
   readonly credentialBinding?: { readonly owner: "provider" | "t3"; readonly key: string };
+  /** The provider's own CLI owns the login, so signing in leaves working sessions running. */
+  readonly keepsSessionsDuringSignIn?: boolean;
   readonly reconnectProfile?: (
     methodId: string,
   ) => Effect.Effect<ChatGptReconnectProfile | null, ProviderSetupError>;
