@@ -191,7 +191,12 @@ import { useThreadContextDrop, threadContextDropTargetProps } from "./threadCont
 import { readThreadShell } from "~/state/entities";
 import { useLinkedEnvironments } from "~/state/peerLinks";
 import { encodeComposerContextFragment } from "@t3tools/shared/composerContextClipboard";
-import type { ComposerContextRecord, ThreadPullRequestLink } from "@t3tools/contracts";
+import { feedbackReportFromApproval } from "@t3tools/client-runtime/feedback-report";
+import type {
+  ComposerContextRecord,
+  ProviderApprovalDecision,
+  ThreadPullRequestLink,
+} from "@t3tools/contracts";
 import { threadContextAttachment } from "~/lib/threadContextAttachment";
 import {
   type ComposerCommandItem,
@@ -210,6 +215,7 @@ import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
 import { ComposerFooterPrimaryActions } from "./ComposerFooterControls";
 import { WorkflowRunReviewPanel } from "./WorkflowRunReviewPanel";
 import { ComposerPendingUserInputPanel } from "./ComposerPendingUserInputPanel";
+import { FeedbackReportApprovalBanner } from "./FeedbackReportApproval";
 import { ComposerPlanFollowUpBanner } from "./ComposerPlanFollowUpBanner";
 import { resolveComposerMenuActiveItemId } from "./composerMenuHighlight";
 import { buildPullRequestReferenceContext } from "../pullRequest/pullRequestDetail.logic";
@@ -429,6 +435,10 @@ export interface ChatComposerProps {
   activePendingDraftAnswers: Record<string, PendingUserInputDraftAnswer>;
   activePendingQuestionIndex: number;
   respondingRequestIds: RuntimeRequestId[];
+  onRespondToApproval: (
+    requestId: RuntimeRequestId,
+    decision: ProviderApprovalDecision,
+  ) => Promise<unknown>;
 
   showPlanFollowUpPrompt: boolean;
   activeProposedPlan: LatestProposedPlanState | null;
@@ -568,6 +578,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     activePendingDraftAnswers,
     activePendingQuestionIndex,
     respondingRequestIds,
+    onRespondToApproval,
     showPlanFollowUpPrompt,
     activeProposedPlan,
     runtimeMode,
@@ -1296,6 +1307,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   });
 
   const isComposerApprovalState = activePendingApproval !== null;
+  const feedbackReportApproval = pendingApprovals.find(
+    (approval) =>
+      !heldRequestIds.has(approval.requestId) && feedbackReportFromApproval(approval) !== null,
+  );
+  const feedbackReport = feedbackReportApproval
+    ? feedbackReportFromApproval(feedbackReportApproval)
+    : null;
   // A send declines the approvals shown here to redirect the agent, so it steers the waiting
   // turn instead of queueing behind it. Approvals the typing guard holds stay unseen and pending.
   const followUpBehavior = pendingApprovals.some(
@@ -3369,6 +3387,18 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 ) : null}
               </ComposerBanner.Root>
             </ComposerBanner.Attachment>
+          ) : null}
+          {feedbackReportApproval && feedbackReport ? (
+            <FeedbackReportApprovalBanner
+              key={feedbackReportApproval.requestId}
+              report={feedbackReport}
+              requestId={feedbackReportApproval.requestId}
+              isResponding={respondingRequestIds.includes(feedbackReportApproval.requestId)}
+              canRespond={feedbackReportApproval.responseCapability === "live"}
+              disabled={!canOperateThread}
+              options={feedbackReportApproval.options}
+              onRespondToApproval={onRespondToApproval}
+            />
           ) : null}
         </ComposerBanner.Column>
         <ComposerStashBadge

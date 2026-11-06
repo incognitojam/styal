@@ -47,7 +47,7 @@ export function FeedbackReportApprovalCard(props: {
       <Text className="font-t3-bold text-2xs uppercase tracking-[1.1px] text-foreground-secondary">
         Post a public issue
       </Text>
-      <Text className="font-t3-bold text-lg text-foreground">{props.report.title}</Text>
+      <Text className="font-t3-bold text-lg text-foreground">{FEEDBACK_REPORT_TITLE}</Text>
       <Text className="font-sans text-sm text-foreground-secondary">
         On {props.report.repository} as @{props.report.account}
       </Text>

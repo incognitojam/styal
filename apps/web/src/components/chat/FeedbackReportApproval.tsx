@@ -14,7 +14,7 @@ import { useRef, useState } from "react";
 
 import ChatMarkdown from "../ChatMarkdown";
 import { StyalToolIcon } from "../StyalToolIcon";
-import { InlineButton } from "../ui/button";
+import { Button } from "../ui/button";
 import {
   Dialog,
   DialogDescription,
@@ -24,10 +24,11 @@ import {
   DialogPopup,
   DialogTitle,
 } from "../ui/dialog";
+import { ComposerBanner } from "./ComposerBanner";
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
 
-/** The row offers opening the report and declining; posting is only offered beside the full report. */
-export function FeedbackReportApprovalActions(props: {
+/** The banner offers opening the report and declining; posting is only offered beside the full report. */
+export function FeedbackReportApprovalBanner(props: {
   readonly report: FeedbackApprovalReport;
   readonly requestId: RuntimeRequestId;
   readonly isResponding: boolean;
@@ -45,16 +46,38 @@ export function FeedbackReportApprovalActions(props: {
   const declineOptions = feedbackReportDeclineOptions(props.options);
   return (
     <>
-      <ComposerPendingApprovalActions
-        presentation="inline"
-        requestId={props.requestId}
-        isResponding={props.isResponding}
-        canRespond={props.canRespond}
-        disabled={props.disabled}
-        options={declineOptions}
-        onRespondToApproval={props.onRespondToApproval}
-      />
-      <InlineButton onClick={() => setOpen(true)}>{FEEDBACK_REPORT_OPEN_ACTION}</InlineButton>
+      <ComposerBanner.Attachment>
+        <ComposerBanner.Root
+          role="group"
+          aria-label={FEEDBACK_REPORT_TITLE}
+          density="spacious"
+          data-chat-composer-feedback-report="true"
+        >
+          <ComposerBanner.Row layout="wrap-actions" className="gap-y-1.5">
+            <ComposerBanner.Icon>
+              <StyalToolIcon className="size-4" />
+            </ComposerBanner.Icon>
+            <ComposerBanner.Content>
+              <span className="min-w-0 text-sm text-foreground">
+                Your agent wants to post a public issue on {props.report.repository}
+              </span>
+            </ComposerBanner.Content>
+            <ComposerBanner.Actions>
+              <ComposerPendingApprovalActions
+                requestId={props.requestId}
+                isResponding={props.isResponding}
+                canRespond={props.canRespond}
+                disabled={props.disabled}
+                options={declineOptions}
+                onRespondToApproval={props.onRespondToApproval}
+              />
+              <Button size="xs" onClick={() => setOpen(true)}>
+                {FEEDBACK_REPORT_OPEN_ACTION}
+              </Button>
+            </ComposerBanner.Actions>
+          </ComposerBanner.Row>
+        </ComposerBanner.Root>
+      </ComposerBanner.Attachment>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogPopup ref={popupRef} className="max-w-2xl" initialFocus={popupRef}>
           <DialogHeader>
