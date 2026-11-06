@@ -469,7 +469,7 @@ const executeStep = (
         const [url, ...alternateUrls] = step.to.urls;
         if (url === undefined) {
           return yield* new WorkTogetherStepError({
-            message: `${step.from.label} has no address for ${step.to.label}. On ${step.to.label}, turn on styal Link or network access in Connections.`,
+            message: `${step.from.label} has no address for ${step.to.label}. On ${step.to.label}, turn on styal Link or network access in Connections, or run \`styal up --lan\`.`,
           });
         }
         // A link replaced at other access must not leave its old session usable.
@@ -507,7 +507,7 @@ const executeStep = (
       case "share":
         if (step.device.deviceUrls === null) {
           return yield* new WorkTogetherStepError({
-            message: `${step.device.label} has no address another machine can reach for its devices. On ${step.device.label}, turn on styal Link or network access in Connections.`,
+            message: `${step.device.label} has no address another machine can reach for its devices. On ${step.device.label}, turn on styal Link or network access in Connections, or run \`styal up --lan\`.`,
           });
         }
         yield* environments.run(
