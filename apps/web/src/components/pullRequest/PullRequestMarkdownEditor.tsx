@@ -10,14 +10,18 @@ import { cn } from "~/lib/utils";
 import { readEnvironmentScope, useEnvironmentScope } from "~/state/session";
 
 import { Button } from "../ui/button";
-import { Textarea } from "../ui/textarea";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { PullRequestMarkdown } from "./PullRequestMarkdown";
+import {
+  PullRequestMarkdownTextarea,
+  type PullRequestMentionScope,
+} from "./PullRequestMarkdownTextarea";
 
 export function PullRequestMarkdownEditor({
   value,
   detail,
   environmentId,
+  mentionScope,
   threadRef = null,
   placeholder,
   label,
@@ -30,6 +34,7 @@ export function PullRequestMarkdownEditor({
   readonly value: string;
   readonly detail: PullRequestDetailView;
   readonly environmentId: EnvironmentId;
+  readonly mentionScope: PullRequestMentionScope | null;
   readonly threadRef?: ScopedThreadRef | null;
   readonly placeholder?: string | undefined;
   readonly label: string;
@@ -103,14 +108,15 @@ export function PullRequestMarkdownEditor({
           )}
         </div>
       ) : (
-        <Textarea
+        <PullRequestMarkdownTextarea
           autoFocus
           disabled={saving}
+          mentionScope={mentionScope}
           value={draft}
           rows={6}
           placeholder={placeholder}
           aria-label={label}
-          onChange={(event) => setDraft(event.target.value)}
+          onValueChange={setDraft}
         />
       )}
       <div className="flex justify-end gap-2">

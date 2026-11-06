@@ -45,6 +45,7 @@ const CAPABILITIES: PullRequestCapabilities = {
   updateMethods: ["merge", "rebase"],
   search: true,
   reactions: true,
+  mentions: true,
   viewedFiles: "host",
   review: {
     inlineComment: true,
