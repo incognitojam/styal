@@ -63,6 +63,15 @@ const reachesEnvironmentLoopback = (target: ConnectionTarget): boolean =>
   isElectron &&
   (target._tag === "PrimaryConnectionTarget" || isDesktopLocalConnectionTarget(target));
 
+export function sharesMachineWithEnvironment(environmentId: EnvironmentId): boolean {
+  const target = readPreparedConnection(environmentId)?.target;
+  if (!target) return false;
+  return (
+    reachesEnvironmentLoopback(target) ||
+    (target._tag === "PrimaryConnectionTarget" && isLocalLoopbackHost(window.location.hostname))
+  );
+}
+
 export function resolveDiscoveredServerUrl(environmentId: EnvironmentId, rawUrl: string): string {
   try {
     const normalizedUrl = normalizePreviewUrl(rawUrl);

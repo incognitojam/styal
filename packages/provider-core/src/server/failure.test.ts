@@ -25,6 +25,20 @@ import {
 import * as IdAllocator from "./IdAllocator.ts";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 
+it("marks ACP's auth-required error however deeply it is wrapped", () => {
+  const authRequired = { _tag: "AcpRequestError", code: -32000 };
+  const wrapped = { _tag: "ProviderAdapterTurnStartError", cause: authRequired };
+  assert.equal(makeProviderFailure({ cause: wrapped }).code, "provider_auth_required");
+  assert.equal(
+    makeProviderFailure({ cause: Cause.fail(authRequired) }).code,
+    "provider_auth_required",
+  );
+  assert.notEqual(
+    makeProviderFailure({ cause: { _tag: "AcpRequestError", code: -32603 } }).code,
+    "provider_auth_required",
+  );
+});
+
 it("redacts credentials and URL secrets from provider failures", () => {
   const failure = makeProviderFailure({
     message:

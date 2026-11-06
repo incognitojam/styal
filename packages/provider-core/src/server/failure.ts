@@ -1,14 +1,15 @@
-import type {
-  NodeId,
-  OrchestrationV2ProviderFailure,
-  OrchestrationV2ProviderFailureClass,
-  OrchestrationV2ProviderRetry,
-  OrchestrationV2TurnItem,
-  ProviderDriverKind,
-  ProviderThreadId,
-  ProviderTurnId,
-  RunId,
-  ThreadId,
+import {
+  PROVIDER_AUTH_REQUIRED_FAILURE_CODE,
+  type NodeId,
+  type OrchestrationV2ProviderFailure,
+  type OrchestrationV2ProviderFailureClass,
+  type OrchestrationV2ProviderRetry,
+  type OrchestrationV2TurnItem,
+  type ProviderDriverKind,
+  type ProviderThreadId,
+  type ProviderTurnId,
+  type RunId,
+  type ThreadId,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Cause from "effect/Cause";
@@ -166,6 +167,27 @@ export function knownProviderFailureMessage(cause: unknown): string | undefined 
   return curatedCauseMessages(cause).known;
 }
 
+/** ACP's auth-required error, however many wrappers it arrives in. */
+function causeRequiresSignIn(cause: unknown): boolean {
+  const seen = new Set<unknown>();
+  for (let depth = 0; depth < 16 && cause != null && !seen.has(cause); depth++) {
+    seen.add(cause);
+    try {
+      if (Cause.isCause(cause)) {
+        cause = Cause.squash(cause);
+        continue;
+      }
+      if (typeof cause !== "object") return false;
+      const record = cause as Record<string, unknown>;
+      if (record._tag === "AcpRequestError" && record.code === -32000) return true;
+      cause = record.cause;
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
 function stringField(value: unknown, key: "message" | "code"): string | undefined {
   if (typeof value !== "object" || value === null) return undefined;
   try {
@@ -246,7 +268,11 @@ export function makeProviderFailure(input: {
   const rawMessage =
     input.message ?? curated.known ?? curated.category ?? DEFAULT_PROVIDER_FAILURE_MESSAGE;
   const message = boundedText(rawMessage, MAX_PROVIDER_FAILURE_MESSAGE_LENGTH);
-  const rawCode = input.code ?? stringField(input.cause, "code") ?? null;
+  const rawCode =
+    input.code ??
+    (causeRequiresSignIn(input.cause) ? PROVIDER_AUTH_REQUIRED_FAILURE_CODE : undefined) ??
+    stringField(input.cause, "code") ??
+    null;
   const code =
     rawCode === null ? null : boundedText(rawCode, MAX_PROVIDER_FAILURE_CODE_LENGTH) || null;
 

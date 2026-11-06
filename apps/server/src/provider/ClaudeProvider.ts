@@ -625,7 +625,8 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
         version: parsedVersion,
         status: "error",
         auth: { status: "unauthenticated" },
-        message: "Claude Code is not authenticated. Run `claude auth login` and try again.",
+        message:
+          "Claude Code is not authenticated. Sign in from provider setup, or run `claude auth login`.",
       },
     });
   }

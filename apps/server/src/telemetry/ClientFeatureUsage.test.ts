@@ -294,6 +294,9 @@ it.effect("records one event per shortcuts overview open with its entry point", 
       yield* decode({ feature: "shortcuts-overview", action: "opened", entryPoint: "shortcut" }),
     );
     yield* report(yield* decode({ feature: "work-together", action: "start", outcome: "waiting" }));
+    yield* report(
+      yield* decode({ feature: "provider-sign-in", action: "start", entryPoint: "thread" }),
+    );
     expect(events).toEqual([
       {
         event: "feature.used",
@@ -312,6 +315,17 @@ it.effect("records one event per shortcuts overview open with its entry point", 
           feature: "work-together",
           action: "start",
           outcome: "waiting",
+          source: "user",
+          forkClientUsageVersion: FORK_CLIENT_USAGE_VERSION,
+          surface: "web",
+        },
+      },
+      {
+        event: "feature.used",
+        properties: {
+          feature: "provider-sign-in",
+          action: "start",
+          entryPoint: "thread",
           source: "user",
           forkClientUsageVersion: FORK_CLIENT_USAGE_VERSION,
           surface: "web",

@@ -21,7 +21,8 @@ export const reporter = Effect.fnUntraced(function* (client: FeatureUsage.Client
       input.feature === "diff-file-review-order" ||
       input.feature === "incoming-share-thread" ||
       input.feature === "mobile-settings" ||
-      input.feature === "device-stream-health";
+      input.feature === "device-stream-health" ||
+      input.feature === "provider-sign-in";
     const reported =
       ((client.surface === "web" || client.surface === "desktop") &&
         input.feature !== "mobile-settings") ||

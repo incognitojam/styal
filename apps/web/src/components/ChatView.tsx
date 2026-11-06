@@ -42,6 +42,7 @@ import { THREAD_FIND_BAR_RESERVED_HEIGHT } from "./chat/ThreadFindBar";
 import { NextUnreadChip } from "./chat/NextUnreadChip";
 import { useNextUnreadSummary } from "./sidebar/nextUnreadThreadBus";
 import { usageLimitRecoveryBannerItem } from "./chat/UsageLimitRecoveryBanner";
+import { useProviderSignInBanner } from "./chat/useProviderSignInBanner";
 import { resolveDraftHeroState } from "./ChatView.logic";
 import { useQueuedRunEdit } from "./chat/useQueuedRunEdit";
 import { recallCheckoutIsRepo, rememberCheckoutIsRepo } from "./ChatView.logic";
@@ -1757,13 +1758,23 @@ export default function ChatView(props: ChatViewProps) {
   if (providerStatusBannerKey === null && dismissedProviderStatusBannerKey !== null) {
     setDismissedProviderStatusBannerKey(null);
   }
-  const visibleProviderStatus = shouldShowProviderStatusBanner(
-    activeProviderStatus,
-    dismissedProviderStatusBannerKey,
-  )
-    ? activeProviderStatus
-    : null;
-  const hasTimelineTopBanner = Boolean(timelineThreadError) || visibleProviderStatus !== null;
+  const providerSignIn = useProviderSignInBanner({
+    environmentId,
+    environmentLabel: activeEnvironment?.label ?? "this environment",
+    failed: serverRuntime?.status === "failed",
+    lastErrorCode: serverRuntime?.lastErrorCode,
+    provider: providerStatuses.find(
+      (provider) => provider.instanceId === serverRuntime?.providerInstanceId,
+    ),
+  });
+  // The sign-in banner says what these two say, and offers the fix.
+  const visibleProviderStatus =
+    providerSignIn.item === null &&
+    shouldShowProviderStatusBanner(activeProviderStatus, dismissedProviderStatusBannerKey)
+      ? activeProviderStatus
+      : null;
+  const bannerThreadError = providerSignIn.item === null ? timelineThreadError : null;
+  const hasTimelineTopBanner = Boolean(bannerThreadError) || visibleProviderStatus !== null;
   const activeProjectCwd = activeProject?.workspaceRoot ?? null;
   const activeThreadWorktreePath = activeThread?.worktreePath ?? null;
   const activeWorkspaceRoot = activeThreadWorktreePath ?? activeProjectCwd ?? undefined;
@@ -2738,7 +2749,10 @@ export default function ChatView(props: ChatViewProps) {
             }),
           ]
         : [];
-    const limitRecoveryItems = limitRecoveryBanner === null ? [] : [limitRecoveryBanner];
+    const limitRecoveryItems = [
+      ...(providerSignIn.item === null ? [] : [providerSignIn.item]),
+      ...(limitRecoveryBanner === null ? [] : [limitRecoveryBanner]),
+    ];
     const usageLimitsItems = usageLimitsBanner === null ? [] : [usageLimitsBanner];
     const projectCloneItems = projectCloneBannerItem === null ? [] : [projectCloneBannerItem];
     if (!localCheckoutBranchMismatch || !showBranchMismatchBanner || !activeBranchMismatchKey) {
@@ -3508,7 +3522,7 @@ export default function ChatView(props: ChatViewProps) {
               setDismissedProviderStatusBannerKey={setDismissedProviderStatusBannerKey}
               onOpenProviderSetup={openProviderSetupStable}
               threadId={activeThread.id}
-              threadError={timelineThreadError}
+              threadError={bannerThreadError}
               threadErrorClass={
                 threadErrorIsServerRuntimeError ? (serverRuntime?.lastErrorClass ?? null) : null
               }
@@ -4201,6 +4215,7 @@ export default function ChatView(props: ChatViewProps) {
     >
       <ChatGithubRepositoryContext value={activeGithubRepository}>
         {content}
+        {providerSignIn.dialog}
       </ChatGithubRepositoryContext>
     </FileMetadataThreadProvider>
   );

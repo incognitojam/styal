@@ -1574,6 +1574,14 @@ export const OrchestrationV2ProviderFailure = Schema.Struct({
 });
 export type OrchestrationV2ProviderFailure = typeof OrchestrationV2ProviderFailure.Type;
 
+export const PROVIDER_AUTH_REQUIRED_FAILURE_CODE = "provider_auth_required";
+
+/** Codex (`unauthorized`) and OpenCode (`ProviderAuthError`) report these natively. */
+export const isProviderAuthFailureCode = (code: string | null | undefined): boolean =>
+  code === PROVIDER_AUTH_REQUIRED_FAILURE_CODE ||
+  code === "unauthorized" ||
+  code === "ProviderAuthError";
+
 export const OrchestrationV2ProviderRetry = Schema.Struct({
   attempt: PositiveInt,
   maxAttempts: Schema.NullOr(PositiveInt),

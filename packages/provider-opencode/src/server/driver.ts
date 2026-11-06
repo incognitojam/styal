@@ -35,6 +35,7 @@ import {
   openCodeCommandsToServerProviderSlashCommands,
 } from "./status.ts";
 import { makeManagedServerProvider } from "@t3tools/provider-core/server/managedProvider";
+import * as ProviderCliLogin from "@t3tools/provider-core/server/providerCliLogin";
 import * as OpenCodeRuntime from "./OpenCodeRuntime.ts";
 import {
   makeOpenCodeRuntimeProbe,
@@ -217,13 +218,17 @@ export const OpenCodeDriver: ProviderDriver<
       driverKind: DRIVER_KIND,
       instanceId,
     });
-    const stampIdentity = withInstanceIdentity({
-      instanceId,
-      driverKind: DRIVER_KIND,
-      displayName,
-      accentColor,
-      continuationGroupKey: continuationIdentity.continuationKey,
-    });
+    const stampIdentity = ProviderCliLogin.withCliLoginSetup(
+      withInstanceIdentity({
+        instanceId,
+        driverKind: DRIVER_KIND,
+        displayName,
+        accentColor,
+        continuationGroupKey: continuationIdentity.continuationKey,
+      }),
+      // An external server holds its own credentials.
+      () => config.serverUrl.trim().length > 0,
+    );
     const effectiveConfig = { ...config, enabled } satisfies OpenCodeSettings;
     const runtimeProbe = yield* makeOpenCodeRuntimeProbe(
       probeOpenCodeRuntime(effectiveConfig, processEnv).pipe(
@@ -504,6 +509,19 @@ export const OpenCodeDriver: ProviderDriver<
       ),
     );
 
+    const auth = yield* ProviderCliLogin.make({
+      instanceId,
+      credentialKey: `${DRIVER_KIND}:login`,
+      // v2's default connects to a shared background service, which would outlive the login.
+      command: byOpenCodeRuntime(runtimeProbe.get, {
+        v1: Effect.succeed(["auth", "login"]),
+        v2: Effect.succeed(["auth", "login", "--standalone"]),
+      }).pipe(Effect.map((args) => ({ binary: effectiveConfig.binaryPath, args }))),
+      environment: processEnv,
+      hint: "On a remote machine, pick an API key or device code. Browser sign-in returns to this machine's localhost.",
+      refresh: snapshot.refresh,
+    });
+
     return {
       instanceId,
       driverKind: DRIVER_KIND,
@@ -511,6 +529,7 @@ export const OpenCodeDriver: ProviderDriver<
       displayName,
       accentColor,
       enabled,
+      auth,
       snapshot,
       snapshotForCwd: (cwd) =>
         !effectiveConfig.enabled

@@ -1,9 +1,9 @@
 import type { ServerProvider } from "@t3tools/contracts";
 
 /**
- * Whether the server can run a sign-in flow for this provider. Providers that
- * reuse their own CLI's login (Claude, default Codex, OpenCode) only report
- * status, so the accounts screen must not query or offer an in-app flow.
+ * Whether the server can run a sign-in flow for this provider. A provider that
+ * cannot (default Codex, or an instance using an API key) only reports status,
+ * so the accounts screen must not query or offer an in-app flow.
  */
 export function supportsInAppSignIn(provider: ServerProvider): boolean {
   return (

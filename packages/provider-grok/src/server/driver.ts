@@ -22,6 +22,7 @@ import {
 import { grokUsageReader } from "./usage.ts";
 import { readGrokAccount } from "./usageLimits.ts";
 import { makeManagedServerProvider } from "@t3tools/provider-core/server/managedProvider";
+import * as ProviderCliLogin from "@t3tools/provider-core/server/providerCliLogin";
 import {
   defaultProviderContinuationIdentity,
   type ProviderDriver,
@@ -130,13 +131,16 @@ export const GrokDriver: ProviderDriver<GrokSettings, GrokDriverEnv, Path.Path> 
       driverKind: DRIVER_KIND,
       instanceId,
     });
-    const stampIdentity = withInstanceIdentity({
-      instanceId,
-      driverKind: DRIVER_KIND,
-      displayName,
-      accentColor,
-      continuationGroupKey: continuationIdentity.continuationKey,
-    });
+    const stampIdentity = ProviderCliLogin.withCliLoginSetup(
+      withInstanceIdentity({
+        instanceId,
+        driverKind: DRIVER_KIND,
+        displayName,
+        accentColor,
+        continuationGroupKey: continuationIdentity.continuationKey,
+      }),
+      () => Boolean(processEnv.XAI_API_KEY?.trim()),
+    );
     const effectiveConfig = { ...config, enabled } satisfies GrokSettings;
     const resolveMaintenance = yield* makeCachedProviderMaintenanceResolution(
       resolveProviderMaintenanceCapabilitiesEffect(UPDATE, {
@@ -245,6 +249,18 @@ export const GrokDriver: ProviderDriver<GrokSettings, GrokDriverEnv, Path.Path> 
             ),
           ]).pipe(Effect.map(([machineSnapshot, skills]) => ({ ...machineSnapshot, skills })));
 
+    const auth = yield* ProviderCliLogin.make({
+      instanceId,
+      credentialKey: `${DRIVER_KIND}:login`,
+      command: Effect.succeed({
+        binary: effectiveConfig.binaryPath,
+        args: ["login", "--device-auth"],
+      }),
+      environment: processEnv,
+      cwd,
+      refresh: snapshot.refresh,
+    });
+
     return {
       instanceId,
       driverKind: DRIVER_KIND,
@@ -252,6 +268,7 @@ export const GrokDriver: ProviderDriver<GrokSettings, GrokDriverEnv, Path.Path> 
       displayName,
       accentColor,
       enabled,
+      auth,
       snapshot,
       snapshotForCwd,
       orchestrationAdapter,

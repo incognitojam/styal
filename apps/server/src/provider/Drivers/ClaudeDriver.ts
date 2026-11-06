@@ -59,6 +59,7 @@ import {
   makeClaudeContinuationGroupKey,
   mergeClaudeProcessEnvironment,
   resolveClaudeHomePath,
+  makeClaudeEnvironment,
 } from "./ClaudeHome.ts";
 import { readClaudeHistoryRetention } from "./ClaudeHistoryRetention.ts";
 import {
@@ -67,6 +68,7 @@ import {
   turnOffClaudeSelfUpdater,
   type ClaudeUpdaterPaths,
 } from "./claudeSelfUpdater.ts";
+import * as ProviderCliLogin from "@t3tools/provider-core/server/providerCliLogin";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 const decodeClaudeSettings = Schema.decodeSync(ClaudeSettings);
 
@@ -193,13 +195,19 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
       ),
     );
     const continuationGroupKey = yield* makeClaudeContinuationGroupKey(effectiveConfig, processEnv);
-    const stampIdentity = withInstanceIdentity({
-      instanceId,
-      driverKind: DRIVER_KIND,
-      displayName,
-      accentColor,
-      continuationGroupKey,
-    });
+    const stampIdentity = ProviderCliLogin.withCliLoginSetup(
+      withInstanceIdentity({
+        instanceId,
+        driverKind: DRIVER_KIND,
+        displayName,
+        accentColor,
+        continuationGroupKey,
+      }),
+      (draft) =>
+        draft.auth.type === "apiKey" ||
+        draft.auth.type === "bedrock" ||
+        draft.auth.type === "customEndpoint",
+    );
 
     const scopedLimitNames = yield* makeClaudeScopedLimitNames;
     const orchestrationAdapter = yield* createClaudeAdapterV2(
@@ -427,6 +435,16 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
       ),
     );
 
+    const auth = yield* ProviderCliLogin.make({
+      instanceId,
+      credentialKey: continuationGroupKey,
+      command: Effect.succeed({ binary: effectiveConfig.binaryPath, args: ["auth", "login"] }),
+      environment: yield* makeClaudeEnvironment(effectiveConfig, processEnv),
+      // Wrappers that scope themselves to their cwd refuse to run in $HOME; see stateDir above.
+      cwd: stateDir,
+      refresh: Cache.invalidateAll(capabilitiesProbeCache).pipe(Effect.andThen(snapshot.refresh)),
+    });
+
     return {
       instanceId,
       driverKind: DRIVER_KIND,
@@ -437,6 +455,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
       displayName,
       accentColor,
       enabled,
+      auth,
       snapshot,
       invalidateCaches: Cache.invalidateAll(capabilitiesProbeCache),
       snapshotForCwd: (cwd: string) =>

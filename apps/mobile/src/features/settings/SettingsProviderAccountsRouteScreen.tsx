@@ -10,10 +10,12 @@ import {
   type ProviderAuthResponse,
   type ServerProvider,
 } from "@t3tools/contracts";
+import { applyMaskedEdit, maskCode } from "@t3tools/shared/maskedCode";
 import { redactedPlaceholder } from "@t3tools/shared/redactedText";
 import { useAtomValue } from "@effect/atom-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { BlurView } from "expo-blur";
+import * as Clipboard from "expo-clipboard";
 import {
   Linking,
   Platform,
@@ -28,11 +30,13 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import type { MenuAction } from "@react-native-menu/menu";
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
+import { Button } from "../../components/ui/Button";
 import { ControlPill } from "../../components/ui/ControlPill";
 import { Menu } from "../../components/ui/Menu";
 import { AppText as Text } from "../../components/ui/AppText";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
+import { reportForkClientUsage } from "../../state/forkClientUsage";
 import { environmentPresentations } from "../../state/presentation";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
@@ -175,6 +179,9 @@ function ProviderAccountSummary({
   );
 }
 
+// Outlives the row so returning to this screen mid-sign-in does not open the browser again.
+let autoOpenedFlowId: string | null = null;
+
 function ProviderAccount({
   environment,
   provider,
@@ -267,12 +274,39 @@ function ProviderAccount({
       />
     );
   }
+  function codeField(name: string, label: string) {
+    return (
+      <View className="gap-1.5">
+        <Text className="text-sm text-foreground">{label}</Text>
+        <TextInput
+          accessibilityLabel={label}
+          className="rounded-lg border border-border-subtle px-3 py-2 text-base text-foreground"
+          autoCapitalize="none"
+          autoCorrect={false}
+          autoComplete="off"
+          textContentType="none"
+          importantForAutofill="no"
+          spellCheck={false}
+          editable={!disabled}
+          maxLength={16_384}
+          value={maskCode(values[name] ?? "")}
+          onChangeText={(masked) =>
+            setDraft({
+              id: draftId,
+              values: { ...values, [name]: applyMaskedEdit(values[name] ?? "", masked) },
+            })
+          }
+        />
+      </View>
+    );
+  }
   const name = provider.displayName ?? provider.driver;
   const email =
     signedIn && !active && !providerUnavailableReason(provider)
       ? provider.auth.email?.trim()
       : undefined;
   const methods = state?.methods ?? [];
+  const usesCliLogin = methods.length === 1 && methods[0]?.id === "cli";
   // The status line says why a provider that is missing or turned off can't sign in.
   const canSignIn =
     !active &&
@@ -288,6 +322,17 @@ function ProviderAccount({
   const usesCredentials =
     provider.driver === "antigravity" &&
     (provider.auth.type === "gemini-api-key" || provider.auth.type === "agent-platform");
+
+  const browserFlowId =
+    usesCliLogin && (interaction?.type === "credentials" || interaction?.type === "browser")
+      ? (state?.flowId ?? null)
+      : null;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- opens the user's browser, once per sign-in.
+  useEffect(() => {
+    if (!browserFlowId || !url || autoOpenedFlowId === browserFlowId) return;
+    autoOpenedFlowId = browserFlowId;
+    void Linking.openURL(url).catch(() => undefined);
+  }, [browserFlowId, url]);
   const status =
     active || state?.phase === "failed" || state?.phase === "cancelled"
       ? state.message
@@ -308,6 +353,13 @@ function ProviderAccount({
     title: method.name,
   }));
   function startSignIn(methodId?: string) {
+    if (usesCliLogin) {
+      void reportForkClientUsage(environmentId, {
+        feature: "provider-sign-in",
+        action: "start",
+        entryPoint: "settings",
+      });
+    }
     void run(() => start(methodId ? { environmentId, input: { instanceId, methodId } } : target));
   }
   function signOut() {
@@ -338,7 +390,7 @@ function ProviderAccount({
       ? [
           {
             id: "change",
-            title: "Change account",
+            title: usesCliLogin ? "Sign in again" : "Change account",
             image: "person.crop.circle",
             attributes: { disabled: signInDisabled },
             ...(methodActions.length > 1
@@ -382,7 +434,7 @@ function ProviderAccount({
   ) : active && state?.flowId ? (
     <ControlPill
       variant="pill"
-      label="Cancel"
+      label="Cancel sign-in"
       accessibilityLabel={`Cancel ${name} sign-in`}
       disabled={disabled}
       onPress={() => {
@@ -435,83 +487,6 @@ function ProviderAccount({
         </View>
         {trailing}
       </View>
-      {interaction?.type === "deviceCode" ||
-      interaction?.type === "terminal" ||
-      interaction?.type === "credentials" ||
-      showCallback ||
-      error ||
-      auth.error ? (
-        <View className="gap-2 px-4 pb-3">
-          {interaction?.type === "deviceCode" ? (
-            <Text selectable className="text-foreground">
-              Enter code {interaction.userCode} on the sign-in page.
-            </Text>
-          ) : null}
-          {interaction?.type === "terminal" ? (
-            <>
-              <ScrollView className="max-h-64" nestedScrollEnabled>
-                <Text selectable className="font-mono text-sm text-foreground">
-                  {interaction.output.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")}
-                </Text>
-              </ScrollView>
-              {field("input", "Terminal response", true)}
-              <SettingsActionRow
-                icon="arrow.up"
-                label="Send response"
-                disabled={disabled}
-                onPress={() => {
-                  void send({ type: "terminal", data: `${values.input ?? ""}\r` }).then((sent) => {
-                    if (sent) setDraft({ id: "", values: {} });
-                  });
-                }}
-              />
-            </>
-          ) : null}
-          {interaction?.type === "credentials" ? (
-            <>
-              {interaction.fields.map((entry) => (
-                <View key={entry.name}>{field(entry.name, entry.label, entry.secret)}</View>
-              ))}
-              <SettingsActionRow
-                icon="person.crop.circle"
-                label="Connect"
-                disabled={disabled}
-                onPress={() => {
-                  void send({ type: "credentials", values }).then((sent) => {
-                    if (sent) setDraft({ id: "", values: {} });
-                  });
-                }}
-              />
-            </>
-          ) : null}
-          {showCallback ? (
-            <>
-              {field("callback", "Final localhost URL", false)}
-              <SettingsActionRow
-                icon="arrow.right"
-                label="Continue"
-                disabled={disabled || !values.callback?.trim()}
-                onPress={() => {
-                  if (!state?.flowId) return;
-                  void run(() =>
-                    complete({
-                      environmentId,
-                      input: { instanceId, flowId: state.flowId!, callbackUrl: values.callback! },
-                    }),
-                  ).then((sent) => {
-                    if (sent) setDraft({ id: "", values: {} });
-                  });
-                }}
-              />
-            </>
-          ) : null}
-          {error || auth.error ? (
-            <Text accessibilityRole="alert" className="text-danger-foreground">
-              {error ?? auth.error}
-            </Text>
-          ) : null}
-        </View>
-      ) : null}
       {url ? (
         <SettingsActionRow
           icon="globe"
@@ -529,6 +504,122 @@ function ProviderAccount({
             })().catch(() => setError("Could not open the sign-in page."));
           }}
         />
+      ) : null}
+      {url && usesCliLogin ? (
+        <SettingsActionRow
+          icon="doc.on.doc"
+          label="Copy sign-in link"
+          disabled={disabled}
+          onPress={() => {
+            void Clipboard.setStringAsync(url).catch(() =>
+              setError("Could not copy the sign-in link."),
+            );
+          }}
+        />
+      ) : null}
+      {interaction?.type === "deviceCode" ||
+      interaction?.type === "terminal" ||
+      interaction?.type === "credentials" ||
+      showCallback ||
+      error ||
+      auth.error ? (
+        <View className="gap-2 px-4 pb-3">
+          {interaction?.type === "deviceCode" ? (
+            <Text selectable className="text-foreground">
+              Enter code {interaction.userCode} on the sign-in page.
+            </Text>
+          ) : null}
+          {interaction?.type === "terminal" ? (
+            <>
+              <ScrollView className="max-h-64" nestedScrollEnabled>
+                <Text selectable className="font-mono text-sm text-foreground">
+                  {interaction.output.replace(
+                    /\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b\[[0-?]*[ -/]*[@-~]/g,
+                    "",
+                  )}
+                </Text>
+              </ScrollView>
+              <View className="flex-row flex-wrap gap-2">
+                {TERMINAL_KEYS.map((key) => (
+                  <ControlPill
+                    key={key.label}
+                    variant="pill"
+                    label={key.label}
+                    accessibilityLabel={key.accessibilityLabel}
+                    disabled={disabled}
+                    onPress={() => void send({ type: "terminal", data: key.data })}
+                  />
+                ))}
+              </View>
+              {field("input", "Terminal response", true)}
+              <View className="flex-row justify-end">
+                <Button
+                  label="Send response"
+                  tone="primary"
+                  disabled={disabled}
+                  onPress={() => {
+                    void send({ type: "terminal", data: `${values.input ?? ""}\r` }).then(
+                      (sent) => {
+                        if (sent) setDraft({ id: "", values: {} });
+                      },
+                    );
+                  }}
+                />
+              </View>
+            </>
+          ) : null}
+          {interaction?.type === "credentials" ? (
+            <>
+              {interaction.fields.map((entry) => (
+                <View key={entry.name}>
+                  {entry.secret && interaction.url
+                    ? codeField(entry.name, entry.label)
+                    : field(entry.name, entry.label, entry.secret)}
+                </View>
+              ))}
+              <View className="flex-row justify-end">
+                <Button
+                  label={interaction.url ? "Continue" : "Connect"}
+                  tone="primary"
+                  disabled={disabled || !Object.values(values).some((value) => value.trim())}
+                  onPress={() => {
+                    void send({ type: "credentials", values }).then((sent) => {
+                      if (sent) setDraft({ id: "", values: {} });
+                    });
+                  }}
+                />
+              </View>
+            </>
+          ) : null}
+          {showCallback ? (
+            <>
+              {field("callback", "Final localhost URL", false)}
+              <View className="flex-row justify-end">
+                <Button
+                  label="Continue"
+                  tone="primary"
+                  disabled={disabled || !values.callback?.trim()}
+                  onPress={() => {
+                    if (!state?.flowId) return;
+                    void run(() =>
+                      complete({
+                        environmentId,
+                        input: { instanceId, flowId: state.flowId!, callbackUrl: values.callback! },
+                      }),
+                    ).then((sent) => {
+                      if (sent) setDraft({ id: "", values: {} });
+                    });
+                  }}
+                />
+              </View>
+            </>
+          ) : null}
+          {error || auth.error ? (
+            <Text accessibilityRole="alert" className="text-danger-foreground">
+              {error ?? auth.error}
+            </Text>
+          ) : null}
+        </View>
       ) : null}
     </View>
   );
@@ -569,3 +660,10 @@ function ProviderAccountEmail({ email }: { readonly email: string }) {
 }
 
 const EMAIL_BLUR_FILTER = { filter: [{ blur: 3 }] };
+
+// A login's menus take arrow keys, which a phone keyboard cannot type.
+const TERMINAL_KEYS = [
+  { label: "↑", accessibilityLabel: "Up arrow", data: "\x1b[A" },
+  { label: "↓", accessibilityLabel: "Down arrow", data: "\x1b[B" },
+  { label: "Enter", accessibilityLabel: "Enter", data: "\r" },
+];

@@ -21,6 +21,7 @@ import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { githubRepositoryOf } from "@t3tools/client-runtime/github-references";
 import { ThreadGithubRepositoryContext } from "./githubReferenceUrlLabels";
 import { UsageLimitRecoveryCard } from "./UsageLimitRecoveryCard";
+import { ProviderSignInCard } from "./ProviderSignInCard";
 import { ChatGptUsageLimitNotice } from "./ChatGptUsageLimitNotice";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import {
@@ -1596,6 +1597,10 @@ function ThreadDetailBody(
                         />
                       </Animated.View>
                     ) : null}
+                    <ProviderSignInCard
+                      thread={props.selectedThread}
+                      environmentId={props.environmentId}
+                    />
                     <UsageLimitRecoveryCard
                       key={props.selectedThread.latestRun?.runId}
                       thread={props.selectedThread}
