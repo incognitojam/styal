@@ -1,3 +1,4 @@
+import { AgentScope } from "@t3tools/shared/AgentScope";
 import { describe, expect, it } from "@effect/vitest";
 import * as NodePath from "@effect/platform-node/NodePath";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -58,6 +59,8 @@ const agentFixture = Effect.fn("agentFixture")(function* (
   const path = yield* Path.Path;
   const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-device-agent-start-" });
   const hub = { running: true, spawnFails: false };
+  const launches: string[] = [];
+  const commands: string[] = [];
   const stateDir = agentDeviceStateDir(path, path.join(baseDir, "userdata"));
   const daemonHealthy = yield* Ref.make(true);
   for (const [name, version, entry] of [
@@ -75,12 +78,20 @@ const agentFixture = Effect.fn("agentFixture")(function* (
       Layer.mergeAll(ServerConfig.layerTest(baseDir, baseDir), NetService.layer, serverEnvironment),
     ),
     Effect.provideService(HostProcess.Environment, { HOME: baseDir, PATH: "" }),
+    Effect.provideService(AgentScope, {
+      ...AgentScope.defaultValue(),
+      wrap: (input) => {
+        launches.push(input.name);
+        return Effect.succeed({ command: "scoped-device-tool", args: input.args });
+      },
+    }),
     Effect.provideService(HostProcess.IsExecutable, false),
     Effect.provideService(HostProcess.Platform, "darwin"),
     Effect.provideService(
       ChildProcessSpawner.ChildProcessSpawner,
-      ChildProcessSpawner.make(() =>
-        hub.spawnFails
+      ChildProcessSpawner.make((command) => {
+        commands.push((command as { command: string }).command);
+        return hub.spawnFails
           ? Effect.fail(
               PlatformError.systemError({
                 _tag: "NotFound",
@@ -103,14 +114,17 @@ const agentFixture = Effect.fn("agentFixture")(function* (
                 getOutputFd: () => Stream.empty,
                 unref: Effect.succeed(Effect.void),
               }),
-            ),
-      ),
+            );
+      }),
     ),
     Effect.provideService(ProcessRunner.ProcessRunner, {
-      run: (input) =>
-        input.args.includes("devices")
-          ? startup(stateDir)
-          : Effect.succeed(input.args.includes("-list-avds") ? avdOutput : processOutput(0)),
+      run: (input) => {
+        if (input.args.includes("devices")) {
+          commands.push(input.command);
+          return startup(stateDir);
+        }
+        return Effect.succeed(input.args.includes("-list-avds") ? avdOutput : processOutput(0));
+      },
     }),
     Effect.provideService(
       HttpClient.HttpClient,
@@ -129,7 +143,7 @@ const agentFixture = Effect.fn("agentFixture")(function* (
     ),
   );
   yield* host.ensureReady(() => Effect.void);
-  return { host, fs, stateDir, hub, daemonHealthy };
+  return { host, fs, stateDir, hub, daemonHealthy, launches, commands };
 });
 
 describe("AgentDevice startup", () => {
@@ -137,7 +151,7 @@ describe("AgentDevice startup", () => {
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       let attempts = 0;
-      const { host, daemonHealthy } = yield* agentFixture((stateDir) =>
+      const { host, daemonHealthy, launches, commands } = yield* agentFixture((stateDir) =>
         Effect.gen(function* () {
           attempts++;
           yield* fs
@@ -154,6 +168,8 @@ describe("AgentDevice startup", () => {
         first.agentDevice,
       );
       expect(attempts).toBe(1);
+      expect(launches).toEqual(["device-hub", "agent-device"]);
+      expect(commands).toEqual(["scoped-device-tool", "scoped-device-tool"]);
 
       yield* Ref.set(daemonHealthy, false);
       const restarted = yield* host.ensureAgentReady(() => Effect.void);
