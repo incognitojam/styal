@@ -1,3 +1,10 @@
+import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
+import * as OrchestratorHandlers from "./toolkits/orchestrator/handlers.ts";
+import { OrchestratorToolkit } from "./toolkits/orchestrator/tools.ts";
+import * as OrchestratorMcpService from "./OrchestratorMcpService.ts";
+import * as PeerLinkRequests from "../peer/PeerLinkRequests.ts";
+import * as PeerLinks from "../peer/PeerLinks.ts";
+import * as Repositories from "../sourceControl/SourceControlRepositoryService.ts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as ProjectHandlers from "./toolkits/project/handlers.ts";
 import { ProjectToolkit } from "./toolkits/project/tools.ts";
@@ -646,4 +653,167 @@ it.effect.each([
       ),
     ),
   ),
+);
+
+const AutoUsageToolkit = Toolkit.make(
+  ProjectToolkit.tools.t3_project_create,
+  ProjectToolkit.tools.t3_project_clone,
+  ThreadToolkit.tools.run_scheduled_task_now,
+  OrchestratorToolkit.tools.t3_environment_link,
+);
+
+it.effect.each(
+  (
+    [
+      [
+        "t3_project_create",
+        "project_create",
+        { title: "Synthetic private title", workspaceRoot: "/projects/synthetic-private" },
+      ],
+      [
+        "t3_project_clone",
+        "project_clone",
+        {
+          remoteUrl: "https://example.test/synthetic-private.git",
+          destinationPath: "/projects/synthetic-private",
+        },
+      ],
+      ["run_scheduled_task_now", "scheduled_run", { taskId: "task:synthetic-private" }],
+      ["t3_environment_link", "link", { hint: "synthetic private machine" }],
+    ] as const
+  ).flatMap(([tool, action, args]) =>
+    (["success", "refused", "failure"] as const).map((outcome) => ({
+      tool,
+      action,
+      args,
+      outcome,
+    })),
+  ),
+)("records Auto $tool $outcome once without operation data", ({ tool, action, args, outcome }) =>
+  Effect.gen(function* () {
+    const events: Array<unknown> = [];
+    const success = <A>(value: A) =>
+      outcome === "failure" ? Effect.die("synthetic private failure") : Effect.succeed(value);
+    const scope = clientCaller("auto");
+    const result = yield* McpServer.McpServer.pipe(
+      Effect.flatMap((server) => server.callTool({ name: String(tool), arguments: args })),
+      Effect.provideService(McpInvocationContext.McpInvocationContext, {
+        ...scope,
+        client: {
+          ...scope.client!,
+          narrowedTo: {
+            runtimeMode: "auto",
+            interactionMode: outcome === "refused" ? "plan" : "default",
+          },
+        },
+      }),
+      Effect.provideService(McpSchema.McpServerClient, mcpClient),
+      Effect.provide(
+        McpHttpServer.toolkitRegistration(
+          AutoUsageToolkit,
+          McpToolAccess.toLayer(AutoUsageToolkit, {
+            t3_project_create: ProjectHandlers.declarations.t3_project_create,
+            t3_project_clone: ProjectHandlers.declarations.t3_project_clone,
+            run_scheduled_task_now: ThreadHandlers.declarations.run_scheduled_task_now,
+            t3_environment_link: OrchestratorHandlers.handlers.t3_environment_link,
+          }),
+        ).pipe(
+          Layer.provideMerge(McpServer.McpServer.layer),
+          Layer.provide(NodeCrypto.layer),
+          Layer.provide(
+            Layer.succeed(
+              AnalyticsService.AnalyticsService,
+              AnalyticsService.AnalyticsService.of({
+                recordOwners: () => Effect.void,
+                flush: Effect.void,
+                record: (event, properties) =>
+                  Effect.sync(() => {
+                    if (event === "feature.used") events.push({ event, properties });
+                  }),
+              }),
+            ),
+          ),
+          Layer.provide(Layer.mock(ThreadManagement.ThreadManagementService)({})),
+          Layer.provide(Layer.mock(OrchestratorMcpService.OrchestratorMcpService)({})),
+          Layer.provide(Layer.mock(PeerLinks.PeerLinks)({})),
+          Layer.provide(
+            Layer.mock(PeerLinkRequests.PeerLinkRequests)({
+              request: () => success({ status: "pending", turnItemId: "card:synthetic" } as never),
+            }),
+          ),
+          Layer.provide(
+            Layer.mock(Repositories.SourceControlRepositoryService)({
+              cloneRepository: () =>
+                success({
+                  cwd: "/projects/synthetic",
+                  remoteUrl: "https://example.test/repo.git",
+                  repository: null,
+                }),
+            }),
+          ),
+          Layer.provide(
+            Layer.mock(ProjectService.ProjectService)({
+              create: () =>
+                success({
+                  id: "created",
+                  title: "Synthetic",
+                  workspaceRoot: "/projects/synthetic",
+                  scripts: [],
+                  defaultModelSelection: null,
+                  createdAt: "2026-01-01T00:00:00.000Z",
+                  updatedAt: "2026-01-01T00:00:00.000Z",
+                  deletedAt: null,
+                } as never),
+            }),
+          ),
+          Layer.provide(
+            Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
+              namedProjectsRoot: "/projects",
+            }),
+          ),
+          Layer.provide(
+            Layer.mock(ScheduledTasks.ScheduledTaskService)({
+              list: () =>
+                Effect.succeed({
+                  tasks: [
+                    {
+                      id: "task:synthetic-private",
+                      runtimeMode: "auto",
+                      interactionMode: "default",
+                      threadId: null,
+                    },
+                  ],
+                } as never),
+              runNow: () =>
+                success({
+                  task: {
+                    id: "task:synthetic-private",
+                    lastRunStatus: "running",
+                    runCount: 1,
+                    nextRunAt: null,
+                  },
+                  threadId: null,
+                } as never),
+            }),
+          ),
+        ),
+      ),
+    );
+    expect(result.isError === true).toBe(outcome !== "success");
+    expect(events).toEqual([
+      {
+        event: "feature.used",
+        properties: {
+          feature: "auto-environment-tools",
+          action,
+          source: "agent",
+          durationMs: 0,
+          outcome: outcome === "refused" ? "failure" : outcome,
+          ...(outcome === "success"
+            ? {}
+            : { failureReason: outcome === "refused" ? "refused" : "operation_failed" }),
+        },
+      },
+    ]);
+  }),
 );

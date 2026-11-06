@@ -501,7 +501,7 @@ results use the latest assistant content from the final work turn.
 
 ## Environment tool permissions
 
-Environment writes require Full access and default interaction mode, except that Auto callers in default interaction mode may request a user-approved environment link, clone a repository, create a project without scripts or a default model, and run a scheduled task whose stored runtime and interaction modes are within their limits. Supervised and Auto-accept edits callers cannot use these exceptions. Existing registered workspaces are refused during creation; clone never adopts an existing destination.
+Environment writes require Full access and default interaction mode, except that Auto callers in default interaction mode may request a user-approved environment link, clone a repository, create a project without scripts or a default model, and run a scheduled task whose stored runtime and interaction modes are within their limits. Bound tasks must also target a thread within those limits, which are rechecked under the dispatch lock. Supervised and Auto-accept edits callers cannot use these exceptions. Existing registered workspaces are refused during creation; clone never adopts an existing destination.
 
 Project update and deletion, environment unlinking, and environment preference updates still require Full access. Linked callers retain their mode ceilings and link-origin fencing. Forwarded calls check the caller before forwarding and apply the destination's guards there.
 

@@ -1,3 +1,8 @@
+import * as Scheduler from "../scheduling/Scheduler.ts";
+import { ServerActivation } from "../serverActivation.ts";
+import * as McpToolAccess from "./McpToolAccess.ts";
+import * as ThreadHandlers from "./toolkits/thread/handlers.ts";
+import { ThreadToolkit } from "./toolkits/thread/tools.ts";
 import * as DocumentText from "../provider/DocumentText.ts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -12,11 +17,12 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   RunId,
+  ScheduledTaskId,
   ThreadId,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import { McpSchema, McpServer } from "effect/ai";
+import { McpSchema, McpServer, Toolkit } from "effect/ai";
 
 import * as ServerConfig from "../config.ts";
 import { CodexProviderCapabilitiesV2 } from "../orchestration-v2/Adapters/CodexAdapterV2.ts";
@@ -130,7 +136,21 @@ const layerTools = Layer.mergeAll(
       list: () => Effect.succeed([]),
     }),
   ),
-  Layer.provide(Layer.mock(ScheduledTaskService.ScheduledTaskService)({})),
+  Layer.provideMerge(
+    ScheduledTaskService.layer.pipe(
+      Layer.provide(layerLaunches),
+      Layer.provide(NodeCrypto.layer),
+      Layer.provide(Scheduler.layer),
+      Layer.provide(Layer.succeed(ServerActivation, Effect.never)),
+      Layer.provide(Layer.mock(SecretRequests.SecretRequests)({})),
+      Layer.provide(
+        Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
+          namedProjectsRoot: "/p",
+          isScratchProject: () => Effect.succeed(false),
+        }),
+      ),
+    ),
+  ),
   Layer.provide(
     Layer.mock(ProjectService.ProjectService)({
       getById: () => Effect.succeedNone,
@@ -251,28 +271,97 @@ const launch = (
     }),
   );
 
-const usersOwnThread = Effect.gen(function* () {
-  const orchestrator = yield* Orchestrator.OrchestratorV2;
-  const threadId = ThreadId.make("thread:users-own");
-  yield* orchestrator.dispatch({
-    type: "thread.create",
-    commandId: CommandId.make("create:users-own"),
-    threadId,
-    projectId,
-    title: "The user's own",
-    modelSelection: { instanceId, model: "gpt-5" },
-    // Within an `auto` link's modes, so only the fence decides.
-    runtimeMode: "auto",
-    interactionMode: "default",
-    branch: null,
-    worktreePath: null,
-    createdBy: "user",
-    creationSource: "web",
+const usersOwnThread = (threadId = ThreadId.make("thread:users-own")) =>
+  Effect.gen(function* () {
+    const orchestrator = yield* Orchestrator.OrchestratorV2;
+    yield* orchestrator.dispatch({
+      type: "thread.create",
+      commandId: CommandId.make(`create:${threadId}`),
+      threadId,
+      projectId,
+      title: "The user's own",
+      modelSelection: { instanceId, model: "gpt-5" },
+      // Within an `auto` link's modes, so only the fence decides.
+      runtimeMode: "auto",
+      interactionMode: "default",
+      branch: null,
+      worktreePath: null,
+      createdBy: "user",
+      creationSource: "web",
+    });
+    return threadId;
   });
-  return threadId;
-});
 
 it.layer(Layer.provideMerge(layerTools, layerOrchestration))("work a link starts", (it) => {
+  it.effect.each(["within", "already-raised", "raised-after-preflight"] as const)(
+    "scheduled bound thread %s respects Auto limits",
+    (scenario) =>
+      Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const threads = yield* ThreadManagement.ThreadManagementService;
+        const scheduler = yield* ScheduledTaskService.ScheduledTaskService;
+        const threadId = yield* usersOwnThread(ThreadId.make(`thread:bound:${scenario}`));
+        const raise = orchestrator.dispatch({
+          type: "thread.runtime-mode.set",
+          commandId: CommandId.make(`raise-bound:${scenario}`),
+          threadId,
+          runtimeMode: "full-access",
+        });
+        if (scenario === "already-raised") yield* raise;
+        const { task } = yield* scheduler.upsert({
+          id: ScheduledTaskId.make(`task:auto-bound:${scenario}`),
+          title: "Synthetic bound run",
+          prompt: "Synthetic scheduled prompt",
+          enabled: false,
+          schedule: { type: "interval", everyMs: 60000 },
+          projectId,
+          threadId,
+          workspaceStrategy: { type: "root" },
+          modelSelection: { instanceId, model: "gpt-5" },
+          runtimeMode: "auto",
+          interactionMode: "default",
+        });
+        const toolkit = Toolkit.make(ThreadToolkit.tools.run_scheduled_task_now);
+        const registered = McpHttpServer.toolkitRegistration(
+          toolkit,
+          McpToolAccess.toLayer(toolkit, {
+            run_scheduled_task_now: ThreadHandlers.declarations.run_scheduled_task_now,
+          }),
+        ).pipe(
+          Layer.provideMerge(McpServer.McpServer.layer),
+          Layer.provide(NodeCrypto.layer),
+          Layer.provide(Layer.succeed(ScheduledTaskService.ScheduledTaskService, scheduler)),
+          Layer.provide(
+            Layer.succeed(ThreadManagement.ThreadManagementService, {
+              ...threads,
+              getThreadShell: (id) =>
+                threads
+                  .getThreadShell(id)
+                  .pipe(
+                    Effect.tap(() => (scenario === "raised-after-preflight" ? raise : Effect.void)),
+                  ),
+            }),
+          ),
+        );
+        const result = yield* call(
+          clientScope("auto-caller", false, "auto"),
+          "run_scheduled_task_now",
+          { taskId: task.id },
+        ).pipe(Effect.provide(registered));
+        if (scenario === "within") {
+          assert.equal(result.isError, false, JSON.stringify(result.content));
+          assert.equal((result.structuredContent as { threadId: string }).threadId, threadId);
+        } else {
+          assert.equal(
+            failureCode(result),
+            "runtime_mode_escalation_denied",
+            JSON.stringify(result.content),
+          );
+          assert.lengthOf((yield* threads.getThreadRecords(threadId, ["messages"])).messages, 0);
+        }
+      }),
+  );
+
   it.effect("is stamped, and so is the work it derives", () =>
     Effect.gen(function* () {
       const projections = yield* ProjectionStore.ProjectionStoreV2;
@@ -339,7 +428,7 @@ it.layer(Layer.provideMerge(layerTools, layerOrchestration))("work a link starts
   it.effect("changes only that link's threads below full access", () =>
     Effect.gen(function* () {
       const projections = yield* ProjectionStore.ProjectionStoreV2;
-      const users = yield* usersOwnThread;
+      const users = yield* usersOwnThread();
       const ownLaunch = yield* launch(laptop, "The laptop's");
       const rename = (scope: McpInvocationContext.McpInvocationScope, threadId: ThreadId) =>
         call(scope, "t3_thread_update", {
@@ -385,7 +474,7 @@ it.layer(Layer.provideMerge(layerTools, layerOrchestration))("work a link starts
   it.effect("is not fenced when the link has full access, but still says where it came from", () =>
     Effect.gen(function* () {
       const projections = yield* ProjectionStore.ProjectionStoreV2;
-      const users = yield* usersOwnThread;
+      const users = yield* usersOwnThread();
       const launched = yield* launch(trusted, "Started from the desk");
       assert.deepEqual((yield* projections.getThreadShell(launched))?.linkOrigin, {
         sessionId: "trusted",

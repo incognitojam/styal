@@ -105,20 +105,30 @@ export const declarations = {
           });
         const caller = yield* check;
         yield* assertTargetWithinLimits(caller.limits, storedTask);
-        const { task, threadId } = yield* scheduler
-          .runNow({ id: input.taskId }, storedTask)
-          .pipe(Effect.mapError(unavailable));
+        if (storedTask.threadId != null) {
+          const target = yield* caller.threads
+            .getThreadShell(ThreadId.make(storedTask.threadId))
+            .pipe(Effect.mapError(unavailable));
+          if (target !== null && target.deletedAt === null)
+            yield* assertTargetWithinLimits(caller.limits, target);
+        }
+        const { task, threadId } = yield* McpToolAccess.withDispatchModeLimit(
+          caller.limits,
+          scheduler.runNow({ id: input.taskId }, storedTask).pipe(Effect.mapError(unavailable)),
+        );
         const scope = yield* McpInvocationContext.McpInvocationContext;
         return {
           taskId: task.id,
           threadId,
-          ...(threadId === null ? {} : { link: McpInvocationContext.threadLinkFor(scope, threadId) }),
+          ...(threadId === null
+            ? {}
+            : { link: McpInvocationContext.threadLinkFor(scope, threadId) }),
           lastRunStatus: task.lastRunStatus,
           runCount: task.runCount,
           nextRunAt: task.nextRunAt,
         };
       }),
-    { auto: "allowed" },
+    { auto: "allowed", autoUsage: "scheduled_run" },
   ),
   t3_thread_search: McpToolAccess.reads((input) =>
     Effect.gen(function* () {

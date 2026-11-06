@@ -127,7 +127,14 @@ export function featureUsage(method: string, payload: unknown): FeatureUsage | u
 
 // Extend this union at the feature's entry point. Never pass tool arguments or
 // results: usage properties are a fixed vocabulary, independent of user data.
+export type AutoEnvironmentAction = "link" | "project_create" | "project_clone" | "scheduled_run";
+
 type ObservedUsage =
+  | {
+      readonly feature: "auto-environment-tools";
+      readonly action: AutoEnvironmentAction;
+      readonly source: "agent";
+    }
   | {
       readonly feature: "browser-tools";
       readonly action: PreviewAutomationOperation;
@@ -359,6 +366,20 @@ function workflowRunWatchFailureReason(cause: Cause.Cause<unknown>) {
   }
 }
 
+function autoEnvironmentFailureReason(cause: Cause.Cause<unknown>) {
+  const error = Option.getOrUndefined(Cause.findErrorOption(cause));
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "_tag" in error &&
+    error._tag === "OrchestratorMcpFailure" &&
+    "code" in error &&
+    error.code !== "orchestration_error"
+  )
+    return "refused";
+  return "operation_failed";
+}
+
 /**
  * Observe one public operation, preserving its result, failure and interruption.
  * `resultProperties` reads bounded categories from a successful result. Untraced:
@@ -399,6 +420,11 @@ export const observe = Effect.fnUntraced(function* <A, E, R>(
           Exit.isFailure(exit) &&
           !Cause.hasInterruptsOnly(exit.cause)
             ? { failureReason: projectFileApprovalFailureReason(exit.cause) }
+            : {}),
+          ...(usage.feature === "auto-environment-tools" &&
+          Exit.isFailure(exit) &&
+          !Cause.hasInterruptsOnly(exit.cause)
+            ? { failureReason: autoEnvironmentFailureReason(exit.cause) }
             : {}),
           ...(usage.feature === "agent-guides" ? { guideTopic: usage.guideTopic } : {}),
           ...(usage.feature === "hardware" && usage.hardwareTier

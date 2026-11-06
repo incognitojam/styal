@@ -12,7 +12,7 @@ import * as OrchestratorMcpService from "../../OrchestratorMcpService.ts";
 import * as ThreadMetadataMcpService from "../../ThreadMetadataMcpService.ts";
 import * as DelegatedWakeUsage from "../../../telemetry/DelegatedWakeUsage.ts";
 
-const handlers = {
+export const handlers = {
   orchestrator_capabilities: McpToolAccess.reads((input) =>
     Effect.gen(function* () {
       const scope = yield* McpInvocationContext.McpInvocationContext;
@@ -200,7 +200,7 @@ const handlers = {
         const requests = yield* PeerLinkRequests.PeerLinkRequests;
         return yield* requests.request(scope, input);
       }),
-    { auto: "allowed" },
+    { auto: "allowed", autoUsage: "link" },
   ),
   t3_environment_unlink: McpToolAccess.writesEnvironment(({ environmentId }) =>
     Effect.gen(function* () {

@@ -10,6 +10,7 @@ import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
+import * as Predicate from "effect/Predicate";
 import * as ThreadLaunch from "../../../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadMessageIntake from "../../../orchestration-v2/ThreadMessageIntake.ts";
 import * as Claims from "../../../orchestration-v2/AttachmentClaims.ts";
@@ -333,6 +334,7 @@ export const declarations = {
     {
       linkedCallers: "allowed",
       auto: "allowed",
+      autoUsage: "project_create",
       validate: (input, caller) =>
         caller.limits.runtimeMode !== "full-access" &&
         (input.scripts !== undefined || input.defaultModelSelection !== undefined)
@@ -365,18 +367,23 @@ export const declarations = {
     (input) =>
       Effect.gen(function* () {
         const repositories = yield* Repositories.SourceControlRepositoryService;
-        return yield* repositories.cloneRepository(input).pipe(
+        return yield* repositories.cloneRepository(input, { requireNewDestination: true }).pipe(
           Effect.mapError(
             (error) =>
               new OrchestratorMcpFailure({
-                code: "orchestration_error",
+                code:
+                  error.operation === "claimCloneDestination" &&
+                  Predicate.hasProperty(error.cause, "reason") &&
+                  Predicate.isTagged(error.cause.reason, "AlreadyExists")
+                    ? "invalid_request"
+                    : "orchestration_error",
                 message: error.detail,
               }),
           ),
         );
       }),
     // An existing destination is never adopted.
-    { linkedCallers: "allowed", auto: "allowed" },
+    { linkedCallers: "allowed", auto: "allowed", autoUsage: "project_clone" },
   ),
 } satisfies McpToolAccess.Handlers<typeof ProjectToolkit.tools>;
 

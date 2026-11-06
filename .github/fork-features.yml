@@ -364,7 +364,9 @@ features:
     rationale: Auto agents need to prepare projects and request user-approved machine links without gaining machine-wide or destructive permissions.
     invariants:
       - Only Auto/default and Full access callers can use the four opted-in environment operations; lower modes remain refused.
-      - Auto project creation refuses scripts and model defaults, and scheduled runs cannot exceed caller modes.
+      - Auto project creation refuses scripts and model defaults; scheduled task and bound-thread modes cannot exceed caller limits, including under the dispatch lock.
+      - MCP clones atomically claim a new destination and never adopt an existing empty or registered workspace.
+      - Auto exceptions record bounded usage outcomes without operation data.
       - Linked callers retain link-origin fencing and mode ceilings, including forwarded calls.
     implementation_paths:
       - apps/server/src/mcp/McpToolAccess.ts
@@ -372,17 +374,23 @@ features:
       - apps/server/src/mcp/toolkits/project/handlers.ts
       - apps/server/src/mcp/toolkits/thread/handlers.ts
       - apps/server/src/scheduledTasks/ScheduledTaskService.ts
+      - apps/server/src/sourceControl/SourceControlRepositoryService.ts
+      - apps/server/src/telemetry/AnalyticsService.ts
+      - apps/server/src/telemetry/FeatureUsage.ts
     upstream_paths:
       - apps/server/src/mcp/McpToolAccess.ts
       - apps/server/src/mcp/toolkits/orchestrator/handlers.ts
       - apps/server/src/mcp/toolkits/project/handlers.ts
       - apps/server/src/mcp/toolkits/thread/handlers.ts
       - apps/server/src/scheduledTasks/ScheduledTaskService.ts
+      - apps/server/src/sourceControl/SourceControlRepositoryService.ts
     tests:
       - apps/server/src/mcp/McpToolAccess.test.ts
+      - apps/server/src/mcp/linkOrigin.test.ts
       - apps/server/src/peer/PeerForwarding.test.ts
       - apps/server/src/peer/PeerLinkRequests.test.ts
       - apps/server/src/scheduledTasks/ScheduledTaskService.interval.test.ts
+      - apps/server/src/sourceControl/SourceControlRepositoryService.test.ts
     upstream:
       status: tracking
       tracking:
