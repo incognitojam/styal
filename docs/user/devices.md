@@ -143,6 +143,9 @@ connection.
 
 ## Devices from another environment
 
+**Work together** in **Settings → Connections** sets this up for you, along with agents on each
+machine reaching the other. See [your machines](./remote-access.md#your-machines).
+
 If the machine with your simulators already runs styal, connect both environments to your client. In **Settings → Devices**, under the environment that has the simulators, turn on **Share with** for the environment whose agents should use them. In the native mobile app, use **Settings → Devices**. Both environment servers need a version that supports sharing.
 
 This enables device hub and agent access on both environments and grants the agent environment access to the other machine’s local devices. Access stays available after you close the browser or mobile app; it does not grant access to projects, files, or terminals. Turning off device hub or agent device access on either environment pauses sharing until it is turned back on. The device machine still needs Xcode for iOS or an Android SDK for Android. As with SSH hosts, a simulator on the device machine cannot reach Metro through the agent environment's localhost.

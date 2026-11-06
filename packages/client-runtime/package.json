@@ -251,6 +251,10 @@
       "types": "./src/state/peerLinks.ts",
       "default": "./src/state/peerLinks.ts"
     },
+    "./state/workTogether": {
+      "types": "./src/state/workTogether.ts",
+      "default": "./src/state/workTogether.ts"
+    },
     "./state/peerPairingCode": {
       "types": "./src/state/peerPairingCode.ts",
       "default": "./src/state/peerPairingCode.ts"

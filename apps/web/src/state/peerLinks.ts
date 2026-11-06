@@ -5,6 +5,7 @@ import {
   offersLinkedEnvironments,
 } from "@t3tools/client-runtime/link-request";
 import { createPeerLinkEnvironmentAtoms } from "@t3tools/client-runtime/state/peerLinks";
+import { createWorkTogetherCommand } from "@t3tools/client-runtime/state/workTogether";
 import { AuthAccessReadScope, type EnvironmentId } from "@t3tools/contracts";
 import { Atom } from "effect/reactivity";
 import { useEffect, useEffectEvent } from "react";
@@ -18,6 +19,8 @@ import { useEnvironmentsWithScope } from "./session";
 import { useAtomCommand } from "./use-atom-command";
 
 export const peerLinkEnvironment = createPeerLinkEnvironmentAtoms(connectionAtomRuntime);
+
+export const workTogether = createWorkTogetherCommand(connectionAtomRuntime, peerLinkEnvironment);
 
 /** Whether `environmentId` offers links, so its threads may name another machine. */
 export const offersLinkedEnvironmentsAtom = Atom.family((environmentId: EnvironmentId) =>

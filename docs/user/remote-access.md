@@ -280,8 +280,42 @@ Add your other machines, such as your laptop and a VPS, and agents on one can
 work on the other: start, message, wait on and stop its threads, answer their
 questions, and manage its queues, projects and scheduled tasks.
 
-This is a beta. Turn on **Work with your other machines** for both machines in
-**Settings → Labs**; on mobile, **Settings → Labs** lists each connected machine.
+### Let two machines work together
+
+If this app is connected to both machines, open **Settings → Connections → Work
+together**, on web, desktop or mobile, and choose **Work together** for the pair. You
+pick what agents may do, and styal does the rest in both directions: it turns on
+**Work with your other machines**, creates a pairing code and adds each machine to the
+other, and shares simulators or emulators from a machine that has them. A list shows
+each step.
+
+Your session on each machine must be able to manage access there. A session paired
+with narrower access, or a machine you've only found on your styal Link account and
+not connected to yet, needs pairing or connecting first. The other machine also has to
+be reachable from this one. If it isn't, that step says so; turn on styal Link or
+network access on that machine in **Connections**, then choose **Try again**.
+
+If a step fails, the steps that worked stay done, and running it again only does what's
+left. If a machine isn't connected, for example because it's asleep, steps that need it
+wait and finish when it's back if this page is still open. Otherwise the row shows
+**Partly set up** and **Finish** when you return.
+
+If a link already exists at other access than you pick, it's replaced. A row that says
+sharing isn't set up also offers **Finish**.
+
+**Stop working together** undoes it: both machines stop using each other's devices and
+forget each other, and each ends the sessions it gave the other. Tasks one has delegated
+to the other fail. **Work with your other machines** and device access stay on, since
+other machines may rely on them; change them in **Settings → Labs** and **Settings →
+Devices**. If a machine is asleep, its side finishes the same way as above.
+
+### Add a machine yourself
+
+Use this for one direction, for a machine this app isn't connected to, or from a
+terminal.
+
+Adding a machine is a beta. Turn on **Work with your other machines** for both machines
+in **Settings → Labs**; on mobile, **Settings → Labs** lists each connected machine.
 While it is off on either machine, agents there start nothing on the other. A
 task already running on the other machine still finishes, and if that machine
 has it off, its result arrives once it is back on.

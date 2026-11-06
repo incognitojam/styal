@@ -127,13 +127,12 @@ function LinkedEnvironmentsRow() {
       settingKeys={["linkedEnvironmentsEnabled"]}
       description={
         <>
-          Let agents here work on your other machines, and theirs here. Turn it on for each machine,
-          then add them in{" "}
+          Let agents here work on your other machines, and theirs here. Work together in{" "}
           <Link to="/settings/connections" className="underline underline-offset-2">
             Connections
-          </Link>
-          . While it is off, agents start nothing new on another machine; tasks already running
-          finish.
+          </Link>{" "}
+          turns this on for you. While it is off, agents start nothing new on another machine; tasks
+          already running finish.
         </>
       }
       control={

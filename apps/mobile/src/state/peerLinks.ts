@@ -5,6 +5,7 @@ import {
   offersLinkedEnvironments,
 } from "@t3tools/client-runtime/link-request";
 import { createPeerLinkEnvironmentAtoms } from "@t3tools/client-runtime/state/peerLinks";
+import { createWorkTogetherCommand } from "@t3tools/client-runtime/state/workTogether";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { useEffect, useEffectEvent, useMemo } from "react";
 
@@ -15,6 +16,8 @@ import { useEnvironmentQuery } from "./query";
 import { useAtomCommand } from "./use-atom-command";
 
 export const peerLinkEnvironment = createPeerLinkEnvironmentAtoms(connectionAtomRuntime);
+
+export const workTogether = createWorkTogetherCommand(connectionAtomRuntime, peerLinkEnvironment);
 
 /**
  * The machines `environmentId` links to, by name, while it offers links, and none otherwise.

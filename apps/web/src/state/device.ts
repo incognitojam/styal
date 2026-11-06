@@ -37,11 +37,17 @@ const EMPTY_DEVICE_STATE: DeviceServiceState = {
 export function useDeviceState(environmentId: EnvironmentId | null): {
   readonly state: DeviceServiceState;
   readonly loaded: boolean;
+  /** It answered, or could not; a failed read stays not loaded. */
+  readonly settled: boolean;
 } {
   const query = useEnvironmentQuery(
     environmentId === null ? null : deviceEnvironment.state({ environmentId, input: {} }),
   );
-  return { state: query.data ?? EMPTY_DEVICE_STATE, loaded: query.data !== null };
+  return {
+    state: query.data ?? EMPTY_DEVICE_STATE,
+    loaded: query.data !== null,
+    settled: query.data !== null || query.error !== null,
+  };
 }
 
 const deviceHubAccessAtom = Atom.family((environmentId: EnvironmentId) =>

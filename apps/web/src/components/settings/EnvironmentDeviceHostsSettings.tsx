@@ -4,7 +4,7 @@ import {
   deviceSharingErrorMessage,
   offlineDeviceShares,
 } from "@t3tools/client-runtime/state/device";
-import type { EnvironmentDeviceHostConfig } from "@t3tools/contracts";
+import type { EnvironmentDeviceHostConfig, EnvironmentId, ServerConfig } from "@t3tools/contracts";
 import { useState } from "react";
 import { reportForkClientUsage } from "~/forkClientUsage";
 import { deviceEnvironment, useDeviceState } from "../../state/device";
@@ -126,14 +126,11 @@ function OfflineShare(props: {
   );
 }
 
-/** One device environment and a sharing switch for each other connected environment. */
-function SharedDevices(props: {
-  device: SharingEnvironment;
-  agents: ReadonlyArray<SharingEnvironment>;
-  showLabel: boolean;
-  disabled: boolean;
+/** Where another machine could reach this machine's devices. */
+export function useDeviceSharingAddresses(device: {
+  readonly environmentId: EnvironmentId;
+  readonly serverConfig: Pick<ServerConfig, "directEndpoints"> | null;
 }) {
-  const { device } = props;
   const clientUrl = useEnvironmentHttpBaseUrl(device.environmentId);
   const linkUrl = useRelayEnvironmentDiscovery().environments.get(device.environmentId)?.environment
     .endpoint.httpBaseUrl;
@@ -157,6 +154,22 @@ function SharedDevices(props: {
     desktopDefaultEndpoint,
     linkUrl,
   });
+  return {
+    addresses,
+    addressLoaded: !isDesktopServer || networkAccess.data !== null,
+    isDesktopServer,
+  };
+}
+
+/** One device environment and a sharing switch for each other connected environment. */
+function SharedDevices(props: {
+  device: SharingEnvironment;
+  agents: ReadonlyArray<SharingEnvironment>;
+  showLabel: boolean;
+  disabled: boolean;
+}) {
+  const { device } = props;
+  const { addresses, addressLoaded, isDesktopServer } = useDeviceSharingAddresses(device);
   const deviceState = useDeviceState(device.environmentId);
   return (
     <div>
@@ -169,7 +182,7 @@ function SharedDevices(props: {
           device={device}
           agent={agent}
           addresses={addresses}
-          addressLoaded={!isDesktopServer || networkAccess.data !== null}
+          addressLoaded={addressLoaded}
           isDesktopServer={isDesktopServer}
           deviceSupportsSharing={deviceState.state.supportsEnvironmentHosts === true}
           deviceLoaded={deviceState.loaded}

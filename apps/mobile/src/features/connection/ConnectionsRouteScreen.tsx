@@ -12,6 +12,7 @@ import { useRemoteConnections } from "../../state/use-remote-environment-registr
 import { LocalEnvironmentList } from "./LocalEnvironmentList";
 import { PullRequestRoutingSettings } from "./PullRequestRoutingSettings";
 import { LinkedEnvironmentsSection } from "./LinkedEnvironmentsSection";
+import { WorkTogetherSection } from "./WorkTogetherSection";
 
 export function ConnectionsRouteScreen() {
   const {
@@ -70,6 +71,7 @@ export function ConnectionsRouteScreen() {
           onSetEnabled={onSetEnvironmentEnabled}
           onUpdate={onUpdateEnvironment}
         />
+        <WorkTogetherSection />
         {connectedEnvironments
           .filter((environment) => environment.connectionState === "connected")
           .map((environment) => (
