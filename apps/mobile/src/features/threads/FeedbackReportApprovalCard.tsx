@@ -64,15 +64,13 @@ export function FeedbackReportApprovalCard(props: {
             <Text className="font-sans text-sm text-foreground-secondary">
               {feedbackReportDescription(props.report)}
             </Text>
-            <View className="gap-3 rounded-[20px] border border-border bg-card-alt p-4">
-              <Text className="font-t3-bold text-2xl text-foreground">{props.report.title}</Text>
-              <View className="h-px bg-border" />
-              <PendingQuestionText
-                text={props.report.body}
-                threadRef={props.threadRef}
-                workspaceRoot={null}
-              />
-            </View>
+            <View className="border-t border-dashed border-border" />
+            <Text className="font-t3-bold text-xl text-foreground">{props.report.title}</Text>
+            <PendingQuestionText
+              text={props.report.body}
+              threadRef={props.threadRef}
+              workspaceRoot={null}
+            />
             <View className="flex-row flex-wrap gap-2.5 pt-2">{props.options?.map(button)}</View>
           </ScrollView>
         </Sheet>
