@@ -61,6 +61,10 @@ const LINK_ACCESS_LABELS: Record<AuthMcpClientAccess, string> = {
 /** Names a stored level for people, including ones new connections no longer use. */
 export const linkAccessLabel = (access: AuthMcpClientAccess): string => LINK_ACCESS_LABELS[access];
 
+/** "a", "a and b", or "a, b and c". */
+export const machineNames = (names: ReadonlyArray<string>): string =>
+  names.length < 2 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
+
 /** What a machine lets your other machines do there, with the limit of each stated plainly. */
 export const MACHINE_ACCESS_CHOICES = [
   {

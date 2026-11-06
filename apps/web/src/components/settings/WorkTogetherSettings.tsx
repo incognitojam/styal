@@ -2,6 +2,7 @@ import {
   LINK_DEFAULT_ACCESS,
   linkAccessLabel,
   machineAccessChoice,
+  machineNames,
 } from "@t3tools/client-runtime/link-request";
 import { peerLinkHealth } from "@t3tools/client-runtime/state/peerLinks";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
@@ -71,6 +72,7 @@ import {
 import { Spinner } from "../ui/spinner";
 import { useDeviceSharingAddresses } from "./EnvironmentDeviceHostsSettings";
 import {
+  AddAnotherMachineRow,
   AddMachineAction,
   OtherMachineLinks,
   peerLinkHealthText,
@@ -169,35 +171,31 @@ export function WorkTogetherSettings() {
                   }
                 />
               </SettingsRow>
-              {pairs.length === 0 ? (
-                <SettingsRow
-                  title="Add another machine first"
-                  description="Add it under Environments. Your machines can then start and message threads on each other, and share simulators."
+              {pairs.map(({ a, b, key }) => (
+                <MachinePair
+                  key={key}
+                  a={a}
+                  b={b}
+                  selectedId={selected.environmentId}
+                  expanded={showOthers}
+                  onOpen={() => setChosenId(selected.environmentId)}
+                  onAttentionChange={(value) =>
+                    setAttention((current) =>
+                      current.get(key) === value ? current : new Map(current).set(key, value),
+                    )
+                  }
                 />
-              ) : (
-                pairs.map(({ a, b, key }) => (
-                  <MachinePair
-                    key={key}
-                    a={a}
-                    b={b}
-                    selectedId={selected.environmentId}
-                    expanded={showOthers}
-                    onOpen={() => setChosenId(selected.environmentId)}
-                    onAttentionChange={(value) =>
-                      setAttention((current) =>
-                        current.get(key) === value ? current : new Map(current).set(key, value),
-                      )
-                    }
-                  />
-                ))
-              )}
-              {selectedHost === undefined ? null : (
+              ))}
+              {selectedHost !== undefined ? (
                 <OtherMachineLinks
                   environmentId={selectedHost.environmentId}
                   environmentLabel={selectedHost.label}
                   knownIds={knownIds}
+                  hasOtherTabs={pairs.length > 0}
                 />
-              )}
+              ) : pairs.length === 0 ? (
+                <AddAnotherMachineRow />
+              ) : null}
               <MachineDevicesRow machine={selected} machines={machines} />
               <MachineStatusRow machine={selected} machines={machines} />
               {pairs.length === 0 ? null : (
@@ -281,17 +279,25 @@ function MachineStatusRow({
     ),
   );
   const named = (level: IncomingMachineAccess) =>
-    linkedOthers
-      .filter(
-        (other) => (other.serverConfig?.settings.incomingMachineAccess ?? "everything") === level,
-      )
-      .map((other) => other.label)
-      .join(", ");
+    linkedOthers.filter(
+      (other) => (other.serverConfig?.settings.incomingMachineAccess ?? "everything") === level,
+    );
+  const refusing = named("nothing");
+  // Their own setting isn't visible from here, so this can't say what they allow.
+  const unconnected = (links.data?.links ?? []).filter(
+    (link) =>
+      link.status !== "expired" &&
+      !machines.some((other) => other.environmentId === link.environmentId),
+  );
+  const names = (list: ReadonlyArray<{ readonly label: string }>) =>
+    machineNames(list.map((entry) => entry.label));
   const parts = [
-    named("everything") && `can control ${named("everything")}`,
-    named("look-only") && `can look at ${named("look-only")}`,
-    named("nothing") &&
-      `can't reach ${named("nothing")}, which accept${linkedOthers.filter((other) => other.serverConfig?.settings.incomingMachineAccess === "nothing").length === 1 ? "s" : ""} nothing`,
+    named("everything").length > 0 ? `can control ${names(named("everything"))}` : "",
+    named("look-only").length > 0 ? `can look at ${names(named("look-only"))}` : "",
+    unconnected.length > 0 ? `can work on ${names(unconnected)}` : "",
+    refusing.length > 0
+      ? `can't reach ${names(refusing)}, which accept${refusing.length === 1 ? "s" : ""} nothing`
+      : "",
   ].filter(Boolean);
   return (
     <SettingsRow
@@ -300,10 +306,8 @@ function MachineStatusRow({
         !connected
           ? `${machine.label} isn't connected. Its setting applies whether or not this app can reach it.`
           : parts.length === 0
-            ? (links.data?.links.length ?? 0) > 0
-              ? "Connected."
-              : "Connected. Agents here aren't working on other machines yet."
-            : `Connected. Agents here ${parts.join(", and ")}.`
+            ? "Connected. Agents here aren't working on other machines yet."
+            : `Connected. Agents here ${machineNames(parts)}.`
       }
     />
   );
