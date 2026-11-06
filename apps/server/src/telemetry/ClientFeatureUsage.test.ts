@@ -11,6 +11,44 @@ import * as ClientFeatureUsage from "./ClientFeatureUsage.ts";
 const decode = Schema.decodeUnknownEffect(ForkClientUsageInput);
 const isUsage = Schema.is(ForkClientUsageInput);
 
+it.effect("records viewed completion suppression without thread content", () =>
+  Effect.gen(function* () {
+    const events: unknown[] = [];
+    for (const surface of ["web", "desktop", "mobile"] as const) {
+      const report = yield* ClientFeatureUsage.reporter({ surface }).pipe(
+        Effect.provideService(AnalyticsService.AnalyticsService, {
+          recordOwners: () => Effect.void,
+          record: (event, properties) =>
+            Effect.sync(() => {
+              events.push({ event, properties });
+            }),
+          flush: Effect.void,
+        }),
+      );
+      yield* report(
+        yield* decode({
+          feature: "completion-sounds",
+          action: "viewed_completion_suppressed",
+          threadId: "synthetic-thread",
+          title: "Synthetic title",
+        }),
+      );
+    }
+    expect(events).toEqual(
+      ["web", "desktop"].map((surface) => ({
+        event: "feature.exposed",
+        properties: {
+          feature: "completion-sounds",
+          action: "viewed_completion_suppressed",
+          source: "system",
+          surface,
+          forkClientUsageVersion: FORK_CLIENT_USAGE_VERSION,
+        },
+      })),
+    );
+  }),
+);
+
 it.effect("records integration setting requests without environment names or setting values", () =>
   Effect.gen(function* () {
     const events: unknown[] = [];

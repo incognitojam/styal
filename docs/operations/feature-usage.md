@@ -12,6 +12,8 @@ Upstream's `mcp.tool.invoked` records one event per agent MCP tool call with `to
 
 Additional measured operations are:
 
+- `completion-sounds`, `source = system`: `feature.exposed` with `action = viewed_completion_suppressed` records a completion kept quiet for a visible, focused routed thread, at most once per notification. Reports require client vocabulary version 29 and include no thread or environment identifiers, titles, or sound choices.
+
 - `work-together`, `source = user`: `start` and `stop` record each run of **Work together** and **Stop working together** on web, desktop and mobile, with `outcome = complete | waiting | failed`. A run that resumes when a machine returns records again. The event goes to a connected machine in the pair, so it needs that machine to be on `forkClientUsageVersion` 26 or later.
 
 - `provider-sign-in`, `source = user`, `action = start`: pressing **Sign in** for a provider whose own CLI owns its login (Claude, Grok Build, OpenCode, Pi, fx, Muse Code), with `entryPoint = settings | thread`. On mobile the thread card opens the Providers screen, so its presses count as `settings`.

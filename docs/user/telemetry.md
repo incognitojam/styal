@@ -56,6 +56,8 @@ clears because activity resumed, work or a request appeared, or the turn ended. 
 session identifiers, prompts, output, commands, and paths are not collected. Local incident
 records remain in the activity log even when telemetry is disabled.
 
+Viewed-thread completion sound suppression reports a count without thread identifiers, titles, or sound choices.
+
 Once after startup and then daily, the server also reports the current values of its settings, so
 we can see which defaults people change: on/off settings, chosen options such as the default permission mode, and day or minute
 counts. Paths, branch prefixes, instructions, model choices, and per-project settings are not
