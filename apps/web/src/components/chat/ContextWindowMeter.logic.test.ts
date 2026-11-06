@@ -107,6 +107,23 @@ describe("resolveContextWindowModelDisplayName", () => {
 describe("shouldOfferResumeCompaction", () => {
   const now = "2026-08-24T12:00:00.000Z";
 
+  it.each([
+    ["claudeAgent", false, true],
+    ["claudeAgent", true, false],
+    ["codex", false, false],
+    ["acpRegistry", false, false],
+  ])("offers for %s with pending handoff %s: %s", (provider, pendingHandoff, expected) => {
+    expect(
+      shouldOfferResumeCompaction({
+        provider,
+        usedTokens: 951_000,
+        updatedAt: "2026-08-24T10:00:00.000Z",
+        now,
+        pendingHandoff,
+      }),
+    ).toBe(expected);
+  });
+
   it("offers compaction once the one-hour prompt cache has expired", () => {
     expect(
       shouldOfferResumeCompaction({
