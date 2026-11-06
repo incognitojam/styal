@@ -346,7 +346,19 @@ export function renderComparison(
       ? `Both sides are compared with upstream at the in-order tip ${links.upstream(after.upstream)}.`
       : `The in-order tip moves from ${links.upstream(before.upstream)} to ${links.upstream(after.upstream)}.`;
   const lines = [
-    ...(labels.marker ? [labels.marker] : []),
+    ...(labels.marker
+      ? [
+          labels.marker,
+          b.changedFiles > a.changedFiles ||
+          b.changedInsertions + b.changedDeletions > a.changedInsertions + a.changedDeletions ||
+          b.removedFiles > a.removedFiles ||
+          b.removedLines > a.removedLines ||
+          b.forkOnlyFiles > a.forkOnlyFiles ||
+          b.forkOnlyLines > a.forkOnlyLines
+            ? "<!-- styal-report:attention -->"
+            : "<!-- styal-report:ok -->",
+        ]
+      : []),
     `## ${labels.heading}`,
     "",
     `${tipLine} Excludes \`.repos/\` and \`pnpm-lock.yaml\`.`,

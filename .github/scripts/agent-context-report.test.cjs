@@ -50,13 +50,13 @@ async function runPublish(t, { pr, main = {}, comments = [], labels = [] }) {
       repo: { owner: "incognitojam", repo: "styal" },
       payload: { pull_request: { number: 7, labels: labels.map((name) => ({ name })) } },
     },
-    core: { info: () => undefined },
+    core: { summary: { addRaw: () => ({ write: async () => {} }) }, info: () => undefined },
   });
   return calls;
 }
 
 function bot(body) {
-  return { id: 99, user: { type: "Bot" }, body };
+  return { id: 99, user: { type: "Bot", login: "github-actions[bot]" }, body };
 }
 
 test("names an added tool and asks for the label", async (t) => {
@@ -64,6 +64,7 @@ test("names an added tool and asks for the label", async (t) => {
     pr: { budget: GROWN_BUDGET, tools: GROWN_TOOLS },
   });
   assert.equal(update.length, 0);
+  assert.match(create[0].body, /<!-- styal-report:attention -->/);
   assert.equal(create.length, 1);
   const { body, issue_number: issueNumber } = create[0];
   assert.equal(issueNumber, 7);
@@ -109,6 +110,7 @@ test("says when the label accepted the growth", async (t) => {
     labels: ["agent-context-increase"],
   });
   assert.match(create[0].body, /A maintainer accepted the growth/);
+  assert.match(create[0].body, /<!-- styal-report:quiet -->/);
   assert.doesNotMatch(create[0].body, /fails until/);
 });
 
@@ -127,6 +129,17 @@ test("updates the existing comment when the growth goes away", async (t) => {
   assert.equal(create.length, 0);
   assert.equal(update[0].comment_id, 99);
   assert.match(update[0].body, /no longer larger than `main`/);
+  assert.doesNotMatch(update[0].body, /<!-- styal-report:quiet -->/);
+  const healthy = await runPublish(t, {
+    pr: { budget: MAIN_BUDGET, tools: MAIN_TOOLS },
+    comments: [bot(update[0].body)],
+  });
+  assert.match(healthy.update[0].body, /<!-- styal-report:quiet -->/);
+  const unchanged = await runPublish(t, {
+    pr: { budget: MAIN_BUDGET, tools: MAIN_TOOLS },
+    comments: [bot(healthy.update[0].body)],
+  });
+  assert.equal(unchanged.update.length, 0);
 });
 
 test("ignores comments that are not its own and skips an unchanged update", async (t) => {

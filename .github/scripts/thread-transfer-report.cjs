@@ -1,3 +1,4 @@
+const { prepareReport, OK, ATTENTION } = require("./quiet-report.cjs");
 const fs = require("node:fs");
 const path = require("node:path");
 
@@ -191,6 +192,7 @@ function renderComment(input) {
 
   return [
     COMMENT_MARKER,
+    failed || ceilingChanges.length > 0 || (baseline && !comparable) ? ATTENTION : OK,
     resultShaMarker(input.currentRun.sha),
     "## Thread transfer impact",
     "",
@@ -356,6 +358,8 @@ async function upsertComment(github, context, pullNumber, body, options = {}) {
   ) {
     return;
   }
+  body = prepareReport(body, existing?.body);
+  if (existing?.body === body) return;
   if (existing) {
     await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
   } else {
@@ -428,6 +432,7 @@ async function publish({ github, context, core }) {
       }
     : undefined;
   const body = renderComment({ current, baseline, currentRun, baselineRun });
+  await core.summary.addRaw(body).write();
   const published = await upsertCommentForCurrentHead(
     github,
     context,

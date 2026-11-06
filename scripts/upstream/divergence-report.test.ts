@@ -50,6 +50,33 @@ const lines = (count: number, prefix = "line") =>
   Array.from({ length: count }, (_, index) => `${prefix} ${index}\n`).join("");
 
 describe("upstream divergence", () => {
+  it("marks flat divergence quiet and any increasing measure loud", () => {
+    const base = { fork: "fork", upstream: "upstream", files: [] };
+    const labels = {
+      before: "before",
+      after: "after",
+      heading: "report",
+      marker: "<!-- upstream-divergence -->",
+    };
+    const links = { upstream: (sha: string) => sha, fork: (path: string) => path };
+    assert.include(
+      renderComparison(base, base, labels, links, new Set()),
+      "<!-- styal-report:ok -->",
+    );
+    const grown = {
+      ...base,
+      files: [{ status: "A" as const, path: "new.ts", from: null, insertions: 1, deletions: 0 }],
+    };
+    assert.include(
+      renderComparison(base, grown, labels, links, new Set()),
+      "<!-- styal-report:attention -->",
+    );
+    assert.include(
+      renderComparison(grown, base, labels, links, new Set()),
+      "<!-- styal-report:ok -->",
+    );
+  });
+
   it("parses renames and binary files from -z diff output", () => {
     assert.deepEqual(
       parseDiff(
@@ -119,7 +146,12 @@ describe("upstream divergence", () => {
       const report = renderComparison(
         readDivergence(run, upstreamBefore, forkBefore),
         readDivergence(run, upstreamAfter, "HEAD"),
-        { before: "Before", after: "After", heading: "Upstream divergence" },
+        {
+          before: "Before",
+          after: "After",
+          heading: "Upstream divergence",
+          marker: "<!-- upstream-divergence -->",
+        },
         { upstream: (sha) => sha.slice(0, 7), fork: (path) => `\`${path}\`` },
         new Set(git("ls-tree", "-r", "-z", "--name-only", upstreamBefore).split("\0")),
       );
@@ -131,6 +163,7 @@ describe("upstream divergence", () => {
         section("Upstream deleted these files and the fork keeps them (1)"),
         "`kept.ts`: 5 lines",
       );
+      assert.include(report, "<!-- styal-report:attention -->");
       assert.include(report, "| Fork-only files | 0 | 1 | **+1** |");
     });
   });

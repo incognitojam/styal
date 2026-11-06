@@ -1,3 +1,4 @@
+const { prepareReport, OK, ATTENTION } = require("./quiet-report.cjs");
 const fs = require("node:fs");
 const path = require("node:path");
 
@@ -125,6 +126,7 @@ function renderComment(input) {
   const { mainBudget, prBudget, accepted, mainSha, prSha } = input;
   return [
     COMMENT_MARKER,
+    hasGrowth(mainBudget, prBudget) && !accepted ? ATTENTION : OK,
     "## Agent context growth",
     "",
     statusLine(hasGrowth(mainBudget, prBudget), accepted),
@@ -159,23 +161,28 @@ async function publish({ github, context, core }) {
     per_page: 100,
   });
   const existing = comments.find(
-    (comment) => comment.user?.type === "Bot" && comment.body?.startsWith(COMMENT_MARKER),
+    (comment) =>
+      comment.user?.login === "github-actions[bot]" && comment.body?.startsWith(COMMENT_MARKER),
   );
+  const body = prepareReport(
+    renderComment({
+      mainBudget,
+      prBudget,
+      mainTools: readTools(path.join(directory, "main")),
+      prTools: readTools(path.join(directory, "pr")),
+      accepted: pull.labels.some((label) => label.name === INCREASE_LABEL),
+      mainSha: process.env.MAIN_SHA,
+      prSha: process.env.PR_SHA,
+    }),
+    existing?.body,
+  );
+  await core.summary.addRaw(body).write();
   // A PR that never grew gets no comment. Once one exists, it stays and reports the current state.
   if (!existing && !hasGrowth(mainBudget, prBudget)) {
     core.info("Agent context is not larger than main; no comment needed.");
     return;
   }
 
-  const body = renderComment({
-    mainBudget,
-    prBudget,
-    mainTools: readTools(path.join(directory, "main")),
-    prTools: readTools(path.join(directory, "pr")),
-    accepted: pull.labels.some((label) => label.name === INCREASE_LABEL),
-    mainSha: process.env.MAIN_SHA,
-    prSha: process.env.PR_SHA,
-  });
   if (!existing) {
     await github.rest.issues.createComment({ owner, repo, issue_number: pull.number, body });
   } else if (existing.body !== body) {
