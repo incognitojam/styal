@@ -522,11 +522,14 @@ export type TurnFoldActivityKind =
   | "file-read"
   | "web"
   | "tool"
-  | "image";
+  | "image"
+  | "context-compaction";
 
 export interface TurnFoldActivitySummary {
   kind: TurnFoldActivityKind;
   count: number;
+  /** A lone compaction's own wording, token counts included. */
+  label?: string;
 }
 const LIVE_ACTIVITY_ROW_ID = "live-activity-row";
 
@@ -807,9 +810,11 @@ const TURN_FOLD_ACTIVITY_ORDER: ReadonlyArray<TurnFoldActivityKind> = [
   "web",
   "tool",
   "image",
+  "context-compaction",
 ];
 
 function turnFoldActivityKind(entry: WorkLogEntry): TurnFoldActivityKind | null {
+  if (entry.sourceActivityKind === "context-compaction") return "context-compaction";
   // Reasoning shares tool-group presentation, but is not a tool invocation.
   if (entry.itemType === "reasoning") return null;
   if (workEntryMemoryFileKind(entry)) return "memory";
@@ -861,6 +866,7 @@ function summarizeTurnFoldActivity(entries: ReadonlyArray<TimelineEntry>) {
   const deferredCounts = new Map<TurnFoldActivityKind, number>();
   const memoryPaths = new Set<string>();
   let hasMemoryIndex = false;
+  let compactionLabel = "";
   for (const entry of entries) {
     if (entry.kind !== "work") continue;
     const typeCounts = entry.entry.projectedItem?.item.deferredWork?.typeCounts;
@@ -883,6 +889,7 @@ function summarizeTurnFoldActivity(entries: ReadonlyArray<TimelineEntry>) {
       continue;
     } else if (kind) {
       counts.set(kind, (counts.get(kind) ?? 0) + 1);
+      if (kind === "context-compaction") compactionLabel = entry.entry.label;
     }
   }
   if (memoryPaths.size > 0 || hasMemoryIndex) {
@@ -894,7 +901,10 @@ function summarizeTurnFoldActivity(entries: ReadonlyArray<TimelineEntry>) {
   }
   return TURN_FOLD_ACTIVITY_ORDER.flatMap((kind) => {
     const count = counts.get(kind);
-    return count ? [{ kind, count }] : [];
+    if (!count) return [];
+    return kind === "context-compaction" && count === 1
+      ? [{ kind, count, label: compactionLabel }]
+      : [{ kind, count }];
   });
 }
 
@@ -1111,6 +1121,15 @@ function timelineEntryStartsResponse(entry: TimelineEntry): boolean {
 
 function timelineEntryIsCompaction(entry: TimelineEntry): boolean {
   return entry.kind === "work" && entry.entry.sourceActivityKind === "context-compaction";
+}
+
+function timelineEntryIsCompletedCompaction(entry: TimelineEntry): boolean {
+  return (
+    entry.kind === "work" &&
+    timelineEntryIsCompaction(entry) &&
+    entry.entry.structuredPayload?.type === "compaction" &&
+    entry.entry.structuredPayload.status === "completed"
+  );
 }
 
 function responseBoundaryRunId(entry: TimelineEntry): RunId | null {
@@ -1331,18 +1350,17 @@ function deriveTurnFolds(input: {
       if (entry.id === group.terminalEntry?.id || entry.id === answerBeforeMemoryNote) {
         continue;
       }
-      const isCompaction = timelineEntryIsCompaction(entry);
       const isFoldableTrailingActivity =
         entry.kind === "work" &&
         entry.entry.toolLifecycleStatus !== "inProgress" &&
         !workEntryDisplayIndicatesToolFailure(entry.entry);
-      if (!isCompaction && index > terminalEntryIndex && !isFoldableTrailingActivity) {
+      if (index > terminalEntryIndex && !isFoldableTrailingActivity) {
         continue;
       }
-      // Submitted answers, linked resources, and still-working children stay
-      // visible after the surrounding work folds.
+      // Submitted answers, linked resources, still-working children, and compactions
+      // that did not finish stay visible after the surrounding work folds.
       if (
-        isCompaction ||
+        (timelineEntryIsCompaction(entry) && !timelineEntryIsCompletedCompaction(entry)) ||
         timelineEntryIsPersistentResourceCard(entry) ||
         input.liveSubagentEntryIds.has(entry.id) ||
         input.completeSupersededReplyEntryIds.has(entry.id) ||
@@ -2731,7 +2749,16 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
         a.label === bf.label &&
         a.expanded === bf.expanded &&
         anchors.length === nextAnchors.length &&
-        anchors.every((id, index) => id === nextAnchors[index])
+        anchors.every((id, index) => id === nextAnchors[index]) &&
+        (a.kind !== "turn-fold" ||
+          (bf.kind === "turn-fold" &&
+            a.activitySummary.length === bf.activitySummary.length &&
+            a.activitySummary.every((stat, index) => {
+              const next = bf.activitySummary[index];
+              return (
+                stat.kind === next?.kind && stat.count === next.count && stat.label === next.label
+              );
+            })))
       );
     }
 
