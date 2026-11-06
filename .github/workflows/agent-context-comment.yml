@@ -56,6 +56,9 @@ jobs:
           echo "main_sha=$main_sha" >> "$GITHUB_OUTPUT"
           echo "pr_sha=$pr_sha" >> "$GITHUB_OUTPUT"
 
+      - name: Test trusted reporter
+        run: node --test .github/scripts/quiet-report.test.cjs .github/scripts/agent-context-report.test.cjs
+
       - name: Update comment
         uses: actions/github-script@v9
         env:

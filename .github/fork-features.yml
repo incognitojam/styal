@@ -5346,13 +5346,26 @@ features:
     rationale: Routine report edits must not spend agent turns or exhaust the comment wake limit.
     invariants:
       - Only github-actions bot issue comments on incognitojam/styal may suppress a wake with the styal-report quiet marker; human and review comments still wake.
+      - Divergence growth, exceeded transfer ceilings or changed ceiling/scenario assumptions, and unaccepted context growth remain loud; the first recovery edit is loud and later healthy edits are quiet.
+      - Reports remain in sticky comments and job summaries; the agent-context budget gate is unchanged.
       - Quiet remarks advance the watch watermark without consuming comment-only wakes; removing the marker on a later edit wakes normally.
     implementation_paths:
+      - .github/scripts/agent-context-report.cjs
+      - .github/scripts/quiet-report.cjs
+      - .github/scripts/thread-transfer-report.cjs
+      - .github/workflows/agent-context-comment.yml
+      - .github/workflows/thread-transfer-report.yml
+      - .github/workflows/upstream-divergence-comment.yml
       - apps/server/src/orchestration-v2/pullRequestWatch.ts
+      - scripts/upstream/divergence-report.ts
     upstream_paths:
       - apps/server/src/orchestration-v2/pullRequestWatch.ts
     tests:
+      - .github/scripts/agent-context-report.test.cjs
+      - .github/scripts/quiet-report.test.cjs
+      - .github/scripts/thread-transfer-report.test.cjs
       - apps/server/src/orchestration-v2/pullRequestWatch.test.ts
+      - scripts/upstream/divergence-report.test.ts
     upstream:
       status: tracking
       tracking:

@@ -52,6 +52,9 @@ jobs:
           git fetch --no-tags origin "+refs/pull/${PR_NUMBER}/head:refs/remotes/pr/head"
           git fetch --no-tags https://github.com/pingdotgg/t3code.git '+refs/heads/main:refs/remotes/upstream/main'
 
+      - name: Test trusted quiet publisher
+        run: node --test .github/scripts/quiet-report.test.cjs
+
       - name: Write report
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -65,7 +68,8 @@ jobs:
           script: |
             const fs = require("node:fs");
             const marker = "<!-- upstream-divergence -->";
-            const body = fs.readFileSync(`${process.env.RUNNER_TEMP}/upstream-divergence.md`, "utf8");
+            const { prepareReport } = require("./.github/scripts/quiet-report.cjs");
+            let body = fs.readFileSync(`${process.env.RUNNER_TEMP}/upstream-divergence.md`, "utf8");
             const issue_number = context.payload.pull_request.number;
             const comments = await github.paginate(github.rest.issues.listComments, {
               ...context.repo,
@@ -73,8 +77,9 @@ jobs:
               per_page: 100,
             });
             const existing = comments.find(
-              (comment) => comment.user?.type === "Bot" && comment.body?.startsWith(marker),
+              (comment) => comment.user?.login === "github-actions[bot]" && comment.body?.startsWith(marker),
             );
+            body = prepareReport(body, existing?.body);
             if (existing) {
               if (existing.body !== body)
                 await github.rest.issues.updateComment({ ...context.repo, comment_id: existing.id, body });

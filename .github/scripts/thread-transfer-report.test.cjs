@@ -3,6 +3,7 @@ const test = require("node:test");
 
 const {
   resolve,
+  renderComment,
   upsertCommentForCurrentHead,
   validateResult,
 } = require("./thread-transfer-report.cjs");
@@ -338,4 +339,25 @@ test("preserves a successful result when a same-SHA rerun has no artifact", asyn
 
   assert.equal(published, true);
   assert.equal(updatedComment, false);
+});
+
+test("transfer report marks failures and changed ceilings loud, healthy results quiet", () => {
+  const input = {
+    current: result(),
+    baseline: result(),
+    currentRun: { sha: "a".repeat(40), url: "https://example.test/run", conclusion: "success" },
+    baselineRun: { sha: "b".repeat(40), url: "https://example.test/base", matchesBase: true },
+  };
+  assert.match(renderComment(input), /<!-- styal-report:ok -->/);
+  assert.match(
+    renderComment({ ...input, current: result({ totalWireBytes: 3_000_000 }) }),
+    /<!-- styal-report:attention -->/,
+  );
+  const raised = result();
+  raised.providers.codex.ceiling.totalWireBytes += 1;
+  assert.match(renderComment({ ...input, current: raised }), /<!-- styal-report:attention -->/);
+  assert.match(renderComment({ ...input, baseline: undefined }), /<!-- styal-report:ok -->/);
+  const changed = result();
+  changed.scenario.historyTurns += 1;
+  assert.match(renderComment({ ...input, current: changed }), /<!-- styal-report:attention -->/);
 });
