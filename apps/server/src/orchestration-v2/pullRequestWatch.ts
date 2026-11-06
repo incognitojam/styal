@@ -131,7 +131,20 @@ export function evaluatePullRequestWatch(
       remark.author?.login.toLowerCase() !== own
     );
   });
-  if (fresh.length > 0) changes.push({ kind: "remarks", remarks: fresh });
+  // Only our workflow issue reports can opt out; reviews and other authors always wake.
+  const loud = fresh.filter(
+    (remark) =>
+      !(
+        remark.kind === "issue-comment" &&
+        remark.author?.isBot === true &&
+        remark.author.login === "github-actions" &&
+        /^https:\/\/github\.com\/incognitojam\/styal\/(?:issues|pull)\/\d+#issuecomment-\d+$/u.test(
+          remark.url ?? "",
+        ) &&
+        remark.body.split("\n").includes("<!-- styal-report:quiet -->")
+      ),
+  );
+  if (loud.length > 0) changes.push({ kind: "remarks", remarks: loud });
   const latest = Math.max(through, ...fresh.map((remark) => Date.parse(activeAt(remark))));
   const atLatest = fresh.filter((remark) => Date.parse(activeAt(remark)) === latest);
   const remarksThrough = latest === through ? watch.remarksThrough : activeAt(atLatest[0]!);

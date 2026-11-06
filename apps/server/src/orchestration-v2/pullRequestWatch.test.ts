@@ -79,6 +79,39 @@ const remark = (
 const noRemarks: ReadonlyArray<PullRequestComment> = [];
 
 describe("evaluatePullRequestWatch", () => {
+  it("ignores only trusted quiet issue reports and advances their watermark", () => {
+    const quiet = {
+      ...remark("github-actions", "2026-10-02T12:01:00.000Z"),
+      kind: "issue-comment" as const,
+      author: { login: "github-actions", name: null, avatarUrl: null, isBot: true },
+      body: "<!-- styal-report:quiet -->",
+      url: "https://github.com/incognitojam/styal/issues/1#issuecomment-1",
+    };
+    const report = evaluatePullRequestWatch(watch(), detail(), [quiet]);
+    assert.deepEqual(report.changes, []);
+    assert.equal(report.next.remarksThrough, quiet.createdAt);
+    assert.equal(report.next.wakes, 0);
+    assert.deepEqual(evaluatePullRequestWatch(report.next, detail(), [quiet]).changes, []);
+    const edited = { ...quiet, editedAt: "2026-10-02T12:02:00.000Z" };
+    const quietEdit = evaluatePullRequestWatch(report.next, detail(), [edited]);
+    assert.deepEqual(quietEdit.changes, []);
+    const recovered = { ...edited, editedAt: "2026-10-02T12:03:00.000Z", body: "Recovered" };
+    assert.equal(evaluatePullRequestWatch(quietEdit.next, detail(), [recovered]).changes.length, 1);
+    const human = remark("person", quiet.createdAt);
+    assert.equal(evaluatePullRequestWatch(report.next, detail(), [quiet, human]).changes.length, 1);
+    for (const loud of [
+      { ...quiet, author: { ...quiet.author, isBot: false } },
+      { ...quiet, author: { ...quiet.author, login: "review-bot" } },
+      { ...quiet, kind: "review" as const },
+      { ...quiet, author: { login: "person", name: null, avatarUrl: null } },
+      { ...quiet, kind: "review-comment" as const },
+      { ...quiet, url: "https://github.com/other/repo/issues/1#issuecomment-1" },
+      { ...quiet, body: "Recovered" },
+    ]) {
+      assert.equal(evaluatePullRequestWatch(watch(), detail(), [loud]).changes.length, 1);
+    }
+  });
+
   it("reports each failure at once, even while another check never finishes", () => {
     const bot = check("CodeRabbit", "pending");
     const first = detail({ checks: [check("lint", "failure"), check("test", "pending"), bot] });
