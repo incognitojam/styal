@@ -137,6 +137,7 @@ export function backgroundWorkNowItem(input: {
   const newest = rows
     .filter((row) => row.activity)
     .toSorted((left, right) => right.updatedAtMs - left.updatedAtMs)[0];
+  const listedRows = newest ? [newest, ...rows.filter((row) => row !== newest)] : rows;
   const isCommand = (row: (typeof rows)[number]) => row.task.kind !== "subagent";
   const verb = presentation.waiting ? "Waiting on" : "Running";
   const onlyThreadId = only?.childThreadId;
@@ -156,25 +157,44 @@ export function backgroundWorkNowItem(input: {
     ) : (
       presentation.title
     ),
+    // Subagent links stay in the text, which truncates with a details popover; a button per
+    // subagent among the actions pushes the title and Stop out of the line.
     description: only ? (
       only.activity
-    ) : newest ? (
-      <>
-        {newest.task.fullLabel ? (
-          <WorkflowRunLabel name={newest.task.fullLabel} />
-        ) : (
-          newest.task.label
-        )}
-        : {newest.activity}
-      </>
     ) : (
       <span className={cn(rows.every(isCommand) && "font-mono")}>
-        {rows.map((row, index) => (
-          <Fragment key={row.task.taskId}>
-            {index > 0 ? ", " : null}
-            {row.task.fullLabel ? <WorkflowRunLabel name={row.task.fullLabel} /> : row.task.label}
-          </Fragment>
-        ))}
+        {listedRows.map((row, index) => {
+          const label = row.task.fullLabel ? (
+            <WorkflowRunLabel name={row.task.fullLabel} />
+          ) : (
+            row.task.label
+          );
+          const childThreadId = row.childThreadId;
+          const punctuation = row === newest ? ":" : index < listedRows.length - 1 ? "," : null;
+          return (
+            <Fragment key={row.task.taskId}>
+              {index > 0 ? " " : null}
+              {childThreadId === undefined ? (
+                <>
+                  {label}
+                  {punctuation}
+                </>
+              ) : (
+                <span className="whitespace-nowrap">
+                  <InlineButton
+                    tone="muted"
+                    aria-label={`Open subagent ${row.task.label}`}
+                    onClick={() => onOpenThread(childThreadId)}
+                  >
+                    {label}
+                  </InlineButton>
+                  {punctuation}
+                </span>
+              )}
+              {row === newest ? ` ${row.activity},` : null}
+            </Fragment>
+          );
+        })}
       </span>
     ),
 
@@ -194,20 +214,6 @@ export function backgroundWorkNowItem(input: {
             Open
           </InlineButton>
         )}
-        {only
-          ? null
-          : rows.map((row) =>
-              row.childThreadId === undefined ? null : (
-                <InlineButton
-                  key={row.task.taskId}
-                  tone="muted"
-                  aria-label={`Open subagent ${row.task.label}`}
-                  onClick={() => onOpenThread(row.childThreadId!)}
-                >
-                  {row.task.label}
-                </InlineButton>
-              ),
-            )}
         <InlineButton disabled={input.stopDisabled} onClick={() => void input.onStop()}>
           {input.stopping ? "Stopping..." : "Stop"}
         </InlineButton>
