@@ -4206,7 +4206,6 @@ features:
       - Codex receives complete project instructions through additional context even when the model catalog replaces collaboration-mode text, and restores that context after root-thread compaction.
       - Projects without additional instructions preserve the ordinary upstream provider prompt and session behavior.
     implementation_paths:
-      - packages/client-runtime/src/operations/commands.ts
       - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
       - apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts
       - apps/server/src/orchestration-v2/ProjectStore.ts
@@ -4214,6 +4213,7 @@ features:
       - apps/server/src/persistence/ForkMigrations/003_ProjectAdditionalInstructions.ts
       - apps/server/src/provider/CodexDeveloperInstructions.ts
       - apps/web/src/components/settings/ProjectSettingsPanel.tsx
+      - packages/client-runtime/src/operations/commands.ts
       - packages/contracts/src/orchestrationV2.ts
       - packages/provider-acp/src/server/adapter.ts
       - packages/provider-core/src/server/ProviderAdapter.ts
@@ -4238,7 +4238,6 @@ features:
       - packages/provider-opencode/src/server/v2/adapter.ts
       - packages/provider-pi/src/server/adapter.ts
     tests:
-      - packages/client-runtime/src/operations/commands.test.ts
       - apps/server/src/orchestration-v2/Adapters/AcpAdapterV2.test.ts
       - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.test.ts
       - apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.test.ts
@@ -4247,6 +4246,7 @@ features:
       - apps/server/src/orchestration-v2/ProjectStore.test.ts
       - apps/server/src/orchestration-v2/RuntimePolicy.test.ts
       - apps/server/src/persistence/ForkMigrations/003_ProjectAdditionalInstructions.test.ts
+      - packages/client-runtime/src/operations/commands.test.ts
       - packages/provider-cursor/src/server/adapter.test.ts
       - packages/provider-opencode/src/server/adapter.test.ts
       - packages/provider-pi/src/server/adapter.test.ts
