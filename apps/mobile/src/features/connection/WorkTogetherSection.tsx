@@ -247,9 +247,9 @@ function MachineAccessChoices({ machine }: { readonly machine: NamedEnvironment 
       Alert.alert("Setting not saved", `Could not check what's running on ${label}. Try again.`);
       return;
     }
-    const { runningThreads } = work.value;
-    if (runningThreads === 0) return save(next, false);
-    Alert.alert("Stop running threads?", machineAccessStopNotice(label, next, runningThreads), [
+    const { threads } = work.value;
+    if (threads === 0) return save(next, false);
+    Alert.alert("Stop these threads?", machineAccessStopNotice(label, next, threads), [
       { text: "Cancel", style: "cancel", onPress: () => setBusy(false) },
       { text: "Stop them", style: "destructive", onPress: () => void save(next, true) },
     ]);
