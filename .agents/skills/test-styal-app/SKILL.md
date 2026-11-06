@@ -31,26 +31,14 @@ for a fresh one. Keep using the same tab.
 
 ## Sign in to styal Link
 
-Link sign-in only appears when the dev server has the development Clerk identifiers and relay URL. If the root `.env` lacks them, export `.env.development.example` for the dev server: `set -a; . ./.env.development.example; set +a` before `vp run dev`. Never use the production values locally; production Clerk rejects sign-ins from `localhost`.
+Link sign-in only appears when the dev server has a relay URL. If the root `.env` lacks one, export `.env.development.example` for the dev server: `set -a; . ./.env.development.example; set +a` before `vp run dev`. It points at the shared development relay, `relay-dev.styal.build`.
 
 Use the shared agent account, `agent+clerk_test@styal.build`. Do not create other accounts.
 
-- **Local dev (development instance):** open Settings and choose **Sign in to styal Link**. A fresh database shows the welcome wizard first; click through it. Enter the email and the verification code `424242`. Clerk test mode sends no email. Typing the code as soon as the code field appears can fail with "You need to send a verification code before attempting to verify"; wait a few seconds after the field appears, or choose **Resend** and enter the code again. `.env.development.example` points at the matching development relay, `relay-dev.styal.build`.
-- **`app.styal.build` or builds using production Clerk:** test mode is off, so the code is not accepted. Mint a one-time token with the maintainer's Clerk CLI login:
+- **Local dev (development relay):** open Settings and choose **Sign in to styal Link**. A fresh database shows the welcome wizard first; click through it. Enter the email, choose **Send code**, then enter the development relay's fixed test code: the value of the `RELAY_DEV_TEST_SIGN_IN_CODE` variable, which the maintainer sets. It only works while the dev relay uses log delivery (`RELAY_DEV_EMAIL_DELIVERY=log`); if sign-in says email sign-in is not available, those variables are not set, so ask the maintainer.
+- **`app.styal.build` or other builds using the production relay:** there is no test code. Ask the maintainer for the code from the sign-in email, and keep it out of screenshots and logs. Sign out when done; signing out ends the session on the relay.
 
-  ```sh
-  clerk api /sign_in_tokens --app app_3IPih12l7JcyeHP2MlqFOESKdGN --instance prod \
-    -d '{"user_id":"user_3Js3kNcKhTiIAGCvFcG70AqB4ZY","expires_in_seconds":300}'
-  ```
-
-  Pass its `token` to the loaded app page, not its `url`:
-
-  ```js
-  const signIn = await Clerk.client.signIn.create({ strategy: "ticket", ticket: TOKEN });
-  await Clerk.setActive({ session: signIn.createdSessionId });
-  ```
-
-  The token is a credential; keep it out of screenshots and logs. When done, list the active production sessions with `clerk api "/sessions?user_id=<user>&status=active"` and revoke each with `clerk api /sessions/<id>/revoke -X POST`, passing the same `--app` and `--instance prod` flags.
+The sign-in dialog's selectors: scope dialog queries by name (`getByRole("dialog", { name: "Sign in to styal Link" })`), since the provider "Updates Available" toast is also a dialog.
 
 ## Verify and retain
 

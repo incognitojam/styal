@@ -9,6 +9,16 @@ styal is in active development. The hosted web app at [app.styal.build](https://
 live, with rough edges and incomplete functionality. Importing T3 Code projects and preferences
 works. This overview focuses on desktop and web; the mobile app is a work in progress.
 
+## styal Link sign-in
+
+- **Sign in with an emailed code, and stay signed in.** styal Link signs you in with an eight-digit
+  code sent to your email, the same way on web, desktop, mobile, and the command line, where you type
+  the code into the terminal. A sign-in lasts while you keep using it, up to 90 days without use,
+  and your account lists every signed-in device so you can sign any of them out. T3 Code signs in
+  through Clerk, so a sign-in ends when Clerk's maximum session lifetime runs out, as of
+  [revision 9c16146](https://github.com/pingdotgg/t3code/tree/9c161462c94f7d9d6d9169da5c841457cbadf213).
+  [styal Link](./remote-access.md#styal-link).
+
 ## Devices
 
 - **Save a simulator memory mode per project.** Low memory prepares unused iOS simulators with a fixed preset before starting them; Standard restores managed services on the next unused start. Web, desktop, mobile, and agents inherit the same project preference. T3 Code has no simulator memory modes as of [revision 725ada6](https://github.com/pingdotgg/t3code/tree/725ada6eaa32d4a32c361ee42a1717a3e65568d1), checked October 25, 2026. [Simulator memory](./devices.md#simulator-memory).
