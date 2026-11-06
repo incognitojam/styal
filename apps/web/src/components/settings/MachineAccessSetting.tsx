@@ -87,7 +87,7 @@ export function MachineAccessSetting({
 
   const disabled = busy || !supported || !mayChange;
   return (
-    <div className="space-y-2">
+    <div className="space-y-2 pb-2 pt-3">
       <RadioGroup
         aria-label={`What your other machines can do on ${machineLabel}`}
         value={level}

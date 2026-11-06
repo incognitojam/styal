@@ -320,9 +320,10 @@ questions, and manage its queues, projects and scheduled tasks.
 
 ### Let two machines work together
 
-If this app is connected to both machines, open **Settings → Environments → Work
-together**, on web, desktop or mobile, and choose **Work together** for the pair. styal does
-the rest in both directions: it turns on
+If this app is connected to both machines, open **Settings → Environments**, on web,
+desktop or mobile, and choose **Work together** for the pair under **Your machines**. On
+web and desktop, pick either machine's tab; **Each machine** lists the ones that are already
+working. styal does the rest in both directions: it turns on
 **Work with your other machines**, creates a pairing code and adds each machine to the
 other, and shares simulators or emulators from a machine that has them. A list shows
 each step.
@@ -359,7 +360,7 @@ task already running on the other machine still finishes, and if that machine
 has it off, its result arrives once it is back on.
 
 On the machine you will work from, open **Settings → Environments → Your machines**,
-choose **Add machine**, and pick the other machine or enter its address. The list
+the **Other machines** tab, choose **Add machine**, and pick the other machine or enter its address. The list
 holds the machines this app knows and those on your styal Link account. If this
 app is connected to that machine with a session that manages access there, it
 makes the pairing code itself; otherwise paste one from that machine's

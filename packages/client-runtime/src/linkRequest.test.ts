@@ -10,6 +10,7 @@ import type { RelayDiscoveredEnvironment } from "./relay/discovery.ts";
 import {
   linkableMachines,
   linkAccessLabel,
+  machineNames,
   linkedEnvironmentNames,
   linkRequestAnswerInput,
   linkRequestDisplay,
@@ -23,6 +24,17 @@ const item = {
   threadId: ThreadId.make("thread-1"),
 };
 const asked = { url: "https://box.example.ts.net", label: "Box" };
+describe("machineNames", () => {
+  it.each([
+    [[], ""],
+    [["sol"], "sol"],
+    [["sol", "terra"], "sol and terra"],
+    [["sol", "terra", "vault"], "sol, terra and vault"],
+  ])("names %j", (names, expected) => {
+    expect(machineNames(names)).toBe(expected);
+  });
+});
+
 describe("link access", () => {
   it("keeps naming levels new connections no longer use", () => {
     expect(linkAccessLabel("auto")).toBe("Only its own threads");

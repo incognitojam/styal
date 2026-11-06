@@ -187,7 +187,7 @@ describe("searchSettings", () => {
       expect.objectContaining({
         id: "linked-environments",
         to: "/settings/connections",
-        targetId: "linked-environments",
+        targetId: "work-together",
       }),
     );
   });

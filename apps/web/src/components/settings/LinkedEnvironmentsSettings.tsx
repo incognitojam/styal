@@ -20,7 +20,11 @@ import { requestConfirmDialog } from "~/confirmDialog";
 import { mintPairingCodeOn } from "~/state/peerPairingCode";
 import { peerLinkEnvironment, useLinkableMachines } from "~/state/peerLinks";
 import { useEnvironmentQuery } from "~/state/query";
-import { useEnvironmentScope, usePreparedConnection } from "~/state/session";
+import {
+  useEnvironmentScope,
+  useEnvironmentsWithScope,
+  usePreparedConnection,
+} from "~/state/session";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { ConnectionStatusDot } from "../ConnectionStatusDot";
 import { Button } from "../ui/button";
@@ -33,64 +37,72 @@ import {
   DialogPanel,
   DialogPopup,
   DialogTitle,
-  DialogTrigger,
 } from "../ui/dialog";
 import { Input } from "../ui/input";
+import { Menu, MenuGroup, MenuGroupLabel, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { ITEM_ROW_CLASSNAME, ITEM_ROW_INNER_CLASSNAME } from "./itemRows";
 import { ANOTHER_ADDRESS, LinkMachineSelect } from "./LinkMachineSelect";
-import { SettingsRow, SettingsSection } from "./settingsLayout";
+import { SettingsRow } from "./settingsLayout";
 import { useNowMinute } from "../../hooks/useNowMinute";
-import { searchableSetting } from "./settingsSearch";
 
 const failureToast = (title: string, description: string) =>
   toastManager.add(stackedThreadToast({ type: "error", title, description }));
 
-export function LinkedEnvironmentsSettings({
+type PeerLinkHealth = ReturnType<typeof peerLinkHealth>;
+
+export const peerLinkHealthText = (health: PeerLinkHealth) =>
+  health.kind === "expired"
+    ? "Expired. Add it again with a new pairing code."
+    : health.kind === "unreachable"
+      ? (health.detail ?? "Not answering right now.")
+      : health.kind === "failing"
+        ? health.detail
+        : health.expiresInDays !== null
+          ? `Expires in ${health.expiresInDays} ${health.expiresInDays === 1 ? "day" : "days"}. Add it again to renew.`
+          : "Reachable";
+
+/** Machines this one works with that this app isn't connected to, so they have no tab. */
+export function OtherMachineLinks({
   environmentId,
   environmentLabel,
-  isSearchTarget,
+  showHost,
+  knownIds,
 }: {
   readonly environmentId: EnvironmentId;
-  readonly environmentLabel: string | null;
-  readonly isSearchTarget: boolean;
+  readonly environmentLabel: string;
+  /** With several machines, says which one a row belongs to. */
+  readonly showHost: boolean;
+  readonly knownIds: ReadonlySet<EnvironmentId>;
 }) {
   const links = useEnvironmentQuery(peerLinkEnvironment.list({ environmentId, input: {} }));
-  const canLink = useAtomValue(peerLinkEnvironment.link.permissionAtom(environmentId));
-  const search = searchableSetting("linked-environments");
-  return (
-    <SettingsSection
-      {...(isSearchTarget ? { id: search.id } : {})}
-      title={environmentLabel === null ? search.title : `${search.title} · ${environmentLabel}`}
-      headerAction={canLink ? <LinkEnvironmentAction environmentId={environmentId} /> : null}
-    >
-      {links.error ? (
-        <SettingsRow title="Could not load your machines" description={links.error} />
-      ) : !links.data ? (
-        <SettingsRow title="Loading your machines…" role="status" />
-      ) : links.data.links.length === 0 ? (
-        <SettingsRow
-          title="No other machines yet"
-          description="Add another machine running styal, such as a VPS, so agents here can start and message threads there."
-        />
-      ) : (
-        links.data.links.map((link) => (
-          <LinkedEnvironmentRow
-            key={link.environmentId}
-            environmentId={environmentId}
-            link={link}
-          />
-        ))
-      )}
-    </SettingsSection>
-  );
+  if (links.error) {
+    return (
+      <SettingsRow
+        title={`Could not load ${environmentLabel}'s other machines`}
+        description={links.error}
+      />
+    );
+  }
+  return (links.data?.links ?? [])
+    .filter((link) => !knownIds.has(link.environmentId))
+    .map((link) => (
+      <LinkedEnvironmentRow
+        key={link.environmentId}
+        environmentId={environmentId}
+        hostLabel={showHost ? environmentLabel : null}
+        link={link}
+      />
+    ));
 }
 
 function LinkedEnvironmentRow({
   environmentId,
+  hostLabel,
   link,
 }: {
   readonly environmentId: EnvironmentId;
+  readonly hostLabel: string | null;
   readonly link: PeerLinkSummary;
 }) {
   const nowMinute = useNowMinute();
@@ -111,16 +123,7 @@ function LinkedEnvironmentRow({
       failureToast("Could not forget the machine", String(squashAtomCommandFailure(result)));
     }
   };
-  const status =
-    health.kind === "expired"
-      ? "Expired. Add it again with a new pairing code."
-      : health.kind === "unreachable"
-        ? (health.detail ?? "Not answering right now.")
-        : health.kind === "failing"
-          ? health.detail
-          : health.expiresInDays !== null
-            ? `Expires in ${health.expiresInDays} ${health.expiresInDays === 1 ? "day" : "days"}. Add it again to renew.`
-            : "Reachable";
+  const status = peerLinkHealthText(health);
   return (
     <div className={ITEM_ROW_CLASSNAME}>
       <div className={ITEM_ROW_INNER_CLASSNAME}>
@@ -142,7 +145,13 @@ function LinkedEnvironmentRow({
             <h3 className="text-sm font-medium text-foreground">{link.label}</h3>
           </div>
           <p className="text-xs text-muted-foreground">
-            {linkAccessLabel(link.access)} · {status}
+            {[
+              hostLabel === null ? null : `From ${hostLabel}`,
+              status,
+              link.access === LINK_DEFAULT_ACCESS ? null : linkAccessLabel(link.access),
+            ]
+              .filter(Boolean)
+              .join(" · ")}
           </p>
           <p className="truncate text-xs text-muted-foreground/80">{link.urls.join(", ")}</p>
         </div>
@@ -163,9 +172,61 @@ function LinkedEnvironmentRow({
   );
 }
 
-function LinkEnvironmentAction({ environmentId }: { readonly environmentId: EnvironmentId }) {
-  const [open, setOpen] = useState(false);
-  const machines = useLinkableMachines(environmentId, open);
+/** Adding starts from one machine, so with several the button asks which. */
+export function AddMachineAction({
+  hosts,
+}: {
+  readonly hosts: ReadonlyArray<{ readonly environmentId: EnvironmentId; readonly label: string }>;
+}) {
+  const writable = useEnvironmentsWithScope(hosts, AuthAccessWriteScope);
+  const choices = hosts.filter((host) => writable.has(host.environmentId));
+  const [target, setTarget] = useState<EnvironmentId | null>(null);
+  const [only] = choices;
+  if (only === undefined) return null;
+  return (
+    <>
+      {choices.length === 1 ? (
+        <Button size="xs" variant="outline" onClick={() => setTarget(only.environmentId)}>
+          <PlusIcon className="size-3" />
+          Add machine
+        </Button>
+      ) : (
+        <Menu>
+          <MenuTrigger
+            render={
+              <Button size="xs" variant="outline">
+                <PlusIcon className="size-3" />
+                Add machine
+              </Button>
+            }
+          />
+          <MenuPopup align="end">
+            <MenuGroup>
+              <MenuGroupLabel>Add a machine for agents on</MenuGroupLabel>
+              {choices.map((host) => (
+                <MenuItem key={host.environmentId} onClick={() => setTarget(host.environmentId)}>
+                  {host.label}
+                </MenuItem>
+              ))}
+            </MenuGroup>
+          </MenuPopup>
+        </Menu>
+      )}
+      {target === null ? null : (
+        <LinkEnvironmentDialog environmentId={target} onClose={() => setTarget(null)} />
+      )}
+    </>
+  );
+}
+
+function LinkEnvironmentDialog({
+  environmentId,
+  onClose,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly onClose: () => void;
+}) {
+  const machines = useLinkableMachines(environmentId, true);
   // Null until the user picks; with no other machines known, only an address is left.
   const [choice, setChoice] = useState<string | null>(null);
   const [address, setAddress] = useState("");
@@ -191,15 +252,6 @@ function LinkEnvironmentAction({ environmentId }: { readonly environmentId: Envi
     selected !== null &&
     (!needsAddress || address.trim().length > 0) &&
     (canMint || pairingCode.trim().length > 0);
-  const handleOpenChange = (next: boolean) => {
-    setOpen(next);
-    if (!next) {
-      setChoice(null);
-      setAddress("");
-      setPairingCode("");
-      setMintFailed(new Set());
-    }
-  };
   // Settles to the code to link with, or null after reporting why there is none.
   const resolvePairingCode = async () => {
     if (!canMint || targetId === null) return pairingCode.trim();
@@ -236,27 +288,18 @@ function LinkEnvironmentAction({ environmentId }: { readonly environmentId: Envi
     if (result === null) return;
     if (result._tag === "Success") {
       toastManager.add({ type: "success", title: `Added ${result.value.label}` });
-      handleOpenChange(false);
+      onClose();
     } else if (!isAtomCommandInterrupted(result)) {
       failureToast("Could not add the machine", String(squashAtomCommandFailure(result)));
     }
   };
   return (
     <Dialog
-      open={open}
+      open
       onOpenChange={(next) => {
-        if (!next && busy) return;
-        handleOpenChange(next);
+        if (!next && !busy) onClose();
       }}
     >
-      <DialogTrigger
-        render={
-          <Button size="xs" variant="default">
-            <PlusIcon className="size-3" />
-            Add machine
-          </Button>
-        }
-      />
       <DialogPopup className="max-w-md">
         <DialogHeader>
           <DialogTitle>Add a machine</DialogTitle>
