@@ -48,23 +48,23 @@ const OPENAI_IGNORED_COMPONENTS = [
   "VS Code extension",
 ];
 
+/** Codex Cloud and the Agents API are separate products a local Codex turn never calls. */
+const OPENAI_RELEVANT_UNTAGGED_INCIDENT_TITLE =
+  /\bcodex\b(?! cloud)|(?<!agents? )\bapi\b|\bgpt-\d|\busage limits?\b/i;
+
 /**
- * Componentless incidents whose scope cannot interrupt a Codex turn. Keep
- * these anchored to the status-page title so a broader incident mentioning
- * the same product or workflow still surfaces.
+ * OpenAI's status API omits incident components, so every incident arrives componentless. Its
+ * impact is derived from them: "none" means no component was tagged, where only the title can show
+ * relevance. Any other impact means a component was tagged, and that component's status says which.
  */
-const OPENAI_IGNORED_INCIDENT_PATTERNS = [
-  /^ChatGPT Work and Dots Errors\.?$/i,
-  /^Degraded Performance of Dots on Enterprise\.?$/i,
-  /^Delayed support responses\.?$/i,
-  /^New Ad Accounts failing to provision admins\.?$/i,
-  /^Delayed Costs data in the Compliance API\.?$/i,
-  /^Support available via email\.?$/i,
-  /^Elevated errors in ChatGPT Space Pages\.?$/i,
-  /^Elevated errors in ChatGPT Work\.?$/i,
-  /^Overbilling for OpenAI-hosted containers in the Agent API\.?$/i,
-  /^SSO sign-in and SCIM provisioning issues\.?$/i,
-];
+function keepOpenAIIncident(
+  incident: { readonly impact: string; readonly name: string },
+  relevantComponentDisrupted: boolean,
+): boolean {
+  return incident.impact === "none"
+    ? OPENAI_RELEVANT_UNTAGGED_INCIDENT_TITLE.test(incident.name)
+    : relevantComponentDisrupted;
+}
 
 export type OpenAIStatusNotice = StatusPageNotice;
 
@@ -76,6 +76,6 @@ export function resolveOpenAIStatusNotice(
     components === undefined ? null : withStatusPageComponents(summary, components);
   return resolveStatusPageNotice(completeSummary ?? summary, "OpenAI", {
     ignoredComponents: OPENAI_IGNORED_COMPONENTS,
-    ignoredIncidentPatterns: OPENAI_IGNORED_INCIDENT_PATTERNS,
+    keepComponentlessIncident: keepOpenAIIncident,
   });
 }
