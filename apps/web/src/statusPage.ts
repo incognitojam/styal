@@ -208,6 +208,14 @@ export interface StatusPageRelevance {
   readonly ignoredComponents: ReadonlyArray<string>;
   /** Incident-name patterns for unrelated disruptions with no assigned component. */
   readonly ignoredIncidentPatterns?: ReadonlyArray<RegExp>;
+  /**
+   * Decides componentless incidents for a page whose API omits incident components. This inverts
+   * the default above: an incident it rejects can be a real one, so use it only with evidence.
+   */
+  readonly keepComponentlessIncident?: (
+    incident: { readonly impact: string; readonly name: string },
+    relevantComponentDisrupted: boolean,
+  ) => boolean;
 }
 
 export function resolveStatusPageNotice(
@@ -228,6 +236,12 @@ export function resolveStatusPageNotice(
   let ignoredAnyDisruption = false;
 
   const summary = decoded.value;
+  const relevantComponentDisrupted = summary.components.some(
+    (component) =>
+      component.showcase !== false &&
+      component.status !== "operational" &&
+      !isIgnoredComponent(component.name),
+  );
   const activeIncidents = (summary.incidents ?? [])
     .filter((incident) => isActiveIncidentStatus(incident.status))
     .flatMap((incident): ReadonlyArray<StatusPageIncidentIssue> => {
@@ -242,7 +256,8 @@ export function resolveStatusPageNotice(
       const relevant = scope.filter((name) => !isIgnoredComponent(name));
       if (
         scope.length === 0 &&
-        relevance?.ignoredIncidentPatterns?.some((pattern) => pattern.test(incident.name))
+        (relevance?.ignoredIncidentPatterns?.some((pattern) => pattern.test(incident.name)) ||
+          relevance?.keepComponentlessIncident?.(incident, relevantComponentDisrupted) === false)
       ) {
         ignoredAnyDisruption = true;
         return [];

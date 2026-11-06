@@ -149,13 +149,11 @@ describe("OpenAI status notice", () => {
         statusSummary({
           indicator: "major",
           components,
-          // OpenAI files incidents without naming a component, so the component
-          // list is the only thing relevance can act on here.
           incidents: [{ impact: "minor", name: "Elevated latency", status: "identified" }],
         }),
       );
 
-    expect(notice(consumer)?.label).toBe("1 active incident");
+    expect(notice(consumer)).toBeNull();
     expect(
       notice([...consumer, { name: "Responses", status: "degraded_performance" }])?.label,
     ).toBe("Degraded: Responses");
@@ -281,34 +279,29 @@ describe("OpenAI status notice", () => {
       ).toMatchObject({ label: "Incident: Codex API" });
     });
 
-    it("keeps concurrent API outages and broader componentless incidents", () => {
-      const broaderIncident = {
-        impact: "minor",
-        name: `${incidentName} and Codex`,
-        status: "investigating",
-      };
+    it("keeps a componentless incident while a relevant component is disrupted", () => {
       expect(
         resolveOpenAIStatusNotice(
           statusSummary({
             indicator: "major",
             components: [{ name: "Responses", status: "partial_outage" }],
-            incidents: [
-              { impact: "minor", name: incidentName, status: "monitoring" },
-              broaderIncident,
-            ],
+            incidents: [{ impact: "minor", name: incidentName, status: "monitoring" }],
           }),
         ),
       ).toMatchObject({
         label: "Outage: Responses",
         tone: "error",
-        activeIncidents: [broaderIncident],
+        activeIncidents: [{ name: incidentName }],
       });
     });
   });
 
   it.each([
-    "SSO sign-in and SCIM provisioning issues",
+    "Elevated error rates with Brex Cards and U.S. business Mastercards",
+    "Elevated error rates in Codex Cloud",
     "Overbilling for OpenAI-hosted containers in the Agent API",
+    "Degraded Performance affecting Agents API",
+    "SSO sign-in and SCIM provisioning issues",
     "Delayed support responses",
     "Support available via email",
     "New Ad Accounts failing to provision admins",
@@ -318,6 +311,37 @@ describe("OpenAI status notice", () => {
         statusSummary({
           indicator: "minor",
           incidents: [{ impact: "none", name, status: "investigating" }],
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  it.each([
+    "Increase in errors on API, Codex and Work Mode",
+    "Elevated error rates for Codex and ChatGPT Work",
+    "Elevated API errors",
+    "Elevated Error Rates on GPT-6 Astra Pro",
+    "Investigating unexpected usage limit resets",
+  ])(
+    "keeps the untagged incident naming Codex, the API, a GPT model, or usage limits %j",
+    (name) => {
+      expect(
+        resolveOpenAIStatusNotice(
+          statusSummary({ incidents: [{ impact: "none", name, status: "investigating" }] }),
+        ),
+      ).toMatchObject({ label: "1 active incident", tone: "warning" });
+    },
+  );
+
+  it("ignores a tagged incident once only ignored components are disrupted", () => {
+    expect(
+      resolveOpenAIStatusNotice(
+        statusSummary({
+          indicator: "minor",
+          components: [{ name: "File uploads", status: "degraded_performance" }],
+          incidents: [
+            { impact: "minor", name: "File upload errors in ChatGPT", status: "identified" },
+          ],
         }),
       ),
     ).toBeNull();
