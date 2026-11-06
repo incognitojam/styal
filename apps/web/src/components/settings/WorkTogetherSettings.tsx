@@ -5,6 +5,7 @@ import {
   planWorkTogether,
   type WorkTogetherLine,
   type WorkTogetherMachine,
+  type WorkTogetherIdentity,
   workTogetherDefaultAccess,
   workTogetherLabels,
   workTogetherFailureMessage,
@@ -29,6 +30,8 @@ import { useEnvironmentQuery } from "../../state/query";
 import { useEnvironmentScope } from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { Button } from "../ui/button";
+import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
+import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import {
   Dialog,
   DialogDescription,
@@ -44,6 +47,7 @@ import { LinkAccessPicker } from "./LinkAccessPicker";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
 
 type Environment = ReturnType<typeof useEnvironments>["environments"][number];
+type NamedEnvironment = Environment & WorkTogetherIdentity;
 type RunKind = "start" | "stop";
 
 /** Each pair of the machines this client knows, and what it can do with them. */
@@ -73,7 +77,10 @@ export function WorkTogetherSettings() {
   );
 }
 
-function useWorkTogetherMachine(environment: Environment, other: Environment): WorkTogetherMachine {
+function useWorkTogetherMachine(
+  environment: NamedEnvironment,
+  other: Environment,
+): WorkTogetherMachine {
   const { environmentId, serverConfig } = environment;
   const connected = environment.connection.phase === "connected";
   const links = useEnvironmentQuery(
@@ -89,6 +96,8 @@ function useWorkTogetherMachine(environment: Environment, other: Environment): W
   return {
     environmentId,
     label: environment.label,
+    identityDetail: environment.identityDetail,
+    identityIcon: environment.identityIcon,
     ownLabel: serverConfig?.environment.label ?? null,
     connected,
     loaded: connected && (links.data !== null || links.error !== null) && device.settled,
@@ -117,8 +126,8 @@ function MachinePair({
   a: first,
   b: second,
 }: {
-  readonly a: Environment;
-  readonly b: Environment;
+  readonly a: NamedEnvironment;
+  readonly b: NamedEnvironment;
 }) {
   const a = useWorkTogetherMachine(first, second);
   const b = useWorkTogetherMachine(second, first);
@@ -127,7 +136,11 @@ function MachinePair({
   const [access, setAccess] = useState<AuthMcpClientAccess>(LINK_DEFAULT_ACCESS);
   const [run, setRun] = useState<Run | null>(null);
   const status = workTogetherStatus(a, b);
-  const label = `${a.label} and ${b.label}`;
+  const label = (
+    <>
+      <MachineName machine={a} /> and <MachineName machine={b} />
+    </>
+  );
   const absent = [a, b].find((machine) => !machine.connected);
   const loading = [a, b].some((machine) => machine.connected && !machine.loaded);
   const missingShares = workTogetherMissingShares(a, b);
@@ -395,4 +408,26 @@ function WorkTogetherLineDetail({ line }: { readonly line: WorkTogetherLine }) {
     default:
       return null;
   }
+}
+
+function MachineName({ machine }: { readonly machine: WorkTogetherMachine }) {
+  const name = (
+    <span className="inline-flex max-w-full items-center gap-1 align-bottom">
+      {machine.identityIcon ? (
+        <EnvironmentMachineIcon
+          kind={machine.identityIcon}
+          className="size-4 shrink-0"
+          aria-hidden
+        />
+      ) : null}
+      <span className="min-w-0 break-words">{machine.label}</span>
+    </span>
+  );
+  if (!machine.identityDetail || !machine.label.includes("…")) return name;
+  return (
+    <Tooltip>
+      <TooltipTrigger render={name} tabIndex={0} />
+      <TooltipPopup>{machine.identityDetail}</TooltipPopup>
+    </Tooltip>
+  );
 }

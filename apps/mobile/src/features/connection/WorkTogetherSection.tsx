@@ -6,6 +6,7 @@ import {
   planWorkTogether,
   type WorkTogetherLine,
   type WorkTogetherMachine,
+  type WorkTogetherIdentity,
   workTogetherDefaultAccess,
   workTogetherLabels,
   workTogetherFailureMessage,
@@ -25,6 +26,7 @@ import { useEffect, useEffectEvent, useState } from "react";
 import { ActivityIndicator, Modal, Platform, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { EnvironmentMachineSymbol } from "../../components/EnvironmentMachineSymbol";
 import { SymbolView, type AppSymbolName } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
 import { ListChoiceRow as SettingsChoiceRow } from "../../components/ui/ListChoiceRow";
@@ -40,6 +42,7 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { SettingsSection } from "../settings/components/SettingsSection";
 
 type Environment = ReturnType<typeof useEnvironments>["environments"][number];
+type NamedEnvironment = Environment & WorkTogetherIdentity;
 type RunKind = "start" | "stop";
 
 interface Run {
@@ -71,7 +74,10 @@ export function WorkTogetherSection() {
   );
 }
 
-function useWorkTogetherMachine(environment: Environment, other: Environment): WorkTogetherMachine {
+function useWorkTogetherMachine(
+  environment: NamedEnvironment,
+  other: Environment,
+): WorkTogetherMachine {
   const { environmentId, serverConfig } = environment;
   const connected = environment.connection.phase === "connected";
   const links = useEnvironmentQuery(
@@ -90,6 +96,8 @@ function useWorkTogetherMachine(environment: Environment, other: Environment): W
   return {
     environmentId,
     label: environment.label,
+    identityDetail: environment.identityDetail,
+    identityIcon: environment.identityIcon,
     ownLabel: serverConfig?.environment.label ?? null,
     connected,
     loaded: connected && (links.data !== null || links.error !== null) && device.settled,
@@ -112,7 +120,7 @@ function useWorkTogetherMachine(environment: Environment, other: Environment): W
   };
 }
 
-function MachinePair(props: { readonly a: Environment; readonly b: Environment }) {
+function MachinePair(props: { readonly a: NamedEnvironment; readonly b: NamedEnvironment }) {
   const a = useWorkTogetherMachine(props.a, props.b);
   const b = useWorkTogetherMachine(props.b, props.a);
   const execute = useAtomCommand(workTogether, { reportFailure: false, reportDefect: false });
@@ -202,9 +210,7 @@ function MachinePair(props: { readonly a: Environment; readonly b: Environment }
   return (
     <View className="gap-3 p-4">
       <View className="gap-0.5">
-        <Text className="text-base font-t3-bold text-foreground">
-          {a.label} and {b.label}
-        </Text>
+        <MachinePairName a={a} b={b} />
         <Text className="text-xs text-foreground-muted">{summary}</Text>
       </View>
       {unmanaged !== undefined ? null : (
@@ -274,9 +280,18 @@ function WorkTogetherSheet(props: {
         }}
       >
         <View className="gap-1">
-          <Text className="font-t3-bold text-lg text-foreground">
-            {a.label} and {b.label}
-          </Text>
+          <MachinePairName a={a} b={b} large />
+          {[a, b]
+            .filter((machine) => machine.identityDetail && machine.label.includes("…"))
+            .map((machine) => (
+              <Text
+                key={machine.environmentId}
+                selectable
+                className="text-xs text-foreground-muted"
+              >
+                {machine.identityDetail}
+              </Text>
+            ))}
           {run !== null ? null : (
             <Text className="font-sans text-sm leading-5 text-foreground-muted">
               {kind === "stop"
@@ -413,6 +428,37 @@ function WorkTogetherLineRow({ line }: { readonly line: WorkTogetherLine }) {
           </Text>
         ) : null}
       </View>
+    </View>
+  );
+}
+
+function MachinePairName({
+  a,
+  b,
+  large = false,
+}: {
+  readonly a: WorkTogetherMachine;
+  readonly b: WorkTogetherMachine;
+  readonly large?: boolean;
+}) {
+  const textClass = large
+    ? "min-w-0 flex-shrink font-t3-bold text-lg text-foreground"
+    : "min-w-0 flex-shrink font-t3-bold text-base text-foreground";
+  return (
+    <View className="flex-row flex-wrap items-center gap-1">
+      {[a, b].map((machine, index) => (
+        <View key={machine.environmentId} className="max-w-full flex-row items-center gap-1">
+          {index === 1 ? <Text className={textClass}>and </Text> : null}
+          {machine.identityIcon ? (
+            <EnvironmentMachineSymbol
+              kind={machine.identityIcon}
+              size={16}
+              tintColorClassName="accent-foreground-muted"
+            />
+          ) : null}
+          <Text className={textClass}>{machine.label}</Text>
+        </View>
+      ))}
     </View>
   );
 }

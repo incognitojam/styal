@@ -5,6 +5,8 @@
  */
 import {
   AuthMcpClientAccess,
+  resolveEnvironmentMachineKind,
+  type EnvironmentMachineKind,
   type AuthSessionId,
   type DeviceHostId,
   type EnvironmentId,
@@ -21,6 +23,11 @@ import * as Option from "effect/Option";
 import type { Atom, AtomRegistry } from "effect/reactivity";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
+
+import {
+  connectionCatalogDisplayUrl,
+  type EnvironmentPresentation,
+} from "../connection/presentation.ts";
 
 import * as RemoteEnvironmentAuthorization from "../authorization/service.ts";
 import { LINK_DEFAULT_ACCESS } from "../linkRequest.ts";
@@ -46,6 +53,8 @@ export interface WorkTogetherMachine {
   readonly label: string;
   /** What the machine calls itself, which names its sessions on other machines. */
   readonly ownLabel: string | null;
+  readonly identityDetail?: string | null;
+  readonly identityIcon?: EnvironmentMachineKind | null;
   readonly connected: boolean;
   /** Its links and device abilities have arrived, so a plan will not miss anything. */
   readonly loaded: boolean;
@@ -70,16 +79,106 @@ export interface WorkTogetherMachine {
   }>;
 }
 
+export interface WorkTogetherIdentity {
+  readonly identityDetail: string | null;
+  readonly identityIcon: EnvironmentMachineKind | null;
+}
+
+const MACHINE_NAMES: Record<EnvironmentMachineKind, string> = {
+  server: "Server",
+  cloud: "Cloud VM",
+  linux: "Linux/WSL",
+  desktop: "Desktop",
+  laptop: "Laptop",
+  "mac-mini": "Mini PC",
+  "mac-studio": "Workstation",
+};
+
 export function workTogetherLabels<
-  T extends { readonly environmentId: string; readonly label: string },
->(machines: ReadonlyArray<T>): ReadonlyArray<T> {
-  const counts = new Map<string, number>();
-  for (const machine of machines) counts.set(machine.label, (counts.get(machine.label) ?? 0) + 1);
-  return machines.map((machine) =>
-    (counts.get(machine.label) ?? 0) > 1
-      ? { ...machine, label: `${machine.label} (${machine.environmentId})` }
-      : machine,
-  );
+  T extends Pick<EnvironmentPresentation, "entry"> & {
+    readonly serverConfig: Parameters<typeof resolveEnvironmentMachineKind>[0];
+    readonly environmentId: string;
+    readonly label: string;
+  },
+>(machines: ReadonlyArray<T>): ReadonlyArray<T & WorkTogetherIdentity> {
+  const identities = machines.map((machine) => {
+    const { entry } = machine;
+    const kind = resolveEnvironmentMachineKind(machine.serverConfig);
+    let address = connectionCatalogDisplayUrl(entry);
+    let type =
+      entry.target._tag === "RelayConnectionTarget"
+        ? "styal Link"
+        : entry.target._tag === "SshConnectionTarget"
+          ? "SSH"
+          : "Direct";
+    if (
+      entry.target._tag === "SshConnectionTarget" &&
+      Option.isSome(entry.profile) &&
+      entry.profile.value._tag === "SshConnectionProfile"
+    ) {
+      const target = entry.profile.value.target;
+      address = `${target.hostname}:${target.port ?? 22}`;
+    } else if (address !== null) {
+      try {
+        const url = new URL(address);
+        address = url.host;
+        if (
+          entry.target._tag === "PrimaryConnectionTarget" &&
+          ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)
+        )
+          type = "Local";
+      } catch {
+        address = null;
+      }
+    }
+    const descriptor = address === null ? type : `${type} · ${address}`;
+    return { machine, kind, descriptor };
+  });
+  return identities.map(({ machine, kind, descriptor }) => {
+    const sameName = identities.filter((other) => other.machine.label === machine.label);
+    if (sameName.length === 1) return { ...machine, identityDetail: null, identityIcon: null };
+    const differentIcons = sameName.some((other) => other.kind !== kind);
+    let detail = descriptor;
+    let fullId: string | null = null;
+    const sameAddress = sameName.filter((other) => other.descriptor === descriptor);
+    if (sameAddress.length > 1 && sameAddress.some((other) => other.kind !== kind))
+      detail += ` · ${MACHINE_NAMES[kind]}`;
+    const indistinguishable = sameAddress.filter((other) => other.kind === kind || !differentIcons);
+    if (indistinguishable.length > 1) {
+      const id = machine.environmentId;
+      fullId = id;
+      let length = Math.min(6, id.length);
+      while (
+        indistinguishable.some(
+          (other) =>
+            other.machine.environmentId !== id &&
+            other.machine.environmentId.slice(0, length) === id.slice(0, length),
+        )
+      )
+        length += 1;
+      let suffixLength = Math.min(6, id.length);
+      while (
+        indistinguishable.some(
+          (other) =>
+            other.machine.environmentId !== id &&
+            other.machine.environmentId.slice(-suffixLength) === id.slice(-suffixLength),
+        )
+      )
+        suffixLength += 1;
+      const shortId =
+        suffixLength < length
+          ? `…${id.slice(-suffixLength)}`
+          : `${id.slice(0, length)}${length < id.length ? "…" : ""}`;
+      detail += ` · ${shortId}`;
+    }
+    const concise = detail.length > 64 ? `${detail.slice(0, 40)}…${detail.slice(-20)}` : detail;
+    return {
+      ...machine,
+      label: `${machine.label} (${concise})`,
+      identityDetail: `${machine.label}: ${detail}${fullId === null ? "" : ` · Environment ID: ${fullId}`}`,
+      identityIcon: differentIcons ? kind : null,
+    };
+  });
 }
 
 type Step =
