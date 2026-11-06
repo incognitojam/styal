@@ -365,7 +365,7 @@ function MachineStatus(props: {
   );
   const parts = [
     named("everything") && `can control ${named("everything")}`,
-    named("look-only") && `can look at ${named("look-only")}`,
+    named("view-only") && `can view ${named("view-only")}`,
     unconnected && `can work on ${unconnected}`,
     named("nothing") && `can't reach ${named("nothing")}`,
   ].filter(Boolean);
