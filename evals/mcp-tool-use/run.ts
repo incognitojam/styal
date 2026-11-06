@@ -47,6 +47,8 @@ import { AttachmentToolkit } from "../../apps/server/src/mcp/toolkits/attachment
 import { DeviceToolkit } from "../../apps/server/src/mcp/toolkits/device/tools.ts";
 import { EnvironmentToolkit } from "../../apps/server/src/mcp/toolkits/environment/tools.ts";
 import { FeedbackToolkit } from "../../apps/server/src/mcp/toolkits/feedback/tools.ts";
+import { AGENT_GUIDES } from "../../apps/server/src/mcp/toolkits/guide/guides.ts";
+import { GuideToolkit } from "../../apps/server/src/mcp/toolkits/guide/tools.ts";
 import { HardwareToolkit } from "../../apps/server/src/mcp/toolkits/hardware/tools.ts";
 import { HtmlToolkit } from "../../apps/server/src/mcp/toolkits/html/tools.ts";
 import { OrchestratorToolkit } from "../../apps/server/src/mcp/toolkits/orchestrator/tools.ts";
@@ -384,6 +386,7 @@ const t3SourceTools: ReadonlyArray<Tool.Any> = [
   HardwareToolkit,
   FeedbackToolkit,
   HtmlToolkit,
+  GuideToolkit,
 ].flatMap((toolkit): ReadonlyArray<Tool.Any> => Object.values(toolkit.tools));
 const t3Tools: ReadonlyArray<ApiTool> = t3SourceTools.map((tool) => ({
   name: `${T3_PREFIX}${tool.name}`,
@@ -980,6 +983,8 @@ const pullRequest = (repo: string, input: Readonly<Record<string, unknown>>) => 
 const t3Default = (sample: Sample, name: string, input: Readonly<Record<string, unknown>>) => {
   const pr = () => pullRequest(sample.repo, input);
   switch (name) {
+    case "read_styal_guide":
+      return { guide: AGENT_GUIDES[input.topic as keyof typeof AGENT_GUIDES] ?? "Unknown topic." };
     case "orchestrator_capabilities":
       return {
         inheritedProviderInstanceId: "claudeAgent",
