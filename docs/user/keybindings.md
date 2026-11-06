@@ -167,8 +167,9 @@ shortcut undoes text edits again. Terminals keep their native shortcut.
 
 `thread.nextUnread` (`mod+shift+u` by default) opens the next thread with something for you.
 Besides finished threads you have not read, that includes threads waiting for an approval or an
-answer, threads stopped by a usage limit or a failed run that you have not opened since, and threads
-that woke from a snooze. It opens the most urgent first, in that order: approval, answer, usage limit or failure, woke, then
+answer, threads stopped by a usage limit or a failed run that you have not opened since, threads that
+are still working but have asked an optional question, and threads that woke from a snooze. It opens
+the most urgent first, in that order: approval, answer, usage limit or failure, optional question, woke, then
 unread. Among threads of the same kind, the one that has waited longest opens first, so older work is
 cleared before newer work. The open thread is skipped, so pressing it again moves on. Snoozed and
 settled threads are left out. It is also in the command palette as **Go to next unread thread**.
