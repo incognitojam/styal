@@ -1,5 +1,6 @@
 import {
   FEEDBACK_REPORT_OPEN_ACTION,
+  FEEDBACK_REPORT_REQUEST,
   FEEDBACK_REPORT_TITLE,
   feedbackReportDeclineOptions,
   feedbackReportDescription,
@@ -44,20 +45,14 @@ export function FeedbackReportApprovalCard(props: {
   );
   return (
     <View className="gap-2.5 rounded-[20px] border border-border bg-card-alt p-4">
-      <Text className="font-t3-bold text-2xs uppercase tracking-[1.1px] text-foreground-secondary">
-        Post a public issue
-      </Text>
-      <Text className="font-t3-bold text-lg text-foreground">{props.report.title}</Text>
-      <Text className="font-sans text-sm text-foreground-secondary">
-        On {props.report.repository} as @{props.report.account}
-      </Text>
+      <Text className="font-sans text-sm text-foreground">{FEEDBACK_REPORT_REQUEST}</Text>
       <View className="flex-row flex-wrap gap-2.5">
+        {feedbackReportDeclineOptions(props.options).map(button)}
         <Button
           label={FEEDBACK_REPORT_OPEN_ACTION}
           tone="primary"
           onPress={() => setReviewing(true)}
         />
-        {feedbackReportDeclineOptions(props.options).map(button)}
       </View>
       {reviewing ? (
         <Sheet title={FEEDBACK_REPORT_TITLE} onClose={() => setReviewing(false)}>

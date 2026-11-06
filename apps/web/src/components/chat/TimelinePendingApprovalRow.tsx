@@ -1,4 +1,7 @@
-import { feedbackReportFromApproval } from "@t3tools/client-runtime/feedback-report";
+import {
+  FEEDBACK_REPORT_TITLE,
+  feedbackReportFromApproval,
+} from "@t3tools/client-runtime/feedback-report";
 import { deriveToolRowPresentation } from "@t3tools/shared/toolRowPresentation";
 import {
   FULL_ACCESS_OVERRIDE_QUESTION,
@@ -10,7 +13,6 @@ import { type PendingApproval } from "../../session-logic";
 import { InlineButton } from "../ui/button";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
-import { FeedbackReportApprovalActions } from "./FeedbackReportApproval";
 import { ToolActivityIconView, type WorkEntryIconName } from "./TimelineToolActivityIcon";
 import { TimelineRowCtx } from "./timelineRowContext";
 import { WorkLogRow } from "./WorkLog";
@@ -54,21 +56,21 @@ export const TimelinePendingApprovalRow = memo(function TimelinePendingApprovalR
   return (
     <WorkLogRow
       role="group"
-      aria-label={report ? "Post a public issue" : presentation.label}
+      aria-label={report ? FEEDBACK_REPORT_TITLE : presentation.label}
       data-v2-item-type="approval_request"
       wrapLabel
       icon={
         <ToolActivityIconView
           icon={undefined}
-          fallbackName={report ? "bug" : presentation.icon}
+          fallbackName={report ? "message-circle" : presentation.icon}
           className="block size-4 shrink-0 stroke-2 text-icon-muted"
           muted
         />
       }
       label={
         report ? (
-          <span className="block min-w-0 text-sm text-foreground select-text wrap-anywhere">
-            {report.title}
+          <span className="block min-w-0 text-sm text-muted-foreground">
+            Waiting for your decision on this feedback
           </span>
         ) : (
           <Detail
@@ -83,11 +85,6 @@ export const TimelinePendingApprovalRow = memo(function TimelinePendingApprovalR
       }
     >
       <div className="ms-7.5 flex min-w-0 flex-col gap-1 pb-1 text-xs">
-        {report ? (
-          <span className="text-muted-foreground wrap-anywhere">
-            Public issue on {report.repository} as @{report.account}
-          </span>
-        ) : null}
         {approval.appName ? (
           <span className="text-muted-foreground wrap-anywhere">{approval.appName}</span>
         ) : null}
@@ -95,7 +92,7 @@ export const TimelinePendingApprovalRow = memo(function TimelinePendingApprovalR
           <span className="text-muted-foreground select-text wrap-anywhere">{approval.reason}</span>
         ) : null}
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          {canRespond ? (
+          {canRespond && report ? null : canRespond ? (
             <>
               <span className="inline-flex items-center gap-1 text-warning-foreground">
                 <ShieldIcon aria-hidden className="size-3 shrink-0" />
@@ -106,27 +103,15 @@ export const TimelinePendingApprovalRow = memo(function TimelinePendingApprovalR
                   <span aria-hidden className="text-muted-foreground">
                     ·
                   </span>
-                  {report ? (
-                    <FeedbackReportApprovalActions
-                      report={report}
-                      requestId={approval.requestId}
-                      disabled={!canOperateThread}
-                      isResponding={respondingRequestIds.includes(approval.requestId)}
-                      canRespond={canRespond}
-                      options={approval.options}
-                      onRespondToApproval={onRespondToApproval}
-                    />
-                  ) : (
-                    <ComposerPendingApprovalActions
-                      presentation="inline"
-                      requestId={approval.requestId}
-                      disabled={!canOperateThread}
-                      isResponding={respondingRequestIds.includes(approval.requestId)}
-                      canRespond={canRespond}
-                      options={approval.options}
-                      onRespondToApproval={onRespondToApproval}
-                    />
-                  )}
+                  <ComposerPendingApprovalActions
+                    presentation="inline"
+                    requestId={approval.requestId}
+                    disabled={!canOperateThread}
+                    isResponding={respondingRequestIds.includes(approval.requestId)}
+                    canRespond={canRespond}
+                    options={approval.options}
+                    onRespondToApproval={onRespondToApproval}
+                  />
                 </>
               ) : null}
             </>
