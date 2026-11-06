@@ -3765,6 +3765,26 @@ features:
       tracking: []
       retire_when: Upstream adds a command that opens the next thread waiting on the user in the same precedence.
 
+  - id: notice-details-when-clipped
+    title: Composer notice details appear only for clipped text
+    status: maintained
+    prs: [1334]
+    invariants:
+      - Opening a popover from composer notice text that fits does not add a details button, either while the popover is open or after it closes.
+      - Notice text that is really clipped keeps its details button, and the button goes away when the notice widens enough for the text to fit.
+    rationale: Upstream's Range overflow measurement counts Base UI's fixed-position focus guards beside an open popover trigger. The notice then shows a details button whose popover repeats text that was never cut off.
+    implementation_paths:
+      - apps/web/src/components/chat/ComposerBannerStack.tsx
+    upstream_paths:
+      - apps/web/src/components/chat/ComposerBannerStack.tsx
+    tests:
+      - apps/web/src/components/chat/ComposerBannerStack.browser.test.tsx
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/26793
+      retire_when: Upstream's notice overflow measurement ignores focus guards, so opening a popover from text that fits adds no details button.
+
   - id: offline-dev-seed
     title: Seed worktrees without routine live database reads
     status: maintained
