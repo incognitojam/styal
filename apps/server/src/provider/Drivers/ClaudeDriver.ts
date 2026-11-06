@@ -5,6 +5,7 @@ import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
@@ -60,6 +61,7 @@ import {
   mergeClaudeProcessEnvironment,
   resolveClaudeHomePath,
   makeClaudeEnvironment,
+  claudeCredentialsHoldLogin,
 } from "./ClaudeHome.ts";
 import { readClaudeHistoryRetention } from "./ClaudeHistoryRetention.ts";
 import {
@@ -456,6 +458,13 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
       accentColor,
       enabled,
       auth,
+      credentialsChangedAt: Effect.gen(function* () {
+        const credentialsPath = path.join(configDir, ".credentials.json");
+        const contents = yield* fileSystem.readFileString(credentialsPath);
+        if (!claudeCredentialsHoldLogin(contents)) return null;
+        const info = yield* fileSystem.stat(credentialsPath);
+        return Option.getOrNull(Option.map(info.mtime, (mtime) => mtime.getTime()));
+      }).pipe(Effect.orElseSucceed(() => null)),
       snapshot,
       invalidateCaches: Cache.invalidateAll(capabilitiesProbeCache),
       snapshotForCwd: (cwd: string) =>

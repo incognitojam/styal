@@ -1,6 +1,7 @@
 import type { ClaudeSettings, ProviderInstanceEnvironment } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 
@@ -101,6 +102,26 @@ export const makeClaudeCapabilitiesCacheKey = Effect.fn("makeClaudeCapabilitiesC
     return `${config.binaryPath}\0${resolvedHomePath}\0${cwd ?? ""}`;
   },
 );
+
+const decodeClaudeCredentials = Schema.decodeUnknownOption(
+  Schema.fromJsonString(
+    Schema.Struct({
+      claudeAiOauth: Schema.optional(
+        Schema.Struct({ refreshToken: Schema.optional(Schema.String) }),
+      ),
+    }),
+  ),
+);
+
+/**
+ * Claude 2.1.316 blanks both tokens in this file when a refresh fails, so a rewrite only means a
+ * sign-in if a refresh token is left. Keychain logins on macOS have no such file.
+ */
+export const claudeCredentialsHoldLogin = (contents: string): boolean =>
+  Option.exists(
+    decodeClaudeCredentials(contents),
+    (credentials) => (credentials.claudeAiOauth?.refreshToken ?? "").length > 0,
+  );
 
 /** Separate spawn env from login commands to preserve literal paths, including relative inherited values. */
 export const claudeSignedOutMessage = (input: {

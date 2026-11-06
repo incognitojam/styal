@@ -1766,6 +1766,16 @@ export default function ChatView(props: ChatViewProps) {
     provider: providerStatuses.find(
       (provider) => provider.instanceId === serverRuntime?.providerInstanceId,
     ),
+    runId: activeThreadShell?.latestRun?.runId,
+    recovery: activeThreadShell?.authRecovery,
+    onChangeWaiting: async (authRecovery) => {
+      if (!activeThreadShell) return;
+      const result = await updateThreadMetadata({
+        environmentId,
+        input: { threadId: activeThreadShell.id, authRecovery },
+      });
+      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+    },
   });
   // The sign-in banner says what these two say, and offers the fix.
   const visibleProviderStatus =

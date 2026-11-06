@@ -90,6 +90,7 @@ export const make = Effect.fn("ProviderAuthFlow.make")(function* (options: {
   const snapshot = yield* SubscriptionRef.make({ owner: null as string | null, state: empty });
   let active: Flow | undefined;
   let operation: "idle" | "auth" | "stopping" | "closed" = "idle";
+  let lastSignedInAt: number | null = null;
   const sessions = new Set<Scope.Closeable>();
   const stopOwnedSessions = Effect.suspend(() =>
     Effect.forEach(Array.from(sessions), (session) => Scope.close(session, Exit.void), {
@@ -195,6 +196,7 @@ export const make = Effect.fn("ProviderAuthFlow.make")(function* (options: {
       }),
     ),
     isChangingCredentials: Effect.sync(() => operation !== "idle"),
+    lastSignedInAt: Effect.sync(() => lastSignedInAt),
     withAccess: (task) =>
       Effect.uninterruptibleMask((restore) =>
         Effect.gen(function* () {
@@ -345,6 +347,7 @@ export const make = Effect.fn("ProviderAuthFlow.make")(function* (options: {
                   Effect.gen(function* () {
                     if (active !== flow) return;
                     if (options.refreshMethodsAfterAuth) yield* refreshMethods;
+                    if (Exit.isSuccess(result)) lastSignedInAt = yield* Clock.currentTimeMillis;
                     yield* publish(flow, {
                       phase: Exit.isSuccess(result) ? "succeeded" : "failed",
                       interaction: null,

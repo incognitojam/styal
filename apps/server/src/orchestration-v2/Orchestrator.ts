@@ -8,6 +8,7 @@ import {
   latestExecutedRun,
   latestRootProviderFailure,
   runRanAfter,
+  signedOutBlockedRun,
   usageLimitBlockedRun,
 } from "@t3tools/shared/orchestrationV2ThreadError";
 import { canonicalizeGitCafePullRequestUrl } from "@t3tools/source-control-definitions/registry";
@@ -19,6 +20,7 @@ import {
   legacyThreadPullRequestKey,
 } from "../sourceControl/threadPullRequests.ts";
 import {
+  isProviderAuthFailureCode,
   ORCHESTRATION_V2_WORKSPACE_PREPARATION_FAILURE_CODE,
   type ChatAttachment,
   CommandId,
@@ -32,6 +34,7 @@ import {
   OrchestrationV2Command,
   type OrchestrationV2InternalCommand,
   type OrchestrationV2RuntimeRequest,
+  type OrchestrationV2AuthRecoveryUpdate,
   type OrchestrationV2LimitRecoveryUpdate,
   type OrchestrationV2ServerCommand,
   type ThreadPullRequestLink,
@@ -382,6 +385,11 @@ export interface OrchestratorV2Shape {
   readonly dispatch: (
     command: OrchestrationV2ServerCommand,
   ) => Effect.Effect<OrchestratorV2DispatchResult, OrchestratorV2Error>;
+  readonly autoArmAuthRecovery: (input: {
+    readonly commandId: CommandId;
+    readonly threadId: ThreadId;
+    readonly authRecovery: OrchestrationV2AuthRecoveryUpdate;
+  }) => Effect.Effect<void, OrchestratorV2Error>;
   readonly autoArmLimitRecovery: (input: {
     readonly commandId: CommandId;
     readonly threadId: ThreadId;
@@ -954,10 +962,10 @@ function usageLimitHoldsQueue(
       latestSession = session;
     }
   }
-  return (
-    usageLimitBlockedRun(projection.runs, projection.turnItems, latestSession?.lastError ?? null)
-      ?.providerInstanceId === providerInstanceId
-  );
+  const blocked =
+    usageLimitBlockedRun(projection.runs, projection.turnItems, latestSession?.lastError ?? null) ??
+    signedOutBlockedRun(projection.runs, projection.turnItems, latestSession?.lastError ?? null);
+  return blocked?.providerInstanceId === providerInstanceId;
 }
 
 function latestStableRun(
@@ -3555,6 +3563,23 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         });
       }
     }
+    if (command.type === "thread.metadata.update" && command.authRecovery !== undefined) {
+      const projection = yield* loadProjectionForCommand(command, ["runs", "turnItems"], {
+        turnItemTypes: ["error"],
+      });
+      const run = signedOutBlockedRun(projection.runs, projection.turnItems, null);
+      if (
+        thread.archivedAt !== null ||
+        thread.settledOverride === "settled" ||
+        run?.id !== command.authRecovery.runId
+      ) {
+        return yield* new OrchestratorDispatchError({
+          commandId: command.commandId,
+          commandType: command.type,
+          cause: "This thread is no longer waiting for a provider sign-in.",
+        });
+      }
+    }
     let snoozedUntil: DateTime.Utc | null = null;
     if (command.type === "thread.snooze") {
       const projection = yield* loadProjectionForCommand(command, ["runs", "runtimeRequests"], {
@@ -3782,10 +3807,28 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                     snooze: command.limitRecovery.snooze ?? previousRecovery?.snooze ?? false,
                     requestId: command.commandId,
                   };
+          const previousAuthRecovery =
+            thread.authRecovery?.runId === command.authRecovery?.runId ? thread.authRecovery : null;
           return {
             ...thread,
             ...(command.title === undefined ? {} : { title: command.title }),
             ...(command.limitRecovery === undefined ? {} : { limitRecovery }),
+            ...(command.authRecovery === undefined
+              ? {}
+              : {
+                  authRecovery: {
+                    runId: command.authRecovery.runId,
+                    waiting: command.authRecovery.waiting ?? previousAuthRecovery?.waiting ?? true,
+                    signedOutSeen:
+                      command.authRecovery.signedOutSeen ??
+                      previousAuthRecovery?.signedOutSeen ??
+                      false,
+                    requestId:
+                      command.authRecovery.waiting === undefined
+                        ? previousAuthRecovery?.requestId
+                        : command.commandId,
+                  },
+                }),
             ...(command.limitRecovery !== undefined &&
             limitRecovery?.snooze === true &&
             Date.parse(limitRecovery.resetAt) > DateTime.toEpochMillis(now)
@@ -5654,6 +5697,43 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             projection.thread.snoozedUntil != null &&
             DateTime.toEpochMillis(projection.thread.snoozedUntil) > DateTime.toEpochMillis(now)
               ? { limitRecovery: { ...recovery, requestId: command.commandId } }
+              : {}),
+          },
+        });
+        return;
+      }
+    }
+
+    if (command.authContinuationOfRunId !== undefined) {
+      const run = signedOutBlockedRun(projection.runs, projection.turnItems, null);
+      const recovery = projection.thread.authRecovery;
+      const now = yield* DateTime.now;
+      if (
+        run?.id !== command.authContinuationOfRunId ||
+        !recovery?.waiting ||
+        recovery.runId !== run.id ||
+        recovery.requestId !== command.authRecoveryRequestId ||
+        projection.thread.archivedAt !== null ||
+        projection.thread.deletedAt !== null ||
+        projection.thread.settledOverride === "settled" ||
+        projection.thread.providerInstanceId !== run.providerInstanceId ||
+        projection.runtimeRequests.some((request) => request.status === "pending") ||
+        (projection.thread.snoozedUntil != null &&
+          DateTime.toEpochMillis(projection.thread.snoozedUntil) > DateTime.toEpochMillis(now))
+      ) {
+        // The receipt still needs an event. A new request id lets the sweep propose again once a
+        // snooze ends, since this command id now has its receipt.
+        yield* emit(
+          events,
+          command,
+        )({
+          type: "thread.metadata-updated",
+          threadId: command.threadId,
+          occurredAt: now,
+          payload: {
+            ...projection.thread,
+            ...(recovery?.waiting && recovery.requestId === command.authRecoveryRequestId
+              ? { authRecovery: { ...recovery, requestId: command.commandId } }
               : {}),
           },
         });
@@ -11316,6 +11396,13 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         })
         .pipe(mapDispatchError(input.command));
       const failure = latestRootProviderFailure(latest, turnItems);
+      // Stop can land before the first sweep arms this failure; record the stop so it cannot.
+      if (isProviderAuthFailureCode(failure?.code) && thread.authRecovery?.runId !== latest.id) {
+        thread = {
+          ...thread,
+          authRecovery: { runId: latest.id, waiting: true, signedOutSeen: false },
+        };
+      }
       if (
         failure?.class === "usage_limit" &&
         failure.resetAt != null &&
@@ -11336,6 +11423,23 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         limitRecovery: {
           ...recovery,
           autoResume: false,
+          requestId: input.command.commandId,
+        },
+        updatedAt: input.now,
+      };
+      yield* emitEvent({
+        type: "thread.metadata-updated",
+        threadId: thread.id,
+        occurredAt: input.now,
+        payload: thread,
+      });
+    }
+    if (thread.authRecovery?.waiting) {
+      thread = {
+        ...thread,
+        authRecovery: {
+          ...thread.authRecovery,
+          waiting: false,
           requestId: input.command.commandId,
         },
         updatedAt: input.now,
@@ -13066,6 +13170,12 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
 
       const now = yield* DateTime.now;
       const result = subagentResultForRun(childProjection, { ...childRun, status: outcome });
+      const awaitingSignIn =
+        outcome === "failed" &&
+        isProviderAuthFailureCode(
+          latestRootProviderFailure({ ...childRun, status: outcome }, childProjection.turnItems)
+            ?.code,
+        );
       const parentRun =
         task.runId === null
           ? undefined
@@ -13078,7 +13188,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ...task,
         providerThreadId: childRun.providerThreadId,
         status: terminalStatus,
-        result: result.text,
+        result: awaitingSignIn
+          ? `${result.text}\n\nThis thread continues by itself once its provider is signed in, then reports back. Do not start a replacement unless that is urgent.`
+          : result.text,
         completedAt: now,
         updatedAt: now,
       };
@@ -14607,6 +14719,23 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                 }
               : command,
           );
+        }),
+      );
+    }),
+    autoArmAuthRecovery: Effect.fn("OrchestratorV2.autoArmAuthRecovery")(function (input) {
+      return threadDispatch.withLock(
+        input.threadId,
+        Effect.gen(function* () {
+          const thread = yield* projectionStore
+            .getThread(input.threadId)
+            .pipe(
+              Effect.mapError(
+                (cause) => new OrchestratorProjectionError({ threadId: input.threadId, cause }),
+              ),
+            );
+          // Stop or an explicit choice can commit after the sweep reads its candidate.
+          if (thread.authRecovery?.runId === input.authRecovery.runId) return;
+          yield* dispatchWithReceiptEffect({ type: "thread.metadata.update", ...input });
         }),
       );
     }),

@@ -109,6 +109,7 @@ export const makeV2HistoryWriter = Effect.gen(function* () {
       projectId: targetProjectId,
       titleRegeneration: null,
       limitRecovery: null,
+      authRecovery: null,
     };
     const prefix = `import:v2:${thread.id}`;
     const events: OrchestrationV2DomainEvent[] = [];

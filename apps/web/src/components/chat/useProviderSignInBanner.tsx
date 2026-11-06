@@ -2,6 +2,9 @@ import { useAtomValue } from "@effect/atom-react";
 import {
   isProviderAuthFailureCode,
   type EnvironmentId,
+  type OrchestrationV2AuthRecovery,
+  type OrchestrationV2AuthRecoveryUpdate,
+  type RunId,
   type ServerProvider,
 } from "@t3tools/contracts";
 import { KeyRoundIcon } from "lucide-react";
@@ -13,6 +16,7 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { Button } from "../ui/button";
 import { Dialog, DialogHeader, DialogPopup, DialogTitle } from "../ui/dialog";
 import { ProviderAuthenticationSection } from "../settings/ProviderAuthenticationSection";
+import { toastManager } from "../ui/toast";
 import type { ComposerBannerStackItem } from "./ComposerBannerStack";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
 
@@ -23,12 +27,16 @@ export function useProviderSignInBanner(input: {
   readonly failed: boolean;
   readonly lastErrorCode: string | null | undefined;
   readonly provider: ServerProvider | undefined;
+  readonly runId: RunId | null | undefined;
+  readonly recovery: OrchestrationV2AuthRecovery | null | undefined;
+  readonly onChangeWaiting: (update: OrchestrationV2AuthRecoveryUpdate) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
   const start = useAtomCommand(serverEnvironment.startProviderAuth, {
     reportFailure: false,
     reportDefect: false,
   });
+  const [pending, setPending] = useState(false);
   const canSignIn = useAtomValue(
     serverEnvironment.startProviderAuth.permissionAtom(input.environmentId),
   );
@@ -52,21 +60,49 @@ export function useProviderSignInBanner(input: {
     });
     void start({ environmentId: input.environmentId, input: { instanceId: provider.instanceId } });
   }
+  const recovery = input.recovery?.runId === input.runId ? input.recovery : null;
+  const waiting = recovery?.waiting === true;
+  async function setWaiting(next: boolean) {
+    if (!input.runId) return;
+    setPending(true);
+    try {
+      await input.onChangeWaiting({ runId: input.runId, waiting: next });
+    } catch (cause) {
+      toastManager.add({
+        type: "error",
+        title: "Could not change this thread",
+        description: cause instanceof Error ? cause.message : "An error occurred.",
+      });
+    }
+    setPending(false);
+  }
   const item: ComposerBannerStackItem = {
     id: `provider-sign-in:${provider.instanceId}`,
     variant: "warning",
     icon: <KeyRoundIcon />,
     title: `${name} needs you to sign in`,
-    description: "Sign in, then send your message again.",
-    ...(canSignIn
-      ? {
-          actions: (
-            <Button size="xs" variant="outline" onClick={openSignIn}>
-              Sign in
-            </Button>
-          ),
-        }
-      : {}),
+    description: waiting
+      ? "It continues after you sign in."
+      : "Sign in, then send your message again.",
+    actions: (
+      <>
+        {recovery ? (
+          <Button
+            size="xs"
+            variant="ghost"
+            disabled={pending}
+            onClick={() => void setWaiting(!waiting)}
+          >
+            {waiting ? "Stop waiting" : "Continue after sign-in"}
+          </Button>
+        ) : null}
+        {canSignIn ? (
+          <Button size="xs" variant="outline" onClick={openSignIn}>
+            Sign in
+          </Button>
+        ) : null}
+      </>
+    ),
   };
   const dialog = (
     <Dialog open={open} onOpenChange={setOpen}>

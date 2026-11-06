@@ -15,6 +15,7 @@ Additional measured operations are:
 - `work-together`, `source = user`: `start` and `stop` record each run of **Work together** and **Stop working together** on web, desktop and mobile, with `outcome = complete | waiting | failed`. A run that resumes when a machine returns records again. The event goes to a connected machine in the pair, so it needs that machine to be on `forkClientUsageVersion` 26 or later.
 
 - `provider-sign-in`, `source = user`, `action = start`: pressing **Sign in** for a provider whose own CLI owns its login (Claude, Grok Build, OpenCode, Pi, fx, Muse Code), with `entryPoint = settings | thread`. On mobile the thread card opens the Providers screen, so its presses count as `settings`.
+- `provider-sign-in`, `source = system`: `wait` when a thread stopped by a signed-out provider starts waiting, and `resume` when it continues after a sign-in. `provider_sign_in.wait` with `variant = on | off` counts a person turning a thread's wait on or off.
 
 - `integration-settings`, `source = user`: `change_requested` records an explicit request to change `browser_access`, `device_support`, `device_access`, `device_idle_shutdown`, or `device_sharing`, with `settingScope = environment | project`. This measures UI requests, not successful writes. Reports require client vocabulary version 14 and contain no setting values, environment or project identifiers, names, or addresses.
 

@@ -4722,6 +4722,39 @@ features:
       tracking: []
       retire_when: Upstream retains environment-only provider configuration when adopting project-scoped settings.
 
+  - id: provider-sign-in-recovery
+    title: Continue threads after their provider signs in again
+    status: maintained
+    prs: [1321]
+    invariants:
+      - A run stopped by a structured authentication failure waits and continues at most once per sign-in; a run that fails again after resuming needs a further sign-in, so there is no retry loop. Other errors and user-stopped runs never wait.
+      - A sign-in is an in-app sign-in after the run started, the CLI rewriting its login file after the failure, or the provider reading signed in after having been seen signed out. A status that only ever read signed in proves nothing, because a CLI's check can pass while its login is rejected.
+      - The decision goes through the orchestrator, which refuses the resume if the failed run is no longer latest, the thread was settled, archived or snoozed, its provider changed, a request is pending, or the user stopped the wait. Queued runs stay held until then.
+      - Waiting is not working, and survives a server restart because it is projected thread state. Delegated children resume as follow-ups, so their parent hears the failure, is told not to replace them, and is woken again when they finish.
+      - There is no setting. It only acts after someone signs in, and each thread can stop it.
+    rationale: One expired login otherwise leaves every thread it stopped failed until someone finds and restarts each one.
+    implementation_paths:
+      - apps/mobile/src/features/threads/ProviderSignInCard.tsx
+      - apps/server/src/orchestration-v2/Orchestrator.ts
+      - apps/server/src/orchestration-v2/ProjectionStore.ts
+      - apps/server/src/orchestration-v2/ProviderAuthRecoveryWorker.ts
+      - apps/server/src/provider/Drivers/ClaudeDriver.ts
+      - apps/web/src/components/chat/useProviderSignInBanner.tsx
+      - packages/contracts/src/orchestrationV2.ts
+      - packages/provider-core/src/server/providerAuthFlow.ts
+      - packages/shared/src/orchestrationV2ThreadError.ts
+    upstream_paths:
+      - apps/server/src/orchestration-v2/Orchestrator.ts
+      - apps/server/src/orchestration-v2/ProjectionStore.ts
+    tests:
+      - apps/server/src/orchestration-v2/DelegatedCompletionDelivery.test.ts
+      - apps/server/src/orchestration-v2/ProviderAuthRecoveryWorker.test.ts
+      - apps/server/src/orchestration-v2/runtimeLayer.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/18558
+      retire_when: Upstream continues threads by itself after a provider sign-in.
   - id: provider-stall-detection
     title: Record and surface suspected provider stalls
     status: maintained
