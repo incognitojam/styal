@@ -11,7 +11,6 @@ import { AndroidScreenHeader } from "../../components/ui/AndroidScreenHeader";
 import { useRemoteConnections } from "../../state/use-remote-environment-registry";
 import { LocalEnvironmentList } from "./LocalEnvironmentList";
 import { PullRequestRoutingSettings } from "./PullRequestRoutingSettings";
-import { LinkedEnvironmentsSection } from "./LinkedEnvironmentsSection";
 import { WorkTogetherSection } from "./WorkTogetherSection";
 
 export function ConnectionsRouteScreen() {
@@ -72,15 +71,6 @@ export function ConnectionsRouteScreen() {
           onUpdate={onUpdateEnvironment}
         />
         <WorkTogetherSection />
-        {connectedEnvironments
-          .filter((environment) => environment.connectionState === "connected")
-          .map((environment) => (
-            <LinkedEnvironmentsSection
-              key={environment.environmentId}
-              environmentId={environment.environmentId}
-              environmentLabel={environment.environmentLabel}
-            />
-          ))}
         <PullRequestRoutingSettings />
       </ScrollView>
     </View>
