@@ -134,12 +134,13 @@ export const make = Effect.gen(function* () {
       ),
     );
     const now = DateTime.toEpochMillis(yield* DateTime.now);
-    const limited = exhaustedUsageWindow(
-      snapshots.find((provider) => provider.instanceId === selection.instanceId),
-      now,
-      selection.model,
-    );
-    if (limited) {
+    const selected = snapshots.find((provider) => provider.instanceId === selection.instanceId);
+    // Only a failed probe counts: a pending one is also not installed yet.
+    const unusable =
+      selected?.enabled === true &&
+      selected.status === "error" &&
+      (!selected.installed || selected.auth.status === "unauthenticated");
+    if (unusable || exhaustedUsageWindow(selected, now, selection.model)) {
       const settings = yield* serverSettings.getSettings.pipe(
         Effect.mapError(
           (cause) =>
@@ -150,7 +151,7 @@ export const make = Effect.gen(function* () {
             }),
         ),
       );
-      const unusable = snapshots
+      const excluded = snapshots
         .filter(
           (provider) =>
             provider.instanceId === selection.instanceId ||
@@ -167,7 +168,7 @@ export const make = Effect.gen(function* () {
       selection = resolveTextGenerationModelSelection(
         { textGenerationModelSelection: selection },
         snapshots,
-        new Set(unusable),
+        new Set(excluded),
       );
     }
     return yield* generateWithRetry(operation, selection, invoke);

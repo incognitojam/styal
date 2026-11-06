@@ -560,11 +560,19 @@ it.layer(layerCodexTextGenerationTest)("CodexTextGeneration", (it) => {
   );
 });
 
+const PREFLIGHT_PRIMARY_STATES = [
+  "ready",
+  "pending",
+  "exhausted",
+  "not installed",
+  "signed out",
+  "signed out, fallback failed",
+] as const;
+
 it.effect.each([
-  { exhausted: false, secondCodex: false },
-  { exhausted: true, secondCodex: false },
-  { exhausted: true, secondCodex: true },
-])("text generation preflight: %j", ({ exhausted, secondCodex }) =>
+  ...PREFLIGHT_PRIMARY_STATES.map((primaryState) => ({ primaryState, secondCodex: false })),
+  { primaryState: "exhausted" as const, secondCodex: true },
+])("text generation preflight: %j", ({ primaryState, secondCodex }) =>
   Effect.gen(function* () {
     const primary = ProviderInstanceId.make("codex");
     const fallback = ProviderInstanceId.make("claude_work");
@@ -593,7 +601,19 @@ it.effect.each([
         models: [],
         slashCommands: [],
         skills: [],
-        ...(exhausted && instanceId === primary
+        ...(primaryState === "pending" && instanceId === primary
+          ? { installed: false, status: "warning", auth: { status: "unknown" } }
+          : {}),
+        ...(primaryState === "not installed" && instanceId === primary
+          ? { installed: false, status: "error", auth: { status: "unknown" } }
+          : {}),
+        ...(primaryState.startsWith("signed out") && instanceId === primary
+          ? { status: "error", auth: { status: "unauthenticated" } }
+          : {}),
+        ...(primaryState === "signed out, fallback failed" && instanceId === fallback
+          ? { status: "error", auth: { status: "unknown" } }
+          : {}),
+        ...(primaryState === "exhausted" && instanceId === primary
           ? {
               usageLimits: {
                 checkedAt: "1970-01-01T00:00:00Z",
@@ -654,7 +674,13 @@ it.effect.each([
         modelSelection: selection,
       }),
     ).toEqual({ title: "Generated title" });
-    if (exhausted) {
+    if (
+      primaryState === "ready" ||
+      primaryState === "pending" ||
+      primaryState === "signed out, fallback failed"
+    ) {
+      expect(calls).toEqual([selection]);
+    } else {
       const driver = secondCodex ? "codex" : "claudeAgent";
       expect(calls).toMatchObject([
         {
@@ -662,8 +688,6 @@ it.effect.each([
           model: DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER[ProviderDriverKind.make(driver)],
         },
       ]);
-    } else {
-      expect(calls).toEqual([selection]);
     }
   }),
 );
