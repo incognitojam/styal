@@ -642,7 +642,7 @@ const runRepoScript = Effect.fn("dev-runner.runRepoScript")(function* (
 });
 
 /**
- * The first start in a worktree seeds its empty database from a small live database
+ * The first start in a worktree seeds its empty database from the shared offline seed
  * and warms the web dependency cache. Each step checks for its own output, so
  * later starts skip it.
  */
@@ -670,7 +670,7 @@ const prepareFirstStart = Effect.fn("dev-runner.prepareFirstStart")(function* (i
     const source = path.join(
       yield* HostProcess.HomeDirectory,
       ".styal",
-      "userdata",
+      "dev-seed",
       "statev2.sqlite",
     );
     // A V1 state.sqlite counts as data too: the server imports it only while
@@ -684,7 +684,7 @@ const prepareFirstStart = Effect.fn("dev-runner.prepareFirstStart")(function* (i
       if (Option.isSome(info)) {
         if (Number(info.value.size) > LARGE_DEV_DATABASE_BYTES) {
           yield* Effect.logWarning(
-            `[dev-runner] ${source} exceeds 500 MiB; skipping automatic database seeding and starting with an empty database. Run \`vp run migrate-dev-db\` manually with dev stopped if needed; it may use substantial disk space before pruning.`,
+            `[dev-runner] ${source} exceeds 500 MiB; skipping automatic database seeding and starting with an empty database. Build a smaller offline seed with \`vp run build-dev-seed\`.`,
           );
         } else {
           yield* Effect.logInfo(
@@ -696,6 +696,10 @@ const prepareFirstStart = Effect.fn("dev-runner.prepareFirstStart")(function* (i
             input.env,
           );
         }
+      } else {
+        yield* Effect.logWarning(
+          "[dev-runner] No shared dev seed; starting empty. Build one explicitly with `vp run build-dev-seed`. Live data is never read on dev startup.",
+        );
       }
     }
   }
@@ -1011,7 +1015,7 @@ const devRunnerCli = Command.make("dev-runner", {
   ),
   seed: Flag.Boolean("seed").pipe(
     Flag.withDescription(
-      "Seed an empty worktree database from ~/.styal on first start (read-only, via migrate-dev-db) if the source is at most 500 MiB. On by default; --no-seed or T3CODE_DEV_SEED=0 skips it.",
+      "Seed an empty worktree database from ~/.styal/dev-seed on first start (offline, via migrate-dev-db) if the seed is at most 500 MiB. On by default; --no-seed or T3CODE_DEV_SEED=0 skips it.",
     ),
     Flag.withFallbackConfig(optionalBooleanConfig("T3CODE_DEV_SEED")),
   ),

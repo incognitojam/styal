@@ -116,9 +116,11 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
       const sourceDir = yield* fs.makeTempDirectoryScoped({ prefix: "migrate-dev-db-src-" });
       const destDir = yield* fs.makeTempDirectoryScoped({ prefix: "migrate-dev-db-dest-" });
       const source = yield* createFixtureSource(sourceDir);
-
+      yield* fs.makeDirectory(path.join(sourceDir, "dev-seed"));
+      yield* fs.copyFile(source, path.join(sourceDir, "dev-seed", "statev2.sqlite"));
+      // The default must use the offline seed even when live userdata exists.
       const result = yield* runMigrateDevDb(
-        { baseDir: destDir, source, projects: 5, threadsPerProject: 2 },
+        { baseDir: destDir, projects: 5, threadsPerProject: 2 },
         { sharedHome: sourceDir },
       );
 
@@ -416,6 +418,30 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
         { sharedHome: sourceDir },
       ).pipe(Effect.flip);
       assert.equal(error._tag, "MigrateDevDbSharedHomeError");
+      const path = yield* Path.Path;
+      const liveHome = yield* fs.makeTempDirectoryScoped();
+      const liveDir = path.join(liveHome, "userdata");
+      yield* fs.makeDirectory(liveDir);
+      const liveFile = path.join(liveDir, "statev2.sqlite");
+      yield* fs.writeFileString(liveFile, "synthetic sentinel, never open as SQLite");
+      for (const directoryAlias of [false, true]) {
+        const dest = yield* fs.makeTempDirectoryScoped();
+        const stateDir = path.join(dest, "userdata");
+        if (directoryAlias) yield* fs.symlink(liveDir, stateDir);
+        else {
+          yield* fs.makeDirectory(stateDir);
+          yield* fs.symlink(liveFile, path.join(stateDir, "statev2.sqlite"));
+        }
+        const aliasError = yield* runMigrateDevDb(
+          { baseDir: dest, source, projects: 5, threadsPerProject: 10 },
+          { liveHome },
+        ).pipe(Effect.flip);
+        assert.equal(aliasError._tag, "MigrateDevDbSharedHomeError");
+        assert.equal(
+          yield* fs.readFileString(liveFile),
+          "synthetic sentinel, never open as SQLite",
+        );
+      }
     }),
   );
 });

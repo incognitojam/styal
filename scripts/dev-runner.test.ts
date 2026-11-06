@@ -911,13 +911,13 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
         }).pipe(Effect.scoped),
       );
 
-      it.effect("seeds a worktree database from ~/.styal only when it has none", () =>
+      it.effect("seeds a worktree database from the offline seed only when it has none", () =>
         Effect.gen(function* () {
           const path = yield* Path.Path;
           const root = yield* makeWorktree;
           const home = path.join(root, "home");
-          NodeFS.mkdirSync(path.join(home, ".styal", "userdata"), { recursive: true });
-          NodeFS.writeFileSync(path.join(home, ".styal", "userdata", "statev2.sqlite"), "");
+          NodeFS.mkdirSync(path.join(home, ".styal", "dev-seed"), { recursive: true });
+          NodeFS.writeFileSync(path.join(home, ".styal", "dev-seed", "statev2.sqlite"), "");
 
           const spawnedArgs = (seed: boolean | undefined) =>
             Effect.gen(function* () {
@@ -951,7 +951,7 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
               "--base-dir",
               path.join(root, ".styal"),
               "--source",
-              path.join(home, ".styal", "userdata", "statev2.sqlite"),
+              path.join(home, ".styal", "dev-seed", "statev2.sqlite"),
             ],
           );
 
@@ -978,7 +978,7 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
             const path = yield* Path.Path;
             const root = yield* makeWorktree;
             const home = path.join(root, "home");
-            const source = path.join(home, ".styal", "userdata", "statev2.sqlite");
+            const source = path.join(home, ".styal", "dev-seed", "statev2.sqlite");
             NodeFS.mkdirSync(path.dirname(source), { recursive: true });
             NodeFS.writeFileSync(source, "");
             const spawned: Array<ReadonlyArray<string>> = [];
@@ -1035,7 +1035,7 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
               assert.lengthOf(warnings, 1);
               assert.include(warnings[0]!, source);
               assert.include(warnings[0]!, "skipping automatic database seeding");
-              assert.include(warnings[0]!, "vp run migrate-dev-db");
+              assert.include(warnings[0]!, "vp run build-dev-seed");
             }
           }).pipe(Effect.scoped),
       );

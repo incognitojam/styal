@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Rebuilds this worktree's dev database from a pruned, read-only snapshot of ~/.styal. Live work,
+ * Rebuilds this worktree's dev database from the shared offline dev seed. Live work,
  * scheduled tasks, queued effects and auth rows are dropped so the dev server never adopts them.
  * Migrations run on top of the real applied set, so the slot check catches two branches claiming
  * the same `Migrations/NNN_` id. Sequences and projection cursors carry over and never rewind.
@@ -53,7 +53,7 @@ export class MigrateDevDbSourceMissingError extends Schema.TaggedError<MigrateDe
   },
 ) {
   override get message(): string {
-    return `Source database does not exist at '${this.sourcePath}'.`;
+    return `Dev seed missing at '${this.sourcePath}'. Start empty, or build it explicitly with vp run build-dev-seed.`;
   }
 }
 
@@ -126,7 +126,7 @@ export class MigrateDevDbPhaseError extends Schema.TaggedError<MigrateDevDbPhase
 export interface RunMigrateDevDbInput {
   /** Isolated .styal directory. Defaults to `<worktree>/.styal` of the cwd. */
   readonly baseDir?: string | undefined;
-  /** Source database. Defaults to `~/.styal/userdata/statev2.sqlite`. */
+  /** Offline source database. Defaults to `~/.styal/dev-seed/statev2.sqlite`. */
   readonly source?: string | undefined;
   readonly projects: number;
   readonly threadsPerProject: number;
@@ -135,6 +135,7 @@ export interface RunMigrateDevDbInput {
 export interface RunMigrateDevDbOptions {
   /** Test override for the directory writes must never target. */
   readonly sharedHome?: string | undefined;
+  readonly liveHome?: string | undefined;
 }
 
 interface KeptProject {
@@ -462,7 +463,7 @@ export const runMigrateDevDb = Effect.fn("runMigrateDevDb")(function* (
 
   const sharedHome = path.resolve(options.sharedHome ?? path.join(NodeOS.homedir(), ".styal"));
   const sourcePath = path.resolve(
-    input.source ?? path.join(sharedHome, "userdata", "statev2.sqlite"),
+    input.source ?? path.join(sharedHome, "dev-seed", "statev2.sqlite"),
   );
 
   const baseDir =
@@ -490,10 +491,43 @@ export const runMigrateDevDb = Effect.fn("runMigrateDevDb")(function* (
   const canonicalSourcePath = yield* fs
     .realPath(sourcePath)
     .pipe(Effect.orElseSucceed(() => sourcePath));
-  for (const destination of [databasePath, snapshotPath]) {
-    const canonicalDestination = yield* fs
-      .realPath(destination)
-      .pipe(Effect.orElseSucceed(() => destination));
+  const resolveExistingParents = Effect.fn("resolveDevDbPath")(function* (
+    file: string,
+  ): Effect.fn.Return<string, never> {
+    const resolved = yield* fs.realPath(file).pipe(Effect.option);
+    if (Option.isSome(resolved)) return resolved.value;
+    const parent = path.dirname(file);
+    return parent === file
+      ? file
+      : path.join(yield* resolveExistingParents(parent), path.basename(file));
+  });
+  const liveDir = yield* resolveExistingParents(
+    path.join(options.liveHome ?? path.join(NodeOS.homedir(), ".styal"), "userdata"),
+  );
+  const livePath = yield* resolveExistingParents(path.join(liveDir, "statev2.sqlite"));
+  if (canonicalSourcePath === livePath) {
+    return yield* Effect.die(
+      "Use build-dev-seed for bounded live reads; migrate-dev-db accepts offline sources only.",
+    );
+  }
+  for (const destination of [
+    stateDir,
+    databasePath,
+    snapshotPath,
+    `${databasePath}-wal`,
+    `${databasePath}-shm`,
+    `${snapshotPath}-wal`,
+    `${snapshotPath}-shm`,
+  ]) {
+    const canonicalDestination = yield* resolveExistingParents(destination);
+    const relative = path.relative(liveDir, canonicalDestination);
+    if (
+      canonicalDestination === livePath ||
+      relative === "" ||
+      (!relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative))
+    ) {
+      return yield* new MigrateDevDbSharedHomeError();
+    }
     if (canonicalSourcePath === canonicalDestination) {
       return yield* new MigrateDevDbSourceIsDestinationError({ sourcePath });
     }
@@ -615,7 +649,7 @@ export const migrateDevDbCommand = Command.make(
     ),
     source: Flag.String("source").pipe(
       Flag.optional,
-      Flag.withDescription("Source database. Defaults to ~/.styal/userdata/statev2.sqlite."),
+      Flag.withDescription("Offline database. Defaults to ~/.styal/dev-seed/statev2.sqlite."),
     ),
   },
   ({ projects, threadsPerProject, baseDir, source }) =>
@@ -642,7 +676,7 @@ export const migrateDevDbCommand = Command.make(
     }),
 ).pipe(
   Command.withDescription(
-    "Rebuild the worktree dev database from a pruned snapshot of the real ~/.styal data, then run migrations.",
+    "Rebuild the worktree database from the shared offline dev seed, then run migrations.",
   ),
 );
 
