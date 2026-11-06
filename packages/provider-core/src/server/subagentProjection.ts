@@ -57,6 +57,8 @@ export function makeSubagentChildThread(input: {
 }): OrchestrationV2AppThread {
   return {
     ...input.parentThread,
+    // The launcher hears from the thread it launched, not that thread's own children.
+    reportTo: null,
     createdBy: input.createdBy,
     creationSource: input.creationSource,
     id: input.childThreadId,

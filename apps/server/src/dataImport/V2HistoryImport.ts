@@ -110,6 +110,8 @@ export const makeV2HistoryWriter = Effect.gen(function* () {
       titleRegeneration: null,
       limitRecovery: null,
       authRecovery: null,
+      // Reports were opted in to on the source environment; an import does not repeat that.
+      ...(repairOnly ? {} : { reportTo: null }),
     };
     const prefix = `import:v2:${thread.id}`;
     const events: OrchestrationV2DomainEvent[] = [];

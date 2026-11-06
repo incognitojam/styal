@@ -103,6 +103,7 @@ it("keeps a subagent child awake when its parent thread is snoozed", () => {
   });
 
   assert.isNull(childThread.snoozedUntil);
+  assert.isNull(childThread.reportTo);
   assert.isNull(childThread.snoozedAt);
   assert.isNull(childThread.titleRegeneration);
   assert.equal(childThread.projectId, parentThread.projectId);

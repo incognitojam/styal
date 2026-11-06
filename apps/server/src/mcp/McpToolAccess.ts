@@ -211,6 +211,10 @@ export const writesThreads = <P, A, E, R>(
         const caller = yield* writingCaller;
         const reportTarget = options?.reportTarget?.(params);
         if (reportTarget !== undefined && caller.caller?.reportTo?.threadId === reportTarget) {
+          const launcher = yield* caller.threads
+            .getThreadShell(reportTarget)
+            .pipe(Effect.mapError(unavailable));
+          if (launcher !== null) yield* assertSameLink(caller, launcher);
           return yield* handle(params);
         }
         for (const threadId of threads(params)) {

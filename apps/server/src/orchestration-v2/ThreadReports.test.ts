@@ -6,15 +6,17 @@ import * as Duration from "effect/Duration";
 import { withCreationProvenance } from "./ThreadManagementService.ts";
 import {
   launcherTakesReports,
+  requestReportKind,
   runReportKind,
   sentReport,
+  startedByPerson,
   threadReportEffect,
 } from "./ThreadReports.ts";
 
 const runId = RunId.make("run:1");
 const base = {
   run: { id: runId, status: "completed" as OrchestrationV2Run["status"], ordinal: 1 },
-  runs: [] as ReadonlyArray<Pick<OrchestrationV2Run, "status" | "ordinal">>,
+  runs: [] as ReadonlyArray<Pick<OrchestrationV2Run, "status" | "ordinal" | "queueHeld">>,
   reportedInRunId: undefined as RunId | undefined,
   startedByPerson: false,
   hasOpenDelegatedTask: false,
@@ -39,10 +41,61 @@ describe("runReportKind", () => {
       },
       "failed",
     ],
+    [
+      "a failure with a held follow-up, which may never start",
+      {
+        run: { ...base.run, status: "failed" as const },
+        runs: [{ status: "queued" as const, ordinal: 2, queueHeld: true }],
+      },
+      "failed",
+    ],
     ["a stopped run", { run: { ...base.run, status: "interrupted" as const } }, "stopped"],
     ["a cancelled run", { run: { ...base.run, status: "cancelled" as const } }, null],
   ])("%s", (_name, input, expected) => {
     assert.equal(runReportKind({ ...base, ...input }), expected);
+  });
+});
+
+it.each([
+  ["a person's message", { createdBy: "user", creationSource: "web" }, true],
+  [
+    "usage-limit recovery, which resends as the user",
+    { createdBy: "user", creationSource: "server" },
+    false,
+  ],
+  ["the launcher's message", { createdBy: "agent", creationSource: "mcp" }, false],
+] as const)("startedByPerson: %s", (_name, message, expected) => {
+  assert.equal(startedByPerson(message), expected);
+});
+
+describe("requestReportKind", () => {
+  const live = { type: "live", providerSessionId: "session" } as never;
+  const message = { type: "message" } as const;
+  it.each([
+    ["a live question", "user_input", "pending", live, false, "blocked"],
+    ["an approval", "command", "pending", live, true, "blocked"],
+    [
+      "a question recovery detached while nothing runs",
+      "user_input",
+      "pending",
+      message,
+      false,
+      "stopped_on_question",
+    ],
+    [
+      "a question recovery detached while a run works",
+      "user_input",
+      "pending",
+      message,
+      true,
+      null,
+    ],
+    ["an answered question", "user_input", "resolved", live, false, null],
+  ] as const)("%s", (_name, kind, status, responseCapability, hasActiveRun, expected) => {
+    assert.equal(
+      requestReportKind({ request: { kind, status, responseCapability }, hasActiveRun }),
+      expected,
+    );
   });
 });
 
@@ -67,6 +120,7 @@ describe("launcherTakesReports", () => {
     ],
     ["an archived launcher", { ...open, archivedAt: now }, false],
     ["a deleted launcher", { ...open, deletedAt: now }, false],
+    ["a launcher that no longer exists", null, false],
   ])("%s", (_name, launcher, expected) => {
     assert.equal(launcherTakesReports(launcher as never), expected);
   });

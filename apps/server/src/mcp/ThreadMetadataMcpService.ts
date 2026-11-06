@@ -4,6 +4,7 @@ import {
   type OrchestrationV2AppThread,
   type OrchestrationV2ServerCommand,
   type OrchestrationV2ThreadReportTarget,
+  type OrchestrationV2ThreadShell,
   type ThreadMetadataMcpAction,
   type ThreadMetadataMcpUpdateInput,
   type ThreadMetadataMcpUpdateResult,
@@ -59,6 +60,9 @@ function commandId(input: {
     ].join(":"),
   );
 }
+
+/** Longer than any real chain of threads; it only bounds the walk on damaged data. */
+const MAX_REPORT_CHAIN = 32;
 
 function metadataCommand(input: {
   readonly commandId: CommandId;
@@ -176,6 +180,19 @@ const make = Effect.gen(function* () {
                 Effect.mapError((error) => failure("orchestration_error", errorMessage(error))),
               );
       reportTo = yield* reportTargetFor(launcher);
+      // Two threads reporting to each other would wake each other without end.
+      let next: OrchestrationV2ThreadShell | null = launcher;
+      for (let hops = 0; next?.reportTo != null && hops < MAX_REPORT_CHAIN; hops++) {
+        if (next.reportTo.threadId === threadId) {
+          return yield* failure(
+            "invalid_request",
+            `Thread ${threadId} already gets reports from this thread, so it cannot report back to it.`,
+          );
+        }
+        next = yield* threadManagement
+          .getThreadShell(next.reportTo.threadId)
+          .pipe(Effect.mapError((error) => failure("orchestration_error", errorMessage(error))));
+      }
     }
     const requestKey =
       input.clientRequestId === undefined

@@ -3,6 +3,7 @@ import {
   type EnvironmentId,
   MessageId,
   type OrchestrationV2AppThread,
+  type OrchestrationV2ConversationMessage,
   type OrchestrationV2DomainEvent,
   type OrchestrationV2Notification,
   type OrchestrationV2Run,
@@ -69,13 +70,34 @@ export function threadReportEffect(
       ? make(id, { kind: "run", runId: id }, INTERRUPTED_REPORT_DELAY)
       : null;
   }
-  if (event.type !== "runtime-request.updated" || !isBlockingRequest(event.payload)) return null;
+  if (event.type !== "runtime-request.updated" || event.payload.kind === "dynamic_tool_call") {
+    return null;
+  }
   const { id, status } = event.payload;
   const trigger: ThreadReportTrigger = { kind: "request", requestId: id };
-  return status === "pending"
+  return status === "pending" && isBlockingRequest(event.payload)
     ? make(id, trigger, BLOCKED_REPORT_DELAY)
     : make(`${id}:settled`, trigger);
 }
+
+/**
+ * What a pending request owes the launcher. A question that recovery turned into a message-mode
+ * one no longer holds a turn: while another run works it is nothing to report, but with nothing
+ * running the thread is stopped until someone answers.
+ */
+export function requestReportKind(input: {
+  readonly request: Pick<OrchestrationV2RuntimeRequest, "kind" | "status" | "responseCapability">;
+  readonly hasActiveRun: boolean;
+}): "blocked" | "stopped_on_question" | null {
+  if (input.request.status !== "pending") return null;
+  if (isBlockingRequest(input.request)) return "blocked";
+  return input.hasActiveRun ? null : "stopped_on_question";
+}
+
+/** Usage-limit recovery resends as the user; only a message from a client is a person's turn. */
+export const startedByPerson = (
+  message: Pick<OrchestrationV2ConversationMessage, "createdBy" | "creationSource"> | undefined,
+) => message?.createdBy === "user" && message.creationSource !== "server";
 
 /**
  * What a finished run owes the launcher. A result needs a thread with nothing else on the way,
@@ -84,16 +106,19 @@ export function threadReportEffect(
  */
 export function runReportKind(input: {
   readonly run: Pick<OrchestrationV2Run, "id" | "status" | "ordinal">;
-  readonly runs: ReadonlyArray<Pick<OrchestrationV2Run, "status" | "ordinal">>;
+  readonly runs: ReadonlyArray<Pick<OrchestrationV2Run, "status" | "ordinal" | "queueHeld">>;
   readonly reportedInRunId: RunId | undefined;
   readonly startedByPerson: boolean;
   readonly hasOpenDelegatedTask: boolean;
   readonly pendingBackgroundTasks: number;
 }): "result" | "failed" | "stopped" | null {
-  // A later run speaks for the thread when it ends.
+  // A later run speaks for the thread when it ends; a held one may never start.
   const superseded = input.runs.some(
     (run) =>
-      run.ordinal > input.run.ordinal && run.status !== "cancelled" && run.status !== "rolled_back",
+      run.ordinal > input.run.ordinal &&
+      run.status !== "cancelled" &&
+      run.status !== "rolled_back" &&
+      run.queueHeld !== true,
   );
   if (superseded) return null;
   if (input.run.status === "failed") return "failed";
@@ -113,10 +138,11 @@ export function runReportKind(input: {
 /** A person settling the launcher said they are done with it; an inactivity settle said nothing. */
 export const launcherTakesReports = (
   launcher: Pick<
-    OrchestrationV2AppThread,
+    OrchestrationV2ThreadShell,
     "archivedAt" | "deletedAt" | "settledOverride" | "settleReason"
-  >,
+  > | null,
 ) =>
+  launcher !== null &&
   launcher.archivedAt === null &&
   launcher.deletedAt === null &&
   !(launcher.settledOverride === "settled" && launcher.settleReason?.kind === "user");
@@ -218,6 +244,8 @@ const withdrawBlockedReport = Effect.fnUntraced(function* (
   threads: ReportThreads,
   input: { readonly threadId: ThreadId; readonly launcherId: ThreadId; readonly key: string },
 ) {
+  // A launcher deleted since has no queue left to withdraw from.
+  if ((yield* threads.getThreadShell(input.launcherId)) === null) return;
   const launcher = yield* threads.getThreadRecords(input.launcherId, ["runs"]);
   const messageId = reportMessageId(input.threadId, input.key);
   const queued = launcher.runs.find(
@@ -263,13 +291,22 @@ export const checkThreadReport = Effect.fn("ThreadReports.check")(function* (
     const requestId = input.trigger.requestId;
     const key = requestId;
     const request = records.runtimeRequests.find((candidate) => candidate.id === requestId);
-    if (request === undefined || request.status !== "pending") {
+    const kind =
+      request === undefined
+        ? null
+        : requestReportKind({
+            request,
+            hasActiveRun: records.runs.some((run) =>
+              ["preparing", "starting", "running", "waiting"].includes(run.status),
+            ),
+          });
+    if (request === undefined || kind === null) {
       yield* withdrawBlockedReport(threads, { threadId: thread.id, launcherId, key });
       return undefined;
     }
-    const launcher = yield* threads.getThreadRecords(launcherId, []);
-    if (!launcherTakesReports(launcher.thread))
+    if (!launcherTakesReports(yield* threads.getThreadShell(launcherId))) {
       return { kind: "blocked", outcome: "dropped" } as const;
+    }
     const asks = request.kind === "user_input" ? "a question" : "an approval";
     yield* deliver(threads, {
       key,
@@ -278,7 +315,10 @@ export const checkThreadReport = Effect.fn("ThreadReports.check")(function* (
       text: reportMessage({
         environmentId,
         thread,
-        situation: `has been blocked on ${asks} for over ${Duration.toMinutes(BLOCKED_REPORT_DELAY)} minutes and cannot continue until it is answered.`,
+        situation:
+          kind === "blocked"
+            ? `has been blocked on ${asks} for over ${Duration.toMinutes(BLOCKED_REPORT_DELAY)} minutes and cannot continue until it is answered.`
+            : "stopped with a question unanswered and will not continue until someone replies.",
         body: undefined,
         next: `Read it with t3_pending_request action read, threadId ${thread.id}, and requestId ${requestId}. Answer it with action respond when the answer follows from the task or the user's instructions; otherwise ask the user, then answer it. If it is no longer pending, it was answered or dismissed.`,
       }),
@@ -301,7 +341,7 @@ export const checkThreadReport = Effect.fn("ThreadReports.check")(function* (
     run,
     runs: records.runs,
     reportedInRunId: target.sentInRunId,
-    startedByPerson: startedBy?.createdBy === "user",
+    startedByPerson: startedByPerson(startedBy),
     hasOpenDelegatedTask: records.subagents.some(
       (task) =>
         task.origin === "app_owned" &&
@@ -310,8 +350,9 @@ export const checkThreadReport = Effect.fn("ThreadReports.check")(function* (
     pendingBackgroundTasks: hasPendingWork(yield* threads.getThreadShell(thread.id)),
   });
   if (kind === null) return undefined;
-  const launcher = yield* threads.getThreadRecords(launcherId, []);
-  if (!launcherTakesReports(launcher.thread)) return { kind, outcome: "dropped" } as const;
+  if (!launcherTakesReports(yield* threads.getThreadShell(launcherId))) {
+    return { kind, outcome: "dropped" } as const;
+  }
   const copy = reportCopy[kind];
   yield* deliver(threads, {
     key: run.id,
