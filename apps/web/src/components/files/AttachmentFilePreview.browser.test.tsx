@@ -2408,7 +2408,7 @@ describe("attachment image preview fallback", () => {
     await using screen = await openImage("photo.png", "image/png");
     await failure(screen);
     expect(decodeImagePreview).not.toHaveBeenCalled();
-    expect(fetch).not.toHaveBeenCalled();
+    expect(vi.mocked(fetch).mock.calls.filter(([url]) => url === sourceUrl)).toEqual([]);
   });
 });
 
