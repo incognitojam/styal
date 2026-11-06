@@ -183,8 +183,10 @@ restarts.
   \`device_list\` for who holds what, and use a free or stopped device (\`device_open\` boots it) or
   ask the user to create another one for parallel work. Do not take over a device another thread or
   the user is using unless the user says so.
-- Hand a device back with \`device_close\` when you finish testing. While your turn is not running,
-  another agent may take the device. Commands then report that it was handed over, so call
+- Hand a device back with \`device_close\` when you finish testing or cannot continue. The message you
+  write after \`device_close\` is the one the user reads, so it must say what happened, including
+  anything you could not finish and why. While your turn is not running, another agent may take the
+  device. Commands then report that it was handed over, so call
   \`device_open\` again.
 - styal does not build apps; build with the project's own tooling. Install with
   \`agent-device install\` from the \`device_open\` quick start or with the project's tooling. For an

@@ -65,7 +65,7 @@ export function agentDeviceQuickStart(
     `Prefer snapshot refs over coordinates. Run ${executable} help <command> for flags and ${executable} help workflow for guides.`,
     "Do not use simctl, idb, adb or ssh for those actions. They stay fine for builds, installs, code sync, Metro, port forwards, logs, test runners and what this command cannot do; come back to it for every UI action and screenshot so the user can watch.",
     "Each device_open returns its own command; opening another device does not retarget this one.",
-    "Other agents may need devices. When you finish testing, hand it back with device_close; it stays booted for the next agent. While your turn is not running, another agent may take the device; commands then report that it was handed over, so call device_open again.",
+    "Other agents may need devices. When you finish testing or cannot continue, hand it back with device_close; it stays booted for the next agent. The message you write after device_close is the one the user reads, so it must say what happened, including anything you could not finish and why. While your turn is not running, another agent may take the device; commands then report that it was handed over, so call device_open again.",
     ...(target === ""
       ? [
           "The command is removed when the device closes or styal restarts. If it is missing, call device_open again.",
