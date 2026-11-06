@@ -284,6 +284,7 @@ export default defineConfig({
       "t3code/no-low-value-comments": "error",
       "t3code/no-manual-effect-runtime-in-tests": "error",
       "t3code/no-native-title-tooltip": "error",
+      "t3code/no-redundant-tooltip": "error",
       // Test files only (the rule checks the filename).
       "t3code/no-polling-loop-in-tests": "error",
       "t3code/no-raw-mcp-registration": "error",
