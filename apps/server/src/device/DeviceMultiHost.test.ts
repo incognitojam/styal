@@ -53,7 +53,7 @@ it.effect("keeps hosts independent when serials collide and another host fails",
           origin: `http://${id}`,
           http,
           run,
-          androidAvailable: Effect.succeed(true),
+          platformAvailable: () => Effect.succeed(true),
         }),
         agentDevice: { baseUrl: `http://${id}`, token: "test", entryPath: "/agent-device" },
         releaseAgentSession: releaseAgentDeviceSession(http, {

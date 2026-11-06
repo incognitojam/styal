@@ -408,6 +408,9 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
     return host;
   });
 
+  // Readiness phases replace the shown detail; this restores an incomplete listing's cause once ready.
+  const discoveryDetails = new Map<DeviceHostId, string>();
+
   const setHostStatus = (
     hostId: DeviceHostId,
     status: DeviceServiceState["hostStatuses"][string],
@@ -416,12 +419,21 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
       !hosts.has(hostId)
         ? SynchronizedRef.get(stateRef).pipe(Effect.map(({ state }) => state))
         : publish((state) => {
+            const previous = state.hostStatuses[hostId];
+            const detail =
+              status.detail ??
+              (status.status === "ready" &&
+              (previous?.incompletePlatforms || previous?.androidDiscoveryIncomplete)
+                ? discoveryDetails.get(hostId)
+                : undefined);
             // MCP structured content rejects keys set to undefined, so a missing detail is omitted.
             const entry = {
-              ...(state.hostStatuses[hostId]?.androidDiscoveryIncomplete
-                ? { androidDiscoveryIncomplete: true }
+              ...(previous?.androidDiscoveryIncomplete ? { androidDiscoveryIncomplete: true } : {}),
+              ...(previous?.incompletePlatforms
+                ? { incompletePlatforms: previous.incompletePlatforms }
                 : {}),
-              ...(status.detail === undefined ? { status: status.status } : status),
+              status: status.status,
+              ...(detail ? { detail } : {}),
             };
             const hostStatuses = { ...state.hostStatuses, [hostId]: entry };
             if (hostId !== LOCAL_DEVICE_HOST_ID) return { ...state, hostStatuses };
@@ -594,14 +606,17 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
         externalSessions: info.sessions,
         detail: undefined,
         androidDiscoveryIncomplete: undefined,
+        incompletePlatforms: [] as ReadonlyArray<DevicePlatform>,
       };
     }
-    const { devices, detail, androidDiscoveryIncomplete } = yield* ready.devices.list;
+    const { devices, detail, androidDiscoveryIncomplete, incompletePlatforms } =
+      yield* ready.devices.list;
     return {
       devices: devices.map((device): DeviceSummary => ({ ...device, hostId: ready.hostId })),
       externalSessions: [],
       detail,
       androidDiscoveryIncomplete,
+      incompletePlatforms: incompletePlatforms ?? [],
     };
   });
 
@@ -612,7 +627,7 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
     const sessionKey = (session: DeviceSession) =>
       `${session.hostId}\u0000${session.deviceId}\u0000${session.threadId}\u0000${session.openedAt}`;
     const before = new Set((yield* SynchronizedRef.get(stateRef)).state.sessions.map(sessionKey));
-    const { devices, detail, externalSessions, androidDiscoveryIncomplete } =
+    const { devices, detail, externalSessions, androidDiscoveryIncomplete, incompletePlatforms } =
       yield* fetchDevices(ready);
 
     const hostSummaries = yield* Effect.forEach(hosts.values(), (host) => host.summary);
@@ -620,13 +635,19 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
       Effect.gen(function* () {
         if (!(yield* readDeviceSettings).enabled || !host || hosts.get(ready.hostId) !== host)
           return (yield* SynchronizedRef.get(stateRef)).state;
+        if (detail && (incompletePlatforms.length > 0 || androidDiscoveryIncomplete))
+          discoveryDetails.set(ready.hostId, detail);
+        else discoveryDetails.delete(ready.hostId);
         return yield* publish((state) => ({
           ...state,
           hosts: hostSummaries,
           ...(ready.hostId === LOCAL_DEVICE_HOST_ID ? { hostStatusDetail: detail } : {}),
           devices: [
-            ...state.devices.filter((device) => device.hostId !== ready.hostId),
-            ...devices,
+            ...state.devices.filter(
+              (device) =>
+                device.hostId !== ready.hostId || incompletePlatforms.includes(device.platform),
+            ),
+            ...devices.filter((device) => !incompletePlatforms.includes(device.platform)),
           ],
           externalSessions: [
             ...(state.externalSessions ?? []).filter((session) => session.hostId !== ready.hostId),
@@ -649,6 +670,7 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
               status: "ready",
               ...(detail ? { detail } : {}),
               ...(androidDiscoveryIncomplete ? { androidDiscoveryIncomplete } : {}),
+              ...(incompletePlatforms.length > 0 ? { incompletePlatforms } : {}),
             },
           },
         }));
@@ -917,7 +939,10 @@ process.exitCode = result.error ? 1 : (result.status ?? 1);`,
           ),
         );
         state = yield* refresh(ready);
-        device = findDevice(state, host.id, bootedId) ?? findDevice(state, host.id, device.id);
+        // Retained entries predate the boot, so only a complete listing confirms the booted device.
+        device = state.hostStatuses[host.id]?.incompletePlatforms?.includes(device.platform)
+          ? undefined
+          : (findDevice(state, host.id, bootedId) ?? findDevice(state, host.id, device.id));
         if (!device) {
           return yield* new DeviceNotFoundError({ hostId: host.id, deviceId: bootedId });
         }

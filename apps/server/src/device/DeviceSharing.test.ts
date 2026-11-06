@@ -328,7 +328,7 @@ const fixture = Effect.gen(function* () {
         origin: ready.hub.origin,
         http: http,
         run: ready.run,
-        androidAvailable: Effect.succeed(true),
+        platformAvailable: () => Effect.succeed(true),
       });
     },
     nodePath: process.execPath,

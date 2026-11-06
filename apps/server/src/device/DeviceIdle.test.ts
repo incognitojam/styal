@@ -95,7 +95,7 @@ const fixture = Effect.fn("fixture")(function* (
         origin: ready.hub.origin,
         http: httpClient,
         run: ready.run,
-        androidAvailable: Effect.succeed(true),
+        platformAvailable: () => Effect.succeed(true),
       });
       return options.perDeviceDaemonDir === undefined
         ? operations

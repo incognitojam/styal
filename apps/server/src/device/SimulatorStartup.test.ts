@@ -51,7 +51,7 @@ const fixture = Effect.fn("simulatorStartupFixture")(function* (
         origin: ready.hub.origin,
         http: http,
         run: ready.run,
-        androidAvailable: Effect.succeed(true),
+        platformAvailable: () => Effect.succeed(true),
       });
     },
     nodePath: "/node",
