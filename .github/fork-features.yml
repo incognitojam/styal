@@ -654,6 +654,7 @@ features:
     prs: [507]
     invariants:
       - The web composer shows the Compact chip, and Enter compacts first, for a Claude thread of at least 200,000 tokens (upstream's threshold) once 60 minutes have passed since its last context update, matching Claude Code's one-hour prompt cache TTL rather than upstream's and Claude Code's 70-minute resume threshold.
+      - A pending context handoff suppresses both the Compact chip and automatic compaction before sending, even when the session-locked provider entry is still Claude.
       - The Compact chip appears only when the next turn resumes the thread's native Claude session; a switch from another provider or to a Claude instance with separate history hands off a summary, so the current usage does not describe it.
     implementation_paths:
       - apps/web/src/components/ChatView.tsx

@@ -77,12 +77,14 @@ export function hasDismissedResumeCompaction(
 
 export function shouldOfferResumeCompaction(input: {
   readonly provider: string | null | undefined;
+  readonly pendingHandoff?: boolean;
   readonly usedTokens: number | null | undefined;
   readonly updatedAt: string | null | undefined;
   readonly promptCacheTtlMs?: number | undefined;
   readonly now: string;
 }): boolean {
   if (
+    input.pendingHandoff ||
     input.provider !== "claudeAgent" ||
     (input.usedTokens ?? 0) < COMPACTION_SUGGESTION_MIN_TOKENS
   ) {

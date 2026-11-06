@@ -2621,6 +2621,7 @@ export default function ChatView(props: ChatViewProps) {
     multipleModelSelections === null &&
     activeThread &&
     shouldOfferResumeCompaction({
+      pendingHandoff: pendingHandoff !== null,
       provider: resumesClaudeSession(
         providerInstanceEntries,
         activeThread.modelSelection.instanceId,
