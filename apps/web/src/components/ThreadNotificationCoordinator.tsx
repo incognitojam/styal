@@ -25,6 +25,7 @@ import {
   hasDesktopNotifications,
   hasNotificationSound,
   playNotificationSound,
+  prepareNotificationAudio,
   notificationSoundForEvent,
   setNotificationBadge,
   threadNotificationTag,
@@ -337,6 +338,9 @@ export function startThreadNotifications(
       });
     }
     if (hasNotificationSound(nextMode)) {
+      // Safari has no requestIdleCallback.
+      if ("requestIdleCallback" in window) window.requestIdleCallback(prepareNotificationAudio);
+      else setTimeout(prepareNotificationAudio);
       document.addEventListener("pointerdown", unlockNotificationAudio);
       document.addEventListener("keydown", unlockNotificationAudio);
       stops.push(() => {

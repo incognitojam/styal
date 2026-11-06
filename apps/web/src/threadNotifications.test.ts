@@ -8,6 +8,9 @@ const audio = {
   contexts: [] as FakeAudioContext[],
   playing: [] as (() => void)[],
   failResume: false,
+  // A browser leaves resume() pending until a key press that counts as activation; a bare modifier does not.
+  blockResume: false,
+  blockedResumes: [] as (() => void)[],
 };
 const gain = { gain: { value: 0 }, connect() {} };
 const fetchSample = vi.fn();
@@ -23,6 +26,14 @@ class FakeAudioContext {
   }
   resume() {
     if (audio.failResume) return Promise.reject(new Error("Failed to start the audio device"));
+    if (audio.blockResume) {
+      return new Promise<void>((resolve) => {
+        audio.blockedResumes.push(() => {
+          this.state = "running";
+          resolve();
+        });
+      });
+    }
     this.state = "running";
     return Promise.resolve();
   }
@@ -69,6 +80,8 @@ beforeEach(() => {
   audio.contexts = [];
   audio.playing = [];
   audio.failResume = false;
+  audio.blockResume = false;
+  audio.blockedResumes = [];
   fetchSample.mockReset().mockResolvedValue({ arrayBuffer: async () => new ArrayBuffer(0) });
   vi.stubGlobal("AudioContext", FakeAudioContext);
   vi.stubGlobal("fetch", fetchSample);
@@ -171,6 +184,36 @@ describe("playNotificationSound", () => {
     audio.playing[1]?.();
 
     expect(context?.state).toBe("suspended");
+  });
+
+  it("reuses the context prepared before the first gesture, without holding the device", async () => {
+    const { prepareNotificationAudio, unlockNotificationAudio, playNotificationSound } =
+      await import("./threadNotifications");
+    prepareNotificationAudio();
+    expect(audio.contexts[0]?.state).toBe("suspended");
+    await playNotificationSound("completion", () => true);
+    expect(audio.started).toBe(0);
+
+    await unlockNotificationAudio();
+    await playNotificationSound("completion", () => true);
+
+    expect(audio.contexts).toHaveLength(1);
+    expect(audio.started).toBe(1);
+  });
+
+  it("unlocks on the next real gesture when the browser ignored the first", async () => {
+    const { unlockNotificationAudio, playNotificationSound } =
+      await import("./threadNotifications");
+    audio.blockResume = true;
+    void unlockNotificationAudio();
+    await playNotificationSound("completion", () => true);
+    expect(audio.started).toBe(0);
+
+    audio.blockResume = false;
+    await unlockNotificationAudio();
+    await playNotificationSound("completion", () => true);
+
+    expect(audio.started).toBe(1);
   });
 
   it("replaces a context that can no longer reach an output device", async () => {
