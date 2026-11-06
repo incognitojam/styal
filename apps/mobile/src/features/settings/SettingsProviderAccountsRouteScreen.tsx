@@ -20,10 +20,15 @@ import {
   ScrollView,
   StyleSheet,
   TextInput,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import type { MenuAction } from "@react-native-menu/menu";
+import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
+import { ControlPill } from "../../components/ui/ControlPill";
+import { Menu } from "../../components/ui/Menu";
 import { AppText as Text } from "../../components/ui/AppText";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
@@ -79,15 +84,20 @@ export function SettingsProviderAccountsRouteScreen() {
                   <>
                     {sortProvidersForAccounts(
                       providersByEnvironment.get(environment.environmentId) ?? [],
-                    ).map((provider) =>
+                    ).map((provider, index) =>
                       supportsInAppSignIn(provider) ? (
                         <ProviderAccount
                           key={provider.instanceId}
                           environment={environment}
+                          divider={index > 0}
                           provider={provider}
                         />
                       ) : (
-                        <ExternalProviderAccount key={provider.instanceId} provider={provider} />
+                        <ExternalProviderAccount
+                          key={provider.instanceId}
+                          provider={provider}
+                          divider={index > 0}
+                        />
                       ),
                     )}
                     {(providersByEnvironment.get(environment.environmentId) ?? []).length === 0 ? (
@@ -106,27 +116,50 @@ export function SettingsProviderAccountsRouteScreen() {
   );
 }
 
-function ProviderAccountName({ provider }: { readonly provider: ServerProvider }) {
+function ExternalProviderAccount({
+  provider,
+  divider,
+}: {
+  readonly provider: ServerProvider;
+  readonly divider: boolean;
+}) {
+  const email =
+    provider.auth.status === "authenticated" && !providerUnavailableReason(provider)
+      ? provider.auth.email?.trim()
+      : undefined;
   return (
-    <View className="flex-row items-center gap-2.5">
-      <ProviderIcon provider={provider.driver} iconUrl={provider.iconUrl} size={20} />
-      <Text className="min-w-0 flex-1 text-lg font-semibold text-foreground">
-        {provider.displayName ?? provider.driver}
-      </Text>
+    <View className={divider ? "border-t border-border-subtle" : undefined}>
+      <View className="min-h-16 flex-row items-center gap-3 px-4 py-3">
+        <ProviderIcon provider={provider.driver} iconUrl={provider.iconUrl} size={20} />
+        <ProviderAccountSummary
+          key={email}
+          name={provider.displayName ?? provider.driver}
+          status={externalSignInStatus(provider)}
+          email={email}
+        />
+      </View>
     </View>
   );
 }
 
-/** A provider that signs in through its own CLI, so styal only reports its status. */
-function ExternalProviderAccount({ provider }: { readonly provider: ServerProvider }) {
-  const signedIn = provider.auth.status === "authenticated" && !providerUnavailableReason(provider);
+function ProviderAccountSummary({
+  name,
+  status,
+  email,
+}: {
+  readonly name: string;
+  readonly status: string | null | undefined;
+  readonly email: string | undefined;
+}) {
   return (
-    <View className="gap-2 border-b border-border-subtle p-4">
-      <ProviderAccountName provider={provider} />
-      <Text className="text-sm text-foreground-muted">{externalSignInStatus(provider)}</Text>
-      {signedIn && provider.auth.email?.trim() ? (
-        <ProviderAccountEmail key={provider.auth.email} email={provider.auth.email} />
-      ) : null}
+    <View className="min-w-0 shrink grow gap-0.5">
+      <Text textRole="body" className="text-foreground">
+        {name}
+      </Text>
+      <Text accessibilityLiveRegion="polite" textRole="footnote" className="text-foreground-muted">
+        {status}
+      </Text>
+      {email ? <ProviderAccountEmail key={email} email={email} /> : null}
     </View>
   );
 }
@@ -134,9 +167,11 @@ function ExternalProviderAccount({ provider }: { readonly provider: ServerProvid
 function ProviderAccount({
   environment,
   provider,
+  divider,
 }: {
   readonly environment: SettingsTarget;
   readonly provider: ServerProvider;
+  readonly divider: boolean;
 }) {
   const environmentId = environment.environmentId;
   const instanceId = provider.instanceId;
@@ -148,8 +183,9 @@ function ProviderAccount({
   const complete = useAtomCommand(serverEnvironment.completeProviderAuth, options);
   const cancel = useAtomCommand(serverEnvironment.cancelProviderAuth, options);
   const logout = useAtomCommand(serverEnvironment.logoutProviderAuth, options);
+  // Matches ListRowLayout: large text stacks the action below instead of squeezing the status.
+  const stacked = useWindowDimensions().fontScale >= 1.5;
   const [pending, setPending] = useState(false);
-  const [choosingMethod, setChoosingMethod] = useState(false);
   const pendingRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState({ id: "", values: {} as Record<string, string> });
@@ -220,120 +256,244 @@ function ProviderAccount({
       />
     );
   }
-  function chooseMethod() {
-    const methods = state?.methods ?? [];
-    if (methods.length <= 1) {
-      void run(() => start(target));
-      return;
-    }
-    setChoosingMethod(true);
+  const name = provider.displayName ?? provider.driver;
+  const email =
+    signedIn && !active && !providerUnavailableReason(provider)
+      ? provider.auth.email?.trim()
+      : undefined;
+  const methods = state?.methods ?? [];
+  // The status line says why a provider that is missing or turned off can't sign in.
+  const canSignIn =
+    !active &&
+    !needsExternalSetup &&
+    provider.setup?.canAuthenticate !== false &&
+    provider.enabled &&
+    provider.installed;
+  const signInDisabled = disabled || state === null;
+  const canSignOut =
+    !active && signedIn && (provider.auth.canLogout ?? provider.setup?.canAuthenticate);
+  const showCallback =
+    Boolean(url) && (interaction?.type === "browser" ? interaction.acceptsCallback : !interaction);
+  const status =
+    active || state?.phase === "failed" || state?.phase === "cancelled"
+      ? state.message
+      : unavailable
+        ? unavailable
+        : signedIn
+          ? "Signed in"
+          : isDiscovering
+            ? "Discovering sign-in methods…"
+            : needsExternalSetup
+              ? "No in-app sign-in advertised. Follow the provider's docs to finish setup."
+              : "Not signed in";
+  // A provider with several sign-in methods picks one from a menu on the same control.
+  const methodActions: MenuAction[] = methods.map((method) => ({
+    id: `method:${method.id}`,
+    title: method.name,
+  }));
+  function startSignIn(methodId?: string) {
+    void run(() => start(methodId ? { environmentId, input: { instanceId, methodId } } : target));
   }
+  function signOut() {
+    Dialog.alert(
+      "Sign out?",
+      `Running threads sharing this sign-in on ${environment.label} will stop. Thread history is kept.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Sign out",
+          style: "destructive",
+          onPress: () => {
+            void run(() => logout(target));
+          },
+        },
+      ],
+    );
+  }
+  function onMenuAction(id: string) {
+    if (id === "signOut") signOut();
+    // iOS keeps a disabled submenu's children selectable, so sign-in guards here too.
+    else if (signInDisabled) return;
+    else if (id.startsWith("method:")) startSignIn(id.slice("method:".length));
+    else if (id === "change") startSignIn();
+  }
+  const accountActions: MenuAction[] = [
+    ...(canSignIn
+      ? [
+          {
+            id: "change",
+            title: "Change account",
+            image: "person.crop.circle",
+            attributes: { disabled: signInDisabled },
+            ...(methodActions.length > 1
+              ? {
+                  subactions: methodActions.map((action) => ({
+                    ...action,
+                    attributes: { disabled: signInDisabled },
+                  })),
+                }
+              : {}),
+          },
+        ]
+      : []),
+    ...(canSignOut
+      ? [
+          {
+            id: "signOut",
+            title: "Sign out",
+            image: "rectangle.portrait.and.arrow.right",
+            attributes: { destructive: true, disabled: disabled || state === null },
+          },
+        ]
+      : []),
+  ];
+  const trailing = pending ? (
+    <View className="h-11 w-11 items-center justify-center">
+      <AppActivityIndicator colorClassName="accent-icon" />
+    </View>
+  ) : !providerUnavailableReason(provider) &&
+    needsExternalSetup &&
+    provider.setup?.documentationUrl ? (
+    <ControlPill
+      variant="pill"
+      label="Docs"
+      onPress={() => {
+        void Linking.openURL(provider.setup!.documentationUrl!).catch(() =>
+          setError("Could not open the provider docs."),
+        );
+      }}
+    />
+  ) : active && state?.flowId ? (
+    <ControlPill
+      variant="pill"
+      label="Cancel"
+      accessibilityLabel={`Cancel ${name} sign-in`}
+      disabled={disabled}
+      onPress={() => {
+        void run(() => cancel({ environmentId, input: { instanceId, flowId: state.flowId! } }));
+      }}
+    />
+  ) : signedIn && !active && accountActions.length > 0 ? (
+    <Menu
+      accessible
+      accessibilityRole="button"
+      accessibilityLabel={`${name} account options`}
+      title={name}
+      actions={accountActions}
+      onPressAction={({ nativeEvent }) => onMenuAction(nativeEvent.event)}
+    >
+      <ControlPill icon="ellipsis" accessibilityLabel={`${name} account options`} />
+    </Menu>
+  ) : canSignIn && !signedIn && methodActions.length > 1 && !signInDisabled ? (
+    <Menu
+      accessible
+      accessibilityRole="button"
+      accessibilityLabel={`Sign in to ${name}`}
+      title="Sign in with"
+      actions={methodActions}
+      onPressAction={({ nativeEvent }) => onMenuAction(nativeEvent.event)}
+    >
+      <ControlPill variant="primary" label="Sign in" accessibilityLabel={`Sign in to ${name}`} />
+    </Menu>
+  ) : canSignIn && !signedIn ? (
+    <ControlPill
+      variant="primary"
+      label="Sign in"
+      accessibilityLabel={`Sign in to ${name}`}
+      disabled={signInDisabled}
+      onPress={() => startSignIn()}
+    />
+  ) : null;
   return (
-    <View className="border-b border-border-subtle">
-      <View className="gap-2 p-4">
-        <ProviderAccountName provider={provider} />
-        <Text accessibilityLiveRegion="polite" className="text-sm text-foreground-muted">
-          {active || state?.phase === "failed" || state?.phase === "cancelled"
-            ? state.message
-            : unavailable
-              ? unavailable
-              : signedIn
-                ? "Signed in."
-                : isDiscovering
-                  ? "Discovering sign-in methods…"
-                  : needsExternalSetup
-                    ? "No in-app sign-in advertised. Follow the provider's docs to finish setup."
-                    : "Not signed in."}
-        </Text>
-        {signedIn && !active && provider.auth.email?.trim() ? (
-          <ProviderAccountEmail key={provider.auth.email} email={provider.auth.email} />
-        ) : null}
-        {interaction?.type === "deviceCode" ? (
-          <Text selectable className="text-foreground">
-            Enter code {interaction.userCode} on the sign-in page.
-          </Text>
-        ) : null}
-        {interaction?.type === "terminal" ? (
-          <>
-            <ScrollView className="max-h-64" nestedScrollEnabled>
-              <Text selectable className="font-mono text-sm text-foreground">
-                {interaction.output.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")}
-              </Text>
-            </ScrollView>
-            {field("input", "Terminal response", true)}
-            <SettingsActionRow
-              icon="arrow.up"
-              label="Send response"
-              disabled={disabled}
-              onPress={() => {
-                void send({ type: "terminal", data: `${values.input ?? ""}\r` }).then((sent) => {
-                  if (sent) setDraft({ id: "", values: {} });
-                });
-              }}
-            />
-          </>
-        ) : null}
-        {interaction?.type === "credentials" ? (
-          <>
-            {interaction.fields.map((entry) => (
-              <View key={entry.name}>{field(entry.name, entry.label, entry.secret)}</View>
-            ))}
-            <SettingsActionRow
-              icon="key"
-              label="Connect"
-              disabled={disabled}
-              onPress={() => {
-                void send({ type: "credentials", values }).then((sent) => {
-                  if (sent) setDraft({ id: "", values: {} });
-                });
-              }}
-            />
-          </>
-        ) : null}
-        {url && (interaction?.type === "browser" ? interaction.acceptsCallback : !interaction) ? (
-          <>
-            {field("callback", "Final localhost URL", false)}
-            <SettingsActionRow
-              icon="arrow.right"
-              label="Continue"
-              disabled={disabled || !values.callback?.trim()}
-              onPress={() => {
-                if (!state?.flowId) return;
-                void run(() =>
-                  complete({
-                    environmentId,
-                    input: { instanceId, flowId: state.flowId!, callbackUrl: values.callback! },
-                  }),
-                ).then((sent) => {
-                  if (sent) setDraft({ id: "", values: {} });
-                });
-              }}
-            />
-          </>
-        ) : null}
-        {error || auth.error ? (
-          <Text accessibilityRole="alert" className="text-danger-foreground">
-            {error ?? auth.error}
-          </Text>
-        ) : null}
+    <View className={divider ? "border-t border-border-subtle" : undefined}>
+      <View
+        className={
+          stacked
+            ? "min-h-16 items-start gap-3 px-4 py-3"
+            : "min-h-16 flex-row items-center gap-3 px-4 py-3"
+        }
+      >
+        <View className="min-w-0 shrink grow flex-row items-center gap-3">
+          <ProviderIcon provider={provider.driver} iconUrl={provider.iconUrl} size={20} />
+          <ProviderAccountSummary key={email} name={name} status={status} email={email} />
+        </View>
+        {trailing}
       </View>
-      {choosingMethod && !active ? (
-        <View>
-          {state?.methods?.map((method) => (
-            <SettingsActionRow
-              key={method.id}
-              icon="key"
-              label={method.name}
-              disabled={disabled}
-              onPress={() => {
-                setChoosingMethod(false);
-                void run(() =>
-                  start({ environmentId, input: { instanceId, methodId: method.id } }),
-                );
-              }}
-            />
-          ))}
-          <SettingsActionRow icon="xmark" label="Cancel" onPress={() => setChoosingMethod(false)} />
+      {interaction?.type === "deviceCode" ||
+      interaction?.type === "terminal" ||
+      interaction?.type === "credentials" ||
+      showCallback ||
+      error ||
+      auth.error ? (
+        <View className="gap-2 px-4 pb-3">
+          {interaction?.type === "deviceCode" ? (
+            <Text selectable className="text-foreground">
+              Enter code {interaction.userCode} on the sign-in page.
+            </Text>
+          ) : null}
+          {interaction?.type === "terminal" ? (
+            <>
+              <ScrollView className="max-h-64" nestedScrollEnabled>
+                <Text selectable className="font-mono text-sm text-foreground">
+                  {interaction.output.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")}
+                </Text>
+              </ScrollView>
+              {field("input", "Terminal response", true)}
+              <SettingsActionRow
+                icon="arrow.up"
+                label="Send response"
+                disabled={disabled}
+                onPress={() => {
+                  void send({ type: "terminal", data: `${values.input ?? ""}\r` }).then((sent) => {
+                    if (sent) setDraft({ id: "", values: {} });
+                  });
+                }}
+              />
+            </>
+          ) : null}
+          {interaction?.type === "credentials" ? (
+            <>
+              {interaction.fields.map((entry) => (
+                <View key={entry.name}>{field(entry.name, entry.label, entry.secret)}</View>
+              ))}
+              <SettingsActionRow
+                icon="person.crop.circle"
+                label="Connect"
+                disabled={disabled}
+                onPress={() => {
+                  void send({ type: "credentials", values }).then((sent) => {
+                    if (sent) setDraft({ id: "", values: {} });
+                  });
+                }}
+              />
+            </>
+          ) : null}
+          {showCallback ? (
+            <>
+              {field("callback", "Final localhost URL", false)}
+              <SettingsActionRow
+                icon="arrow.right"
+                label="Continue"
+                disabled={disabled || !values.callback?.trim()}
+                onPress={() => {
+                  if (!state?.flowId) return;
+                  void run(() =>
+                    complete({
+                      environmentId,
+                      input: { instanceId, flowId: state.flowId!, callbackUrl: values.callback! },
+                    }),
+                  ).then((sent) => {
+                    if (sent) setDraft({ id: "", values: {} });
+                  });
+                }}
+              />
+            </>
+          ) : null}
+          {error || auth.error ? (
+            <Text accessibilityRole="alert" className="text-danger-foreground">
+              {error ?? auth.error}
+            </Text>
+          ) : null}
         </View>
       ) : null}
       {url ? (
@@ -352,61 +512,6 @@ function ProviderAccount({
               await Linking.openURL(url);
             })().catch(() => setError("Could not open the sign-in page."));
           }}
-        />
-      ) : null}
-      {needsExternalSetup && provider.setup?.documentationUrl ? (
-        <SettingsActionRow
-          icon="book"
-          label="Open docs"
-          onPress={() => {
-            void Linking.openURL(provider.setup!.documentationUrl!).catch(() =>
-              setError("Could not open the provider docs."),
-            );
-          }}
-        />
-      ) : active && state?.flowId ? (
-        <SettingsActionRow
-          icon="xmark"
-          label="Cancel sign-in"
-          disabled={disabled}
-          onPress={() => {
-            void run(() => cancel({ environmentId, input: { instanceId, flowId: state.flowId! } }));
-          }}
-        />
-      ) : !active &&
-        !unavailable &&
-        !needsExternalSetup &&
-        provider.setup?.canAuthenticate !== false ? (
-        <SettingsActionRow
-          icon={signedIn ? "arrow.left.arrow.right" : "person.crop.circle.badge.plus"}
-          label={signedIn ? "Change account" : "Sign in"}
-          disabled={disabled || state === null}
-          loading={pending}
-          onPress={chooseMethod}
-        />
-      ) : null}
-      {!active && signedIn && (provider.auth.canLogout ?? provider.setup?.canAuthenticate) ? (
-        <SettingsActionRow
-          icon="rectangle.portrait.and.arrow.right"
-          label="Sign out"
-          tone="danger"
-          disabled={disabled || state === null}
-          onPress={() =>
-            Dialog.alert(
-              "Sign out?",
-              `Running threads sharing this sign-in on ${environment.label} will stop. Thread history is kept.`,
-              [
-                { text: "Cancel", style: "cancel" },
-                {
-                  text: "Sign out",
-                  style: "destructive",
-                  onPress: () => {
-                    void run(() => logout(target));
-                  },
-                },
-              ],
-            )
-          }
         />
       ) : null}
     </View>

@@ -3342,8 +3342,8 @@ features:
     invariants:
       - Hidden account emails retain the shared same-shaped placeholder and platform-appropriate blur, with explicit reveal controls.
       - Mobile Provider accounts lists every configured provider with its icon, usable providers before turned-off ones; providers that sign in through their own CLI show a status line and no sign-in control.
-      - A turned-off or missing provider says why instead of showing a disabled sign-in row, and Sign in, Change account, Sign out, credentials and docs rows each use a distinct icon.
-    rationale: Upstream lists only providers with in-app sign-in, so Claude and Codex users see their providers missing, and every action reuses the same person icon. Compared with upstream revision 7ac952c630ef8a60d14ca8f6a0c7adce33db4bae on October 14, 2026.
+      - A turned-off or missing provider says why instead of showing a disabled sign-in control. Upstream compact rows retain a trailing Sign in pill, account menu, Cancel or Docs control, sign-in details below, and stacked controls at large accessibility text sizes.
+    rationale: Upstream compact rows from PR 25861 are retained while the fork keeps every configured provider, CLI-only statuses, provider icons, availability ordering and blurred email reveal. Compared with upstream revision 25b53299b7 on November 5, 2026; later Claude account configuration is outside this layout port.
     implementation_paths:
       - apps/mobile/src/components/ui/AppSymbol.tsx
       - apps/mobile/src/features/settings/SettingsProviderAccountsRouteScreen.tsx
@@ -3356,7 +3356,7 @@ features:
       status: tracking
       tracking:
         - https://github.com/pingdotgg/t3code/pull/18425
-      retire_when: Upstream's mobile Provider accounts screen shows every provider with its sign-in source and gives each action its own icon.
+      retire_when: Upstream's mobile Provider accounts screen shows every configured provider with its sign-in source and preserves the fork's email privacy behavior.
 
   - id: mobile-runtime-mode-icons
     title: Mobile runtime modes carry web's icons
