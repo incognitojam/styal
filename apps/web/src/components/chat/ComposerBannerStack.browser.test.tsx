@@ -12,6 +12,7 @@ import {
   NoticeText,
   type ComposerBannerStackItem,
 } from "./ComposerBannerStack";
+import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 
 function notice(title: string, group?: ComposerBannerStackItem["group"]): ComposerBannerStackItem {
   return { id: title, variant: "default", icon: <InfoIcon />, title, ...(group ? { group } : {}) };
@@ -123,6 +124,31 @@ it("shows the details button while text or nested text is cut, until it fits aga
   await expect.element(details).toBeInTheDocument();
   await screen.rerender(<ComposerBanner.Root>{noticeRow("4rem", "Ready")}</ComposerBanner.Root>);
   await expect.element(details).not.toBeInTheDocument();
+});
+
+it("leaves out the details button when a popover opens from text that fits", async () => {
+  // Base UI's focus guards sit at the viewport origin, so the text must start away from it.
+  await using screen = await render(
+    <div style={{ marginLeft: "20rem" }}>
+      <ComposerBanner.Root>
+        {noticeRow(
+          "40rem",
+          <Popover>
+            <PopoverTrigger>Updating 1 machine</PopoverTrigger>
+            <PopoverPopup>Machine list</PopoverPopup>
+          </Popover>,
+        )}
+      </ComposerBanner.Root>
+    </div>,
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Updating 1 machine" }));
+  await expect.element(page.getByText("Machine list")).toBeVisible();
+
+  await userEvent.keyboard("{Escape}");
+  await expect.element(page.getByText("Machine list")).not.toBeInTheDocument();
+  await expect
+    .element(screen.getByRole("button", { name: "Show details" }))
+    .not.toBeInTheDocument();
 });
 
 it("opens the details of a long notice right above its button", async () => {
