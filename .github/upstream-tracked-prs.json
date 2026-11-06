@@ -201,6 +201,14 @@
       }
     },
     {
+      "pr": 29325,
+      "reason": "Imported provisionally as one snapshot: the full-window dialog backdrop keeps its dim but loses its blur, which stops open dialogs vanishing for one frame while scrolling on macOS displays above 60 Hz. No fork adaptations to the change. It avoids the trigger of what looks like a Chromium compositor bug rather than fixing it, and the fork keeps popup and composer glass. When it merges, compare the frozen base-to-head diff with the final upstream change, reconcile amendments, verify trackpad scrolling in Settings on a high-refresh Mac, then clear the snapshot marker with that intake. If it closes without merging, review whether to remove the change or retain it as maintained fork behavior and record that decision before clearing the marker. Restore the blur once a Chromium or Electron fix ships.",
+      "snapshot": {
+        "base": "47f2c8d29e981c7723467efe137ee19e91df924e",
+        "head": "26678f72ca00434fda2e8fe964ead73806a5215e"
+      }
+    },
+    {
       "pr": 30096,
       "reason": "Imported provisionally as one snapshot: a new mobile draft keeps the project the draft screen selected, instead of being saved under the fallback project when the provider's draft-creation effect runs after the screen's (fixes #30095; a regression from #25812). The fork imports only the provider change; the PR's regression test lives in new-task-flow-provider.test.tsx, which arrives with #25254. When it merges, compare the frozen base-to-head diff with the final upstream change, take its regression test once #25254 is in, verify on a device that a draft started from the project picker stays in the chosen project after Back and reopening, then clear the snapshot marker with that intake. If it closes without merging, review whether to remove the change or retain it as maintained fork behavior and record that decision before clearing the marker.",
       "snapshot": {
