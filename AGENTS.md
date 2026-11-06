@@ -177,12 +177,12 @@ For mobile verification, a missing or outdated native client is an install step,
 - UI changes need before/after images. Motion or timing needs a short video.
 - Label a PR `preview:web` for a hosted web preview, `preview:mac` for an unsigned Apple Silicon DMG, `preview:windows` for an unsigned Windows x64 installer, or `preview:android` for an installable APK, rebuilt on every push. See [PR previews](docs/operations/development.md#pr-previews) for setup and for handing a build over.
 - Upload PR evidence to GitHub. Never commit PR-only screenshots or assets such as `.github/pr-assets/`.
-- One request is one PR. Split it only when the maintainer asks. Outside contributions follow the stricter [one problem per PR](CONTRIBUTING.md#one-problem) rule.
+- Make each PR the smallest change that works on its own, even within a larger request or thread. Small PRs are easier to review, merge sooner, and can be tested and reverted individually. Splitting by layer, such as frontend and backend, or into parts that only work once the last lands does not count. Outside contributions follow the stricter [one problem per PR](CONTRIBUTING.md#one-problem) rule.
 - When babysitting: call `watch_pull_request` and end your turn. T3 Code wakes you on checks, comments, or conflicts. Do not poll or sleep. Verify each bot finding against the source, fix real ones, dismiss false positives with a written reason. Stay quiet when nothing is new. Stop when the bots are green on the latest commit.
 
 ### Stacked pull requests
 
-- Most changes are a single PR. Stack only when a large change splits into dependent, independently reviewable layers; unrelated concerns stay separate, non-stacked PRs.
+- Stack only when a PR builds on an earlier one that hasn't merged yet; each layer must still work and ship without the layers above it; unrelated changes stay separate, non-stacked PRs.
 - Manage a stack exclusively with the `gh stack` extension (`gh extension install github/gh-stack`). Keep it current with `gh stack rebase` then `gh stack push` — the stack's equivalent of the rebase-before-opening rule above. Plain `git rebase`, `git push --force`, or manual PR retargeting corrupt the stack's dependent branches and GitHub metadata. If the extension is unavailable, report that instead of falling back.
 - `gh stack` is newer than most models' training data — run `gh stack --help` and review the workflow before your first stack operation rather than guessing from priors.
 - `gh stack submit` and `gh stack merge` create or change remote PRs, so the existing rules apply: only when the developer explicitly asks. Note `gh stack merge <pr-number>` also lands every unmerged layer below it — a middle layer cannot merge alone. Run `gh stack view` first and state exactly which layers will land.
