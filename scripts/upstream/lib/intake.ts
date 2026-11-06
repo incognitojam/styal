@@ -54,10 +54,15 @@ interface ManualReviewRule {
 const migrationReviewRule: ManualReviewRule = {
   description: "a database migration changed",
   matches: (path) =>
-    path
-      .toLowerCase()
-      .split("/")
-      .some((segment) => segment.includes("migration")),
+    path === "apps/server/src/persistence/Migrations.ts" ||
+    path === "apps/server/src/persistence/ForkMigrations.ts" ||
+    [
+      "apps/server/src/persistence/Migrations/",
+      "apps/server/src/persistence/ForkMigrations/",
+      "infra/relay/migrations/",
+      "infra/task-cache/migrations/",
+      "infra/task-cache/vendor/vite-plus-remote-cache-cloudflare/migrations/",
+    ].some((root) => path.startsWith(root)),
 };
 
 const manualReviewRules: ReadonlyArray<ManualReviewRule> = [

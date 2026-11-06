@@ -193,6 +193,33 @@ describe("upstream intake audit", () => {
     assert.include(result.summary, "Manual approval required");
   });
 
+  it("limits database migration review to migration roots and manifests", () => {
+    for (const path of [
+      "apps/server/src/persistence/Migrations/001_Initial.ts",
+      "apps/server/src/persistence/Migrations.ts",
+      "apps/server/src/persistence/ForkMigrations/001_Initial.ts",
+      "apps/server/src/persistence/ForkMigrations.ts",
+      "infra/relay/migrations/postgres/001/migration.sql",
+      "infra/task-cache/migrations/savings/001.sql",
+      "infra/task-cache/vendor/vite-plus-remote-cache-cloudflare/migrations/001.sql",
+    ]) {
+      assert.include(
+        audit({ changedPaths: [path] }).manualReviewReasons,
+        "a database migration changed",
+      );
+    }
+    for (const path of [
+      "docs/user/thread-migration.md",
+      "apps/web/src/hooks/useThreadVisitedMigration.ts",
+      "scripts/upstream/lib/migrations.test.ts",
+    ]) {
+      assert.notInclude(
+        audit({ changedPaths: [path] }).manualReviewReasons,
+        "a database migration changed",
+      );
+    }
+  });
+
   it("blocks a candidate whose own fork feature ledger is invalid", () => {
     const result = audit({
       candidateLedgerErrors: ["Candidate fork feature ledger: x.tracking must be sorted."],
