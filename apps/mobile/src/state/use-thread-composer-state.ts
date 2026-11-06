@@ -18,6 +18,7 @@ import type { ThreadCheckpointSummary } from "@t3tools/client-runtime/state/thre
 import { resolvePendingHandoff } from "@t3tools/client-runtime/handoff";
 import {
   deriveProviderSubagentStatus,
+  deriveProviderExtensionStatuses,
   deriveResumableRunId,
   deriveRunlessWorkStartedAt,
   deriveThreadActivityRun,
@@ -977,6 +978,9 @@ export function useThreadComposerState(input: {
     dispatchingQueuedMessageId,
     activeWorkStartedAt,
     runlessWorkActive,
+    extensionStatuses: deriveProviderExtensionStatuses(
+      selectedThreadProjection?.projection ?? null,
+    ),
     providerSubagentStatus,
     isCompacting,
     compactBeforeSend:

@@ -716,6 +716,7 @@ it.effect(
           driver: ProviderDriverKind.make("codex"),
           providerInstanceId: ProviderInstanceId.make("codex"),
           status: "ready",
+          extensionStatuses: [{ key: "watch", text: "Watching" }],
         },
       ],
       providerThreads: [
@@ -898,6 +899,13 @@ it.effect(
           assert.equal(rows[0]?.updated_at, DateTime.formatIso(recordedAt));
         }).pipe(Effect.provide(ProjectionStore.layer.pipe(Layer.provideMerge(layerMemory))));
       }
+      const stoppedSession = events.find((event) => event.type === "provider-session.updated");
+      assert.deepEqual(
+        stoppedSession?.type === "provider-session.updated"
+          ? stoppedSession.payload.extensionStatuses
+          : undefined,
+        [],
+      );
       assert.deepEqual(
         events.flatMap((event) =>
           event.type === "turn-item.updated" && "streaming" in event.payload
