@@ -1,3 +1,4 @@
+import { styalSkillPaths } from "@t3tools/provider-core/server/styalSkill";
 import { historyResponseItems } from "@t3tools/provider-core/server/handoffBudget";
 import {
   makeProviderTextDeltaCoalescer,
@@ -41,6 +42,7 @@ import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Predicate from "effect/Predicate";
 import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
 import { MCP_APP_OUTPUT_KEY, readMcpAppReference } from "@t3tools/shared/mcpApp";
 import { toolOutputImages } from "@t3tools/shared/toolOutput";
 import { resolveAttachmentPathById } from "../../attachmentStore.ts";
@@ -1181,6 +1183,8 @@ describe("CodexAdapterV2 post-settle continuation", () => {
     onRequest: (method: string, params: unknown) => Effect.Effect<void> = () => Effect.void,
     readChildMetadata?: Parameters<typeof withCodexReplayChildMetadata>[2],
     beforeEmitInbound?: CodexReplay.CodexAppServerReplayDriver["beforeEmitInbound"],
+    stateDirReady: (stateDir: string) => Effect.Effect<void, never, FileSystem.FileSystem> = () =>
+      Effect.void,
   ) =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
@@ -1188,6 +1192,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
       const serverConfig = yield* ProviderReplayHarness.makeReplayServerConfig(
         transcript.scenario,
       ).pipe(Effect.orDie);
+      yield* stateDirReady(serverConfig.stateDir);
       const changes = yield* makeChangeSignal;
       const continuationRequests: Array<ProviderContinuationRequests.ProviderContinuationRequest> =
         [];
@@ -1560,6 +1565,210 @@ describe("CodexAdapterV2 post-settle continuation", () => {
           },
         },
       ]);
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(
+        Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+      ),
+    ),
+  );
+
+  it.effect("gives the session the styal skill and hides the guide tool", () =>
+    Effect.gen(function* () {
+      const scenario = "styal-skill";
+      const threadId = ThreadId.make(`thread-${scenario}`);
+      yield* (yield* McpProviderSessions.McpProviderSessions).set({
+        environmentId: EnvironmentId.make("environment-codex-skill"),
+        threadId,
+        providerSessionId: `provider-session-${scenario}`,
+        providerInstanceId: ProviderInstanceId.make("codex"),
+        endpoint: "http://127.0.0.1:43123/mcp",
+        authorizationHeader: "Bearer secret-codex-token",
+        browserToolsAvailable: true,
+      });
+      const preamble = codexReplayPreamble({
+        nativeThreadId: "skill-thread",
+        nativeTurnId: "unused",
+        prompt: "unused",
+      }).slice(0, 5) as ReadonlyArray<Record<string, unknown> & { frame: object }>;
+      const renumbered = (entry: (typeof preamble)[number]) => ({
+        ...entry,
+        frame: { ...entry.frame, id: 3 },
+      });
+      const threadStarts: Array<unknown> = [];
+      // Replay compares this frame once the session opens, after stateDirReady fills it in.
+      const extraRoots: Array<string> = [];
+      const path = yield* Path.Path;
+      yield* makeCodexReplayHarness(
+        makeCodexReplayTranscript({
+          scenario,
+          entries: [
+            ...preamble.slice(0, 3),
+            {
+              type: "expect_outbound",
+              label: "skills/extraRoots/set",
+              frame: { id: 2, method: "skills/extraRoots/set", params: { extraRoots } },
+            },
+            {
+              type: "emit_inbound",
+              label: "skills/extraRoots/set",
+              frame: { id: 2, result: {} },
+            },
+            renumbered(preamble[3]!),
+            renumbered(preamble[4]!),
+          ] as never,
+        }),
+        () => Effect.void,
+        (method, params) =>
+          Effect.sync(() => {
+            if (method === "thread/start") threadStarts.push(params);
+          }),
+        undefined,
+        undefined,
+        (stateDir) =>
+          Effect.gen(function* () {
+            const fileSystem = yield* FileSystem.FileSystem;
+            const skill = styalSkillPaths(path, stateDir);
+            extraRoots.push(skill.skillsRoot);
+            yield* fileSystem.makeDirectory(skill.skillDirectory, { recursive: true });
+            yield* fileSystem.writeFileString(skill.skillFile, "skill");
+          }).pipe(Effect.orDie),
+      );
+      const start = threadStarts[0] as {
+        readonly config: Readonly<Record<string, { readonly disabled_tools?: unknown }>>;
+      };
+      assert.deepEqual(start.config["mcp_servers.styal"]?.disabled_tools, ["read_styal_guide"]);
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(
+        Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+      ),
+    ),
+  );
+
+  it.effect("keeps the guide tool on a first resume when Codex refuses the skill root", () =>
+    Effect.gen(function* () {
+      const scenario = "styal-skill-refused";
+      const nativeThreadId = "native-skill-refused";
+      const threadId = ThreadId.make(`thread-${scenario}`);
+      yield* (yield* McpProviderSessions.McpProviderSessions).set({
+        environmentId: EnvironmentId.make("environment-codex-skill"),
+        threadId,
+        providerSessionId: `provider-session-${scenario}`,
+        providerInstanceId: ProviderInstanceId.make("codex"),
+        endpoint: "http://127.0.0.1:43123/mcp",
+        authorizationHeader: "Bearer secret-codex-token",
+        browserToolsAvailable: true,
+      });
+      const fileSystem = yield* FileSystem.FileSystem;
+      const serverConfig = yield* ProviderReplayHarness.makeReplayServerConfig(scenario).pipe(
+        Effect.orDie,
+      );
+      const skill = styalSkillPaths(yield* Path.Path, serverConfig.stateDir);
+      yield* fileSystem.makeDirectory(skill.skillDirectory, { recursive: true });
+      yield* fileSystem.writeFileString(skill.skillFile, "skill");
+      const resumes: Array<{ readonly config: Readonly<Record<string, unknown>> }> = [];
+      const transcript = makeCodexReplayTranscript({
+        scenario,
+        entries: [
+          ...codexReplayPreamble({
+            nativeThreadId,
+            nativeTurnId: "unused",
+            prompt: "unused",
+          }).slice(0, 3),
+          {
+            type: "expect_outbound",
+            label: "skills/extraRoots/set",
+            frame: {
+              id: 2,
+              method: "skills/extraRoots/set",
+              params: { extraRoots: [skill.skillsRoot] },
+            },
+          },
+          {
+            type: "emit_inbound",
+            label: "skills/extraRoots/set",
+            frame: { id: 2, error: { code: -32601, message: "Method not found" } },
+          },
+          {
+            type: "expect_outbound",
+            label: "thread/resume",
+            frame: {
+              id: 3,
+              method: "thread/resume",
+              params: {
+                threadId: nativeThreadId,
+                excludeTurns: true,
+                config: {
+                  ...CodexAdapterV2.CODEX_THREAD_CONFIG,
+                  "mcp_servers.styal": {
+                    url: "http://127.0.0.1:43123/mcp",
+                    tool_timeout_sec: 3_900,
+                    http_headers: { Authorization: "Bearer secret-codex-token" },
+                  },
+                },
+              },
+            },
+          },
+          {
+            type: "emit_inbound",
+            label: "thread/resume",
+            frame: { id: 3, result: { thread: { id: nativeThreadId, updatedAt: 1782622450 } } },
+          },
+        ],
+      });
+      const adapter = yield* CodexAdapterV2.makeCodexAdapterV2({
+        instanceId: CodexAdapterV2.CODEX_DEFAULT_INSTANCE_ID,
+        settings: DEFAULT_CODEX_SETTINGS,
+        environment: {},
+        clientFactory: {
+          open: () =>
+            Layer.build(CodexReplay.layerReplay(transcript)).pipe(
+              Effect.orDie,
+              Effect.flatMap((context) =>
+                Effect.service(CodexClient.CodexAppServerClient).pipe(Effect.provide(context)),
+              ),
+              Effect.map(
+                (client) =>
+                  ({
+                    ...client,
+                    raw: {
+                      ...client.raw,
+                      request: (method: string, params: never) => {
+                        if (method === "thread/resume") resumes.push(params);
+                        return client.raw.request(method, params);
+                      },
+                    },
+                  }) as typeof client,
+              ),
+            ),
+        },
+        crypto: yield* Crypto.Crypto,
+        fileSystem,
+        idAllocator: yield* IdAllocator.IdAllocatorV2,
+        serverConfig,
+      });
+      const runtime = yield* adapter.openSession({
+        threadId,
+        providerSessionId: ProviderSessionId.make(`provider-session-${scenario}`),
+        modelSelection: CODEX_TEST_MODEL_SELECTION,
+        runtimePolicy: CODEX_TEST_RUNTIME_POLICY,
+      });
+      const resumed = yield* runtime.resumeThread({
+        threadId,
+        providerThread: {
+          appThreadId: threadId,
+          nativeThreadRef: { driver: "codex", nativeId: nativeThreadId, strength: "strong" },
+        } as never,
+        modelSelection: CODEX_TEST_MODEL_SELECTION,
+        runtimePolicy: CODEX_TEST_RUNTIME_POLICY,
+      });
+      assert.equal(resumed.nativeThreadRef?.nativeId, nativeThreadId);
+      assert.deepEqual(resumes[0]?.config["mcp_servers.styal"], {
+        url: "http://127.0.0.1:43123/mcp",
+        tool_timeout_sec: 3_900,
+        http_headers: { Authorization: "Bearer secret-codex-token" },
+      });
     }).pipe(
       Effect.scoped,
       Effect.provide(

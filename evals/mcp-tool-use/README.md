@@ -19,6 +19,10 @@ pnpm mcp-tool-use --model claude-opus-5-5 --out runs/opus
 - Cost: the existing non-device suite costs about $9 on Sonnet and $17 on Opus. The 16 device cases at 3 samples each cost about $5.70–5.90 on Opus and $2.90–3.40 on Sonnet (main's text–#25661), including the Haiku shell simulator; dry runs cost $0. Results record token costs for the agent and shell simulator. Codex proxy charges are outside that total; only its shell simulator is priced here, about $0.60–0.70 for the device cases.
 - A rate limit or overload (429, 529 or another 5xx) is retried with backoff for up to about 4 minutes. A sample that still fails gets an `error` in `results.jsonl`, is left out of every pass rate, and is listed in the summary; the tokens it spent still count toward the cost.
 
+## The styal skill
+
+`--styal-skill` runs `cases-skill/` on Claude models with what a session that has the styal skill sees: the skill listed in a reminder, no `read_styal_guide`, and no always-on line about it. The skill and guide files come from this checkout. Without the flag, the guide cases measure the tool and line that providers without the skill keep.
+
 ## Add a case
 
 Cases are JSON lines in `cases/`, one file per area. The case schema in `run.ts` (`McpToolUseCase`) documents every field.

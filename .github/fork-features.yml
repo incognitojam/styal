@@ -107,19 +107,26 @@ features:
       retire_when: Upstream's budget check reports which tools and text caused the growth.
 
   - id: agent-guides
-    title: Agents read styal how-to guides through an MCP tool
+    title: Agents read styal how-to guides through a session skill or an MCP tool
     status: maintained
-    prs: [1265]
+    prs: [1265, 1308]
     invariants:
+      - A Claude, Codex or OpenCode 2 session started by styal gets the `styal-guides` skill without writing to a provider home or provider config. The server writes it under its state directory at startup and passes it through the SDK `plugins` option, `skills/extraRoots/set`, or `OPENCODE_CONFIG_CONTENT` merged with the user's value.
+      - A session with the skill has no `read_styal_guide` tool and no always-on line about it. Every other session that has the styal MCP server, including OpenCode 1.x and any session whose skill was not written, keeps both. An external OpenCode server gets neither unless the user configures the styal MCP server on it, because styal attaches neither MCP nor the skill to a server it did not start.
+      - The skill is not listed in the `$` picker and has no settings, install, update or remove step. Updating styal replaces it.
+      - The skill's guide files are the same text `read_styal_guide` returns. Reading them does not ask for approval on Claude or OpenCode; on Codex in Supervised it asks like any other shell command.
       - "`read_styal_guide` returns a bundled guide for a fixed topic (`project-setup`, `devices`, `hardware`, `data-import`, `troubleshooting`) with no capability gate, so every provider session that has the styal MCP server can read it. It is read-only and Claude pre-approves it."
       - Guides name only tools the server publishes and topics that exist.
-      - Always-on instructions tell agents to read `project-setup` before adding or changing project actions, because `read_styal_guide` is a deferred tool whose description they do not see first.
-      - Each read records `feature.used` with `feature = agent-guides` and the topic, and no other argument or result.
+      - In a session without the skill, always-on instructions tell agents to read `project-setup` before adding or changing project actions, because `read_styal_guide` is a deferred tool whose description they do not see first.
+      - Each read records `feature.used` with `feature = agent-guides`, `guideRoute` and the topic, and no other argument or result. Opening the skill records `action = open`.
     rationale: Gives agents styal-specific setup knowledge (styal.json, devices, hardware, imports, maintenance) through the MCP server every provider already connects to, so no provider session or desktop packaging changes are needed. Upstream's bundled skills proposal installs files into provider homes instead.
     implementation_paths:
       - apps/server/src/mcp/toolkits/guide/guides.ts
       - apps/server/src/mcp/toolkits/guide/handlers.ts
+      - apps/server/src/mcp/toolkits/guide/skill.ts
       - apps/server/src/mcp/toolkits/guide/tools.ts
+      - apps/server/src/telemetry/StyalSkillUsage.ts
+      - packages/provider-core/src/server/styalSkill.ts
     upstream_paths:
       - apps/server/src/cli/doctor.ts
       - apps/server/src/cli/trace.ts
@@ -128,16 +135,23 @@ features:
       - apps/server/src/mcp/McpHttpServer.ts
       - apps/server/src/mcp/toolkits/device/handlers.ts
       - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
+      - apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts
+      - apps/server/src/orchestration-v2/ProviderEventIngestor.ts
       - apps/server/src/orchestration-v2/ThreadSettlementService.ts
       - apps/server/src/preview/PortScanner.ts
       - apps/server/src/process/agentScope.ts
       - apps/server/src/project/ProjectSetupScriptRunner.ts
+      - apps/server/src/provider/CodexDeveloperInstructions.ts
       - apps/server/src/provider/agentContextBudget.json
       - apps/server/src/telemetry/AnalyticsService.ts
       - apps/server/src/telemetry/FeatureUsage.ts
       - packages/client-runtime/src/t3ToolSummary.ts
       - packages/contracts/src/t3ProjectFile.ts
       - packages/provider-core/src/server/orchestrationInstructions.ts
+      - packages/provider-opencode/src/server/driver.ts
+      - packages/provider-opencode/src/server/status.ts
+      - packages/provider-opencode/src/server/v2/OpenCode2Server.ts
+      - packages/provider-opencode/src/server/v2/adapter.ts
       - packages/shared/src/projectScripts.ts
       - packages/shared/src/t3McpToolPresentation.ts
     tests:
@@ -145,6 +159,7 @@ features:
       - apps/server/src/mcp/toolkits/guide/handlers.test.ts
       - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.test.ts
       - apps/server/src/provider/AgentContextBudget.test.ts
+      - apps/server/src/telemetry/StyalSkillUsage.test.ts
     upstream:
       status: tracking
       tracking:

@@ -41,6 +41,7 @@ import { UsageService } from "../usage/UsageService.ts";
 import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
+import { StyalSkillAnalytics } from "../telemetry/StyalSkillUsage.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as EffectOutbox from "./EffectOutbox.ts";
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
@@ -392,6 +393,7 @@ export const layer: Layer.Layer<
     const idAllocator = yield* IdAllocator.IdAllocatorV2;
     const threadCommands = yield* ThreadCommandExecutor.ThreadCommandExecutor;
     const analytics = yield* ProviderTurnAnalytics;
+    const skillAnalytics = yield* StyalSkillAnalytics;
     const agentScope = yield* AgentScope;
     const instances = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
     const scope = yield* Effect.scope;
@@ -824,7 +826,8 @@ export const layer: Layer.Layer<
                   nodeId: input.event.message.nodeId,
                 }),
               ];
-            case "turn_item.updated":
+            case "turn_item.updated": {
+              yield* skillAnalytics.record(input.event.turnItem);
               return [
                 yield* makeDomainEvent(input, {
                   type: "turn-item.updated",
@@ -836,6 +839,7 @@ export const layer: Layer.Layer<
                   nodeId: input.event.turnItem.nodeId,
                 }),
               ];
+            }
             case "runtime_request.updated":
               return [
                 yield* makeDomainEvent(input, {

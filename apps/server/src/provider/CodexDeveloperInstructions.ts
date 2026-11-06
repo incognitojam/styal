@@ -10,6 +10,7 @@ import {
   T3_CODE_DEVICE_TOOL_INSTRUCTIONS,
   T3_CODE_ORCHESTRATION_SECTIONS,
   renderProviderToolInstructions,
+  withoutGuideToolLine,
 } from "@t3tools/provider-core/server/orchestrationInstructions";
 
 /** Codex silently truncates additionalContext values over 1,000 tokens, counted as UTF-8 bytes / 4. */
@@ -67,6 +68,7 @@ export function buildCodexAdditionalContext(
   toolsAvailable: boolean | T3CodeToolAvailability = true,
   additionalInstructions?: string,
   mcpServerName: McpServerName = ACTIVE_MCP_SERVER_NAME,
+  hasStyalSkill = false,
 ): Record<string, V2TurnStartParams__AdditionalContextEntry> {
   const tools = toolInstructions(toolsAvailable, mcpServerName);
   const projectContext: Record<string, V2TurnStartParams__AdditionalContextEntry> = {};
@@ -98,7 +100,10 @@ export function buildCodexAdditionalContext(
         `t3_code_orchestration_${String(index + 1).padStart(2, "0")}`,
         {
           kind: "application" as const,
-          value: renderProviderToolInstructions(section, mcpServerName),
+          value: renderProviderToolInstructions(
+            hasStyalSkill ? withoutGuideToolLine(section) : section,
+            mcpServerName,
+          ),
         },
       ]),
     ),

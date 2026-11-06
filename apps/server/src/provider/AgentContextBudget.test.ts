@@ -99,6 +99,7 @@ const claudeSystemAppend = () => {
     resume: false,
     cwd: null,
     mcpServers: { styal: { type: "http", url: "http://127.0.0.1/mcp" } },
+    styalSkillPluginRoot: "/state/agent-skills/styal",
   });
   return typeof systemPrompt === "object" && "append" in systemPrompt ? systemPrompt.append : "";
 };
@@ -108,6 +109,9 @@ const codexAdditionalContext = () =>
     buildCodexAdditionalContext(
       { model: "gpt-6.1-sol", modelName: "GPT-6.1 Sol", reasoningEffort: "high" },
       { browser: true, device: true },
+      undefined,
+      undefined,
+      true,
     ),
   )
     .map((entry) => entry.value)

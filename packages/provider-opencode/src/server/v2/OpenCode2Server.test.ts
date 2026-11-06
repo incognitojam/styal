@@ -17,6 +17,7 @@ import * as OpenCodeRuntime from "../OpenCodeRuntime.ts";
 import * as OpenCodeServerLedger from "../OpenCodeServerLedger.ts";
 import * as OpenCode2Client from "./OpenCode2Client.ts";
 import * as OpenCode2Server from "./OpenCode2Server.ts";
+import { styalSkillRules } from "./adapter.ts";
 
 // Shapes and content types observed on `opencode serve` 2.0.18 (pid and port replaced). 1.x
 // answers /api/info with its web UI: 200 text/html.
@@ -217,4 +218,33 @@ describe("OpenCode2Server spawned server", () => {
       ),
     ),
   );
+});
+
+it.each([
+  ["no user config", undefined, { skills: { paths: ["/skills"] } }],
+  ["other user settings", '{"model":"a/b"}', { model: "a/b", skills: { paths: ["/skills"] } }],
+  ["the array form", '{"skills":["/mine"]}', { skills: { paths: ["/mine", "/skills"] } }],
+  [
+    "the object form",
+    '{"skills":{"paths":["/mine"],"urls":["https://example.com"]}}',
+    { skills: { paths: ["/mine", "/skills"], urls: ["https://example.com"] } },
+  ],
+])("adds the skill root to %s", (_name, content, expected) => {
+  assert.deepEqual(
+    JSON.parse(OpenCode2Server.withOpenCodeSkillPath(content, "/skills") ?? ""),
+    expected,
+  );
+});
+
+it.each([["not json"], ["[]"]])("leaves %s for OpenCode to report", (content) => {
+  assert.isUndefined(OpenCode2Server.withOpenCodeSkillPath(content, "/skills"));
+});
+
+// OpenCode applies the last matching rule, so these must follow its Supervised "ask" rules.
+it("lets a session read the skill's files and removes the guide tool", () => {
+  assert.deepEqual(styalSkillRules("/state/styal-guides", "styal"), [
+    { action: "external_directory", resource: "/state/styal-guides/*", effect: "allow" },
+    { action: "styal_read_styal_guide", resource: "*", effect: "deny" },
+  ]);
+  assert.deepEqual(styalSkillRules(undefined, "styal"), []);
 });

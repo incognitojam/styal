@@ -426,7 +426,9 @@ export const observe = Effect.fnUntraced(function* <A, E, R>(
           !Cause.hasInterruptsOnly(exit.cause)
             ? { failureReason: autoEnvironmentFailureReason(exit.cause) }
             : {}),
-          ...(usage.feature === "agent-guides" ? { guideTopic: usage.guideTopic } : {}),
+          ...(usage.feature === "agent-guides"
+            ? { guideTopic: usage.guideTopic, guideRoute: "tool" }
+            : {}),
           ...(usage.feature === "hardware" && usage.hardwareTier
             ? { hardwareTier: usage.hardwareTier }
             : {}),

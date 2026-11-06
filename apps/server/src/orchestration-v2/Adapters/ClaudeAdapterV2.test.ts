@@ -622,6 +622,36 @@ describe("ClaudeAdapterV2 MCP query overrides", () => {
 });
 
 describe("ClaudeAdapterV2 native protocol logging", () => {
+  it("gives a session the styal skill in place of the guide tool and its line", () => {
+    const base = {
+      modelSelection: {
+        instanceId: ProviderInstanceId.make("claudeAgent"),
+        model: "claude-sonnet-4-6",
+      },
+      nativeThreadId: "native-thread-claude-skill",
+      resume: false,
+      cwd: "/workspace",
+      mcpServers: { styal: { type: "http" as const, url: "http://127.0.0.1:43123/mcp" } },
+      environment: {},
+    };
+    const append = (options: ReturnType<typeof ClaudeAdapterV2.makeClaudeQueryOptions>) =>
+      (options.systemPrompt as { readonly append?: string }).append ?? "";
+
+    const without = ClaudeAdapterV2.makeClaudeQueryOptions(base);
+    assert.include(append(without), "read_styal_guide");
+    assert.isUndefined(without.plugins);
+    assert.isUndefined(without.disallowedTools);
+
+    const withSkill = ClaudeAdapterV2.makeClaudeQueryOptions({
+      ...base,
+      styalSkillPluginRoot: "/state/agent-skills/styal",
+    });
+    assert.notInclude(append(withSkill), "read_styal_guide");
+    assert.deepEqual(withSkill.plugins, [{ type: "local", path: "/state/agent-skills/styal" }]);
+    assert.deepEqual(withSkill.disallowedTools, ["mcp__styal__read_styal_guide"]);
+    assert.include(withSkill.additionalDirectories ?? [], "/state/agent-skills/styal");
+  });
+
   it("names the styal MCP server in the orchestration instructions", () => {
     const options = ClaudeAdapterV2.makeClaudeQueryOptions({
       modelSelection: {

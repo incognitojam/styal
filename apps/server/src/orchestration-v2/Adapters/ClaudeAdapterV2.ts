@@ -206,6 +206,7 @@ import {
 } from "@t3tools/provider-core/server/mcpToolPresentation";
 import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
+import { STYAL_GUIDE_TOOL, resolveStyalSkill } from "@t3tools/provider-core/server/styalSkill";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import {
   makeProviderFailure,
@@ -1611,6 +1612,7 @@ export function makeClaudeQueryOptions(input: {
   readonly supportedDialogKinds?: ClaudeQueryOptions["supportedDialogKinds"];
   readonly allowDangerouslySkipPermissions?: boolean;
   readonly appendSystemPromptFileText?: string;
+  readonly styalSkillPluginRoot?: string;
   // Flag settings, because a user's settings.json env beats the process env in Claude Code.
   readonly toolSearchOverride?: "true";
 }): ClaudeAgentSdkQueryOptions {
@@ -1674,6 +1676,13 @@ export function makeClaudeQueryOptions(input: {
     input.mcpServers !== undefined && McpProviderSession.LEGACY_MCP_SERVER_NAME in input.mcpServers
       ? McpProviderSession.LEGACY_MCP_SERVER_NAME
       : McpProviderSession.ACTIVE_MCP_SERVER_NAME;
+  const hasStyalSkill = input.styalSkillPluginRoot !== undefined;
+  const disallowedTools = [
+    ...(input.disallowedTools ?? []),
+    ...(hasStyalSkill && input.mcpServers !== undefined
+      ? [`mcp__${mcpServerName}__${STYAL_GUIDE_TOOL}`]
+      : []),
+  ];
   const options: ClaudeAgentSdkQueryOptions = {
     model: compiledSelection.apiModelId,
     tools: claudeAgentSdkQueryToolsForSdk(selectedTools),
@@ -1691,7 +1700,7 @@ export function makeClaudeQueryOptions(input: {
     ...threadIdentity,
     ...(input.resumeSessionAt === undefined ? {} : { resumeSessionAt: input.resumeSessionAt }),
     ...(input.allowedTools === undefined ? {} : { allowedTools: [...input.allowedTools] }),
-    ...(input.disallowedTools === undefined ? {} : { disallowedTools: [...input.disallowedTools] }),
+    ...(disallowedTools.length === 0 ? {} : { disallowedTools }),
     ...(input.canUseTool === undefined ? {} : { canUseTool: input.canUseTool }),
     ...(input.allowDangerouslySkipPermissions === true
       ? { allowDangerouslySkipPermissions: true }
@@ -1725,8 +1734,12 @@ export function makeClaudeQueryOptions(input: {
       preset: "claude_code" as const,
       append: [
         buildRuntimeInstructions({ harness: "Claude Code" }) +
-          (t3OrchestrationSystemPrompt(input.mcpServers !== undefined, false, mcpServerName) ??
-            "") +
+          (t3OrchestrationSystemPrompt(
+            input.mcpServers !== undefined,
+            false,
+            mcpServerName,
+            hasStyalSkill,
+          ) ?? "") +
           (input.mcpServers === undefined
             ? ""
             : CLAUDE_BACKGROUND_WAIT_INSTRUCTIONS +
@@ -1741,11 +1754,16 @@ export function makeClaudeQueryOptions(input: {
       ? { hooks: { SubagentStart: [{ hooks: [subagentDeviceInstructions(mcpServerName)] }] } }
       : {}),
     ...(Object.keys(extraArgs).length === 0 ? {} : { extraArgs }),
+    ...(input.styalSkillPluginRoot === undefined
+      ? {}
+      : { plugins: [{ type: "local" as const, path: input.styalSkillPluginRoot }] }),
   };
   const additionalDirectories = [
     ...(input.cwd === null ? [] : [input.cwd]),
     ...(input.attachmentsDir === undefined ? [] : [input.attachmentsDir]),
     ...claudeLaunchArgDirectories(input.settings?.launchArgs),
+    // Supervised sessions would otherwise ask before reading a guide file.
+    ...(input.styalSkillPluginRoot === undefined ? [] : [input.styalSkillPluginRoot]),
   ];
   const withDirectories =
     additionalDirectories.length === 0 ? options : { ...options, additionalDirectories };
@@ -4635,6 +4653,8 @@ export interface ClaudeAdapterV2Options {
   readonly settings: ClaudeSettings;
   readonly environment: NodeJS.ProcessEnv;
   readonly attachmentsDir: string;
+  /** Where the server wrote the styal skill. */
+  readonly stateDir?: string;
   readonly fileSystem: FileSystem.FileSystem;
   readonly path: Path.Path;
   readonly crypto: Crypto.Crypto;
@@ -10761,6 +10781,13 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             turnInput.runtimePolicy.cwd,
             launchArgSettings,
           );
+          const styalSkill =
+            adapterOptions.stateDir === undefined
+              ? undefined
+              : yield* resolveStyalSkill(adapterOptions.stateDir).pipe(
+                  Effect.provideService(FileSystem.FileSystem, fileSystem),
+                  Effect.provideService(Path.Path, path),
+                );
           const queryOptions = makeClaudeQueryOptions({
             modelSelection: turnInput.modelSelection,
             nativeThreadId,
@@ -10808,6 +10835,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             supportedDialogKinds: ["resume_return"],
             ...(appendSystemPromptFileText === undefined ? {} : { appendSystemPromptFileText }),
             ...(toolSearchOverride === undefined ? {} : { toolSearchOverride }),
+            ...(styalSkill === undefined ? {} : { styalSkillPluginRoot: styalSkill.pluginRoot }),
           });
           const resolvedTurnCwd = yield* fileSystem
             .realPath(turnInput.runtimePolicy.cwd ?? ".")
@@ -12291,6 +12319,7 @@ export const createClaudeAdapterV2 = Effect.fn("ClaudeAdapterV2Driver.create")(
       settings: { ...config, enabled, binaryPath },
       environment: claudeEnvironment,
       attachmentsDir: serverConfig.attachmentsDir,
+      stateDir: serverConfig.stateDir,
       fileSystem,
       path,
       crypto,

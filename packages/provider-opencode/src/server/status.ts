@@ -1,3 +1,4 @@
+import { STYAL_SKILL_NAME } from "@t3tools/provider-core/server/styalSkill";
 import {
   type ModelCapabilities,
   type ServerProviderModel,
@@ -544,6 +545,7 @@ export function openCode2SkillsToServerProviderSkills(
   skills: OpenCode2Workspace["skills"],
 ): ReadonlyArray<ServerProviderSkill> {
   return skills
+    .filter((skill) => skill.id !== STYAL_SKILL_NAME)
     .map((skill) => {
       const description = trimOptional(skill.description);
       return {

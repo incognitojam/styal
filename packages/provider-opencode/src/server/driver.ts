@@ -1,3 +1,4 @@
+import { resolveStyalSkill } from "@t3tools/provider-core/server/styalSkill";
 import { ProviderDriverKind } from "@t3tools/contracts";
 import { OpenCodeSettings } from "../settings.ts";
 import * as Crypto from "effect/Crypto";
@@ -279,12 +280,26 @@ export const OpenCodeDriver: ProviderDriver<
           }),
       ),
     );
+    // An external server's process and config are not styal's to change.
+    const styalSkill = effectiveConfig.serverUrl
+      ? undefined
+      : yield* resolveStyalSkill(host.paths.stateDir);
+    const openCode2Config =
+      styalSkill === undefined
+        ? undefined
+        : OpenCode2Server.withOpenCodeSkillPath(
+            processEnv.OPENCODE_CONFIG_CONTENT,
+            styalSkill.skillsRoot,
+          );
     const openCode2Server = yield* OpenCode2Server.make({
       binaryPath: effectiveConfig.binaryPath,
       serverUrl: effectiveConfig.serverUrl,
       serverPassword: effectiveConfig.serverPassword,
       directory: host.paths.cwd,
-      environment: processEnv,
+      environment:
+        openCode2Config === undefined
+          ? processEnv
+          : { ...processEnv, OPENCODE_CONFIG_CONTENT: openCode2Config },
     }).pipe(
       Effect.provideService(OpenCodeRuntime.OpenCodeRuntime, openCodeRuntime),
       Effect.provideService(
@@ -295,9 +310,10 @@ export const OpenCodeDriver: ProviderDriver<
     const orchestrationAdapter = selectOpenCodeRuntimeAdapter({
       probe: runtimeProbe,
       v1: openCodeV1Adapter,
-      v2: yield* OpenCode2AdapterV2.make(instanceId).pipe(
-        Effect.provideService(OpenCode2Server.OpenCode2Server, openCode2Server),
-      ),
+      v2: yield* OpenCode2AdapterV2.make(
+        instanceId,
+        openCode2Config === undefined ? undefined : styalSkill?.skillDirectory,
+      ).pipe(Effect.provideService(OpenCode2Server.OpenCode2Server, openCode2Server)),
     });
     const loadOpenCode2Models = yield* makeOpenCode2ModelLoader(
       openCode2Server.withConnection(({ client }) => loadOpenCode2Catalog(client, host.paths.cwd)),
