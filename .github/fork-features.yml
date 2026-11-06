@@ -5351,6 +5351,7 @@ features:
       - Only github-actions bot issue comments on incognitojam/styal may suppress a wake with the styal-report quiet marker; human and review comments still wake.
       - Divergence growth, exceeded transfer ceilings or changed ceiling/scenario assumptions, and unaccepted context growth remain loud; the first recovery edit is loud and later healthy edits are quiet.
       - Reports remain in sticky comments and job summaries; the agent-context budget gate is unchanged.
+      - Divergence publishing loads trusted code from the default branch while comparing against the PR base, including when that base predates the publisher.
       - Quiet remarks advance the watch watermark without consuming comment-only wakes; removing the marker on a later edit wakes normally.
     implementation_paths:
       - .github/scripts/agent-context-report.cjs

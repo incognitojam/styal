@@ -3,6 +3,7 @@ import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 import { assert, describe, it } from "@effect/vitest";
+import { parse } from "yaml";
 import {
   parseDiff,
   readDivergence,
@@ -50,6 +51,23 @@ const lines = (count: number, prefix = "line") =>
   Array.from({ length: count }, (_, index) => `${prefix} ${index}\n`).join("");
 
 describe("upstream divergence", () => {
+  it("runs trusted current publisher code while comparing the pull request base", () => {
+    const workflow = parse(
+      NodeFS.readFileSync(
+        new URL("../../.github/workflows/upstream-divergence-comment.yml", import.meta.url),
+        "utf8",
+      ),
+    );
+    const steps = workflow.jobs.comment.steps;
+    const checkout = steps.find((step: { uses?: string }) =>
+      step.uses?.startsWith("actions/checkout@"),
+    );
+    const report = steps.find((step: { name?: string }) => step.name === "Write report");
+    assert.equal(checkout.with.ref, "${{ github.event.repository.default_branch }}");
+    assert.equal(report.env.BASE_SHA, "${{ github.event.pull_request.base.sha }}");
+    assert.include(report.run, '--base "$BASE_SHA"');
+  });
+
   it("marks flat divergence quiet and any increasing measure loud", () => {
     const base = { fork: "fork", upstream: "upstream", files: [] };
     const labels = {

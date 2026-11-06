@@ -20,12 +20,12 @@ jobs:
       group: upstream-divergence-comment-${{ github.event.pull_request.number }}
       cancel-in-progress: true
     steps:
-      # This pull_request_target job runs the base repository's report and reads the pull
+      # This pull_request_target job runs the default branch's report and reads the pull
       # request's commits only as git data. Do not install dependencies or run PR code here.
-      - name: Checkout base repository
+      - name: Checkout trusted publisher
         uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.pull_request.base.sha }}
+          ref: ${{ github.event.repository.default_branch }}
           fetch-depth: 0
           sparse-checkout: |
             /scripts/
