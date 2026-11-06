@@ -4,6 +4,7 @@ import {
   MACHINE_ACCESS_CHOICES,
   machineAccessChoice,
   machineAccessStopNotice,
+  machineNames,
 } from "@t3tools/client-runtime/link-request";
 import { deviceSharingAddresses } from "@t3tools/client-runtime/state/device";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
@@ -297,16 +298,37 @@ function OtherMachineLinks(props: {
       : null,
   );
   const known = new Set<EnvironmentId>(machines.map((other) => other.environmentId));
-  return (links.data?.links ?? [])
-    .filter((link) => !known.has(link.environmentId))
-    .map((link) => (
-      <View key={link.environmentId} className="gap-0.5 border-t border-border p-4">
-        <Text className="font-t3-bold text-sm text-foreground">{link.label}</Text>
+  const others = (links.data?.links ?? []).filter((link) => !known.has(link.environmentId));
+  if (others.length === 0) {
+    return machines.length > 1 || !links.data ? null : (
+      <View className="gap-0.5 border-t border-border p-4">
+        <Text className="font-t3-bold text-sm text-foreground">Add another machine first</Text>
         <Text className="text-xs text-foreground-muted">
-          Agents on {machine.label} · {linkAccessLabel(link.access)}
+          Add one under Environments so your machines can work on each other and share simulators.
         </Text>
       </View>
-    ));
+    );
+  }
+  return (
+    <>
+      <View className="gap-0.5 border-t border-border p-4">
+        <Text className="font-t3-bold text-sm text-foreground">
+          Other machines {machine.label} works with
+        </Text>
+        <Text className="text-xs text-foreground-muted">
+          This app isn't connected to these. Add one under Environments to give it a tab here.
+        </Text>
+      </View>
+      {others.map((link) => (
+        <View key={link.environmentId} className="gap-0.5 border-t border-border p-4">
+          <Text className="font-t3-bold text-sm text-foreground">{link.label}</Text>
+          {link.access === LINK_DEFAULT_ACCESS ? null : (
+            <Text className="text-xs text-foreground-muted">{linkAccessLabel(link.access)}</Text>
+          )}
+        </View>
+      ))}
+    </>
+  );
 }
 
 function MachineStatus(props: {
@@ -322,18 +344,29 @@ function MachineStatus(props: {
       : null,
   );
   const named = (level: IncomingMachineAccess) =>
-    machines
+    machineNames(
+      machines
+        .filter(
+          (other) =>
+            links.data?.links.some(
+              (link) => link.environmentId === other.environmentId && link.status !== "expired",
+            ) && (other.serverConfig?.settings.incomingMachineAccess ?? "everything") === level,
+        )
+        .map((other) => other.label),
+    );
+  const unconnected = machineNames(
+    (links.data?.links ?? [])
       .filter(
-        (other) =>
-          links.data?.links.some(
-            (link) => link.environmentId === other.environmentId && link.status !== "expired",
-          ) && (other.serverConfig?.settings.incomingMachineAccess ?? "everything") === level,
+        (link) =>
+          link.status !== "expired" &&
+          !machines.some((other) => other.environmentId === link.environmentId),
       )
-      .map((other) => other.label)
-      .join(", ");
+      .map((link) => link.label),
+  );
   const parts = [
     named("everything") && `can control ${named("everything")}`,
     named("look-only") && `can look at ${named("look-only")}`,
+    unconnected && `can work on ${unconnected}`,
     named("nothing") && `can't reach ${named("nothing")}`,
   ].filter(Boolean);
   const devices = state.hosts
@@ -346,8 +379,8 @@ function MachineStatus(props: {
         {!connected
           ? `${machine.label} isn't connected. Its setting applies whether or not this app can reach it.`
           : parts.length === 0
-            ? "Connected."
-            : `Connected. Agents here ${parts.join(", and ")}.`}
+            ? "Connected. Agents here aren't working on other machines yet."
+            : `Connected. Agents here ${machineNames(parts)}.`}
       </Text>
       {connected && devices.length > 0 ? (
         <Text className="text-xs text-foreground-muted">
