@@ -2,7 +2,6 @@ import {
   LINK_DEFAULT_ACCESS,
   linkAccessLabel,
   machineAccessChoice,
-  machineNames,
 } from "@t3tools/client-runtime/link-request";
 import { peerLinkHealth } from "@t3tools/client-runtime/state/peerLinks";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
@@ -31,6 +30,7 @@ import {
   resolveEnvironmentMachineKind,
 } from "@t3tools/contracts";
 import { Tabs } from "@base-ui/react/tabs";
+import { Link } from "@tanstack/react-router";
 import * as DateTime from "effect/DateTime";
 import {
   CheckIcon,
@@ -58,7 +58,7 @@ import { useEnvironmentQuery } from "../../state/query";
 import { useEnvironmentScope } from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { ConnectionStatusDot } from "../ConnectionStatusDot";
-import { Button } from "../ui/button";
+import { Button, InlineButton } from "../ui/button";
 import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import {
@@ -233,7 +233,7 @@ export function WorkTogetherSettings() {
             ) : (
               <>
                 <MachineDevicesRow machine={selected} machines={machines} />
-                <MachineStatusRow machine={selected} machines={machines} />
+                <MachineReachRow machine={selected} machines={machines} onOpenTab={setChosenTab} />
               </>
             )}
           </SettingsGroup>
@@ -290,16 +290,23 @@ function MachineDevicesRow({
       description={
         from.length === 0 ? here : `${here} Agents here can use devices on ${from.join(" and ")}.`
       }
+      control={
+        <Button variant="outline" size="sm" render={<Link to="/settings/devices" />}>
+          Manage
+        </Button>
+      }
     />
   );
 }
 
-function MachineStatusRow({
+function MachineReachRow({
   machine,
   machines,
+  onOpenTab,
 }: {
   readonly machine: NamedEnvironment;
   readonly machines: ReadonlyArray<NamedEnvironment>;
+  readonly onOpenTab: (tab: string) => void;
 }) {
   const connected = machine.connection.phase === "connected";
   const links = useEnvironmentQuery(
@@ -307,41 +314,58 @@ function MachineStatusRow({
       ? peerLinkEnvironment.list({ environmentId: machine.environmentId, input: {} })
       : null,
   );
-  const linkedOthers = machines.filter((other) =>
-    links.data?.links.some(
-      (link) => link.environmentId === other.environmentId && link.status !== "expired",
-    ),
+  if (!connected) {
+    return (
+      <SettingsRow
+        title={`This app can't reach ${machine.label} right now`}
+        description="Its setting still applies."
+      />
+    );
+  }
+  const liveLinks = (links.data?.links ?? []).filter((link) => link.status !== "expired");
+  const tabbed = machines.filter((other) =>
+    liveLinks.some((link) => link.environmentId === other.environmentId),
   );
   const named = (level: IncomingMachineAccess) =>
-    linkedOthers.filter(
-      (other) => (other.serverConfig?.settings.incomingMachineAccess ?? "everything") === level,
-    );
-  const refusing = named("nothing");
+    tabbed
+      .filter(
+        (other) => (other.serverConfig?.settings.incomingMachineAccess ?? "everything") === level,
+      )
+      .map((other) => ({ label: other.label, tab: other.environmentId }));
   // Their own setting isn't visible from here, so this can't say what they allow.
-  const unconnected = (links.data?.links ?? []).filter(
-    (link) =>
-      link.status !== "expired" &&
-      !machines.some((other) => other.environmentId === link.environmentId),
-  );
-  const names = (list: ReadonlyArray<{ readonly label: string }>) =>
-    machineNames(list.map((entry) => entry.label));
-  const parts = [
-    named("everything").length > 0 ? `can control ${names(named("everything"))}` : "",
-    named("view-only").length > 0 ? `can view ${names(named("view-only"))}` : "",
-    unconnected.length > 0 ? `can work on ${names(unconnected)}` : "",
-    refusing.length > 0
-      ? `can't reach ${names(refusing)}, which accept${refusing.length === 1 ? "s" : ""} nothing`
-      : "",
-  ].filter(Boolean);
+  const untabbed = liveLinks
+    .filter((link) => !machines.some((other) => other.environmentId === link.environmentId))
+    .map((link) => ({ label: link.label, tab: OTHER_MACHINES_TAB }));
+  const refusing = named("nothing");
+  const groups = [
+    { lead: "Can control", machines: named("everything"), tail: "" },
+    { lead: "Can view", machines: named("view-only"), tail: "" },
+    { lead: "Can work on", machines: untabbed, tail: "" },
+    {
+      lead: "Can't reach",
+      machines: refusing,
+      tail: refusing.length === 1 ? ", which accepts nothing" : ", which accept nothing",
+    },
+  ].filter((group) => group.machines.length > 0);
   return (
     <SettingsRow
-      title="Status"
+      title={`Agents on ${machine.label}`}
       description={
-        !connected
-          ? `This app can't reach ${machine.label} right now. Its setting still applies.`
-          : parts.length === 0
-            ? "Agents here aren't working on other machines yet."
-            : `Agents here ${machineNames(parts)}.`
+        groups.length === 0
+          ? "Not working on other machines yet."
+          : groups.map((group, index) => (
+              <span key={group.lead}>
+                {index > 0 ? " " : ""}
+                {group.lead}{" "}
+                {group.machines.map((other, position) => (
+                  <span key={other.label}>
+                    {position === 0 ? "" : position === group.machines.length - 1 ? " and " : ", "}
+                    <InlineButton onClick={() => onOpenTab(other.tab)}>{other.label}</InlineButton>
+                  </span>
+                ))}
+                {group.tail}.
+              </span>
+            ))
       }
     />
   );
