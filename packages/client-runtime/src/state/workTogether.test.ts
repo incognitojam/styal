@@ -7,6 +7,7 @@ import {
   planWorkTogether,
   runWorkTogetherLines,
   workTogetherDefaultAccess,
+  workTogetherLabels,
   workTogetherFailureMessage,
   workTogetherMissingShares,
   workTogetherOutcome,
@@ -304,4 +305,14 @@ describe("workTogetherFailureMessage", () => {
       workTogetherFailureMessage({ _tag: "RpcClientError", message: "pairingCode=ABC123" }),
     ).toBe("This step did not finish. Try again.");
   });
+});
+
+it("identifies duplicate names across every pair without changing unique names", () => {
+  const machines = [atlas(), machine(EnvironmentId.make("atlas-two"), "Atlas"), orion()];
+  expect(workTogetherLabels(machines).map(({ label }) => label)).toEqual([
+    "Atlas (atlas)",
+    "Atlas (atlas-two)",
+    "Orion",
+  ]);
+  expect(machines[0]?.label).toBe("Atlas");
 });

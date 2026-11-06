@@ -7,6 +7,7 @@ import {
   type WorkTogetherLine,
   type WorkTogetherMachine,
   workTogetherDefaultAccess,
+  workTogetherLabels,
   workTogetherFailureMessage,
   workTogetherMissingShares,
   workTogetherOutcome,
@@ -50,8 +51,10 @@ interface Run {
 /** Each pair of the machines this app knows. The phone is a client, so it is never one. */
 export function WorkTogetherSection() {
   const { environments } = useEnvironments();
-  const machines = environments.filter(
-    (environment) => environment.serverConfig?.environment.capabilities.peerLinks !== false,
+  const machines = workTogetherLabels(
+    environments.filter(
+      (environment) => environment.serverConfig?.environment.capabilities.peerLinks !== false,
+    ),
   );
   const pairs = machines.flatMap((a, index) =>
     machines.slice(index + 1).map((b) => [a, b] as const),

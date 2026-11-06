@@ -6,6 +6,7 @@ import {
   type WorkTogetherLine,
   type WorkTogetherMachine,
   workTogetherDefaultAccess,
+  workTogetherLabels,
   workTogetherFailureMessage,
   workTogetherMissingShares,
   workTogetherOutcome,
@@ -48,8 +49,10 @@ type RunKind = "start" | "stop";
 /** Each pair of the machines this client knows, and what it can do with them. */
 export function WorkTogetherSettings() {
   const { environments } = useEnvironments();
-  const machines = environments.filter(
-    (environment) => environment.serverConfig?.environment.capabilities.peerLinks !== false,
+  const machines = workTogetherLabels(
+    environments.filter(
+      (environment) => environment.serverConfig?.environment.capabilities.peerLinks !== false,
+    ),
   );
   const pairs = machines.flatMap((a, index) =>
     machines.slice(index + 1).map((b) => [a, b] as const),

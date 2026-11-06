@@ -70,6 +70,18 @@ export interface WorkTogetherMachine {
   }>;
 }
 
+export function workTogetherLabels<
+  T extends { readonly environmentId: string; readonly label: string },
+>(machines: ReadonlyArray<T>): ReadonlyArray<T> {
+  const counts = new Map<string, number>();
+  for (const machine of machines) counts.set(machine.label, (counts.get(machine.label) ?? 0) + 1);
+  return machines.map((machine) =>
+    (counts.get(machine.label) ?? 0) > 1
+      ? { ...machine, label: `${machine.label} (${machine.environmentId})` }
+      : machine,
+  );
+}
+
 type Step =
   | { readonly kind: "allow"; readonly machine: WorkTogetherMachine }
   | {
