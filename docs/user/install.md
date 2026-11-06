@@ -84,6 +84,15 @@ The app can update the `.deb` installation itself. Installing an update may ask
 for your password. If no password prompt is available, download the new `.deb`
 and run the command above again.
 
+The Linux desktop downloads, an AppImage and a `.deb`, are built for x86_64.
+To launch the AppImage, open a terminal in its download folder and make it
+executable:
+
+```sh
+chmod +x ./styal-*.AppImage
+./styal-*.AppImage
+```
+
 ### The `styal` command
 
 The desktop app includes the `styal` command-line tool. To run it from any
