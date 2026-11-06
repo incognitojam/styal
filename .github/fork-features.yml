@@ -299,6 +299,7 @@ features:
       - packages/contracts/src/orchestrationV2.ts
       - packages/provider-core/src/server/attachmentPrompt.ts
     tests:
+      - e2e/tests/chat-smoke.e2e.ts
       - apps/mobile/src/features/sharing/incoming-share-inbox.test.ts
       - apps/mobile/src/features/threads/pending-thread-feed.test.ts
       - apps/mobile/src/lib/attachmentUpload.test.ts
