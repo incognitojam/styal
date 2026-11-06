@@ -3090,39 +3090,6 @@ features:
       status: unassessed
       tracking: []
       retire_when: Upstream lists resolved keybindings in one overview opened from the keyboard.
-  - id: markdown-table-layout
-    title: Fit Markdown tables to the available width
-    status: review-needed
-    prs: [341]
-    invariants:
-      - Web and desktop Markdown tables in messages and file previews start from the Word wrap preference and let wrapped rows grow to show complete cell content within the available width where headings can fit.
-      - The existing Expand table cells and Collapse table cells controls switch between wrapped and single-line rows without retaining measured column minimum widths; collapsed cells keep full values accessible by horizontal scrolling without ellipsis truncation.
-      - Tables that must overflow retain discoverable scrollbars, including dense wrapped tables whose headings cannot fit without breaking words.
-    implementation_paths:
-      - apps/web/src/components/chat/MarkdownTable.tsx
-      - apps/web/src/components/files/FileMarkdownPreview.tsx
-      - apps/web/src/index.css
-    upstream_paths:
-      - apps/web/src/components/ChatMarkdown.tsx
-      - apps/web/src/components/chat/MarkdownTable.tsx
-      - apps/web/src/components/files/FileMarkdownPreview.tsx
-      - apps/web/src/components/ui/scroll-area.tsx
-      - apps/web/src/index.css
-    # Layout and mode switching were verified in the real client at 480, 640,
-    # and 848 pixel content widths; PR 341 contains the screenshot evidence.
-    # Settings tests cover the Word wrap default, not browser layout.
-    tests:
-      - packages/contracts/src/settings.test.ts
-    upstream:
-      status: partial
-      # PR 8868 exposes scrollbars only. PR 26449 always wraps cells at a 24rem cap and
-      # removes the Expand and Collapse controls and the Word wrap preference for tables.
-      tracking:
-        - https://github.com/pingdotgg/t3code/pull/13443
-        - https://github.com/pingdotgg/t3code/pull/26449
-        - https://github.com/pingdotgg/t3code/pull/8868
-      retire_when: Upstream provides equivalent width-fitting wrapped tables, reversible untruncated horizontal scrolling without locked column widths, and discoverable overflow across shared web and desktop Markdown surfaces while preserving the Word wrap preference.
-
   - id: mentioned-time-chips
     title: Explain times mentioned in agent messages in the reader's time zone
     status: maintained
