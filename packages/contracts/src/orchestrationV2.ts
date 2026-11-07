@@ -1375,6 +1375,7 @@ export const OrchestrationV2NotificationSource = kindUnionWithFallback(
           /** Null when the wake is not about one head, so a newer push does not outdate it. */
           headSha: Schema.NullOr(TrimmedNonEmptyString),
           watchEnded: Schema.optional(Schema.Boolean),
+          supersedesUpdates: Schema.optional(Schema.Boolean),
         }),
       ),
     }),
@@ -3741,6 +3742,8 @@ const OrchestrationV2InternalCommand = Schema.Union([
         notification: OrchestrationV2Notification,
         /** Comments stay worth reading after a push, so the wake outlives a newer head. */
         includesRemarks: Schema.optional(Schema.Boolean),
+        /** A merge notice replaces updates queued before the watch ended. */
+        supersedesUpdates: Schema.optional(Schema.Boolean),
       }),
     ),
   }),

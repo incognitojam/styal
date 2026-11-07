@@ -1008,12 +1008,13 @@ function isStalePullRequestWatchWake(
     return latestWatch?.startedAt !== stamp.watchStartedAt;
   }
   if (link.watch === undefined) {
-    // A watch the server ended with a final notice still owes the wakes it queued before it.
+    // A final notice can preserve earlier wakes unless it supersedes them, as a merge does.
     const endedWithNotice = projection.messages.some((message) => {
       const ending = message.notification?.source;
       return (
         ending?.kind === "monitor" &&
         ending.pullRequest?.watchEnded === true &&
+        ending.pullRequest.supersedesUpdates !== true &&
         ending.pullRequest.watchStartedAt === stamp.watchStartedAt &&
         threadPullRequestKeysEqual(ending.pullRequest, stamp)
       );
@@ -3190,7 +3191,12 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             watchStartedAt: command.startedAt,
             headSha:
               command.wake.includesRemarks === true ? null : (command.watch?.headSha ?? null),
-            ...(command.watch === null ? { watchEnded: true } : {}),
+            ...(command.watch === null
+              ? {
+                  watchEnded: true,
+                  ...(command.wake.supersedesUpdates === true ? { supersedesUpdates: true } : {}),
+                }
+              : {}),
           },
         },
       };
