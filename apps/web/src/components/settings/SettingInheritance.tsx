@@ -52,7 +52,7 @@ function formatValue(key: keyof ServerSettings, value: unknown): string {
       ? "Last selected"
       : key === "sidebarAutoSettleAfterDays"
         ? "Never"
-        : key === "defaultModelSelection"
+        : key === "defaultModelSelection" || key === "mentionedTimeCheckModelSelection"
           ? "Automatic"
           : key === "sourceControlWriterModelSelection"
             ? "Text generation model"
