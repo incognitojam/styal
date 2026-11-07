@@ -251,9 +251,11 @@ Provider updates do not restart running chats. An existing session can keep
 using the previous CLI until it ends. If discovery fails, check the provider
 status and refresh it again.
 
-### styal managed updates
+<a id="styal-managed-updates"></a>
 
-With **styal managed updates** on, styal manages your provider CLI versions. It
+### Automatically install styal-tested provider updates
+
+With **Automatically install styal-tested provider updates** on, styal takes over automatic updates for supported providers. It
 installs only versions it has tested: an automated check runs real agent turns
 against each new Codex, Claude Code, and OpenCode release on the latest nightly
 and an older nightly published within the last seven days. It installs in the background once none of that
