@@ -59,6 +59,7 @@ export const SETTINGS_NOT_BADGED: Readonly<Record<string, string>> = {
   "claude-outage-alerts": "Sits under the badged outage alerts row.",
   "github-outage-alerts": "Sits under the badged outage alerts row.",
   "openai-codex-outage-alerts": "Sits under the badged outage alerts row.",
+  "cursor-keychain-usage": "Legacy upstream setting awaiting intake of SDK-based usage data.",
   "hardware-devices": "Sits on the hardware page beside its badged access row.",
   "mentioned-time-check-model": "Sits under the badged time check row.",
   "project-simulator-memory": "Section holding the badged simulator memory row.",

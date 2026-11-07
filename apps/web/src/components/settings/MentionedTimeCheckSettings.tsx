@@ -12,7 +12,11 @@ import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { TraitsPicker } from "../chat/TraitsPicker";
 import { Switch } from "../ui/switch";
 import { toastManager } from "../ui/toast";
-import { SETTINGS_PICKER_TRIGGER_CLASSNAME, SettingsRow } from "./settingsLayout";
+import {
+  SETTINGS_PICKER_TRIGGER_CLASSNAME,
+  SettingResetButton,
+  SettingsRow,
+} from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 import { useSettingsScope } from "./SettingsScopeContext";
 import { useScopedModelDisabledReason } from "./useScopedModelAvailability";
@@ -23,6 +27,32 @@ import {
 } from "./useScopedSettings";
 
 export function MentionedTimeCheckSettings() {
+  const settings = useScopedSettings();
+  const updateSettings = useUpdateScopedSettings();
+  const mixed = useScopedSettingsMixed(["mentionedTimeCheckEnabled"]);
+  return (
+    <SettingsRow
+      serverScoped
+      settingKeys={["mentionedTimeCheckEnabled"]}
+      mixed={mixed}
+      {...searchableSetting("mentioned-time-check")}
+      forkFeature="mentioned-time-chips"
+      description="Improve time chips using a model. Adds a short model call for replies that mention a time."
+      control={
+        <Switch
+          mixed={mixed}
+          checked={mixed ? false : settings.mentionedTimeCheckEnabled}
+          onCheckedChange={(checked) =>
+            updateSettings({ mentionedTimeCheckEnabled: Boolean(checked) })
+          }
+          aria-label="Check mentioned times with a model"
+        />
+      }
+    />
+  );
+}
+
+export function MentionedTimeCheckModelSettings() {
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   const { environment, connectedEnvironments, target } = useSettingsScope();
@@ -83,99 +113,66 @@ export function MentionedTimeCheckSettings() {
   };
 
   return (
-    <>
-      <SettingsRow
-        serverScoped
-        settingKeys={["mentionedTimeCheckEnabled"]}
-        mixed={mixedTimeCheckEnabled}
-        {...searchableSetting("mentioned-time-check")}
-        forkFeature="mentioned-time-chips"
-        description="When an agent's reply mentions a clock time, a model reads the whole reply to tell times of day from lengths and examples, and to work out which day it means. Time chips then follow its reading. Each reply with a clock time costs one short model call."
-        control={
-          <Switch
-            mixed={mixedTimeCheckEnabled}
-            checked={mixedTimeCheckEnabled ? false : settings.mentionedTimeCheckEnabled}
-            onCheckedChange={(checked) =>
-              updateSettings({ mentionedTimeCheckEnabled: Boolean(checked) })
-            }
-            aria-label="Check mentioned times with a model"
+    <SettingsRow
+      serverScoped
+      settingKeys={["mentionedTimeCheckModelSelection"]}
+      {...searchableSetting("mentioned-time-check-model")}
+      mixed={mixedTimeCheckModel}
+      resetAction={
+        hasServerTargets && (usesTimeCheckModel || mixedTimeCheckModel) ? (
+          <SettingResetButton
+            label="time check model"
+            onClick={() => updateSettings({ mentionedTimeCheckModelSelection: null })}
           />
-        }
-      />
-
-      {settings.mentionedTimeCheckEnabled || mixedTimeCheckEnabled ? (
-        <SettingsRow
-          serverScoped
-          settingKeys={["mentionedTimeCheckModelSelection"]}
-          {...searchableSetting("mentioned-time-check-model")}
-          description="Model that checks mentioned times. A small, fast model is enough; reasoning does not help. Off uses GPT-6.1 Terra or Claude Haiku when either is available, otherwise the text generation model."
-          control={
-            !hasServerTargets ? (
-              <span className="text-sm text-muted-foreground">
-                Connect an environment to choose its time check model.
-              </span>
-            ) : (
-              <div className="flex flex-wrap items-center justify-end gap-2">
-                {usesTimeCheckModel || mixedTimeCheckModel ? (
-                  <ProviderModelPicker
-                    environmentId={environmentId}
-                    activeInstanceId={timeCheckSelection.instanceId}
-                    model={timeCheckSelection.model}
-                    lockedProvider={null}
-                    instanceEntries={instanceEntries}
-                    modelOptionsByInstance={timeCheckModelOptionsByInstance}
-                    triggerClassName={SETTINGS_PICKER_TRIGGER_CLASSNAME}
-                    triggerAriaLabel="Time check model"
-                    {...(mixedTimeCheckModel ? { triggerLabel: "Mixed" } : {})}
-                    getModelDisabledReason={writerModelDisabledReason}
-                    onInstanceModelChange={(instanceId, model) =>
-                      saveTimeCheckModel(createModelSelection(instanceId, model))
-                    }
-                  />
-                ) : null}
-                {usesTimeCheckModel && !mixedTimeCheckModel && timeCheckInstanceEntry ? (
-                  <TraitsPicker
-                    provider={timeCheckInstanceEntry.driverKind}
-                    models={timeCheckInstanceEntry.models}
-                    model={timeCheckSelection.model}
-                    modelOptions={timeCheckSelection.options ?? []}
-                    allowPromptInjectedEffort={false}
-                    planModeEnabled={false}
-                    triggerClassName={SETTINGS_PICKER_TRIGGER_CLASSNAME}
-                    onModelOptionsChange={(options) =>
-                      updateSettings({
-                        mentionedTimeCheckModelSelection: createModelSelection(
-                          timeCheckSelection.instanceId,
-                          timeCheckSelection.model,
-                          options,
-                        ),
-                      })
-                    }
-                  />
-                ) : null}
-                <Switch
-                  mixed={mixedTimeCheckModel}
-                  checked={mixedTimeCheckModel ? false : usesTimeCheckModel}
-                  onCheckedChange={(checked) => {
-                    if (!checked) {
-                      updateSettings({ mentionedTimeCheckModelSelection: null });
-                      return;
-                    }
-                    saveTimeCheckModel(
-                      createModelSelection(
-                        timeCheckSelection.instanceId,
-                        timeCheckSelection.model,
-                        timeCheckSelection.options,
-                      ),
-                    );
-                  }}
-                  aria-label="Use a separate time check model"
-                />
-              </div>
-            )
-          }
-        />
-      ) : null}
-    </>
+        ) : null
+      }
+      control={
+        !hasServerTargets ? (
+          <span className="text-sm text-muted-foreground">
+            Connect an environment to choose its time check model.
+          </span>
+        ) : (
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <ProviderModelPicker
+              environmentId={environmentId}
+              activeInstanceId={timeCheckSelection.instanceId}
+              model={timeCheckSelection.model}
+              lockedProvider={null}
+              instanceEntries={instanceEntries}
+              modelOptionsByInstance={timeCheckModelOptionsByInstance}
+              triggerClassName={SETTINGS_PICKER_TRIGGER_CLASSNAME}
+              triggerAriaLabel="Time check model"
+              disabled={!settings.mentionedTimeCheckEnabled && !mixedTimeCheckEnabled}
+              {...(mixedTimeCheckModel ? { triggerLabel: "Mixed" } : {})}
+              getModelDisabledReason={writerModelDisabledReason}
+              onInstanceModelChange={(instanceId, model) =>
+                saveTimeCheckModel(createModelSelection(instanceId, model))
+              }
+            />
+            {usesTimeCheckModel && !mixedTimeCheckModel && timeCheckInstanceEntry ? (
+              <TraitsPicker
+                disabled={!settings.mentionedTimeCheckEnabled && !mixedTimeCheckEnabled}
+                provider={timeCheckInstanceEntry.driverKind}
+                models={timeCheckInstanceEntry.models}
+                model={timeCheckSelection.model}
+                modelOptions={timeCheckSelection.options ?? []}
+                allowPromptInjectedEffort={false}
+                planModeEnabled={false}
+                triggerClassName={SETTINGS_PICKER_TRIGGER_CLASSNAME}
+                onModelOptionsChange={(options) =>
+                  updateSettings({
+                    mentionedTimeCheckModelSelection: createModelSelection(
+                      timeCheckSelection.instanceId,
+                      timeCheckSelection.model,
+                      options,
+                    ),
+                  })
+                }
+              />
+            ) : null}
+          </div>
+        )
+      }
+    />
   );
 }

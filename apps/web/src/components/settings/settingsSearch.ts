@@ -1230,8 +1230,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Time check model",
     to: "/settings/threads",
     scope: "project-defaults",
-    // Hidden until the check is on, so a search lands on the switch that shows it.
-    targetId: "mentioned-time-check",
     searchTerms: ["time chips model haiku terra small fast"],
     environmentOnly: true,
   },

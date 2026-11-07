@@ -1,5 +1,8 @@
 import { useAtomValue } from "@effect/atom-react";
-import { MentionedTimeCheckSettings } from "./MentionedTimeCheckSettings";
+import {
+  MentionedTimeCheckModelSettings,
+  MentionedTimeCheckSettings,
+} from "./MentionedTimeCheckSettings";
 import { NotificationSettings } from "./NotificationSettings";
 import { PRIVACY_POLICY_URL } from "../../legalLinks";
 import { DiscordPresencePreview } from "./DiscordPresencePreview";
@@ -2089,10 +2092,12 @@ export function ThreadsSettingsPanel() {
         <MentionedTimeCheckSettings />
         <AdvancedSettings
           targetIds={[
+            searchableSetting("mentioned-time-check-model").id,
             searchableSetting("thread-title-instructions").id,
             searchableSetting("response-streaming").id,
           ]}
         >
+          <MentionedTimeCheckModelSettings />
           <ThreadTitleInstructionsSettings />
           <SettingsRow
             serverScoped
