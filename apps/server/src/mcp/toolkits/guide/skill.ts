@@ -7,11 +7,13 @@ import { STYAL_SKILL_NAME, styalSkillPaths } from "@t3tools/provider-core/server
 import { AGENT_GUIDES, type AgentGuideTopic } from "./guides.ts";
 
 export const STYAL_SKILL_DESCRIPTION =
-  "Read before setting up or explaining a styal feature: styal.json and project actions, worktree setup, t3.json migration, devices, hardware, data import, doctor, triage.";
+  "Read before styal setup or advice: styal.json, actions, worktrees, t3.json migration, devices, hardware, imports, doctor, triage; coordinate threads and report back.";
 
 const TOPIC_SUMMARIES: Record<AgentGuideTopic, string> = {
   "project-setup":
     "styal.json, actions, worktree setup and settle actions, t3.json migration. `t3.json` scripts do not run, so read this before adding or changing project actions.",
+  orchestration:
+    "delegated tasks versus independent threads, PR watches, reporting back and stopping reports.",
   devices: "simulators, emulators and physical devices, device tools, agent-device.",
   hardware: "hardware leases and hardware definitions.",
   "data-import": "importing T3 Code projects, Claude Code and Codex history, and browser sessions.",

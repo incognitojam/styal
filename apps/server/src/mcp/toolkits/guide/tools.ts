@@ -5,7 +5,7 @@ import { AgentGuideTopic } from "./guides.ts";
 
 const GuideReadTool = Tool.make("read_styal_guide", {
   description:
-    "Read before setting up or explaining a styal feature. `project-setup`: styal.json, actions, worktree setup, t3.json migration. `troubleshooting`: doctor, triage.",
+    "Read before setup or advice. `project-setup`: actions, worktrees. `orchestration`: tasks, threads, reports. `troubleshooting`: doctor, triage.",
   parameters: Schema.Struct({ topic: AgentGuideTopic }),
   success: Schema.Struct({ guide: Schema.String }),
 })

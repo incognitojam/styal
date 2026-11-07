@@ -2,6 +2,7 @@ import * as Schema from "effect/Schema";
 
 export const AgentGuideTopic = Schema.Literals([
   "project-setup",
+  "orchestration",
   "devices",
   "hardware",
   "data-import",
@@ -139,6 +140,28 @@ while the user has set one in Settings. Worktree branch naming lives in Settings
 \`worktreeSubmodules\`. \`t3_project_read\` shows the project's \`workspaceRoot\`, which is the
 registered checkout, and its stored record. It does not show \`styal.json\` actions, approval state
 or overrides saved in Settings, so read \`styal.json\` from \`workspaceRoot\`.
+`;
+
+const orchestration = `# Orchestration: tasks, threads and reports
+
+Use a delegated task for bounded work that should return to this turn, such as a review or an
+implementation step. It reports its result to its parent automatically. Delegated children cannot
+watch pull requests.
+
+When the user asks for a new thread, use a top-level thread for work that continues independently,
+especially work that needs a pull request or workflow watch. If you need to hear back, opt in with
+\`reportBack\`. styal reports failures, unanswered blocking approvals or questions, and results when
+nothing else is pending. Routine turn ends while a watch is active stay quiet.
+
+While watching, send the launcher one short explicit report with \`t3_thread_send\` when you reach
+the requested milestone, such as a PR ready for review. Include the result and a link; do not repeat
+automatic failure or blocked reports. End your turn after starting a watch and let it wake you.
+
+A thread launched on another linked machine cannot report back yet. Use a delegated task when its
+automatic cross-machine result is sufficient; it still cannot watch PRs.
+
+Either thread can stop reports with \`t3_thread_update\`. A person can stop them from the launched
+thread's details on web or desktop, or its menu on mobile. See the tool descriptions for parameters.
 `;
 
 const devices = `# Devices: iOS simulators, Android emulators and phones
@@ -329,6 +352,7 @@ Provider problems (a CLI missing, signed out or outdated) show in Settings → P
 
 export const AGENT_GUIDES: Readonly<Record<AgentGuideTopic, string>> = {
   "project-setup": projectSetup,
+  orchestration,
   devices,
   hardware,
   "data-import": dataImport,
