@@ -21,6 +21,7 @@ import { ServerSettingsPatch, requiredScopesForServerSettingsPatch } from "./set
 export const CLIENT_GUARDED_RPC_SCOPES = {
   [ORCHESTRATION_V2_WS_METHODS.dismissReport]: AuthOrchestrationOperateScope,
   [WS_METHODS.deviceEasAccount]: AuthSettingsWriteScope,
+  [WS_METHODS.providerAuthRemoveMethod]: AuthProvidersManageScope,
   [WS_METHODS.previewClose]: AuthPreviewOperateScope,
   // Stopping a server signals its processes, as closing a terminal does.
   [WS_METHODS.previewStopLocalServer]: AuthTerminalOperateScope,
