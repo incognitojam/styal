@@ -255,8 +255,8 @@ status and refresh it again.
 
 With **styal managed updates** on, styal manages your provider CLI versions. It
 installs only versions it has tested: an automated check runs real agent turns
-against each new Codex, Claude Code, and OpenCode release on the current stable
-and nightly styal builds. It installs in the background once none of that
+against each new Codex, Claude Code, and OpenCode release on the latest nightly
+and an older nightly published within the last seven days. It installs in the background once none of that
 provider's threads are running or waiting for you. A question left unanswered
 for over an hour after the agent finished does not hold it back. A turn that
 starts during an install waits for it. styal never moves a provider back, and
@@ -266,6 +266,9 @@ still install it yourself.
 
 Managed updates are on by default. Turn them on or off in **Settings → Maintenance**;
 they need provider update checks on.
+Refreshing provider status also checks for approved updates immediately when
+you have permission to manage providers. Installation continues in the background;
+the usual checks still apply, including waiting while a provider is busy.
 They cover providers installed with npm, Bun, pnpm, Yarn, Vite+, or Volta, and
 Claude Code installed with its own installer on macOS, Linux, and Windows.
 Codex and OpenCode 2 native installs are covered on macOS and Linux.

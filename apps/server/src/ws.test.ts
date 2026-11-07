@@ -4,6 +4,8 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
   AuthSessionId,
+  AuthOrchestrationReadScope,
+  AuthProvidersManageScope,
   EnvironmentId,
   ProjectId,
   ThreadId,
@@ -72,6 +74,7 @@ import * as ProviderAuthService from "./provider/ProviderAuthService.ts";
 import * as ProviderInstanceRegistry from "./provider/ProviderInstanceRegistry.ts";
 import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderLatestVersions";
 import * as ProviderMaintenanceRunner from "./provider/providerMaintenanceRunner.ts";
+import * as ProviderAutoUpdater from "./provider/ProviderAutoUpdater.ts";
 import * as ProviderRegistry from "./provider/ProviderRegistry.ts";
 import * as ProviderSessionManager from "./orchestration-v2/ProviderSessionManager.ts";
 import * as PullRequestReviewGuideService from "./pullRequest/PullRequestReviewGuideService.ts";
@@ -749,6 +752,7 @@ const layerUnusedConfigRpcServices = Layer.mergeAll(
   Layer.mock(ProviderInstanceRegistry.ProviderInstanceRegistry)({}),
   Layer.mock(ProviderLatestVersions.ProviderLatestVersions)({}),
   Layer.mock(ProviderMaintenanceRunner.ProviderMaintenanceRunner)({}),
+  Layer.mock(ProviderAutoUpdater.ProviderAutoUpdater)({}),
   Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({}),
   Layer.mock(PullRequestReviewGuideService.PullRequestReviewGuideService)({}),
   Layer.mock(PullRequestService.PullRequestService)({}),
@@ -1058,6 +1062,98 @@ it.effect.each([
           Layer.fresh(layerConfigSources),
           Layer.mock(PreviewAutomationBroker.PreviewAutomationBroker)({}),
           Layer.mock(ServerBrowser.ServerBrowser)({}),
+        ),
+      ),
+      Effect.scoped,
+    ),
+);
+
+it.effect.each([
+  { manage: true, input: { refreshModels: true }, expected: 1 },
+  { manage: true, input: { reloadSecrets: true }, expected: 1 },
+  { manage: false, input: { refreshModels: true }, expected: 0 },
+  { manage: true, input: {}, expected: 0 },
+])(
+  "manual provider refresh requests managed updates only with manage access (%j)",
+  ({ manage, input, expected }) =>
+    Effect.gen(function* () {
+      let requests = 0;
+      const responses = yield* Queue.unbounded<unknown>();
+      const services = Layer.mergeAll(
+        layerUnusedConfigRpcServices,
+        Layer.mock(SecretResolver.SecretResolver)({ invalidate: () => Effect.void }),
+        Layer.mock(ProviderAutoUpdater.ProviderAutoUpdater)({
+          requestPass: Effect.sync(() => {
+            requests += 1;
+          }),
+        }),
+        Layer.mock(ProviderRegistry.ProviderRegistry)({
+          invalidateModelCaches: () => Effect.void,
+          reloadSecretsAndRefresh: () => Effect.succeed([]),
+          refresh: () => Effect.succeed([]),
+        }),
+        Layer.mock(ProviderInstanceRegistry.ProviderInstanceRegistry)({
+          listInstances: Effect.succeed([]),
+        }),
+        Layer.mock(UsageLimitSources.UsageLimitSources)({ refresh: Effect.void }),
+        Layer.mock(ExternalLauncher.ExternalLauncher)({}),
+        Layer.mock(RemoteOpenTargets.RemoteOpenTargets)({}),
+        Layer.mock(DirectEndpoints.DirectEndpoints)({}),
+        Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
+          namedProjectsRoot: process.cwd(),
+        }),
+        Layer.mock(ScratchThreadPromotion.ScratchThreadPromotion)({}),
+        Layer.mock(ServerEnvironment.ServerEnvironment)({}),
+        Layer.mock(EnvironmentAuth.EnvironmentAuth)({}),
+      );
+      const server = yield* RpcServer.makeNoSerialization(
+        RpcGroup.make(WsServerRefreshProvidersRpc),
+        {
+          ...WS_RPC_SERVER_OPTIONS,
+          onFromServer: (response) =>
+            response._tag === "Chunk"
+              ? Effect.forEach(response.values, (value) => Queue.offer(responses, value), {
+                  discard: true,
+                })
+              : response._tag === "Exit"
+                ? Queue.offer(
+                    responses,
+                    response.exit._tag === "Success" ? response.exit.value : response.exit,
+                  )
+                : Effect.void,
+        },
+      ).pipe(
+        Effect.provide(
+          layerWsRpc(
+            {
+              sessionId: AuthSessionId.make("refresh-test"),
+              subject: "refresh-test",
+              method: "browser-session-cookie",
+              scopes: manage
+                ? [AuthOrchestrationReadScope, AuthProvidersManageScope]
+                : [AuthOrchestrationReadScope],
+            },
+            {},
+            yield* ServerBrowser.ServerBrowser,
+            () => Effect.void,
+          ).pipe(Layer.provide(services)),
+        ),
+      );
+      yield* server.write(0, {
+        _tag: "Request",
+        id: RpcMessage.RequestId("refresh"),
+        tag: WS_METHODS.serverRefreshProviders,
+        payload: input,
+        headers: Headers.empty,
+      });
+      assert.deepEqual(yield* Queue.take(responses), { providers: [] });
+      assert.equal(requests, expected);
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          Layer.fresh(layerConfigSources),
+          Layer.mock(ServerBrowser.ServerBrowser)({}),
+          Layer.mock(PreviewAutomationBroker.PreviewAutomationBroker)({}),
         ),
       ),
       Effect.scoped,

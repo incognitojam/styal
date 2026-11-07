@@ -7,6 +7,7 @@ import {
 } from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
 import * as DateTime from "effect/DateTime";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as TestClock from "effect/testing/TestClock";
@@ -162,6 +163,8 @@ interface Fixture {
   readonly selfUpdaterActive?: boolean | null;
   readonly freshSelfUpdaterActive?: boolean | null;
   readonly installs: Array<unknown>;
+  readonly onInstall?: Effect.Effect<void>;
+  readonly devUrl?: string;
 }
 
 const testLayer = (input: Fixture) => {
@@ -170,7 +173,7 @@ const testLayer = (input: Fixture) => {
   const ageMs = input.manifestAgeMs === undefined ? 60_000 : input.manifestAgeMs;
   return Layer.mergeAll(
     // Only `devUrl` is read; the service has no partial form.
-    Layer.succeed(ServerConfig, { devUrl: undefined } as never),
+    Layer.succeed(ServerConfig, { devUrl: input.devUrl } as never),
     ServerSettingsService.layerTest(input.settings ?? {}),
     Layer.mock(ProviderRegistry)({
       getProviders: Effect.succeed([input.provider ?? codex]),
@@ -236,6 +239,7 @@ const testLayer = (input: Fixture) => {
             version: target.targetVersion,
             ...(target.autoUpdate?.takeover ? { takeover: true } : {}),
           });
+          yield* input.onInstall ?? Effect.void;
           return {
             providers: [
               {
@@ -259,6 +263,59 @@ const runPassWith = (input: Fixture) =>
   Effect.flatMap(make, (updater) => updater.runPass).pipe(Effect.provide(testLayer(input)));
 
 describe("ProviderAutoUpdater.runPass", () => {
+  it.effect(
+    "a manual request installs the approved version without waiting for the periodic pass",
+    () =>
+      Effect.gen(function* () {
+        const installs: Array<unknown> = [];
+        const installed = yield* Deferred.make<void>();
+        const release = yield* Deferred.make<void>();
+        yield* Effect.gen(function* () {
+          const updater = yield* make;
+          yield* updater.requestPass.pipe(Effect.scoped);
+          yield* Deferred.succeed(release, undefined);
+          yield* Deferred.await(installed);
+          assert.deepStrictEqual(installs, [{ instanceId: "codex", version: "2.0.0" }]);
+        }).pipe(
+          Effect.provide(
+            testLayer({
+              installs,
+              onInstall: Deferred.await(release).pipe(
+                Effect.andThen(Deferred.succeed(installed, undefined)),
+              ),
+            }),
+          ),
+        );
+      }),
+  );
+
+  it.effect("overlapping manual and periodic passes do not install the same CLI twice", () =>
+    Effect.gen(function* () {
+      const installs: Array<unknown> = [];
+      const started = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      yield* Effect.gen(function* () {
+        const updater = yield* make;
+        yield* updater.requestPass;
+        yield* Deferred.await(started);
+        yield* updater.runPass;
+        assert.strictEqual(installs.length, 1);
+        yield* Deferred.succeed(release, undefined);
+      }).pipe(
+        Effect.provide(
+          testLayer({
+            installs,
+            onInstall: Effect.gen(function* () {
+              if (installs.length !== 1) return;
+              yield* Deferred.succeed(started, undefined);
+              yield* Deferred.await(release);
+            }),
+          }),
+        ),
+      );
+    }),
+  );
+
   it.effect("installs the verified version once per window", () => {
     const installs: Array<unknown> = [];
     return Effect.gen(function* () {
@@ -457,12 +514,16 @@ describe("ProviderAutoUpdater.runPass", () => {
     });
   });
 
-  it.effect("does nothing when automatic updates or update checks are off", () => {
-    const installs: Array<unknown> = [];
-    return Effect.gen(function* () {
-      yield* runPassWith({ settings: { autoUpdateProviders: false }, installs });
-      yield* runPassWith({ settings: { enableProviderUpdateChecks: false }, installs });
-      assert.deepStrictEqual(installs, []);
-    });
-  });
+  it.effect(
+    "does nothing on dev servers or when automatic updates or update checks are off",
+    () => {
+      const installs: Array<unknown> = [];
+      return Effect.gen(function* () {
+        yield* runPassWith({ settings: { autoUpdateProviders: false }, installs });
+        yield* runPassWith({ settings: { enableProviderUpdateChecks: false }, installs });
+        yield* runPassWith({ devUrl: "http://localhost:5173", installs });
+        assert.deepStrictEqual(installs, []);
+      });
+    },
+  );
 });
