@@ -18,6 +18,7 @@ import {
   SquareSplitVertical,
   TerminalSquare,
   Trash2,
+  WifiOff,
 } from "lucide-react";
 import {
   AuthPreviewOperateScope,
@@ -84,6 +85,7 @@ import { useLocalStorage } from "../hooks/useLocalStorage";
 import { attachedTerminalSessionAtom } from "../state/terminalSessions";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { serverEnvironment } from "../state/server";
+import { useEnvironmentPresentation } from "../state/presentation";
 import { previewEnvironment } from "../state/preview";
 import { readEnvironmentScope } from "../state/session";
 import { terminalEnvironment } from "../state/terminal";
@@ -529,6 +531,8 @@ function TerminalSessionViewport({
   const terminalRef = useRef<GhosttyTerminalSurface | null>(null);
   const visibleRef = useRef(visible);
   const environmentId = threadRef.environmentId;
+  const { presentation: environment } = useEnvironmentPresentation(environmentId);
+  const isConnected = environment?.connection.phase === "connected";
   const canOperateTerminal = useEnvironmentScope(environmentId, AuthTerminalOperateScope);
   const hasTerminalWriteAccess = useEffectEvent(() =>
     readEnvironmentScope(environmentId, AuthTerminalOperateScope),
@@ -592,7 +596,17 @@ function TerminalSessionViewport({
   // Attaching starts with the viewport, while the WASM surface is still loading;
   // the surface reads the session itself, so output chunks never re-render here.
   useAtomMount(terminalSessionAtom);
+  const isSessionWritable = useAtomValue(
+    terminalSessionAtom,
+    (session) => writableSessionGeneration(session, true) !== null,
+  );
+  const canSendInput = canOperateTerminal && isConnected && isSessionWritable;
   const readTerminalSession = useEffectEvent(() => appAtomRegistry.get(terminalSessionAtom));
+  const canSendTerminalInput = useEffectEvent(
+    () =>
+      isConnected &&
+      writableSessionGeneration(readTerminalSession(), hasTerminalWriteAccess()) !== null,
+  );
   const subscribeTerminalSession = useEffectEvent(
     (listener: (session: TerminalSessionState) => void) =>
       appAtomRegistry.subscribe(terminalSessionAtom, listener),
@@ -604,7 +618,7 @@ function TerminalSessionViewport({
     }),
   );
   const resizeTerminal = useEffectEvent((cols: number, rows: number) => {
-    if (writableSessionGeneration(readTerminalSession(), hasTerminalWriteAccess()) === null) {
+    if (!canSendTerminalInput()) {
       return;
     }
     return runTerminalResize({
@@ -640,12 +654,12 @@ function TerminalSessionViewport({
       openTerminalLinkInPreview({ url, threadRef, openPreview, fallbackToBrowser, forceBrowser }),
   );
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- sets the terminal input's readOnly from the operate grant and consumes a pending focus request
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- synchronizes the imperative terminal input with connection readiness and the operate grant
   useLayoutEffect(() => {
-    if (terminalRef.current) terminalRef.current.input.readOnly = !canOperateTerminal;
+    if (terminalRef.current) terminalRef.current.input.readOnly = !canSendInput;
     if (canOperateTerminal && visibleRef.current)
       consumePendingTerminalFocus(threadRef, terminalId);
-  }, [canOperateTerminal, terminalId, threadRef]);
+  }, [canOperateTerminal, canSendInput, terminalId, threadRef]);
 
   // Links re-read the grant on activation; only the hovered link's styling needs a nudge.
   const linkActivationScopeRef = useRef(canOpenHostEditor);
@@ -711,7 +725,7 @@ function TerminalSessionViewport({
       setupTerminal = terminal;
       terminalRef.current = terminal;
       terminal.input.setAttribute("data-workspace-focus-default", "");
-      terminal.input.readOnly = !hasTerminalWriteAccess();
+      terminal.input.readOnly = !canSendTerminalInput();
       // Reapply font settings hydrated during loading, when terminalRef was null.
       const currentFont = terminalFontRef.current;
       if (currentFont.family !== setupFont.family || currentFont.size !== setupFont.size) {
@@ -850,7 +864,7 @@ function TerminalSessionViewport({
       };
 
       const pasteFromClipboard = async (requestId: number) => {
-        if (!hasTerminalWriteAccess()) return;
+        if (!canSendTerminalInput()) return;
         const activeTerminal = terminalRef.current;
         if (!activeTerminal) return;
         try {
@@ -879,7 +893,7 @@ function TerminalSessionViewport({
             terminalContextMenuItems({
               hasSelection: selectionAction !== null,
               canAddToChat: canAddSelectionToChat(),
-              readOnly: !hasTerminalWriteAccess(),
+              readOnly: !canSendTerminalInput(),
             }),
             { x: event.clientX, y: event.clientY },
           );
@@ -955,12 +969,16 @@ function TerminalSessionViewport({
       // Sends input for terminal key shortcuts. Like typing, it returns a
       // scrolled-back viewport to the live screen.
       const sendTerminalInput = async (data: string, fallbackError: string) => {
-        if (!hasTerminalWriteAccess()) return;
+        if (!canSendTerminalInput()) return;
         const activeTerminal = terminalRef.current;
         if (!activeTerminal) return;
         if (!activeTerminal.isAtBottom()) activeTerminal.scrollToBottom();
         const result = await writeTerminal(data);
-        if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+        if (
+          result._tag === "Failure" &&
+          !isAtomCommandInterrupted(result) &&
+          canSendTerminalInput()
+        ) {
           const error = squashAtomCommandFailure(result);
           writeSystemMessage(
             activeTerminal,
@@ -1057,16 +1075,7 @@ function TerminalSessionViewport({
       }
 
       function handleData(data: string): void {
-        if (!hasTerminalWriteAccess()) return;
-        void (async () => {
-          const result = await writeTerminal(data);
-          if (result._tag === "Success" || isAtomCommandInterrupted(result)) return;
-          const error = squashAtomCommandFailure(result);
-          writeSystemMessage(
-            terminal,
-            error instanceof Error ? error.message : "Terminal write failed",
-          );
-        })();
+        void sendTerminalInput(data, "Terminal write failed");
       }
 
       function handleSelectionChange(): void {
@@ -1180,11 +1189,29 @@ function TerminalSessionViewport({
     };
   };
   return (
-    <div
-      ref={attachContainer}
-      tabIndex={-1}
-      className="relative h-full w-full overflow-hidden bg-(--terminal-background)"
-    />
+    <div className="flex h-full w-full flex-col overflow-hidden bg-(--terminal-background)">
+      {!isConnected ? (
+        <div
+          role="status"
+          className="flex shrink-0 items-center gap-2 border-b border-warning/20 bg-warning/10 px-3 py-1.5 text-xs text-warning"
+        >
+          <WifiOff className="size-3.5 shrink-0" />
+          <span>
+            {environment?.entry.target.label ?? "Server"} is{" "}
+            {environment?.connection.phase === "connecting" ||
+            environment?.connection.phase === "reconnecting"
+              ? "reconnecting"
+              : "disconnected"}
+            . Input paused until connected.
+          </span>
+        </div>
+      ) : null}
+      <div
+        ref={attachContainer}
+        tabIndex={-1}
+        className="relative min-h-0 w-full flex-1 overflow-hidden"
+      />
+    </div>
   );
 }
 

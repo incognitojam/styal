@@ -41,7 +41,7 @@ import { ScreenContent } from "../../components/ui/ScreenContent";
 import { Button } from "../../components/ui/Button";
 import { IconButton } from "../../components/ui/IconButton";
 import { environmentCatalog } from "../../connection/catalog";
-import { useEnvironmentPresentation } from "../../state/presentation";
+import { environmentPresentations, useEnvironmentPresentation } from "../../state/presentation";
 import { terminalEnvironment } from "../../state/terminal";
 import { environmentSession, readEnvironmentScope } from "../../state/session";
 import { useEnvironmentQuery } from "../../state/query";
@@ -540,7 +540,8 @@ function ThreadTerminal(props: {
           : null,
     ),
   );
-  const isRunning = terminal.status === "running" || terminal.status === "starting";
+  const isRunning =
+    terminal.version > 0 && (terminal.status === "running" || terminal.status === "starting");
 
   const cwd = terminal.summary?.cwd ?? selectedThreadProject?.workspaceRoot ?? null;
   const serverConfigs = useServerConfigs();
@@ -624,6 +625,8 @@ function ThreadTerminal(props: {
   const writeInput = async (data: string): Promise<boolean> => {
     if (
       !isRunning ||
+      appAtomRegistry.get(environmentPresentations.presentationAtom(selectedThread.environmentId))
+        ?.connection.phase !== "connected" ||
       !readEnvironmentScope(selectedThread.environmentId, AuthTerminalOperateScope)
     ) {
       return false;
@@ -934,7 +937,7 @@ function ThreadTerminal(props: {
                 <TerminalSurface
                   ref={surfaceRef}
                   autoFocus={canOperateTerminal && terminalAutoFocus}
-                  readOnly={!canOperateTerminal}
+                  readOnly={!canOperateTerminal || !isEnvironmentReady || !isRunning}
                   buffer={terminal.version === 0 ? null : terminal.buffer}
                   output={terminal.version === 0 ? null : terminal.output}
                   fontSize={fontSize}

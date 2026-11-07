@@ -1,18 +1,30 @@
 import { EMPTY_TERMINAL_SESSION_STATE } from "@t3tools/client-runtime/state/terminal";
 import { EnvironmentId, ThreadId, type ScopedThreadRef } from "@t3tools/contracts";
 import { expect, it, vi } from "vite-plus/test";
+import * as Cause from "effect/Cause";
+import { AsyncResult } from "effect/reactivity";
 import { act, fakeTimers, render } from "../../test/render";
+import type { GhosttyTerminalSurfaceOptions } from "../terminal/ghostty/surface";
 import ThreadTerminalDrawer from "./ThreadTerminalDrawer";
 
 const fixture = vi.hoisted(() => ({
   statusByThreadId: new Map<string, "running" | "exited">(),
   pendingSurfaces: [] as Array<() => void>,
+  surfaceOptions: [] as Array<GhosttyTerminalSurfaceOptions>,
+  writes: [] as Array<unknown>,
+  writeResult: null as Promise<unknown> | null,
+  terminalOutput: [] as Array<string>,
+  connectionPhase: "connected" as "connected" | "reconnecting",
+  connectionListeners: new Set<() => void>(),
 }));
 
 // Every surface method is a no-op returning an unsubscribe; `then` stays undefined so awaiting the
 // surface resolves to it.
 const fakeSurface: object = new Proxy(
-  { input: document.createElement("textarea") },
+  {
+    input: document.createElement("textarea"),
+    write: (data: string) => fixture.terminalOutput.push(data),
+  },
   {
     get: (target, key) =>
       key === "then" ? undefined : key in target ? Reflect.get(target, key) : () => () => undefined,
@@ -20,8 +32,9 @@ const fakeSurface: object = new Proxy(
 );
 vi.mock("~/terminal/ghostty/surface", () => ({
   GhosttyTerminalSurface: {
-    create: () =>
+    create: (_mount: HTMLElement, options: GhosttyTerminalSurfaceOptions) =>
       new Promise((resolve) => {
+        fixture.surfaceOptions.push(options);
         fixture.pendingSurfaces.push(() => resolve(fakeSurface));
       }),
   },
@@ -47,15 +60,40 @@ vi.mock("../state/session", () => ({
   readEnvironmentScope: () => true,
 }));
 vi.mock("../state/use-atom-command", () => ({
-  useAtomCommand: () => async () => ({ _tag: "Success" }),
+  useAtomCommand: (command: unknown) => async (input: unknown) => {
+    if (command === "write") fixture.writes.push(input);
+    return command === "write" && fixture.writeResult !== null
+      ? await fixture.writeResult
+      : { _tag: "Success" };
+  },
 }));
+vi.mock("../state/presentation", async () => {
+  const { useSyncExternalStore } = await import("react");
+  return {
+    useEnvironmentPresentation: () => {
+      const phase = useSyncExternalStore(
+        (listener) => {
+          fixture.connectionListeners.add(listener);
+          return () => fixture.connectionListeners.delete(listener);
+        },
+        () => fixture.connectionPhase,
+      );
+      return {
+        presentation: {
+          entry: { target: { label: "Test server" } },
+          connection: { phase },
+        },
+      };
+    },
+  };
+});
 // The commands are replaced above; importing their runtime would connect a client.
 vi.mock("../state/server", async () => {
   const Atom = await import("effect/reactivity/Atom");
   const config = Atom.make(null);
   return { serverEnvironment: { configValueAtom: () => config } };
 });
-vi.mock("../state/terminal", () => ({ terminalEnvironment: { write: {}, resize: {} } }));
+vi.mock("../state/terminal", () => ({ terminalEnvironment: { write: "write", resize: {} } }));
 vi.mock("../state/preview", () => ({ previewEnvironment: { open: {} } }));
 vi.mock("../editorPreferences", () => ({ useOpenInPreferredEditor: () => () => {} }));
 vi.mock("./preview/openTerminalLinkInPreview", () => ({ openTerminalLinkInPreview: () => {} }));
@@ -108,6 +146,12 @@ function setup() {
     [other.threadId, "running"],
   ]);
   fixture.pendingSurfaces = [];
+  fixture.surfaceOptions = [];
+  fixture.writes = [];
+  fixture.writeResult = null;
+  fixture.terminalOutput = [];
+  fixture.connectionPhase = "connected";
+  fixture.connectionListeners.clear();
   return { original, other };
 }
 
@@ -127,4 +171,52 @@ it("closes an exited terminal on its own thread after navigating to one reusing 
     vi.runOnlyPendingTimers();
   });
   expect(onCloseTerminal.mock.calls).toEqual([["term-1", original]]);
+});
+
+it("pauses terminal input while reconnecting and resumes without replaying it", async () => {
+  const { other } = setup();
+  const onCloseTerminal = vi.fn();
+  await using screen = await render(<Drawer threadRef={other} onCloseTerminal={onCloseTerminal} />);
+  await act(async () => fixture.pendingSurfaces.shift()?.());
+  const surface = fixture.surfaceOptions[0]!;
+  let finishWrite!: (value: unknown) => void;
+  fixture.writeResult = new Promise((resolve) => {
+    finishWrite = resolve;
+  });
+  await act(async () => surface.onData("echo before\r"));
+  expect(fixture.writes).toHaveLength(1);
+
+  await act(() => {
+    fixture.connectionPhase = "reconnecting";
+    for (const listener of fixture.connectionListeners) listener();
+  });
+  await act(async () => {
+    finishWrite(AsyncResult.failure(Cause.fail(new Error("Test server is not connected."))));
+    surface.onData("echo offline\r");
+    surface.onData("\u0003");
+  });
+  expect(fixture.writes).toHaveLength(1);
+  expect(fixture.terminalOutput).toEqual([]);
+  await expect
+    .element(screen.getByRole("status"))
+    .toHaveTextContent("Test server is reconnecting. Input paused until connected.");
+
+  await act(() => {
+    fixture.writeResult = null;
+    fixture.connectionPhase = "connected";
+    for (const listener of fixture.connectionListeners) listener();
+  });
+  await expect.element(screen.getByRole("status")).not.toBeInTheDocument();
+  await act(async () => surface.onData("echo after\r"));
+  expect(fixture.writes).toEqual([
+    {
+      environmentId: other.environmentId,
+      input: { threadId: other.threadId, terminalId: "term-1", data: "echo before\r" },
+    },
+    {
+      environmentId: other.environmentId,
+      input: { threadId: other.threadId, terminalId: "term-1", data: "echo after\r" },
+    },
+  ]);
+  expect(onCloseTerminal).not.toHaveBeenCalled();
 });

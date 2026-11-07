@@ -67,6 +67,16 @@ When the T3 helper is active, Linux does not need a system `xdg-open` command to
 HTTPS URL to a connected desktop Preview. A real system browser launcher is still required for the
 fallback behavior when no compatible Preview is connected.
 
+# Reconnecting to a terminal
+
+Terminal sessions run on the environment server. Hiding the terminal or losing your
+connection leaves the shell and its commands running while that server stays up.
+The client reattaches and loads retained output when the connection returns.
+
+Input pauses while disconnected. Web and desktop show a notice in the terminal;
+mobile shows the environment's connection status. Keystrokes typed while disconnected
+are not queued or replayed. Wait for the terminal to reconnect before typing again.
+
 # Terminal history
 
 Each terminal keeps up to 5,000 lines and 8 MiB of scrollback on its environment
