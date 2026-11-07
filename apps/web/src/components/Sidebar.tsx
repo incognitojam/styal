@@ -1368,6 +1368,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       projectScopeFilter.contains(item, query, (candidate) => candidate.label),
   });
   const scopedProjectGroups = revealWidensScope ? [] : chosenProjectGroups;
+  const singleProjectScope = scopedProjectGroups.length === 1;
   const scopedProjectRefs = scopedProjectGroups.flatMap((project) => project.memberProjectRefs);
   const scopedProjectKeys = revealWidensScope ? null : chosenScopeProjectKeys;
   const threadSearch = useThreadSearch(
@@ -2245,7 +2246,12 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     const pinnedGroups = new Set(pinnedProjectGroupKeys);
     let pinnedDividerPlaced = false;
     for (const row of activeRows) {
-      if (row.kind === "thread" && row.group !== undefined && row.group !== activeGroup) {
+      if (
+        !singleProjectScope &&
+        row.kind === "thread" &&
+        row.group !== undefined &&
+        row.group !== activeGroup
+      ) {
         if (!pinnedDividerPlaced && !pinnedGroups.has(row.group)) {
           items.push({ kind: "marker", marker: "pinned-projects-divider" });
           pinnedDividerPlaced = true;
@@ -2262,7 +2268,12 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       items.push({ kind: "marker", marker: "working-header" });
       let workingGroup: string | undefined;
       for (const row of rowsOf(visibleWorkingThreads, "working")) {
-        if (row.kind === "thread" && row.group !== undefined && row.group !== workingGroup) {
+        if (
+          !singleProjectScope &&
+          row.kind === "thread" &&
+          row.group !== undefined &&
+          row.group !== workingGroup
+        ) {
           workingGroup = row.group;
           items.push({ kind: "working-project-header", group: row.group });
         }
@@ -3532,6 +3543,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           <SidebarGroup className="z-[1]">
             <SidebarThreadHeader
               hasProjects={projectGroups.length > 0}
+              singleProjectScope={singleProjectScope}
               projectScope={
                 <Combobox
                   items={projectScopeItems}
@@ -3571,13 +3583,41 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                 >
                   <ComboboxTrigger
                     render={
-                      <SidebarHeaderIconButton
-                        label={
-                          scopedProjectGroups.length > 0
-                            ? `Filter threads by project: ${scopedProjectGroups.map((project) => project.displayName).join(", ")}`
-                            : "Filter threads by project"
-                        }
-                      />
+                      singleProjectScope ? (
+                        <button
+                          type="button"
+                          aria-label={`Filter threads by project: ${scopedProjectGroups[0]!.displayName}`}
+                          className="flex h-8 w-full min-w-0 items-center gap-2 rounded-md px-2 text-sm font-medium text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring/70"
+                          onContextMenu={(event) => {
+                            event.preventDefault();
+                            handleProjectGroupContextMenu(scopedProjectGroups[0]!.projectKey, {
+                              x: event.clientX,
+                              y: event.clientY,
+                            });
+                          }}
+                          onKeyDown={(event) => {
+                            if (
+                              event.key !== "ContextMenu" &&
+                              !(event.shiftKey && event.key === "F10")
+                            )
+                              return;
+                            event.preventDefault();
+                            const rect = event.currentTarget.getBoundingClientRect();
+                            handleProjectGroupContextMenu(scopedProjectGroups[0]!.projectKey, {
+                              x: rect.left,
+                              y: rect.bottom,
+                            });
+                          }}
+                        />
+                      ) : (
+                        <SidebarHeaderIconButton
+                          label={
+                            scopedProjectGroups.length > 0
+                              ? `Filter threads by project: ${scopedProjectGroups.map((project) => project.displayName).join(", ")}`
+                              : "Filter threads by project"
+                          }
+                        />
+                      )
                     }
                   >
                     {scopedProjectGroups.length > 1 ? (
@@ -3597,6 +3637,14 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                     ) : (
                       <ListFilterIcon className="size-4" />
                     )}
+                    {singleProjectScope ? (
+                      <>
+                        <span className="min-w-0 flex-1 truncate text-left">
+                          {scopedProjectGroups[0]!.displayName}
+                        </span>
+                        <ChevronDownIcon aria-hidden className="size-4 shrink-0" />
+                      </>
+                    ) : null}
                   </ComboboxTrigger>
                   {/* Refocusing the trigger after a pointer close shows its focus ring and opens its tooltip. */}
                   <ComboboxPopup
@@ -3860,10 +3908,11 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                           : isCard
                             ? "card"
                             : "slim";
-                        const grouped =
+                        const groupedByHeader =
                           groupThreadsByProject && (section === "active" || section === "working");
+                        const grouped = groupedByHeader || singleProjectScope;
                         const compact =
-                          grouped &&
+                          groupedByHeader &&
                           (section === "working"
                             ? branchlessWorkingGroups
                             : branchlessActiveGroups
