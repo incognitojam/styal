@@ -1768,7 +1768,7 @@ it("stops stranded thinking after a steer and follows the next thought or tool",
     status: "running",
     completedAt: null,
     streaming: true,
-    text: id,
+    text: `**${id}**`,
   });
   const first = thought("first-thought");
   const next = thought("next-thought");
@@ -1792,6 +1792,7 @@ it("stops stranded thinking after a steer and follows the next thought or tool",
   expect(afterSteer.find((row) => row.type === "work-toggle")).toMatchObject({
     live: false,
     shimmer: false,
+    summary: "first-thought",
   });
   expect(afterSteer.at(-1)?.type).toBe("thinking");
   const header = afterSteer.find((row) => row.type === "work-toggle");
@@ -2435,9 +2436,11 @@ it.each([false, true])(
   },
 );
 
-it("caps live thought previews while preserving reasoning detail", () => {
+it.each([
+  "Considering the pending approval\n".repeat(100),
+  "**Considering** the *pending approval*\n".repeat(100),
+])("caps plain-text thought previews while preserving reasoning detail (%#)", (text) => {
   const at = "2026-06-20T00:00:02.000Z";
-  const text = "Considering the pending approval\n".repeat(100);
   const thought: OrchestrationV2TurnItem = {
     ...base("long-thought", at, 1),
     type: "reasoning",
@@ -2460,6 +2463,9 @@ it("caps live thought previews while preserving reasoning detail", () => {
   expect(header?.thought).not.toContain("\n");
   expect(header!.thought!.length).toBeLessThanOrEqual(203);
   const activity = feed.flatMap((row) => (row.type === "activity-group" ? row.activities : []))[0]!;
+  expect(workEntryRowLabel(activity.workEntry)).toMatch(/^Considering the pending approval/);
+  expect(workEntryRowLabel(activity.workEntry)).not.toMatch(/[*\n]/);
+  expect(workEntryRowLabel(activity.workEntry, true)).toBe("Thinking");
   expect(activity.detail).toBe(text);
   expect(JSON.parse(activity.getFullDetail()!).item).toMatchObject({ text });
   expect(activity.getCopyText()).toContain(text);

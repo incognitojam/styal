@@ -323,8 +323,10 @@ export function workEntryRowLabel(entry: WorkLogPresentationEntry, expanded = fa
   if (entry.structuredPayload?.type === "command_execution" && entry.structuredPayload.setupScript)
     return entry.label;
   if (entry.itemType === "fork") return entry.label;
-  if (expanded && entry.itemType === "reasoning")
-    return entry.toolLifecycleStatus === "inProgress" ? "Thinking" : "Thought";
+  if (entry.itemType === "reasoning") {
+    const status = entry.toolLifecycleStatus === "inProgress" ? "Thinking" : "Thought";
+    return expanded ? status : compactWorkEntryText(liveThoughtLine(entry.detail ?? "")) || status;
+  }
   const presentation = resolveWorkEntryToolPresentation(entry);
   if (presentation) return presentation.displayName;
   if (entry.command?.trim()) return compactWorkEntryText(commandDisplayText(entry.command));
@@ -944,7 +946,7 @@ function singleToolCallLabel(activity: ThreadFeedActivity, expanded: boolean): s
   if (activity.workEntry.itemType === "reasoning")
     return expanded
       ? "Thought"
-      : compactWorkEntryText(activity.workEntry.detail ?? "") || "Thought";
+      : compactWorkEntryText(liveThoughtLine(activity.workEntry.detail ?? "")) || "Thought";
   const presentation = resolveWorkEntryToolPresentation(activity.workEntry, "completed");
   if (presentation) return presentation.displayName;
   if (
@@ -2115,7 +2117,8 @@ function liveToolActivitySummary(activity: ThreadFeedActivity, presentTense: boo
   const status = liveActivityToolStatus(activity.lifecycleStatus, presentTense);
   if (activity.workEntry.itemType === "reasoning") {
     return compactWorkEntryText(
-      activity.workEntry.detail?.trim() || (status === "inProgress" ? "Thinking" : "Thought"),
+      liveThoughtLine(activity.workEntry.detail ?? "") ||
+        (status === "inProgress" ? "Thinking" : "Thought"),
     );
   }
   const presentation = resolveWorkEntryToolPresentation({
