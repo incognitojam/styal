@@ -4786,12 +4786,13 @@ features:
   - id: provider-server-settings-isolation
     title: Keep the server's own settings out of agent processes
     status: maintained
-    prs: [365, 1094]
+    prs: [365, 1094, 1379]
     invariants:
       - Agent processes and provider status probes do not inherit the server's settings, service launcher variables, or dev web build variables, so a styal server started by an agent does not use the running server's port, state directory, or Tailscale Serve mapping.
       - A provider process given a complete environment is spawned without re-extending it from the server's own environment.
       - Provider processes still receive per-session workspace ports, the provider instance's configured environment, and the Codex launch args override.
       - Terminals and provider processes use the same rule for which inherited variables are removed.
+      - Filtering does not freeze the environment. A provider using the default base still finds a CLI through a shell PATH that desktop delivers after the server starts.
       - Provider update commands and the package-manager probes behind update checks are not covered; they still run with the server's full environment.
     implementation_paths:
       - apps/server/src/provider/CodexProvider.ts

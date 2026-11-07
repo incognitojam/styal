@@ -40,6 +40,35 @@ describe("inheritedProviderEnvironment", () => {
 });
 
 describe("mergeProviderInstanceEnvironment", () => {
+  it.effect("follows host changes made after the merge, without server-owned variables", () => {
+    const host: NodeJS.ProcessEnv = {
+      PATH: "/usr/bin",
+      T3CODE_PORT: "3773",
+      ACCOUNT: "from-host",
+    };
+    return Effect.gen(function* () {
+      const inherited = yield* mergeProviderInstanceEnvironment(undefined);
+      const configured = yield* mergeProviderInstanceEnvironment([
+        { name: "ACCOUNT", value: "from-instance", sensitive: false },
+      ]);
+
+      host.PATH = "/home/ada/.local/bin:/usr/bin";
+
+      expect({ ...inherited }).toEqual({
+        PATH: "/home/ada/.local/bin:/usr/bin",
+        ACCOUNT: "from-host",
+      });
+      expect({ ...configured }).toEqual({
+        PATH: "/home/ada/.local/bin:/usr/bin",
+        ACCOUNT: "from-instance",
+      });
+    }).pipe(
+      Effect.provideService(HostProcess.Environment, host),
+      Effect.provideService(HostProcess.HomeDirectory, "/home/ada"),
+      Effect.provide(NodeServices.layer),
+    );
+  });
+
   it.effect.each([
     { value: "~/.account", tail: ".account" },
     { value: "~\\.account\\work", tail: ".account\\work" },
@@ -85,6 +114,23 @@ describe("mergeProviderInstanceEnvironment", () => {
         ),
       ).toEqual({ ...baseEnv, CUSTOM_VALUE: "~/.custom" });
     }),
+  );
+
+  it.effect("gives a Windows override one spelling in the default host environment", () =>
+    Effect.gen(function* () {
+      const environment = yield* mergeProviderInstanceEnvironment([
+        { name: "path", value: "C:\\configured", sensitive: false },
+      ]);
+
+      expect({ ...environment }).toEqual({ PATH: "C:\\configured", SystemRoot: "C:\\Windows" });
+      expect(environment.Path).toBeUndefined();
+    }).pipe(
+      Effect.provideService(HostProcess.Platform, "win32"),
+      Effect.provideService(HostProcess.Environment, {
+        Path: "C:\\inherited",
+        SystemRoot: "C:\\Windows",
+      }),
+    ),
   );
 
   it.effect("removes server-owned variables from the default host environment", () =>
