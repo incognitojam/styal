@@ -372,7 +372,8 @@ jobs:
           echo "changed=true" >> "$GITHUB_OUTPUT"
           # Importing the manifest module decodes the bundled file with the server's schema.
           node --input-type=module -e "await import('./apps/server/src/provider/ModelManifest.ts')"
-          vp test run apps/server/src/provider/ModelManifest.test.ts
+          # The root config loads every package's test config; this filtered install lacks mobile's dependencies.
+          (cd apps/server && vp test run src/provider/ModelManifest.test.ts)
           summary="$(jq -r 'map("\(.packageName)@\(.version)") | unique | join(", ")' "$RUNNER_TEMP/canary-results.json")"
           builds="$(jq -r 'map(.styal) | unique | join(" and ")' "$RUNNER_TEMP/canary-results.json")"
           echo "builds=$builds" >> "$GITHUB_OUTPUT"
