@@ -16,8 +16,8 @@ The [Provider canary](../../.github/workflows/provider-canary.yml) workflow runs
 hourly (at 23 minutes past; GitHub may start scheduled runs late), after every
 successful Fork Nightly run, and on demand. A run with nothing new to verify
 stops after a quick npm and GitHub lookup. For Codex,
-Claude Code, and OpenCode it finds npm releases that the current stable and
-nightly styal builds may not install yet, installs
+Claude Code, and OpenCode it finds npm releases that the latest nightly and the
+oldest nightly published in the last seven days may not install yet, installs
 each one into an isolated prefix, and runs real turns against that build's
 server, checked out from its release tag: a tool turn, a shell command that
 must not see the server's own `T3CODE_PORT`, the tool turn's checkpoint, a
@@ -29,7 +29,10 @@ fails on error items or server warnings any of them leave behind. A failed run i
 on the retry is still recorded and is listed in the status issue. Versions that
 pass are recorded in one pull request from `automation/provider-canary`, which
 also keeps that pull request's earlier additions. Builds whose tag predates the
-canary are skipped.
+canary are skipped. Publication dates come from npm; stable builds are not
+selected. When the older nightly passes, its approval also covers later builds,
+so provider updates do not require the newest styal nightly. If only the latest
+nightly passes, older builds keep their previous approved provider version.
 
 A release that fails on a build is not verified on that build again for six
 hours. A new nightly or a new provider release is verified on the next run. A

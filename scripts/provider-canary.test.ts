@@ -12,6 +12,7 @@ import {
   planRewind,
   reconcileStatusIssue,
   recordVersions,
+  selectNightlyBuilds,
   statusFailures,
   styalBuildContains,
   type CanaryFailure,
@@ -75,6 +76,37 @@ const codexEntry = (version: string, styal: string) => ({
   packageName: "@openai/codex",
   version,
   styal,
+});
+
+describe("provider canary builds", () => {
+  it("selects latest and the oldest published nightly in the last seven days", () => {
+    expect(
+      selectNightlyBuilds(
+        LATER_NIGHTLY,
+        {
+          [LATER_NIGHTLY]: "2026-10-15T12:00:00.000Z",
+          [NIGHTLY]: "2026-10-14T12:00:00.000Z",
+          "0.1.1-nightly.20261008.600": "2026-10-08T12:00:00.000Z",
+          "0.1.1-nightly.20261008.599": "2026-10-08T11:59:59.999Z",
+          "0.1.1-nightly.20261016.750": "2026-10-15T12:00:00.000Z",
+          "0.1.1-nightly.20261007.550": "2026-10-16T12:00:00.000Z",
+          "0.1.1-nightly.20261006.500": "invalid",
+          "0.1.0": "2026-10-09T12:00:00.000Z",
+          "0.1.1-preview.20261009.610": "2026-10-09T12:00:00.000Z",
+          created: "2026-10-01T12:00:00.000Z",
+          modified: "2026-10-15T12:00:00.000Z",
+        },
+        new Date("2026-10-15T12:00:00.000Z"),
+      ),
+    ).toEqual([LATER_NIGHTLY, "0.1.1-nightly.20261008.600"]);
+  });
+
+  it("keeps latest once when no older nightly is in the window", () => {
+    expect(
+      selectNightlyBuilds(LATER_NIGHTLY, { [LATER_NIGHTLY]: "2026-10-15T12:00:00.000Z" }, NOW),
+    ).toEqual([LATER_NIGHTLY]);
+    expect(selectNightlyBuilds(undefined, {}, NOW)).toEqual([]);
+  });
 });
 
 describe("provider canary plan", () => {
@@ -274,6 +306,16 @@ describe("provider canary record", () => {
     expect(covering.compatibility[2].autoUpdates).toEqual([
       { version: "2.0.21", package: "@opencode/cli", styal: NIGHTLY },
     ]);
+    expect(
+      planProvider(canary("opencode"), covering, LATER_NIGHTLY, {
+        "@opencode/cli": "2.0.21",
+      }).kind,
+    ).toBe("current");
+    expect(
+      planProvider(canary("opencode"), later, NIGHTLY, {
+        "@opencode/cli": "2.0.21",
+      }).kind,
+    ).toBe("verify");
     // An older version on an older build covers builds the nightly entry does not.
     const stable = JSON.parse(recordVersions(MANIFEST_TEXT, [opencode("2.0.19", "0.1.0")], NOW));
     expect(stable.compatibility[2].autoUpdates).toHaveLength(2);

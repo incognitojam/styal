@@ -1,7 +1,7 @@
 name: Provider canary
 
-# Verifies new provider CLI releases with real turns against the published
-# stable and nightly styal builds, checked out from their release tags, and
+# Verifies new provider CLI releases against the latest nightly and oldest
+# nightly published in the last seven days, checked out from their tags, and
 # records each passing version in the model manifest's `autoUpdates` with the
 # build it passed on. Servers fetch that manifest from main and automatically
 # update only to a version verified on a build their code contains. Problems
