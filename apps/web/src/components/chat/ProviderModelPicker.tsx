@@ -96,7 +96,6 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   triggerClassName?: string;
   triggerLabel?: string;
   triggerAriaLabel?: string;
-  automaticOption?: { selected: boolean; onSelect: () => void };
   onOpenChange?: (open: boolean) => void;
   onOpenProviderSetup?: (instanceId: ProviderInstanceId) => void;
   getModelDisabledReason?: (instanceId: ProviderInstanceId, model: string) => string | null;
@@ -253,7 +252,6 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
       environmentId={props.environmentId}
       activeInstanceId={activeInstanceId}
       model={props.model}
-      {...(props.automaticOption ? { automaticOption: props.automaticOption } : {})}
       {...(props.selectedModels !== undefined ? { selectedModels: props.selectedModels } : {})}
       {...(props.onToggleModel
         ? {

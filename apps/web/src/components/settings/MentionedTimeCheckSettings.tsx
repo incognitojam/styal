@@ -10,10 +10,14 @@ import { useEnvironmentProviders } from "../../state/environments";
 import { EMPTY_SERVER_PROVIDERS } from "../../state/server";
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { TraitsPicker } from "../chat/TraitsPicker";
-import { getDisplayModelName } from "../chat/providerIconUtils";
+import { Badge } from "../ui/badge";
 import { Switch } from "../ui/switch";
 import { toastManager } from "../ui/toast";
-import { SETTINGS_PICKER_TRIGGER_CLASSNAME, SettingsRow } from "./settingsLayout";
+import {
+  SETTINGS_PICKER_TRIGGER_CLASSNAME,
+  SettingResetButton,
+  SettingsRow,
+} from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 import { useSettingsScope } from "./SettingsScopeContext";
 import { useScopedModelDisabledReason } from "./useScopedModelAvailability";
@@ -52,7 +56,7 @@ export function MentionedTimeCheckSettings() {
 export function MentionedTimeCheckModelSettings() {
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
-  const { environment, connectedEnvironments, target, targets } = useSettingsScope();
+  const { environment, connectedEnvironments, target } = useSettingsScope();
   const environmentId = environment?.environmentId ?? null;
   const hasServerTargets = connectedEnvironments.length > 0;
   const providersByEnvironment = useEnvironmentProviders();
@@ -80,17 +84,6 @@ export function MentionedTimeCheckModelSettings() {
   );
   const writerModelDisabledReason = useScopedModelDisabledReason(settings, instanceEntries);
   const usesTimeCheckModel = settings.mentionedTimeCheckModelSelection !== null;
-  const automaticSelection = resolveMentionedTimeCheckModelSelection(
-    { ...settings, mentionedTimeCheckModelSelection: null },
-    textGenerationProviders,
-    target?.projectId ?? null,
-  );
-  const automaticProvider = textGenerationProviders.find(
-    (provider) => provider.instanceId === automaticSelection.instanceId,
-  );
-  const automaticModel = automaticProvider?.models.find(
-    (model) => model.slug === automaticSelection.model,
-  );
   const timeCheckSelection = resolveAppModelSelectionState(
     {
       ...settings,
@@ -126,10 +119,14 @@ export function MentionedTimeCheckModelSettings() {
       settingKeys={["mentionedTimeCheckModelSelection"]}
       {...searchableSetting("mentioned-time-check-model")}
       mixed={mixedTimeCheckModel}
-      description={
-        targets.length === 1 && automaticProvider
-          ? `Automatic uses ${automaticModel ? getDisplayModelName(automaticModel) : automaticSelection.model} with ${automaticProvider.displayName ?? automaticProvider.driver}.`
-          : "Choose automatically or select a model."
+      resetAction={
+        hasServerTargets && (usesTimeCheckModel || mixedTimeCheckModel) ? (
+          <SettingResetButton
+            label="time check model"
+            tooltip="Use automatic model selection"
+            onClick={() => updateSettings({ mentionedTimeCheckModelSelection: null })}
+          />
+        ) : null
       }
       control={
         !hasServerTargets ? (
@@ -148,15 +145,17 @@ export function MentionedTimeCheckModelSettings() {
               triggerClassName={SETTINGS_PICKER_TRIGGER_CLASSNAME}
               triggerAriaLabel="Time check model"
               disabled={!settings.mentionedTimeCheckEnabled && !mixedTimeCheckEnabled}
-              automaticOption={{
-                selected: !usesTimeCheckModel && !mixedTimeCheckModel,
-                onSelect: () => updateSettings({ mentionedTimeCheckModelSelection: null }),
-              }}
-              {...(mixedTimeCheckModel
-                ? { triggerLabel: "Mixed" }
-                : !usesTimeCheckModel
-                  ? { triggerLabel: "Automatic" }
-                  : {})}
+              {...(mixedTimeCheckModel ? { triggerLabel: "Mixed" } : {})}
+              {...(!usesTimeCheckModel && !mixedTimeCheckModel
+                ? {
+                    triggerSuffix: (
+                      <Badge size="sm" variant="secondary" aria-hidden>
+                        Auto
+                      </Badge>
+                    ),
+                    triggerDetail: "Selected automatically",
+                  }
+                : {})}
               getModelDisabledReason={writerModelDisabledReason}
               onInstanceModelChange={(instanceId, model) =>
                 saveTimeCheckModel(createModelSelection(instanceId, model))

@@ -9,62 +9,6 @@ import { render } from "../../../test/render";
 import { deriveProviderInstanceEntries } from "../../providerInstances";
 import { ProviderModelPicker } from "./ProviderModelPicker";
 
-it("can choose a model and return to Automatic using the keyboard", async () => {
-  const instanceId = ProviderInstanceId.make("codex");
-  const entries = deriveProviderInstanceEntries([
-    {
-      instanceId,
-      driver: ProviderDriverKind.make("codex"),
-      enabled: true,
-      installed: true,
-      version: null,
-      status: "ready",
-      auth: { status: "authenticated" },
-      checkedAt: "2026-01-01T00:00:00.000Z",
-      models: [],
-      slashCommands: [],
-      skills: [],
-    },
-  ]);
-  const options = new Map([[instanceId, [{ slug: "small", name: "Small model" }]]]);
-
-  function Picker() {
-    const [selection, setSelection] = useState<string | null>(null);
-    return (
-      <ProviderModelPicker
-        environmentId={null}
-        activeInstanceId={instanceId}
-        model={selection ?? "small"}
-        triggerLabel={selection === null ? "Automatic" : "Small model"}
-        triggerAriaLabel="Time check model"
-        automaticOption={{ selected: selection === null, onSelect: () => setSelection(null) }}
-        lockedProvider={null}
-        instanceEntries={entries}
-        modelOptionsByInstance={options}
-        onInstanceModelChange={(_, model) => setSelection(model)}
-      />
-    );
-  }
-
-  await using screen = await render(<Picker />);
-  const trigger = screen.getByRole("button", { name: "Time check model" });
-  await trigger.click();
-  await expect
-    .element(page.getByRole("option", { name: "Automatic (recommended)" }))
-    .toHaveAttribute("aria-selected", "true");
-  await page.getByPlaceholder("Search models...").fill("Small");
-  await userEvent.keyboard("{ArrowDown}{Enter}");
-  await expect.element(trigger).toHaveTextContent("Small model");
-  await trigger.click();
-  await expect
-    .element(page.getByRole("option", { name: "Automatic (recommended)" }))
-    .toHaveAttribute("aria-selected", "false");
-  await page.getByPlaceholder("Search models...").fill("Automatic");
-  await userEvent.keyboard("{ArrowDown}{Enter}");
-  await expect.element(trigger).toHaveTextContent("Automatic");
-  await expect.element(page.getByPlaceholder("Search models...")).not.toBeInTheDocument();
-});
-
 it("keeps each registry image when adding a model from another ACP agent", async () => {
   const icons = [
     "https://cdn.agentclientprotocol.com/registry/icons/picker-explicit.svg",

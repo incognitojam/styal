@@ -22,7 +22,6 @@ import {
   type RefObject,
 } from "react";
 import { ModelListRow } from "./ModelListRow";
-import { CheckIcon } from "lucide-react";
 import { ModelPickerSidebar } from "./ModelPickerSidebar";
 import { getProviderStatusMessage, hasProviderSetup } from "./ProviderStatusBanner";
 import {
@@ -164,7 +163,6 @@ function adjacentModelPickerProvider(input: {
 
 const EMPTY_MODEL_JUMP_LABELS = new Map<string, string>();
 const MODEL_LIST_ESTIMATED_ITEM_SIZE = 32;
-const AUTOMATIC_MODEL_KEY = "automatic";
 // Rendered heights in `--spacing` units. Chrome is the search box and list padding, plus a 1px border.
 const ROW_UNITS = 8;
 const ROW_SEPARATOR_UNITS = 0.5;
@@ -350,7 +348,6 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   environmentId: EnvironmentId | null;
   activeInstanceId: ProviderInstanceId;
   model: string;
-  automaticOption?: { selected: boolean; onSelect: () => void };
   selectedModels?: ReadonlyArray<{ instanceId: ProviderInstanceId; model: string }>;
   onToggleModel?: (instanceId: ProviderInstanceId, model: string) => void;
   lockedProvider: ProviderDriverKind | null;
@@ -403,11 +400,6 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   const activeModelKey = activeModelSlug
     ? modelPickerModelKey(props.activeInstanceId, activeModelSlug)
     : null;
-  const selectedKey = props.automaticOption?.selected ? AUTOMATIC_MODEL_KEY : activeModelKey;
-  const selectAutomatic = () => {
-    props.automaticOption?.onSelect();
-    onRequestClose?.();
-  };
   const selectedModelKeys = props.selectedModels?.map((selection) => {
     const entry = instanceEntries.find((entry) => entry.instanceId === selection.instanceId);
     const model = resolveModelPickerSelectedModel({
@@ -746,7 +738,6 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     .slice(0, MODEL_PICKER_JUMP_KEYBINDING_COMMANDS.length)
     .map((model) => modelPickerModelKey(model.instanceId, model.slug));
   const allItemKeys = ((): string[] => [
-    ...(props.automaticOption ? [AUTOMATIC_MODEL_KEY] : []),
     ...flatModels.map((model) => modelPickerModelKey(model.instanceId, model.slug)),
     ...new Set(
       flatModels
@@ -759,14 +750,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
       modelPickerModelKey(model.instanceId, model.slug),
     );
     // The toggle trails the list, so expanding it reveals older models above it.
-    return [
-      ...(props.automaticOption &&
-      "automatic (recommended)".includes(searchQuery.trim().toLowerCase())
-        ? [AUTOMATIC_MODEL_KEY]
-        : []),
-      ...modelKeys,
-      ...(legacySection ? [legacySection.key] : []),
-    ];
+    return legacySection ? [...modelKeys, legacySection.key] : modelKeys;
   })();
   const filteredModelByKey = ((): ReadonlyMap<string, ModelPickerItem> =>
     new Map(
@@ -791,7 +775,6 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     modelJumpLabelByKey,
     activeModelKey,
     selectedModelKeySet,
-    automaticOption: props.automaticOption,
   };
 
   const onWindowKeyDown = (event: globalThis.KeyboardEvent) => {
@@ -866,7 +849,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
             : isSearching
               ? { height: searchHeight }
               : {
-                  minHeight: `min(calc(var(--spacing) * ${tallestTabUnits + LIST_CHROME_UNITS + (props.automaticOption ? ROW_UNITS : 0)} + 1px), calc(var(--spacing) * 86.5))`,
+                  minHeight: `min(calc(var(--spacing) * ${tallestTabUnits + LIST_CHROME_UNITS} + 1px), calc(var(--spacing) * 86.5))`,
                 }
         }
         data-model-picker-content="true"
@@ -898,7 +881,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
           open
           virtualized
           multiple={onToggleModel !== undefined}
-          value={onToggleModel ? [...selectedModelKeySet] : selectedKey}
+          value={onToggleModel ? [...selectedModelKeySet] : activeModelKey}
           onItemHighlighted={(modelKey, eventDetails) => {
             highlightedModelKeyRef.current = typeof modelKey === "string" ? modelKey : null;
             if (eventDetails.reason === "keyboard" && eventDetails.index >= 0) {
@@ -914,10 +897,6 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                 [...selectedModelKeySet].find((key) => !value.includes(key)))
               : value;
             if (typeof modelKey !== "string") {
-              return;
-            }
-            if (modelKey === AUTOMATIC_MODEL_KEY) {
-              selectAutomatic();
               return;
             }
             const legacyInstanceId = parseModelPickerLegacySectionKey(modelKey);
@@ -1010,10 +989,6 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                   (e as typeof e & { preventBaseUIHandler?: () => void }).preventBaseUIHandler?.();
                   e.preventDefault();
                   e.stopPropagation();
-                  if (highlightedModelKeyRef.current === AUTOMATIC_MODEL_KEY) {
-                    selectAutomatic();
-                    return;
-                  }
                   const legacyInstanceId = parseModelPickerLegacySectionKey(
                     highlightedModelKeyRef.current,
                   );
@@ -1038,16 +1013,6 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
               itemKeys={filteredItemKeys}
               extraData={modelListExtraData}
               renderItem={({ item: modelKey, index }) => {
-                if (modelKey === AUTOMATIC_MODEL_KEY) {
-                  return (
-                    <ComboboxItem index={index} value={modelKey} hideIndicator>
-                      <span className="min-w-0 flex-1 truncate">Automatic (recommended)</span>
-                      {props.automaticOption?.selected ? (
-                        <CheckIcon className="size-3.5 shrink-0" aria-hidden="true" />
-                      ) : null}
-                    </ComboboxItem>
-                  );
-                }
                 if (legacySection?.key === modelKey) {
                   return (
                     <ComboboxItem
@@ -1086,7 +1051,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                     isSelected={
                       selectedModelKeys !== undefined
                         ? selectedModelKeySet.has(modelKey)
-                        : !props.automaticOption?.selected && modelKey === activeModelKey
+                        : modelKey === activeModelKey
                     }
                     favoriteStarOnHover={selectedInstanceId === "favorites" && !isSearching}
                     showInstanceBadge={badgedInstanceIds.has(model.instanceId)}
