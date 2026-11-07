@@ -567,9 +567,15 @@ describe("vcsActionState", () => {
 
         expect(AsyncResult.isFailure(interruptedResult)).toBe(true);
         if (AsyncResult.isFailure(interruptedResult)) {
-          expect(Cause.hasInterruptsOnly(interruptedResult.cause)).toBe(true);
+          expect(Cause.squash(interruptedResult.cause)).toMatchObject({
+            _tag: "EnvironmentRpcUnavailableError",
+            outcomeUnknown: true,
+          });
         }
-        expect(registry.get(manager.stateAtom(targetKey))).toEqual(EMPTY_VCS_ACTION_STATE);
+        expect(registry.get(manager.stateAtom(targetKey))).toMatchObject({
+          isRunning: false,
+          error: expect.stringContaining("The result of the request is unknown."),
+        });
         expect(registry.get(state).revision).toBe(3);
         expect(removed).toEqual([`${environmentId}:*`, `${environmentId}:*`, `${environmentId}:*`]);
       }),

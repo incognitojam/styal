@@ -47,6 +47,7 @@ import * as Persistence from "../platform/persistence.ts";
 import { runCachePersistence } from "./cachePersistence.ts";
 import {
   isRpcClientError,
+  EnvironmentRpcUnavailableError,
   request,
   requestGuarded,
   runStream,
@@ -313,7 +314,10 @@ export function serverUpdateFailureMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Server update failed.";
 }
 
+const isRpcUnavailableError = Schema.is(EnvironmentRpcUnavailableError);
+
 function isRpcSocketError(error: unknown): boolean {
+  if (isRpcUnavailableError(error) && error.outcomeUnknown === true) return true;
   if (!isRpcClientError(error)) {
     return false;
   }

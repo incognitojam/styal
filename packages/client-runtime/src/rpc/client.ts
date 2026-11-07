@@ -31,7 +31,9 @@ export class EnvironmentRpcUnavailableError extends Schema.TaggedError<Environme
   },
 ) {}
 
-const isSocketErrorReason = Schema.is(Socket.SocketErrorReason);
+const isSocketErrorReason = Schema.is(
+  Schema.Union([Socket.SocketReadError, Socket.SocketWriteError, Socket.SocketCloseError]),
+);
 
 const rpcFailure = <E>(
   cause: Cause.Cause<E>,
