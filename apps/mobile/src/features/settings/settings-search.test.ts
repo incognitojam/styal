@@ -79,6 +79,7 @@ describe("filterSettingsSections", () => {
       );
     expect(labels("device hub")).toEqual(["Devices"]);
     expect(labels("managed updates")).toEqual(["Maintenance"]);
+    expect(labels("styal-tested updates")).toEqual(["Maintenance"]);
     expect(labels("turn usage")).toEqual(["Chat"]);
     expect(labels("last message time")).toEqual(["General"]);
   });

@@ -133,6 +133,7 @@ const SETTINGS_SEARCH_TERMS = {
     "updates",
     "provider updates",
     "managed updates",
+    "automatically install styal-tested updates",
     "restart",
     "manage environments",
   ],

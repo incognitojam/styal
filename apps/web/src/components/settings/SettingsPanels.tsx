@@ -584,7 +584,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       ? ["Provider update checks"]
       : []),
     ...(settings.autoUpdateProviders !== DEFAULT_UNIFIED_SETTINGS.autoUpdateProviders
-      ? ["styal managed updates"]
+      ? ["Automatically install styal-tested updates"]
       : []),
     ...(settings.continueThreadsAfterServerUpdate !==
     DEFAULT_UNIFIED_SETTINGS.continueThreadsAfterServerUpdate
@@ -2203,18 +2203,18 @@ export function MaintenanceSettingsPanel() {
           settingKeys={["autoUpdateProviders"]}
           {...searchableSetting("provider-auto-updates")}
           forkFeature="provider-auto-updates"
-          description="styal manages provider CLI updates for you, installing only versions it has tested."
+          description="styal takes over automatic updates for supported providers and installs only versions it has tested."
           status={
             !supportsProviderAutoUpdates
-              ? "All selected connected environments must support styal managed updates."
+              ? "All selected connected environments must support automatic provider updates."
               : settings.enableProviderUpdateChecks
                 ? undefined
-                : "Turn on provider update checks to use managed updates."
+                : "Turn on provider update checks to install tested updates automatically."
           }
           resetAction={
             settings.autoUpdateProviders !== DEFAULT_UNIFIED_SETTINGS.autoUpdateProviders ? (
               <SettingResetButton
-                label="styal managed updates"
+                label="Automatically install styal-tested updates"
                 onClick={() =>
                   updateSettings({
                     autoUpdateProviders: DEFAULT_UNIFIED_SETTINGS.autoUpdateProviders,
@@ -2231,7 +2231,7 @@ export function MaintenanceSettingsPanel() {
               onCheckedChange={(checked) =>
                 updateSettings({ autoUpdateProviders: Boolean(checked) })
               }
-              aria-label="styal managed updates"
+              aria-label="Automatically install styal-tested updates"
             />
           }
         />

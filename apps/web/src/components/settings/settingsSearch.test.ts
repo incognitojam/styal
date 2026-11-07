@@ -111,8 +111,15 @@ describe("searchSettings", () => {
   });
 
   it("finds managed provider updates by their new and old names", () => {
-    expect(searchableSetting("provider-auto-updates").title).toBe("styal managed updates");
-    for (const query of ["managed updates", "automatic provider updates", "codex self updater"]) {
+    expect(searchableSetting("provider-auto-updates").title).toBe(
+      "Automatically install styal-tested updates",
+    );
+    for (const query of [
+      "styal-tested updates",
+      "managed updates",
+      "automatic provider updates",
+      "codex self updater",
+    ]) {
       expect(searchSettings(query)[0]?.id).toBe("provider-auto-updates");
     }
   });
