@@ -10,7 +10,6 @@ import { useEnvironmentProviders } from "../../state/environments";
 import { EMPTY_SERVER_PROVIDERS } from "../../state/server";
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { TraitsPicker } from "../chat/TraitsPicker";
-import { Badge } from "../ui/badge";
 import { Switch } from "../ui/switch";
 import { toastManager } from "../ui/toast";
 import {
@@ -123,7 +122,6 @@ export function MentionedTimeCheckModelSettings() {
         hasServerTargets && (usesTimeCheckModel || mixedTimeCheckModel) ? (
           <SettingResetButton
             label="time check model"
-            tooltip="Use automatic model selection"
             onClick={() => updateSettings({ mentionedTimeCheckModelSelection: null })}
           />
         ) : null
@@ -146,16 +144,6 @@ export function MentionedTimeCheckModelSettings() {
               triggerAriaLabel="Time check model"
               disabled={!settings.mentionedTimeCheckEnabled && !mixedTimeCheckEnabled}
               {...(mixedTimeCheckModel ? { triggerLabel: "Mixed" } : {})}
-              {...(!usesTimeCheckModel && !mixedTimeCheckModel
-                ? {
-                    triggerSuffix: (
-                      <Badge size="sm" variant="secondary" aria-hidden>
-                        Auto
-                      </Badge>
-                    ),
-                    triggerDetail: "Selected automatically",
-                  }
-                : {})}
               getModelDisabledReason={writerModelDisabledReason}
               onInstanceModelChange={(instanceId, model) =>
                 saveTimeCheckModel(createModelSelection(instanceId, model))

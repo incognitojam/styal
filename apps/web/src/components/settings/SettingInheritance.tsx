@@ -52,15 +52,17 @@ function formatValue(key: keyof ServerSettings, value: unknown): string {
       ? "Last selected"
       : key === "sidebarAutoSettleAfterDays"
         ? "Never"
-        : key === "defaultModelSelection" || key === "mentionedTimeCheckModelSelection"
+        : key === "defaultModelSelection"
           ? "Automatic"
-          : key === "sourceControlWriterModelSelection"
-            ? "Text generation model"
-            : key === "reviewGuideModelSelection"
-              ? "Source control writer model"
-              : key === "defaultThreadEnvMode" || key === "worktreeSubmodules"
-                ? "Inherit"
-                : "Not set";
+          : key === "mentionedTimeCheckModelSelection"
+            ? "Default model"
+            : key === "sourceControlWriterModelSelection"
+              ? "Text generation model"
+              : key === "reviewGuideModelSelection"
+                ? "Source control writer model"
+                : key === "defaultThreadEnvMode" || key === "worktreeSubmodules"
+                  ? "Inherit"
+                  : "Not set";
   }
   if (typeof value === "boolean") return value ? "On" : "Off";
   if (typeof value === "number") {
