@@ -1,6 +1,6 @@
 import { DEFAULT_UNIFIED_SETTINGS, type ServerSettings } from "@t3tools/contracts";
 
-export const AUTO_SETTLE_DEFAULT_DAYS = DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays ?? 3;
+export const AUTO_SETTLE_DEFAULT_DAYS = DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays ?? 7;
 
 export interface SettlementChoice {
   readonly onMerge: boolean;
