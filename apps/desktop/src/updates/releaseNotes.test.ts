@@ -327,9 +327,13 @@ describe("normalizeDesktopUpdateReleaseNotes", () => {
     });
   });
 
-  it("ignores the Full Changelog paragraph that ends GitHub's generated notes", () => {
+  it.each([
+    "",
+    " (includes 1 additional change not listed above)",
+    " (includes 11 additional changes not listed above)",
+  ])("ignores the Full Changelog paragraph with suffix %j", (suffix) => {
     const fullChangelog = (from: string, to: string) =>
-      `<p><strong>Full Changelog</strong>: <a class="commit-link" href="https://github.com/incognitojam/styal/compare/v${from}...v${to}"><tt>v${from}...v${to}</tt></a></p>`;
+      `<p><strong>Full Changelog</strong>: <a class="commit-link" href="https://github.com/incognitojam/styal/compare/v${from}...v${to}"><tt>v${from}...v${to}</tt></a>${suffix}</p>`;
     const result = normalizeDesktopUpdateReleaseNotes(
       [
         {

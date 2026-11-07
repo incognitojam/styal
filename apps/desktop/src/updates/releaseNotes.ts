@@ -93,7 +93,9 @@ const GENERATED_FOOTER_LABELS = ["new contributors", "compare"];
 function isGeneratedFooterLine(normalized: string): boolean {
   return (
     normalized === "full changelog" ||
-    /^full changelog: \S+\.\.\.\S+$/.test(normalized) ||
+    /^full changelog: \S+\.\.\.\S+(?: \(includes \d+ additional changes? not listed above\))?$/.test(
+      normalized,
+    ) ||
     GENERATED_FOOTER_LABELS.some(
       (label) => normalized === label || normalized.startsWith(`${label}:`),
     )
