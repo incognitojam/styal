@@ -412,13 +412,3 @@ export function applyGitStatusStreamEvent(
       return mergeGitStatusParts(toLocalStatusPart(current), event.remote);
   }
 }
-
-export function formatAutoPullStatus(status: VcsStatusResult): string | null {
-  const autoPull = status.autoPull;
-  if (!autoPull) return null;
-  const setting = `Auto pull ${autoPull.enabled ? "on" : "off"} · ${autoPull.source}`;
-  const last = autoPull.lastRun;
-  return last
-    ? `${setting}. Last check: ${last.checkedAt} · ${last.outcome}${last.detail ? `: ${last.detail}` : ""}.`
-    : `${setting}. No check recorded this server session.`;
-}
