@@ -2125,6 +2125,28 @@ describe("OrchestratorMcpService provider resolution", () => {
               threads: [{ target: { driverKind: driver, model } }],
               clientRequestId: "create-retry",
             };
+            const threads = yield* ThreadManagementService.ThreadManagementService;
+            const existing = yield* threads.listProjectThreads({
+              projectId,
+              includeSubagents: true,
+            });
+            for (const target of [
+              { environmentId: EnvironmentId.make("environment:other") },
+              { environmentId: scope.environmentId },
+              { projectId },
+            ]) {
+              const error = yield* service
+                .createThreads(scope, {
+                  threads: [{ title: "Must not be created" }, { target }],
+                })
+                .pipe(Effect.flip);
+              assert.equal(error.code, "invalid_request");
+              assert.include(error.message, "t3_thread_launch");
+              assert.deepEqual(
+                yield* threads.listProjectThreads({ projectId, includeSubagents: true }),
+                existing,
+              );
+            }
             const first = yield* service.createThreads(scope, request);
             const child = first.threads[0]!;
             const selection = parentEnabled

@@ -2757,6 +2757,16 @@ const make = Effect.gen(function* () {
     createThreads: Effect.fn("OrchestratorMcpService.createThreads")(
       function* (callerScope, input) {
         const { scope, parent } = yield* loadThreadCaller(callerScope, "create_threads");
+        if (
+          input.threads.some(
+            ({ target }) => target?.environmentId !== undefined || target?.projectId !== undefined,
+          )
+        ) {
+          return yield* failure(
+            "invalid_request",
+            "create_threads inherits this checkout and project. Use t3_thread_launch to select an environment or project.",
+          );
+        }
         const parentRun = ThreadManagementService.latestActiveRun(parent);
         if (
           parentRun === undefined ||
