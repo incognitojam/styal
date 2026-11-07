@@ -65,7 +65,6 @@ export interface SettingsSearchItem {
   readonly cloudOnly?: boolean;
   readonly environmentOnly?: boolean;
   readonly providerSettingsOnly?: boolean;
-  readonly macProviderSettingsOnly?: boolean;
   readonly localBackendManagementOnly?: boolean;
   readonly localEnvironmentOnly?: boolean;
   readonly wslAvailableOnly?: boolean;
@@ -80,7 +79,6 @@ export interface SettingsSearchAvailability {
   readonly hasCloudPublicConfig: boolean;
   readonly hasEnvironment: boolean;
   readonly hasProviderSettingsEnvironment: boolean;
-  readonly hasMacProviderSettingsEnvironment: boolean;
   readonly canManageLocalBackend: boolean;
   readonly isWslSettingsRowVisible: boolean;
   readonly hasThreadAutoSettlement: boolean;
@@ -1069,14 +1067,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     providerSettingsOnly: true,
   },
   {
-    id: "cursor-keychain-usage",
-    title: "Cursor account usage",
-    to: "/settings/providers",
-    searchTerms: ["cursor macOS keychain usage tokens cost limits permission"],
-    providerSettingsOnly: true,
-    macProviderSettingsOnly: true,
-  },
-  {
     id: "provider-health-check-interval",
     title: "Health check interval",
     to: "/settings/providers",
@@ -1687,7 +1677,6 @@ export function filterAvailableSettingsSearchItems(
       (!item.cloudOnly || availability.hasCloudPublicConfig) &&
       (!item.environmentOnly || availability.hasEnvironment) &&
       (!item.providerSettingsOnly || availability.hasProviderSettingsEnvironment) &&
-      (!item.macProviderSettingsOnly || availability.hasMacProviderSettingsEnvironment) &&
       (!item.localBackendManagementOnly || availability.canManageLocalBackend) &&
       (!item.localEnvironmentOnly || !availability.localEnvironmentDisabled) &&
       (!item.wslAvailableOnly || availability.isWslSettingsRowVisible) &&
