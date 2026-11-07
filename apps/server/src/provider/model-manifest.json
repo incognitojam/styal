@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-11-07T18:45:07.836Z",
+  "updatedAt": "2026-11-07T20:24:40.050Z",
   "compatibility": [
     {
       "driver": "codex",
@@ -20,7 +20,7 @@
         {
           "version": "0.167.0",
           "package": "@openai/codex",
-          "styal": "0.1.1-nightly.20261107.1333"
+          "styal": "0.1.1-nightly.20261031.1123"
         }
       ],
       "ranges": [
@@ -57,7 +57,7 @@
         {
           "version": "2.1.319",
           "package": "@anthropic-ai/claude-code",
-          "styal": "0.1.1-nightly.20261107.1333"
+          "styal": "0.1.1-nightly.20261031.1123"
         }
       ],
       "ranges": [
@@ -113,7 +113,7 @@
         {
           "version": "2.2.6",
           "package": "@opencode/cli",
-          "styal": "0.1.1-nightly.20261107.1333"
+          "styal": "0.1.1-nightly.20261031.1123"
         }
       ],
       "ranges": [
