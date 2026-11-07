@@ -231,6 +231,14 @@
     {
       "pr": 26958,
       "reason": "Fork PR ported its one-line ComposerSurface change early: the composer host hides its glass while a banner is attached, which removes the extra card behind the banner when the context row shows. Expect that hunk to be already applied at intake. The rest of the PR, which moves new-thread notices below the composer so they never shift it, has not been imported and arrives with it. Remove this entry once recorded."
+    },
+    {
+      "pr": 26472,
+      "reason": "Imported provisionally as one snapshot: web and desktop thread links and attached thread chips load missing thread families, restoring titles and navigation for older settled threads omitted from the initial shell. Keep the fork baseline's formatThreadLink copy formatter; upstream's surrounding hosted-share-link formatter is a later feature outside this diff. Mobile and archived-thread handling are unchanged. When it merges, compare the frozen base-to-head diff with the final upstream change, reconcile amendments and the formatter context, verify omitted settled links, literal-ID precedence and remote resolution, then clear the snapshot marker with that intake. If it closes without merging, review whether to remove the change or retain it as maintained fork behavior and record that decision before clearing the marker.",
+      "snapshot": {
+        "base": "8b44f42b14c8e273156474a924ccf29680dd7857",
+        "head": "eb652bad038192762075d77b7ccc359a5b380427"
+      }
     }
   ]
 }
