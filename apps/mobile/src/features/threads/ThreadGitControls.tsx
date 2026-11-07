@@ -1,3 +1,4 @@
+import { formatAutoPullStatus } from "@t3tools/shared/git";
 import { Toolbar } from "../../components/ui/Toolbar";
 import * as Dialog from "../../components/ui/Dialog";
 import { useOpenPullRequest } from "../../native/useOpenPullRequest";
@@ -356,7 +357,12 @@ function useThreadGitHeaderActionItems(props: ThreadGitControlsProps): ThreadGit
       menu: {
         items: [
           {
-            description: compactMenuStatus(props.gitStatus),
+            description: [
+              compactMenuStatus(props.gitStatus),
+              props.gitStatus && formatAutoPullStatus(props.gitStatus),
+            ]
+              .filter(Boolean)
+              .join("\n"),
             disabled: true,
             icon: {
               name: "point.topleft.down.curvedto.point.bottomright.up",
@@ -540,7 +546,12 @@ function threadGitMenuDefinition(
         title: compactMenuBranchLabel(model.currentBranchLabel),
         icon: "point.topleft.down.curvedto.point.bottomright.up",
         disabled: true,
-        subtitle: compactMenuStatus(props.gitStatus),
+        subtitle: [
+          compactMenuStatus(props.gitStatus),
+          props.gitStatus && formatAutoPullStatus(props.gitStatus),
+        ]
+          .filter(Boolean)
+          .join("\n"),
         onPress: () => {},
       },
       {

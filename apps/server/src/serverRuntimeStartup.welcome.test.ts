@@ -1,3 +1,4 @@
+import * as AutoPullStatus from "./vcs/AutoPullStatus.ts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
@@ -64,6 +65,8 @@ it.effect.each(["success", "retry"] as const)(
         const projectId = ProjectId.make("synthetic-bootstrap-project");
         const threadId = ThreadId.make("synthetic-bootstrap-thread");
         const services = Layer.mergeAll(
+          AutoPullStatus.layer,
+
           Layer.mock(HttpServer.HttpServer)({
             address: NetAddress.inetAddressFromIpStringUnsafe("127.0.0.1", 3773),
           }),
@@ -231,6 +234,8 @@ it.effect("starts the bootstrap thread on Codex when the environment turned Clau
         },
       });
       const services = Layer.mergeAll(
+        AutoPullStatus.layer,
+
         Layer.mock(HttpServer.HttpServer)({
           address: NetAddress.inetAddressFromIpStringUnsafe("127.0.0.1", 3773),
         }),

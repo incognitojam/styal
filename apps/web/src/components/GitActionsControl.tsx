@@ -1,3 +1,4 @@
+import { formatAutoPullStatus } from "@t3tools/shared/git";
 import { ThreadDetailsControl } from "./chat/ThreadDetailsControl";
 import { useAtomMount, useAtomValue } from "@effect/atom-react";
 import {
@@ -1655,6 +1656,22 @@ export default function GitActionsControl({
           </span>
         </ThreadDetailsControl>
       ) : null}
+
+      {gitStatusForActions?.autoPull && (
+        <Popover>
+          <PopoverTrigger
+            render={<ThreadDetailsControl size="xs" variant="ghost" part="row" panel />}
+          >
+            <InfoIcon className="size-3.5" aria-hidden />
+            <span className={THREAD_DETAILS_PANEL_LABEL_CLASS}>Auto pull</span>
+          </PopoverTrigger>
+          <PopoverPopup side="left" align="start">
+            <p className="max-w-80 whitespace-normal text-xs text-muted-foreground">
+              {formatAutoPullStatus(gitStatusForActions)}
+            </p>
+          </PopoverPopup>
+        </Popover>
+      )}
 
       <Dialog
         open={isCommitDialogOpen}

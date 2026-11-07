@@ -1,6 +1,8 @@
+import * as AutoPullStatus from "./vcs/AutoPullStatus.ts";
 import { assert, it } from "@effect/vitest";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import {
+  GitCommandError,
   DEFAULT_SERVER_SETTINGS,
   DEFAULT_CLAUDE_MODEL,
   ProjectId,
@@ -79,6 +81,7 @@ it.effect.each([
       };
       const imports = { importedThreadCount: 0, importedMessageCount: 0 };
       const dependencies = Layer.mergeAll(
+        AutoPullStatus.layer,
         NodeCrypto.layer,
         Path.layer,
         Layer.mock(ServerConfig.ServerConfig)({
@@ -333,17 +336,27 @@ it.effect("enqueueCommand fails queued work when readiness fails", () =>
 
 it.effect("automatic pull only updates enabled, behind, clean default-branch checkouts", () =>
   Effect.gen(function* () {
+    const outcomes = yield* AutoPullStatus.AutoPullStatus;
     const pulled: string[] = [];
     const git = {
       statusDetails: (cwd: string) =>
-        Effect.succeed({
-          isRepo: true,
-          isDefaultBranch: cwd !== "/feature",
-          hasUpstream: true,
-          hasWorkingTreeChanges: cwd === "/dirty",
-          aheadCount: cwd === "/ahead" ? 1 : 0,
-          behindCount: cwd === "/current" ? 0 : 1,
-        } as never),
+        cwd === "/failed"
+          ? Effect.fail(
+              new GitCommandError({
+                operation: "status",
+                command: "git",
+                cwd,
+                detail: "Synthetic pull failure",
+              }),
+            )
+          : Effect.succeed({
+              isRepo: true,
+              isDefaultBranch: cwd !== "/feature",
+              hasUpstream: cwd !== "/no-upstream",
+              hasWorkingTreeChanges: cwd === "/dirty",
+              aheadCount: cwd === "/ahead" ? 1 : 0,
+              behindCount: cwd === "/current" ? 0 : 1,
+            } as never),
       pullCurrentBranch: (cwd: string) =>
         Effect.sync(() => {
           pulled.push(cwd);
@@ -373,6 +386,8 @@ it.effect("automatic pull only updates enabled, behind, clean default-branch che
         project("/dirty"),
         project("/ahead"),
         project("/feature"),
+        project("/no-upstream"),
+        project("/failed"),
         project("/disabled"),
       ],
       overrides({
@@ -381,11 +396,21 @@ it.effect("automatic pull only updates enabled, behind, clean default-branch che
         "/dirty": true,
         "/ahead": true,
         "/feature": true,
+        "/no-upstream": true,
+        "/failed": true,
         "/disabled": false,
       }),
     ).pipe(Effect.provideService(GitVcsDriver.GitVcsDriver, git));
 
     assert.deepStrictEqual(pulled, ["/clean"]);
+    assert.equal((yield* outcomes.get("/clean"))?.outcome, "pulled");
+    assert.equal((yield* outcomes.get("/current"))?.outcome, "already up to date");
+    assert.equal((yield* outcomes.get("/dirty"))?.detail, "Dirty checkout");
+    assert.equal((yield* outcomes.get("/ahead"))?.detail, "Local commits");
+    assert.equal((yield* outcomes.get("/feature"))?.detail, "Not on the default branch");
+    assert.equal((yield* outcomes.get("/no-upstream"))?.detail, "No upstream");
+    assert.equal((yield* outcomes.get("/failed"))?.outcome, "failed");
+    assert.match((yield* outcomes.get("/failed"))?.detail ?? "", /Synthetic pull failure/);
 
     pulled.length = 0;
     yield* ServerRuntimeStartup.autoPullProjects(
@@ -393,5 +418,5 @@ it.effect("automatic pull only updates enabled, behind, clean default-branch che
       { ...overrides({ "/opted-out": false }), defaultAutoPull: true },
     ).pipe(Effect.provideService(GitVcsDriver.GitVcsDriver, git));
     assert.deepStrictEqual(pulled, ["/inherited"]);
-  }),
+  }).pipe(Effect.provide(AutoPullStatus.layer)),
 );

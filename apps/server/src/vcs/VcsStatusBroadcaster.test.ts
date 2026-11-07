@@ -1,3 +1,4 @@
+import * as AutoPullStatus from "./AutoPullStatus.ts";
 import { SourceControlProviderKind } from "@t3tools/contracts";
 import { assert, it, describe } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -32,6 +33,7 @@ import { symlinksSupported } from "@t3tools/shared/testing/symlinks";
 const TEST_EPOCH = DateTime.makeUnsafe("1970-01-01T00:00:00.000Z");
 
 const baseLocalStatus: VcsStatusLocalResult = {
+  autoPull: { enabled: false, source: "global default", lastRun: null },
   isRepo: true,
   sourceControlProvider: {
     kind: SourceControlProviderKind.make("github"),
@@ -81,6 +83,7 @@ function layerTestFor(state: {
   pullCurrentBranch?: GitWorkflowService.GitWorkflowService["Service"]["pullCurrentBranch"];
 }) {
   return VcsStatusBroadcaster.layer.pipe(
+    Layer.provide(AutoPullStatus.layer),
     Layer.provideMerge(
       state.fileSystem
         ? Layer.succeed(FileSystem.FileSystem, state.fileSystem)
@@ -331,6 +334,7 @@ describe("VcsStatusBroadcaster", () => {
         refName: "main",
       };
       const layerTest = VcsStatusBroadcaster.layer.pipe(
+        Layer.provide(AutoPullStatus.layer),
         Layer.provideMerge(NodeServices.layer),
         Layer.provide(layerBackgroundPolicy(() => true)),
         Layer.provide(
@@ -377,6 +381,13 @@ describe("VcsStatusBroadcaster", () => {
 
         assert.equal(pullCalls, 1);
         assert.equal(status.behindCount, 0);
+        assert.equal(status.autoPull?.lastRun?.outcome, "pulled");
+        const current = yield* broadcaster.refreshStatus(configuredWorkspaceRoot);
+        assert.equal(current.autoPull?.lastRun?.outcome, "already up to date");
+        remoteStatus = { ...remoteStatus, behindCount: 1, aheadCount: 1 };
+        const blocked = yield* broadcaster.refreshStatus(configuredWorkspaceRoot);
+        assert.equal(blocked.autoPull?.lastRun?.detail, "Local commits");
+        assert.equal(pullCalls, 1);
       }).pipe(Effect.provide(layerTest));
     },
   );
@@ -425,6 +436,7 @@ describe("VcsStatusBroadcaster", () => {
     const firstPollStarted = Deferred.makeUnsafe<void>();
     let remoteReads = 0;
     const layer = VcsStatusBroadcaster.layer.pipe(
+      Layer.provide(AutoPullStatus.layer),
       Layer.provideMerge(NodeServices.layer),
       Layer.provide(layerBackgroundPolicy(() => true)),
       Layer.provide(
@@ -470,6 +482,7 @@ describe("VcsStatusBroadcaster", () => {
     const releaseFirstRead = Deferred.makeUnsafe<void>();
     let remoteReads = 0;
     const layer = VcsStatusBroadcaster.layer.pipe(
+      Layer.provide(AutoPullStatus.layer),
       Layer.provide(FileSystem.layerNoop({ realPath: (path) => Effect.succeed(path) })),
       Layer.provideMerge(NodeServices.layer),
       Layer.provide(layerBackgroundPolicy(() => true)),
@@ -520,6 +533,7 @@ describe("VcsStatusBroadcaster", () => {
       failRemoteStatus: false,
     };
     const layerTest = VcsStatusBroadcaster.layer.pipe(
+      Layer.provide(AutoPullStatus.layer),
       Layer.provideMerge(NodeServices.layer),
       Layer.provide(layerBackgroundPolicy(() => true)),
       Layer.provide(
@@ -603,6 +617,7 @@ describe("VcsStatusBroadcaster", () => {
         remoteInvalidationCalls: 0,
       };
       const layerTest = VcsStatusBroadcaster.layer.pipe(
+        Layer.provide(AutoPullStatus.layer),
         Layer.provideMerge(NodeServices.layer),
         Layer.provide(layerBackgroundPolicy(() => true)),
         Layer.provide(
@@ -706,6 +721,7 @@ describe("VcsStatusBroadcaster", () => {
       let cachedLocal: VcsStatusLocalResult | undefined;
       const readLocalStatus = () => Effect.sync(() => (cachedLocal ??= local));
       const layerTest = VcsStatusBroadcaster.layer.pipe(
+        Layer.provide(AutoPullStatus.layer),
         Layer.provideMerge(NodeServices.layer),
         Layer.provide(layerBackgroundPolicy(() => true)),
         Layer.provide(
@@ -1008,6 +1024,7 @@ describe("VcsStatusBroadcaster", () => {
     let remoteInterruptedDeferred: Deferred.Deferred<void, never> | null = null;
     let remoteStartedDeferred: Deferred.Deferred<void, never> | null = null;
     const layerTest = VcsStatusBroadcaster.layer.pipe(
+      Layer.provide(AutoPullStatus.layer),
       Layer.provideMerge(NodeServices.layer),
       Layer.provide(layerBackgroundPolicy(() => true)),
       Layer.provide(
