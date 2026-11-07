@@ -282,10 +282,18 @@ it.layer(layerTest, { excludeTestServices: true })("WorkspaceFileSystemLive", (i
         const cwd = yield* makeTempDir;
         yield* writeTextFile(config.secretsDir, "example.bin", "example\n");
         yield* writeTextFile(config.stateDir, "statev2.sqlite", "example\n");
+        yield* writeTextFile(
+          config.stateDir,
+          "backups/pre-event-prune/statev2.sqlite",
+          "synthetic\n",
+        );
+        yield* writeTextFile(config.stateDir, "backups/pre-event-prune/manifest.json", "{}\n");
 
         for (const input of [
           { cwd, relativePath: path.join(config.secretsDir, "example.bin") },
           { cwd: config.stateDir, relativePath: "statev2.sqlite" },
+          { cwd: config.stateDir, relativePath: "backups/pre-event-prune/statev2.sqlite" },
+          { cwd: config.stateDir, relativePath: "backups/pre-event-prune/manifest.json" },
         ]) {
           const error = yield* workspaceFileSystem.readFile(input).pipe(Effect.flip);
           expect(error).toBeInstanceOf(WorkspacePaths.WorkspacePathOutsideRootError);

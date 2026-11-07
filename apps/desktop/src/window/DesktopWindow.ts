@@ -8,8 +8,17 @@ import * as Ref from "effect/Ref";
 import * as Semaphore from "effect/Semaphore";
 
 import * as Electron from "electron";
+import {
+  T3_CODE_DARK_THEME_COLORS,
+  T3_CODE_LIGHT_THEME_COLORS,
+} from "@t3tools/shared/themePalettes";
 
-import { type DesktopSnapShotEvent, DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts";
+import {
+  STARTUP_COPY_MESSAGE,
+  type ServerStartupCopyProgress,
+  type DesktopSnapShotEvent,
+  DEFAULT_CLIENT_SETTINGS,
+} from "@t3tools/contracts";
 
 import * as DesktopAssets from "../app/DesktopAssets.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
@@ -101,6 +110,7 @@ export class DesktopWindow extends Context.Service<
     readonly activate: Effect.Effect<void, DesktopWindowError>;
     readonly createMainIfBackendReady: Effect.Effect<void, DesktopWindowError>;
     readonly showConnectingSplash: Effect.Effect<void>;
+    readonly showStartupCopy?: (progress: ServerStartupCopyProgress) => Effect.Effect<void>;
     readonly handleBackendReady: (httpBaseUrl: URL) => Effect.Effect<void, DesktopWindowError>;
     readonly handleBackendNotReady: Effect.Effect<void>;
     readonly flushMainWindowBounds: Effect.Effect<void>;
@@ -178,11 +188,19 @@ export function resolveInitialMainWindowBounds(
   return DesktopAppSettings.DEFAULT_MAIN_WINDOW_SIZE;
 }
 
-function buildConnectingSplashDataUrl(shouldUseDarkColors: boolean): string {
+function buildConnectingSplashDataUrl(
+  shouldUseDarkColors: boolean,
+  progress?: ServerStartupCopyProgress,
+): string {
   const background = getInitialWindowBackgroundColor(shouldUseDarkColors);
   const label = shouldUseDarkColors ? "#9ca3af" : "#6b7280";
   const accent = shouldUseDarkColors ? "#f8fafc" : "#1f2937";
   const track = shouldUseDarkColors ? "rgba(248,250,252,0.18)" : "rgba(31,41,55,0.18)";
+  if (progress !== undefined) {
+    const colors = shouldUseDarkColors ? T3_CODE_DARK_THEME_COLORS : T3_CODE_LIGHT_THEME_COLORS;
+    const percent = Math.min(100, Math.floor((progress.copiedBytes / progress.totalBytes) * 100));
+    return `data:text/html;charset=utf-8,${encodeURIComponent(`<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><style>body{margin:32px;background:${background};color:${colors.text};font:14px system-ui;text-align:center}.track{height:8px;border-radius:999px;overflow:hidden;background:${colors.muted}}.fill{height:100%;border-radius:inherit;background:${colors.messageAction};width:${percent}%}.percent{color:${colors.mutedForeground}}</style></head><body><p>${STARTUP_COPY_MESSAGE}</p><div class="track" role="progressbar" aria-label="Safety copy" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}"><div class="fill"></div></div><p class="percent">${percent}%</p></body></html>`)}`;
+  }
   const html = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><style>html,body{margin:0;height:100%}body{background:${background};color:${label};font-family:system-ui,-apple-system,'Segoe UI',sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;-webkit-user-select:none;user-select:none;-webkit-app-region:drag}.spinner{width:26px;height:26px;border:3px solid ${track};border-top-color:${accent};border-radius:50%;animation:spin .8s linear infinite}.label{font-size:13px}@keyframes spin{to{transform:rotate(360deg)}}</style></head><body><div class="spinner"></div><div class="label">Connecting to WSL…</div></body></html>`;
   return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
 }
@@ -314,6 +332,7 @@ export const make = Effect.gen(function* () {
   const backendReadyRef = yield* Ref.make(false);
   let backendHasStarted = false;
   let mainClosedDuringStartup = false;
+  const lastCopyPercent = yield* Ref.make(-1);
   const splashWindowRef = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
   const context = yield* Effect.context<DesktopWindowRuntimeServices>();
   const runFork = Effect.runForkWith(context);
@@ -1119,6 +1138,19 @@ export const make = Effect.gen(function* () {
     }).pipe(Effect.withSpan("desktop.window.activate")),
     createMainIfBackendReady,
     showConnectingSplash,
+    showStartupCopy: Effect.fn("desktop.window.showStartupCopy")(function* (progress) {
+      const percent = Math.floor((progress.copiedBytes / progress.totalBytes) * 100);
+      if ((yield* Ref.get(lastCopyPercent)) === percent) return;
+      yield* Ref.set(lastCopyPercent, percent);
+      yield* showConnectingSplash;
+      const splash = yield* Ref.get(splashWindowRef);
+      if (Option.isSome(splash) && !splash.value.isDestroyed()) {
+        const dark = yield* electronTheme.shouldUseDarkColors;
+        yield* Effect.promise(() =>
+          splash.value.loadURL(buildConnectingSplashDataUrl(dark, progress)),
+        ).pipe(Effect.ignore);
+      }
+    }),
     handleBackendReady: Effect.fn("desktop.window.handleBackendReady")(function* (httpBaseUrl) {
       backendHasStarted = true;
       yield* Ref.set(backendReadyRef, true);

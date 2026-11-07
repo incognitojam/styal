@@ -11,6 +11,7 @@ import {
   EVENT_LOG_PRUNE_MARK,
   EVENT_LOG_PRUNED_THROUGH,
 } from "../persistence/OrchestrationEventStore.ts";
+import * as PreEventPruneSafety from "../persistence/preEventPruneSafety.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import { eventPruningEnabled } from "../config.ts";
 
@@ -99,6 +100,10 @@ export const layer: Layer.Layer<ProjectionMaintenanceV2, never, SqlClient.SqlCli
       throughSequence: number,
       head: number,
       betweenPages: Effect.Effect<void>,
+      beforeDelete: Effect.Effect<
+        void,
+        Effect.Error<ReturnType<typeof PreEventPruneSafety.deletePassStarted>>
+      >,
     ) {
       const referenced = yield* readPromptReferences(throughSequence, head, betweenPages);
       // Stream heads at or below the boundary are kept, so the anchors they borrow must stay too.
@@ -199,6 +204,7 @@ export const layer: Layer.Layer<ProjectionMaintenanceV2, never, SqlClient.SqlCli
               if (appended.length === REFERENCE_SCAN_WINDOW) return { deleted: 0, caughtUp: false };
               const obsolete = candidates.filter((sequence) => !referenced.has(sequence));
               if (obsolete.length === 0) return { deleted: 0, caughtUp: true };
+              yield* beforeDelete;
               yield* sql`DELETE FROM orchestration_events WHERE sequence IN ${sql.in(obsolete)}`;
               return { deleted: obsolete.length, caughtUp: true };
             }),
@@ -223,6 +229,10 @@ export const layer: Layer.Layer<ProjectionMaintenanceV2, never, SqlClient.SqlCli
       throughSequence: number,
       throughReceiptRowId: number,
       betweenPages: Effect.Effect<void>,
+      beforeDelete: Effect.Effect<
+        void,
+        Effect.Error<ReturnType<typeof PreEventPruneSafety.deletePassStarted>>
+      >,
     ) {
       let deletedEventCount = 0;
       let deletedReceiptCount = 0;
@@ -246,6 +256,7 @@ export const layer: Layer.Layer<ProjectionMaintenanceV2, never, SqlClient.SqlCli
         const obsolete = rows.filter((row) => row.imported === 1).map((row) => row.sequence);
         yield* Effect.yieldNow;
         if (obsolete.length > 0) {
+          yield* beforeDelete;
           yield* sql`DELETE FROM orchestration_events WHERE sequence IN ${sql.in(obsolete)}`;
           deletedEventCount += obsolete.length;
           yield* Effect.yieldNow;
@@ -276,6 +287,7 @@ export const layer: Layer.Layer<ProjectionMaintenanceV2, never, SqlClient.SqlCli
         const obsolete = rows.filter((row) => row.imported === 1).map((row) => row.command_id);
         yield* Effect.yieldNow;
         if (obsolete.length > 0) {
+          yield* beforeDelete;
           yield* sql`DELETE FROM orchestration_command_receipts WHERE command_id IN ${sql.in(obsolete)}`;
           deletedReceiptCount += obsolete.length;
           yield* Effect.yieldNow;
@@ -314,6 +326,21 @@ export const layer: Layer.Layer<ProjectionMaintenanceV2, never, SqlClient.SqlCli
         `.pipe(NodeSqliteClient.readOnly);
         const head = bounds[0]?.sequence ?? 0;
 
+        if (
+          !(yield* PreEventPruneSafety.canPrune().pipe(
+            Effect.provideService(SqlClient.SqlClient, sql),
+          ))
+        ) {
+          return { deletedEventCount: 0, deletedReceiptCount: 0, reclaimableBytes: 0 };
+        }
+        let deleteStarted = false;
+        const beforeDelete = Effect.gen(function* () {
+          if (deleteStarted) return;
+          yield* PreEventPruneSafety.deletePassStarted().pipe(
+            Effect.provideService(SqlClient.SqlClient, sql),
+          );
+          deleteStarted = true;
+        });
         let deletedEventCount = 0;
         const markIsDue =
           mark !== undefined &&
@@ -325,7 +352,12 @@ export const layer: Layer.Layer<ProjectionMaintenanceV2, never, SqlClient.SqlCli
             // Publish the boundary first so resuming clients take a snapshot, never a partial replay.
             yield* writeMetadata(EVENT_LOG_PRUNED_THROUGH, throughSequence, now);
           }
-          deletedEventCount += yield* pruneEvents(throughSequence, head, betweenPages);
+          deletedEventCount += yield* pruneEvents(
+            throughSequence,
+            head,
+            betweenPages,
+            beforeDelete,
+          );
         }
         if (mark === undefined || markIsDue) yield* writeMetadata(EVENT_LOG_PRUNE_MARK, head, now);
 
@@ -333,8 +365,14 @@ export const layer: Layer.Layer<ProjectionMaintenanceV2, never, SqlClient.SqlCli
           head,
           bounds[0]?.receipt_row_id ?? 0,
           betweenPages,
+          beforeDelete,
         );
         deletedEventCount += legacy.deletedEventCount;
+        if (deletedEventCount > 0 || legacy.deletedReceiptCount > 0) {
+          yield* PreEventPruneSafety.deletePassFinished().pipe(
+            Effect.provideService(SqlClient.SqlClient, sql),
+          );
+        }
 
         const freelistRows = yield* sql<{ readonly freelist_count: number }>`PRAGMA freelist_count`;
         const pageSizeRows = yield* sql<{ readonly page_size: number }>`PRAGMA page_size`;

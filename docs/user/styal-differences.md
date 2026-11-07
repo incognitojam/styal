@@ -387,6 +387,8 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   preferences in a separate step.[^import-comparison] Credentials and active sessions remain separate.
   [Import T3 Code data](./importing-t3-code-data.md).
 
+- **A recovery copy before history pruning.** History pruning stays off unless enabled. When enabled, styal keeps imported and migrated history readable after older internal events are pruned, and requires a verified database copy before the first prune. The first start may take longer while the copy is made; without enough disk space, styal starts without pruning. The copy stays for seven days after the first deletion completes. T3 Code prunes without this safety copy as of [revision 25bf84a](https://github.com/pingdotgg/t3code/tree/25bf84ab07f53f141c20239c63e383823a9d5ea0). [Restore the safety copy](./background-service.md#safety-copy-before-history-pruning).
+
 ## App updates
 
 - **Refresh when a new web build is available.** The web app and previews detect a new deployment

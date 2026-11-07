@@ -1,4 +1,5 @@
 import * as ConfigProvider from "effect/ConfigProvider";
+import * as PruneSafety from "../persistence/preEventPruneSafety.ts";
 import * as NodeSqlite from "node:sqlite";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
@@ -164,6 +165,7 @@ function threadCreatedEvent(input: {
 
 const seedCompaction = Effect.fnUntraced(function* () {
   const sql = yield* SqlClient.SqlClient;
+  yield* PruneSafety.prepare().pipe(Effect.provide(pruningEnabled));
   yield* sql`INSERT INTO orchestration_v2_legacy_imports (
     thread_id, source_updated_at, shell_imported_at, transcript_imported_at, imported_message_count
   ) VALUES ('imported', '2026-10-17', '2026-10-17', '2026-10-17', 0)`;
@@ -3505,6 +3507,7 @@ it.effect.each(["events", "receipts"] as const)(
       yield* Effect.gen(function* () {
         const sql = yield* SqlClient.SqlClient;
         const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
+        yield* PruneSafety.prepare().pipe(Effect.provide(pruningEnabled));
         const now = DateTime.formatIso(yield* DateTime.now);
         yield* sql`
           INSERT INTO orchestration_v2_legacy_imports (

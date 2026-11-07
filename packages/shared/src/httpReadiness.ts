@@ -1,11 +1,11 @@
-import * as Duration from "effect/Duration";
+import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
-import * as Ref from "effect/Ref";
-import * as Schedule from "effect/Schedule";
-import { HttpClient, HttpClientRequest } from "effect/http";
+import * as Schema from "effect/Schema";
+import { HttpClient } from "effect/http";
+import { ServerStartupStatus, type ServerStartupCopyProgress } from "@t3tools/contracts";
 
-const DEFAULT_HTTP_READY_PROBE_TIMEOUT_MS = 1_000;
+const decodeStatus = Schema.decodeUnknownOption(Schema.fromJsonString(ServerStartupStatus));
 
 function describeReadinessCause(cause: unknown): unknown {
   if (cause instanceof Error) {
@@ -38,106 +38,75 @@ export const waitForHttpReady = Effect.fn("shared.httpReadiness.waitForHttpReady
   readonly timeoutMs?: number;
   readonly intervalMs?: number;
   readonly probeTimeoutMs?: number;
+  readonly onStartupCopy?: (progress: ServerStartupCopyProgress) => Effect.Effect<void>;
   readonly makeError: (info: {
     readonly requestUrl: string;
     readonly probeTimeoutMs: number;
     readonly attempt: number;
     readonly cause: unknown;
   }) => E;
-}): Effect.fn.Return<void, E, HttpClient.HttpClient> {
+}) {
   const timeoutMs = input.timeoutMs ?? 30_000;
   const intervalMs = input.intervalMs ?? 100;
-  const probeTimeoutMs = input.probeTimeoutMs ?? DEFAULT_HTTP_READY_PROBE_TIMEOUT_MS;
-  const retryPolicy = Schedule.spaced(Duration.millis(intervalMs)).pipe(
-    Schedule.upTo({ times: Math.max(0, Math.ceil(timeoutMs / intervalMs)) }),
-  );
+  const probeTimeoutMs = input.probeTimeoutMs ?? 1000;
   const requestUrl = new URL(input.path ?? "/", input.baseUrl).toString();
   const client = yield* HttpClient.HttpClient;
-  const lastProbeFailure = yield* Ref.make<unknown>(null);
+  const clock = yield* Clock.Clock;
+  const now = () => Number(clock.monotonicTimeNanosUnsafe() / 1_000_000n);
+  let deadline = now() + timeoutMs;
+  let copying = false;
   let attempt = 0;
-
-  const makeError = input.makeError;
-  const madeErrors = new WeakSet<object>();
-  const fail = (cause: unknown): E => {
-    const error = makeError({ requestUrl, probeTimeoutMs, attempt, cause });
-    if (typeof error === "object" && error !== null) {
-      madeErrors.add(error);
-    }
-    return error;
-  };
-  const isMadeError = (value: unknown): value is E =>
-    typeof value === "object" && value !== null && madeErrors.has(value);
-
+  let cause: unknown;
   yield* Effect.logDebug("httpReadiness.start", {
-    baseUrl: input.baseUrl,
     requestUrl,
     timeoutMs,
     intervalMs,
     probeTimeoutMs,
   });
-
-  const readinessClient = client.pipe(
-    HttpClient.filterStatusOk,
-    HttpClient.transform((effect) =>
-      Effect.gen(function* () {
-        attempt += 1;
-        const responseOption = yield* effect.pipe(
-          Effect.timeoutOption(Duration.millis(probeTimeoutMs)),
-          Effect.mapError((cause) => fail(cause)),
-        );
-        return yield* Effect.fromOption(responseOption, () =>
-          fail({
-            kind: "probe-timeout",
-            attempt,
-            probeTimeoutMs,
-          }),
-        );
-      }).pipe(
-        Effect.mapError((cause) => (isMadeError(cause) ? cause : fail(cause))),
-        Effect.tapError((cause) =>
-          Ref.set(lastProbeFailure, {
-            attempt,
-            cause: describeReadinessCause(cause),
-          }),
-        ),
-      ),
-    ),
-    HttpClient.tap((response) => response.text.pipe(Effect.ignore)),
-    HttpClient.retry(retryPolicy),
-  );
-
-  const result = yield* readinessClient.execute(HttpClientRequest.get(requestUrl)).pipe(
-    Effect.mapError((cause) => (isMadeError(cause) ? cause : fail(cause))),
-    Effect.timeoutOption(Duration.millis(timeoutMs)),
-  );
-
-  return yield* Option.match(result, {
-    onSome: () =>
-      Effect.logDebug("httpReadiness.succeeded", {
-        baseUrl: input.baseUrl,
-        requestUrl,
-        attempts: attempt,
+  while (now() < deadline || copying) {
+    attempt++;
+    const result = yield* Effect.gen(function* () {
+      const response = yield* client.get(requestUrl);
+      const text = yield* response.text;
+      if (response.status >= 200 && response.status < 300) return { ready: true, copy: null };
+      cause = { kind: "http-status", status: response.status };
+      let copy: ServerStartupCopyProgress | null = null;
+      const status = decodeStatus(text);
+      if (Option.isSome(status) && status.value.copy !== null && status.value.copy.leaseMs > 0) {
+        copy = status.value.copy;
+      }
+      return { ready: false, copy };
+    }).pipe(
+      Effect.timeoutOption(Math.min(probeTimeoutMs, Math.max(1, deadline - now()))),
+      Effect.catch((error) => {
+        cause = error;
+        return Effect.succeedNone;
       }),
-    // The enclosing operation owns the span for this inline handler.
-    onNone: Effect.fnUntraced(function* () {
-      const lastFailure = yield* Ref.get(lastProbeFailure);
-      yield* Effect.logWarning("httpReadiness.timedOut", {
-        baseUrl: input.baseUrl,
-        requestUrl,
-        timeoutMs,
-        intervalMs,
-        probeTimeoutMs,
-        attempts: attempt,
-        lastFailure,
-      });
-      return yield* Effect.fail(
-        fail({
-          kind: "overall-timeout",
-          baseUrl: input.baseUrl,
-          timeoutMs,
-          lastFailure,
-        }),
-      );
-    }),
+    );
+    if (Option.isSome(result)) {
+      if (result.value.ready) {
+        yield* Effect.logDebug("httpReadiness.succeeded", { requestUrl, attempts: attempt });
+        return;
+      }
+      if (result.value.copy !== null) {
+        copying = true;
+        // Leave one probe to observe normal startup after the byte watchdog expires.
+        deadline = now() + result.value.copy.leaseMs + probeTimeoutMs + intervalMs;
+        yield* input.onStartupCopy?.(result.value.copy) ?? Effect.void;
+      } else if (copying) {
+        copying = false;
+        deadline = now() + timeoutMs;
+      }
+    }
+    if (now() >= deadline) break;
+    yield* Effect.sleep(
+      Math.min(copying ? Math.max(1000, intervalMs) : intervalMs, Math.max(0, deadline - now())),
+    );
+  }
+  yield* Effect.logWarning("httpReadiness.timedOut", {
+    requestUrl,
+    attempts: attempt,
+    cause: describeReadinessCause(cause),
   });
+  return yield* Effect.fail(input.makeError({ requestUrl, probeTimeoutMs, attempt, cause }));
 });

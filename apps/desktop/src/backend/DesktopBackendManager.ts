@@ -18,6 +18,7 @@ import { HttpClient } from "effect/http";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import {
+  type ServerStartupCopyProgress,
   SERVER_EXIT_CODE_MANAGED_POLICY,
   SERVER_EXIT_CODE_STATE_DIR_OWNED,
   DesktopBackendBootstrap,
@@ -199,6 +200,7 @@ interface RunBackendProcessOptions extends DesktopBackendStartConfig {
   readonly outputDrainTimeout?: Duration.Duration;
   readonly onStarted?: (pid: number) => Effect.Effect<void>;
   readonly onExitObserved?: () => Effect.Effect<void>;
+  readonly onStartupCopy?: (progress: ServerStartupCopyProgress) => Effect.Effect<void>;
   readonly onReady?: () => Effect.Effect<void>;
   readonly onReadinessFailure?: (error: BackendReadinessTimeoutError) => Effect.Effect<void>;
   readonly onOutput?: (
@@ -246,6 +248,7 @@ export interface BackendInstanceSpec {
   readonly label: Effect.Effect<string>;
   readonly configResolve: Effect.Effect<DesktopBackendStartConfig, PlatformError.PlatformError>;
   /** Receives the ready run's resolved URL; reading current config could race a subsequent restart. */
+  readonly onStartupCopy?: (progress: ServerStartupCopyProgress) => Effect.Effect<void>;
   readonly onReady?: (httpBaseUrl: URL) => Effect.Effect<void>;
   readonly onShutdown?: () => Effect.Effect<void>;
   readonly onPreflightFailed?: (failure: PreflightFailure) => Effect.Effect<boolean>;
@@ -322,10 +325,14 @@ const closeRun = (
 };
 
 export const waitForHttpReady = (
-  options: BackendProcessContext & { readonly timeout: Duration.Duration },
+  options: BackendProcessContext & {
+    readonly timeout: Duration.Duration;
+    readonly onStartupCopy?: (progress: ServerStartupCopyProgress) => Effect.Effect<void>;
+  },
 ): Effect.Effect<void, BackendReadinessTimeoutError, HttpClient.HttpClient> => {
   const readinessUrl = new URL(BACKEND_READINESS_PATH, options.httpBaseUrl);
   return waitForHttpReadyShared({
+    ...(options.onStartupCopy === undefined ? {} : { onStartupCopy: options.onStartupCopy }),
     baseUrl: options.httpBaseUrl.href,
     path: BACKEND_READINESS_PATH,
     timeoutMs: Duration.toMillis(options.timeout),
@@ -555,6 +562,7 @@ export const runBackendProcess = Effect.fn("runBackendProcess")(function* (
       cwd: options.cwd,
       httpBaseUrl: options.httpBaseUrl,
       timeout: options.readinessTimeout ?? DEFAULT_BACKEND_READINESS_TIMEOUT,
+      ...(options.onStartupCopy === undefined ? {} : { onStartupCopy: options.onStartupCopy }),
     }).pipe(
       Effect.flatMap(() => options.onReady?.() ?? Effect.void),
       Effect.as(true),
@@ -928,6 +936,7 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
               ...run,
               exitObserved: true,
             })),
+          ...(spec.onStartupCopy === undefined ? {} : { onStartupCopy: spec.onStartupCopy }),
           onReady: Effect.fn("desktop.backendInstance.onReady")(function* () {
             const isCurrentRun = yield* SubscriptionRef.modify(state, (latest) => {
               const activeRun = Option.getOrUndefined(latest.active);

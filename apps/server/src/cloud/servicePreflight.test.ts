@@ -30,13 +30,13 @@ it("requires the styal package launcher protocol", () => {
   expect(
     runServicePreflight({
       databasePath: "/missing/state.sqlite",
-      launcherProtocol: SERVICE_LAUNCHER_PROTOCOL,
+      launcherProtocol: 4,
       version: "1.2.3",
     }),
   ).toEqual({
     status: "ready",
     version: "1.2.3",
-    launcherProtocol: SERVICE_LAUNCHER_PROTOCOL,
+    launcherProtocol: 4,
   });
 });
 
