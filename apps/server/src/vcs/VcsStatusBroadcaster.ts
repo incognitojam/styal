@@ -494,7 +494,7 @@ export const make = Effect.gen(function* () {
             : !local.isDefaultRef
               ? "Not on the default branch"
               : local.hasWorkingTreeChanges
-                ? "Dirty checkout"
+                ? "Local changes"
                 : "Branch changed during check",
         );
         return null;

@@ -242,7 +242,7 @@ export const autoPullProjects = Effect.fn("autoPullProjects")(function* (
                 : !status.hasUpstream
                   ? "No upstream"
                   : status.hasWorkingTreeChanges
-                    ? "Dirty checkout"
+                    ? "Local changes"
                     : "Local commits",
           );
           yield* Effect.logDebug("Skipped automatic project pull", {

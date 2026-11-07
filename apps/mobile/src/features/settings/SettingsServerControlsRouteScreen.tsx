@@ -471,12 +471,6 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
                                   ? `${target.environment.label} · ${project.workspaceRoot}`
                                   : undefined
                               }
-                              enabled={target.settings.defaultAutoPull}
-                              source={
-                                target.sources.defaultAutoPull === "project"
-                                  ? "Project override"
-                                  : "Global default"
-                              }
                             />
                           ) : null;
                         })

@@ -6,46 +6,30 @@ export function AutoPullStatus({
   environmentId,
   cwd,
   label,
-  enabled,
-  source,
 }: {
   environmentId: EnvironmentId;
   cwd: string;
   label?: string | undefined;
-  enabled: boolean;
-  source: string;
 }) {
   const query = useEnvironmentQuery(
     vcsEnvironment.status({ environmentId, input: { cwd, includeRemote: false } }),
   );
   const last = query.data?.autoPull?.lastRun;
   return (
-    <div className="mb-3 px-4 pb-3 text-xs">
+    <div className="pt-3 pb-2 text-xs">
       {label ? <p className="mb-2 font-medium">{label}</p> : null}
-      <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2">
-        <dt className="text-muted-foreground">Effective setting</dt>
-        <dd>
-          {enabled ? "On" : "Off"} · {source}
-        </dd>
-        {last ? (
-          <>
-            <dt className="text-muted-foreground">Last result</dt>
-            <dd className="first-letter:uppercase">{last.outcome}</dd>
-            <dt className="text-muted-foreground">Last checked</dt>
-            <dd>
-              <time dateTime={last.checkedAt}>{new Date(last.checkedAt).toLocaleString()}</time>
-            </dd>
-            {last.detail ? (
-              <>
-                <dt className="text-muted-foreground">
-                  {last.outcome === "failed" ? "Error" : "Reason"}
-                </dt>
-                <dd className="min-w-0 break-words">{last.detail}</dd>
-              </>
-            ) : null}
-          </>
-        ) : null}
-      </dl>
+      {last ? (
+        <div className="space-y-1">
+          <p className="min-w-0 break-words first-letter:uppercase">
+            {last.outcome}
+            {last.detail ? ` · ${last.detail}` : ""}
+          </p>
+          <p className="text-muted-foreground">
+            Last checked:{" "}
+            <time dateTime={last.checkedAt}>{new Date(last.checkedAt).toLocaleString()}</time>
+          </p>
+        </div>
+      ) : null}
       {query.error ? (
         <p className="mt-2 text-destructive">Could not load the last check: {query.error}</p>
       ) : query.isPending && query.data === null ? (

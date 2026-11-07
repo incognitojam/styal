@@ -405,7 +405,7 @@ it.effect("automatic pull only updates enabled, behind, clean default-branch che
     assert.deepStrictEqual(pulled, ["/clean"]);
     assert.equal((yield* outcomes.get("/clean"))?.outcome, "pulled");
     assert.equal((yield* outcomes.get("/current"))?.outcome, "already up to date");
-    assert.equal((yield* outcomes.get("/dirty"))?.detail, "Dirty checkout");
+    assert.equal((yield* outcomes.get("/dirty"))?.detail, "Local changes");
     assert.equal((yield* outcomes.get("/ahead"))?.detail, "Local commits");
     assert.equal((yield* outcomes.get("/feature"))?.detail, "Not on the default branch");
     assert.equal((yield* outcomes.get("/no-upstream"))?.detail, "No upstream");

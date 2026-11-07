@@ -8,14 +8,10 @@ export function AutoPullStatus({
   environmentId,
   cwd,
   label,
-  enabled,
-  source,
 }: {
   environmentId: EnvironmentId;
   cwd: string;
   label?: string | undefined;
-  enabled: boolean;
-  source: string;
 }) {
   const query = useEnvironmentQuery(
     vcsEnvironment.status({ environmentId, input: { cwd, includeRemote: false } }),
@@ -28,18 +24,15 @@ export function AutoPullStatus({
           {label}
         </Text>
       ) : null}
-      <Text textRole="footnote">
-        {enabled ? "On" : "Off"} · {source}
-      </Text>
       {last ? (
         <>
-          <Text textRole="footnote">Last result: {last.outcome}</Text>
-          <Text textRole="footnote">Last checked: {new Date(last.checkedAt).toLocaleString()}</Text>
-          {last.detail ? (
-            <Text textRole="footnote">
-              {last.outcome === "failed" ? "Error" : "Reason"}: {last.detail}
-            </Text>
-          ) : null}
+          <Text textRole="footnote">
+            {last.outcome.charAt(0).toUpperCase() + last.outcome.slice(1)}
+            {last.detail ? ` · ${last.detail}` : ""}
+          </Text>
+          <Text textRole="footnote" className="text-foreground-muted">
+            Last checked: {new Date(last.checkedAt).toLocaleString()}
+          </Text>
         </>
       ) : null}
       {query.error ? (
