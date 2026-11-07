@@ -20,7 +20,7 @@ const fixture = vi.hoisted(() => ({
 
 // Every surface method is a no-op returning an unsubscribe; `then` stays undefined so awaiting the
 // surface resolves to it.
-const fakeSurface: object = new Proxy(
+const fakeSurface = new Proxy(
   {
     input: document.createElement("textarea"),
     write: (data: string) => fixture.terminalOutput.push(data),
@@ -152,6 +152,7 @@ function setup() {
   fixture.terminalOutput = [];
   fixture.connectionPhase = "connected";
   fixture.connectionListeners.clear();
+  fakeSurface.input.readOnly = false;
   return { original, other };
 }
 
@@ -176,7 +177,9 @@ it("closes an exited terminal on its own thread after navigating to one reusing 
 it("pauses terminal input while reconnecting and resumes without replaying it", async () => {
   const { other } = setup();
   const onCloseTerminal = vi.fn();
-  await using screen = await render(<Drawer threadRef={other} onCloseTerminal={onCloseTerminal} />);
+  await using _screen = await render(
+    <Drawer threadRef={other} onCloseTerminal={onCloseTerminal} />,
+  );
   await act(async () => fixture.pendingSurfaces.shift()?.());
   const surface = fixture.surfaceOptions[0]!;
   let finishWrite!: (value: unknown) => void;
@@ -197,16 +200,14 @@ it("pauses terminal input while reconnecting and resumes without replaying it", 
   });
   expect(fixture.writes).toHaveLength(1);
   expect(fixture.terminalOutput).toEqual([]);
-  await expect
-    .element(screen.getByRole("status"))
-    .toHaveTextContent("Test server is reconnecting. Input paused until connected.");
+  expect(fakeSurface.input.readOnly).toBe(true);
 
   await act(() => {
     fixture.writeResult = null;
     fixture.connectionPhase = "connected";
     for (const listener of fixture.connectionListeners) listener();
   });
-  await expect.element(screen.getByRole("status")).not.toBeInTheDocument();
+  expect(fakeSurface.input.readOnly).toBe(false);
   await act(async () => surface.onData("echo after\r"));
   expect(fixture.writes).toEqual([
     {

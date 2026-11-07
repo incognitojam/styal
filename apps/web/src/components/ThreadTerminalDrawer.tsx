@@ -18,7 +18,6 @@ import {
   SquareSplitVertical,
   TerminalSquare,
   Trash2,
-  WifiOff,
 } from "lucide-react";
 import {
   AuthPreviewOperateScope,
@@ -602,11 +601,10 @@ function TerminalSessionViewport({
   );
   const canSendInput = canOperateTerminal && isConnected && isSessionWritable;
   const readTerminalSession = useEffectEvent(() => appAtomRegistry.get(terminalSessionAtom));
-  const canSendTerminalInput = useEffectEvent(
-    () =>
-      isConnected &&
-      writableSessionGeneration(readTerminalSession(), hasTerminalWriteAccess()) !== null,
+  const isTerminalReady = useEffectEvent(
+    () => isConnected && writableSessionGeneration(readTerminalSession(), true) !== null,
   );
+  const canSendTerminalInput = useEffectEvent(() => isTerminalReady() && hasTerminalWriteAccess());
   const subscribeTerminalSession = useEffectEvent(
     (listener: (session: TerminalSessionState) => void) =>
       appAtomRegistry.subscribe(terminalSessionAtom, listener),
@@ -656,10 +654,13 @@ function TerminalSessionViewport({
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- synchronizes the imperative terminal input with connection readiness and the operate grant
   useLayoutEffect(() => {
-    if (terminalRef.current) terminalRef.current.input.readOnly = !canSendInput;
+    if (terminalRef.current) {
+      terminalRef.current.input.readOnly = !canSendInput;
+      terminalRef.current.setCursorVisible(isConnected && isSessionWritable);
+    }
     if (canOperateTerminal && visibleRef.current)
       consumePendingTerminalFocus(threadRef, terminalId);
-  }, [canOperateTerminal, canSendInput, terminalId, threadRef]);
+  }, [canOperateTerminal, canSendInput, isConnected, isSessionWritable, terminalId, threadRef]);
 
   // Links re-read the grant on activation; only the hovered link's styling needs a nudge.
   const linkActivationScopeRef = useRef(canOpenHostEditor);
@@ -726,6 +727,7 @@ function TerminalSessionViewport({
       terminalRef.current = terminal;
       terminal.input.setAttribute("data-workspace-focus-default", "");
       terminal.input.readOnly = !canSendTerminalInput();
+      terminal.setCursorVisible(isTerminalReady());
       // Reapply font settings hydrated during loading, when terminalRef was null.
       const currentFont = terminalFontRef.current;
       if (currentFont.family !== setupFont.family || currentFont.size !== setupFont.size) {
@@ -1189,29 +1191,11 @@ function TerminalSessionViewport({
     };
   };
   return (
-    <div className="flex h-full w-full flex-col overflow-hidden bg-(--terminal-background)">
-      {!isConnected ? (
-        <div
-          role="status"
-          className="flex shrink-0 items-center gap-2 border-b border-warning/20 bg-warning/10 px-3 py-1.5 text-xs text-warning"
-        >
-          <WifiOff className="size-3.5 shrink-0" />
-          <span>
-            {environment?.entry.target.label ?? "Server"} is{" "}
-            {environment?.connection.phase === "connecting" ||
-            environment?.connection.phase === "reconnecting"
-              ? "reconnecting"
-              : "disconnected"}
-            . Input paused until connected.
-          </span>
-        </div>
-      ) : null}
-      <div
-        ref={attachContainer}
-        tabIndex={-1}
-        className="relative min-h-0 w-full flex-1 overflow-hidden"
-      />
-    </div>
+    <div
+      ref={attachContainer}
+      tabIndex={-1}
+      className="relative h-full w-full overflow-hidden bg-(--terminal-background)"
+    />
   );
 }
 

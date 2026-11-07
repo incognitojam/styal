@@ -73,9 +73,9 @@ Terminal sessions run on the environment server. Hiding the terminal or losing y
 connection leaves the shell and its commands running while that server stays up.
 The client reattaches and loads retained output when the connection returns.
 
-Input pauses while disconnected. Web and desktop show a notice in the terminal;
-mobile shows the environment's connection status. Keystrokes typed while disconnected
-are not queued or replayed. Wait for the terminal to reconnect before typing again.
+Input pauses while disconnected and resumes after the terminal reattaches. Keystrokes
+typed while disconnected are not queued or replayed. Wait for the terminal to reconnect
+before typing again.
 
 # Terminal history
 

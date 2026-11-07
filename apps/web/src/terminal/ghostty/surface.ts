@@ -561,6 +561,7 @@ export class GhosttyTerminalSurface {
   private compositionInputToSuppress: string | null = null;
   private compositionSuppressionTimer: number | null = null;
   private cursorOn = true;
+  private cursorVisible = true;
   private renderedCursorY: number | null = null;
   private forceFullRender = true;
   private scrollbarDirty = true;
@@ -746,6 +747,12 @@ export class GhosttyTerminalSurface {
       return;
     }
     this.fit();
+  }
+
+  setCursorVisible(visible: boolean): void {
+    if (this.disposed || this.cursorVisible === visible) return;
+    this.cursorVisible = visible;
+    this.requestRender();
   }
 
   write(data: string): void {
@@ -2030,7 +2037,7 @@ export class GhosttyTerminalSurface {
       padding: CONTENT_PADDING,
       originY: this.originY,
       forceFull: this.forceFullRender,
-      cursorOn: this.cursorOn,
+      cursorOn: this.cursorVisible && this.cursorOn,
       previousCursorY: this.renderedCursorY,
       focused: this.focused,
       hoveredLinkRange: this.hoveredLink?.range ?? null,
@@ -2040,7 +2047,10 @@ export class GhosttyTerminalSurface {
     });
     this.positionInput();
     this.renderedCursorY =
-      this.cursorOn && this.snapshot.cursorVisible && this.snapshot.cursorY >= 0
+      this.cursorVisible &&
+      this.cursorOn &&
+      this.snapshot.cursorVisible &&
+      this.snapshot.cursorY >= 0
         ? this.snapshot.cursorY
         : null;
     if (this.scrollbarDirty) {
@@ -2064,7 +2074,7 @@ export class GhosttyTerminalSurface {
 
   private blinkEnabled(): boolean {
     const snapshot = this.snapshot;
-    if (!snapshot || !this.visible || !this.hasSize) return false;
+    if (!snapshot || !this.visible || !this.hasSize || !this.cursorVisible) return false;
     return shouldBlinkTerminalCursor({
       focused: this.focused,
       cursorBlinking: snapshot.cursorBlinking,
