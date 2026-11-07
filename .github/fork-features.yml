@@ -4477,14 +4477,17 @@ features:
   - id: project-filter-continuity
     title: Preserve project filters while navigating and creating threads
     status: maintained
-    prs: [83, 162, 954]
+    prs: [83, 162, 865, 954]
     invariants:
       - Reopening the sidebar does not discard the user's project filter.
+      - With exactly one logical project selected on web and desktop, the filter shows its name above search and exposes project actions by pointer or keyboard context menu. Pinned, active, Working, snoozed, and settled rows omit the project icon and name, and Active and Working omit project headers. Multiple selections and All projects restore normal labels and headers; hover details, drafts, search results, and project folders retain their project context.
       - New-thread actions follow the visible project scope without unexpectedly switching the active thread's project. With several filtered projects, a thread on screen in any of them keeps its project, the first filtered project in list order replaces the fallback default, and the sidebar button opens the project picker instead of creating directly.
       - Explicit filter changes and new-thread actions taken while filtered emit bounded client-usage events through the primary environment, with the entry point but never project names or keys; clearing a vanished project's filter is not counted.
     implementation_paths:
       - apps/web/src/components/CommandPalette.tsx
       - apps/web/src/components/Sidebar.tsx
+      - apps/web/src/components/sidebar/SidebarThreadHeader.tsx
+      - apps/web/src/components/sidebar/SidebarThreadRow.tsx
       - apps/web/src/lib/chatThreadActions.ts
       - apps/web/src/shortcuts/chatRouteCommands.ts
       - apps/web/src/sidebarProjectFilterUsage.ts
@@ -4495,6 +4498,8 @@ features:
       - apps/web/src/components/AppSidebarLayout.tsx
       - apps/web/src/components/CommandPalette.tsx
       - apps/web/src/components/Sidebar.tsx
+      - apps/web/src/components/sidebar/SidebarThreadHeader.tsx
+      - apps/web/src/components/sidebar/SidebarThreadRow.tsx
       - apps/web/src/shortcuts/chatRouteCommands.ts
       - apps/web/src/uiStateStore.ts
     tests:

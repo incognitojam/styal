@@ -298,6 +298,7 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   checked October 1, 2026, which shows active threads as one list; an open pull request
   ([#13815](https://github.com/pingdotgg/t3code/pull/13815)) proposes collapsible, title-only
   groups instead. [Group threads by project](./thread-sidebar.md#group-threads-by-project).
+- **Compact single-project filters.** On web and desktop, selecting one project names it above search and removes repeated project labels and section headers. Selecting several projects or All projects restores them. Compared with [T3 Code revision d5fc29f](https://github.com/pingdotgg/t3code/tree/d5fc29fe5cb62db68bfbf824cfabe0ae94ac6ac4), checked November 7, 2026, which repeats the project on thread cards. [Filter by project](./thread-sidebar.md#filter-by-project).
 - **Proactive panels by default.** Newly linked reviews open automatically, and completed agent work
   switches to its diff. You can turn this off in Settings. Compared with
   [T3 Code revision f223312](https://github.com/pingdotgg/t3code/tree/f22331240ed1a97fae560e314bffb75fe39db8ca),
