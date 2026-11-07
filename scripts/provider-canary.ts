@@ -759,16 +759,44 @@ async function fetchDistTags(packageName: string): Promise<Record<string, string
   );
 }
 
-/**
- * The published stable and nightly styal builds to verify, as version and git
- * ref. Builds whose tag predates the verifier cannot run it and do not update
- * providers automatically, so they are left out.
- */
+export function selectNightlyBuilds(
+  latest: string | undefined,
+  publishedAt: Readonly<Record<string, string>>,
+  now: Date,
+): ReadonlyArray<string> {
+  if (!latest) return [];
+  const cutoff = now.getTime() - 7 * 24 * 60 * 60 * 1_000;
+  const baseline = Object.entries(publishedAt)
+    .filter(([version, date]) => {
+      const timestamp = Date.parse(date);
+      return (
+        /^\d+\.\d+\.\d+-nightly\.\d{8}\.\d+$/.test(version) &&
+        timestamp >= cutoff &&
+        timestamp <= now.getTime() &&
+        compareSemverVersions(version, latest) < 0
+      );
+    })
+    .map(([version]) => version)
+    .toSorted(compareSemverVersions)[0];
+  return baseline ? [latest, baseline] : [latest];
+}
+
+/** Published builds whose tags contain the verifier. */
 async function publishedBuilds(): Promise<Array<{ styal: string; ref: string }>> {
-  const tags = await fetchDistTags("@styal/cli");
+  const response = await fetch("https://registry.npmjs.org/@styal%2fcli", {
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!response.ok) throw new Error(`Cannot read @styal/cli publications: HTTP ${response.status}`);
+  const metadata = (await response.json()) as {
+    "dist-tags": Record<string, string>;
+    time: Record<string, string>;
+  };
   const builds: Array<{ styal: string; ref: string }> = [];
-  for (const styal of new Set([tags.nightly, tags.latest])) {
-    if (styal === undefined) continue;
+  for (const styal of selectNightlyBuilds(
+    metadata["dist-tags"].nightly,
+    metadata.time,
+    new Date(),
+  )) {
     const ref = `v${styal}`;
     const git = (...args: Array<string>) =>
       NodeChildProcess.spawnSync("git", args, { cwd: ROOT, stdio: "ignore" }).status === 0;
