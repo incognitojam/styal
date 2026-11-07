@@ -255,6 +255,7 @@ it.effect("paces scheduled compaction while preserving retention state and fixed
     const pauseStarted = yield* Deferred.make<void>();
     let activeNanos = 0n;
     let eventPages = 0;
+    let receiptPages = 0;
     const pauses: number[] = [];
     const compactionSpans: Tracer.Span[] = [];
     const tracer = Tracer.make({
@@ -268,7 +269,9 @@ it.effect("paces scheduled compaction while preserving retention state and fixed
           if (typeof query !== "string" || !query.includes("LIMIT")) return;
           if (query.includes("FROM orchestration_events AS event")) {
             eventPages++;
-          } else if (!query.includes("FROM orchestration_command_receipts AS receipt")) return;
+          } else if (query.includes("FROM orchestration_command_receipts AS receipt")) {
+            receiptPages++;
+          } else return;
           // Model a page exceeding the active budget, without wall-clock sleeps.
           activeNanos += 30_000_000n;
         };
@@ -320,7 +323,7 @@ it.effect("paces scheduled compaction while preserving retention state and fixed
         },
       }),
     );
-    assert.deepEqual(pauses, Array(8).fill(270));
+    assert.deepEqual(pauses, Array(eventPages + receiptPages).fill(270));
     assert.deepEqual(
       compactionSpans.map((span) => span.status._tag),
       ["Ended"],
