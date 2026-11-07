@@ -253,6 +253,7 @@ export const make = Effect.gen(function* () {
           t3CodeRepository: T3_CODE_REPOSITORY,
           featureUsageVersion: 1,
           autoEnvironmentToolsUsageVersion: 1,
+          fleetThreadSearchUsageVersion: 1,
           agentGuidesUsageVersion: 2,
           browserToolsUsageVersion: 1,
           deviceUsageVersion: 2,

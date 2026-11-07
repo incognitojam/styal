@@ -43,6 +43,7 @@ import {
 } from "./orchestrationV2.ts";
 import { ProviderOptionSelection, ProviderOptionSelectionValue } from "./model.ts";
 import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
+import { OrchestrationSearchThreadsInput, OrchestrationThreadSearchMatch } from "./threadSearch.ts";
 
 const OrchestratorMcpPrompt = TrimmedNonEmptyString.check(Schema.isMaxLength(120_000));
 const OrchestratorMcpTitle = TrimmedNonEmptyString.check(Schema.isMaxLength(512));
@@ -361,6 +362,47 @@ export const OrchestratorMcpThreadListInput = Schema.Struct({
   limit: Schema.optional(PositiveInt.check(Schema.isLessThanOrEqualTo(100))),
 });
 export type OrchestratorMcpThreadListInput = typeof OrchestratorMcpThreadListInput.Type;
+
+export const OrchestratorMcpThreadSearchInput = Schema.Struct({
+  ...OrchestrationSearchThreadsInput.fields,
+  environmentId: Schema.optional(EnvironmentId),
+  projectId: Schema.optional(ProjectId),
+});
+export type OrchestratorMcpThreadSearchInput = typeof OrchestratorMcpThreadSearchInput.Type;
+
+const OrchestratorMcpThreadSearchMatch = Schema.Struct({
+  threadId: ThreadId,
+  projectId: ProjectId,
+  title: Schema.String,
+  link: Schema.optional(Schema.String),
+  source: Schema.Literals(["title", "user", "assistant"]),
+  snippet: Schema.optional(OrchestrationThreadSearchMatch.fields.snippet),
+  messageCreatedAt: Schema.optional(OrchestrationThreadSearchMatch.fields.messageCreatedAt),
+});
+export const OrchestratorMcpThreadSearchPage = Schema.Struct({
+  matches: Schema.Array(OrchestratorMcpThreadSearchMatch),
+});
+export type OrchestratorMcpThreadSearchPage = typeof OrchestratorMcpThreadSearchPage.Type;
+
+export const OrchestratorMcpThreadSearchResult = Schema.Struct({
+  matches: Schema.Array(
+    Schema.Struct({
+      ...OrchestratorMcpThreadSearchMatch.fields,
+      environmentId: EnvironmentId,
+      environmentLabel: Schema.String,
+    }),
+  ),
+  machines: Schema.Array(
+    Schema.Struct({
+      environmentId: EnvironmentId,
+      environmentLabel: Schema.String,
+      status: Schema.Literals(["searched", "offline", "skipped"]),
+      reason: Schema.optional(Schema.String),
+    }),
+  ),
+  notes: Schema.Array(Schema.String),
+});
+export type OrchestratorMcpThreadSearchResult = typeof OrchestratorMcpThreadSearchResult.Type;
 
 /** state is null until the host is read. */
 export const OrchestratorMcpThreadPullRequest = Schema.Struct({

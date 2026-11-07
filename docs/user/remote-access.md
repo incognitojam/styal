@@ -318,6 +318,8 @@ Add your other machines, such as your laptop and a VPS, and agents on one can
 work on the other: start, message, wait on and stop its threads, answer their
 questions, and manage its queues, projects and scheduled tasks.
 
+Agents can search previous work across these machines in one request, including settled threads. Results identify the machine, and unavailable or refused machines are reported so missing results are not mistaken for missing history. Archived threads and subagent threads are excluded.
+
 ### Let two machines work together
 
 If this app is connected to both machines, open **Settings → Environments**, on web,

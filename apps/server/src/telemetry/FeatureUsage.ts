@@ -135,6 +135,11 @@ export type AutoEnvironmentAction = "link" | "project_create" | "project_clone" 
 
 type ObservedUsage =
   | {
+      readonly feature: "fleet-thread-search";
+      readonly action: "search";
+      readonly source: "agent";
+    }
+  | {
       readonly feature: "auto-environment-tools";
       readonly action: AutoEnvironmentAction;
       readonly source: "agent";
