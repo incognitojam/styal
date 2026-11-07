@@ -7,7 +7,7 @@ import { STYAL_SKILL_NAME, styalSkillPaths } from "@t3tools/provider-core/server
 import { AGENT_GUIDES, type AgentGuideTopic } from "./guides.ts";
 
 export const STYAL_SKILL_DESCRIPTION =
-  "Read before setting up or explaining a styal feature: styal.json and project actions, worktree setup, t3.json migration, devices, hardware, data import, doctor, triage. Coordinate threads and report back.";
+  "Read before styal setup or advice: styal.json, actions, worktrees, t3.json migration, devices, hardware, imports, doctor, triage; coordinate threads and report back.";
 
 const TOPIC_SUMMARIES: Record<AgentGuideTopic, string> = {
   "project-setup":
