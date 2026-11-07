@@ -4486,9 +4486,9 @@ features:
     implementation_paths:
       - apps/web/src/components/CommandPalette.tsx
       - apps/web/src/components/Sidebar.tsx
-      - apps/web/src/lib/chatThreadActions.ts
       - apps/web/src/components/sidebar/SidebarThreadHeader.tsx
       - apps/web/src/components/sidebar/SidebarThreadRow.tsx
+      - apps/web/src/lib/chatThreadActions.ts
       - apps/web/src/shortcuts/chatRouteCommands.ts
       - apps/web/src/sidebarProjectFilterUsage.ts
       - apps/web/src/sidebarProjectScopeStore.ts
