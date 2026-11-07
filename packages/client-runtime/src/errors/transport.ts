@@ -3,6 +3,7 @@ import { NETWORK_BLOCKING_HINT, UNRESPONSIVE_HOST_HINT } from "./network.ts";
 const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const TRANSPORT_ERROR_PATTERNS = [
+  /^The connection to .+ was lost\. The result of the request is unknown\. Refresh to check before trying again\.$/,
   /\bSocketCloseError\b/i,
   /\bSocketOpenError\b/i,
   /\bSocket is not connected\b/i,
