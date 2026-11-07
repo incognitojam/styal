@@ -36,6 +36,7 @@ import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import { CodexProviderCapabilitiesV2 } from "../orchestration-v2/Adapters/CodexAdapterV2.ts";
 import * as CommandReceiptStore from "../orchestration-v2/CommandReceiptStore.ts";
@@ -2029,7 +2030,7 @@ describe("OrchestratorMcpService provider resolution", () => {
     { name: "parent instance", parentEnabled: true, model: "gpt-5.4" },
     { name: "alternate instance", parentEnabled: false, model: "gpt-5.5" },
   ])(
-    "replays accepted creation on the $name without authorizing new disabled work",
+    "replays accepted creation and pruned delegation on the $name without authorizing new disabled work",
     ({ parentEnabled, model }) =>
       Effect.scoped(
         Effect.gen(function* () {
@@ -2075,6 +2076,7 @@ describe("OrchestratorMcpService provider resolution", () => {
           );
           const layerTest = layerOrchestratorService.pipe(
             Layer.provideMerge(layerThreads),
+            Layer.provideMerge(layerDatabase),
             Layer.provide(
               Layer.mergeAll(
                 NodeServices.layer,
@@ -2179,6 +2181,29 @@ describe("OrchestratorMcpService provider resolution", () => {
               emojiAtLimit.threads[0]!.threadId,
             );
             assert.equal(titled.thread.title, `${"a".repeat(76)}...`);
+
+            const delegation = {
+              task: "Summarize the diff.",
+              target: { providerInstanceId: selection.instanceId, model },
+              mode: "async" as const,
+              clientRequestId: "pruned-delegation",
+            };
+            const delegated = yield* service.delegateTask(scope, delegation);
+            yield* service.delegateTask(scope, {
+              ...delegation,
+              clientRequestId: "other-delegation",
+            });
+            const parentBeforePrune = yield* orchestrator.getThreadProjection(parentThreadId);
+            const sql = yield* SqlClient.SqlClient;
+            yield* sql`DELETE FROM orchestration_events
+              WHERE command_id IN (
+                SELECT command_id FROM orchestration_events
+                WHERE event_type = 'subagent.updated' AND stream_id = ${parentThreadId}
+              )`;
+            assert.deepEqual(yield* service.delegateTask(scope, delegation), delegated);
+            const parentAfterRetry = yield* orchestrator.getThreadProjection(parentThreadId);
+            assert.deepEqual(parentAfterRetry.subagents, parentBeforePrune.subagents);
+            assert.equal(parentAfterRetry.subagents.length, 2);
 
             yield* settings.updateSettings({
               projectSettingsOverrides: {

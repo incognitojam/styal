@@ -63,6 +63,7 @@ import {
   ThreadId,
   isOrchestrationV2WorkActive,
 } from "@t3tools/contracts";
+import { derive } from "@t3tools/provider-core/server/IdAllocator";
 import { getProviderOptionCurrentValue } from "@t3tools/shared/model";
 import { runRanAfter } from "@t3tools/shared/orchestrationV2ThreadError";
 import { formatThreadLink } from "@t3tools/shared/threadLinks";
@@ -2467,14 +2468,26 @@ const make = Effect.gen(function* () {
         (stored) =>
           stored.event.type === "subagent.updated" && stored.event.payload.origin === "app_owned",
       );
-      if (taskEvent?.event.type !== "subagent.updated") {
+      const task =
+        taskEvent?.event.type === "subagent.updated"
+          ? taskEvent.event.payload
+          : result.replayed
+            ? (yield* loadThreadRecords(scope.thread.threadId, ["subagents"], {
+                subagentIds: [derive.delegatedTaskNode({ commandId })],
+              })).subagents.find(
+                (candidate) =>
+                  candidate.id === derive.delegatedTaskNode({ commandId }) &&
+                  candidate.origin === "app_owned",
+              )
+            : undefined;
+      if (task === undefined) {
         return yield* failure(
           "orchestration_error",
           "Delegated task command did not produce a task projection.",
         );
       }
-      const taskId = taskEvent.event.payload.id;
-      const childThreadId = taskEvent.event.payload.childThreadId;
+      const taskId = task.id;
+      const childThreadId = task.childThreadId;
       const childRunEvent = result.storedEvents.find(
         (stored) => stored.event.type === "run.created" && stored.event.threadId === childThreadId,
       );
