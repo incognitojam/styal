@@ -438,7 +438,8 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   Codex, Claude Code, and OpenCode releases in the background only after an automated check has run
   real agent turns against them, once none of that provider's own threads are running. Checks
   include an older nightly, so provider updates can reach environments that have not installed the
-  newest styal build. This covers
+  newest styal build. Refreshing provider status also checks for approved updates immediately.
+  This covers
   providers installed with npm or a similar package manager, native Claude Code on macOS, Linux,
   and Windows, and native Codex and OpenCode 2 on macOS and Linux. WinGet and unrecognized native
   install locations are excluded. For native Claude Code and Codex, styal manages updates in

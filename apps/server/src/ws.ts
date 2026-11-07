@@ -34,6 +34,7 @@ import {
   AuthAccessStreamError,
   type AuthAccessStreamEvent,
   AuthOrchestrationOperateScope,
+  AuthProvidersManageScope,
   type AuthEnvironmentScope,
   type ScheduledTaskListResult,
   AuthSessionId,
@@ -186,6 +187,7 @@ import * as ProviderInstanceRegistry from "./provider/ProviderInstanceRegistry.t
 import * as AcpRegistrySupport from "@t3tools/provider-acp-registry/server/AcpRegistrySupport";
 import * as AcpRegistryRuntimeCoordinator from "@t3tools/provider-acp-registry/server/AcpRegistryRuntimeCoordinator";
 import * as ProviderMaintenanceRunner from "./provider/providerMaintenanceRunner.ts";
+import * as ProviderAutoUpdater from "./provider/ProviderAutoUpdater.ts";
 import * as ProviderAuthService from "./provider/ProviderAuthService.ts";
 import { makeProviderInstallation } from "./provider/providerInstallation.ts";
 import * as ServerSelfUpdate from "./cloud/selfUpdate.ts";
@@ -1466,6 +1468,7 @@ export const layerWsRpc = (
       const previewManager = yield* PreviewManager.PreviewManager;
       const portDiscovery = yield* PortScanner.PortDiscovery;
       const providerRegistry = yield* ProviderRegistry.ProviderRegistry;
+      const providerAutoUpdater = yield* ProviderAutoUpdater.ProviderAutoUpdater;
       const providerInstances = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
       const acpRegistryCatalog = yield* AcpRegistrySupport.AcpRegistryCatalog;
       const acpRegistryRuntimeCoordinator =
@@ -2473,7 +2476,7 @@ export const layerWsRpc = (
         [WS_METHODS.serverRefreshProviders]:
           /* Request instrumentation already owns the span; keep this helper in that context. */
           Effect.fnUntraced(function* (input) {
-            if (input.refreshModels) {
+            if (input.refreshModels || input.reloadSecrets) {
               yield* providerRegistry.invalidateModelCaches({
                 instanceId: input.instanceId,
                 cwd: input.cwd,
@@ -2524,6 +2527,12 @@ export const layerWsRpc = (
                 );
                 providers = yield* providerRegistry.refreshInstance(instance.instanceId);
               }
+            }
+            if (
+              (input.refreshModels === true || input.reloadSecrets === true) &&
+              currentSession.scopes.includes(AuthProvidersManageScope)
+            ) {
+              yield* providerAutoUpdater.requestPass;
             }
             if (input.workspaceSnapshotsOnDemand !== true) return { providers };
             const commandProviders =

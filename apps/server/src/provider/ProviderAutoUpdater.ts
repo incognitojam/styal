@@ -12,10 +12,13 @@ import type {
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import { compareSemverVersions } from "@t3tools/shared/semver";
 import * as Clock from "effect/Clock";
+import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as Schedule from "effect/Schedule";
+import * as Semaphore from "effect/Semaphore";
 import type * as Scope from "effect/Scope";
 
 import { ServerConfig } from "../config.ts";
@@ -107,14 +110,18 @@ function threadProviderUse(
     : "busy";
 }
 
-export interface ProviderAutoUpdater {
-  /** One pass over every provider instance; exposed for tests. */
-  readonly runPass: Effect.Effect<void>;
-  /** Forks the periodic passes into the caller's scope. */
-  readonly start: Effect.Effect<void, never, Scope.Scope>;
-  /** Returns and resets, per instance, the updates skipped because a thread was using its CLI. */
-  readonly takeBusySkips: Effect.Effect<ReadonlyMap<ProviderInstanceId, number>>;
-}
+export class ProviderAutoUpdater extends Context.Service<
+  ProviderAutoUpdater,
+  {
+    /** One pass over every provider instance; exposed for tests. */
+    readonly runPass: Effect.Effect<void>;
+    readonly requestPass: Effect.Effect<void>;
+    /** Forks the periodic passes into the caller's scope. */
+    readonly start: Effect.Effect<void, never, Scope.Scope>;
+    /** Returns and resets, per instance, the updates skipped because a thread was using its CLI. */
+    readonly takeBusySkips: Effect.Effect<ReadonlyMap<ProviderInstanceId, number>>;
+  }
+>()("@styal/cli/provider/ProviderAutoUpdater") {}
 
 export const make = Effect.gen(function* () {
   const config = yield* ServerConfig;
@@ -124,6 +131,8 @@ export const make = Effect.gen(function* () {
   const manifestService = yield* ModelManifest.ModelManifest;
   const projections = yield* ProjectionStoreV2;
   const installGate = yield* ProviderInstallGate;
+  const serviceScope = yield* Effect.scope;
+  const passPermit = yield* Semaphore.make(1);
   const attemptedAt = new Map<string, number>();
   let busySkips = new Map<ProviderInstanceId, number>();
   const countBusySkip = (instanceId: ProviderInstanceId) =>
@@ -242,6 +251,7 @@ export const make = Effect.gen(function* () {
   );
 
   const runPass = Effect.gen(function* () {
+    if (config.devUrl !== undefined) return;
     if (!(yield* isEnabled)) return;
     yield* manifestService.refresh;
     const providers = yield* providerRegistry.getProviders;
@@ -311,6 +321,13 @@ export const make = Effect.gen(function* () {
   }).pipe(
     Effect.catchCause((cause) => Effect.logWarning("Background provider update failed", { cause })),
     Effect.withSpan("ProviderAutoUpdater.runPass"),
+    passPermit.withPermitsIfAvailable(1),
+    Effect.asVoid,
+  );
+
+  const requestPass = runPass.pipe(
+    Effect.forkIn(serviceScope, { startImmediately: true }),
+    Effect.asVoid,
   );
 
   const start = Effect.gen(function* () {
@@ -327,5 +344,7 @@ export const make = Effect.gen(function* () {
     return taken;
   });
 
-  return { runPass, start, takeBusySkips } satisfies ProviderAutoUpdater;
+  return { runPass, requestPass, start, takeBusySkips } satisfies ProviderAutoUpdater["Service"];
 });
+
+export const layer = Layer.effect(ProviderAutoUpdater, make);

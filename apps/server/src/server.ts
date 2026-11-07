@@ -678,11 +678,11 @@ const layerProviderInstallationRefresh = Layer.effectDiscard(
 
 const ProviderAutoUpdaterLive = Layer.effectDiscard(
   Effect.gen(function* () {
-    const updater = yield* ProviderAutoUpdater.make;
+    const updater = yield* ProviderAutoUpdater.ProviderAutoUpdater;
     yield* updater.start;
     yield* ProviderAnalytics.startProviderInventory(updater.takeBusySkips);
   }),
-).pipe(Layer.provide(ProjectionStoreV2.layer));
+).pipe(Layer.provideMerge(ProviderAutoUpdater.layer), Layer.provide(ProjectionStoreV2.layer));
 
 const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   AgentAwarenessRelay.layer,
