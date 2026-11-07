@@ -202,6 +202,46 @@ function readProjectEvents(
   );
 }
 
+function projectedProjectCreatedEvent(
+  database: ReadonlyDatabase,
+  projectId: ProjectId,
+): OrchestrationEvent {
+  const rows = database.all("SELECT * FROM projection_projects WHERE project_id = ?", [
+    projectId,
+  ]) as ReadonlyArray<Record<string, unknown>>;
+  const row = rows[0];
+  if (row === undefined) {
+    throw sourceFailure("unsupported-source", "The source project history is incomplete.");
+  }
+  const json = (column: string, fallback: unknown = null) =>
+    typeof row[column] === "string" ? decodeUnknownJsonString(row[column]) : fallback;
+  return decodeOrchestrationEvent({
+    sequence: 0,
+    eventId: `import:v2:project-created:${projectId}`,
+    type: "project.created",
+    aggregateKind: "project",
+    aggregateId: projectId,
+    occurredAt: row.created_at,
+    commandId: null,
+    causationEventId: null,
+    correlationId: null,
+    metadata: {},
+    payload: {
+      projectId,
+      title: row.title,
+      workspaceRoot: row.workspace_root,
+      repositoryIdentity: json("repository_identity_json"),
+      defaultModelSelection: json("default_model_selection_json"),
+      faviconPath: row.favicon_path ?? null,
+      additionalInstructions: row.additional_instructions ?? null,
+      projectIcon: json("project_icon_json"),
+      scripts: json("scripts_json", []),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    },
+  });
+}
+
 function readSourceContinuations(
   database: ReadonlyDatabase,
   threadIds: ReadonlyArray<ThreadId>,
@@ -475,11 +515,13 @@ function inspectSelectedProjects(
                 resumeCursor: continuations.get(id)!.resumeCursor,
               }),
         );
-        const events = readProjectEvents(database, projectId, []).filter(
+        const projectEvents = readProjectEvents(database, projectId, []).filter(
           (event) => event.aggregateKind === "project",
         );
-        if (!events.some((event) => event.type === "project.created"))
-          throw sourceFailure("unsupported-source", "The source project history is incomplete.");
+        // V2 pruning can remove project creation; thread history comes from projections.
+        const events = projectEvents.some((event) => event.type === "project.created")
+          ? projectEvents
+          : [projectedProjectCreatedEvent(database, projectId), ...projectEvents];
         return {
           projectId,
           project,

@@ -6,6 +6,9 @@ import * as NodeSqlite from "node:sqlite";
 import { assert, it } from "@effect/vitest";
 import { ThreadId, type OrchestrationV2ThreadProjection } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
+import * as Layer from "effect/Layer";
+import { emptyLegacyImportDestinationState } from "./LegacyImportPreview.ts";
+import * as SqlClient from "effect/sql/SqlClient";
 import { makeLegacyHistoryWriter } from "./LegacyHistoryWriter.ts";
 import { readLegacySourceSnapshot } from "./LegacyImport.ts";
 import * as References from "effect/References";
@@ -316,3 +319,165 @@ for (const fixture of fixtures) {
     );
   });
 }
+
+it.effect("imports and repairs pruned V2 sources without changing projected history", () => {
+  const importSource = Effect.fn("test.importSource")(
+    function* (pruned: boolean) {
+      const config = yield* ServerConfig;
+      const fixtureDir = fixtures[0]!.directory;
+      const manifest = readJson<Manifest>(fixtureDir, "manifest.json");
+      const sourceDir = NodePath.join(config.baseDir, "pruned-source");
+      NodeFS.mkdirSync(sourceDir);
+      const sourceDatabasePath = NodePath.join(sourceDir, manifest.databaseFilename!);
+      const database = new NodeSqlite.DatabaseSync(sourceDatabasePath);
+      try {
+        database.exec(NodeFS.readFileSync(NodePath.join(fixtureDir, "state.sql"), "utf8"));
+        database.exec("ALTER TABLE projection_projects ADD COLUMN additional_instructions TEXT");
+        const projects = database.prepare("SELECT project_id FROM projection_projects").all();
+        for (const row of projects) {
+          const projectId = String(row.project_id);
+          const created = database
+            .prepare(
+              "SELECT payload_json FROM orchestration_events WHERE stream_id = ? AND event_type = 'project.created'",
+            )
+            .get(projectId)!;
+          const payload = JSON.parse(String(created.payload_json)) as Json;
+          const fields = {
+            defaultModelSelection: { instanceId: "codex", model: "synthetic-model" },
+            faviconPath: "synthetic.svg",
+            additionalInstructions: "Use synthetic fixtures.",
+            projectIcon: { kind: "emoji", emoji: "🧪" },
+          };
+          database
+            .prepare(
+              "UPDATE orchestration_events SET payload_json = ? WHERE stream_id = ? AND event_type = 'project.created'",
+            )
+            .run(JSON.stringify({ ...payload, ...fields }), projectId);
+          database
+            .prepare(
+              "UPDATE projection_projects SET default_model_selection_json = ?, favicon_path = ?, additional_instructions = ?, project_icon_json = ? WHERE project_id = ?",
+            )
+            .run(
+              JSON.stringify(fields.defaultModelSelection),
+              fields.faviconPath,
+              fields.additionalInstructions,
+              JSON.stringify(fields.projectIcon),
+              projectId,
+            );
+
+          const scripts = [
+            {
+              id: "verify",
+              name: "Verify",
+              command: "echo synthetic",
+              icon: "test",
+              runOnWorktreeCreate: false,
+            },
+          ];
+          const updatedAt = "2026-11-01T00:00:00.000Z";
+          const update = { projectId, title: `${payload.title} updated`, scripts, updatedAt };
+          database
+            .prepare(
+              "INSERT INTO orchestration_events (event_id, aggregate_kind, stream_id, stream_version, event_type, occurred_at, actor_kind, payload_json, metadata_json, application_event_version) VALUES (?, 'project', ?, 2, 'project.meta-updated', ?, 'server', ?, '{}', 2)",
+            )
+            .run(`synthetic-update:${projectId}`, projectId, updatedAt, JSON.stringify(update));
+          database
+            .prepare(
+              "UPDATE projection_projects SET title = ?, scripts_json = ?, updated_at = ? WHERE project_id = ?",
+            )
+            .run(update.title, JSON.stringify(scripts), updatedAt, projectId);
+        }
+        database.exec(`
+          UPDATE orchestration_v2_projection_provider_turns
+          SET payload_json = json_set(payload_json, '$.turnTokenUsage.costUsd', 0.125)
+          WHERE json_type(payload_json, '$.turnTokenUsage') = 'object';
+        `);
+        if (pruned) {
+          const deleted = database
+            .prepare(`
+        DELETE FROM orchestration_events
+        WHERE application_event_version = 2
+          AND event_type != 'thread.created'
+          AND NOT (event_type = 'run.updated' AND json_extract(payload_json, '$.status') = 'running')
+          AND sequence NOT IN (SELECT MAX(sequence) FROM orchestration_events GROUP BY aggregate_kind, stream_id);
+      `)
+            .run();
+          assert.isAbove(Number(deleted.changes), 2);
+          assert.equal(
+            database
+              .prepare(
+                "SELECT COUNT(*) AS count FROM orchestration_events WHERE event_type = 'project.created'",
+              )
+              .get()!.count,
+            0,
+          );
+        }
+      } finally {
+        database.close();
+      }
+      NodeFS.cpSync(
+        NodePath.join(fixtureDir, "attachments"),
+        NodePath.join(sourceDir, "attachments"),
+        { recursive: true },
+      );
+      let destination = emptyLegacyImportDestinationState();
+      const service = yield* makeLegacyImportService({
+        sourceStateDir: sourceDir,
+        loadDestinationState: () => Effect.succeed(destination),
+        stopActiveProviderSession: () => Effect.void,
+      });
+      const projectIds = ["project-alpha", "project-beta"];
+      const result = yield* service.importData({ projectIds, includeSettings: false });
+      assert.equal(result.importedThreadCount, manifest.importedThreadIds.length);
+      const store = yield* ProjectionStore.ProjectionStoreV2;
+      const threads = yield* Effect.forEach(manifest.importedThreadIds, (id) =>
+        store.getThreadProjection(ThreadId.make(id)),
+      );
+      assert.isTrue(
+        threads.some((projection) =>
+          projection.providerTurns.some((turn) => turn.turnTokenUsage?.costUsd === 0.125),
+        ),
+      );
+      const projects = yield* (yield* ProjectStore.ProjectStoreV2).list();
+      destination = {
+        ...destination,
+        projectIds: new Set(projectIds),
+        threadIds: new Set(manifest.importedThreadIds),
+      };
+      // Model an older import with event identities distinct from the current V2 writer.
+      const sql = yield* SqlClient.SqlClient;
+      yield* sql`UPDATE orchestration_events SET event_id = 'older-import:' || event_id`;
+      const repair = yield* service.importData({ projectIds, includeSettings: false });
+      assert.isAbove(repair.repairedThreadCount, 0, JSON.stringify(repair));
+      assert.equal(repair.importedThreadCount, 0);
+      assert.deepEqual(
+        yield* Effect.forEach(manifest.importedThreadIds, (id) =>
+          store.getThreadProjection(ThreadId.make(id)),
+        ),
+        threads,
+      );
+      if (pruned) {
+        const damaged = new NodeSqlite.DatabaseSync(sourceDatabasePath);
+        try {
+          damaged.exec("DELETE FROM projection_projects WHERE project_id = 'project-alpha'");
+        } finally {
+          damaged.close();
+        }
+        const refusal = yield* readLegacySourceSnapshot({
+          sourceDatabasePath,
+          currentDatabasePath: config.dbPath,
+          projectIds: ["project-alpha"],
+        }).pipe(Effect.flip);
+        assert.equal(refusal.reason, "source-changed");
+      }
+      return { projects, threads };
+    },
+    Effect.provide(Layer.fresh(importLayer)),
+    Effect.provideService(References.MinimumLogLevel, "Warn"),
+  );
+  return Effect.gen(function* () {
+    const full = yield* importSource(false);
+    const pruned = yield* importSource(true);
+    assert.deepEqual(pruned, full);
+  });
+});
