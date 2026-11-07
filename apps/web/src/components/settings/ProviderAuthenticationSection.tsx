@@ -346,9 +346,7 @@ export function ProviderAuthenticationSection({
           }}
         >
           {signedIn
-            ? usesCliLogin
-              ? "Sign in again"
-              : "Change account"
+            ? "Change account"
             : auth?.phase === "failed" || auth?.phase === "cancelled"
               ? usesCredentials
                 ? "Retry connection"

@@ -390,7 +390,7 @@ function ProviderAccount({
       ? [
           {
             id: "change",
-            title: usesCliLogin ? "Sign in again" : "Change account",
+            title: "Change account",
             image: "person.crop.circle",
             attributes: { disabled: signInDisabled },
             ...(methodActions.length > 1
