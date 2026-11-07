@@ -102,19 +102,36 @@ export const layer: Layer.Layer<ProjectionMaintenanceV2, never, SqlClient.SqlCli
     ) {
       const referenced = yield* readPromptReferences(throughSequence, head, betweenPages);
       // Stream heads at or below the boundary are kept, so the anchors they borrow must stay too.
-      const keptHeadReferences = yield* sql<{ readonly prompt_sequence: number }>`
-        SELECT json_extract(event.payload_json, '$.promptSequence') AS prompt_sequence
-        FROM (
-          SELECT MAX(sequence) AS sequence FROM orchestration_events
-          GROUP BY aggregate_kind, stream_id
-        ) AS heads
-        JOIN orchestration_events AS event ON event.sequence = heads.sequence
-        WHERE heads.sequence <= ${throughSequence}
-          AND event.event_type IN ('subagent.updated', 'turn-item.updated')
-          AND json_type(event.payload_json, '$.promptSequence') = 'integer'
-      `.pipe(NodeSqliteClient.readOnly);
-      for (const row of keptHeadReferences) referenced.add(row.prompt_sequence);
-      yield* betweenPages;
+      let streamKind = "";
+      let streamId = "";
+      while (true) {
+        const heads = yield* sql<{
+          readonly aggregate_kind: string;
+          readonly stream_id: string;
+          readonly prompt_sequence: number | null;
+        }>`
+          SELECT head.aggregate_kind, head.stream_id, (
+            SELECT CASE WHEN event.sequence <= ${throughSequence}
+              AND event.event_type IN ('subagent.updated', 'turn-item.updated')
+              AND json_type(event.payload_json, '$.promptSequence') = 'integer'
+              THEN json_extract(event.payload_json, '$.promptSequence') END
+            FROM orchestration_events AS event
+            WHERE event.aggregate_kind = head.aggregate_kind AND event.stream_id = head.stream_id
+            ORDER BY event.sequence DESC LIMIT 1
+          ) AS prompt_sequence
+          FROM (
+            SELECT aggregate_kind, stream_id FROM orchestration_events
+            WHERE (aggregate_kind, stream_id) > (${streamKind}, ${streamId})
+            ORDER BY aggregate_kind, stream_id LIMIT 1
+          ) AS head
+        `.pipe(NodeSqliteClient.readOnly);
+        yield* betweenPages;
+        const head = heads[0];
+        if (head === undefined) break;
+        if (head.prompt_sequence !== null) referenced.add(head.prompt_sequence);
+        streamKind = head.aggregate_kind;
+        streamId = head.stream_id;
+      }
       let referencesThrough = head;
       let deleted = 0;
       let cursor = 0;
@@ -147,7 +164,7 @@ export const layer: Layer.Layer<ProjectionMaintenanceV2, never, SqlClient.SqlCli
         // Never hold a transaction or the reader lock across a yield or a rest.
         yield* Effect.yieldNow;
         if (candidates.length > 0) {
-          deleted += yield* sql.withTransaction(
+          const batch = yield* sql.withTransaction(
             Effect.gen(function* () {
               // Rows appended since the reference scan may borrow a prompt from a candidate.
               const appended = yield* sql<{
@@ -163,18 +180,27 @@ export const layer: Layer.Layer<ProjectionMaintenanceV2, never, SqlClient.SqlCli
                   END AS prompt_sequence
                 FROM orchestration_events
                 WHERE sequence > ${referencesThrough}
+                ORDER BY sequence ASC
+                LIMIT ${REFERENCE_SCAN_WINDOW}
               `;
               for (const row of appended) {
                 if (row.prompt_sequence !== null) referenced.add(row.prompt_sequence);
                 referencesThrough = Math.max(referencesThrough, row.sequence);
               }
+              // A full batch may leave unseen borrowers; commit and yield before catching up.
+              if (appended.length === REFERENCE_SCAN_WINDOW) return { deleted: 0, caughtUp: false };
               const obsolete = candidates.filter((sequence) => !referenced.has(sequence));
-              if (obsolete.length === 0) return 0;
+              if (obsolete.length === 0) return { deleted: 0, caughtUp: true };
               yield* sql`DELETE FROM orchestration_events WHERE sequence IN ${sql.in(obsolete)}`;
-              return obsolete.length;
+              return { deleted: obsolete.length, caughtUp: true };
             }),
           );
+          deleted += batch.deleted;
           yield* Effect.yieldNow;
+          if (!batch.caughtUp) {
+            yield* betweenPages;
+            continue;
+          }
         }
         // Rest after every page, including the last, so the next loop starts a fresh slice.
         yield* betweenPages;

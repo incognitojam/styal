@@ -397,6 +397,7 @@ it.effect("keeps an anchor that a row appended during the pass borrows from", ()
       const threadId = ThreadId.make("thread:prune-race");
       yield* sink.write({ events: [threadCreated(makeThread(threadId, now), now)] });
       yield* sink.write({ events: subagentEvents(threadId, now, 0) });
+      yield* sink.write({ events: [itemEvent(threadId, now, itemSpecs[1], 0)] });
       yield* maintenance.pruneEventStore().pipe(Effect.provide(pruningEnabled));
       yield* sink.write({ events: [itemEvent(threadId, now, itemSpecs[0], 0)] });
       yield* TestClock.adjust("1 day");
@@ -423,9 +424,22 @@ it.effect("keeps an anchor that a row appended during the pass borrows from", ()
           Effect.forkScoped,
         );
       yield* Deferred.await(scanStarted);
+      const sql = yield* SqlClient.SqlClient;
+      yield* sql`
+        WITH RECURSIVE backlog(n) AS (
+          SELECT 1 UNION ALL SELECT n + 1 FROM backlog WHERE n < 1000
+        )
+        INSERT INTO orchestration_events (
+          event_id, aggregate_kind, stream_id, stream_version, event_type,
+          occurred_at, actor_kind, payload_json, metadata_json, application_event_version
+        )
+        SELECT 'event:prune-backlog:' || n, 'thread', 'thread:backlog', n,
+          'run.updated', '2026-11-01T00:00:00.000Z', 'server', '{}', '{}', 2
+        FROM backlog
+      `;
       yield* sink.write({ events: subagentEvents(threadId, now, 0, "late") });
       yield* Deferred.succeed(releaseScan, undefined);
-      assert.equal((yield* Fiber.join(pass)).deletedEventCount, 0);
+      assert.equal((yield* Fiber.join(pass)).deletedEventCount, 1);
 
       const late = yield* eventStore
         .read({ threadId, eventType: "subagent.updated" })
