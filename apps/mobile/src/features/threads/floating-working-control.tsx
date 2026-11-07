@@ -101,11 +101,12 @@ export function FloatingWorkingControl(props: {
   const [previewWidth, setPreviewWidth] = useState(0);
   const agents = props.agents;
   const hasAgents = agents !== null;
+  // Only reserve the scroll button's slot while it is visible.
+  const reservedWidth = props.showScrollToEnd ? CONTROL_HEIGHT + 32 : 16;
   const availableLabelWidth = Math.max(
     0,
     Math.min(overlayWidth, windowWidth) -
-      CONTROL_HEIGHT -
-      32 -
+      reservedWidth -
       (action !== null ? actionWidth : 0) -
       (hasQueue ? queueWidth : 0) -
       (hasAgents ? agentsWidth : 0) -
@@ -191,7 +192,7 @@ export function FloatingWorkingControl(props: {
     props.status !== null ? (
       <View
         pointerEvents={statusInteractive ? "box-none" : "none"}
-        className="h-11 items-center justify-center"
+        className="h-11 items-center justify-center overflow-hidden"
       >
         <Animated.View className="h-11" style={capsuleSizerStyle} />
         <Animated.View
@@ -277,7 +278,7 @@ export function FloatingWorkingControl(props: {
           className="h-11 flex-row items-center gap-1.5 px-3 active:opacity-70"
         >
           {hasStatus || hasPreview ? <View className="absolute left-0 h-4 w-px bg-border" /> : null}
-          <SymbolView name="person.2" size={13} tintColorClassName="accent-foreground-muted" />
+          <SymbolView name="person.2" size={13} tintColorClassName="accent-foreground" />
           <Text className="font-t3-medium text-xs tabular-nums" numberOfLines={1}>
             {agents.label}
           </Text>
@@ -296,7 +297,7 @@ export function FloatingWorkingControl(props: {
           {hasStatus || hasPreview || hasAgents ? (
             <View className="absolute left-0 h-4 w-px bg-border" />
           ) : null}
-          <SymbolView name="list.number" size={13} tintColorClassName="accent-foreground-muted" />
+          <SymbolView name="list.number" size={13} tintColorClassName="accent-foreground" />
           <Text className="shrink font-t3-medium text-xs tabular-nums" numberOfLines={1}>
             {props.queuedCount} queued
           </Text>
