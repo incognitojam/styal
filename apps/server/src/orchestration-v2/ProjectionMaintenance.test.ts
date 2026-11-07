@@ -439,3 +439,49 @@ it.effect("keeps an anchor that a row appended during the pass borrows from", ()
     }),
   ).pipe(Effect.provide(layerTest)),
 );
+
+it.effect("retains starting run events until the projected run leaves starting", () =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const sink = yield* EventSink.EventSinkV2;
+    const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
+    const now = yield* DateTime.now;
+    const threadId = ThreadId.make("thread:starting-prune");
+    yield* sink.write({ events: [threadCreated(makeThread(threadId, now), now)] });
+    for (const [ordinal, eventType] of ["run.created", "run.updated"].entries()) {
+      const runId = `run:starting-prune:${ordinal}`;
+      yield* sql`
+        INSERT INTO orchestration_v2_projection_runs (
+          run_id, thread_id, ordinal, provider, provider_thread_id, status,
+          requested_at, completed_at, payload_json
+        ) VALUES (${runId}, ${threadId}, ${ordinal}, 'codex', NULL, 'starting',
+          '2026-11-01T00:00:00.000Z', NULL, '{}')
+      `;
+      yield* sql`
+        INSERT INTO orchestration_events (
+          event_id, aggregate_kind, stream_id, stream_version, event_type,
+          occurred_at, actor_kind, payload_json, metadata_json, application_event_version
+        ) VALUES (
+          ${`event:starting-prune:${ordinal}`}, 'thread', ${threadId}, ${ordinal + 2},
+          ${eventType}, '2026-11-01T00:00:00.000Z', 'server',
+          ${JSON.stringify({ id: runId, status: "starting" })}, '{}', 2
+        )
+      `;
+    }
+    yield* sink.write({ events: [itemEvent(threadId, now, itemSpecs[0], 0)] });
+    yield* maintenance.pruneEventStore();
+    yield* TestClock.adjust("1 day");
+    yield* maintenance.pruneEventStore();
+    assert.deepEqual(
+      (yield* remainingEventIds(threadId)).filter((id) => id.startsWith("event:starting-prune:")),
+      ["event:starting-prune:0", "event:starting-prune:1"],
+    );
+    yield* sql`UPDATE orchestration_v2_projection_runs SET status = 'running' WHERE thread_id = ${threadId}`;
+    yield* TestClock.adjust("1 day");
+    yield* maintenance.pruneEventStore();
+    assert.deepEqual(
+      (yield* remainingEventIds(threadId)).filter((id) => id.startsWith("event:starting-prune:")),
+      [],
+    );
+  }).pipe(Effect.provide(Layer.mergeAll(layerTest, pruningEnabled))),
+);

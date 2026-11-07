@@ -129,6 +129,14 @@ export const layer: Layer.Layer<ProjectionMaintenanceV2, never, SqlClient.SqlCli
               -- Codex usage history reads the selection a run attempt started with.
               WHEN event.event_type = 'run.updated'
                 AND json_extract(event.payload_json, '$.status') = 'running' THEN 0
+              -- Stall detection uses the starting event's time until the run advances.
+              WHEN event.event_type IN ('run.created', 'run.updated')
+                AND json_extract(event.payload_json, '$.status') = 'starting'
+                AND EXISTS (
+                  SELECT 1 FROM orchestration_v2_projection_runs AS run
+                  WHERE run.run_id = json_extract(event.payload_json, '$.id')
+                    AND run.thread_id = event.stream_id AND run.status = 'starting'
+                ) THEN 0
               -- The newest row keeps each stream's high water, stream_version, and snapshot sequence.
               WHEN event.sequence = (
                 SELECT MAX(newer.sequence) FROM orchestration_events AS newer
