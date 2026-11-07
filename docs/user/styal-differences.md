@@ -11,6 +11,8 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 
 ## Agent permissions
 
+- **Agents find previous work across machines.** A thread search covers this machine and its linked machines by default, labels results by machine, and reports offline or refused machines. A machine or project can still be searched on its own. Upstream searches one selected machine as of [revision e455200](https://github.com/pingdotgg/t3code/tree/e455200077ce60806a01c8f28435b58860dcfc74), checked November 7, 2026. [Your machines](./remote-access.md#your-machines).
+
 - **Auto agents can prepare work on another machine.** Auto threads can request a link for you to approve, clone repositories, and create projects without scripts or a default model. They can run a scheduled task only within their own mode limits. Changing or deleting projects and changing machine settings still need Full access. Upstream requires Full access for all these operations as of [revision 4bfb896](https://github.com/pingdotgg/t3code/tree/4bfb896d00a130ecf155ac55c24577b32ea49e2e), checked November 5, 2026. [Link another environment](./remote-access.md#link-another-environment).
 
 ## Devices

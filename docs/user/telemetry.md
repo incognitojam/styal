@@ -10,6 +10,8 @@ counts are reported separately from the main agent's. Model names are sent only 
 a provider's public model list. Approval and review counts never include the command or file
 involved.
 
+Cross-machine agent searches record their outcome and duration, without queries, results or machine names and identifiers.
+
 Agent browser usage includes the operation name, whether it succeeded, failed, or was cancelled,
 and its duration. It does not include visited URLs, page content, screenshots, selectors, typed
 input, or evaluated code. Device panel actions and agent device tools record their operation and

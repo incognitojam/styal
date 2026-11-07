@@ -12,6 +12,8 @@ Upstream's `mcp.tool.invoked` records one event per agent MCP tool call with `to
 
 Additional measured operations are:
 
+- `fleet-thread-search`, `source = agent`, `action = search`: one outcome per default cross-machine search, with `fleetThreadSearchUsageVersion = 1`. Forwarded and explicit single-machine searches are excluded. Queries, matches, machine labels and identifiers are never sent.
+
 - `completion-sounds`, `source = system`: `feature.exposed` with `action = viewed_completion_suppressed` records a completion kept quiet for a visible, focused routed thread, at most once per notification. Reports require client vocabulary version 29 and include no thread or environment identifiers, titles, or sound choices.
 
 - `machine-access`, `source = user`: `set` records each change of what other machines can do on a machine, on web, desktop and mobile, with the new `level` and whether it stopped running threads. It needs that machine to be on `forkClientUsageVersion` 30 or later.

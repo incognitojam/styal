@@ -2,8 +2,8 @@ import {
   OrchestratorMcpEnvironmentTarget,
   ScheduledTaskId,
   ScheduledTask,
-  OrchestrationSearchThreadsInput,
-  OrchestrationThreadSearchMatch,
+  OrchestratorMcpThreadSearchInput,
+  OrchestratorMcpThreadSearchResult,
   OrchestrationV2ThreadForkSourcePoint,
   OrchestrationV2ContextTransfer,
   TrimmedNonEmptyString,
@@ -18,13 +18,12 @@ import {
   ThreadId,
   RunId,
   NonNegativeInt,
-  ProjectId,
 } from "@t3tools/contracts";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/ai";
 
-import * as ThreadSearch from "../../../orchestration-v2/ThreadSearch.ts";
+import * as ThreadSearchMcpService from "../../ThreadSearchMcpService.ts";
 import * as ScheduledTaskService from "../../../scheduledTasks/ScheduledTaskService.ts";
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
@@ -192,26 +191,11 @@ const ThreadTransferTool = Tool.make("t3_thread_transfer", {
 const ThreadSearchTool = Tool.make("t3_thread_search", {
   ...commandTool,
   description:
-    "Search active threads by title, branch, PR, project, then message text. Skips subagent threads. `projectId`: one project, else yours, else all outside a thread. Not exhaustive.",
-  parameters: Schema.Struct({
-    environmentId: OrchestratorMcpEnvironmentTarget,
-    ...OrchestrationSearchThreadsInput.fields,
-    projectId: Schema.optional(ProjectId),
-  }),
-  success: Schema.Struct({
-    matches: Schema.Array(
-      Schema.Struct({
-        threadId: OrchestrationThreadSearchMatch.fields.threadId,
-        projectId: OrchestrationThreadSearchMatch.fields.projectId,
-        title: Schema.String,
-        link: Schema.optional(Schema.String),
-        source: Schema.Literals(["title", "user", "assistant"]),
-        snippet: Schema.optional(OrchestrationThreadSearchMatch.fields.snippet),
-        messageCreatedAt: Schema.optional(OrchestrationThreadSearchMatch.fields.messageCreatedAt),
-      }),
-    ),
-  }),
-  dependencies: [...commandTool.dependencies, ThreadSearch.ThreadSearch],
+    "Search here and linked machines. Includes settled threads. Labels hits; reports offline/skipped. environmentId: one; projectId alone: local. Skips archived/subagents. Bounded.",
+  // Search aggregates peers itself; the generic single-environment forwarding wrapper must not consume its target.
+  parameters: OrchestratorMcpThreadSearchInput,
+  success: OrchestratorMcpThreadSearchResult,
+  dependencies: [...commandTool.dependencies, ThreadSearchMcpService.ThreadSearchMcpService],
 })
   .annotate(Tool.Readonly, true)
   .annotate(Tool.Destructive, false);

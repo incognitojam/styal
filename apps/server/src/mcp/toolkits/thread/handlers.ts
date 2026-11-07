@@ -16,11 +16,10 @@ import {
   assertTargetWithinLimits,
   dispatchFailure,
   newCommandId,
-  readCaller,
   readThread,
   unavailable,
 } from "../../threadAccess.ts";
-import * as ThreadSearch from "../../../orchestration-v2/ThreadSearch.ts";
+import * as ThreadSearchMcpService from "../../ThreadSearchMcpService.ts";
 import * as ScheduledTasks from "../../../scheduledTasks/ScheduledTaskService.ts";
 import { queuedRunsInDeliveryOrder } from "../../../orchestration-v2/QueuedRunOrder.ts";
 import { ThreadToolkit } from "./tools.ts";
@@ -139,20 +138,9 @@ export const declarations = {
     { auto: "allowed", autoUsage: "scheduled_run" },
   ),
   t3_thread_search: McpToolAccess.reads((input) =>
-    Effect.gen(function* () {
-      const { caller } = yield* readCaller();
-      const scope = yield* McpInvocationContext.McpInvocationContext;
-      const threadSearch = yield* ThreadSearch.ThreadSearch;
-      const { matches } = yield* threadSearch
-        .searchThreads({ ...input, projectId: input.projectId ?? caller?.projectId })
-        .pipe(Effect.mapError(unavailable));
-      return {
-        matches: matches.map((match) => ({
-          ...match,
-          link: McpInvocationContext.threadLinkFor(scope, match.threadId),
-        })),
-      };
-    }),
+    ThreadSearchMcpService.ThreadSearchMcpService.pipe(
+      Effect.flatMap((service) => service.search(input)),
+    ),
   ),
   t3_thread_transfer: McpToolAccess.either(
     (input) => input.action === "status",
