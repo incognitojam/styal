@@ -146,6 +146,12 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     return typeof result === "string" ? result : null;
   },
   getSystemActive: () => ipcRenderer.invoke(IpcChannels.GET_SYSTEM_ACTIVE_CHANNEL),
+  getPreferredSystemLanguages: () => {
+    const result: unknown = ipcRenderer.sendSync(
+      IpcChannels.GET_PREFERRED_SYSTEM_LANGUAGES_CHANNEL,
+    );
+    return Array.isArray(result) ? result.filter((tag) => typeof tag === "string") : [];
+  },
   getLocalEnvironmentBootstraps: () => {
     const result = ipcRenderer.sendSync(IpcChannels.GET_LOCAL_ENVIRONMENT_BOOTSTRAPS_CHANNEL);
     if (!Array.isArray(result)) {

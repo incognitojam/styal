@@ -1211,6 +1211,8 @@ export interface DesktopBridge {
    * only sees input aimed at its own window.
    */
   getSystemActive?: () => Promise<boolean>;
+  /** The OS's preferred languages, most preferred first; `navigator.languages` is pinned like the locale. */
+  getPreferredSystemLanguages: () => readonly string[];
   getLocalEnvironmentBootstraps: () => readonly DesktopEnvironmentBootstrap[];
   getLocalEnvironmentEnabled: () => boolean;
   setLocalEnvironmentEnabled: (enabled: boolean) => Promise<void>;
