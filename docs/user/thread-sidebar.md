@@ -178,6 +178,10 @@ it asks which project to use. The **new thread in current project** shortcut use
 open thread's project, or the first selected project when no thread is open. Choose
 **All projects** to clear the filter.
 
+With one project selected on web and desktop, its name appears above search instead of
+on every thread. Right-click the named filter for project actions. Selecting several
+projects or **All projects** restores the thread labels and grouped headers.
+
 ## Group threads by project
 
 On web and desktop, turn on **Settings → General → Sidebar → Group threads by

@@ -1,7 +1,6 @@
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Vite config runs before any Effect runtime.
 import * as NodeFSP from "node:fs/promises";
 import * as NodeZlib from "node:zlib";
-// @effect-diagnostics-next-line nodeBuiltinImport:off -- The Vite config runs outside Effect.
 import * as NodeCrypto from "node:crypto";
 
 import react from "@vitejs/plugin-react";

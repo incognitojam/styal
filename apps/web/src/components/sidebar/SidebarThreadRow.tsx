@@ -596,8 +596,7 @@ type SidebarThreadRowProps = {
   // "folder" is a one-line row inside a boring sidebar project folder;
   // "folder-multiline" adds the card's branch and PR line under it.
   variant: "card" | "slim" | "folder" | "folder-multiline";
-  // Cards under a project header: the header names the project, so the
-  // title moves up to the status line.
+  // A header or the single-project filter already identifies the project.
   grouped: boolean;
   // Grouped cards whose project has no branched threads (typically a folder
   // without git): the branch line would be empty, so the row is one line.
@@ -1301,7 +1300,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
             {/* `contents` keeps one-line rows a single flex row. */}
             <div className={multiline ? "flex h-6 min-w-0 items-center gap-2.5" : "contents"}>
               {accessibleTitle}
-              {inFolder ? null : (
+              {inFolder || props.grouped ? null : (
                 <span
                   className={cn(
                     "flex shrink-0 items-center transition-opacity",
