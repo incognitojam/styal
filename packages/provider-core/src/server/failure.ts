@@ -138,6 +138,26 @@ function curatedCauseMessages(cause: unknown): {
             category: categoryMessage(),
           };
         }
+        case "PlatformError": {
+          // Only the structured reason; its command text can include launch arguments.
+          const failed = (cause as Record<string, unknown>).reason as
+            | Record<string, unknown>
+            | undefined;
+          if (
+            failed?._tag === "NotFound" &&
+            failed.module === "ChildProcess" &&
+            failed.method === "spawn"
+          ) {
+            const missing = "provider's command was not found on this machine";
+            const stage =
+              category === undefined ? `The ${missing}` : `${category.summary}: the ${missing}`;
+            return {
+              known: `${stage}. Install it or set its binary path in the provider's settings, then retry the turn.`,
+              category: categoryMessage(),
+            };
+          }
+          break;
+        }
         case "ContextHandoffDeliveryUncertainError":
           return {
             known:
