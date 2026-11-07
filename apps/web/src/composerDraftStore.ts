@@ -4772,7 +4772,44 @@ function composerContentSignature(draft: ComposerThreadDraftState): string {
     draft.issueContexts,
     draft.previewAnnotations,
     draft.reviewComments,
+    draft.threadContexts,
+    draft.environmentContexts,
   ]);
+}
+
+/** A lost acknowledgement can restore a draft whose message already reached the server. */
+export function subscribeUnconfirmedComposerSend(input: {
+  registry: AtomRegistry.AtomRegistry;
+  target: ScopedThreadRef;
+  messageId: string;
+  messagesAtom: Atom.Atom<ReadonlyArray<{ readonly id: string }>>;
+}): () => void {
+  const store = useComposerDraftStore;
+  const restored = store.getState().getComposerDraft(input.target);
+  if (!restored) return () => {};
+  const signature = composerContentSignature(restored);
+  const unchanged = () => {
+    const draft = store.getState().getComposerDraft(input.target);
+    return draft !== undefined && draft !== null && composerContentSignature(draft) === signature;
+  };
+  const unsubscribeDraft = store.subscribe(() => {
+    if (!unchanged()) unsubscribe();
+  });
+  const confirm = (messages: ReadonlyArray<{ readonly id: string }>) => {
+    if (!messages.some((message) => message.id === input.messageId)) return;
+    unsubscribe();
+    if (unchanged()) {
+      revokeDraftThreadPreviewUrls(restored);
+      store.getState().clearComposerContent(input.target);
+    }
+  };
+  const unsubscribeMessages = input.registry.subscribe(input.messagesAtom, confirm);
+  function unsubscribe() {
+    unsubscribeDraft();
+    unsubscribeMessages();
+  }
+  confirm(input.registry.get(input.messagesAtom));
+  return unsubscribe;
 }
 
 export function rememberUnconfirmedDraftSend(draftId: DraftId): void {
