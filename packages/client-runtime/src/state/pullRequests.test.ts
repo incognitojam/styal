@@ -11,6 +11,7 @@ import {
   type AuthSessionState,
 } from "@t3tools/contracts";
 import { expect, it } from "@effect/vitest";
+import * as Cause from "effect/Cause";
 import * as Data from "effect/Data";
 import * as Deferred from "effect/Deferred";
 import * as Fiber from "effect/Fiber";
@@ -1056,15 +1057,93 @@ it.effect.each(["closed", "draft", "permission", "stack", "method"] as const)(
     ),
 );
 
+it.effect.each([
+  "disconnect",
+  "not-mergeable",
+  "auto-merge",
+  "stack",
+  "partial-stack",
+  "auto-armed",
+  "blocked",
+  "unreadable",
+] as const)("checks the host after a failed merge: %s", (scenario) =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      let writes = 0;
+      const reads: number[] = [];
+      const refusal = new PullRequestOperationError({
+        operation: "runAction",
+        detail: "Required review is missing.",
+      });
+      const client = {
+        [WS_METHODS.pullRequestsRunAction]: () =>
+          Effect.gen(function* () {
+            writes++;
+            return yield* scenario === "disconnect" ? Effect.interrupt : Effect.fail(refusal);
+          }),
+        [WS_METHODS.pullRequestsDetail]: (input: { number: number; allowStale?: boolean }) =>
+          Effect.suspend(() => {
+            reads.push(input.number);
+            expect(input.allowStale).toBe(false);
+            return scenario === "unreadable"
+              ? Effect.fail(refusal)
+              : Effect.succeed({
+                  state:
+                    scenario === "blocked" ||
+                    scenario === "auto-armed" ||
+                    (scenario === "partial-stack" && input.number === 1)
+                      ? "open"
+                      : "merged",
+                  autoMergeEnabled: scenario === "auto-armed",
+                });
+          }),
+      } as unknown as WsRpcProtocolClient;
+      const { atoms, registry } = yield* makeTestRuntime(client);
+      const result = yield* Effect.promise(() =>
+        atoms.runAction.run(registry, {
+          environmentId: TARGET.environmentId,
+          input: {
+            projectId: ProjectId.make("project-1"),
+            repository: "acme/web",
+            number: 2,
+            action:
+              scenario === "auto-merge" || scenario === "auto-armed"
+                ? "enable-auto-merge"
+                : "merge",
+            ...(scenario === "stack" || scenario === "partial-stack"
+              ? {
+                  stackNumber: 3,
+                  expectedStackHeads: [
+                    { number: 1, headSha: "one" },
+                    { number: 2, headSha: "two" },
+                  ],
+                }
+              : {}),
+          },
+        }),
+      );
+      if (result._tag === "Failure") expect(Cause.squash(result.cause)).toBe(refusal);
+      expect(writes).toBe(1);
+      expect(reads).toEqual(scenario === "stack" || scenario === "partial-stack" ? [1, 2] : [2]);
+      expect(result._tag).toBe(
+        scenario === "blocked" || scenario === "unreadable" || scenario === "partial-stack"
+          ? "Failure"
+          : "Success",
+      );
+    }),
+  ),
+);
+
 it.effect("pins a quick merge to the head its fresh read saw", () =>
   Effect.scoped(
     Effect.gen(function* () {
       const merges: Array<{ mergeMethod?: string; expectedHeadSha?: string }> = [];
       let headSha: string | undefined = "fresh-head";
+      let merged = false;
       const client = {
         [WS_METHODS.pullRequestsDetail]: () =>
           Effect.sync(() => ({
-            state: "open",
+            state: merged ? "merged" : "open",
             isDraft: false,
             ...(headSha ? { headSha } : {}),
             capabilities: { actions: ["merge"], stackActions: false },
@@ -1090,6 +1169,8 @@ it.effect("pins a quick merge to the head its fresh read saw", () =>
       yield* Effect.promise(merge);
       headSha = undefined;
       yield* Effect.promise(merge);
+      merged = true;
+      expect((yield* Effect.promise(merge))._tag).toBe("Success");
       expect(
         merges.map(({ mergeMethod, expectedHeadSha }) => ({ mergeMethod, expectedHeadSha })),
       ).toEqual([

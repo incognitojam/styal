@@ -27,6 +27,8 @@ import {
   type PullRequestSummary,
   type VcsStatusResult,
 } from "@t3tools/contracts";
+import * as Cause from "effect/Cause";
+import * as Stream from "effect/Stream";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -48,6 +50,7 @@ import { createPullRequestRouter } from "./pullRequestRouting.ts";
 import * as PullRequestDiffLoader from "./pullRequestDiffHttp.ts";
 import type { EnvironmentRegistry } from "../connection/registry.ts";
 import * as EnvironmentSupervisor from "../connection/supervisor.ts";
+import { isRpcClientError } from "../rpc/client.ts";
 
 export {
   type PullRequestDiffLoadError,
@@ -481,6 +484,7 @@ export function createPullRequestEnvironmentAtoms<R, E>(
       const { projectId, host, repository, number } = actionInput;
       const reference = { projectId, host, repository, number, allowStale: false };
       const detail = yield* routedRequest(WS_METHODS.pullRequestsDetail, reference);
+      if (detail.state === "merged") return;
       if (
         detail.state !== "open" ||
         detail.isDraft ||
@@ -516,7 +520,72 @@ export function createPullRequestEnvironmentAtoms<R, E>(
         ...(detail.headSha ? { expectedHeadSha: detail.headSha } : {}),
       };
     }
-    return yield* routedRequest(WS_METHODS.pullRequestsRunAction, preparedInput);
+    const supervisor = yield* EnvironmentSupervisor.EnvironmentSupervisor;
+    const session = yield* SubscriptionRef.get(supervisor.session);
+    return yield* routedRequest(WS_METHODS.pullRequestsRunAction, preparedInput).pipe(
+      Effect.catchCause((cause) => {
+        if (input.action !== "merge" && input.action !== "enable-auto-merge") {
+          return Effect.failCause(cause);
+        }
+        const reconcile = Effect.gen(function* () {
+          const numbers =
+            input.stackNumber === undefined
+              ? [input.number]
+              : [
+                  ...new Set([
+                    ...(input.expectedStackHeads ?? []).map((head) => head.number),
+                    input.number,
+                  ]),
+                ];
+          // Stack success requires every requested layer, not just the selected PR.
+          if (input.stackNumber !== undefined && !input.expectedStackHeads?.length) return false;
+          const states = yield* Effect.forEach(numbers, (number) =>
+            routedRequest(WS_METHODS.pullRequestsDetail, {
+              projectId: input.projectId,
+              host: input.host,
+              repository: input.repository,
+              number,
+              allowStale: false,
+            }),
+          );
+          return (
+            states.every((detail) => detail.state === "merged") ||
+            (input.action === "enable-auto-merge" &&
+              states.every((detail) => detail.autoMergeEnabled === true))
+          );
+        });
+        const checked = reconcile.pipe(
+          Effect.catchCause((readCause) => {
+            const failure = Cause.squash(readCause);
+            if (
+              !Cause.hasInterruptsOnly(readCause) &&
+              !isRpcClientError(failure) &&
+              (!(failure instanceof Error) ||
+                !("_tag" in failure) ||
+                failure._tag !== "EnvironmentRpcUnavailableError")
+            ) {
+              return Effect.succeed(false);
+            }
+            return SubscriptionRef.changes(supervisor.session).pipe(
+              Stream.filter(
+                (next) =>
+                  Option.isSome(next) && (Option.isNone(session) || next.value !== session.value),
+              ),
+              Stream.take(1),
+              Stream.runDrain,
+              Effect.andThen(reconcile),
+            );
+          }),
+          Effect.timeoutOption("10 seconds"),
+          Effect.catchCause(() => Effect.succeedNone),
+        );
+        return checked.pipe(
+          Effect.flatMap((merged) =>
+            Option.isSome(merged) && merged.value ? Effect.void : Effect.failCause(cause),
+          ),
+        );
+      }),
+    );
   });
 
   return {
@@ -655,6 +724,7 @@ export function createPullRequestEnvironmentAtoms<R, E>(
       execute: runAction,
       onSuccess: ({ environmentId, input }, registry) =>
         Effect.sync(() => {
+          registry.refresh(detail({ environmentId, input }));
           registry.refresh(preview({ environmentId, input }));
           registry.refresh(previewCard({ environmentId, input }));
         }),
