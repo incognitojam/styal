@@ -147,7 +147,8 @@ function rejectedBeforeDispatch(error: unknown): boolean {
     typeof error === "object" &&
     error !== null &&
     "_tag" in error &&
-    (error._tag === "EnvironmentRpcUnavailableError" ||
+    ((error._tag === "EnvironmentRpcUnavailableError" &&
+      !("outcomeUnknown" in error && error.outcomeUnknown === true)) ||
       error._tag === "EnvironmentNotRegisteredError" ||
       (error._tag === "PullRequestOperationError" &&
         "operation" in error &&

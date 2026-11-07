@@ -16,6 +16,7 @@ import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import { RpcClientError } from "effect/rpc";
+import * as Socket from "effect/socket/Socket";
 
 import {
   AVAILABLE_CONNECTION_STATE,
@@ -26,7 +27,7 @@ import {
 import * as EnvironmentSupervisor from "../connection/supervisor.ts";
 import * as RpcSession from "../rpc/session.ts";
 import type { WsRpcProtocolClient } from "../rpc/protocol.ts";
-import { runStream, subscribe, subscribeDynamicWithSession } from "./client.ts";
+import { request, runStream, subscribe, subscribeDynamicWithSession } from "./client.ts";
 
 const TARGET = new PrimaryConnectionTarget({
   environmentId: EnvironmentId.make("environment-1"),
@@ -80,6 +81,49 @@ const makeHarness = Effect.fn("TestEnvironmentRpc.makeHarness")(function* () {
 });
 
 describe("environment RPC", () => {
+  it.effect.each([
+    { kind: "unary", closed: false },
+    { kind: "stream", closed: false },
+    { kind: "unary", closed: true },
+    { kind: "stream", closed: true },
+  ] as const)(
+    "reports a failed $kind RPC (socket close: $closed) with an unknown result",
+    ({ kind, closed }) =>
+      Effect.gen(function* () {
+        const failure = closed
+          ? Effect.fail(
+              new RpcClientError.RpcClientError({
+                reason: new Socket.SocketCloseError({ code: 1006 }),
+              }),
+            )
+          : Effect.interrupt;
+        const client = {
+          [WS_METHODS.serverGetConfig]: () => failure,
+          [WS_METHODS.cloudInstallRelayClient]: () => Stream.fromEffect(failure),
+        } as unknown as WsRpcProtocolClient;
+        const { activeSession, supervisor } = yield* makeHarness();
+        yield* SubscriptionRef.set(activeSession, Option.some(session(client)));
+        const operation: Effect.Effect<
+          Exit.Exit<void, unknown>,
+          never,
+          EnvironmentSupervisor.EnvironmentSupervisor
+        > = kind === "unary"
+          ? request(WS_METHODS.serverGetConfig, {}).pipe(Effect.asVoid, Effect.exit)
+          : runStream(WS_METHODS.cloudInstallRelayClient, {}).pipe(Stream.runDrain, Effect.exit);
+        const exit = yield* operation.pipe(
+          Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
+        );
+        expect(Exit.isFailure(exit)).toBe(true);
+        if (Exit.isFailure(exit)) {
+          expect(Cause.squash(exit.cause)).toMatchObject({
+            _tag: "EnvironmentRpcUnavailableError",
+            message:
+              "The connection to Test environment was lost. The result of the request is unknown. Refresh to check before trying again.",
+          });
+        }
+      }),
+  );
+
   it.effect("binds finite streaming commands to one active session", () =>
     Effect.gen(function* () {
       const firstEvents = yield* Queue.unbounded<RelayClientInstallProgressEvent>();

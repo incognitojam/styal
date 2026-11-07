@@ -16,6 +16,7 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import { RpcClientError } from "effect/rpc";
+import * as Socket from "effect/socket/Socket";
 
 import * as EnvironmentSupervisor from "../connection/supervisor.ts";
 import type { WsRpcProtocolClient } from "../rpc/protocol.ts";
@@ -26,8 +27,29 @@ export class EnvironmentRpcUnavailableError extends Schema.TaggedError<Environme
   {
     environmentId: Schema.String,
     message: Schema.String,
+    outcomeUnknown: Schema.optional(Schema.Boolean),
   },
 ) {}
+
+const isSocketErrorReason = Schema.is(Socket.SocketErrorReason);
+
+const rpcFailure = <E>(
+  cause: Cause.Cause<E>,
+  environmentId: string,
+  label: string,
+): Cause.Cause<E | EnvironmentRpcUnavailableError> => {
+  const failure = Cause.squash(cause);
+  return Cause.hasInterruptsOnly(cause) ||
+    (isRpcClientError(failure) && isSocketErrorReason(failure.reason))
+    ? Cause.fail(
+        new EnvironmentRpcUnavailableError({
+          environmentId,
+          outcomeUnknown: true,
+          message: `The connection to ${label} was lost. The result of the request is unknown. Refresh to check before trying again.`,
+        }),
+      )
+    : cause;
+};
 
 export interface EnvironmentRpcRequestObservation {
   readonly environmentId: string;
@@ -206,7 +228,12 @@ export const requestGuarded = Effect.fn("EnvironmentRpc.request")(function* <
     environmentLabel: supervisor.target.label,
     method: tag,
   });
-  return yield* method(input).pipe(Effect.ensuring(completeObservation));
+  return yield* method(input).pipe(
+    Effect.catchCause((cause) =>
+      Effect.failCause(rpcFailure(cause, supervisor.target.environmentId, supervisor.target.label)),
+    ),
+    Effect.ensuring(completeObservation),
+  );
 });
 
 export function runStreamGuarded<TTag extends EnvironmentStreamCommandRpcTag>(
@@ -220,15 +247,24 @@ export function runStreamGuarded<TTag extends EnvironmentStreamCommandRpcTag>(
   EnvironmentSupervisor.EnvironmentSupervisor
 > {
   return Stream.unwrap(
-    authorizeRequest(tag, input).pipe(
-      Effect.andThen(currentSession()),
-      Effect.map((session) => {
-        const method = session.client[tag] as (
-          input: EnvironmentRpcInput<TTag>,
-        ) => Stream.Stream<EnvironmentRpcStreamValue<TTag>, EnvironmentRpcStreamFailure<TTag>>;
-        return method(input);
-      }),
-    ),
+    Effect.gen(function* () {
+      const supervisor = yield* EnvironmentSupervisor.EnvironmentSupervisor;
+      return yield* authorizeRequest(tag, input).pipe(
+        Effect.andThen(currentSession()),
+        Effect.map((session) => {
+          const method = session.client[tag] as (
+            input: EnvironmentRpcInput<TTag>,
+          ) => Stream.Stream<EnvironmentRpcStreamValue<TTag>, EnvironmentRpcStreamFailure<TTag>>;
+          return method(input).pipe(
+            Stream.catchCause((cause) =>
+              Stream.failCause(
+                rpcFailure(cause, supervisor.target.environmentId, supervisor.target.label),
+              ),
+            ),
+          );
+        }),
+      );
+    }),
   ).pipe(
     Stream.withSpan("EnvironmentRpc.runStream", {
       attributes: { "rpc.method": tag },

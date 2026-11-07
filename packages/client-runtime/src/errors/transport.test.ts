@@ -22,6 +22,11 @@ describe("isTransportConnectionErrorMessage", () => {
     }
     expect(
       isTransportConnectionErrorMessage(
+        "The connection to Demo was lost. The result of the request is unknown. Refresh to check before trying again.",
+      ),
+    ).toBe(true);
+    expect(
+      isTransportConnectionErrorMessage(
         "Your ChatGPT connection expired or was disconnected. Sign in again.",
       ),
     ).toBe(false);

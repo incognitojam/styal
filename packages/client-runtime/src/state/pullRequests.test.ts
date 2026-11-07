@@ -1,5 +1,5 @@
 import { createCommandPermissions } from "./commandPermissions.ts";
-import { RpcPermissionGuard } from "../rpc/client.ts";
+import { EnvironmentRpcUnavailableError, RpcPermissionGuard } from "../rpc/client.ts";
 import { vi } from "vite-plus/test";
 import {
   EnvironmentId,
@@ -60,6 +60,7 @@ for (const scenario of [
   "prefers the local environment with the same github account",
   "falls back before mutation when the local account differs",
   "never retries an ambiguous mutation failure",
+  "never retries an interrupted mutation",
   "returns a fast local source read without checking alternate identities",
   "keeps single-environment requests free of identity lookups",
   "keeps a local origin ahead of another local environment",
@@ -85,7 +86,8 @@ for (const scenario of [
         const mismatch =
           scenario === "falls back before mutation when the local account differs" ||
           switchedAccount;
-        const ambiguous = scenario === "never retries an ambiguous mutation failure";
+        const interrupted = scenario === "never retries an interrupted mutation";
+        const ambiguous = interrupted || scenario === "never retries an ambiguous mutation failure";
         const reading =
           scenario === "returns a fast local source read without checking alternate identities";
         const single = scenario === "keeps single-environment requests free of identity lookups";
@@ -143,6 +145,7 @@ for (const scenario of [
                   (input as { expectedAccountId?: string }).expectedAccountId === "123"
                 )
                   return yield* failure;
+                if (local && interrupted) return yield* Effect.interrupt;
                 if (local && ambiguous) return yield* failure;
               }),
             [WS_METHODS.pullRequestsSummary]: (input: { allowStale?: boolean }) =>
@@ -212,7 +215,17 @@ for (const scenario of [
           expect(calls.filter((call) => call.endsWith(":mutation"))).toEqual(["origin:mutation"]);
           expect(inputs).toEqual([{ ...input, expectedAccountId: "123" }]);
         } else if (ambiguous) {
-          expect(result).toMatchObject({ _tag: "Failure", failure });
+          expect(result).toMatchObject({
+            _tag: "Failure",
+            failure: interrupted
+              ? new EnvironmentRpcUnavailableError({
+                  environmentId: "local-environment",
+                  outcomeUnknown: true,
+                  message:
+                    "The connection to Local environment was lost. The result of the request is unknown. Refresh to check before trying again.",
+                })
+              : failure,
+          });
           expect(calls.filter((call) => call.endsWith(":mutation"))).toEqual(["local:mutation"]);
         } else {
           expect(result._tag).toBe("Success");
