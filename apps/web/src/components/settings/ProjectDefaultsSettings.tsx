@@ -1,3 +1,4 @@
+import { AutoPullStatus } from "./AutoPullStatus";
 import {
   DEFAULT_SERVER_SETTINGS,
   type ModelSelection,
@@ -447,7 +448,33 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
                 onCheckedChange={(enabled) => updateSettings({ defaultAutoPull: enabled })}
               />
             }
-          />
+          >
+            {isProjectScope ? (
+              scope.members.map((member) => {
+                const memberTarget = targets.find(
+                  (candidate) =>
+                    candidate.environmentId === member.environmentId &&
+                    candidate.projectId === member.id,
+                );
+                return memberTarget ? (
+                  <AutoPullStatus
+                    key={member.physicalProjectKey}
+                    environmentId={member.environmentId}
+                    cwd={member.workspaceRoot}
+                    label={
+                      scope.members.length > 1
+                        ? `${memberTarget.label} · ${member.workspaceRoot}`
+                        : undefined
+                    }
+                  />
+                ) : null;
+              })
+            ) : (
+              <p className="pb-4 text-xs text-muted-foreground">
+                Select a project to see its latest automatic pull check.
+              </p>
+            )}
+          </SettingsRow>
           <SettingsRow
             serverScoped
             settingKeys={["removeAgentCreditsOnMerge"]}

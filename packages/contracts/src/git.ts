@@ -217,7 +217,21 @@ const VcsStatusChangeRequest = Schema.Struct({
   updatedAt: Schema.optional(Schema.NullOr(Schema.String)),
 });
 
+export const AutoPullOutcome = Schema.Struct({
+  checkedAt: Schema.String,
+  outcome: Schema.Literals(["pulled", "already up to date", "blocked", "failed"]),
+  detail: Schema.optional(Schema.String),
+});
+export type AutoPullOutcome = typeof AutoPullOutcome.Type;
+
 const VcsStatusLocalShape = {
+  autoPull: Schema.optional(
+    Schema.Struct({
+      enabled: Schema.Boolean,
+      source: Schema.Literals(["global default", "project override"]),
+      lastRun: Schema.NullOr(AutoPullOutcome),
+    }),
+  ),
   isRepo: Schema.Boolean,
   sourceControlProvider: Schema.optional(SourceControlProviderInfo),
   /**

@@ -1,3 +1,4 @@
+import * as AutoPullStatus from "../vcs/AutoPullStatus.ts";
 import * as BackgroundPolicy from "../background/BackgroundPolicy.ts";
 import * as VcsStatusBroadcaster from "../vcs/VcsStatusBroadcaster.ts";
 import { SourceControlProviderKind } from "@t3tools/contracts";
@@ -784,6 +785,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         const { manager } = yield* makeManager({ providerScenario });
         const context = yield* Layer.build(
           VcsStatusBroadcaster.layer.pipe(
+            Layer.provide(AutoPullStatus.layer),
             Layer.provide(
               GitWorkflowService.layer.pipe(
                 Layer.provide(Layer.succeed(GitManager.GitManager, manager)),

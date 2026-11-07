@@ -369,6 +369,7 @@ function toRemoteStatusPart(status: VcsStatusResult): VcsStatusRemoteResult {
 
 function toLocalStatusPart(status: VcsStatusResult): VcsStatusLocalResult {
   return {
+    ...(status.autoPull ? { autoPull: status.autoPull } : {}),
     isRepo: status.isRepo,
     ...(status.sourceControlProvider
       ? { sourceControlProvider: status.sourceControlProvider }

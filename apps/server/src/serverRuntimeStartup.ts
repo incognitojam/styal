@@ -1,3 +1,4 @@
+import * as AutoPullStatus from "./vcs/AutoPullStatus.ts";
 import {
   CommandId,
   DEFAULT_CLAUDE_MODEL,
@@ -210,6 +211,7 @@ export const autoPullProjects = Effect.fn("autoPullProjects")(function* (
   settings = DEFAULT_SERVER_SETTINGS,
 ) {
   const git = yield* GitVcsDriver.GitVcsDriver;
+  const outcomes = yield* AutoPullStatus.AutoPullStatus;
   const workspaceRoots = [
     ...new Set(
       projects
@@ -230,6 +232,19 @@ export const autoPullProjects = Effect.fn("autoPullProjects")(function* (
           status.hasWorkingTreeChanges ||
           status.aheadCount > 0
         ) {
+          yield* outcomes.record(
+            cwd,
+            "blocked",
+            !status.isRepo
+              ? "Not a repository"
+              : !status.isDefaultBranch
+                ? "Not on the default branch"
+                : !status.hasUpstream
+                  ? "No upstream"
+                  : status.hasWorkingTreeChanges
+                    ? "Local changes"
+                    : "Local commits",
+          );
           yield* Effect.logDebug("Skipped automatic project pull", {
             cwd,
             reason: !status.isRepo
@@ -245,9 +260,13 @@ export const autoPullProjects = Effect.fn("autoPullProjects")(function* (
           return;
         }
 
-        if (status.behindCount <= 0) return;
+        if (status.behindCount <= 0) {
+          yield* outcomes.record(cwd, "already up to date");
+          return;
+        }
 
         const result = yield* git.pullCurrentBranch(cwd);
+        yield* outcomes.record(cwd, result.status === "pulled" ? "pulled" : "already up to date");
         yield* Effect.logDebug("Automatic project pull completed", {
           cwd,
           status: result.status,
@@ -255,10 +274,14 @@ export const autoPullProjects = Effect.fn("autoPullProjects")(function* (
         });
       }).pipe(
         Effect.catch((cause) =>
-          Effect.logWarning("Automatic project pull failed", {
-            cwd,
-            cause,
-          }),
+          outcomes.record(cwd, "failed", String(cause)).pipe(
+            Effect.andThen(
+              Effect.logWarning("Automatic project pull failed", {
+                cwd,
+                cause,
+              }),
+            ),
+          ),
         ),
       ),
     { concurrency: 4, discard: true },

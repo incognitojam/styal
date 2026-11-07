@@ -1,3 +1,4 @@
+import { AutoPullStatus } from "./components/AutoPullStatus";
 import { useNavigation } from "@react-navigation/native";
 import { SettingsRow } from "./components/SettingsRow";
 import { AuthSettingsWriteScope } from "@t3tools/contracts";
@@ -453,6 +454,27 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
                       disabled={disabledFor("defaultAutoPull")}
                       onValueChange={(value) => write({ defaultAutoPull: value })}
                     />
+                    {projectSelected
+                      ? selectedProject?.members.map(({ project }) => {
+                          const target = targets.find(
+                            (candidate) =>
+                              candidate.projectId === project.id &&
+                              candidate.environment.environmentId === project.environmentId,
+                          );
+                          return target ? (
+                            <AutoPullStatus
+                              key={`${project.environmentId}:${project.id}`}
+                              environmentId={project.environmentId}
+                              cwd={project.workspaceRoot}
+                              label={
+                                targets.length > 1
+                                  ? `${target.environment.label} · ${project.workspaceRoot}`
+                                  : undefined
+                              }
+                            />
+                          ) : null;
+                        })
+                      : null}
                   </SettingsSection>
                 </>
               ) : null}

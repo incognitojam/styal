@@ -1,3 +1,4 @@
+import * as AutoPullStatus from "./AutoPullStatus.ts";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
@@ -165,6 +166,7 @@ export const layerAutomaticFetchInterval = Layer.effect(
 
 export class VcsAutoPullPolicy extends Context.Reference<{
   readonly isEnabled: (cwd: string) => Effect.Effect<boolean, never>;
+  readonly source?: (cwd: string) => Effect.Effect<"global default" | "project override">;
 }>("t3/vcs/VcsAutoPullPolicy", {
   defaultValue: () => ({ isEnabled: () => Effect.succeed(false) }),
 }) {}
@@ -175,6 +177,18 @@ export const layerAutoPullPolicy = Layer.effect(
     const projects = yield* ProjectStore.ProjectStoreV2;
     const serverSettings = yield* ServerSettings.ServerSettingsService;
     return {
+      source: Effect.fn("VcsAutoPullPolicy.source")(
+        function* (cwd: string) {
+          const project = yield* projects.findActiveByWorkspaceRoot(cwd);
+          if (project._tag === "None") return "global default" as const;
+          const settings = yield* serverSettings.getSettings;
+          return resolveProjectSettings(settings, project.value.projectId).sources
+            .defaultAutoPull === "project"
+            ? ("project override" as const)
+            : ("global default" as const);
+        },
+        Effect.orElseSucceed(() => "global default" as const),
+      ),
       isEnabled: Effect.fn("VcsAutoPullPolicy.isEnabled")(
         function* (cwd: string) {
           const project = yield* projects.findActiveByWorkspaceRoot(cwd);
@@ -236,6 +250,7 @@ const normalizeCwd = (cwd: string) =>
 
 /** @public */
 export const make = Effect.gen(function* () {
+  const outcomes = yield* AutoPullStatus.AutoPullStatus;
   const automaticFetchInterval = yield* VcsAutomaticFetchInterval;
   const autoPullPolicy = yield* VcsAutoPullPolicy;
   const workflow = yield* GitWorkflowService.GitWorkflowService;
@@ -265,6 +280,14 @@ export const make = Effect.gen(function* () {
 
   const updateCachedLocalStatus = Effect.fn("VcsStatusBroadcaster.updateCachedLocalStatus")(
     function* (cwd: string, local: VcsStatusLocalResult, options?: { publish?: boolean }) {
+      local = {
+        ...local,
+        autoPull: {
+          enabled: yield* autoPullPolicy.isEnabled(cwd),
+          source: autoPullPolicy.source ? yield* autoPullPolicy.source(cwd) : "global default",
+          lastRun: yield* outcomes.get(cwd),
+        },
+      };
       const nextLocal = { fingerprint: fingerprintStatusPart(local), value: local };
       const [localChanged, remoteCleared] = yield* Ref.modify(cacheRef, (cache) => {
         const previous = cache.get(cwd) ?? { local: null, remote: null };
@@ -411,6 +434,18 @@ export const make = Effect.gen(function* () {
       : null;
   });
 
+  const recordAutoPull = Effect.fn("VcsStatusBroadcaster.recordAutoPull")(function* (
+    cwd: string,
+    outcome: Parameters<AutoPullStatus.AutoPullStatus["Service"]["record"]>[1],
+    detail?: string,
+  ) {
+    yield* outcomes.record(cwd, outcome, detail);
+    const cached = yield* getCachedStatus(cwd);
+    if (cached?.local) {
+      yield* updateCachedLocalStatus(cwd, cached.local.value, { publish: true });
+    }
+  });
+
   const maybeAutoPull = Effect.fn("VcsStatusBroadcaster.maybeAutoPull")(function* (
     cwd: string,
     remoteRead: CachedRemoteStatus | null,
@@ -422,6 +457,17 @@ export const make = Effect.gen(function* () {
       const autoPullEnabled = (yield* Effect.forEach(policyCwds, autoPullPolicy.isEnabled, {
         concurrency: "unbounded",
       })).some(Boolean);
+      if (autoPullEnabled) {
+        const detail =
+          remote === null || !remote.hasUpstream
+            ? "No upstream"
+            : remote.aheadCount > 0
+              ? "Local commits"
+              : null;
+        if (detail) yield* recordAutoPull(cwd, "blocked", detail);
+        else if (remote && remote.behindCount <= 0)
+          yield* recordAutoPull(cwd, "already up to date");
+      }
       if (
         remote === null ||
         !remote.hasUpstream ||
@@ -439,11 +485,24 @@ export const make = Effect.gen(function* () {
         !local.isDefaultRef ||
         local.hasWorkingTreeChanges ||
         local.refName !== remoteRead?.branch
-      )
+      ) {
+        yield* recordAutoPull(
+          cwd,
+          "blocked",
+          !local.isRepo
+            ? "Not a repository"
+            : !local.isDefaultRef
+              ? "Not on the default branch"
+              : local.hasWorkingTreeChanges
+                ? "Local changes"
+                : "Branch changed during check",
+        );
         return null;
+      }
 
       pullAttempted = true;
-      yield* workflow.pullCurrentBranch(cwd);
+      const result = yield* workflow.pullCurrentBranch(cwd);
+      yield* recordAutoPull(cwd, result.status === "pulled" ? "pulled" : "already up to date");
       yield* workflow.invalidateStatus(cwd);
       yield* refreshLocalStatusCore(cwd);
       const refreshedRemote = yield* readRemoteStatus(cwd, { refreshUpstream: false });
@@ -452,6 +511,7 @@ export const make = Effect.gen(function* () {
     }).pipe(
       Effect.catch((error) =>
         Effect.gen(function* () {
+          yield* recordAutoPull(cwd, "failed", String(error));
           yield* Effect.logWarning("Automatic project pull failed", {
             cwdLength: cwd.length,
             errorTag: error._tag,
