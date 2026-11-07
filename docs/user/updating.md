@@ -253,9 +253,9 @@ status and refresh it again.
 
 <a id="styal-managed-updates"></a>
 
-### Automatically install styal-tested updates
+### Automatically install styal-tested provider updates
 
-With **Automatically install styal-tested updates** on, styal takes over automatic updates for supported providers. It
+With **Automatically install styal-tested provider updates** on, styal takes over automatic updates for supported providers. It
 installs only versions it has tested: an automated check runs real agent turns
 against each new Codex, Claude Code, and OpenCode release on the latest nightly
 and an older nightly published within the last seven days. It installs in the background once none of that

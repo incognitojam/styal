@@ -112,7 +112,7 @@ describe("searchSettings", () => {
 
   it("finds managed provider updates by their new and old names", () => {
     expect(searchableSetting("provider-auto-updates").title).toBe(
-      "Automatically install styal-tested updates",
+      "Automatically install styal-tested provider updates",
     );
     for (const query of [
       "styal-tested updates",

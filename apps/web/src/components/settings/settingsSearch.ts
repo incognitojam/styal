@@ -699,7 +699,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "provider-auto-updates",
-    title: "Automatically install styal-tested updates",
+    title: "Automatically install styal-tested provider updates",
     to: "/settings/maintenance",
     searchTerms: [
       "styal managed updates automatic auto provider install cli updates background tested version idle native self updater codex claude opencode",

@@ -584,7 +584,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       ? ["Provider update checks"]
       : []),
     ...(settings.autoUpdateProviders !== DEFAULT_UNIFIED_SETTINGS.autoUpdateProviders
-      ? ["Automatically install styal-tested updates"]
+      ? ["Automatically install styal-tested provider updates"]
       : []),
     ...(settings.continueThreadsAfterServerUpdate !==
     DEFAULT_UNIFIED_SETTINGS.continueThreadsAfterServerUpdate
@@ -2214,7 +2214,7 @@ export function MaintenanceSettingsPanel() {
           resetAction={
             settings.autoUpdateProviders !== DEFAULT_UNIFIED_SETTINGS.autoUpdateProviders ? (
               <SettingResetButton
-                label="Automatically install styal-tested updates"
+                label="Automatically install styal-tested provider updates"
                 onClick={() =>
                   updateSettings({
                     autoUpdateProviders: DEFAULT_UNIFIED_SETTINGS.autoUpdateProviders,
@@ -2231,7 +2231,7 @@ export function MaintenanceSettingsPanel() {
               onCheckedChange={(checked) =>
                 updateSettings({ autoUpdateProviders: Boolean(checked) })
               }
-              aria-label="Automatically install styal-tested updates"
+              aria-label="Automatically install styal-tested provider updates"
             />
           }
         />

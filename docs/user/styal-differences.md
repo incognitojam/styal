@@ -434,7 +434,7 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 
 ## Provider updates
 
-- **Automatically install styal-tested updates.** Each environment manages its provider CLI versions: it installs new
+- **Automatically install styal-tested provider updates.** Each environment manages its provider CLI versions: it installs new
   Codex, Claude Code, and OpenCode releases in the background only after an automated check has run
   real agent turns against them, once none of that provider's own threads are running. Checks
   include an older nightly, so provider updates can reach environments that have not installed the
@@ -449,7 +449,7 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   [revision 25bf84a](https://github.com/pingdotgg/t3code/tree/25bf84ab07f53f141c20239c63e383823a9d5ea0);
   automatic installs exist there only as an open pull request
   ([#17585](https://github.com/pingdotgg/t3code/pull/17585)) without a tested-version gate.
-  [Automatically install styal-tested updates](./updating.md#automatically-install-styal-tested-updates).
+  [Automatically install styal-tested provider updates](./updating.md#automatically-install-styal-tested-provider-updates).
 
 ## Error reports
 
