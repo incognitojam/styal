@@ -173,7 +173,7 @@ export function buildPendingUserInputAnswers(
   draftAnswers: Record<string, PendingUserInputDraftAnswer>,
   preferCustomAnswer = false,
 ): Record<string, PendingUserInputAnswer> | null {
-  const answers: Record<string, PendingUserInputAnswer> = {};
+  const entries: Array<[string, PendingUserInputAnswer]> = [];
 
   for (const question of questions) {
     const answer = resolvePendingUserInputAnswer(
@@ -184,8 +184,8 @@ export function buildPendingUserInputAnswers(
     if (answer === null) {
       return null;
     }
-    answers[question.id] = answer;
+    entries.push([question.id, answer]);
   }
 
-  return answers;
+  return Object.fromEntries(entries);
 }
