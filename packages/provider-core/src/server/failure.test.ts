@@ -13,6 +13,7 @@ import {
 import * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as PlatformError from "effect/PlatformError";
 
 import {
   knownProviderFailureMessage,
@@ -198,6 +199,31 @@ it("uses the innermost category without carrying an outer reason into it", () =>
     }).message,
     "The provider session could not be opened. Check that the provider is installed and signed in, then retry the turn.",
   );
+});
+
+it("says the provider command was not found without showing its arguments", () => {
+  const spawnFailure = (tag: "NotFound" | "PermissionDenied", module = "ChildProcess") => ({
+    _tag: "ProviderSessionOpenError",
+    cause: new ProviderAdapter.ProviderAdapterOpenSessionError({
+      driver: ProviderDriverKind.make("codex"),
+      providerSessionId: ProviderSessionId.make("provider-session:private-id"),
+      cause: PlatformError.systemError({
+        _tag: tag,
+        module,
+        method: "spawn",
+        pathOrDescriptor: "codex app-server -c token=argument-secret",
+      }),
+    }),
+  });
+
+  const message = knownProviderFailureMessage(spawnFailure("NotFound"));
+  assert.equal(
+    message,
+    "The provider session could not be opened: the provider's command was not found on this machine. Install it or set its binary path in the provider's settings, then retry the turn.",
+  );
+  assert.notInclude(message ?? "", "argument-secret");
+  assert.isUndefined(knownProviderFailureMessage(spawnFailure("PermissionDenied")));
+  assert.isUndefined(knownProviderFailureMessage(spawnFailure("NotFound", "FileSystem")));
 });
 
 it("does not expose defect text nested inside a known error category", () => {
