@@ -1,5 +1,6 @@
 import { MAC_PERMISSION_SETTINGS_URLS } from "../permissions/MacPermission.ts";
 import {
+  isLocalEditorFileUrl,
   REMOTE_CAPABLE_EDITOR_IDS,
   remoteSchemeForEditor,
   type SystemSettingsPane,
@@ -14,9 +15,9 @@ import * as Electron from "electron";
 const SAFE_WEB_EXTERNAL_PROTOCOLS = new Set(["http:", "https:"]);
 
 // Remote open-in-editor deep links (`vscode://vscode-remote/ssh-remote+…`,
-// `zed://ssh/<host>/<path>`, `jetbrains://gateway/ssh/environment?h=…`) must
-// reach the OS handler when requested by trusted T3 UI; every other non-web
-// scheme stays blocked.
+// `zed://ssh/<host>/<path>`, `jetbrains://gateway/ssh/environment?h=…`) and
+// local editor file links (`cursor://file/<path>`) must reach the OS handler
+// when requested by trusted T3 UI; every other non-web scheme stays blocked.
 const REMOTE_EDITOR_PROTOCOLS = new Set(
   REMOTE_CAPABLE_EDITOR_IDS.flatMap((id) => {
     const scheme = remoteSchemeForEditor(id);
@@ -62,7 +63,10 @@ export function parseSafeWebExternalUrl(rawUrl: unknown): Option.Option<string> 
 export function parseSafeExternalUrl(rawUrl: unknown): Option.Option<string> {
   return parseUrlWhen(
     rawUrl,
-    (url) => SAFE_WEB_EXTERNAL_PROTOCOLS.has(url.protocol) || isRemoteEditorUrl(url),
+    (url) =>
+      SAFE_WEB_EXTERNAL_PROTOCOLS.has(url.protocol) ||
+      isRemoteEditorUrl(url) ||
+      isLocalEditorFileUrl(url),
   );
 }
 
