@@ -44,6 +44,7 @@ export function makeClaudeMaintenance(paths: ClaudeUpdaterPaths) {
   return makePackageManagedProviderMaintenanceResolver({
     provider: ProviderDriverKind.make("claudeAgent"),
     npmPackageName: "@anthropic-ai/claude-code",
+    mise: { tool: "claude" },
     nativeUpdate: {
       args: ["update"],
       isCommandPath: isClaudeNativeCommandPath,

@@ -101,6 +101,8 @@ export const openCodeUpdateFor = (generation: ProbedOpenCode["generation"]) =>
         : {}),
       requiresCommandPath: true,
     },
+    // mise's `opencode` follows releases into 2.x, so it would upgrade 1.x across that line.
+    mise: { tool: "opencode", upgrade: generation === "v2" },
   });
 
 type OpenCodeRuntimeProbe = Effect.Success<
