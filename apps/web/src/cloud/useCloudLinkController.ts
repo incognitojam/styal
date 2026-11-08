@@ -18,6 +18,8 @@ import * as Schema from "effect/Schema";
 import { useState } from "react";
 
 import { toastManager } from "../components/ui/toast";
+import { stackedThreadToast } from "../components/ui/toastHelpers";
+import { relayFailureReason } from "./relayFailureReason";
 import { relayEnvironmentDiscovery } from "../state/relay";
 import { readEnvironmentScope } from "../state/session";
 import { useAtomCommand } from "../state/use-atom-command";
@@ -55,6 +57,7 @@ function isManagedTunnelActive(
  * desired state. Re-linking happens only when the tunnel mode changes; toggling publish alone is cheap.
  */
 const isManagedRelayRequestFailedError = Schema.is(ManagedRelay.ManagedRelayRequestFailedError);
+const isManagedRelayClientError = Schema.is(ManagedRelay.ManagedRelayClientError);
 
 /** The account's tunnel cap when the relay refused a new tunnel for being at it. */
 function tunnelLimitFromLinkFailure(cause: unknown): number | null {
@@ -88,24 +91,28 @@ export function useCloudLinkController(environmentId: EnvironmentId | null) {
   const [operationError, setOperationError] = useState<string | null>(null);
   const [tunnelLimit, setTunnelLimit] = useState<number | null>(null);
 
-  const reportUpdateFailure = (cause: unknown) => {
+  const reportUpdateFailure = (cause: unknown, reason?: string) => {
     const message = cause instanceof Error ? cause.message : "Could not update styal Link access.";
     const traceId = findErrorTraceId(cause);
     console.error("[t3-connect] Could not update styal Link", { message, traceId, cause });
     setOperationError(traceId ? `${message} Trace ID: ${traceId}` : message);
-    toastManager.add({
-      type: "error",
-      title: "Could not update styal Link",
-      description: message,
-      data: traceId
-        ? {
-            secondaryActionProps: {
-              children: "Copy trace ID",
-              onClick: () => void navigator.clipboard?.writeText(traceId),
-            },
-          }
-        : undefined,
-    });
+    toastManager.add(
+      stackedThreadToast({
+        type: "error",
+        title: "Could not update styal Link",
+        description: reason ?? relayFailureReason(cause) ?? message,
+        ...(traceId
+          ? {
+              actionProps: {
+                children: "Copy trace ID",
+                onClick: () => void navigator.clipboard?.writeText(traceId),
+              },
+              actionVariant: "outline",
+            }
+          : {}),
+        data: { hideCopyButton: true },
+      }),
+    );
   };
 
   const linkData = cloudLinkState.data;
@@ -161,9 +168,19 @@ export function useCloudLinkController(environmentId: EnvironmentId | null) {
       refreshManagedTunnelUsage();
       if (unlinkResult._tag === "Failure") {
         if (!isAtomCommandInterrupted(unlinkResult)) {
-          reportUpdateFailure(squashAtomCommandFailure(unlinkResult));
+          const cause = squashAtomCommandFailure(unlinkResult);
+          // Only the relay delete fails with a relay error, and it runs after the local unlink.
+          const relayKeptLink =
+            isCloudEnvironmentLinkError(cause) && isManagedRelayClientError(cause.cause);
+          reportUpdateFailure(
+            cause,
+            relayKeptLink
+              ? "Disconnected here, but styal Link still lists it. Remove it in Account."
+              : undefined,
+          );
         }
         cloudLinkState.refresh();
+        await refreshRelayEnvironments();
         return false;
       }
     } else {
