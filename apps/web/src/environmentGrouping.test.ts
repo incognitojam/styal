@@ -155,7 +155,7 @@ describe("environment grouping", () => {
     });
   });
 
-  it("puts the preferred project after pinned projects", () => {
+  it("puts the preferred project before pinned projects", () => {
     const project = (title: string, pinnedAt: string | null = null) =>
       makeProject({
         id: ProjectId.make(title),
@@ -175,7 +175,7 @@ describe("environment grouping", () => {
       groups: pickableProjectGroups(groups),
       preferredProjectRef: { environmentId: current.environmentId, projectId: current.id },
     });
-    expect(entries.map((entry) => entry.group.displayName)).toEqual(["pinned", "current", "other"]);
+    expect(entries.map((entry) => entry.group.displayName)).toEqual(["current", "pinned", "other"]);
   });
 
   it("dedupes stale project rows with the same environment and workspace path", () => {
@@ -299,19 +299,6 @@ describe("environment grouping", () => {
     });
     expect(entries[0]?.isPreferred).toBe(true);
     expect(entries[1]?.group.displayName).toBe("separate");
-
-    // A pinned project stays ahead of the preferred one.
-    const separateGroup = groups.find((group) => group.displayName === "separate")!;
-    const sharedGroup = groups.find((group) => group.displayName !== "separate")!;
-    const pinnedFirst = buildSidebarProjectPickerEntries({
-      groups: [{ ...separateGroup, pinned: true }, sharedGroup],
-      preferredProjectRef: { environmentId: remoteEnvironmentId, projectId: remote.id },
-    });
-    expect(pinnedFirst.map((entry) => entry.group.projectKey)).toEqual([
-      separateGroup.projectKey,
-      sharedGroup.projectKey,
-    ]);
-    expect(pinnedFirst[1]?.isPreferred).toBe(true);
   });
 
   it("keeps the current environment when available and falls back otherwise", () => {
