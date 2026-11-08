@@ -13,6 +13,7 @@ import { resolveThreadCurrentPullRequestLink } from "@t3tools/client-runtime/thr
 
 import { threadUsageSummary } from "@t3tools/shared/turnUsage";
 
+import { useDraggable } from "@dnd-kit/core";
 import { useSortable } from "@dnd-kit/sortable";
 
 import { CSS } from "@dnd-kit/utilities";
@@ -1767,9 +1768,17 @@ export const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props
     isActive: props.isRouteActive,
   });
   const threadRef = scopeThreadRef(thread.environmentId, thread.id);
-  const { leaseLiveStatus, rowRef } = useSidebarRowSubscriptionLease(
+  // Results only drag out as chat context; the row keeps its own listbox attributes.
+  const { listeners: dragListeners, setNodeRef: setDragNodeRef } = useDraggable({
+    id: scopedThreadKey(threadRef),
+  });
+  const { leaseLiveStatus, rowRef: leaseRowRef } = useSidebarRowSubscriptionLease(
     props.isHighlighted || props.isRouteActive,
   );
+  const rowRef = (row: HTMLElement | null) => {
+    setDragNodeRef(row);
+    return leaseRowRef(row);
+  };
   const gitCwd = thread.worktreePath ?? props.project?.workspaceRoot ?? null;
   const branchTarget =
     leaseLiveStatus && (thread.branch != null || thread.worktreePath !== null) && gitCwd !== null
@@ -1839,6 +1848,7 @@ export const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props
               aria-current={accessibility.current}
               aria-describedby={`${props.resultId}-pr`}
               aria-label={accessibility.label}
+              {...dragListeners}
               onMouseMove={props.onHighlight}
               onClick={props.onSelect}
               className={cn(
