@@ -69,7 +69,11 @@ async function piRegisteredToolNames(): Promise<string[]> {
     NodeFSP,
     NodePath,
     stripFrontmatter: (text: string) => text,
-    pi: { on: () => undefined, registerTool: (tool: { name: string }) => names.push(tool.name) },
+    pi: {
+      on: () => undefined,
+      registerCommand: () => undefined,
+      registerTool: (tool: { name: string }) => names.push(tool.name),
+    },
     fetch: async (_url: string, options: { body: string }) => {
       const request = JSON.parse(options.body) as { id?: number; method: string };
       const result =
