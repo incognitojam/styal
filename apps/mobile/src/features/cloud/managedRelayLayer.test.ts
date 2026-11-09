@@ -25,6 +25,12 @@ vi.mock("expo-crypto", () => ({
 
 const secureStore = new Map<string, string>();
 let failNextRead = false;
+vi.mock("expo", async () => {
+  const { createNodeDpopKeysModule } = await import("./dpop.testing");
+  const dpopKeys = createNodeDpopKeysModule();
+  return { requireNativeModule: () => dpopKeys };
+});
+
 vi.mock("expo-secure-store", () => ({
   getItemAsync: vi.fn((key: string) => {
     if (failNextRead) {
