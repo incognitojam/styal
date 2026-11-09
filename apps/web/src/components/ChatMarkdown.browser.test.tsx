@@ -39,9 +39,26 @@ vi.mock(import("../state/server"), async (original) => {
   const actual = await original();
   const { Atom } = await import("effect/reactivity");
   const noConfig = Atom.make(null);
+  const modelsConfig = Atom.make({
+    availableEditors: [],
+    environment: { platform: {} },
+    settings: { providerInstances: {} },
+    providers: [
+      {
+        instanceId: "codex",
+        driver: "codex",
+        displayName: "Codex",
+        models: [{ slug: "gpt-6.1", name: "GPT-6.1", isCustom: false, capabilities: {} }],
+      },
+    ],
+  });
   return {
     ...actual,
-    serverEnvironment: { ...actual.serverEnvironment, configValueAtom: (() => noConfig) as never },
+    serverEnvironment: {
+      ...actual.serverEnvironment,
+      configValueAtom: ((environmentId: string) =>
+        environmentId === "models" ? modelsConfig : noConfig) as never,
+    },
   };
 });
 vi.mock(import("../state/session"), async (original) => {
@@ -137,6 +154,12 @@ it("keeps compact audio playback loaded across signed URL renewals", async () =>
   expect(screen.container.querySelector("audio")).not.toBe(audio);
   expect(screen.container.querySelector("audio")?.getAttribute("src")).toBe(renewed);
 });
+
+function buttonsLabelled(container: HTMLElement, label: string) {
+  return [...container.querySelectorAll<HTMLButtonElement>("button")].filter(
+    (button) => button.getAttribute("aria-label") === label,
+  );
+}
 
 function setup() {
   appearance.value = "light";
@@ -706,6 +729,19 @@ describe("ChatMarkdown skill chips", () => {
     await userEvent.click(page.getByRole("button", { name: "View instructions" }));
 
     expect(openFile).toHaveBeenCalledExactlyOnceWith(threadRef, "/skills/review/SKILL.md");
+  });
+
+  it("names a mentioned model as its provider does, without a thread", async () => {
+    setup();
+    await using screen = await renderText("Ask (model:codex/gpt-6.1), not model:openai/gpt-4o.", {
+      environmentId: EnvironmentId.make("models"),
+    });
+
+    await expect
+      .element(screen.getByRole("button", { name: "Model GPT-6.1. Show details" }))
+      .toBeVisible();
+    expect(buttonsLabelled(screen.container, "Model gpt-4o. Show details")).toEqual([]);
+    expect(screen.container.textContent).toBe("Ask (GPT-6.1), not model:openai/gpt-4o.");
   });
 });
 
