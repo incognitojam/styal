@@ -4,6 +4,8 @@ Sign in to styal Link, add your machines, and enable **Device Notifications** (*
 
 Use the switches under **Notify me when an agent** to choose which of those alerts reach this device, for example only approvals and input requests. Each device keeps its own choice.
 
+On iOS you can also add the **Agent Activity** widget to your Home Screen or Lock Screen. It shows the same agents as the Live Activity, using your styal Link sign-in. The widget refreshes when you open styal and shows unfinished work as out of date after 10 minutes.
+
 While you're using styal on a computer, alerts wait before reaching your phone, 10 minutes by default. If you answer, approve, or open the thread on the computer in that time, the phone alert is skipped. Choose a shorter wait, or **Immediately** to turn this off, under **While I'm using a computer**. The desktop app counts you as active while you use any app on that computer; a browser tab counts only while you use that tab. This needs a server and relay new enough to report computer activity; otherwise alerts arrive immediately.
 
 Enable **Ongoing agent activity** on Android or **Live Activity Updates** on iOS to follow work without opening the app. Finished results remain visible for up to 15 minutes. You can dismiss an Android activity card without disabling alerts; turn off ongoing activity in Settings to stop future cards.
