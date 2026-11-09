@@ -21,6 +21,8 @@ import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
 import * as ThreadTitleLinks from "./ThreadTitleLinks.ts";
 import { isTextGenerationRateLimitError } from "@t3tools/provider-core/server/textGenerationUtils";
+import * as TextGenerators from "./TextGenerators.ts";
+import * as TextGenerationOperations from "@t3tools/provider-core/server/textGenerationOperations";
 
 export type {
   BranchNameGenerationInput,
@@ -120,6 +122,7 @@ export const make = Effect.gen(function* () {
     }
   });
   const serverSettings = yield* ServerSettings.ServerSettingsService;
+  const textGenerators = yield* TextGenerators.TextGenerators;
   const generate = Effect.fn("TextGeneration.generate")(function* <A>(
     operation: TextGenerationOp,
     selection: ModelSelection,
@@ -128,6 +131,17 @@ export const make = Effect.gen(function* () {
       modelSelection: ModelSelection,
     ) => Effect.Effect<A, TextGenerationError>,
   ) {
+    const textGenerator = yield* textGenerators.runner(selection.instanceId);
+    // A review guide reaches a text generator only through a fallback; it needs an agent instead.
+    const textGeneratorId = selection.instanceId;
+    const textGeneratorCannotRun =
+      textGenerator !== undefined && operation === "generateReviewGuide";
+    if (textGenerator !== undefined && !textGeneratorCannotRun) {
+      return yield* invoke(
+        TextGenerationOperations.fromRunner("TextGenerator", textGenerator),
+        selection,
+      );
+    }
     const snapshots = yield* registry.listInstances.pipe(
       Effect.flatMap((instances) =>
         Effect.forEach(instances, (instance) => instance.snapshot.getSnapshot),
@@ -137,9 +151,10 @@ export const make = Effect.gen(function* () {
     const selected = snapshots.find((provider) => provider.instanceId === selection.instanceId);
     // Only a failed probe counts: a pending one is also not installed yet.
     const unusable =
-      selected?.enabled === true &&
-      selected.status === "error" &&
-      (!selected.installed || selected.auth.status === "unauthenticated");
+      textGeneratorCannotRun ||
+      (selected?.enabled === true &&
+        selected.status === "error" &&
+        (!selected.installed || selected.auth.status === "unauthenticated"));
     if (unusable || exhaustedUsageWindow(selected, now, selection.model)) {
       const settings = yield* serverSettings.getSettings.pipe(
         Effect.mapError(
@@ -165,11 +180,19 @@ export const make = Effect.gen(function* () {
             exhaustedUsageWindow(provider, now, defaultTextGenerationModel(provider.driver)),
         )
         .map((provider) => provider.instanceId);
+      // A text generator has no snapshot, so it is excluded by id.
       selection = resolveTextGenerationModelSelection(
         { textGenerationModelSelection: selection },
         snapshots,
-        new Set(excluded),
+        new Set([selection.instanceId, ...excluded]),
       );
+    }
+    if (textGeneratorCannotRun && selection.instanceId === textGeneratorId) {
+      return yield* new TextGenerationError({
+        operation,
+        detail:
+          "Review guides need a coding agent that can read the checkout. None is ready. Pick Codex or Claude as the review guide model in Settings → Source control.",
+      });
     }
     return yield* generateWithRetry(operation, selection, invoke);
   });
@@ -240,4 +263,6 @@ export const make = Effect.gen(function* () {
   });
 });
 
-export const layer = Layer.effect(TextGeneration, make);
+export const layer = Layer.effect(TextGeneration, make).pipe(
+  Layer.provideMerge(TextGenerators.layer),
+);

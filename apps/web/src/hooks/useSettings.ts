@@ -610,13 +610,16 @@ function useUpdateSettingsTarget(environmentId: EnvironmentId | null) {
   const sharedSettingsSyncTargetIds = useSharedSettingsSyncTargetIds(true);
   const updateSettings = (
     patch: UnifiedSettingsPatch,
-    options?: { readonly onFailed?: () => void },
+    options?: { readonly onFailed?: () => void; readonly onSaved?: () => void },
   ): Promise<boolean> => {
     const { serverPatch, clientPatch } = splitPatch(patch);
     const writes: Array<Promise<boolean>> = [];
     const persistTracked = (input: Parameters<typeof persistServerSettings>[0]) =>
       writes.push(
-        persistServerSettings(input, options?.onFailed).then((result) => result._tag === "Success"),
+        persistServerSettings(input, options?.onFailed).then((result) => {
+          if (result._tag === "Success") options?.onSaved?.();
+          return result._tag === "Success";
+        }),
       );
 
     const canWriteServerPatch =
@@ -721,6 +724,12 @@ function useUpdateSettingsTarget(environmentId: EnvironmentId | null) {
                 `Could not save on ${label}: ${error instanceof Error ? error.message : "The save failed. Try reconnecting and saving again."}`,
               ];
             });
+            if (
+              deniedLabels.length === 0 &&
+              outcomes.every(({ result }) => result._tag === "Success")
+            ) {
+              options?.onSaved?.();
+            }
             if (failures.length === 0) return;
             const saved = outcomes
               .filter(({ result }) => result._tag === "Success")

@@ -17,6 +17,7 @@ import { createModelSelection } from "@t3tools/shared/model";
 
 import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
+import * as TextGenerators from "./TextGenerators.ts";
 import * as TextGeneration from "./TextGeneration.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
@@ -98,7 +99,12 @@ describe("TextGeneration.make", () => {
         }),
       );
       const generation = yield* TextGeneration.make.pipe(
-        Effect.provide(ServerSettings.layerTest({})),
+        Effect.provide(
+          Layer.mergeAll(
+            Layer.mock(TextGenerators.TextGenerators)({ runner: () => Effect.undefined }),
+            ServerSettings.layerTest({}),
+          ),
+        ),
         Effect.provideService(
           ProviderInstanceRegistry.ProviderInstanceRegistry,
           makeStubRegistry([
@@ -208,7 +214,12 @@ describe("TextGeneration.make", () => {
           }),
         );
         const generation = yield* TextGeneration.make.pipe(
-          Effect.provide(ServerSettings.layerTest({})),
+          Effect.provide(
+            Layer.mergeAll(
+              Layer.mock(TextGenerators.TextGenerators)({ runner: () => Effect.undefined }),
+              ServerSettings.layerTest({}),
+            ),
+          ),
           Effect.provideService(
             ProviderInstanceRegistry.ProviderInstanceRegistry,
             makeStubRegistry([codex, claude]),
@@ -275,7 +286,12 @@ describe("TextGeneration.make", () => {
 
   const makeGeneration = (instances: ReadonlyArray<ProviderInstance>) =>
     TextGeneration.make.pipe(
-      Effect.provide(ServerSettings.layerTest({})),
+      Effect.provide(
+        Layer.mergeAll(
+          Layer.mock(TextGenerators.TextGenerators)({ runner: () => Effect.undefined }),
+          ServerSettings.layerTest({}),
+        ),
+      ),
       Effect.provideService(
         ProviderInstanceRegistry.ProviderInstanceRegistry,
         makeStubRegistry(instances),
