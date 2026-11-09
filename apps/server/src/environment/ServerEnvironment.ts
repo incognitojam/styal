@@ -302,6 +302,7 @@ export const make = Effect.gen(function* () {
       incomingMachineAccess: true,
       mcpModeLimitHeader: true,
       linkFence: true,
+      mcpApprovalCodes: true,
     },
   };
 

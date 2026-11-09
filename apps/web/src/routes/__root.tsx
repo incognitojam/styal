@@ -20,6 +20,7 @@ import { AppSidebarLayout } from "../components/AppSidebarLayout";
 import { CommandPalette } from "../components/CommandPalette";
 import { CustomSnoozeDialogHost } from "../components/CustomSnoozeDialog";
 import { GuestShareDialogHost } from "../components/chat/GuestShareControls";
+import { UseInAnotherAppDialogHost } from "../components/mcp/UseInAnotherAppDialog";
 import { AddProjectToMachineDialogHost } from "../components/AddProjectToMachineDialog";
 import { DevReplayHost } from "../components/DevReplayHost";
 import { FirstRunGate } from "../components/onboarding/FirstRunGate";
@@ -175,6 +176,8 @@ function RootRouteBranch() {
       <>
         <CustomSnoozeDialogHost />
         <GuestShareDialogHost />
+        <UseInAnotherAppDialogHost />
+        <RelayClientInstallDialog />
         <CommandPalette>
           <AppSidebarLayout>
             <Outlet />
@@ -220,6 +223,7 @@ function RootRouteBranch() {
         {isElectron ? <DesktopUpdatedNotice /> : null}
         <ProjectCloneToastCoordinator />
         <AddProjectToMachineDialogHost />
+        <UseInAnotherAppDialogHost />
         {import.meta.env.DEV && primaryEnvironmentAuthenticated ? <DevReplayHost /> : null}
         {primaryEnvironmentAuthenticated ? (
           <EventRouter skipInitialBootstrapNavigation={returningFromWelcome} />
