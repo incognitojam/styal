@@ -143,6 +143,8 @@ const SETTINGS_SEARCH_TERMS = {
     "your machines",
     "other machines",
     "linked environments",
+    "fast worktree checkout",
+    "clone cache",
     "tool calls in chat",
     "hide tool calls",
     "commands edits searches",
