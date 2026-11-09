@@ -43,6 +43,7 @@ export const PREVIEW_APP_CANCEL_INSTALL_CHANNEL = "desktop:preview-app-cancel-in
 export const PREVIEW_APP_OPEN_CHANNEL = "desktop:preview-app-open";
 export const PREVIEW_APP_REMOVE_CHANNEL = "desktop:preview-app-remove";
 export const PREVIEW_APP_RESET_DATA_CHANNEL = "desktop:preview-app-reset-data";
+export const CLI_COMMAND_ADD_TO_PATH_CHANNEL = "desktop:cli-command-add-to-path";
 export const GET_APP_BRANDING_CHANNEL = "desktop:get-app-branding";
 export const GET_RELAY_TELEMETRY_ENABLED_CHANNEL = "desktop:get-relay-telemetry-enabled";
 export const GET_SYSTEM_LOCALE_CHANNEL = "desktop:get-system-locale";

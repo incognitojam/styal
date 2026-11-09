@@ -2,6 +2,7 @@ import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
+import * as Random from "effect/Random";
 
 import { CLI_COMMAND_NAME } from "@t3tools/shared/cliPackage";
 
@@ -154,7 +155,8 @@ export const install = Effect.gen(function* () {
     if (Option.getOrUndefined(existing) !== content) {
       yield* fs.makeDirectory(path.dirname(shimPath), { recursive: true });
       // Written beside the launcher and renamed over it, so a running `styal` never reads half a file.
-      const staging = `${shimPath}.${process.pid}.tmp`;
+      // Unique per call: backend startup and the first-launch command install can race here.
+      const staging = `${shimPath}.${process.pid}.${yield* Random.nextIntBetween(0, 0xffffff)}.tmp`;
       yield* fs.writeFileString(staging, content, { mode: 0o755 });
       yield* fs.rename(staging, shimPath);
       yield* logInfo("installed styal launcher", { shimPath });

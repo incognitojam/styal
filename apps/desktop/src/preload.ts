@@ -339,6 +339,7 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     getState: () => ipcRenderer.invoke(IpcChannels.CLI_COMMAND_GET_STATE_CHANNEL),
     install: () => ipcRenderer.invoke(IpcChannels.CLI_COMMAND_INSTALL_CHANNEL),
     uninstall: () => ipcRenderer.invoke(IpcChannels.CLI_COMMAND_UNINSTALL_CHANNEL),
+    addToPath: () => ipcRenderer.invoke(IpcChannels.CLI_COMMAND_ADD_TO_PATH_CHANNEL),
   },
   previewApp: {
     getState: () => ipcRenderer.invoke(IpcChannels.PREVIEW_APP_GET_STATE_CHANNEL),
