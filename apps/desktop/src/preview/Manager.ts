@@ -53,6 +53,7 @@ import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as Predicate from "effect/Predicate";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
@@ -149,10 +150,6 @@ const PICTURE_IN_PICTURE_INITIAL_HEIGHT = 320;
 const PICTURE_IN_PICTURE_MIN_WIDTH = 240;
 const PICTURE_IN_PICTURE_MIN_HEIGHT = 160;
 const PICTURE_IN_PICTURE_ASPECT_RATIO_EPSILON = 0.002;
-
-/** Electron's rejection when a load is superseded by another navigation. */
-const isAbortedNavigationError = (error: unknown): boolean =>
-  typeof error === "object" && error !== null && "code" in error && error.code === "ERR_ABORTED";
 
 class PreviewCaptureTimeoutError extends Schema.TaggedError<PreviewCaptureTimeoutError>()(
   "PreviewCaptureTimeoutError",
@@ -2297,13 +2294,23 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       );
       return;
     }
-    // loadURL rejects with ERR_ABORTED when the page navigates again before it finishes
-    // loading, such as a dev server reload. The newer navigation reports its own result.
-    yield* attemptPromise({ operation: "navigate.loadURL", tabId, webContentsId: wc.id }, () =>
-      wc.loadURL(url).catch((error: unknown) => {
-        if (isAbortedNavigationError(error)) return;
-        throw error;
-      }),
+    let unloadPrevented = false;
+    const onPreventUnload = () => {
+      unloadPrevented = true;
+    };
+    yield* attemptPromise({ operation: "navigate.loadURL", tabId, webContentsId: wc.id }, () => {
+      wc.on("will-prevent-unload", onPreventUnload);
+      return wc.loadURL(url);
+    }).pipe(
+      // Blocked unloads and superseding navigations both reject with ERR_ABORTED.
+      Effect.catchIf(
+        (error) =>
+          !unloadPrevented &&
+          Predicate.hasProperty(error.cause, "errno") &&
+          error.cause.errno === -3,
+        () => Effect.void,
+      ),
+      Effect.ensuring(Effect.sync(() => wc.off("will-prevent-unload", onPreventUnload))),
     );
   });
 
