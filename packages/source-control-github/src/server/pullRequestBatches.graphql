@@ -34,6 +34,7 @@ query PullRequestSummary($owner: String!, $name: String!, $number: Int!, $stacks
       latestReviews(first: 20) {
         nodes {
           state
+          isMinimized
           author {
             login
           }
@@ -162,6 +163,7 @@ query PullRequestSummaryEnterprise($owner: String!, $name: String!, $number: Int
       latestReviews(first: 20) {
         nodes {
           state
+          isMinimized
           author {
             login
           }

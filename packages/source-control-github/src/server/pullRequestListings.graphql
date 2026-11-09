@@ -41,6 +41,7 @@ fragment PullRequestRow on PullRequest {
   latestReviews(first: 20) {
     nodes {
       state
+      isMinimized
       author {
         login
       }
@@ -162,6 +163,7 @@ fragment PullRequestRowEnterprise on PullRequest {
   latestReviews(first: 20) {
     nodes {
       state
+      isMinimized
       author {
         login
       }
