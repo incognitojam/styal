@@ -30,8 +30,12 @@ irm https://raw.githubusercontent.com/incognitojam/styal/main/scripts/install.ps
 ```
 
 The installer verifies the release checksum and adds a `styal` launcher under
-`~/.local/bin`. Follow its PATH instructions if that directory is not on your PATH.
-Set `STYAL_VERSION` to install an exact version, or `STYAL_CHANNEL=stable` for
+`~/.local/bin`. If that folder is not on your `PATH` yet, the installer says so
+and, for zsh, bash on Linux, and fish, prints a command to add it. On Windows,
+`styal` works in the same PowerShell window right away; add the folder to your
+`PATH` for new windows. If a `styal` that the installer or the desktop app did
+not create is already there, it leaves that one alone and stops. Set
+`STYAL_VERSION` to install an exact version, or `STYAL_CHANNEL=stable` for
 stable releases.
 
 Run `styal start` to start the server and open the local web app, or `styal serve`
@@ -54,6 +58,11 @@ npx @styal/cli@nightly start
 
 This starts the server and opens the local web app. Run
 `npx @styal/cli@nightly --help` for command-line options.
+
+At a terminal, it first offers to install the `styal` command. If you say no,
+it asks again at the next minor release, and `npx @styal/cli@nightly install`
+installs it later. `npx @styal/cli` always runs the version npm picked, even
+when a `styal` is installed.
 
 For a persistent installation, run `npm install -g @styal/cli@nightly`. The
 installed command is `styal`. On its first run the package downloads the

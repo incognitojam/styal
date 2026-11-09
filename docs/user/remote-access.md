@@ -279,13 +279,13 @@ command to run on the host:
 sudo styal browser setup
 ```
 
-The server shows the exact line for how you started it, such as
-`sudo npx @styal/cli browser setup`, and keeps your `PATH` when Node is
-installed only for your user. Where `styal` is not on your `PATH`, such as with
-only the desktop app installed, it names the full path of the app's own `styal`
-instead. It allows Chrome's sandbox with an AppArmor profile and installs any
-missing libraries and system fonts with apt; pages that load without text can
-mean the host has no fonts. It is safe to run again. Without `sudo`, it only
+The server shows the exact line for how you started it, and keeps your `PATH`
+when you started it with `npx` and Node is installed only for your user. Where
+`styal` is not on your `PATH`, such as with only the desktop app installed, it
+names the full path of the app's own `styal` instead. It allows Chrome's sandbox
+with an AppArmor profile and installs any missing libraries and system fonts
+with apt; pages that load without text can mean the host has no fonts. It is
+safe to run again. Without `sudo`, it only
 reports what it would change.
 
 The browser runs in Chrome's sandbox by default. Chrome cannot start that sandbox
@@ -440,15 +440,15 @@ expires.
 To choose a token's permissions, pass `--scope` once for each scope you want:
 
 ```sh
-npx @styal/cli pair --scope orchestration:read --scope relay:read
+styal pair --scope orchestration:read --scope relay:read
 ```
 
 The selected scopes replace the default permissions. The same option works with
-`npx @styal/cli auth pairing create` and `npx @styal/cli auth session issue`;
-each command's `--help` lists the available scopes. Without `--scope`, pairing
-tokens and issued bearer sessions get every permission, including managing access
-and styal Link. A terminal or a full-access agent on the host can reach those as
-well, so a client that should not manage access also needs to go without
+`styal auth pairing create` and `styal auth session issue`; each command's
+`--help` lists the available scopes. Without `--scope`, pairing tokens and issued
+bearer sessions get every permission, including managing access and styal Link.
+A terminal or a full-access agent on the host can reach those as well, so a
+client that should not manage access also needs to go without
 `terminal:operate` and `orchestration:operate`.
 
 To change an existing client's permissions, create a fresh pairing link with the

@@ -78,7 +78,7 @@ import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import { StyalWordmark } from "../StyalWordmark";
 import { Alert, AlertDescription } from "../ui/alert";
 import { Button } from "../ui/button";
-import { CommandBlock } from "../CommandBlock";
+import { InstallT3Commands } from "../InstallT3Commands";
 import { Checkbox } from "../ui/checkbox";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 import { Input } from "../ui/input";
@@ -614,7 +614,7 @@ function ConnectAccountOption({
             <p className="text-sm text-muted-foreground">
               Run this on each computer you want to connect.
             </p>
-            <CommandBlock command="npx @styal/cli link" className="mt-3" />
+            <InstallT3Commands command="styal link" className="mt-3" />
             <p className="mt-3 text-xs text-muted-foreground">
               Keep styal running. Select the computers you want to set up above.
             </p>
@@ -721,14 +721,12 @@ function PairingForm({
             </Button>
           </div>
           <CollapsiblePanel>
-            <p className="pt-3 text-sm text-muted-foreground">
-              On the computer with your code, start styal or run{" "}
-              <code className="font-mono">npx @styal/cli serve</code>, then run:
-            </p>
-            <CommandBlock command="npx @styal/cli pair" className="mt-2" />
+            <p className="pt-3 text-sm text-muted-foreground">On the computer with your code:</p>
+            <InstallT3Commands command="styal pair" className="mt-2" />
             <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-              On a tailnet, run <code className="font-mono">npx @styal/cli pair --tailscale</code>{" "}
-              instead.
+              Start styal or run <code className="font-mono">styal serve</code> there before{" "}
+              <code className="font-mono">styal pair</code>. On a tailnet, run{" "}
+              <code className="font-mono">styal pair --tailscale</code> instead.
             </p>
           </CollapsiblePanel>
         </Collapsible>
