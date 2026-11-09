@@ -248,13 +248,10 @@ function AdaptiveWorkspaceLayoutContent(
   const [primarySidebarPreferredVisible, setPrimarySidebarPreferredVisible] = useState(true);
   const [fileInspectorPreferredVisible, setFileInspectorPreferredVisible] = useState(true);
   const [nativeInspectorWidthFraction, setNativeInspectorWidthFraction] = useState(0.4);
+  const horizontalSafeArea =
+    (nativeMetrics?.safeArea.left ?? 0) + (nativeMetrics?.safeArea.right ?? 0);
   const inspectorWidthFor = (fraction: number) =>
-    nativeInspectorColumnWidth({
-      viewportWidth,
-      horizontalSafeArea:
-        (nativeMetrics?.safeArea.left ?? 0) + (nativeMetrics?.safeArea.right ?? 0),
-      fraction,
-    });
+    nativeInspectorColumnWidth({ viewportWidth, horizontalSafeArea, fraction });
   const nativeInspectorWidth = inspectorWidthFor(nativeInspectorWidthFraction);
   const [fileInspectorPreferredWidth, setFileInspectorPreferredWidth] = useState<number | null>(
     null,
@@ -411,6 +408,7 @@ function AdaptiveWorkspaceLayoutContent(
       deriveWorkspacePaneLayout({
         layout,
         viewportWidth: width,
+        horizontalSafeArea,
         nativeWorkspace,
         primarySidebarFloats: sidebarFloats,
         primarySidebarPreferredVisible: showPrimarySidebar,
@@ -422,6 +420,7 @@ function AdaptiveWorkspaceLayoutContent(
       }),
     [
       nativeInspectorWidth,
+      horizontalSafeArea,
       fileInspectorPreferredVisible,
       fileInspectorPreferredWidth,
       inspectorActive,
@@ -441,6 +440,7 @@ function AdaptiveWorkspaceLayoutContent(
         : deriveWorkspacePaneLayout({
             layout,
             viewportWidth: width,
+            horizontalSafeArea,
             nativeWorkspace,
             primarySidebarFloats: sidebarFloats,
             primarySidebarPreferredVisible: sidebarWithoutKeyboard,
@@ -451,6 +451,7 @@ function AdaptiveWorkspaceLayoutContent(
           }).primarySidebarVisible,
     [
       nativeInspectorWidth,
+      horizontalSafeArea,
       fileInspectorPreferredVisible,
       fileInspectorPreferredWidth,
       inspectorActive,
