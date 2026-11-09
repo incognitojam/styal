@@ -330,12 +330,16 @@ export const checkThreadReport = Effect.fn("ThreadReports.check")(function* (
   const runId = input.trigger.runId;
   const run = records.runs.find((candidate) => candidate.id === runId);
   if (run === undefined) return undefined;
-  const history = yield* threads.getThreadRecords(thread.id, ["messages", "turnItems"], {
-    messageRoles: ["user", "assistant"],
-    messageRunIds: [run.id],
-    turnItemRunId: run.id,
-    turnItemTypes: ["assistant_message", "error"],
-  });
+  const history = yield* threads.getThreadRecords(
+    thread.id,
+    ["messages", "turnItems", "providerTurns"],
+    {
+      messageRoles: ["user", "assistant"],
+      messageRunIds: [run.id],
+      turnItemRunId: run.id,
+      turnItemTypes: ["assistant_message", "error"],
+    },
+  );
   const startedBy = history.messages.find((message) => message.id === run.userMessageId);
   const kind = runReportKind({
     run,
