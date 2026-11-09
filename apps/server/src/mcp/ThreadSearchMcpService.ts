@@ -73,6 +73,7 @@ const make = Effect.gen(function* () {
           McpInvocationContext.threadLinkFor(
             environmentId === scope.environmentId ? scope : { environmentId, client: undefined },
             match.threadId,
+            match.title,
           ),
       }));
     if (input.environmentId === undefined || input.environmentId === scope.environmentId) {
