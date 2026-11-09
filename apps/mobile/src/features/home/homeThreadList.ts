@@ -1,4 +1,8 @@
-import { buildProjectGroups } from "@t3tools/client-runtime/state/project-grouping";
+import {
+  buildProjectGroups,
+  pickableProjectGroups,
+  resolveScratchProjectScopeKey,
+} from "@t3tools/client-runtime/state/project-grouping";
 import {
   resolveProjectGroupPinOrder,
   sortPinnedProjectsFirst,
@@ -73,6 +77,21 @@ export function buildHomeProjectScopes(input: {
       archived: group.archived,
     };
   });
+}
+
+export function resolveHomeProjectFilterScope(
+  scopes: ReadonlyArray<HomeProjectScope>,
+  projects: ReadonlyArray<EnvironmentProject>,
+  options: {
+    readonly selectedProjectKey: string | null;
+    readonly projectGroupingMode: SidebarProjectGroupingMode;
+  },
+): HomeProjectScope | null {
+  const key = resolveScratchProjectScopeKey(options.selectedProjectKey, projects, {
+    sidebarProjectGroupingMode: options.projectGroupingMode,
+    sidebarProjectGroupingOverrides: {},
+  });
+  return pickableProjectGroups(scopes).find((scope) => scope.key === key) ?? null;
 }
 
 export function findHomeProjectScope(

@@ -140,7 +140,6 @@ export interface Preferences {
   /** Device-local counterpart of desktop's `turnUsageFigure`; unset means tokens. */
   readonly turnUsageFigure?: "tokens" | "cost";
   readonly workingShelfEnabled?: boolean;
-  readonly useLastProjectForNewThreads?: boolean;
   readonly lastThreadProject?: typeof ThreadProject.Type;
   readonly modelFavorites?: ReadonlyArray<{
     readonly provider: ProviderInstanceId;
@@ -233,7 +232,6 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     planModeEnabled?: boolean;
     turnUsageEnabled?: boolean;
     turnUsageFigure?: "tokens" | "cost";
-    useLastProjectForNewThreads?: boolean;
     lastThreadProject?: typeof ThreadProject.Type;
     modelFavorites?: Preferences["modelFavorites"];
     threadListSettledShelfExpanded?: boolean;
@@ -400,9 +398,6 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   }
   if (typeof parsed.workingShelfEnabled === "boolean") {
     preferences.workingShelfEnabled = parsed.workingShelfEnabled;
-  }
-  if (typeof parsed.useLastProjectForNewThreads === "boolean") {
-    preferences.useLastProjectForNewThreads = parsed.useLastProjectForNewThreads;
   }
   if (isThreadProject(parsed.lastThreadProject)) {
     preferences.lastThreadProject = parsed.lastThreadProject;

@@ -170,20 +170,26 @@ describe("newTaskDestination", () => {
   const picker = { draft: { requestId: "request" } };
 
   function destination(options: {
-    readonly useLastProject: boolean | undefined;
     readonly projects: ReadonlyArray<EnvironmentProject>;
     readonly current?: EnvironmentProject;
+    readonly filteredScope?: HomeProjectScope;
+    readonly origin?: "list" | "contextual";
+    readonly connectedEnvironmentIds?: ReadonlySet<EnvironmentId>;
     readonly last?: { readonly environmentId: string; readonly projectId: string };
   }) {
     return newTaskDestination({
       projects: options.projects,
       requestId: "request",
-      useLastProject: options.useLastProject,
       currentProject: options.current && {
         environmentId: options.current.environmentId,
         projectId: options.current.id,
       },
       lastProject: options.last,
+      filteredScope: options.filteredScope,
+      origin: options.origin,
+      connectedEnvironmentIds:
+        options.connectedEnvironmentIds ??
+        new Set(options.projects.map((project) => project.environmentId)),
     });
   }
 
@@ -191,7 +197,6 @@ describe("newTaskDestination", () => {
     const projects = [makeProject("remembered"), makeProject("current", "other-environment")];
     expect(
       destination({
-        useLastProject: true,
         projects,
         current: projects[1],
         last: { environmentId: "environment", projectId: "remembered" },
@@ -205,20 +210,12 @@ describe("newTaskDestination", () => {
     const archived = { ...makeProject("archived"), archivedAt: "2026-01-01T00:00:00.000Z" };
     expect(
       destination({
-        useLastProject: true,
         projects: [archived],
         last: { environmentId: "environment", projectId: "archived" },
       }),
     ).toEqual(picker);
-    expect(destination({ useLastProject: true, projects: [archived], current: archived })).toEqual({
+    expect(destination({ projects: [archived], current: archived })).toEqual({
       draft: { requestId: "request", environmentId: "environment", projectId: "archived" },
-    });
-  });
-
-  it("treats an unset preference as on", () => {
-    const projects = [makeProject("first"), makeProject("current")];
-    expect(destination({ useLastProject: undefined, projects, current: projects[1] })).toEqual({
-      draft: { requestId: "request", environmentId: "environment", projectId: "current" },
     });
   });
 
@@ -226,7 +223,6 @@ describe("newTaskDestination", () => {
     const projects = [makeProject("chosen"), makeProject("chosen", "other-environment")];
     expect(
       destination({
-        useLastProject: true,
         projects,
         last: { environmentId: "other-environment", projectId: "chosen" },
       }),
@@ -238,7 +234,6 @@ describe("newTaskDestination", () => {
   it("ignores a remembered project id from another environment", () => {
     expect(
       destination({
-        useLastProject: true,
         projects: [makeProject("chosen")],
         last: { environmentId: "removed-environment", projectId: "chosen" },
       }),
@@ -248,23 +243,84 @@ describe("newTaskDestination", () => {
   it("opens the picker rather than the first project when nothing matches", () => {
     expect(
       destination({
-        useLastProject: true,
         projects: [makeProject("first"), makeProject("second")],
         current: makeProject("removed"),
       }),
     ).toEqual(picker);
   });
 
-  it("always opens the picker when the preference is off", () => {
-    const only = makeProject("only");
+  it("follows the list filter ahead of another open or remembered project", () => {
+    const remembered = makeProject("remembered");
+    const current = makeProject("current");
+    const filtered = makeProject("filtered", "remote");
+    const input = {
+      projects: [remembered, current, filtered],
+      current,
+      filteredScope: makeScope([filtered]),
+      last: { environmentId: "environment", projectId: "remembered" },
+    };
+    expect(destination(input)).toEqual({
+      draft: { requestId: "request", environmentId: "remote", projectId: "filtered" },
+    });
+    expect(destination({ ...input, origin: "contextual" })).toEqual({
+      draft: { requestId: "request", environmentId: "environment", projectId: "current" },
+    });
+    expect(destination({ ...input, current: undefined, origin: "contextual" })).toEqual({
+      draft: { requestId: "request", environmentId: "remote", projectId: "filtered" },
+    });
+  });
+
+  it("keeps a connected copy within the filtered group and excludes archived copies", () => {
+    const local = makeProject("local");
+    const remote = makeProject("remote", "remote");
+    const archived = {
+      ...makeProject("archived", "archived"),
+      archivedAt: "2026-01-01T00:00:00.000Z",
+    };
+    const input = {
+      projects: [local, remote, archived],
+      filteredScope: makeScope([archived, local, remote]),
+    };
+    const anotherLocal = makeProject("local-clone");
     expect(
       destination({
-        useLastProject: false,
-        projects: [only],
-        current: only,
-        last: { environmentId: "environment", projectId: "only" },
+        ...input,
+        projects: [...input.projects, anotherLocal],
+        current: anotherLocal,
+        filteredScope: makeScope([local, anotherLocal]),
       }),
-    ).toEqual(picker);
+    ).toEqual({
+      draft: { requestId: "request", environmentId: "environment", projectId: "local-clone" },
+    });
+    const remoteDraft = {
+      draft: { requestId: "request", environmentId: "remote", projectId: "remote" },
+    };
+    expect(destination({ ...input, current: remote })).toEqual(remoteDraft);
+    const third = makeProject("third", "third");
+    expect(
+      destination({
+        ...input,
+        projects: [...input.projects, third],
+        filteredScope: makeScope([third, local, remote]),
+        current: local,
+        last: { environmentId: "remote", projectId: "remote" },
+        connectedEnvironmentIds: new Set([third.environmentId, remote.environmentId]),
+      }),
+    ).toEqual(remoteDraft);
+    expect(
+      destination({ ...input, last: { environmentId: "remote", projectId: "remote" } }),
+    ).toEqual(remoteDraft);
+    expect(
+      destination({
+        ...input,
+        last: { environmentId: "environment", projectId: "local" },
+        connectedEnvironmentIds: new Set([remote.environmentId]),
+      }),
+    ).toEqual(remoteDraft);
+    expect(destination({ ...input, current: archived })).toEqual({
+      draft: { requestId: "request", environmentId: "environment", projectId: "local" },
+    });
+    expect(destination({ ...input, filteredScope: makeScope([archived]) })).toEqual(picker);
   });
 });
 

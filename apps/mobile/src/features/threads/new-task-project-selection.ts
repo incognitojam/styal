@@ -150,21 +150,45 @@ type ProjectRef = { readonly environmentId: string; readonly projectId: string }
 export function newTaskDestination(options: {
   readonly projects: ReadonlyArray<EnvironmentProject>;
   readonly requestId: string;
-  readonly useLastProject: boolean | undefined;
   readonly currentProject: ProjectRef | undefined;
   readonly lastProject: ProjectRef | undefined;
+  readonly filteredScope?: HomeProjectScope | null | undefined;
+  readonly connectedEnvironmentIds?: ReadonlySet<EnvironmentId> | undefined;
+  readonly origin?: "list" | "contextual" | undefined;
 }) {
   const find = (ref: ProjectRef | undefined) =>
     ref &&
     options.projects.find(
       (project) => project.environmentId === ref.environmentId && project.id === ref.projectId,
     );
-  // A remembered project that was archived since opens the picker; the current one still wins.
+  const current = find(options.currentProject);
   const last = find(options.lastProject);
+  const live =
+    options.filteredScope?.projects.filter((project) => project.archivedAt == null) ?? [];
+  const connected = options.connectedEnvironmentIds ?? new Set();
+  const preferredProjects = [current, last]
+    .filter((project) => project !== undefined)
+    .filter((project) => live.includes(project));
+  const preferred =
+    preferredProjects.find((project) => connected.has(project.environmentId)) ??
+    preferredProjects[0];
+  const filtered =
+    live[0] && options.filteredScope
+      ? getProjectScopeSelectionTarget(
+          {
+            ...options.filteredScope,
+            projects: preferred
+              ? [preferred, ...live.filter((project) => project !== preferred)]
+              : live,
+            representative: live[0],
+          },
+          preferred?.environmentId ?? null,
+          connected,
+        )
+      : undefined;
+  const contextual = options.origin === "contextual" ? current : undefined;
   const project =
-    options.useLastProject === false
-      ? undefined
-      : (find(options.currentProject) ?? (last?.archivedAt == null ? last : undefined));
+    contextual ?? filtered ?? current ?? (last?.archivedAt == null ? last : undefined);
   return project
     ? {
         draft: {

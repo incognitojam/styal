@@ -33,6 +33,8 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 
 ## Mobile
 
+- **New threads follow the project filter.** On mobile, New thread uses the filtered project even when another thread is open. Without a filter or an open thread, it reuses the last valid project automatically; there is no reuse toggle. The contextual keyboard shortcut still prefers the open thread. Upstream ignores the filter as of [revision c6ca605](https://github.com/pingdotgg/t3code/tree/c6ca6056309904f89b90b6055d797973be0a0939), checked November 9, 2026. [Start a thread](./thread-sidebar.md#start-a-thread).
+
 - **Android updates inside the app.** styal offers APK updates in **Settings → About**,
   downloads them with progress and cancellation, then opens Android's installer. T3 Code has
   over-the-air updates but no in-app APK installer as of
