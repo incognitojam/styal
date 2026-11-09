@@ -861,15 +861,12 @@ export function shouldCreateNewThreadInCurrentProject(input: {
   openProjectGroupCount: number;
   projectGroupCount: number;
   hasProjectScope: boolean;
-  /** Boring mode with no project filter: its folders already show the context. */
-  boringWithoutFilter: boolean;
 }): boolean {
   return (
     input.shiftKey ||
     input.hasProjectScope ||
     input.openProjectGroupCount === 1 ||
-    input.projectGroupCount === 0 ||
-    input.boringWithoutFilter
+    input.projectGroupCount === 0
   );
 }
 

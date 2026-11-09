@@ -22,8 +22,6 @@ it("explains why sending is disabled while feedback is uploading", async () => {
       pendingAction={null}
       isRunning={false}
       canInterrupt={false}
-      showPlanFollowUpPrompt={false}
-      promptHasText
       isSendBusy={false}
       sendDisabledReason="Sending feedback"
       isEnvironmentUnavailable={false}
@@ -31,7 +29,6 @@ it("explains why sending is disabled while feedback is uploading", async () => {
       hasSendableContent
       onPreviousPendingQuestion={() => {}}
       onInterrupt={() => {}}
-      onImplementPlanInNewThread={() => {}}
     />,
   );
 

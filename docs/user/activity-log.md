@@ -32,7 +32,8 @@ The activity log retains a record of the incident.
 
 ## Hide tool calls
 
-**Settings → Labs → Tool calls in chat** hides commands, file edits, searches, and MCP tool calls
+**Tool calls in chat** in **Settings → Chat** (web and desktop) or **Settings → Appearance**
+(mobile) hides commands, file edits, searches, and MCP tool calls
 from the conversation. **Hide successful** shows a call while it runs and keeps
 it only if it fails. **Hide all** hides every call and shows **Thinking** while the agent works.
 **Zen** also hides the agent's in-between messages, so each turn shows your message

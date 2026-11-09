@@ -157,7 +157,6 @@ export function MentionedTimeCheckModelSettings() {
                 model={timeCheckSelection.model}
                 modelOptions={timeCheckSelection.options ?? []}
                 allowPromptInjectedEffort={false}
-                planModeEnabled={false}
                 triggerClassName={SETTINGS_PICKER_TRIGGER_CLASSNAME}
                 onModelOptionsChange={(options) =>
                   updateSettings({

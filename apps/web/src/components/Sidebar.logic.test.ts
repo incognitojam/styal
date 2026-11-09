@@ -70,28 +70,23 @@ const localEnvironmentId = EnvironmentId.make("environment-local");
 
 describe("shouldCreateNewThreadInCurrentProject", () => {
   it.each([
-    { shiftKey: false, open: 3, total: 3, hasProjectScope: false, boring: false, direct: false },
-    { shiftKey: true, open: 3, total: 3, hasProjectScope: false, boring: false, direct: true },
-    { shiftKey: false, open: 1, total: 1, hasProjectScope: false, boring: false, direct: true },
-    { shiftKey: false, open: 1, total: 3, hasProjectScope: false, boring: false, direct: true },
-    { shiftKey: false, open: 0, total: 2, hasProjectScope: false, boring: false, direct: false },
-    { shiftKey: false, open: 0, total: 0, hasProjectScope: false, boring: false, direct: true },
-    { shiftKey: false, open: 3, total: 3, hasProjectScope: true, boring: false, direct: true },
-    { shiftKey: false, open: 3, total: 3, hasProjectScope: false, boring: true, direct: true },
-  ])(
-    "$direct for $open of $total projects, shift $shiftKey, scope $hasProjectScope, boring $boring",
-    (row) => {
-      expect(
-        shouldCreateNewThreadInCurrentProject({
-          shiftKey: row.shiftKey,
-          openProjectGroupCount: row.open,
-          projectGroupCount: row.total,
-          hasProjectScope: row.hasProjectScope,
-          boringWithoutFilter: row.boring,
-        }),
-      ).toBe(row.direct);
-    },
-  );
+    { shiftKey: false, open: 3, total: 3, hasProjectScope: false, direct: false },
+    { shiftKey: true, open: 3, total: 3, hasProjectScope: false, direct: true },
+    { shiftKey: false, open: 1, total: 1, hasProjectScope: false, direct: true },
+    { shiftKey: false, open: 1, total: 3, hasProjectScope: false, direct: true },
+    { shiftKey: false, open: 0, total: 2, hasProjectScope: false, direct: false },
+    { shiftKey: false, open: 0, total: 0, hasProjectScope: false, direct: true },
+    { shiftKey: false, open: 3, total: 3, hasProjectScope: true, direct: true },
+  ])("$direct for $open of $total projects, shift $shiftKey, scope $hasProjectScope", (row) => {
+    expect(
+      shouldCreateNewThreadInCurrentProject({
+        shiftKey: row.shiftKey,
+        openProjectGroupCount: row.open,
+        projectGroupCount: row.total,
+        hasProjectScope: row.hasProjectScope,
+      }),
+    ).toBe(row.direct);
+  });
 });
 
 describe("deleteSelectedThreadEntries", () => {

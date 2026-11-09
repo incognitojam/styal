@@ -136,7 +136,6 @@ export interface Preferences {
   /** Device-local counterpart of desktop's `sidebarThreadGrouping`; unset means none. */
   readonly threadGrouping?: SidebarThreadGrouping;
   readonly threadTimestampMode?: "last_prompted" | "last_message";
-  readonly planModeEnabled?: boolean;
   /** Device-local counterpart of desktop's `turnUsageEnabled`; unset means on. */
   readonly turnUsageEnabled?: boolean;
   /** Device-local counterpart of desktop's `turnUsageFigure`; unset means tokens. */
@@ -236,7 +235,6 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     projectGroupingMode?: SidebarProjectGroupingMode;
     threadGrouping?: SidebarThreadGrouping;
     threadTimestampMode?: "last_prompted" | "last_message";
-    planModeEnabled?: boolean;
     toolCallVisibility?: ToolCallVisibility;
     turnUsageEnabled?: boolean;
     turnUsageFigure?: "tokens" | "cost";
@@ -394,9 +392,6 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     parsed.threadTimestampMode === "last_message"
   ) {
     preferences.threadTimestampMode = parsed.threadTimestampMode;
-  }
-  if (typeof parsed.planModeEnabled === "boolean") {
-    preferences.planModeEnabled = parsed.planModeEnabled;
   }
   if (typeof parsed.turnUsageEnabled === "boolean") {
     preferences.turnUsageEnabled = parsed.turnUsageEnabled;

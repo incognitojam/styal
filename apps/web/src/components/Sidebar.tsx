@@ -169,7 +169,7 @@ import { useTerminalFocus } from "../hooks/useTerminalFocus";
 import { isCommandPaletteOpen, openCommandPalette } from "../commandPaletteBus";
 import { registerSettleAndAdvance } from "../settleAndAdvance";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
-import { useBoringSidebarEnabled, useClientSettings } from "../hooks/useSettings";
+import { useClientSettings } from "../hooks/useSettings";
 import { useCopyThreadTranscript } from "../hooks/useCopyThreadTranscript";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { useLocalStorage } from "../hooks/useLocalStorage";
@@ -1048,7 +1048,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const confirmThreadDelete = useClientSettings((s) => s.confirmThreadDelete);
   const confirmThreadArchive = useClientSettings((s) => s.confirmThreadArchive);
-  const boringSidebarEnabled = useBoringSidebarEnabled();
+  const boringSidebarEnabled = useClientSettings((settings) => settings.boringSidebarEnabled);
   // Boring mode's folders take the place of the project headers.
   const groupThreadsByProject =
     useClientSettings((s) => s.sidebarThreadGrouping === "project") && !boringSidebarEnabled;
@@ -1130,7 +1130,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     },
   });
   const copyThreadTranscript = useCopyThreadTranscript();
-  const legacySidebarEnabled = useClientSettings((settings) => settings.legacySidebarEnabled);
   const folderRowsMultiline = useClientSettings((settings) => settings.boringSidebarMultilineRows);
   const newThreadContext = useHandleNewThread();
   // Row callbacks capture only the handler; the rest of the context changes with the route.
@@ -3470,7 +3469,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       openProjectGroupCount: scopeGroups.length,
       projectGroupCount: projectGroups.length,
       hasProjectScope: scopedProjectGroups.length === 1,
-      boringWithoutFilter: legacySidebarEnabled && scopedProjectGroups.length === 0,
     });
   const newThreadPicksProject = !newThreadCreatesDirectly(false);
   const handleNewThreadClick = (event?: ReactMouseEvent) => {
@@ -3492,9 +3490,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   // With a filter, chat.new opens the chooser and chat.newLocal follows the current thread,
   // so neither shortcut represents a button that creates in the filtered project.
   const newThreadShortcutCommand =
-    scopeGroups.length === 1 ||
-    projectGroups.length === 0 ||
-    (legacySidebarEnabled ? scopedProjectGroups.length === 0 : newThreadPicksProject)
+    scopeGroups.length === 1 || projectGroups.length === 0 || newThreadPicksProject
       ? shortcutLabelForCommand(keybindings, "chat.new") !== null
         ? "chat.new"
         : newThreadPicksProject
