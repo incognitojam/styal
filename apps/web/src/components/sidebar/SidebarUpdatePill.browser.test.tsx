@@ -28,6 +28,7 @@ const testState = vi.hoisted(() => ({
   desktopActivity: vi.fn(),
   updateServer: vi.fn(),
   updateProvider: vi.fn(),
+  refreshProviders: vi.fn(),
   localActivity: vi.fn(),
   install: vi.fn(),
   toast: vi.fn(),
@@ -81,6 +82,7 @@ vi.mock(import("~/state/use-atom-command"), async (original) => {
       if (command === serverEnvironment.desktopHostActivity) return testState.desktopActivity;
       if (command === serverEnvironment.updateProvider) return testState.updateProvider;
       if (command === serverEnvironment.updateServer) return testState.updateServer;
+      if (command === serverEnvironment.refreshProviders) return testState.refreshProviders;
       throw new Error("Unexpected update command");
     }) as never,
   };
@@ -298,6 +300,7 @@ function setup() {
   testState.localActivity.mockReset().mockResolvedValue(localChecks);
   testState.updateServer.mockReset().mockResolvedValue(updated());
   testState.updateProvider.mockReset();
+  testState.refreshProviders.mockReset().mockResolvedValue(AsyncResult.success(undefined));
   testState.providers.clear();
   testState.install
     .mockReset()
@@ -765,10 +768,15 @@ describe("combined sidebar update", () => {
     using _timers = fakeTimers();
     await click(screen.container.querySelector<HTMLButtonElement>("button")!);
     expect(dialog()).toBeNull();
+    expect(testState.refreshProviders).not.toHaveBeenCalled();
 
     await act(() => vi.advanceTimersByTimeAsync(2_000));
     expect(dialog()!.textContent).toContain(
       "Still checking this app, Build machine, and Test machine for running work.",
+    );
+    // Machines that cache an older latest provider version look again while the dialog is open.
+    expect(testState.refreshProviders).toHaveBeenCalledWith(
+      expect.objectContaining({ input: { refreshModels: true } }),
     );
     expect(button("Update anyway", dialog()!).disabled).toBe(false);
 

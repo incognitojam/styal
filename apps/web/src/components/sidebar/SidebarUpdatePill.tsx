@@ -19,6 +19,7 @@ import {
   shouldToastDesktopUpdateActionResult,
 } from "../desktopUpdate.logic";
 import { showDesktopUpdateDownloadedToast } from "../desktopUpdate.toast";
+import { useCheckProviderUpdates } from "../ProviderUpdatesAction";
 import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
 import { Popover, PopoverCreateHandle, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { SidebarMenuItem } from "../ui/sidebar";
@@ -140,6 +141,7 @@ export function SidebarUpdatePill() {
 function SidebarUpdateControl() {
   const state = useDesktopUpdateState();
   const [isActionPending, setIsActionPending] = useState(false);
+  const [isCheckingProviders, setIsCheckingProviders] = useState(false);
   const [isConfirmingEverything, setIsConfirmingEverything] = useState(false);
   const [activityCheck, setActivityCheck] = useState<UpdateEverythingConfirmation | null>(null);
   const [isCheckingActivity, setIsCheckingActivity] = useState(false);
@@ -152,6 +154,7 @@ function SidebarUpdateControl() {
   const localUpdateVersion =
     state && action === "install" ? getDesktopUpdateDownloadedVersion(state) : null;
   const everything = useUpdateEverything(localUpdateVersion);
+  const checkProviderUpdates = useCheckProviderUpdates();
   const isDownloading = state?.status === "downloading";
   const runsEverything = everything.hasUpdates && !isDownloading;
   const run = useUpdateEverythingRun();
@@ -182,6 +185,13 @@ function SidebarUpdateControl() {
     setReleaseNotesOpen(showReleaseNotesPopover && releaseNotesTriggerFocusVisible);
   }
 
+  // Machines that still cache an older latest version add their rows while the dialog is open.
+  const openConfirmation = () => {
+    setIsConfirmingEverything(true);
+    setIsCheckingProviders(true);
+    void checkProviderUpdates({ quiet: true }).finally(() => setIsCheckingProviders(false));
+  };
+
   const handleAction = async () => {
     if (isInteractionDisabled) return;
     if (runsEverything) {
@@ -201,14 +211,14 @@ function SidebarUpdateControl() {
         setActivityCheck(early.value);
         setIsCheckingActivity(false);
         setActivityUpdatedAt(null);
-        setIsConfirmingEverything(true);
+        openConfirmation();
         return;
       }
       const checkId = ++latestActivityCheck.current;
       setActivityCheck(everything.checkingActivity());
       setIsCheckingActivity(true);
       setActivityUpdatedAt(null);
-      setIsConfirmingEverything(true);
+      openConfirmation();
       void check.then((activity) => {
         if (latestActivityCheck.current !== checkId) return;
         setActivityCheck(
@@ -280,6 +290,7 @@ function SidebarUpdateControl() {
       open={isConfirmingEverything}
       onOpenChange={(open) => (open ? setIsConfirmingEverything(true) : closeConfirmation())}
       checking={isCheckingActivity}
+      checkingProviders={isCheckingProviders}
       contentUpdatedAt={activityUpdatedAt}
       version={everything.version}
       providerCount={everything.providerCount}
