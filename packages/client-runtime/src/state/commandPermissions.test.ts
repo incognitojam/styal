@@ -10,6 +10,7 @@ import {
   DEFAULT_SERVER_SETTINGS,
   AuthAccessReadScope,
   AuthAccessWriteScope,
+  AuthEnvironmentMaintainScope,
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
   AuthPreviewOperateScope,
@@ -161,17 +162,18 @@ describe("command permissions", () => {
   );
 
   it.effect.each([
-    WS_METHODS.serverUpdateSettings,
-    WS_METHODS.serverRunStorageCleanup,
-    WS_METHODS.sourceControlSignInStart,
-    WS_METHODS.sourceControlSignInWait,
-    WS_METHODS.sourceControlSignInCancel,
-  ])("requires the destination settings grant for %s", (method) =>
+    { method: WS_METHODS.serverUpdateSettings, scope: AuthSettingsWriteScope },
+    { method: WS_METHODS.serverRunStorageCleanup, scope: AuthSettingsWriteScope },
+    { method: WS_METHODS.sourceControlSignInStart, scope: AuthSettingsWriteScope },
+    { method: WS_METHODS.sourceControlSignInWait, scope: AuthSettingsWriteScope },
+    { method: WS_METHODS.sourceControlSignInCancel, scope: AuthSettingsWriteScope },
+    { method: WS_METHODS.serverReclaimDatabaseSpace, scope: AuthEnvironmentMaintainScope },
+  ])("requires the destination $scope grant for $method", ({ method, scope }) =>
     Effect.scoped(
       Effect.gen(function* () {
         const registry = yield* setup;
-        const cleanup = createCommandPermissions(runtime, method);
-        expect(registry.get(cleanup.permissionAtom(env))).toBe(false);
+        const command = createCommandPermissions(runtime, method);
+        expect(registry.get(command.permissionAtom(env))).toBe(false);
         registry.set(
           sessions(env),
           AsyncResult.success({
@@ -180,27 +182,23 @@ describe("command permissions", () => {
             permissions: [AuthOrchestrationReadScope],
           }),
         );
-        expect(registry.get(cleanup.permissionAtom(env))).toBe(false);
-        expect((yield* cleanup.authorize(registry, env).pipe(Effect.flip))._tag).toBe(
+        expect(registry.get(command.permissionAtom(env))).toBe(false);
+        expect((yield* command.authorize(registry, env).pipe(Effect.flip))._tag).toBe(
           "EnvironmentAuthorizationError",
         );
         registry.set(sessions(env), AsyncResult.success(grant(true)));
-        expect(registry.get(cleanup.permissionAtom(env))).toBe(false);
-        expect((yield* cleanup.authorize(registry, env).pipe(Effect.flip))._tag).toBe(
+        expect(registry.get(command.permissionAtom(env))).toBe(false);
+        expect((yield* command.authorize(registry, env).pipe(Effect.flip))._tag).toBe(
           "EnvironmentAuthorizationError",
         );
         registry.set(
           sessions(env),
-          AsyncResult.success({
-            ...grant(true),
-            scopes: [AuthSettingsWriteScope],
-            permissions: [AuthSettingsWriteScope],
-          }),
+          AsyncResult.success({ ...grant(true), scopes: [scope], permissions: [scope] }),
         );
-        expect(registry.get(cleanup.permissionAtom(env))).toBe(true);
-        yield* cleanup.authorize(registry, env);
+        expect(registry.get(command.permissionAtom(env))).toBe(true);
+        yield* command.authorize(registry, env);
         registry.set(sessions(other), AsyncResult.success(grant(false)));
-        expect(registry.get(cleanup.permissionAtom(other))).toBe(false);
+        expect(registry.get(command.permissionAtom(other))).toBe(false);
       }),
     ),
   );
