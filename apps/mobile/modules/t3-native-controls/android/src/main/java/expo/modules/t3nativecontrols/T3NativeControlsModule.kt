@@ -11,7 +11,9 @@ import android.provider.Settings
 import android.text.format.DateFormat
 import androidx.annotation.RequiresApi
 import androidx.core.content.FileProvider
+import androidx.core.view.WindowCompat
 import expo.modules.kotlin.Promise
+import expo.modules.kotlin.functions.Queues
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import java.io.File
@@ -21,9 +23,19 @@ class T3NativeControlsModule : Module() {
   private var filePreviewPromise: Promise? = null
   private var installPermissionPromise: Promise? = null
 
-  @Suppress("TooGenericExceptionCaught") // Clear the pending promise before rethrowing.
+  // Clear the pending promise before rethrowing. Expo declares every export in this one block.
+  @Suppress("TooGenericExceptionCaught", "LongMethod")
   override fun definition() = ModuleDefinition {
     Name("T3NativeControls")
+
+    // React Native sets this once, at launch, from the system theme rather than the app's.
+    AsyncFunction("setNavigationBarStyle") { light: Boolean ->
+      // Below Android 10, React Native paints the navigation bar color itself.
+      if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return@AsyncFunction
+      val window = appContext.currentActivity?.window ?: return@AsyncFunction
+      val controller = WindowCompat.getInsetsController(window, window.decorView)
+      controller.isAppearanceLightNavigationBars = light
+    }.runOnQueue(Queues.MAIN)
 
     Function("is24HourFormat") {
       val context = appContext.reactContext ?: error("The app is not active.")
