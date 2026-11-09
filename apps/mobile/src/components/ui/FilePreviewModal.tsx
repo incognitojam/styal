@@ -1,8 +1,19 @@
-import * as Dialog from "./ui/Dialog";
+import * as Dialog from "./Dialog";
 import { requireNativeModule } from "expo";
 import { useEffect, useEffectEvent, useId, useRef, useState } from "react";
 
-import type { FilePreviewImage, FilePreviewViewerProps } from "./FilePreviewModal.types";
+import type {
+  FilePreviewImage,
+  FilePreviewModalProps,
+  FilePreviewViewerProps,
+} from "./FilePreviewModal.types";
+import { FilePreviewSession } from "./FilePreviewSession";
+
+export type {
+  FilePreviewItem,
+  FilePreviewSource,
+  ResolvedFilePreviewSource,
+} from "./FilePreviewModal.types";
 
 const NativeControls = requireNativeModule<{
   presentFile(
@@ -90,6 +101,7 @@ function NativeFilePreview(props: FilePreviewViewerProps) {
   return null;
 }
 
-export function FilePreview(props: FilePreviewViewerProps) {
-  return <NativeFilePreview {...props} />;
+/** Shows images, PDFs and documents full screen in the native viewer (Android: FilePreviewModal.android.tsx). */
+export function FilePreviewModal(props: FilePreviewModalProps) {
+  return <FilePreviewSession {...props} progressiveGallery Viewer={NativeFilePreview} />;
 }

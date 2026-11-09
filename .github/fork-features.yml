@@ -3751,7 +3751,7 @@ features:
       - A turned-off or missing provider says why instead of showing a disabled sign-in control. Upstream compact rows retain a trailing Sign in pill, account menu, Cancel or Docs control, sign-in details below, and stacked controls at large accessibility text sizes.
     rationale: Upstream compact rows from PR 25861 are retained while the fork keeps every configured provider, CLI-only statuses, provider icons, availability ordering and blurred email reveal. Compared with upstream revision 25b53299b7 on November 5, 2026; later Claude account configuration is outside this layout port.
     implementation_paths:
-      - apps/mobile/src/components/ui/AppSymbol.tsx
+      - apps/mobile/src/components/ui/AppSymbol.android.tsx
       - apps/mobile/src/features/settings/SettingsProviderAccountsRouteScreen.tsx
       - apps/mobile/src/features/settings/providerAccountStatus.ts
     upstream_paths:
@@ -3774,11 +3774,11 @@ features:
       - The thread settings Runtime row and the runtime mode choice lists, in thread settings and Server controls default permissions, show each mode's icon beside its label, and screen readers read only the label.
     rationale: Mobile features that refer to a runtime mode, such as the Blocked chip for tool calls Auto mode refused, need the same icon web shows for that mode.
     implementation_paths:
-      - apps/mobile/src/components/ui/AppSymbol.tsx
+      - apps/mobile/src/components/ui/AppSymbol.android.tsx
       - apps/mobile/src/features/threads/ThreadSettingsSheet.tsx
       - apps/mobile/src/features/threads/thread-settings-options.ts
     upstream_paths:
-      - apps/mobile/src/components/ui/AppSymbol.tsx
+      - apps/mobile/src/components/ui/AppSymbol.android.tsx
       - apps/mobile/src/features/threads/ThreadSettingsSheet.tsx
       - apps/mobile/src/features/threads/thread-settings-options.ts
     tests:
@@ -4375,7 +4375,7 @@ features:
       - Project actions can select desktop, database, and deployment roles in addition to the upstream icon set through the validated project-file contract.
       - Web and mobile use the same role vocabulary in action menus and completed action activity instead of falling back to generic or platform-inconsistent symbols.
     implementation_paths:
-      - apps/mobile/src/components/ui/AppSymbol.tsx
+      - apps/mobile/src/components/ui/AppSymbol.android.tsx
       - apps/mobile/src/lib/threadActivity.ts
       - apps/web/src/components/chat/TimelineToolActivityIcon.tsx
       - apps/web/src/components/chat/TimelineWorkEntryRow.logic.ts
@@ -4383,7 +4383,7 @@ features:
       - packages/contracts/src/orchestrationV2.ts
       - packages/contracts/src/t3ProjectFile.ts
     upstream_paths:
-      - apps/mobile/src/components/ui/AppSymbol.tsx
+      - apps/mobile/src/components/ui/AppSymbol.android.tsx
       - apps/mobile/src/lib/threadActivity.ts
       - apps/web/src/components/chat/TimelineToolActivityIcon.tsx
       - apps/web/src/components/chat/TimelineWorkEntryRow.logic.ts

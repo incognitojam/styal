@@ -1,27 +1,30 @@
 import * as Schema from "effect/Schema";
-import * as Dialog from "./ui/Dialog";
-import { useContext, useEffect, useEffectEvent, useState } from "react";
-import { Platform } from "react-native";
+import * as Dialog from "./Dialog";
+import { useContext, useEffect, useEffectEvent, useState, type ComponentType } from "react";
 
-import { loadLocalAttachmentPreview } from "../lib/localAttachmentPreview";
+import { loadLocalAttachmentPreview } from "../../lib/localAttachmentPreview";
 import {
   downloadAndShareAttachment,
   nativeViewerErrorMessage,
   shareLocalAttachment,
-} from "../lib/attachmentDownload";
-import { usePreviewPresentation } from "../lib/previewPresentation";
-import { refreshAssetUrl } from "../state/assets";
-import { filePreviewGallery, filePreviewKey, filePreviewName } from "../lib/filePreviewGallery";
+} from "../../lib/attachmentDownload";
+import { usePreviewPresentation } from "../../lib/previewPresentation";
+import { refreshAssetUrl } from "../../state/assets";
+import { filePreviewGallery, filePreviewKey, filePreviewName } from "../../lib/filePreviewGallery";
 import { FilePreviewGallery } from "./FilePreviewGallery";
-import { FilePreview } from "./FilePreview";
-import type { MediaActionsSource } from "../lib/mediaActionsSource";
-import type { FilePreviewItem, FilePreviewSource } from "./FilePreviewModal.types";
-
-export type {
+import type { MediaActionsSource } from "../../lib/mediaActionsSource";
+import type {
   FilePreviewItem,
+  FilePreviewModalProps,
   FilePreviewSource,
-  ResolvedFilePreviewSource,
+  FilePreviewViewerProps,
 } from "./FilePreviewModal.types";
+
+interface FilePreviewSessionOptions {
+  /** Opens before every image resolves; the viewer takes later URLs as they arrive. */
+  readonly progressiveGallery: boolean;
+  readonly Viewer: ComponentType<FilePreviewViewerProps>;
+}
 
 class PreviewResolutionError extends Schema.TaggedError<PreviewResolutionError>()(
   "PreviewResolutionError",
@@ -80,17 +83,19 @@ function pdfActionsSource(item: FilePreviewItem): MediaActionsSource {
   return { ...metadata, environmentId: item.environmentId, resource: item.resource };
 }
 
-function ResolvedFilePreview(props: {
-  readonly source: FilePreviewSource;
-  readonly onRequestClose: () => void;
-  readonly onOpenError?: (error: unknown) => void;
-  readonly onPresent: (isFinished: () => boolean) => void;
-}) {
+function ResolvedFilePreview(
+  props: FilePreviewSessionOptions & {
+    readonly source: FilePreviewSource;
+    readonly onRequestClose: () => void;
+    readonly onOpenError?: (error: unknown) => void;
+    readonly onPresent: (isFinished: () => boolean) => void;
+  },
+) {
+  const { progressiveGallery, Viewer } = props;
   // Freeze the group at opening; streaming messages and URL refreshes must not reopen the viewer.
   const [items] = useState(() => filePreviewGallery(props.source, []));
   const selectedKey = filePreviewKey(props.source);
   const selectedIndex = items.findIndex((item) => filePreviewKey(item) === selectedKey);
-  const progressiveGallery = Platform.OS === "ios";
   // Undefined while resolving, null once it cannot be.
   const [uris, setUris] = useState<readonly (string | null | undefined)[]>(() =>
     items.map((item) => ("uri" in item ? item.uri : undefined)),
@@ -134,7 +139,7 @@ function ResolvedFilePreview(props: {
   }, [items, selectedIndex, progressiveGallery]);
   const selected = { ...items[selectedIndex]!, name: filePreviewName(items[selectedIndex]!) };
   if (selected.kind === "image") {
-    // Android's viewer resets image gestures when its sources change during a presentation.
+    // A viewer that resets image gestures when its sources change waits for every image.
     if (!progressiveGallery && uris.some((uri) => uri === undefined)) return null;
     const images = items.map((item, index) => {
       const uri = uris[index];
@@ -145,7 +150,7 @@ function ResolvedFilePreview(props: {
       };
     });
     return (
-      <FilePreview
+      <Viewer
         source={{ kind: "image", images, selectedIndex }}
         onRequestClose={props.onRequestClose}
         onPresent={props.onPresent}
@@ -184,7 +189,7 @@ function ResolvedFilePreview(props: {
   const actionsSource =
     selected.kind === "pdf" ? (selected.actionsSource ?? pdfActionsSource(selected)) : undefined;
   return (
-    <FilePreview
+    <Viewer
       source={{
         ...selected,
         kind: selected.kind,
@@ -198,24 +203,22 @@ function ResolvedFilePreview(props: {
   );
 }
 
-export function FilePreviewModal(props: {
-  readonly source: FilePreviewSource | null;
-  readonly onRequestClose: () => void;
-
-  readonly onOpenError?: (error: unknown) => void;
-}) {
+/**
+ * The part of FilePreviewModal both platforms share: it resolves sources, freezes the gallery
+ * at opening and closes with its screen. Each platform's FilePreviewModal passes its viewer.
+ */
+export function FilePreviewSession(props: FilePreviewModalProps & FilePreviewSessionOptions) {
   const group = useContext(FilePreviewGallery);
   const source =
     props.source === null
       ? null
       : { ...props.source, gallery: filePreviewGallery(props.source, group) };
   usePreviewPresentation(source && filePreviewKey(source), props.onRequestClose);
-
   // A tap can land after the native viewer closed but before its close reached the caller, which
   // still holds the same item; that tap only opens a new viewer under a new key.
   // Only a viewer that presented and has since closed reopens; one still resolving never does.
   const [opening, setOpening] = useState<{
-    readonly source: FilePreviewSource | null;
+    readonly source: FilePreviewModalProps["source"];
     readonly count: number;
     readonly presented: { readonly isFinished: () => boolean } | null;
   }>({ source: props.source, count: 0, presented: null });
@@ -244,8 +247,10 @@ export function FilePreviewModal(props: {
     <ResolvedFilePreview
       key={`${opening.count}:${filePreviewKey(source)}`}
       source={source}
-      onPresent={onPresent}
       onRequestClose={props.onRequestClose}
+      progressiveGallery={props.progressiveGallery}
+      Viewer={props.Viewer}
+      onPresent={onPresent}
       {...(props.onOpenError ? { onOpenError: props.onOpenError } : {})}
     />
   );
