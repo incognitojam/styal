@@ -42,7 +42,7 @@ Ordinary coding tasks need no T3 tools.
 - A machine the user names that is not linked ("delegate this to my vps"): call \`t3_environment_link\` with a \`hint\` from their words. Never ask for a pairing code in chat.
 - In your reply, mention a thread by its \`link\`, verbatim. Never a plain title or bare id.
 ${GUIDE_TOOL_LINE}
-- A login, token, PIN or pairing code only the user can give: call \`request_secret\`, not a chat ask or a handoff. Not for access you have. When asked only to schedule, \`schedule_task\` without running its prompt.
+- A login, token, PIN, pairing code or sudo password only the user can give: call \`request_secret\`, not a chat ask or a handoff. Not for access you have. Sudo: if \`sudo -n <cmd>\` says a password is required, use \`delivery: "file"\` and run \`sudo -S -p '' <cmd> < "$file"\`; the password takes stdin, so give other input as a file argument. When asked only to schedule, \`schedule_task\` without running its prompt.
 - The \`t3-code\` MCP server's tools, such as \`mcp__t3_code__orchestrator_capabilities\`, may load late. Try the name once before you call it absent.`,
   `### Visuals and preview
 
