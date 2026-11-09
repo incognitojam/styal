@@ -382,7 +382,7 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   you keep or turn off settling on merge and after inactivity before you reach the sidebar. T3 Code
   setup does not mention settling as of
   [revision 67c0fc0](https://github.com/pingdotgg/t3code/tree/67c0fc0cdaf963b103518862dd7b68a9c758ecf2),
-  checked October 20, 2026. [Welcome wizard](./welcome-wizard.md#choose-your-workflow-defaults).
+  checked October 20, 2026. [Welcome page](./welcome-page.md).
 - **Import without replacing your existing setup.** Bring projects, threads, attachments, and
   supported preferences into styal while leaving the T3 Code installation intact. Existing styal
   project settings take precedence, and interrupted imports can resume without duplicating completed

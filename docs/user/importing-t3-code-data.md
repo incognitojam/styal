@@ -1,6 +1,6 @@
 # Import T3 Code data
 
-Use **Settings → Import data** on web or desktop, or during setup, to bring projects, threads, and preferences from T3 Code into styal. During setup, choose **T3 Code** in Projects; differing T3 preferences appear in their own **Preferences** step regardless of the project source. Claude Code and Codex history are a separate option available only during first setup; see [Import your projects](welcome-wizard.md#import-your-projects).
+Use **Settings → Import data** on web or desktop, or during setup, to bring projects, threads, and preferences from T3 Code into styal. During setup, choose **T3 Code** in Projects; differing T3 preferences appear in their own **Preferences** step regardless of the project source. Claude Code and Codex history are a separate option available only during first setup; see [Projects](welcome-page.md#projects).
 
 ## Choose a server
 

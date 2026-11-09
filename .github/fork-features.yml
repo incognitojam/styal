@@ -19,7 +19,7 @@ features:
       - apps/web/src/components/ChatView.tsx
       - apps/web/src/components/ThreadTerminalDrawer.tsx
       - apps/web/src/components/chat/useChatTerminalActions.ts
-      - apps/web/src/components/onboarding/WelcomeWizard.tsx
+      - apps/web/src/components/onboarding/WelcomePage.tsx
       - apps/web/src/hooks/useRightPanelSurfaceClose.ts
       - apps/web/src/hooks/useTerminalCloseConfirmation.ts
       - apps/web/src/lib/terminalCloseConfirm.ts
@@ -1069,7 +1069,7 @@ features:
       - apps/web/src/components/import/useLegacyImport.ts
       - apps/web/src/components/onboarding/FirstRunGate.tsx
       - apps/web/src/components/onboarding/OnboardingImportStep.tsx
-      - apps/web/src/components/onboarding/WelcomeWizard.tsx
+      - apps/web/src/components/onboarding/WelcomePage.tsx
       - apps/web/src/components/settings/DataImportSettings.logic.ts
       - apps/web/src/components/settings/DataImportSettings.tsx
       - apps/web/src/onboarding/firstRun.logic.ts
@@ -1087,7 +1087,7 @@ features:
       - apps/server/src/orchestration-v2/ProjectionStore.ts
       - apps/server/src/project/AgentSessionImporter.ts
       - apps/server/src/ws.ts
-      - apps/web/src/components/onboarding/WelcomeWizard.tsx
+      - apps/web/src/components/onboarding/WelcomePage.tsx
       - apps/web/src/components/settings/SettingsSidebarNav.tsx
       - apps/web/src/components/settings/settingsSearch.ts
       - apps/web/src/onboarding/projectImport.logic.ts
@@ -2427,7 +2427,7 @@ features:
       - apps/web/src/components/chat/TimelineToolActivityIcon.tsx
       - apps/web/src/components/chat/TimelineUserMessageRow.tsx
       - apps/web/src/components/chat/V2LifecycleRow.tsx
-      - apps/web/src/components/onboarding/WelcomeWizard.tsx
+      - apps/web/src/components/onboarding/WelcomePage.tsx
       - apps/web/src/components/settings/BranchNamingSettings.tsx
       - apps/web/src/components/settings/MobileAppSettingsRow.tsx
       - apps/web/src/components/settings/SavedEnvironmentRows.tsx
@@ -2575,7 +2575,7 @@ features:
       - apps/web/src/cloud/linkEnvironment.ts
       - apps/web/src/components/cloud/CloudEnvironmentConnectList.tsx
       - apps/web/src/components/cloud/ConnectCliAuthSurface.tsx
-      - apps/web/src/components/onboarding/WelcomeWizard.tsx
+      - apps/web/src/components/onboarding/WelcomePage.tsx
       - apps/web/src/components/settings/EnvironmentRow.tsx
       - infra/relay/alchemy.run.ts
       - infra/relay/src/Config.ts
@@ -6459,11 +6459,11 @@ features:
     implementation_paths:
       - apps/web/src/components/import/DataImportPanel.tsx
       - apps/web/src/components/onboarding/OnboardingImportStep.tsx
-      - apps/web/src/components/onboarding/WelcomeWizard.tsx
+      - apps/web/src/components/onboarding/WelcomePage.tsx
       - apps/web/src/components/onboarding/WorkflowStep.tsx
       - apps/web/src/onboarding/settlement.logic.ts
     upstream_paths:
-      - apps/web/src/components/onboarding/WelcomeWizard.tsx
+      - apps/web/src/components/onboarding/WelcomePage.tsx
       - packages/contracts/src/settings.ts
     tests:
       - apps/web/src/onboarding/settlement.logic.test.ts

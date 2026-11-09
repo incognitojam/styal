@@ -109,7 +109,7 @@ up on first launch; after an update, or any time, choose **Install** next to
 **styal command** in **Settings → About**. On macOS and Linux it adds a `styal`
 link in `~/.local/bin` (or `~/bin`); on Windows it adds the app's command folder
 to your `PATH`. Open a new terminal afterwards. If the folder is not on your
-`PATH`, **Add to PATH** in the welcome setup or **Settings → About** adds one
+`PATH`, **Add to PATH** on the Welcome page or in **Settings → About** adds one
 line to your shell's startup file. **Remove** takes it off, and the app does not
 add it again. If you already have another `styal`, it stays as it is.
 
