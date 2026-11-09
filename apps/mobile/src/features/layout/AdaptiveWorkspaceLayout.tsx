@@ -52,6 +52,10 @@ import { appAtomRegistry } from "../../state/atom-registry";
 import { useProjects } from "../../state/entities";
 import { useThreadCwd } from "../../state/use-selected-thread-worktree";
 import { environmentThreadShells } from "../../state/threads";
+import { savedConnectionsByIdAtom } from "../../state/use-remote-environment-registry";
+import { workspaceConnections } from "../../state/workspace";
+import { reportForkClientUsage } from "../../state/forkClientUsage";
+import { buildHomeProjectScopes, resolveHomeProjectFilterScope } from "../home/homeThreadList";
 import { mobilePreferencesAtom } from "../../state/preferences";
 import {
   DEFAULT_MOBILE_PROJECT_GROUPING_SETTINGS,
@@ -595,7 +599,7 @@ function AdaptiveWorkspaceLayoutContent(
   const compactAndroidSettings =
     Platform.OS === "android" && androidSettingsOpen && !layout.usesSplitView;
   // Reads the open page when pressed, so the layout context doesn't change on every navigation.
-  const handleStartNewTask = () => {
+  const startNewTask = (origin: "list" | "contextual") => {
     const state = rootStackState(navigation);
     const currentRoute = workspaceRoutesOf(
       state?.routes.slice(0, state.index + 1) ?? [],
@@ -619,19 +623,50 @@ function AdaptiveWorkspaceLayoutContent(
         : undefined;
     const preferences = appAtomRegistry.get(mobilePreferencesAtom);
     const saved = AsyncResult.isSuccess(preferences) ? preferences.value : undefined;
+    const filters = saved?.threadListFilters;
+    const environmentFilter = filters?.environmentId;
+    const selectedEnvironmentId =
+      environmentFilter && appAtomRegistry.get(savedConnectionsByIdAtom)[environmentFilter]
+        ? environmentFilter
+        : null;
+    const filteredScope = resolveHomeProjectFilterScope(
+      buildHomeProjectScopes({
+        projects,
+        environmentId: selectedEnvironmentId,
+        projectGroupingMode,
+      }),
+      projects,
+      { selectedProjectKey: filters?.projectKey ?? null, projectGroupingMode },
+    );
+    const connectedEnvironmentIds = new Set(
+      appAtomRegistry
+        .get(workspaceConnections.environmentsAtom)
+        .filter((environment) => environment.connectionState === "connected")
+        .map((environment) => environment.environmentId),
+    );
     handleSelectThreadRoute(
       newTaskDestination({
         projects,
         requestId: uuidv4(),
-        useLastProject: saved?.useLastProjectForNewThreads,
         currentProject: environmentId && projectId ? { environmentId, projectId } : undefined,
         lastProject: saved?.lastThreadProject,
+        filteredScope,
+        connectedEnvironmentIds,
+        origin,
       }),
     );
+    if (filteredScope) {
+      void reportForkClientUsage(filteredScope.representative.environmentId, {
+        feature: "sidebar-project-filter",
+        action: "thread_started",
+      });
+    }
   };
 
+  const handleStartNewTask = () => startNewTask("list");
+
   useHardwareKeyboardCommand("newTask", () => {
-    handleStartNewTask();
+    startNewTask("contextual");
     return true;
   });
 

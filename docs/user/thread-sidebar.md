@@ -19,11 +19,13 @@ your model and mode selections, unless the destination project has its own model
 Its branch and workspace mode come from your configured defaults. To continue in
 an existing worktree, use **New thread in this worktree** from the branch toolbar.
 
-On mobile, **New thread** starts in the current thread's project, or else in the
-last project you opened or chose on that device. If neither is available, the
-project picker opens. Turn off **Settings → General → Use last project** to
-choose a project every time. When you pick a project that is on more than one
-machine, the thread starts on a connected one if any is connected.
+On mobile, **New thread** follows the thread list's project filter. Without a filter,
+it uses the open thread's project, then the last project you used on that device.
+The new-thread keyboard shortcut prefers the open thread's project before the filter.
+If none of those projects is available, the project picker opens. When the filtered
+project has several workspaces, a connected copy wins; among connected copies, your current
+workspace is preferred, then the remembered one. Reopening a saved draft keeps its
+saved project regardless of the filter.
 
 When you change a new thread's project, T3 Code stays in the current environment
 if that project exists there. Otherwise it selects an environment that has it.

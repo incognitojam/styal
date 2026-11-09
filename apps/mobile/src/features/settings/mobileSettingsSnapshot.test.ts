@@ -67,7 +67,6 @@ const EVERY_PREFERENCE: Required<Preferences> = {
   turnUsageEnabled: false,
   turnUsageFigure: "cost",
   workingShelfEnabled: true,
-  useLastProjectForNewThreads: false,
   lastThreadProject: { environmentId: "synthetic-environment", projectId: "synthetic-project" },
   modelFavorites: [{ provider: ProviderInstanceId.make("codex"), model: "synthetic-model" }],
   threadListSettledShelfExpanded: true,
@@ -92,6 +91,7 @@ describe("mobileSettingsSnapshot", () => {
   it("reports the app's defaults for a fresh install", () => {
     const snapshot = mobileSettingsSnapshot({}, { notificationsEnabled: false });
     expect(isSnapshot(snapshot)).toBe(true);
+    expect(snapshot).not.toHaveProperty("useLastProjectForNewThreads");
     expect(snapshot).toMatchObject({
       notificationsEnabled: false,
       liveActivitiesEnabled: true,
@@ -106,7 +106,6 @@ describe("mobileSettingsSnapshot", () => {
       turnUsageEnabled: true,
       turnUsageFigure: "tokens",
       threadGrouping: "none",
-      useLastProjectForNewThreads: true,
       projectGroupingMode: "repository",
       modelFavoriteCount: 0,
       microphoneOrderCustomized: false,
@@ -135,7 +134,6 @@ describe("mobileSettingsSnapshot", () => {
       attendedAlertDelaySeconds: 120,
       composerEnterBehavior: "newline",
       projectGroupingMode: "repository_path",
-      useLastProjectForNewThreads: false,
       modelFavoriteCount: 1,
       // A remembered headset alone is not a reordering; bluetooth above wired is.
       microphoneOrderCustomized: true,

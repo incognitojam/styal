@@ -5,7 +5,11 @@ import type {
 import { EnvironmentId, ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { buildHomeProjectScopes, findHomeProjectScope } from "./homeThreadList";
+import {
+  buildHomeProjectScopes,
+  findHomeProjectScope,
+  resolveHomeProjectFilterScope,
+} from "./homeThreadList";
 import { makeThreadShellFixture } from "../../test-fixtures";
 import { buildThreadListV2Items } from "../threads/threadListV2";
 
@@ -84,6 +88,36 @@ describe("home project scopes", () => {
     });
     expect(scopes).toHaveLength(2);
     const scratchScope = scopes.find((scope) => scope.representative.isScratch)!;
+    for (const selectedProjectKey of [
+      scratchScope.key,
+      `${localEnvironmentId}:${projects[0]!.workspaceRoot}`,
+    ]) {
+      expect(
+        resolveHomeProjectFilterScope(scopes, projects, {
+          selectedProjectKey,
+          projectGroupingMode: "separate",
+        }),
+      ).toBe(scratchScope);
+    }
+    expect(
+      resolveHomeProjectFilterScope(scopes, projects, {
+        selectedProjectKey: "missing",
+        projectGroupingMode: "separate",
+      }),
+    ).toBeNull();
+    expect(
+      resolveHomeProjectFilterScope(scopes, projects, {
+        selectedProjectKey: null,
+        projectGroupingMode: "separate",
+      }),
+    ).toBeNull();
+    expect(
+      resolveHomeProjectFilterScope(
+        scopes.map((scope) => ({ ...scope, archived: true })),
+        projects,
+        { selectedProjectKey: scratchScope.key, projectGroupingMode: "separate" },
+      ),
+    ).toBeNull();
     const filtered = buildThreadListV2Items({
       threads,
       environmentId: null,
@@ -104,6 +138,12 @@ describe("home project scopes", () => {
     });
     const remoteScratch = remoteScopes.find((scope) => scope.representative.isScratch)!;
     expect(remoteScratch.key).toBe(scratchScope.key);
+    expect(
+      resolveHomeProjectFilterScope(remoteScopes, projects, {
+        selectedProjectKey: scratchScope.key,
+        projectGroupingMode: "separate",
+      }),
+    ).toBe(remoteScratch);
     expect(remoteScratch.projectRefs).toEqual([
       { environmentId: remoteEnvironmentId, projectId: projects[1]!.id },
     ]);

@@ -746,7 +746,6 @@ const mobileSnapshot = {
   threadGrouping: "none",
   projectGroupingMode: "repository",
   workingShelfEnabled: false,
-  useLastProjectForNewThreads: true,
   threadListWorkingShelfExpanded: false,
   threadListSettledShelfExpanded: true,
   threadListSnoozedShelfExpanded: false,
@@ -780,7 +779,11 @@ it.effect("records a mobile settings snapshot only from mobile, as the client se
       ClientFeatureUsage.reporter({ surface, clientOs: "iOS", clientAppVersion: "9.9.9" }).pipe(
         Effect.provideService(AnalyticsService.AnalyticsService, analytics),
       );
-    const input = yield* decode({ ...mobileSnapshot, connectOnboardingOptOutAccounts: ["x"] });
+    const input = yield* decode({
+      ...mobileSnapshot,
+      connectOnboardingOptOutAccounts: ["x"],
+      useLastProjectForNewThreads: false,
+    });
     yield* (yield* reporter("web"))(input);
     yield* (yield* reporter("desktop"))(input);
     yield* (yield* reporter("mobile"))(yield* decode(snapshot));
