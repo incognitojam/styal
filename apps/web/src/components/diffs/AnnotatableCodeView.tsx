@@ -287,12 +287,12 @@ export function AnnotatableCodeView({
       items={items}
       selectedLines={selectedLines}
       onSelectedLinesChange={setSelectedLines}
-      onRevealSearchMatch={(item) => onRevealSearchMatch(item.id)}
       options={{
         ...options,
         enableGutterUtility: !hasOpenComment,
         enableLineSelection: !hasOpenComment,
         onGutterUtilityClick: beginComment,
+        onRevealSearchMatch: (item) => onRevealSearchMatch(item.id),
       }}
       renderHeaderFilenameSuffix={(item) =>
         item.type === "diff" ? renderHeaderFilenameSuffix(item.fileDiff, item.id) : null

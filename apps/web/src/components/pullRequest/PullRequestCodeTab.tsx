@@ -942,6 +942,19 @@ function PullRequestCodeTab({
     onGutterUtilityClick: beginComment,
     onLineSelectionEnd: beginComment,
     onPostRender: codeViewReveal.flush,
+    // Find may repeat requests before render; only unfold, never toggle.
+    onRevealSearchMatch: (item: CodeViewItem<ReviewAnnotationGroup>) => {
+      const diff = items.find((candidate) => candidate.id === item.id);
+      if (!diff) return;
+      setToggledFiles((current) =>
+        toggleFileDiffFoldForViewed(
+          item.id,
+          false,
+          foldOverrideForFile(resolveFileDiffPath(diff.fileDiff)),
+          current,
+        ),
+      );
+    },
   };
 
   const runThreadCommand = async (
@@ -1602,19 +1615,6 @@ function PullRequestCodeTab({
               {...(diffSortMode === "smart" ? { renderHeaderFilenameSuffix } : {})}
               renderHeaderMetadata={renderHeaderMetadata}
               renderAnnotation={renderAnnotation}
-              // Find may repeat requests before render; only unfold, never toggle.
-              onRevealSearchMatch={(item) => {
-                const diff = items.find((candidate) => candidate.id === item.id);
-                if (!diff) return;
-                setToggledFiles((current) =>
-                  toggleFileDiffFoldForViewed(
-                    item.id,
-                    false,
-                    foldOverrideForFile(resolveFileDiffPath(diff.fileDiff)),
-                    current,
-                  ),
-                );
-              }}
               unsafeCSSExtra={REPLACE_FILE_COUNTS_CSS}
             />
           </FileViewedToggleContext>
