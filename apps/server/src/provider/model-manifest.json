@@ -1,17 +1,12 @@
 {
   "version": 1,
-  "updatedAt": "2026-11-10T17:58:52.641Z",
+  "updatedAt": "2026-11-10T23:32:09.495Z",
   "compatibility": [
     {
       "driver": "codex",
       "t3CodeRange": ">=0.0.44",
       "recommendedRange": ">=0.159.0",
       "autoUpdates": [
-        {
-          "version": "0.165.0",
-          "package": "@openai/codex",
-          "styal": "0.1.1-nightly.20261027.1009"
-        },
         {
           "version": "0.166.0",
           "package": "@openai/codex",
@@ -21,6 +16,11 @@
           "version": "0.167.0",
           "package": "@openai/codex",
           "styal": "0.1.1-nightly.20261031.1123"
+        },
+        {
+          "version": "0.167.1",
+          "package": "@openai/codex",
+          "styal": "0.1.1-nightly.20261104.1168"
         }
       ],
       "ranges": [
