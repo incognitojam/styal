@@ -40,8 +40,8 @@ vi.mock(import("../state/server"), async (original) => {
   const { Atom } = await import("effect/reactivity");
   const noConfig = Atom.make(null);
   const modelsConfig = Atom.make({
+    environment: { platform: { os: "darwin" } },
     availableEditors: [],
-    environment: { platform: {} },
     settings: { providerInstances: {} },
     providers: [
       {
