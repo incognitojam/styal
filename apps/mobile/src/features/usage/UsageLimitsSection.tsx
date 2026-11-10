@@ -11,6 +11,8 @@ import {
   type ServerProviderUsageWindow,
 } from "@t3tools/contracts";
 import {
+  type ResetCreditChoice,
+  resetCreditChoices,
   formatDuration,
   formatResetsIn,
   limitsNotice,
@@ -24,7 +26,6 @@ import { Atom } from "effect/reactivity";
 import { Linking, Pressable, View } from "react-native";
 
 import { AppText as Text } from "../../components/ui/AppText";
-import { Button } from "../../components/ui/Button";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import { environmentPresentations } from "../../state/presentation";
 import { serverEnvironment } from "../../state/server";
@@ -247,22 +248,12 @@ export function ResetCredits(props: {
 
   // The full screen lists every credit's expiry; the composer pill keeps the soonest.
   const expiries = dense ? null : resetCreditExpiries(credits);
-  const expiresIn =
-    credits.nextExpiresAt && !expiries
-      ? formatDuration(Date.parse(credits.nextExpiresAt) - now)
-      : null;
-  const summary =
-    credits.availableCount === 0
-      ? "No reset credits banked"
-      : `${credits.availableCount} ${credits.availableCount === 1 ? "reset credit" : "reset credits"} banked${
-          expiresIn ? ` · next expires in ${expiresIn}` : ""
-        }`;
 
-  const redeem = async () => {
+  const redeem = async (choice: ResetCreditChoice) => {
     if (!readEnvironmentScope(environmentId, AuthProvidersManageScope)) return;
     setBusy(true);
     setStatus(null);
-    const result = await consume({ environmentId, input });
+    const result = await consume({ environmentId, input: choice.input });
     setBusy(false);
     if (result._tag === "Success") {
       setStatus(result.value.warning ?? OUTCOME_TEXT[result.value.outcome]);
@@ -275,49 +266,50 @@ export function ResetCredits(props: {
     );
   };
 
-  const confirm = () => {
+  const confirm = (choice: ResetCreditChoice) => {
     if (!readEnvironmentScope(environmentId, AuthProvidersManageScope)) return;
-    Dialog.alert(
-      "Use a reset credit?",
-      "This redeems one credit on your account and clears the current rate-limit windows. It cannot be undone.",
-      [
-        { text: "Cancel", style: "cancel" },
-        { text: "Use credit", onPress: () => void redeem() },
-      ],
-    );
+    Dialog.alert("Use a reset credit?", choice.confirmDescription, [
+      { text: "Cancel", style: "cancel" },
+      { text: "Use credit", onPress: () => void redeem(choice) },
+    ]);
   };
 
-  if (dense) {
-    return (
-      <View className="flex-row flex-wrap items-center gap-x-3 gap-y-1">
-        <Text className="text-xs tabular-nums text-foreground-tertiary">{summary}</Text>
-        {credits.availableCount > 0 ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityState={{ disabled: busy || !canManageProviders }}
-            disabled={busy || !canManageProviders}
-            onPress={confirm}
-            className="rounded-full bg-subtle-strong px-2.5 py-1 disabled:opacity-[0.45]"
-          >
-            <Text className="text-xs font-t3-medium text-foreground">
-              {busy ? "Using…" : "Use reset"}
-            </Text>
-          </Pressable>
-        ) : null}
-        {!canManageProviders ? (
-          <Text className="text-xs text-foreground-tertiary">
-            This connection cannot manage provider accounts.
-          </Text>
-        ) : null}
-        {status ? <Text className="text-sm text-foreground">{status}</Text> : null}
-      </View>
-    );
-  }
   return (
-    <View className="gap-3">
-      <Text className="text-sm tabular-nums text-foreground-muted">{summary}</Text>
+    <View className="gap-1">
+      {resetCreditChoices(credits, input, now).map((choice) => (
+        <View key={choice.key} className="flex-row flex-wrap items-center gap-x-3 gap-y-1">
+          <Text className="text-xs tabular-nums text-foreground-tertiary">
+            {choice.key === "next" && expiries
+              ? `${choice.availableCount} ${choice.availableCount === 1 ? "reset credit" : "reset credits"} banked`
+              : choice.summary}
+          </Text>
+          {choice.availableCount > 0 ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ disabled: busy || !canManageProviders }}
+              disabled={busy || !canManageProviders}
+              onPress={() => confirm(choice)}
+              className={
+                dense
+                  ? "rounded-full bg-subtle-strong px-2.5 py-1 disabled:opacity-[0.45]"
+                  : "min-h-[44px] justify-center rounded-full bg-subtle-strong px-3 py-1.5 disabled:opacity-[0.45]"
+              }
+            >
+              <Text
+                className={
+                  dense
+                    ? "text-xs font-t3-medium text-foreground"
+                    : "text-sm font-t3-medium text-foreground"
+                }
+              >
+                {busy ? "Using…" : choice.actionLabel}
+              </Text>
+            </Pressable>
+          ) : null}
+        </View>
+      ))}
       {expiries && expiries.length > 0 ? (
-        <View className="gap-2">
+        <View className="gap-2 pt-2">
           {expiries.map(({ expiresAt, count }) => (
             <View
               key={expiresAt ?? "never"}
@@ -340,16 +332,6 @@ export function ResetCredits(props: {
             </View>
           ))}
         </View>
-      ) : null}
-      {credits.availableCount > 0 ? (
-        <Button
-          label="Use reset"
-          tone="primary"
-          onPress={confirm}
-          loading={busy}
-          disabled={!canManageProviders}
-          fullWidth
-        />
       ) : null}
       {!canManageProviders ? (
         <Text className="text-xs text-foreground-tertiary">
