@@ -2168,7 +2168,7 @@ describe("V2 continued response timer boundaries", () => {
     );
     expect(rows.filter((entry) => entry.type === "run-fold")).toHaveLength(1);
     expect(rows.find((entry) => entry.type === "run-fold")).toMatchObject({
-      label: "Worked for 35m",
+      label: "Worked for 35m 0s",
     });
     expect(
       feed
@@ -2190,7 +2190,7 @@ describe("V2 continued response timer boundaries", () => {
       [{ id: runId }],
     );
     expect(rows.find((entry) => entry.type === "run-fold")).toMatchObject({
-      label: "You stopped after 15m",
+      label: "You stopped after 15m 0s",
     });
   });
 
@@ -2206,7 +2206,7 @@ describe("V2 continued response timer boundaries", () => {
       runs,
     );
     expect(rows.find((entry) => entry.type === "run-fold")).toMatchObject({
-      label: "You stopped after 35m",
+      label: "You stopped after 35m 0s",
     });
   });
 });

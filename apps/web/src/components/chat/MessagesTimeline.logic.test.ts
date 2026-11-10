@@ -5521,7 +5521,9 @@ describe("V2 continued response elapsed time", () => {
   it("uses the latest end of overlapping tools and retains quiet final time across two restarts", () => {
     const rows = deriveMessagesTimelineRows(input);
     expect(rows.filter((row) => row.kind === "turn-fold")).toHaveLength(1);
-    expect(rows.find((row) => row.kind === "turn-fold")).toMatchObject({ label: "Worked for 35m" });
+    expect(rows.find((row) => row.kind === "turn-fold")).toMatchObject({
+      label: "Worked for 35m 0s",
+    });
   });
 
   it("does not count a recovery-cancelled run's synthetic completion as work", () => {
@@ -5532,7 +5534,7 @@ describe("V2 continued response elapsed time", () => {
       latestRun: { runId: first, status: "cancelled", startedAt: iso(0), completedAt: iso(40) },
     });
     expect(rows.find((row) => row.kind === "turn-fold")).toMatchObject({
-      label: "You stopped after 15m",
+      label: "You stopped after 15m 0s",
     });
   });
 
@@ -5542,7 +5544,7 @@ describe("V2 continued response elapsed time", () => {
       latestRun: { ...input.latestRun, status: "interrupted" },
     });
     expect(rows.find((row) => row.kind === "turn-fold")).toMatchObject({
-      label: "You stopped after 35m",
+      label: "You stopped after 35m 0s",
     });
   });
 });
