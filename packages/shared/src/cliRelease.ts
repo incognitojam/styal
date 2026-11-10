@@ -10,7 +10,8 @@ export const CLI_NPM_DIST_TAGS_URL = `https://registry.npmjs.org/-/package/${CLI
 export const CLI_RELEASE_CHECKSUMS_FILE = "SHA256SUMS";
 export const CLI_RELEASE_BASE_URL_ENV = "STYAL_RELEASE_BASE_URL";
 
-// Keep archive keys aligned with the build_linux_cli matrix in .github/workflows/fork-cli-archives.yml.
+// Keep archive keys aligned with the build_linux_cli matrix in .github/workflows/fork-cli-archives.yml,
+// and with the SSH runner's host check in packages/ssh/src/tunnel.ts.
 // Intel macOS is outside the supported platform set.
 const CLI_ARCHIVE_PLATFORM_KEYS = [
   "darwin-arm64",
