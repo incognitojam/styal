@@ -123,6 +123,11 @@ export const PullRequestCheck = Schema.Struct({
    * answer, which is not the same as optional: only an explicit true or false earns that claim.
    */
   required: Schema.optional(Schema.Boolean),
+  /**
+   * Not a check: it stands for ones the host could not list, such as workflow runs awaiting
+   * approval when that read fails, so nothing waits on it or counts it as passing.
+   */
+  placeholder: Schema.optional(Schema.Boolean),
 });
 export type PullRequestCheck = typeof PullRequestCheck.Type;
 

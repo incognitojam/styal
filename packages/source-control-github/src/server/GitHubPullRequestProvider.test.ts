@@ -323,6 +323,7 @@ describe("gitHubViewerPermissions", () => {
           status: "action-required",
           description: "GitHub could not determine whether workflows are awaiting approval.",
           url: null,
+          placeholder: true,
         },
         {
           name: "build",
@@ -713,6 +714,7 @@ it.effect("keeps an unsafe workflow approval scope visible as unknown", () =>
         status: "action-required",
         description: "GitHub could not determine whether workflows are awaiting approval.",
         url: null,
+        placeholder: true,
       },
     ]);
   }).pipe(
