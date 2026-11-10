@@ -55,12 +55,15 @@ const install = Effect.fn(function* () {
   yield* installSystemNotifications().pipe(
     Effect.provideService(
       DesktopIpc.DesktopIpc,
-      DesktopIpc.make({
-        handle: (channel, listener) => void handlers.set(channel, listener),
-        removeHandler: (channel) => void handlers.delete(channel),
-        on: () => undefined,
-        removeAllListeners: () => undefined,
-      }),
+      DesktopIpc.make(
+        {
+          handle: (channel, listener) => void handlers.set(channel, listener),
+          removeHandler: (channel) => void handlers.delete(channel),
+          on: () => undefined,
+          removeAllListeners: () => undefined,
+        },
+        () => Effect.succeed(true),
+      ),
     ),
   );
   return {
