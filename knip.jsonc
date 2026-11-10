@@ -28,6 +28,10 @@
         "linux-after-pack.ts",
         "mobile-behavior/run.ts",
         "mobile-native-client.ts",
+        // e2e loads its config and the scenarios by path, and starts the app script.
+        "e2e.config.ts",
+        "prove-scenario.ts",
+        "scenarios/*.ts",
         "setup-worktree.ts",
         "teardown-worktree.ts",
         "verify-cli-package.mjs",
@@ -38,7 +42,7 @@
       ],
       // esbuild stays in scripts/package.json as in upstream, whose deleted release
       // workflow was its only user, so upstream bumps to it apply cleanly.
-      "ignoreDependencies": ["agent-device", "esbuild"],
+      "ignoreDependencies": ["esbuild"],
       // The `@styal/cli` npm package's files: copied into the package, never imported.
       // knip-schemas.test.ts writes a throwaway project to .knip-test-*, which a
       // knip run beside it in check:changed must not report.
