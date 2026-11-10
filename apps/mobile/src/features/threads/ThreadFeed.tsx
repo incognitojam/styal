@@ -2129,7 +2129,11 @@ function renderFeedEntry(
       const bubbleBodyVisible = foldRowId === null || foldExpanded;
       const intent = props.userMessageGrouping.continuesSteer
         ? null
-        : resolveUserMessageIntent(message.inputIntent, message.id);
+        : resolveUserMessageIntent(
+            message.inputIntent,
+            message.id,
+            message.projectedItem?.item.status === "pending",
+          );
       const { gridImages, listedAttachments, inlineAttachmentIds } = userMessageAttachmentLayout({
         text: message.text,
         context: message.context,

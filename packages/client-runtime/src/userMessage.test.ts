@@ -264,6 +264,12 @@ describe("resolveUserMessageIntent", () => {
       description: "Replied to a tool approval",
     });
     expect(resolveUserMessageIntent("steer", "message-1")?.label).toBe("Steer");
+    expect(resolveUserMessageIntent("steer", "message-1", true)?.label).toBe(
+      "Steer · waiting to be read",
+    );
+    expect(resolveUserMessageIntent("steer", "approval-feedback:request-1", true)?.label).toBe(
+      "Approval feedback",
+    );
   });
 
   it("labels a promoted queued message as a steer and keeps its origin in the description", () => {

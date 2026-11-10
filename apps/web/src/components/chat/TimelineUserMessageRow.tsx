@@ -352,7 +352,11 @@ function AutomationMessageRow({ row }: { row: Extract<TimelineRow, { kind: "mess
                 Open automation
               </Link>
             ) : null}
-            <UserMessageIntentMarker intent={row.message.inputIntent} messageId={row.message.id} />
+            <UserMessageIntentMarker
+              intent={row.message.inputIntent}
+              messageId={row.message.id}
+              unread={row.projectedItem?.item.status === "pending"}
+            />
             <TimelineRowTimestamp
               createdAt={row.message.createdAt}
               timestampFormat={ctx.timestampFormat}
@@ -916,7 +920,11 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
         </InlineButton>
       ) : null}
       {row.continuesSteer ? null : (
-        <UserMessageIntentMarker intent={row.message.inputIntent} messageId={row.message.id} />
+        <UserMessageIntentMarker
+          intent={row.message.inputIntent}
+          messageId={row.message.id}
+          unread={row.projectedItem?.item.status === "pending"}
+        />
       )}
       <Tooltip>
         <TooltipTrigger render={<p className="text-muted-foreground text-xs tabular-nums" />}>
@@ -1194,11 +1202,13 @@ const ACTIONS_REVEAL_CLASS_NAME =
 function UserMessageIntentMarker({
   intent,
   messageId,
+  unread,
 }: {
   readonly intent: ChatMessage["inputIntent"];
   readonly messageId: string;
+  readonly unread: boolean;
 }) {
-  const presentation = resolveUserMessageIntent(intent, messageId);
+  const presentation = resolveUserMessageIntent(intent, messageId, unread);
   if (!presentation) return null;
   return (
     <Tooltip>

@@ -121,10 +121,19 @@ export function resolveUserMessagePresentation(message: {
 export function resolveUserMessageIntent(
   intent: OrchestrationV2UserMessageInputIntent | undefined,
   messageId?: string,
+  unread = false,
 ) {
   // The server records approval replies as steers but routes them only to the requesting tool.
   if (intent === "steer" && messageId?.startsWith("approval-feedback:")) {
     return { label: "Approval feedback", steer: false, description: "Replied to a tool approval" };
+  }
+  if (unread && (intent === "steer" || intent === "promoted_queued_to_steer")) {
+    return {
+      label: "Steer · waiting to be read",
+      steer: true,
+      description:
+        "Waiting for the agent to read this. It reads steers between steps, after a running command finishes.",
+    };
   }
   switch (intent) {
     case "queued_turn":
