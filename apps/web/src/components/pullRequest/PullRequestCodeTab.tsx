@@ -14,6 +14,7 @@ import type {
   PullRequestThreadCommentsResult,
 } from "@t3tools/contracts";
 import {
+  ArrowDownWideNarrowIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   Columns2Icon,
@@ -23,7 +24,6 @@ import {
   MessageSquareOffIcon,
   PilcrowIcon,
   Rows3Icon,
-  SparklesIcon,
   Settings2Icon,
   TextWrapIcon,
   TriangleAlertIcon,
@@ -1409,7 +1409,7 @@ function PullRequestCodeTab({
               />
             }
           >
-            <SparklesIcon className="size-3.5" />
+            <ArrowDownWideNarrowIcon className="size-3.5" />
           </TooltipTrigger>
           <TooltipPopup side="top">
             {diffSortMode === "smart" ? "Sort files alphabetically" : "Sort files by relevance"}

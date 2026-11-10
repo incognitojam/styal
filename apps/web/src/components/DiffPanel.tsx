@@ -9,6 +9,7 @@ import {
 import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
 import type { ReviewBranchCommitsResult, ScopedThreadRef, RunId } from "@t3tools/contracts";
 import {
+  ArrowDownWideNarrowIcon,
   ArrowRightIcon,
   CheckIcon,
   ChevronDownIcon,
@@ -17,7 +18,6 @@ import {
   FolderTreeIcon,
   PilcrowIcon,
   Rows3Icon,
-  SparklesIcon,
   TextWrapIcon,
 } from "lucide-react";
 import { ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown } from "lucide";
@@ -1229,7 +1229,7 @@ export default function DiffPanel({
               />
             }
           >
-            <SparklesIcon className="size-3.5" />
+            <ArrowDownWideNarrowIcon className="size-3.5" />
           </TooltipTrigger>
           <TooltipPopup side="top">
             {diffSortMode === "smart" ? "Sort files alphabetically" : "Sort files by relevance"}
