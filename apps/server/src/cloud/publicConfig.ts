@@ -114,6 +114,15 @@ export const hostedAppUrlConfig = makePublicValueConfig(
   DEFAULT_HOSTED_APP_URL,
 ).pipe(Config.mapEffect(validateHostedAppUrl));
 
+/**
+ * Where agent sign-ins on the styal Link address are approved. styal serves one hosted app, with
+ * the same approval page, for nightly and stable builds.
+ */
+export const agentApprovalAppUrlConfig = makePublicValueConfig(
+  "T3CODE_HOSTED_APP_URL",
+  DEFAULT_HOSTED_APP_URL,
+).pipe(Config.mapEffect(validateHostedAppUrl));
+
 function validateHostedAppUrl(value: string) {
   try {
     const url = new URL(value);

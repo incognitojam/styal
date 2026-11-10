@@ -10,15 +10,16 @@ in once, and you choose what it may do.
 
 Open the command palette (`Cmd/Ctrl+K`) and choose **Use styal in another
 app (MCP)**, or use the button in **Settings → Sharing & access**. Pick the
-app, choose what it may do, and follow the step for that app. Assistants like
+app and follow the step for that app. Assistants like
 Poke and Claude run in the cloud, so the wizard first asks you to sign in to
 styal Link and turn it on for the environment. To reach your other machines
 through the same connection, turn on **Work with your other machines** in Labs
 and [add them](./remote-access.md#your-machines).
 
-When the app opens the sign-in page, choose **Get code** in the wizard and paste
-the code there. A code works once, for 5 minutes, and approves only the level
-you chose.
+When the app opens the sign-in page, choose what it may do and approve with your
+styal Link account. On an older environment, the wizard asks for the level and
+gives you a code to paste instead. A code works once, for 5 minutes, and
+approves only that level.
 
 For an app that is not listed, choose **Something else…**, add a remote MCP
 server with OAuth in that app, and paste the URL. Apps that require their own
@@ -50,22 +51,22 @@ device is connected over, so an agent on the same device can reach it.
 
 ## Approve a sign-in
 
-The first time an agent connects, it opens a sign-in page on the environment.
-The page names the agent and where its access goes:
+The first time an agent connects, it opens a sign-in page. When the agent
+reaches the environment through styal Link, the page opens on the styal web
+app: sign in with the styal Link account the environment is linked to and
+approve there, without a code. Otherwise the page opens on the environment.
+Either page names the agent and where its access goes:
 
 - For an agent on your computer, approval returns to a `localhost` address on
   the computer that opened the page.
 - For a hosted agent, approval goes to that service, such as `chatgpt.com`.
   Anyone who runs that service gets the access.
 
-Only approve a sign-in you just started. To approve, enter a code from
-**Use styal in another app (MCP)**, **Settings → Sharing & access**, or
-`styal auth pairing create` on the host. A browser already signed in to the
-environment with permission to manage access can approve without a code.
-
-When the page opens on the environment's styal Link address, choose the level
-and select **Approve with styal Link** instead. Sign in with the styal Link
-account the environment is linked to, and the sign-in completes without a code.
+Only approve a sign-in you just started. On the environment's own page, enter a
+code from **Use styal in another app (MCP)**, **Settings → Sharing & access**,
+or `styal auth pairing create` on the host. A browser already signed in to the
+environment with permission to manage access can approve without a code. On the
+web app, **Use a sign-in code instead** opens the environment's own page.
 
 A code from **Use styal in another app (MCP)** already carries the level you
 picked there. With another code, choose what the agent may do here: **Auto** is
