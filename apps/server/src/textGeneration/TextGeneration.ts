@@ -11,7 +11,7 @@ import {
 import { exhaustedUsageWindow } from "@t3tools/shared/usageLimits";
 import { defaultTextGenerationModel } from "@t3tools/shared/serverSettings";
 import * as ServerSettings from "../serverSettings.ts";
-import type { ModelSelection, ProviderInstanceId } from "@t3tools/contracts";
+import type { ModelSelection, ProjectId, ProviderInstanceId } from "@t3tools/contracts";
 import type { ProviderTextGeneration } from "@t3tools/provider-core/server/textGeneration";
 import { TextGenerationError } from "@t3tools/contracts";
 
@@ -77,9 +77,12 @@ const INVESTIGATING_DRIVERS = new Set(["codex", "claudeAgent"]);
 export const make = Effect.gen(function* () {
   const registry = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
   const sourceControl = yield* SourceControlProviderRegistry.SourceControlProviderRegistry;
+  const serverSettings = yield* ServerSettings.ServerSettingsService;
+  const textGenerators = yield* TextGenerators.TextGenerators;
   const generateWithRetry = Effect.fn("TextGeneration.generateWithRetry")(function* <A>(
     operation: TextGenerationOp,
     requested: ModelSelection,
+    projectId: ProjectId | null | undefined,
     run: (
       textGeneration: TextGeneration["Service"],
       modelSelection: ModelSelection,
@@ -93,9 +96,30 @@ export const make = Effect.gen(function* () {
       ...(yield* registry.listUnavailable),
     ];
     const attempted = new Set<string>();
+    if (projectId) {
+      const settings = yield* serverSettings.getSettings.pipe(
+        Effect.mapError(
+          (cause) =>
+            new TextGenerationError({
+              operation,
+              detail: "Could not read fallback model settings.",
+              cause,
+            }),
+        ),
+      );
+      for (const provider of providers) {
+        if (
+          provider.instanceId !== requested.instanceId &&
+          !resolveProjectProviderInstanceEnabled(settings, projectId, provider.instanceId)
+        ) {
+          attempted.add(provider.instanceId);
+        }
+      }
+    }
     let modelSelection = resolveTextGenerationModelSelection(
       { textGenerationModelSelection: requested },
       providers,
+      attempted,
     );
     while (true) {
       const result = yield* resolveInstance(registry, operation, modelSelection.instanceId).pipe(
@@ -121,11 +145,10 @@ export const make = Effect.gen(function* () {
       modelSelection = next;
     }
   });
-  const serverSettings = yield* ServerSettings.ServerSettingsService;
-  const textGenerators = yield* TextGenerators.TextGenerators;
   const generate = Effect.fn("TextGeneration.generate")(function* <A>(
     operation: TextGenerationOp,
     selection: ModelSelection,
+    projectId: ProjectId | null | undefined,
     invoke: (
       service: ProviderTextGeneration,
       modelSelection: ModelSelection,
@@ -171,7 +194,11 @@ export const make = Effect.gen(function* () {
           (provider) =>
             provider.instanceId === selection.instanceId ||
             provider.enabled !== true ||
-            !resolveProjectProviderInstanceEnabled(settings, null, provider.instanceId) ||
+            !resolveProjectProviderInstanceEnabled(
+              settings,
+              projectId ?? null,
+              provider.instanceId,
+            ) ||
             !provider.installed ||
             provider.auth.status === "unauthenticated" ||
             !isProviderAvailable(provider) ||
@@ -194,26 +221,32 @@ export const make = Effect.gen(function* () {
           "Review guides need a coding agent that can read the checkout. None is ready. Pick Codex or Claude as the review guide model in Settings → Source control.",
       });
     }
-    return yield* generateWithRetry(operation, selection, invoke);
+    return yield* generateWithRetry(operation, selection, projectId, invoke);
   });
   return TextGeneration.of({
     generateCommitMessage: Effect.fn("TextGeneration.generateCommitMessage")(function (input) {
       return generate(
         "generateCommitMessage",
         input.modelSelection,
+        input.projectId,
         (textGeneration, modelSelection) =>
           textGeneration.generateCommitMessage({ ...input, modelSelection }),
       );
     }),
     generatePrContent: Effect.fn("TextGeneration.generatePrContent")(function (input) {
-      return generate("generatePrContent", input.modelSelection, (textGeneration, modelSelection) =>
-        textGeneration.generatePrContent({ ...input, modelSelection }),
+      return generate(
+        "generatePrContent",
+        input.modelSelection,
+        input.projectId,
+        (textGeneration, modelSelection) =>
+          textGeneration.generatePrContent({ ...input, modelSelection }),
       );
     }),
     generateBranchName: Effect.fn("TextGeneration.generateBranchName")(function (input) {
       return generate(
         "generateBranchName",
         input.modelSelection,
+        input.projectId,
         (textGeneration, modelSelection) =>
           textGeneration.generateBranchName({ ...input, modelSelection }),
       );
@@ -222,6 +255,7 @@ export const make = Effect.gen(function* () {
       return generate(
         "generateReviewGuide",
         input.modelSelection,
+        input.projectId,
         (textGeneration, modelSelection) =>
           textGeneration.generateReviewGuide({ ...input, modelSelection }),
       );
@@ -232,6 +266,7 @@ export const make = Effect.gen(function* () {
       return generate(
         "generateTranscriptionPostProcessing",
         input.modelSelection,
+        null,
         (service, modelSelection) =>
           service.generateTranscriptionPostProcessing({ ...input, modelSelection }),
       );
@@ -240,6 +275,7 @@ export const make = Effect.gen(function* () {
       return generate(
         "checkMentionedTimes",
         input.modelSelection,
+        null,
         (textGeneration, modelSelection) =>
           textGeneration.checkMentionedTimes({ ...input, modelSelection }),
       );
@@ -256,6 +292,7 @@ export const make = Effect.gen(function* () {
       return yield* generate(
         "generateThreadTitle",
         input.modelSelection,
+        input.projectId,
         (textGeneration, modelSelection) =>
           textGeneration.generateThreadTitle({ ...input, modelSelection, linkedContext }),
       );
