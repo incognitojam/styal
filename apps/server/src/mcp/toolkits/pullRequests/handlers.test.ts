@@ -19,7 +19,6 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
-import * as TestClock from "effect/testing/TestClock";
 import * as ProjectEnrichment from "../../../project/ProjectEnrichmentService.ts";
 import * as ProjectFaviconResolver from "../../../project/ProjectFaviconResolver.ts";
 import * as RepositoryIdentityResolver from "../../../project/RepositoryIdentityResolver.ts";
@@ -323,7 +322,7 @@ describe("repository identity refresh", () => {
     "unwatch_pull_request",
     "unlink_pull_request",
     "unwatch_workflow_run",
-  ] as const)("%s resolves a host after the identity cache expires", (tool) =>
+  ] as const)("%s resolves a host before the identity cache has a value", (tool) =>
     Effect.gen(function* () {
       const enrichment = yield* ProjectEnrichment.make().pipe(
         Effect.provide(
@@ -337,8 +336,6 @@ describe("repository identity refresh", () => {
           ),
         ),
       );
-      yield* enrichment.readRepositoryIdentity("/workspace/project");
-      yield* TestClock.adjust("61 seconds");
       expect((yield* enrichment.peek("/workspace/project")).repositoryIdentity).toBeNull();
       const harness = yield* makeHarness({ enrichment, workflowRun: runningRun });
       const result = yield* harness.call(tool, {
@@ -349,7 +346,7 @@ describe("repository identity refresh", () => {
       expect(result).toMatchObject({ host: "github.com", repository: "t3tools/t3code" });
     }),
   );
-  it.effect("finds the guide project after the identity cache expires", () =>
+  it.effect("finds the guide project before the identity cache has a value", () =>
     Effect.gen(function* () {
       const enrichment = yield* ProjectEnrichment.make().pipe(
         Effect.provide(
@@ -363,8 +360,6 @@ describe("repository identity refresh", () => {
           ),
         ),
       );
-      yield* enrichment.readRepositoryIdentity("/workspace/project");
-      yield* TestClock.adjust("61 seconds");
       const harness = yield* makeHarness({ enrichment });
       const result = yield* harness.call("write_pull_request_guides", {
         pullRequests: [{ repository: "t3tools/t3code", number: 123 }],
