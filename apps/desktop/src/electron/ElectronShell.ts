@@ -25,6 +25,10 @@ const REMOTE_EDITOR_PROTOCOLS = new Set(
   }),
 );
 
+// "Use styal in another app" opens these apps (apps/web/src/components/mcp/mcpApps.ts). List
+// each exact link shape the wizard sends, never a whole scheme.
+const APP_LAUNCH_URLS = new Set(["grokbot://app"]);
+
 // Zed embeds [user@]host in the path; reject passwords and ports there.
 const ZED_SSH_PATHNAME = /^\/(?:[^/@:]+@)?[^/@:]+\/.*$/;
 
@@ -65,6 +69,7 @@ export function parseSafeExternalUrl(rawUrl: unknown): Option.Option<string> {
     rawUrl,
     (url) =>
       SAFE_WEB_EXTERNAL_PROTOCOLS.has(url.protocol) ||
+      APP_LAUNCH_URLS.has(url.href) ||
       isRemoteEditorUrl(url) ||
       isLocalEditorFileUrl(url),
   );
