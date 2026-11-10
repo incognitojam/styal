@@ -21,10 +21,11 @@ import {
   buildServerProvider,
   isCommandMissingCause,
   nonEmptyTrimmed,
-  parseGenericCliVersion,
+  parseCliVersionResult,
   type ProviderProbeResult,
   providerModelsFromSettings,
   type ServerProviderDraft,
+  providerProbeEnvironment,
   spawnAndCollect,
 } from "@t3tools/provider-core/server/snapshotProbe";
 
@@ -165,7 +166,8 @@ export const checkFxProviderStatus = Effect.fn("checkFxProviderStatus")(function
     });
   }
 
-  const versionResult = yield* runFxCli(settings, ["--version"], environment).pipe(
+  const probeEnvironment = providerProbeEnvironment(environment);
+  const versionResult = yield* runFxCli(settings, ["--version"], probeEnvironment).pipe(
     Effect.timeoutOption(VERSION_PROBE_TIMEOUT_MS),
     Effect.result,
   );
@@ -180,7 +182,7 @@ export const checkFxProviderStatus = Effect.fn("checkFxProviderStatus")(function
     });
   }
   const versionOutput = versionResult.success.value;
-  const version = parseGenericCliVersion(`${versionOutput.stdout}\n${versionOutput.stderr}`);
+  const version = parseCliVersionResult(versionOutput);
   if (versionOutput.code !== 0) {
     return snapshot(settings, checkedAt, {
       installed: true,
@@ -192,7 +194,7 @@ export const checkFxProviderStatus = Effect.fn("checkFxProviderStatus")(function
   }
 
   const read = (args: ReadonlyArray<string>) =>
-    runFxCli(settings, args, environment).pipe(
+    runFxCli(settings, args, probeEnvironment).pipe(
       Effect.timeoutOption(AUTH_PROBE_TIMEOUT_MS),
       Effect.map(Option.filter((output) => output.code === 0)),
       Effect.map(Option.map((output) => output.stdout)),
