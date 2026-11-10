@@ -2,7 +2,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import type { ManagedPolicyDocument } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
-import { HttpClient, HttpClientResponse } from "effect/http";
+import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
 import type { HostActivity } from "@t3tools/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
@@ -31,6 +31,7 @@ interface HarnessOptions {
   readonly preflightDuration?: Duration.Input;
   readonly preflightStarted?: Deferred.Deferred<void>;
   readonly beforeDownload?: Effect.Effect<void>;
+  readonly httpClient?: HttpClient.HttpClient;
   readonly requestUpdate?: ServiceLauncherClient.ServiceLauncherClient["Service"]["requestUpdate"];
   readonly desktopAppUpdate?: DesktopAppUpdate.DesktopAppUpdate["Service"];
   readonly activity?: Effect.Effect<HostActivity>;
@@ -45,6 +46,27 @@ const idleActivity: HostActivity = {
   terminalsWithUnknownActivity: 0,
   environmentsUsingDevices: 0,
 };
+
+const archiveBytes = new TextEncoder().encode("archive fixture");
+
+const releaseHttpClient = (urls: string[], beforeDownload?: Effect.Effect<void>) =>
+  HttpClient.make((request) =>
+    Effect.gen(function* () {
+      urls.push(request.url);
+      if (new URL(request.url).pathname.endsWith("/SHA256SUMS")) {
+        const digest = yield* Effect.promise(() => crypto.subtle.digest("SHA-256", archiveBytes));
+        const checksum = Array.from(new Uint8Array(digest), (byte) =>
+          byte.toString(16).padStart(2, "0"),
+        ).join("");
+        return HttpClientResponse.fromWeb(
+          request,
+          new Response(`${checksum}  styal-1.1.0-linux-x64.tar.gz\n`),
+        );
+      }
+      if (beforeDownload) yield* beforeDownload;
+      return HttpClientResponse.fromWeb(request, new Response(archiveBytes));
+    }),
+  );
 
 const makeHarness = Effect.fn("test.make_self_update_harness")(function* (
   options: HarnessOptions = {},
@@ -125,29 +147,14 @@ const makeHarness = Effect.fn("test.make_self_update_harness")(function* (
   const config = yield* ServerConfig.ServerConfig.pipe(
     Effect.provide(ServerConfig.layerTest(process.cwd(), baseDir)),
   );
-  const bytes = new TextEncoder().encode("archive fixture");
-  const digest = yield* Effect.promise(() => crypto.subtle.digest("SHA-256", bytes));
-  const checksum = Array.from(new Uint8Array(digest), (byte) =>
-    byte.toString(16).padStart(2, "0"),
-  ).join("");
-  const httpClient = HttpClient.make((request) =>
-    Effect.gen(function* () {
-      urls.push(request.url);
-      if (new URL(request.url).pathname.endsWith("/SHA256SUMS")) {
-        return HttpClientResponse.fromWeb(
-          request,
-          new Response(`${checksum}  styal-1.1.0-linux-x64.tar.gz\n`),
-        );
-      }
-      if (options.beforeDownload) yield* options.beforeDownload;
-      return HttpClientResponse.fromWeb(request, new Response(bytes));
-    }),
-  );
   const selfUpdate = yield* ServerSelfUpdate.make(
     options.activity ?? Effect.succeed(idleActivity),
   ).pipe(
     Effect.provideService(ProcessRunner.ProcessRunner, runner),
-    Effect.provideService(HttpClient.HttpClient, httpClient),
+    Effect.provideService(
+      HttpClient.HttpClient,
+      options.httpClient ?? releaseHttpClient(urls, options.beforeDownload),
+    ),
     Effect.provideService(HostProcess.Platform, "linux"),
     Effect.provideService(HostProcess.Architecture, "x64"),
     Effect.provideService(ServiceLauncherClient.ServiceLauncherClient, launcher),
@@ -168,7 +175,7 @@ const makeHarness = Effect.fn("test.make_self_update_harness")(function* (
       ),
     ),
   );
-  return { selfUpdate, order, urls };
+  return { selfUpdate, order, urls, baseDir };
 });
 
 it.layer(NodeServices.layer)("server self update", (it) => {
@@ -285,6 +292,43 @@ it.layer(NodeServices.layer)("server self update", (it) => {
         method: "boot-service",
         updateId: "launcher-id",
       });
+      expect(order).toEqual(["install", "preflight", "accept"]);
+    }),
+  );
+
+  it.effect.each([
+    { asset: "checksums", status: 504 },
+    { asset: "archive", status: 503 },
+    { asset: "checksums", status: 403 },
+  ])("reports an HTTP $status downloading $asset and allows retry", ({ asset, status }) =>
+    Effect.gen(function* () {
+      let failDownload = true;
+      const { selfUpdate, order, baseDir } = yield* makeHarness({
+        httpClient: releaseHttpClient([]).pipe(
+          HttpClient.transform((response, request) =>
+            failDownload && request.url.endsWith("/SHA256SUMS") === (asset === "checksums")
+              ? Effect.succeed(
+                  HttpClientResponse.fromWeb(
+                    HttpClientRequest.get("https://user:password@cdn.example/private?token=secret"),
+                    new Response("private response body", { status }),
+                  ),
+                )
+              : response,
+          ),
+        ),
+      });
+      const error = yield* selfUpdate.update({ targetVersion: "1.1.0" }).pipe(Effect.flip);
+      expect(error.reason).toBe(
+        `Could not prepare @styal/cli@1.1.0 while downloading the styal release ${asset} (HTTP ${status} from cdn.example).`,
+      );
+      expect(order).toEqual([]);
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      expect(
+        yield* fs.readDirectory(path.join(baseDir, "runtime", "styal-executable", "versions")),
+      ).toEqual([]);
+      failDownload = false;
+      expect((yield* selfUpdate.update({ targetVersion: "1.1.0" })).updateId).toBe("launcher-id");
       expect(order).toEqual(["install", "preflight", "accept"]);
     }),
   );
