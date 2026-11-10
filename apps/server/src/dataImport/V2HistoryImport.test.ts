@@ -200,7 +200,16 @@ it.layer(layer)("V2 source history import", (it) => {
           runs: encoded.runs,
           run_attempts: encoded.attempts,
           nodes: encoded.nodes,
-          provider_threads: encoded.providerThreads,
+          provider_threads: encoded.providerThreads.map((provider) => ({
+            ...provider,
+            pendingBackgroundTasks: [
+              {
+                kind: "command",
+                taskId: "upstream-task",
+                command: "echo synthetic",
+              },
+            ],
+          })),
           provider_turns: encoded.providerTurns,
           messages: encoded.messages,
           turn_items: encoded.turnItems,
@@ -236,6 +245,7 @@ it.layer(layer)("V2 source history import", (it) => {
         assert.equal(projection.providerThreads[0]?.providerSessionId, null);
         assert.equal(projection.providerThreads[0]?.status, "not_loaded");
         assert.equal(projection.providerThreads[0]?.nativeThreadRef?.nativeId, "resume-native");
+        assert.deepEqual(projection.providerThreads[0]?.pendingBackgroundTasks, []);
         assert.equal(projection.providerTurns[0]?.turnTokenUsage?.costUsd, 12.345);
         assert.equal(projection.messages[0]?.text, "Recorded answer");
         assert.equal(projection.messages[0]?.streaming, false);

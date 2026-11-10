@@ -25,7 +25,6 @@ const fields = {
   attempts: "run_attempts",
   nodes: "nodes",
   subagents: "subagents",
-  providerThreads: "provider_threads",
   providerTurns: "provider_turns",
   messages: "messages",
   plans: "plans",
@@ -61,6 +60,12 @@ export function readV2SourceProjection(
       read(`orchestration_v2_projection_${suffix}`),
     ]),
   );
+  // Live tasks are discarded on import, and upstream stores command text where styal stores ownership.
+  const providerThreads = read("orchestration_v2_projection_provider_threads").map((provider) =>
+    typeof provider === "object" && provider !== null
+      ? { ...provider, pendingBackgroundTasks: [] }
+      : provider,
+  );
   const transfers = tables.has("orchestration_v2_projection_context_transfers")
     ? rows(
         database.all(
@@ -72,6 +77,7 @@ export function readV2SourceProjection(
   return decodeProjection({
     ...records,
     thread,
+    providerThreads,
     providerSessions: [],
     runtimeRequests: [],
     contextTransfers: transfers,
