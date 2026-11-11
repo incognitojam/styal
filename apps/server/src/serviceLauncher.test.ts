@@ -2,6 +2,8 @@
 import type * as NodeChildProcess from "node:child_process";
 // @effect-diagnostics-next-line nodeBuiltinImport:off - the free-space probe is a plain Promise callback.
 import * as NodeFS from "node:fs";
+// @effect-diagnostics-next-line nodeBuiltinImport:off - models the service manager reading disk through the launcher's Promise callback.
+import * as NodeFSP from "node:fs/promises";
 import * as NodeSqlite from "node:sqlite";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -13,11 +15,11 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 
+import { renderBootServicePlist, renderBootServiceUnit } from "./cloud/bootService.ts";
 import {
   databaseBackupBlocker,
   Launcher,
   launcherChildEnvironment,
-  main,
   readServiceEnvironment,
   type BackupSpaceProbe,
   readServiceState,
@@ -30,6 +32,7 @@ import {
   isExactServiceVersion,
   SERVICE_ENV_FILE,
   SERVICE_LAUNCHER_PROTOCOL,
+  SERVICE_RESTART_PENDING_FILE,
   SERVICE_STOP_MARKER_FILE,
 } from "./cloud/serviceProtocol.ts";
 
@@ -181,6 +184,39 @@ it("rejects contradictory service state", () => {
   );
 });
 
+const unitPlan = (root: string, version: string) => ({
+  program: [`${root}/runtime/styal-executable/versions/${version}/styal`, "__service-launcher"],
+  baseDir: root,
+  logPath: `${root}/logs/boot-service.log`,
+  unitPath: `${root}/unit/styal.service`,
+});
+
+const fakeServiceUnit = (
+  fs: FileSystem.FileSystem,
+  path: Path.Path,
+  root: string,
+  version: string,
+  render = renderBootServiceUnit,
+) =>
+  Effect.gen(function* () {
+    const plan = unitPlan(root, version);
+    yield* fs.makeDirectory(path.dirname(plan.unitPath), { recursive: true });
+    const contents = render(plan);
+    yield* fs.writeFileString(plan.unitPath, contents);
+    const unit = {
+      path: plan.unitPath,
+      reloads: 0,
+      loadedContents: contents,
+      failReload: false,
+      reload: async () => {
+        unit.reloads += 1;
+        if (unit.failReload) throw new Error("daemon-reload failed");
+        unit.loadedContents = await NodeFSP.readFile(unit.path, "utf8");
+      },
+    };
+    return unit;
+  });
+
 it.layer(NodeServices.layer)("service state persistence", (it) => {
   // Managed services support Linux/macOS; subprocess fixtures use POSIX shebangs.
   const serviceProcessTest = it.effect.skipIf(HostProcess.Platform.defaultValue() === "win32");
@@ -230,6 +266,145 @@ it.layer(NodeServices.layer)("service state persistence", (it) => {
           MULTILINE: "first\nsecond",
           EMPTY: "",
         });
+      }),
+  );
+
+  it.effect("a fresh launcher clears a restart deferred by styal update", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-service-launcher-restart-" });
+      const statePath = path.join(root, "runtime", "service-state.json");
+      const restartPending = path.join(root, "runtime", SERVICE_RESTART_PENDING_FILE);
+      yield* writeFakeRuntime(
+        fs,
+        path,
+        path.join(root, "runtime", "styal-executable", "versions", "1.0.0"),
+        "setInterval(() => {}, 1_000);\n",
+      );
+      yield* Effect.promise(() =>
+        writeServiceState(statePath, {
+          protocol: SERVICE_LAUNCHER_PROTOCOL,
+          activeVersion: "1.0.0",
+        }),
+      );
+      const run = () =>
+        Effect.gen(function* () {
+          const launcher = new Launcher(
+            root,
+            yield* Effect.promise(() => readServiceState(statePath)),
+          );
+          const running = launcher.run();
+          yield* Effect.promise(() => launcher.stop("SIGTERM"));
+          yield* Effect.promise(() => running);
+        });
+
+      yield* fs.writeFileString(restartPending, "1.0.1\n");
+      yield* run();
+      assert.isTrue(yield* fs.exists(restartPending));
+
+      yield* fs.writeFileString(restartPending, "1.0.0\n");
+      yield* run();
+      assert.isFalse(yield* fs.exists(restartPending));
+    }),
+  );
+
+  it.effect.each([
+    { unitVersion: "1.0.0", replacement: "an intentional downgrade" },
+    { unitVersion: "1.2.0", replacement: "another T3 home" },
+  ])(
+    "recovers a rolled-back update with unit $unitVersion and preserves $replacement",
+    ({ unitVersion, replacement }) =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-service-launcher-repoint-" });
+        const statePath = path.join(root, "runtime", "service-state.json");
+        yield* writeFakeRuntime(
+          fs,
+          path,
+          path.join(root, "runtime", "styal-executable", "versions", "1.1.0"),
+          "setInterval(() => {}, 1_000);\n",
+        );
+        yield* Effect.promise(() =>
+          writeServiceState(statePath, {
+            protocol: SERVICE_LAUNCHER_PROTOCOL,
+            activeVersion: "1.1.0",
+            update: {
+              id: "update-1",
+              fromVersion: "1.1.0",
+              targetVersion: "1.2.0",
+              status: "rolled-back",
+            },
+          }),
+        );
+        const unit = yield* fakeServiceUnit(fs, path, root, unitVersion);
+        const expected = renderBootServiceUnit(
+          unitPlan(root, unitVersion === "1.0.0" ? "1.1.0" : unitVersion),
+        );
+        const createLauncher = Effect.gen(function* () {
+          return new Launcher(root, yield* Effect.promise(() => readServiceState(statePath)), {
+            serviceUnit: unit,
+          });
+        });
+        const run = (launcher: Launcher) =>
+          Effect.gen(function* () {
+            const running = launcher.run();
+            yield* Effect.promise(() => launcher.stop("SIGTERM"));
+            yield* Effect.promise(() => running);
+          });
+
+        yield* run(yield* createLauncher);
+        assert.equal(yield* fs.readFileString(unit.path), expected);
+        assert.equal(unit.loadedContents, expected);
+
+        yield* run(yield* createLauncher);
+        assert.equal(yield* fs.readFileString(unit.path), expected);
+        assert.equal(unit.loadedContents, expected);
+
+        yield* Effect.promise(() =>
+          writeServiceState(statePath, {
+            protocol: SERVICE_LAUNCHER_PROTOCOL,
+            activeVersion: "1.1.0",
+            update: {
+              id: "update-2",
+              fromVersion: "1.0.0",
+              targetVersion: "1.1.0",
+              status: "committed",
+            },
+          }),
+        );
+        const staleLauncher = yield* createLauncher;
+        // A local install can replace the selection or service owner without stopping this launcher.
+        const selectedRoot =
+          replacement === "another T3 home" ? path.join(root, "other-home") : root;
+        yield* writeFakeRuntime(
+          fs,
+          path,
+          path.join(selectedRoot, "runtime", "styal-executable", "versions", "1.0.0"),
+          "setInterval(() => {}, 1_000);\n",
+        );
+        const selectedStatePath = path.join(selectedRoot, "runtime", "service-state.json");
+        yield* Effect.promise(() =>
+          writeServiceState(selectedStatePath, {
+            protocol: SERVICE_LAUNCHER_PROTOCOL,
+            activeVersion: "1.0.0",
+          }),
+        );
+        const selectedUnit = renderBootServiceUnit({
+          ...unitPlan(selectedRoot, "1.0.0"),
+          unitPath: unit.path,
+        });
+        yield* fs.writeFileString(unit.path, selectedUnit);
+        yield* Effect.promise(() => unit.reload());
+        const oldHomeState = yield* fs.readFileString(statePath);
+        const selectedState = yield* fs.readFileString(selectedStatePath);
+
+        yield* run(staleLauncher);
+        assert.equal(yield* fs.readFileString(statePath), oldHomeState);
+        assert.equal(yield* fs.readFileString(selectedStatePath), selectedState);
+        assert.equal(yield* fs.readFileString(unit.path), selectedUnit, replacement);
+        assert.equal(unit.loadedContents, selectedUnit, replacement);
       }),
   );
 
@@ -304,25 +479,45 @@ it.layer(NodeServices.layer)("service state persistence", (it) => {
     }),
   );
 
-  serviceProcessTest("commits only after the trial reports prepared", () =>
+  const commitUpdate = (render = renderBootServiceUnit, missingUnit = false) =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-service-launcher-flow-" });
+      const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-service 100% & <test>-" });
       const statePath = path.join(root, "runtime", "service-state.json");
       const databasePath = path.join(root, "userdata", "state.sqlite");
+      const activatedPath = path.join(root, "activated");
       yield* fs.makeDirectory(path.dirname(databasePath), { recursive: true });
       yield* fs.writeFileString(databasePath, "before trial");
-      const encodedDatabasePath = JSON.stringify(databasePath);
+      const unit = yield* fakeServiceUnit(fs, path, root, "1.0.0", render);
+      if (missingUnit) yield* fs.remove(unit.path);
       const childSource = `
+import assert from "node:assert/strict";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 const context = JSON.parse(process.env.T3_SERVICE_LAUNCHER_CONTEXT);
+assert.equal(context.protocol, ${SERVICE_LAUNCHER_PROTOCOL});
 if (context.update?.status === "pending") {
-  process.send({ type: "prepared", updateId: context.update.id });
+  const state = JSON.parse(readFileSync(${JSON.stringify(statePath)}, "utf8"));
+  assert.equal(state.activeVersion, "1.0.0");
+  assert.equal(state.update.status, "pending");
+  ${
+    missingUnit
+      ? `assert.equal(existsSync(${JSON.stringify(unit.path)}), false);`
+      : `assert.equal(readFileSync(${JSON.stringify(unit.path)}, "utf8"), ${JSON.stringify(unit.loadedContents)});`
+  }
   process.on("message", (message) => {
-    if (message.type === "committed") process.exit(0);
+    if (message.type === "committed") {
+      const state = JSON.parse(readFileSync(${JSON.stringify(statePath)}, "utf8"));
+      assert.equal(state.protocol, ${SERVICE_LAUNCHER_PROTOCOL});
+      assert.equal(state.activeVersion, "1.1.0");
+      assert.equal(state.update.status, "committed");
+      writeFileSync(${JSON.stringify(activatedPath)}, message.updateId);
+      process.exit(0);
+    }
   });
+  process.send({ type: "prepared", updateId: context.update.id });
 } else if (context.update === undefined) {
-  process.send({ type: "request-update", targetVersion: "1.1.0", dbPath: ${encodedDatabasePath} });
+  process.send({ type: "request-update", targetVersion: "1.1.0", dbPath: ${JSON.stringify(databasePath)} });
   setInterval(() => {}, 1_000);
 } else {
   process.exit(0);
@@ -342,19 +537,78 @@ if (context.update?.status === "pending") {
           activeVersion: "1.0.0",
         }),
       );
-
-      const launcher = new Launcher(root, yield* Effect.promise(() => readServiceState(statePath)));
-      yield* Effect.promise(() =>
+      const launcher = new Launcher(
+        root,
+        yield* Effect.promise(() => readServiceState(statePath)),
+        { serviceUnit: unit },
+      );
+      const failure = yield* Effect.promise(() =>
         launcher.run().then(
-          () => Promise.reject(new Error("launcher unexpectedly completed")),
-          () => Promise.resolve(),
+          () => "launcher unexpectedly completed",
+          (cause: unknown) => String(cause),
         ),
       );
-
+      assert.include(failure, "Active child exited unexpectedly (0)");
       const state = yield* Effect.promise(() => readServiceState(statePath));
       assert.equal(state.activeVersion, "1.1.0");
       assert.equal(state.update?.status, "committed");
+      assert.equal(yield* fs.readFileString(activatedPath), state.update?.id);
+      const recover = () =>
+        Effect.gen(function* () {
+          const fresh = new Launcher(
+            root,
+            yield* Effect.promise(() => readServiceState(statePath)),
+            { serviceUnit: unit },
+          );
+          const running = fresh.run();
+          yield* Effect.promise(() => fresh.stop("SIGTERM"));
+          yield* Effect.promise(() => running);
+        });
+      return { fs, root, unit, recover };
+    });
+
+  it.effect.each([
+    { name: "systemd", render: renderBootServiceUnit },
+    {
+      name: "launchd",
+      render: (plan: Parameters<typeof renderBootServicePlist>[0]) =>
+        renderBootServicePlist(plan, {
+          homeDir: "/Users/test & <user>",
+          environmentPath: "/usr/bin:/custom/runtime/versions/1.0.0",
+        }),
+    },
+  ])("commits and repoints $name only after the trial reports prepared", ({ render }) =>
+    Effect.gen(function* () {
+      const { fs, root, unit } = yield* commitUpdate(render);
+      const expected = render(unitPlan(root, "1.1.0"));
+      assert.equal(yield* fs.readFileString(unit.path), expected);
+      assert.equal(unit.loadedContents, expected);
+      assert.equal(unit.reloads, 1);
     }),
+  );
+
+  it.effect(
+    "keeps a durable commit through unit failure and retries a failed reload on restart",
+    () =>
+      Effect.gen(function* () {
+        const { fs, root, unit, recover } = yield* commitUpdate(renderBootServiceUnit, true);
+        assert.equal(unit.reloads, 0);
+        const original = renderBootServiceUnit(unitPlan(root, "1.0.0"));
+        const expected = renderBootServiceUnit(unitPlan(root, "1.1.0"));
+        assert.equal(unit.loadedContents, original);
+        yield* fs.writeFileString(unit.path, original);
+        unit.failReload = true;
+        yield* recover();
+        assert.equal(yield* fs.readFileString(unit.path), expected);
+        assert.equal(unit.reloads, 1);
+        assert.equal(unit.loadedContents, original);
+
+        unit.failReload = false;
+        yield* recover();
+        assert.equal(yield* fs.readFileString(unit.path), expected);
+        assert.equal(unit.loadedContents, expected);
+        assert.equal(unit.reloads, 2);
+      }),
   );
 
   serviceProcessTest("rolls back invalid trials with the startup environment", () =>
@@ -404,9 +658,18 @@ if (context.update?.status === "pending") {
           activeVersion: "1.0.0",
         }),
       );
+      const unit = yield* fakeServiceUnit(fs, path, root, "0.9.0");
 
+      const launcher = new Launcher(
+        root,
+        yield* Effect.promise(() => readServiceState(statePath)),
+        {
+          serviceUnit: unit,
+          environment: yield* Effect.promise(() => readServiceEnvironment(root)),
+        },
+      );
       yield* Effect.promise(() =>
-        main().then(
+        launcher.run().then(
           () => Promise.reject(new Error("launcher unexpectedly completed")),
           () => Promise.resolve(),
         ),
@@ -415,6 +678,11 @@ if (context.update?.status === "pending") {
       const state = yield* Effect.promise(() => readServiceState(statePath));
       assert.equal(state.activeVersion, "1.0.0");
       assert.equal(state.update?.status, "rolled-back");
+      assert.equal(
+        yield* fs.readFileString(unit.path),
+        renderBootServiceUnit(unitPlan(root, "1.0.0")),
+      );
+      assert.equal(unit.reloads, 1);
       assert.equal(
         state.update?.status === "rolled-back" ? state.update.reason : undefined,
         "invalid-prepared",

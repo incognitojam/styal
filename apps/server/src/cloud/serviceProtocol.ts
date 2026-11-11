@@ -1,17 +1,53 @@
 import type { ServerSelfUpdateOutcome } from "@t3tools/contracts";
-import { SERVICE_LAUNCHER_CONTEXT_ENV } from "@t3tools/shared/serverOwnedEnvironment";
+import {
+  BOOT_SERVICE_UNIT_ENV,
+  SERVICE_LAUNCHER_CONTEXT_ENV,
+} from "@t3tools/shared/serverOwnedEnvironment";
 
-/**
- * Bump for incompatible runtime layout changes; launchers survive self-updates.
- * Protocol 4 requires isolated styal executable archives.
- */
+// Bump for incompatible runtime layout changes; launchers survive self-updates. Protocol 4
+// requires isolated styal executable archives. Selection leases and unit repointing need no
+// bump: an older protocol-4 launcher runs newer servers without them until a local update.
 export const SERVICE_LAUNCHER_PROTOCOL = 4 as const;
 export { SERVICE_LAUNCHER_CONTEXT_ENV };
 export const SERVICE_RESTART_PENDING_FILE = ".restart-pending";
 export const SERVICE_ENV_FILE = "service.env";
 export const SERVICE_STATE_FILE = "service-state.json";
+/** Set by the unit or launch agent to its own file name, so the launcher can
+    find the definition that started it. */
+export const SERVICE_UNIT_ENV = BOOT_SERVICE_UNIT_ENV;
 /** Written before explicit stop to distinguish shutdown from update handoff. */
 export const SERVICE_STOP_MARKER_FILE = ".service-stopping";
+
+const unquoteSystemdValue = (raw: string) =>
+  (raw.startsWith('"') && raw.endsWith('"')
+    ? raw.slice(1, -1).replaceAll('\\"', '"').replaceAll("\\\\", "\\")
+    : raw
+  ).replaceAll("%%", "%");
+
+const unescapeXmlText = (value: string) =>
+  value.replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&amp;", "&");
+
+/**
+ * Reads `STYAL_HOME` back out of a rendered unit or plist. Only values the boot
+ * service writes are expected, so a quoted systemd value is unquoted and
+ * unescaped the same way it was produced.
+ */
+export function serviceUnitBaseDirOf(contents: string): string | undefined {
+  const systemd = /^Environment=STYAL_HOME=(.*)$/m.exec(contents)?.[1];
+  if (systemd !== undefined) return unquoteSystemdValue(systemd.trim());
+  const plist = /<key>STYAL_HOME<\/key>\s*<string>([^<]*)<\/string>/.exec(contents)?.[1];
+  return plist === undefined ? undefined : unescapeXmlText(plist);
+}
+
+/** The executable an installed unit or plist starts: the launcher's runtime. */
+export function serviceUnitProgramOf(contents: string): string | undefined {
+  const systemd = /^ExecStart=("(?:\\.|[^"\\])*"|\S+)/m.exec(contents)?.[1];
+  if (systemd !== undefined) return unquoteSystemdValue(systemd);
+  const plist = /<key>ProgramArguments<\/key>\s*<array>\s*<string>([^<]*)<\/string>/.exec(
+    contents,
+  )?.[1];
+  return plist === undefined ? undefined : unescapeXmlText(plist);
+}
 
 export interface PendingServiceUpdate {
   readonly id: string;
