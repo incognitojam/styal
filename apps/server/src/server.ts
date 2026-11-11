@@ -55,6 +55,7 @@ import * as DelegatedTaskAnalytics from "./telemetry/DelegatedTaskAnalytics.ts";
 import * as ProviderUsageAnalytics from "./telemetry/ProviderUsageAnalytics.ts";
 import * as ProviderSessionManager from "./orchestration-v2/ProviderSessionManager.ts";
 import * as ModelManifest from "./provider/ModelManifest.ts";
+import * as ProviderUpdateJournal from "./provider/ProviderUpdateJournal.ts";
 import * as ProviderAutoUpdater from "./provider/ProviderAutoUpdater.ts";
 import * as ProviderAnalytics from "./telemetry/ProviderAnalytics.ts";
 import * as SettingsSnapshot from "./telemetry/SettingsSnapshot.ts";
@@ -681,7 +682,10 @@ const ProviderAutoUpdaterLive = Layer.effectDiscard(
     yield* updater.start;
     yield* ProviderAnalytics.startProviderInventory(updater.takeBusySkips);
   }),
-).pipe(Layer.provideMerge(ProviderAutoUpdater.layer), Layer.provide(ProjectionStoreV2.layer));
+).pipe(
+  Layer.provideMerge(ProviderAutoUpdater.layer.pipe(Layer.provide(ProviderUpdateJournal.layer))),
+  Layer.provide(ProjectionStoreV2.layer),
+);
 
 const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   AgentAwarenessRelay.layer,

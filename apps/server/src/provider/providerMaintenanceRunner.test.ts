@@ -31,6 +31,7 @@ import * as ProviderInstallLock from "./ProviderInstallLock.ts";
 import * as ProviderInstanceRegistry from "./ProviderInstanceRegistry.ts";
 import * as ProviderRegistry from "./ProviderRegistry.ts";
 import * as ModelManifest from "./ModelManifest.ts";
+import type { ProviderUpdateRecord } from "./ProviderUpdateJournal.ts";
 import * as ProviderMaintenanceRunner from "./providerMaintenanceRunner.ts";
 import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderLatestVersions";
 import * as ServerSettings from "../serverSettings.ts";
@@ -1617,13 +1618,54 @@ describe("provider.update.finished", () => {
   });
 
   it.effect("classifies a refused install without sending its output", () => {
+    const records: ProviderUpdateRecord[] = [];
     const events: Array<RecordedEvent> = [];
     return Effect.gen(function* () {
       const { registry } = yield* makeRegistry({ ...baseProvider, version: "1.0.0" });
-      const updater = yield* makeTestRunner(registry, undefined, {}, events);
+      const updater = yield* makeTestRunner(
+        {
+          ...registry,
+          getProviderMaintenanceCapabilitiesForInstance: () =>
+            Effect.succeed(
+              makeProviderMaintenanceCapabilities({
+                provider: CODEX_DRIVER,
+                packageName: "@openai/codex",
+                updateExecutable: "npm",
+                updateArgs: ["install", "-g", "@openai/codex@latest"],
+                updateLockKey: "npm-global:/synthetic/prefix",
+              }),
+            ),
+        },
+        undefined,
+        {},
+        events,
+      );
       yield* updater.updateProvider(CODEX_DRIVER);
-      assert.deepStrictEqual(events, [finished({ failureReason: "permission_denied" })]);
+      assert.deepStrictEqual(events, [
+        finished({ failureReason: "permission_denied", installerKind: "npm" }),
+      ]);
       assert.notInclude(JSON.stringify(events), "synthetic");
+      yield* updater.updateProvider({
+        provider: CODEX_DRIVER,
+        targetVersion: "2.0.0",
+        autoUpdate: {
+          shouldStart: Effect.succeed(true),
+          record: (entry) =>
+            Effect.sync(() => {
+              records.push(entry);
+            }),
+        },
+      });
+      assert.deepStrictEqual(records, [
+        { outcome: "started", takeover: false },
+        { outcome: "command_finished", durationMs: 0, exitCode: 243, timedOut: false },
+        {
+          outcome: "failed",
+          status: "failed",
+          reason: "permission_denied",
+          resultVersion: "1.0.0",
+        },
+      ]);
     }).pipe(
       Effect.provide(
         Layer.mergeAll(
@@ -1737,6 +1779,11 @@ describe("provider.update.finished", () => {
   });
 
   it.effect("records a background update once and a declined one not at all", () => {
+    const records: ProviderUpdateRecord[] = [];
+    const record = (entry: ProviderUpdateRecord) =>
+      Effect.sync(() => {
+        records.push(entry);
+      });
     const events: Array<RecordedEvent> = [];
     return Effect.gen(function* () {
       const { registry, providersRef } = yield* makeRegistry({ ...baseProvider, version: "1.0.0" });
@@ -1767,12 +1814,18 @@ describe("provider.update.finished", () => {
         targetVersion: "2.0.0",
         autoUpdate: { shouldStart: Effect.succeed(false) },
       });
+      assert.deepStrictEqual(records, []);
       assert.deepStrictEqual(events, []);
       yield* updater.updateProvider({
         provider: CODEX_DRIVER,
         targetVersion: "2.0.0",
-        autoUpdate: { shouldStart: Effect.succeed(true) },
+        autoUpdate: { shouldStart: Effect.succeed(true), record },
       });
+      assert.deepStrictEqual(records, [
+        { outcome: "started", takeover: false },
+        { outcome: "command_finished", durationMs: 1_500, exitCode: 0, timedOut: false },
+        { outcome: "finished", status: "succeeded", reason: null, resultVersion: "2.0.0" },
+      ]);
       assert.deepStrictEqual(events, [
         finished({
           source: "background",
@@ -1780,6 +1833,7 @@ describe("provider.update.finished", () => {
           targetVersion: "2.0.0",
           resultVersion: "2.0.0",
           outcome: "success",
+          durationMs: 1_500,
         }),
       ]);
     }).pipe(
@@ -1787,7 +1841,10 @@ describe("provider.update.finished", () => {
         Layer.mergeAll(
           layerNonWindowsPlatform,
           layerLatestVersionHttpClient("3.0.0"),
-          layerMockSpawner(() => ({ stdout: "installed" })),
+          layerMockSpawner(() => ({
+            stdout: "installed",
+            exitCode: TestClock.adjust(1_500).pipe(Effect.as(ChildProcessSpawner.ExitCode(0))),
+          })),
         ),
       ),
     );
@@ -2129,6 +2186,7 @@ describe("provider.update.finished", () => {
   });
 
   it.effect("records nothing for a background update dropped because the lock is held", () => {
+    const records: ProviderUpdateRecord[] = [];
     const events: Array<RecordedEvent> = [];
     return Effect.gen(function* () {
       const { registry } = yield* makeRegistry({ ...baseProvider, version: "1.0.0" });
@@ -2141,9 +2199,16 @@ describe("provider.update.finished", () => {
       yield* updater.updateProvider({
         provider: CODEX_DRIVER,
         targetVersion: "2.0.0",
-        autoUpdate: { shouldStart: Effect.succeed(true) },
+        autoUpdate: {
+          shouldStart: Effect.succeed(true),
+          record: (entry) =>
+            Effect.sync(() => {
+              records.push(entry);
+            }),
+        },
       });
       assert.deepStrictEqual(events, []);
+      assert.deepStrictEqual(records, [{ outcome: "skipped", reason: "install_in_progress" }]);
     }).pipe(
       Effect.provide(
         Layer.mergeAll(

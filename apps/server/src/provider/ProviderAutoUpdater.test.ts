@@ -20,6 +20,7 @@ import { decideProviderAutoUpdate, make } from "./ProviderAutoUpdater.ts";
 import type { ProviderMaintenanceCapabilities } from "@t3tools/provider-core/server/maintenance";
 import { ProviderInstallGate, type ProviderInstallTarget } from "./ProviderInstallGate.ts";
 import { ProviderMaintenanceRunner } from "./providerMaintenanceRunner.ts";
+import { ProviderUpdateJournal } from "./ProviderUpdateJournal.ts";
 import { ProviderRegistry } from "./ProviderRegistry.ts";
 
 const codex: ServerProvider = {
@@ -145,6 +146,8 @@ const pendingQuestion = (createdAtMs: number) => ({
 const HOUR_MS = 60 * 60 * 1_000;
 
 interface Fixture {
+  readonly checkFails?: boolean;
+  readonly records?: Array<unknown>;
   readonly settings?: Partial<ServerSettings>;
   /** Status of a Codex thread per shell snapshot read, in order; the last one repeats. */
   readonly threadStatuses?: ReadonlyArray<string | null>;
@@ -172,6 +175,12 @@ const testLayer = (input: Fixture) => {
   const statuses = input.threadStatuses ?? [null];
   const ageMs = input.manifestAgeMs === undefined ? 60_000 : input.manifestAgeMs;
   return Layer.mergeAll(
+    Layer.succeed(ProviderUpdateJournal, {
+      record: (instanceId, driver, entry) =>
+        Effect.sync(() => {
+          input.records?.push({ instanceId, driver, ...entry });
+        }),
+    }),
     // Only `devUrl` is read; the service has no partial form.
     Layer.succeed(ServerConfig, { devUrl: input.devUrl } as never),
     ServerSettingsService.layerTest(input.settings ?? {}),
@@ -185,6 +194,7 @@ const testLayer = (input: Fixture) => {
         return Effect.succeed([refreshed]);
       },
       getProviderMaintenanceCapabilitiesForInstance: (_instanceId, _driver, options) => {
+        if (input.checkFails) return Effect.die("synthetic check failure");
         const selfUpdaterActive = options?.fresh
           ? input.freshSelfUpdaterActive
           : input.selfUpdaterActive;
@@ -318,12 +328,75 @@ describe("ProviderAutoUpdater.runPass", () => {
 
   it.effect("installs the verified version once per window", () => {
     const installs: Array<unknown> = [];
+    const records: Array<{ reason?: string }> = [];
     return Effect.gen(function* () {
       const updater = yield* make;
       yield* updater.runPass;
       yield* updater.runPass;
       assert.deepStrictEqual(installs, [{ instanceId: "codex", version: "2.0.0" }]);
-    }).pipe(Effect.provide(testLayer({ installs })));
+      assert.strictEqual(records.at(-1)?.reason, "retry_backoff");
+    }).pipe(Effect.provide(testLayer({ installs, records })));
+  });
+
+  it.effect("records due versions and why each pass left the provider alone", () =>
+    Effect.gen(function* () {
+      for (const [fixture, reason, due] of [
+        [{ settings: { autoUpdateProviders: false } }, "automatic_updates_off", true],
+        [{ provider: withAdvisory({ canInstallVersion: false }) }, "installer_cannot_pin", true],
+        [{ provider: withAdvisory({ canUpdate: false }) }, "update_unavailable", true],
+        [{ provider: { ...codex, status: "error" as const } }, "provider_unhealthy", true],
+        [{ provider: { ...codex, enabled: false } }, "provider_disabled", true],
+        [{ provider: { ...codex, installed: false } }, "not_installed", true],
+        [{ provider: { ...codex, version: null } }, "unknown_current_version", null],
+        [{ provider: { ...codex, version: "2.0.0" } }, "already_current_or_newer", false],
+        [{ manifestAgeMs: null }, "no_recent_verified_target", null],
+        [
+          { threadStatuses: ["running"] },
+          "a thread using this provider CLI is running or waiting",
+          true,
+        ],
+        [
+          { refreshed: { ...codex, version: "2.0.0" } },
+          "the provider is already updated or no longer healthy",
+          true,
+        ],
+      ] as const) {
+        const records: Array<unknown> = [];
+        yield* runPassWith({ ...fixture, records, installs: [] });
+        assert.deepStrictEqual(records, [
+          {
+            instanceId: "codex",
+            driver: "codex",
+            currentVersion: "provider" in fixture ? fixture.provider.version : "1.0.0",
+            targetVersion: "manifestAgeMs" in fixture ? null : "2.0.0",
+            updateDue: due,
+            outcome: "skipped",
+            reason,
+          },
+        ]);
+      }
+    }),
+  );
+
+  it.effect("records a failed capability check", () => {
+    const records: Array<unknown> = [];
+    return runPassWith({ checkFails: true, records, installs: [] }).pipe(
+      Effect.tap(() =>
+        Effect.sync(() =>
+          assert.deepStrictEqual(records, [
+            {
+              instanceId: "codex",
+              driver: "codex",
+              currentVersion: "1.0.0",
+              targetVersion: null,
+              updateDue: null,
+              outcome: "failed",
+              reason: "check_failed",
+            },
+          ]),
+        ),
+      ),
+    );
   });
 
   it.effect("waits while a thread is running or waiting on the user", () => {

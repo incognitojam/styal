@@ -8,6 +8,8 @@ import {
   type ServerProviderUpdateState,
 } from "@t3tools/contracts";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
+import type { ProviderUpdateRecord } from "./ProviderUpdateJournal.ts";
+import * as Clock from "effect/Clock";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Data from "effect/Data";
@@ -85,7 +87,11 @@ export interface ProviderMaintenanceRunnerShape {
            * `takeover` reinstalls to turn off the provider's own updater and verifies once it is off.
            */
           readonly autoUpdate?:
-            | { readonly shouldStart: Effect.Effect<boolean>; readonly takeover?: boolean }
+            | {
+                readonly shouldStart: Effect.Effect<boolean>;
+                readonly takeover?: boolean;
+                readonly record?: (entry: ProviderUpdateRecord) => Effect.Effect<void>;
+              }
             | undefined;
         },
   ) => Effect.Effect<ServerProviderUpdatedPayload, ServerProviderUpdateError>;
@@ -428,6 +434,8 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
         : (target.instanceId ?? defaultInstanceIdForDriver(provider));
     const targetVersion = typeof target === "string" ? undefined : target.targetVersion;
     const autoUpdate = typeof target === "string" ? undefined : target.autoUpdate;
+    const record = (entry: ProviderUpdateRecord) =>
+      autoUpdate?.record?.(entry).pipe(Effect.ignoreCause) ?? Effect.void;
     const targetKey = `instance:${instanceId}`;
     const capabilities = yield* providerRegistry.getProviderMaintenanceCapabilitiesForInstance(
       instanceId,
@@ -463,6 +471,7 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
         let recordFinished: ProviderUpdateRecorder | undefined;
         const startRecording = Effect.gen(function* () {
           if (recordFinished) return;
+          yield* record({ outcome: "started", takeover: autoUpdate?.takeover === true });
           recordFinished = yield* startProviderUpdateRecording(analytics, {
             source: autoUpdate ? "background" : "manual",
             takeover: autoUpdate?.takeover === true,
@@ -482,6 +491,15 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
           setUpdateState(state).pipe(
             Effect.tap((providers) =>
               recordFinished ? recordFinished(state.status, failureReason, providers) : Effect.void,
+            ),
+            Effect.tap((providers) =>
+              record({
+                outcome: state.status === "succeeded" ? "finished" : "failed",
+                status: state.status,
+                reason: failureReason,
+                resultVersion:
+                  providers.find((entry) => entry.instanceId === instanceId)?.version ?? null,
+              }),
             ),
             Effect.map((providers) => ({ providers })),
           );
@@ -609,7 +627,28 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
             }
 
             yield* setRunningMessage(`Running ${describeCommand(command)}`);
-            const result = yield* runMaintenanceCommand(command, setRunningMessage, recordChildPid);
+            const commandStartedAt = yield* Clock.currentTimeMillis;
+            const result = yield* runMaintenanceCommand(
+              command,
+              setRunningMessage,
+              recordChildPid,
+            ).pipe(
+              Effect.onExit((exit) =>
+                Effect.flatMap(Clock.currentTimeMillis, (finishedAt) =>
+                  record({
+                    outcome: "command_finished",
+                    durationMs: Math.max(0, finishedAt - commandStartedAt),
+                    ...(exit._tag === "Success"
+                      ? { exitCode: exit.value.exitCode, timedOut: exit.value.timedOut }
+                      : {
+                          reason: Cause.hasInterruptsOnly(exit.cause)
+                            ? "interrupted"
+                            : "spawn_failed",
+                        }),
+                  }),
+                ),
+              ),
+            );
             const finishedAt = yield* nowIso;
             if (result.timedOut || result.exitCode !== 0) {
               // A failed install can leave the provider broken; show its health now.
@@ -765,7 +804,12 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
                     ? Effect.logInfo("Background provider update skipped", {
                         instanceId,
                         reason: "another server on this machine is running this installer",
-                      }).pipe(Effect.andThen(dropped))
+                      }).pipe(
+                        Effect.andThen(
+                          record({ outcome: "skipped", reason: "install_in_progress" }),
+                        ),
+                        Effect.andThen(dropped),
+                      )
                     : startRecording.pipe(
                         Effect.andThen(nowIso),
                         Effect.flatMap((finishedAt) =>
@@ -785,7 +829,11 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
             ),
             Effect.catchCause(recordFailedUpdate),
             Effect.onInterrupt(() =>
-              recordFinished ? recordFinished("failed", "interrupted", []) : Effect.void,
+              record({ outcome: "failed", reason: "interrupted" }).pipe(
+                Effect.andThen(
+                  recordFinished ? recordFinished("failed", "interrupted", []) : Effect.void,
+                ),
+              ),
             ),
           );
       },
