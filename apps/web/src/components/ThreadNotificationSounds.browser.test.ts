@@ -157,7 +157,11 @@ function setup() {
         return;
       }
       started = true;
-      const router = { state: { matches: [] }, navigate: state.navigate };
+      const router = {
+        state: { matches: [] },
+        navigate: state.navigate,
+        subscribe: () => () => {},
+      };
       stack.defer(startThreadNotifications(registry, router as never));
     },
     [Symbol.asyncDispose]: () => stack.disposeAsync(),

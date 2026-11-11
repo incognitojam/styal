@@ -237,6 +237,7 @@ function setup() {
         },
       },
       navigate: state.navigate,
+      subscribe: () => () => {},
     };
     stack.defer(startThreadNotifications(registry, router as never));
   };
