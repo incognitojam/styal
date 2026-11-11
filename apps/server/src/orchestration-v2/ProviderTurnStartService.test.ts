@@ -65,6 +65,7 @@ import * as RunExecutionService from "./RunExecutionService.ts";
 import * as ProviderUsageAnalytics from "../telemetry/ProviderUsageAnalytics.ts";
 import * as RuntimePolicy from "./RuntimePolicy.ts";
 import { ServerActivation } from "../serverActivation.ts";
+import * as TurnItemPositionStore from "./TurnItemPositionStore.ts";
 
 const isDomainEvent = Schema.is(OrchestrationV2DomainEvent);
 
@@ -166,6 +167,7 @@ function startWithMissingWorktree(
         Layer.mock(ContextHandoffService.ContextHandoffServiceV2)({}),
         Layer.mock(EventSink.EventSinkV2)({ writeIfRunCurrent }),
         IdAllocator.layer,
+        Layer.mock(TurnItemPositionStore.TurnItemPositionStoreV2)({}),
         Layer.succeed(FileSystem.FileSystem, {
           exists: () => Effect.succeed(folderExists),
           realPath: (target: string) =>
@@ -1066,6 +1068,7 @@ function makeLocalCommandHarness(input: {
             }),
         }),
         IdAllocator.layer,
+        Layer.mock(TurnItemPositionStore.TurnItemPositionStoreV2)({}),
         layerWorktreeLocation(input.worktreesDir),
         input.fileSystem === undefined
           ? FileSystem.layerNoop({ exists: () => Effect.succeed(true) })
@@ -2037,6 +2040,7 @@ effectIt.effect("holds a starting run back until an install of its provider CLI 
           Layer.mock(ContextHandoffService.ContextHandoffServiceV2)({}),
           Layer.mock(EventSink.EventSinkV2)({}),
           IdAllocator.layer,
+          Layer.mock(TurnItemPositionStore.TurnItemPositionStoreV2)({}),
           Layer.succeed(FileSystem.FileSystem, {} as never),
           layerWorktreeLocation(),
           Layer.mock(GitWorkflow.GitWorkflowService)({}),

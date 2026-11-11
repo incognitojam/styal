@@ -181,6 +181,7 @@ const layerProviderTurnStartServiceProvided = ProviderTurnStartService.layer.pip
       layerRunExecutionServiceProvided,
       layerRuntimePolicyProvided,
       GitVcsDriver.layer,
+      TurnItemPositionStore.layer,
     ),
   ),
 );
