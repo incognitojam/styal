@@ -2193,17 +2193,16 @@ describe("storage cleanup reports and local file policies", () => {
         Effect.gen(function* () {
           const fs = yield* FileSystem.FileSystem;
           const storeDir = yield* fs.makeTempDirectoryScoped({ prefix: "pnpm-store-" });
+          const measured = (target: string) => (info: FileSystem.File.Info) => ({
+            ...info,
+            // ZFS can change physical allocation between the expectation and the cleanup scan.
+            blocks: Option.some(8n),
+            dev: store === "other-device" && target === storeDir ? info.dev + 1n : info.dev,
+          });
           const measuredFs = {
             ...fs,
-            stat: (target: string) =>
-              fs.stat(target).pipe(
-                Effect.map((info) => ({
-                  ...info,
-                  // ZFS can change physical allocation between the expectation and the cleanup scan.
-                  blocks: Option.some(8n),
-                  dev: store === "other-device" && target === storeDir ? info.dev + 1n : info.dev,
-                })),
-              ),
+            stat: (target: string) => fs.stat(target).pipe(Effect.map(measured(target))),
+            lstat: (target: string) => fs.lstat(target).pipe(Effect.map(measured(target))),
           };
           const { service, worktree, setPolicy } = yield* cleanupFixture().pipe(
             Effect.provideService(FileSystem.FileSystem, measuredFs),
