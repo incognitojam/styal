@@ -117,7 +117,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, SecureRandom.layerWebCrypto))(
         }),
     );
     it.effect(
-      "a running writer rolls over full files and retains recent failures within its budget",
+      "a running writer survives a failed write, rolls over full files, and retains recent failures within its budget",
       () =>
         Effect.gen(function* () {
           const fs = yield* FileSystem.FileSystem;
@@ -128,18 +128,26 @@ it.layer(Layer.mergeAll(NodeServices.layer, SecureRandom.layerWebCrypto))(
             prefix: "provider-update-running-",
           });
           const writes = yield* Queue.unbounded<void>();
+          let failNextWrite = true;
           const observedFs: FileSystem.FileSystem = {
             ...fs,
-            writeFile: (file, bytes, options) =>
-              fs
-                .writeFile(file, bytes, options)
-                .pipe(Effect.tap(() => Queue.offer(writes, undefined))),
+            writeFile: (file, bytes, options) => {
+              // Writing to the directory itself fails like a full or read-only disk would.
+              const target = failNextWrite ? logsDir : file;
+              failNextWrite = false;
+              return fs.writeFile(target, bytes, options).pipe(
+                Effect.tap(() => Queue.offer(writes, undefined)),
+                Effect.tapError(() => Queue.offer(writes, undefined)),
+              );
+            },
           };
           const context = yield* Layer.build(Journal.layer).pipe(
             Effect.provideService(ServerConfig, { logsDir } as never),
             Effect.provideService(FileSystem.FileSystem, observedFs),
           );
           const journal = Context.get(context, Journal.ProviderUpdateJournal);
+          yield* journal.record("synthetic-provider", "codex", { outcome: "started" });
+          yield* Queue.take(writes);
           for (let index = 0; index < 1600; index++) {
             yield* journal.record("synthetic-provider", "codex", {
               outcome: "skipped",

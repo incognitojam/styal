@@ -118,7 +118,20 @@ const make = Effect.gen(function* () {
     yield* fs.writeFile(filePath, line, { flag: "a", mode: 0o600 });
   });
   const worker = initialize.pipe(
-    Effect.andThen(Effect.forever(Queue.take(pending).pipe(Effect.flatMap(write)))),
+    Effect.andThen(
+      Effect.forever(
+        Queue.take(pending).pipe(
+          Effect.flatMap((line) =>
+            write(line).pipe(
+              // One failed write, such as a full disk, must not end recording for the session.
+              Effect.catch((cause) =>
+                Effect.logWarning("Provider update journal write failed", { cause }),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ),
     Effect.catchCause((cause) =>
       Cause.hasInterruptsOnly(cause)
         ? Effect.void
