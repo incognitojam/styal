@@ -835,6 +835,7 @@ it.effect(
       assert.equal(summary.stoppedSessions, 1);
       assert.equal(summary.retiredEffects, 2);
       assert.deepEqual(committedInput?.cancelUnsettledEffects?.effectTypes, [
+        "provider-session.apply-model-selection",
         "provider-turn.start",
         "provider-turn.interrupt",
         "provider-turn.steer",
