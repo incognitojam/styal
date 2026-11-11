@@ -88,35 +88,39 @@ export const makeLegacyHistoryWriter = Effect.gen(function* () {
         ),
       };
     }
+    const importedAt = yield* DateTime.now;
     const events: OrchestrationV2DomainEvent[] = [];
     const prefix = `import:v1:${source.at(-1)?.eventId ?? options?.continuation?.lastSeenAt}`;
     for (const legacy of model.threads) {
-      const thread = importedThread({
-        thread_id: legacy.id,
-        project_id: legacy.projectId,
-        title: legacy.title,
-        model_selection_json: encodeJson(legacy.modelSelection),
-        runtime_mode: legacy.runtimeMode,
-        interaction_mode: legacy.interactionMode,
-        branch: legacy.branch,
-        worktree_path: legacy.worktreePath,
-        created_at: legacy.createdAt,
-        updated_at: legacy.updatedAt,
-        archived_at: legacy.archivedAt,
-        settled_override: legacy.settledOverride,
-        settled_at: legacy.settledAt,
-        unsettled_at: legacy.unsettledAt ?? null,
-        snoozed_until: legacy.snoozedUntil ?? null,
-        snoozed_at: legacy.snoozedAt ?? null,
-        pinned_at: legacy.pinnedAt ?? null,
-        auto_settle_disabled_at: legacy.autoSettleDisabledAt ?? null,
-        pin_order_key: legacy.pinOrderKey ?? null,
-        active_order_key: legacy.activeOrderKey ?? null,
-        deleted_at: legacy.deletedAt,
-        pull_requests_json: encodeJson(legacy.pullRequests),
-        linked_pull_request_json: encodeJson(legacy.linkedPullRequest ?? null),
-        branch_pull_request_json: encodeJson(legacy.branchPullRequest ?? null),
-      });
+      const thread = importedThread(
+        {
+          thread_id: legacy.id,
+          project_id: legacy.projectId,
+          title: legacy.title,
+          model_selection_json: encodeJson(legacy.modelSelection),
+          runtime_mode: legacy.runtimeMode,
+          interaction_mode: legacy.interactionMode,
+          branch: legacy.branch,
+          worktree_path: legacy.worktreePath,
+          created_at: legacy.createdAt,
+          updated_at: legacy.updatedAt,
+          archived_at: legacy.archivedAt,
+          settled_override: legacy.settledOverride,
+          settled_at: legacy.settledAt,
+          unsettled_at: legacy.unsettledAt ?? null,
+          snoozed_until: legacy.snoozedUntil ?? null,
+          snoozed_at: legacy.snoozedAt ?? null,
+          pinned_at: legacy.pinnedAt ?? null,
+          auto_settle_disabled_at: legacy.autoSettleDisabledAt ?? null,
+          pin_order_key: legacy.pinOrderKey ?? null,
+          active_order_key: legacy.activeOrderKey ?? null,
+          deleted_at: legacy.deletedAt,
+          pull_requests_json: encodeJson(legacy.pullRequests),
+          linked_pull_request_json: encodeJson(legacy.linkedPullRequest ?? null),
+          branch_pull_request_json: encodeJson(legacy.branchPullRequest ?? null),
+        },
+        importedAt,
+      );
       const historicalItem = (
         id: string,
         ordinal: number,
@@ -163,19 +167,24 @@ export const makeLegacyHistoryWriter = Effect.gen(function* () {
         }
         if (message.role !== "user" && message.role !== "assistant") continue;
         events.push(
-          ...messageEvents({
-            message_id: message.id,
-            thread_id: thread.id,
-            turn_id: message.turnId,
-            role: message.role,
-            text: message.text,
-            attachments_json: encodeJson(message.attachments ?? []),
-            ...(message.context === undefined ? {} : { context_json: encodeJson(message.context) }),
-            is_streaming: message.streaming ? 1 : 0,
-            created_at: message.createdAt,
-            updated_at: message.updatedAt,
-            ordinal: ordinal + 1,
-          }).map((event) => ({ ...event, id: EventId.make(`${prefix}:${event.id}`) })),
+          ...messageEvents(
+            {
+              message_id: message.id,
+              thread_id: thread.id,
+              turn_id: message.turnId,
+              role: message.role,
+              text: message.text,
+              attachments_json: encodeJson(message.attachments ?? []),
+              ...(message.context === undefined
+                ? {}
+                : { context_json: encodeJson(message.context) }),
+              is_streaming: message.streaming ? 1 : 0,
+              created_at: message.createdAt,
+              updated_at: message.updatedAt,
+              ordinal: ordinal + 1,
+            },
+            importedAt,
+          ).map((event) => ({ ...event, id: EventId.make(`${prefix}:${event.id}`) })),
         );
       }
       for (const [ordinal, plan] of legacy.proposedPlans.entries()) {
