@@ -1502,7 +1502,7 @@ describe("orchestrator MCP toolkit", () => {
               threadId: parentThreadId,
               cursor: 90,
             }).pipe(Effect.flip);
-            expect(unknownPagingParamError.message).toContain("Expected no excess property");
+            expect(unknownPagingParamError.message).toContain('Unknown argument "cursor"');
             const threadUpdateTool = server.tools.find(
               ({ tool }) => tool.name === "t3_thread_update",
             );

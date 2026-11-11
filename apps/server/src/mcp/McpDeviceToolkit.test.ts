@@ -639,8 +639,10 @@ describe("device targeting across hosts", () => {
               "device_screenshot",
               "device_close",
             ]) {
+              // device_list declares only hostId, and every tool rejects arguments it does not declare.
+              const deviceId = name === "device_list" ? {} : { deviceId: "MAC-UDID" };
               for (const hostId of ["mac-mini", "MAC MINI"]) {
-                const result = yield* call(name, { hostId, deviceId: "MAC-UDID" });
+                const result = yield* call(name, { hostId, ...deviceId });
                 expect(result.isError).not.toBe(true);
                 if (name === "device_list") {
                   expect(result.structuredContent).toMatchObject({
@@ -648,7 +650,7 @@ describe("device targeting across hosts", () => {
                   });
                 }
               }
-              const unknown = yield* call(name, { hostId: "unknown-host", deviceId: "MAC-UDID" });
+              const unknown = yield* call(name, { hostId: "unknown-host", ...deviceId });
               expect(unknown.isError).toBe(true);
               expect(text(unknown)).toBe(
                 "No device host unknown-host. Known hosts: Simlock pool (pool), This machine (local), Mac Mini (mac-mini).",
@@ -810,6 +812,19 @@ describe("device targeting across hosts", () => {
           );
         }),
       { locateSession: () => Effect.fail(onTheMac) },
+    ),
+  );
+
+  it.effect("names a device_screenshot argument the tool does not declare", () =>
+    run([session("mac-mini", "MAC-UDID", "ios")], ({ call }) =>
+      Effect.gen(function* () {
+        const result = yield* call("device_screenshot", {
+          deviceId: "MAC-UDID",
+          includeImage: false,
+        });
+        expect(result.isError).toBe(true);
+        expect(text(result)).toContain('Unknown argument "includeImage"');
+      }),
     ),
   );
 
