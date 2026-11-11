@@ -303,6 +303,7 @@ export const layer: Layer.Layer<
       readonly attemptId: OrchestrationV2RunAttempt["id"];
       readonly providerThreadId: OrchestrationV2ProviderThread["id"];
       readonly runOrdinal: number;
+      readonly worktreePath: string | null;
       readonly inheritedBackgroundTurnItems: ReturnType<
         typeof RunExecutionService.selectInheritedBackgroundTurnItems
       >;
@@ -348,6 +349,11 @@ export const layer: Layer.Layer<
               }),
             )
             .pipe(Effect.catchCause(() => Effect.succeed(false))),
+        hasWorkspaceMoved: () =>
+          projectionStore.getRuntimeRecoveryProjection(input.threadId).pipe(
+            Effect.map((current) => current.thread.worktreePath !== input.worktreePath),
+            Effect.catchCause(() => Effect.succeed(false)),
+          ),
         loadRunInterruptReason: () =>
           projectionStore
             .getThreadRecords(input.threadId, ["turnItems"], {
@@ -823,6 +829,7 @@ export const layer: Layer.Layer<
         attemptId: attempt.id,
         providerThreadId: providerThread.id,
         runOrdinal: run.ordinal,
+        worktreePath: projection.thread.worktreePath,
         inheritedBackgroundTurnItems,
       });
       const { isCurrentAttemptInStatus } = runControls;
@@ -1980,6 +1987,7 @@ export const layer: Layer.Layer<
         shouldFinalizeRun: runControls.shouldFinalizeRun,
         hasUnpairedRunInterruptRequest: runControls.hasUnpairedRunInterruptRequest,
         loadRunInterruptReason: runControls.loadRunInterruptReason,
+        hasWorkspaceMoved: runControls.hasWorkspaceMoved,
         message: {
           messageId: message.id,
           text: userText,
