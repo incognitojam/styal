@@ -1287,6 +1287,10 @@ function deriveThreadFeedRunFolds(
             ? { work: entry.activities.map((activity) => activity.workEntry) }
             : null,
     );
+    // Folded dividers lose their place in the turn, so only the latest stays visible.
+    const visibleCompactionId = group.entries.findLast(
+      (entry) => entry.type === "activity-group" && isContextCompactionActivityGroup(entry),
+    )?.id;
     const hiddenEntryIds = new Set(
       group.entries
         .filter(
@@ -1296,7 +1300,7 @@ function deriveThreadFeedRunFolds(
             entry.type !== "html-render" &&
             entry.type !== "mcp-app" &&
             !(entry.type === "message" && entry.message.report !== undefined) &&
-            !(entry.type === "activity-group" && isContextCompactionActivityGroup(entry)) &&
+            entry.id !== visibleCompactionId &&
             !(
               entry.type === "activity-group" &&
               entry.activities.some(
