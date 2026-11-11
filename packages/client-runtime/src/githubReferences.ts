@@ -71,14 +71,17 @@ export function parseGithubReferenceUrl(
 }
 
 /**
- * The shorthand GitHub shows for a bare issue or pull request URL. Without a repository every
- * reference names its own, and only github.com is recognised.
+ * The shorthand GitHub shows for a link to an issue or pull request whose text is its URL or its
+ * bare `#123`, which would read as this repository's. Without a repository every reference names
+ * its own, and only github.com is recognised.
  */
 export function githubReferenceUrlLabel(
   context: GithubReferenceContext | undefined,
   url: string,
+  text: string,
 ): string | null {
   const parsed = parseGithubReferenceUrl(context ?? GITHUB_DOT_COM, url);
   if (parsed === null) return null;
+  if (text !== url && text !== `#${parsed.reference.number}`) return null;
   return `${formatGithubReference(context ?? GITHUB_DOT_COM, parsed.reference)}${parsed.suffix}`;
 }

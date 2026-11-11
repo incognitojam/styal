@@ -8,11 +8,11 @@ describe("labelGithubReferenceUrls", () => {
   it("labels bare issue and pull request URLs as GitHub shorthand", () => {
     expect(
       labelGithubReferenceUrls(
-        "Opened https://github.com/example/project/pull/42. See <https://github.com/other/repo_x/issues/7#issuecomment-1> too.",
+        "Opened https://github.com/example/project/pull/42. See <https://github.com/other/repo_x/issues/7#issuecomment-1> and [#8](https://github.com/other/repo/pull/8) too.",
         repository,
       ),
     ).toBe(
-      "Opened [#42](https://github.com/example/project/pull/42). See [other/repo\\_x#7 (comment)](https://github.com/other/repo_x/issues/7#issuecomment-1) too.",
+      "Opened [#42](https://github.com/example/project/pull/42). See [other/repo\\_x#7 (comment)](https://github.com/other/repo_x/issues/7#issuecomment-1) and [other/repo#8](https://github.com/other/repo/pull/8) too.",
     );
   });
 
