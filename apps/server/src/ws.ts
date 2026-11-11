@@ -3646,7 +3646,6 @@ export const layer = Layer.unwrap(
               Layer.provide(DefectReporter.layer),
               Layer.provide(Layer.succeed(SqlClient.SqlClient, sql)),
               Layer.provide(CommandOutputQuery.layer),
-              Layer.provide(AgentSessionScanner.layer),
               Layer.provide(AcpRegistrySessions.layer),
               Layer.provide(Layer.succeed(NpmRelease.NpmRelease, npmRelease)),
               Layer.provide(Layer.succeed(ServerSelfUpdate.ServerSelfUpdate, serverSelfUpdate)),
