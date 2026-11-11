@@ -30,10 +30,13 @@ const state = vi.hoisted(() => ({
     attachments: [] as DraftComposerImageAttachment[],
     modelSelection: undefined as ModelSelection | undefined,
   },
+  compactModel: null as string | null,
+  compactDueAt: "",
   serverConfig: null as ServerConfig | null,
   projection: null as OrchestrationV2ThreadProjection | null,
   pendingRequests: { approvals: [], userInputs: [] } as PendingThreadRequests,
   enqueue: vi.fn(async () => undefined),
+
   clearDraft: vi.fn(),
   approve: vi.fn(),
   answer: vi.fn(),
@@ -70,6 +73,15 @@ vi.mock("react", () => ({
   ],
 }));
 vi.mock("expo-crypto", () => ({ randomUUID: () => "uuid" }));
+vi.mock("@t3tools/client-runtime/state/context-window", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@t3tools/client-runtime/state/context-window")>()),
+  compactBeforeSendTokens: (input: { readonly selection: ModelSelection; readonly now: string }) =>
+    input.selection.model === state.compactModel && input.now >= state.compactDueAt
+      ? 248_000
+      : null,
+}));
+vi.mock("../lib/clock", () => ({ useNowMinuteMs: () => 0 }));
+
 vi.mock("../lib/attachmentUpload", () => ({ prepareTurnAttachments: vi.fn() }));
 vi.mock("../lib/uuid", () => ({ uuidv4: () => "uuid" }));
 vi.mock("./queued-run-edit", () => ({
@@ -182,6 +194,9 @@ beforeEach(() => {
   state.grantedEnvironments = new Set(["primary"]);
   state.connectionState = "connected";
   state.draft = { text: "Keep my draft", attachments: [], modelSelection: undefined };
+  state.compactModel = null;
+  state.compactDueAt = "";
+
   state.projection = null;
   state.serverConfig = {
     providers: [{ instanceId: "codex", driver: "codex", enabled: true }],
@@ -253,6 +268,69 @@ describe("mobile task permissions", () => {
     expect(state.updateSettings).toHaveBeenCalledWith("secondary:thread", {
       interactionMode: "plan",
     });
+  });
+
+  it("compacts a stale thread before sending unless kept", async () => {
+    state.grantedEnvironments.add("secondary");
+    state.projection = {
+      thread: {
+        ...state.thread,
+        activeProviderThreadId: null,
+        lineage: { rootThreadId: "thread", parentThreadId: null, relationshipToParent: null },
+      },
+      runs: [],
+      attempts: [],
+      nodes: [],
+      subagents: [],
+      providerSessions: [],
+      providerThreads: [],
+      providerTurns: [],
+      runtimeRequests: [],
+      messages: [],
+      plans: [],
+      turnItems: [],
+      checkpointScopes: [],
+      checkpoints: [],
+      contextHandoffs: [],
+      contextTransfers: [],
+      visibleTurnItems: [],
+      updatedAt: v2Now,
+    } as unknown as OrchestrationV2ThreadProjection;
+    state.compactModel = "gpt-5.4";
+    // The notice's minute clock (the epoch here) trails a deadline the send's exact time has passed.
+    state.compactDueAt = "2026-01-01T00:00:00.000Z";
+    const unannounced = useThreadComposerState();
+    expect(unannounced.compactBeforeSend).toBeNull();
+    await unannounced.onSendMessage();
+    expect(state.enqueue).toHaveBeenLastCalledWith(
+      expect.not.objectContaining({ compactBeforeSend: true }),
+    );
+    state.compactDueAt = "";
+    const composer = useThreadComposerState();
+    expect(composer.compactBeforeSend?.tokens).toBe(248_000);
+    await composer.onSendMessage();
+    expect(state.enqueue).toHaveBeenLastCalledWith(
+      expect.objectContaining({ compactBeforeSend: true }),
+    );
+    // A model picked after the last render still decides the send.
+    state.draft = {
+      ...state.draft,
+      modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.5" },
+    };
+    await composer.onSendMessage();
+    expect(state.enqueue).toHaveBeenLastCalledWith(
+      expect.not.objectContaining({ compactBeforeSend: true }),
+    );
+    state.draft = { ...state.draft, modelSelection: undefined };
+    composer.compactBeforeSend?.keepFullHistory();
+    const kept = useThreadComposerState();
+    expect(kept.compactBeforeSend).toBeNull();
+    await kept.onSendMessage();
+    expect(state.enqueue).toHaveBeenLastCalledWith(
+      expect.not.objectContaining({ compactBeforeSend: true }),
+    );
+    // Keeping covers one send, as on web.
+    expect(useThreadComposerState().compactBeforeSend?.tokens).toBe(248_000);
   });
 
   it("rechecks a retained send callback before clearing or queueing the draft", async () => {
