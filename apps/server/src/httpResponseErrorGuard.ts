@@ -1,10 +1,6 @@
 // These guards run on the raw Node HTTP server before Effect handles requests.
 // @effect-diagnostics nodeBuiltinImport:off
-import {
-  STARTUP_COPY_MESSAGE,
-  STARTUP_STATUS_PATH,
-  type ServerStartupCopyProgress,
-} from "@t3tools/contracts";
+import { STARTUP_COPY_MESSAGE, type ServerStartupCopyProgress } from "@t3tools/contracts";
 import type * as NodeHttp from "node:http";
 import type * as NodeStream from "node:stream";
 
@@ -41,10 +37,7 @@ export function rejectRequestsUntilServing<T extends NodeHttp.Server>(
       return;
     }
     if (request.headers.accept?.includes("text/html")) {
-      const percent =
-        copy === null
-          ? ""
-          : `${Math.min(100, Math.floor((copy.copiedBytes / copy.totalBytes) * 100))}%`;
+      const percent = `${Math.min(100, Math.floor((copy.copiedBytes / copy.totalBytes) * 100))}%`;
       response
         .writeHead(503, {
           "retry-after": "2",
@@ -53,17 +46,16 @@ export function rejectRequestsUntilServing<T extends NodeHttp.Server>(
           "cache-control": "no-store",
         })
         .end(
-          `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="2"><title>Starting styal</title></head><body style="font:16px system-ui;text-align:center;margin:20vh auto;max-width:32em"><p>${copy === null ? "Waiting for styal to start…" : STARTUP_COPY_MESSAGE}</p><p>${percent}</p></body></html>`,
+          `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="2"><title>Starting styal</title></head><body style="font:16px system-ui;text-align:center;margin:20vh auto;max-width:32em"><p>${STARTUP_COPY_MESSAGE}</p><p>${percent}</p></body></html>`,
         );
       return;
     }
     response
-      .writeHead(request.url === STARTUP_STATUS_PATH ? 200 : 503, {
+      .writeHead(503, {
         "retry-after": "1",
         connection: "close",
         "content-type": "application/json",
         "cache-control": "no-store",
-        "access-control-allow-origin": "*",
       })
       .end(JSON.stringify({ starting: true, copy }));
   };

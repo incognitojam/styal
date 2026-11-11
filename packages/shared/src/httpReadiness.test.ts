@@ -8,6 +8,51 @@ import * as TestClock from "effect/testing/TestClock";
 import { HttpClient, HttpClientResponse } from "effect/http";
 import { waitForHttpReady } from "./httpReadiness.ts";
 
+it.effect.each(["pending", "status"] as const)(
+  "retains specific readiness timeout causes for %s probes",
+  (mode) =>
+    Effect.gen(function* () {
+      const started = yield* Deferred.make<void>();
+      const client = HttpClient.make((request) =>
+        Deferred.succeed(started, undefined).pipe(
+          Effect.andThen(
+            mode === "pending"
+              ? Effect.never
+              : Effect.succeed(
+                  HttpClientResponse.fromWeb(request, new Response("", { status: 503 })),
+                ),
+          ),
+        ),
+      );
+      const waiter = yield* waitForHttpReady({
+        baseUrl: "http://localhost",
+        timeoutMs: 100,
+        intervalMs: 10,
+        probeTimeoutMs: 20,
+        makeError: ({ cause }) => ({ cause }),
+      }).pipe(
+        Effect.provideService(HttpClient.HttpClient, client),
+        Effect.result,
+        Effect.forkChild,
+      );
+      yield* Deferred.await(started);
+      yield* TestClock.adjust("100 millis");
+      const result = yield* Fiber.join(waiter);
+      assert.isTrue(result._tag === "Failure");
+      if (result._tag === "Failure") {
+        assert.deepInclude(result.failure.cause, {
+          kind: "overall-timeout",
+          baseUrl: "http://localhost",
+          timeoutMs: 100,
+        });
+        assert.include(
+          JSON.stringify(result.failure),
+          mode === "pending" ? "probe-timeout" : "http-status",
+        );
+      }
+    }),
+);
+
 it.effect(
   "waits past desktop's three minutes while copy progress is live, then becomes ready",
   () =>

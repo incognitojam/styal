@@ -7,6 +7,7 @@ import * as Cause from "effect/Cause";
 import * as Exit from "effect/Exit";
 import * as TestClock from "effect/testing/TestClock";
 import * as Copy from "./startupFileCopy.ts";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 
 it.effect("gives up on a pending read even when its promise never returns", () =>
   Effect.gen(function* () {
@@ -64,6 +65,8 @@ it.effect("streams exact bytes across chunk boundaries before reporting completi
     yield* Copy.streamDatabaseFile(`${root}/source`, `${root}/staging`, (n) => {
       progress.push(n);
     });
+    if (HostProcess.Platform.defaultValue() !== "win32")
+      assert.equal((yield* fs.stat(`${root}/staging`)).mode & 0o777, 0o600);
     assert.deepEqual(yield* fs.readFile(`${root}/staging`), bytes);
     assert.equal(progress.at(-1), bytes.length);
   }).pipe(Effect.provide(NodeServices.layer)),

@@ -177,6 +177,7 @@ export const layer: Layer.Layer<ProjectionMaintenanceV2, never, SqlClient.SqlCli
         // Never hold a transaction or the reader lock across a yield or a rest.
         yield* Effect.yieldNow;
         if (candidates.length > 0) {
+          yield* beforeDelete;
           const batch = yield* sql.withTransaction(
             Effect.gen(function* () {
               // Rows appended since the reference scan may borrow a prompt from a candidate.
@@ -204,7 +205,6 @@ export const layer: Layer.Layer<ProjectionMaintenanceV2, never, SqlClient.SqlCli
               if (appended.length === REFERENCE_SCAN_WINDOW) return { deleted: 0, caughtUp: false };
               const obsolete = candidates.filter((sequence) => !referenced.has(sequence));
               if (obsolete.length === 0) return { deleted: 0, caughtUp: true };
-              yield* beforeDelete;
               yield* sql`DELETE FROM orchestration_events WHERE sequence IN ${sql.in(obsolete)}`;
               return { deleted: obsolete.length, caughtUp: true };
             }),
