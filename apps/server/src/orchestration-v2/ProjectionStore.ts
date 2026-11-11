@@ -234,6 +234,7 @@ export type ProjectionSettlementCandidate = Pick<
   | "projectId"
   | "branch"
   | "worktreePath"
+  | "lineage"
   | "pullRequests"
   | "linkedPullRequest"
   | "branchPullRequest"
@@ -7287,6 +7288,16 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
               AND json_extract(t.payload_json, '$.pinnedAt') IS NULL
               AND json_extract(t.payload_json, '$.autoSettleDisabledAt') IS NULL
               ${includeReportQuestions ? sql`AND NOT EXISTS (${openReportQuestions})` : sql``}
+              AND (
+                json_extract(t.payload_json, '$.lineage.relationshipToParent') IS NOT 'subagent'
+                OR NOT EXISTS (
+                  SELECT 1 FROM orchestration_v2_projection_threads parent
+                  WHERE parent.thread_id = json_extract(t.payload_json, '$.lineage.parentThreadId')
+                    AND parent.deleted_at IS NULL
+                    AND json_extract(parent.payload_json, '$.archivedAt') IS NULL
+                    AND json_extract(parent.payload_json, '$.settledOverride') IS NOT 'settled'
+                )
+              )
               AND NOT EXISTS (
                 SELECT 1 FROM orchestration_v2_projection_runs active
                 WHERE active.thread_id = t.thread_id

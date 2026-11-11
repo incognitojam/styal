@@ -9,6 +9,7 @@ import {
   CommandId,
   isOrchestrationV2WorkActive,
   type ThreadId,
+  type OrchestrationV2AppThread,
   type OrchestrationV2DomainEvent,
   type OrchestrationV2ThreadAutoSettleReason,
   type OrchestrationV2ThreadShell,
@@ -57,6 +58,7 @@ export interface AutoSettlement {
 
 const DAY_MS = 24 * 60 * 60 * 1_000;
 const QUEUED_TURN_START_GRACE_MS = 2 * 60 * 1_000;
+const MAX_SHARED_WORKTREE_ANCESTORS = 16;
 
 function toMillis(value: DateTime.Utc | null | undefined): number | null {
   return value == null ? null : DateTime.toEpochMillis(value);
@@ -387,27 +389,45 @@ export const make = Effect.gen(function* () {
   const terminals = yield* TerminalManager.TerminalManager;
   const projectScripts = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
   // Repeated thread.settled retains settledAt; run the action only once per settlement.
-  const settleActionRunAt = new Map<ThreadId, number>();
+  // ranAtMs lets a subagent see whether an ancestor's action ran after its last run.
+  const settleActionRuns = new Map<
+    ThreadId,
+    { readonly settledAtMs: number; readonly ranAtMs: number }
+  >();
 
   const sweep = Effect.fn("ThreadSettlementServiceV2.sweep")(function* (
     mergedPullRequest: PullRequestService.PullRequestMergeEvent | null,
     threadId?: ThreadId,
   ) {
     const settings = yield* settingsService.getSettings;
-    if (!autoSettlementConfigured(settings)) {
-      return;
-    }
+    const automaticSettlementEnabled = autoSettlementConfigured(settings);
     const threads = yield* projections.getSettlementCandidates(threadId);
     if (threads.length === 0) return;
     const projectShells = yield* projectStore.listShells();
     const nowMs = DateTime.toEpochMillis(yield* DateTime.now);
     const projects = new Map(projectShells.map((project) => [project.id, project]));
     // Merge events resweep all candidates because unlinked threads settle through branch lookup.
-    const candidates = threads.filter((thread) => isAutoSettlementCandidate(thread, nowMs));
+    const candidates = threads.filter(
+      (thread) =>
+        (automaticSettlementEnabled || thread.lineage.relationshipToParent === "subagent") &&
+        isAutoSettlementCandidate(thread, nowMs),
+    );
 
     // Runs per candidate thread, thousands per sweep on busy servers; the sweep owns the span.
     const settleThread = Effect.fnUntraced(
       function* (thread: (typeof candidates)[number], pullRequest: SettlementPullRequest | null) {
+        if (thread.lineage.relationshipToParent === "subagent") {
+          // The store returns a subagent only once its parent is done, so it
+          // settles with the parent and never runs its own lookup.
+          const uuid = yield* random.uuidV4();
+          yield* orchestrator.dispatch({
+            type: "thread.auto-settle",
+            commandId: CommandId.make(`server:auto-settle:${thread.id}:${uuid}`),
+            threadId: thread.id,
+            snapshotAt: thread.updatedAt,
+          });
+          return null;
+        }
         // thread.auto-settle does not recheck settings, so read them per decision; reads are cached.
         const currentSettings = resolveProjectSettings(
           yield* settingsService.getSettings,
@@ -450,6 +470,7 @@ export const make = Effect.gen(function* () {
     const lookupCandidates = (yield* Effect.forEach(
       candidates,
       (thread) => {
+        if (thread.lineage.relationshipToParent === "subagent") return settleThread(thread, null);
         const projectSettings = resolveProjectSettings(settings, thread.projectId).settings;
         // Skip no-op decisions; actual settlement still reads fresh settings before dispatch.
         const settledAt = resolveAutoSettlementAt({
@@ -645,9 +666,20 @@ export const make = Effect.gen(function* () {
           }),
       ),
     );
+  let fullSweepPending = false;
   // A thread that just stopped must not wait behind a full sweep or another thread's host
   // reads: clients hold it in Working only briefly, so a late settle makes it appear and then vanish.
-  const fullSweeps = yield* makeDrainableWorker(() => runSweep(null));
+  const fullSweeps = yield* makeDrainableWorker(() => {
+    // Clear at the start so events during this sweep can request one follow-up.
+    fullSweepPending = false;
+    return runSweep(null);
+  });
+  const enqueueFullSweep = () =>
+    Effect.suspend(() => {
+      if (fullSweepPending) return Effect.void;
+      fullSweepPending = true;
+      return fullSweeps.enqueue(undefined);
+    });
   const threadSweeps = yield* FiberSet.make<void>();
   const threadSweepSlots = yield* Semaphore.make(8);
   // One sweep per thread at a time; events during a running sweep coalesce into one more pass.
@@ -695,7 +727,43 @@ export const make = Effect.gen(function* () {
       const thread = yield* projections.getThread(threadId);
       if (thread.settledOverride !== "settled") return;
       const settledAtMs = toMillis(thread.settledAt);
-      if (settledAtMs === null || settleActionRunAt.get(threadId) === settledAtMs) return;
+      if (settledAtMs === null || settleActionRuns.get(threadId)?.settledAtMs === settledAtMs) {
+        return;
+      }
+      // The worktree belongs to the ancestors sharing it. Only a subagent that worked after one
+      // of them settled can have held that action, and it skips when one of their actions has
+      // run since its last run ended.
+      if (thread.lineage.relationshipToParent === "subagent") {
+        const ancestors: Array<OrchestrationV2AppThread> = [];
+        let ancestorId = thread.lineage.parentThreadId;
+        while (ancestorId !== null && ancestors.length < MAX_SHARED_WORKTREE_ANCESTORS) {
+          const ancestor = yield* projections.getThread(ancestorId).pipe(
+            Effect.catchTags({
+              ProjectionStoreThreadNotFoundError: () => Effect.succeed(null),
+            }),
+          );
+          if (ancestor?.worktreePath !== worktreePath) break;
+          ancestors.push(ancestor);
+          ancestorId = ancestor.lineage.parentThreadId;
+        }
+        if (ancestors.length > 0) {
+          const runCompletedAtMs = toMillis(
+            (yield* projections.getThreadShell(threadId))?.latestRunCompletedAt,
+          );
+          if (
+            runCompletedAtMs === null ||
+            !ancestors.some((ancestor) => {
+              const ancestorSettledAtMs = toMillis(ancestor.settledAt);
+              return ancestorSettledAtMs !== null && ancestorSettledAtMs < runCompletedAtMs;
+            }) ||
+            ancestors.some(
+              (ancestor) => (settleActionRuns.get(ancestor.id)?.ranAtMs ?? -1) >= runCompletedAtMs,
+            )
+          ) {
+            return;
+          }
+        }
+      }
       // The script runs as the terminal's own process, so it stops holding the
       // worktree when it exits, and the runner records its outcome in the work log.
       yield* projectScripts.runForThread({
@@ -704,7 +772,10 @@ export const make = Effect.gen(function* () {
         worktreePath,
         trigger: "settle",
       });
-      settleActionRunAt.set(threadId, settledAtMs);
+      settleActionRuns.set(threadId, {
+        settledAtMs,
+        ranAtMs: DateTime.toEpochMillis(yield* DateTime.now),
+      });
     },
     (effect, threadId) =>
       effect.pipe(
@@ -722,7 +793,10 @@ export const make = Effect.gen(function* () {
   const processEvent = (event: OrchestrationV2DomainEvent) => {
     switch (event.type) {
       case "thread.settled":
-        return cleanUpSettledThread(event.threadId);
+        return cleanUpSettledThread(event.threadId).pipe(Effect.andThen(enqueueFullSweep()));
+      case "thread.archived":
+      case "thread.deleted":
+        return enqueueFullSweep();
       case "thread.pull-request-link-updated":
       case "thread.pull-request-synced":
       case "thread.unpinned":
@@ -778,7 +852,7 @@ export const make = Effect.gen(function* () {
     let lastSettlementSettings = autoSettlementSettingsKey(initialSettings);
     yield* forkParked(
       Effect.gen(function* () {
-        yield* fullSweeps.enqueue(undefined);
+        yield* enqueueFullSweep();
         yield* fullSweeps.drain;
       }).pipe(Effect.repeat(Schedule.spaced("1 minute")), Effect.asVoid),
     );
@@ -789,7 +863,7 @@ export const make = Effect.gen(function* () {
           return Effect.void;
         }
         lastSettlementSettings = key;
-        return fullSweeps.enqueue(undefined);
+        return enqueueFullSweep();
       }),
     );
     yield* forkParked(Stream.runForEach(mergedPullRequests, (event) => runSweep(event)));

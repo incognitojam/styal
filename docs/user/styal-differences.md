@@ -176,8 +176,9 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   runs its settle action when the last open thread settles, and never while a thread there is
   working. An idle subagent does not hold it back. [Project actions](./project-scripts.md).
   Compared with
-  [T3 Code revision b9522c8](https://github.com/pingdotgg/t3code/tree/b9522c845b06cb8c852c28e9fa747c6335e9f6b3),
-  checked November 5, 2026, which runs the action whenever any thread in the worktree settles.
+  [T3 Code revision 20081ef](https://github.com/pingdotgg/t3code/tree/20081ef95f78b17c1f0e8d9be8bacf28b191bdc9),
+  checked November 18, 2026, which runs the action whenever a thread in the worktree settles,
+  except a subagent sharing its parent's worktree.
 
 - **Agents know how styal is set up.** Claude, Codex and OpenCode 2 sessions come with a built-in styal skill covering `styal.json`, actions, devices, hardware, imports and troubleshooting, so asking an agent to set these up works without installing anything. It doesn't touch your provider's own skills or settings, and it updates with styal. Other providers read the same guides through a styal tool.
 
