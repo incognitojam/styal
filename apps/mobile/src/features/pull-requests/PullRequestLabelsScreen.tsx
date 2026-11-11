@@ -1,3 +1,5 @@
+import { NativeScrollView } from "../../native/NativeScrollViewMarker";
+import { LegendList } from "@legendapp/list/react-native";
 import { useAtomValue } from "@effect/atom-react";
 import type { StaticScreenProps } from "@react-navigation/native";
 import { pullRequestLabelCandidateList } from "@t3tools/client-runtime/state/pull-requests";
@@ -5,7 +7,7 @@ import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime"
 import type { PullRequestLabelCandidate } from "@t3tools/contracts";
 import { AsyncResult } from "effect/reactivity";
 import { useState } from "react";
-import { FlatList, Platform, View } from "react-native";
+import { Platform, View } from "react-native";
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { AppText as Text } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
@@ -77,9 +79,13 @@ export function PullRequestLabelsScreen({ route }: StaticScreenProps<PullRequest
       onQueryChange={setQuery}
     >
       {({ paddingBottom }) => (
-        <FlatList
+        <LegendList
+          renderScrollComponent={NativeScrollView}
           data={candidates}
           keyExtractor={(candidate) => candidate.name}
+          extraData={{ allowed, count: candidates.length }}
+          estimatedItemSize={72}
+          recycleItems
           className="flex-1"
           contentInsetAdjustmentBehavior="automatic"
           automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}

@@ -17,7 +17,10 @@ const state = vi.hoisted(() => ({
 vi.mock("react-native", () => ({
   Platform: { OS: "ios" },
   View: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
-  FlatList: (props: {
+}));
+vi.mock("../../native/NativeScrollViewMarker", () => ({ NativeScrollView: () => null }));
+vi.mock("@legendapp/list/react-native", () => ({
+  LegendList: (props: {
     data: ReadonlyArray<Candidate>;
     renderItem: (entry: { item: Candidate; index: number }) => ReactElement;
     ListEmptyComponent?: ReactElement;
