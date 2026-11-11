@@ -858,6 +858,7 @@ it.effect(
           ["turn-item.updated", "cancelled"],
           ["turn-item.updated", "cancelled"],
           ["turn-item.updated", "cancelled"],
+          ["turn-item.updated", "completed"],
           ["provider-thread.updated", "idle"],
           ["provider-session.updated", "stopped"],
         ],
@@ -878,7 +879,9 @@ it.effect(
         yield* Effect.gen(function* () {
           const store = yield* ProjectionStore.ProjectionStoreV2;
           yield* store.apply(messageEvent);
-          const stoppedItems = events.filter((event) => event.type === "turn-item.updated");
+          const stoppedItems = events
+            .filter((event) => event.type === "turn-item.updated")
+            .filter((event) => event.payload.status === "cancelled");
           assert.equal(stoppedItems.length, 5);
           for (const event of stoppedItems) {
             assert.equal(
