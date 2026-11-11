@@ -369,6 +369,8 @@ jobs:
           name: wsl-node-pty-x64
           path: wsl-prebuild
 
+      - uses: ./.github/actions/setup-apt-mirrors
+        if: matrix.platform == 'linux'
       - name: Install Linux desktop build libraries
         if: matrix.platform == 'linux'
         shell: bash
