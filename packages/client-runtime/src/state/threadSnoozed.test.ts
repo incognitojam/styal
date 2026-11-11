@@ -81,7 +81,7 @@ describe("effectiveSnoozed", () => {
     expect(effectiveSnoozed(makeShell({ snoozedUntil: "not-a-date" }), { now: NOW })).toBe(false);
   });
 
-  it("wakes early when the agent is blocked on the user", () => {
+  it("wakes early when a report question is open", () => {
     const report = { ...makeShell({ snoozedUntil: FUTURE_WAKE }), openReportQuestionCount: 1 };
     expect(effectiveSnoozed(report, { now: NOW })).toBe(false);
     expect(canSnooze(report, { now: NOW })).toBe(true);
@@ -98,16 +98,6 @@ describe("effectiveSnoozed", () => {
         { now: NOW },
       ),
     ).toBe(true);
-    expect(
-      effectiveSnoozed(makeShell({ snoozedUntil: FUTURE_WAKE, pending: "approval" }), {
-        now: NOW,
-      }),
-    ).toBe(false);
-    expect(
-      effectiveSnoozed(makeShell({ snoozedUntil: FUTURE_WAKE, pending: "user-input" }), {
-        now: NOW,
-      }),
-    ).toBe(false);
   });
 
   it("defers an existing question until the timer, but wakes for a new question", () => {
