@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
+import { buildThreadTitlePrompt } from "./textGenerationPrompts.ts";
 import { TextGenerationError } from "@t3tools/contracts";
 
 import { isTextGenerationRateLimitError, normalizeCliError } from "./textGenerationUtils.ts";
@@ -68,4 +69,17 @@ it.each([
       new TextGenerationError({ operation: "synthetic", detail, cause }),
     ),
   ).toBe(expected);
+});
+
+describe("buildThreadTitlePrompt", () => {
+  it("names the project to leave out of initial and regenerated titles", () => {
+    for (const previousTitle of [undefined, "Hyperdrive Config Crash"]) {
+      const { prompt } = buildThreadTitlePrompt({
+        message: "hyperdrive init crashes without a config",
+        previousTitle,
+        projectTitle: "Hyperdrive",
+      });
+      expect(prompt).toContain('Never include the project name ("Hyperdrive")');
+    }
+  });
 });
