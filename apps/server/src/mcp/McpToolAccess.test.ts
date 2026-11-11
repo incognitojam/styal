@@ -1,6 +1,7 @@
 import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
 import * as OrchestratorHandlers from "./toolkits/orchestrator/handlers.ts";
 import { OrchestratorToolkit } from "./toolkits/orchestrator/tools.ts";
+import * as RemoteDelegation from "../peer/RemoteDelegation.ts";
 import * as OrchestratorMcpService from "./OrchestratorMcpService.ts";
 import * as PeerLinkRequests from "../peer/PeerLinkRequests.ts";
 import * as PeerLinks from "../peer/PeerLinks.ts";
@@ -833,6 +834,7 @@ it.effect.each([
   Effect.gen(function* () {
     const dependencies = Layer.mergeAll(
       NodeCrypto.layer,
+      Layer.mock(RemoteDelegation.RemoteDelegation)({}),
       Layer.succeed(McpInvocationContext.McpInvocationContext, scope),
       Layer.mock(ThreadManagement.ThreadManagementService)({
         getThreadShell: (threadId) => Effect.succeed(shells.get(threadId) ?? null),
