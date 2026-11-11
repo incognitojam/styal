@@ -15,12 +15,18 @@ export const makeIsServerInternalPath = Effect.gen(function* () {
   const realPath = (value: string) =>
     Effect.promise(() => NodeFSP.realpath(value).catch(() => path.resolve(value)));
   return Effect.fn("ServerInternalPaths.isServerInternalPath")(function* (filePath: string) {
-    const [file, stateDir, secretsDir] = yield* Effect.all(
-      [realPath(filePath), realPath(config.stateDir), realPath(config.secretsDir)],
+    const [file, stateDir, secretsDir, pruneBackupDir] = yield* Effect.all(
+      [
+        realPath(filePath),
+        realPath(config.stateDir),
+        realPath(config.secretsDir),
+        realPath(path.join(config.stateDir, "backups", "pre-event-prune")),
+      ],
       { concurrency: "unbounded" },
     );
     return (
       isWithinRoot(path, file, secretsDir) ||
+      isWithinRoot(path, file, pruneBackupDir) ||
       (path.dirname(file) === stateDir && path.basename(file).includes(".sqlite")) ||
       // macOS does not resolve `/dev/fd/N` to the open file's path.
       isWithinRoot(path, file, "/dev/fd")

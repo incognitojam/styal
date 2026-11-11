@@ -1,3 +1,4 @@
+import * as PruneSafety from "./preEventPruneSafety.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -110,7 +111,7 @@ it.layer(DatabaseMaintenance.layer.pipe(Layer.provideMerge(NodeServices.layer)))
         const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-compact-" });
         const dbPath = path.join(baseDir, "userdata", "statev2.sqlite");
         // Opening the database migrates it.
-        yield* Effect.void.pipe(Effect.provide(Sqlite.layerFromPath(dbPath)));
+        yield* PruneSafety.prepare().pipe(Effect.provide(Sqlite.layerFromPath(dbPath)));
         yield* Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
           yield* sql`PRAGMA auto_vacuum = NONE`;

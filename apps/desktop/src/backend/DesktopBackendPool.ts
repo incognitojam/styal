@@ -158,6 +158,7 @@ export const layer = Layer.effect(
       // Resolve lazily: startup loads persisted settings after pool initialization.
       label: configuration.resolvePrimaryLabel,
       configResolve: configuration.resolvePrimary,
+      onStartupCopy: (progress) => desktopWindow.showStartupCopy?.(progress) ?? Effect.void,
       // Absorb window errors so readiness can reset restartAttempt.
       onReady: (httpBaseUrl) =>
         desktopWindow.handleBackendReady(httpBaseUrl).pipe(

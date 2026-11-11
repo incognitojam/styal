@@ -11,6 +11,7 @@ const { guardHttpResponseWriteErrors } = HttpResponseErrorGuard;
 const servers: NodeHttp.Server[] = [];
 const requests: NodeHttp.ClientRequest[] = [];
 const sockets: NodeNet.Socket[] = [];
+const bodies = new WeakMap<NodeHttp.IncomingMessage, string>();
 
 function listen(server: NodeHttp.Server): Promise<number> {
   servers.push(server);
@@ -27,6 +28,7 @@ function fetchResponse(
   port: number,
   path: string,
   upgrade = false,
+  accept?: string,
 ): Promise<NodeHttp.IncomingMessage> {
   return new Promise((resolve, reject) => {
     const request = NodeHttp.get(
@@ -42,9 +44,16 @@ function fetchResponse(
               "sec-websocket-key": "dGhlIHNhbXBsZSBub25jZQ==",
               "sec-websocket-version": "13",
             }
-          : {},
+          : accept === undefined
+            ? {}
+            : { accept },
       },
       (response) => {
+        let body = "";
+        response.on("data", (chunk) => {
+          body += chunk;
+        });
+        response.on("end", () => bodies.set(response, body));
         response.on("error", reject);
         response.on("end", () => resolve(response));
         response.resume();
@@ -126,10 +135,22 @@ describe("guardHttpResponseWriteErrors", () => {
 });
 
 describe("rejectRequestsUntilServing", () => {
+  it("keeps main's empty connection-closing response without copy progress", async () => {
+    const server = HttpResponseErrorGuard.rejectRequestsUntilServing(NodeHttp.createServer());
+    const port = await listen(server);
+    for (const accept of ["text/html", "application/json"]) {
+      const response = await fetchResponse(port, "/api/startup", false, accept);
+      expect(response.statusCode).toBe(503);
+      expect(response.headers.connection).toBe("close");
+      expect(response.headers["retry-after"]).toBe("1");
+      expect(bodies.get(response)).toBe("");
+    }
+  });
   it("rejects early HTTP and upgrades, then hands each off to its serving handler", async () => {
     const writeErrors: unknown[] = [];
     const server = HttpResponseErrorGuard.rejectRequestsUntilServing(
       guardHttpResponseWriteErrors(NodeHttp.createServer(), (error) => writeErrors.push(error)),
+      () => ({ phase: "copying", copiedBytes: 25, totalBytes: 100, leaseMs: 60000 }),
     );
     const port = await listen(server);
 
@@ -137,6 +158,18 @@ describe("rejectRequestsUntilServing", () => {
     expect(earlyHttp.statusCode).toBe(503);
     expect(earlyHttp.headers["retry-after"]).toBe("1");
 
+    const status = await fetchResponse(port, "/api/startup");
+    expect(status.statusCode).toBe(200);
+    expect(JSON.parse(bodies.get(status) ?? "{}")).toEqual({
+      starting: true,
+      copy: { phase: "copying", copiedBytes: 25, totalBytes: 100, leaseMs: 60000 },
+    });
+    const olderBrowser = await fetchResponse(port, "/", false, "text/html");
+    expect(olderBrowser.statusCode).toBe(503);
+    expect(bodies.get(olderBrowser)).toContain(
+      "Making a safety copy of your data. This only happens once.",
+    );
+    expect(bodies.get(olderBrowser)).toContain("25%");
     const earlyUpgrade = await fetchResponse(port, "/rpc", true);
     expect(earlyUpgrade.statusCode).toBe(503);
     expect(earlyUpgrade.headers["retry-after"]).toBe("1");

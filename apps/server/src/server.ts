@@ -1,4 +1,6 @@
 import * as AutoPullStatus from "./vcs/AutoPullStatus.ts";
+import * as PreEventPruneSafety from "./persistence/preEventPruneSafety.ts";
+import * as Scope from "effect/Scope";
 import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
 import type { RelayManagedEndpointRuntimeConfig } from "@t3tools/contracts/relay";
 import * as Random from "effect/Random";
@@ -219,6 +221,7 @@ import * as CursorKeychain from "@t3tools/provider-cursor/server/CursorKeychain"
 import * as CursorUsageAccounts from "@t3tools/provider-cursor/server/CursorUsageAccounts";
 import * as UsageService from "./usage/UsageService.ts";
 import * as CodexUsageHistory from "./usage/CodexUsageHistory.ts";
+import * as Startup from "./serverStartup.ts";
 import * as RuntimeLayer from "./orchestration-v2/runtimeLayer.ts";
 import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
 import * as ThreadSearch from "./orchestration-v2/ThreadSearch.ts";
@@ -376,10 +379,12 @@ const layerHttpServer = Layer.unwrap(
       privateNetworkOnly: config.privateNetworkOnly,
     });
     yield* ManagedLimits.closeTailscaleServeTo(policy, { host: bindHost, port: config.port });
+    const startupCopy = yield* Startup.StartupStatus;
     return NodeHttpServer.layer(
       () => {
         const server = rejectRequestsUntilServing(
           guardHttpResponseWriteErrors(NodeHttp.createServer()),
+          startupCopy,
         );
         if (config.privateNetworkOnly) {
           server.on("connection", (socket) => {
@@ -1306,7 +1311,11 @@ const layerMakeServer = Layer.unwrap(
       }),
     );
 
-    return reportStalledShutdown.pipe(
+    const startup = yield* Startup.makeStartupStatus();
+    const http = layerHttpServer.pipe(
+      Layer.provide(Layer.succeed(Startup.StartupStatus, startup.current)),
+    );
+    const runtimeLayer = reportStalledShutdown.pipe(
       Layer.provideMerge(providerShutdownLayer),
       Layer.provideMerge(layerServerApplication),
       Layer.provide(CloudLink.layer.pipe(Layer.provideMerge(ConnectReachability.layer))),
@@ -1321,13 +1330,42 @@ const layerMakeServer = Layer.unwrap(
       Layer.provideMerge(
         RelayTracing.layerServerRelayBroker.pipe(Layer.provide(ManagedPolicy.layer)),
       ),
-      Layer.provideMerge(layerHttpServer),
+      Layer.provideMerge(http),
       Layer.provide(layerApplicationObservability),
       Layer.provideMerge(FetchHttpClient.layer),
       Layer.provide(VcsProcess.layer),
       Layer.provideMerge(AgentScopeLive.layer),
       Layer.provideMerge(layerPlatformServices),
     );
+    return Layer.fromBuild((memoMap, scope) =>
+      Effect.gen(function* () {
+        yield* Startup.prepareBeforeRuntime(
+          yield* ServerConfig.eventPruningEnabled,
+          Layer.buildWithMemoMap(http, memoMap, scope).pipe(Effect.asVoid),
+          Effect.gen(function* () {
+            const observability = yield* Layer.buildWithMemoMap(
+              layerApplicationObservability,
+              memoMap,
+              scope,
+            );
+            yield* Effect.gen(function* () {
+              const persistence = yield* Layer.buildWithMemoMap(
+                SqlitePersistence.layerConfig,
+                memoMap,
+                scope,
+              );
+              yield* PreEventPruneSafety.prepare().pipe(
+                Effect.provideService(PreEventPruneSafety.Progress, startup.report),
+                Effect.provideContext(persistence),
+                Effect.provideService(Scope.Scope, scope),
+                Effect.provideService(ServerActivation.ServerActivation, awaitActivation),
+              );
+            }).pipe(Effect.provideContext(observability));
+          }).pipe(Effect.provide(FetchHttpClient.layer)),
+        );
+        return yield* Layer.buildWithMemoMap(runtimeLayer, memoMap, scope);
+      }),
+    ).pipe(Layer.provide(layerPlatformServices));
   }),
 ).pipe(Layer.provide(ProcessRunner.layer));
 

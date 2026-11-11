@@ -72,6 +72,8 @@ Runtimes live under `runtime/styal-executable/versions/<version>`, separate from
 remove an old npm runtime. Launcher protocol 4 requires this layout. Protocol 3's integer was
 fork-local: upstream also used 3 for a different layout, so the numbers are not interchangeable.
 
+Pruning safety copies are deferred in update-trial children. Their inherited pending-update context remains for that process lifetime, so copying and pruning wait for an ordinary start after commit rather than extending an installed launcher's health deadline.
+
 Older launchers fail preflight and need one local `npx @styal/cli@<version> service update`. The
 npm launcher keeps `dist/bin.mjs` so old updaters can run that preflight and show its migration
 guidance; it must remain until npm-based installations have migrated. Migration cannot defer the

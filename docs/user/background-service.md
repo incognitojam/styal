@@ -194,3 +194,19 @@ If you upgraded from a version before 0.1.0, its database (`state.sqlite`) is
 still kept next to the current one so you can roll back. `styal doctor` offers to
 delete it, but never selects that repair for you and `--fix` skips it: once it
 is gone, a version before 0.1.0 starts with no threads or settings.
+
+## Safety copy before history pruning
+
+History pruning is off by default. To turn it on early, start the server with `T3CODE_EVENT_PRUNING=1` in its environment. This also applies to desktop and background-service server processes. Without it, styal makes no pruning copy, checks no copy disk space, and shows no copy progress screen.
+
+Before deleting older internal history events, styal saves a verified copy of `statev2.sqlite` in `backups/pre-event-prune/` beside the database (normally `~/.styal/userdata/backups/pre-event-prune/`). Imported and migrated thread history remains readable after pruning. The first startup can take longer on a disk that cannot clone files: styal copies the database before opening it for normal use, and shows progress while you wait. The copy needs free disk space equal to the database size plus the larger of 1 GiB or 10%. If there is not enough space, styal starts normally without pruning and checks again at the next startup.
+
+You can quit the app or stop the service during the copy. The incomplete copy is discarded, and the next start tries again immediately. If copying stops making progress for a minute or exceeds its size-based limit, styal gives up, starts without pruning, and retries at a startup at least seven days later. A disk-full failure is retried at the next start. Nothing is pruned without a verified copy.
+
+Background-service updates defer the safety copy and pruning until the next ordinary service start after the update finishes. Existing service launchers keep working without a manual launcher update.
+
+The copy stays until a maintenance run at least seven days after the first completed deletion. It stays indefinitely if no deletion completes. After it expires, the manifest stays as the record that the first prune was protected. Pruning continues without making another copy. This recovery copy is not a continuous backup.
+
+To restore it, stop the server and quit the desktop app. Save your current database elsewhere, replace `statev2.sqlite` with the copy from `backups/pre-event-prune/`, and remove `statev2.sqlite-wal` and `statev2.sqlite-shm` beside the restored database if they exist. Start styal again. Everything recorded since the copy was taken is lost when you restore it. Pruning pauses and the recovery copy does not expire while you verify the restored history. Once you are happy with the restored database, stop styal, delete `backups/pre-event-prune/`, and start it again to make a new safety copy and resume pruning.
+
+If an unused copy belongs to a different database generation and neither records a deletion, styal safely replaces it at the next startup. If either the database or the copy records a deletion and their generations differ, styal preserves the copy, warns, and pauses pruning. Keep that copy until you have verified which database you want to retain; removing `backups/pre-event-prune/` and restarting explicitly requests a new copy of the current database.

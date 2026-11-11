@@ -1,3 +1,4 @@
+import { copyDatabaseFile, databaseCopyHeadroom, runCp } from "./persistence/databaseFileCopy.ts";
 // @effect-diagnostics nodeBuiltinImport:off
 // @effect-diagnostics globalTimers:off
 // This file is shipped as a standalone bundle and copied to a stable path by
@@ -131,33 +132,7 @@ async function syncDirectory(directory: string): Promise<void> {
   }
 }
 
-function runCp(args: ReadonlyArray<string>): Promise<boolean> {
-  return new Promise((resolve) => {
-    NodeChildProcess.execFile("cp", args, (error) => resolve(error === null));
-  });
-}
-
-// macOS fs.copyFile clone flags fall back to full copies.
-async function copyDatabaseFile(source: string, destination: string): Promise<void> {
-  // oxlint-disable-next-line t3code/no-global-process-runtime -- Standalone launcher has no Effect runtime.
-  const platform = process.platform;
-  // cp -c replaces files and breaks hard links; copy into hard-linked destinations instead.
-  const hardLinked =
-    platform === "darwin" &&
-    ((await NodeFSP.stat(destination).catch(() => undefined))?.nlink ?? 1) > 1;
-  const args =
-    platform === "darwin" && !hardLinked
-      ? ["-c", source, destination]
-      : platform === "linux"
-        ? ["--reflink=auto", source, destination]
-        : undefined;
-  if (args === undefined || !(await runCp(args))) await NodeFSP.copyFile(source, destination);
-}
-
 const GIB = 1024 ** 3;
-// Cloned backups still need headroom for trial writes and migrations to diverge.
-const CLONED_BACKUP_MIN_HEADROOM_BYTES = GIB;
-const CLONED_BACKUP_HEADROOM_FRACTION = 0.1;
 
 async function statDatabaseFiles(dbPath: string): Promise<ReadonlyArray<NodeFS.Stats>> {
   const stats: Array<NodeFS.Stats> = [];
@@ -228,10 +203,7 @@ export async function databaseBackupBlocker(
   const size = files.reduce((total, file) => total + file.size, 0);
   const fullCopyBytes = size * 1.05;
   if (free >= fullCopyBytes) return undefined;
-  const clonedBytes = Math.max(
-    CLONED_BACKUP_MIN_HEADROOM_BYTES,
-    size * CLONED_BACKUP_HEADROOM_FRACTION,
-  );
+  const clonedBytes = databaseCopyHeadroom(size);
   const needed = (await canClone(dbPath, backupRoot)) ? clonedBytes : fullCopyBytes;
   if (free >= needed) return undefined;
   const gb = (bytes: number) => (bytes / GIB).toFixed(1);
