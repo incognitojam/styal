@@ -5,7 +5,11 @@ import type { ScopedThreadRef } from "@t3tools/contracts";
 import { resolveMarkdownLinkPresentation } from "../../lib/markdownLinks";
 import { useCallback, useMemo } from "react";
 
-import { fileRoutePathSegments, resolveWorkspaceRelativeFilePath } from "../files/filePath";
+import {
+  fileRoutePathSegments,
+  resolveFileLinkPath,
+  resolveWorkspaceRelativeFilePath,
+} from "../files/filePath";
 import { resolveScaledTextRole } from "../../lib/appearancePreferences";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { FONT_FAMILIES } from "../../lib/fontFamilies";
@@ -53,14 +57,14 @@ export function PendingQuestionText(props: {
     (href: string) => {
       const presentation = resolveMarkdownLinkPresentation(href);
       if (presentation.kind === "file") {
-        const path =
-          (props.workspaceRoot
-            ? resolveWorkspaceRelativeFilePath(presentation.path, props.workspaceRoot)
-            : null) ?? presentation.path;
+        const path = resolveFileLinkPath(props.workspaceRoot, presentation.path);
+        if (path === null) return;
         navigation.navigate("ThreadFile", {
           environmentId: String(props.threadRef.environmentId),
           threadId: String(props.threadRef.threadId),
-          path: fileRoutePathSegments(path),
+          path: fileRoutePathSegments(
+            resolveWorkspaceRelativeFilePath(props.workspaceRoot, path) ?? path,
+          ),
           ...(presentation.line ? { line: String(presentation.line) } : {}),
         });
         return;
