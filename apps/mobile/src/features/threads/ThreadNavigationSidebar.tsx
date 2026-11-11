@@ -32,7 +32,11 @@ import { useThreadListV2ShelfPreferences } from "./use-thread-list-v2-shelf-pref
 import { useThreadListNow } from "./use-thread-list-now";
 import { usePendingThreadOrder } from "../../state/thread-order";
 import { threadListEnvironmentsAtom } from "../../state/presentation";
-import { usePendingNewTasks, type PendingNewTask } from "../../state/use-pending-new-tasks";
+import {
+  useLaunchingThreads,
+  usePendingNewTasks,
+  type PendingNewTask,
+} from "../../state/use-pending-new-tasks";
 import { useDraftThreadKeys } from "../../state/use-composer-drafts";
 import { useQueuedThreadKeys } from "../../state/use-thread-outbox";
 import { useWorkspaceState } from "../../state/workspace";
@@ -146,6 +150,7 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
     ? (preferencesResult.value.threadTimestampMode ?? "last_prompted")
     : "last_prompted";
   const pendingTasks = usePendingNewTasks();
+  const launchingThreads = useLaunchingThreads(threads);
   const activeNewTask = useActiveNewTask();
   const queuedThreadKeys = useQueuedThreadKeys();
   const draftThreadKeys = useDraftThreadKeys();
@@ -270,7 +275,7 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
     contentOnlyThreadKeys,
     olderSettledShelf,
   } = useThreadListV2({
-    threads,
+    threads: launchingThreads,
     pendingTasks,
     environmentId: options.selectedEnvironmentId,
     projectRefs: selectedProjectScope === null ? null : selectedProjectScope.projectRefs,
