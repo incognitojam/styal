@@ -1,5 +1,6 @@
 import type { KeybindingCommand } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
+import { deadlineAfter } from "@t3tools/client-runtime/clock";
 import {
   createContext,
   use,
@@ -7,16 +8,18 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
 
 import { isElectron } from "../env";
-import { useTerminalFocus } from "../hooks/useTerminalFocus";
+import { useDeadlinePassed } from "../hooks/useDeadline";
 import { type ShortcutMatchContext, shortcutHintLabelForModifiers } from "../keybindings";
 import { type ShortcutModifierState, useShortcutModifierState } from "../shortcutModifierState";
+import { isTerminalFocused, subscribeToTerminalFocusChanges } from "../lib/terminalFocus";
 import { primaryServerKeybindingsAtom } from "../state/server";
-import { useThreadJumpHintsVisible } from "./Sidebar.logic";
+import { THREAD_JUMP_HINT_SHOW_DELAY_MS } from "./Sidebar.logic";
 
 const HeldShortcutModifiersContext = createContext<ShortcutModifierState | null>(null);
 
@@ -27,14 +30,29 @@ const HeldShortcutModifiersContext = createContext<ShortcutModifierState | null>
 export function ShortcutHintProvider(props: { children: ReactNode }) {
   const modifiers = useShortcutModifierState();
   // Ghostty can write keys to the shell before window shortcuts run.
-  const terminalFocused = useTerminalFocus();
+  const terminalFocused = useSyncExternalStore(
+    subscribeToTerminalFocusChanges,
+    isTerminalFocused,
+    () => false,
+  );
   const holding = (modifiers.metaKey || modifiers.ctrlKey) && !terminalFocused;
-  const visible = useThreadJumpHintsVisible(holding);
+  const visible = useHeldForHintDelay(holding);
   return (
     <HeldShortcutModifiersContext value={visible && holding ? modifiers : null}>
       {props.children}
     </HeldShortcutModifiersContext>
   );
+}
+
+/** True once `holding` has stayed true for the hint delay, so a quick shortcut never flashes hints. */
+function useHeldForHintDelay(holding: boolean): boolean {
+  const [showAt, setShowAt] = useState<number | null>(null);
+  // The clock is read inside the updater: the compiler caches a bare clock read
+  // in render once per instance, so a second hold would reuse the first deadline.
+  if (holding !== (showAt !== null)) {
+    setShowAt(holding ? () => deadlineAfter(THREAD_JUMP_HINT_SHOW_DELAY_MS) : null);
+  }
+  return useDeadlinePassed(showAt);
 }
 
 /** The command's shortcut label while its modifiers are held, otherwise null. */
