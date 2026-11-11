@@ -1,8 +1,8 @@
 import type { ThreadGuestMessage } from "@t3tools/contracts";
 
-import { AssistantCitationChip } from "./AssistantCitationChip";
+import { AssistantCitationEmbed } from "./AssistantCitationChip";
 
-/** A guest message's quotes as citation chips, then the guest's own text. */
+/** A guest message's quotes as quote cards, then the guest's own text. */
 export function GuestMessageText({
   message,
 }: {
@@ -10,11 +10,15 @@ export function GuestMessageText({
 }) {
   return (
     <>
-      {message.quotes?.map((quote, index) => (
-        // oxlint-disable-next-line react/no-array-index-key -- a message's quotes never change
-        <AssistantCitationChip key={index} citation={quote} />
+      {message.quotes?.map((quote, index, quotes) => (
+        <AssistantCitationEmbed
+          // oxlint-disable-next-line react/no-array-index-key -- a message's quotes never change
+          key={index}
+          citation={quote}
+          leading={index === 0}
+          trailing={index === quotes.length - 1 && !message.text}
+        />
       ))}
-      {(message.quotes?.length ?? 0) > 0 && message.text ? " " : null}
       {message.text}
     </>
   );

@@ -301,6 +301,10 @@ describe("GuestPage", () => {
     await expect
       .element(screen.getByRole("list", { name: "Quotes" }).getByText("All checks pass."))
       .toBeVisible();
+    // The quote's source opens in the owner's app, which a guest cannot open.
+    await expect
+      .element(screen.getByRole("link", { name: /View cited assistant text/ }))
+      .not.toBeInTheDocument();
     await userEvent.type(screen.getByLabelText("Message", { exact: true }), "Which checks?");
     await userEvent.click(screen.getByRole("button", { name: "Send" }));
 
