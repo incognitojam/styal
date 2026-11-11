@@ -1,4 +1,4 @@
-import type { EnvironmentId, ServerProviderHistoryRetention } from "@t3tools/contracts";
+import type { EditorId, EnvironmentId, ServerProviderHistoryRetention } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { CheckIcon, CopyIcon, InfoIcon } from "lucide-react";
 
@@ -6,14 +6,14 @@ import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
 import { cn } from "../../lib/utils";
 import { useRemoteOpenState } from "../../remoteOpen";
 import { usePrimaryEnvironmentId } from "../../state/environments";
-import {
-  primaryServerAvailableEditorsAtom,
-  primaryServerKeybindingsAtom,
-} from "../../state/server";
+import { hostEnvironmentIdAtom } from "../../state/primaryEnvironment";
+import { primaryServerKeybindingsAtom, serverEnvironment } from "../../state/server";
 import { OpenInPicker } from "../chat/OpenInPicker";
 import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
+
+const NO_EDITORS: ReadonlyArray<EditorId> = [];
 
 const formatDays = (days: number) => `${days} ${days === 1 ? "day" : "days"}`;
 
@@ -101,12 +101,17 @@ function SettingsFileActions({
   const environmentId = requestedEnvironmentId ?? primaryEnvironmentId;
   const remoteOpenState = useRemoteOpenState(environmentId);
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
-  const availableEditors = useAtomValue(primaryServerAvailableEditorsAtom);
+  const hostEnvironmentId = useAtomValue(hostEnvironmentIdAtom);
+  const availableEditors =
+    useAtomValue(serverEnvironment.configValueAtom(environmentId))?.availableEditors ?? NO_EDITORS;
   // Matches the file preview: a local editor list only applies to the primary
-  // environment; other environments open through a remote editor link.
+  // environment and the service sharing the desktop's home; other environments
+  // open through a remote editor link.
   const canOpen =
     environmentId !== null &&
-    (environmentId === primaryEnvironmentId || remoteOpenState.mode !== "local-exec");
+    (environmentId === primaryEnvironmentId ||
+      environmentId === hostEnvironmentId ||
+      remoteOpenState.mode !== "local-exec");
   return (
     <div className="flex min-w-0 items-center gap-1.5">
       <SettingsPathChip path={path} copyable={!canOpen} />
