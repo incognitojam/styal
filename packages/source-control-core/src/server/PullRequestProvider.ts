@@ -30,6 +30,7 @@ import type {
   PullRequestReactionContent,
   PullRequestReviewCommentDraft,
   PullRequestReviewDecision,
+  PullRequestOverviewThread,
   PullRequestReviewThread,
   PullRequestThreadCommentsResult,
   PullRequestReviewVerdict,
@@ -234,6 +235,7 @@ export interface ProviderChangeRequestActivity {
   readonly commentsTruncated: boolean;
   readonly reviewThreadsTruncated?: boolean;
   readonly reviewThreads: ReadonlyArray<PullRequestReviewThread>;
+  readonly overviewThreads?: ReadonlyArray<PullRequestOverviewThread>;
   readonly commits: ReadonlyArray<PullRequestCommit>;
   readonly reactions?: ReadonlyArray<PullRequestReaction>;
 }
