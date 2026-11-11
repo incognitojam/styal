@@ -290,7 +290,6 @@ jobs:
           NEW_TAG: ${{ needs.prepare.outputs.tag }}
           SOURCE_REF: ${{ needs.prepare.outputs.ref }}
           SOURCE_TAG: ${{ needs.prepare.outputs.source_tag }}
-          VERSION: ${{ needs.prepare.outputs.version }}
         run: |
           set -euo pipefail
           source release-tools/.github/scripts/release-changelog.sh
@@ -300,16 +299,8 @@ jobs:
             upstream_ref=$(git merge-base "$SOURCE_REF" FETCH_HEAD)
           fi
 
-          {
-            printf 'styal %s, promoted from [%s](../../releases/tag/%s).\n\n' \
-              "$VERSION" "$SOURCE_TAG" "$SOURCE_TAG"
-            if [[ -n "$previous_stable" ]]; then
-              render_release_notes "$GITHUB_REPOSITORY" "$previous_stable" "$NEW_TAG" \
-                "$SOURCE_REF" "$upstream_ref"
-            else
-              printf 'These artifacts are a rebuild of the same commit with a stable version, so they carry the stable update channel.\n'
-            fi
-          } > release-notes.md
+          render_stable_release_notes "$GITHUB_REPOSITORY" "$previous_stable" "$NEW_TAG" \
+            "$SOURCE_REF" "${upstream_ref:-}" "$SOURCE_TAG" > release-notes.md
           cat release-notes.md
 
       # Pushed with the checkout's app token before the release, which would

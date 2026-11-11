@@ -2234,6 +2234,7 @@ features:
       - Settings that exist only in styal show the monochrome styal mark beside their title, limited to ledger features that are still maintained or under review; fork refinements of upstream settings stay unmarked.
       - The desktop app's CLI launcher and its Settings install are named `styal`, so they never take over or remove an upstream `t3` command.
       - styal releases only through its `fork-*` workflows. Upstream's `release.yml` and `release-desktop.yml`, and the scripts only they ran, stay deleted; intake removes upstream edits to them as fork deletions.
+      - Stable promotions spanning more than 100 commits use source and comparison links without per-commit PR lookups or account mentions; small stable ranges and nightly notes retain their detailed changelogs.
     implementation_paths:
       - .github/actions/cache-android-build/action.yml
       - .github/actions/setup-deps/dependency-hash.mjs

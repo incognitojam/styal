@@ -215,3 +215,29 @@ render_release_notes() {
     printf '\n'
   fi
 }
+
+render_stable_release_notes() {
+  local repository="$1" previous_tag="$2" new_tag="$3"
+  local source_ref="$4" upstream_ref="$5" source_tag="$6"
+  local commit_count
+
+  printf 'styal %s, promoted from [%s](../../releases/tag/%s).\n\n' \
+    "${new_tag#v}" "$source_tag" "$source_tag"
+  if [[ -z "$previous_tag" ]]; then
+    printf 'These artifacts are a rebuild of the same commit with a stable version, so they carry the stable update channel.\n'
+    return
+  fi
+
+  # Bound stable notes before filtering or PR lookups; nightly notes stay detailed.
+  commit_count=$(git rev-list --count "${previous_tag}..${source_ref}")
+  if (( commit_count > 100 )); then
+    printf 'Source commit: [`%s`](https://github.com/%s/commit/%s).\n\n' \
+      "${source_ref:0:7}" "$repository" "$source_ref"
+    printf 'This release spans %s commits; see the comparison for the full list of changes.\n\n' "$commit_count"
+    printf '**Full Changelog**: https://github.com/%s/compare/%s...%s\n' \
+      "$repository" "$previous_tag" "$new_tag"
+    return
+  fi
+
+  render_release_notes "$repository" "$previous_tag" "$new_tag" "$source_ref" "$upstream_ref"
+}

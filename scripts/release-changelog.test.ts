@@ -772,3 +772,68 @@ it.each([
     NodeFS.rmSync(fixtureRoot, { recursive: true, force: true });
   }
 });
+
+it.each([100, 101])(
+  "renders stable notes for %s commits without changing nightly notes",
+  (count) => {
+    const fixtureRoot = createFixture();
+    try {
+      const base = commitFile(fixtureRoot, "base.txt", "base\n", "base");
+      runGit(fixtureRoot, "tag", "v0.1.0");
+      for (let index = 0; index < count; index++) {
+        commitPaths(fixtureRoot, ["apps/web/src/main.tsx"], `fix: change ${index} (#123)`);
+      }
+      const source = runGit(fixtureRoot, "rev-parse", "HEAD");
+      const result = NodeChildProcess.spawnSync(
+        "bash",
+        [
+          "-c",
+          `set -euo pipefail
+source "$1"
+gh() { echo call >> calls; printf 'synthetic-author\\n'; }
+render_stable_release_notes example/fork v0.1.0 v0.1.1 "$2" "$3" v0.1.1-nightly.20261111.1`,
+          "release-changelog-test",
+          helperPath,
+          source,
+          base,
+        ],
+        { cwd: fixtureRoot, encoding: "utf8" },
+      );
+      assert.equal(result.status, 0, result.stderr);
+      const header = `styal 0.1.1, promoted from [v0.1.1-nightly.20261111.1](../../releases/tag/v0.1.1-nightly.20261111.1).\n\n`;
+      if (count === 100) {
+        assert.equal(
+          result.stdout,
+          header +
+            renderReleaseNotes(fixtureRoot, "v0.1.0", "v0.1.1", source, base).replaceAll(
+              "release-author",
+              "synthetic-author",
+            ),
+        );
+        assert.equal(
+          NodeFS.readFileSync(NodePath.join(fixtureRoot, "calls"), "utf8").trim().split("\n")
+            .length,
+          count,
+        );
+      } else {
+        assert.equal(
+          result.stdout,
+          `${header}Source commit: [\`${source.slice(0, 7)}\`](https://github.com/example/fork/commit/${source}).\n\nThis release spans 101 commits; see the comparison for the full list of changes.\n\n**Full Changelog**: https://github.com/example/fork/compare/v0.1.0...v0.1.1\n`,
+        );
+        assert.isFalse(NodeFS.existsSync(NodePath.join(fixtureRoot, "calls")));
+        assert.isFalse(result.stdout.includes("@"));
+        assert.isFalse(result.stdout.includes("pingdotgg/t3code"));
+        const nightly = renderReleaseNotes(
+          fixtureRoot,
+          "v0.1.0",
+          "v0.1.1-nightly.20261111.1",
+          source,
+          base,
+        );
+        assert.equal(nightly.match(/by @release-author/g)?.length, count);
+      }
+    } finally {
+      NodeFS.rmSync(fixtureRoot, { recursive: true, force: true });
+    }
+  },
+);
