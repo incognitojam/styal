@@ -8,8 +8,14 @@ import type {
   PullRequestThreadCommentsResult,
   PullRequestThreadComment,
 } from "@t3tools/contracts";
-import { HammerIcon, MessageSquareIcon, MessageSquarePlusIcon, Trash2Icon } from "lucide-react";
-import { Circle, CircleCheck } from "lucide";
+import {
+  HammerIcon,
+  MessageSquareIcon,
+  MessageSquarePlusIcon,
+  Trash2Icon,
+  CircleCheckIcon,
+  CircleIcon,
+} from "lucide-react";
 import { useRef, useState } from "react";
 import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 
@@ -18,7 +24,6 @@ import { cn } from "~/lib/utils";
 import { SpeechTextField, TextFieldSpeechControls } from "~/speech/useTextFieldSpeech";
 
 import { Button } from "../ui/button";
-import { MorphIcon } from "~/components/MorphIcon";
 import { PullRequestEditButton } from "./PullRequestEditButton";
 import { isCommentSubmitShortcut } from "../diffs/commentSubmitShortcut";
 import {
@@ -235,10 +240,11 @@ export function ReviewThreadCard({
       onPointerDown={(event) => event.stopPropagation()}
     >
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        <MorphIcon
-          className={cn("size-3.5", thread.isResolved && "text-success-foreground")}
-          icon={thread.isResolved ? CircleCheck : Circle}
-        />
+        {thread.isResolved ? (
+          <CircleCheckIcon className="size-3.5 text-success-foreground" />
+        ) : (
+          <CircleIcon className="size-3.5" />
+        )}
         <button
           type="button"
           className="cursor-pointer hover:text-foreground"
