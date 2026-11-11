@@ -1,10 +1,12 @@
 import { DATABASE_COMPACTION_RECOMMENDED_BYTES } from "@t3tools/contracts";
+import * as Clock from "effect/Clock";
 import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { Command, Flag, GlobalFlag, Prompt } from "effect/cli";
 
 import * as BootService from "../cloud/bootService.ts";
+import { eventPruningEnabled } from "../config.ts";
 import * as DatabaseMaintenance from "../persistence/DatabaseMaintenance.ts";
 import { projectLocationFlags, resolveCliAuthConfig } from "./config.ts";
 import * as CliService from "./service.ts";
@@ -18,6 +20,18 @@ const formatBytes = (bytes: number) =>
 
 // Off until the V1 history backfill ships: state.sqlite still holds history the import skips.
 const OFFER_LEGACY_DATABASE_REMOVAL = false;
+
+const formatElapsed = (nanos: bigint) => {
+  const seconds = Number(nanos / 1_000_000_000n);
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+};
+
+const COMPACT_STEP_LABELS: Record<DatabaseMaintenance.DatabaseCompactStep, string> = {
+  "prune-events": "Removing superseded events",
+  vacuum: "Rewriting the database file",
+  "rebuild-search": "Rebuilding the search index",
+  checkpoint: "Flushing the write-ahead log",
+};
 
 export const runDoctor = Effect.fn("runDoctor")(function* (
   databasePath: string,
@@ -44,7 +58,7 @@ export const runDoctor = Effect.fn("runDoctor")(function* (
               status.incrementalVacuumEnabled
                 ? "Returns unused space to disk."
                 : "Returns unused space to disk and turns on automatic shrinking."
-            }\n  Pauses the background service, if installed, while it runs and may need temporary disk space.`,
+            }\n  Rewrites the whole ${formatBytes(status.databaseBytes)} database, which can take more than an hour on a large database or slow disk.\n  Pauses the background service, if installed, while it runs and may need temporary disk space.`,
             recommended:
               !status.incrementalVacuumEnabled ||
               status.reclaimableBytes >= DATABASE_COMPACTION_RECOMMENDED_BYTES,
@@ -103,15 +117,30 @@ export const runDoctor = Effect.fn("runDoctor")(function* (
   }
   if (selected.includes("database")) {
     const service = yield* BootService.BootService;
-    yield* Console.log("\nReclaiming database space. This can take several minutes...");
+    yield* Console.log("\nReclaiming database space. Each step is shown as it starts.");
+    // Event pruning is off unless T3CODE_EVENT_PRUNING=1; then its step removes nothing.
+    const pruning = yield* eventPruningEnabled;
+    const startedAt = yield* Clock.monotonicTimeNanos;
+    const reportStep = (step: DatabaseMaintenance.DatabaseCompactStep) =>
+      step === "prune-events" && !pruning
+        ? Effect.void
+        : Clock.monotonicTimeNanos.pipe(
+            Effect.flatMap((now) =>
+              Console.log(`  [${formatElapsed(now - startedAt)}] ${COMPACT_STEP_LABELS[step]}`),
+            ),
+          );
     // Report the repair before restarting, which can fail independently.
     yield* service.withStopped(
       maintenance
-        .compact(databasePath)
+        .compact(databasePath, reportStep)
         .pipe(
           Effect.tap((result) =>
-            Console.log(
-              `Done: ${formatBytes(result.beforeBytes)} -> ${formatBytes(result.afterBytes)}, ${result.deletedEventCount} superseded events removed.`,
+            Clock.monotonicTimeNanos.pipe(
+              Effect.flatMap((now) =>
+                Console.log(
+                  `Done in ${formatElapsed(now - startedAt)}: ${formatBytes(result.beforeBytes)} -> ${formatBytes(result.afterBytes)}${pruning ? `, ${result.deletedEventCount} superseded events removed` : ""}.`,
+                ),
+              ),
             ),
           ),
         ),
