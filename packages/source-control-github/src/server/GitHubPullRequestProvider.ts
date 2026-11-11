@@ -166,6 +166,9 @@ function withAvatar(
   return avatarUrl === null ? actor : { ...actor, avatarUrl };
 }
 
+const workflowRunIdOf = (url: string | null) =>
+  url?.match(/\/actions\/runs\/(\d+)(?:\/|$)/)?.[1] ?? null;
+
 function withWorkflowApprovals(
   checks: ReadonlyArray<PullRequestCheck>,
   runs: ReadonlyArray<GitHubWorkflowRunApproval>,
@@ -174,8 +177,8 @@ function withWorkflowApprovals(
   const representedRunIds = new Set<number>();
   for (const check of checks) {
     if (check.status !== "action-required" || check.url === null) continue;
-    const id = check.url.match(/\/actions\/runs\/(\d+)(?:\/|$)/)?.[1];
-    if (id !== undefined) representedRunIds.add(Number(id));
+    const id = workflowRunIdOf(check.url);
+    if (id !== null) representedRunIds.add(Number(id));
   }
   const approvalChecks = runs
     .filter((run) => !representedRunIds.has(run.id))
@@ -201,6 +204,30 @@ function withWorkflowApprovals(
         ]
       : []),
     ...checks,
+  ];
+}
+
+// GitHub adds a run's check runs only as its jobs start, so a queued run can have none yet.
+function withUnfinishedWorkflowRuns(
+  checks: ReadonlyArray<PullRequestCheck>,
+  runs: ReadonlyArray<GitHubWorkflowRunApproval>,
+): ReadonlyArray<PullRequestCheck> {
+  const runningRunIds = new Set<number>();
+  for (const check of checks) {
+    if (check.status !== "pending" && check.status !== "action-required") continue;
+    const id = workflowRunIdOf(check.url);
+    if (id !== null) runningRunIds.add(Number(id));
+  }
+  return [
+    ...checks,
+    ...runs
+      .filter((run) => !runningRunIds.has(run.id))
+      .map((run): PullRequestCheck => ({
+        name: run.name,
+        status: "pending",
+        description: "This workflow run has not finished.",
+        url: run.url,
+      })),
   ];
 }
 
@@ -356,15 +383,31 @@ export const make = Effect.gen(function* () {
     },
   );
 
+  const readUnfinishedRuns = (
+    input: ProviderRepositoryRef,
+    pullRequest: GitHubPullRequestDetail,
+  ) =>
+    pullRequest.state !== "open" || pullRequest.headSha == null
+      ? Effect.succeed([] as ReadonlyArray<GitHubWorkflowRunApproval>)
+      : cli.listUnfinishedWorkflowRuns({ ...input, headSha: pullRequest.headSha }).pipe(
+          Effect.catchIf(
+            (error) =>
+              error._tag !== "GitHubApiRateLimitError" &&
+              error._tag !== "SourceControlRateLimitPausedError",
+            () => Effect.succeed([] as ReadonlyArray<GitHubWorkflowRunApproval>),
+          ),
+        );
+
   const readChecks = (input: ProviderRepositoryRef & { readonly number: number }) =>
     cli.getPullRequestDetail(input).pipe(
       Effect.flatMap((pullRequest) =>
         readWorkflowApprovals(input, pullRequest).pipe(
-          Effect.map((workflowApprovals) => ({
+          Effect.zip(readUnfinishedRuns(input, pullRequest), { concurrent: true }),
+          Effect.map(([workflowApprovals, unfinishedRuns]) => ({
             ...pullRequest,
             author: withAvatar(pullRequest.author, new Map(), input.host),
             checks: withWorkflowApprovals(
-              pullRequest.checks,
+              withUnfinishedWorkflowRuns(pullRequest.checks, unfinishedRuns),
               workflowApprovals.runs,
               workflowApprovals.unavailable,
             ),
@@ -511,6 +554,7 @@ export const make = Effect.gen(function* () {
                     })
                     .pipe(Effect.orElseSucceed(() => null)),
                   workflowApprovals: readWorkflowApprovals(input, pullRequest),
+                  unfinishedRuns: readUnfinishedRuns(input, pullRequest),
                 },
                 { concurrency: 2 },
               ).pipe(Effect.map((metadata) => ({ pullRequest, ...metadata }))),
@@ -525,17 +569,20 @@ export const make = Effect.gen(function* () {
         Effect.mapError(fail("getChangeRequest")),
         Effect.map(
           ([
-            { pullRequest, branchPolicy, workflowApprovals },
+            { pullRequest, branchPolicy, workflowApprovals, unfinishedRuns },
             requiredChecks,
           ]): ProviderChangeRequestDetail => ({
             ...pullRequest,
             author: withAvatar(pullRequest.author, new Map<string, string>(), input.host),
             checks: withWorkflowApprovals(
-              applyRequiredCheckPolicy(
-                requiredChecks === null
-                  ? pullRequest.checks
-                  : markRequiredChecks(pullRequest.checks, requiredChecks),
-                branchPolicy?.requiredChecks ?? [],
+              withUnfinishedWorkflowRuns(
+                applyRequiredCheckPolicy(
+                  requiredChecks === null
+                    ? pullRequest.checks
+                    : markRequiredChecks(pullRequest.checks, requiredChecks),
+                  branchPolicy?.requiredChecks ?? [],
+                ),
+                unfinishedRuns,
               ),
               workflowApprovals.runs,
               workflowApprovals.unavailable,

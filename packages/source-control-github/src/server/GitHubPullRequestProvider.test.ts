@@ -517,6 +517,7 @@ describe("gitHubViewerPermissions", () => {
               comments: [],
               commits: [],
             }),
+          listUnfinishedWorkflowRuns: () => Effect.succeed([]),
           listWorkflowRunsRequiringApproval: () =>
             Effect.succeed([
               {
@@ -615,6 +616,7 @@ describe("core detail author avatars", () => {
         Layer.mock(GitHubPullRequestApi.GitHubPullRequestApi)({
           getPullRequestDetail: () =>
             Effect.succeed({ ...openDetail, author, isCrossRepository: false }),
+          listUnfinishedWorkflowRuns: () => Effect.succeed([]),
           listWorkflowRunsRequiringApproval: () => Effect.succeed([]),
           getRequiredChecks: () => Effect.succeed([]),
           getBranchPolicy: () => Effect.succeed({ requiredChecks: [], allowedMergeMethods: null }),
@@ -638,6 +640,7 @@ describe("same-repository workflow approvals", () => {
           allowedMergeMethods: null,
         }),
       getPullRequestDetail: () => Effect.succeed({ ...openDetail, isCrossRepository: false }),
+      listUnfinishedWorkflowRuns: () => Effect.succeed([]),
       listWorkflowRunsRequiringApproval,
     });
 
@@ -729,6 +732,7 @@ it.effect("keeps an unsafe workflow approval scope visible as unknown", () =>
             allowedMergeMethods: null,
           }),
         getPullRequestDetail: () => Effect.succeed(openDetail),
+        listUnfinishedWorkflowRuns: () => Effect.succeed([]),
         listWorkflowRunsRequiringApproval: () =>
           Effect.fail(
             new GitHubPullRequestApi.GitHubWorkflowApprovalRefusedError({
@@ -1186,3 +1190,69 @@ describe("listChangeRequestsAcross", () => {
     }),
   );
 });
+
+const sameRepositoryChecks = [
+  { name: "CodeRabbit", status: "skipped" as const, description: null, url: null },
+  {
+    name: "lint",
+    status: "pending" as const,
+    description: null,
+    url: "https://github.com/acme/web/actions/runs/201/job/1",
+  },
+];
+
+it.effect("adds unstarted same-repository workflow runs as pending, not as approvals", () =>
+  Effect.gen(function* () {
+    const provider = yield* make;
+    const detail = yield* provider.getChangeRequest({
+      cwd: "/w",
+      repository: "acme/web",
+      host: "github.com",
+      number: 7,
+    });
+
+    const checks = yield* provider.getChangeRequestChecks!({
+      cwd: "/w",
+      repository: "acme/web",
+      host: "github.com",
+      number: 7,
+    });
+    expect(checks.checks).toEqual(detail.checks);
+    expect(detail.workflowApprovalsRequired).toBe(0);
+    expect(detail.checks).toEqual([
+      ...sameRepositoryChecks,
+      {
+        name: "CI",
+        status: "pending",
+        description: "This workflow run has not finished.",
+        url: "https://github.com/acme/web/actions/runs/202",
+      },
+    ]);
+  }).pipe(
+    Effect.provide(
+      Layer.mock(GitHubPullRequestApi.GitHubPullRequestApi)({
+        revalidateChecks: (_input, read) => read,
+        getPullRequestDetail: () =>
+          Effect.succeed({ ...openDetail, isCrossRepository: false, checks: sameRepositoryChecks }),
+        // Run 201 is represented by its running job; run 202 is queued before any job exists.
+        listUnfinishedWorkflowRuns: () =>
+          Effect.succeed([
+            { id: 201, name: "Lint", url: "https://github.com/acme/web/actions/runs/201" },
+            { id: 202, name: "CI", url: "https://github.com/acme/web/actions/runs/202" },
+          ]),
+        listWorkflowRunsRequiringApproval: () => Effect.succeed([]),
+        getRequiredChecks: () => Effect.succeed([]),
+        getBranchPolicy: () => Effect.succeed({ requiredChecks: [], allowedMergeMethods: null }),
+        getViewerAccess: () =>
+          Effect.succeed({
+            canWrite: true,
+            canTriage: true,
+            canUpdate: true,
+            didAuthor: false,
+            mergeCapabilities: { merge: true, squash: true, rebase: true },
+            autoMergeAllowed: true,
+          }),
+      }),
+    ),
+  ),
+);
