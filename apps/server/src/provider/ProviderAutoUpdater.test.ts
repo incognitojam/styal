@@ -5,6 +5,11 @@ import {
   type ServerProvider,
   type ServerSettings,
 } from "@t3tools/contracts";
+import * as NodePath from "@effect/platform-node/NodePath";
+import * as SecureRandom from "effect/crypto/SecureRandom";
+import * as Context from "effect/Context";
+import * as FileSystem from "effect/FileSystem";
+import * as Option from "effect/Option";
 import * as Clock from "effect/Clock";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
@@ -20,6 +25,10 @@ import { decideProviderAutoUpdate, make } from "./ProviderAutoUpdater.ts";
 import type { ProviderMaintenanceCapabilities } from "@t3tools/provider-core/server/maintenance";
 import { ProviderInstallGate, type ProviderInstallTarget } from "./ProviderInstallGate.ts";
 import { ProviderMaintenanceRunner } from "./providerMaintenanceRunner.ts";
+import * as Journal from "./ProviderUpdateJournal.ts";
+import * as Gate from "./ProviderInstallGate.ts";
+import * as InstallLock from "./ProviderInstallLock.ts";
+import * as InstanceRegistry from "./ProviderInstanceRegistry.ts";
 import { ProviderUpdateJournal } from "./ProviderUpdateJournal.ts";
 import { ProviderRegistry } from "./ProviderRegistry.ts";
 
@@ -146,7 +155,10 @@ const pendingQuestion = (createdAtMs: number) => ({
 const HOUR_MS = 60 * 60 * 1_000;
 
 interface Fixture {
+  readonly journal?: ProviderUpdateJournal["Service"];
+  readonly gate?: ProviderInstallGate["Service"];
   readonly checkFails?: boolean;
+  readonly capabilityReads?: Array<unknown>;
   readonly records?: Array<unknown>;
   readonly settings?: Partial<ServerSettings>;
   /** Status of a Codex thread per shell snapshot read, in order; the last one repeats. */
@@ -175,13 +187,16 @@ const testLayer = (input: Fixture) => {
   const statuses = input.threadStatuses ?? [null];
   const ageMs = input.manifestAgeMs === undefined ? 60_000 : input.manifestAgeMs;
   return Layer.mergeAll(
-    Layer.succeed(ProviderUpdateJournal, {
-      record: (instanceId, driver, entry) =>
-        Effect.sync(() => {
-          input.records?.push({ instanceId, driver, ...entry });
-        }),
-    }),
-    // Only `devUrl` is read; the service has no partial form.
+    Layer.succeed(
+      ProviderUpdateJournal,
+      input.journal ?? {
+        record: (instanceId, driver, entry) =>
+          Effect.sync(() => {
+            input.records?.push({ instanceId, driver, ...entry });
+          }),
+      },
+    ),
+    // The service has no partial config form.
     Layer.succeed(ServerConfig, { devUrl: input.devUrl } as never),
     ServerSettingsService.layerTest(input.settings ?? {}),
     Layer.mock(ProviderRegistry)({
@@ -194,6 +209,7 @@ const testLayer = (input: Fixture) => {
         return Effect.succeed([refreshed]);
       },
       getProviderMaintenanceCapabilitiesForInstance: (_instanceId, _driver, options) => {
+        input.capabilityReads?.push(_instanceId);
         if (input.checkFails) return Effect.die("synthetic check failure");
         const selfUpdaterActive = options?.fresh
           ? input.freshSelfUpdaterActive
@@ -233,9 +249,11 @@ const testLayer = (input: Fixture) => {
           return { threads } as never;
         }),
     }),
-    Layer.mock(ProviderInstallGate)({
-      targetFor: (instanceId) => Effect.succeed(targets[instanceId] ?? null),
-    }),
+    input.gate
+      ? Layer.succeed(ProviderInstallGate, input.gate)
+      : Layer.mock(ProviderInstallGate)({
+          targetFor: (instanceId) => Effect.succeed(targets[instanceId] ?? null),
+        }),
     // Mirrors the real runner: `shouldStart` decides whether the install runs.
     Layer.mock(ProviderMaintenanceRunner)({
       updateProvider: (target) =>
@@ -249,6 +267,7 @@ const testLayer = (input: Fixture) => {
             version: target.targetVersion,
             ...(target.autoUpdate?.takeover ? { takeover: true } : {}),
           });
+          yield* target.autoUpdate?.record?.({ outcome: "started" }) ?? Effect.void;
           yield* input.onInstall ?? Effect.void;
           return {
             providers: [
@@ -264,7 +283,13 @@ const testLayer = (input: Fixture) => {
               },
             ],
           };
-        }),
+        }).pipe((effect) =>
+          input.gate
+            ? input.gate
+                .tryInstall(targets.codex!, () => effect)
+                .pipe(Effect.map(Option.getOrThrow), Effect.orDie)
+            : effect,
+        ),
     }),
   );
 };
@@ -326,6 +351,88 @@ describe("ProviderAutoUpdater.runPass", () => {
     }),
   );
 
+  it.effect("a stalled journal does not hold passes, the installer gate, or shutdown", () =>
+    Effect.gen(function* () {
+      const writing = yield* Deferred.make<void>();
+      const interrupted = yield* Deferred.make<void>();
+      const installs: Array<unknown> = [];
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const journalContext = yield* Layer.build(
+            Journal.layer.pipe(
+              Layer.provide(
+                Layer.mergeAll(
+                  Layer.succeed(ServerConfig, { logsDir: "/synthetic/logs" } as never),
+                  NodePath.layer,
+                  SecureRandom.layerWebCrypto,
+                  Layer.succeed(
+                    FileSystem.FileSystem,
+                    FileSystem.makeNoop({
+                      makeDirectory: () => Effect.void,
+                      readDirectory: () => Effect.succeed([]),
+                      stat: () => Effect.succeed({ size: 0 } as never),
+                      writeFile: () =>
+                        Deferred.succeed(writing, undefined).pipe(
+                          Effect.andThen(Effect.never),
+                          Effect.onInterrupt(() => Deferred.succeed(interrupted, undefined)),
+                        ),
+                    }),
+                  ),
+                ),
+              ),
+            ),
+          );
+          const journal = Context.get(journalContext, ProviderUpdateJournal);
+          const gate = yield* Gate.make.pipe(
+            Effect.provide(
+              Layer.mergeAll(
+                Layer.mock(InstallLock.ProviderInstallLock)({
+                  tryRun: (_key, run) => run(() => Effect.void).pipe(Effect.asSome),
+                  anyHeld: Effect.succeed(false),
+                  keyHeld: () => Effect.succeed(false),
+                }),
+                Layer.mock(InstanceRegistry.ProviderInstanceRegistry)({
+                  getInstance: () =>
+                    Effect.succeed({
+                      snapshot: {
+                        resolveMaintenance: () =>
+                          Effect.succeed({
+                            packageName: "@openai/codex",
+                            update: { lockKey: targets.codex!.lockKey },
+                          }),
+                      },
+                    } as never),
+                }),
+              ),
+            ),
+          );
+          yield* Effect.gen(function* () {
+            const updater = yield* make;
+            yield* updater.runPass;
+            assert.strictEqual(yield* gate.installsInFlight, 0);
+            yield* gate.awaitInstance(codex.instanceId);
+            yield* updater.runPass;
+            assert.strictEqual(installs.length, 1);
+          }).pipe(
+            Effect.provide(
+              testLayer({
+                journal,
+                gate,
+                installs,
+                onInstall: Effect.gen(function* () {
+                  yield* Deferred.await(writing);
+                  for (let index = 0; index < 256; index++)
+                    yield* journal.record("codex", "codex", { outcome: "started" });
+                }),
+              }),
+            ),
+          );
+        }),
+      );
+      assert.isTrue(yield* Deferred.isDone(interrupted));
+    }),
+  );
+
   it.effect("installs the verified version once per window", () => {
     const installs: Array<unknown> = [];
     const records: Array<{ reason?: string }> = [];
@@ -341,7 +448,6 @@ describe("ProviderAutoUpdater.runPass", () => {
   it.effect("records due versions and why each pass left the provider alone", () =>
     Effect.gen(function* () {
       for (const [fixture, reason, due] of [
-        [{ settings: { autoUpdateProviders: false } }, "automatic_updates_off", true],
         [{ provider: withAdvisory({ canInstallVersion: false }) }, "installer_cannot_pin", true],
         [{ provider: withAdvisory({ canUpdate: false }) }, "update_unavailable", true],
         [{ provider: { ...codex, status: "error" as const } }, "provider_unhealthy", true],
@@ -591,11 +697,23 @@ describe("ProviderAutoUpdater.runPass", () => {
     "does nothing on dev servers or when automatic updates or update checks are off",
     () => {
       const installs: Array<unknown> = [];
+      const capabilityReads: Array<unknown> = [];
       return Effect.gen(function* () {
-        yield* runPassWith({ settings: { autoUpdateProviders: false }, installs });
-        yield* runPassWith({ settings: { enableProviderUpdateChecks: false }, installs });
-        yield* runPassWith({ devUrl: "http://localhost:5173", installs });
+        yield* runPassWith({
+          settings: { autoUpdateProviders: false },
+          checkFails: true,
+          capabilityReads,
+          records: [],
+          installs,
+        });
+        yield* runPassWith({
+          settings: { enableProviderUpdateChecks: false },
+          capabilityReads,
+          installs,
+        });
+        yield* runPassWith({ devUrl: "http://localhost:5173", capabilityReads, installs });
         assert.deepStrictEqual(installs, []);
+        assert.deepStrictEqual(capabilityReads, []);
       });
     },
   );

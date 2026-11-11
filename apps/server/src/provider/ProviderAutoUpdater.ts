@@ -248,21 +248,19 @@ export const make = Effect.gen(function* () {
     },
     (effect, _provider, _decision, _target, record) =>
       effect.pipe(
-        Effect.catchCause(() =>
-          record({ outcome: "failed", reason: "check_failed" }).pipe(Effect.as(false)),
+        Effect.catchCause((cause) =>
+          Effect.logWarning("Background provider update check failed", { cause }).pipe(
+            Effect.andThen(record({ outcome: "failed", reason: "check_failed" })),
+            Effect.as(false),
+          ),
         ),
       ),
   );
 
   const runPass = Effect.gen(function* () {
     if (config.devUrl !== undefined) return;
-    const enabled = yield* isEnabled.pipe(Effect.orElseSucceed(() => null));
-    const manifestReady = enabled
-      ? yield* manifestService.refresh.pipe(
-          Effect.as(true),
-          Effect.orElseSucceed(() => false),
-        )
-      : true;
+    if (!(yield* isEnabled)) return;
+    yield* manifestService.refresh;
     const providers = yield* providerRegistry.getProviders;
     for (const provider of providers) {
       const currentVersion = stableProviderVersion(provider.driver, provider.version);
@@ -276,8 +274,6 @@ export const make = Effect.gen(function* () {
           ...entry,
         });
       yield* Effect.gen(function* () {
-        if (enabled === null || !manifestReady)
-          return yield* record({ outcome: "failed", reason: "check_failed" });
         const capabilities = yield* maintenanceFor(provider);
         targetVersion = yield* testedVersionFor(provider, capabilities.packageName);
         updateDue =
@@ -285,7 +281,6 @@ export const make = Effect.gen(function* () {
             ? compareSemverVersions(currentVersion, targetVersion) < 0
             : null;
         const skip = (reason: string) => record({ outcome: "skipped", reason });
-        if (!enabled) return yield* skip("automatic_updates_off");
         const decision = decideProviderAutoUpdate(
           provider,
           targetVersion,
@@ -368,7 +363,14 @@ export const make = Effect.gen(function* () {
               }).pipe(Effect.andThen(record({ outcome: "failed", reason: "update_not_started" }))),
             ),
           );
-      }).pipe(Effect.catchCause(() => record({ outcome: "failed", reason: "check_failed" })));
+      }).pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("Background provider update check failed", {
+            instanceId: provider.instanceId,
+            cause,
+          }).pipe(Effect.andThen(record({ outcome: "failed", reason: "check_failed" }))),
+        ),
+      );
     }
   }).pipe(
     Effect.catchCause((cause) => Effect.logWarning("Background provider update failed", { cause })),
