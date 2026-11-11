@@ -22,6 +22,7 @@ import {
   type PreviewAutomationDragInput,
   type PreviewAutomationEvaluateInput,
   type PreviewAutomationHoverInput,
+  type PreviewAutomationLoadError,
   type PreviewAutomationNavigateInput,
   type PreviewAutomationNetworkEntry,
   type PreviewAutomationOpenInput,
@@ -334,6 +335,7 @@ interface ServerTab {
   /** A read queued behind `desktopViewportRead`, shared by every caller that waits for it. */
   desktopViewportNext: Promise<ServerTab["desktopViewport"]> | null;
   loading: boolean;
+  loadError: PreviewAutomationLoadError | undefined;
   closing: boolean;
   recording: Recording | null;
   initialNavigation: Promise<void> | null;
@@ -907,6 +909,7 @@ const make = Effect.gen(function* () {
       desktopViewportRead: Promise.resolve(null),
       desktopViewportNext: null,
       loading: false,
+      loadError: undefined,
       closing: false,
       recording: null,
       recordingStart: null,
@@ -943,6 +946,7 @@ const make = Effect.gen(function* () {
       navigationGenerations.set(request, ++tab.navigationGeneration);
       clearAbortedNavigation(tab);
       tab.loading = true;
+      tab.loadError = undefined;
       report(tab, {
         _tag: "Loading",
         url: ServerBrowserPage.withoutDataPayload(request.url()).slice(0, 2048),
@@ -998,13 +1002,9 @@ const make = Effect.gen(function* () {
       }
       tab.loading = false;
       const { code, description } = ServerBrowserPage.parseNetError(errorText);
-      report(tab, {
-        _tag: "LoadFailed",
-        url: ServerBrowserPage.withoutDataPayload(request.url()).slice(0, 2048),
-        title: "",
-        code,
-        description,
-      });
+      const url = ServerBrowserPage.withoutDataPayload(request.url()).slice(0, 2048);
+      tab.loadError = { url, code, description };
+      report(tab, { _tag: "LoadFailed", url, title: "", code, description });
     });
     page.on("response", (response) => {
       pushBounded(tab.networkEntries, {
@@ -1620,6 +1620,14 @@ const make = Effect.gen(function* () {
     });
   };
 
+  const loadErrorOf = (tab: ServerTab): PreviewAutomationLoadError | undefined => {
+    if (!tab.page.url().startsWith("chrome-error://")) return undefined;
+    // A desktop failure from before CDP attached is superseded by any navigation we observe.
+    if (tab.loadError || !tab.desktop || tab.navigationGeneration > 0) return tab.loadError;
+    const reported = desktopChannel.loadFailure({ threadId: tab.threadId, tabId: tab.tabId });
+    return reported && { ...reported, url: ServerBrowserPage.withoutDataPayload(reported.url) };
+  };
+
   const statusWithTitle = async (
     tab: ServerTab | undefined,
     agentSessionId?: string,
@@ -1637,6 +1645,7 @@ const make = Effect.gen(function* () {
     }
     const url = ServerBrowserPage.withoutDataPayload(tab.page.url());
     const viewport = tab.desktop ? await layoutSize(tab) : tab.page.viewportSize();
+    const loadError = loadErrorOf(tab);
     const status = {
       available: true,
       visible: isVisible(tab),
@@ -1644,6 +1653,7 @@ const make = Effect.gen(function* () {
       url: url === "about:blank" ? null : url,
       title: null,
       loading: tab.loading,
+      ...(loadError ? { loadError } : {}),
       control: {
         owner: tabOwner(tab),
         ownedByCaller: tab.control.agentId === agentSessionId,
@@ -2256,13 +2266,15 @@ const make = Effect.gen(function* () {
         return { tabId: tab.tabId, colorScheme };
       }
       case "snapshot": {
-        return withScreencastsPaused(tab, () =>
+        const snapshot = await withScreencastsPaused(tab, () =>
           ServerBrowserPage.snapshot({
             ...tab,
             renderScale: tab.desktop ? "display" : RENDER_SCALE,
             fullScreenshot: (input as PreviewAutomationSnapshotInput | undefined)?.fullScreenshot,
           }),
         );
+        const loadError = loadErrorOf(tab);
+        return loadError ? { ...snapshot, loadError } : snapshot;
       }
       case "click": {
         const clickInput = input as PreviewAutomationClickInput;
