@@ -243,6 +243,7 @@ export interface DesktopBackendInstance {
   readonly id: BackendInstanceId;
   readonly label: Effect.Effect<string>;
   readonly start: Effect.Effect<void>;
+  /** Timeout controls the warning; stop still waits for process teardown and exit. */
   readonly stop: (options?: { readonly timeout?: Duration.Duration }) => Effect.Effect<void>;
   readonly currentConfig: Effect.Effect<Option.Option<DesktopBackendStartConfig>>;
   readonly snapshot: Effect.Effect<DesktopBackendSnapshot>;
@@ -311,7 +312,7 @@ const closeRun = (
   run: ActiveBackendRun,
   parentScope: Scope.Scope,
   options?: { readonly timeout?: Duration.Duration },
-): Effect.Effect<boolean> => {
+) => {
   const waitForFiber = Option.match(run.fiber, {
     onNone: () => Effect.void,
     onSome: (fiber) => Fiber.await(fiber).pipe(Effect.asVoid),
@@ -323,12 +324,24 @@ const closeRun = (
   const timeout = options?.timeout;
 
   if (!timeout) {
-    return close.pipe(Effect.as(true));
+    return close;
   }
 
-  return Effect.forkIn(close, parentScope).pipe(
+  return Effect.forkIn(close, parentScope, { startImmediately: true }).pipe(
     Effect.flatMap((closeFiber) =>
-      Fiber.await(closeFiber).pipe(Effect.timeoutOption(timeout), Effect.map(Option.isSome)),
+      Fiber.await(closeFiber).pipe(
+        Effect.timeoutOption(timeout),
+        Effect.tap((completed) =>
+          Option.isNone(completed)
+            ? logBackendProcessWarning("backend shutdown exceeded timeout; waiting for exit", {
+                timeoutMs: Duration.toMillis(timeout),
+              })
+            : Effect.void,
+        ),
+        // Parent-scope interruption still finishes release; do not cancel sibling stops.
+        Effect.andThen(Fiber.await(closeFiber)),
+        Effect.asVoid,
+      ),
     ),
   );
 };
@@ -1136,15 +1149,11 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
         yield* logInstanceInfo("backend stop closing active run", {
           pid: Option.getOrNull(run.pid),
         });
-        const closed = yield* closeRun(run, parentScope, options);
+        yield* closeRun(run, parentScope, options);
         yield* logInstanceInfo("backend stop active run closed", {
           elapsedMs: (yield* Clock.currentTimeMillis) - closeStartedAt,
-          completedWithinTimeout: closed,
           pid: Option.getOrNull(run.pid),
         });
-        if (!closed) {
-          return;
-        }
         const cleanup = yield* mutex.withPermits(1)(
           SubscriptionRef.modify(
             state,
