@@ -390,6 +390,7 @@ jobs:
       - name: Ensure Electron runtime is installed
         run: vp run --filter @t3tools/desktop ensure:electron
 
+      - uses: ./.github/actions/setup-apt-mirrors
       - name: Install browser secret helper build libraries
         run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev pkg-config
 
@@ -416,6 +417,7 @@ jobs:
             !/.repos/
           sparse-checkout-cone-mode: false
 
+      - uses: ./.github/actions/setup-apt-mirrors
       - name: Install Electron display dependencies
         run: |
           sudo apt-get update
@@ -704,6 +706,8 @@ jobs:
         if: matrix.suite == 'Clients'
         run: vp run --filter @t3tools/desktop ensure:electron
 
+      - uses: ./.github/actions/setup-apt-mirrors
+        if: matrix.suite == 'Clients'
       - name: Install browser secret helper build libraries
         if: matrix.suite == 'Clients'
         run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev pkg-config

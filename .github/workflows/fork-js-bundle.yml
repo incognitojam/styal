@@ -64,6 +64,7 @@ jobs:
               - --filter=@styal/cli...
               - --filter=@t3tools/scripts...
 
+      - uses: ./.github/actions/setup-apt-mirrors
       # The desktop build compiles the Linux browser secret helper on this host.
       - name: Install browser secret helper build libraries
         run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev pkg-config
