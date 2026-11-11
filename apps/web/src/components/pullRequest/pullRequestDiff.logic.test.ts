@@ -7,7 +7,8 @@ import {
   getFileViewedRange,
   isFileDiffCollapsed,
   isLineInFileDiff,
-  toggleFileDiffFoldForViewed,
+  withFileDiffFold,
+  type FileDiffFoldChoices,
   type PullRequestDiffSlice,
 } from "./pullRequestDiff.logic";
 
@@ -88,24 +89,37 @@ describe("isLineInFileDiff", () => {
 describe("isFileDiffCollapsed", () => {
   // regression: #9174 diffs now expand by default; a reader's fold must survive new slices
   it("keeps a file the reader folded closed as the next slice arrives", () => {
-    const toggled = new Set(["b.ts"]);
-    expect(isFileDiffCollapsed("b.ts", null, toggled)).toBe(true);
-    expect(isFileDiffCollapsed("c.ts", null, toggled)).toBe(false);
+    const choices = new Map([["b.ts", true]]);
+    expect(isFileDiffCollapsed("b.ts", "expanded", choices)).toBe(true);
+    expect(isFileDiffCollapsed("c.ts", "expanded", choices)).toBe(false);
+  });
+
+  it("folds a file marked Viewed when the Code tab mounts again with no fold choices", () => {
+    expect(isFileDiffCollapsed("a.ts", "expanded", new Map(), true)).toBe(true);
+    expect(isFileDiffCollapsed("a.ts", "expanded", new Map(), false)).toBe(false);
+  });
+
+  it("keeps a reader's choice when the file's Viewed mark loads later", () => {
+    const choices = new Map([["a.ts", false]]);
+    expect(isFileDiffCollapsed("a.ts", "expanded", choices, false)).toBe(false);
+    expect(isFileDiffCollapsed("a.ts", "expanded", choices, true)).toBe(false);
   });
 });
 
-describe("toggleFileDiffFoldForViewed", () => {
-  it("moves against whatever the toolbar last asked for", () => {
-    expect([...toggleFileDiffFoldForViewed("a.ts", true, "expanded", new Set())]).toEqual(["a.ts"]);
-    expect(toggleFileDiffFoldForViewed("a.ts", false, "expanded", new Set()).size).toBe(0);
+describe("withFileDiffFold", () => {
+  it("records an absolute choice and keeps the same map when nothing changes", () => {
+    const folded = withFileDiffFold(new Map(), "a.ts", true);
+    expect(folded.get("a.ts")).toBe(true);
+    expect(withFileDiffFold(folded, "a.ts", true)).toBe(folded);
+    expect(withFileDiffFold(folded, "a.ts", false).get("a.ts")).toBe(false);
   });
 });
 
 describe("fileDiffFoldDefault", () => {
   const NO_ATTRIBUTIONS: ReadonlySet<string> = new Set();
-  const NO_TOGGLES: ReadonlySet<string> = new Set();
+  const NO_CHOICES: FileDiffFoldChoices = new Map();
   const collapsedWhenOpening = (path: string, generatedPaths = NO_ATTRIBUTIONS) =>
-    isFileDiffCollapsed(path, fileDiffFoldDefault(path, null, false, generatedPaths), NO_TOGGLES);
+    isFileDiffCollapsed(path, fileDiffFoldDefault(path, null, false, generatedPaths), NO_CHOICES);
 
   it("folds lockfiles and build output when files open expanded", () => {
     expect(collapsedWhenOpening("src/app.ts")).toBe(false);
@@ -124,9 +138,9 @@ describe("fileDiffFoldDefault", () => {
 
   it("opens a folded lockfile the reader toggles", () => {
     const foldDefault = fileDiffFoldDefault("pnpm-lock.yaml", null, false, NO_ATTRIBUTIONS);
-    expect(isFileDiffCollapsed("pnpm-lock.yaml", foldDefault, new Set(["pnpm-lock.yaml"]))).toBe(
-      false,
-    );
+    expect(
+      isFileDiffCollapsed("pnpm-lock.yaml", foldDefault, new Map([["pnpm-lock.yaml", false]])),
+    ).toBe(false);
   });
 
   it("follows the toolbar for generated files once the reader expands or folds everything", () => {
@@ -138,11 +152,10 @@ describe("fileDiffFoldDefault", () => {
 
   it("leaves a folded lockfile alone when ticked and opens it when the tick is taken off", () => {
     const foldDefault = fileDiffFoldDefault("pnpm-lock.yaml", null, false, NO_ATTRIBUTIONS);
-    const toggled = toggleFileDiffFoldForViewed("pnpm-lock.yaml", false, foldDefault, NO_TOGGLES);
-    expect(isFileDiffCollapsed("pnpm-lock.yaml", foldDefault, toggled)).toBe(false);
-    expect(toggleFileDiffFoldForViewed("pnpm-lock.yaml", true, foldDefault, NO_TOGGLES)).toBe(
-      NO_TOGGLES,
-    );
+    const ticked = withFileDiffFold(NO_CHOICES, "pnpm-lock.yaml", true);
+    expect(isFileDiffCollapsed("pnpm-lock.yaml", foldDefault, ticked, true)).toBe(true);
+    const unticked = withFileDiffFold(ticked, "pnpm-lock.yaml", false);
+    expect(isFileDiffCollapsed("pnpm-lock.yaml", foldDefault, unticked)).toBe(false);
   });
 });
 
