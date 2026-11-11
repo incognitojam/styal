@@ -67,6 +67,7 @@ import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as SynchronizedRef from "effect/SynchronizedRef";
 
+import packageJson from "../../package.json" with { type: "json" };
 import * as ServerConfig from "../config.ts";
 import { mergeProviderInstanceEnvironment } from "@t3tools/provider-core/server/instanceEnvironment";
 import { stripServerOwnedEnvironment } from "@t3tools/shared/serverOwnedEnvironment";
@@ -1404,8 +1405,19 @@ function createTerminalSpawnEnv(
 ): NodeJS.ProcessEnv {
   const spawnEnv = stripServerOwnedEnvironment(baseEnv);
   for (const key of Object.keys(spawnEnv)) {
-    if (TERMINAL_MULTIPLEXER_ENV_KEYS.has(key.toUpperCase())) delete spawnEnv[key];
+    const normalizedKey = key.toUpperCase();
+    if (TERMINAL_MULTIPLEXER_ENV_KEYS.has(normalizedKey)) delete spawnEnv[key];
+    if (
+      platform === "win32" &&
+      (normalizedKey === "TERM_PROGRAM" || normalizedKey === "TERM_PROGRAM_VERSION")
+    ) {
+      delete spawnEnv[key];
+    }
   }
+  // The server inherits its launcher's identity (e.g. Apple_Terminal); shells
+  // and tools inside the integrated terminal should see styal instead.
+  spawnEnv.TERM_PROGRAM = "styal";
+  spawnEnv.TERM_PROGRAM_VERSION = packageJson.version;
   if (runtimeEnv) {
     for (const [key, value] of Object.entries(runtimeEnv)) {
       const existingKey =
