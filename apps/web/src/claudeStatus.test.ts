@@ -111,23 +111,31 @@ describe("Claude status notice", () => {
     });
   });
 
-  it("ignores the surfaces Claude Code never calls, and only those", () => {
+  it("shows only the surfaces a Claude Code turn can depend on", () => {
+    const api = { name: "Claude API (api.anthropic.com)", status: "operational", showcase: true };
     const elsewhere = [
       { name: "claude.ai", status: "degraded_performance", showcase: true },
       { name: "Claude Console (platform.claude.com)", status: "major_outage", showcase: true },
       { name: "Claude Cowork", status: "partial_outage", showcase: true },
       { name: "Claude for Government", status: "major_outage", showcase: true },
+      { name: "Claude Design", status: "major_outage", showcase: true },
     ];
     const label = (components: typeof elsewhere) =>
       resolveClaudeStatusNotice(statusSummary({ indicator: "major", components }))?.label ?? null;
 
-    expect(label(elsewhere)).toBeNull();
+    expect(label([...elsewhere, api])).toBeNull();
+    expect(label([...elsewhere, { ...api, status: "degraded_performance" }])).toBe("Degraded: API");
     expect(
       label([
         ...elsewhere,
-        { name: "Claude API (api.anthropic.com)", status: "degraded_performance", showcase: true },
+        api,
+        {
+          name: "Claude Models on Google Cloud (Anthropic managed)",
+          status: "partial_outage",
+          showcase: true,
+        },
       ]),
-    ).toBe("Degraded: API");
+    ).toBe("Outage: Claude Models on Google Cloud");
   });
 
   it.each([

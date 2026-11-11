@@ -140,10 +140,10 @@ function withoutComponentHost(name: string): string {
 }
 
 /**
- * Matches an ignore-list entry against a component name, ignoring the appended
- * hostname so "Claude Console" keeps matching if the host it names ever moves.
+ * Matches a listed component against a component name, ignoring the appended
+ * hostname so "Claude API" keeps matching if the host it names ever moves.
  */
-function componentIgnoreKey(name: string): string {
+function componentRelevanceKey(name: string): string {
   return componentNameKey(withoutComponentHost(name));
 }
 
@@ -200,17 +200,20 @@ function activeIncidentsDescription(incidents: ReadonlyArray<StatusPageIncidentI
 }
 
 /**
- * Ignoring is opt-in per name, so a surface the vendor adds or renames still shows up: the
- * failure mode is a notice that did not matter, never a missed one that did.
+ * Relevance is opt-in per name, so a product the vendor adds stays quiet. The cost is that a
+ * listed component the vendor renames goes quiet too.
  */
 export interface StatusPageRelevance {
-  /** Component names, hostname suffix optional, whose disruption cannot reach styal. */
-  readonly ignoredComponents: ReadonlyArray<string>;
+  /**
+   * Exact component names, hostname suffix optional, whose disruption can reach styal. A page
+   * listing none of them was restructured, so all of its components count.
+   */
+  readonly relevantComponents: ReadonlyArray<string>;
   /** Incident-name patterns for unrelated disruptions with no assigned component. */
   readonly ignoredIncidentPatterns?: ReadonlyArray<RegExp>;
   /**
-   * Decides componentless incidents for a page whose API omits incident components. This inverts
-   * the default above: an incident it rejects can be a real one, so use it only with evidence.
+   * Decides componentless incidents for a page whose API omits incident components. Otherwise
+   * they are kept as unattributable; an incident this rejects can be a real one.
    */
   readonly keepComponentlessIncident?: (
     incident: { readonly impact: string; readonly name: string },
@@ -226,16 +229,20 @@ export function resolveStatusPageNotice(
   const decoded = decodeStatusPageSummary(input);
   if (decoded._tag === "None") return null;
 
-  const ignoredComponents = new Set(
-    (relevance?.ignoredComponents ?? []).map((name) => componentIgnoreKey(name)),
+  const summary = decoded.value;
+  const relevantComponents = new Set(
+    (relevance?.relevantComponents ?? []).map((name) => componentRelevanceKey(name)),
   );
-  const isIgnoredComponent = (name: string) => ignoredComponents.has(componentIgnoreKey(name));
+  const pageListsRelevantComponent = summary.components.some((component) =>
+    relevantComponents.has(componentRelevanceKey(component.name)),
+  );
+  const isIgnoredComponent = (name: string) =>
+    pageListsRelevantComponent && !relevantComponents.has(componentRelevanceKey(name));
   // Set when the page reported a disruption we deliberately dropped, which is
   // what separates "nothing relevant is wrong" from "we could not attribute
   // this" further down.
   let ignoredAnyDisruption = false;
 
-  const summary = decoded.value;
   const relevantComponentDisrupted = summary.components.some(
     (component) =>
       component.showcase !== false &&

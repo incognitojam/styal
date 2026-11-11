@@ -19,9 +19,10 @@ function summary(
   };
 }
 
-/** Every relevance case below ignores Widgets, a surface this service does not drive. */
+/** Every relevance case below depends on Engine alone, so Widgets is a surface it does not drive. */
 const notice = (input: ReturnType<typeof summary>) =>
-  resolveStatusPageNotice(input, "Example", { ignoredComponents: ["Widgets"] });
+  resolveStatusPageNotice(input, "Example", { relevantComponents: ["Engine"] });
+const engineUp = ["Engine", "operational"] as const;
 
 describe("status page component naming", () => {
   it("drops the vendor word only where what follows is generic", () => {
@@ -58,11 +59,23 @@ describe("status page component naming", () => {
 });
 
 describe("status page relevance", () => {
-  it("stays hidden when every disruption is ignored", () => {
-    expect(notice(summary([["Widgets", "degraded_performance"]]))).toBeNull();
-    expect(notice(summary([], [["Degraded performance on Widgets", ["Widgets"]]]))).toBeNull();
-    // The hostname a status page appends for disambiguation does not defeat the match.
-    expect(notice(summary([["Widgets (widgets.example.com)", "major_outage"]]))).toBeNull();
+  it("stays hidden when no disruption touches a relevant component", () => {
+    expect(notice(summary([engineUp, ["Widgets", "degraded_performance"]]))).toBeNull();
+    expect(
+      notice(summary([engineUp], [["Degraded performance on Widgets", ["Widgets"]]])),
+    ).toBeNull();
+  });
+
+  it("matches a relevant component despite the hostname a status page appends", () => {
+    expect(notice(summary([["Engine (engine.example.com)", "major_outage"]]))).toMatchObject({
+      label: "Outage: Engine",
+    });
+  });
+
+  it("counts every component when the page lists none of the relevant names", () => {
+    expect(notice(summary([["Widgets", "degraded_performance"]]))).toMatchObject({
+      label: "Degraded: Widgets",
+    });
   });
 
   it("takes severity from what survived rather than the aggregate indicator", () => {
@@ -85,7 +98,9 @@ describe("status page relevance", () => {
   });
 
   it("narrows a mixed incident to the components that reach us", () => {
-    expect(notice(summary([], [["Elevated error rates", ["Widgets", "Engine"]]]))).toMatchObject({
+    expect(
+      notice(summary([engineUp], [["Elevated error rates", ["Widgets", "Engine"]]])),
+    ).toMatchObject({
       activeIncidents: [{ affectedComponents: ["Engine"] }],
       label: "Incident: Engine",
     });
@@ -93,7 +108,7 @@ describe("status page relevance", () => {
 
   it("keeps an incident naming no component, which is unattributable rather than irrelevant", () => {
     expect(
-      notice(summary([["Widgets", "major_outage"]], [["Elevated error rates", []]])),
+      notice(summary([engineUp, ["Widgets", "major_outage"]], [["Elevated error rates", []]])),
     ).toMatchObject({ label: "1 active incident" });
   });
 

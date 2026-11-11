@@ -2803,7 +2803,7 @@ features:
       - Enabled clients distinguish GitHub, Claude, and OpenAI incidents from missing or malformed status responses.
       - Sidebar notices are scoped to relevant projects or providers and remain readable without blocking ordinary work.
       - GitHub, Claude, and OpenAI alerts can each be turned off under Outage alerts in Settings, and a disabled alert stops polling its status page.
-      - Provider filters hide known unrelated components and componentless incidents; broader, unknown, and explicitly relevant outages remain visible, except OpenAI, whose API omits incident components, so its incidents show only when a relevant component is disrupted or an untagged incident's title names Codex, the API, a GPT model, or usage limits.
+      - Each provider filter lists the status page components its work depends on, and only those raise a notice, so a component the vendor adds stays hidden. A page listing none of them counts in full. Incidents naming no component remain visible unless a known unrelated title pattern matches, except OpenAI, whose API omits incident components, so its incidents show only when a relevant component is disrupted or an untagged incident's title names Codex, the API, a GPT model, or usage limits.
     implementation_paths:
       - apps/web/src/claudeStatus.ts
       - apps/web/src/components/settings/SettingsPanels.tsx
