@@ -27,3 +27,10 @@ export function loadCursorSqlite(): typeof import("@cursor/sdk/sqlite") {
   }
   return sqlite;
 }
+
+// Error classification must not initialize the SDK when the load itself failed.
+export function isCursorSdkError<
+  K extends "AuthenticationError" | "ConfigurationError" | "CursorSdkError",
+>(cause: unknown, kind: K): cause is InstanceType<(typeof import("@cursor/sdk"))[K]> {
+  return sdk !== undefined && cause instanceof sdk[kind];
+}
