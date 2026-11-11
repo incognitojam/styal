@@ -1037,6 +1037,8 @@ export const OrchestrationV2Subagent = Schema.Struct({
   // the same parent run is terminal, or one of them fails. Omitted means "each".
   wakeWhen: Schema.optional(Schema.Literals(["each", "all"])),
   completionDelivery: Schema.optional(OrchestrationV2DelegatedCompletionTaskDelivery),
+  // The run whose unfinished task was cancelled, committed with its Stop.
+  cancelledRunId: Schema.optional(RunId),
   status: Schema.Literals([
     "idle",
     "pending",
