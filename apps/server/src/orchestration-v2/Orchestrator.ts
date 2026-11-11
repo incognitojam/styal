@@ -9870,20 +9870,35 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
   ) {
     const { followUpOf } = command.remoteChild;
     const parentProjection = yield* projectionStore
-      .getThreadRecords(
-        command.parentThreadId,
-        ["runs", "providerTurns", "attempts", "subagents"],
-        { subagentIds: followUpOf === undefined ? [] : [followUpOf] },
-      )
+      .getThreadRecords(command.parentThreadId, ["runs", "providerTurns", "attempts", "subagents"])
       .pipe(
         Effect.mapError(
           (cause) => new OrchestratorProjectionError({ threadId: command.parentThreadId, cause }),
         ),
       );
+    // Explicit sends and later-run observers can discover the same remote run concurrently.
+    if (
+      command.remoteChild.runId !== undefined &&
+      parentProjection.subagents.some(
+        (task) =>
+          task.remoteChild?.environmentId === command.remoteChild.environmentId &&
+          task.remoteChild.threadId === command.remoteChild.threadId &&
+          task.remoteChild.runId === command.remoteChild.runId,
+      )
+    )
+      return;
+    const followsUp = parentProjection.subagents.some(
+      (task) =>
+        task.result !== null &&
+        task.remoteChild?.environmentId === command.remoteChild.environmentId &&
+        task.remoteChild.threadId === command.remoteChild.threadId,
+    );
     const followed = parentProjection.subagents.find(
       (task) =>
         task.id === followUpOf &&
-        task.remoteChild?.followsAfterRunId !== undefined &&
+        task.result !== null &&
+        task.remoteChild !== undefined &&
+        (task.remoteChild.followsAfterRunId !== undefined || command.parentRunId !== undefined) &&
         task.remoteChild.environmentId === command.remoteChild.environmentId &&
         task.remoteChild.threadId === command.remoteChild.threadId,
     );
@@ -9920,7 +9935,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       parentRun === undefined ||
       parentRun.rootNodeId === null ||
       parentNodeId == null ||
-      (followed === undefined && !isActiveRun(parentRun))
+      (followed === undefined &&
+        (followsUp
+          ? parentRun.id !== followUpOwnerRun(parentProjection.runs)?.id
+          : !isActiveRun(parentRun)))
     ) {
       return yield* new OrchestratorDispatchError({
         commandId: command.commandId,
