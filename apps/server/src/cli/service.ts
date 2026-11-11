@@ -154,7 +154,7 @@ function formatServiceStatus(
   protection?: ServiceProtection.ServiceProtectionState,
 ): string {
   if (!status.supported) {
-    return "styal service\n  Status: unavailable on this machine\n  Supported on: Linux with systemd, macOS with launchd";
+    return "styal service\n  Status: unavailable on this machine\n  Supported on: Linux with systemd, macOS with launchd, Windows with Task Scheduler";
   }
   if (!status.installed) {
     return "styal service\n  Status: not installed\n  Next: Run `styal service install`.";
