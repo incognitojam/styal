@@ -1109,9 +1109,22 @@ describe("GitHubSourceControlProvider issues, references and fork parents", () =
     const { layer } = harness({
       remotes,
       graphql: (variables) =>
-        variables.number === 404
-          ? { issue: null }
-          : new Response("{not json", { headers: { "content-type": "application/json" } }),
+        new Response(
+          variables.number === 404
+            ? encodeJson({
+                data: { repository: { issue: null } },
+                errors: [
+                  {
+                    type: "NOT_FOUND",
+                    path: ["repository", "issue"],
+                    locations: [{ line: 3, column: 5 }],
+                    message: "Could not resolve to an Issue with the number of 404.",
+                  },
+                ],
+              })
+            : "{not json",
+          { headers: { "content-type": "application/json" } },
+        ),
     });
     return Effect.gen(function* () {
       const provider = yield* GitHubSourceControlProvider.make;
