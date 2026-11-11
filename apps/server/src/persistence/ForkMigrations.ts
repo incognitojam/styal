@@ -18,7 +18,7 @@ import ForkMigration0013 from "./ForkMigrations/013_WorktreeSetupState.ts";
 import ForkMigration0014 from "./ForkMigrations/014_DropWorktreeSetupState.ts";
 import ForkMigration0015 from "./ForkMigrations/015_WorktreeStripped.ts";
 import ForkMigration0016 from "./ForkMigrations/016_ReportQuestionIndexes.ts";
-import { runMigrations } from "./Migrations.ts";
+import { hasPendingMigrations, runMigrations } from "./Migrations.ts";
 
 export const FORK_MIGRATIONS_TABLE = "yngatech_sql_migrations";
 /**
@@ -77,6 +77,28 @@ export const runForkMigrations = Effect.fn("runForkMigrations")(function* ({
 
 const MISPLACED_LATEST_MESSAGE_MIGRATION_ID = 51;
 const MISPLACED_LATEST_MESSAGE_MIGRATION_NAME = "ProjectionThreadLatestMessageAt";
+
+const latestForkMigrationId = Math.max(...forkMigrationEntries.map(([id]) => id));
+
+/** Whether runAllMigrations would write: upstream's pending check, the fork's own history, or a misplaced record to release. */
+export const hasPendingAllMigrations = Effect.fn("hasPendingAllMigrations")(function* () {
+  if (yield* hasPendingMigrations()) return true;
+  const sql = yield* SqlClient.SqlClient;
+  const tables = yield* sql`
+    SELECT name FROM sqlite_master WHERE type = 'table' AND name = ${FORK_MIGRATIONS_TABLE}
+  `;
+  if (tables.length === 0) return true;
+  const rows = yield* sql<{ readonly latestId: number | null }>`
+    SELECT MAX(migration_id) AS latestId FROM yngatech_sql_migrations
+  `;
+  if ((rows[0]?.latestId ?? 0) < latestForkMigrationId) return true;
+  const misplaced = yield* sql`
+    SELECT 1 FROM effect_sql_migrations
+    WHERE migration_id = ${MISPLACED_LATEST_MESSAGE_MIGRATION_ID}
+      AND name = ${MISPLACED_LATEST_MESSAGE_MIGRATION_NAME}
+  `;
+  return misplaced.length > 0;
+});
 
 /**
  * Nightlies from 2026-09-29 recorded fork migration `ProjectionThreadLatestMessageAt` as upstream
