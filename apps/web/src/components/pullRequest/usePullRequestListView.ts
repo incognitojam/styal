@@ -35,7 +35,10 @@ import {
 } from "./pullRequestList.logic";
 import type { PullRequestExpectedHost } from "./PullRequestListFilters";
 import type { PullRequestListPreferences, PullRequestListSort } from "./pullRequestListPreferences";
-import { assignPullRequestQueries } from "./pullRequestProjectAssignment.logic";
+import {
+  pullRequestProjectQueries,
+  type PullRequestHostAvailability,
+} from "./pullRequestProjectAssignment.logic";
 import { pullRequestFilterProjects } from "@t3tools/client-runtime/pull-request-project-filter";
 import { pullRequestListEntryId } from "./pullRequestListGroups.logic";
 
@@ -54,7 +57,10 @@ export interface PullRequestsSearch extends PullRequestListPreferences {
 const SEARCH_DEBOUNCE_MS = 250;
 
 /** Which servers and projects the page reads, from the URL and what this client knows. */
-export function usePullRequestScope(search: PullRequestsSearch) {
+export function usePullRequestScope(
+  search: PullRequestsSearch,
+  hostAvailability: PullRequestHostAvailability,
+) {
   const { environments } = useEnvironments();
   const allProjects = useProjects();
   const projectsKnown = useAllEnvironmentShellsBootstrapped();
@@ -120,15 +126,19 @@ export function usePullRequestScope(search: PullRequestsSearch) {
     scopedProjectId,
     projectsKnown,
   );
-  const environmentQueries = ((): ReadonlyArray<{
+  const queriesFor = (
+    availability?: PullRequestHostAvailability,
+  ): ReadonlyArray<{
     readonly environmentId: EnvironmentId;
     readonly projectIds?: ReadonlyArray<ProjectId>;
   }> => {
-    if (!projectsKnown || scopedProjectId !== undefined) {
-      return queryEnvironmentIds.map((environmentId) => ({ environmentId }));
-    }
-    return assignPullRequestQueries(projects, queryEnvironmentIds);
-  })();
+    const plain = queryEnvironmentIds.map((environmentId) => ({ environmentId }));
+    if (!projectsKnown || scopedProjectId !== undefined) return plain;
+    return pullRequestProjectQueries(projects, queryEnvironmentIds, availability);
+  };
+  const environmentQueries = queriesFor(hostAvailability);
+  // What the page reads once a refresh forgets host reads; refresh must refetch these too.
+  const preferredEnvironmentQueries = queriesFor();
   const assignmentKey = environmentQueries
     .map(({ environmentId, projectIds }) => `${environmentId}#${projectIds?.join("+") ?? "*"}`)
     .join("|");
@@ -178,6 +188,7 @@ export function usePullRequestScope(search: PullRequestsSearch) {
     selectedProject,
     queryEnvironmentIds,
     environmentQueries,
+    preferredEnvironmentQueries,
     assignmentKey,
     linkedSelection,
     expectedHosts,
