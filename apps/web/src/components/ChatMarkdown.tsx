@@ -1217,8 +1217,8 @@ const CHAT_MARKDOWN_COMPONENTS = {
       const isPullRequestAutolink = pullRequestCopy !== undefined;
       const linkText = plainHastText(node);
       const shorthand =
-        !isPullRequestAutolink && href && linkText === href
-          ? githubReferenceUrlLabel(githubRepository, href)
+        !isPullRequestAutolink && href && linkText
+          ? githubReferenceUrlLabel(githubRepository, href, linkText)
           : null;
       const confirmBeforeOpen = pullRequestAutolink === "reference";
       const pullRequestCandidateUrl =

@@ -29,9 +29,9 @@ const parser = unified().use(remarkParse).use(remarkGfm);
 const GITHUB_REFERENCE_URL_HINT = /\/(?:pull|issues)\/\d/u;
 
 /**
- * Rewrites each bare GitHub issue or pull request URL as a link labelled `#123` or
- * `owner/repo#123`, because the native renderer takes markdown text. A link with its own label
- * keeps it.
+ * Rewrites each bare GitHub issue or pull request URL, or one labelled only `#123`, as a link
+ * labelled `#123` or `owner/repo#123`, because the native renderer takes markdown text. A link
+ * with any other label keeps it.
  */
 export function labelGithubReferenceUrls(
   markdown: string,
@@ -48,14 +48,14 @@ export function labelGithubReferenceUrls(
       if (
         url === undefined ||
         child?.type !== "text" ||
-        child.value !== url ||
+        child.value === undefined ||
         start === undefined ||
         end === undefined ||
         /[\s()<>]/u.test(url)
       ) {
         return;
       }
-      const label = githubReferenceUrlLabel(repository, url);
+      const label = githubReferenceUrlLabel(repository, url, child.value);
       if (label !== null) {
         edits.push({ start, end, value: `[${label.replace(/[\\[\]*_`~]/gu, "\\$&")}](${url})` });
       }
