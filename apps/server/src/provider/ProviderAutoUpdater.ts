@@ -31,6 +31,7 @@ import {
 } from "./providerCompatibility.ts";
 import { ProviderInstallGate, type ProviderInstallTarget } from "./ProviderInstallGate.ts";
 import { ProviderMaintenanceRunner } from "./providerMaintenanceRunner.ts";
+import { ProviderUpdateJournal, type ProviderUpdateRecord } from "./ProviderUpdateJournal.ts";
 import { ProviderRegistry } from "./ProviderRegistry.ts";
 
 const FIRST_PASS_DELAY = Duration.minutes(2);
@@ -125,6 +126,7 @@ export class ProviderAutoUpdater extends Context.Service<
 
 export const make = Effect.gen(function* () {
   const config = yield* ServerConfig;
+  const journal = yield* ProviderUpdateJournal;
   const settingsService = yield* ServerSettings.ServerSettingsService;
   const providerRegistry = yield* ProviderRegistry;
   const runner = yield* ProviderMaintenanceRunner;
@@ -211,12 +213,13 @@ export const make = Effect.gen(function* () {
       provider: ServerProvider,
       decision: ProviderAutoUpdateDecision,
       target: ProviderInstallTarget,
+      record: (entry: ProviderUpdateRecord) => Effect.Effect<void>,
     ) {
       const skip = (reason: string) =>
         Effect.logInfo("Background provider update skipped", {
           instanceId: provider.instanceId,
           reason,
-        }).pipe(Effect.as(false));
+        }).pipe(Effect.andThen(record({ outcome: "skipped", reason })), Effect.as(false));
       const providers = yield* providerRegistry.refreshInstance(provider.instanceId);
       const current = providers.find((candidate) => candidate.instanceId === provider.instanceId);
       const version = stableProviderVersion(provider.driver, current?.version);
@@ -243,11 +246,15 @@ export const make = Effect.gen(function* () {
       }
       return true;
     },
-    Effect.catchCause((cause) =>
-      Effect.logWarning("Background provider update check failed", { cause }).pipe(
-        Effect.as(false),
+    (effect, _provider, _decision, _target, record) =>
+      effect.pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("Background provider update check failed", { cause }).pipe(
+            Effect.andThen(record({ outcome: "failed", reason: "check_failed" })),
+            Effect.as(false),
+          ),
+        ),
       ),
-    ),
   );
 
   const runPass = Effect.gen(function* () {
@@ -256,67 +263,114 @@ export const make = Effect.gen(function* () {
     yield* manifestService.refresh;
     const providers = yield* providerRegistry.getProviders;
     for (const provider of providers) {
-      const capabilities = yield* maintenanceFor(provider);
-      const decision = decideProviderAutoUpdate(
-        provider,
-        yield* testedVersionFor(provider, capabilities.packageName),
-        capabilities.selfUpdaterActive,
-      );
-      if (decision === null) continue;
-      const { version: targetVersion, takeover } = decision;
-      // A takeover counts as an attempt at its version like any update.
-      const attemptKey = `${provider.instanceId}@${targetVersion}`;
-      const now = yield* Clock.currentTimeMillis;
-      const previous = attemptedAt.get(attemptKey);
-      if (previous !== undefined && now >= previous && now - previous < RETRY_AFTER_MS) continue;
-      const target = yield* installGate.targetFor(provider.instanceId);
-      if (target === null) continue;
-      const busy = yield* busyReason(target);
-      if (busy !== null) {
-        yield* countBusySkip(provider.instanceId);
-        yield* Effect.logInfo("Background provider update skipped", {
-          instanceId: provider.instanceId,
-          toVersion: targetVersion,
-          reason: busy,
-        });
-        continue;
-      }
-      yield* Effect.logInfo("Updating provider in the background", {
-        instanceId: provider.instanceId,
-        fromVersion: provider.version,
-        toVersion: targetVersion,
-        takeover,
-      });
-      // The runner publishes the update state, so clients show a background
-      // update the same way as one they started.
-      yield* runner
-        .updateProvider({
-          provider: provider.driver,
-          instanceId: provider.instanceId,
+      const currentVersion = stableProviderVersion(provider.driver, provider.version);
+      let targetVersion: string | null = null;
+      let updateDue: boolean | null = null;
+      const record = (entry: ProviderUpdateRecord) =>
+        journal.record(provider.instanceId, provider.driver, {
+          currentVersion,
           targetVersion,
-          autoUpdate: { shouldStart: shouldStart(provider, decision, target), takeover },
-        })
-        .pipe(
-          Effect.flatMap((result) => {
-            const updated = result.providers.find(
-              (candidate) => candidate.instanceId === provider.instanceId,
-            );
-            // Only an install that ran counts; one skipped by `shouldStart`
-            // is tried again next pass.
-            if (updated?.updateState) attemptedAt.set(attemptKey, now);
-            return Effect.logInfo("Background provider update finished", {
-              instanceId: provider.instanceId,
-              status: updated?.updateState?.status ?? "skipped",
-              message: updated?.updateState?.message ?? null,
-            });
-          }),
-          Effect.catch((error) =>
-            Effect.logWarning("Background provider update was not started", {
-              instanceId: provider.instanceId,
-              reason: error.reason,
-            }),
-          ),
+          updateDue,
+          ...entry,
+        });
+      yield* Effect.gen(function* () {
+        const capabilities = yield* maintenanceFor(provider);
+        targetVersion = yield* testedVersionFor(provider, capabilities.packageName);
+        updateDue =
+          currentVersion !== null && targetVersion !== null
+            ? compareSemverVersions(currentVersion, targetVersion) < 0
+            : null;
+        const skip = (reason: string) => record({ outcome: "skipped", reason });
+        const decision = decideProviderAutoUpdate(
+          provider,
+          targetVersion,
+          capabilities.selfUpdaterActive,
         );
+        if (decision === null)
+          return yield* skip(
+            targetVersion === null
+              ? "no_recent_verified_target"
+              : !provider.enabled
+                ? "provider_disabled"
+                : !provider.installed
+                  ? "not_installed"
+                  : provider.status === "error"
+                    ? "provider_unhealthy"
+                    : currentVersion === null
+                      ? "unknown_current_version"
+                      : !provider.versionAdvisory?.canUpdate
+                        ? "update_unavailable"
+                        : !provider.versionAdvisory.canInstallVersion
+                          ? "installer_cannot_pin"
+                          : "already_current_or_newer",
+          );
+        const { version: installVersion, takeover } = decision;
+        // A takeover counts as an attempt at its version like any update.
+        const attemptKey = `${provider.instanceId}@${installVersion}`;
+        const now = yield* Clock.currentTimeMillis;
+        const previous = attemptedAt.get(attemptKey);
+        if (previous !== undefined && now >= previous && now - previous < RETRY_AFTER_MS)
+          return yield* skip("retry_backoff");
+        const target = yield* installGate.targetFor(provider.instanceId);
+        if (target === null) return yield* skip("install_target_unavailable");
+        const busy = yield* busyReason(target);
+        if (busy !== null) {
+          yield* countBusySkip(provider.instanceId);
+          yield* Effect.logInfo("Background provider update skipped", {
+            instanceId: provider.instanceId,
+            toVersion: targetVersion,
+            reason: busy,
+          });
+          return yield* skip(busy);
+        }
+        yield* Effect.logInfo("Updating provider in the background", {
+          instanceId: provider.instanceId,
+          fromVersion: provider.version,
+          toVersion: targetVersion,
+          takeover,
+        });
+        // The runner publishes the update state, so clients show a background
+        // update the same way as one they started.
+        yield* runner
+          .updateProvider({
+            provider: provider.driver,
+            instanceId: provider.instanceId,
+            targetVersion: installVersion,
+            autoUpdate: {
+              shouldStart: shouldStart(provider, decision, target, record),
+              takeover,
+              record,
+            },
+          })
+          .pipe(
+            Effect.flatMap((result) => {
+              const updated = result.providers.find(
+                (candidate) => candidate.instanceId === provider.instanceId,
+              );
+              // Only an install that ran counts; one skipped by `shouldStart`
+              // is tried again next pass.
+              if (updated?.updateState) attemptedAt.set(attemptKey, now);
+              return Effect.logInfo("Background provider update finished", {
+                instanceId: provider.instanceId,
+                status: updated?.updateState?.status ?? "skipped",
+                message: updated?.updateState?.message ?? null,
+              });
+            }),
+            Effect.catch((error) =>
+              Effect.logWarning("Background provider update was not started", {
+                instanceId: provider.instanceId,
+                reason: error.reason,
+              }).pipe(Effect.andThen(record({ outcome: "failed", reason: "update_not_started" }))),
+            ),
+          );
+      }).pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("Background provider update check failed", {
+            instanceId: provider.instanceId,
+            cause,
+          }).pipe(Effect.andThen(record({ outcome: "failed", reason: "check_failed" }))),
+        ),
+      );
     }
   }).pipe(
     Effect.catchCause((cause) => Effect.logWarning("Background provider update failed", { cause })),
