@@ -15,7 +15,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, SecureRandom.layerWebCrypto))(
   "ProviderUpdateJournal",
   (it) => {
     it.effect(
-      "two writers preserve history during startup rotation and share the running size cap",
+      "two writers preserve history during concurrent rotation with bounded overshoot",
       () =>
         Effect.gen(function* () {
           const fs = yield* FileSystem.FileSystem;
@@ -34,9 +34,11 @@ it.layer(Layer.mergeAll(NodeServices.layer, SecureRandom.layerWebCrypto))(
               `old synthetic archive ${index}`,
             );
           const writes = yield* Queue.unbounded<void>();
-          const reads = yield* Queue.unbounded<void>();
           const bothRead = yield* Deferred.make<void>();
           let startupReads = 0;
+          let nearCapReads = 0;
+          let atCap = false;
+          const bothNearCap = yield* Deferred.make<void>();
           const observedFs: FileSystem.FileSystem = {
             ...fs,
             stat: (file) =>
@@ -49,7 +51,10 @@ it.layer(Layer.mergeAll(NodeServices.layer, SecureRandom.layerWebCrypto))(
                       if (startupReads === 2) yield* Deferred.succeed(bothRead, undefined);
                       yield* Deferred.await(bothRead);
                     }
-                    yield* Queue.offer(reads, undefined);
+                    if (atCap && nearCapReads++ < 2) {
+                      if (nearCapReads === 2) yield* Deferred.succeed(bothNearCap, undefined);
+                      yield* Deferred.await(bothNearCap);
+                    }
                   }),
                 ),
               ),
@@ -66,8 +71,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, SecureRandom.layerWebCrypto))(
             Effect.provideService(FileSystem.FileSystem, observedFs),
             Effect.map((context) => Context.get(context, Journal.ProviderUpdateJournal)),
           );
-          const first = yield* build;
-          const second = yield* build;
+          const [first, second] = yield* Effect.all([build, build], { concurrency: "unbounded" });
           yield* first.record("writer-a", "codex", { outcome: "started" });
           yield* second.record("writer-b", "claudeCode", { outcome: "finished" });
           yield* Queue.take(writes);
@@ -80,16 +84,87 @@ it.layer(Layer.mergeAll(NodeServices.layer, SecureRandom.layerWebCrypto))(
           assert.strictEqual(content.split(history).length - 1, 1);
           assert.strictEqual(content.split('"instanceId":"writer-a"').length - 1, 1);
           assert.strictEqual(content.split('"instanceId":"writer-b"').length - 1, 1);
-          // Simulate a second server filling the active file after both workers initialized.
-          const full = "x".repeat(1024 * 1024);
-          yield* fs.writeFileString(active, full);
-          yield* Queue.takeAll(reads);
+          const nearCap = "x".repeat(1024 * 1024 - 200);
+          yield* fs.writeFileString(active, nearCap);
+          atCap = true;
           yield* first.record("writer-a", "codex", { outcome: "started" });
           yield* second.record("writer-b", "claudeCode", { outcome: "started" });
-          yield* Queue.take(reads);
-          yield* Queue.take(reads);
-          assert.strictEqual(yield* fs.readFileString(active), full);
-          assert.deepStrictEqual((yield* fs.readDirectory(logsDir)).sort(), files.sort());
+          yield* Queue.take(writes);
+          yield* Queue.take(writes);
+          const overshot = Number((yield* fs.stat(active)).size);
+          assert.isAbove(overshot, 1024 * 1024);
+          assert.isAtMost(overshot, 1024 * 1024 + 2 * 4096);
+          yield* first.record("writer-a", "codex", { outcome: "failed", reason: "after_rotation" });
+          yield* second.record("writer-b", "claudeCode", {
+            outcome: "failed",
+            reason: "after_rotation",
+          });
+          yield* Queue.take(writes);
+          yield* Queue.take(writes);
+          const retained = yield* fs.readDirectory(logsDir);
+          const contents = yield* Effect.forEach(retained, (file) =>
+            fs.readFileString(`${logsDir}/${file}`),
+          );
+          assert.strictEqual(contents.join("").split(nearCap).length - 1, 1);
+          assert.strictEqual(contents.join("").split('"reason":"after_rotation"').length - 1, 2);
+          assert.isAtMost(
+            contents.reduce(
+              (total, content) => total + new TextEncoder().encode(content).length,
+              0,
+            ),
+            5 * 1024 * 1024 + 2 * 4096,
+          );
+        }),
+    );
+    it.effect(
+      "a running writer rolls over full files and retains recent failures within its budget",
+      () =>
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const scratch = new URL("../../../../.scratch/", import.meta.url).pathname;
+          yield* fs.makeDirectory(scratch, { recursive: true });
+          const logsDir = yield* fs.makeTempDirectoryScoped({
+            directory: scratch,
+            prefix: "provider-update-running-",
+          });
+          const writes = yield* Queue.unbounded<void>();
+          const observedFs: FileSystem.FileSystem = {
+            ...fs,
+            writeFile: (file, bytes, options) =>
+              fs
+                .writeFile(file, bytes, options)
+                .pipe(Effect.tap(() => Queue.offer(writes, undefined))),
+          };
+          const context = yield* Layer.build(Journal.layer).pipe(
+            Effect.provideService(ServerConfig, { logsDir } as never),
+            Effect.provideService(FileSystem.FileSystem, observedFs),
+          );
+          const journal = Context.get(context, Journal.ProviderUpdateJournal);
+          for (let index = 0; index < 1600; index++) {
+            yield* journal.record("synthetic-provider", "codex", {
+              outcome: "skipped",
+              reason: "x".repeat(3800),
+            });
+            yield* Queue.take(writes);
+          }
+          yield* journal.record("synthetic-provider", "codex", {
+            outcome: "failed",
+            reason: "recent_failure",
+          });
+          yield* Queue.take(writes);
+          const files = yield* fs.readDirectory(logsDir);
+          assert.lengthOf(files, 5);
+          const bytes = yield* Effect.forEach(files, (file) =>
+            fs.stat(`${logsDir}/${file}`).pipe(Effect.map((stat) => Number(stat.size))),
+          );
+          assert.isAtMost(
+            bytes.reduce((total, size) => total + size, 0),
+            5 * 1024 * 1024,
+          );
+          assert.include(
+            yield* fs.readFileString(`${logsDir}/provider-updates.ndjson`),
+            '"reason":"recent_failure"',
+          );
         }),
     );
   },

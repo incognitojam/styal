@@ -59,32 +59,62 @@ const make = Effect.gen(function* () {
     ),
   );
 
-  const initialize = Effect.gen(function* () {
-    yield* fs.makeDirectory(config.logsDir, { recursive: true });
-    if ((yield* size) >= ROTATE_AFTER_BYTES) {
-      const timestamp = DateTime.formatIso(yield* DateTime.now).replaceAll(":", "-");
-      const archive = `${filePath}.${timestamp}.${yield* random.uuidV7()}`;
-      // Unique destinations preserve history when two servers archive the same active path.
-      yield* fs.rename(filePath, archive).pipe(
-        Effect.catchIf(
-          (error) => error.reason._tag === "NotFound",
-          () => Effect.void,
+  const rotate = Effect.gen(function* () {
+    const timestamp = DateTime.formatIso(yield* DateTime.now).replaceAll(":", "-");
+    const archive = `${filePath}.${timestamp}.${yield* random.uuidV7()}`;
+    // Unique destinations preserve history when two servers archive the same active path.
+    return yield* fs.rename(filePath, archive).pipe(
+      Effect.as(true),
+      Effect.catchIf(
+        (error) => error.reason._tag === "NotFound",
+        () => Effect.succeed(true),
+      ),
+      Effect.catch((cause) =>
+        Effect.logWarning("Provider update journal rotation failed", { cause }).pipe(
+          Effect.as(false),
         ),
-      );
-    }
+      ),
+    );
+  });
+
+  const prune = Effect.gen(function* () {
     const archives = (yield* fs.readDirectory(config.logsDir))
       .filter((name) => name.startsWith(`${fileName}.`))
       .sort()
       .reverse();
-    yield* Effect.forEach(archives.slice(MAX_ARCHIVES), (name) =>
-      fs.remove(path.join(config.logsDir, name), { force: true }),
-    );
+    let retainedBytes = 0;
+    let retainedFiles = 0;
+    for (const name of archives) {
+      const archivePath = path.join(config.logsDir, name);
+      const bytes = yield* fs.stat(archivePath).pipe(
+        Effect.map((stat) => Number(stat.size)),
+        Effect.catchIf(
+          (error) => error.reason._tag === "NotFound",
+          () => Effect.succeed(0),
+        ),
+      );
+      if (retainedFiles >= MAX_ARCHIVES || retainedBytes + bytes > MAX_ARCHIVES * MAX_FILE_BYTES) {
+        yield* fs.remove(archivePath, { force: true });
+      } else {
+        retainedFiles++;
+        retainedBytes += bytes;
+      }
+    }
+  });
+
+  const initialize = Effect.gen(function* () {
+    yield* fs.makeDirectory(config.logsDir, { recursive: true });
+    if ((yield* size) >= ROTATE_AFTER_BYTES) yield* rotate;
+    yield* prune;
   });
 
   const write = Effect.fn("ProviderUpdateJournal.write")(function* (line: Uint8Array) {
     // Stat each append: another server's writes must count towards the cap too.
     // Concurrent appends may exceed it by one bounded line per writer.
-    if ((yield* size) + line.byteLength > MAX_FILE_BYTES) return;
+    if ((yield* size) + line.byteLength > MAX_FILE_BYTES) {
+      if (!(yield* rotate)) return;
+      yield* prune;
+    }
     yield* fs.writeFile(filePath, line, { flag: "a", mode: 0o600 });
   });
   const worker = initialize.pipe(
