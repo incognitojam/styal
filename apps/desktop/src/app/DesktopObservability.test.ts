@@ -156,7 +156,7 @@ describe("DesktopObservability", () => {
     ),
   );
 
-  it.effect("buffers backend child output and persists it only when a failure is reported", () =>
+  it.effect("persists backend child output during healthy runs and retains it after shutdown", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
       const baseDir = yield* fileSystem.makeTempDirectoryScoped({
@@ -179,7 +179,9 @@ describe("DesktopObservability", () => {
           details: "pid=123 port=3773 cwd=/repo",
         });
         yield* outputLog.writeOutputChunk("stdout", new TextEncoder().encode("hello server\n"));
-        assert.isFalse(yield* fileSystem.exists(logPath));
+        const liveLog = yield* fileSystem.readFileString(logPath);
+        const liveOutput = yield* decodeDesktopBackendChildLogRecord(liveLog.trimEnd());
+        assert.equal(liveOutput.annotations.text, "hello server\n");
         yield* outputLog.persistFailure({ details: "code=1" });
         yield* outputLog.beginSession({ details: "pid=456" });
         yield* outputLog.writeOutputChunk("stderr", new TextEncoder().encode("normal shutdown\n"));
@@ -191,11 +193,14 @@ describe("DesktopObservability", () => {
 
       const log = yield* fileSystem.readFileString(logPath);
       const lines = log.trimEnd().split("\n");
-      const start = yield* decodeDesktopBackendChildLogRecord(lines[0] ?? "");
-      const output = yield* decodeDesktopBackendChildLogRecord(lines[1] ?? "");
+      const start = yield* decodeDesktopBackendChildLogRecord(lines[1] ?? "");
+      const output = yield* decodeDesktopBackendChildLogRecord(lines[0] ?? "");
       const end = yield* decodeDesktopBackendChildLogRecord(lines[2] ?? "");
 
-      assert.equal(lines.length, 3);
+      assert.equal(lines.length, 4);
+      const shutdown = yield* decodeDesktopBackendChildLogRecord(lines[3] ?? "");
+      assert.equal(shutdown.level, "ERROR");
+      assert.equal(shutdown.annotations.text, "normal shutdown\n");
       assert.equal(start.message, "backend child process failure output start");
       assert.equal(start.level, "ERROR");
       assert.equal(start.annotations.component, "desktop-backend-child");
@@ -234,7 +239,7 @@ describe("DesktopObservability", () => {
     ),
   );
 
-  it.effect("keeps buffering output after a non-terminal failure snapshot", () =>
+  it.effect("keeps writing output after a non-terminal failure snapshot", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
       const baseDir = yield* fileSystem.makeTempDirectoryScoped({
@@ -274,7 +279,7 @@ describe("DesktopObservability", () => {
     ),
   );
 
-  it.effect("retains only the last mebibyte of backend child output", () =>
+  it.effect("persists backend output larger than one mebibyte without truncation", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
       const baseDir = yield* fileSystem.makeTempDirectoryScoped({
@@ -285,11 +290,11 @@ describe("DesktopObservability", () => {
         const environment = yield* DesktopEnvironment.DesktopEnvironment;
         return environment.path.join(environment.logDir, "server-child.log");
       }).pipe(Effect.provide(layerEnvironment));
-      const maxBufferedBytes = 1024 * 1024;
-      const discardedPrefixBytes = 128;
-      const output = new Uint8Array(maxBufferedBytes + discardedPrefixBytes);
+      const mebibyte = 1024 * 1024;
+      const prefixBytes = 128;
+      const output = new Uint8Array(mebibyte + prefixBytes);
       output.fill("x".charCodeAt(0));
-      output.fill("y".charCodeAt(0), 0, discardedPrefixBytes);
+      output.fill("y".charCodeAt(0), 0, prefixBytes);
 
       yield* Effect.scoped(
         Effect.gen(function* () {
@@ -304,14 +309,14 @@ describe("DesktopObservability", () => {
       );
 
       const lines = (yield* fileSystem.readFileString(logPath)).trimEnd().split("\n");
-      const record = yield* decodeDesktopBackendChildLogRecord(lines[1] ?? "");
+      const record = yield* decodeDesktopBackendChildLogRecord(lines[0] ?? "");
       const text = record.annotations.text;
       assert.equal(typeof text, "string");
       if (typeof text !== "string") {
         return;
       }
-      assert.equal(new TextEncoder().encode(text).byteLength, maxBufferedBytes);
-      assert.isFalse(text.includes("y"));
+      assert.equal(new TextEncoder().encode(text).byteLength, output.byteLength);
+      assert.isTrue(text.startsWith("y".repeat(prefixBytes)));
     }).pipe(
       Effect.scoped,
       Effect.provide(Layer.mergeAll(NodeServices.layer, NodeHttpClient.layerUndici, layerEmptyEnv)),

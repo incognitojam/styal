@@ -40,8 +40,6 @@ const DESKTOP_LOG_FILE_MAX_BYTES = 10 * 1024 * 1024;
 const DESKTOP_LOG_FILE_MAX_FILES = 10;
 const DESKTOP_BACKEND_CHILD_LOG_FIBER_ID = "#backend-child";
 const DESKTOP_TRACE_BATCH_WINDOW_MS = 1_000;
-const DESKTOP_BACKEND_OUTPUT_BUFFER_MAX_BYTES = 1024 * 1024;
-const DESKTOP_BACKEND_OUTPUT_BUFFER_MAX_CHUNKS = 256;
 
 export interface RotatingLogFileWriter {
   readonly writeBytes: (chunk: Uint8Array) => Effect.Effect<void>;
@@ -151,71 +149,9 @@ const DesktopBackendOutputLogNoop: DesktopBackendOutputLogShape = {
   discardSession: Effect.void,
 };
 
-interface BufferedBackendOutputChunk {
-  readonly streamName: "stdout" | "stderr";
-  readonly chunk: Uint8Array;
-  readonly offset: number;
-}
-
 interface BackendOutputSession {
   readonly runId: string;
   readonly startDetails: string;
-  readonly chunks: ReadonlyArray<BufferedBackendOutputChunk>;
-  readonly byteLength: number;
-}
-
-function appendBoundedOutputChunk(
-  session: BackendOutputSession,
-  streamName: "stdout" | "stderr",
-  chunk: Uint8Array,
-): BackendOutputSession {
-  if (chunk.byteLength === 0) {
-    return session;
-  }
-
-  const retainedChunk =
-    chunk.byteLength > DESKTOP_BACKEND_OUTPUT_BUFFER_MAX_BYTES
-      ? chunk.slice(chunk.byteLength - DESKTOP_BACKEND_OUTPUT_BUFFER_MAX_BYTES)
-      : chunk.slice();
-  const chunks = [...session.chunks, { streamName, chunk: retainedChunk, offset: 0 }];
-  let byteLength = session.byteLength + retainedChunk.byteLength;
-  let overflow = Math.max(0, byteLength - DESKTOP_BACKEND_OUTPUT_BUFFER_MAX_BYTES);
-  let firstRetainedIndex = 0;
-
-  while (overflow > 0) {
-    const first = chunks[firstRetainedIndex];
-    if (!first) break;
-    const retainedByteLength = first.chunk.byteLength - first.offset;
-    if (retainedByteLength <= overflow) {
-      overflow -= retainedByteLength;
-      byteLength -= retainedByteLength;
-      firstRetainedIndex += 1;
-      continue;
-    }
-
-    chunks[firstRetainedIndex] = {
-      ...first,
-      offset: first.offset + overflow,
-    };
-    byteLength -= overflow;
-    overflow = 0;
-  }
-
-  const excessChunks = Math.max(
-    0,
-    chunks.length - firstRetainedIndex - DESKTOP_BACKEND_OUTPUT_BUFFER_MAX_CHUNKS,
-  );
-  for (let index = firstRetainedIndex; index < firstRetainedIndex + excessChunks; index += 1) {
-    const chunk = chunks[index];
-    byteLength -= chunk ? chunk.chunk.byteLength - chunk.offset : 0;
-  }
-  firstRetainedIndex += excessChunks;
-
-  return {
-    ...session,
-    chunks: chunks.slice(firstRetainedIndex),
-    byteLength,
-  };
 }
 
 const currentDesktopRunId = Effect.gen(function* () {
@@ -486,19 +422,6 @@ const makeBackendOutputLogShape = (
             details: session.startDetails,
           },
         });
-        for (const output of session.chunks) {
-          yield* writeBackendChildLogRecord(logFile, {
-            message: "backend child process output",
-            level: output.streamName === "stderr" ? "ERROR" : "INFO",
-            annotations: {
-              component: "desktop-backend-child",
-              runId: session.runId,
-              instanceId: id,
-              stream: output.streamName,
-              text: textDecoder.decode(output.chunk.subarray(output.offset)),
-            },
-          });
-        }
         yield* writeBackendChildLogRecord(logFile, {
           message: "backend child process failure output end",
           level: "ERROR",
@@ -521,8 +444,6 @@ const makeBackendOutputLogShape = (
             Option.some({
               runId,
               startDetails: sanitizeLogValue(details),
-              chunks: [],
-              byteLength: 0,
             }),
           );
         }),
@@ -530,10 +451,20 @@ const makeBackendOutputLogShape = (
           if (environment.isDevelopment) {
             yield* writeDevelopmentConsoleOutput(streamName, chunk);
           }
-          yield* Ref.update(
-            sessionRef,
-            Option.map((session) => appendBoundedOutputChunk(session, streamName, chunk)),
-          );
+          if (chunk.byteLength === 0) return;
+          const session = yield* Ref.get(sessionRef);
+          if (Option.isNone(session)) return;
+          yield* writeBackendChildLogRecord(logFile, {
+            message: "backend child process output",
+            level: streamName === "stderr" ? "ERROR" : "INFO",
+            annotations: {
+              component: "desktop-backend-child",
+              runId: session.value.runId,
+              instanceId: id,
+              stream: streamName,
+              text: textDecoder.decode(chunk),
+            },
+          });
         }),
         persistFailureSnapshot: Effect.fn(
           "desktop.observability.backendOutput.persistFailureSnapshot",
