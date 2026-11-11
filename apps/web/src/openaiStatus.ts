@@ -12,7 +12,7 @@ export const OPENAI_STATUS_COMPONENTS_URL = `${OPENAI_STATUS_PAGE_URL}/api/v2/co
  * Surfaces a local Codex turn calls: the Responses API it drives, the Codex API and CLI, and the
  * sign-in they share. Consumer features, other API products, and other Codex clients are left out.
  */
-const OPENAI_RELEVANT_COMPONENTS = ["Responses", "Codex API", "CLI", "Login"];
+export const OPENAI_RELEVANT_COMPONENTS = ["Responses", "Codex API", "CLI", "Login"];
 
 /** Codex Cloud and the Agents API are separate products a local Codex turn never calls. */
 const OPENAI_RELEVANT_UNTAGGED_INCIDENT_TITLE =

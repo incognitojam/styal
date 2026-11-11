@@ -2825,6 +2825,7 @@ features:
       - apps/web/src/components/sidebar/StatusPageNotice.test.ts
       - apps/web/src/githubStatus.test.ts
       - apps/web/src/openaiStatus.test.ts
+      - apps/web/src/statusPageComponents.live.test.ts
       - packages/contracts/src/settings.test.ts
     upstream:
       status: unassessed
