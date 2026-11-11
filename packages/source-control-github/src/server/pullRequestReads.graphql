@@ -154,6 +154,7 @@ query PullRequestCore(
         nodes {
           name
           color
+          description
         }
       }
       timelineItems(last: 100, itemTypes: [DEPLOYED_EVENT]) @include(if: $deployments) {
@@ -296,6 +297,7 @@ query PullRequestCoreWithoutDeployments(
         nodes {
           name
           color
+          description
         }
       }
 
@@ -413,6 +415,7 @@ query PullRequestCoreEnterprise(
         nodes {
           name
           color
+          description
         }
       }
       timelineItems(last: 100, itemTypes: [DEPLOYED_EVENT]) @include(if: $deployments) {
@@ -549,6 +552,7 @@ query PullRequestCoreEnterpriseWithoutDeployments(
         nodes {
           name
           color
+          description
         }
       }
 
