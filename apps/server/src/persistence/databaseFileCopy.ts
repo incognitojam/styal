@@ -10,11 +10,12 @@ export const runCp = (
   args: ReadonlyArray<string>,
   timeout = 0,
   signal?: AbortSignal,
+  privateCopy = false,
 ): Promise<boolean> =>
   new Promise((resolve) => {
     NodeChildProcess.execFile(
-      "cp",
-      args,
+      privateCopy ? "/bin/sh" : "cp",
+      privateCopy ? ["-c", 'umask 077; exec cp "$@"', "cp", ...args] : args,
       { timeout, ...(signal === undefined ? {} : { signal }) },
       (error) => resolve(error === null),
     );
@@ -27,7 +28,7 @@ export async function cloneDatabaseFile(
 ): Promise<boolean> {
   // oxlint-disable-next-line t3code/no-global-process-runtime -- Filesystem clone support depends on the host OS.
   if (process.platform === "linux")
-    return runCp(["--reflink=always", source, destination], 60000, signal);
+    return runCp(["--reflink=always", source, destination], 60000, signal, true);
   // oxlint-disable-next-line t3code/no-global-process-runtime -- Windows uses the startup streaming fallback.
   if (process.platform !== "darwin") return false;
   const directory = NodePath.dirname(destination);
@@ -39,7 +40,7 @@ export async function cloneDatabaseFile(
   ]);
   // cp -c can silently byte-copy across volumes or outside APFS.
   if (file.dev !== target.dev || filesystem.type !== system.type || file.nlink !== 1) return false;
-  return runCp(["-c", source, destination], 60000, signal);
+  return runCp(["-c", source, destination], 60000, signal, true);
 }
 
 // macOS fs.copyFile clone flags fall back to full copies.

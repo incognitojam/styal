@@ -159,7 +159,8 @@ describe("rejectRequestsUntilServing", () => {
     expect(earlyHttp.headers["retry-after"]).toBe("1");
 
     const status = await fetchResponse(port, "/api/startup");
-    expect(status.statusCode).toBe(200);
+    expect(status.statusCode).toBe(503);
+    expect(status.headers["access-control-allow-origin"]).toBeUndefined();
     expect(JSON.parse(bodies.get(status) ?? "{}")).toEqual({
       starting: true,
       copy: { phase: "copying", copiedBytes: 25, totalBytes: 100, leaseMs: 60000 },

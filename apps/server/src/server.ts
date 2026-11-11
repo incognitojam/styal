@@ -1341,7 +1341,16 @@ const layerMakeServer = Layer.unwrap(
       Effect.gen(function* () {
         yield* Startup.prepareBeforeRuntime(
           yield* ServerConfig.eventPruningEnabled,
-          Layer.buildWithMemoMap(http, memoMap, scope).pipe(Effect.asVoid),
+          Effect.gen(function* () {
+            const observability = yield* Layer.buildWithMemoMap(
+              layerApplicationObservability,
+              memoMap,
+              scope,
+            );
+            yield* Layer.buildWithMemoMap(http, memoMap, scope).pipe(
+              Effect.provideContext(observability),
+            );
+          }).pipe(Effect.provide(FetchHttpClient.layer)),
           Effect.gen(function* () {
             const observability = yield* Layer.buildWithMemoMap(
               layerApplicationObservability,

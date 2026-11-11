@@ -1,7 +1,6 @@
 import * as Schema from "effect/Schema";
 
 export const STARTUP_COPY_MESSAGE = "Making a safety copy of your data. This only happens once.";
-export const STARTUP_STATUS_PATH = "/api/startup";
 export const ServerStartupCopyProgress = Schema.Struct({
   phase: Schema.Literal("copying"),
   copiedBytes: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),

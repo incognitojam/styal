@@ -78,6 +78,11 @@ export const waitForHttpReady = Effect.fn("shared.httpReadiness.waitForHttpReady
       return { ready: false, copy };
     }).pipe(
       Effect.timeoutOption(Math.min(probeTimeoutMs, Math.max(1, deadline - now()))),
+      Effect.tap((result) =>
+        Effect.sync(() => {
+          if (Option.isNone(result)) cause = { kind: "probe-timeout", attempt, probeTimeoutMs };
+        }),
+      ),
       Effect.catch((error) => {
         cause = error;
         return Effect.succeedNone;
@@ -108,5 +113,17 @@ export const waitForHttpReady = Effect.fn("shared.httpReadiness.waitForHttpReady
     attempts: attempt,
     cause: describeReadinessCause(cause),
   });
-  return yield* Effect.fail(input.makeError({ requestUrl, probeTimeoutMs, attempt, cause }));
+  return yield* Effect.fail(
+    input.makeError({
+      requestUrl,
+      probeTimeoutMs,
+      attempt,
+      cause: {
+        kind: "overall-timeout",
+        baseUrl: input.baseUrl,
+        timeoutMs,
+        lastFailure: { attempt, cause },
+      },
+    }),
+  );
 });
