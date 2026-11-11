@@ -169,9 +169,11 @@ For mobile verification, a missing or outdated native client is an install step,
 - Conventional commit titles, plain language: `fix(web): new threads no longer spike CPU`.
 - Body: the problem in a sentence or two, then how you fixed it. End with the model and harness that did the work.
 - **Upstream intake follows [the upstream intake runbook](docs/operations/upstream-tracking.md).** Upstream is never auto-synced. Intake batches land on `intake/**` branches through the promotion workflow, never through a pull request. Never rebase `main` onto upstream or force-push it.
-- Referencing upstream on GitHub:
-  - In fork PR and issue text, link upstream PRs and issues by full URL. Each link adds one entry to the upstream timeline.
-  - In commit messages you write, leave out upstream references; provenance trailers carry them. Each pushed commit that mentions an upstream PR or issue adds another timeline entry, even inside backticks.
+- Referencing upstream:
+  - A bare #123 always means a fork PR or issue, and styal and GitHub both link it to the fork. For an upstream one, write the plain URL with no link text; it is shown as pingdotgg/t3code#123.
+  - In replies to the maintainer, reference upstream freely. Nothing is sent to upstream.
+  - In fork PR and issue text, reference an upstream PR or issue when it helps the reader, such as comparing our change with theirs. Each fork PR that does adds one entry to that upstream timeline, so skip passing mentions.
+  - Keep upstream references out of commit messages; put them in the PR body. Every pushed, amended or rebased commit adds its own timeline entry, even inside backticks, and provenance trailers already carry intake references.
   - Do not `@` mention upstream accounts unless we mean to contact them. Mentions notify.
 - When the pull request body is long, begin it with a `> [!NOTE]` callout containing a TL;DR.
 - **Rebase standalone branches onto latest main before opening.** Stale branches conflict and burn a review round.
