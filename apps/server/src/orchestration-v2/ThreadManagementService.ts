@@ -986,8 +986,19 @@ const make = Effect.gen(function* () {
         messageId: input.messageId,
       });
     }
-    const delivery: ThreadManagementSendResult["delivery"] =
-      input.notification !== undefined && run.status !== "queued"
+    // A provider without interrupt-and-restart stops the turn and runs the
+    // restart as the next turn. Read from this command's own events, so a replay agrees.
+    const restartedAsNextTurn =
+      mode === "restart" &&
+      dispatched.storedEvents.some(
+        ({ event }) =>
+          event.type === "turn-item.updated" &&
+          event.payload.type === "run_interrupt_request" &&
+          event.payload.runId !== run.id,
+      );
+    const delivery: ThreadManagementSendResult["delivery"] = restartedAsNextTurn
+      ? "restarted"
+      : input.notification !== undefined && run.status !== "queued"
         ? "started"
         : turnItem === null || turnItem.inputIntent === "queued_turn"
           ? "queued"
