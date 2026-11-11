@@ -481,6 +481,8 @@ export const make = Effect.gen(function* () {
     reviewWorkflowRun: (input) =>
       cli.reviewWorkflowRun(input).pipe(Effect.mapError(fail("reviewWorkflowRun"))),
 
+    changeRequestEvents: (input) => cli.pullRequestEvents(input),
+
     getChangeRequestPreview: (input) =>
       cli.getPullRequestPreview(input).pipe(Effect.mapError(fail("getChangeRequestPreview"))),
 
