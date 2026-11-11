@@ -151,10 +151,11 @@ it.effect.each(["success", "retry"] as const)(
           Layer.mock(Analytics.AnalyticsService)({ record: () => Effect.void }),
           Layer.mock(Git.GitVcsDriver)({}),
           Layer.mock(EffectWorker.OrchestrationEffectWorkerV2)({
-            runOnce: Deferred.succeed(workerStarted, undefined).pipe(
-              Effect.andThen(Effect.never),
-              Effect.ensuring(Deferred.succeed(workerStopped, undefined)),
-            ),
+            runOnce: () =>
+              Deferred.succeed(workerStarted, undefined).pipe(
+                Effect.andThen(Effect.never),
+                Effect.ensuring(Deferred.succeed(workerStopped, undefined)),
+              ),
           }),
           Layer.succeed(Lifecycle.ServerLifecycleEvents, lifecycle),
         );
@@ -298,7 +299,7 @@ it.effect("starts the bootstrap thread on Codex when the environment turned Clau
         }),
         Layer.mock(Analytics.AnalyticsService)({ record: () => Effect.void }),
         Layer.mock(Git.GitVcsDriver)({}),
-        Layer.mock(EffectWorker.OrchestrationEffectWorkerV2)({ runOnce: Effect.never }),
+        Layer.mock(EffectWorker.OrchestrationEffectWorkerV2)({ runOnce: () => Effect.never }),
         Layer.succeed(Lifecycle.ServerLifecycleEvents, lifecycle),
       );
       const context = yield* Layer.build(

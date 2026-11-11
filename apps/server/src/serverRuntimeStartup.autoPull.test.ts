@@ -126,7 +126,7 @@ it.effect("parks automatic pull until activation without delaying command readin
         Layer.mock(ProviderInstanceRegistry.ProviderInstanceRegistry)({
           getInstance: () => Effect.undefined,
         }),
-        Layer.mock(EffectWorker.OrchestrationEffectWorkerV2)({ runOnce: Effect.never }),
+        Layer.mock(EffectWorker.OrchestrationEffectWorkerV2)({ runOnce: () => Effect.never }),
         Layer.mock(EventSink.EventSinkV2)({}),
         Layer.mock(ServerLifecycleEvents.ServerLifecycleEvents)({
           publish: (event) => Effect.succeed({ ...event, sequence: 1 }),
