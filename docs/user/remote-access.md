@@ -361,14 +361,18 @@ has it off, its result arrives once it is back on.
 
 In **Settings → Machines → Your machines**, choose the machine your agents will work from. At the end of **Agents on &lt;name&gt; can work on**, choose **Add machine**, then pick the other machine or enter its address; this is done from web or desktop. The list
 holds the machines this app knows and those on your styal Link account. If this
-app is connected to that machine with a session that manages access there, it
-makes the pairing code itself; otherwise paste one from that machine's
-**Settings → Sharing & access**. From a terminal, use
+app has an address for that machine and is connected to it with a session that
+manages access there, it makes the pairing code itself; otherwise paste one
+from that machine's **Settings → Sharing & access**. An address you type always
+needs a pasted code. From a terminal, use
 `styal environment link <address> --pairing-code <code>`.
 
 You can also ask an agent to use a machine by name, such as "delegate this to
 my vps". It shows a card in the thread where you pick the machine the same way, then
-approve. Auto threads can request this card; Supervised threads cannot.
+approve. Auto threads can request this card; Supervised threads cannot. An
+address the agent gives that this app does not know for one of your machines
+also needs a pasted code. Paste one only for an address you trust: the code is
+sent there.
 
 Use **Stop** beside a machine in the list to remove that direction. For a machine this app has not added, its tab also shows which of your other machines can work on it, with **Stop** for each. **Show addresses** reveals addresses for machines without their own tab.
 

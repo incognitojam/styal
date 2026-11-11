@@ -12,6 +12,7 @@ import type {
   ThreadPendingUserInput,
 } from "@t3tools/client-runtime/state/thread-requests";
 import { isAnsweredFeedbackReportApproval } from "@t3tools/client-runtime/feedback-report";
+import { linkRequestTargetName } from "@t3tools/client-runtime/link-request";
 import { turnItemIsWorkspacePreparation } from "@t3tools/client-runtime/state/turn-item-presentation";
 import type { ThreadCheckpointSummary } from "@t3tools/client-runtime/state/thread-checkpoints";
 import { formatSubagentDisplayTitle } from "@t3tools/client-runtime/state/subagent-display";
@@ -713,7 +714,7 @@ function itemSummary(
     case "secret_request":
       return item.label;
     case "link_request":
-      return `Add ${item.label ?? item.url ?? "a machine"}`;
+      return `Add ${linkRequestTargetName(item)}`;
     case "dynamic_tool": {
       const classified = classifyToolActivity({
         itemType: "dynamic_tool_call",
