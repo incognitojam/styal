@@ -404,6 +404,7 @@ describe("providerMaintenanceRunner", () => {
   ] as const)("only skips a successful fresh current probe: $name", ({ probe, skip }) => {
     const calls: Array<{ command: string; args: ReadonlyArray<string> }> = [];
     const refreshedInstanceIds: Array<ProviderInstanceId> = [];
+    const retired: Array<RetiredInstances> = [];
     return Effect.gen(function* () {
       const { registry, updateStatesRef, providersRef } = yield* makeRegistry({
         ...baseProvider,
@@ -418,39 +419,49 @@ describe("providerMaintenanceRunner", () => {
           message: "Update available.",
         },
       });
-      const updater = yield* makeTestRunner({
-        ...registry,
-        refreshInstance: (instanceId) => {
-          refreshedInstanceIds.push(instanceId);
-          return Ref.updateAndGet(providersRef, (providers) =>
-            providers.map((provider) =>
-              provider.instanceId === instanceId
-                ? {
-                    ...provider,
-                    version: "2.1.310",
-                    ...probe,
-                    checkedAt: "2026-04-10T00:00:01.000Z",
-                  }
-                : provider,
+      const updater = yield* makeTestRunner(
+        {
+          ...registry,
+          refreshInstance: (instanceId) => {
+            refreshedInstanceIds.push(instanceId);
+            return Ref.updateAndGet(providersRef, (providers) =>
+              providers.map((provider) =>
+                provider.instanceId === instanceId
+                  ? {
+                      ...provider,
+                      version: "2.1.310",
+                      ...probe,
+                      checkedAt: "2026-04-10T00:00:01.000Z",
+                    }
+                  : provider,
+              ),
+            );
+          },
+          getProviderMaintenanceCapabilitiesForInstance: () =>
+            Effect.succeed(
+              makeProviderMaintenanceCapabilities({
+                provider: CODEX_DRIVER,
+                packageName: "@anthropic-ai/claude-code",
+                updateExecutable: "claude",
+                updateArgs: ["update"],
+                updateLockKey: "claudeAgent-native",
+              }),
             ),
-          );
         },
-        getProviderMaintenanceCapabilitiesForInstance: () =>
-          Effect.succeed(
-            makeProviderMaintenanceCapabilities({
-              provider: CODEX_DRIVER,
-              packageName: "@anthropic-ai/claude-code",
-              updateExecutable: "claude",
-              updateArgs: ["update"],
-              updateLockKey: "claudeAgent-native",
-            }),
-          ),
-      });
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        retired,
+      );
 
       const result = yield* updater.updateProvider(CODEX_DRIVER);
       assert.deepStrictEqual(refreshedInstanceIds, [CODEX_INSTANCE_ID]);
       assert.deepStrictEqual(calls, skip ? [] : [{ command: "claude", args: ["update"] }]);
       if (!skip) return;
+      // Nothing was installed, so the running sessions still use the current installation.
+      assert.deepStrictEqual(retired, []);
       assert.strictEqual(result.providers[0]?.updateState?.status, "succeeded");
       assert.strictEqual(result.providers[0]?.updateState?.message, "Already up to date.");
       assert.deepStrictEqual(
@@ -1090,6 +1101,89 @@ describe("providerMaintenanceRunner", () => {
       ),
     );
   });
+
+  it.effect("an interrupted update ends failed instead of running forever", () => {
+    const started = Deferred.makeUnsafe<void>();
+    return Effect.gen(function* () {
+      const { registry, updateStatesRef } = yield* makeRegistry(baseNativeCliProvider);
+      const updater = yield* makeTestRunner(registry);
+      const update = yield* updater.updateProvider(NATIVE_CLI_DRIVER).pipe(Effect.forkScoped);
+      yield* Deferred.await(started);
+      yield* Fiber.interrupt(update);
+      const last = (yield* Ref.get(updateStatesRef)).at(-1);
+      assert.deepStrictEqual(
+        [last?.status, last?.message],
+        ["failed", "Update stopped before it finished."],
+      );
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          layerNonWindowsPlatform,
+          layerLatestVersionHttpClient("1.0.0"),
+          layerMockSpawner(() => ({
+            exitCode: Deferred.succeed(started, undefined).pipe(Effect.andThen(Effect.never)),
+          })),
+        ),
+      ),
+    );
+  });
+
+  it.effect("a request dropped while the final state is written still records it", () =>
+    Effect.gen(function* () {
+      for (const status of ["failed", "unchanged", "succeeded"] as const) {
+        const writing = Deferred.makeUnsafe<void>();
+        const release = Deferred.makeUnsafe<void>();
+        const retired: Array<RetiredInstances> = [];
+        yield* Effect.gen(function* () {
+          const { registry, updateStatesRef } = yield* makeRegistry(baseNativeCliProvider);
+          const updater = yield* makeTestRunner(
+            {
+              ...registry,
+              ...(status === "unchanged" ? { refreshAfterUpdate: () => Effect.succeed([]) } : {}),
+              setProviderMaintenanceActionState: (input) =>
+                input.state?.status === status
+                  ? Deferred.succeed(writing, undefined).pipe(
+                      Effect.andThen(Deferred.await(release)),
+                      Effect.andThen(registry.setProviderMaintenanceActionState(input)),
+                    )
+                  : registry.setProviderMaintenanceActionState(input),
+            },
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            retired,
+          );
+
+          const update = yield* updater.updateProvider(NATIVE_CLI_DRIVER).pipe(Effect.forkScoped);
+          yield* Deferred.await(writing);
+          update.interruptUnsafe();
+          yield* Deferred.succeed(release, undefined);
+          yield* Fiber.await(update);
+
+          assert.strictEqual((yield* Ref.get(updateStatesRef)).at(-1)?.status, status);
+          assert.deepStrictEqual(
+            retired,
+            status === "succeeded"
+              ? [{ instanceIds: [NATIVE_CLI_INSTANCE_ID], whileInstalling: true }]
+              : [],
+          );
+        }).pipe(
+          Effect.provide(
+            Layer.mergeAll(
+              layerNonWindowsPlatform,
+              layerLatestVersionHttpClient("1.0.0"),
+              layerMockSpawner(() => ({
+                stdout: "updated",
+                code: status === "failed" ? 1 : 0,
+              })),
+            ),
+          ),
+        );
+      }
+    }),
+  );
 
   it.effect("prevents concurrent updates for the same provider", () => {
     const startedLatch: { resolve: () => void } = { resolve: () => {} };
