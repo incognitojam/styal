@@ -2,7 +2,14 @@ import { page, userEvent } from "vite-plus/test/browser";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import { render } from "../../../test/render";
-import { Sidebar, SidebarProvider, SidebarRail, SidebarTrigger, useSidebar } from "./sidebar";
+import {
+  Sidebar,
+  SidebarProvider,
+  SidebarRail,
+  SidebarTrigger,
+  useMobileSidebarSheetMounted,
+  useSidebar,
+} from "./sidebar";
 
 function CollapseFromInside() {
   const { setOpen } = useSidebar();
@@ -129,4 +136,31 @@ it("keeps the mobile sheet closed and leaves the saved desktop state alone", asy
     .element(screen.getByRole("button", { name: "Toggle Sidebar" }))
     .toHaveAttribute("aria-pressed", "false");
   localStorage.removeItem(storageKey);
+});
+
+function SheetCoverProbe() {
+  return <div data-testid="sheet-covers-page">{String(useMobileSidebarSheetMounted())}</div>;
+}
+
+it("reports a kept-mounted mobile sheet only while it covers the page", async () => {
+  await page.viewport(390, 844);
+  await using screen = await render(
+    <SidebarProvider>
+      <Sidebar keepMountedOnMobile>
+        <button type="button">Kept content</button>
+      </Sidebar>
+      <SidebarTrigger />
+      <SheetCoverProbe />
+    </SidebarProvider>,
+    { router: false /* no routes involved */ },
+  );
+  const probe = screen.getByTestId("sheet-covers-page");
+  await expect.element(probe).toHaveTextContent("false");
+
+  await userEvent.click(screen.getByRole("button", { name: "Toggle Sidebar" }));
+  await expect.element(probe).toHaveTextContent("true");
+
+  await userEvent.keyboard("{Escape}");
+  await expect.element(probe).toHaveTextContent("false");
+  expect(document.body.textContent).toContain("Kept content");
 });
