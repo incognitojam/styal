@@ -12,8 +12,11 @@ describe.runIf(process.env.STYAL_STATUS_PAGE_LIVE_CHECK === "1")("live status pa
     ["GitHub", GITHUB_STATUS_PAGE_URL, GITHUB_RELEVANT_COMPONENTS],
     ["OpenAI", OPENAI_STATUS_PAGE_URL, OPENAI_RELEVANT_COMPONENTS],
   ])("%s still lists every component its outage filter names", async (_service, page, names) => {
-    const response = await fetch(`${page}/api/v2/components.json`);
-    expect(response.ok).toBe(true);
-    expect(missingStatusPageComponents(await response.json(), names)).toEqual([]);
+    const url = `${page}/api/v2/components.json`;
+    const response = await fetch(url);
+    expect(response.ok, `${url} returned HTTP ${response.status}`).toBe(true);
+    const missing = missingStatusPageComponents(await response.json(), names);
+    expect(missing, `${url} returned no component listing`).not.toBeNull();
+    expect(missing).toEqual([]);
   });
 });

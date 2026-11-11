@@ -67,9 +67,17 @@ jobs:
         shell: bash
         run: |
           # This run is still in progress, so the latest completed scheduled run is the previous one.
-          previous=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow status-page-check.yml \
-            --event schedule --status completed --limit 20 --json conclusion \
-            --jq '[.[] | select(.conclusion == "success" or .conclusion == "failure")][0].conclusion // ""')
+          # Compare its check job, not the run, so a failed notification is not read as a failed check.
+          previous=''
+          for run_id in $(gh run list --repo "$GITHUB_REPOSITORY" --workflow status-page-check.yml \
+            --event schedule --status completed --limit 20 --json databaseId --jq '.[].databaseId'); do
+            conclusion=$(gh run view "$run_id" --repo "$GITHUB_REPOSITORY" --json jobs \
+              --jq '.jobs[] | select(.name == "Status page check") | .conclusion')
+            if [ "$conclusion" = success ] || [ "$conclusion" = failure ]; then
+              previous=$conclusion
+              break
+            fi
+          done
           if [ "$RESULT" = failure ] && [ "$previous" != failure ]; then
             title='Status page check failed'
             color=15158332
