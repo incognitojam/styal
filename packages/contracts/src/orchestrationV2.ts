@@ -1366,7 +1366,18 @@ export const OrchestrationV2NotificationSource = kindUnionWithFallback(
     SubagentNotificationSource,
     CommandNotificationSource,
     Schema.Struct({ kind: Schema.Literal("launched_thread"), childThreadId: ThreadId }),
-    Schema.Struct({ kind: Schema.Literal("monitor") }),
+    Schema.Struct({
+      kind: Schema.Literal("monitor"),
+      pullRequest: Schema.optional(
+        Schema.Struct({
+          ...ThreadPullRequestKey.fields,
+          watchStartedAt: IsoDateTime,
+          /** Null when the wake is not about one head, so a newer push does not outdate it. */
+          headSha: Schema.NullOr(TrimmedNonEmptyString),
+          watchEnded: Schema.optional(Schema.Boolean),
+        }),
+      ),
+    }),
     Schema.Struct({ kind: Schema.Literal("background_task") }),
     Schema.Struct({ kind: Schema.Literal("system") }),
   ],
@@ -3728,6 +3739,8 @@ const OrchestrationV2InternalCommand = Schema.Union([
         messageId: MessageId,
         text: Schema.String,
         notification: OrchestrationV2Notification,
+        /** Comments stay worth reading after a push, so the wake outlives a newer head. */
+        includesRemarks: Schema.optional(Schema.Boolean),
       }),
     ),
   }),
