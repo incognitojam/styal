@@ -95,26 +95,48 @@ function isOpenCodeNativeCommandPath(commandPath: string): boolean {
   );
 }
 
+function openCodeNativeHome(commandPath: string): string | null {
+  const slashed = commandPath.replaceAll("\\", "/");
+  const match = /\/\.opencode\/bin\/opencode(?:\.exe)?$/i.exec(slashed);
+  if (!match) return null;
+  return match.index === 0 ? "/" : slashed.slice(0, match.index);
+}
+
+// The curl installer writes to `$HOME/.opencode/bin`, so target the install it replaces.
+function openCodeNativeEnv(context: {
+  readonly realCommandPath: string;
+  readonly resolvedCommandPath: string;
+}) {
+  const home =
+    openCodeNativeHome(context.realCommandPath) ?? openCodeNativeHome(context.resolvedCommandPath);
+  return home ? { HOME: home } : {};
+}
+
 /** Update only within the installed package generation; 2.x converts the shared database in place. */
 export const openCodeUpdateFor = (generation: ProbedOpenCode["generation"]) =>
   makePackageManagedProviderMaintenanceResolver({
     provider: DRIVER_KIND,
     npmPackageName: generation === "v2" ? "@opencode/cli" : "opencode-ai",
     nativeUpdate: {
-      args: ["upgrade"],
+      // `isOpenCodeNativeCommandPath` is the curl installer's own binary. Name the
+      // method so OpenCode does not have to infer it from `process.execPath`, which
+      // fails when the binary is launched through a wrapper or shim.
+      args: ["upgrade", "--method", "curl"],
       isCommandPath: isOpenCodeNativeCommandPath,
       // OpenCode 2's `upgrade <version>` installs exactly that release with its
       // own installer (downloaded first, run with `--no-modify-path`). Tested
       // versions only exist for 2.x, so a native 1.x install is not pinned.
       ...(generation === "v2"
         ? {
-            pinned: (version: string, context: { readonly resolvedCommandPath: string }) => ({
+            pinned: (version, context) => ({
               executable: context.resolvedCommandPath,
-              args: ["upgrade", version],
+              args: ["upgrade", version, "--method", "curl"],
+              env: openCodeNativeEnv(context),
             }),
           }
         : {}),
       requiresCommandPath: true,
+      env: openCodeNativeEnv,
     },
     // mise's `opencode` follows releases into 2.x, so it would upgrade 1.x across that line.
     mise: { tool: "opencode", upgrade: generation === "v2" },

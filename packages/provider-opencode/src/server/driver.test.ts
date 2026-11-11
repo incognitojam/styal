@@ -824,9 +824,9 @@ it.effect.skipIf(HostProcess.Platform.defaultValue() === "win32")(
       const native = executable(".opencode", "bin", "opencode");
       for (const generation of ["v1", "v2"] as const) {
         assert.isNull((yield* resolveUpdate(generation, launcher)).update);
-        assert.deepStrictEqual((yield* resolveUpdate(generation, native)).update?.args, [
-          "upgrade",
-        ]);
+        const update = (yield* resolveUpdate(generation, native)).update;
+        assert.deepStrictEqual(update?.args, ["upgrade", "--method", "curl"]);
+        assert.strictEqual(update?.env?.HOME, root);
       }
     }),
 );
@@ -860,11 +860,12 @@ it.effect("pins a native OpenCode 2 install with `opencode upgrade <version>` on
     for (const platform of ["darwin", "linux"] as const) {
       const native = yield* resolveNative("v2", platform);
       // A manual update still moves to the latest release.
-      assert.deepStrictEqual(native.update?.args, ["upgrade"]);
+      assert.deepStrictEqual(native.update?.args, ["upgrade", "--method", "curl"]);
       assert.deepStrictEqual(pin(native), {
         executable: "/home/developer/.opencode/bin/opencode",
-        args: ["upgrade", "2.1.2"],
-        command: "/home/developer/.opencode/bin/opencode upgrade 2.1.2",
+        args: ["upgrade", "2.1.2", "--method", "curl"],
+        env: { HOME: "/home/developer" },
+        command: "/home/developer/.opencode/bin/opencode upgrade 2.1.2 --method curl",
         lockKey: "opencode-native",
       });
     }
@@ -875,7 +876,13 @@ it.effect("pins a native OpenCode 2 install with `opencode upgrade <version>` on
       "/usr/local/bin/opencode",
       "/home/developer/.opencode/bin/opencode",
     );
-    assert.deepStrictEqual(pin(linked)?.args, ["upgrade", "2.1.2"]);
+    assert.deepStrictEqual(pin(linked), {
+      executable: "/usr/local/bin/opencode",
+      args: ["upgrade", "2.1.2", "--method", "curl"],
+      env: { HOME: "/home/developer" },
+      command: "/usr/local/bin/opencode upgrade 2.1.2 --method curl",
+      lockKey: "opencode-native",
+    });
 
     // Windows native installs, 1.x installs, and unproven paths stay manual.
     const windows = yield* resolveNative(
@@ -883,7 +890,7 @@ it.effect("pins a native OpenCode 2 install with `opencode upgrade <version>` on
       "win32",
       "C:/Users/Developer/.opencode/bin/opencode.exe",
     );
-    assert.deepStrictEqual(windows.update?.args, ["upgrade"]);
+    assert.deepStrictEqual(windows.update?.args, ["upgrade", "--method", "curl"]);
     assert.isNull(pin(windows));
     assert.isNull(pin(yield* resolveNative("v1", "darwin")));
     const unproven = yield* resolveNative("v2", "linux", "/opt/tools/opencode");
