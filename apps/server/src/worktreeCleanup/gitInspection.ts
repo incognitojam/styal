@@ -19,7 +19,6 @@ export const makeInspectGit = Effect.gen(function* () {
       args: ["-C", root, ...args],
       env,
       timeoutMs: 30_000,
-      forceKillAfterMs: 1000,
       maxOutputBytes: 64 * 1024 * 1024,
       allowNonZeroExit: true,
       ...(stdin === undefined ? {} : { stdin }),
