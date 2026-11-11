@@ -1657,12 +1657,11 @@ export function AddProjectDestinationScreen(props: {
 
     const originRoute = getActiveRoute(navigation);
     setIsSubmitting(true);
-    const projectId = ProjectId.make(uuidv4());
     const title = inferProjectTitleFromPath(resolved.path);
     const startResult = await startProjectClone({
       environmentId: environment.environmentId,
       input: {
-        projectId,
+        projectId: ProjectId.make(uuidv4()),
         title,
         createdAt: new Date().toISOString(),
         // Only a fork needs naming: it is what lets the server wire up the
@@ -1679,6 +1678,7 @@ export function AddProjectDestinationScreen(props: {
       setError(`Clone failed on ${environment.label}. ${detail}`);
     } else {
       void suggestAppAccessForRemote(checkAppAccess, environment.environmentId, remoteUrl);
+      const { projectId } = startResult.value;
       // Wait for the create event; the client store otherwise falls back to the project picker and loses clone controls.
       const project = await waitForProject(
         { environmentId: environment.environmentId, projectId },
