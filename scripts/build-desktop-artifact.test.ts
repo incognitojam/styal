@@ -570,7 +570,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       assert.equal(
         (linux.linux as { desktop: { entry: { StartupWMClass: string } } }).desktop.entry
           .StartupWMClass,
-        "styal-preview",
+        "build.styal.Styal.Preview",
       );
       assert.notEqual((win.nsis as { guid: string }).guid, (release.nsis as { guid: string }).guid);
       assert.equal(resolveDesktopPackageIdentity("0.0.33-pr.8182.1").packageName, "styal-preview");
@@ -619,6 +619,22 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         ),
       ),
     ),
+  );
+
+  it.effect("names the Electron window class in the Linux desktop entry", () =>
+    Effect.gen(function* () {
+      const linux = yield* createBuildConfig(
+        "linux",
+        "AppImage",
+        "0.0.33",
+        false,
+        false,
+        undefined,
+        undefined,
+      );
+
+      assert.nestedPropertyVal(linux, "linux.desktop.entry.StartupWMClass", "build.styal.Styal");
+    }),
   );
 
   it.effect("declares Calendar access for hosted commands in macOS builds", () =>

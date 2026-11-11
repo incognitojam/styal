@@ -82,7 +82,7 @@ const PREVIEW_PACKAGE_IDENTITY: DesktopPackageIdentity = {
   packageName: "styal-preview",
   windowsInstallerGuid: "3388c33a-8bc0-4e28-90c9-b06db7e034bd",
   protocolSchemes: ["styal-preview"],
-  linuxWmClass: "styal-preview",
+  linuxWmClass: "build.styal.Styal.Preview",
 };
 
 const PRODUCTION_PACKAGE_IDENTITY: DesktopPackageIdentity = {
@@ -90,7 +90,7 @@ const PRODUCTION_PACKAGE_IDENTITY: DesktopPackageIdentity = {
   packageName: DESKTOP_PACKAGE_NAME,
   windowsInstallerGuid: WINDOWS_INSTALLER_GUID,
   protocolSchemes: ["styal", "styal-dev"],
-  linuxWmClass: "styal",
+  linuxWmClass: "build.styal.Styal",
 };
 
 export function resolveDesktopPackageIdentity(version: string): DesktopPackageIdentity {
@@ -3077,6 +3077,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       ],
       desktop: {
         entry: {
+          // Match Electron's WM_CLASS from setDesktopName so docks use this launcher.
           StartupWMClass: packageIdentity.linuxWmClass,
         },
       },
