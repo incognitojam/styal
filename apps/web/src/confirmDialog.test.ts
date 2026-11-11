@@ -61,7 +61,9 @@ describe("confirm dialog coordinator", () => {
 
   it("serializes concurrent confirmations", async () => {
     const unregister = mountHost();
-    const first = requireConfirmation(requestConfirmDialog("Delete the project?"));
+    const first = requireConfirmation(
+      requestConfirmDialog("Delete the project?", { initialFocus: "confirm" }),
+    );
     const second = requireConfirmation(requestConfirmDialog("Delete the worktree too?"));
 
     respondToConfirmDialog(false);
@@ -71,6 +73,7 @@ describe("confirm dialog coordinator", () => {
       message: "Delete the project?",
       variant: "default",
       confirmLabel: "Confirm",
+      initialFocus: "confirm",
     });
 
     completeConfirmDialogClose();

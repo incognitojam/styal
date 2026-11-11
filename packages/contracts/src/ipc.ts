@@ -1521,6 +1521,8 @@ export interface ConfirmDialogOptions {
   /** Names the action on the confirm button. Defaults to "Confirm". */
   readonly confirmLabel?: string;
   readonly threadActivity?: ReadonlyArray<ConfirmDialogThreadActivity>;
+  /** Which button takes focus on open. Defaults to Cancel; destructive confirms always keep Cancel. */
+  readonly initialFocus?: "confirm" | "cancel";
 }
 
 export interface LocalApi {

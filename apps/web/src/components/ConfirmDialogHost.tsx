@@ -12,6 +12,7 @@ import {
 import {
   AlertDialog,
   AlertDialogClose,
+  AlertDialogAction,
   AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogHeader,
@@ -123,6 +124,7 @@ export function ConfirmDialogHost() {
   const copy = resolveConfirmDialogCopy(state.status === "idle" ? "" : state.message);
   const confirmVariant = state.status === "idle" ? "default" : state.variant;
   const threadActivity = state.status === "idle" ? undefined : state.threadActivity;
+  const focusConfirm = state.status !== "idle" && state.initialFocus === "confirm";
   const onCancel = () => respondToConfirmDialog(false);
   const onConfirm = () => confirmActiveConfirmDialog();
   const checking = state.status !== "idle" && state.checking === true;
@@ -167,9 +169,15 @@ export function ConfirmDialogHost() {
         {threadActivity?.length ? <HostActivityThreadList activity={threadActivity} /> : null}
         <AlertDialogFooter>
           <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
-          <Button variant={confirmVariant} onClick={onConfirm}>
-            <StableLabel label={confirmLabel} previous={previousConfirmLabel} />
-          </Button>
+          {focusConfirm && confirmVariant === "default" ? (
+            <AlertDialogAction onClick={onConfirm}>
+              <StableLabel label={confirmLabel} previous={previousConfirmLabel} />
+            </AlertDialogAction>
+          ) : (
+            <Button variant={confirmVariant} onClick={onConfirm}>
+              <StableLabel label={confirmLabel} previous={previousConfirmLabel} />
+            </Button>
+          )}
         </AlertDialogFooter>
       </AlertDialogPopup>
     </AlertDialog>

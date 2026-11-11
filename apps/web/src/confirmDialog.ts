@@ -5,6 +5,7 @@ type ConfirmDialogContent = {
   readonly variant: ConfirmDialogVariant;
   readonly confirmLabel: string;
   readonly threadActivity?: ConfirmDialogOptions["threadActivity"];
+  readonly initialFocus: ConfirmDialogOptions["initialFocus"];
   /** The dialog is waiting for content that replaces it. */
   readonly checking?: true;
   /** A label the confirm button showed before, kept so the button does not resize. */
@@ -27,6 +28,7 @@ type PendingConfirmation = {
   checking: boolean;
   previousConfirmLabel?: string;
   contentUpdatedAt?: number;
+  readonly initialFocus: ConfirmDialogOptions["initialFocus"];
   readonly resolve: (confirmed: boolean) => void;
   readonly onPresented?: () => void;
   presented: boolean;
@@ -53,6 +55,7 @@ function presentConfirmation(pending: PendingConfirmation): void {
     variant: pending.variant,
     confirmLabel: pending.confirmLabel,
     ...(pending.threadActivity ? { threadActivity: pending.threadActivity } : {}),
+    initialFocus: pending.initialFocus,
     ...(pending.checking ? { checking: true } : {}),
     ...(pending.previousConfirmLabel ? { previousConfirmLabel: pending.previousConfirmLabel } : {}),
   });
@@ -106,6 +109,7 @@ export function requestConfirmDialog(
     const pending: PendingConfirmation = {
       message,
       variant: options?.variant ?? "default",
+      initialFocus: options?.initialFocus,
       confirmLabel: options?.confirmLabel ?? "Confirm",
       ...(options?.threadActivity ? { threadActivity: options.threadActivity } : {}),
       checking: lifecycle?.checking === true,
