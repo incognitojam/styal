@@ -160,7 +160,11 @@ describe("choosing a device", () => {
   it.effect("opens a running device no other thread has open", () =>
     Effect.gen(function* () {
       const picked = yield* pickDevice(
-        { hosts: [], devices: [emulator("emulator-5554", true), emulator("emulator-5556", true)] },
+        {
+          hosts: [],
+          hostStatuses: {},
+          devices: [emulator("emulator-5554", true), emulator("emulator-5556", true)],
+        },
         [{ hostId: local, deviceId: DeviceId.make("emulator-5554") }],
         { platform: "android" },
       );
