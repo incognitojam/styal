@@ -2,7 +2,7 @@ import type { ProviderInstanceEnvironment } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
 
-import { expandHomePath } from "./pathExpansion.ts";
+import { expandHomeVariable } from "./pathExpansion.ts";
 import { stripServerOwnedEnvironment } from "@t3tools/shared/serverOwnedEnvironment";
 
 /** Read by the Codex adapter from the provider environment, so it must survive stripping. */
@@ -66,10 +66,7 @@ export const mergeProviderInstanceEnvironment = Effect.fn(function* (
     // order. Upper case sorts first, so the configured value wins even where a spawn merges the
     // parent environment back in.
     const name = windows ? variable.name.toUpperCase() : variable.name;
-    overrides[name] =
-      name === "CODEX_HOME" || name === "CLAUDE_CONFIG_DIR"
-        ? expandHomePath(variable.value, home)
-        : variable.value;
+    overrides[name] = expandHomeVariable(name, variable.value, home);
   }
   const applyOverrides = (baseEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv => {
     const next: NodeJS.ProcessEnv = { ...baseEnv };
