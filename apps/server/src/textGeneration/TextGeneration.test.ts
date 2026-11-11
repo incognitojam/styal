@@ -1,3 +1,4 @@
+import * as ProviderInstallationGate from "../provider/ProviderInstallationGate.ts";
 import { it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as PubSub from "effect/PubSub";
@@ -101,6 +102,7 @@ describe("TextGeneration.make", () => {
       const generation = yield* TextGeneration.make.pipe(
         Effect.provide(
           Layer.mergeAll(
+            ProviderInstallationGate.layer,
             Layer.mock(TextGenerators.TextGenerators)({ runner: () => Effect.undefined }),
             ServerSettings.layerTest({}),
           ),
@@ -216,6 +218,7 @@ describe("TextGeneration.make", () => {
         const generation = yield* TextGeneration.make.pipe(
           Effect.provide(
             Layer.mergeAll(
+              ProviderInstallationGate.layer,
               Layer.mock(TextGenerators.TextGenerators)({ runner: () => Effect.undefined }),
               ServerSettings.layerTest({}),
             ),
@@ -288,6 +291,7 @@ describe("TextGeneration.make", () => {
     TextGeneration.make.pipe(
       Effect.provide(
         Layer.mergeAll(
+          ProviderInstallationGate.layer,
           Layer.mock(TextGenerators.TextGenerators)({ runner: () => Effect.undefined }),
           ServerSettings.layerTest({}),
         ),

@@ -16,6 +16,7 @@ import type { ProviderTextGeneration } from "@t3tools/provider-core/server/textG
 import { TextGenerationError } from "@t3tools/contracts";
 
 import { resolveTextGenerationModelSelection } from "@t3tools/shared/serverSettings";
+import * as ProviderInstallationGate from "../provider/ProviderInstallationGate.ts";
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
 import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
@@ -78,6 +79,7 @@ export const make = Effect.gen(function* () {
   const registry = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
   const sourceControl = yield* SourceControlProviderRegistry.SourceControlProviderRegistry;
   const serverSettings = yield* ServerSettings.ServerSettingsService;
+  const installationGate = yield* ProviderInstallationGate.ProviderInstallationGate;
   const textGenerators = yield* TextGenerators.TextGenerators;
   const generateWithRetry = Effect.fn("TextGeneration.generateWithRetry")(function* <A>(
     operation: TextGenerationOp,
@@ -122,10 +124,14 @@ export const make = Effect.gen(function* () {
       attempted,
     );
     while (true) {
-      const result = yield* resolveInstance(registry, operation, modelSelection.instanceId).pipe(
-        Effect.flatMap((textGeneration) => run(textGeneration, modelSelection)),
-        Effect.result,
-      );
+      const result = yield* installationGate
+        .execute(
+          modelSelection.instanceId,
+          resolveInstance(registry, operation, modelSelection.instanceId).pipe(
+            Effect.flatMap((textGeneration) => run(textGeneration, modelSelection)),
+          ),
+        )
+        .pipe(Effect.result);
       if (Result.isSuccess(result)) return result.success;
       attempted.add(modelSelection.instanceId);
       if (!isTextGenerationRateLimitError(result.failure)) return yield* result.failure;
