@@ -1685,6 +1685,7 @@ export function toReviewDismissalsPage(result: ReviewDismissals.Result): {
 }
 
 function toThreadComment(comment: ThreadComment, viewer: string | null): PullRequestThreadComment {
+  const reviewUrl = trimmed(comment.pullRequestReview?.url);
   return {
     id: comment.id,
     author: toActor(comment.author),
@@ -1692,6 +1693,7 @@ function toThreadComment(comment: ThreadComment, viewer: string | null): PullReq
     createdAt: comment.createdAt,
     editedAt: comment.lastEditedAt,
     url: trimmed(comment.url),
+    ...(reviewUrl === null ? {} : { reviewUrl }),
     reactions: toReactions(comment.reactionGroups, viewer),
   };
 }

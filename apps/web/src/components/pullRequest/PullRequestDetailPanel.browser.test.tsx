@@ -63,8 +63,16 @@ vi.mock(import("~/state/sourceControlActions"), async (original) => ({
 }));
 vi.mock(import("~/state/use-atom-command"), async (original) => ({
   ...(await original()),
+  // The panel reads the invalidation's result before revealing a linked comment.
   useAtomCommand: ((command: unknown) =>
-    command === "update" ? update : command === "invalidate" ? refresh : hostCommand) as never,
+    command === "update"
+      ? update
+      : command === "invalidate"
+        ? async (input: unknown) => {
+            refresh(input);
+            return { _tag: "Success", value: undefined };
+          }
+        : hostCommand) as never,
 }));
 vi.mock(import("~/state/pullRequests"), async (original) => {
   const actual = await original();
