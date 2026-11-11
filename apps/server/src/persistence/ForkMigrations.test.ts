@@ -14,6 +14,7 @@ import { migrationManifest, runMigrations } from "./Migrations.ts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 
 import dropWorktreeSetupState from "./ForkMigrations/014_DropWorktreeSetupState.ts";
+import { createMessageSearchTriggers } from "../orchestration-v2/messageSearchIndex.ts";
 
 const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 const decodeJson = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown));
@@ -85,6 +86,11 @@ organizedLayer("ForkMigrations project pins from fork migration 11", (it) => {
       yield* sql`DROP INDEX orchestration_v2_projection_threads_subagent_result_idx`;
       yield* sql`DROP INDEX orchestration_v2_projection_runs_delegated_delivery_idx`;
       yield* sql`ALTER TABLE scheduled_tasks DROP COLUMN thread_mode`;
+      yield* sql`DROP TRIGGER orchestration_v2_message_search_insert`;
+      yield* sql`DROP TRIGGER orchestration_v2_message_search_update`;
+      yield* sql`DROP TRIGGER orchestration_v2_message_search_delete`;
+      yield* sql`ALTER TABLE orchestration_v2_projection_messages DROP COLUMN search_text`;
+      yield* createMessageSearchTriggers(sql);
       yield* sql`
         INSERT INTO projection_projects (
           project_id, title, workspace_root, scripts_json, created_at, updated_at,
@@ -102,6 +108,7 @@ organizedLayer("ForkMigrations project pins from fork migration 11", (it) => {
         [78, "DropOrchestrationEventCorrelationIndex"],
         [79, "DelegatedRecoveryIndexes"],
         [80, "ScheduledTaskThreadMode"],
+        [81, "ProjectionMessageSearchText"],
       ]);
       assert.deepStrictEqual(
         yield* sql`

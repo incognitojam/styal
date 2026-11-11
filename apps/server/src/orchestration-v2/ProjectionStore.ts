@@ -109,6 +109,7 @@ import type * as Statement from "effect/sql/Statement";
 import * as ServerSettings from "../serverSettings.ts";
 import { MCP_APP_OUTPUT_KEY } from "@t3tools/shared/mcpApp";
 import { threadHtmlRenderAttachmentIds } from "../attachmentStore.ts";
+import { readableSearchText } from "./messageSearchIndex.ts";
 import {
   isThreadHistoryUserTurn,
   isConversationHistoryItem,
@@ -2834,7 +2835,8 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                 streaming,
                 created_at,
                 updated_at,
-                payload_json
+                payload_json,
+                search_text
               )
               VALUES (
                 ${event.payload.id},
@@ -2845,7 +2847,8 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                 ${booleanInt(event.payload.streaming)},
                 ${createdAt},
                 ${updatedAt},
-                ${payloadJson}
+                ${payloadJson},
+                ${readableSearchText(event.payload.text)}
               )
               ON CONFLICT(message_id)
               DO UPDATE SET
@@ -2867,7 +2870,8 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                     json_extract(orchestration_v2_projection_messages.payload_json, '$.mentionedTimes')
                   )
                   ELSE excluded.payload_json
-                END
+                END,
+                search_text = excluded.search_text
             `;
               break;
             }
