@@ -28,6 +28,7 @@ import * as NodeUtil from "node:util";
 import * as ModelManifest from "./ModelManifest.ts";
 import { resolveProviderCompatibility } from "./providerCompatibility.ts";
 import * as ProviderInstallGate from "./ProviderInstallGate.ts";
+import * as ProviderInstallationGate from "./ProviderInstallationGate.ts";
 import * as ProviderRegistry from "./ProviderRegistry.ts";
 import { makeProviderMaintenanceCommandCoordinator } from "./providerMaintenanceCommandCoordinator.ts";
 import {
@@ -368,6 +369,7 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
     Effect.map((settings) => settings.enableProviderUpdateChecks && settings.autoUpdateProviders),
     Effect.orElseSucceed(() => true),
   );
+  const installationGate = yield* ProviderInstallationGate.ProviderInstallationGate;
   const runMaintenanceCommand = (
     update: ProviderMaintenanceCommandAction,
     onProgress: (line: string) => Effect.Effect<void>,
@@ -381,6 +383,28 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
       recordChildPid,
       ...(update.env ? { env: update.env } : {}),
     });
+  // Instances with other homes or accounts can still run the binary this update replaces. The
+  // lock key names the package manager location, so other drivers there keep their own package.
+  const instancesSharingInstallation = Effect.fn(
+    "ProviderMaintenanceRunner.instancesSharingInstallation",
+  )(function* (instanceId: ProviderInstanceId, provider: ProviderDriverKind, lockKey: string) {
+    const providers = yield* providerRegistry.getProviders;
+    const shared = yield* Effect.forEach(
+      providers.filter(
+        (candidate) => candidate.instanceId !== instanceId && candidate.driver === provider,
+      ),
+      (candidate) =>
+        providerRegistry
+          .getProviderMaintenanceCapabilitiesForInstance(candidate.instanceId, candidate.driver)
+          .pipe(
+            Effect.map((capabilities) =>
+              capabilities.update?.lockKey === lockKey ? [candidate.instanceId] : [],
+            ),
+          ),
+      { concurrency: "unbounded" },
+    );
+    return [instanceId, ...shared.flat()];
+  });
   const commandCoordinator = yield* makeProviderMaintenanceCommandCoordinator({
     makeAlreadyRunningError: () =>
       new ServerProviderUpdateError({
@@ -693,138 +717,157 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
               }
             }
 
-            yield* setRunningMessage(`Running ${describeCommand(command)}`);
-            const commandStartedAt = yield* Clock.currentTimeMillis;
-            const result = yield* runMaintenanceCommand(
-              command,
-              setRunningMessage,
-              recordChildPid,
-            ).pipe(
-              Effect.onExit((exit) =>
-                Effect.flatMap(Clock.currentTimeMillis, (finishedAt) =>
-                  record({
-                    outcome: "command_finished",
-                    durationMs: Math.max(0, finishedAt - commandStartedAt),
-                    ...(exit._tag === "Success"
-                      ? { exitCode: exit.value.exitCode, timedOut: exit.value.timedOut }
-                      : {
-                          reason: Cause.hasInterruptsOnly(exit.cause)
-                            ? "interrupted"
-                            : "spawn_failed",
-                        }),
-                  }),
-                ),
-              ),
-            );
-            const finishedAt = yield* nowIso;
-            if (result.timedOut || result.exitCode !== 0) {
-              // A failed install can leave the provider broken; show its health now.
-              yield* providerRegistry.refreshInstance(instanceId);
-              yield* Effect.logWarning("Provider update command failed", {
-                provider,
-                command: describeCommand(command),
-                exitCode: result.exitCode,
-                timedOut: result.timedOut,
-                output: commandOutput(result),
-              });
-              return yield* finish(
-                makeUpdateState({
-                  status: "failed",
-                  startedAt,
-                  finishedAt,
-                  message: failureMessage(result),
-                  output: commandOutput(result),
-                }),
-                updateCommandFailureReason(result),
-              );
-            }
-
-            // A background install keeps the provider's own updater off; a
-            // manual update with managed updates off hands it back.
-            if (fresh.selfUpdater) {
-              if (autoUpdate) yield* fresh.selfUpdater.turnOff;
-              else if (!(yield* managedUpdatesOn)) yield* fresh.selfUpdater.handBack;
-            }
-
-            yield* setRunningMessage("Verifying the installed version");
-            const verified = yield* providerRegistry.getProviderMaintenanceCapabilitiesForInstance(
+            const sharingInstances = yield* instancesSharingInstallation(
               instanceId,
               provider,
-              { fresh: true },
+              update.lockKey,
             );
-            yield* invalidateLatestProviderVersion(verified).pipe(
-              Effect.provideService(ProviderLatestVersions.ProviderLatestVersions, latestVersions),
-            );
-            const { verifiedProviders } = yield* verifyFromRefresh(
-              providerRegistry.refreshAfterUpdate(provider, instanceId),
-              provider,
-              verified,
-              instanceId,
-              "post-update",
-            );
-            // An installer can exit 0 and leave the binary missing. Cursor about probes can fail
-            // transiently, so a missing version alone does not imply failure. A takeover succeeds
-            // only once the provider's own updater is off.
-            const couldNotVerify =
-              verifiedProviders.length === 0 ||
-              (autoUpdate?.takeover === true && verified.selfUpdaterActive !== false) ||
-              verifiedProviders.some((verifiedProvider) => {
-                const installedVersion =
-                  verifiedProvider.installedVersion !== undefined
-                    ? verifiedProvider.installedVersion
-                    : verifiedProvider.version;
-                return (
-                  !isStillInstalled(verifiedProvider) ||
-                  (verifiedProvider.status === "error" &&
-                    (verifiedProvider.auth.status !== "unauthenticated" ||
-                      !verifiedProvider.version)) ||
-                  (targetVersion !== undefined &&
-                    installedVersion?.replace(/^v/, "") !== targetVersion)
+            yield* setRunningMessage("Waiting for running provider work to finish.");
+            return yield* installationGate.update(
+              sharingInstances,
+              Effect.gen(function* () {
+                yield* setRunningMessage(`Running ${describeCommand(command)}`);
+                const commandStartedAt = yield* Clock.currentTimeMillis;
+                const result = yield* runMaintenanceCommand(
+                  command,
+                  setRunningMessage,
+                  recordChildPid,
+                ).pipe(
+                  Effect.onExit((exit) =>
+                    Effect.flatMap(Clock.currentTimeMillis, (finishedAt) =>
+                      record({
+                        outcome: "command_finished",
+                        durationMs: Math.max(0, finishedAt - commandStartedAt),
+                        ...(exit._tag === "Success"
+                          ? { exitCode: exit.value.exitCode, timedOut: exit.value.timedOut }
+                          : {
+                              reason: Cause.hasInterruptsOnly(exit.cause)
+                                ? "interrupted"
+                                : "spawn_failed",
+                            }),
+                      }),
+                    ),
+                  ),
                 );
-              });
-            // npm exits 0 when an optional platform package fails to download,
-            // leaving a launcher that cannot start. The probe error says why.
-            const brokenProvider = verifiedProviders.find(
-              (verifiedProvider) =>
-                verifiedProvider.status === "error" &&
-                (verifiedProvider.auth.status !== "unauthenticated" || !verifiedProvider.version),
-            );
-            const stillOutdated =
-              targetVersion === undefined &&
-              verifiedProviders.some((verifiedProvider) => isOutdatedProvider(verifiedProvider));
-            const succeeded = !couldNotVerify && !brokenProvider && !stillOutdated;
-            const finished = yield* finish(
-              makeUpdateState({
-                status: succeeded ? "succeeded" : "unchanged",
-                startedAt,
-                finishedAt,
-                message: brokenProvider
-                  ? `Update command completed, but the provider reports an error: ${
-                      brokenProvider.message ?? "unknown error"
-                    }`
-                  : couldNotVerify
-                    ? "Update command completed, but styal could not verify the provider version."
-                    : stillOutdated
-                      ? "Update command completed, but styal still detects an outdated provider version."
-                      : needsOpenCodeServerRestart(verifiedProviders)
-                        ? OPENCODE_SERVER_RESTART_MESSAGE
-                        : "Provider updated.",
-                output: commandOutput(result),
+
+                const finishedAt = yield* nowIso;
+                if (result.timedOut || result.exitCode !== 0) {
+                  // A failed install can leave the provider broken; show its health now.
+                  yield* providerRegistry.refreshInstance(instanceId);
+                  yield* Effect.logWarning("Provider update command failed", {
+                    provider,
+                    command: describeCommand(command),
+                    exitCode: result.exitCode,
+                    timedOut: result.timedOut,
+                    output: commandOutput(result),
+                  });
+                  return yield* finish(
+                    makeUpdateState({
+                      status: "failed",
+                      startedAt,
+                      finishedAt,
+                      message: failureMessage(result),
+                      output: commandOutput(result),
+                    }),
+                    updateCommandFailureReason(result),
+                  );
+                }
+
+                // A background install keeps the provider's own updater off; a
+                // manual update with managed updates off hands it back.
+                if (fresh.selfUpdater) {
+                  if (autoUpdate) yield* fresh.selfUpdater.turnOff;
+                  else if (!(yield* managedUpdatesOn)) yield* fresh.selfUpdater.handBack;
+                }
+
+                yield* setRunningMessage("Verifying the installed version");
+                const verified =
+                  yield* providerRegistry.getProviderMaintenanceCapabilitiesForInstance(
+                    instanceId,
+                    provider,
+                    { fresh: true },
+                  );
+                yield* invalidateLatestProviderVersion(verified).pipe(
+                  Effect.provideService(
+                    ProviderLatestVersions.ProviderLatestVersions,
+                    latestVersions,
+                  ),
+                );
+                const { verifiedProviders } = yield* verifyFromRefresh(
+                  providerRegistry.refreshAfterUpdate(provider, instanceId),
+                  provider,
+                  verified,
+                  instanceId,
+                  "post-update",
+                );
+                // An installer can exit 0 and leave the binary missing. Cursor about probes can fail
+                // transiently, so a missing version alone does not imply failure. A takeover succeeds
+                // only once the provider's own updater is off.
+                const couldNotVerify =
+                  verifiedProviders.length === 0 ||
+                  (autoUpdate?.takeover === true && verified.selfUpdaterActive !== false) ||
+                  verifiedProviders.some((verifiedProvider) => {
+                    const installedVersion =
+                      verifiedProvider.installedVersion !== undefined
+                        ? verifiedProvider.installedVersion
+                        : verifiedProvider.version;
+                    return (
+                      !isStillInstalled(verifiedProvider) ||
+                      (verifiedProvider.status === "error" &&
+                        (verifiedProvider.auth.status !== "unauthenticated" ||
+                          !verifiedProvider.version)) ||
+                      (targetVersion !== undefined &&
+                        installedVersion?.replace(/^v/, "") !== targetVersion)
+                    );
+                  });
+                // npm exits 0 when an optional platform package fails to download,
+                // leaving a launcher that cannot start. The probe error says why.
+                const brokenProvider = verifiedProviders.find(
+                  (verifiedProvider) =>
+                    verifiedProvider.status === "error" &&
+                    (verifiedProvider.auth.status !== "unauthenticated" ||
+                      !verifiedProvider.version),
+                );
+                const stillOutdated =
+                  targetVersion === undefined &&
+                  verifiedProviders.some((verifiedProvider) =>
+                    isOutdatedProvider(verifiedProvider),
+                  );
+                const succeeded = !couldNotVerify && !brokenProvider && !stillOutdated;
+                const finished = yield* finish(
+                  makeUpdateState({
+                    status: succeeded ? "succeeded" : "unchanged",
+                    startedAt,
+                    finishedAt,
+                    message: brokenProvider
+                      ? `Update command completed, but the provider reports an error: ${
+                          brokenProvider.message ?? "unknown error"
+                        }`
+                      : couldNotVerify
+                        ? "Update command completed, but styal could not verify the provider version."
+                        : stillOutdated
+                          ? "Update command completed, but styal still detects an outdated provider version."
+                          : needsOpenCodeServerRestart(verifiedProviders)
+                            ? OPENCODE_SERVER_RESTART_MESSAGE
+                            : "Provider updated.",
+                    output: commandOutput(result),
+                  }),
+                  // No snapshot to check, such as when the post-update refresh
+                  // failed, counts as could-not-verify rather than not installed.
+                  verifiedProviders.some((verifiedProvider) => !isStillInstalled(verifiedProvider))
+                    ? "not_installed_after_install"
+                    : brokenProvider
+                      ? "provider_error_after_install"
+                      : couldNotVerify
+                        ? "unchanged_after_install"
+                        : stillOutdated
+                          ? "unchanged_after_install"
+                          : null,
+                  succeeded,
+                );
+                return finished;
               }),
-              // No snapshot to check, such as when the post-update refresh
-              // failed, counts as could-not-verify rather than not installed.
-              verifiedProviders.some((verifiedProvider) => !isStillInstalled(verifiedProvider))
-                ? "not_installed_after_install"
-                : brokenProvider
-                  ? "provider_error_after_install"
-                  : couldNotVerify
-                    ? "unchanged_after_install"
-                    : stillOutdated
-                      ? "unchanged_after_install"
-                      : null,
-              succeeded,
             );
-            return finished;
           },
         );
 
