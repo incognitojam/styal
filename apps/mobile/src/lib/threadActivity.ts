@@ -40,6 +40,7 @@ import {
   memoryRowLabel,
   workEntryReadsMemoryFile,
   workEntryMemoryFileKind,
+  workEntriesViewedImagePaths,
   type ToolGroupSummaryKind,
   type WorkLogPresentationEntry,
   type WorkLogToolLifecycleStatus,
@@ -289,6 +290,14 @@ type ThreadFeedEntryContent =
       readonly live: boolean;
       readonly shimmer: boolean;
       readonly thought?: string;
+    }
+  | {
+      /** Images the agent opened in the tool group above, kept visible while the group is collapsed. */
+      readonly type: "viewed-images";
+      readonly id: string;
+      readonly createdAt: string;
+      readonly runId: RunId | null;
+      readonly paths: ReadonlyArray<string>;
     }
   | {
       readonly type: "run-fold";
@@ -1384,7 +1393,9 @@ const trailingReasoningGroups = new WeakMap<ThreadFeedActivityGroup, ThreadFeedA
 function settleSupersededReasoning(
   entry: Exclude<
     ThreadFeedEntry,
-    { readonly type: "run-fold" | "work-toggle" | "thinking" | "review-findings" }
+    {
+      readonly type: "run-fold" | "work-toggle" | "thinking" | "review-findings" | "viewed-images";
+    }
   >,
   tail: boolean,
 ) {
@@ -1706,7 +1717,14 @@ export function deriveThreadFeedPresentation(
   const retainedFeed: Array<
     Exclude<
       ThreadFeedEntry,
-      { readonly type: "run-fold" | "work-toggle" | "thinking" | "review-findings" }
+      {
+        readonly type:
+          | "run-fold"
+          | "work-toggle"
+          | "thinking"
+          | "review-findings"
+          | "viewed-images";
+      }
     >
   > = [];
   const retainedFeedIndices: number[] = [];
@@ -1735,7 +1753,8 @@ export function deriveThreadFeedPresentation(
       feedEntry.type === "run-fold" ||
       feedEntry.type === "work-toggle" ||
       feedEntry.type === "thinking" ||
-      feedEntry.type === "review-findings"
+      feedEntry.type === "review-findings" ||
+      feedEntry.type === "viewed-images"
     )
       continue;
     const recoveryRun =
@@ -2046,7 +2065,10 @@ function thinkingRow(createdAt: string, runId: RunId | null, label: string | nul
 
 function appendPresentedFeedEntry(
   result: ThreadFeedEntry[],
-  entry: Exclude<ThreadFeedEntry, { readonly type: "run-fold" | "work-toggle" | "thinking" }>,
+  entry: Exclude<
+    ThreadFeedEntry,
+    { readonly type: "run-fold" | "work-toggle" | "thinking" | "viewed-images" }
+  >,
   expandedWorkGroupIds: ReadonlySet<string>,
   activeRunId: RunId | null,
   isWorking: boolean,
@@ -2129,16 +2151,27 @@ function appendActivityGroupRows(
   let groupableRun: ThreadFeedActivity[] = [];
   const flushGroupableRun = (isTrailingRun: boolean) => {
     if (groupableRun.length === 0) return;
+    const groupId = `work-group:${groupAnchorIdByActivityId.get(groupableRun[0]!.id) ?? groupableRun[0]!.id}`;
     appendToolGroupRows(
       result,
       entry,
       groupableRun,
-      `work-group:${groupAnchorIdByActivityId.get(groupableRun[0]!.id) ?? groupableRun[0]!.id}`,
+      groupId,
       expandedWorkGroupIds,
       activeRunId,
       isWorking,
       activeTail && isTrailingRun,
     );
+    const paths = workEntriesViewedImagePaths(groupableRun.map((activity) => activity.workEntry));
+    if (paths.length > 0) {
+      result.push({
+        type: "viewed-images",
+        id: `${groupId}:viewed-images`,
+        createdAt: groupableRun[0]!.createdAt,
+        runId: groupableRun[0]!.runId,
+        paths,
+      });
+    }
     groupableRun = [];
   };
   for (const activity of activities) {

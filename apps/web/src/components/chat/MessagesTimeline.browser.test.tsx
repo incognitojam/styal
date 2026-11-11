@@ -390,9 +390,11 @@ describe("MessagesTimeline work rows", () => {
     await click(screen.button(/^Worked for/));
     await click(screen.button(/diagram\.png/));
     await expect.element(screen.getByText("/repo/diagram.png")).toBeVisible();
-    expect([...screen.container.querySelectorAll("img")].map((image) => image.alt)).toEqual([
-      "diagram.png",
-    ]);
+    // The group's viewed-image strip shows it too; the expanded row itself draws it once.
+    const rowImages = screen.container.querySelectorAll<HTMLImageElement>(
+      '[data-timeline-row-kind="work"] img',
+    );
+    expect([...rowImages].map((image) => image.alt)).toEqual(["diagram.png"]);
   });
 
   it("keeps following a streaming turn after a heading is expanded at the bottom", async () => {
