@@ -1241,13 +1241,12 @@ export function deriveEffectiveComposerModelState(input: {
         activeSelection.model,
       ))
     : baseModel;
-  // Keep the source selection so fallback options cannot cross model boundaries.
+  // Draft options win; otherwise an existing thread's options, even none, outrank the project's.
+  // Selections stay with them, so a fallback instance can check which model the options belong to.
   const optionSelections =
-    [
-      draftSelections,
-      selectionsByInstance(threadSelection),
-      selectionsByInstance(projectSelection),
-    ].find((selections) => modelSelectionByProviderToOptions(selections) !== null) ?? null;
+    [draftSelections, selectionsByInstance(threadSelection ?? projectSelection)].find(
+      (selections) => modelSelectionByProviderToOptions(selections) !== null,
+    ) ?? null;
   const modelOptions = modelSelectionByProviderToOptions(optionSelections);
 
   return {
