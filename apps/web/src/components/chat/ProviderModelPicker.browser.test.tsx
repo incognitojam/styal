@@ -169,3 +169,47 @@ it("keeps a docked picker open after a pick and hands focus to that model's effo
   await userEvent.keyboard("{Escape}");
   await expect.element(search).not.toBeInTheDocument();
 });
+
+it("opens the provider that needs an update from the picker's update notice", async () => {
+  const instanceId = ProviderInstanceId.make("claude-work");
+  const entries = deriveProviderInstanceEntries([
+    {
+      instanceId,
+      driver: ProviderDriverKind.make("claudeAgent"),
+      enabled: true,
+      installed: true,
+      version: "2.1.319",
+      status: "ready",
+      auth: { status: "authenticated" },
+      checkedAt: "2026-01-01T00:00:00.000Z",
+      models: [],
+      updateRequiredModels: [
+        { slug: "claude-fable-5-2", name: "Claude Fable 5.2", minVersion: "2.1.321" },
+      ],
+      slashCommands: [],
+      skills: [],
+    },
+  ]);
+  const options = new Map([[instanceId, [{ slug: "claude-opus-5-5", name: "Claude Opus 5.5" }]]]);
+  const onOpenProviderSetup = vi.fn();
+
+  await using screen = await render(
+    <ProviderModelPicker
+      environmentId={null}
+      activeInstanceId={instanceId}
+      model="claude-opus-5-5"
+      lockedProvider={null}
+      instanceEntries={entries}
+      modelOptionsByInstance={options}
+      triggerAriaLabel="Choose model"
+      onOpenProviderSetup={onOpenProviderSetup}
+      onInstanceModelChange={() => {}}
+    />,
+  );
+  await screen.getByRole("button", { name: "Choose model" }).click();
+  await expect
+    .element(page.getByText(/to v2\.1\.321 or newer to use Claude Fable 5\.2/))
+    .toBeVisible();
+  await page.getByRole("button", { name: "Provider settings" }).click();
+  expect(onOpenProviderSetup).toHaveBeenCalledWith(instanceId);
+});

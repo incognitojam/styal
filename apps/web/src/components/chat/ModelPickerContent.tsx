@@ -239,7 +239,8 @@ function ModelPickerProviderNotices({
           <InlineButton
             onClick={() => {
               onRequestClose?.();
-              void navigate({ to: "/settings/providers" });
+              if (onOpenProviderSetup) onOpenProviderSetup(instanceId);
+              else void navigate({ to: "/settings/providers", search: { instanceId } });
             }}
           >
             Provider settings
