@@ -13,6 +13,8 @@ takes the state lease before the unit lease; the launcher never holds both, so a
 unit failure cannot block a durable commit. Manager stop/start commands run outside
 both leases, since stopping a launcher that waits on a lease would deadlock. A
 running launcher refuses further updates once a local command changes its selection.
+A protocol-4 launcher from before the leases takes none, so a local command can still
+race its updates.
 
 Exact-version release archives keep restarts independent of a package cache or a
 moving release tag. The server downloads the archive, verifies its SHA-256 against
@@ -24,6 +26,9 @@ the child, so upgrading the launcher requires a local service update with a rest
 styal's protocol 4 is the isolated executable layout; the selection leases and unit
 reconciliation below did not change it, so a protocol-4 launcher from before them
 runs newer servers without them until a local update or service install restarts it.
+A target refuses a launcher protocol only when its child cannot work under that
+launcher; styal's protocol 3 is the old npm layout, so it stays refused. The server
+names its launcher's protocol to preflight, not its own.
 
 After a commit or rollback the launcher points the unit at the selected runtime and
 reloads the manager, so the next service start runs that version's launcher; the

@@ -8,6 +8,12 @@ import {
 // requires isolated styal executable archives. Selection leases and unit repointing need no
 // bump: an older protocol-4 launcher runs newer servers without them until a local update.
 export const SERVICE_LAUNCHER_PROTOCOL = 4 as const;
+/** Launchers this runtime runs under. styal's protocol 3 is the old npm layout, whose
+    launcher cannot run a styal executable archive. */
+export type SupportedLauncherProtocol = typeof SERVICE_LAUNCHER_PROTOCOL;
+export const isSupportedLauncherProtocol = (
+  protocol: unknown,
+): protocol is SupportedLauncherProtocol => protocol === SERVICE_LAUNCHER_PROTOCOL;
 export { SERVICE_LAUNCHER_CONTEXT_ENV };
 export const SERVICE_RESTART_PENDING_FILE = ".restart-pending";
 export const SERVICE_ENV_FILE = "service.env";
@@ -66,7 +72,7 @@ export interface ServiceState {
 }
 
 export interface ServiceLauncherContext {
-  readonly protocol: typeof SERVICE_LAUNCHER_PROTOCOL;
+  readonly protocol: SupportedLauncherProtocol;
   readonly childVersion: string;
   readonly update?: ServiceUpdateRecord;
 }
@@ -182,7 +188,7 @@ export function decodeServiceState(value: unknown): ServiceState | undefined {
   if (!isRecord(value)) return undefined;
   const update = value.update === undefined ? undefined : decodeServiceUpdate(value.update);
   if (
-    value.protocol !== SERVICE_LAUNCHER_PROTOCOL ||
+    !isSupportedLauncherProtocol(value.protocol) ||
     typeof value.activeVersion !== "string" ||
     !isExactServiceVersion(value.activeVersion) ||
     (value.update !== undefined && update === undefined) ||
@@ -246,7 +252,7 @@ export function decodeServiceLauncherContext(value: string): ServiceLauncherCont
   }
   if (
     !isRecord(parsed) ||
-    parsed.protocol !== SERVICE_LAUNCHER_PROTOCOL ||
+    !isSupportedLauncherProtocol(parsed.protocol) ||
     typeof parsed.childVersion !== "string" ||
     !isExactServiceVersion(parsed.childVersion)
   ) {
@@ -264,7 +270,7 @@ export function decodeServiceLauncherContext(value: string): ServiceLauncherCont
     return undefined;
   }
   return {
-    protocol: SERVICE_LAUNCHER_PROTOCOL,
+    protocol: parsed.protocol,
     childVersion: parsed.childVersion,
     ...(update === undefined ? {} : { update }),
   };

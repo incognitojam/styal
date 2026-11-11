@@ -127,14 +127,12 @@ const makeHarness = Effect.fn("test.make_self_update_harness")(function* (
           }
         }
         order.push("preflight");
+        // Like a release, report back the launcher protocol the server named.
+        const named = input.args[input.args.indexOf("--launcher-protocol") + 1];
         const result =
           options.preflight === "blocked"
             ? { status: "blocked", version: "1.1.0", reason: "local update required" }
-            : {
-                status: "ready",
-                version: "1.1.0",
-                launcherProtocol: SERVICE_LAUNCHER_PROTOCOL,
-              };
+            : { status: "ready", version: "1.1.0", launcherProtocol: Number(named) };
         return {
           stdout: JSON.stringify(result),
           stderr: "",
@@ -147,8 +145,10 @@ const makeHarness = Effect.fn("test.make_self_update_harness")(function* (
         };
       }),
   });
+  const managed = options.managed ?? true;
   const launcher = ServiceLauncherClient.ServiceLauncherClient.of({
-    managed: options.managed ?? true,
+    managed,
+    protocol: managed ? SERVICE_LAUNCHER_PROTOCOL : undefined,
     requestUpdate:
       options.requestUpdate ??
       (() =>

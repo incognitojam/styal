@@ -138,6 +138,15 @@ it.effect("rejects contradictory trial context instead of leaving activation clo
   }),
 );
 
+// styal's protocol 3 is the old npm layout, which this runtime cannot run under.
+it.effect("refuses a protocol-3 launcher's startup context", () =>
+  Effect.gen(function* () {
+    const host = new FakeLauncherProcess({ protocol: 3, childVersion: "1.1.0" });
+    const error = yield* makeClient(host, "1.1.0").pipe(Effect.flip);
+    expect(error.message).toBe("The service launcher supplied invalid startup context.");
+  }),
+);
+
 it.effect("ignores launcher context inherited without an IPC channel", () =>
   Effect.gen(function* () {
     const host = new FakeLauncherProcess(
