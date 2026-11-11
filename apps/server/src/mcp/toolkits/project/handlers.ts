@@ -411,20 +411,23 @@ export const declarations = {
     (input) =>
       Effect.gen(function* () {
         const repositories = yield* Repositories.SourceControlRepositoryService;
-        return yield* repositories.cloneRepository(input, { requireNewDestination: true }).pipe(
-          Effect.mapError(
-            (error) =>
-              new OrchestratorMcpFailure({
-                code:
-                  error.operation === "claimCloneDestination" &&
-                  Predicate.hasProperty(error.cause, "reason") &&
-                  Predicate.isTagged(error.cause.reason, "AlreadyExists")
-                    ? "invalid_request"
-                    : "orchestration_error",
-                message: error.detail,
-              }),
-          ),
-        );
+        // Agents' MCP calls have their own long budget, and an aborted call interrupts git.
+        return yield* repositories
+          .cloneRepository(input, { requireNewDestination: true, timeoutMs: null })
+          .pipe(
+            Effect.mapError(
+              (error) =>
+                new OrchestratorMcpFailure({
+                  code:
+                    error.operation === "claimCloneDestination" &&
+                    Predicate.hasProperty(error.cause, "reason") &&
+                    Predicate.isTagged(error.cause.reason, "AlreadyExists")
+                      ? "invalid_request"
+                      : "orchestration_error",
+                  message: error.detail,
+                }),
+            ),
+          );
       }),
     // An existing destination is never adopted.
     { linkedCallers: "allowed", auto: "allowed" },
