@@ -158,6 +158,7 @@ export function legacyActivityTurnItem(
         nativeItem.command,
         record(nativeItem.input).command,
         data.command,
+        record(data.input).command,
         rawInput.command,
         payload.detail,
       ) ?? last.summary;
@@ -165,7 +166,7 @@ export function legacyActivityTurnItem(
     const recorded = recordedCommandOutput({
       output: text(nativeItem.aggregatedOutput, nativeItem.output, data.output, payload.output),
       exitCode: nativeItem.exitCode ?? data.exitCode,
-      legacyActivities: activities.map(activityReference),
+      legacyActivities: activities,
     });
     return {
       ...base,
@@ -193,9 +194,26 @@ export function legacyActivityTurnItem(
       };
     }
   } else if (last.tone === "tool" || type !== undefined) {
-    const toolName = text(payload.toolName, nativeItem.name, rawInput.name, payload.title) ?? null;
-    const toolInput = nativeItem.input ?? data.rawInput ?? data.input ?? data;
-    const output = nativeItem.output ?? nativeItem.result ?? data.rawOutput ?? data.output;
+    // Claude and OpenCode kept the tool name in `data`, Codex in its native item's `tool`.
+    const toolName =
+      text(
+        payload.toolName,
+        data.toolName,
+        nativeItem.tool,
+        nativeItem.name,
+        rawInput.name,
+        payload.title,
+      ) ?? null;
+    const toolInput =
+      nativeItem.input ?? nativeItem.arguments ?? data.rawInput ?? data.input ?? data;
+    const result = record(data.result);
+    const output =
+      nativeItem.output ??
+      nativeItem.result ??
+      data.rawOutput ??
+      data.output ??
+      // Claude recorded its tool_result block; native V2 items keep only its content.
+      ("content" in result ? result.content : data.result);
     return {
       ...base,
       type: "dynamic_tool",
