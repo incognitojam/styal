@@ -1,0 +1,49 @@
+name: Notify scheduled check
+description: Compare scheduled check jobs and summary artifacts. Requires actions read and GH_TOKEN.
+inputs:
+  workflow:
+    description: Workflow.
+    required: true
+  check-job:
+    description: Check job.
+    required: true
+  result:
+    description: Result.
+    required: true
+  failure-summary:
+    description: Failure summary.
+    required: true
+  failure-title:
+    description: Failure title.
+    required: true
+  recovery-title:
+    description: Recovery title.
+    required: true
+  failure-message:
+    description: Failure message.
+    required: true
+  recovery-message:
+    description: Recovery message.
+    required: true
+  context:
+    description: Context.
+    required: true
+  webhook-url:
+    description: Webhook url.
+    required: true
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        WORKFLOW: ${{ inputs.workflow }}
+        CHECK_JOB: ${{ inputs.check-job }}
+        RESULT: ${{ inputs.result }}
+        FAILURE_SUMMARY: ${{ inputs.failure-summary }}
+        FAILURE_TITLE: ${{ inputs.failure-title }}
+        RECOVERY_TITLE: ${{ inputs.recovery-title }}
+        FAILURE_MESSAGE: ${{ inputs.failure-message }}
+        RECOVERY_MESSAGE: ${{ inputs.recovery-message }}
+        MESSAGE_CONTEXT: ${{ inputs.context }}
+        DISCORD_WEBHOOK_URL: ${{ inputs.webhook-url }}
+      run: bash "$GITHUB_ACTION_PATH/notify.sh"
