@@ -2276,6 +2276,65 @@ describe("EnvironmentSupervisor routes", () => {
     }).pipe(Effect.provide(TestClock.layer())),
   );
 
+  it.effect("tries a route still silent after its check when a late LAN route fails", () =>
+    Effect.gen(function* () {
+      const tailnetTarget = new BearerConnectionTarget({
+        environmentId: TARGET.environmentId,
+        label: TARGET.label,
+        connectionId: "bearer:tailnet",
+      });
+      const entry: ConnectionCatalogEntry = {
+        ...LAN_THEN_RELAY_ENTRY,
+        alternateRoutes: [
+          {
+            target: tailnetTarget,
+            profile: Option.some(
+              new BearerConnectionProfile({
+                connectionId: tailnetTarget.connectionId,
+                environmentId: TARGET.environmentId,
+                label: TARGET.label,
+                httpBaseUrl: "http://100.100.1.2:3773/",
+                wsBaseUrl: "ws://100.100.1.2:3773/",
+                network: "tailscale",
+              }),
+            ),
+          },
+        ],
+      };
+      const checking = yield* Ref.make(0);
+      const checkingBoth = yield* Deferred.make<void>();
+      const attempted: string[] = [];
+      const harness = yield* makeHarness({
+        checkRoute: (route) =>
+          Ref.updateAndGet(checking, (count) => count + 1).pipe(
+            Effect.flatMap((count) =>
+              count === 2 ? Deferred.succeed(checkingBoth, undefined) : Effect.void,
+            ),
+            Effect.andThen(
+              connectionRouteId(route.target) === LAN_TARGET.connectionId
+                ? Effect.sleep("700 millis").pipe(Effect.as("answered" as const))
+                : Effect.sleep("2500 millis").pipe(Effect.as("silent" as const)),
+            ),
+          ),
+        // The LAN answers its check but its socket fails; the slow tailnet works.
+        prepare: (_attempt, target) => {
+          attempted.push(connectionRouteId(target));
+          return connectionRouteId(target) === LAN_TARGET.connectionId
+            ? Effect.fail(transient("LAN socket closed."))
+            : Effect.succeed(preparedFor(target));
+        },
+      });
+      const supervisor = yield* EnvironmentSupervisor.make(entry, {
+        initiallyDesired: true,
+      }).pipe(Effect.provide(harness.dependencies));
+
+      yield* Deferred.await(checkingBoth);
+      yield* TestClock.adjust("2500 millis");
+      yield* awaitState(supervisor.state, (state) => state.phase === "connected");
+      expect(attempted).toEqual([LAN_TARGET.connectionId, "bearer:tailnet"]);
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
+
   it.effect("still tries a slow LAN route when relay fails", () =>
     Effect.gen(function* () {
       const checkingLan = yield* Deferred.make<void>();
@@ -2303,6 +2362,36 @@ describe("EnvironmentSupervisor routes", () => {
       yield* TestClock.adjust("2500 millis");
       yield* awaitState(supervisor.state, (state) => state.phase === "connected");
       expect(attempted).toEqual(["RelayConnectionTarget", "BearerConnectionTarget"]);
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
+
+  it.effect("retries instead of waiting on a LAN route that stayed silent after relay failed", () =>
+    Effect.gen(function* () {
+      const checkingLan = yield* Deferred.make<void>();
+      const attempted: string[] = [];
+      const harness = yield* makeHarness({
+        checkRoute: (route) =>
+          route.target._tag === "BearerConnectionTarget"
+            ? Deferred.succeed(checkingLan, undefined).pipe(
+                Effect.andThen(Effect.sleep("2500 millis")),
+                Effect.as("silent" as const),
+              )
+            : Effect.succeed("unchecked"),
+        prepare: (_attempt, target) => {
+          attempted.push(target._tag);
+          return target._tag === "RelayConnectionTarget"
+            ? Effect.fail(transient("Relay socket closed."))
+            : Effect.never;
+        },
+      });
+      const supervisor = yield* EnvironmentSupervisor.make(LAN_THEN_RELAY_ENTRY, {
+        initiallyDesired: true,
+      }).pipe(Effect.provide(harness.dependencies));
+
+      yield* Deferred.await(checkingLan);
+      yield* TestClock.adjust("2500 millis");
+      yield* awaitState(supervisor.state, (state) => state.phase === "backoff");
+      expect(attempted).toEqual(["RelayConnectionTarget"]);
     }).pipe(Effect.provide(TestClock.layer())),
   );
 
