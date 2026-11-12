@@ -181,7 +181,19 @@ it("scans untracked working-tree sources, excludes ignored files, and tolerates 
     write(".gitignore", "Ignored.swift\n");
     write(file, 'print("T3 Code")');
     write("apps/mobile/modules/example/Ignored.swift", 'print("T3 Code")');
-    expect(findRepositoryUpstreamNames(root, true).map(({ path }) => path)).toEqual([file]);
+    const assets = NodePath.join(
+      root,
+      "apps/mobile/modules/example",
+      "generated-" + "x".repeat(100),
+    );
+    NodeFS.mkdirSync(assets);
+    for (let index = 0; index < 10_000; index++) {
+      NodeFS.writeFileSync(NodePath.join(assets, `${index}.bin`), "T3 Code");
+    }
+    const source = "packages/example/src/index.ts";
+    write(source, 'console.log("T3 Code");');
+    expect(findRepositoryUpstreamNames(root, true).map(({ path }) => path)).toEqual([file, source]);
+    NodeFS.unlinkSync(NodePath.join(root, source));
     git("add", file);
     NodeFS.unlinkSync(NodePath.join(root, file));
     expect(findRepositoryUpstreamNames(root, true)).toEqual([]);

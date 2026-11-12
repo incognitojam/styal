@@ -126,6 +126,7 @@ const UPSTREAM_NAMING_EXCEPTIONS: ReadonlyArray<{
   },
 ];
 
+const SOURCE_EXTENSIONS = ["ts", "tsx", "mts", "js", "mjs", "cjs", "kt", "swift", "java"];
 const SCANNED_ROOTS = [
   ":(glob)apps/*/src/**",
   ":(glob)apps/mobile/modules/**",
@@ -134,7 +135,11 @@ const SCANNED_ROOTS = [
   ":(glob)apps/mobile/plugins/**",
   "apps/mobile/app.config.ts",
   "scripts/build-desktop-artifact.ts",
-];
+].flatMap((root) =>
+  root.endsWith("/**")
+    ? SOURCE_EXTENSIONS.map((extension) => `${root.slice(0, -2)}**/*.${extension}`)
+    : [root],
+);
 const SCANNED_PATH =
   /^(?:apps\/[^/]+\/src\/|apps\/mobile\/modules\/|apps\/desktop\/gnome-extension\/|packages\/[^/]+\/src\/|apps\/mobile\/plugins\/|apps\/mobile\/app\.config\.ts$|scripts\/build-desktop-artifact\.ts$)/u;
 const TEST_PATH = /\.test\./u;
@@ -362,27 +367,35 @@ export function renameTestStrings(
   );
 }
 
-const trackedFiles = (repoRoot: string) =>
-  NodeChildProcess.execFileSync("git", ["ls-files", "-z", "--", ...SCANNED_ROOTS], {
-    cwd: repoRoot,
-    encoding: "utf8",
-  }).split("\0");
+const trackedFiles = (repoRoot: string, worktree = false) => {
+  const result = NodeChildProcess.spawnSync(
+    "git",
+    [
+      "ls-files",
+      "-z",
+      ...(worktree ? ["--cached", "--others", "--exclude-standard"] : []),
+      "--",
+      ...SCANNED_ROOTS,
+    ],
+    { cwd: repoRoot, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
+  );
+  if (result.error || result.status !== 0) {
+    throw new Error(
+      `git ls-files failed (naming source list limit: 64 MiB): ${result.error?.message ?? result.stderr.trim()}`,
+      { cause: result.error },
+    );
+  }
+  return result.stdout.split("\0");
+};
 
-/** Upstream names in tracked application and package sources outside the exceptions. */
+/** Upstream names in application/package sources; working-tree mode includes untracked sources. */
 export function findRepositoryUpstreamNames(
   repoRoot: string,
   worktree = false,
 ): ReadonlyArray<UpstreamNameFinding> {
-  const files = worktree
-    ? NodeChildProcess.execFileSync(
-        "git",
-        ["ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", ...SCANNED_ROOTS],
-        { cwd: repoRoot, encoding: "utf8" },
-      ).split("\0")
-    : trackedFiles(repoRoot);
-  return [...new Set(files)]
-    .filter((path) => !worktree || NodeFS.existsSync(NodePath.join(repoRoot, path)))
+  return [...new Set(trackedFiles(repoRoot, worktree))]
     .filter(isCheckedSource)
+    .filter((path) => !worktree || NodeFS.existsSync(NodePath.join(repoRoot, path)))
     .flatMap((path) =>
       findUpstreamNames(path, NodeFS.readFileSync(NodePath.join(repoRoot, path), "utf8")),
     );
