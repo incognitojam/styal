@@ -54,6 +54,7 @@ import { MobileAppSettingsRow } from "./MobileAppSettingsRow";
 import {
   canCheckForUpdate,
   getDesktopUpdateButtonTooltip,
+  getDesktopUpdateActionError,
   getDesktopUpdateDisabledReason,
   getDesktopUpdateProgressLabel,
   resolveDesktopUpdateButtonAction,
@@ -265,15 +266,21 @@ function AboutVersionSection() {
     const action = updateState ? resolveDesktopUpdateButtonAction(updateState) : "none";
 
     if (action === "download") {
-      void bridge.downloadUpdate().catch((error: unknown) => {
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: "Could not download update",
-            description: error instanceof Error ? error.message : "Download failed.",
-          }),
-        );
-      });
+      void bridge
+        .downloadUpdate()
+        .then((result) => {
+          const error = getDesktopUpdateActionError(result);
+          if (error) throw new Error(error);
+        })
+        .catch((error: unknown) => {
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: "Could not download update",
+              description: error instanceof Error ? error.message : "Download failed.",
+            }),
+          );
+        });
       return;
     }
 
