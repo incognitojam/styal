@@ -107,7 +107,10 @@ export const readLegacyTextItems = Effect.fn("readLegacyTextItems")(function* (
     }),
   );
   for (const [index, row] of plans.entries()) {
-    const { proposedPlan: plan } = yield* decodePlan(row.payload_json);
+    // A malformed V1 event loses that plan only, never the rest of the thread's import.
+    const decoded = yield* decodePlan(row.payload_json).pipe(Effect.option);
+    if (decoded._tag === "None") continue;
+    const plan = decoded.value.proposedPlan;
     events.push(
       ...legacyTextItem({
         id: `migration:v1:turn-item:plan:${plan.id}`,

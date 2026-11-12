@@ -57,6 +57,13 @@ const seed = Effect.gen(function* () {
       `;
     }
   }
+  // A malformed V1 plan event is skipped instead of failing the thread.
+  yield* sql`
+    INSERT INTO orchestration_events (event_id, aggregate_kind, stream_id, stream_version,
+      event_type, occurred_at, actor_kind, payload_json, metadata_json, application_event_version)
+    VALUES ('thread:a:plan:malformed', 'thread', 'thread:a', 200, 'thread.proposed-plan-upserted',
+      '2026-01-02T00:00:00.000Z', 'server', '{"threadId":"thread:a","proposedPlan":{"id":"broken"}}', '{}', 1)
+  `;
   for (const [index, id] of ["native:first", "native:second"].entries()) {
     const date = DateTime.makeUnsafe("2026-01-03T00:00:00.000Z");
     yield* sink.write({
