@@ -14,7 +14,7 @@ The T3 Code list shows thread counts and identifies projects already in styal, a
 
 The list refreshes while the page is open, so projects added to or removed from the old installation appear automatically. During import, a progress view shows the selected projects and preferences for each computer. Remaining thread and repair counts refresh automatically; completed requests are marked complete.
 
-A new project includes its name, workspace, icon, additional instructions, default model, default thread environment, scripts, and threads. When styal already has the project or workspace, its current project setup stays and the import adds its missing threads.
+A new project includes its name, workspace, icon, additional instructions, default model, scripts, and threads. When styal already has the project or workspace, its current project setup stays and the import adds its missing threads.
 
 Each thread is committed with its history and provider continuation as one transaction. Recorded token use, API cost, model choices, tool activity, and checkpoints come with the conversation, including when an older thread upgrades to the new history format. Attachments are copied and checked before that transaction is committed. The continuation contains the provider's conversation identifier, not its credentials or active-session state, so the next message can resume with the original context. If an import is interrupted, completed threads stay imported and the next preview omits them; running the import again continues with the remaining threads.
 
@@ -31,11 +31,11 @@ Differing preferences are selected by default. In the preferences section (the *
 - provider update checks and agent browser access;
 - defaults for new threads, worktrees, and the add-project directory;
 - source-control writing style, custom instructions, and change-request templates; and
-- legacy token streaming.
+- response streaming, where T3 Code's token streaming becomes **Show finished paragraphs**.
 
 When every value already matches, a **Preferences already match** status replaces the comparison and checkbox.
 
-Connections, provider sign-ins, credentials, tokens, and active sessions stay separate. Client-local choices such as appearance, fonts, and keybindings are not part of the server preference import.
+Connections, provider sign-ins, credentials, tokens, and active sessions stay separate. Client-local choices such as appearance and fonts are not part of the server preference import. Keybindings are not imported either; see [Keybindings](keybindings.md) to set them in styal.
 
 ## Older fork installations
 
