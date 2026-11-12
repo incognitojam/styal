@@ -3515,21 +3515,50 @@ export const layerWsRpc = (
         [WS_METHODS.subscribeAuthAccess]: (_input) =>
           Stream.unwrap(
             Effect.gen(function* () {
+              const liveBuffer = yield* Queue.dropping<
+                PairingGrantStore.BootstrapCredentialChange | SessionStore.SessionCredentialChange,
+                AuthAccessStreamError
+              >(1024);
+              const bufferChange = (
+                change:
+                  | PairingGrantStore.BootstrapCredentialChange
+                  | SessionStore.SessionCredentialChange,
+              ) =>
+                Queue.offer(liveBuffer, change).pipe(
+                  Effect.flatMap((accepted) =>
+                    accepted
+                      ? Effect.void
+                      : Effect.fail(
+                          new AuthAccessStreamError({
+                            message: "Access changes overflowed; resubscribe for a fresh snapshot.",
+                          }),
+                        ),
+                  ),
+                );
+              // Stop both store subscriptions on overflow, even while RPC waits for an acknowledgement.
+              yield* Effect.forkScoped(
+                Effect.all(
+                  [
+                    Stream.runForEach(bootstrapCredentials.streamChanges, bufferChange),
+                    Stream.runForEach(sessions.streamChanges, bufferChange),
+                  ],
+                  { concurrency: "unbounded", discard: true },
+                ).pipe(Effect.catch((error) => Queue.fail(liveBuffer, error))),
+                { startImmediately: true },
+              );
               const initialSnapshot = yield* loadAuthAccessSnapshot();
               const revisionRef = yield* Ref.make(1);
-              const accessChanges: Stream.Stream<
-                PairingGrantStore.BootstrapCredentialChange | SessionStore.SessionCredentialChange
-              > = Stream.merge(bootstrapCredentials.streamChanges, sessions.streamChanges);
 
-              const liveEvents: Stream.Stream<AuthAccessStreamEvent> = accessChanges.pipe(
-                Stream.mapEffect((change) =>
-                  Ref.updateAndGet(revisionRef, (revision) => revision + 1).pipe(
-                    Effect.map((revision) =>
-                      toAuthAccessStreamEvent(change, revision, currentSessionId),
+              const liveEvents: Stream.Stream<AuthAccessStreamEvent, AuthAccessStreamError> =
+                Stream.fromQueue(liveBuffer).pipe(
+                  Stream.mapEffect((change) =>
+                    Ref.updateAndGet(revisionRef, (revision) => revision + 1).pipe(
+                      Effect.map((revision) =>
+                        toAuthAccessStreamEvent(change, revision, currentSessionId),
+                      ),
                     ),
                   ),
-                ),
-              );
+                );
 
               return Stream.concat(
                 rpcInitialItems([

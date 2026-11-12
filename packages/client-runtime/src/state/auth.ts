@@ -5,17 +5,18 @@ import type {
   AuthCreatePairingCredentialInput,
   AuthRevokeClientSessionInput,
   AuthRevokePairingLinkInput,
+  EnvironmentId,
 } from "@t3tools/contracts";
 import { WS_METHODS } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import type { HttpClient } from "effect/http";
 import * as Stream from "effect/Stream";
-import { Atom } from "effect/reactivity";
+import { AsyncResult, Atom } from "effect/reactivity";
 
 import type { EnvironmentRegistry } from "../connection/registry.ts";
-import { subscribe } from "../rpc/client.ts";
+import { isAuthorizationFailure, subscribe } from "../rpc/client.ts";
 import { executeConnectedEnvironmentHttpRequest } from "./environmentHttpAuth.ts";
-import { createEnvironmentCommand, createEnvironmentSubscriptionAtomFamily } from "./runtime.ts";
+import { createEnvironmentCommand, followStreamInEnvironment } from "./runtime.ts";
 
 const ACCESS_REQUEST_TIMEOUT_MS = 8_000;
 
@@ -87,6 +88,35 @@ function projectAuthAccessSnapshot(
 export function createAuthEnvironmentAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | HttpClient.HttpClient | R, E>,
 ) {
+  const accessChanges = Atom.family((environmentId: EnvironmentId) =>
+    runtime
+      .atom((get) =>
+        followStreamInEnvironment(
+          environmentId,
+          subscribe(
+            WS_METHODS.subscribeAuthAccess,
+            {},
+            {
+              onExpectedFailure: (cause) =>
+                Effect.sync(() =>
+                  get.setSelf(
+                    AsyncResult.failureWithPrevious(cause, {
+                      previous:
+                        get.self<AsyncResult.AsyncResult<AuthAccessStreamSnapshotEvent, unknown>>(),
+                      waiting: !isAuthorizationFailure(cause),
+                    }),
+                  ),
+                ),
+              retryExpectedFailureAfter: "250 millis",
+            },
+          ).pipe(Stream.mapAccum(() => EMPTY_AUTH_ACCESS_SNAPSHOT, projectAuthAccessSnapshot)),
+        ),
+      )
+      .pipe(
+        Atom.setIdleTTL(5 * 60_000),
+        Atom.withLabel(`environment-data:server:auth-access-changes:${environmentId}`),
+      ),
+  );
   return {
     createPairingCredential: createEnvironmentCommand(runtime, {
       label: "environment-data:server:auth-create-pairing-credential",
@@ -132,12 +162,7 @@ export function createAuthEnvironmentAtoms<R, E>(
           request: ({ client, headers }) => client.revokeOtherClients({ headers }),
         }).pipe(Effect.map((result) => result.revokedCount)),
     }),
-    accessChanges: createEnvironmentSubscriptionAtomFamily(runtime, {
-      label: "environment-data:server:auth-access-changes",
-      subscribe: (_input: null) =>
-        subscribe(WS_METHODS.subscribeAuthAccess, {}).pipe(
-          Stream.mapAccum(() => EMPTY_AUTH_ACCESS_SNAPSHOT, projectAuthAccessSnapshot),
-        ),
-    }),
+    accessChanges: (target: { readonly environmentId: EnvironmentId; readonly input: null }) =>
+      accessChanges(target.environmentId),
   };
 }

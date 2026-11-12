@@ -1,5 +1,8 @@
 import { describe, expect, it } from "@effect/vitest";
 import {
+  type AuthAccessStreamEvent,
+  AuthAccessStreamError,
+  EnvironmentAuthorizationError,
   DEFAULT_MAX_TERMINAL_BUFFER_BYTES,
   EnvironmentId,
   type FilesystemBrowseEntry,
@@ -15,6 +18,7 @@ import {
   WS_METHODS,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
+import * as Clock from "effect/Clock";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -26,6 +30,7 @@ import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
+import * as TestClock from "effect/testing/TestClock";
 import type { HttpClient } from "effect/http";
 import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
 
@@ -41,6 +46,7 @@ import * as EnvironmentRegistry from "../connection/registry.ts";
 import * as EnvironmentSupervisor from "../connection/supervisor.ts";
 import { EnvironmentRpcUnavailableError } from "../rpc/client.ts";
 import type * as RpcSession from "../rpc/session.ts";
+import { createAuthEnvironmentAtoms, EMPTY_AUTH_ACCESS_SNAPSHOT } from "./auth.ts";
 import { createOrchestrationEnvironmentAtoms } from "./orchestration.ts";
 import { createReviewEnvironmentAtoms } from "./review.ts";
 import { createPreviewEnvironmentAtoms } from "./preview.ts";
@@ -163,6 +169,7 @@ const makeEnvironmentQueryHarness = Effect.fn("TestEnvironmentQuery.makeHarness"
 
   return {
     runtime,
+    environmentRegistry,
     atom: family({ environmentId: QUERY_ENVIRONMENT.environmentId, input: undefined }),
     supervisorSession,
     supervisorState,
@@ -1633,3 +1640,92 @@ describe("persisted environment queries", () => {
     ),
   );
 });
+
+it.effect("shows access stream failures with stale data until a fresh snapshot arrives", () =>
+  Effect.gen(function* () {
+    const inputs = yield* Queue.make<
+      AuthAccessStreamError | EnvironmentAuthorizationError | number
+    >();
+    let subscriptions = 0;
+    const rpcSession = {
+      client: {
+        [WS_METHODS.subscribeAuthAccess]: () => {
+          subscriptions += 1;
+          return Stream.fromQueue(inputs).pipe(
+            Stream.mapEffect((input) =>
+              typeof input === "number"
+                ? Effect.succeed({
+                    version: 1 as const,
+                    type: "snapshot" as const,
+                    revision: input,
+                    payload: EMPTY_AUTH_ACCESS_SNAPSHOT,
+                  })
+                : Effect.fail(input),
+            ),
+          );
+        },
+      },
+    } as unknown as RpcSession.RpcSession;
+    const { environmentRegistry } = yield* makeEnvironmentQueryHarness(Effect.void, { rpcSession });
+    const runtime = Atom.runtime(
+      Layer.mergeAll(
+        Layer.succeed(EnvironmentRegistry.EnvironmentRegistry, environmentRegistry),
+        Layer.succeed(Clock.Clock, yield* Clock.Clock),
+      ),
+    );
+    const atom = createAuthEnvironmentAtoms(
+      runtime as Atom.AtomRuntime<EnvironmentRegistry.EnvironmentRegistry | HttpClient.HttpClient>,
+    ).accessChanges({ environmentId: QUERY_ENVIRONMENT.environmentId, input: null });
+    const registry = AtomRegistry.make();
+    const observed = yield* Queue.make<AsyncResult.AsyncResult<AuthAccessStreamEvent, unknown>>();
+    const unsubscribe = registry.subscribe(
+      atom,
+      (result) => {
+        Queue.offerUnsafe(observed, result);
+      },
+      { immediate: true },
+    );
+    yield* Effect.addFinalizer(() =>
+      Effect.sync(() => {
+        unsubscribe();
+        registry.dispose();
+      }),
+    );
+    const next = (
+      predicate: (result: AsyncResult.AsyncResult<AuthAccessStreamEvent, unknown>) => boolean,
+    ) =>
+      Stream.fromQueue(observed).pipe(
+        Stream.filter(predicate),
+        Stream.runHead,
+        Effect.map(Option.getOrThrow),
+      );
+    yield* Queue.offer(inputs, 1);
+    yield* next(AsyncResult.isSuccess);
+    for (const message of ["Access stream overflow", "Could not read replacement snapshot"]) {
+      const failure = new AuthAccessStreamError({ message });
+      yield* Queue.offer(inputs, failure);
+      yield* TestClock.adjust(0);
+      const result = registry.get(atom);
+      expect(AsyncResult.isFailure(result) && Cause.squash(result.cause)).toBe(failure);
+      expect(result.waiting).toBe(true);
+      expect(Option.getOrThrow(AsyncResult.value(result)).revision).toBe(1);
+      yield* TestClock.adjust("250 millis");
+    }
+    yield* TestClock.adjust("250 millis");
+    expect(subscriptions).toBe(3);
+    yield* Queue.offer(inputs, 2);
+    const fresh = yield* next(AsyncResult.isSuccess);
+    expect(AsyncResult.isSuccess(fresh) && fresh.value.revision).toBe(2);
+    const denied = new EnvironmentAuthorizationError({
+      message: "Access denied",
+      requiredScope: "access:read",
+    });
+    yield* Queue.offer(inputs, denied);
+    const failure = yield* next(AsyncResult.isFailure);
+    expect(AsyncResult.isFailure(failure) && Cause.squash(failure.cause)).toBe(denied);
+    expect(failure.waiting).toBe(false);
+    const attempts = subscriptions;
+    yield* TestClock.adjust("1 minute");
+    expect(subscriptions).toBe(attempts);
+  }).pipe(Effect.scoped),
+);

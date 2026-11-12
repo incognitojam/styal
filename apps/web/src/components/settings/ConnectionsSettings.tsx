@@ -1042,13 +1042,14 @@ function ConnectionsSettingsContent({
       canRevoke={canWriteAccess}
     />
   );
+  const accessManagementErrorContent = desktopAccessManagementError ? (
+    <div className={ITEM_ROW_CLASSNAME}>
+      <p className="text-xs text-destructive">{desktopAccessManagementError}</p>
+    </div>
+  ) : null;
   const renderAuthorizedClients = () => (
     <>
-      {desktopAccessManagementError ? (
-        <div className={ITEM_ROW_CLASSNAME}>
-          <p className="text-xs text-destructive">{desktopAccessManagementError}</p>
-        </div>
-      ) : null}
+      {accessManagementErrorContent}
       {renderPairingClientsList(visibleDesktopPairingLinks, desktopClientSessions)}
     </>
   );
@@ -1254,14 +1255,18 @@ function ConnectionsSettingsContent({
               id="authorized-clients"
               title="Authorized clients"
               collapsedContent={
-                canReadAccess && newestPairingLink
-                  ? renderPairingClientsList([newestPairingLink], [])
+                canReadAccess
+                  ? (accessManagementErrorContent ??
+                    (newestPairingLink
+                      ? renderPairingClientsList([newestPairingLink], [])
+                      : undefined))
                   : undefined
               }
-              summary={summarizeAuthorizedClients(
-                desktopClientSessions,
-                visibleDesktopPairingLinks,
-              )}
+              summary={
+                authAccessChanges.error === null
+                  ? summarizeAuthorizedClients(desktopClientSessions, visibleDesktopPairingLinks)
+                  : null
+              }
               control={
                 canWriteAccess ? (
                   <AuthorizedClientsHeaderAction
