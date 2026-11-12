@@ -6273,6 +6273,28 @@ features:
         - https://github.com/pingdotgg/t3code/pull/2829
       retire_when: Upstream distinguishes replacement-turn handoffs from same-turn follow-ups and settles both without false ready or Working states.
 
+  - id: server-browser-live-default-profile
+    title: Browser defaults belong to connected clients
+    status: maintained
+    tier: keep
+    prs: []
+    invariants:
+      - Named browser profiles persist across server restarts and remain available to agents before a client connects.
+      - The reported default profile is never saved to or restored from the profile catalog, including catalogs written by older builds.
+      - Without a connected reporting client, opening a browser without an explicit profile uses the built-in Default profile.
+    rationale: A departed client's signed-in profile must not become the implicit default for scheduled agents in another project after a restart.
+    implementation_paths:
+      - apps/server/src/preview/ServerBrowser.ts
+    upstream_paths:
+      - apps/server/src/preview/ServerBrowser.ts
+    tests:
+      - apps/server/src/preview/ServerBrowser.test.ts
+    upstream:
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/23484
+      retire_when: Upstream persists named profiles while deriving the default exclusively from connected clients and ignoring defaults in older saved catalogs.
+
   - id: server-public-descriptor-privacy
     title: Keep installation paths and host details behind sign-in
     status: maintained

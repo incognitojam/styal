@@ -3,14 +3,15 @@
 // --disable-gpu uses cheaper software compositing while preserving SwiftShader WebGL.
 import * as PhysicalFileSystem from "@t3tools/shared/PhysicalFileSystem";
 import {
+  BrowserProfile,
   BUILT_IN_BROWSER_PROFILES,
   DEFAULT_BROWSER_PROFILE_ID,
   DEFAULT_BROWSER_RECORDING_FRAME_RATE,
   FILL_PREVIEW_VIEWPORT,
   findBrowserProfile,
   INCOGNITO_BROWSER_PROFILE_ID,
+  isBuiltInBrowserProfileId,
   resolveBrowserProfiles,
-  type BrowserProfile,
   type PreviewReportProfilesInput,
   PREVIEW_AUTOMATION_SERVER_OPERATIONS,
   PreviewViewportSetting as PreviewViewportSettingSchema,
@@ -47,6 +48,7 @@ import {
   type PreviewAppearancePreference,
 } from "@t3tools/contracts";
 import { AgentScope, agentScopeLauncherScript } from "@t3tools/shared/AgentScope";
+import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { normalizePreviewUrl } from "@t3tools/shared/preview";
 import { resolvePreviewViewport } from "@t3tools/shared/previewViewport";
@@ -55,12 +57,15 @@ import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import { constVoid } from "effect/Function";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import type * as Path from "effect/Path";
 import * as Queue from "effect/Queue";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
+import * as Semaphore from "effect/Semaphore";
 import * as Exit from "effect/Exit";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
@@ -91,6 +96,12 @@ import { BrowserControlInterrupted, SessionControl } from "./SessionControl.ts";
 import { installPdfDocumentNavigation, isPdfAssetUrl } from "./PdfDocumentNavigation.ts";
 
 const SERVER_HOST_CLIENT_ID = SERVER_BROWSER_AUTOMATION_CLIENT_ID;
+// Each client's report is capped, but the saved catalog is their union, so it has no cap.
+const SavedProfilesJson = Schema.fromJsonString(
+  Schema.Struct({ profiles: Schema.Array(BrowserProfile) }),
+);
+const decodeSavedProfiles = Schema.decodeUnknownEffect(SavedProfilesJson);
+const encodeSavedProfiles = Schema.encodeSync(SavedProfilesJson);
 const RENDER_SCALE = 2;
 // Chromium allows three unacked frames, so 100 ms pacing caps viewers near 30 fps.
 const SCREENCAST_ACK_PACE_MS = 100;
@@ -1606,19 +1617,64 @@ const make = Effect.gen(function* () {
         ? ("agent" as const)
         : ("unclaimed" as const);
 
+  const resolveReportedProfiles = (input: PreviewReportProfilesInput) => {
+    const profiles = resolveBrowserProfiles(input.profiles);
+    return {
+      profiles,
+      defaultProfileId:
+        findBrowserProfile(profiles, input.defaultProfileId)?.id ?? DEFAULT_BROWSER_PROFILE_ID,
+    };
+  };
+
+  // Clients report profiles only when they connect, so the catalog at the last report is
+  // kept on disk for agents and scheduled tasks that open a profile after a restart.
+  const savedProfilesPath = NodePath.join(
+    config.stateDir,
+    "server-browser",
+    "reported-profiles.json",
+  );
+  const fileServices = yield* Effect.context<FileSystem.FileSystem | Path.Path>();
+  const saveProfilesLock = yield* Semaphore.make(1);
+  let savedProfiles = yield* (yield* FileSystem.FileSystem).readFileString(savedProfilesPath).pipe(
+    Effect.tapError((cause) =>
+      cause.reason._tag === "NotFound"
+        ? Effect.void
+        : Effect.logWarning("failed to read saved browser profiles", {
+            path: savedProfilesPath,
+            cause,
+          }),
+    ),
+    Effect.orElseSucceed(() => ""),
+  );
   const reportsByClient = new Map<number, PreviewReportProfilesInput>();
   let nextClient = 0;
   let reportedProfiles: {
     readonly profiles: ReadonlyArray<BrowserProfile>;
     readonly defaultProfileId: string;
-  } | null = null;
+  } | null = yield* decodeSavedProfiles(savedProfiles).pipe(
+    Effect.map(({ profiles }) =>
+      resolveReportedProfiles({ profiles, defaultProfileId: DEFAULT_BROWSER_PROFILE_ID }),
+    ),
+    Effect.tapError((cause) =>
+      savedProfiles === ""
+        ? Effect.void
+        : Effect.logWarning("ignoring invalid saved browser profiles", {
+            path: savedProfilesPath,
+            cause,
+          }),
+    ),
+    Effect.orElseSucceed(() => null),
+  );
+  // Only reports change what is saved, so the order clients disconnect in at shutdown,
+  // even while a save waits for the lock, cannot shrink the saved catalog.
+  let catalogToSave = reportedProfiles;
   // Agent recordings encode here, so they need the client's Browser recording frame rate. The
   // last report outlives the client, which lets agents record while no client is connected.
   let recordingFrameRate = DEFAULT_BROWSER_RECORDING_FRAME_RATE;
 
   // Each client reports only the profiles in its own settings, so the catalog is
-  // their union while they stay connected. The last catalog stays usable after
-  // every client disconnects, as a single report did before.
+  // their union while they stay connected. Named profiles stay usable after
+  // every client disconnects; the default belongs only to connected clients.
   const rebuildReportedProfiles = () => {
     const byId = new Map<string, BrowserProfile>();
     let latest: PreviewReportProfilesInput | undefined;
@@ -1626,14 +1682,35 @@ const make = Effect.gen(function* () {
       for (const profile of report.profiles) byId.set(profile.id, profile);
       latest = report;
     }
-    if (latest === undefined) return;
-    const profiles = resolveBrowserProfiles([...byId.values()]);
-    reportedProfiles = {
-      profiles,
-      defaultProfileId:
-        findBrowserProfile(profiles, latest.defaultProfileId)?.id ?? DEFAULT_BROWSER_PROFILE_ID,
-    };
+    if (latest === undefined) {
+      if (reportedProfiles !== null)
+        reportedProfiles = { ...reportedProfiles, defaultProfileId: DEFAULT_BROWSER_PROFILE_ID };
+      return;
+    }
+    reportedProfiles = resolveReportedProfiles({
+      profiles: [...byId.values()],
+      defaultProfileId: latest.defaultProfileId,
+    });
   };
+
+  const saveReportedProfiles = Effect.fn("ServerBrowser.saveReportedProfiles")(function* () {
+    if (catalogToSave === null) return;
+    const contents = encodeSavedProfiles({
+      profiles: catalogToSave.profiles.filter((profile) => !isBuiltInBrowserProfileId(profile.id)),
+    });
+    if (contents === savedProfiles) return;
+    yield* writeFileStringAtomically({ filePath: savedProfilesPath, contents }).pipe(
+      Effect.provideContext(fileServices),
+      Effect.tap(() =>
+        Effect.sync(() => {
+          savedProfiles = contents;
+        }),
+      ),
+      Effect.catch((cause) =>
+        Effect.logWarning("failed to save reported browser profiles", { cause }),
+      ),
+    );
+  }, saveProfilesLock.withPermits(1));
 
   const profileReporter: ServerBrowser["Service"]["profileReporter"] = Effect.acquireRelease(
     Effect.sync(() => nextClient++),
@@ -1652,7 +1729,13 @@ const make = Effect.gen(function* () {
             reportsByClient.delete(client);
             reportsByClient.set(client, input);
             rebuildReportedProfiles();
-          }),
+            catalogToSave = reportedProfiles;
+          }).pipe(
+            Effect.andThen(saveReportedProfiles),
+            // A disconnect, even while an earlier save holds the lock, must not drop this
+            // report's save or leave the saved-content cache stale.
+            Effect.uninterruptible,
+          ),
     ),
   );
 
