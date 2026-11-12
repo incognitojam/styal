@@ -55,9 +55,10 @@ export function evaluatePullRequestWatch(
   now: number,
 ): PullRequestWatchReport {
   const changes: Array<PullRequestWatchChange> = [];
-  // Azure DevOps omits the head when its iteration read fails; that is not a push.
+  // A read without a head says nothing about pushes, so it keeps the last known one.
   const headSha = detail.headSha ?? watch.headSha;
-  const headMoved = headSha !== watch.headSha;
+  const headMoved = watch.headSha !== null && headSha !== watch.headSha;
+  const checksBaseline = watch.awaitingBaseline !== undefined && !headMoved;
 
   // Hosts can return no checks on read failure; preserve prior state.
   let failedChecks = headMoved ? [] : watch.failedChecks;
@@ -78,9 +79,11 @@ export function evaluatePullRequestWatch(
     // A run awaiting approval waits on a person, like a review, so only running checks count.
     checksPending = checks.some((check) => check.status === "pending");
     const newlyFailed = failed.filter((check) => !failedChecks.includes(check.name));
-    if (newlyFailed.length > 0) changes.push({ kind: "checks-failed", failed: newlyFailed });
+    if (!checksBaseline && newlyFailed.length > 0) {
+      changes.push({ kind: "checks-failed", failed: newlyFailed });
+    }
     if (!approvalAnnounced && awaiting.length > 0) {
-      changes.push({ kind: "checks-awaiting-approval", checks: awaiting });
+      if (!checksBaseline) changes.push({ kind: "checks-awaiting-approval", checks: awaiting });
       approvalAnnounced = true;
     }
     failedChecks = failed.map((check) => check.name);
@@ -138,7 +141,9 @@ export function evaluatePullRequestWatch(
       checks.every((check) => check.status !== "pending");
     owedChecks = owed;
     if (passedNow && (!passed || gateGrew)) {
-      changes.push({ kind: "checks-passed", count: gate.length, required: required.length > 0 });
+      if (!checksBaseline) {
+        changes.push({ kind: "checks-passed", count: gate.length, required: required.length > 0 });
+      }
       owedChecks =
         required.length > 0
           ? checks
@@ -156,9 +161,10 @@ export function evaluatePullRequestWatch(
   // Only a head never read with checks waits for them; a legacy watch's clock starts at its next
   // push. CI can register late on any host, so every host waits, but running out of time is news
   // only where a host always reports checks: elsewhere an empty list can mean there are none.
-  const awaitedBefore = headMoved
-    ? DateTime.formatIso(DateTime.makeUnsafe(now))
-    : (watch.checksAwaitedSince ?? null);
+  const awaitedBefore =
+    headMoved || watch.awaitingBaseline === "all"
+      ? DateTime.formatIso(DateTime.makeUnsafe(now))
+      : (watch.checksAwaitedSince ?? null);
   let checksAwaitedSince = checks.length > 0 ? null : awaitedBefore;
   const awaitedMs = checksAwaitedSince === null ? 0 : now - Date.parse(checksAwaitedSince);
   if (!unread && awaitedMs >= PULL_REQUEST_WATCH_NO_CHECKS_MS) {
@@ -206,7 +212,7 @@ export function evaluatePullRequestWatch(
 
   // Like a failed check, a conflict a push did not resolve is news for the new head.
   const toldConflict = !headMoved && watch.conflicting;
-  if (detail.mergeability === "conflicting" && !toldConflict) {
+  if (watch.awaitingBaseline !== "all" && detail.mergeability === "conflicting" && !toldConflict) {
     changes.push({ kind: "conflicting" });
   }
   // "unknown" is a host still computing after a push; only a clean answer clears a conflict.
@@ -231,6 +237,11 @@ export function evaluatePullRequestWatch(
       remarkIds,
       conflicting,
       wakes,
+      // Only a read that cannot be trusted to show the checks leaves the baseline to the next one.
+      ...(checksBaseline &&
+        (unread || (detail.headSha === undefined && checks.length === 0)) && {
+          awaitingBaseline: "checks" as const,
+        }),
       checksAwaitedSince,
       checksPending,
     },
