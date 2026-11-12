@@ -395,8 +395,10 @@ Add `--signed` after configuring the platform credentials in the
 Label a pull request from a branch in this repository to build a preview on every push. The
 workflow comments the link on the PR, and closing the PR or removing the label deletes the preview.
 PRs from forks are skipped because they do not receive the credentials. When handing a
-`preview:mac` build to someone, give the DMG link together with the `xattr` command from that
-comment: the DMG is unsigned and macOS will not open it until the quarantine attribute is cleared.
+`preview:mac` build to someone on an Apple Silicon Mac with the desktop app, point them at
+**Install and open** in the pull request panel. Otherwise, or if styal reports the build as
+quarantined, give the DMG link together with the `xattr` command from that comment: the DMG is
+unsigned and macOS will not open it until the quarantine attribute is cleared.
 
 - `preview:mac` builds an unsigned Apple Silicon DMG and attaches it to the rolling
   `desktop-preview` prerelease. It needs no setup beyond the repository variables in
