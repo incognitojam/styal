@@ -77,8 +77,7 @@ npx @styal/cli pair
 ```
 
 Scan the QR code on your phone or paste the pairing URL into **Add machine** on web or desktop, or **Add environment** on mobile,
-in the receiving app. Connection settings are under **Settings → Machines**
-on web and desktop and **Settings → Environments** on mobile. A loopback address
+in the receiving app. Connection settings are under **Settings → Machines**. A loopback address
 such as `127.0.0.1` reaches only the device opening the link.
 
 On a computer with the desktop app, you can open the printed `styal://pair`
@@ -129,7 +128,7 @@ each time it drops.
 
 On web and desktop, select the route count under the machine's name in
 **Settings → Machines** to see its routes. Drag a route to change the order,
-or remove it. On mobile, open the machine under **Settings → Environments** and
+or remove it. On mobile, open the machine under **Settings → Machines** and
 choose **Edit**. Signing out of styal Link removes only that route; a machine
 you can still reach another way stays saved.
 
@@ -320,11 +319,11 @@ questions, and manage its queues, projects and scheduled tasks.
 
 Agents can search previous work across these machines in one request, including settled threads. Results identify the machine, and unavailable or refused machines are reported so missing results are not mistaken for missing history. Archived threads and subagent threads are excluded.
 
-On web and desktop, **Settings → Machines** shows each machine once under **Your machines**: this computer, machines added to this app, and computers on your styal Link account. Choose a tab to see its connection, access setting, devices, and the list **Agents on &lt;name&gt; can work on**. Offline and switched-off machines keep their tabs. Use **Add machine** at the top to connect this app to another computer. Mobile lists the same machines under **Settings → Environments**.
+**Settings → Machines** shows each machine once under **Your machines**: this computer (on desktop), machines added to this app, and computers on your styal Link account. Choose a tab to see its connection, access setting, devices, and the list **Agents on &lt;name&gt; can work on**. Offline and switched-off machines keep their tabs. Use **Add machine** at the top to connect this app to another computer. On mobile, use the **+** at the top.
 
 ### Let two machines work together
 
-If this app is connected to both machines, choose either machine's tab and **Work together** beside the other machine in **Agents on &lt;name&gt; can work on**. On mobile, choose the pair under **Your machines** in **Settings → Environments**. styal does the rest in both directions: it turns on
+If this app is connected to both machines, choose either machine's tab and **Work together** beside the other machine in **Agents on &lt;name&gt; can work on**. styal does the rest in both directions: it turns on
 **Work with your other machines**, creates a pairing code and adds each machine to the
 other, and shares simulators or emulators from a machine that has them. A list shows
 each step.
@@ -360,7 +359,7 @@ While it is off on either machine, agents there start nothing on the other. A
 task already running on the other machine still finishes, and if that machine
 has it off, its result arrives once it is back on.
 
-In **Settings → Machines → Your machines**, choose the machine your agents will work from. At the end of **Agents on &lt;name&gt; can work on**, choose **Add machine**, then pick the other machine or enter its address. The list
+In **Settings → Machines → Your machines**, choose the machine your agents will work from. At the end of **Agents on &lt;name&gt; can work on**, choose **Add machine**, then pick the other machine or enter its address; this is done from web or desktop. The list
 holds the machines this app knows and those on your styal Link account. If this
 app is connected to that machine with a session that manages access there, it
 makes the pairing code itself; otherwise paste one from that machine's

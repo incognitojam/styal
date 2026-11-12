@@ -234,7 +234,7 @@ Auto-merge does not start them. A watched pull request wakes its agent when runs
 approval; the agent asks you to approve them unless you told it to.
 
 Pull request sharing is off by default. In Settings → Machines → Pull request sharing (Pull
-request routing under Settings → Environments on mobile), choose **Read PRs** or **Read and act** for each
+request routing on mobile), choose **Read PRs** or **Read and act** for each
 environment you trust to share its source control access.
 Enable both the original environment and the environment answering its requests on this client.
 **Read and act** can use broader permissions than the original environment's credential;

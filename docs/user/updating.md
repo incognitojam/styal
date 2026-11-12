@@ -289,7 +289,7 @@ versions.
 
 ## Mobile updates
 
-To update an environment from your phone, open **Settings → Environments** and
+To update an environment from your phone, open **Settings → Machines** and
 select it. **Check for updates** finds the latest release on that environment's
 current release channel. Updating asks for confirmation if work would be interrupted
 or could not be checked, listing affected threads and which can continue. Otherwise

@@ -10,43 +10,14 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SettingsScreen } from "./components/SettingsScreen";
 import { AndroidAnchoredMenu } from "../../components/ui/AndroidAnchoredMenu";
 import { AndroidHeaderIconButton } from "../../components/ui/AndroidScreenHeader";
-import { CloudEnvironmentRows } from "../connection/CloudEnvironmentRows";
-import { LocalEnvironmentList } from "../connection/LocalEnvironmentList";
+import { WorkTogetherSection } from "../connection/WorkTogetherSection";
 import { PullRequestRoutingSettings } from "../connection/PullRequestRoutingSettings";
-import { splitEnvironmentSections } from "../connection/environmentSections";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
-import { useRemoteConnections } from "../../state/use-remote-environment-registry";
 import { relayEnvironmentDiscovery } from "../../state/relay";
 import { useAtomCommand } from "../../state/use-atom-command";
-import {
-  applyShowcaseLocalEnvironmentDisplayUrls,
-  resolveShowcaseEnvironmentUpdateDisplayUrl,
-  SHOWCASE_AVAILABLE_CLOUD_ENVIRONMENTS,
-  SHOWCASE_CONNECTED_CLOUD_ENVIRONMENTS,
-} from "../showcase/showcaseEnvironmentRows";
-
-const SHOWCASE_ENABLED = process.env.EXPO_PUBLIC_SHOWCASE === "1";
-
 export function SettingsEnvironmentsRouteScreen() {
-  const {
-    connectedEnvironments,
-    onReconnectEnvironment,
-    onRemoveEnvironmentPress,
-    onSetEnvironmentEnabled,
-    onUpdateEnvironment,
-  } = useRemoteConnections();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-  const environmentSections = splitEnvironmentSections({
-    connectedEnvironments,
-    cloudEnvironments: null,
-  });
-  const localEnvironments = SHOWCASE_ENABLED
-    ? applyShowcaseLocalEnvironmentDisplayUrls(environmentSections.localEnvironments)
-    : environmentSections.localEnvironments;
-  const connectedCloudEnvironments = SHOWCASE_ENABLED
-    ? SHOWCASE_CONNECTED_CLOUD_ENVIRONMENTS
-    : environmentSections.connectedCloudEnvironments;
   const headerIconColor = useUniwindTheme()["--color-icon"];
   const relaySession = useAtomValue(managedRelaySessionAtom);
   const refreshRelayEnvironments = useAtomCommand(
@@ -67,33 +38,10 @@ export function SettingsEnvironmentsRouteScreen() {
   const openEnvironment = (environmentId: EnvironmentId) => {
     navigation.navigate("SettingsEnvironmentDetail", { environmentId });
   };
-  const handleUpdateEnvironment = (
-    environmentId: EnvironmentId,
-    updates: { readonly label: string; readonly displayUrl: string },
-  ) => {
-    if (!SHOWCASE_ENABLED) return onUpdateEnvironment(environmentId, updates);
-    const actualEnvironment = environmentSections.localEnvironments.find(
-      (environment) => environment.environmentId === environmentId,
-    );
-    const presentedEnvironment = localEnvironments.find(
-      (environment) => environment.environmentId === environmentId,
-    );
-    return onUpdateEnvironment(environmentId, {
-      ...updates,
-      displayUrl:
-        actualEnvironment && presentedEnvironment
-          ? resolveShowcaseEnvironmentUpdateDisplayUrl({
-              actualDisplayUrl: actualEnvironment.displayUrl,
-              presentedDisplayUrl: presentedEnvironment.displayUrl,
-              submittedDisplayUrl: updates.displayUrl,
-            })
-          : updates.displayUrl,
-    });
-  };
 
   return (
     <SettingsScreen
-      title="Environments"
+      title="Machines"
       trailing={
         Platform.OS === "android" && relaySession ? (
           <AndroidAnchoredMenu
@@ -121,7 +69,7 @@ export function SettingsEnvironmentsRouteScreen() {
       }
       actions={[
         {
-          accessibilityLabel: "Add environment",
+          accessibilityLabel: "Add machine",
           icon: "plus",
           tintColor: headerIconColor,
           onPress: () => navigation.navigate("SettingsEnvironmentNew"),
@@ -146,34 +94,7 @@ export function SettingsEnvironmentsRouteScreen() {
           ) : undefined
         }
       >
-        {/* The empty state would claim nothing is connected above a list of
-            styal Link environments, so it only shows when there are none. */}
-        {localEnvironments.length > 0 || connectedCloudEnvironments.length === 0 ? (
-          <LocalEnvironmentList
-            environments={localEnvironments}
-            expandedId={null}
-            onToggle={openEnvironment}
-            opensDetails
-            onReconnect={onReconnectEnvironment}
-            onRemove={onRemoveEnvironmentPress}
-            onSetEnabled={onSetEnvironmentEnabled}
-            onUpdate={handleUpdateEnvironment}
-          />
-        ) : null}
-
-        {/* Keep connected relays visible and removable without cloud config or sign-in; this component gates discovery. */}
-        <CloudEnvironmentRows
-          connectedCloudEnvironments={connectedCloudEnvironments}
-          onOpenEnvironment={openEnvironment}
-          onSetEnvironmentEnabled={onSetEnvironmentEnabled}
-          onRemoveEnvironment={onRemoveEnvironmentPress}
-          {...(SHOWCASE_ENABLED
-            ? {
-                showcaseAvailableEnvironments: SHOWCASE_AVAILABLE_CLOUD_ENVIRONMENTS,
-                showcaseSignedIn: true,
-              }
-            : {})}
-        />
+        <WorkTogetherSection onOpenEnvironment={openEnvironment} />
         <PullRequestRoutingSettings />
       </ScrollView>
     </SettingsScreen>

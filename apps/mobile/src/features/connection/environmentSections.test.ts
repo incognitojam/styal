@@ -2,7 +2,11 @@ import { EnvironmentId } from "@t3tools/contracts";
 import type { RelayClientEnvironmentRecord } from "@t3tools/contracts/relay";
 import { describe, expect, it } from "vite-plus/test";
 import type { ConnectedEnvironmentSummary } from "../../state/remote-runtime-types";
-import { splitEnvironmentSections } from "./environmentSections";
+import {
+  machineListEntries,
+  untabbedMachineLinks,
+  splitEnvironmentSections,
+} from "./environmentSections";
 
 function connectedEnvironment(
   input: Omit<Partial<ConnectedEnvironmentSummary>, "environmentId"> & {
@@ -96,5 +100,39 @@ describe("mobile environment settings sections", () => {
     expect(
       sections.availableCloudEnvironments.map((environment) => environment.environmentId),
     ).toEqual([EnvironmentId.make("environment-cloud")]);
+  });
+  it("tabs every saved machine once and adds only unknown Link machines", () => {
+    const local = {
+      environmentId: EnvironmentId.make("environment-local"),
+      label: "Local",
+      enabled: false,
+      peerLinks: false,
+    };
+    const relay = {
+      environmentId: EnvironmentId.make("environment-cloud"),
+      label: "Cloud",
+      enabled: true,
+      peerLinks: true,
+    };
+    const tabs = machineListEntries(
+      [local, relay],
+      [
+        cloudEnvironment("environment-local"),
+        cloudEnvironment("environment-cloud"),
+        cloudEnvironment("environment-new"),
+      ],
+    );
+    expect(tabs.map((tab) => tab.environmentId)).toEqual([
+      local.environmentId,
+      relay.environmentId,
+      EnvironmentId.make("environment-new"),
+    ]);
+    expect(tabs.map((tab) => tab.saved)).toEqual([local, relay, null]);
+    const links = [
+      cloudEnvironment("environment-cloud"),
+      cloudEnvironment("environment-new"),
+      cloudEnvironment("environment-unlisted"),
+    ];
+    expect(untabbedMachineLinks(links, tabs)).toEqual([links[2]]);
   });
 });

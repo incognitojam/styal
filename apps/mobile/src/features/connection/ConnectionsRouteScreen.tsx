@@ -2,41 +2,26 @@ import { Toolbar } from "../../components/ui/Toolbar";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 
 import { useNavigation } from "@react-navigation/native";
-import type { EnvironmentId } from "@t3tools/contracts";
-import { useState } from "react";
 import { Platform, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AndroidScreenHeader } from "../../components/ui/AndroidScreenHeader";
-import { useRemoteConnections } from "../../state/use-remote-environment-registry";
-import { LocalEnvironmentList } from "./LocalEnvironmentList";
 import { PullRequestRoutingSettings } from "./PullRequestRoutingSettings";
 import { WorkTogetherSection } from "./WorkTogetherSection";
 
 export function ConnectionsRouteScreen() {
-  const {
-    connectedEnvironments,
-    onReconnectEnvironment,
-    onRemoveEnvironmentPress,
-    onSetEnvironmentEnabled,
-    onUpdateEnvironment,
-  } = useRemoteConnections();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-  const [expandedId, setExpandedId] = useState<EnvironmentId | null>(null);
-  const handleToggle = (environmentId: EnvironmentId) => {
-    setExpandedId((prev) => (prev === environmentId ? null : environmentId));
-  };
 
   return (
     <View collapsable={false} className="flex-1 bg-sheet">
       {Platform.OS === "android" ? (
         <AndroidScreenHeader
-          title="Environments"
+          title="Machines"
           onBack={() => navigation.goBack()}
           actions={[
             {
-              accessibilityLabel: "Add environment",
+              accessibilityLabel: "Add machine",
               icon: "plus",
               onPress: () => navigation.navigate("ConnectionsNew"),
             },
@@ -45,6 +30,7 @@ export function ConnectionsRouteScreen() {
       ) : (
         <Toolbar placement="right">
           <Toolbar.Button
+            accessibilityLabel="Add machine"
             icon="plus"
             onPress={() => navigation.navigate("ConnectionsNew")}
             separateBackground
@@ -61,15 +47,6 @@ export function ConnectionsRouteScreen() {
           paddingTop: 16,
         }}
       >
-        <LocalEnvironmentList
-          environments={connectedEnvironments}
-          expandedId={expandedId}
-          onToggle={handleToggle}
-          onReconnect={onReconnectEnvironment}
-          onRemove={onRemoveEnvironmentPress}
-          onSetEnabled={onSetEnvironmentEnabled}
-          onUpdate={onUpdateEnvironment}
-        />
         <WorkTogetherSection />
         <PullRequestRoutingSettings />
       </ScrollView>
