@@ -47,6 +47,7 @@ import { legacyHistoricalItems } from "./LegacyHistoricalItems.ts";
 import { orderLegacyHistory } from "./orderLegacyHistory.ts";
 import { readLegacyTextItems, writeLegacyTextItems } from "./LegacyTextItems.ts";
 import { importLegacyPlansAndReasoning } from "./importLegacyPlansAndReasoning.ts";
+import { rederiveLegacyToolItems } from "./rederiveLegacyToolItems.ts";
 import { slimImportedHistory } from "./slimImportedHistory.ts";
 import {
   OrchestrationThreadActivity,
@@ -1030,6 +1031,11 @@ const make = Effect.gen(function* () {
       Effect.provideService(EventSink.EventSinkV2, eventSink),
       Effect.catchCause((cause) =>
         Effect.logWarning("Importing legacy plans and reasoning stopped", { cause }),
+      ),
+    );
+    yield* rederiveLegacyToolItems(sql).pipe(
+      Effect.catchCause((cause) =>
+        Effect.logWarning("Re-deriving imported v1 tool items stopped", { cause }),
       ),
     );
     return { importedThreadCount, importedMessageCount };
