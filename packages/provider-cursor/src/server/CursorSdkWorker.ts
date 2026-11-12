@@ -50,6 +50,7 @@ parentPort.on('message',async ({id,method,args})=>{
       }
       case 'wait': result=await runs.get(args[0]).wait();break;
       case 'cancel': result=await runs.get(args[0]).cancel();break;
+      case 'steer': result=await runs.get(args[0]).steer?.(args[1])??'revert_to_followup';break;
       case 'listRuns': result=await Agent.listRuns(...args);break;
       case 'cancelRun': result=await Agent.cancelRun(...args);break;
       case 'messages': result=await Agent.messages.list(...args);break;
@@ -148,6 +149,7 @@ export function makeCursorSdkWorkerApi(
             ...run,
             wait: () => call("wait", [run.id]),
             cancel: () => call("cancel", [run.id]),
+            steer: (text: string) => call("steer", [run.id, text]),
           } as Awaited<ReturnType<CursorSdkAgent["send"]>>;
         },
         summarize: async () => {
@@ -157,6 +159,7 @@ export function makeCursorSdkWorkerApi(
             ...run,
             wait: () => call("wait", [run.id]),
             cancel: () => call("cancel", [run.id]),
+            steer: (text: string) => call("steer", [run.id, text]),
           } as Awaited<ReturnType<CursorSdkAgent["summarize"]>>;
         },
         close: async () => {
