@@ -3794,6 +3794,8 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             WHERE thread_id = ${threadId}
               AND (status IN ('pending','capturing')
                 OR (run_id IS NULL AND ordinal_within_scope = 0 AND status = 'ready')
+                -- Imported V1 turns have no run or windowed item to reference them.
+                OR (run_id IS NULL AND json_extract(payload_json, '$.legacyTurnId') IS NOT NULL)
                 OR checkpoint_id IN (SELECT value FROM json_each(${cohortCheckpointIds}))
                 OR run_id IN (SELECT value FROM json_each(${cohortRunIds}))
                 OR node_id IN (SELECT value FROM json_each(${cohortNodeIds})))
