@@ -201,7 +201,8 @@ function activeIncidentsDescription(incidents: ReadonlyArray<StatusPageIncidentI
 
 /**
  * Relevance is opt-in per name, so a product the vendor adds stays quiet. The cost is that a
- * listed component the vendor renames goes quiet too.
+ * listed component the vendor renames goes quiet too, which the scheduled status page check
+ * reports.
  */
 export interface StatusPageRelevance {
   /**
@@ -219,6 +220,19 @@ export interface StatusPageRelevance {
     incident: { readonly impact: string; readonly name: string },
     relevantComponentDisrupted: boolean,
   ) => boolean;
+}
+
+/** Listed names that a status page's component listing no longer carries. */
+export function missingStatusPageComponents(
+  componentsInput: unknown,
+  relevantComponents: ReadonlyArray<string>,
+): ReadonlyArray<string> | null {
+  const decoded = decodeStatusPageComponents(componentsInput);
+  if (decoded._tag === "None") return null;
+  const listed = new Set(
+    decoded.value.components.map((component) => componentRelevanceKey(component.name)),
+  );
+  return relevantComponents.filter((name) => !listed.has(componentRelevanceKey(name)));
 }
 
 export function resolveStatusPageNotice(

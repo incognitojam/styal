@@ -8,7 +8,7 @@ export const CLAUDE_STATUS_SUMMARY_URL = `${CLAUDE_STATUS_PAGE_URL}/api/v2/summa
  * authenticates with a key or a subscription, or through a cloud platform when configured for
  * one. The consumer app, the developer console, and sibling products cannot reach a turn here.
  */
-const CLAUDE_RELEVANT_COMPONENTS = [
+export const CLAUDE_RELEVANT_COMPONENTS = [
   "Claude API",
   "Claude Code",
   "Claude Platform on AWS",

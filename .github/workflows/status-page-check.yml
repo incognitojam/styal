@@ -1,0 +1,102 @@
+name: Status page check
+
+# The outage alert filters name the status page components each provider's work
+# depends on. A component the vendor renames stops raising alerts, so this reads
+# the real pages and fails when a named component is no longer listed.
+
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: status-page-check
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Status page check
+    if: github.repository == 'incognitojam/styal'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+
+      - name: Check the named components are still listed
+        working-directory: apps/web
+        env:
+          STYAL_STATUS_PAGE_LIVE_CHECK: "1"
+        run: vp test run src/statusPageComponents.live.test.ts
+
+  notify:
+    name: Notify Discord when the result changes
+    needs: check
+    # Manual dispatches are watched by whoever started them.
+    if: >-
+      ${{
+        always() &&
+        github.event_name == 'schedule' &&
+        (needs.check.result == 'success' || needs.check.result == 'failure')
+      }}
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+    steps:
+      - name: Post to Discord if the result changed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_CI }}
+          RESULT: ${{ needs.check.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        shell: bash
+        run: |
+          # This run is still in progress, so the latest completed scheduled run is the previous one.
+          # Compare its check job, not the run, so a failed notification is not read as a failed check.
+          previous=''
+          for run_id in $(gh run list --repo "$GITHUB_REPOSITORY" --workflow status-page-check.yml \
+            --event schedule --status completed --limit 20 --json databaseId --jq '.[].databaseId'); do
+            conclusion=$(gh run view "$run_id" --repo "$GITHUB_REPOSITORY" --json jobs \
+              --jq '.jobs[] | select(.name == "Status page check") | .conclusion')
+            if [ "$conclusion" = success ] || [ "$conclusion" = failure ]; then
+              previous=$conclusion
+              break
+            fi
+          done
+          if [ "$RESULT" = failure ] && [ "$previous" != failure ]; then
+            title='Status page check failed'
+            color=15158332
+            description='A status page no longer lists a component an outage alert filter names, or could not be read. The run names the missing components.'
+          elif [ "$RESULT" = success ] && [ "$previous" = failure ]; then
+            title='Status page check passes again'
+            color=3066993
+            description='Every component the outage alert filters name is listed again.'
+          else
+            echo "Result '$RESULT' matches the previous scheduled run ('$previous'); not posting."
+            exit 0
+          fi
+          payload=$(jq -n \
+            --arg title "$title" \
+            --arg url "$RUN_URL" \
+            --arg description "$description" \
+            --argjson color "$color" \
+            '{embeds: [{title: $title, url: $url, description: $description, color: $color}]}')
+          curl --fail-with-body --retry 3 --retry-all-errors \
+            --header 'Content-Type: application/json' \
+            --data "$payload" \
+            "$DISCORD_WEBHOOK_URL"

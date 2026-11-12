@@ -24,7 +24,7 @@ export function hasGitHubProject(
  * Surfaces source-control work can depend on. Copilot is left out: it is a separate product
  * whose disruption says nothing about pushing or reviewing code from here.
  */
-const GITHUB_RELEVANT_COMPONENTS = [
+export const GITHUB_RELEVANT_COMPONENTS = [
   "Git Operations",
   "API Requests",
   "Pull Requests",
