@@ -7,10 +7,12 @@ import {
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import type * as SqlClient from "effect/sql/SqlClient";
+import type { EventSinkV2Shape } from "../EventSink.ts";
 
-export function legacyTextItem(input: {
+function legacyTextItem(input: {
   id: string;
   eventId: string;
   threadId: ThreadId;
@@ -94,22 +96,38 @@ export const readLegacyTextItems = Effect.fn("readLegacyTextItems")(function* (
         AND stream_id = ${threadId} AND event_type = 'thread.proposed-plan-upserted'
     ) WHERE rank = 1 ORDER BY sequence
   `;
-  const events = reasoning.flatMap((row, index) =>
-    legacyTextItem({
-      id: `migration:v1:turn-item:reasoning:${row.message_id}`,
-      eventId: `migration:v1:history:${threadId}:reasoning:${row.message_id}`,
-      threadId,
-      ordinal: index + 1,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-      turnId: row.turn_id,
-      content: { type: "reasoning", text: row.text },
-    }),
-  );
+  // A V1 row with an unreadable date loses that item only, never the thread's import.
+  const validDates = (row: { readonly createdAt: string; readonly updatedAt: string }) =>
+    Option.isSome(DateTime.make(row.createdAt)) && Option.isSome(DateTime.make(row.updatedAt));
+  const events: OrchestrationV2DomainEvent[] = [];
+  for (const [index, row] of reasoning.entries()) {
+    if (!validDates({ createdAt: row.created_at, updatedAt: row.updated_at })) {
+      yield* Effect.logWarning("Skipped a V1 reasoning row with an unreadable date", {
+        threadId,
+        messageId: row.message_id,
+      });
+      continue;
+    }
+    events.push(
+      ...legacyTextItem({
+        id: `migration:v1:turn-item:reasoning:${row.message_id}`,
+        eventId: `migration:v1:history:${threadId}:reasoning:${row.message_id}`,
+        threadId,
+        ordinal: index + 1,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+        turnId: row.turn_id,
+        content: { type: "reasoning", text: row.text },
+      }),
+    );
+  }
   for (const [index, row] of plans.entries()) {
     // A malformed V1 event loses that plan only, never the rest of the thread's import.
     const decoded = yield* decodePlan(row.payload_json).pipe(Effect.option);
-    if (decoded._tag === "None") continue;
+    if (decoded._tag === "None" || !validDates(decoded.value.proposedPlan)) {
+      yield* Effect.logWarning("Skipped an unreadable V1 proposed plan event", { threadId });
+      continue;
+    }
     const plan = decoded.value.proposedPlan;
     events.push(
       ...legacyTextItem({
@@ -125,4 +143,30 @@ export const readLegacyTextItems = Effect.fn("readLegacyTextItems")(function* (
     );
   }
   return events;
+});
+
+/**
+ * Writes V1 text items without moving the thread's last update: applying an item sets it to
+ * the item's V1-era time, which would reorder the thread among recent ones.
+ */
+export const writeLegacyTextItems = Effect.fn("writeLegacyTextItems")(function* (
+  sql: SqlClient.SqlClient,
+  sink: EventSinkV2Shape,
+  threadId: ThreadId,
+  events: ReadonlyArray<OrchestrationV2DomainEvent>,
+) {
+  if (events.length === 0) return;
+  const thread = yield* sql<{ readonly updated_at: string; readonly payload: string }>`
+    SELECT updated_at, json_extract(payload_json, '$.updatedAt') AS payload
+    FROM orchestration_v2_projection_threads WHERE thread_id = ${threadId}
+  `;
+  yield* sink.write({ events });
+  const previous = thread[0];
+  if (previous === undefined) return;
+  yield* sql`
+    UPDATE orchestration_v2_projection_threads
+    SET updated_at = ${previous.updated_at},
+      payload_json = json_set(payload_json, '$.updatedAt', ${previous.payload})
+    WHERE thread_id = ${threadId}
+  `;
 });

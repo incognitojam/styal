@@ -62,7 +62,9 @@ const seed = Effect.gen(function* () {
     INSERT INTO orchestration_events (event_id, aggregate_kind, stream_id, stream_version,
       event_type, occurred_at, actor_kind, payload_json, metadata_json, application_event_version)
     VALUES ('thread:a:plan:malformed', 'thread', 'thread:a', 200, 'thread.proposed-plan-upserted',
-      '2026-01-02T00:00:00.000Z', 'server', '{"threadId":"thread:a","proposedPlan":{"id":"broken"}}', '{}', 1)
+      '2026-01-02T00:00:00.000Z', 'server', '{"threadId":"thread:a","proposedPlan":{"id":"broken"}}', '{}', 1),
+      ('thread:a:plan:bad-date', 'thread', 'thread:a', 201, 'thread.proposed-plan-upserted',
+      '2026-01-02T00:00:00.000Z', 'server', '{"threadId":"thread:a","proposedPlan":{"id":"bad-date","turnId":null,"planMarkdown":"Plan","createdAt":"not a date","updatedAt":"not a date"}}', '{}', 1)
   `;
   for (const [index, id] of ["native:first", "native:second"].entries()) {
     const date = DateTime.makeUnsafe("2026-01-03T00:00:00.000Z");
@@ -111,6 +113,10 @@ it.effect(
       }>`
       SELECT turn_item_id, ordinal, payload_json FROM orchestration_v2_projection_turn_items ORDER BY thread_id, ordinal
     `;
+      const threadsBefore = yield* sql`
+        SELECT thread_id, updated_at, json_extract(payload_json, '$.updatedAt') AS payload_updated_at
+        FROM orchestration_v2_projection_threads ORDER BY thread_id
+      `;
       const fenceBefore = yield* readHistoryRewriteFence(sql);
       const interrupted = yield* importLegacyPlansAndReasoning().pipe(
         Effect.provideService(Statement.CurrentTransformer, (statement) => {
@@ -126,17 +132,45 @@ it.effect(
         yield* sql`SELECT projection_name FROM orchestration_v2_projection_metadata WHERE projection_name = 'legacy-plans-reasoning-imported'`,
         [],
       );
+      // A thread that keeps failing is skipped; the others still land and reach cached clients.
+      assert.deepEqual(
+        yield* importLegacyPlansAndReasoning().pipe(
+          Effect.provideService(Statement.CurrentTransformer, (statement) => {
+            const [query, params] = statement.compile();
+            if (query.includes("FROM projection_thread_messages") && params.includes("thread:b"))
+              return Effect.die(new Error("unreadable thread"));
+            return Effect.succeed(statement);
+          }),
+        ),
+        { threads: 3, reasoning: 0, plans: 0, failed: 1 },
+      );
+      assert.deepEqual(
+        yield* sql`SELECT projection_name FROM orchestration_v2_projection_metadata WHERE projection_name = 'legacy-plans-reasoning-imported'`,
+        [],
+      );
+      const fenceAfterFailure = yield* readHistoryRewriteFence(sql);
+      assert.isAbove(fenceAfterFailure, fenceBefore);
       assert.deepEqual(yield* importLegacyPlansAndReasoning(), {
         threads: 3,
         reasoning: 1,
         plans: 1,
+        failed: 0,
       });
       const fence = yield* readHistoryRewriteFence(sql);
-      assert.isAbove(fence, fenceBefore);
+      assert.isAbove(fence, fenceAfterFailure);
+      // Old-dated items must not move a thread's last update back to the V1 era.
+      assert.deepEqual(
+        yield* sql`
+          SELECT thread_id, updated_at, json_extract(payload_json, '$.updatedAt') AS payload_updated_at
+          FROM orchestration_v2_projection_threads ORDER BY thread_id
+        `,
+        threadsBefore,
+      );
       assert.deepEqual(yield* importLegacyPlansAndReasoning(), {
         threads: 0,
         reasoning: 0,
         plans: 0,
+        failed: 0,
       });
       assert.equal(yield* readHistoryRewriteFence(sql), fence);
       const after = yield* sql<{
@@ -189,10 +223,29 @@ it.effect(
         threads: 3,
         reasoning: 0,
         plans: 0,
+        failed: 0,
       });
       assert.deepEqual(
         yield* sql`SELECT COUNT(*) AS count FROM orchestration_events`,
         eventsBefore,
       );
     }).pipe(Effect.provide(layer)),
+);
+
+it.effect("adds nothing and leaves the fence alone when no imported thread lacks items", () =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const fence = yield* readHistoryRewriteFence(sql);
+    assert.deepEqual(yield* importLegacyPlansAndReasoning(), {
+      threads: 0,
+      reasoning: 0,
+      plans: 0,
+      failed: 0,
+    });
+    assert.equal(yield* readHistoryRewriteFence(sql), fence);
+    assert.lengthOf(
+      yield* sql`SELECT 1 FROM orchestration_v2_projection_metadata WHERE projection_name = 'legacy-plans-reasoning-imported'`,
+      1,
+    );
+  }).pipe(Effect.provide(layer)),
 );

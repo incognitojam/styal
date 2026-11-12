@@ -45,7 +45,7 @@ import * as EventSink from "../EventSink.ts";
 import { randomUuidV4 } from "@t3tools/provider-core/server/randomUuid";
 import { legacyHistoricalItems } from "./LegacyHistoricalItems.ts";
 import { orderLegacyHistory } from "./orderLegacyHistory.ts";
-import { readLegacyTextItems } from "./LegacyTextItems.ts";
+import { readLegacyTextItems, writeLegacyTextItems } from "./LegacyTextItems.ts";
 import { importLegacyPlansAndReasoning } from "./importLegacyPlansAndReasoning.ts";
 import { slimImportedHistory } from "./slimImportedHistory.ts";
 import {
@@ -936,9 +936,13 @@ const make = Effect.gen(function* () {
             // a retry cannot leave half a checkpoint/subagent graph behind.
             yield* sql.withTransaction(
               Effect.gen(function* () {
-                yield* eventSink.write({
-                  events: [...historicalEvents, ...(yield* readLegacyTextItems(sql, threadId))],
-                });
+                yield* eventSink.write({ events: historicalEvents });
+                yield* writeLegacyTextItems(
+                  sql,
+                  eventSink,
+                  threadId,
+                  yield* readLegacyTextItems(sql, threadId),
+                );
                 yield* orderLegacyHistory(sql, [threadId]);
               }),
             );

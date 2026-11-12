@@ -2,7 +2,8 @@ import {
   CommandId,
   EventId,
   TurnId,
-  type TurnItemId,
+  TurnItemId,
+  PlanId,
   TURN_USAGE_ACTIVITY_KIND,
   ThreadTokenUsage,
   type IsoDateTime,
@@ -28,7 +29,6 @@ import {
   importedThread,
   messageEvents,
 } from "../orchestration-v2/legacy/LegacyV1ThreadImporter.ts";
-import { legacyTextItem } from "../orchestration-v2/legacy/LegacyTextItems.ts";
 import { legacyHistoricalItems } from "../orchestration-v2/legacy/LegacyHistoricalItems.ts";
 import { orderLegacyHistory } from "../orchestration-v2/legacy/orderLegacyHistory.ts";
 import { legacyProviderContinuation } from "../orchestration-v2/legacy/LegacyProviderContinuation.ts";
@@ -117,6 +117,27 @@ export const makeLegacyHistoryWriter = Effect.gen(function* () {
         linked_pull_request_json: encodeJson(legacy.linkedPullRequest ?? null),
         branch_pull_request_json: encodeJson(legacy.branchPullRequest ?? null),
       });
+      const historicalItem = (
+        id: string,
+        ordinal: number,
+        createdAt: string,
+        updatedAt: string,
+      ) => ({
+        id: TurnItemId.make(`import:v1:item:${id}`),
+        threadId: thread.id,
+        runId: null,
+        nodeId: null,
+        providerThreadId: null,
+        providerTurnId: null,
+        nativeItemRef: null,
+        parentItemId: null,
+        ordinal,
+        status: "completed" as const,
+        title: null,
+        startedAt: DateTime.makeUnsafe(createdAt),
+        completedAt: DateTime.makeUnsafe(updatedAt),
+        updatedAt: DateTime.makeUnsafe(updatedAt),
+      });
       events.push({
         id: EventId.make(`${prefix}:thread:${thread.id}`),
         type: "thread.created",
@@ -126,18 +147,18 @@ export const makeLegacyHistoryWriter = Effect.gen(function* () {
       });
       for (const [ordinal, message] of legacy.messages.entries()) {
         if (message.role === "reasoning") {
-          events.push(
-            ...legacyTextItem({
-              id: `import:v1:item:${message.id}`,
-              eventId: `${prefix}:reasoning:${message.id}`,
-              threadId: thread.id,
-              ordinal: ordinal + 1,
-              createdAt: message.createdAt,
-              updatedAt: message.updatedAt,
-              turnId: message.turnId,
-              content: { type: "reasoning", text: message.text },
-            }),
-          );
+          events.push({
+            id: EventId.make(`${prefix}:reasoning:${message.id}`),
+            type: "turn-item.updated",
+            threadId: thread.id,
+            occurredAt: DateTime.makeUnsafe(message.updatedAt),
+            payload: {
+              ...historicalItem(message.id, ordinal + 1, message.createdAt, message.updatedAt),
+              type: "reasoning",
+              text: message.text,
+              streaming: false,
+            },
+          });
           continue;
         }
         if (message.role !== "user" && message.role !== "assistant") continue;
@@ -158,18 +179,24 @@ export const makeLegacyHistoryWriter = Effect.gen(function* () {
         );
       }
       for (const [ordinal, plan] of legacy.proposedPlans.entries()) {
-        events.push(
-          ...legacyTextItem({
-            id: `import:v1:item:${plan.id}`,
-            eventId: `${prefix}:plan:${plan.id}`,
-            threadId: thread.id,
-            ordinal: legacy.messages.length + ordinal + 1,
-            createdAt: plan.createdAt,
-            updatedAt: plan.updatedAt,
-            turnId: plan.turnId,
-            content: { type: "proposed_plan", planId: plan.id, markdown: plan.planMarkdown },
-          }),
-        );
+        events.push({
+          id: EventId.make(`${prefix}:plan:${plan.id}`),
+          type: "turn-item.updated",
+          threadId: thread.id,
+          occurredAt: DateTime.makeUnsafe(plan.updatedAt),
+          payload: {
+            ...historicalItem(
+              plan.id,
+              legacy.messages.length + ordinal + 1,
+              plan.createdAt,
+              plan.updatedAt,
+            ),
+            type: "proposed_plan",
+            planId: PlanId.make(plan.id),
+            markdown: plan.planMarkdown,
+            streaming: false,
+          },
+        });
       }
       events.push(
         ...legacyHistoricalItems({
