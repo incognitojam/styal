@@ -53,6 +53,8 @@ export interface TurnUsageByTurn {
 
 export const EMPTY_TURN_USAGE: TurnUsageByTurn = { key: "", byTurnId: new Map(), thread: null };
 
+const inputFields = ["inputTokens", "cachedInputTokens", "cacheCreationTokens"] as const;
+
 /** Several native turns can complete one app run after compaction or a handoff. */
 export function addTurnTokenUsage(a: TurnTokenUsage, b: TurnTokenUsage): TurnTokenUsage {
   const fields = [
@@ -62,23 +64,27 @@ export function addTurnTokenUsage(a: TurnTokenUsage, b: TurnTokenUsage): TurnTok
     "cacheCreationTokens",
     "reasoningTokens",
   ] as const;
-  const counts = Object.fromEntries(
-    fields.flatMap((field) =>
-      a[field] === undefined && b[field] === undefined
-        ? []
-        : [[field, (a[field] ?? 0) + (b[field] ?? 0)]],
-    ),
-  );
+  // Each native turn's input is corrected before summing, as the server's thread total does.
+  const sum = (x: TokenCounts | undefined, y: TokenCounts | undefined) =>
+    Object.fromEntries(
+      fields.flatMap((field) => {
+        const present = (counts: TokenCounts | undefined) =>
+          field === "inputTokens"
+            ? inputFields.some((inputField) => counts?.[inputField] !== undefined)
+            : counts?.[field] !== undefined;
+        if (!present(x) && !present(y)) return [];
+        const value =
+          field === "inputTokens"
+            ? inputWithCache(x) + inputWithCache(y)
+            : (x?.[field] ?? 0) + (y?.[field] ?? 0);
+        return [[field, value] as const];
+      }),
+    );
+  const counts = sum(a, b);
   const subagents =
     a.subagents === undefined && b.subagents === undefined
       ? undefined
-      : Object.fromEntries(
-          fields.flatMap((field) =>
-            a.subagents?.[field] === undefined && b.subagents?.[field] === undefined
-              ? []
-              : [[field, (a.subagents?.[field] ?? 0) + (b.subagents?.[field] ?? 0)]],
-          ),
-        );
+      : sum(a.subagents, b.subagents);
   return decodeTurnTokenUsageSync({
     ...counts,
     usageScope: "main_agent",
@@ -387,7 +393,7 @@ function usageView(
     if (cacheWrites > 0) {
       rows.push({ label: "Cache writes", value: formatTokens(cacheWrites), indent: true });
     }
-    // Neither read from nor written to the cache, as in the usage summary's uncachedInputTokens.
+    // Input left after the cache counts the provider reported; unreported writes stay in it.
     const uncached = Math.max(0, input - cached - cacheWrites);
     rows.push({ label: "Uncached", value: formatTokens(uncached), indent: true });
   }

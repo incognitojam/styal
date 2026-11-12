@@ -24,6 +24,7 @@ import {
   usageFigureText,
   withLiveTurnUsage,
 } from "./turnUsage.ts";
+import { formatTokens } from "./usageFormat.ts";
 
 const usage = {
   usageScope: "main_agent",
@@ -382,6 +383,17 @@ describe("turnUsageView", () => {
       ],
     ] as const) {
       expect(inputRows(fields)).toEqual(rows);
+      // Rows are rounded independently; the exact counts behind them add up to Input.
+      const parts = [fields, "subagents" in fields ? fields.subagents : undefined].map((counts) => {
+        const cache = (counts?.cachedInputTokens ?? 0) + (counts?.cacheCreationTokens ?? 0);
+        return { cache, input: Math.max(counts?.inputTokens ?? 0, cache) };
+      });
+      const cache = parts.reduce((total, part) => total + part.cache, 0);
+      const input = parts.reduce((total, part) => total + part.input, 0);
+      if (rows.length > 1) {
+        expect(rows[0]).toBe(`Input ${formatTokens(input)}`);
+        expect(rows.at(-1)).toBe(`  Uncached ${formatTokens(input - cache)}`);
+      }
     }
   });
 
@@ -562,6 +574,12 @@ describe("threadUsageView", () => {
       turns: 2,
     });
     expect(mixed.inputTokens).toBe(140_000);
+    // The same two native turns grouped into one application turn agree with the stored total.
+    expect(
+      turnUsageView(addTurnTokenUsage(normal, partial))
+        .rows.slice(0, 4)
+        .map((row) => `${row.label} ${row.value}`),
+    ).toEqual(inputRows(mixed));
     expect(inputRows(mixed)).toEqual([
       "Input 140K",
       "Cache reads 80K",
