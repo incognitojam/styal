@@ -1479,24 +1479,16 @@ export function KeybindingsSettingsPanel() {
             Add keybinding
           </Button>
           {primaryEnvironment ? (
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <span>
-                    <OpenInPicker
-                      environmentId={primaryEnvironment.environmentId}
-                      keybindings={primaryEnvironment.serverConfig?.keybindings ?? []}
-                      availableEditors={availableEditors}
-                      openInCwd={keybindingsConfigPath}
-                      openInCwdIsFile
-                      compact
-                      enableShortcut={false}
-                    />
-                  </span>
-                }
-              />
-              <TooltipPopup side="top">Open keybindings.json</TooltipPopup>
-            </Tooltip>
+            <OpenInPicker
+              environmentId={primaryEnvironment.environmentId}
+              keybindings={primaryEnvironment.serverConfig?.keybindings ?? []}
+              availableEditors={availableEditors}
+              openInCwd={keybindingsConfigPath}
+              openInCwdIsFile
+              primaryActionLabel="Open keybindings.json"
+              compact
+              enableShortcut={false}
+            />
           ) : null}
         </div>
         <KeybindingsConfigIssues issues={configIssues} />
