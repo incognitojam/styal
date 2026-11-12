@@ -292,7 +292,7 @@ describe("turnUsageView", () => {
       tokens: "1.26M",
       costUsd: null,
       rows: [
-        { label: "Input", value: "1.20M (50% cached)" },
+        { label: "Input", value: "1.20M (600K uncached, 50% cached)" },
         { label: "Output", value: "60K (24K reasoning)" },
         { label: "Subagents", value: "210K" },
       ],
@@ -306,11 +306,22 @@ describe("turnUsageView", () => {
       tokens: "1.05M",
       costUsd: null,
       rows: [
-        { label: "Input", value: "1M (60% cached)" },
+        { label: "Input", value: "1M (400K uncached, 60% cached)" },
         { label: "Output", value: "50K (20K reasoning)" },
       ],
       notes: [],
     });
+    for (const [inputTokens, cachedInputTokens, cacheCreationTokens, value] of [
+      [1_300_000, 1_280_000, 10_000, "1.30M (20K uncached, 98% cached)"],
+      [1_300_000, 1_299_000, 0, "1.30M (1K uncached, 100% cached)"],
+      [1_000, 1_000, 0, "1K (0 uncached, 100% cached)"],
+      [1_000, 0, 400, "1K"],
+      [0, 0, 0, "0"],
+    ] as const) {
+      expect(
+        turnUsageView({ ...usage, inputTokens, cachedInputTokens, cacheCreationTokens }).rows[0],
+      ).toEqual({ label: "Input", value });
+    }
   });
 
   it("notes usage the figure leaves out", () => {
@@ -442,7 +453,7 @@ describe("threadUsageView", () => {
       tokens: "3.12M",
       costUsd: null,
       rows: [
-        { label: "Input", value: "3M (67% cached)" },
+        { label: "Input", value: "3M (1M uncached, 67% cached)" },
         { label: "Output", value: "120K (40K reasoning)" },
       ],
       notes: [],

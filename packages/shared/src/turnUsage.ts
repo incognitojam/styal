@@ -366,7 +366,7 @@ function usageView(
       label: "Input",
       value:
         input > 0 && cached > 0
-          ? `${formatTokens(input)} (${formatPercent(cached / input, 0)} cached)`
+          ? `${formatTokens(input)} (${formatTokens(Math.max(0, input - cached))} uncached, ${formatPercent(cached / input, 0)} cached)`
           : formatTokens(input),
     },
     {
