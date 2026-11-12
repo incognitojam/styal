@@ -21,14 +21,23 @@ export function hasGitHubProject(
 }
 
 /**
- * Surfaces no source-control work depends on. Git operations, pull requests,
- * Actions, and deploys all stay visible; Copilot is a separate product whose
- * disruption says nothing about pushing or reviewing code from here.
+ * Surfaces source-control work can depend on. Copilot is left out: it is a separate product
+ * whose disruption says nothing about pushing or reviewing code from here.
  */
-const GITHUB_IGNORED_COMPONENTS = ["Copilot", "Copilot AI Model Providers"];
+const GITHUB_RELEVANT_COMPONENTS = [
+  "Git Operations",
+  "API Requests",
+  "Pull Requests",
+  "Issues",
+  "Actions",
+  "Webhooks",
+  "Packages",
+  "Pages",
+  "Codespaces",
+];
 
 export function resolveGitHubStatusNotice(input: unknown): GitHubStatusNotice | null {
   return resolveStatusPageNotice(input, "GitHub", {
-    ignoredComponents: GITHUB_IGNORED_COMPONENTS,
+    relevantComponents: GITHUB_RELEVANT_COMPONENTS,
   });
 }

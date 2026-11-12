@@ -9,44 +9,10 @@ export const OPENAI_STATUS_SUMMARY_URL = `${OPENAI_STATUS_PAGE_URL}/api/v2/summa
 export const OPENAI_STATUS_COMPONENTS_URL = `${OPENAI_STATUS_PAGE_URL}/api/v2/components.json`;
 
 /**
- * Surfaces a local Codex turn never calls. Responses, Codex API, CLI, and Login stay visible, so a
- * shared outage still shows, and any new or renamed component still shows.
+ * Surfaces a local Codex turn calls: the Responses API it drives, the Codex API and CLI, and the
+ * sign-in they share. Consumer features, other API products, and other Codex clients are left out.
  */
-const OPENAI_IGNORED_COMPONENTS = [
-  "Ads API",
-  "Ads Manager",
-  "Agent",
-  "Agents",
-  "Audio",
-  "Batch",
-  "Chat Completions",
-  "ChatGPT Atlas",
-  "ChatGPT Space Pages",
-  "ChatGPT Work",
-  "Codex in ChatGPT Desktop",
-  "Codex Web",
-  "Compliance API",
-  "Connectors/Apps",
-  "Conversations",
-  "Deep Research",
-  "dots",
-  "Embeddings",
-  "FedRAMP",
-  "File uploads",
-  "Files",
-  "Fine-tuning",
-  "GPTs",
-  "Image Generation",
-  "Images",
-  "Moderations",
-  "Realtime",
-  "Search",
-  "Sites",
-  "Sora",
-  "Space",
-  "Voice mode",
-  "VS Code extension",
-];
+const OPENAI_RELEVANT_COMPONENTS = ["Responses", "Codex API", "CLI", "Login"];
 
 /** Codex Cloud and the Agents API are separate products a local Codex turn never calls. */
 const OPENAI_RELEVANT_UNTAGGED_INCIDENT_TITLE =
@@ -75,7 +41,7 @@ export function resolveOpenAIStatusNotice(
   const completeSummary =
     components === undefined ? null : withStatusPageComponents(summary, components);
   return resolveStatusPageNotice(completeSummary ?? summary, "OpenAI", {
-    ignoredComponents: OPENAI_IGNORED_COMPONENTS,
+    relevantComponents: OPENAI_RELEVANT_COMPONENTS,
     keepComponentlessIncident: keepOpenAIIncident,
   });
 }

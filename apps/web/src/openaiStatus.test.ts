@@ -36,7 +36,7 @@ describe("OpenAI status notice", () => {
     expect(resolveOpenAIStatusNotice(statusSummary())).toBeNull();
   });
 
-  it("lists affected OpenAI and Codex services", () => {
+  it("lists affected Codex services and leaves out components it does not name", () => {
     expect(
       resolveOpenAIStatusNotice(
         statusSummary({
@@ -53,15 +53,10 @@ describe("OpenAI status notice", () => {
       activeIncidents: [],
       affectedComponents: [
         { name: "Codex API", status: "major_outage", statusLabel: "Major outage" },
-        {
-          name: "ChatGPT",
-          status: "degraded_performance",
-          statusLabel: "Degraded performance",
-        },
       ],
       description: "Partial System Outage",
-      accessibleLabel: "OpenAI Outage: Codex API, ChatGPT",
-      label: "Outage: Codex API, ChatGPT",
+      accessibleLabel: "OpenAI Outage: Codex API",
+      label: "Outage: Codex API",
       tone: "error",
     });
   });
@@ -153,7 +148,7 @@ describe("OpenAI status notice", () => {
         }),
       );
 
-    expect(notice(consumer)).toBeNull();
+    expect(notice([...consumer, { name: "Responses", status: "operational" }])).toBeNull();
     expect(
       notice([...consumer, { name: "Responses", status: "degraded_performance" }])?.label,
     ).toBe("Degraded: Responses");
@@ -192,7 +187,14 @@ describe("OpenAI status notice", () => {
 
   it("ignores Space degradation while retaining a concurrent Responses incident", () => {
     const components = [{ name: "Space", status: "degraded_performance" }];
-    expect(resolveOpenAIStatusNotice(statusSummary({ indicator: "minor", components }))).toBeNull();
+    expect(
+      resolveOpenAIStatusNotice(
+        statusSummary({
+          indicator: "minor",
+          components: [...components, { name: "Responses", status: "operational" }],
+        }),
+      ),
+    ).toBeNull();
 
     expect(
       resolveOpenAIStatusNotice(
@@ -248,7 +250,10 @@ describe("OpenAI status notice", () => {
         resolveOpenAIStatusNotice(
           statusSummary({
             indicator: "minor",
-            components: [{ name: surface, status: "degraded_performance" }],
+            components: [
+              { name: surface, status: "degraded_performance" },
+              { name: "Responses", status: "operational" },
+            ],
             incidents: [
               {
                 components: [{ name: surface }],
@@ -333,12 +338,15 @@ describe("OpenAI status notice", () => {
     },
   );
 
-  it("ignores a tagged incident once only ignored components are disrupted", () => {
+  it("ignores a tagged incident once no relevant component is disrupted", () => {
     expect(
       resolveOpenAIStatusNotice(
         statusSummary({
           indicator: "minor",
-          components: [{ name: "File uploads", status: "degraded_performance" }],
+          components: [
+            { name: "File uploads", status: "degraded_performance" },
+            { name: "Responses", status: "operational" },
+          ],
           incidents: [
             { impact: "minor", name: "File upload errors in ChatGPT", status: "identified" },
           ],

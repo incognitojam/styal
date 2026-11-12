@@ -150,6 +150,6 @@ for its installation and routing configuration.
 
 When Anthropic's status page reports an incident affecting services Claude Code
 depends on, the web and desktop sidebar shows the affected services. Select the
-notice to open the Claude status page. Incidents limited to claude.ai, the Claude
-Console, Claude Cowork, or Claude for Government do not appear. Turn alerts off
+notice to open the Claude status page. Incidents limited to other Anthropic
+products, such as claude.ai or the Claude Console, do not appear. Turn alerts off
 under **Claude** in **Settings > General > Outage alerts**.

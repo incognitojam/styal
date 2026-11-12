@@ -121,7 +121,9 @@ describe("GitHub status notice", () => {
     const label = (components: typeof copilot) =>
       resolveGitHubStatusNotice(statusSummary({ indicator: "major", components }))?.label ?? null;
 
-    expect(label(copilot)).toBeNull();
+    expect(
+      label([...copilot, { name: "Pull Requests", status: "operational", showcase: true }]),
+    ).toBeNull();
     expect(
       label([
         ...copilot,
