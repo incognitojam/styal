@@ -6028,6 +6028,18 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
         );
         const absorbedWakes = yield* Ref.make(new Set<string>());
         const heldProposedPlansByToolUseId = new Map<string, string>();
+        // /clear moves a live process to a new native session; persist that one so a reopen resumes it.
+        const clearedNativeSessions = new Map<string, string>();
+        // The process that ran /clear keeps its state under the id it opened with until it exits.
+        const liveNativeThreadId = <Id extends string | null | undefined>(
+          live: ClaudeLiveQueryContext | null,
+          nativeThreadId: Id,
+        ): Id | string =>
+          live !== null &&
+          nativeThreadId != null &&
+          clearedNativeSessions.get(live.nativeThreadId) === nativeThreadId
+            ? live.nativeThreadId
+            : nativeThreadId;
         const runtimeContext = yield* Effect.context<never>();
         const runPromise = Effect.runPromiseWith(runtimeContext);
 
@@ -6046,6 +6058,23 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                       pagesUsed: budget.committed.pages,
                     },
                   },
+                },
+              };
+            }
+            const nativeSessionId = clearedNativeSessions.get(
+              event.providerThread.nativeThreadRef?.nativeId ?? "",
+            );
+            if (nativeSessionId !== undefined) {
+              event = {
+                ...event,
+                providerThread: {
+                  ...event.providerThread,
+                  nativeThreadRef: {
+                    driver: CLAUDE_PROVIDER,
+                    nativeId: nativeSessionId,
+                    strength: "strong",
+                  },
+                  nativeConversationHeadRef: null,
                 },
               };
             }
@@ -8274,7 +8303,8 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           if (
             liveQuery === null ||
             liveQuery.stopping ||
-            liveQuery.nativeThreadId !== providerThread.nativeThreadRef?.nativeId
+            liveQuery.nativeThreadId !==
+              liveNativeThreadId(liveQuery, providerThread.nativeThreadRef?.nativeId)
           ) {
             return yield* new ProviderAdapter.ProviderAdapterSessionStoppedError({
               driver: CLAUDE_PROVIDER,
@@ -12445,6 +12475,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
         const openQuery = Effect.fnUntraced(function* (
           turnInput: ProviderAdapter.ProviderAdapterV2TurnInput,
           nativeThreadId: string,
+          nativeSessionId: string,
         ) {
           const queryPolicy = yield* queryPolicyForTurn(turnInput);
           const mcpSession = yield* mcpSessions.read(turnInput.threadId);
@@ -12540,6 +12571,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             path,
           });
           const closedExistingNativeThreadId = existing !== null ? existing.nativeThreadId : null;
+          if (nativeSessionId === nativeThreadId) clearedNativeSessions.delete(nativeThreadId);
           if (existing !== null) {
             yield* existing.query.close.pipe(Effect.ignore);
             if (existing.nativeThreadId !== nativeThreadId) {
@@ -12550,7 +12582,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             }
           }
 
-          const openedWithResume = (yield* Ref.get(openedNativeThreads)).has(nativeThreadId);
+          const openedWithResume = (yield* Ref.get(openedNativeThreads)).has(nativeSessionId);
           // Idle release loses openedNativeThreads; persisted turns still require resume to avoid "already in use".
           const hasPersistedProviderTurn =
             turnInput.nativeThreadHasTurns ?? turnInput.providerTurnOrdinal > 1;
@@ -12570,7 +12602,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           const queryOptions = makeClaudeQueryOptions({
             modelSelection: turnInput.modelSelection,
             modelCatalog,
-            nativeThreadId,
+            nativeThreadId: nativeSessionId,
             title: turnInput.appThread.title,
             resume: shouldResume,
             ...(resumeSessionAt === undefined ? {} : { resumeSessionAt }),
@@ -12649,11 +12681,11 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           );
           // Mark only successful opens; retries must not resume sessions that failed to create.
           yield* Ref.update(openedNativeThreads, (current) => {
-            if (current.has(nativeThreadId)) {
+            if (current.has(nativeSessionId)) {
               return current;
             }
             const updated = new Set(current);
-            updated.add(nativeThreadId);
+            updated.add(nativeSessionId);
             return updated;
           });
           yield* resetBackgroundTaskStateForNativeThreadProcess(nativeThreadId, {
@@ -12709,7 +12741,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           yield* querySession.messages.pipe(
             Stream.runForEach((message) =>
               sdkMessageLock.withPermits(1)(
-                Effect.suspend(() => {
+                Effect.gen(function* () {
                   // Every result moves the baseline, including ones that complete no turn.
                   if (message.type === "result" && message.modelUsage) {
                     if (hasModelUsageBaseline) {
@@ -12731,6 +12763,19 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                     context.receivedInit = true;
                     context.capabilities = new Set(message.capabilities ?? []);
                     context.claudeCodeVersion = message.claude_code_version;
+                  }
+                  if (
+                    message.type === "system" &&
+                    message.subtype === "init" &&
+                    message.session_id.length > 0 &&
+                    message.session_id !== context.nativeThreadId
+                  ) {
+                    clearedNativeSessions.set(context.nativeThreadId, message.session_id);
+                    yield* Ref.update(openedNativeThreads, (current) =>
+                      current.has(message.session_id)
+                        ? current
+                        : new Set(current).add(message.session_id),
+                    );
                   }
                   if (
                     message.type === "system" &&
@@ -12756,7 +12801,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                       resultsReportingNewContextWindow.add(message);
                     }
                   }
-                  return handleSdkMessage({ query: querySession, message });
+                  yield* handleSdkMessage({ query: querySession, message });
                 }),
               ),
             ),
@@ -12795,10 +12840,28 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
         });
 
         const startTurn = Effect.fn("ClaudeAdapterV2.startTurn")(
-          function* (turnInput: ProviderAdapter.ProviderAdapterV2TurnInput) {
+          function* (requestedTurnInput: ProviderAdapter.ProviderAdapterV2TurnInput) {
             modelCatalog = yield* loadModelCatalog;
             const startedAt = yield* DateTime.now;
-            const nativeThreadId = yield* getNativeThreadId(turnInput.providerThread);
+            const nativeSessionId = yield* getNativeThreadId(requestedTurnInput.providerThread);
+            const nativeThreadId = liveNativeThreadId(
+              yield* Ref.get(queryContext),
+              nativeSessionId,
+            );
+            const turnInput =
+              nativeThreadId === nativeSessionId
+                ? requestedTurnInput
+                : {
+                    ...requestedTurnInput,
+                    providerThread: {
+                      ...requestedTurnInput.providerThread,
+                      nativeThreadRef: {
+                        driver: CLAUDE_PROVIDER,
+                        nativeId: nativeThreadId,
+                        strength: "strong" as const,
+                      },
+                    },
+                  };
             const nativeTurnId = `turn:${turnInput.attemptId}`;
             // Use fresh uuids: native sessions can outlive this database, and Claude skips previously recorded prompts.
             const promptUuid = isClaudeProviderContinuationTurn(turnInput)
@@ -12908,7 +12971,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                     Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
                     Effect.provideService(Path.Path, path),
                   );
-            const querySession = yield* openQuery(turnInput, nativeThreadId);
+            const querySession = yield* openQuery(turnInput, nativeThreadId, nativeSessionId);
             const autoCompactWindow = yield* resolveAutoCompactWindow(
               querySession.settingsCwd,
               turnInput.modelSelection,
@@ -13193,7 +13256,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             const existing = yield* Ref.get(queryContext);
             const currentTurn = yield* Ref.get(activeTurn);
             const nativeThreadId =
-              turnInput.providerThread.nativeThreadRef?.nativeId ??
+              liveNativeThreadId(existing, turnInput.providerThread.nativeThreadRef?.nativeId) ??
               existing?.nativeThreadId ??
               null;
             if (currentTurn === null && turnInput.requestRuntimeRestart === true) {
@@ -13514,7 +13577,11 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
 
         const closeLiveQueryForNativeThread = Effect.fnUntraced(function* (nativeThreadId: string) {
           const existing = yield* Ref.get(queryContext);
-          if (existing === null || existing.nativeThreadId !== nativeThreadId) {
+          if (
+            existing === null ||
+            (existing.nativeThreadId !== nativeThreadId &&
+              clearedNativeSessions.get(existing.nativeThreadId) !== nativeThreadId)
+          ) {
             return;
           }
 
@@ -13536,7 +13603,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           );
           if (ownedLiveQuery) {
             yield* finalizeActiveTurnAfterQueryExit(existing);
-            yield* endSubagentCallsOfClosedQuery(nativeThreadId, "interrupted");
+            yield* endSubagentCallsOfClosedQuery(existing.nativeThreadId, "interrupted");
           } else {
             yield* endSubagentsOfReplacedQuery(existing);
           }
@@ -13627,12 +13694,15 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           }),
           // Untraced: the run's event stream calls this once per provider event.
           hasPendingBackgroundWorkForThread: Effect.fnUntraced(function* (providerThread, options) {
-            const nativeThreadId = providerThread.nativeThreadRef?.nativeId;
+            const live = yield* Ref.get(queryContext);
+            const nativeThreadId = liveNativeThreadId(
+              live,
+              providerThread.nativeThreadRef?.nativeId,
+            );
             if (nativeThreadId === undefined || nativeThreadId === null) {
               return false;
             }
             if (options?.includeSubagents) {
-              const live = yield* Ref.get(queryContext);
               if (
                 live?.nativeThreadId === nativeThreadId &&
                 !live.stopping &&
@@ -13675,11 +13745,12 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           resumeThread: Effect.fn("ClaudeAdapterV2.resumeThread")(
             function* (threadInput: { readonly providerThread: OrchestrationV2ProviderThread }) {
               const nativeThreadId = threadInput.providerThread.nativeThreadRef?.nativeId;
+              const live = yield* Ref.get(queryContext);
               if (
                 nativeThreadId !== undefined &&
                 nativeThreadId !== null &&
                 // A live process holds the conversation even before saving it.
-                (yield* Ref.get(queryContext))?.nativeThreadId !== nativeThreadId
+                live?.nativeThreadId !== liveNativeThreadId(live, nativeThreadId)
               ) {
                 // An unreadable transcript leaves the resume to the CLI.
                 const transcript = yield* claudeTranscriptState(nativeThreadId).pipe(
@@ -13816,7 +13887,8 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             if (
               live === null ||
               live.stopping ||
-              live.nativeThreadId !== providerThread.nativeThreadRef?.nativeId ||
+              live.nativeThreadId !==
+                liveNativeThreadId(live, providerThread.nativeThreadRef?.nativeId) ||
               live.selection.queryIdentity === selection.queryIdentity ||
               live.selection.apiModelId !== selection.apiModelId ||
               !canApplyClaudeSelectionLive(live.selection, selection)
@@ -13836,7 +13908,8 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             if (
               liveQuery === null ||
               liveQuery.stopping ||
-              liveQuery.nativeThreadId !== providerThread.nativeThreadRef?.nativeId ||
+              liveQuery.nativeThreadId !==
+                liveNativeThreadId(liveQuery, providerThread.nativeThreadRef?.nativeId) ||
               task === undefined ||
               task.task.threadId !== providerThread.appThreadId ||
               task.task.workflow === undefined ||
@@ -13861,7 +13934,10 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           }),
           awaitBackgroundTasks: Effect.fn("ClaudeAdapterV2.awaitBackgroundTasks")(
             function* ({ providerThread, taskIds, awaited }) {
-              const nativeThreadId = providerThread.nativeThreadRef?.nativeId;
+              const nativeThreadId = liveNativeThreadId(
+                yield* Ref.get(queryContext),
+                providerThread.nativeThreadRef?.nativeId,
+              );
               if (nativeThreadId == null) return { matched: [] };
               const roster = rosterForNativeThread(
                 yield* Ref.get(pendingBackgroundTasksByNativeThread),
@@ -13896,7 +13972,10 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           interruptTurn,
           stopSubagent: Effect.fn("ClaudeAdapterV2.stopSubagent")(function* (input) {
             const existing = yield* Ref.get(queryContext);
-            const nativeThreadId = input.providerThread.nativeThreadRef?.nativeId;
+            const nativeThreadId = liveNativeThreadId(
+              existing,
+              input.providerThread.nativeThreadRef?.nativeId,
+            );
             const subagent = (yield* Ref.get(sessionSubagentsByTaskId)).get(input.nativeTaskId);
             if (subagent?.task.threadId !== input.providerThread.appThreadId) {
               return yield* new ProviderAdapter.ProviderAdapterProtocolError({

@@ -543,6 +543,19 @@ function makeReplayQueryRunner(
     signal.resolve();
   };
 
+  // A real fork reports its own session ID; the recording reports the session it truncated.
+  const withHistoricalRewindSessionId = (
+    message: SDKMessage,
+    resume: string | undefined,
+  ): SDKMessage => {
+    const rewind = resume === undefined ? undefined : historicalRewinds.get(resume);
+    return rewind !== undefined &&
+      resume !== undefined &&
+      Reflect.get(message, "session_id") === rewind.sessionId
+      ? ({ ...message, session_id: resume } as SDKMessage)
+      : message;
+  };
+
   async function* replayMessages(
     options: ClaudeAdapterV2.ClaudeAgentSdkQueryOptions,
     signal: AbortSignal,
@@ -614,7 +627,10 @@ function makeReplayQueryRunner(
           continue;
         }
         advance();
-        const message = sdkMessageFromReplayFrame(withReplayedPromptUuids(entry.frame));
+        const message = withHistoricalRewindSessionId(
+          sdkMessageFromReplayFrame(withReplayedPromptUuids(entry.frame)),
+          options.resume,
+        );
         appendHistory(message);
         yield message;
         continue;
