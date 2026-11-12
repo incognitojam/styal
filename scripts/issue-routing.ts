@@ -1,17 +1,9 @@
-export type ReportKind = "agent" | "user" | "other";
+import { parseFeedbackFooter } from "@t3tools/shared/feedbackFooter";
 
-// Standalone markers count anywhere so issue-form prefills survive surrounding fields.
-// This is a routing hint, not authentication: anyone can imitate a report.
-export function classifyReport(body: string | null | undefined): ReportKind {
-  const text = (body ?? "").replaceAll("\r\n", "\n").trimEnd();
-  const marker = /^<!-- styal-report: kind=(agent|user) version=[0-9A-Za-z.+-]+ -->$/m.exec(text);
-  if (marker) return marker[1] as "agent" | "user";
-  if (/(?:^|\n)Sent from styal by the user\.$/.test(text)) return "user";
-  if (/(?:^|\n)Written by an agent(?: \([^()\n]+\))? and approved by the user\.$/.test(text)) {
-    return "agent";
-  }
-  return "other";
-}
+export type ReportKind = ReturnType<typeof parseFeedbackFooter>;
+
+// Only the complete visible footer at the end of the report identifies its source.
+export const classifyReport = parseFeedbackFooter;
 
 export const routingLabels = [
   {
@@ -49,7 +41,7 @@ export function discordPayload(
     allowed_mentions: { parse: [] },
     embeds: [
       {
-        title: `#${issue.number}: ${issue.title}`.slice(0, 256),
+        title: Array.from(`#${issue.number}: ${issue.title}`).slice(0, 256).join(""),
         url: issue.html_url,
         color: 7506394,
         fields: [
@@ -59,4 +51,38 @@ export function discordPayload(
       },
     ],
   };
+}
+
+export async function postDiscord(
+  webhook: string,
+  payload: ReturnType<typeof discordPayload>,
+  request = fetch,
+  wait = (milliseconds: number) =>
+    // @effect-diagnostics-next-line globalTimers:off -- github-script runs this module without Effect installed.
+    new Promise<void>((resolve) => setTimeout(resolve, milliseconds)),
+) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const response = await request(webhook, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (response.ok) return true;
+    if (response.status !== 429) throw new Error(`Discord alert failed: ${response.status}`);
+    if (attempt === 2) return false;
+    const data: unknown = await response.json().catch(() => null);
+    const retryAfter =
+      typeof data === "object" && data !== null && "retry_after" in data
+        ? data.retry_after
+        : undefined;
+    if (
+      typeof retryAfter !== "number" ||
+      !Number.isFinite(retryAfter) ||
+      retryAfter < 0 ||
+      retryAfter > 30
+    )
+      return false;
+    await wait(Math.ceil(retryAfter * 1_000));
+  }
+  return false;
 }

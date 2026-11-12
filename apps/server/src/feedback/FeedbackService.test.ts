@@ -6,6 +6,7 @@ import * as Layer from "effect/Layer";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import { SourceControlDrivers } from "../sourceControl/builtInDrivers.ts";
 import * as FeedbackService from "./FeedbackService.ts";
+import { classifyReport } from "../../../../scripts/issue-routing.ts";
 
 const threadId = ThreadId.make("thread-1");
 const draft = { title: "The sidebar is empty", body: "Open the app and the sidebar is empty." };
@@ -93,6 +94,7 @@ describe("reportFromAgent", () => {
       expect(filed[0]).toMatchObject({ host: "github.com", repository: "incognitojam/styal" });
       expect(filed[0]?.body).toContain(draft.body);
       expect(filed[0]?.body).toContain("Written by an agent (Claude, claude-opus-5-5)");
+      expect(classifyReport(filed[0]?.body)).toBe("agent");
       // The card shows the text that gets posted, under the account that posts it.
       expect(approvals[0]?.attention).toBe("input");
       expect(approvals[0]?.prompt).toContain("as @octocat");
@@ -161,6 +163,7 @@ describe("submit", () => {
       expect(approvals).toEqual([]);
       expect(filed[0]?.body).toContain(draft.body);
       expect(filed[0]?.body).toContain("Sent from styal by the user.");
+      expect(classifyReport(filed[0]?.body)).toBe("user");
       expect(filed[0]?.body).toMatch(/styal \S+ \(\S+\), \S+ \S+/);
     }).pipe(Effect.provide(layer));
   });

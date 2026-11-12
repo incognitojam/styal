@@ -18,13 +18,19 @@ jobs:
         with:
           script: |
             // issues events use the default branch SHA, never a ref supplied by the reporter.
-            const source = await fetch(
-              `https://raw.githubusercontent.com/${context.repo.owner}/${context.repo.repo}/${context.sha}/scripts/issue-routing.ts`
-            );
-            if (!source.ok) throw new Error(`Cannot load routing script: ${source.status}`);
             const { stripTypeScriptTypes } = require('node:module');
-            const javascript = stripTypeScriptTypes(await source.text());
-            const { classifyReport, issueLabels, routingLabels, discordPayload } =
+            const loadModule = async (path) => {
+              const source = await fetch(
+                `https://raw.githubusercontent.com/${context.repo.owner}/${context.repo.repo}/${context.sha}/${path}`
+              );
+              if (!source.ok) throw new Error(`Cannot load routing module: ${source.status}`);
+              return stripTypeScriptTypes(await source.text());
+            };
+            const moduleUrl = source => `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`;
+            const footer = moduleUrl(await loadModule('packages/shared/src/feedbackFooter.ts'));
+            const javascript = (await loadModule('scripts/issue-routing.ts'))
+              .replaceAll('@t3tools/shared/feedbackFooter', footer);
+            const { classifyReport, issueLabels, routingLabels, discordPayload, postDiscord } =
               await import(`data:text/javascript;base64,${Buffer.from(javascript).toString('base64')}`);
             const issue = context.payload.issue;
             const kind = classifyReport(issue.body);
@@ -48,9 +54,6 @@ jobs:
 
             const webhook = process.env.DISCORD_WEBHOOK_URL;
             if (!webhook) return;
-            const response = await fetch(webhook, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(discordPayload(issue, kind)),
-            });
-            if (!response.ok) throw new Error(`Discord alert failed: ${response.status}`);
+            if (!await postDiscord(webhook, discordPayload(issue, kind))) {
+              core.warning('Discord rate limited; skipping announcement after bounded retries.');
+            }
