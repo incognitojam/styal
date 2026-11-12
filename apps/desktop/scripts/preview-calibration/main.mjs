@@ -12,6 +12,7 @@ import * as Stream from "effect/Stream";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as DesktopEnvironment from "../../src/app/DesktopEnvironment.ts";
 import * as DesktopConfig from "../../src/app/DesktopConfig.ts";
+import * as ElectronApp from "../../src/electron/ElectronApp.ts";
 import * as ElectronDialog from "../../src/electron/ElectronDialog.ts";
 import * as BrowserSession from "../../src/preview/BrowserSession.ts";
 import * as DesktopBrowserHost from "../../src/preview/DesktopBrowserHost.ts";
@@ -113,7 +114,11 @@ async function run() {
     const runtime = PreviewManager.layer.pipe(
       // Kept in context: agents reach the tab through this host's CDP relay.
       Layer.provideMerge(DesktopBrowserHost.layer),
-      Layer.provide(BrowserSession.layer.pipe(Layer.provide(ElectronDialog.layer))),
+      Layer.provide(
+        BrowserSession.layer.pipe(
+          Layer.provide(Layer.mergeAll(ElectronDialog.layer, ElectronApp.layer)),
+        ),
+      ),
       Layer.provide(PreviewPasskeys.layer),
       // Calibration measures captures; renderer telemetry would only add files to its artifacts.
       Layer.provide(

@@ -43,6 +43,8 @@ export interface DesktopBrowserTabDebugger {
   readonly debugger: Electron.Debugger;
   /** The CDP scale fitting the tab's viewport into its panel, or 1 when it is not fitted. */
   readonly surfaceScale: () => number;
+  /** Runs after the server clears the tab's cookies, so state kept beside them goes too. */
+  readonly cookiesCleared?: () => Promise<void>;
 }
 
 const keyOf = ({ threadId, tabId }: DesktopBrowserTabKey) => `${threadId}\u0000${tabId}`;
@@ -318,8 +320,8 @@ export const make = Effect.gen(function* () {
 
   const relayFor = (tab: AttachedTab) => {
     if (tab.relay) return tab.relay;
-    const { webContents, debugger: debuggee, surfaceScale } = tab.debuggee;
-    const send = (method: string, params: Record<string, unknown>, sessionId?: string) => {
+    const { webContents, debugger: debuggee, surfaceScale, cookiesCleared } = tab.debuggee;
+    const sendScaled = (method: string, params: Record<string, unknown>, sessionId?: string) => {
       if (sessionId !== undefined)
         return sendPageCommand(webContents, debuggee, method, params, sessionId);
       const scale = surfaceScale();
@@ -328,6 +330,11 @@ export const make = Effect.gen(function* () {
         return captureFittedScreenshot(webContents, debuggee, params);
       }
       return sendPageCommand(webContents, debuggee, method, toSurfaceInput(method, params, scale));
+    };
+    const send = async (method: string, params: Record<string, unknown>, sessionId?: string) => {
+      const result = await sendScaled(method, params, sessionId);
+      if (method === "Network.clearBrowserCookies") await cookiesCleared?.();
+      return result;
     };
     const detachedOwners = new Set<string>();
     /** Viewers and recordings stream; the agent's own sessions never do. */
