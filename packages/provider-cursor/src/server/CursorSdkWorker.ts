@@ -24,6 +24,9 @@ export interface CursorSdkApi {
 const workerSource = String.raw`
 const {parentPort,workerData}=require('node:worker_threads');
 const {Agent,createAgentPlatform}=require(workerData.modulePath);
+globalThis[Symbol.for("@cursor/sdk.shellStreamOutput")]=(output)=>{
+  if(output.conversationId===agent?.agentId&&typeof output.toolCallId==='string'){parentPort.postMessage({update:{type:'shell-output-delta',event:{...output.event,toolCallId:output.toolCallId}}});}
+};
 let agent;
 let storePlatform;
 const runs=new Map();
