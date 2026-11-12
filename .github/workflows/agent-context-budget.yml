@@ -1,5 +1,7 @@
 name: Agent Context Budget
 
+# Agent context is what styal sends into every user's agent session: the Claude system append, the
+# Codex additional context, and the MCP tool list. This repository's AGENTS.md and docs are not part of it.
 # Fails when a PR raises a value in agentContextBudget.json above main's. AgentContextBudget.test.ts
 # keeps that file equal to the measured context, so the context cannot grow by editing the file.
 # To accept growth on purpose, a maintainer adds the agent-context-increase label.
@@ -51,5 +53,5 @@ jobs:
             echo "Accepted by the agent-context-increase label."
             exit 0
           fi
-          echo "::error file=$BUDGET::Agent context grew compared to main. Cut the added text and rerun the evals that cover it (evals/README.md), or report the growth and leave the agent-context-increase label to the maintainer."
+          echo "::error file=$BUDGET::Agent context, the instructions and MCP tool list styal sends into every user's agent session, grew compared to main. Cut the added text and rerun the evals that cover it (evals/README.md), or report the growth and leave the agent-context-increase label to the maintainer."
           exit 1
