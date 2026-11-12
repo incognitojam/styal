@@ -17,7 +17,8 @@ import {
   type ThreadId,
 } from "@t3tools/contracts";
 import {
-  isSetupScriptOutsideWorktree,
+  isLifecycleScriptOutsideWorktree,
+  projectScriptMenuLabel,
   projectScriptTerminalInput,
   type ResolvedProjectAction,
 } from "@t3tools/shared/projectScripts";
@@ -238,11 +239,8 @@ export function useChatTerminalActions(input: ChatTerminalActionsInput) {
       return;
     const targetThreadRef = activeThreadRef;
     const targetWorktreePath = options?.worktreePath ?? activeThread.worktreePath ?? null;
-    // A setup script assumes a worktree cwd with the project root somewhere else;
-    // on the main checkout the two collapse and the script can overwrite what it
-    // meant to link to. Refuse rather than run it against the project root.
     if (
-      isSetupScriptOutsideWorktree({
+      isLifecycleScriptOutsideWorktree({
         script,
         projectCwd: activeProject.workspaceRoot,
         worktreePath: targetWorktreePath,
@@ -250,7 +248,7 @@ export function useChatTerminalActions(input: ChatTerminalActionsInput) {
     ) {
       setThreadError(
         activeThreadId,
-        `"${script.name}" runs after a worktree is created. In a local thread it would run in the project root and could overwrite the files it sets up.`,
+        `Cannot run "${projectScriptMenuLabel(script)}" in the project checkout. Open a thread in a separate worktree to run this action.`,
       );
       return;
     }

@@ -2,50 +2,53 @@ import { DEFAULT_SERVER_SETTINGS, ProjectId, type ProjectScript } from "@t3tools
 import { describe, expect, it } from "vite-plus/test";
 
 import {
-  isSetupScriptOutsideWorktree,
+  isLifecycleScriptOutsideWorktree,
   resolveProjectActions,
   projectScriptRuntimeEnv,
   withT3CodeProjectEnvironmentAliases,
 } from "./projectScripts.ts";
 
-const setupScript = { runOnWorktreeCreate: true } as const;
 const regularScript = { runOnWorktreeCreate: false } as const;
 
-describe("isSetupScriptOutsideWorktree", () => {
-  it("allows a setup script in a worktree of its project", () => {
+describe.each([
+  { role: "setup", script: { runOnWorktreeCreate: true } },
+  { role: "on settle", script: { runOnWorktreeCreate: false, runOnSettle: true } },
+  { role: "setup, on settle", script: { runOnWorktreeCreate: true, runOnSettle: true } },
+])("isLifecycleScriptOutsideWorktree ($role)", ({ script: lifecycleScript }) => {
+  it("allows a lifecycle script in a worktree of its project", () => {
     expect(
-      isSetupScriptOutsideWorktree({
-        script: setupScript,
+      isLifecycleScriptOutsideWorktree({
+        script: lifecycleScript,
         projectCwd: "/repo/project",
         worktreePath: "/repo/worktrees/a",
       }),
     ).toBe(false);
   });
 
-  it("refuses a setup script with no worktree", () => {
+  it("refuses a lifecycle script with no worktree", () => {
     expect(
-      isSetupScriptOutsideWorktree({
-        script: setupScript,
+      isLifecycleScriptOutsideWorktree({
+        script: lifecycleScript,
         projectCwd: "/repo/project",
         worktreePath: null,
       }),
     ).toBe(true);
-    expect(isSetupScriptOutsideWorktree({ script: setupScript, projectCwd: "/repo/project" })).toBe(
-      true,
-    );
+    expect(
+      isLifecycleScriptOutsideWorktree({ script: lifecycleScript, projectCwd: "/repo/project" }),
+    ).toBe(true);
   });
 
-  it("refuses a setup script pointed at the project root, trailing separators aside", () => {
+  it("refuses a lifecycle script pointed at the project root, trailing separators aside", () => {
     expect(
-      isSetupScriptOutsideWorktree({
-        script: setupScript,
+      isLifecycleScriptOutsideWorktree({
+        script: lifecycleScript,
         projectCwd: "/repo/project",
         worktreePath: "/repo/project",
       }),
     ).toBe(true);
     expect(
-      isSetupScriptOutsideWorktree({
-        script: setupScript,
+      isLifecycleScriptOutsideWorktree({
+        script: lifecycleScript,
         projectCwd: "/repo/project/",
         worktreePath: "/repo/project",
       }),
@@ -54,14 +57,14 @@ describe("isSetupScriptOutsideWorktree", () => {
 
   it("leaves ordinary scripts alone wherever they run", () => {
     expect(
-      isSetupScriptOutsideWorktree({
+      isLifecycleScriptOutsideWorktree({
         script: regularScript,
         projectCwd: "/repo/project",
         worktreePath: null,
       }),
     ).toBe(false);
     expect(
-      isSetupScriptOutsideWorktree({
+      isLifecycleScriptOutsideWorktree({
         script: regularScript,
         projectCwd: "/repo/project",
         worktreePath: "/repo/project",

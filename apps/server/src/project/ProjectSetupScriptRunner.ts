@@ -11,7 +11,7 @@ import {
 } from "@t3tools/contracts";
 import {
   isProjectCheckoutRun,
-  isSetupScriptOutsideWorktree,
+  isLifecycleScriptOutsideWorktree,
   projectScriptRuntimeEnv,
   resolveProjectActions,
   settleProjectScript,
@@ -794,7 +794,7 @@ export const make = Effect.gen(function* () {
     // $T3CODE_PROJECT_ROOT/.env into the cwd would clobber the file it links to.
     if (
       trigger === "setup" &&
-      isSetupScriptOutsideWorktree({
+      isLifecycleScriptOutsideWorktree({
         script,
         projectCwd: project.workspaceRoot,
         worktreePath: input.worktreePath,

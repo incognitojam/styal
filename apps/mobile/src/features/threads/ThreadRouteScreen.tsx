@@ -3,7 +3,10 @@ import {
   useTurnUsageEnabled,
   useTurnUsageFigure,
 } from "../../state/use-turn-usage";
-import { isSetupScriptOutsideWorktree } from "@t3tools/shared/projectScripts";
+import {
+  isLifecycleScriptOutsideWorktree,
+  projectScriptMenuLabel,
+} from "@t3tools/shared/projectScripts";
 import * as Dialog from "../../components/ui/Dialog";
 import { useRememberThreadProject } from "./useRememberThreadProject";
 import { useOpenPullRequest } from "../../native/useOpenPullRequest";
@@ -827,19 +830,16 @@ function ThreadRouteContent(
       threadShellWorktreePath: selectedThread.worktreePath ?? null,
       threadDetailWorktreePath: selectedThreadDetailWorktreePath,
     });
-    // A setup script assumes a worktree cwd with the project root somewhere else;
-    // on the main checkout the two collapse and the script can overwrite what it
-    // meant to link to. Refuse rather than run it against the project root.
     if (
-      isSetupScriptOutsideWorktree({
+      isLifecycleScriptOutsideWorktree({
         script,
         projectCwd: selectedThreadProject.workspaceRoot,
         worktreePath: preferredWorktreePath,
       })
     ) {
       Dialog.alert(
-        `Cannot run "${script.name}"`,
-        "This action runs after a worktree is created. In a local thread it would run in the project root and could overwrite the files it sets up.",
+        `Cannot run "${projectScriptMenuLabel(script)}"`,
+        "This action cannot run in the project checkout. Open a thread in a separate worktree to run this action.",
       );
       return;
     }
