@@ -194,8 +194,12 @@ export function legacyActivityTurnItem(
       };
     }
   } else if (last.tone === "tool" || type !== undefined) {
+    const mcpServer = nativeItem.type === "mcpToolCall" ? text(nativeItem.server) : undefined;
+    const mcpTool = mcpServer === undefined ? undefined : text(nativeItem.tool);
     // Claude and OpenCode kept the tool name in `data`, Codex in its native item's `tool`.
+    // Codex MCP calls use the `mcp__server__tool` name native V2 items report.
     const toolName =
+      (mcpTool === undefined ? undefined : `mcp__${mcpServer}__${mcpTool}`) ??
       text(
         payload.toolName,
         data.toolName,
@@ -203,7 +207,8 @@ export function legacyActivityTurnItem(
         nativeItem.name,
         rawInput.name,
         payload.title,
-      ) ?? null;
+      ) ??
+      null;
     const openCodeState = record(data.state);
     const toolInput =
       nativeItem.input ??
