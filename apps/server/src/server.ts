@@ -548,7 +548,7 @@ const layerTerminalBrowserOpen = TerminalBrowserOpen.layer.pipe(
 
 const layerTerminal = Layer.merge(
   layerTerminalBrowserOpen,
-  TerminalManager.layer.pipe(
+  TerminalManager.layer(ProviderInstanceRegistryHydration.deriveProviderInstanceConfigMap).pipe(
     Layer.provide(GitVcsDriver.layer),
     Layer.provide(layerPtyAdapter),
     Layer.provide(layerPortScanner),
