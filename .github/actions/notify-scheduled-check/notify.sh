@@ -6,12 +6,17 @@ if [ "$GITHUB_EVENT_NAME" != schedule ]; then
 fi
 previous=''
 previous_run=''
+# A failed lookup leaves the history unknown, which posts a current failure.
 run_ids=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$WORKFLOW" \
-  --event schedule --status completed --limit 20 --json databaseId --jq '.[].databaseId')
+  --event schedule --status completed --limit 20 --json databaseId --jq '.[].databaseId') ||
+  echo 'Could not list previous runs.'
 for run_id in $run_ids; do
   [ "$run_id" != "$GITHUB_RUN_ID" ] || continue
   conclusion=$(gh run view "$run_id" --repo "$GITHUB_REPOSITORY" --json jobs \
-    --jq ".jobs[] | select(.name == \"$CHECK_JOB\") | .conclusion")
+    --jq ".jobs[] | select(.name == \"$CHECK_JOB\") | .conclusion") || {
+    echo "Could not read run $run_id."
+    break
+  }
   if [ "$conclusion" = success ] || [ "$conclusion" = failure ]; then
     previous=$conclusion
     previous_run=$run_id
