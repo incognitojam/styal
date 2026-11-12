@@ -98,6 +98,8 @@ import {
 const MODELS = {
   "claude-sonnet-5-5": "Sonnet 5.5",
   "claude-opus-5-5": "Opus 5.5",
+  "claude-haiku-5-5": "Haiku 5.5",
+  "claude-fable-5-2": "Fable 5.2",
   "gpt-6.1-sol": "GPT-6.1 Sol",
   "gpt-6-astra": "GPT-6 Astra",
 } as const;
@@ -111,6 +113,7 @@ const PRICES = {
   "claude-sonnet-5-5": { input: 2, output: 10, cacheWrite: 2.5, cacheRead: 0.2 },
   "claude-haiku-5-5": { input: 0.1, output: 0.5, cacheWrite: 0.125, cacheRead: 0.01 },
   "claude-opus-5-5": { input: 4, output: 20, cacheWrite: 5, cacheRead: 0.2 },
+  "claude-fable-5-2": { input: 8, output: 40, cacheWrite: 10, cacheRead: 0.2 },
 };
 type PricedModel = keyof typeof PRICES;
 const T3_SERVER = "styal";
@@ -123,6 +126,8 @@ const TOOL_LOADED = "Tool loaded.";
 const DEFERRED_LIST =
   /(The following deferred tools are now available via ToolSearch\.[^\n]*\n)((?:[^\n]+\n)*)/;
 const MODEL_LINE = /You are powered by the model named .+?\. The exact model ID is [\w.-]+\./;
+// Claude Code's attribution reminder names the session's model.
+const CO_AUTHOR_LINE = /Co-Authored-By: Claude [^<\n]+ </;
 // API keys can be billed differently for requests that open with Claude Code's identity line,
 // so every copy of it becomes a neutral line. The rest of the captured prompt is unchanged.
 const IDENTITY =
@@ -636,7 +641,13 @@ export const buildBase = (
     ...(options.styalSkill === true ? { styalSkill: true as const } : {}),
     system: system.map(text),
     reminders: [
-      ...reminders.filter((_, i) => i !== gitStatusAt).map((value) => text(anonymize(value))),
+      ...reminders
+        .filter((_, i) => i !== gitStatusAt)
+        .map((value) =>
+          text(
+            anonymize(value).replace(CO_AUTHOR_LINE, `Co-Authored-By: Claude ${MODELS[model]} <`),
+          ),
+        ),
       ...(options.styalSkill === true ? [text(STYAL_SKILL_REMINDER)] : []),
     ],
     gitStatusAt: gitStatusAt === -1 ? reminders.length : gitStatusAt,
@@ -1714,6 +1725,24 @@ export const gradeSample = (expect: McpToolUseCase["expect"], run: SampleRun) =>
   return checks;
 };
 
+const escapeRegex = (value: string) => value.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&");
+/**
+ * Fills the run's own identity into `textMust` and `textMustNot`: `{model}` is the model id,
+ * `{modelName}` its display name, and `{harness}` the harness T3 runs it in.
+ */
+export const expectForModel = (expect: McpToolUseCase["expect"], model: Model) => {
+  const fill = (pattern: string) =>
+    pattern
+      .replaceAll("{modelName}", escapeRegex(MODELS[model]))
+      .replaceAll("{model}", escapeRegex(model))
+      .replaceAll("{harness}", isCodex(model) ? "Codex" : "Claude Code");
+  return {
+    ...expect,
+    ...(expect.textMust ? { textMust: expect.textMust.map(fill) } : {}),
+    ...(expect.textMustNot ? { textMustNot: expect.textMustNot.map(fill) } : {}),
+  };
+};
+
 // Checks that can only go from pass to fail as a sample goes on.
 const SETTLED = /^(notCalls|callsMustNot|shellMustNot|maxCalls|textMustNot) /;
 /** True once the sample has failed for good, so the rest of it cannot change the result. */
@@ -2269,11 +2298,13 @@ const main = Effect.gen(function* () {
   const wanted = flags.case?.flatMap((ids) => ids.split(","));
   const codex = isCodex(flags.model);
   const harness = codex ? "codex" : "claude";
-  const selectedCases = cases.filter(
-    ({ id, setup }) =>
-      (wanted === undefined || wanted.includes(id)) &&
-      (setup.harness === undefined || setup.harness === harness),
-  );
+  const selectedCases = cases
+    .filter(
+      ({ id, setup }) =>
+        (wanted === undefined || wanted.includes(id)) &&
+        (setup.harness === undefined || setup.harness === harness),
+    )
+    .map((testCase) => ({ ...testCase, expect: expectForModel(testCase.expect, flags.model) }));
   if (selectedCases.length === 0) return yield* Effect.die(new Error("No case matches --case."));
   const selected = yield* Effect.forEach(selectedCases, (testCase) =>
     Effect.gen(function* () {
