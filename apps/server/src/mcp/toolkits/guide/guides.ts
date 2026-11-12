@@ -63,11 +63,12 @@ run often (dev server, tests, lint, build). Prefer existing scripts over inlined
   first saved action with the role, otherwise the first \`styal.json\` action with the role whose
   command is approved.
 - **Settle** (\`runOnSettle\`): runs in the worktree each time the last open thread in it settles, for
-  example to stop dev servers on the workspace ports or delete large build output. Another thread
-  holds the action back if it is unsettled and not a subagent, or if it is working, waiting on a
-  request, or has queued work. An idle subagent does not hold it back, and one that settles after its
-  parent runs the action again, so make the action safe to run twice. One action per checkout runs,
-  chosen the same way as setup.
+  example to stop dev servers on the workspace ports or delete large build output. A thread settles
+  when someone settles it, or by default after 3 idle days or when its pull request merges or
+  closes, never just because a turn ended. Another thread holds the action back if it is unsettled
+  and not a subagent, or if it is working, waiting on a request, or has queued work. An idle subagent
+  does not hold it back, and one that settles after its parent runs the action again, so make the
+  action safe to run twice. One action per checkout runs, chosen the same way as setup.
 - Actions run by hand run in the thread's worktree, or the project root for a local thread, using
   the environment's shell. Setup and settle actions run only in a separate worktree, never in a
   local thread or the project's own checkout. Shared actions should work on every OS the team uses.
