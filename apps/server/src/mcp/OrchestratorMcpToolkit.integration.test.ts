@@ -786,7 +786,7 @@ describe("orchestrator MCP toolkit", () => {
               Layer.mock(ProjectService.ProjectService)({
                 getById: (id) =>
                   Effect.succeed(
-                    id === projectId
+                    id === projectId || id === "project:mcp-foreign"
                       ? Option.some({ id, defaultModelSelection: null } as never)
                       : Option.none(),
                   ),
