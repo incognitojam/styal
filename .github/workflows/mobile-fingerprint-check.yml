@@ -39,7 +39,7 @@ jobs:
       NODE_OPTIONS: --max-old-space-size=8192
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           # The merge ref can advance after the event is queued. Pin its commit
           # and compare against its first parent, rather than the event's base.
@@ -64,7 +64,7 @@ jobs:
 
       - name: Setup Vite+
         if: steps.changes.outputs.relevant == 'true'
-        uses: voidzero-dev/setup-vp@v1
+        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1.15.0
         with:
           node-version-file: package.json
           cache: true
@@ -142,7 +142,7 @@ jobs:
           printf '%s\n' "$CHANGED_PLATFORMS" > "$RUNNER_TEMP/fingerprint-result/changed-platforms"
 
       - name: Upload changed platforms
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: fingerprint-result
           path: ${{ runner.temp }}/fingerprint-result
