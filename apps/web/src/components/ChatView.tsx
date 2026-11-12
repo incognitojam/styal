@@ -2649,8 +2649,10 @@ export default function ChatView(props: ChatViewProps) {
 
   // Tokens a stale Claude session would re-read on its next turn. Held queues, multi-model sends,
   // and switches that hand off a summary never compact first, so the offer hides for them.
+  // The context window is the current conversation's, so a handoff destination never inherits it.
   const resumeCompactionTokens =
     activeContextWindow &&
+    pendingHandoff === null &&
     resolveIdleCompaction(
       settings,
       activeProviderInstanceId ?? ProviderInstanceId.make("claudeAgent"),
