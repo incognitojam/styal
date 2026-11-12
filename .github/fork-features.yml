@@ -1882,7 +1882,7 @@ features:
   - id: feedback-reports
     title: Report styal bugs and feedback as GitHub issues from an agent or the app
     status: maintained
-    prs: [1278]
+    prs: [1278, 1431]
     invariants:
       - Reports only go to incognitojam/styal, never upstream or the repository a thread works in.
       - An agent's report posts only after the user approves it; clients offer posting only beside the full report and the posting account, agents cannot answer that card, and it appears in every runtime mode.
@@ -1891,6 +1891,7 @@ features:
       - A form report that was not posted keeps its text, in the form and after closing it, so the user can fix the sign-in and post again.
       - Without a usable GitHub credential, or when GitHub refuses, the report is not lost; the caller gets a link to the issue form with the report filled in.
       - Filing uses the server's GitHub credential whichever way it was provided (saved token, GH_TOKEN or gh), not the gh CLI.
+      - The issue templates and contributing guide send bugs, feature requests and proposals to incognitojam/styal, never to upstream's issues or discussions.
     rationale: Users and agents had no way to report a styal bug from inside styal. `styal triage` runs only from a terminal, and analytics events are dropped for anyone who opts out and cannot carry a reply.
     implementation_paths:
       - apps/mobile/src/features/settings/SettingsFeedbackRouteScreen.tsx
@@ -1903,6 +1904,9 @@ features:
       - packages/client-runtime/src/feedbackReport.ts
       - packages/source-control-github/src/server/gitHubIssueFiling.ts
     upstream_paths:
+      - .github/ISSUE_TEMPLATE/bug_report.yml
+      - .github/ISSUE_TEMPLATE/config.yml
+      - CONTRIBUTING.md
       - apps/server/src/orchestration-v2/Orchestrator.ts
       - apps/server/src/orchestration-v2/ProjectionStore.ts
       - packages/contracts/src/orchestrationV2.ts

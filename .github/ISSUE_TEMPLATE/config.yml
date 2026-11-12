@@ -1,5 +1,5 @@
 blank_issues_enabled: false
 contact_links:
-  - name: Feature request
-    url: https://github.com/pingdotgg/t3code/discussions/categories/ideas
-    about: Suggest an improvement or new capability in Discussions.
+  - name: Feature request or other feedback
+    url: https://github.com/incognitojam/styal/blob/main/docs/user/faq.md#how-do-i-report-a-bug-or-send-feedback
+    about: Choose Send feedback in styal, or ask your agent to report it. Either files an issue here.
