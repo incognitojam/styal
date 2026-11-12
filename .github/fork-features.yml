@@ -5231,7 +5231,7 @@ features:
       - Pull request association does not match a same-named branch from another fork.
       - Pull request association survives hosted branch pruning by recovering the head branch from the branch's remote and merge configuration.
       - A cached repository identity resolves without running git.
-    rationale: Upstream's repository identity follows `upstream`, then `origin`, and ignores `gh repo set-default`, while `gh` and upstream's own GitHub API calls honour it. The fork prefers that default first, so the app and agents running `gh` in the checkout pick the same repository. Identity no longer follows the branch's tracking remote, which disagreed with `gh` and ran git on every lookup. Unlike `gh`, a remote named `github` is not ranked before `origin`.
+    rationale: Upstream's repository identity honours `gh repo set-default` only when it marks a remote's own repository (`base`), and ignores the `owner/repo` value a single-remote fork gets when its parent is chosen, while `gh` and upstream's own GitHub API calls honour both. The fork follows either value, so the app and agents running `gh` in the checkout pick the same repository, and reads remote URLs and the default in one git call. Identity never follows the branch's tracking remote, which disagreed with `gh` and ran git on every lookup. Unlike `gh`, a remote named `github` is not ranked before `origin`.
     implementation_paths:
       - apps/server/src/git/GitManager.ts
       - apps/server/src/project/RepositoryIdentityResolver.ts
@@ -5251,7 +5251,7 @@ features:
         - https://github.com/pingdotgg/t3code/pull/16322
         - https://github.com/pingdotgg/t3code/pull/16353
         - https://github.com/pingdotgg/t3code/pull/9125
-      retire_when: Upstream's repository identity honours `gh repo set-default` before `upstream` and `origin`, and upstream keeps pull request association correct across forks and branch pruning.
+      retire_when: Upstream's repository identity honours an `owner/repo` `gh repo set-default` value as well as `base`, and upstream keeps pull request association correct across forks and branch pruning.
 
   - id: pull-request-base-move-freshness
     title: Show sibling pull requests out of date as soon as a merge moves their base

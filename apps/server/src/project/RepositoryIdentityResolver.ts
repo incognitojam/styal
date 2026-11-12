@@ -62,7 +62,9 @@ function parseRemoteConfig(stdout: string): {
     if (entry.url && !isLocalRemoteUrl(entry.url)) remotes.set(entry.remoteName, entry.url);
   }
 
-  const pinned = entries.find((entry) => entry.ghResolved !== null);
+  // As upstream does, a default marked on more than one remote is ambiguous and ignored.
+  const pinnedEntries = entries.filter((entry) => entry.ghResolved !== null);
+  const pinned = pinnedEntries.length === 1 ? pinnedEntries[0] : undefined;
   const ghDefaultRemote = pinned?.ghResolved
     ? {
         remoteName: pinned.remoteName,
