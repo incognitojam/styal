@@ -183,5 +183,17 @@ describe("manualIssueUrl", () => {
     expect(url.searchParams.get("title")).toBe("A title");
     expect(url.searchParams.get("actual")).toContain("(shortened to fit in a link)");
     expect(url.href.length).toBeLessThan(4_000);
+    for (const [kind, author] of [
+      ["user", "Sent from styal by the user."],
+      ["agent", "Written by an agent (Codex, model) and approved by the user."],
+    ]) {
+      const suffix = `\n\n---\nstyal ${packageJson.version} (nightly), linux x64\n${author}\n<!-- styal-report: kind=${kind} version=${packageJson.version} -->`;
+      const actual = new URL(
+        FeedbackService.manualIssueUrl("A title", "x".repeat(2_500) + suffix),
+      ).searchParams.get("actual");
+      expect(actual?.endsWith(suffix)).toBe(true);
+      expect(actual).toContain("(shortened to fit in a link)");
+      expect(actual?.length).toBeLessThanOrEqual(2_500);
+    }
   });
 });
