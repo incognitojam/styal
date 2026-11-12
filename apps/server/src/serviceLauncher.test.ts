@@ -32,6 +32,7 @@ import {
   registerServiceTask,
   serviceLauncherIsRunning,
   serviceLauncherLockPath,
+  stateDirOwned,
   writeServiceState,
 } from "./serviceLauncher.ts";
 import {
@@ -39,6 +40,7 @@ import {
   decodeServiceState,
   isExactServiceVersion,
   disabledServiceTask,
+  SERVICE_BACKUP_CLAIM_FILE,
   SERVICE_ENV_FILE,
   SERVICE_LAUNCHER_PROTOCOL,
   SERVICE_RESTART_PENDING_FILE,
@@ -46,12 +48,34 @@ import {
 } from "./cloud/serviceProtocol.ts";
 
 const spawnedChildren = vi.hoisted((): Array<NodeChildProcess.ChildProcess> => []);
+const spawnHook = vi.hoisted(() => ({
+  current: undefined as ((child: NodeChildProcess.ChildProcess) => void) | undefined,
+}));
+
+const failRm = vi.hoisted(() => ({ path: undefined as string | undefined }));
+const rmHook = vi.hoisted(() => ({
+  current: undefined as ((path: string) => void) | undefined,
+}));
+
+// Backups are removed through the physical file system, which reads node:fs.promises.
+vi.mock("node:fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof NodeFS>();
+  const rm: typeof actual.promises.rm = (path, options) => {
+    rmHook.current?.(String(path));
+    return path === failRm.path
+      ? Promise.reject(Object.assign(new Error("EACCES"), { code: "EACCES" }))
+      : actual.promises.rm(path, options);
+  };
+  const promises = { ...actual.promises, rm };
+  return { ...actual, promises, default: { ...actual, promises } };
+});
 
 vi.mock("node:child_process", async (importOriginal) => {
   const actual = await importOriginal<typeof NodeChildProcess>();
   const spawn = (...args: Parameters<typeof actual.spawn>) => {
     const child = actual.spawn(...args);
     spawnedChildren.push(child);
+    spawnHook.current?.(child);
     return child;
   };
   return { ...actual, spawn: spawn as typeof actual.spawn };
@@ -636,22 +660,239 @@ process.exit(0);
       }),
   );
 
-  serviceProcessTest("stays idle instead of exiting when another server owns the styal home", () =>
+  serviceProcessTest(
+    "waits without exiting and restarts once the other owner releases the styal home",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-service-reclaim-" });
+        const statePath = path.join(root, "runtime", "service-state.json");
+        const ownerPath = path.join(root, "userdata", "server-owner.sqlite");
+        yield* fs.makeDirectory(path.dirname(ownerPath), { recursive: true });
+        for (const version of ["1.0.0", "1.1.0"]) {
+          yield* writeFakeRuntime(
+            fs,
+            path,
+            path.join(root, "runtime", "styal-executable", "versions", version),
+            [
+              `const db = new (require("node:sqlite").DatabaseSync)(${JSON.stringify(ownerPath)});`,
+              `try { db.exec("PRAGMA busy_timeout = 0; BEGIN EXCLUSIVE;"); }`,
+              `catch { process.exit(${SERVER_EXIT_CODE_STATE_DIR_OWNED}); }`,
+              "process.send(JSON.parse(process.env.T3_SERVICE_LAUNCHER_CONTEXT).childVersion);",
+              "setInterval(() => {}, 1_000);",
+            ].join("\n"),
+          );
+        }
+        yield* Effect.promise(() =>
+          writeServiceState(statePath, {
+            protocol: SERVICE_LAUNCHER_PROTOCOL,
+            activeVersion: "1.0.0",
+          }),
+        );
+        using otherOwner = new NodeSqlite.DatabaseSync(ownerPath);
+        otherOwner.exec("BEGIN EXCLUSIVE;");
+        const refused = Promise.withResolvers<void>();
+        const owned = Promise.withResolvers<unknown>();
+        yield* Effect.acquireRelease(
+          Effect.sync(() =>
+            vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
+              if (String(chunk).includes("owns this styal home")) refused.resolve();
+              return true;
+            }),
+          ),
+          (spy) => Effect.sync(() => spy.mockRestore()),
+        );
+        yield* Effect.acquireRelease(
+          Effect.sync(() => {
+            spawnHook.current = (child) => child.once("message", owned.resolve);
+          }),
+          () =>
+            Effect.sync(() => {
+              spawnHook.current = undefined;
+            }),
+        );
+        const spawnsBefore = spawnedChildren.length;
+        const launcher = new Launcher(
+          root,
+          yield* Effect.promise(() => readServiceState(statePath)),
+          { stateDirOwnerPollMs: 10 },
+        );
+        let completed = false;
+        const running = launcher.run().finally(() => {
+          completed = true;
+        });
+        yield* Effect.promise(() => refused.promise);
+        assert.isFalse(completed);
+        // An install selects another runtime while the launcher idles.
+        yield* Effect.promise(() =>
+          writeServiceState(statePath, {
+            protocol: SERVICE_LAUNCHER_PROTOCOL,
+            activeVersion: "1.1.0",
+          }),
+        );
+        otherOwner.close();
+        assert.strictEqual(yield* Effect.promise(() => owned.promise), "1.1.0");
+        yield* Effect.promise(() => launcher.stop("SIGTERM"));
+        yield* Effect.promise(() => running);
+        assert.strictEqual(spawnedChildren.length - spawnsBefore, 2);
+      }),
+  );
+
+  serviceProcessTest(
+    "keeps a pending update while owned and rolls a failed resumed trial back to the other owner's writes",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-service-reclaim-update-" });
+        const statePath = path.join(root, "runtime", "service-state.json");
+        const ownerPath = path.join(root, "userdata", "server-owner.sqlite");
+        const databasePath = path.join(root, "userdata", "state.sqlite");
+        const startsPath = path.join(root, "starts.log");
+        yield* fs.makeDirectory(path.dirname(ownerPath), { recursive: true });
+        yield* fs.writeFileString(databasePath, "before update");
+        // A trial backed up before the other owner took the home, then the launcher restarted.
+        const backupDir = path.join(root, "runtime", "db-backup", "update-1");
+        yield* fs.makeDirectory(backupDir, { recursive: true });
+        yield* fs.writeFileString(path.join(backupDir, "database"), "stale backup");
+        for (const version of ["1.0.0", "1.1.0"]) {
+          yield* writeFakeRuntime(
+            fs,
+            path,
+            path.join(root, "runtime", "styal-executable", "versions", version),
+            [
+              `const db = new (require("node:sqlite").DatabaseSync)(${JSON.stringify(ownerPath)});`,
+              `try { db.exec("PRAGMA busy_timeout = 0; BEGIN EXCLUSIVE;"); }`,
+              `catch { process.exit(${SERVER_EXIT_CODE_STATE_DIR_OWNED}); }`,
+              "const context = JSON.parse(process.env.T3_SERVICE_LAUNCHER_CONTEXT);",
+              `require("node:fs").appendFileSync(${JSON.stringify(startsPath)}, context.childVersion + "\\n");`,
+              'if (context.update?.status === "pending") {',
+              `  require("node:fs").writeFileSync(${JSON.stringify(databasePath)}, "migrated by failed trial");`,
+              "  process.exit(1);",
+              "}",
+              'process.send("active");',
+              "setInterval(() => {}, 1_000);",
+            ].join("\n"),
+          );
+        }
+        yield* Effect.promise(() =>
+          writeServiceState(statePath, {
+            protocol: SERVICE_LAUNCHER_PROTOCOL,
+            activeVersion: "1.0.0",
+            update: {
+              id: "update-1",
+              fromVersion: "1.0.0",
+              targetVersion: "1.1.0",
+              dbPath: databasePath,
+              status: "pending",
+            },
+          }),
+        );
+        using otherOwner = new NodeSqlite.DatabaseSync(ownerPath);
+        otherOwner.exec("BEGIN EXCLUSIVE;");
+        const refused = Promise.withResolvers<void>();
+        const active = Promise.withResolvers<void>();
+        yield* Effect.acquireRelease(
+          Effect.sync(() =>
+            vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
+              if (String(chunk).includes("owns this styal home")) refused.resolve();
+              return true;
+            }),
+          ),
+          (spy) => Effect.sync(() => spy.mockRestore()),
+        );
+        yield* Effect.acquireRelease(
+          Effect.sync(() => {
+            spawnHook.current = (child) =>
+              child.on("message", (message) => message === "active" && active.resolve());
+          }),
+          () =>
+            Effect.sync(() => {
+              spawnHook.current = undefined;
+            }),
+        );
+        const statusesAtBackupRemoval: Array<string | undefined> = [];
+        const ownerLockFreeAtBackup: Array<boolean> = [];
+        yield* Effect.acquireRelease(
+          Effect.sync(() => {
+            rmHook.current = (removed) => {
+              if (removed === backupDir) {
+                const state = JSON.parse(NodeFS.readFileSync(statePath, "utf8"));
+                statusesAtBackupRemoval.push(state.update?.status);
+              } else if (removed === `${backupDir}.staging`) {
+                using probe = new NodeSqlite.DatabaseSync(ownerPath);
+                try {
+                  probe.exec("PRAGMA busy_timeout = 0; BEGIN EXCLUSIVE;");
+                  ownerLockFreeAtBackup.push(true);
+                } catch {
+                  ownerLockFreeAtBackup.push(false);
+                }
+              }
+            };
+          }),
+          () =>
+            Effect.sync(() => {
+              rmHook.current = undefined;
+            }),
+        );
+        const launcher = new Launcher(
+          root,
+          yield* Effect.promise(() => readServiceState(statePath)),
+          { stateDirOwnerPollMs: 10 },
+        );
+        const running = launcher.run();
+        yield* Effect.promise(() => refused.promise);
+        const idle = yield* Effect.promise(() => readServiceState(statePath));
+        assert.strictEqual(idle.activeVersion, "1.0.0");
+        assert.strictEqual(idle.update?.status, "pending");
+        assert.isFalse(yield* fs.exists(backupDir));
+
+        yield* fs.writeFileString(databasePath, "written by the other owner");
+        otherOwner.close();
+        yield* Effect.promise(() => active.promise);
+        yield* Effect.promise(() => launcher.stop("SIGTERM"));
+        yield* Effect.promise(() => running);
+
+        const state = yield* Effect.promise(() => readServiceState(statePath));
+        assert.strictEqual(state.activeVersion, "1.0.0");
+        assert.strictEqual(state.update?.status, "rolled-back");
+        assert.strictEqual(yield* fs.readFileString(startsPath), "1.1.0\n1.0.0\n");
+        assert.strictEqual(yield* fs.readFileString(databasePath), "written by the other owner");
+        // A launcher killed while removing a backup must not leave it under a pending record.
+        assert.deepStrictEqual(statusesAtBackupRemoval, ["failed", "rolled-back"]);
+        // Nothing else can write between the resumed trial's backup and its start.
+        assert.deepStrictEqual(ownerLockFreeAtBackup, [false]);
+      }),
+  );
+
+  serviceProcessTest("fails a pending update when its backup cannot be dropped while owned", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-service-refused-" });
+      const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-service-stale-backup-" });
       const statePath = path.join(root, "runtime", "service-state.json");
+      const ownerPath = path.join(root, "userdata", "server-owner.sqlite");
+      const databasePath = path.join(root, "userdata", "state.sqlite");
+      yield* fs.makeDirectory(path.dirname(ownerPath), { recursive: true });
+      yield* fs.writeFileString(databasePath, "before update");
       yield* writeFakeRuntime(
         fs,
         path,
-        path.join(root, "runtime", "styal-executable", "versions", "1.0.0"),
+        path.join(root, "runtime", "styal-executable", "versions", "1.1.0"),
         `process.exit(${SERVER_EXIT_CODE_STATE_DIR_OWNED});\n`,
       );
       yield* Effect.promise(() =>
         writeServiceState(statePath, {
           protocol: SERVICE_LAUNCHER_PROTOCOL,
           activeVersion: "1.0.0",
+          update: {
+            id: "update-1",
+            fromVersion: "1.0.0",
+            targetVersion: "1.1.0",
+            dbPath: databasePath,
+            status: "pending",
+          },
         }),
       );
       const refused = Promise.withResolvers<void>();
@@ -664,16 +905,340 @@ process.exit(0);
         ),
         (spy) => Effect.sync(() => spy.mockRestore()),
       );
+      const statusesAtBackupRemoval: Array<string | undefined> = [];
+      yield* Effect.acquireRelease(
+        Effect.sync(() => {
+          failRm.path = path.join(root, "runtime", "db-backup", "update-1");
+          rmHook.current = (removed) => {
+            if (removed !== failRm.path) return;
+            const state = JSON.parse(NodeFS.readFileSync(statePath, "utf8"));
+            statusesAtBackupRemoval.push(state.update?.status);
+          };
+        }),
+        () =>
+          Effect.sync(() => {
+            failRm.path = undefined;
+            rmHook.current = undefined;
+          }),
+      );
       const launcher = new Launcher(root, yield* Effect.promise(() => readServiceState(statePath)));
-      let completed = false;
-      const running = launcher.run().finally(() => {
-        completed = true;
-      });
+      const running = launcher.run();
       yield* Effect.promise(() => refused.promise);
-      assert.isFalse(completed);
       yield* Effect.promise(() => launcher.stop("SIGTERM"));
       yield* Effect.promise(() => running);
+
+      const state = yield* Effect.promise(() => readServiceState(statePath));
+      assert.strictEqual(state.activeVersion, "1.0.0");
+      assert.strictEqual(state.update?.status, "failed");
+      assert.deepStrictEqual(statusesAtBackupRemoval, ["failed"]);
     }),
+  );
+
+  serviceProcessTest(
+    "neither backs up nor starts a trial while the owner lock cannot be checked",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-service-owner-unknown-" });
+        const statePath = path.join(root, "runtime", "service-state.json");
+        const databasePath = path.join(root, "userdata", "state.sqlite");
+        // SQLite cannot open a directory, so the lock is neither free nor held.
+        yield* fs.makeDirectory(path.join(root, "userdata", "server-owner.sqlite"), {
+          recursive: true,
+        });
+        yield* fs.writeFileString(databasePath, "before update");
+        yield* writeFakeRuntime(
+          fs,
+          path,
+          path.join(root, "runtime", "styal-executable", "versions", "1.1.0"),
+          "setInterval(() => {}, 1_000);\n",
+        );
+        yield* Effect.promise(() =>
+          writeServiceState(statePath, {
+            protocol: SERVICE_LAUNCHER_PROTOCOL,
+            activeVersion: "1.0.0",
+            update: {
+              id: "update-1",
+              fromVersion: "1.0.0",
+              targetVersion: "1.1.0",
+              dbPath: databasePath,
+              status: "pending",
+            },
+          }),
+        );
+        const unchecked = Promise.withResolvers<void>();
+        yield* Effect.acquireRelease(
+          Effect.sync(() =>
+            vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
+              if (String(chunk).includes("Could not check whether")) unchecked.resolve();
+              return true;
+            }),
+          ),
+          (spy) => Effect.sync(() => spy.mockRestore()),
+        );
+        yield* Effect.acquireRelease(
+          Effect.sync(() => {
+            spawnHook.current = () => unchecked.resolve();
+          }),
+          () =>
+            Effect.sync(() => {
+              spawnHook.current = undefined;
+            }),
+        );
+        const spawnsBefore = spawnedChildren.length;
+        const launcher = new Launcher(
+          root,
+          yield* Effect.promise(() => readServiceState(statePath)),
+        );
+        const running = launcher.run();
+        yield* Effect.promise(() => unchecked.promise);
+        yield* Effect.promise(() => launcher.stop("SIGTERM"));
+        yield* Effect.promise(() => running);
+
+        assert.strictEqual(spawnedChildren.length, spawnsBefore);
+        assert.isFalse(yield* fs.exists(path.join(root, "runtime", "db-backup", "update-1")));
+        const state = yield* Effect.promise(() => readServiceState(statePath));
+        assert.strictEqual(state.update?.status, "pending");
+      }),
+  );
+
+  serviceProcessTest(
+    "restores a failed trial's backup only under the owner lock and while no other server has cleared its claim",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        type Paths = { claim: string; owner: string; database: string; backup: string };
+        const holdOwnerLock = (paths: Paths) => {
+          const owner = new NodeSqlite.DatabaseSync(paths.owner);
+          owner.exec("BEGIN EXCLUSIVE;");
+          return () => owner.close();
+        };
+        const writeBackup = (paths: Paths, contents: string) => {
+          NodeFS.mkdirSync(paths.backup, { recursive: true });
+          NodeFS.writeFileSync(path.join(paths.backup, "database"), contents);
+        };
+        const cases: Array<{
+          name: string;
+          // Before the launcher starts, or when the first trial spawns; returns what frees the home.
+          prepare?: (paths: Paths) => (() => void) | undefined;
+          onTrialSpawn?: (paths: Paths) => (() => void) | undefined;
+          // The unrestored live database while the launcher waits with the pending record and backup.
+          pendingWhileIdle?: string;
+          status?: "failed";
+          expected: string;
+        }> = [
+          {
+            // Another server owned the home between the backup and the trial taking it.
+            name: "claim cleared before the trial",
+            onTrialSpawn: (paths) => {
+              NodeFS.rmSync(paths.claim);
+              NodeFS.writeFileSync(paths.database, "written before the trial");
+              return undefined;
+            },
+            expected: "written before the trial + trial",
+          },
+          {
+            // An earlier trial's backup, from before another server wrote; then the launcher restarted.
+            name: "stale backup on restart",
+            prepare: (paths) => {
+              writeBackup(paths, "stale backup");
+              return undefined;
+            },
+            expected: "before update",
+          },
+          {
+            name: "home owned when the trial fails",
+            onTrialSpawn: (paths) => {
+              const release = holdOwnerLock(paths);
+              NodeFS.writeFileSync(paths.database, "written by the new owner");
+              return release;
+            },
+            expected: "written by the new owner + trial",
+          },
+          {
+            // SQLite cannot open a directory, so the lock is neither free nor held.
+            name: "owner lock uncheckable when the trial fails",
+            onTrialSpawn: (paths) => {
+              NodeFS.rmSync(paths.owner);
+              NodeFS.mkdirSync(paths.owner);
+              return () => NodeFS.rmdirSync(paths.owner);
+            },
+            pendingWhileIdle: "before update + trial",
+            expected: "before update",
+          },
+          {
+            name: "interrupted restore while the home is owned",
+            prepare: (paths) => {
+              writeBackup(paths, "before update");
+              NodeFS.writeFileSync(path.join(paths.backup, ".restore-pending"), "");
+              NodeFS.writeFileSync(paths.database, "partly restored");
+              return holdOwnerLock(paths);
+            },
+            pendingWhileIdle: "partly restored",
+            status: "failed",
+            expected: "before update",
+          },
+          {
+            // An earlier trial migrated the database, then the launcher restarted.
+            name: "claim unreadable on restart",
+            prepare: (paths) => {
+              writeBackup(paths, "before update");
+              NodeFS.writeFileSync(paths.database, "migrated by an earlier trial");
+              NodeFS.mkdirSync(paths.claim);
+              return () => {
+                NodeFS.rmdirSync(paths.claim);
+                NodeFS.writeFileSync(paths.claim, "update-1");
+              };
+            },
+            pendingWhileIdle: "migrated by an earlier trial",
+            expected: "before update",
+          },
+        ];
+        for (const scenario of cases) {
+          const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-service-restore-" });
+          const statePath = path.join(root, "runtime", "service-state.json");
+          const paths = {
+            claim: path.join(root, "userdata", SERVICE_BACKUP_CLAIM_FILE),
+            owner: path.join(root, "userdata", "server-owner.sqlite"),
+            database: path.join(root, "userdata", "state.sqlite"),
+            backup: path.join(root, "runtime", "db-backup", "update-1"),
+          };
+          yield* fs.makeDirectory(path.join(root, "userdata"), { recursive: true });
+          yield* fs.writeFileString(paths.database, "before update");
+          let release = scenario.prepare?.(paths);
+          yield* writeFakeRuntime(
+            fs,
+            path,
+            path.join(root, "runtime", "styal-executable", "versions", "1.1.0"),
+            `require("node:fs").appendFileSync(${JSON.stringify(paths.database)}, " + trial");\nprocess.exit(1);\n`,
+          );
+          yield* writeFakeRuntime(
+            fs,
+            path,
+            path.join(root, "runtime", "styal-executable", "versions", "1.0.0"),
+            'process.send("active");\nsetInterval(() => {}, 1_000);\n',
+          );
+          yield* Effect.promise(() =>
+            writeServiceState(statePath, {
+              protocol: SERVICE_LAUNCHER_PROTOCOL,
+              activeVersion: "1.0.0",
+              update: {
+                id: "update-1",
+                fromVersion: "1.0.0",
+                targetVersion: "1.1.0",
+                dbPath: paths.database,
+                status: "pending",
+              },
+            }),
+          );
+          yield* Effect.scoped(
+            Effect.gen(function* () {
+              const idle = Promise.withResolvers<void>();
+              const active = Promise.withResolvers<void>();
+              yield* Effect.acquireRelease(
+                Effect.sync(() =>
+                  vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
+                    const line = String(chunk);
+                    if (line.includes("owns this styal home") || line.includes("Could not check"))
+                      idle.resolve();
+                    return true;
+                  }),
+                ),
+                (spy) => Effect.sync(() => spy.mockRestore()),
+              );
+              let trialSpawns = 0;
+              yield* Effect.acquireRelease(
+                Effect.sync(() => {
+                  spawnHook.current = (child) => {
+                    if (child.spawnfile.includes("1.1.0") && trialSpawns++ === 0) {
+                      release = scenario.onTrialSpawn?.(paths) ?? release;
+                    }
+                    child.on("message", (message) => message === "active" && active.resolve());
+                  };
+                }),
+                () =>
+                  Effect.sync(() => {
+                    spawnHook.current = undefined;
+                  }),
+              );
+              const launcher = new Launcher(
+                root,
+                yield* Effect.promise(() => readServiceState(statePath)),
+                { stateDirOwnerPollMs: 10 },
+              );
+              // No fake runtime outlives the case, even when an assertion fails.
+              const running = launcher.run();
+              yield* Effect.addFinalizer(() =>
+                Effect.promise(() => launcher.stop("SIGTERM").then(() => running)),
+              );
+              yield* Effect.promise(() => Promise.race([idle.promise, active.promise]));
+              if (scenario.pendingWhileIdle !== undefined) {
+                const idleState = yield* Effect.promise(() => readServiceState(statePath));
+                assert.strictEqual(idleState.update?.status, "pending", scenario.name);
+                assert.strictEqual(
+                  yield* fs.readFileString(path.join(paths.backup, "database")),
+                  "before update",
+                  scenario.name,
+                );
+                assert.strictEqual(
+                  yield* fs.readFileString(paths.database),
+                  scenario.pendingWhileIdle,
+                  scenario.name,
+                );
+              }
+              release?.();
+              yield* Effect.promise(() => active.promise);
+            }),
+          );
+
+          const state = yield* Effect.promise(() => readServiceState(statePath));
+          assert.strictEqual(state.activeVersion, "1.0.0", scenario.name);
+          assert.strictEqual(state.update?.status, scenario.status ?? "rolled-back", scenario.name);
+          assert.strictEqual(
+            yield* fs.readFileString(paths.database),
+            scenario.expected,
+            scenario.name,
+          );
+        }
+      }),
+  );
+
+  it.effect(
+    "treats the styal home as owned while the lock is held or uncheckable, or a pre-lock server holds it",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-service-owned-" });
+        const stateDir = path.join(root, "userdata");
+        const recordPath = path.join(stateDir, "server-runtime.json");
+        // SQLite cannot open a directory, so this lock cannot be checked.
+        yield* fs.makeDirectory(path.join(stateDir, "server-owner.sqlite"), { recursive: true });
+        assert.isTrue(yield* Effect.promise(() => stateDirOwned(root)));
+        yield* fs.remove(path.join(stateDir, "server-owner.sqlite"), { recursive: true });
+        assert.isFalse(yield* Effect.promise(() => stateDirOwned(root)));
+
+        using owner = new NodeSqlite.DatabaseSync(path.join(stateDir, "server-owner.sqlite"));
+        owner.exec("BEGIN EXCLUSIVE;");
+        assert.isTrue(yield* Effect.promise(() => stateDirOwned(root)));
+        owner.close();
+
+        const record = { version: 1, pid: process.pid, port: 1, origin: "", startedAt: "" };
+        yield* fs.writeFileString(recordPath, JSON.stringify(record));
+        assert.isTrue(yield* Effect.promise(() => stateDirOwned(root)));
+        yield* fs.writeFileString(recordPath, JSON.stringify({ ...record, ownerId: "lock-aware" }));
+        assert.isFalse(yield* Effect.promise(() => stateDirOwned(root)));
+        // This process started after 1970, so its PID was reused since that record.
+        yield* fs.writeFileString(
+          recordPath,
+          JSON.stringify({ ...record, startedAt: "1970-01-01T00:00:00Z" }),
+        );
+        assert.isFalse(yield* Effect.promise(() => stateDirOwned(root)));
+        yield* fs.writeFileString(recordPath, JSON.stringify({ ...record, pid: 2 ** 22 + 1 }));
+        assert.isFalse(yield* Effect.promise(() => stateDirOwned(root)));
+      }),
   );
 
   serviceProcessTest("serializes shutdown with launcher recovery", () =>

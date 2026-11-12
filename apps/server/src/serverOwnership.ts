@@ -21,12 +21,18 @@ import {
 } from "./cloud/bootService.ts";
 import { ServiceLauncherHostProcess } from "./cloud/serviceLauncherClient.ts";
 import {
+  decodeServiceLauncherContext,
+  SERVICE_BACKUP_CLAIM_FILE,
   SERVICE_LAUNCHER_CONTEXT_ENV,
   SERVICE_RESTART_PENDING_FILE,
   SERVICE_STATE_FILE,
   compareExactServiceVersions,
   serviceStateActiveVersion,
 } from "./cloud/serviceProtocol.ts";
+import {
+  legacyOwnerStartedBeforeRecord,
+  legacyOwnerStartTimeCommand,
+} from "./legacyServerOwner.ts";
 import * as ProcessRunner from "./processRunner.ts";
 import {
   clearPersistedServerRuntimeState,
@@ -68,6 +74,15 @@ export class ServerOwnershipError extends Schema.TaggedError<ServerOwnershipErro
   }
 }
 
+export class ServiceBackupClaimError extends Schema.TaggedError<ServiceBackupClaimError>()(
+  "ServiceBackupClaimError",
+  { path: Schema.String, cause: Schema.Defect() },
+) {
+  override get message(): string {
+    return `Could not remove ${this.path}. While it remains, a failed styal service update may restore its database backup over changes made now, so styal stopped before opening the database. Remove that file, then retry.`;
+  }
+}
+
 const isSqliteBusy = (cause: unknown) =>
   cause instanceof Error &&
   (("errcode" in cause && cause.errcode === 5) ||
@@ -80,29 +95,20 @@ const legacyOwnerIsLive = Effect.fn("legacyOwnerIsLive")(function* (
   if (!isProcessAlive(state.pid)) return false;
   const recordedAt = Date.parse(state.startedAt);
   if (!Number.isFinite(recordedAt)) return true;
-  const windows = (yield* HostProcess.Platform) === "win32";
+  const platform = yield* HostProcess.Platform;
   const runner = yield* ProcessRunner.ProcessRunner;
   const result = yield* runner
     .run({
-      command: windows ? "powershell.exe" : "ps",
-      args: windows
-        ? [
-            "-NoProfile",
-            "-NonInteractive",
-            "-Command",
-            `(Get-Process -Id ${state.pid} -ErrorAction Stop).StartTime.ToUniversalTime().ToString('o')`,
-          ]
-        : ["-p", String(state.pid), "-o", "lstart="],
-      env: { LC_ALL: "C", TZ: "UTC" },
+      ...legacyOwnerStartTimeCommand(state.pid, platform),
       timeout: Duration.seconds(2),
       maxOutputBytes: 16_384,
     })
     .pipe(Effect.option);
-  if (Option.isNone(result) || result.value.code !== 0) return true;
-  const output = result.value.stdout.trim();
-  const startedAt = Date.parse(windows ? output : `${output} UTC`);
-  // ps reports whole seconds. Unknown identity stays conservative.
-  return !Number.isFinite(startedAt) || startedAt <= recordedAt + 1_000;
+  return legacyOwnerStartedBeforeRecord(
+    Option.isSome(result) && result.value.code === 0 ? result.value.stdout : undefined,
+    recordedAt,
+    platform,
+  );
 });
 
 const FIRST_LOCK_AWARE_SERVICE_VERSION = "0.1.1-nightly.20261023.894";
@@ -180,6 +186,35 @@ const olderBootServiceHome = Effect.fn("olderBootServiceHome")(
 
 const ownershipLockPath = (stateDir: string) => NodePath.join(stateDir, "server-owner.sqlite");
 
+// Holding the lock, once nothing can refuse the start and before the database opens: a service
+// update's backup no longer covers what this process writes.
+const clearServiceBackupClaim = (stateDir: string, trialUpdateId?: string) => {
+  const claimPath = NodePath.join(stateDir, SERVICE_BACKUP_CLAIM_FILE);
+  return Effect.try({
+    try: () => {
+      let claim: string;
+      try {
+        claim = NodeFS.readFileSync(claimPath, "utf8");
+      } catch (cause) {
+        if (cause instanceof Error && "code" in cause && cause.code === "ENOENT") return;
+        throw cause;
+      }
+      if (claim === trialUpdateId) return;
+      NodeFS.rmSync(claimPath, { force: true });
+      const directory = NodeFS.openSync(stateDir, "r");
+      try {
+        NodeFS.fsyncSync(directory);
+      } catch (cause) {
+        // Windows refuses to flush a directory; NTFS journals the removal itself.
+        if (!(cause instanceof Error && "code" in cause && cause.code === "EPERM")) throw cause;
+      } finally {
+        NodeFS.closeSync(directory);
+      }
+    },
+    catch: (cause) => new ServiceBackupClaimError({ path: claimPath, cause }),
+  });
+};
+
 /**
  * The lock is an exclusive transaction on `server-owner.sqlite`, which never
  * holds data and must never be unlinked: the OS releases it when the process
@@ -197,7 +232,8 @@ const openOwnershipLock = (stateDir: string) =>
       }
       const db = new NodeSqlite.DatabaseSync(lockPath);
       try {
-        db.exec("PRAGMA busy_timeout = 0; BEGIN EXCLUSIVE;");
+        // An idle service launcher probes this lock for a moment; wait out that probe.
+        db.exec("PRAGMA busy_timeout = 250; BEGIN EXCLUSIVE;");
         const identity = NodeFS.statSync(lockPath, { bigint: true });
         return {
           db,
@@ -219,9 +255,11 @@ const openOwnershipLock = (stateDir: string) =>
 export const holdServerOwnershipLock = Effect.fn("holdServerOwnershipLock")(function* (
   statePath: string,
 ) {
-  yield* Effect.acquireRelease(openOwnershipLock(NodePath.dirname(statePath)), ({ db }) =>
+  const stateDir = NodePath.dirname(statePath);
+  yield* Effect.acquireRelease(openOwnershipLock(stateDir), ({ db }) =>
     Effect.sync(() => db.close()),
   );
+  yield* clearServiceBackupClaim(stateDir);
 });
 
 /** Hold an exclusive lock on the state directory until the scope closes. */
@@ -234,6 +272,14 @@ export const acquireServerOwnership = Effect.fn("acquireServerOwnership")(functi
     .uuidV4()
     .pipe(Effect.mapError((cause) => new ServerOwnershipError({ stateDir, cause })));
   const lockPath = ownershipLockPath(stateDir);
+  // IPC channels are not inherited; without one, launcher context belongs to an ancestor.
+  const launcherContext = (yield* ServiceLauncherHostProcess).connected
+    ? decodeServiceLauncherContext(
+        (yield* HostProcess.Environment)[SERVICE_LAUNCHER_CONTEXT_ENV] ?? "",
+      )
+    : undefined;
+  const trialUpdateId =
+    launcherContext?.update?.status === "pending" ? launcherContext.update.id : undefined;
   const lock = yield* Effect.acquireRelease(openOwnershipLock(stateDir), ({ db }) =>
     readPersistedServerRuntimeState(statePath).pipe(
       Effect.flatMap((state) =>
@@ -260,6 +306,7 @@ export const acquireServerOwnership = Effect.fn("acquireServerOwnership")(functi
   if (olderServiceHome !== undefined) {
     return yield* new OlderBootServiceError({ baseDir: olderServiceHome });
   }
+  yield* clearServiceBackupClaim(stateDir, trialUpdateId);
 
   yield* Effect.gen(function* () {
     let lost = lock.replacedDuringAcquire;

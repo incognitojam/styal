@@ -25,6 +25,10 @@ export const SERVICE_UNIT_ENV = BOOT_SERVICE_UNIT_ENV;
 export const SERVICE_STOP_MARKER_FILE = ".service-stopping";
 /** Held by a Windows launcher while it runs: Task Scheduler tracks only the task's console host. */
 export const SERVICE_LAUNCHER_LOCK_FILE = "service-launcher.lock";
+/** In userdata, the id of the pending update whose database backup a failed trial may restore.
+    Each server taking ownership removes it unless it is that update's trial, so the backup is
+    never restored over another server's writes. */
+export const SERVICE_BACKUP_CLAIM_FILE = "service-update-backup-claim";
 
 const unquoteSystemdValue = (raw: string) =>
   (raw.startsWith('"') && raw.endsWith('"')

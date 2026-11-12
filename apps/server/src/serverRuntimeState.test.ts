@@ -19,7 +19,11 @@ import { vi } from "vite-plus/test";
 
 import { renderBootServicePlist, renderBootServiceUnit } from "./cloud/bootService.ts";
 import { ServiceLauncherHostProcess } from "./cloud/serviceLauncherClient.ts";
-import { SERVICE_LAUNCHER_CONTEXT_ENV } from "./cloud/serviceProtocol.ts";
+import {
+  SERVICE_BACKUP_CLAIM_FILE,
+  SERVICE_LAUNCHER_CONTEXT_ENV,
+  SERVICE_LAUNCHER_PROTOCOL,
+} from "./cloud/serviceProtocol.ts";
 import * as ProcessRunner from "./processRunner.ts";
 import * as ServerOwnership from "./serverOwnership.ts";
 import * as ServerRuntimeState from "./serverRuntimeState.ts";
@@ -196,6 +200,46 @@ describe("server ownership", () => {
     }).pipe(Effect.provide(layerOwnership)),
   );
 
+  it.effect("clears a service update's backup claim unless it starts as that update's trial", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-owner-claim-" });
+      const claimPath = path.join(root, SERVICE_BACKUP_CLAIM_FILE);
+      const environment = {
+        [SERVICE_LAUNCHER_CONTEXT_ENV]: JSON.stringify({
+          protocol: SERVICE_LAUNCHER_PROTOCOL,
+          childVersion: "1.1.0",
+          update: {
+            id: "update-1",
+            fromVersion: "1.0.0",
+            targetVersion: "1.1.0",
+            dbPath: path.join(root, "state.sqlite"),
+            status: "pending",
+          },
+        }),
+      };
+      const start = (connected: boolean) =>
+        Effect.scoped(
+          ServerOwnership.acquireServerOwnership(path.join(root, "server-runtime.json")),
+        ).pipe(
+          Effect.provideService(HostProcess.Environment, environment),
+          Effect.provideService(ServiceLauncherHostProcess, {
+            connected,
+            send: () => false,
+            on: () => undefined,
+            off: () => undefined,
+          }),
+        );
+      yield* fs.writeFileString(claimPath, "update-1");
+      yield* start(true);
+      assert.equal(yield* fs.readFileString(claimPath), "update-1");
+      // Without the launcher's IPC channel the context belongs to an ancestor, not this server.
+      yield* start(false);
+      assert.isFalse(yield* fs.exists(claimPath));
+    }).pipe(Effect.provide(layerOwnership)),
+  );
+
   describe.skipIf(HostProcess.Platform.defaultValue() === "win32")("lock file checks", () => {
     it.effect.each([
       "unchanged",
@@ -285,7 +329,9 @@ describe("server ownership", () => {
       const path = yield* Path.Path;
       const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-owner-legacy-" });
       const statePath = path.join(root, "server-runtime.json");
+      const claimPath = path.join(root, SERVICE_BACKUP_CLAIM_FILE);
       const state = yield* makeState;
+      yield* fs.writeFileString(claimPath, "update-1");
       yield* ServerRuntimeState.persistServerRuntimeState({
         path: statePath,
         // Any record time after this process started proves the PID was not reused.
@@ -295,11 +341,14 @@ describe("server ownership", () => {
         Effect.flip,
       );
       assert.equal(refused._tag, "ServerAlreadyRunningError");
+      // A refused server never opens the database, so a pending update's backup still covers it.
+      assert.isTrue(yield* fs.exists(claimPath));
       yield* ServerRuntimeState.persistServerRuntimeState({
         path: statePath,
         state: { ...state, pid: 0 },
       });
       yield* Effect.scoped(ServerOwnership.acquireServerOwnership(statePath));
+      assert.isFalse(yield* fs.exists(claimPath));
     }).pipe(Effect.provide(layerOwnership)),
   );
 
