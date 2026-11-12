@@ -58,6 +58,10 @@ function status(
   };
 }
 
+function token(accountId: string): string {
+  return `e30.${btoa(JSON.stringify({ sub: accountId }))}.signature`;
+}
+
 const makeHarness = Effect.fn("RelayDiscoveryTest.makeHarness")(function* () {
   const networkStatus = yield* SubscriptionRef.make<NetworkStatus>("online");
   const listCalls = yield* Ref.make(0);
@@ -65,7 +69,8 @@ const makeHarness = Effect.fn("RelayDiscoveryTest.makeHarness")(function* () {
     yield* Ref.make<ReadonlyArray<RelayClientEnvironmentRecord>>(environments);
   const listFailure = yield* Ref.make<ManagedRelay.ManagedRelayClientError | null>(null);
   const secondListCall = yield* Deferred.make<void>();
-  const clerkToken = yield* Ref.make<string | null>("clerk-token");
+  const listGate = yield* Ref.make<Deferred.Deferred<void> | null>(null);
+  const clerkToken = yield* Ref.make<string | null>(token("account-1"));
   const sessionIdentity = { accountId: "account-1" };
   const wakeups = yield* SubscriptionRef.make<{
     readonly sequence: number;
@@ -100,6 +105,8 @@ const makeHarness = Effect.fn("RelayDiscoveryTest.makeHarness")(function* () {
         if (count >= 2) {
           yield* Deferred.succeed(secondListCall, undefined);
         }
+        const gate = yield* Ref.get(listGate);
+        if (gate) yield* Deferred.await(gate);
         const failure = yield* Ref.get(listFailure);
         if (failure) {
           return yield* failure;
@@ -174,6 +181,7 @@ const makeHarness = Effect.fn("RelayDiscoveryTest.makeHarness")(function* () {
     listCalls,
     listedEnvironments,
     listFailure,
+    listGate,
     clerkToken,
     networkStatus,
     secondListCall,
@@ -187,6 +195,105 @@ const makeHarness = Effect.fn("RelayDiscoveryTest.makeHarness")(function* () {
 });
 
 describe("RelayEnvironmentDiscovery", () => {
+  it.effect("keeps the same account's rows and statuses until their replacements arrive", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness();
+      yield* Effect.gen(function* () {
+        const discovery = yield* RelayEnvironmentDiscovery.RelayEnvironmentDiscovery;
+        const requests = yield* Ref.get(harness.statusRequests);
+        for (const environment of environments) {
+          yield* Deferred.succeed(
+            requests.get(environment.environmentId)!,
+            status(environment, "online"),
+          );
+        }
+        yield* discovery.refresh;
+        const before = yield* SubscriptionRef.get(discovery.state);
+        const gate = yield* Deferred.make<void>();
+        yield* Ref.set(harness.listGate, gate);
+        const added = { ...environments[1]!, environmentId: EnvironmentId.make("environment-3") };
+        const retained = { ...environments[0]!, label: "Updated label" };
+        yield* Ref.set(harness.listedEnvironments, [retained, added]);
+        const retainedStatus = yield* Deferred.make<
+          RelayEnvironmentStatusResponse,
+          ManagedRelay.ManagedRelayClientError
+        >();
+        const addedStatus = yield* Deferred.make<
+          RelayEnvironmentStatusResponse,
+          ManagedRelay.ManagedRelayClientError
+        >();
+        yield* Ref.set(
+          harness.statusRequests,
+          new Map([
+            [retained.environmentId, retainedStatus],
+            [added.environmentId, addedStatus],
+          ]),
+        );
+        const refresh = yield* Effect.forkChild(discovery.refresh);
+        yield* Deferred.await(harness.secondListCall);
+        const pending = yield* SubscriptionRef.get(discovery.state);
+        expect(pending.environments).toEqual(before.environments);
+        expect(pending.refreshing).toBe(true);
+        expect(pending.listed).toBe(false);
+        expect(
+          RelayEnvironmentDiscovery.relayEnvironmentRegistration(pending, added.environmentId),
+        ).toBe("unknown");
+        yield* Deferred.succeed(gate, undefined);
+        const listed = yield* SubscriptionRef.changes(discovery.state).pipe(
+          Stream.filter((state) => state.listed),
+          Stream.runHead,
+          Effect.map(Option.getOrThrow),
+        );
+        expect([...listed.environments.keys()]).toEqual([
+          retained.environmentId,
+          added.environmentId,
+        ]);
+        expect(listed.environments.get(retained.environmentId)).toEqual({
+          ...before.environments.get(retained.environmentId),
+          environment: retained,
+        });
+        expect(listed.environments.get(added.environmentId)?.availability).toBe("checking");
+        yield* Deferred.succeed(retainedStatus, status(retained, "offline"));
+        yield* Deferred.succeed(addedStatus, status(added, "online"));
+        yield* Fiber.join(refresh);
+        const complete = yield* SubscriptionRef.get(discovery.state);
+        expect(complete.environments.get(retained.environmentId)?.availability).toBe("offline");
+        expect(complete.environments.get(added.environmentId)?.availability).toBe("online");
+        expect(complete.refreshing).toBe(false);
+      }).pipe(Effect.provide(harness.layer));
+    }),
+  );
+
+  it.effect("clears the previous account's rows before the new account's listing arrives", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness();
+      yield* Effect.gen(function* () {
+        const discovery = yield* RelayEnvironmentDiscovery.RelayEnvironmentDiscovery;
+        const requests = yield* Ref.get(harness.statusRequests);
+        for (const environment of environments) {
+          yield* Deferred.succeed(
+            requests.get(environment.environmentId)!,
+            status(environment, "online"),
+          );
+        }
+        yield* discovery.refresh;
+        const gate = yield* Deferred.make<void>();
+        yield* Ref.set(harness.listGate, gate);
+        yield* Ref.set(harness.clerkToken, token("account-2"));
+        yield* Ref.set(harness.listedEnvironments, []);
+        const refresh = yield* Effect.forkChild(discovery.refresh);
+        yield* Deferred.await(harness.secondListCall);
+        const pending = yield* SubscriptionRef.get(discovery.state);
+        expect(pending.environments.size).toBe(0);
+        expect(pending.listed).toBe(false);
+        expect(pending.refreshing).toBe(true);
+        yield* Deferred.succeed(gate, undefined);
+        yield* Fiber.join(refresh);
+        expect((yield* SubscriptionRef.get(discovery.state)).environments.size).toBe(0);
+      }).pipe(Effect.provide(harness.layer));
+    }),
+  );
+
   it.effect("fetches a fresh list after removal while an older refresh is checking statuses", () =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -484,6 +591,15 @@ describe("RelayEnvironmentDiscovery", () => {
       const harness = yield* makeHarness();
       yield* Effect.gen(function* () {
         const discovery = yield* RelayEnvironmentDiscovery.RelayEnvironmentDiscovery;
+        const requests = yield* Ref.get(harness.statusRequests);
+        for (const environment of environments) {
+          yield* Deferred.succeed(
+            requests.get(environment.environmentId)!,
+            status(environment, "online"),
+          );
+        }
+        yield* discovery.refresh;
+        expect((yield* SubscriptionRef.get(discovery.state)).environments.size).toBe(2);
         yield* Ref.set(harness.clerkToken, null);
         yield* discovery.refresh;
 

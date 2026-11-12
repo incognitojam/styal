@@ -229,14 +229,6 @@ export const make = Effect.fn("RelayEnvironmentDiscovery.make")(function* () {
 
       let generation = yield* Ref.get(accountGeneration);
       yield* Ref.set(refreshGeneration, generation);
-      yield* SubscriptionRef.set(state, {
-        environments: new Map(),
-        listed: false,
-        refreshing: true,
-        offline: false,
-        error: Option.none(),
-      });
-
       // Sign-out triggers credentials-changed refreshes and must settle to an empty list.
       // Only session-level missing credentials are benign; relay-side auth failures must surface.
       const tokenResult = yield* Effect.result(session.clerkToken);
@@ -246,10 +238,8 @@ export const make = Effect.fn("RelayEnvironmentDiscovery.make")(function* () {
           if ((yield* Ref.get(accountGeneration)) !== generation) {
             return;
           }
-          yield* SubscriptionRef.update(state, (current) => ({
-            ...current,
-            refreshing: false,
-          }));
+          yield* Ref.set(activeAccountId, Option.none());
+          yield* SubscriptionRef.set(state, EMPTY_RELAY_ENVIRONMENT_DISCOVERY_STATE);
           return;
         }
         return yield* failure;
@@ -268,6 +258,17 @@ export const make = Effect.fn("RelayEnvironmentDiscovery.make")(function* () {
         yield* Ref.set(refreshGeneration, generation);
       }
       yield* Ref.set(activeAccountId, accountId);
+      const sameAccount =
+        Option.isSome(previousAccountId) &&
+        Option.isSome(accountId) &&
+        previousAccountId.value === accountId.value;
+      yield* SubscriptionRef.update(state, (current) => ({
+        environments: sameAccount ? current.environments : new Map(),
+        listed: false,
+        refreshing: true,
+        offline: false,
+        error: Option.none(),
+      }));
 
       const environments = yield* relay
         .listEnvironments({ clerkToken })
@@ -275,20 +276,20 @@ export const make = Effect.fn("RelayEnvironmentDiscovery.make")(function* () {
       if ((yield* Ref.get(accountGeneration)) !== generation) {
         return;
       }
-      const next = new Map<string, RelayDiscoveredEnvironment>();
-      for (const environment of environments) {
-        next.set(environment.environmentId, {
-          environment,
-          availability: "checking",
-          status: Option.none(),
-          error: Option.none(),
-        });
-      }
-      yield* SubscriptionRef.update(state, (current) => ({
-        ...current,
-        environments: next,
-        listed: true,
-      }));
+      yield* SubscriptionRef.update(state, (current) => {
+        const next = new Map<string, RelayDiscoveredEnvironment>();
+        for (const environment of environments) {
+          const previous = current.environments.get(environment.environmentId);
+          next.set(environment.environmentId, {
+            availability: "checking",
+            status: Option.none(),
+            error: Option.none(),
+            ...previous,
+            environment,
+          });
+        }
+        return { ...current, environments: next, listed: true };
+      });
 
       yield* Effect.forEach(
         environments,
@@ -312,11 +313,10 @@ export const make = Effect.fn("RelayEnvironmentDiscovery.make")(function* () {
           if ((yield* Ref.get(accountGeneration)) !== generation) {
             return;
           }
-          yield* SubscriptionRef.update(state, (current) => ({
-            ...current,
-            refreshing: false,
+          yield* SubscriptionRef.set(state, {
+            ...EMPTY_RELAY_ENVIRONMENT_DISCOVERY_STATE,
             error: Option.some(error),
-          }));
+          });
         }),
       ),
     ),

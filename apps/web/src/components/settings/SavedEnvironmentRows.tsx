@@ -182,8 +182,7 @@ export function SavedBackendListRow({
     serverUpdateState.status === "running" && serverUpdateState.stage === "resuming";
   const status = savedBackendStatus(environment);
   const serverVersion = environment.serverConfig?.environment.serverVersion ?? null;
-  // Discovery empties its map on every refresh, so hold the last descriptor
-  // seen or the glyph would blink back to the generic one each time.
+  // Keep the last descriptor when discovery fails or credentials change.
   const relayDiscovery = useRelayEnvironmentDiscovery();
   const discoveredDescriptor = Option.getOrNull(
     relayDiscovery.environments.get(environmentId)?.status ?? Option.none(),
