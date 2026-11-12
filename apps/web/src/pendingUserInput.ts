@@ -42,6 +42,19 @@ export function threadContextsReferencedByAnswer(
   return threadContexts.filter((record) => referencedIds.has(record.contextId));
 }
 
+/** The draft's thread references once undo takes a displaced answer back out of its prompt. */
+export function threadContextsAfterWithdrawal(
+  threadContexts: ReadonlyArray<ThreadContextRecord>,
+  withdrawnAnswer: string,
+  nextPrompt: string,
+) {
+  const withdrawn = new Set(collectInlineContextIds(withdrawnAnswer));
+  const stillReferenced = new Set(collectInlineContextIds(nextPrompt));
+  return threadContexts.filter(
+    (record) => !withdrawn.has(record.contextId) || stillReferenced.has(record.contextId),
+  );
+}
+
 export interface PendingUserInputProgress<Q extends UserInputQuestion = UserInputQuestion> {
   questionIndex: number;
   activeQuestion: Q | null;
@@ -70,6 +83,28 @@ export function carryDisplacedCustomAnswerIntoPrompt(
     return displaced;
   }
   return `${prompt.trimEnd()}${DISPLACED_ANSWER_SEPARATOR}${displaced}`;
+}
+
+/**
+ * Takes set-aside answer text back out of the thread draft once it is the answer again.
+ * `laterDisplaced` is what was set aside after it, in order: together they locate this copy,
+ * so equal text inside another answer or the user's own draft is never the one removed.
+ */
+export function withdrawDisplacedCustomAnswerFromPrompt(
+  prompt: string,
+  displaced: string,
+  laterDisplaced: ReadonlyArray<string> = [],
+): string {
+  const text = displaced.trim();
+  if (text.length === 0) return prompt;
+  const later = laterDisplaced.map((entry) => entry.trim()).filter((entry) => entry.length > 0);
+  const suffix = [text, ...later].join(DISPLACED_ANSWER_SEPARATOR);
+  if (!prompt.endsWith(suffix)) return prompt;
+  const before = prompt.slice(0, prompt.length - suffix.length);
+  const after = later.join(DISPLACED_ANSWER_SEPARATOR);
+  if (before.length === 0) return after;
+  if (!before.endsWith(DISPLACED_ANSWER_SEPARATOR)) return prompt;
+  return after.length === 0 ? before.slice(0, -DISPLACED_ANSWER_SEPARATOR.length) : before + after;
 }
 
 function countAnsweredPendingUserInputQuestions(
