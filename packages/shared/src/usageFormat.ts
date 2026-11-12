@@ -71,21 +71,18 @@ export function formatCount(value: number): string {
   return INTEGER.format(Math.round(value));
 }
 
-const TOKEN_UNITS = [
-  [1e3, "K"],
-  [1e6, "M"],
-  [1e9, "B"],
-] as const;
+const TOKEN_SUFFIXES = ["K", "M", "B", "T"] as const;
 
 export function formatTokens(value: number): string {
-  const rounded = Math.round(value);
-  if (Math.abs(rounded) < 1e3) return INTEGER.format(rounded);
-  // Take the smallest unit that stays under 1000 once rounded, so 999,600
-  // reads "1M" rather than "1000K".
-  const [size, suffix] = TOKEN_UNITS.find(
-    ([unitSize]) => Math.abs(Number(trim(value / unitSize))) < 1e3,
-  ) ?? [1e12, "T"];
-  return `${trim(value / size)}${suffix}`;
+  if (Math.abs(Math.round(value)) < 1e3) return INTEGER.format(Math.round(value));
+  let scaled = value / 1e3;
+  let unit = 0;
+  // Choose the unit after rounding, so 999,999 reads 1M rather than 1000K.
+  while (Math.abs(Number(trim(scaled))) >= 1e3 && unit < TOKEN_SUFFIXES.length - 1) {
+    scaled /= 1e3;
+    unit += 1;
+  }
+  return `${trim(scaled)}${TOKEN_SUFFIXES[unit]}`;
 }
 
 /** Estimated operational CO2 from generated tokens, in grams. */

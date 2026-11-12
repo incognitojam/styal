@@ -24,8 +24,11 @@ describe("formatTokens", () => {
   it("moves up a unit when rounding reaches 1000", () => {
     expect(formatTokens(999.6)).toBe("1K");
     expect(formatTokens(999_900)).toBe("1M");
+    expect(formatTokens(999_999)).toBe("1M");
     expect(formatTokens(-999_900)).toBe("-1M");
+    expect(formatTokens(-999_999)).toBe("-1M");
     expect(formatTokens(999_700_000)).toBe("1B");
+    expect(formatTokens(999_999_999)).toBe("1B");
     expect(formatTokens(999_700_000_000)).toBe("1T");
   });
 });
