@@ -155,7 +155,9 @@ publish it. If Git has no name or email on that machine, the project is created 
 first commit.
 
 Use **Add Project** in the command palette (`Cmd/Ctrl+K`) to clone a repository. Choose a hosting
-provider or paste a Git URL, then choose where to save it. A branch or file page copied from GitHub,
+provider or paste a Git URL, then choose where to save it. Only GitHub is listed at first. To list
+another provider here and in **Publish Repository**, turn on its switch under
+**Settings → Source control**. A branch or file page copied from GitHub,
 GitLab, GitCafe, Codeberg or Bitbucket also works: styal clones that repository's default branch.
 On other hosts, paste the repository's clone URL. GitHub repositories clone over HTTPS; to use SSH,
 choose **Git URL** and paste the SSH clone URL. The project opens right away while the

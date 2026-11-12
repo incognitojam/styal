@@ -7,6 +7,7 @@ import type {
   ServerConfig,
   SourceControlDefaultRepositoryRemote,
   SourceControlDefaultRepositoryState,
+  ServerSettings,
   SourceControlDiscoveryResult,
   SourceControlRepositoryInfo,
 } from "@t3tools/contracts";
@@ -196,11 +197,24 @@ export function addProjectDefaultRepositoryChoices(
   return choices.size > 1 ? [...choices.values()] : [];
 }
 
+export type OfferedSourceControlProviders = ServerSettings["offeredSourceControlProviders"];
+
+/** Whether the project pickers offer a host. Only the default host is on until the user turns others on. */
+export function isSourceControlProviderOffered(
+  offered: OfferedSourceControlProviders | undefined,
+  kind: SourceControlProviderKind,
+): boolean {
+  return offered?.[kind] ?? kind === sourceControlClients.get(undefined).kind;
+}
+
 export function sortAddProjectProviderSources(
   readiness: AddProjectRemoteSourceReadiness,
+  offered: OfferedSourceControlProviders | undefined,
 ): ReadonlyArray<SourceControlProviderKind> {
   return Arr.sort(
-    ADD_PROJECT_REMOTE_PROVIDER_SOURCES,
+    ADD_PROJECT_REMOTE_PROVIDER_SOURCES.filter((source) =>
+      isSourceControlProviderOffered(offered, source),
+    ),
     Order.mapInput(
       Order.Struct({
         ready: Order.flip(Order.Boolean),
@@ -317,9 +331,11 @@ export interface NewProjectPublishTarget {
 
 export function getNewProjectPublishTargets(
   discovery: SourceControlDiscoveryResult | null,
+  offered: OfferedSourceControlProviders | undefined,
 ): ReadonlyArray<NewProjectPublishTarget> {
   const readiness = buildAddProjectRemoteSourceReadiness(discovery);
   return sourceControlClients.definitions.flatMap((definition) => {
+    if (!isSourceControlProviderOffered(offered, definition.kind)) return [];
     if (!readiness(definition.kind).ready) return [];
     const provider = discovery?.sourceControlProviders.find(
       (candidate) => candidate.kind === definition.kind,
