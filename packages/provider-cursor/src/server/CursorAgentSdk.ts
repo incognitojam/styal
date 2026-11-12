@@ -438,7 +438,8 @@ export const makeCursorAgentSdkRunner = Effect.fn("makeCursorAgentSdkRunner")(fu
             : makeCursorSdkWorkerApi(
                 resolveCursorSdkModulePath(),
                 input.environment,
-                ...(input.storeCwd === undefined ? [] : [input.storeCwd]),
+                input.storeCwd,
+                cursorSdk.useHttp1ForAgent,
               ),
 
         catch: (cause) => runnerError(cause, `agent.${input.operation}`),

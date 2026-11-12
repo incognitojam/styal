@@ -23,7 +23,8 @@ export interface CursorSdkApi {
 // its shell children inherit that environment, without changing another session.
 const workerSource = String.raw`
 const {parentPort,workerData}=require('node:worker_threads');
-const {Agent,createAgentPlatform}=require(workerData.modulePath);
+const {Agent,createAgentPlatform,Cursor}=require(workerData.modulePath);
+if(workerData.useHttp1ForAgent){Cursor.configure({local:{useHttp1ForAgent:true}});}
 globalThis[Symbol.for("@cursor/sdk.shellStreamOutput")]=(output)=>{
   if(output.conversationId===agent?.agentId&&typeof output.toolCallId==='string'){parentPort.postMessage({update:{type:'shell-output-delta',event:{...output.event,toolCallId:output.toolCallId}}});}
 };
@@ -71,11 +72,12 @@ export function makeCursorSdkWorkerApi(
   modulePath: string,
   environment: NodeJS.ProcessEnv,
   storeCwd?: string,
+  useHttp1ForAgent = false,
 ): CursorSdkApi {
   const worker = new NodeWorkerThreads.Worker(workerSource, {
     eval: true,
     env: environment,
-    workerData: { modulePath, storeCwd },
+    workerData: { modulePath, storeCwd, useHttp1ForAgent },
   });
   let nextId = 0;
   const pending = new Map<
