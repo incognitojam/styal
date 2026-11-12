@@ -39,6 +39,7 @@ import {
   type OrchestrationV2RuntimeRequest,
   type OrchestrationV2AuthRecoveryUpdate,
   type OrchestrationV2LimitRecoveryUpdate,
+  type OrchestrationV2Notification,
   type OrchestrationV2ServerCommand,
   type ThreadPullRequestLink,
   type ThreadPullRequestWatch,
@@ -90,6 +91,7 @@ import * as KeyedLock from "@t3tools/shared/KeyedLock";
 import { modelSelectionsEqual } from "@t3tools/shared/model";
 import { orchestrationV2RunRecordedWorkEndMs } from "@t3tools/shared/orchestrationTiming";
 import { modelSwitchSince } from "./modelSwitch.ts";
+import { combinePullRequestWatchWakes, type PullRequestWatchWake } from "./pullRequestWatch.ts";
 import { recordThreadOpen } from "@t3tools/shared/paletteSearch";
 import {
   backgroundWorkHoldsCompletion,
@@ -1142,14 +1144,21 @@ function pullRequestSnapshotEndsWatch(
   );
 }
 
-function isStalePullRequestWatchWake(
+type MonitorPullRequestStamp = NonNullable<
+  Extract<OrchestrationV2Notification["source"], { readonly kind: "monitor" }>["pullRequest"]
+>;
+
+function monitorPullRequestStamps(
+  source: OrchestrationV2Notification["source"] | undefined,
+): ReadonlyArray<MonitorPullRequestStamp> {
+  if (source?.kind !== "monitor" || source.pullRequest === undefined) return [];
+  return [source.pullRequest, ...(source.otherPullRequests ?? [])];
+}
+
+function isStalePullRequestWatchStamp(
   projection: Pick<OrchestrationV2ThreadProjection, "thread" | "messages">,
-  run: OrchestrationV2Run,
+  stamp: MonitorPullRequestStamp,
 ): boolean {
-  const source = projection.messages.find((message) => message.id === run.userMessageId)
-    ?.notification?.source;
-  if (source?.kind !== "monitor" || source.pullRequest === undefined) return false;
-  const stamp = source.pullRequest;
   const link = threadPullRequestsOf(projection.thread).find(
     (candidate) =>
       candidate.source !== "stack-dismissed" && threadPullRequestKeysEqual(candidate, stamp),
@@ -1162,16 +1171,15 @@ function isStalePullRequestWatchWake(
   }
   if (link.watch === undefined) {
     // A final notice can preserve earlier wakes unless it supersedes them, as a merge does.
-    const endedWithNotice = projection.messages.some((message) => {
-      const ending = message.notification?.source;
-      return (
-        ending?.kind === "monitor" &&
-        ending.pullRequest?.watchEnded === true &&
-        ending.pullRequest.supersedesUpdates !== true &&
-        ending.pullRequest.watchStartedAt === stamp.watchStartedAt &&
-        threadPullRequestKeysEqual(ending.pullRequest, stamp)
-      );
-    });
+    const endedWithNotice = projection.messages.some((message) =>
+      monitorPullRequestStamps(message.notification?.source).some(
+        (ending) =>
+          ending.watchEnded === true &&
+          ending.supersedesUpdates !== true &&
+          ending.watchStartedAt === stamp.watchStartedAt &&
+          threadPullRequestKeysEqual(ending, stamp),
+      ),
+    );
     return (
       !endedWithNotice ||
       link.endedWatch?.startedAt !== stamp.watchStartedAt ||
@@ -1183,6 +1191,58 @@ function isStalePullRequestWatchWake(
     (stamp.headSha !== null && link.watch.headSha !== stamp.headSha) ||
     pullRequestSnapshotEndsWatch(link.snapshot, link.watch.startedAt)
   );
+}
+
+function isStalePullRequestWatchWake(
+  projection: Pick<OrchestrationV2ThreadProjection, "thread" | "messages">,
+  run: OrchestrationV2Run,
+): boolean {
+  const stamps = monitorPullRequestStamps(
+    projection.messages.find((message) => message.id === run.userMessageId)?.notification?.source,
+  );
+  return (
+    stamps.length > 0 && stamps.every((stamp) => isStalePullRequestWatchStamp(projection, stamp))
+  );
+}
+
+/**
+ * A queued wake covering several pull requests, rebuilt from the ones still current, or
+ * undefined when it needs no change.
+ */
+function currentPullRequestWatchWake(
+  projection: Pick<OrchestrationV2ThreadProjection, "thread" | "messages">,
+  run: OrchestrationV2Run,
+): OrchestrationV2ConversationMessage | undefined {
+  const message = projection.messages.find((candidate) => candidate.id === run.userMessageId);
+  const stamps = monitorPullRequestStamps(message?.notification?.source);
+  if (message === undefined || stamps.length < 2) return undefined;
+  const current = stamps.filter((stamp) => !isStalePullRequestWatchStamp(projection, stamp));
+  const [first, ...rest] = current;
+  if (first === undefined || rest.length === stamps.length - 1) return undefined;
+  const sections = current.flatMap(({ section }) => (section === undefined ? [] : [section]));
+  if (sections.length !== current.length) return undefined;
+  const wake = combinePullRequestWatchWakes(
+    sections.map(({ text, outcome, summary }) => ({
+      text,
+      notification: { source: { kind: "monitor" }, outcome, summary },
+    })) as [PullRequestWatchWake, ...Array<PullRequestWatchWake>],
+  );
+  return {
+    ...message,
+    text: wake.text,
+    notification: {
+      ...wake.notification,
+      source: {
+        kind: "monitor",
+        pullRequest: rest.length === 0 ? withoutSection(first) : first,
+        ...(rest.length === 0 ? {} : { otherPullRequests: rest }),
+      },
+    },
+  };
+}
+
+function withoutSection({ section: _, ...stamp }: MonitorPullRequestStamp) {
+  return stamp;
 }
 
 function queuedRunCancellationEvents(
@@ -2404,6 +2464,28 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         );
         projection = yield* readCommandProjection(threadId);
         storedQueuedRun = nextQueuedRun(projection);
+      }
+      // A wake that outlived some of its pull requests tells only the current ones.
+      const currentWake =
+        storedQueuedRun === undefined
+          ? undefined
+          : currentPullRequestWatchWake(projection, storedQueuedRun);
+      if (storedQueuedRun !== undefined && currentWake !== undefined) {
+        const now = yield* DateTime.now;
+        yield* writeSystemEvents([
+          {
+            type: "message.updated",
+            threadId,
+            runId: storedQueuedRun.id,
+            ...(storedQueuedRun.rootNodeId === null ? {} : { nodeId: storedQueuedRun.rootNodeId }),
+            providerInstanceId: storedQueuedRun.providerInstanceId,
+            occurredAt: now,
+            payload: { ...currentWake, updatedAt: now },
+          },
+        ]);
+        const runId = storedQueuedRun.id;
+        projection = yield* readCommandProjection(threadId);
+        storedQueuedRun = projection.runs.find((run) => run.id === runId);
       }
       if (storedQueuedRun === undefined) {
         return;
@@ -3856,17 +3938,124 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     });
   });
 
+  // Recheck under the lock after reading the host. Record the watch first so wake events carry it.
+  const dispatchPullRequestWatchSync = Effect.fn("orchestrationV2.dispatch.pullRequestWatchSync")(
+    function* (
+      command: Extract<
+        OrchestrationV2ServerCommand,
+        { readonly type: "thread.pull-request-watch.sync" }
+      >,
+      events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
+      effects: Ref.Ref<Array<PendingOrchestrationEffectV2>>,
+    ) {
+      const thread = yield* projectionStore
+        .getThread(command.threadId)
+        .pipe(
+          Effect.mapError(
+            (cause) => new OrchestratorProjectionError({ threadId: command.threadId, cause }),
+          ),
+        );
+      const { others = [], wake, ...primary } = command;
+      const entries = [
+        { ...primary, includesRemarks: wake?.includesRemarks },
+        ...others.map((other) => ({
+          type: primary.type,
+          commandId: primary.commandId,
+          threadId: primary.threadId,
+          ...other,
+        })),
+      ].map((entry) => {
+        const key = normalizeThreadPullRequestKey(entry);
+        const link = threadPullRequestsOf(thread).find(
+          (candidate) =>
+            candidate.source !== "stack-dismissed" && threadPullRequestKeysEqual(candidate, key),
+        );
+        return { entry, key, link };
+      });
+      const inactive =
+        thread.archivedAt !== null ||
+        thread.settledOverride === "settled" ||
+        thread.settledAt !== null ||
+        isProviderNativeSubagentThread(thread);
+      // An idle thread dispatches immediately, bypassing queued-wake validation.
+      const outdated = entries.map(
+        ({ entry, link }) =>
+          wake?.notification.source.kind === "monitor" &&
+          entry.watch !== null &&
+          pullRequestSnapshotEndsWatch(link?.snapshot ?? null, entry.startedAt),
+      );
+      if (
+        entries.some(({ entry, link }) => link?.watch?.startedAt !== entry.startedAt) ||
+        (wake && inactive) ||
+        // One wake cannot drop the news of just some of its pull requests; the sender splits it.
+        (entries.length > 1 && outdated.some(Boolean))
+      ) {
+        return yield* new OrchestratorDispatchError({
+          commandId: command.commandId,
+          commandType: command.type,
+          cause: "The pull request watch ended or its thread settled while it was read.",
+        });
+      }
+      for (const { entry } of entries) {
+        const { includesRemarks: _, ...mutation } = entry;
+        yield* dispatchThreadMutation(mutation, events, effects);
+      }
+      if (wake === undefined || outdated[0]) return;
+      const { sections, ...wakeMessage } = wake;
+      const stamps = entries.map(({ entry, key }, index) => ({
+        ...key,
+        watchStartedAt: entry.startedAt,
+        headSha: entry.includesRemarks === true ? null : (entry.watch?.headSha ?? null),
+        ...(entry.watch === null
+          ? {
+              watchEnded: true,
+              // Only a merge notice, which goes alone, supersedes earlier updates.
+              ...(index === 0 && wake.supersedesUpdates === true
+                ? { supersedesUpdates: true }
+                : {}),
+            }
+          : {}),
+        ...(entries.length > 1 && sections?.[index] !== undefined
+          ? { section: sections[index] }
+          : {}),
+      }));
+      yield* dispatchMessage(
+        {
+          type: "message.dispatch",
+          commandId: command.commandId,
+          threadId: command.threadId,
+          messageId: wakeMessage.messageId,
+          text: wakeMessage.text,
+          notification: {
+            ...wakeMessage.notification,
+            source:
+              wake.notification.source.kind === "monitor"
+                ? {
+                    kind: "monitor",
+                    pullRequest: stamps[0]!,
+                    ...(stamps.length > 1 ? { otherPullRequests: stamps.slice(1) } : {}),
+                  }
+                : wake.notification.source,
+          },
+          attachments: [],
+          dispatchMode: { type: "queue_after_active" },
+          createdBy: "agent",
+          creationSource: "server",
+        },
+        events,
+        effects,
+      );
+    },
+  );
+
   // Recheck under the lock after reading the host: refuse an ended watch or a wake for a settled
   // or archived thread. Record the watch first so wake events carry it.
-  const dispatchWatchUpdate = Effect.fn("orchestrationV2.dispatch.watchUpdate")(function* (
+  const dispatchWorkflowRunWatchUpdate = Effect.fn(
+    "orchestrationV2.dispatch.workflowRunWatchUpdate",
+  )(function* (
     command: Extract<
       OrchestrationV2ServerCommand,
-      {
-        readonly type:
-          | "thread.pull-request-watch.sync"
-          | "thread.workflow-run-watch.finish"
-          | "thread.workflow-run-watch.sync";
-      }
+      { readonly type: "thread.workflow-run-watch.finish" | "thread.workflow-run-watch.sync" }
     >,
     events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
     effects: Ref.Ref<Array<PendingOrchestrationEffectV2>>,
@@ -3878,22 +4067,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           (cause) => new OrchestratorProjectionError({ threadId: command.threadId, cause }),
         ),
       );
-    const pullRequestKey =
-      command.type === "thread.pull-request-watch.sync"
-        ? normalizeThreadPullRequestKey(command)
-        : undefined;
-    const pullRequestLink =
-      pullRequestKey === undefined
-        ? undefined
-        : threadPullRequestsOf(thread).find(
-            (candidate) =>
-              candidate.source !== "stack-dismissed" &&
-              threadPullRequestKeysEqual(candidate, pullRequestKey),
-          );
-    const watchStartedAt =
-      command.type === "thread.pull-request-watch.sync"
-        ? pullRequestLink?.watch?.startedAt
-        : (thread.workflowRuns ?? []).find((run) => workflowRunKeysEqual(run, command))?.startedAt;
+    const watchStartedAt = (thread.workflowRuns ?? []).find((run) =>
+      workflowRunKeysEqual(run, command),
+    )?.startedAt;
     const inactive =
       thread.archivedAt !== null ||
       thread.settledOverride === "settled" ||
@@ -3909,40 +4085,6 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     }
     yield* dispatchThreadMutation(command, events, effects);
     if (wake === undefined) return;
-    let notification = wake.notification;
-    if (
-      command.type === "thread.pull-request-watch.sync" &&
-      command.wake !== undefined &&
-      pullRequestKey !== undefined &&
-      pullRequestLink !== undefined &&
-      wake.notification.source.kind === "monitor"
-    ) {
-      // An idle thread dispatches immediately, bypassing queued-wake validation.
-      if (
-        command.watch !== null &&
-        pullRequestSnapshotEndsWatch(pullRequestLink.snapshot, command.startedAt)
-      ) {
-        return;
-      }
-      notification = {
-        ...wake.notification,
-        source: {
-          kind: "monitor",
-          pullRequest: {
-            ...pullRequestKey,
-            watchStartedAt: command.startedAt,
-            headSha:
-              command.wake.includesRemarks === true ? null : (command.watch?.headSha ?? null),
-            ...(command.watch === null
-              ? {
-                  watchEnded: true,
-                  ...(command.wake.supersedesUpdates === true ? { supersedesUpdates: true } : {}),
-                }
-              : {}),
-          },
-        },
-      };
-    }
     yield* dispatchMessage(
       {
         type: "message.dispatch",
@@ -3950,7 +4092,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         threadId: command.threadId,
         messageId: wake.messageId,
         text: wake.text,
-        notification,
+        notification: wake.notification,
         attachments: [],
         dispatchMode: { type: "queue_after_active" },
         createdBy: "agent",
@@ -15825,9 +15967,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         yield* dispatchThreadMutation(command, events, effects);
         break;
       case "thread.pull-request-watch.sync":
+        yield* dispatchPullRequestWatchSync(command, events, effects);
+        break;
       case "thread.workflow-run-watch.finish":
       case "thread.workflow-run-watch.sync":
-        yield* dispatchWatchUpdate(command, events, effects);
+        yield* dispatchWorkflowRunWatchUpdate(command, events, effects);
         break;
       case "thread.guest-share.open":
       case "thread.guest-share.redeem":
