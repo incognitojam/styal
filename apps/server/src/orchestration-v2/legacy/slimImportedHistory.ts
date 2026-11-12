@@ -135,14 +135,14 @@ export const slimImportedHistory = Effect.fn("slimImportedHistory")(function* (
         // Keep each activity reference, in order, without its payload.
         const items = yield* sql`
             UPDATE orchestration_v2_projection_turn_items
-            SET payload_json = json_set(payload_json, '$.legacyActivities', (
+            SET payload_json = json_set(payload_json, '$.legacyActivities', json((
               SELECT json_group_array(json(json_remove(activity.value, '$.payload')))
               FROM (
                 SELECT value
                 FROM json_each(orchestration_v2_projection_turn_items.payload_json, '$.legacyActivities')
                 ORDER BY key
               ) AS activity
-            ))
+            )))
             WHERE thread_id = ${threadId}
               AND turn_item_id LIKE 'import:v1:activity:%'
               AND json_type(payload_json, '$.legacyActivities[0].payload') IS NOT NULL
@@ -150,14 +150,14 @@ export const slimImportedHistory = Effect.fn("slimImportedHistory")(function* (
           `;
         const events = yield* sql`
             UPDATE orchestration_events INDEXED BY idx_orchestration_events_agent_stream_sequence
-            SET payload_json = json_set(payload_json, '$.legacyActivities', (
+            SET payload_json = json_set(payload_json, '$.legacyActivities', json((
               SELECT json_group_array(json(json_remove(activity.value, '$.payload')))
               FROM (
                 SELECT value
                 FROM json_each(orchestration_events.payload_json, '$.legacyActivities')
                 ORDER BY key
               ) AS activity
-            ))
+            )))
             WHERE application_event_version = 2
               AND aggregate_kind = 'thread'
               AND stream_id = ${threadId}
