@@ -72,7 +72,9 @@ it.effect("requires a safety copy and retains it until seven days after deletion
       ) VALUES ('synthetic:safety:old', 'project', 'synthetic:project', 1, 'project.updated',
         '2020-01-01T00:00:00.000Z', 'server', '{}', '{}', 2),
         ('synthetic:safety:head', 'project', 'synthetic:project', 2, 'project.updated',
-        '2020-01-01T00:00:00.000Z', 'server', '{}', '{}', 2)`;
+        '2020-01-01T00:00:00.000Z', 'server', '{}', '{}', 2),
+        ('synthetic:safety:v1-plan', 'thread', 'synthetic:import', 1, 'thread.proposed-plan-upserted',
+        '2020-01-01T00:00:00.000Z', 'server', '{}', '{}', 1)`;
       yield* sql`INSERT OR REPLACE INTO orchestration_v2_projection_metadata
         (projection_name,schema_version,last_sequence,updated_at) VALUES ('thread-projections',1,2,'2020-01-01T00:00:00.000Z'),
         ('event-log-prune-mark',1,2,'1969-01-01T00:00:00.000Z')`;
@@ -83,7 +85,7 @@ it.effect("requires a safety copy and retains it until seven days after deletion
       yield* fs.remove(`${backup}/manifest.json`);
       assert.equal((yield* maintenance.pruneEventStore()).deletedEventCount, 0);
       assert.deepEqual(yield* sql`SELECT COUNT(*) AS count FROM orchestration_events`, [
-        { count: 2 },
+        { count: 3 },
       ]);
       assert.deepEqual(yield* sql`SELECT COUNT(*) AS count FROM orchestration_command_receipts`, [
         { count: 1 },
@@ -91,7 +93,14 @@ it.effect("requires a safety copy and retains it until seven days after deletion
       yield* fs.writeFileString(`${backup}/manifest.json`, manifest);
       const deleted = yield* maintenance.pruneEventStore();
       assert.equal(deleted.deletedEventCount, 1);
-      assert.equal(deleted.deletedReceiptCount, 1);
+      // Imported V1 history stays until the plan import has copied plans out of it.
+      assert.equal(deleted.deletedReceiptCount, 0);
+      yield* sql`INSERT INTO orchestration_v2_projection_metadata
+        (projection_name,schema_version,last_sequence,updated_at)
+        VALUES ('legacy-plans-reasoning-imported',1,0,'1969-01-01T00:00:00.000Z')`;
+      const legacy = yield* maintenance.pruneEventStore();
+      assert.equal(legacy.deletedEventCount, 1);
+      assert.equal(legacy.deletedReceiptCount, 1);
       yield* TestClock.adjust("6 days");
       assert.isTrue(yield* Safety.canPrune());
       yield* TestClock.adjust("1 day");

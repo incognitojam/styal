@@ -169,6 +169,9 @@ const seedCompaction = Effect.fnUntraced(function* () {
   yield* sql`INSERT INTO orchestration_v2_legacy_imports (
     thread_id, source_updated_at, shell_imported_at, transcript_imported_at, imported_message_count
   ) VALUES ('imported', '2026-10-17', '2026-10-17', '2026-10-17', 0)`;
+  // Imported V1 events are prunable once the V1 plan import has run.
+  yield* sql`INSERT INTO orchestration_v2_projection_metadata (projection_name, schema_version, last_sequence, updated_at)
+    VALUES ('legacy-plans-reasoning-imported', 1, 0, '2026-10-17T00:00:00.000Z') ON CONFLICT(projection_name) DO NOTHING`;
   yield* sql`WITH RECURSIVE history(n) AS (
     SELECT 1 UNION ALL SELECT n + 1 FROM history WHERE n < 151
   ) INSERT INTO orchestration_events (
@@ -919,6 +922,9 @@ it.layer(layerTest)("orchestration V2 foundation persistence", (it) => {
           (${pendingV1ThreadId}, ${nowIso}, ${nowIso}, NULL, 0, NULL)
         ON CONFLICT(thread_id) DO NOTHING
       `;
+      // Imported V1 events are prunable once the V1 plan import has run.
+      yield* sql`INSERT INTO orchestration_v2_projection_metadata (projection_name, schema_version, last_sequence, updated_at)
+    VALUES ('legacy-plans-reasoning-imported', 1, 0, '2026-10-17T00:00:00.000Z') ON CONFLICT(projection_name) DO NOTHING`;
       yield* sql`
         INSERT INTO orchestration_command_receipts (
           command_id, aggregate_kind, aggregate_id, accepted_at, result_sequence, status, command_type
@@ -3515,6 +3521,9 @@ it.effect.each(["events", "receipts"] as const)(
             imported_message_count, last_error
           ) VALUES ('imported', ${now}, ${now}, ${now}, 1, NULL)
         `;
+        // Imported V1 events are prunable once the V1 plan import has run.
+        yield* sql`INSERT INTO orchestration_v2_projection_metadata (projection_name, schema_version, last_sequence, updated_at)
+    VALUES ('legacy-plans-reasoning-imported', 1, 0, '2026-10-17T00:00:00.000Z') ON CONFLICT(projection_name) DO NOTHING`;
         for (const threadId of ["imported", "pending"]) {
           if (kind === "events") {
             yield* sql`

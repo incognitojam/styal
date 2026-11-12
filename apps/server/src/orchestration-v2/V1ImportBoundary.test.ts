@@ -29,12 +29,12 @@ it("keeps the legacy importer out of reach of new code", () => {
     )
     .map(({ path }) => path)
     .toSorted();
-  // Startup imports pending transcripts, the V2 runtime wires the importer, and
-  // thread and project services hydrate a V1 transcript before they act on it.
-  // Explicit T3 data import shares the same inert canonical history conversion, and fork
-  // migration 9 re-derives earlier imports through it.
+  // Startup imports pending transcripts, the V2 runtime wires the importer, thread and project
+  // services hydrate a V1 transcript before acting on it, T3 data import and fork migration 9 share
+  // the history conversion, and event pruning waits for the V1 plan import.
   assert.deepEqual(importers, [
     "dataImport/LegacyHistoryWriter.ts",
+    "orchestration-v2/ProjectionMaintenance.ts",
     "orchestration-v2/ThreadManagementService.ts",
     "orchestration-v2/runtimeLayer.ts",
     "persistence/ForkMigrations/009_RederiveLegacyActivityItems.ts",

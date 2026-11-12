@@ -11,6 +11,7 @@ import {
   EVENT_LOG_PRUNE_MARK,
   EVENT_LOG_PRUNED_THROUGH,
 } from "../persistence/OrchestrationEventStore.ts";
+import { LEGACY_PLANS_REASONING_IMPORTED } from "./legacy/legacyPlansReasoningMarker.ts";
 import * as PreEventPruneSafety from "../persistence/preEventPruneSafety.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import { eventPruningEnabled } from "../config.ts";
@@ -361,12 +362,20 @@ export const layer: Layer.Layer<ProjectionMaintenanceV2, never, SqlClient.SqlCli
         }
         if (mark === undefined || markIsDue) yield* writeMetadata(EVENT_LOG_PRUNE_MARK, head, now);
 
-        const legacy = yield* pruneImportedLegacyHistory(
-          head,
-          bounds[0]?.receipt_row_id ?? 0,
-          betweenPages,
-          beforeDelete,
-        );
+        // V1 events hold the only copy of V1 proposed plans until the plan import has run.
+        const plansImported = yield* sql`
+          SELECT 1 FROM orchestration_v2_projection_metadata
+          WHERE projection_name = ${LEGACY_PLANS_REASONING_IMPORTED}
+        `.pipe(NodeSqliteClient.readOnly);
+        const legacy =
+          plansImported.length === 0
+            ? { deletedEventCount: 0, deletedReceiptCount: 0 }
+            : yield* pruneImportedLegacyHistory(
+                head,
+                bounds[0]?.receipt_row_id ?? 0,
+                betweenPages,
+                beforeDelete,
+              );
         deletedEventCount += legacy.deletedEventCount;
         if (deletedEventCount > 0 || legacy.deletedReceiptCount > 0) {
           yield* PreEventPruneSafety.deletePassFinished().pipe(

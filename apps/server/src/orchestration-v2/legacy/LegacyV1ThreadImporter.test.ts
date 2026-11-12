@@ -225,6 +225,55 @@ it.effect("caches the absent legacy transcript for a native V2 thread", () =>
   }).pipe(Effect.provide(layerTest)),
 );
 
+it.effect("imports reasoning and the latest inert proposed plan between messages", () =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const importer = yield* LegacyV1ThreadImporter.LegacyV1ThreadImporter;
+    const projections = yield* ProjectionStore.ProjectionStoreV2;
+    yield* seedPendingTranscripts;
+    const threadId = ThreadId.make("thread:first");
+    const at = "2026-01-01T02:00:00.000Z";
+    yield* sql`
+      INSERT INTO projection_thread_messages
+        (message_id, thread_id, turn_id, role, text, is_streaming, created_at, updated_at)
+      VALUES ('reasoning:first', ${threadId}, 'turn:first', 'reasoning', 'Recorded reasoning', 0, ${at}, ${at}),
+        ('reasoning:empty', ${threadId}, NULL, 'reasoning', '', 0, ${at}, ${at})
+    `;
+    for (const [index, markdown] of [
+      "Old plan",
+      "Latest plan",
+      "Superseded empty plan",
+      "   ",
+    ].entries()) {
+      yield* sql`
+        INSERT INTO orchestration_events
+          (event_id, aggregate_kind, stream_id, stream_version, event_type, occurred_at,
+           actor_kind, payload_json, metadata_json, application_event_version)
+        VALUES (${`plan-event:${index}`}, 'thread', ${threadId}, ${index + 100},
+          'thread.proposed-plan-upserted', ${at}, 'server',
+          ${encodeHistoryJson({ threadId, proposedPlan: { id: index < 2 ? "plan:first" : "plan:empty", turnId: "turn:first", planMarkdown: markdown, createdAt: "2026-01-01T03:00:00.000Z", updatedAt: at } })}, '{}', 1)
+      `;
+    }
+    yield* importer.ensureTranscript(threadId);
+    const result = yield* projections.getThreadProjection(threadId);
+    assert.deepEqual(
+      result.turnItems.map((item) => item.type),
+      ["user_message", "reasoning", "proposed_plan", "user_message"],
+    );
+    const reasoning = result.turnItems.find((item) => item.type === "reasoning");
+    const plan = result.turnItems.find((item) => item.type === "proposed_plan");
+    assert.equal(reasoning?.type === "reasoning" && reasoning.text, "Recorded reasoning");
+    assert.equal(plan?.type === "proposed_plan" && plan.markdown, "Latest plan");
+    assert.equal(reasoning?.legacyTurnId, "turn:first");
+    assert.equal(plan?.legacyTurnId, "turn:first");
+    assert.isFalse((yield* projections.getThreadShell(threadId))?.hasActionableProposedPlan);
+    assert.deepEqual(result.plans, []);
+    const counts =
+      yield* sql`SELECT imported_message_count FROM orchestration_v2_legacy_imports WHERE thread_id = ${threadId}`;
+    assert.deepEqual(counts, [{ imported_message_count: 2 }]);
+  }).pipe(Effect.provide(layerTest)),
+);
+
 it.layer(layerTest)("LegacyV1ThreadImporter", (it) => {
   it.effect(
     "preserves recorded usage and cost, without duplication after replay or compaction",
