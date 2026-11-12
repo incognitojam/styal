@@ -152,8 +152,17 @@ describe("rederiveLegacyToolItems", () => {
           yield* sql`SELECT payload_json FROM orchestration_v2_projection_turn_items ORDER BY ordinal`,
           rows,
         );
+        yield* sql`INSERT INTO orchestration_v2_projection_turn_items
+          (turn_item_id, thread_id, run_id, ordinal, type, status, updated_at, payload_json)
+          VALUES ('import:v1:activity:thread-1:unreadable', 'thread-1', NULL, 100, 'command_execution', 'completed', ${at}, '{"id":"unreadable"}')`;
         yield* sql`DELETE FROM orchestration_v2_projection_metadata WHERE projection_name = 'legacy-tool-items-rederived'`;
+        // A run interrupted after changing items still moves the fence when it completes.
         assert.deepEqual(yield* rederiveLegacyToolItems(sql), { threads: 1, items: 0 });
+        assert.isAbove(yield* readHistoryRewriteFence(sql), fence);
+        assert.deepEqual(
+          yield* sql`SELECT payload_json FROM orchestration_v2_projection_turn_items WHERE ordinal = 100`,
+          [{ payload_json: '{"id":"unreadable"}' }],
+        );
         assert.deepEqual(
           yield* sql`SELECT previous_payload_json FROM styal_legacy_v1_rederived_items ORDER BY turn_item_id`,
           undo,

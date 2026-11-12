@@ -61,7 +61,10 @@ export const rederiveLegacyToolItems = Effect.fn("rederiveLegacyToolItems")(func
       `;
         let changed = 0;
         for (const row of rows) {
-          const item = yield* decodeItem(row.payload_json);
+          // An unreadable row stays as it is rather than stopping every later startup's pass.
+          const decoded = yield* decodeItem(row.payload_json).pipe(Effect.option);
+          if (decoded._tag === "None") continue;
+          const item = decoded.value;
           if (!item.legacyActivities?.length) continue;
           const activities = [];
           for (const reference of item.legacyActivities) {
@@ -79,18 +82,18 @@ export const rederiveLegacyToolItems = Effect.fn("rederiveLegacyToolItems")(func
             const activity = source[0];
             if (activity === undefined) break;
             const payload = decodeJson(activity.payload_json);
-            activities.push(
-              yield* decodeActivity({
-                id: activity.activity_id,
-                tone: activity.tone,
-                kind: activity.kind,
-                summary: activity.summary,
-                payload: payload._tag === "Some" ? payload.value : undefined,
-                turnId: activity.turn_id,
-                createdAt: activity.created_at,
-                ...(activity.sequence === null ? {} : { sequence: activity.sequence }),
-              }),
-            );
+            const decodedActivity = yield* decodeActivity({
+              id: activity.activity_id,
+              tone: activity.tone,
+              kind: activity.kind,
+              summary: activity.summary,
+              payload: payload._tag === "Some" ? payload.value : undefined,
+              turnId: activity.turn_id,
+              createdAt: activity.created_at,
+              ...(activity.sequence === null ? {} : { sequence: activity.sequence }),
+            }).pipe(Effect.option);
+            if (decodedActivity._tag === "None") break;
+            activities.push(decodedActivity.value);
           }
           if (activities.length !== item.legacyActivities.length) continue;
           const rederived = legacyActivityTurnItem(
@@ -151,7 +154,10 @@ export const rederiveLegacyToolItems = Effect.fn("rederiveLegacyToolItems")(func
   yield* sql.withTransaction(
     Effect.gen(function* () {
       const finishedAt = DateTime.formatIso(yield* DateTime.now);
-      if (items > 0) {
+      // Count earlier interrupted runs too, so their changes also reach cached clients.
+      const rederived = yield* sql<{ readonly count: number }>`
+        SELECT COUNT(*) AS count FROM styal_legacy_v1_rederived_items`;
+      if ((rederived[0]?.count ?? 0) > 0) {
         yield* sql`UPDATE sqlite_sequence
         SET seq = MAX(seq, (SELECT COALESCE(MAX(sequence), 0) FROM orchestration_events)) + 1
         WHERE name = 'orchestration_events'`;
