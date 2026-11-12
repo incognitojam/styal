@@ -1,3 +1,5 @@
+import * as Path from "effect/Path";
+import * as NodePath from "@effect/platform-node/NodePath";
 import * as DesktopShutdownGuard from "../app/DesktopShutdownGuard.ts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -265,6 +267,7 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
 
   const updateRestartMarkers = new Set<string>();
   const installRecords = new Map<string, string>();
+  const directories = new Set<string>();
   let previousInstallRecord = options.installRecord;
   const isInstallRecord = (path: string) =>
     path.endsWith(DesktopUpdates.DESKTOP_UPDATE_INSTALL_RECORD_FILE);
@@ -285,12 +288,28 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
             }),
           );
     },
-    makeDirectory: () => Effect.void,
-    writeFileString: (path, data) =>
+    makeDirectory: (path) =>
       Effect.sync(() => {
-        if (isInstallRecord(path)) installRecords.set(path, data);
-        else updateRestartMarkers.add(path);
+        directories.add(path);
       }),
+    writeFileString: (path, data) =>
+      Effect.flatMap(Path.Path, (paths) =>
+        Effect.suspend(() => {
+          if (!directories.has(paths.dirname(path))) {
+            return Effect.fail(
+              PlatformError.systemError({
+                module: "FileSystem",
+                method: "writeFileString",
+                _tag: "NotFound",
+                pathOrDescriptor: path,
+              }),
+            );
+          }
+          if (isInstallRecord(path)) installRecords.set(path, data);
+          else updateRestartMarkers.add(path);
+          return Effect.void;
+        }),
+      ).pipe(Effect.provide(NodePath.layer)),
     remove: (path) =>
       Effect.sync(() => {
         updateRestartMarkers.delete(path);
