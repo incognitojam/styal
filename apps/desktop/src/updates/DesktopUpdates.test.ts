@@ -24,8 +24,14 @@ import * as DesktopUpdates from "./DesktopUpdates.ts";
 import { flushCallbacks, makeHarness } from "./updatesTestHarness.ts";
 
 describe("DesktopUpdates", () => {
-  it.effect("configures the updater and runs startup checks on the test clock", () => {
-    const harness = makeHarness();
+  it.effect("configures the updater and keeps polling after an unexpected check failure", () => {
+    let attempts = 0;
+    const harness = makeHarness({
+      checkForUpdates: Effect.suspend(() => {
+        attempts += 1;
+        return attempts === 2 ? Effect.die("unexpected check failure") : Effect.void;
+      }),
+    });
 
     return Effect.gen(function* () {
       yield* Effect.scoped(
@@ -45,6 +51,10 @@ describe("DesktopUpdates", () => {
 
           yield* TestClock.adjust(Duration.millis(15_000));
           assert.equal(harness.checkCount(), 1);
+          yield* TestClock.adjust("225 seconds");
+          assert.equal(harness.checkCount(), 2);
+          yield* TestClock.adjust("4 minutes");
+          assert.equal(harness.checkCount(), 3);
         }),
       );
 
