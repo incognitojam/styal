@@ -66,7 +66,12 @@ describe("legacyActivityTurnItem", () => {
           state: { status: "completed", input: { filePath: "calc.py" }, output: "contents" },
         },
       },
-      expected: { type: "dynamic_tool", toolName: "read" },
+      expected: {
+        type: "dynamic_tool",
+        toolName: "read",
+        input: { filePath: "calc.py" },
+        output: "contents",
+      },
     },
     {
       provider: "Codex MCP tool",

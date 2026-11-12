@@ -204,14 +204,21 @@ export function legacyActivityTurnItem(
         rawInput.name,
         payload.title,
       ) ?? null;
+    const openCodeState = record(data.state);
     const toolInput =
-      nativeItem.input ?? nativeItem.arguments ?? data.rawInput ?? data.input ?? data;
+      nativeItem.input ??
+      nativeItem.arguments ??
+      data.rawInput ??
+      data.input ??
+      openCodeState.input ??
+      data;
     const result = record(data.result);
     const output =
       nativeItem.output ??
       nativeItem.result ??
       data.rawOutput ??
       data.output ??
+      openCodeState.output ??
       // Claude recorded its tool_result block; native V2 items keep only its content.
       ("content" in result ? result.content : data.result);
     return {
