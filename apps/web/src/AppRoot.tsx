@@ -5,6 +5,7 @@ import { ElectronBrowserHost } from "./browser/ElectronBrowserHost";
 import { ThreadVisitBaselineObserver } from "./components/ThreadVisitBaselineObserver";
 import { QuitHoldOverlay } from "./components/QuitHoldOverlay";
 import { WebBuildUpdateProvider } from "./components/WebBuildUpdateProvider";
+import { I18nProvider } from "./i18n/I18nProvider";
 import { AppAtomRegistryProvider } from "./rpc/atomRegistry";
 import type { AppRouter } from "./router";
 
@@ -12,14 +13,16 @@ import type { AppRouter } from "./router";
 // Confirmation dialogs have one host here; a second would queue each desktop shutdown request twice.
 export function AppRoot({ router }: { readonly router: AppRouter }) {
   return (
-    <AppAtomRegistryProvider>
-      <WebBuildUpdateProvider>
-        <RouterProvider router={router} />
-        <ThreadVisitBaselineObserver />
-        <ElectronBrowserHost />
-        <QuitHoldOverlay />
-        <ConfirmDialogHost />
-      </WebBuildUpdateProvider>
-    </AppAtomRegistryProvider>
+    <I18nProvider>
+      <AppAtomRegistryProvider>
+        <WebBuildUpdateProvider>
+          <RouterProvider router={router} />
+          <ThreadVisitBaselineObserver />
+          <ElectronBrowserHost />
+          <QuitHoldOverlay />
+          <ConfirmDialogHost />
+        </WebBuildUpdateProvider>
+      </AppAtomRegistryProvider>
+    </I18nProvider>
   );
 }
