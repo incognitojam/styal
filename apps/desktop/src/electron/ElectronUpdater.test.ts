@@ -28,6 +28,7 @@ vi.mock("electron", () => ({ app: appMock }));
 
 vi.mock("electron-updater", () => ({
   autoUpdater: autoUpdaterMock,
+  AppImageUpdater: vi.fn(),
 }));
 
 import * as ElectronUpdater from "./ElectronUpdater.ts";
