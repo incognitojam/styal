@@ -168,17 +168,16 @@ export function setupProjectScript(scripts: readonly ProjectScript[]): ProjectSc
   return scripts.find((script) => script.runOnWorktreeCreate) ?? null;
 }
 
-/**
- * On the main checkout the cwd and `$STYAL_PROJECT_ROOT` are the same directory, so a line like
- * `ln -sf "$STYAL_PROJECT_ROOT/.env" .env` replaces the file it meant to link to. Callers refuse
- * the run instead of falling back to the project root.
- */
-export function isSetupScriptOutsideWorktree(input: {
-  script: Pick<ProjectScript, "runOnWorktreeCreate">;
+/** Setup and settle actions can overwrite or delete checkout files, so manual runs need a worktree. */
+export function isLifecycleScriptOutsideWorktree(input: {
+  script: Pick<ProjectScript, "runOnWorktreeCreate" | "runOnSettle">;
   projectCwd: string;
   worktreePath?: string | null;
 }): boolean {
-  return input.script.runOnWorktreeCreate && isProjectCheckoutRun(input);
+  return (
+    (input.script.runOnWorktreeCreate || input.script.runOnSettle === true) &&
+    isProjectCheckoutRun(input)
+  );
 }
 
 /**

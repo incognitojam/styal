@@ -6345,7 +6345,7 @@ features:
       - A setup or settle terminal is titled with its configured script name from start through exit, in every client's terminal list.
       - A terminal opened locally survives server session-list reconciliation until the server reports it, so focus stays on it rather than falling back to a setup session.
       - Opening the terminal on a thread whose only sessions are retained setup or settle terminals starts an interactive shell instead of focusing the finite session.
-      - Worktree-creation setup actions never run against a project root; server, web, and mobile refuse the run and explain why before a script can overwrite files it meant to copy or link.
+      - Worktree-creation setup actions never run against a project root; server, web, and mobile refuse the run and explain why before a script can overwrite files it meant to copy or link. Web and mobile also refuse manual settle action runs in the project checkout, naming all configured roles.
       - Web and mobile work log rows are titled with the configured setup or settle action's name, not its command, and truthfully distinguish requested, waiting for approval, running, completed, failed, and stopped states.
       - Setup and settle terminal output remains inspectable after exit, and later toolbar actions start on the first click without reusing the finite session.
       - Approve and run resumes the waiting lifecycle row through the same finite-command runner, checks the current file approval on the destination environment, and retains output and exit status.
