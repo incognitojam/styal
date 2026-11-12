@@ -37,6 +37,21 @@ jobs:
                 color: "fbca04",
                 description: "Issue needs maintainer review and initial categorization.",
               },
+              {
+                name: "from-styal",
+                color: "7057ff",
+                description: "Reported through styal's in-app feedback tool.",
+              },
+              {
+                name: "agent-report",
+                color: "1d76db",
+                description: "Agent-written feedback approved by the user.",
+              },
+              {
+                name: "user-report",
+                color: "0e8a16",
+                description: "Feedback written by a user in styal.",
+              },
             ];
 
             for (const label of managedLabels) {

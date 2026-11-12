@@ -1885,6 +1885,7 @@ features:
     prs: [1278]
     invariants:
       - Reports only go to incognitojam/styal, never upstream or the repository a thread works in.
+      - New issues receive needs-triage; in-app reports are classified by standalone marker or terminal legacy footer, labelled by kind, and announced without their body through the existing optional Discord webhook.
       - An agent's report posts only after the user approves it; clients offer posting only beside the full report and the posting account, agents cannot answer that card, and it appears in every runtime mode.
       - While an agent's report waits, thread lists show the thread as asking for input rather than as a permission approval; every other server approval keeps the Approval status.
       - On web the request stays in a banner attached to the composer while it waits.
@@ -1895,6 +1896,8 @@ features:
     implementation_paths:
       - apps/mobile/src/features/settings/SettingsFeedbackRouteScreen.tsx
       - apps/mobile/src/features/threads/FeedbackReportApprovalCard.tsx
+      - .github/workflows/issue-routing.yml
+      - scripts/issue-routing.ts
       - apps/server/src/feedback/FeedbackService.ts
       - apps/server/src/mcp/toolkits/feedback/tools.ts
       - apps/web/src/components/chat/FeedbackReportApproval.tsx
@@ -1908,6 +1911,7 @@ features:
       - packages/contracts/src/orchestrationV2.ts
       - packages/source-control-core/src/server/driver.ts
     tests:
+      - scripts/issue-routing.test.ts
       - apps/server/src/feedback/FeedbackService.test.ts
       - apps/server/src/orchestration-v2/ProjectionStore.test.ts
       - apps/web/src/components/chat/FeedbackReportApproval.browser.test.tsx
