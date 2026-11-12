@@ -45,6 +45,8 @@ import * as EventSink from "../EventSink.ts";
 import { randomUuidV4 } from "@t3tools/provider-core/server/randomUuid";
 import { legacyHistoricalItems } from "./LegacyHistoricalItems.ts";
 import { orderLegacyHistory } from "./orderLegacyHistory.ts";
+import { readLegacyTextItems } from "./LegacyTextItems.ts";
+import { importLegacyPlansAndReasoning } from "./importLegacyPlansAndReasoning.ts";
 import { slimImportedHistory } from "./slimImportedHistory.ts";
 import {
   OrchestrationThreadActivity,
@@ -934,7 +936,9 @@ const make = Effect.gen(function* () {
             // a retry cannot leave half a checkpoint/subagent graph behind.
             yield* sql.withTransaction(
               Effect.gen(function* () {
-                yield* eventSink.write({ events: historicalEvents });
+                yield* eventSink.write({
+                  events: [...historicalEvents, ...(yield* readLegacyTextItems(sql, threadId))],
+                });
                 yield* orderLegacyHistory(sql, [threadId]);
               }),
             );
@@ -1017,6 +1021,13 @@ const make = Effect.gen(function* () {
       ),
     );
     if (slimmed.rows > 0) yield* Effect.logInfo("Slimmed imported v1 history", slimmed);
+    yield* importLegacyPlansAndReasoning().pipe(
+      Effect.provideService(SqlClient.SqlClient, sql),
+      Effect.provideService(EventSink.EventSinkV2, eventSink),
+      Effect.catchCause((cause) =>
+        Effect.logWarning("Importing legacy plans and reasoning stopped", { cause }),
+      ),
+    );
     return { importedThreadCount, importedMessageCount };
   }).pipe(
     Effect.catchCause((cause) =>

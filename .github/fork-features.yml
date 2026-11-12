@@ -975,6 +975,7 @@ features:
     prs: [294, 297, 298, 300, 306, 347, 349, 379, 478, 842]
     rationale: Upstream V2 supplies canonical orchestration and messages-only automatic V1 migration, but the maintained T3 import flow must retain full recorded history and costs. The batch explicitly preserves these values, converts V1 history at the boundary, imports native V2 projections through inert canonical events, and materializes unavailable fork ancestors.
     invariants:
+      - The automatic V1 importer retains reasoning and inert proposed plans as turn items, including for threads imported earlier, without creating actionable plan artifacts.
       - Import previews on web and desktop keep last-active ages counting while the same projects remain displayed.
       - A selected styal environment can preview and import projects, missing threads, attachments, provider continuations, and supported server preferences from a live T3 Code database, including older fork databases, without modifying the source.
       - Existing styal project configuration wins while each imported thread and its verified attachments commit atomically, so interrupted or repeated imports resume without duplication.
@@ -1048,6 +1049,7 @@ features:
       - packages/contracts/src/index.ts
       - packages/contracts/src/rpc.ts
     tests:
+      - apps/server/src/orchestration-v2/legacy/importLegacyPlansAndReasoning.test.ts
       - apps/server/integration/importedThreadTransferBudget.integration.test.ts
       - apps/server/src/dataImport/LegacyHistoryWriter.test.ts
       - apps/server/src/dataImport/LegacyImport.fixture.test.ts
