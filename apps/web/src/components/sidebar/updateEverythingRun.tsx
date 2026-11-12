@@ -1,6 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import { serverUpdateStateAtom } from "@t3tools/client-runtime/state/server";
-import { EnvironmentId } from "@t3tools/contracts";
+import { EnvironmentId, type ServerConfig } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { AsyncResult, Atom } from "effect/reactivity";
@@ -63,6 +63,13 @@ export function settleUpdateRunMachine(
   );
 }
 
+function runsVersion(config: ServerConfig | null, targetVersion: string): boolean {
+  return (
+    config !== null &&
+    resolveVersionMismatch(config.environment.serverVersion, targetVersion) === null
+  );
+}
+
 export function retryFailedUpdateRunServers(update: ReturnType<typeof useServerUpdates>): void {
   const failed = (appAtomRegistry.get(updateEverythingRunAtom)?.machines ?? []).flatMap(
     (machine) =>
@@ -70,7 +77,23 @@ export function retryFailedUpdateRunServers(update: ReturnType<typeof useServerU
         ? [{ target: machine.server, providerFailure: machine.providerFailure }]
         : [],
   );
-  const targets = failed.map(({ target }) => target);
+  const pending: typeof failed = [];
+  for (const entry of failed) {
+    // The host rejects a same-version update; a server that came back on the target is done.
+    if (
+      runsVersion(
+        appAtomRegistry.get(serverEnvironment.configValueAtom(entry.target.environmentId)),
+        entry.target.targetVersion,
+      )
+    ) {
+      settleUpdateRunMachine(entry.target.environmentId, entry.providerFailure, {
+        serverUpdated: true,
+      });
+    } else {
+      pending.push(entry);
+    }
+  }
+  const targets = pending.map(({ target }) => target);
   const retried = new Set(targets.map((target) => target.environmentId));
   const startedAt = Date.now();
   updateRunMachines((machine) =>
@@ -79,7 +102,7 @@ export function retryFailedUpdateRunServers(update: ReturnType<typeof useServerU
       : machine,
   );
   const providerFailures = new Map(
-    failed.map(({ target, providerFailure }) => [target.environmentId, providerFailure]),
+    pending.map(({ target, providerFailure }) => [target.environmentId, providerFailure]),
   );
   // One batch, so the fork's running-work check confirms every retried server at once.
   void update(targets, {
@@ -290,12 +313,7 @@ function followHandedOffServers(servers: ReadonlyArray<HandedOffServer>): void {
     const unsubscribe = appAtomRegistry.subscribe(
       serverEnvironment.configValueAtom(server.environmentId),
       (config) => {
-        if (
-          config !== null &&
-          resolveVersionMismatch(config.environment.serverVersion, server.targetVersion) === null
-        ) {
-          settle(null);
-        }
+        if (runsVersion(config, server.targetVersion)) settle(null);
       },
       { immediate: true },
     );
