@@ -74,6 +74,7 @@ source alone does not explain. Most code changes do not need an internal documen
 - [styal Link setup](./operations/styal-link.md)
 - [Release](./operations/release.md)
 - [Fork nightly releases](./operations/fork-nightly.md)
+- [Pulling a bad release](./operations/pulling-a-release.md)
 - [Observability](./operations/observability.md)
 - [Relay observability](./operations/relay-observability.md)
 - [Mobile app store screenshots](./operations/mobile-app-store-screenshots.md)
