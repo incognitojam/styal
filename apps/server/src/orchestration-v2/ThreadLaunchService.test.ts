@@ -2407,15 +2407,21 @@ it.effect("stops an in-flight branch rename when tracked setup is cancelled", ()
   }),
 );
 
-it.effect.each([0, 1])("releases an async setup before its completion with exit %s", (exitCode) =>
+it.effect.each([
+  { exitCode: 0, exitSignal: null, async: true },
+  { exitCode: 1, exitSignal: null, async: true },
+  { exitCode: 0, exitSignal: 15, async: true },
+  { exitCode: 0, exitSignal: 15, async: false },
+])("handles setup completion %j", ({ exitCode, exitSignal, async }) =>
   Effect.gen(function* () {
-    const completion = yield* Deferred.make<{ exitCode: number | null; durationMs: number }>();
+    const completion =
+      yield* Deferred.make<ProjectSetupScriptRunner.ProjectSetupScriptCompletion>();
     const harness = makeHarness({
       runSetup: () =>
         Effect.succeed({
           status: "started" as const,
           runId: RunId.make("setup-run-fixture"),
-          async: true,
+          async,
           scriptId: "setup",
           scriptName: "Setup",
           scriptCommand: "vp install",
@@ -2436,31 +2442,47 @@ it.effect.each([0, 1])("releases an async setup before its completion with exit 
           workspace: { type: "worktree", baseRef: "main" },
         }),
       );
+      if (async) {
+        yield* tracker.stream(launched.threadId).pipe(
+          Stream.filter(
+            (snapshot) =>
+              snapshot?.stages.some((stage) => stage.id === "agent" && stage.status === "done") ===
+              true,
+          ),
+          Stream.runHead,
+        );
+        const running = yield* threads.getThreadProjection(launched.threadId);
+        assert.equal(running.runs[0]?.status, "starting");
+        assert.equal((yield* tracker.get(launched.threadId))?.phase, "running");
+      }
+      yield* Deferred.succeed(completion, { exitCode, exitSignal, durationMs: 1 });
       yield* tracker.stream(launched.threadId).pipe(
-        Stream.filter(
-          (snapshot) =>
-            snapshot?.stages.some((stage) => stage.id === "agent" && stage.status === "done") ===
-            true,
-        ),
-        Stream.runHead,
-      );
-      const running = yield* threads.getThreadProjection(launched.threadId);
-      assert.equal(running.runs[0]?.status, "starting");
-      assert.equal((yield* tracker.get(launched.threadId))?.phase, "running");
-      yield* Deferred.succeed(completion, { exitCode, durationMs: 1 });
-      yield* tracker.stream(launched.threadId).pipe(
-        Stream.filter((snapshot) => snapshot?.phase === "done"),
+        Stream.filter((snapshot) => snapshot?.phase === (async ? "done" : "failed")),
         Stream.runHead,
       );
       const settled = yield* tracker.get(launched.threadId);
       assert.equal(
         settled?.stages.find((stage) => stage.id === "setup-script")?.status,
-        exitCode === 0 ? "done" : "failed",
+        exitCode === 0 && !exitSignal ? "done" : "failed",
       );
-      assert.equal(
-        (yield* threads.getThreadProjection(launched.threadId)).runs[0]?.status,
-        "starting",
-      );
+      if (async) {
+        assert.equal(
+          (yield* threads.getThreadProjection(launched.threadId)).runs[0]?.status,
+          "starting",
+        );
+      } else {
+        const outbox = yield* EffectOutbox.EffectOutboxV2;
+        assert.isEmpty(
+          yield* outbox.listByCommandId(CommandId.make(`command:launch:async-${exitCode}:release`)),
+        );
+        assert.notEqual(settled?.stages.find((stage) => stage.id === "agent")?.status, "done");
+      }
+      if (exitSignal) {
+        assert.equal(
+          settled?.stages.find((stage) => stage.id === "setup-script")?.detail,
+          `killed by signal ${exitSignal}`,
+        );
+      }
     }).pipe(Effect.provide(harness.layer));
   }),
 );

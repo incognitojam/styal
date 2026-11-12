@@ -6354,6 +6354,7 @@ features:
       - Setup and settle terminal output remains inspectable after exit, and later toolbar actions start on the first click without reusing the finite session.
       - Approve and run resumes the waiting lifecycle row through the same finite-command runner, checks the current file approval on the destination environment, and retains output and exit status.
       - The settle action runs as one finite command in a single settle terminal per thread, restarted in place by later settlements; a settlement during a running settle action starts nothing, and a thread whose worktree is the project checkout skips it without a work-log row.
+      - A signal-terminated setup fails the setup card with its signal and blocks a synchronous first turn; installer failure markers retain the signal and output tail.
       - A setup or settle command whose preferred shell fails to spawn runs through the same fallback shells as an interactive terminal, using each fallback's own command syntax, and the run's outcome comes from that process's exit.
     rationale: Setup runs as the terminal's own process, so the exit code is exact on every shell and setup cannot hang on a sentinel. That finite session is what makes the titled, retained setup terminal and the per-run work log possible. Upstream's settle action is built into its sentinel runner, so the fork runs it on the same process runner.
     implementation_paths:

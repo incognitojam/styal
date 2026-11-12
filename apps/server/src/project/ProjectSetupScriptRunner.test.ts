@@ -155,27 +155,34 @@ it.effect(
       assert.equal(completed?.status, "completed");
       assert.equal(completed?.type === "command_execution" && completed.exitCode, 0);
 
-      const failed = yield* service.runForThread({
-        threadId,
-        projectId,
-        worktreePath: "/synthetic/repo-worktree",
-      });
-      assert.equal(failed.status, "started");
-      if (failed.status !== "started") return;
-      yield* Effect.forEach([...listeners], (listener) =>
-        listener({
-          type: "exited",
+      for (const { exitCode, exitSignal } of [
+        { exitCode: 2, exitSignal: null },
+        { exitCode: 0, exitSignal: 15 },
+      ]) {
+        const failed = yield* service.runForThread({
           threadId,
-          terminalId: failed.terminalId,
-          exitCode: 2,
-          exitSignal: null,
-        }),
-      );
-      const failure = (yield* projections.getThreadProjection(threadId)).turnItems.find(
-        (item) => item.type === "command_execution" && item.setupScript?.runId === failed.runId,
-      );
-      assert.equal(failure?.status, "failed");
-      assert.equal(failure?.type === "command_execution" && failure.exitCode, 2);
+          projectId,
+          worktreePath: "/synthetic/repo-worktree",
+          observeCompletion: {},
+        });
+        assert.equal(failed.status, "started");
+        if (failed.status !== "started") return;
+        yield* Effect.forEach([...listeners], (listener) =>
+          listener({
+            type: "exited",
+            threadId,
+            terminalId: failed.terminalId,
+            exitCode,
+            exitSignal,
+          }),
+        );
+        assert.deepEqual(yield* failed.completion!, { exitCode, exitSignal, durationMs: 0 });
+        const failure = (yield* projections.getThreadProjection(threadId)).turnItems.find(
+          (item) => item.type === "command_execution" && item.setupScript?.runId === failed.runId,
+        );
+        assert.equal(failure?.status, "failed");
+        assert.equal(failure?.type === "command_execution" && failure.exitCode, exitCode);
+      }
 
       const stopped = yield* service.runForThread({
         threadId,
@@ -197,7 +204,7 @@ it.effect(
         worktreePath: project.workspaceRoot,
       });
       assert.equal(guarded.status, "not-a-worktree");
-      assert.equal(openCommand.mock.calls.length, 3);
+      assert.equal(openCommand.mock.calls.length, 4);
     }).pipe(Effect.provide(Layer.mergeAll(dependencies, runner)));
   },
 );

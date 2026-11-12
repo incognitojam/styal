@@ -66,12 +66,19 @@ for (const [source, target] of [
     installOutput = (installOutput + chunk).slice(-8_000);
   });
 }
-const installStatus = await new Promise<number | null>((resolve) => install.on("close", resolve));
+const { code: installStatus, signal: installSignal } = await new Promise<{
+  code: number | null;
+  signal: NodeJS.Signals | null;
+}>((resolve) => install.on("close", (code, signal) => resolve({ code, signal })));
 activeInstall = undefined;
-if (installStatus !== 0 || cancelSignal) {
-  failureDetail = cancelSignal
-    ? `Cancelled by ${cancelSignal}.`
-    : installOutput.trimEnd().split("\n").slice(-30).join("\n");
+if (installStatus !== 0 || installSignal || cancelSignal) {
+  failureDetail = [
+    cancelSignal ? `Cancelled by ${cancelSignal}.` : "",
+    installSignal ? `Installer killed by signal ${installSignal}.` : "",
+    installOutput.trimEnd().split("\n").slice(-30).join("\n"),
+  ]
+    .filter(Boolean)
+    .join("\n");
   process.exit(installStatus || 1);
 }
 
