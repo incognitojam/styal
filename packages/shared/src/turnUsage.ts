@@ -305,11 +305,22 @@ export function addThreadTokenUsage(a: ThreadTokenUsage, b: ThreadTokenUsage): T
   };
 }
 
+/**
+ * Input includes cache reads and writes, but a partial record can carry cache counts without
+ * input, and counts clamped to input one at a time can together exceed it.
+ */
+function inputWithCache(counts: TokenCounts | undefined): number {
+  return Math.max(
+    counts?.inputTokens ?? 0,
+    (counts?.cachedInputTokens ?? 0) + (counts?.cacheCreationTokens ?? 0),
+  );
+}
+
 /** The main agent's usage plus any its subagents reported. */
 function combinedTokenCounts(usage: TurnTokenUsage) {
   const subagents = usage.subagents;
   return {
-    inputTokens: (usage.inputTokens ?? 0) + (subagents?.inputTokens ?? 0),
+    inputTokens: inputWithCache(usage) + inputWithCache(subagents),
     cachedInputTokens: (usage.cachedInputTokens ?? 0) + (subagents?.cachedInputTokens ?? 0),
     cacheCreationTokens: (usage.cacheCreationTokens ?? 0) + (subagents?.cacheCreationTokens ?? 0),
     outputTokens: (usage.outputTokens ?? 0) + (subagents?.outputTokens ?? 0),
@@ -318,7 +329,7 @@ function combinedTokenCounts(usage: TurnTokenUsage) {
 }
 
 function subagentTokens(usage: TurnTokenUsage): number {
-  return (usage.subagents?.inputTokens ?? 0) + (usage.subagents?.outputTokens ?? 0);
+  return inputWithCache(usage.subagents) + (usage.subagents?.outputTokens ?? 0);
 }
 
 export interface TurnUsageView {
@@ -361,8 +372,8 @@ function usageView(
   costUsd: number | undefined,
   notes: ReadonlyArray<string>,
 ): TurnUsageView {
-  // Input already includes cache reads and writes.
-  const input = usage.inputTokens ?? 0;
+  // Thread totals stored before turns were counted this way can still fall short.
+  const input = inputWithCache(usage);
   const output = usage.outputTokens ?? 0;
   const cached = usage.cachedInputTokens ?? 0;
   const reasoning = usage.reasoningTokens ?? 0;

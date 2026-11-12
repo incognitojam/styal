@@ -360,6 +360,26 @@ describe("turnUsageView", () => {
         },
         ["Input 15K", "  Cache reads 4K", "  Uncached 11K"],
       ],
+      // Input never shows less than the cache counts under it.
+      [
+        { inputTokens: 1_000, cachedInputTokens: 1_500 },
+        ["Input 1.50K", "  Cache reads 1.50K", "  Uncached 0"],
+      ],
+      [
+        {
+          inputTokens: 10_000,
+          cachedInputTokens: 8_000,
+          cacheCreationTokens: 1_000,
+          hasSubagents: true,
+          subagents: {
+            inputTokens: 5_000,
+            cachedInputTokens: 4_000,
+            cacheCreationTokens: 3_000,
+            outputTokens: 100,
+          },
+        },
+        ["Input 17K", "  Cache reads 12K", "  Cache writes 4K", "  Uncached 1K"],
+      ],
     ] as const) {
       expect(inputRows(fields)).toEqual(rows);
     }
@@ -374,8 +394,13 @@ describe("turnUsageView", () => {
       hasSubagents: true,
     });
 
-    expect(view.headline).toBe("900 tokens");
-    expect(view.rows).toContainEqual({ label: "Cache writes", value: "40K", indent: true });
+    expect(view.headline).toBe("40.9K tokens");
+    expect(view.rows.slice(0, 4)).toEqual([
+      { label: "Input", value: "40K" },
+      { label: "Cache reads", value: "0", indent: true },
+      { label: "Cache writes", value: "40K", indent: true },
+      { label: "Uncached", value: "0", indent: true },
+    ]);
     expect(view.notes).toEqual([
       "Subagent usage isn't included.",
       "The provider reported only some token counts.",
@@ -512,6 +537,46 @@ describe("threadUsageView", () => {
       { label: "Input", value: "3M" },
       { label: "Output", value: "120K (40K reasoning)" },
     ]);
+    const inputRows = (total: Parameters<typeof threadUsageView>[0]) =>
+      threadUsageView(total)
+        .rows.slice(0, 4)
+        .map((row) => `${row.label} ${row.value}`);
+    // A partial turn reported cache writes without input.
+    const partial = {
+      usageScope: "main_agent",
+      usageStatus: "partial",
+      cacheCreationTokens: 40_000,
+      outputTokens: 900,
+      hasSubagents: false,
+    } as const;
+    const normal = {
+      ...usage,
+      inputTokens: 100_000,
+      cachedInputTokens: 80_000,
+      cacheCreationTokens: 10_000,
+    } as const;
+    const mixed = sumThreadTokenUsage({
+      activities: [activity("usage-1", "turn-1", "turn.usage", normal)],
+      turnId: "turn-2",
+      usage: partial,
+      turns: 2,
+    });
+    expect(mixed.inputTokens).toBe(140_000);
+    expect(inputRows(mixed)).toEqual([
+      "Input 140K",
+      "Cache reads 80K",
+      "Cache writes 50K",
+      "Uncached 10K",
+    ]);
+    // Totals stored before then can still fall short of their cache counts.
+    expect(
+      inputRows({
+        ...threadTotal,
+        inputTokens: 100_000,
+        cachedInputTokens: 90_000,
+        cacheCreationTokens: 30_000,
+      }),
+    ).toEqual(["Input 120K", "Cache reads 90K", "Cache writes 30K", "Uncached 0"]);
   });
 
   it("says how many turns the total leaves out", () => {
@@ -604,7 +669,7 @@ it("prefers newer live root usage and excludes child and rolled-back records", (
       activities: [],
       turnId: "total",
       turns: 1,
-      usage: { ...usage, inputTokens },
+      usage: { ...usage, inputTokens, cachedInputTokens: 0 },
     });
   const turn = (id: string, ordinal: number, inputTokens: number) => ({
     nodeId: NodeId.make(id),
