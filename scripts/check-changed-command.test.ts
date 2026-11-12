@@ -5,7 +5,7 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import { expect, it } from "vite-plus/test";
 
-import { vitePlusCommand } from "./check-changed-command.ts";
+import { repositoryChecks, vitePlusCommand } from "./check-changed-command.ts";
 
 function fixture() {
   const root = NodeFS.realpathSync(
@@ -38,7 +38,7 @@ function fixture() {
   write(
     "run.mjs",
     `import { spawn, spawnSync } from 'node:child_process';
-     import { vitePlusCommand } from './command.ts';
+     import { repositoryChecks, vitePlusCommand } from './command.ts';
      const [command, args] = vitePlusCommand(process.argv.slice(3), 'win32');
      const options = { cwd: process.env.CHILD_CWD, env: process.env };
      if (process.argv[2] === 'sync') {
@@ -119,4 +119,62 @@ it.each(["sync", "async"])("preserves a failing CLI's output and status (%s)", (
   expect(result.stdout).toBe("vp stdout");
   expect(result.stderr).toBe("vp stderr");
   expect(project.call()).toEqual({ args, cwd: project.cwd, marker: "inherited" });
+});
+
+it.each([
+  [
+    ".github/fork-features.yml",
+    ["ledger"],
+    [
+      "scripts/fork-feature-ledger.test.ts",
+      "apps/web/src/components/settings/forkFeatures.test.ts",
+    ],
+  ],
+  [
+    "scripts/check-fork-feature-ledger.ts",
+    ["ledger"],
+    [
+      "scripts/fork-feature-ledger.test.ts",
+      "apps/web/src/components/settings/forkFeatures.test.ts",
+    ],
+  ],
+  [
+    "scripts/fork-feature-ledger.ts",
+    ["ledger"],
+    [
+      "scripts/fork-feature-ledger.test.ts",
+      "apps/web/src/components/settings/forkFeatures.test.ts",
+    ],
+  ],
+  ["tracked/source.ts", ["ledger"], []],
+  ["apps/web/src/example.tsx", ["naming"], []],
+  ["apps/mobile/modules/example/Example.swift", ["naming"], []],
+  ["scripts/upstream-naming.ts", ["naming"], []],
+  [
+    "apps/server/src/persistence/Migrations/063_DropUnusedV1Projections.ts",
+    ["naming", "migrations"],
+    [],
+  ],
+  ["apps/server/src/persistence/ForkMigrations/001_Test.ts", ["naming", "migrations"], []],
+  ["apps/server/src/persistence/Migrations.ts", ["naming", "migrations"], []],
+  ["apps/server/src/persistence/ForkMigrations.ts", ["naming", "migrations"], []],
+  ["scripts/upstream/check-migrations.ts", ["migrations"], []],
+  [
+    ".github/scripts/superseded-dependency-caches.jq",
+    [],
+    [".github/scripts/superseded-dependency-caches.test.cjs"],
+  ],
+  ["knip.jsonc", [], ["scripts/knip-schemas.test.ts"]],
+  [".github/workflows/provider-canary.yml", [], ["scripts/provider-canary.test.ts"]],
+  ["scripts/example.ts", [], []],
+  ["docs/user/example.md", [], []],
+  ["apps/server/src/persistence/MigrationsExtra.ts", ["naming"], []],
+] as const)("selects repository checks for %s", (file, expected, tests) => {
+  const plan = repositoryChecks([file], ["tracked/source.ts"]);
+  expect(
+    Object.entries(plan)
+      .filter(([key, value]) => key !== "tests" && value)
+      .map(([key]) => key),
+  ).toEqual(expected);
+  expect(plan.tests).toEqual(tests);
 });

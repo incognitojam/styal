@@ -39,7 +39,7 @@ import { Argument, Command, Flag } from "effect/cli";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import { decide, readWorkspace } from "../.github/scripts/ci-changes.cjs";
-import { vitePlusCommand } from "./check-changed-command.ts";
+import { repositoryChecks, vitePlusCommand } from "./check-changed-command.ts";
 
 const GiB = 1024 ** 3;
 
@@ -176,7 +176,7 @@ export const comparisonBase = Effect.fn("checkChanged.comparisonBase")(function*
 const CODE = /\.(?:[cm]?[jt]sx?|astro)$/;
 const TEST = /\.test\.[cm]?[jt]sx?$/;
 // CI runs the .github/scripts tests with `node --test`; vitest passes a failing node:test file.
-const NODE_TEST = /^\.github[/\\]scripts[/\\]/;
+const NODE_TEST = /^\.github[/\\](?:scripts|actions)[/\\]/;
 export const splitTests = (tests: Iterable<string>) => {
   const all = [...tests];
   return {
@@ -297,13 +297,23 @@ const checkChanged = Effect.fn("checkChanged")(function* (input: {
     }
     return hash.digest("hex");
   });
+  const ledgerPaths = yield* Effect.tryPromise(async () => {
+    const { loadForkFeatureLedger } = await import("./fork-feature-ledger.ts");
+    return loadForkFeatureLedger(root).features.flatMap((feature) => [
+      ...feature.upstream_paths,
+      ...feature.implementation_paths,
+      ...feature.tests,
+    ]);
+  }).pipe(Effect.orElseSucceed(() => []));
+  const checks = repositoryChecks(files, ledgerPaths);
+  // Migration results depend on upstream history, which can change without a local edit.
   const key = yield* inputKey;
   const cachePath = inRoot("node_modules/.cache/check-changed.json");
   // A missing or unreadable cache is a miss, never a failure.
   const cached = yield* fs
     .readFileString(cachePath)
     .pipe(Effect.flatMap(decodeCacheEntry), Effect.option);
-  if (Option.isSome(cached) && cached.value.key === key) {
+  if (!checks.migrations && Option.isSome(cached) && cached.value.key === key) {
     yield* Console.log("Nothing changed since the last passing run.\n");
     for (const line of cached.value.summary) yield* Console.log(line);
     return true;
@@ -329,6 +339,7 @@ const checkChanged = Effect.fn("checkChanged")(function* (input: {
   for (const test of docReaderTests(files)) tests.add(test);
   // It reads files other than the ones beside it, so no changed file selects it.
   if (affected.includes("t3")) tests.add("apps/server/src/provider/AgentContextBudget.test.ts");
+  for (const test of checks.tests) tests.add(test);
   const { vitestTests, nodeTests } = splitTests(tests);
 
   // React Compiler coverage compiles every client source file, so run only the
@@ -465,7 +476,73 @@ const checkChanged = Effect.fn("checkChanged")(function* (input: {
   const command = (name: string, args: ReadonlyArray<string>) => ({ name, run: vp(args) });
   const compilerFiles = compilerApps.reduce((count, app) => count + app.names.length, 0);
 
+  let skippedMigrations = false;
+  const migrations = Effect.gen(function* () {
+    const upstreamRef = "refs/remotes/upstream/main";
+    const stamp = yield* git(root, ["log", "-1", "--format=%ct", upstreamRef]).pipe(
+      Effect.map((value) => Number(value.toString().trim())),
+      Effect.orElseSucceed(() => 0),
+    );
+    // A tip committed in the last day is fresh enough for a local pre-push check.
+    if (stamp < (yield* Clock.currentTimeMillis) / 1000 - 86400) {
+      const fetched = yield* git(root, [
+        "fetch",
+        "--no-tags",
+        "https://github.com/pingdotgg/t3code.git",
+        "+refs/heads/main:refs/remotes/upstream/main",
+      ]).pipe(Effect.timeoutOption("30 seconds"), Effect.option);
+      if (Option.isNone(fetched) || Option.isNone(fetched.value)) {
+        skippedMigrations = true;
+        return { ok: true, output: "migrations skipped: could not fetch upstream, CI will run it" };
+      }
+    }
+    return yield* vp([
+      "run",
+      "--filter",
+      "@t3tools/scripts",
+      "migrations:check",
+      "--",
+      "--worktree",
+    ]);
+  }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner));
+  const ledger = Effect.scoped(
+    Effect.gen(function* () {
+      yield* fs.makeDirectory(inRoot("node_modules/.cache"), { recursive: true });
+      const temp = yield* fs.makeTempDirectoryScoped({
+        directory: inRoot("node_modules/.cache"),
+        prefix: "changed-paths-",
+      });
+      const changedPaths = path.join(temp, "paths.txt");
+      yield* fs.writeFileString(changedPaths, files.join("\n") + "\n");
+      return yield* vp([
+        "run",
+        "--filter",
+        "@t3tools/scripts",
+        "ledger:check",
+        "--",
+        "--changed-paths",
+        changedPaths,
+      ]);
+    }),
+  ).pipe(Effect.catch((error) => Effect.succeed({ ok: false, output: error.message })));
+
   const steps: Array<Step<never>> = [
+    ...(files.some((file) => file.startsWith(".github/pr-assets/") && present.includes(file))
+      ? [
+          {
+            name: "PR assets",
+            run: Effect.succeed({
+              ok: false,
+              output: "PR evidence must be uploaded to GitHub, not committed.",
+            }),
+          },
+        ]
+      : []),
+    ...(checks.ledger ? [{ name: "ledger", run: ledger }] : []),
+    ...(checks.naming
+      ? [command("naming", ["run", "--filter", "@t3tools/scripts", "naming:check"])]
+      : []),
+    ...(checks.migrations ? [{ name: "migrations", run: migrations }] : []),
     ...(runPatchCheck ? [{ name: "unused patches", run: checkPatches }] : []),
     ...(present.length > 0
       ? [command("format", ["fmt", "--check", "--no-error-on-unmatched-pattern", ...present])]
@@ -562,6 +639,7 @@ const checkChanged = Effect.fn("checkChanged")(function* (input: {
   yield* Console.log(`\n${summary.join("\n")}`);
 
   if (results.some((result) => result.outcome !== "pass")) return false;
+  if (skippedMigrations) return true;
   if ((yield* inputKey) !== key) {
     yield* Console.log("  pass not cached: files changed during the run");
     return true;

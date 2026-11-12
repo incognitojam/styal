@@ -147,6 +147,7 @@ describe("check:changed", () => {
     assert.deepStrictEqual(
       splitTests([
         "apps/server/src/ws.test.ts",
+        ".github/actions/setup-deps/dependency-hash.test.mjs",
         ".github/scripts/ci-changes.test.cjs",
         ".github\\scripts\\thread-transfer-report.test.cjs",
         "scripts/check-changed.test.ts",
@@ -154,6 +155,7 @@ describe("check:changed", () => {
       {
         vitestTests: ["apps/server/src/ws.test.ts", "scripts/check-changed.test.ts"],
         nodeTests: [
+          ".github/actions/setup-deps/dependency-hash.test.mjs",
           ".github/scripts/ci-changes.test.cjs",
           ".github\\scripts\\thread-transfer-report.test.cjs",
         ],
