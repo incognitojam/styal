@@ -26,7 +26,7 @@ export class DatabaseInUseError extends Schema.TaggedError<DatabaseInUseError>()
   { path: Schema.String, cause: Schema.Defect() },
 ) {
   override get message() {
-    return "Stop the styal server and desktop app, including any version before 0.1.0, before repairing the database.";
+    return "Stop the styal server and desktop app, including version 0.1.0 or earlier, before repairing the database.";
   }
 }
 
@@ -53,7 +53,7 @@ export class LegacyDatabaseRemoveError extends Schema.TaggedError<LegacyDatabase
   { path: Schema.String, cause: Schema.Defect() },
 ) {
   override get message() {
-    return "Could not delete the database from before 0.1.0. Check that this user can write to the data directory.";
+    return "Could not delete the database from 0.1.0 or earlier. Check that this user can write to the data directory.";
   }
 }
 
@@ -65,7 +65,7 @@ export class DatabaseMaintenance extends Context.Service<
         readonly databaseBytes: number;
         readonly reclaimableBytes: number;
         readonly incrementalVacuumEnabled: boolean;
-        /** Size of the database from before 0.1.0 still kept beside it, or null. */
+        /** Size of the database from 0.1.0 or earlier still kept beside it, or null. */
         readonly legacyDatabaseBytes: number | null;
       },
       DatabaseMissingError | DatabaseInspectError
@@ -80,7 +80,7 @@ export class DatabaseMaintenance extends Context.Service<
       },
       DatabaseMissingError | DatabaseInUseError | DatabaseCompactError
     >;
-    /** Deletes only the pre-0.1.0 database; earlier versions still use it. */
+    /** Deletes only the database from 0.1.0 or earlier; those versions still use it. */
     readonly removeLegacyDatabase: (
       databasePath: string,
     ) => Effect.Effect<void, DatabaseInUseError | LegacyDatabaseRemoveError>;

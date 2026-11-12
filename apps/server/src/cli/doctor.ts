@@ -16,6 +16,9 @@ const formatBytes = (bytes: number) =>
       ? `${(bytes / 1024 ** 2).toFixed(1)} MiB`
       : `${Math.ceil(bytes / 1024)} KiB`;
 
+// Off until the V1 history backfill ships: state.sqlite still holds history the import skips.
+const OFFER_LEGACY_DATABASE_REMOVAL = false;
+
 export const runDoctor = Effect.fn("runDoctor")(function* (
   databasePath: string,
   options: { readonly fix: boolean; readonly dryRun: boolean; readonly interactive?: boolean },
@@ -27,7 +30,7 @@ export const runDoctor = Effect.fn("runDoctor")(function* (
   );
   if (status.legacyDatabaseBytes !== null) {
     yield* Console.log(
-      `Database from before 0.1.0: ${formatBytes(status.legacyDatabaseBytes)}, kept for rolling back.`,
+      `Database from 0.1.0 or earlier: ${formatBytes(status.legacyDatabaseBytes)}, kept for going back to 0.1.0 and for old history not imported yet.`,
     );
   }
   const repairs = [
@@ -47,13 +50,13 @@ export const runDoctor = Effect.fn("runDoctor")(function* (
               status.reclaimableBytes >= DATABASE_COMPACTION_RECOMMENDED_BYTES,
           },
         ]),
-    ...(status.legacyDatabaseBytes === null
+    ...(!OFFER_LEGACY_DATABASE_REMOVAL || status.legacyDatabaseBytes === null
       ? []
       : [
           {
             id: "legacy" as const,
-            title: "Delete the database from before 0.1.0",
-            description: `Frees ${formatBytes(status.legacyDatabaseBytes)}. Your threads and settings are already in the current database.\n  Warning: after this, a styal version before 0.1.0 starts with no threads or settings, so you can no longer roll back.`,
+            title: "Delete the database from 0.1.0 or earlier",
+            description: `Frees ${formatBytes(status.legacyDatabaseBytes)}. Your threads and settings are already in the current database, but some old history, such as proposed plans and drafts, is only in this one.\n  Warning: after this, that old history is gone, and styal 0.1.0 or earlier starts with no threads or settings, so you can no longer go back to 0.1.0.`,
             recommended: false,
           },
         ]),
@@ -115,9 +118,9 @@ export const runDoctor = Effect.fn("runDoctor")(function* (
     );
   }
   if (selected.includes("legacy")) {
-    // Only pre-0.1.0 servers use this file; removal refuses while they hold it open.
+    // Only 0.1.0 and earlier servers use this file; removal refuses while they hold it open.
     yield* maintenance.removeLegacyDatabase(databasePath);
-    yield* Console.log("\nDeleted the database from before 0.1.0.");
+    yield* Console.log("\nDeleted the database from 0.1.0 or earlier.");
   }
 });
 
