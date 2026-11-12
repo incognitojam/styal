@@ -38,6 +38,7 @@ import { withUntracedRequests } from "./http.ts";
 import * as ServerHttp from "./http.ts";
 import {
   guardHttpResponseWriteErrors,
+  keepIdleConnections,
   rejectRequestsUntilServing,
 } from "./httpResponseErrorGuard.ts";
 import { fixPath } from "./os-jank.ts";
@@ -395,7 +396,7 @@ const layerHttpServer = Layer.unwrap(
     return NodeHttpServer.layer(
       () => {
         const server = rejectRequestsUntilServing(
-          guardHttpResponseWriteErrors(NodeHttp.createServer()),
+          keepIdleConnections(guardHttpResponseWriteErrors(NodeHttp.createServer())),
           startupCopy,
         );
         if (config.privateNetworkOnly) {

@@ -25,11 +25,13 @@ import {
   type OrchestrationV2ProjectedTurnItem,
   type OrchestrationV2ProviderThread,
   type OrchestrationV2Run,
+  type OrchestrationV2ShellSnapshot,
   type OrchestrationV2ShellStreamItem,
   type OrchestrationV2ThreadProjection,
   type OrchestrationV2ThreadShell,
   type OrchestrationV2ThreadStreamItem,
   type OrchestrationV2TurnItem,
+  type ServerLifecycleStreamEvent,
   type TerminalMetadataStreamEvent,
 } from "@t3tools/contracts";
 import type {
@@ -56,15 +58,16 @@ const CODEX = ProviderInstanceId.make("codex");
 const MODEL = { instanceId: CODEX, model: "gpt-5.4" };
 const AT = DateTime.makeUnsafe("2026-03-17T19:12:28.000Z");
 
-const descriptor = {
-  environmentId: ENVIRONMENT_ID,
+const descriptorOf = (environmentId: EnvironmentId) => ({
+  environmentId,
   label: "Render scenarios",
   platform: { os: "linux", arch: "x64" },
   // A matching version, since a mismatch adds an update banner a typical user never sees.
   serverVersion: APP_VERSION,
   orchestrationProtocolVersion: ORCHESTRATION_PROTOCOL_VERSION,
   capabilities: { repositoryIdentity: true },
-};
+});
+let descriptor = descriptorOf(ENVIRONMENT_ID);
 const auth = {
   policy: "loopback-browser",
   bootstrapMethods: ["one-time-token"],
@@ -370,6 +373,7 @@ let pendingDispatches: Array<{
 }> = [];
 let sequence = 1;
 let vcsStatusSubscriber: Queue.Queue<VcsStatusStreamEvent> | null = null;
+let lifecycleSubscriber: Queue.Queue<ServerLifecycleStreamEvent> | null = null;
 
 const subscribe = <A>(first: ReadonlyArray<A>, register?: (queue: Queue.Queue<A>) => () => void) =>
   Stream.unwrap(
@@ -383,6 +387,17 @@ const subscribe = <A>(first: ReadonlyArray<A>, register?: (queue: Queue.Queue<A>
       return Stream.fromQueue(queue);
     }),
   );
+
+/** The shell the environment serves for the installed threads. */
+export function shellSnapshot(): OrchestrationV2ShellSnapshot {
+  return {
+    schemaVersion: 1,
+    snapshotSequence: sequence,
+    projects: [project],
+    threads: threads.filter((thread) => !thread.olderSettled).map(shellOf),
+    archivedThreads: [],
+  };
+}
 
 const handlers: Record<string, (input: never) => unknown> = {
   // Recorded, and accepted only when the scenario asks, since a pending command holds every
@@ -405,16 +420,7 @@ const handlers: Record<string, (input: never) => unknown> = {
     }),
   [ORCHESTRATION_V2_WS_METHODS.subscribeShell]: () =>
     subscribe<OrchestrationV2ShellStreamItem>([
-      {
-        kind: "snapshot",
-        snapshot: {
-          schemaVersion: 1,
-          snapshotSequence: sequence,
-          projects: [project],
-          threads: threads.filter((thread) => !thread.olderSettled).map(shellOf),
-          archivedThreads: [],
-        },
-      },
+      { kind: "snapshot", snapshot: shellSnapshot() },
       { kind: "synchronized" },
     ]),
   [ORCHESTRATION_V2_WS_METHODS.subscribeThread]: (input: { readonly threadId: ThreadId }) => {
@@ -454,6 +460,14 @@ const handlers: Record<string, (input: never) => unknown> = {
     }),
   [WS_METHODS.subscribeServerConfig]: () =>
     subscribe([{ version: 1 as const, type: "snapshot" as const, config: serverConfig() }]),
+  // The welcome waits for `emitWelcome`, like a server that has not sent it yet.
+  [WS_METHODS.subscribeServerLifecycle]: () =>
+    subscribe<ServerLifecycleStreamEvent>([], (queue) => {
+      lifecycleSubscriber = queue;
+      return () => {
+        if (lifecycleSubscriber === queue) lifecycleSubscriber = null;
+      };
+    }),
 };
 
 // Unanswered calls stay pending, like a server that has not replied yet.
@@ -484,7 +498,7 @@ export const fakeDriver = {
   ): Effect.Effect<EnvironmentConnectionLease, ConnectionAttemptError, Scope.Scope> =>
     Effect.succeed({
       prepared: {
-        environmentId: ENVIRONMENT_ID,
+        environmentId: descriptor.environmentId,
         label: descriptor.label,
         httpBaseUrl: window.location.origin,
         socketUrl: window.location.origin.replace(/^http/, "ws"),
@@ -499,9 +513,27 @@ export const fakeDriver = {
 export type FakeDriver = typeof fakeDriver;
 
 const realFetch = globalThis.fetch;
-const encodedDescriptor = Schema.encodeSync(ExecutionEnvironmentDescriptor)(
-  Schema.decodeUnknownSync(ExecutionEnvironmentDescriptor)(descriptor),
-);
+const DESCRIPTOR_PATH = "/.well-known/t3/environment";
+// The app starts discovering its environment while its modules load, before a test installs one,
+// and retries only on a slow poll, so discovery waits for the install like a server still starting.
+let markInstalled = () => {};
+const untilInstalled = () =>
+  new Promise<void>((resolve) => {
+    markInstalled = resolve;
+  });
+let installed = untilInstalled();
+const fetchBeforeInstall: typeof fetch = async (input, init) => {
+  const url = new URL(input instanceof Request ? input.url : String(input), window.location.href);
+  if (url.origin !== window.location.origin || url.pathname !== DESCRIPTOR_PATH) {
+    return realFetch(input, init);
+  }
+  await installed;
+  return globalThis.fetch(input, init);
+};
+globalThis.fetch = fetchBeforeInstall;
+const encodeDescriptorSchema = Schema.encodeSync(ExecutionEnvironmentDescriptor);
+const decodeDescriptor = Schema.decodeUnknownSync(ExecutionEnvironmentDescriptor);
+const encodeDescriptor = () => encodeDescriptorSchema(decodeDescriptor(descriptor));
 
 /** Serves the environment's HTTP API and these threads until disposed. */
 export function installFakeEnvironment(
@@ -511,9 +543,12 @@ export function installFakeEnvironment(
     /** Commands left unanswered even when accepting, until `rejectPendingCommand`. */
     readonly holdCommand?: (command: OrchestrationV2Command) => boolean;
     readonly providers?: ReadonlyArray<unknown>;
+    /** Another environment, so a test's persisted caches stay its own. */
+    readonly environmentId?: EnvironmentId;
   },
 ): Disposable {
   threads = fixtures;
+  descriptor = descriptorOf(options?.environmentId ?? ENVIRONMENT_ID);
   baseServerConfig = makeServerConfig(options?.providers ?? [CODEX_PROVIDER]);
   dispatched = [];
   acceptCommands = options?.acceptCommands === true;
@@ -521,7 +556,7 @@ export function installFakeEnvironment(
   globalThis.fetch = async (input, init) => {
     const url = new URL(input instanceof Request ? input.url : String(input), window.location.href);
     if (url.origin !== window.location.origin) return realFetch(input, init);
-    if (url.pathname === "/.well-known/t3/environment") return json(encodedDescriptor);
+    if (url.pathname === DESCRIPTOR_PATH) return json(encodeDescriptor());
     if (url.pathname === "/api/auth/session") {
       return json({
         authenticated: true,
@@ -535,10 +570,13 @@ export function installFakeEnvironment(
     if (/^\/(api|oauth|\.well-known)\//.test(url.pathname)) return json({}, 404);
     return realFetch(input, init);
   };
+  markInstalled();
   return {
     [Symbol.dispose]: () => {
-      globalThis.fetch = realFetch;
+      globalThis.fetch = fetchBeforeInstall;
+      installed = untilInstalled();
       threads = [];
+      descriptor = descriptorOf(ENVIRONMENT_ID);
       baseServerConfig = makeServerConfig([CODEX_PROVIDER]);
       dispatched = [];
       acceptCommands = false;
@@ -561,6 +599,24 @@ export async function rejectPendingCommand(message: string): Promise<void> {
         message,
       }),
     ),
+  );
+}
+
+/** Sends the welcome on the live lifecycle subscription, naming a bootstrap thread when given. */
+export async function emitWelcome(bootstrapThreadId?: ThreadId): Promise<void> {
+  if (!lifecycleSubscriber) throw new Error("No lifecycle subscription");
+  await Effect.runPromise(
+    Queue.offer(lifecycleSubscriber, {
+      version: 1,
+      sequence: 1,
+      type: "welcome",
+      payload: {
+        environment: baseServerConfig.environment,
+        cwd: "/workspace/render",
+        projectName: "render",
+        ...(bootstrapThreadId ? { bootstrapProjectId: PROJECT_ID, bootstrapThreadId } : {}),
+      },
+    }),
   );
 }
 

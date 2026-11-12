@@ -822,6 +822,19 @@ export function __resetClientSettingsPersistenceForTests(): void {
   clientSettingsHydrationListeners.clear();
 }
 
+/** Holds settings hydration pending until the returned function marks it ready. */
+export function __holdClientSettingsHydrationForTests(settings: ClientSettings): () => void {
+  clientSettingsHydrationGeneration += 1;
+  clientSettingsSnapshot = settings;
+  clientSettingsHydrationStatus = "pending";
+  clientSettingsHydrationPromise = new Promise<void>(() => {});
+  return () => {
+    clientSettingsHydrationPromise = null;
+    setClientSettingsHydrationStatus("ready");
+    emitClientSettingsChange();
+  };
+}
+
 export function __setClientSettingsForTests(settings: ClientSettings): void {
   clientSettingsHydrationGeneration += 1;
   clientSettingsSnapshot = settings;

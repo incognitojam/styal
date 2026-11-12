@@ -383,10 +383,12 @@ const makeSlowRelayServer = Effect.fn("TestSlowRelayServer.make")(function* (inp
 }) {
   const stalls = yield* Queue.unbounded<void>();
   const paths: Array<string> = [];
+  let stalled = 0;
   const fetchFn = ((request, init) => {
     const pathname = new URL(new Request(request, init).url).pathname;
     paths.push(pathname);
-    if (paths.length <= input.stalledRequests) {
+    // A cached token's descriptor read runs beside its ticket request; only the ticket stalls.
+    if (pathname !== "/.well-known/t3/environment" && stalled++ < input.stalledRequests) {
       Queue.offerUnsafe(stalls, undefined);
       return new Promise<Response>(() => {});
     }
@@ -398,6 +400,9 @@ const makeSlowRelayServer = Effect.fn("TestSlowRelayServer.make")(function* (inp
   }) satisfies typeof fetch;
   return { fetchFn, paths, stalls };
 });
+
+const withoutDescriptorReads = (paths: ReadonlyArray<string>) =>
+  paths.filter((path) => path !== "/.well-known/t3/environment");
 
 /**
  * Builds the real relay authorization service over a test fetch, one stored token, and a
@@ -1807,7 +1812,7 @@ describe("EnvironmentSupervisor", () => {
       const connected = yield* awaitState(supervisor.state, (state) => state.phase === "connected");
       expect(connected).toMatchObject({ attempt: 1, lastFailure: null });
       expect(yield* Ref.get(relay.bootstrapCalls)).toBe(0);
-      expect(httpPaths).toEqual(["/api/auth/websocket-ticket/rpc"]);
+      expect(withoutDescriptorReads(httpPaths)).toEqual(["/api/auth/websocket-ticket/rpc"]);
       const session = Option.getOrThrow(yield* SubscriptionRef.get(supervisor.session));
       const prepared = Option.getOrThrow(yield* SubscriptionRef.get(supervisor.prepared));
       expect(prepared.httpAuthorization).toMatchObject({ accessToken: "access-token-1" });
@@ -1865,7 +1870,7 @@ describe("EnvironmentSupervisor", () => {
       const prepared = Option.getOrThrow(yield* SubscriptionRef.get(supervisor.prepared));
       expect(prepared.httpAuthorization).toMatchObject({ accessToken: "stored-token" });
       expect(yield* Ref.get(relay.bootstrapCalls)).toBe(0);
-      expect(server.paths).toEqual([
+      expect(withoutDescriptorReads(server.paths)).toEqual([
         "/api/auth/websocket-ticket/rpc",
         "/api/auth/websocket-ticket/rpc",
       ]);
@@ -1910,7 +1915,9 @@ describe("EnvironmentSupervisor", () => {
       const prepared = Option.getOrThrow(yield* SubscriptionRef.get(supervisor.prepared));
       expect(prepared.httpAuthorization).toMatchObject({ accessToken: "stored-token" });
       expect(yield* Ref.get(relay.bootstrapCalls)).toBe(0);
-      expect(server.paths).toEqual(Array(3).fill("/api/auth/websocket-ticket/rpc"));
+      expect(withoutDescriptorReads(server.paths)).toEqual(
+        Array(3).fill("/api/auth/websocket-ticket/rpc"),
+      );
     }).pipe(Effect.provide(TestClock.layer())),
   );
 
@@ -1969,8 +1976,7 @@ describe("EnvironmentSupervisor", () => {
       const prepared = Option.getOrThrow(yield* SubscriptionRef.get(supervisor.prepared));
       expect(prepared.httpAuthorization).toMatchObject({ accessToken: "access-token-2" });
       expect(yield* Ref.get(relay.bootstrapCalls)).toBe(1);
-      expect(server.paths.slice(6)).toEqual([
-        "/.well-known/t3/environment",
+      expect(withoutDescriptorReads(server.paths).slice(6)).toEqual([
         "/oauth/token",
         "/api/auth/websocket-ticket/rpc",
       ]);
