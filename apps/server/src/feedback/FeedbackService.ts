@@ -17,6 +17,7 @@ import {
   type ThreadId,
 } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import { formatFeedbackFooter } from "@t3tools/shared/feedbackFooter";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -83,14 +84,16 @@ const make = Effect.gen(function* () {
   const platform = yield* HostProcess.Platform;
   const architecture = yield* HostProcess.Architecture;
 
-  const composeBody = (draft: FeedbackDraft, author: string) =>
-    [
-      draft.body,
-      "",
-      "---",
-      `styal ${packageJson.version} (${ServerConfig.telemetryChannel}), ${platform} ${architecture}`,
-      author,
-    ].join("\n");
+  const composeBody = (draft: FeedbackDraft, kind: "user" | "agent", agent?: string) =>
+    draft.body +
+    formatFeedbackFooter({
+      version: packageJson.version,
+      channel: ServerConfig.telemetryChannel,
+      platform,
+      architecture,
+      kind,
+      ...(agent === undefined ? {} : { agent }),
+    });
 
   const notFiled = (title: string, body: string, reason: string) =>
     ({ status: "not_filed", reason, manualUrl: manualIssueUrl(title, body) }) as const;
@@ -165,7 +168,7 @@ const make = Effect.gen(function* () {
 
   const submit: FeedbackService["Service"]["submit"] = Effect.fn("FeedbackService.submit")(
     function* (draft) {
-      return yield* file(draft.title, composeBody(draft, "Sent from styal by the user."));
+      return yield* file(draft.title, composeBody(draft, "user"));
     },
   );
 
@@ -179,11 +182,12 @@ const make = Effect.gen(function* () {
     const model = records?.thread.modelSelection;
     const body = composeBody(
       draft,
+      "agent",
       model === undefined
-        ? "Written by an agent and approved by the user."
-        : `Written by an agent (${[providerName(model.instanceId), model.model]
+        ? undefined
+        : [providerName(model.instanceId), model.model]
             .filter((part) => part !== undefined)
-            .join(", ")}) and approved by the user.`,
+            .join(", "),
     );
     const login = yield* account;
     if (login === null) {

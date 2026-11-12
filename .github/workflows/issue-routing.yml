@@ -1,0 +1,59 @@
+name: Route new issues
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  issues: write
+
+jobs:
+  route:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Label and announce issue
+        uses: actions/github-script@v9
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_CI }}
+        with:
+          script: |
+            // issues events use the default branch SHA, never a ref supplied by the reporter.
+            const { stripTypeScriptTypes } = require('node:module');
+            const loadModule = async (path) => {
+              const source = await fetch(
+                `https://raw.githubusercontent.com/${context.repo.owner}/${context.repo.repo}/${context.sha}/${path}`
+              );
+              if (!source.ok) throw new Error(`Cannot load routing module: ${source.status}`);
+              return stripTypeScriptTypes(await source.text());
+            };
+            const moduleUrl = source => `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`;
+            const footer = moduleUrl(await loadModule('packages/shared/src/feedbackFooter.ts'));
+            const javascript = (await loadModule('scripts/issue-routing.ts'))
+              .replaceAll('@t3tools/shared/feedbackFooter', footer);
+            const { classifyReport, issueLabels, routingLabels, discordPayload, postDiscord } =
+              await import(`data:text/javascript;base64,${Buffer.from(javascript).toString('base64')}`);
+            const issue = context.payload.issue;
+            const kind = classifyReport(issue.body);
+            const labels = issueLabels(kind);
+            for (const name of labels) {
+              try {
+                await github.rest.issues.getLabel({ ...context.repo, name });
+              } catch (error) {
+                if (error.status !== 404) throw error;
+                const definition = routingLabels.find(label => label.name === name);
+                try {
+                  await github.rest.issues.createLabel({ ...context.repo, ...definition });
+                } catch (creationError) {
+                  // Another opened issue or the label sync can create it concurrently.
+                  if (creationError.status !== 422) throw creationError;
+                  await github.rest.issues.getLabel({ ...context.repo, name });
+                }
+              }
+            }
+            await github.rest.issues.addLabels({ ...context.repo, issue_number: issue.number, labels });
+
+            const webhook = process.env.DISCORD_WEBHOOK_URL;
+            if (!webhook) return;
+            if (!await postDiscord(webhook, discordPayload(issue, kind))) {
+              core.warning('Discord announcement skipped after a request failure or bounded rate-limit retries.');
+            }

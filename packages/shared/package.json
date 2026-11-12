@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./feedbackFooter": {
+      "types": "./src/feedbackFooter.ts",
+      "import": "./src/feedbackFooter.ts"
+    },
     "./brandAssets": {
       "types": "./src/brandAssets.ts",
       "import": "./src/brandAssets.ts",

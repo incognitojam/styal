@@ -6,9 +6,60 @@ import * as Layer from "effect/Layer";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import { SourceControlDrivers } from "../sourceControl/builtInDrivers.ts";
 import * as FeedbackService from "./FeedbackService.ts";
+import { classifyReport } from "../../../../scripts/issue-routing.ts";
 
 const threadId = ThreadId.make("thread-1");
 const draft = { title: "The sidebar is empty", body: "Open the app and the sidebar is empty." };
+
+function manualFormBody(body: string) {
+  const actual = new URL(FeedbackService.manualIssueUrl(draft.title, body)).searchParams.get(
+    "actual",
+  );
+  return `### Before submitting
+
+- [x] I searched existing issues and did not find a duplicate.
+- [x] I included enough detail to reproduce or investigate the problem.
+
+### Area
+
+apps/web
+
+### Steps to reproduce
+
+Open the app.
+
+### Expected behavior
+
+The sidebar lists threads.
+
+### Actual behavior
+
+${actual}
+
+### Impact
+
+Major degradation or frequent failure
+
+### Version or commit
+
+_No response_
+
+### Environment
+
+_No response_
+
+### Logs or stack traces
+
+_No response_
+
+### Screenshots, recordings, or supporting files
+
+_No response_
+
+### Workaround
+
+_No response_`;
+}
 
 /** A thread with a running turn whose approval card the "user" answers as soon as it opens. */
 function harness(input: {
@@ -93,6 +144,8 @@ describe("reportFromAgent", () => {
       expect(filed[0]).toMatchObject({ host: "github.com", repository: "incognitojam/styal" });
       expect(filed[0]?.body).toContain(draft.body);
       expect(filed[0]?.body).toContain("Written by an agent (Claude, claude-opus-5-5)");
+      expect(classifyReport(filed[0]?.body)).toBe("agent");
+      expect(classifyReport(manualFormBody(filed[0]?.body ?? ""))).toBe("agent");
       // The card shows the text that gets posted, under the account that posts it.
       expect(approvals[0]?.attention).toBe("input");
       expect(approvals[0]?.prompt).toContain("as @octocat");
@@ -161,6 +214,8 @@ describe("submit", () => {
       expect(approvals).toEqual([]);
       expect(filed[0]?.body).toContain(draft.body);
       expect(filed[0]?.body).toContain("Sent from styal by the user.");
+      expect(classifyReport(filed[0]?.body)).toBe("user");
+      expect(classifyReport(manualFormBody(filed[0]?.body ?? ""))).toBe("user");
       expect(filed[0]?.body).toMatch(/styal \S+ \(\S+\), \S+ \S+/);
     }).pipe(Effect.provide(layer));
   });
