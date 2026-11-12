@@ -71,6 +71,10 @@ const makeHarness = Effect.fn("RelayDiscoveryTest.makeHarness")(function* () {
   const secondListCall = yield* Deferred.make<void>();
   const listGate = yield* Ref.make<Deferred.Deferred<void> | null>(null);
   const clerkToken = yield* Ref.make<string | null>(token("account-1"));
+  const tokenGate = yield* Ref.make<{
+    readonly requested: Deferred.Deferred<void>;
+    readonly release: Deferred.Deferred<void>;
+  } | null>(null);
   const sessionIdentity = { accountId: "account-1" };
   const wakeups = yield* SubscriptionRef.make<{
     readonly sequence: number;
@@ -147,7 +151,15 @@ const makeHarness = Effect.fn("RelayDiscoveryTest.makeHarness")(function* () {
                 token === null ? Option.none() : Option.some(sessionIdentity),
               ),
             ),
-            clerkToken: Ref.get(clerkToken).pipe(
+            clerkToken: Ref.get(tokenGate).pipe(
+              Effect.flatMap((gate) =>
+                gate === null
+                  ? Effect.void
+                  : Deferred.succeed(gate.requested, undefined).pipe(
+                      Effect.andThen(Deferred.await(gate.release)),
+                    ),
+              ),
+              Effect.andThen(Ref.get(clerkToken)),
               Effect.filterOrFail(
                 (token) => token !== null,
                 () =>
@@ -183,6 +195,7 @@ const makeHarness = Effect.fn("RelayDiscoveryTest.makeHarness")(function* () {
     listFailure,
     listGate,
     clerkToken,
+    tokenGate,
     networkStatus,
     secondListCall,
     statusRequests,
@@ -229,7 +242,18 @@ describe("RelayEnvironmentDiscovery", () => {
             [added.environmentId, addedStatus],
           ]),
         );
+        const tokenGate = {
+          requested: yield* Deferred.make<void>(),
+          release: yield* Deferred.make<void>(),
+        };
+        yield* Ref.set(harness.tokenGate, tokenGate);
         const refresh = yield* Effect.forkChild(discovery.refresh);
+        yield* Deferred.await(tokenGate.requested);
+        const awaitingToken = yield* SubscriptionRef.get(discovery.state);
+        expect(awaitingToken.environments).toEqual(before.environments);
+        expect(awaitingToken.refreshing).toBe(true);
+        expect(awaitingToken.listed).toBe(false);
+        yield* Deferred.succeed(tokenGate.release, undefined);
         yield* Deferred.await(harness.secondListCall);
         const pending = yield* SubscriptionRef.get(discovery.state);
         expect(pending.environments).toEqual(before.environments);
@@ -253,11 +277,19 @@ describe("RelayEnvironmentDiscovery", () => {
           environment: retained,
         });
         expect(listed.environments.get(added.environmentId)?.availability).toBe("checking");
-        yield* Deferred.succeed(retainedStatus, status(retained, "offline"));
+        yield* Deferred.fail(
+          retainedStatus,
+          new ManagedRelay.ManagedRelayRequestTimeoutError({
+            activity: "Relay environment status request",
+            timeoutMs: ManagedRelay.MANAGED_RELAY_REQUEST_TIMEOUT_MS,
+            traceId: null,
+          }),
+        );
         yield* Deferred.succeed(addedStatus, status(added, "online"));
         yield* Fiber.join(refresh);
         const complete = yield* SubscriptionRef.get(discovery.state);
-        expect(complete.environments.get(retained.environmentId)?.availability).toBe("offline");
+        expect(complete.environments.get(retained.environmentId)?.availability).toBe("error");
+        expect(complete.environments.get(retained.environmentId)?.status).toEqual(Option.none());
         expect(complete.environments.get(added.environmentId)?.availability).toBe("online");
         expect(complete.refreshing).toBe(false);
       }).pipe(Effect.provide(harness.layer));
