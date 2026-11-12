@@ -218,6 +218,10 @@ Cursor and Antigravity update with styal. Homebrew and Chocolatey installs
 compare against the version their package manager offers, which can trail the
 npm release; update Claude installed with Chocolatey through Chocolatey.
 
+The managed runtimes for Antigravity and for Codex connected through ChatGPT
+first install the release styal tested. When styal finds a newer compatible
+release, their setup in **Settings → Providers** offers an update.
+
 Add another provider instance for a separate account or configuration. Each
 instance can have its own environment variables, such as API keys or a custom
 base URL. Mark secret values as sensitive; after saving, styal does not display
