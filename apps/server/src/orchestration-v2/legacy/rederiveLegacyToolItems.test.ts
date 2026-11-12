@@ -247,4 +247,79 @@ describe("rederiveLegacyToolItems", () => {
       assert.equal(yield* readHistoryRewriteFence(sql), fence);
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
+  it.effect(
+    "names Codex MCP calls by server and tool, including ones stored with the bare tool",
+    () =>
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* runAllMigrations();
+        const mcpPayload = {
+          itemType: "mcp_tool_call",
+          title: "MCP tool call",
+          status: "completed",
+          data: {
+            item: {
+              type: "mcpToolCall",
+              server: "docs",
+              tool: "search",
+              arguments: { query: "calc" },
+              result: { content: [] },
+            },
+          },
+        };
+        for (const [key, toolName] of [
+          ["bare", "search"],
+          ["titled", "MCP tool call"],
+        ] as const) {
+          const id = `import:v1:activity:thread-1:${key}`;
+          const item = {
+            id,
+            threadId: "thread-1",
+            ordinal: key === "bare" ? 1 : 2,
+            runId: null,
+            nodeId: null,
+            providerThreadId: null,
+            providerTurnId: null,
+            nativeItemRef: null,
+            parentItemId: null,
+            type: "dynamic_tool",
+            status: "completed",
+            title: "MCP tool call",
+            startedAt: at,
+            completedAt: at,
+            updatedAt: at,
+            toolName,
+            input: { query: "calc" },
+            output: { content: [] },
+            legacyActivities: [
+              {
+                id: key,
+                tone: "tool",
+                kind: "tool.completed",
+                summary: "MCP tool call",
+                turnId: null,
+                createdAt: at,
+              },
+            ],
+          };
+          yield* sql`INSERT INTO orchestration_v2_projection_turn_items
+          (turn_item_id, thread_id, run_id, ordinal, type, status, updated_at, payload_json)
+          VALUES (${id}, 'thread-1', NULL, ${item.ordinal}, 'dynamic_tool', 'completed', ${at}, ${JSON.stringify(item)})`;
+          yield* sql`INSERT INTO styal_legacy_v1_thread_activities
+          (activity_id, thread_id, turn_id, tone, kind, summary, payload_json, created_at, sequence)
+          VALUES (${key}, 'thread-1', NULL, 'tool', 'tool.completed', 'MCP tool call', ${JSON.stringify(mcpPayload)}, ${at}, ${item.ordinal})`;
+          yield* sql`INSERT INTO orchestration_events
+          (event_id, aggregate_kind, stream_id, stream_version, event_type, occurred_at, actor_kind, payload_json, metadata_json, application_event_version)
+          VALUES (${`migration:v1:history:thread-1:item:${id}`}, 'thread', 'thread-1', ${item.ordinal}, 'turn-item.updated', ${at}, 'server', ${JSON.stringify(item)}, '{}', 2)`;
+        }
+        assert.deepEqual(yield* rederiveLegacyToolItems(sql), { threads: 1, items: 2, failed: 0 });
+        const names = yield* sql<{ readonly name: string }>`
+        SELECT json_extract(payload_json, '$.toolName') AS name
+        FROM orchestration_v2_projection_turn_items ORDER BY ordinal`;
+        assert.deepEqual(
+          names.map((row) => row.name),
+          ["mcp__docs__search", "mcp__docs__search"],
+        );
+      }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
+  );
 });

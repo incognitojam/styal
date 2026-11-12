@@ -90,7 +90,7 @@ describe("legacyActivityTurnItem", () => {
       },
       expected: {
         type: "dynamic_tool",
-        toolName: "search",
+        toolName: "mcp__docs__search",
         input: { query: "calc" },
         output: { content: [] },
       },

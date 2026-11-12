@@ -153,8 +153,13 @@ export const rederiveLegacyToolItems = Effect.fn("rederiveLegacyToolItems")(func
                 if (item.input === payload.detail && rederived.input !== item.input)
                   patch.input = rederived.input;
               } else if (item.type === "dynamic_tool" && rederived.type === "dynamic_tool") {
+                const nativeItem =
+                  isRecord(payload.data) && isRecord(payload.data.item) ? payload.data.item : {};
+                // Imports between output keeping and the MCP name fix stored a Codex MCP call's bare tool.
+                const bareMcpTool =
+                  nativeItem.type === "mcpToolCall" && item.toolName === nativeItem.tool;
                 if (
-                  (item.toolName == null || item.toolName === item.title) &&
+                  (item.toolName == null || item.toolName === item.title || bareMcpTool) &&
                   rederived.toolName?.trim() &&
                   rederived.toolName !== item.toolName
                 )
