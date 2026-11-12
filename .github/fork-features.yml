@@ -1157,6 +1157,7 @@ features:
       - Update summaries retain skipped environment reasons, including late skips and across desktop relaunch.
       - Combined update confirmations keep the machine table and affected threads in one scrolling body and retain remote host labels even when only one remote server is checked.
       - A Stable and Nightly track switch compares the database with both migration histories, upstream's and `yngatech_sql_migrations`, through one combined number that `build-npm-launcher.ts` publishes in the `@styal/cli` manifest and servers report, and the service preflight blocks a migration from either history that the target build does not know.
+      - The desktop update-track menu shows each track's npm release version using the switch dialog's shared lookup, or a checking, unavailable, or no-release message. Hosted web deployment selection retains track labels because npm versions do not identify hosted deployments.
       - The switch dialog lists running work from the same activity check as the sidebar, clicking confirm is explicit consent, and it waits for the download the app starts by itself after a check. It records no combined update confirmation events.
       - Pull request preview versions (`-pr.<number>.<run>`) count as the preview channel, so a switch skips them and a preview install is outside the refusal of cross-track and downgraded builds.
     implementation_paths:
