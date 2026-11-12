@@ -159,6 +159,7 @@ const TailscaleStatusSelf = Schema.Struct({
 });
 
 const TailscaleStatusJson = Schema.Struct({
+  BackendState: Schema.optional(Schema.Unknown),
   Self: Schema.optional(TailscaleStatusSelf),
 });
 
@@ -195,6 +196,11 @@ type TailscaleServeStatusJson = typeof TailscaleServeStatusJson.Type;
 export type TailscaleStatusJson = typeof TailscaleStatusJson.Type;
 
 export interface TailscaleStatus {
+  /**
+   * `tailscale down` keeps `Self` from the last netmap, so the DNS name alone
+   * does not mean the tailnet is reachable. `null` when the CLI omits BackendState.
+   */
+  readonly running: boolean | null;
   readonly magicDnsName: string | null;
   readonly tailnetIpv4Addresses: readonly string[];
   /**
@@ -267,6 +273,7 @@ export const parseTailscaleStatus = (
 
       const capMap = parsed.Self?.CapMap;
       return {
+        running: parsed.BackendState === undefined ? null : parsed.BackendState === "Running",
         magicDnsName: normalizeMagicDnsName(parsed),
         tailnetIpv4Addresses,
         httpsServeEnabled:
