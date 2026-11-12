@@ -25,6 +25,7 @@ export function serverNameForResumeCursor(
     ? (resumeCursor.mcpServerName ?? LEGACY_MCP_SERVER_NAME)
     : LEGACY_MCP_SERVER_NAME;
 }
+import type * as Effect from "effect/Effect";
 
 /**
  * Sent by MCP clients that cannot defer tools themselves. The T3 MCP server then
@@ -44,6 +45,8 @@ export interface McpProviderSessionConfig {
   readonly browserToolsAvailable: boolean;
   readonly capabilities?: ReadonlySet<string>;
   readonly agentDeviceEnvironment?: Readonly<Record<string, string>>;
+  /** True while a delegated task this thread started will wake it with its result. */
+  readonly hasPendingWake?: Effect.Effect<boolean>;
 }
 
 export function withAgentDeviceEnvironment(
