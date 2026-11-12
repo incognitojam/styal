@@ -9320,6 +9320,7 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
       ]) {
         assert.equal(shell?.pendingRuntimeRequest?.id, "secret:b");
         assert.isTrue(shell?.pendingRuntimeRequest?.blocking);
+        assert.isTrue(shell?.pendingRuntimeRequest?.userOnly);
       }
 
       const requestId = RuntimeRequestId.make(`request:${suffix}:async`);
@@ -9410,6 +9411,10 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
         assert.deepEqual(
           [thread?.pendingRuntimeRequest?.blocking, memoryShell.pendingRuntimeRequest?.blocking],
           terminal ? [false, false] : [true, true],
+        );
+        assert.deepEqual(
+          [thread?.pendingRuntimeRequest?.userOnly, memoryShell.pendingRuntimeRequest?.userOnly],
+          terminal ? [undefined, undefined] : [true, true],
         );
       }
     }),
