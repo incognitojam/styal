@@ -25,6 +25,7 @@ import {
   EnvironmentId,
   CommandId,
   EnvironmentAuthorizationError,
+  MessageId,
   OrchestrationV2DispatchCommandError,
   ProjectId,
   ProviderDriverKind,
@@ -33,6 +34,7 @@ import {
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   RunId,
   ThreadId,
+  TurnItemId,
   type SourceControlIssue,
   type OrchestrationV2ThreadShell,
   type OrchestrationV2ShellSnapshot,
@@ -108,6 +110,7 @@ import { insertInlineContextReference } from "./lib/composerContextReferences";
 import {
   buildMessageContext,
   environmentContextRecord,
+  responseContextRecord,
   terminalContextReference,
 } from "./lib/composerContextRecords";
 import { threadContextRecord } from "@t3tools/shared/composerContextReferences";
@@ -1263,6 +1266,33 @@ describe("composerDraftStore project draft thread mapping", () => {
     expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.prompt).toBe(
       "a follow-up typed while reconnecting",
     );
+  });
+
+  it("keeps a restored draft whose reply the user changed before the unconfirmed send was confirmed", () => {
+    const store = useComposerDraftStore.getState();
+    store.setProjectDraftThreadId(projectRef, draftId, { threadId });
+    store.setPrompt(draftId, "sent before the socket dropped");
+    rememberUnconfirmedDraftSend(draftId);
+    const replyTo = responseContextRecord({
+      citation: {
+        version: 1,
+        environmentId: TEST_ENVIRONMENT_ID,
+        threadId,
+        messageId: MessageId.make("message-1"),
+        text: "Done.",
+        start: 0,
+        end: 5,
+        prefix: "",
+        suffix: "",
+      },
+      itemId: TurnItemId.make("item-1"),
+      subagents: [],
+    });
+    store.setReplyTo(draftId, replyTo);
+
+    finalizePromotedDraftThreadByRef(scopeThreadRef(TEST_ENVIRONMENT_ID, threadId));
+
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.replyTo).toEqual(replyTo);
   });
 
   it("does not clear composer drafts for existing server threads during promotion cleanup", () => {

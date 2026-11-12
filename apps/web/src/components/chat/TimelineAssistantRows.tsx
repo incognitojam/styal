@@ -1,7 +1,12 @@
 import { CoordinatorReportsContext, ReportAnswerBar } from "./CoordinatorReports";
 import { ReportAnswerMessageBody } from "./TimelineUserMessageRow";
 import { shouldPreserveAssistantLineBreaks } from "@t3tools/shared/markdownPipeline";
-import { type MessageId, type RunId, type ScopedThreadRef } from "@t3tools/contracts";
+import {
+  type MessageId,
+  type RunId,
+  type ScopedThreadRef,
+  type TurnItemId,
+} from "@t3tools/contracts";
 import { canForkProjectedAssistantItem } from "@t3tools/client-runtime/state/thread-workflows";
 import { memo, use, useState } from "react";
 import { type ChatMessage, type TurnDiffSummary } from "../../types";
@@ -11,7 +16,9 @@ import {
   formatReviewFindingsMarkdown,
   reviewFindingsHeading,
 } from "@t3tools/shared/reviewFindings";
-import { ChevronRightIcon, FileTextIcon, GitForkIcon, SearchIcon } from "lucide-react";
+import { ChevronRightIcon, FileTextIcon, GitForkIcon, ReplyIcon, SearchIcon } from "lucide-react";
+import { captureAssistantMessageOpening } from "~/lib/assistantTextSelection";
+import { responseContextRecord } from "~/lib/composerContextRecords";
 import { Button } from "../ui/button";
 import { ProposedPlanCard } from "./ProposedPlanCard";
 import { HtmlRenderFrame } from "./HtmlRenderFrame";
@@ -20,6 +27,7 @@ import { checkpointFileTotals } from "@t3tools/client-runtime/state/thread-check
 import { ChangedFilesCard } from "./ChangedFilesTree";
 import { useFileContextMenuHandler } from "../../fileContextMenu";
 import {
+  readResponseSubagents,
   useAssistantMessageText,
   useProject,
   useThreadMentionedTimes,
@@ -290,6 +298,9 @@ function AssistantMessageMeta({
       {projectedItem?.item.type === "assistant_message" ? (
         <AssistantForkButton projectedItem={projectedItem} />
       ) : null}
+      {!message.streaming && projectedItem ? (
+        <AssistantReplyButton message={message} itemId={projectedItem.sourceItemId} />
+      ) : null}
       {!message.streaming && (
         <div className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
           <Tooltip>
@@ -315,6 +326,52 @@ function AssistantMessageMeta({
         </div>
       )}
     </div>
+  );
+}
+
+function AssistantReplyButton({ message, itemId }: { message: ChatMessage; itemId: TurnItemId }) {
+  const ctx = use(TimelineRowCtx);
+  const { threadRef, onReplyToResponse } = ctx;
+  if (!threadRef || !onReplyToResponse || !message.text.trim()) return null;
+
+  const reply = () => {
+    // The meta row can sit below trailing tool rows, so the message may be virtualized away.
+    const source = [
+      ...document.querySelectorAll<HTMLElement>("[data-assistant-citation-source]"),
+    ].find(
+      (element) =>
+        element.dataset.assistantCitationSource === message.id &&
+        element.dataset.assistantCitationThread === threadRef.threadId &&
+        element.dataset.assistantCitationEnvironment === threadRef.environmentId,
+    );
+    const opening = captureAssistantMessageOpening(source ?? null, message.text);
+    if (!opening) return;
+    onReplyToResponse(
+      responseContextRecord({
+        citation: { version: 1, ...threadRef, messageId: message.id, ...opening },
+        itemId,
+        subagents: readResponseSubagents(threadRef, itemId),
+      }),
+    );
+  };
+
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            type="button"
+            size="xs"
+            variant="ghost-muted"
+            onClick={reply}
+            aria-label="Reply to this response"
+          />
+        }
+      >
+        <ReplyIcon className="size-3" />
+      </TooltipTrigger>
+      <TooltipPopup side="top">Reply to this response</TooltipPopup>
+    </Tooltip>
   );
 }
 
