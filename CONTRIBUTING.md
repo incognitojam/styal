@@ -19,9 +19,9 @@ the same reasons as a ready PR; converting a PR to draft does not exempt it from
 Focused bug fixes, reliability fixes, performance improvements, and maintenance work are the most
 likely to be accepted. Unsolicited features, opinionated rewrites, and unrelated cleanup are not.
 
-Report bugs in issues. Feature requests and proposals belong in
-[Ideas discussions](https://github.com/pingdotgg/t3code/discussions/categories/ideas).
-Search existing reports, discussions, and documented workflows before starting work.
+Report bugs, feature requests, and proposals in
+[issues](https://github.com/incognitojam/styal/issues). Search existing reports and documented
+workflows before starting work.
 
 <a id="prior-approval"></a>
 
@@ -35,7 +35,7 @@ implementation or promise a merge.
 
 For a substantial bug fix, link an issue that maintainers have triaged to establish the actual failure
 and intended behavior. For other non-trivial work outside the exceptions below, agree on direction
-and scope with maintainers in an Ideas discussion before implementing it.
+and scope with maintainers in an issue before implementing it.
 
 A very small, focused fix for an obvious bug can be submitted without a prior issue or discussion.
 Explain the defect and why the fix qualifies for this exception. We judge purpose, behavioral impact,

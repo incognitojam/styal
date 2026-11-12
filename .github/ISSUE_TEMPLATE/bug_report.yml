@@ -9,7 +9,7 @@ body:
     attributes:
       value: |
         Use this form for broken behavior, regressions, crashes, or reliability problems.
-        Feature requests belong in [Discussions](https://github.com/pingdotgg/t3code/discussions/categories/ideas).
+        The easiest way to report a bug or request a feature is **Send feedback** in styal, or asking your agent to report it; [see how](https://github.com/incognitojam/styal/blob/main/docs/user/faq.md#how-do-i-report-a-bug-or-send-feedback).
         Search existing issues first and keep the report focused on one problem.
 
   - type: checkboxes
