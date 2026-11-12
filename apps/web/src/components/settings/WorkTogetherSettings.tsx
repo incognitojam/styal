@@ -71,7 +71,7 @@ import {
 } from "./LinkedEnvironmentsSettings";
 import { SettingsGroup } from "./SettingsGroup";
 import { MachineAccessSetting } from "./MachineAccessSetting";
-import { SettingsRow, SettingsSection } from "./settingsLayout";
+import { SettingsRow, SettingsSection, useSettingsSearchTargetId } from "./settingsLayout";
 
 type Environment = ReturnType<typeof useEnvironments>["environments"][number];
 type NamedEnvironment = Environment & WorkTogetherIdentity;
@@ -111,6 +111,10 @@ export function WorkTogetherSettings({
         ({ environment }) => !knownIds.has(environment.environmentId),
       )
     : [];
+  const tabbedIds = new Set<EnvironmentId>([
+    ...knownIds,
+    ...notAdded.map(({ environment }) => environment.environmentId),
+  ]);
   const localOff = Boolean(window.desktopBridge) && primaryEnvironment === null;
   const tabIds: string[] = [
     ...(localOff ? [LOCAL_OFF_TAB] : []),
@@ -130,6 +134,15 @@ export function WorkTogetherSettings({
       ({ a, b, key }) =>
         (a.environmentId === id || b.environmentId === id) && attention.get(key) === true,
     );
+  const localTab = window.desktopBridge
+    ? localOff
+      ? LOCAL_OFF_TAB
+      : (primaryEnvironment?.environmentId ?? null)
+    : null;
+  const searchTargetId = useSettingsSearchTargetId();
+  if (searchTargetId === "local-environment" && localTab && chosenTab !== localTab) {
+    setChosenTab(localTab);
+  }
   const currentTab =
     (chosenTab !== null && tabIds.includes(chosenTab) ? chosenTab : null) ??
     machines.find((machine) => needsAttention(machine.environmentId))?.environmentId ??
@@ -217,8 +230,7 @@ export function WorkTogetherSettings({
                     description="Add a server or another computer and its agents can work with this one, and this app can run threads there."
                   />
                 ) : null}
-                {tabIds.length > 1 &&
-                selected.serverConfig?.environment.capabilities.incomingMachineAccess === true ? (
+                {selected.serverConfig?.environment.capabilities.incomingMachineAccess === true ? (
                   <SettingsRow
                     id="machine-access"
                     forkFeature="machine-access"
@@ -233,13 +245,13 @@ export function WorkTogetherSettings({
                     />
                   </SettingsRow>
                 ) : null}
-                {tabIds.length > 1 && !connected ? (
+                {!connected ? (
                   <SettingsRow
                     title={`This app can't reach ${selected.label} right now`}
                     description="Its setting still applies."
                   />
                 ) : null}
-                {tabIds.length > 1 && connected && !supportsLinks ? (
+                {connected && !supportsLinks ? (
                   <SettingsRow
                     title={`${selected.label} can't work with your other machines`}
                     description={`Update styal on ${selected.label} to let its agents work on your other machines.`}
@@ -272,7 +284,7 @@ export function WorkTogetherSettings({
               </>
             ) : null}
             <SettingsGroup className="m-3 empty:hidden sm:mx-4">
-              {selected && connected && supportsLinks && tabIds.length > 1 ? (
+              {selected && connected && supportsLinks ? (
                 <SettingsRow title={`Agents on ${selected.label} can work on`} />
               ) : null}
               {pairs.map(({ a, b, key }) => (
@@ -280,11 +292,7 @@ export function WorkTogetherSettings({
                   key={key}
                   a={a}
                   b={b}
-                  selectedId={
-                    connected && supportsLinks && tabIds.length > 1
-                      ? (selected?.environmentId ?? null)
-                      : null
-                  }
+                  selectedId={connected && supportsLinks ? (selected?.environmentId ?? null) : null}
                   onOpen={() => setChosenTab(currentTab)}
                   onAttentionChange={(value) =>
                     setAttention((current) =>
@@ -293,12 +301,12 @@ export function WorkTogetherSettings({
                   }
                 />
               ))}
-              {selected && connected && supportsLinks && tabIds.length > 1 ? (
+              {selected && connected && supportsLinks ? (
                 <MachineLinkList
                   key={selected.environmentId}
                   machine={selected}
                   machines={linkMachines}
-                  knownIds={knownIds}
+                  knownIds={tabbedIds}
                 />
               ) : null}
             </SettingsGroup>

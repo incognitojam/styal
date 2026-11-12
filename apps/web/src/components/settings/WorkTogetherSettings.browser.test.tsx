@@ -91,6 +91,14 @@ it("deduplicates tab machines from links and adds from the selected machine", as
           urls: [],
           access: "full",
         },
+        {
+          environmentId: EnvironmentId.make("gamma"),
+          label: "Gamma",
+          status: "reachable",
+          expiresAt: DateTime.makeUnsafe("2030-01-01"),
+          urls: [],
+          access: "full",
+        },
       ],
     ],
   ]);
@@ -116,6 +124,7 @@ it("deduplicates tab machines from links and adds from the selected machine", as
     .poll(() => screen.getByRole("heading", { name: "Beta", exact: true }).all().length)
     .toBe(1);
   await expect.poll(() => screen.getByRole("tab", { name: /Gamma/ }).all().length).toBe(1);
+  expect(screen.getByRole("heading", { name: "Gamma", exact: true }).all()).toHaveLength(0);
   await screen.getByRole("tab", { name: /Beta/ }).click();
   await expect.poll(() => screen.getByText("Beta", { exact: true }).all().length).toBe(1);
   fixture.linkable.mockClear();

@@ -169,9 +169,6 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
   const savedEnvironments = environments.filter(
     (environment) => environment.entry.target._tag !== "PrimaryConnectionTarget",
   );
-  const listedEnvironments = savedEnvironments.filter(
-    (environment) => !isDesktopLocalConnectionTarget(environment.entry.target),
-  );
   const savedUpdateStates = useAtomValue(
     environmentUpdateStatesAtom(
       environmentIdsKey(savedEnvironments.map(({ environmentId }) => environmentId)),
@@ -1469,7 +1466,7 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
   return (
     <SettingsPageContainer>
       <WorkTogetherSettings
-        listedEnvironments={listedEnvironments}
+        listedEnvironments={savedEnvironments}
         primaryEnvironment={primaryEnvironment}
         localSetting={<LocalEnvironmentSetting />}
         headerAction={
@@ -1488,19 +1485,22 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
             />
           </div>
         }
-        renderConnectionRow={(environment) => (
-          <SavedBackendListRow
-            environment={environment}
-            removingEnvironmentId={removingSavedEnvironmentId}
-            onSetEnabled={handleSetSavedBackendEnabled}
-            onRemove={handleRemoveSavedBackend}
-            onAddRoute={(target) => {
-              setRouteTarget(target);
-              setSavedBackendError(null);
-              setAddBackendDialogOpen(true);
-            }}
-          />
-        )}
+        renderConnectionRow={(environment) =>
+          isDesktopLocalConnectionTarget(environment.entry.target) ? null : (
+            <SavedBackendListRow
+              key={environment.environmentId}
+              environment={environment}
+              removingEnvironmentId={removingSavedEnvironmentId}
+              onSetEnabled={handleSetSavedBackendEnabled}
+              onRemove={handleRemoveSavedBackend}
+              onAddRoute={(target) => {
+                setRouteTarget(target);
+                setSavedBackendError(null);
+                setAddBackendDialogOpen(true);
+              }}
+            />
+          )
+        }
       />
       {hasCloudPublicConfig() ? (
         <RemoveT3ConnectEnvironmentDialog
