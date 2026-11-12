@@ -354,7 +354,13 @@ export function resolveStatusPageNotice(
       affectedComponents.length === 0 &&
       (summary.status.indicator === "none" || ignoredAnyDisruption)
         ? activeIncidentsDescription(activeIncidents)
-        : summary.status.description,
+        : ignoredAnyDisruption
+          ? affectedComponents.reduce((worst, component) =>
+              componentStatusSeverity(component.status) > componentStatusSeverity(worst.status)
+                ? component
+                : worst,
+            ).statusLabel
+          : summary.status.description,
     label: rendered.label,
     tone,
   };
