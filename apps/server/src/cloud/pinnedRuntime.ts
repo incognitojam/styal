@@ -477,6 +477,17 @@ export const windowsShimTarget = (contents: string) => /^"([^"]+)"/m.exec(conten
 export const generatedWindowsShimTarget = (contents: string) =>
   /^@echo off\r?\n"([^"]+)" %\*\s*$/.exec(contents)?.[1];
 
+export const readPinnedRuntimeLaunchers = Effect.fn("cloud.pinned_runtime.read_launchers")(
+  function* (baseDir: string) {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const launchersFile = path.join(baseDir, PINNED_RUNTIME_DIR, PINNED_RUNTIME_LAUNCHERS_FILE);
+    return (yield* fs.readFileString(launchersFile).pipe(Effect.orElseSucceed(() => "")))
+      .split(/\r?\n/)
+      .filter((launcher) => launcher.trim().length > 0);
+  },
+);
+
 /** Where the `styal` launchers written by the install scripts and `styal update` point. */
 const shellLauncherTargets = Effect.fn("cloud.pinned_runtime.shell_launcher_targets")(function* (
   baseDir: string,
@@ -488,9 +499,7 @@ const shellLauncherTargets = Effect.fn("cloud.pinned_runtime.shell_launcher_targ
   const home = yield* HostProcess.HomeDirectory;
   const launcherName = platform === "win32" ? "styal.cmd" : "styal";
   const launchersFile = path.join(baseDir, PINNED_RUNTIME_DIR, PINNED_RUNTIME_LAUNCHERS_FILE);
-  const recorded = (yield* fs.readFileString(launchersFile).pipe(Effect.orElseSucceed(() => "")))
-    .split(/\r?\n/)
-    .filter((launcher) => launcher.trim().length > 0);
+  const recorded = yield* readPinnedRuntimeLaunchers(baseDir);
   const found = [
     environment["STYAL_INSTALL_BIN_DIR"] || path.join(home, ".local", "bin"),
     ...(environment["PATH"] ?? environment["Path"] ?? "").split(platform === "win32" ? ";" : ":"),

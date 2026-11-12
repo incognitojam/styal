@@ -235,7 +235,7 @@ it.effect.each([
         Layer.mock(ServiceLauncherClient.ServiceLauncherClient)({
           managed: false,
           protocol: undefined,
-          prepareTrial: Effect.undefined,
+          prepareTrial: () => Effect.undefined,
         }),
         Layer.mock(GitVcsDriver.GitVcsDriver)({}),
         Layer.mock(AnalyticsService.AnalyticsService)({}),

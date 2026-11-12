@@ -41,6 +41,7 @@ import {
   disabledServiceTask,
   serviceTaskIsDisabled,
   serviceUnitBaseDirOf as bootServiceBaseDirOf,
+  serviceUnitEnvironmentValueOf,
   parseServiceState,
   serviceStateActiveVersion,
   serviceStateHasPendingUpdate,
@@ -84,6 +85,7 @@ export interface BootServicePlan {
   readonly baseDir: string;
   readonly logPath: string;
   readonly unitPath: string;
+  readonly installBinDir?: string;
   /** The manager accepted a detached install; its outcome is written to `logPath`. */
   readonly handedOff?: boolean;
 }
@@ -101,6 +103,9 @@ export function renderBootServiceUnit(plan: BootServicePlan): string {
     "Type=simple",
     "WorkingDirectory=%h",
     `Environment=STYAL_HOME=${quoteSystemdValue(plan.baseDir)}`,
+    ...(plan.installBinDir === undefined
+      ? []
+      : [`Environment=STYAL_INSTALL_BIN_DIR=${quoteSystemdValue(plan.installBinDir)}`]),
     `Environment=${SERVICE_UNIT_ENV}=${BOOT_SERVICE_UNIT_FILE}`,
     `ExecStart=${plan.program.map(quoteSystemdValue).join(" ")}`,
     // Let the launcher mark an explicit stop before it signals the server.
@@ -159,6 +164,12 @@ export function renderBootServicePlist(
     `    <string>${escapeXmlText(options.environmentPath)}</string>`,
     `    <key>STYAL_HOME</key>`,
     `    <string>${escapeXmlText(plan.baseDir)}</string>`,
+    ...(plan.installBinDir === undefined
+      ? []
+      : [
+          `    <key>STYAL_INSTALL_BIN_DIR</key>`,
+          `    <string>${escapeXmlText(plan.installBinDir)}</string>`,
+        ]),
     `    <key>${SERVICE_UNIT_ENV}</key>`,
     `    <string>${BOOT_SERVICE_PLIST_FILE}</string>`,
     `  </dict>`,
@@ -799,6 +810,9 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
   );
   const xdgConfigHome = yield* Config.String("XDG_CONFIG_HOME").pipe(Config.withDefault(""));
   const installerPath = yield* Config.String("PATH").pipe(Config.withDefault(""));
+  const installBinDir = Option.getOrUndefined(
+    yield* Config.String("STYAL_INSTALL_BIN_DIR").pipe(Config.option),
+  );
   const xdgRuntimeDir = yield* Config.String("XDG_RUNTIME_DIR").pipe(Config.withDefault(""));
   // Root under sudo must not reach or start a separate root service.
   const rootUnderSudo =
@@ -1016,6 +1030,11 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
         );
       }),
     ).pipe(Effect.mapError((cause) => new BootServiceInstallError({ cause })));
+  const planForUnit = (unit: string): BootServicePlan => {
+    const effectiveInstallBinDir =
+      installBinDir || serviceUnitEnvironmentValueOf(unit, "STYAL_INSTALL_BIN_DIR");
+    return effectiveInstallBinDir ? { ...plan, installBinDir: effectiveInstallBinDir } : plan;
+  };
   const requireManager = Effect.suspend(() =>
     detectedManager === undefined
       ? new BootServiceUnsupportedError({ platform })
@@ -1297,7 +1316,10 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
         input.baseDir.replaceAll("$", () => "$$"),
         ...(options?.allowDowngrade === true ? ["--allow-downgrade"] : []),
       ]);
-      return { ...plan, handedOff: true };
+      const unit = yield* fs
+        .readFileString(unitPath)
+        .pipe(Effect.mapError((cause) => new BootServiceInstallError({ cause })));
+      return { ...planForUnit(unit), handedOff: true };
     }
     // Task Scheduler restarts the task itself, so the files are written as for a deferred
     // restart while this launcher keeps running, then the restart is handed to the manager.
@@ -1318,7 +1340,7 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
 
     // State first, then unit. The launcher acquires only one at a time, and a
     // failure to lock the unit must never prevent its durable update commit.
-    yield* withSelectionLock(
+    const installedPlan = yield* withSelectionLock(
       statePath,
       withSelectionLock(
         unitPath,
@@ -1366,6 +1388,7 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
             .pipe(Effect.mapError((cause) => new BootServiceInstallError({ cause })));
           // Files can match the new version even when activation fails; keep that install retryable.
           yield* fs.writeFileString(restartPendingPath, `${input.cliVersion}\n`, { mode: 0o600 });
+          const plan = planForUnit(currentlyInstalled ? yield* fs.readFileString(unitPath) : "");
           yield* writeDurably(
             statePath,
             // @effect-diagnostics-next-line globalJsonInEffect:off - fixed launcher-owned document.
@@ -1387,10 +1410,11 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
           const unit = manager.render(plan);
           yield* writeDurably(unitPath, unit);
           if (!start && manager.kind === "schtasks") yield* refreshWindowsTask(unit);
+          return plan;
         }),
       ),
     ).pipe(
-      Effect.andThen(
+      Effect.tap(
         Effect.gen(function* () {
           if (handOff) {
             yield* runSteps(manager.handoff ?? []);
@@ -1422,7 +1446,7 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
           : Effect.void,
       ),
     );
-    return handOff ? { ...plan, handedOff: true } : plan;
+    return handOff ? { ...installedPlan, handedOff: true } : installedPlan;
   });
 
   const restart: BootService["Service"]["restart"] = Effect.gen(function* () {
@@ -1567,7 +1591,7 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
       problems,
       current:
         problems.length === 0 &&
-        normalizeUnit(unit) === normalizeUnit(manager.render(plan)) &&
+        normalizeUnit(unit) === normalizeUnit(manager.render(planForUnit(unit))) &&
         runtimeEntryExists &&
         Option.isSome(runtimeSentinel) &&
         runtimeSentinel.value.trim() === input.cliVersion &&

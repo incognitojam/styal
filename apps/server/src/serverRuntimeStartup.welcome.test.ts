@@ -147,7 +147,7 @@ it.effect.each(["success", "retry"] as const)(
           Layer.mock(Launcher.ServiceLauncherClient)({
             managed: false,
             protocol: undefined,
-            prepareTrial: Effect.undefined,
+            prepareTrial: () => Effect.undefined,
           }),
           Layer.mock(Analytics.AnalyticsService)({ record: () => Effect.void }),
           Layer.mock(Git.GitVcsDriver)({}),
@@ -297,7 +297,7 @@ it.effect("starts the bootstrap thread on Codex when the environment turned Clau
         Layer.mock(Launcher.ServiceLauncherClient)({
           managed: false,
           protocol: undefined,
-          prepareTrial: Effect.undefined,
+          prepareTrial: () => Effect.undefined,
         }),
         Layer.mock(Analytics.AnalyticsService)({ record: () => Effect.void }),
         Layer.mock(Git.GitVcsDriver)({}),
