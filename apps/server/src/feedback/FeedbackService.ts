@@ -38,6 +38,10 @@ const MANUAL_URL_MAX_BODY_LENGTH = 2_500;
  * forms take values by field id rather than `body`.
  */
 export const manualIssueUrl = (title: string, body: string) => {
+  body = body.replace(
+    /(\nWritten by an agent) \([^\n]{2000,}\)( and approved by the user\.)$/,
+    "$1$2",
+  );
   const suffix =
     /\n\n---\nstyal [^\n]+\n(?:Sent from styal by the user\.|Written by an agent(?: \([^\n]+\))? and approved by the user\.)$/.exec(
       body,

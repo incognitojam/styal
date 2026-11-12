@@ -187,5 +187,13 @@ describe("manualIssueUrl", () => {
       expect(actual).toContain("(shortened to fit in a link)");
       expect(actual?.length).toBeLessThanOrEqual(2_500);
     }
+    const oversized = `\n\n---\nstyal 0.1.1 (nightly), linux x64\nWritten by an agent (Codex, ${"x".repeat(3_000)}) and approved by the user.`;
+    const capped = new URL(
+      FeedbackService.manualIssueUrl("A title", "A report" + oversized),
+    ).searchParams.get("actual");
+    expect(capped).toBe(
+      "A report\n\n---\nstyal 0.1.1 (nightly), linux x64\nWritten by an agent and approved by the user.",
+    );
+    expect(capped?.length).toBeLessThanOrEqual(2_500);
   });
 });
