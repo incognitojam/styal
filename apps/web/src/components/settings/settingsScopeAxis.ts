@@ -4,7 +4,7 @@ import type { ResolvedSettingsScope, SettingsScopeSearch } from "./settingsScope
 
 type ScopeEnvironment = Pick<EnvironmentPresentation, "environmentId" | "label" | "displayUrl">;
 
-export function settingsScopeEnvironmentAddress(environment: ScopeEnvironment) {
+function settingsScopeEnvironmentAddress(environment: ScopeEnvironment) {
   if (!environment.displayUrl) return environment.environmentId;
   try {
     return new URL(environment.displayUrl).host || environment.displayUrl;
@@ -42,15 +42,12 @@ export function settingsScopeEnvironmentLabel(
 export function settingsScopeProjectMachines(
   group: SidebarProjectSnapshot,
   environments: readonly ScopeEnvironment[],
-  includeAddresses = false,
 ) {
   const machines = group.memberProjects.map((member) => {
     const environment = environments.find((entry) => entry.environmentId === member.environmentId);
     if (!environment) return member.environmentLabel ?? member.environmentId;
     const { primary, secondary } = settingsScopeEnvironmentLabels(environment, environments);
-    const address =
-      secondary || (includeAddresses ? settingsScopeEnvironmentAddress(environment) : "");
-    return includeAddresses || address ? `${primary} · ${address}` : primary;
+    return secondary ? `${primary} · ${secondary}` : primary;
   });
   return Array.from(new Set(machines));
 }
