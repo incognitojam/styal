@@ -76,9 +76,9 @@ If a server is already running, generate a fresh link without restarting it:
 npx @styal/cli pair
 ```
 
-Scan the QR code on your phone or paste the pairing URL into **Add environment**
-in the receiving app. Connection settings are under **Settings → Environments**
-on web and desktop and **Settings → Environments** on mobile. A loopback address
+Scan the QR code on your phone or paste the pairing URL into **Add machine** on web or desktop, or **Add environment** on mobile,
+in the receiving app. Connection settings are under **Settings → Machines**
+on web and desktop and **Settings → Environments on mobile**. A loopback address
 such as `127.0.0.1` reaches only the device opening the link.
 
 On a computer with the desktop app, you can open the printed `styal://pair`
@@ -128,8 +128,8 @@ minutes, styal waits at least five minutes before trying it again, and longer
 each time it drops.
 
 On web and desktop, select the route count under the machine's name in
-**Settings → Environments** to see its routes. Drag a route to change the order,
-or remove it. On mobile, open the machine under **Settings → Environments** and
+**Settings → Machines** to see its routes. Drag a route to change the order,
+or remove it. On mobile, open the machine under **Settings → Environments on mobile** and
 choose **Edit**. Signing out of styal Link removes only that route; a machine
 you can still reach another way stays saved.
 
@@ -148,7 +148,7 @@ different permissions.
 ### Balance new threads across machines
 
 Auto balance is off by default. On web and desktop, enable it in
-**Settings → Environments → Load balancing** to automatically choose a machine for
+**Settings → Machines → Load balancing** to automatically choose a machine for
 new threads in projects grouped across connected environments. The section
 appears once two or more machines are switched on.
 Each machine starts at **Normal**. Choose **Prefer** to favor it when it has CPU and
@@ -204,7 +204,7 @@ scheme uses HTTP, so include `https://` when your server uses HTTPS.
 
 ## Desktop-managed SSH
 
-In the desktop app, open **Settings → Environments → Add environment**, choose
+In the desktop app, open **Settings → Machines → Add machine**, choose
 **SSH**, and enter a host or SSH alias such as `user@example.com`. styal starts
 or reuses a server there and opens the port forward for you. Projects, provider
 credentials, and agent work stay on the remote machine.
@@ -320,11 +320,11 @@ questions, and manage its queues, projects and scheduled tasks.
 
 Agents can search previous work across these machines in one request, including settled threads. Results identify the machine, and unavailable or refused machines are reported so missing results are not mistaken for missing history. Archived threads and subagent threads are excluded.
 
+On web and desktop, **Settings → Machines** shows each machine once under **Your machines**: this computer, machines added to this app, and computers on your styal Link account. Choose a tab to see its connection, access setting, devices, and the list **Agents on &lt;name&gt; can work on**. Offline and switched-off machines keep their tabs. Use **Add machine** at the top to connect this app to another computer. On mobile, use **Settings → Environments on mobile**.
+
 ### Let two machines work together
 
-If this app is connected to both machines, open **Settings → Environments**, on web,
-desktop or mobile, and choose **Work together** for the pair under **Your machines**. Pick
-either machine's tab; **Each machine** lists the ones that are already working. styal does the rest in both directions: it turns on
+If this app is connected to both machines, choose either machine's tab and **Work together** beside the other machine in **Agents on &lt;name&gt; can work on**. On mobile, choose the pair under **Your machines** in **Settings → Environments on mobile**. styal does the rest in both directions: it turns on
 **Work with your other machines**, creates a pairing code and adds each machine to the
 other, and shares simulators or emulators from a machine that has them. A list shows
 each step.
@@ -340,10 +340,10 @@ left. If a machine isn't connected, for example because it's asleep, steps that 
 wait and finish when it's back if this page is still open. Otherwise the row shows
 **Partly set up** and **Finish** when you return.
 
-If a link already exists at other access than you pick, it's replaced. A row that says
+If a link already exists with narrower access, it's replaced. A row that says
 sharing isn't set up also offers **Finish**.
 
-**Stop working together** undoes it: both machines stop using each other's devices and
+**Stop** beside a machine opens the confirmation to stop working together: both machines stop using each other's devices and
 forget each other, and each ends the sessions it gave the other. Tasks one has delegated
 to the other fail. **Work with your other machines** and device access stay on, since
 other machines may rely on them; change them in **Settings → Labs** and **Settings →
@@ -360,8 +360,7 @@ While it is off on either machine, agents there start nothing on the other. A
 task already running on the other machine still finishes, and if that machine
 has it off, its result arrives once it is back on.
 
-On the machine you will work from, open **Settings → Environments → Your machines**,
-the **Other machines** tab, choose **Add machine**, and pick the other machine or enter its address. The list
+In **Settings → Machines → Your machines**, choose the machine your agents will work from. At the end of **Agents on &lt;name&gt; can work on**, choose **Add machine**, then pick the other machine or enter its address. On mobile, use **Settings → Environments on mobile → Your machines → Other machines → Add machine**. The list
 holds the machines this app knows and those on your styal Link account. If this
 app is connected to that machine with a session that manages access there, it
 makes the pairing code itself; otherwise paste one from that machine's
@@ -372,10 +371,12 @@ You can also ask an agent to use a machine by name, such as "delegate this to
 my vps". It shows a card in the thread where you pick the machine the same way, then
 approve. Auto threads can request this card; Supervised threads cannot.
 
+Use **Stop** beside a machine in the list to remove that direction. For a machine this app has not added, its tab also shows which of your other machines can work on it, with **Stop** for each. **Show addresses** reveals addresses for machines without their own tab.
+
 ### Choose what other machines can do
 
 Each machine has one setting for what your other machines can do there, under **Settings →
-Environments → Your machines**. It applies to every machine connected to it, and only people
+Machines → Your machines**. It applies to every machine connected to it, and only people
 can change it, not agents.
 
 - **Can control this machine** is the default. Agents on your other machines can do anything
@@ -527,7 +528,7 @@ same device are not reported.
 ## Using the Desktop App as a Remote Only
 
 If a computer should only drive work running elsewhere, turn off its local environment. In the
-desktop app, open **Settings → Environments** and switch off **Local
+desktop app, open **Settings → Machines** and switch off **Local
 environment**. styal restarts without a local server: no local agents or terminals run, WSL
 backends stay off, and other devices can no longer connect to this computer. Your projects,
 history, and saved connections are kept, and you keep working through pairing, styal Link, or SSH.

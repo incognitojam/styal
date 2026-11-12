@@ -25,40 +25,32 @@ import {
   AuthSettingsWriteScope,
   type EnvironmentId,
   type EnvironmentMachineKind,
-  type IncomingMachineAccess,
   type PeerLinkSummary,
   resolveEnvironmentMachineKind,
 } from "@t3tools/contracts";
 import { Tabs } from "@base-ui/react/tabs";
 import { Link } from "@tanstack/react-router";
+import * as Option from "effect/Option";
 import * as DateTime from "effect/DateTime";
-import {
-  CheckIcon,
-  ChevronRightIcon,
-  CircleAlertIcon,
-  CircleIcon,
-  ClockIcon,
-  MinusIcon,
-  PlusIcon,
-} from "lucide-react";
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { CheckIcon, CircleAlertIcon, CircleIcon, ClockIcon, MinusIcon } from "lucide-react";
+import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
 
 import { reportForkClientUsage } from "~/forkClientUsage";
 import { useNowMinute } from "../../hooks/useNowMinute";
 import { cn } from "../../lib/utils";
 import { useDeviceState } from "../../state/device";
-import { useEnvironments } from "../../state/environments";
-import {
-  peerLinkEnvironment,
-  useLinkableMachines,
-  usePeerLinkHosts,
-  workTogether,
-} from "../../state/peerLinks";
+import { useEnvironments, useRelayEnvironmentDiscovery } from "../../state/environments";
+import { relayEnvironmentDiscovery } from "~/state/relay";
+import { hasCloudPublicConfig } from "~/cloud/publicConfig";
+import { isLocalEnvironmentDisabled } from "~/localEnvironment";
+import { CloudEnvironmentConnectRows } from "../cloud/CloudEnvironmentConnectList";
+import { useEnvironmentTransportLabel } from "./EnvironmentRow";
+import { peerLinkEnvironment, useLinkableMachines, workTogether } from "../../state/peerLinks";
 import { useEnvironmentQuery } from "../../state/query";
 import { useEnvironmentScope } from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { ConnectionStatusDot } from "../ConnectionStatusDot";
-import { Button, InlineButton } from "../ui/button";
+import { Button } from "../ui/button";
 import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import {
@@ -85,40 +77,72 @@ type Environment = ReturnType<typeof useEnvironments>["environments"][number];
 type NamedEnvironment = Environment & WorkTogetherIdentity;
 type RunKind = "start" | "stop";
 
-/**
- * One tab per machine, joined to a panel listing the machines it works with. Every pair stays
- * mounted so a run in progress survives switching tabs, and so each tab can show a problem.
- */
-export function WorkTogetherSettings() {
+export function WorkTogetherSettings({
+  listedEnvironments,
+  primaryEnvironment,
+  localSetting,
+  headerAction,
+  renderConnectionRow,
+}: {
+  readonly listedEnvironments: ReadonlyArray<Environment>;
+  readonly primaryEnvironment: Environment | null;
+  readonly localSetting: ReactNode;
+  readonly headerAction: ReactNode;
+  readonly renderConnectionRow: (environment: Environment) => ReactNode;
+}) {
   const { environments } = useEnvironments();
-  const hosts = usePeerLinkHosts();
+  const discovery = useRelayEnvironmentDiscovery();
+  const refreshDiscovery = useAtomCommand(relayEnvironmentDiscovery.refresh, {
+    reportFailure: false,
+  });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- the machine tabs need account discovery even before an add dialog opens
+  useEffect(() => {
+    if (hasCloudPublicConfig()) void refreshDiscovery();
+  }, [refreshDiscovery]);
   const [chosenTab, setChosenTab] = useState<string | null>(null);
   const [attention, setAttention] = useState<ReadonlyMap<string, boolean>>(new Map());
-  const [showOthers, setShowOthers] = useState(false);
-  const machines = workTogetherLabels(
-    environments.filter(
-      (environment) => environment.serverConfig?.environment.capabilities.peerLinks !== false,
-    ),
+  const machines = workTogetherLabels([
+    ...(primaryEnvironment ? [primaryEnvironment] : []),
+    ...listedEnvironments,
+  ]);
+  const knownIds = new Set<EnvironmentId>(environments.map((machine) => machine.environmentId));
+  const notAdded = hasCloudPublicConfig()
+    ? [...discovery.environments.values()].filter(
+        ({ environment }) => !knownIds.has(environment.environmentId),
+      )
+    : [];
+  const localOff = Boolean(window.desktopBridge) && primaryEnvironment === null;
+  const tabIds: string[] = [
+    ...(localOff ? [LOCAL_OFF_TAB] : []),
+    ...machines.map((machine) => machine.environmentId),
+    ...notAdded.map(({ environment }) => environment.environmentId),
+  ];
+  const linkMachines = machines.filter(
+    (machine) => machine.serverConfig?.environment.capabilities.peerLinks !== false,
   );
-  const pairs = machines.flatMap((a, index) =>
-    machines.slice(index + 1).map((b) => ({ a, b, key: `${a.environmentId}:${b.environmentId}` })),
+  const pairs = linkMachines.flatMap((a, index) =>
+    linkMachines
+      .slice(index + 1)
+      .map((b) => ({ a, b, key: `${a.environmentId}:${b.environmentId}` })),
   );
-  const needsAttention = (environmentId: EnvironmentId) =>
+  const needsAttention = (id: EnvironmentId) =>
     pairs.some(
       ({ a, b, key }) =>
-        (a.environmentId === environmentId || b.environmentId === environmentId) &&
-        attention.get(key) === true,
+        (a.environmentId === id || b.environmentId === id) && attention.get(key) === true,
     );
-  const selected =
-    chosenTab === OTHER_MACHINES_TAB
-      ? undefined
-      : (machines.find((machine) => machine.environmentId === chosenTab) ??
-        machines.find((machine) => needsAttention(machine.environmentId)) ??
-        machines[0]);
-  const currentTab = selected?.environmentId ?? OTHER_MACHINES_TAB;
-  const knownIds = new Set<EnvironmentId>(machines.map((machine) => machine.environmentId));
+  const currentTab =
+    (chosenTab !== null && tabIds.includes(chosenTab) ? chosenTab : null) ??
+    machines.find((machine) => needsAttention(machine.environmentId))?.environmentId ??
+    tabIds[0] ??
+    "";
+  const selected = machines.find((machine) => machine.environmentId === currentTab);
+  const selectedDiscovery = notAdded.find(
+    ({ environment }) => environment.environmentId === currentTab,
+  );
+  const connected = selected?.connection.phase === "connected";
+  const supportsLinks = selected?.serverConfig?.environment.capabilities.peerLinks !== false;
   const tabListRef = useRef<HTMLDivElement>(null);
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- on a narrow page the default tab can start scrolled out of the strip, and scroll position lives in the DOM
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- scroll position lives in the DOM, including when the default tab starts outside the visible strip
   useEffect(() => {
     const list = tabListRef.current;
     const tab = list?.querySelector<HTMLElement>(`[data-machine-id="${currentTab}"]`);
@@ -129,7 +153,12 @@ export function WorkTogetherSettings() {
     else if (end > list.scrollLeft + list.clientWidth) list.scrollLeft = end - list.clientWidth;
   }, [currentTab]);
   return (
-    <SettingsSection id="work-together" title="Your machines" variant="plain">
+    <SettingsSection
+      id="work-together"
+      title="Your machines"
+      variant="plain"
+      headerAction={headerAction}
+    >
       <Tabs.Root value={currentTab} onValueChange={(value: string) => setChosenTab(value)}>
         <Tabs.List
           ref={tabListRef}
@@ -137,71 +166,124 @@ export function WorkTogetherSettings() {
           aria-label="Your machines"
           className="relative z-10 -mb-px flex items-end gap-1 overflow-x-auto [scrollbar-width:none]"
         >
+          {localOff ? (
+            <SimpleMachineTab
+              id={LOCAL_OFF_TAB}
+              label="This computer"
+              status={isLocalEnvironmentDisabled() ? "This computer · Off" : "This computer"}
+              selected={currentTab === LOCAL_OFF_TAB}
+            />
+          ) : null}
           {machines.map((machine) => (
             <MachineTab
               key={machine.environmentId}
               machine={machine}
-              machines={machines}
+              machines={linkMachines}
               isSelected={machine.environmentId === currentTab}
               needsAttention={needsAttention(machine.environmentId)}
+              primary={machine.environmentId === primaryEnvironment?.environmentId}
             />
           ))}
-          <Tabs.Tab
-            value={OTHER_MACHINES_TAB}
-            data-machine-id={OTHER_MACHINES_TAB}
-            className={machineTabClassName(currentTab === OTHER_MACHINES_TAB)}
-          >
-            <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-              <PlusIcon aria-hidden className="size-4" />
-            </span>
-            <span className="min-w-0">
-              <span className="block truncate text-sm font-medium text-foreground">
-                Other machines
-              </span>
-              <span className="block truncate text-xs text-muted-foreground">Add or manage</span>
-            </span>
-          </Tabs.Tab>
+          {notAdded.map(({ environment, status }) => {
+            const descriptor = Option.getOrNull(status ?? Option.none())?.descriptor;
+            return (
+              <SimpleMachineTab
+                key={environment.environmentId}
+                id={environment.environmentId}
+                label={environment.label}
+                status="Not in this app"
+                selected={currentTab === environment.environmentId}
+                kind={resolveEnvironmentMachineKind(
+                  descriptor ? { environment: descriptor } : null,
+                )}
+                notAdded
+              />
+            );
+          })}
         </Tabs.List>
         <Tabs.Panel value={currentTab}>
           <SettingsGroup className="min-h-12 rounded-t-none bg-card">
-            {selected === undefined ? null : (
-              <SettingsRow
-                id="machine-access"
-                forkFeature="machine-access"
-                title={`What your other machines can do on ${selected.label}`}
-              >
-                <MachineAccessSetting
-                  environmentId={selected.environmentId}
-                  machineLabel={selected.label}
-                  level={selected.serverConfig?.settings.incomingMachineAccess ?? "everything"}
-                  supported={
-                    selected.serverConfig?.environment.capabilities.incomingMachineAccess === true
-                  }
+            {currentTab === LOCAL_OFF_TAB ? localSetting : null}
+            {selected ? (
+              <>
+                {selected.environmentId === primaryEnvironment?.environmentId
+                  ? window.desktopBridge
+                    ? localSetting
+                    : null
+                  : renderConnectionRow(selected)}
+                {tabIds.length === 1 ? (
+                  <SettingsRow
+                    title="Add your other computers"
+                    description="Add a server or another computer and its agents can work with this one, and this app can run threads there."
+                  />
+                ) : null}
+                {tabIds.length > 1 &&
+                selected.serverConfig?.environment.capabilities.incomingMachineAccess === true ? (
+                  <SettingsRow
+                    id="machine-access"
+                    forkFeature="machine-access"
+                    title={`What your other machines can do on ${selected.label}`}
+                  >
+                    <MachineAccessSetting
+                      environmentId={selected.environmentId}
+                      machineLabel={selected.label}
+                      level={selected.serverConfig.settings.incomingMachineAccess}
+                      supported
+                    />
+                  </SettingsRow>
+                ) : null}
+                {tabIds.length > 1 && !connected ? (
+                  <SettingsRow
+                    title={`This app can't reach ${selected.label} right now`}
+                    description="Its setting still applies."
+                  />
+                ) : null}
+                {tabIds.length > 1 && connected && !supportsLinks ? (
+                  <SettingsRow
+                    title={`${selected.label} can't work with your other machines`}
+                    description={`Update styal on ${selected.label} to let its agents work on your other machines.`}
+                  />
+                ) : null}
+              </>
+            ) : null}
+            {selectedDiscovery ? (
+              <>
+                <CloudEnvironmentConnectRows
+                  onlyEnvironmentId={selectedDiscovery.environment.environmentId}
+                  primaryEnvironmentId={primaryEnvironment?.environmentId ?? null}
+                  savedEnvironments={environments}
                 />
-              </SettingsRow>
-            )}
-            {selected === undefined || pairs.length === 0 ? null : (
-              <div className="px-3 py-2 sm:px-4">
-                <Button
-                  size="xs"
-                  variant="ghost-muted"
-                  aria-expanded={showOthers}
-                  onClick={() => setShowOthers((shown) => !shown)}
-                >
-                  <ChevronRightIcon className={showOthers ? "size-3 rotate-90" : "size-3"} />
-                  Each machine
-                </Button>
-              </div>
-            )}
-            {/* Every pair stays mounted, even on another tab, so a run in progress keeps going. */}
+                <SettingsRow
+                  title="Not added to this app"
+                  description="Add it to see its threads and change its settings here."
+                />
+                {linkMachines
+                  .filter((machine) => machine.connection.phase === "connected")
+                  .map((machine) => (
+                    <OtherMachineLinks
+                      key={machine.environmentId}
+                      environmentId={machine.environmentId}
+                      environmentLabel={machine.label}
+                      knownIds={knownIds}
+                      reverseTarget={selectedDiscovery.environment}
+                    />
+                  ))}
+              </>
+            ) : null}
             <SettingsGroup className="m-3 empty:hidden sm:mx-4">
+              {selected && connected && supportsLinks && tabIds.length > 1 ? (
+                <SettingsRow title={`Agents on ${selected.label} can work on`} />
+              ) : null}
               {pairs.map(({ a, b, key }) => (
                 <MachinePair
                   key={key}
                   a={a}
                   b={b}
-                  selectedId={selected?.environmentId ?? null}
-                  expanded={showOthers}
+                  selectedId={
+                    connected && supportsLinks && tabIds.length > 1
+                      ? (selected?.environmentId ?? null)
+                      : null
+                  }
                   onOpen={() => setChosenTab(currentTab)}
                   onAttentionChange={(value) =>
                     setAttention((current) =>
@@ -210,32 +292,22 @@ export function WorkTogetherSettings() {
                   }
                 />
               ))}
-            </SettingsGroup>
-            {selected === undefined ? (
-              <>
-                <SettingsRow
-                  title="Not connected to this app"
-                  description="Machines your machines work with appear here if this app isn't connected to them. This app can't show or change their settings. Add one under Environments to give it a tab."
-                  control={<AddMachineAction hosts={hosts} />}
+              {selected && connected && supportsLinks && tabIds.length > 1 ? (
+                <MachineLinkList
+                  key={selected.environmentId}
+                  machine={selected}
+                  machines={linkMachines}
+                  knownIds={knownIds}
                 />
-                <SettingsGroup className="m-3 empty:hidden sm:mx-4">
-                  {hosts.map((host) => (
-                    <OtherMachineLinks
-                      key={host.environmentId}
-                      environmentId={host.environmentId}
-                      environmentLabel={host.label}
-                      showHost={hosts.length > 1}
-                      knownIds={knownIds}
-                    />
-                  ))}
-                </SettingsGroup>
-              </>
-            ) : (
-              <>
-                <MachineDevicesRow machine={selected} machines={machines} />
-                <MachineReachRow machine={selected} machines={machines} onOpenTab={setChosenTab} />
-              </>
-            )}
+              ) : null}
+            </SettingsGroup>
+            {selected ? <MachineDevicesRow machine={selected} machines={machines} /> : null}
+            {currentTab === LOCAL_OFF_TAB && tabIds.length === 1 ? (
+              <SettingsRow
+                title="Add your other computers"
+                description="Add a server or another computer and its agents can work with this one, and this app can run threads there."
+              />
+            ) : null}
           </SettingsGroup>
         </Tabs.Panel>
       </Tabs.Root>
@@ -243,7 +315,84 @@ export function WorkTogetherSettings() {
   );
 }
 
-const OTHER_MACHINES_TAB = "other-machines";
+const LOCAL_OFF_TAB = "local-off";
+
+function SimpleMachineTab({
+  id,
+  label,
+  status,
+  selected,
+  notAdded = false,
+  kind = "desktop",
+}: {
+  readonly id: string;
+  readonly label: string;
+  readonly status: string;
+  readonly selected: boolean;
+  readonly notAdded?: boolean;
+  readonly kind?: EnvironmentMachineKind;
+}) {
+  const tab = (
+    <Tabs.Tab
+      value={id}
+      data-machine-id={id}
+      className={cn(machineTabClassName(selected), notAdded && !selected && "border-dashed")}
+    >
+      <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+        <EnvironmentMachineIcon kind={kind} aria-hidden className="size-4" />
+      </span>
+      <span className="min-w-0">
+        <span className="block truncate text-sm font-medium text-foreground">{label}</span>
+        <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <ConnectionStatusDot
+            dotClassName={status === "This computer" ? "bg-success" : "bg-muted-foreground/30"}
+            pingClassName={null}
+          />
+          {status}
+        </span>
+      </span>
+    </Tabs.Tab>
+  );
+  return label.length <= 16 ? (
+    tab
+  ) : (
+    <Tooltip>
+      <TooltipTrigger render={tab} />
+      <TooltipPopup>{label}</TooltipPopup>
+    </Tooltip>
+  );
+}
+
+function MachineLinkList({
+  machine,
+  machines,
+  knownIds,
+}: {
+  readonly machine: NamedEnvironment;
+  readonly machines: ReadonlyArray<NamedEnvironment>;
+  readonly knownIds: ReadonlySet<EnvironmentId>;
+}) {
+  const links = useEnvironmentQuery(
+    peerLinkEnvironment.list({ environmentId: machine.environmentId, input: {} }),
+  );
+  const hasOthers =
+    machines.some((other) => other.environmentId !== machine.environmentId) ||
+    (links.data?.links ?? []).some((link) => !knownIds.has(link.environmentId));
+  return (
+    <>
+      <OtherMachineLinks
+        environmentId={machine.environmentId}
+        environmentLabel={machine.label}
+        knownIds={knownIds}
+      />
+      {!hasOthers ? <SettingsRow title={null} description="None yet." /> : null}
+      <SettingsRow
+        title={null}
+        control={<AddMachineAction environmentId={machine.environmentId} label={machine.label} />}
+      />
+    </>
+  );
+}
 
 const machineTabClassName = (isSelected: boolean) =>
   cn(
@@ -299,92 +448,24 @@ function MachineDevicesRow({
   );
 }
 
-function MachineReachRow({
-  machine,
-  machines,
-  onOpenTab,
-}: {
-  readonly machine: NamedEnvironment;
-  readonly machines: ReadonlyArray<NamedEnvironment>;
-  readonly onOpenTab: (tab: string) => void;
-}) {
-  const connected = machine.connection.phase === "connected";
-  const links = useEnvironmentQuery(
-    connected
-      ? peerLinkEnvironment.list({ environmentId: machine.environmentId, input: {} })
-      : null,
-  );
-  if (!connected) {
-    return (
-      <SettingsRow
-        title={`This app can't reach ${machine.label} right now`}
-        description="Its setting still applies."
-      />
-    );
-  }
-  const liveLinks = (links.data?.links ?? []).filter((link) => link.status !== "expired");
-  const tabbed = machines.filter((other) =>
-    liveLinks.some((link) => link.environmentId === other.environmentId),
-  );
-  const named = (level: IncomingMachineAccess) =>
-    tabbed
-      .filter(
-        (other) => (other.serverConfig?.settings.incomingMachineAccess ?? "everything") === level,
-      )
-      .map((other) => ({ label: other.label, tab: other.environmentId }));
-  // Their own setting isn't visible from here, so this can't say what they allow.
-  const untabbed = liveLinks
-    .filter((link) => !machines.some((other) => other.environmentId === link.environmentId))
-    .map((link) => ({ label: link.label, tab: OTHER_MACHINES_TAB }));
-  const refusing = named("nothing");
-  const groups = [
-    { lead: "Can control", machines: named("everything"), tail: "" },
-    { lead: "Can view", machines: named("view-only"), tail: "" },
-    { lead: "Can work on", machines: untabbed, tail: "" },
-    {
-      lead: "Can't reach",
-      machines: refusing,
-      tail: refusing.length === 1 ? ", which accepts nothing" : ", which accept nothing",
-    },
-  ].filter((group) => group.machines.length > 0);
-  return (
-    <SettingsRow
-      title={`Agents on ${machine.label}`}
-      description={
-        groups.length === 0
-          ? "Not working on other machines yet."
-          : groups.map((group, index) => (
-              <span key={group.lead}>
-                {index > 0 ? " " : ""}
-                {group.lead}{" "}
-                {group.machines.map((other, position) => (
-                  <span key={other.label}>
-                    {position === 0 ? "" : position === group.machines.length - 1 ? " and " : ", "}
-                    <InlineButton onClick={() => onOpenTab(other.tab)}>{other.label}</InlineButton>
-                  </span>
-                ))}
-                {group.tail}.
-              </span>
-            ))
-      }
-    />
-  );
-}
-
 function MachineTab({
   machine,
   machines,
   isSelected,
   needsAttention,
+  primary,
 }: {
   readonly machine: NamedEnvironment;
   readonly machines: ReadonlyArray<NamedEnvironment>;
   readonly isSelected: boolean;
   readonly needsAttention: boolean;
+  readonly primary: boolean;
 }) {
+  const transport = useEnvironmentTransportLabel(machine);
+  const supported = machine.serverConfig?.environment.capabilities.peerLinks !== false;
   const connected = machine.connection.phase === "connected";
   const links = useEnvironmentQuery(
-    connected
+    connected && supported
       ? peerLinkEnvironment.list({ environmentId: machine.environmentId, input: {} })
       : null,
   );
@@ -407,21 +488,26 @@ function MachineTab({
   const level = machineAccessChoice(
     machine.serverConfig?.settings.incomingMachineAccess ?? "everything",
   );
-  const [status, dot] = !connected
-    ? (["Not connected", "bg-muted-foreground/30"] as const)
-    : links.error
-      ? (["Could not check", "bg-warning"] as const)
-      : !links.data
-        ? (["Checking…", "bg-muted-foreground/30"] as const)
-        : unreachable !== undefined
-          ? ([`Can't reach ${unreachable.label}`, "bg-destructive"] as const)
-          : others.length > 0 && linked.length === 0
-            ? (["Not set up yet", "bg-muted-foreground/30"] as const)
-            : needsAttention
-              ? (["Needs attention", "bg-warning"] as const)
-              : level.level === "nothing"
-                ? ([level.status, "bg-muted-foreground/30"] as const)
-                : ([level.status, "bg-success"] as const);
+  const connectedStatus = `${transport}${level.level === "everything" ? "" : ` · ${level.level === "nothing" ? "Nothing" : "View only"}`}`;
+  const [status, dot] = primary
+    ? ([window.desktopBridge ? "This computer" : "Serving this app", "bg-success"] as const)
+    : !machine.entry.enabled
+      ? (["Switched off", "bg-muted-foreground/30"] as const)
+      : !connected
+        ? (["Offline", "bg-muted-foreground/30"] as const)
+        : !supported
+          ? ([connectedStatus, "bg-success"] as const)
+          : links.error
+            ? (["Could not check", "bg-warning"] as const)
+            : !links.data
+              ? (["Checking…", "bg-muted-foreground/30"] as const)
+              : unreachable !== undefined
+                ? ([`Can't reach ${unreachable.label}`, "bg-destructive"] as const)
+                : others.length > 0 && linked.length === 0
+                  ? (["Not set up yet", "bg-muted-foreground/30"] as const)
+                  : needsAttention
+                    ? (["Needs attention", "bg-warning"] as const)
+                    : ([connectedStatus, "bg-success"] as const);
   const tab = (
     <Tabs.Tab
       value={machine.environmentId}
@@ -505,15 +591,12 @@ function MachinePair({
   a: first,
   b: second,
   selectedId,
-  expanded,
   onOpen,
   onAttentionChange,
 }: {
   readonly a: NamedEnvironment;
   readonly b: NamedEnvironment;
   readonly selectedId: EnvironmentId | null;
-  /** Shows the pair even when nothing needs doing, so it can be stopped. */
-  readonly expanded: boolean;
   /** Keeps this tab selected through a run, even once the pair no longer needs attention. */
   readonly onOpen: () => void;
   readonly onAttentionChange: (needsAttention: boolean) => void;
@@ -625,9 +708,7 @@ function MachinePair({
   }, [needsAttention]);
   const other =
     first.environmentId === selectedId ? { machine: b, env: second } : { machine: a, env: first };
-  const shown =
-    (first.environmentId === selectedId || second.environmentId === selectedId) &&
-    (expanded || needsAttention || narrower);
+  const shown = first.environmentId === selectedId || second.environmentId === selectedId;
   const narrowest = [...(a.links ?? []), ...(b.links ?? [])].find(
     (link) =>
       (link.environmentId === a.environmentId || link.environmentId === b.environmentId) &&
@@ -657,7 +738,7 @@ function MachinePair({
                 ? absent === undefined
                   ? "Partly set up"
                   : `Partly set up · ${absent.label} isn't connected`
-                : undefined
+                : "Not set up"
           }
           description={
             unmanaged !== undefined
@@ -684,7 +765,7 @@ function MachinePair({
                     disabled={loading}
                     onClick={() => openDialog("stop")}
                   >
-                    Stop working together
+                    Stop
                   </Button>
                 )}
                 {status === "together" && missingShares.length === 0 && !narrower ? null : (

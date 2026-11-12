@@ -16,18 +16,15 @@ import * as Result from "effect/Result";
 import { PlusIcon } from "lucide-react";
 import { useId, useRef, useState } from "react";
 
+import { reportForkClientUsage } from "~/forkClientUsage";
 import { requestConfirmDialog } from "~/confirmDialog";
 import { mintPairingCodeOn } from "~/state/peerPairingCode";
 import { peerLinkEnvironment, useLinkableMachines } from "~/state/peerLinks";
 import { useEnvironmentQuery } from "~/state/query";
-import {
-  useEnvironmentScope,
-  useEnvironmentsWithScope,
-  usePreparedConnection,
-} from "~/state/session";
+import { useEnvironmentScope, usePreparedConnection } from "~/state/session";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { ConnectionStatusDot } from "../ConnectionStatusDot";
-import { Button } from "../ui/button";
+import { Button, InlineButton } from "../ui/button";
 import {
   Dialog,
   DialogClose,
@@ -39,7 +36,6 @@ import {
   DialogTitle,
 } from "../ui/dialog";
 import { Input } from "../ui/input";
-import { Menu, MenuGroup, MenuGroupLabel, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { ITEM_ROW_CLASSNAME, ITEM_ROW_INNER_CLASSNAME } from "./itemRows";
 import { ANOTHER_ADDRESS, LinkMachineSelect } from "./LinkMachineSelect";
@@ -66,13 +62,12 @@ export const peerLinkHealthText = (health: PeerLinkHealth) =>
 export function OtherMachineLinks({
   environmentId,
   environmentLabel,
-  showHost,
+  reverseTarget,
   knownIds,
 }: {
   readonly environmentId: EnvironmentId;
   readonly environmentLabel: string;
-  /** With several machines, says which one a row belongs to. */
-  readonly showHost: boolean;
+  readonly reverseTarget?: { readonly environmentId: EnvironmentId; readonly label: string };
   readonly knownIds: ReadonlySet<EnvironmentId>;
 }) {
   const links = useEnvironmentQuery(peerLinkEnvironment.list({ environmentId, input: {} }));
@@ -85,12 +80,17 @@ export function OtherMachineLinks({
     );
   }
   return (links.data?.links ?? [])
-    .filter((link) => !knownIds.has(link.environmentId))
+    .filter((link) =>
+      reverseTarget
+        ? link.environmentId === reverseTarget.environmentId
+        : !knownIds.has(link.environmentId),
+    )
     .map((link) => (
       <LinkedEnvironmentRow
         key={link.environmentId}
         environmentId={environmentId}
-        hostLabel={showHost ? environmentLabel : null}
+        hostLabel={environmentLabel}
+        reverseLabel={reverseTarget?.label}
         link={link}
       />
     ));
@@ -100,27 +100,36 @@ function LinkedEnvironmentRow({
   environmentId,
   hostLabel,
   link,
+  reverseLabel,
 }: {
   readonly environmentId: EnvironmentId;
   readonly hostLabel: string | null;
   readonly link: PeerLinkSummary;
+  readonly reverseLabel?: string | undefined;
 }) {
   const nowMinute = useNowMinute();
   const health = peerLinkHealth(link, DateTime.makeUnsafe(nowMinute));
   const unlink = useAtomCommand(peerLinkEnvironment.unlink, { label: "unlink environment" });
   const canUnlink = useAtomValue(peerLinkEnvironment.unlink.permissionAtom(environmentId));
   const [busy, setBusy] = useState(false);
+  const [showAddresses, setShowAddresses] = useState(false);
   const forget = async () => {
     const confirmed = await (requestConfirmDialog(
-      `Forget ${link.label}? Agents here stop working there. Revoke "styal · …" in ${link.label}'s Connections to end the session there too.`,
+      `Stop agents on ${hostLabel} working on ${link.label}? Revoke "styal · …" in ${link.label}'s Settings → Sharing & access to end the session there too.`,
       { variant: "destructive" },
     ) ?? Promise.resolve(false));
     if (!confirmed) return;
     setBusy(true);
     const result = await unlink({ environmentId, input: { environmentId: link.environmentId } });
     setBusy(false);
+    if (!isAtomCommandInterrupted(result))
+      void reportForkClientUsage(environmentId, {
+        feature: "machine-list",
+        action: "stop",
+        outcome: result._tag === "Success" ? "success" : "failure",
+      });
     if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-      failureToast("Could not forget the machine", String(squashAtomCommandFailure(result)));
+      failureToast("Could not stop", String(squashAtomCommandFailure(result)));
     }
   };
   const status = peerLinkHealthText(health);
@@ -142,18 +151,21 @@ function LinkedEnvironmentRow({
               }
               pingClassName={null}
             />
-            <h3 className="text-sm font-medium text-foreground">{link.label}</h3>
+            <h3 className="text-sm font-medium text-foreground">
+              {reverseLabel ? `Agents on ${hostLabel} can work on ${reverseLabel}` : link.label}
+            </h3>
           </div>
           <p className="text-xs text-muted-foreground">
-            {[
-              hostLabel === null ? null : `From ${hostLabel}`,
-              status,
-              link.access === LINK_DEFAULT_ACCESS ? null : linkAccessLabel(link.access),
-            ]
+            {[status, link.access === LINK_DEFAULT_ACCESS ? null : linkAccessLabel(link.access)]
               .filter(Boolean)
-              .join(" · ")}
+              .join(" · ")}{" "}
+            <InlineButton onClick={() => setShowAddresses((shown) => !shown)}>
+              {showAddresses ? "Hide addresses" : "Show addresses"}
+            </InlineButton>
           </p>
-          <p className="truncate text-xs text-muted-foreground/80">{link.urls.join(", ")}</p>
+          {showAddresses ? (
+            <p className="truncate text-xs text-muted-foreground/80">{link.urls.join(", ")}</p>
+          ) : null}
         </div>
         {canUnlink ? (
           <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto sm:justify-end">
@@ -163,7 +175,7 @@ function LinkedEnvironmentRow({
               disabled={busy}
               onClick={() => void forget()}
             >
-              {busy ? "Forgetting…" : "Forget"}
+              {busy ? "Stopping…" : "Stop"}
             </Button>
           </div>
         ) : null}
@@ -172,59 +184,41 @@ function LinkedEnvironmentRow({
   );
 }
 
-/** Adding starts from one machine, so with several the button asks which. */
 export function AddMachineAction({
-  hosts,
+  environmentId,
+  label,
 }: {
-  readonly hosts: ReadonlyArray<{ readonly environmentId: EnvironmentId; readonly label: string }>;
+  readonly environmentId: EnvironmentId;
+  readonly label: string;
 }) {
-  const writable = useEnvironmentsWithScope(hosts, AuthAccessWriteScope);
-  const choices = hosts.filter((host) => writable.has(host.environmentId));
-  const [target, setTarget] = useState<EnvironmentId | null>(null);
-  const [only] = choices;
-  if (only === undefined) return null;
+  const writable = useEnvironmentScope(environmentId, AuthAccessWriteScope);
+  const [open, setOpen] = useState(false);
+  if (!writable) return null;
   return (
     <>
-      {choices.length === 1 ? (
-        <Button size="xs" variant="outline" onClick={() => setTarget(only.environmentId)}>
-          <PlusIcon className="size-3" />
-          Add machine
-        </Button>
-      ) : (
-        <Menu>
-          <MenuTrigger
-            render={
-              <Button size="xs" variant="outline">
-                <PlusIcon className="size-3" />
-                Add machine
-              </Button>
-            }
-          />
-          <MenuPopup align="end">
-            <MenuGroup>
-              <MenuGroupLabel>Add a machine for agents on</MenuGroupLabel>
-              {choices.map((host) => (
-                <MenuItem key={host.environmentId} onClick={() => setTarget(host.environmentId)}>
-                  {host.label}
-                </MenuItem>
-              ))}
-            </MenuGroup>
-          </MenuPopup>
-        </Menu>
-      )}
-      {target === null ? null : (
-        <LinkEnvironmentDialog environmentId={target} onClose={() => setTarget(null)} />
-      )}
+      <Button size="xs" variant="outline" onClick={() => setOpen(true)}>
+        <PlusIcon className="size-3" />
+        Add machine
+      </Button>
+      {open ? (
+        <LinkEnvironmentDialog
+          environmentId={environmentId}
+          label={label}
+          onClose={() => setOpen(false)}
+        />
+      ) : null}
     </>
   );
 }
 
 function LinkEnvironmentDialog({
   environmentId,
+  label,
   onClose,
 }: {
   readonly environmentId: EnvironmentId;
   readonly onClose: () => void;
+  readonly label: string;
 }) {
   const machines = useLinkableMachines(environmentId, true);
   // Null until the user picks; with no other machines known, only an address is left.
@@ -285,7 +279,20 @@ function LinkEnvironmentDialog({
           });
     inFlight.current = false;
     setBusy(false);
-    if (result === null) return;
+    if (result === null) {
+      void reportForkClientUsage(environmentId, {
+        feature: "machine-list",
+        action: "add",
+        outcome: "failure",
+      });
+      return;
+    }
+    if (!isAtomCommandInterrupted(result))
+      void reportForkClientUsage(environmentId, {
+        feature: "machine-list",
+        action: "add",
+        outcome: result._tag === "Success" ? "success" : "failure",
+      });
     if (result._tag === "Success") {
       toastManager.add({ type: "success", title: `Added ${result.value.label}` });
       onClose();
@@ -302,7 +309,7 @@ function LinkEnvironmentDialog({
     >
       <DialogPopup className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Add a machine</DialogTitle>
+          <DialogTitle>Add a machine for agents on {label}</DialogTitle>
           <DialogDescription>
             Agents here can then start, message and wait on threads there. It appears in that
             machine's Connections, where it can be revoked.

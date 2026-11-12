@@ -74,6 +74,7 @@ function RemoteEnvironmentRowsSkeleton() {
  */
 export function CloudEnvironmentConnectRows({
   primaryEnvironmentId,
+  onlyEnvironmentId,
   savedEnvironments,
   showSavedEnvironments = false,
   refreshWhileEmpty = false,
@@ -81,6 +82,7 @@ export function CloudEnvironmentConnectRows({
   selection,
   onDiscoveryReady,
 }: {
+  readonly onlyEnvironmentId?: EnvironmentId;
   readonly primaryEnvironmentId: EnvironmentId | null;
   readonly savedEnvironments: ReadonlyArray<SavedCloudEnvironmentConnection>;
   readonly showSavedEnvironments?: boolean;
@@ -191,6 +193,7 @@ export function CloudEnvironmentConnectRows({
 
   // Omit machines saved over other routes; onboarding selection must not add a T3 Connect route.
   const isVisibleEnvironment = (environmentId: EnvironmentId) =>
+    (onlyEnvironmentId === undefined || environmentId === onlyEnvironmentId) &&
     environmentId !== primaryEnvironmentId &&
     (showSavedEnvironments || !savedById.has(environmentId)) &&
     !(selection && savedWithoutRelay.has(environmentId));

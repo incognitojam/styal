@@ -160,6 +160,8 @@ existing opt-out. Durable thread notices provide local evidence independently of
 
 Auto environment operations report `feature.used` with `feature = auto-environment-tools`, `source = agent`, and `action = link | project_create | project_clone | scheduled_run`. Count only servers with `autoEnvironmentToolsUsageVersion = 1`. These are effective Auto callers, including a Full access caller narrowed by an Auto link; Full access operations do not count. Executions are observed at their destination, and permission refusals before forwarding are observed at the source. Requests that fail in transport before reaching their destination do not count. Outcomes are `success`, `failure`, or `cancelled`; failures distinguish `refused` from `operation_failed`. No arguments, results, paths, machine names, task names, or model selections are collected.
 
+Machine-list actions on web and desktop report `feature.used`, `feature = machine-list`, `source = user`, `action = add | stop`, and `outcome = success | failure`, requiring client vocabulary version 31. These count completed attempts from a machine’s agent list, excluding cancelled confirmations. Machine names, addresses, pairing codes and identifiers are never reported.
+
 ## Measure a fork feature
 
 Measure use of a new or materially changed fork feature in the PR that ships it. Measure fork-maintained behavior only: usage of an upstream feature does not inform whether to keep a fork difference.

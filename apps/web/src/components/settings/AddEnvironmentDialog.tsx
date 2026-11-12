@@ -69,12 +69,14 @@ const EMPTY_DISCOVERED_SSH_HOSTS: ReadonlyArray<DesktopDiscoveredSshHost> = [];
 
 export function AddEnvironmentDialog({
   open,
+  triggerLabel = "Add environment",
   routeTarget,
   error,
   savedEnvironments,
   onOpenChange,
   onErrorChange,
 }: {
+  readonly triggerLabel?: string;
   readonly open: boolean;
   readonly routeTarget: EnvironmentPresentation | null;
   readonly error: string | null;
@@ -612,15 +614,15 @@ export function AddEnvironmentDialog({
           render={
             <DialogTrigger
               render={
-                <Button size="xs" variant="ghost-muted" aria-label="Add environment">
+                <Button size="xs" variant="ghost-muted" aria-label={triggerLabel}>
                   <PlusIcon className="size-3" />
-                  <span>Add environment</span>
+                  <span>{triggerLabel}</span>
                 </Button>
               }
             />
           }
         />
-        <TooltipPopup side="top">Add environment</TooltipPopup>
+        <TooltipPopup side="top">{triggerLabel}</TooltipPopup>
       </Tooltip>
       <DialogPopup className="max-h-[80dvh] sm:max-w-3xl">
         <DialogHeader>

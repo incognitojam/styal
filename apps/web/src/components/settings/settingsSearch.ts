@@ -104,7 +104,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/scheduled-tasks": "Scheduled tasks",
   "/settings/source-control": "Source control",
   "/settings/worktrees": "Worktrees",
-  "/settings/connections": "Environments",
+  "/settings/connections": "Machines",
   "/settings/import": "Import data",
   "/settings/access": "Sharing & access",
   "/settings/secrets": "Secrets",
@@ -1334,7 +1334,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "work-together",
-    title: "Work together",
+    title: "Your machines",
     to: "/settings/connections",
     targetId: "work-together",
     searchTerms: [
@@ -1362,7 +1362,8 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "remote-environments",
-    title: "Environments",
+    title: "Your machines",
+    targetId: "work-together",
     to: "/settings/connections",
     searchTerms: ["add pair backend host code ssh config agent tunnel saved t3 connect"],
   },

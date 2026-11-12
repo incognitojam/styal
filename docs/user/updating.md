@@ -2,7 +2,7 @@
 
 The app you use and the server running your agents can be on different machines.
 When a server is behind your web or desktop app, the update button at the bottom
-of the sidebar and **Settings → Environments** offer to update it.
+of the sidebar and **Settings → Machines** offer to update it.
 
 ## Update everything at once
 
@@ -25,7 +25,7 @@ Each server checks that it can install the release before it restarts. If the
 release is not available to a server yet, its update fails, the server keeps
 running, and you can retry. The confirmation lists each machine it skips and
 why, such as a machine that is offline or needs a manual update. Use
-**Settings → Environments** for those.
+**Settings → Machines** for those.
 The final update summary also names skipped machines and their reasons, including
 after the desktop app restarts.
 
@@ -289,7 +289,7 @@ versions.
 
 ## Mobile updates
 
-To update an environment from your phone, open **Settings → Environments** and
+To update an environment from your phone, open **Settings → Environments on mobile** and
 select it. **Check for updates** finds the latest release on that environment's
 current release channel. Updating asks for confirmation if work would be interrupted
 or could not be checked, listing affected threads and which can continue. Otherwise

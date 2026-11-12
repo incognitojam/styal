@@ -151,6 +151,8 @@ a [managed policy](./managed-policy.md#other-capabilities).
 The desktop app reads `T3CODE_TELEMETRY_ENABLED` from your shell profile (for example `~/.zshrc`) on macOS and
 Linux, so export it there and restart the app. On Windows, set it as a user environment variable.
 
+Adding or stopping a machine from another machine’s agent list on web or desktop records whether the attempt succeeded or failed. Cancelled confirmations are not counted. Machine names, addresses, pairing codes and identifiers are never included.
+
 ## Export diagnostics to your own receiver
 
 To send traces, metrics, or logs to an OpenTelemetry receiver, open

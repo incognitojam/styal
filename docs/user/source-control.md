@@ -233,7 +233,7 @@ The pull request panel names these as awaiting approval and offers **Approve wor
 Auto-merge does not start them. A watched pull request wakes its agent when runs wait for
 approval; the agent asks you to approve them unless you told it to.
 
-Pull request sharing is off by default. In Settings → Environments → Pull request sharing (Pull
+Pull request sharing is off by default. In Settings → Machines → Pull request sharing (Pull
 request routing under Environments on mobile), choose **Read PRs** or **Read and act** for each
 environment you trust to share its source control access.
 Enable both the original environment and the environment answering its requests on this client.

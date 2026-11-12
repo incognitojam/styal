@@ -335,6 +335,20 @@ it.effect("records one event per shortcuts overview open with its entry point", 
     yield* report(
       yield* decode({ feature: "provider-sign-in", action: "start", entryPoint: "thread" }),
     );
+    for (const action of ["add", "stop"] as const) {
+      for (const outcome of ["success", "failure"] as const) {
+        yield* report(
+          yield* decode({
+            feature: "machine-list",
+            action,
+            outcome,
+            machineName: "Synthetic machine",
+            url: "https://machine.example.test",
+            pairingCode: "synthetic-code",
+          }),
+        );
+      }
+    }
     expect(events).toEqual([
       {
         event: "feature.used",
@@ -369,6 +383,19 @@ it.effect("records one event per shortcuts overview open with its entry point", 
           surface: "web",
         },
       },
+      ...(["add", "stop"] as const).flatMap((action) =>
+        (["success", "failure"] as const).map((outcome) => ({
+          event: "feature.used",
+          properties: {
+            feature: "machine-list",
+            action,
+            outcome,
+            source: "user",
+            forkClientUsageVersion: FORK_CLIENT_USAGE_VERSION,
+            surface: "web",
+          },
+        })),
+      ),
     ]);
   }),
 );
