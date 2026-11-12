@@ -399,10 +399,6 @@ export function AppSidebarLayout({
               {...sidebarArea}
               role="navigation"
               aria-label="Threads"
-              // The thread sidebar answers thread shortcuts and the next unread
-              // button above the composer, so it stays mounted while the mobile
-              // sheet is closed.
-              keepMountedOnMobile
               resizable={{
                 maxWidth: sidebarMaximumWidth,
                 minWidth: sidebarMinimumWidth,
