@@ -1,7 +1,7 @@
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 
-// V2 never reads these copied V1 projections; pre-0.1.0 builds use state.sqlite, preserving rollback.
+// V2 never reads these copied V1 projections; 0.1.0 and earlier builds use state.sqlite, preserving rollback.
 export default Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
 

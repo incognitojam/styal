@@ -190,10 +190,11 @@ database's size twice over: once in the system temporary directory (`TMPDIR`
 or `/tmp` on Linux and macOS) and once next to the database for its
 write-ahead log.
 
-If you upgraded from a version before 0.1.0, its database (`state.sqlite`) is
-still kept next to the current one so you can roll back. `styal doctor` offers to
-delete it, but never selects that repair for you and `--fix` skips it: once it
-is gone, a version before 0.1.0 starts with no threads or settings.
+If you upgraded from 0.1.0 or earlier, its database (`state.sqlite`) is still
+kept next to the current one. It lets you go back to 0.1.0, and it holds old
+history that is not imported into the current database yet, such as proposed
+plans and drafts. `styal doctor` reports its size but does not offer to delete
+it.
 
 ## Safety copy before history pruning
 
