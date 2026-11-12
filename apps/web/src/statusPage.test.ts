@@ -80,6 +80,7 @@ describe("status page relevance", () => {
     ).toMatchObject({
       affectedComponents: [{ name: "Engine", status: "degraded_performance" }],
       label: "Degraded: Engine",
+      description: "Degraded performance",
       tone: "warning",
     });
   });
