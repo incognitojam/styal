@@ -1004,6 +1004,8 @@ features:
       - apps/server/src/dataImport/V2ForkHistoryImport.ts
       - apps/server/src/dataImport/V2HistoryImport.ts
       - apps/server/src/orchestration-v2/legacy/LegacyHistoricalItems.ts
+      - apps/server/src/orchestration-v2/legacy/LegacyTextItems.ts
+      - apps/server/src/orchestration-v2/legacy/importLegacyPlansAndReasoning.ts
       - apps/server/src/orchestration-v2/legacy/legacyPayloadEncoding.ts
       - apps/server/src/orchestration-v2/legacy/orderLegacyHistory.ts
       - apps/server/src/orchestration-v2/legacy/slimImportedHistory.ts
@@ -1049,7 +1051,6 @@ features:
       - packages/contracts/src/index.ts
       - packages/contracts/src/rpc.ts
     tests:
-      - apps/server/src/orchestration-v2/legacy/importLegacyPlansAndReasoning.test.ts
       - apps/server/integration/importedThreadTransferBudget.integration.test.ts
       - apps/server/src/dataImport/LegacyHistoryWriter.test.ts
       - apps/server/src/dataImport/LegacyImport.fixture.test.ts
@@ -1058,6 +1059,7 @@ features:
       - apps/server/src/dataImport/LegacyImportTurnPromptLinks.test.ts
       - apps/server/src/dataImport/V2HistoryImport.test.ts
       - apps/server/src/orchestration-v2/legacy/LegacyHistoricalItems.test.ts
+      - apps/server/src/orchestration-v2/legacy/importLegacyPlansAndReasoning.test.ts
       - apps/server/src/orchestration-v2/legacy/legacyPayloadEncoding.test.ts
       - apps/server/src/orchestration-v2/legacy/orderLegacyHistory.test.ts
       - apps/server/src/orchestration-v2/legacy/slimImportedHistory.test.ts
