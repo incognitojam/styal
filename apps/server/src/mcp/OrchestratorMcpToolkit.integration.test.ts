@@ -627,10 +627,22 @@ describe("orchestrator MCP toolkit", () => {
             ProviderContinuationRequests.ProviderContinuationRequests,
             {
               offer: (request) =>
-                SubscriptionRef.update(continuationOffers, (existing) => [
-                  ...existing,
-                  request,
-                ]).pipe(
+                SubscriptionRef.update(continuationOffers, (existing) => {
+                  const completion = request.delegatedCompletion;
+                  // Checkpoint recovery retries unconsumed deliveries; this probe counts identities, not attempts.
+                  if (
+                    completion !== undefined &&
+                    existing.some(
+                      (offer) =>
+                        offer.threadId === request.threadId &&
+                        offer.delegatedCompletion?.parentRunId === completion.parentRunId &&
+                        offer.delegatedCompletion?.generation === completion.generation &&
+                        offer.delegatedCompletion?.messageId === completion.messageId,
+                    )
+                  )
+                    return existing;
+                  return [...existing, request];
+                }).pipe(
                   Effect.andThen(
                     request.threadId === approvalParentId
                       ? Deferred.succeed(approvalOffered, undefined)
@@ -2152,8 +2164,18 @@ describe("orchestrator MCP toolkit", () => {
 
             expect(childFollowup.taskId).toBeDefined();
             expect(activeChildFollowup.taskId).toBeDefined();
-            yield* waitForContinuationOffers(2);
-            yield* expectOffersToStay(2);
+            const followupOffers = yield* waitForContinuationOffers(1);
+            yield* expectOffersToStay(1);
+            const followupCompletion = followupOffers[0]?.delegatedCompletion;
+            expect(followupCompletion).toBeDefined();
+            const followupParent = yield* orchestrator.getThreadProjection(parentThreadId);
+            expect(
+              followupParent.runs.find((run) => run.id === followupCompletion?.parentRunId)
+                ?.delegatedCompletion?.delivery,
+            ).toMatchObject({
+              generation: followupCompletion?.generation,
+              messageId: followupCompletion?.messageId,
+            });
             yield* invoke("task_status", { taskId: childFollowup.taskId });
             yield* invoke("task_status", { taskId: activeChildFollowup.taskId });
             yield* SubscriptionRef.set(continuationOffers, []);

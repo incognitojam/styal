@@ -494,37 +494,59 @@ describe("ProviderContinuationService", () => {
     },
   );
 
-  it.effect("does not redispatch a persisted delegated completion message during recovery", () => {
+  it.effect("dispatches repeated offers for one delegated delivery exactly once", () => {
     return Effect.gen(function* () {
       const dispatched = yield* Queue.unbounded<unknown>();
+      const persistedMessageIds = yield* Ref.make<ReadonlyArray<MessageId>>([]);
+      const barrierMessageId = MessageId.make("message-provider-continuation-barrier");
+      const layerThreads = Layer.mock(ThreadManagementService.ThreadManagementService)({
+        getThreadRecords: () =>
+          Ref.get(persistedMessageIds).pipe(
+            Effect.map(
+              (messageIds) =>
+                ({
+                  ...delegatedProjection(),
+                  messages: messageIds.map((id) => ({ id })),
+                }) as unknown as OrchestrationV2ThreadProjection,
+            ),
+          ),
+        dispatch: (command) =>
+          (command.type === "message.dispatch"
+            ? Ref.update(persistedMessageIds, (ids) => [...ids, command.messageId])
+            : Effect.void
+          ).pipe(Effect.andThen(Queue.offer(dispatched, command)), Effect.as({} as never)),
+      });
+      const layerWorker = ProviderContinuationService.layer.pipe(
+        Layer.provide(
+          Layer.mergeAll(IdAllocator.layer, ProviderContinuationRequests.layer, layerThreads),
+        ),
+      );
       yield* Effect.gen(function* () {
         const requests = yield* ProviderContinuationRequests.ProviderContinuationRequests;
-        yield* requests.offer({
+        const completion = {
           threadId,
           providerThreadId,
           driver,
           detail: null,
-          delivery: "message_text",
-          delegatedCompletion: {
-            parentRunId,
-            generation: 1,
-            messageId: delegatedMessageId,
-          },
-        });
-        yield* Effect.yieldNow;
-        yield* Effect.yieldNow;
+          delivery: "message_text" as const,
+          delegatedCompletion: { parentRunId, generation: 1, messageId: delegatedMessageId },
+        };
+        yield* requests.offer(completion);
+        yield* requests.offer(completion);
+        yield* requests.offer(completion);
+        yield* requests.offer({ ...request(), messageId: barrierMessageId });
+        const first = (yield* Queue.take(dispatched)) as { readonly messageId: MessageId };
+        const barrier = (yield* Queue.take(dispatched)) as { readonly messageId: MessageId };
+        assert.equal(first.messageId, delegatedMessageId);
+        // The serial consumer reached this request only after consuming all three completion offers.
+        assert.equal(barrier.messageId, barrierMessageId);
         assert.isTrue(Option.isNone(yield* Queue.poll(dispatched)));
+        assert.deepEqual(yield* Ref.get(persistedMessageIds), [
+          delegatedMessageId,
+          barrierMessageId,
+        ]);
       }).pipe(
-        Effect.provide(
-          layerTest({
-            dispatched,
-            getThreadRecords: () =>
-              Effect.succeed({
-                ...delegatedProjection(),
-                messages: [{ id: delegatedMessageId }],
-              } as unknown as OrchestrationV2ThreadProjection),
-          }),
-        ),
+        Effect.provide(Layer.merge(ProviderContinuationRequests.layer, layerWorker)),
         Effect.scoped,
       );
     });
