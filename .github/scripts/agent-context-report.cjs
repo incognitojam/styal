@@ -131,7 +131,7 @@ function renderComment(input) {
     "",
     statusLine(hasGrowth(mainBudget, prBudget), accepted),
     "",
-    "Sizes are UTF-8 bytes.",
+    "Agent context is the instructions and MCP tool list styal sends into every user's agent session. Sizes are UTF-8 bytes.",
     "",
     "| Context | `main` | This PR | Change |",
     "| --- | ---: | ---: | ---: |",
