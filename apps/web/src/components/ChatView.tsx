@@ -21,7 +21,10 @@ import { useFocusComposerOnThreadOpen } from "./chat/useFocusComposerOnThreadOpe
 import { githubRepositoryOf } from "@t3tools/client-runtime/github-references";
 import { ChatGithubRepositoryContext } from "./chat/githubReferenceLinks";
 import { configuredHostedAppUrl } from "../hostedPairing";
-import { announcedRun, isDetailBehindShell } from "./chat/threadActivityAnnouncement";
+import {
+  announcedRun,
+  isDetailBehindShell,
+} from "@t3tools/client-runtime/state/thread-activity-announcement";
 import {
   deriveAvailableRevertTurnCounts,
   deriveThreadPendingBackgroundTasks,
