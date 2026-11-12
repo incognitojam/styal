@@ -1,3 +1,4 @@
+import { signalProcessGroup } from "@t3tools/provider-core/server/processGroup";
 // @effect-diagnostics nodeBuiltinImport:off - isolated SDK history worker must not mutate the server environment
 import * as NodeChildProcess from "node:child_process";
 import * as NodeURL from "node:url";
@@ -159,6 +160,7 @@ import * as Effect from "effect/Effect";
 import * as Equal from "effect/Equal";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
+import * as Schedule from "effect/Schedule";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -196,6 +198,7 @@ import {
 } from "../../claudeModelOptions.ts";
 import * as ServerConfig from "../../config.ts";
 import * as PortScanner from "../../preview/PortScanner.ts";
+import * as ProcessRunner from "../../processRunner.ts";
 import * as ServerSettings from "../../serverSettings.ts";
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import { spawnAndCollect } from "@t3tools/provider-core/server/snapshotProbe";
@@ -438,10 +441,64 @@ const CLAUDE_STOP_CONFIRM_TIMEOUT_MS = 10_000;
 const CLAUDE_STDERR_TAIL_LENGTH = 2_048;
 // The process group is killed on exit, so its stderr closes promptly.
 const CLAUDE_STDERR_DRAIN_TIMEOUT = Duration.seconds(1);
+// How often the CLI's process tree is recorded when no agent scope will stop what it leaves.
+const CLAUDE_DESCENDANT_POLL = "1 second";
 // Claude Code's refusal of bypassPermissions as root, which it explains only on stderr.
 const CLAUDE_ROOT_REFUSAL =
   "--dangerously-skip-permissions cannot be used with root/sudo privileges for security reasons";
 
+interface ClaudeProcessRow {
+  readonly pid: number;
+  readonly ppid: number;
+  readonly pgid: number;
+  readonly started: string;
+}
+
+/** Parses `ps -A -o pid=,ppid=,pgid=,lstart=`; pid plus start time tells a process from a reused pid. */
+function parseClaudeProcessTable(table: string): ReadonlyArray<ClaudeProcessRow> {
+  return table.split("\n").flatMap((line) => {
+    const [pid, ppid, pgid, ...started] = line.trim().split(/\s+/);
+    const row = {
+      pid: Number(pid),
+      ppid: Number(ppid),
+      pgid: Number(pgid),
+      started: started.join(" "),
+    };
+    return Number.isSafeInteger(row.pid) &&
+      Number.isSafeInteger(row.ppid) &&
+      Number.isSafeInteger(row.pgid) &&
+      row.started
+      ? [row]
+      : [];
+  });
+}
+
+// A job leading its own group takes the processes it started since with it.
+function killClaudeDescendant(row: ClaudeProcessRow) {
+  try {
+    if (row.pgid === row.pid) signalProcessGroup(row.pid, "SIGKILL");
+    else process.kill(row.pid, "SIGKILL");
+  } catch {}
+}
+
+function claudeDescendants(
+  rows: ReadonlyArray<ClaudeProcessRow>,
+  rootPids: ReadonlyArray<number>,
+): ReadonlyArray<ClaudeProcessRow> {
+  const children = Map.groupBy(rows, (row) => row.ppid);
+  const found: Array<ClaudeProcessRow> = [];
+  const seen = new Set<number>(rootPids);
+  const pending = [...rootPids];
+  for (let parent = pending.pop(); parent !== undefined; parent = pending.pop()) {
+    for (const child of children.get(parent) ?? []) {
+      if (seen.has(child.pid)) continue;
+      seen.add(child.pid);
+      found.push(child);
+      pending.push(child.pid);
+    }
+  }
+  return found;
+}
 export const ClaudeProviderCapabilitiesV2 = {
   sessions: {
     supportsMultipleProviderThreadsPerSession: false,
@@ -1280,6 +1337,41 @@ export const layerQueryRunner: Layer.Layer<
     const platform = yield* HostProcess.Platform;
     const hostEnvironment = yield* HostProcess.Environment;
     const portDiscovery = yield* PortScanner.PortDiscovery;
+    const processRunner = yield* ProcessRunner.make();
+    const readProcessTable = processRunner
+      .run({ command: "ps", args: ["-A", "-o", "pid=,ppid=,pgid=,lstart="], timeout: "5 seconds" })
+      .pipe(
+        Effect.map((result) => (result.code === 0 ? parseClaudeProcessTable(result.stdout) : [])),
+        Effect.orElseSucceed(() => []),
+      );
+    // Without an agent scope, a job that left the CLI's group escapes the group kill and is
+    // re-parented once the CLI exits. So the CLI's tree is recorded while it runs, and what is
+    // still the same process (pid and start time) is stopped after it exits.
+    const trackDescendants = (cliPid: number) => {
+      const tracked = new Map<string, ClaudeProcessRow>();
+      const identity = (row: ClaudeProcessRow) => `${row.pid} ${row.started}`;
+      // After exit the CLI's pid may belong to an unrelated process, so only tracked jobs are roots.
+      const refresh = Effect.fn("ClaudeAgentSdkQueryRunner.trackDescendants")(function* (
+        cliRunning: boolean,
+      ) {
+        const rows = yield* readProcessTable;
+        const running = new Set(rows.map(identity));
+        const roots = [
+          ...(cliRunning ? [cliPid] : []),
+          ...[...tracked.values()].flatMap((row) => (running.has(identity(row)) ? [row.pid] : [])),
+        ];
+        for (const row of claudeDescendants(rows, roots)) tracked.set(identity(row), row);
+        return running;
+      });
+      const stop = refresh(false).pipe(
+        Effect.map((running) => {
+          for (const row of tracked.values()) {
+            if (running.has(identity(row))) killClaudeDescendant(row);
+          }
+        }),
+      );
+      return { refresh: refresh(true).pipe(Effect.asVoid), stop };
+    };
 
     return ClaudeAgentSdkQueryRunner.of({
       allocateSessionId: random.uuidV4(),
@@ -1313,12 +1405,23 @@ export const layerQueryRunner: Layer.Layer<
             if (answered) return;
             stderrTail = (stderrTail + text).slice(-CLAUDE_STDERR_TAIL_LENGTH);
           };
+          let refreshDescendants: Effect.Effect<void> = Effect.void;
+          let stopDescendants: (() => void) | undefined;
           let stopScope: (() => void) | undefined;
           const claudeProcess = makeClaudeProcessSpawner({
             // Windows has no process groups.
             processGroup: platform !== "win32",
             observer: {
               onSpawn: ({ pid }) => {
+                if (platform !== "win32" && unit === undefined && pid !== undefined) {
+                  const tracker = trackDescendants(pid);
+                  const polling = runFork(
+                    tracker.refresh.pipe(Effect.repeat(Schedule.spaced(CLAUDE_DESCENDANT_POLL))),
+                  );
+                  refreshDescendants = tracker.refresh;
+                  stopDescendants = () =>
+                    void runFork(Fiber.interrupt(polling).pipe(Effect.andThen(tracker.stop)));
+                }
                 stderrClosed = new Promise((resolve) => (stderrDone = resolve));
                 runFork(Effect.logInfo("claude.cli.spawned", { threadId: input.threadId, pid }));
               },
@@ -1329,6 +1432,7 @@ export const layerQueryRunner: Layer.Layer<
               },
               onExit: ({ pid, code, signal, stderrTail }) => {
                 stopScope?.();
+                stopDescendants?.();
                 runFork(
                   Effect.logInfo("claude.cli.exited", {
                     threadId: input.threadId,
@@ -1680,7 +1784,9 @@ export const layerQueryRunner: Layer.Layer<
                 }),
               ),
             ),
-            close: Queue.shutdown(promptQueue).pipe(
+            // Capture late children before telling the CLI to exit.
+            close: Effect.suspend(() => (processExited ? Effect.void : refreshDescendants)).pipe(
+              Effect.andThen(Queue.shutdown(promptQueue)),
               Effect.andThen(closeClaudeQuery(queryRuntime, claudeProcess.handle)),
               Effect.tap(() =>
                 logProtocolEvent({
