@@ -194,7 +194,12 @@ const make = Effect.gen(function* () {
         if (match !== undefined && matches.length < limit) matches.push(match);
       }
     }
-    return { matches, machines: pages.map((page) => page.machine), notes };
+    return {
+      currentThreadId: scope.thread?.threadId ?? null,
+      matches,
+      machines: pages.map((page) => page.machine),
+      notes,
+    };
   });
   return ThreadSearchMcpService.of({ search: searchAcrossMachines });
 });

@@ -423,6 +423,7 @@ export const OrchestratorMcpThreadSearchPage = Schema.Struct({
 export type OrchestratorMcpThreadSearchPage = typeof OrchestratorMcpThreadSearchPage.Type;
 
 export const OrchestratorMcpThreadSearchResult = Schema.Struct({
+  currentThreadId: Schema.optional(Schema.NullOr(ThreadId)),
   matches: Schema.Array(
     Schema.Struct({
       ...OrchestratorMcpThreadSearchMatch.fields,
