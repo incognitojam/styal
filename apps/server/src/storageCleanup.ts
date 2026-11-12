@@ -1453,6 +1453,8 @@ const make = Effect.gen(function* () {
               execute: git.execute,
               run: (args) => cleanupGit(project.workspaceRoot, [...args], "git worktree remove"),
             });
+            // Recreation records its own setup; an older record would outlive this checkout.
+            yield* sql`DELETE FROM worktree_stripped WHERE worktree_path = ${worktreePath}`;
             entries.push({ ...entry, outcome: "removed", reason: sentence(removalReason), bytes });
             yield* gitManager.invalidateStatus(project.workspaceRoot);
             // Preserve branch/path so ProviderTurnStartService can recreate the checkout on resume.

@@ -10,6 +10,9 @@ import { makeCheckout } from "../worktreeCleanup/Checkout.ts";
 import { assert, it } from "@effect/vitest";
 import {
   DEFAULT_TERMINAL_ID,
+  ProjectId,
+  ThreadId,
+  TerminalCwdNotFoundError,
   type TerminalAttachStreamEvent,
   type TerminalEvent,
   type TerminalOpenInput,
@@ -41,6 +44,7 @@ import * as SynchronizedRef from "effect/SynchronizedRef";
 import * as TestClock from "effect/testing/TestClock";
 import { expect, vi } from "vite-plus/test";
 
+import * as ServerConfig from "../config.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import {
@@ -48,6 +52,10 @@ import {
   type TerminalBrowserOpenOwner,
 } from "../preview/TerminalBrowserOpen.ts";
 import * as TerminalManager from "./Manager.ts";
+import * as GitWorkflowService from "../git/GitWorkflowService.ts";
+import * as ProjectService from "../project/ProjectService.ts";
+import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
+import { makePrepareTerminalLaunch } from "../workspace/restoreMissingWorktree.ts";
 import { terminalOutputStream } from "./OutputProtocol.ts";
 import * as PtyAdapter from "@t3tools/shared/PtyAdapter";
 import packageJson from "../../package.json" with { type: "json" };
@@ -537,6 +545,129 @@ it.layer(
       assert.equal(terminal.cwd, cwd);
       yield* manager.close({ threadId: input.threadId, terminalId: input.terminalId });
     }).pipe(Effect.scoped),
+  );
+
+  it.effect("leaves an enclosing checkout released when a nested worktree is missing", () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      yield* f.write("src/main.txt", "tracked source");
+      yield* f.command(f.worktree, ["add", "src/main.txt"]);
+      yield* f.command(f.worktree, ["commit", "-m", "fixture: source"]);
+      const checkout = yield* makeCheckout.pipe(
+        Effect.provideService(GitVcsDriver.GitVcsDriver, f.git),
+      );
+      yield* checkout.release(f.worktree, f.root);
+      const { manager } = yield* createManager(5, { gitDriver: f.git });
+      // The lease covers the missing worktree, not the checkout that encloses it.
+      const missing = `${f.worktree}/worktrees/feature`;
+      const error = yield* manager
+        .open(openInput({ cwd: missing, worktreePath: missing }))
+        .pipe(Effect.flip);
+      assert.deepEqual(error, new TerminalCwdNotFoundError({ cwd: missing }));
+      assert.isFalse(yield* f.fs.exists(`${f.worktree}/src/main.txt`));
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect.each([
+    { method: "open", location: "managed" },
+    { method: "attach", location: "managed" },
+    { method: "open", location: "subdirectory" },
+    { method: "open", location: "unmanaged" },
+    { method: "open", location: "no-worktree" },
+  ] as const)(
+    "recovers $method with a $location cwd without a cleanup gap",
+    ({ method, location }) =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const { manager, ptyAdapter, baseDir } = yield* createManager();
+        const worktreesDir = path.join(baseDir, "worktrees");
+        const worktreePath =
+          location === "unmanaged"
+            ? path.join(baseDir, "missing")
+            : path.join(worktreesDir, "project", "feature");
+        const cwd = location === "subdirectory" ? path.join(worktreePath, "src") : worktreePath;
+        const cleanupQueued = yield* Deferred.make<Fiber.Fiber<void>>();
+        const withWorkspaceLease = yield* makeWorkspaceLease;
+        let creations = 0;
+        const markedForSetup: Array<string> = [];
+        const gitCommands: Array<ReadonlyArray<string>> = [];
+        const prepareLaunch = yield* makePrepareTerminalLaunch(() =>
+          Effect.succeed({
+            id: ThreadId.make("thread-1"),
+            projectId: ProjectId.make("project-1"),
+            worktreePath: location === "no-worktree" ? null : worktreePath,
+            branch: "feature",
+          }),
+        ).pipe(
+          Effect.provide(
+            Layer.mergeAll(
+              Layer.mock(ServerConfig.ServerConfig)({
+                worktreesDir,
+              } as ServerConfig.ServerConfig["Service"]),
+              ServerSettings.layerTest(),
+              Layer.mock(ProjectService.ProjectService)({
+                getById: () =>
+                  Effect.succeedSome({ id: "project-1", workspaceRoot: baseDir } as never),
+              }),
+              Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({
+                markStripped: (root) => Effect.sync(() => void markedForSetup.push(root)),
+              }),
+              Layer.mock(GitVcsDriver.GitVcsDriver)({
+                execute: ({ args }) =>
+                  Effect.sync(() => {
+                    gitCommands.push(args);
+                    return {} as never;
+                  }),
+              }),
+              Layer.mock(GitWorkflowService.GitWorkflowService)({
+                listLocalBranchNames: () => Effect.succeed(["feature"]),
+                createWorktree: () =>
+                  Effect.gen(function* () {
+                    assert.deepEqual(markedForSetup, [path.resolve(worktreePath)]);
+                    creations++;
+                    yield* fs.makeDirectory(cwd, { recursive: true }).pipe(Effect.orDie);
+                    const cleanup = yield* withWorkspaceLease(
+                      worktreePath,
+                      Effect.sync(() => {
+                        assert.equal(ptyAdapter.spawnInputs.length, 1);
+                      }),
+                    ).pipe(Effect.forkChild({ startImmediately: true }));
+                    yield* Deferred.succeed(cleanupQueued, cleanup);
+                    return {} as never;
+                  }),
+              }),
+            ),
+          ),
+        );
+        const input = openInput({
+          cwd,
+          worktreePath: location === "subdirectory" ? null : worktreePath,
+        });
+        const launch = prepareLaunch(input).pipe(
+          Effect.flatMap(({ input, recover }) =>
+            (method === "attach"
+              ? manager.attachStream(input, () => Effect.void).pipe(Effect.asVoid)
+              : manager.open(input).pipe(Effect.asVoid)
+            ).pipe(Effect.provideService(TerminalManager.TerminalCwdRecovery, recover)),
+          ),
+        );
+        if (location === "unmanaged" || location === "no-worktree") {
+          const error = yield* launch.pipe(Effect.flip);
+          assert.deepEqual(error, new TerminalCwdNotFoundError({ cwd }));
+          assert.equal(creations, 0);
+          assert.deepEqual(markedForSetup, []);
+          assert.equal(ptyAdapter.spawnInputs.length, 0);
+          return;
+        }
+        yield* launch;
+        yield* Fiber.join(yield* Deferred.await(cleanupQueued));
+        assert.equal(creations, 1);
+        assert.deepEqual(gitCommands, [["worktree", "remove", worktreePath]]);
+        assert.deepEqual(markedForSetup, [path.resolve(worktreePath)]);
+        assert.equal(ptyAdapter.spawnInputs.length, 1);
+        assert.isTrue(yield* fs.exists(cwd));
+      }),
   );
 
   it.effect("spawns lazily and reuses running terminal per thread", () =>

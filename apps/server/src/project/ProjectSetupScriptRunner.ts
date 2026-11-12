@@ -272,6 +272,7 @@ export class ProjectSetupScriptRunner extends Context.Service<
     }) => Effect.Effect<void, ProjectFileActionApprovalError>;
     readonly consumeStripped: (worktreePath: string) => Effect.Effect<boolean>;
     readonly isStripped: (worktreePath: string) => Effect.Effect<boolean>;
+    readonly markStripped: (worktreePath: string, projectId: ProjectId) => Effect.Effect<void>;
     readonly runForThread: (
       input: ProjectSetupScriptRunnerInput,
     ) => Effect.Effect<ProjectSetupScriptRunnerResult, ProjectSetupScriptRunnerError>;
@@ -1126,6 +1127,10 @@ export const make = Effect.gen(function* () {
     consumeStripped: Effect.fn("ProjectSetupScriptRunner.consumeStripped")((root) =>
       consume(root).pipe(Effect.orDie),
     ),
+    markStripped: Effect.fn("ProjectSetupScriptRunner.markStripped")(function* (root, projectId) {
+      const strippedAt = DateTime.formatIso(yield* DateTime.now);
+      yield* sql`INSERT INTO worktree_stripped (worktree_path, project_id, stripped_at) VALUES (${root}, ${projectId}, ${strippedAt}) ON CONFLICT (worktree_path) DO NOTHING`;
+    }, Effect.orDie),
   });
 });
 

@@ -769,3 +769,16 @@ it.effect("keeps sources when the recovery directory cannot be synced", () =>
     }).pipe(Effect.provideService(GitVcsDriver.GitVcsDriver, f.git));
   }).pipe(Effect.provide(nodeLayer)),
 );
+
+it.effect("roots a missing worktree at its own path inside an enclosing checkout", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    const missing = `${f.worktree}/nested/feature`;
+    yield* Effect.gen(function* () {
+      const checkout = yield* makeCheckout;
+      expect(yield* checkout.root(missing)).toBe(f.worktree);
+      expect(yield* checkout.root(missing, { worktree: true })).toBe(missing);
+      expect(yield* checkout.root(f.worktree, { worktree: true })).toBe(f.worktree);
+    }).pipe(Effect.provideService(GitVcsDriver.GitVcsDriver, f.git));
+  }).pipe(Effect.provide(nodeLayer)),
+);

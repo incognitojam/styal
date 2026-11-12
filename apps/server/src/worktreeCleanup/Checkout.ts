@@ -59,7 +59,10 @@ export const makeCheckout = Effect.gen(function* () {
       return yield* fail("Git checkout check failed or returned incomplete output.");
     return result.stdout;
   });
-  const root = Effect.fn("WorktreeCleanup.checkoutRoot")(function* (cwd: string) {
+  const root = Effect.fn("WorktreeCleanup.checkoutRoot")(function* (
+    cwd: string,
+    options?: { readonly worktree?: boolean },
+  ) {
     const resolved = path.resolve(cwd);
     let canonical = resolved;
     let parent = resolved;
@@ -79,6 +82,8 @@ export const makeCheckout = Effect.gen(function* () {
       missing.unshift(path.basename(parent));
       parent = path.dirname(parent);
     }
+    // A missing worktree is recreated at its own path, not in a checkout that encloses it.
+    if (options?.worktree === true && missing.length > 0) return canonical;
     for (let directory = canonical; ; directory = path.dirname(directory)) {
       const marker = yield* io(() =>
         fs.lstat(path.join(directory, ".git")).catch((error: NodeJS.ErrnoException) => {

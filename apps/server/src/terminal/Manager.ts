@@ -174,6 +174,10 @@ class TerminalProcessSignalError extends Schema.TaggedError<TerminalProcessSigna
   }
 }
 
+export class TerminalCwdRecovery extends Context.Reference<
+  (error: TerminalCwdNotFoundError) => Effect.Effect<void, TerminalCwdNotFoundError>
+>("t3/terminal/TerminalCwdRecovery", { defaultValue: () => (error) => Effect.fail(error) }) {}
+
 export class TerminalManager extends Context.Service<
   TerminalManager,
   {
@@ -2347,12 +2351,20 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
   });
 
   const assertValidCwd = Effect.fn("terminal.assertValidCwd")(function* (cwd: string) {
-    const stats = yield* fileSystem.stat(cwd).pipe(
+    const stat = fileSystem.stat(cwd).pipe(
       Effect.catchTags({
         PlatformError: (cause) =>
           cause.reason._tag === "NotFound"
             ? new TerminalCwdNotFoundError({ cwd })
             : new TerminalCwdStatError({ cwd, cause }),
+      }),
+    );
+    const stats = yield* stat.pipe(
+      Effect.catchTags({
+        TerminalCwdNotFoundError: (error) =>
+          Effect.flatMap(TerminalCwdRecovery, (recover) =>
+            recover(error).pipe(Effect.andThen(stat)),
+          ),
       }),
     );
     if (stats.type !== "Directory") {
@@ -3200,7 +3212,8 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     requestedInput: TerminalOpenInput | TerminalCommandOpenInput,
   ) {
     const workspace = requestedInput.worktreePath ?? requestedInput.cwd;
-    yield* checkout.root(workspace).pipe(
+    // Resolved as the lease was, so a missing nested worktree never restores its enclosing checkout.
+    yield* checkout.root(workspace, { worktree: requestedInput.worktreePath != null }).pipe(
       Effect.flatMap(checkout.restore),
       Effect.mapError((cause) => new TerminalWorkspaceRestoreError({ cwd: workspace, cause })),
     );
@@ -3351,10 +3364,11 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
   ) {
     const existing = yield* getSession(input.threadId, input.terminalId);
     const session = Option.getOrUndefined(existing);
-    const workspace = input.worktreePath ?? session?.worktreePath ?? input.cwd ?? session?.cwd;
+    const worktreePath = input.worktreePath ?? session?.worktreePath;
+    const workspace = worktreePath ?? input.cwd ?? session?.cwd;
     if (workspace === undefined) return yield* effect;
     const root = yield* checkout
-      .root(workspace)
+      .root(workspace, { worktree: worktreePath != null })
       .pipe(
         Effect.mapError((cause) => new TerminalWorkspaceRestoreError({ cwd: workspace, cause })),
       );
@@ -3362,7 +3376,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
   });
 
   const openLocked = (input: TerminalOpenInput | TerminalCommandOpenInput) =>
-    checkout.root(input.worktreePath ?? input.cwd).pipe(
+    checkout.root(input.worktreePath ?? input.cwd, { worktree: input.worktreePath != null }).pipe(
       Effect.mapError((cause) => new TerminalWorkspaceRestoreError({ cwd: input.cwd, cause })),
       Effect.flatMap((root) =>
         withWorkspaceLease(root, withThreadLock(input.threadId, openWithWorkspaceLease(input))),

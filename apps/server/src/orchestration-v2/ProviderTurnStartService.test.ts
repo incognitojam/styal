@@ -155,8 +155,11 @@ function startWithMissingWorktree(
       }),
   );
   const startRootRun = vi.fn(() => Effect.void);
-  const pruneWorktrees = vi.fn(() => Effect.void);
+  const unregisterWorktree = vi.fn((_: GitVcsDriver.ExecuteGitInput) =>
+    Effect.succeed({} as GitVcsDriver.ExecuteGitResult),
+  );
   const runSetup = vi.fn(() => onSetup.pipe(Effect.as(setupResult)));
+  const markedForSetup = new Set<string>();
   let folderExists = exists;
   const createWorktree = vi.fn(() =>
     Effect.sync(() => {
@@ -189,14 +192,24 @@ function startWithMissingWorktree(
         } as never),
         layerWorktreeLocation(worktreesDir),
         Layer.mock(GitWorkflow.GitWorkflowService)({
-          pruneWorktrees,
           createWorktree,
           listLocalBranchNames,
         }),
-        Layer.succeed(GitVcsDriver.GitVcsDriver, checkoutGit),
+        Layer.succeed(GitVcsDriver.GitVcsDriver, {
+          ...checkoutGit,
+          execute: (input) =>
+            input.operation === "restoreMissingWorktree.unregister"
+              ? unregisterWorktree(input)
+              : checkoutGit.execute(input),
+        }),
         Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({
-          consumeStripped,
-          isStripped,
+          consumeStripped: (root) =>
+            consumeStripped(root).pipe(
+              Effect.map((consumed) => markedForSetup.delete(root) || consumed),
+            ),
+          isStripped: (root) =>
+            markedForSetup.has(root) ? Effect.succeed(true) : isStripped(root),
+          markStripped: (root) => Effect.sync(() => void markedForSetup.add(root)),
           runForThread: runSetup,
         }),
         Layer.mock(ProjectService.ProjectService)({
@@ -253,7 +266,7 @@ function startWithMissingWorktree(
     start: startEffect,
     retry: startEffect,
     startNoRetry: callStartWithRetry(false).pipe(Effect.provide(layer)),
-    pruneWorktrees,
+    unregisterWorktree,
     createWorktree,
     runSetup,
     writeIfRunCurrent,
@@ -390,6 +403,7 @@ function makeLocalCommandHarness(input: {
   readonly worktreesDir?: string;
   readonly workspaceRoot?: string;
   readonly gitWorkflow?: GitWorkflow.GitWorkflowService["Service"];
+  readonly gitDriver?: GitVcsDriver.GitVcsDriver["Service"];
   readonly fileSystem?: FileSystem.FileSystem;
   readonly previousNativeSession?: boolean;
   readonly previousMessages?: ReadonlyArray<string>;
@@ -1097,15 +1111,17 @@ function makeLocalCommandHarness(input: {
           : Layer.succeed(FileSystem.FileSystem, input.fileSystem),
         input.gitWorkflow === undefined
           ? Layer.mock(GitWorkflow.GitWorkflowService)({
-              pruneWorktrees: () => Effect.void,
               listLocalBranchNames: () => Effect.succeed(["feature/restore"]),
               createWorktree,
             })
           : Layer.succeed(GitWorkflow.GitWorkflowService, input.gitWorkflow),
-        Layer.mock(GitVcsDriver.GitVcsDriver)({}),
+        input.gitDriver === undefined
+          ? Layer.mock(GitVcsDriver.GitVcsDriver)({ execute: () => Effect.succeed({} as never) })
+          : Layer.succeed(GitVcsDriver.GitVcsDriver, input.gitDriver),
         Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({
           consumeStripped: () => Effect.succeed(false),
           isStripped: () => Effect.succeed(false),
+          markStripped: () => Effect.void,
           runForThread: () => Effect.succeed({ status: "no-script" }),
         }),
         Layer.mock(ProjectService.ProjectService)({
@@ -1291,6 +1307,12 @@ effectIt.effect(
           yield* git(workspaceRoot, ["remote", "remove", "origin"]);
         }
         yield* fileSystem.remove(worktreePath, { recursive: true });
+        // Recovery clears only its own registration, not other deleted worktrees'.
+        const otherPath = path.join(worktreesDir, "project", "other");
+        if (scenario === "retained") {
+          yield* git(workspaceRoot, ["worktree", "add", "--detach", otherPath]);
+          yield* fileSystem.remove(otherPath, { recursive: true });
+        }
         if (scenario !== "retained") {
           yield* git(workspaceRoot, ["worktree", "prune"]);
           yield* git(workspaceRoot, ["branch", "-D", "feature/restore"]);
@@ -1302,6 +1324,7 @@ effectIt.effect(
           worktreesDir,
           fileSystem,
           gitWorkflow,
+          gitDriver: driver,
           failReadsAfterRunning: true,
         });
         const open = harness.open.getMockImplementation()!;
@@ -1336,6 +1359,18 @@ effectIt.effect(
           }),
         );
         expect(harness.projection().runs.at(-1)?.status).toBe("running");
+        if (scenario === "retained") {
+          // Git lists real paths; macOS temp directories sit under a /var symlink.
+          const realOtherPath = path.join(
+            yield* fileSystem.realPath(root),
+            "worktrees",
+            "project",
+            "other",
+          );
+          expect(yield* git(workspaceRoot, ["worktree", "list", "--porcelain"])).toContain(
+            `worktree ${realOtherPath}\n`,
+          );
+        }
       }
     }).pipe(Effect.scoped, Effect.provide(layerRealGit)),
 );
