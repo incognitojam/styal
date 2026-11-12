@@ -2,7 +2,7 @@ import { parseFeedbackFooter } from "@t3tools/shared/feedbackFooter";
 
 export type ReportKind = ReturnType<typeof parseFeedbackFooter>;
 
-// Only the complete visible footer at the end of the report identifies its source.
+// A complete visible footer must end the report or a GitHub issue-form section.
 export const classifyReport = parseFeedbackFooter;
 
 export const routingLabels = [
@@ -66,7 +66,9 @@ export async function postDiscord(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
-    });
+      signal: AbortSignal.timeout(10_000),
+    }).catch(() => null);
+    if (response === null) return false;
     if (response.ok) return true;
     if (response.status !== 429) throw new Error(`Discord alert failed: ${response.status}`);
     if (attempt === 2) return false;

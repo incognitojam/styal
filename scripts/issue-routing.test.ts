@@ -8,9 +8,16 @@ describe("issue routing", () => {
     [`Report${footer}Written by an agent and approved by the user.`, "agent"],
     [`Report${footer}Written by an agent (Codex, model) and approved by the user.`, "agent"],
     [`Report${footer}Written by an agent (model) and approved by the user.`, "agent"],
-    [`Report${footer}Sent from styal by the user.\nMore text`, "other"],
+    [
+      `### Actual behavior\n\nReport${footer}Sent from styal by the user.\nMore text\n\n### Impact\n\nMajor degradation or frequent failure`,
+      "other",
+    ],
     [
       `Report${footer}Written by an agent (Codex, model) and approved by the user.\nMore text`,
+      "other",
+    ],
+    [
+      `Report${footer}Sent from styal by the user.\n\n### Impact\n\nMajor degradation or frequent failure`,
       "other",
     ],
     ["Sent from styal by the user.", "other"],
@@ -88,6 +95,47 @@ describe("Discord rate limits", () => {
       expect(options?.body).toBe(JSON.stringify(payload));
     }
   });
+
+  it.each(["request", "response body"])(
+    "fails softly when the %s deadline aborts",
+    async (phase) => {
+      const controller = new AbortController();
+      using deadline = vi.spyOn(AbortSignal, "timeout").mockReturnValue(controller.signal);
+      const started = Promise.withResolvers<void>();
+      const request = vi.fn<typeof fetch>().mockImplementation(async (_url, options) => {
+        const signal = options?.signal;
+        if (!signal) throw new Error("Missing request deadline");
+        if (phase === "request") {
+          return new Promise<Response>((_resolve, reject) => {
+            signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+            started.resolve();
+          });
+        }
+        return new Response(
+          new ReadableStream({
+            start(stream) {
+              signal.addEventListener("abort", () => stream.error(signal.reason), { once: true });
+              started.resolve();
+            },
+          }),
+          { status: 429 },
+        );
+      });
+      const wait = vi.fn(async () => undefined);
+      const result = postDiscord(
+        "https://example.invalid/webhook",
+        discordPayload(issue, "agent"),
+        request,
+        wait,
+      );
+      await started.promise;
+      controller.abort(new DOMException("Deadline exceeded", "TimeoutError"));
+      expect(await result).toBe(false);
+      expect(deadline).toHaveBeenCalledWith(10_000);
+      expect(request).toHaveBeenCalledTimes(1);
+      expect(wait).not.toHaveBeenCalled();
+    },
+  );
 
   it.each([0.25, 31, -1, "1", null])(
     "gives up successfully on persistent or unusable rate limit %s",

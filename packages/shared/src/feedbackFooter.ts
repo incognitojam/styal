@@ -19,14 +19,25 @@ export function formatFeedbackFooter(input: {
 
 export function parseFeedbackFooter(body: string | null | undefined) {
   const text = (body ?? "").replaceAll("\r\n", "\n").trimEnd();
-  const author = /\n\n---\nstyal \S+ \([^()\r\n]+\), \S+ \S+\n([^\r\n]+)$/.exec(text)?.[1];
-  if (author === USER_AUTHOR) return "user";
-  if (author === `${AGENT_AUTHOR}${AGENT_APPROVAL}`) return "agent";
-  if (
-    author?.startsWith(`${AGENT_AUTHOR} (`) &&
-    author.endsWith(`)${AGENT_APPROVAL}`) &&
-    author.length > AGENT_AUTHOR.length + AGENT_APPROVAL.length + 3
-  )
-    return "agent";
+  const sections = [
+    text,
+    ...text
+      .split(/^### [^\n]*$/m)
+      .slice(1)
+      .reverse(),
+  ];
+  for (const section of sections) {
+    const author = /\n\n---\nstyal \S+ \([^()\r\n]+\), \S+ \S+\n([^\r\n]+)$/.exec(
+      section.trimEnd(),
+    )?.[1];
+    if (author === USER_AUTHOR) return "user";
+    if (author === `${AGENT_AUTHOR}${AGENT_APPROVAL}`) return "agent";
+    if (
+      author?.startsWith(`${AGENT_AUTHOR} (`) &&
+      author.endsWith(`)${AGENT_APPROVAL}`) &&
+      author.length > AGENT_AUTHOR.length + AGENT_APPROVAL.length + 3
+    )
+      return "agent";
+  }
   return "other";
 }

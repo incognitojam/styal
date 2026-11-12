@@ -55,5 +55,5 @@ jobs:
             const webhook = process.env.DISCORD_WEBHOOK_URL;
             if (!webhook) return;
             if (!await postDiscord(webhook, discordPayload(issue, kind))) {
-              core.warning('Discord rate limited; skipping announcement after bounded retries.');
+              core.warning('Discord announcement skipped after a request failure or bounded rate-limit retries.');
             }
