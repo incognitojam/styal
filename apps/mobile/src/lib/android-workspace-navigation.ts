@@ -2,30 +2,20 @@ import type { NavigationState } from "@react-navigation/native";
 import { isSettingsRoute } from "../features/settings/settings-navigation";
 import { resetRootStack, type RootStackNavigation } from "./root-stack-reset";
 
-function androidWorkspaceBackReturnsToPreviousPage(state: NavigationState) {
-  const current = state.routes[state.index];
-  const params = current?.params as ReactNavigation.RootParamList["Thread"] | undefined;
-  return (
-    androidWorkspaceBackReturnsToPage(state) &&
-    !(current?.name === "Thread" && params !== undefined && parentThreadIsBelow(state, params))
-  );
+// Back follows history; Git confirmations can stack copies of the current thread, so skip those too.
+function androidWorkspaceBackTarget(state: NavigationState) {
+  let index = state.index;
+  const params = state.routes[index]?.params as ReactNavigation.RootParamList["Thread"] | undefined;
+  if (state.routes[index]?.name === "Thread" && params) {
+    while (parentThreadIsBelow({ ...state, index }, params)) index -= 1;
+  }
+  return index - 1;
 }
 
 /** The root stack with only the workspace list. */
 export function androidWorkspaceNavigationState(state: NavigationState) {
   const home = state.routes.find((route) => route.name === "Home") ?? { name: "Home" };
   return { ...state, index: 0, routes: [home] };
-}
-
-/**
- * A list selection leaves only Home below its page, so Back returns to the list. Anything else
- * was opened from a page, such as a pull request linked in a thread, and Back returns there.
- */
-export function androidWorkspaceBackReturnsToPage(
-  state: Pick<NavigationState, "index" | "routes">,
-) {
-  const below = state.routes[state.index - 1];
-  return below !== undefined && below.name !== "Home";
 }
 
 export function resetAndroidWorkspace(navigation: RootStackNavigation) {
@@ -69,12 +59,12 @@ export function linkedThreadStep(
 
 export function returnToAndroidWorkspaceList(
   navigation: RootStackNavigation & { readonly goBack: () => void },
-  selectTab: () => void,
 ) {
   const state = navigation.getState();
-  if (state && androidWorkspaceBackReturnsToPreviousPage(state)) return navigation.goBack();
-  selectTab();
-  resetAndroidWorkspace(navigation);
+  const index = state ? androidWorkspaceBackTarget(state) : -1;
+  if (!state || index < 0) return resetAndroidWorkspace(navigation);
+  if (index === state.index - 1) return navigation.goBack();
+  resetRootStack(navigation, () => ({ ...state, index, routes: state.routes.slice(0, index + 1) }));
 }
 
 // Split view: Thread, PullRequest, and a Settings page picked from the list swap the detail pane

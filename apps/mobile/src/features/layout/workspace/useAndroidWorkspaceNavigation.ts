@@ -1,56 +1,43 @@
-import { StackActions, useFocusEffect, useNavigation } from "@react-navigation/native";
+import { StackActions, useFocusEffect, useNavigation, useRoute } from "@react-navigation/native";
 import { useCallback } from "react";
 import { BackHandler, Keyboard, Platform } from "react-native";
-import {
-  androidWorkspaceBackReturnsToPage,
-  resetAndroidWorkspace,
-  returnToAndroidWorkspaceList,
-} from "../../../lib/android-workspace-navigation";
+import { returnToAndroidWorkspaceList } from "../../../lib/android-workspace-navigation";
 import { useWorkspaceTabs } from "./WorkspaceTabsContext";
-import type { WorkspaceTab } from "./workspace-tabs-state";
+import { workspaceTabOf } from "./workspace-tabs-state";
 
-function useWorkspaceListNavigation(tab: WorkspaceTab) {
+export function useWorkspaceBackNavigation() {
   const navigation = useNavigation();
-  const dispatch = useWorkspaceTabs()?.dispatch;
   return () => {
-    if (Platform.OS === "android") {
-      const state = navigation.getState();
-      if (state && androidWorkspaceBackReturnsToPage(state)) {
-        navigation.goBack();
-        return;
-      }
-      dispatch?.({ type: "select", tab });
-      resetAndroidWorkspace(navigation);
-    } else if (navigation.canGoBack()) navigation.goBack();
+    if (Platform.OS === "android") returnToAndroidWorkspaceList(navigation);
+    else if (navigation.canGoBack()) navigation.goBack();
     else navigation.dispatch(StackActions.replace("Home"));
   };
 }
 
-export function useWorkspaceBackNavigation(tab: WorkspaceTab) {
-  const navigation = useNavigation();
+/** App links, the multi-PR sheet and shared drafts bypass list selection; the page shown picks its list. */
+export function useAndroidWorkspaceTab() {
   const dispatch = useWorkspaceTabs()?.dispatch;
-  const returnToList = useWorkspaceListNavigation(tab);
-  return () => {
-    if (Platform.OS === "android") {
-      returnToAndroidWorkspaceList(navigation, () => dispatch?.({ type: "select", tab }));
-    } else returnToList();
-  };
+  const tab = workspaceTabOf(useRoute().name);
+  useFocusEffect(
+    useCallback(() => {
+      if (Platform.OS === "android") dispatch?.({ type: "select", tab });
+    }, [dispatch, tab]),
+  );
 }
 
-export function useAndroidWorkspaceBack(tab: WorkspaceTab) {
-  const dispatch = useWorkspaceTabs()?.dispatch;
-  const goBack = useWorkspaceBackNavigation(tab);
+export function useAndroidWorkspaceBack() {
+  const goBack = useWorkspaceBackNavigation();
+  useAndroidWorkspaceTab();
   useFocusEffect(
     useCallback(() => {
       if (Platform.OS !== "android") return;
-      dispatch?.({ type: "select", tab });
       const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
         if (Keyboard.isVisible()) Keyboard.dismiss();
         else goBack();
         return true;
       });
       return () => subscription.remove();
-    }, [goBack, dispatch, tab]),
+    }, [goBack]),
   );
   return goBack;
 }
