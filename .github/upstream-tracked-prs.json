@@ -239,6 +239,10 @@
         "base": "8b44f42b14c8e273156474a924ccf29680dd7857",
         "head": "eb652bad038192762075d77b7ccc359a5b380427"
       }
+    },
+    {
+      "pr": 21158,
+      "reason": "Claude parents get no mid-turn delegated-completion notices. Since upstream #15892, a Claude parent queues every notice behind its active run, because ClaudeAdapterV2 steers with priority \"now\", which cancels the running tool. An async delegate that finishes during a long parent turn is only seen when that turn ends, so the agent reports finished delegates as still running. This PR switched agent and background messages to Claude's priority \"next\" input at the next root tool boundary. It closed unmerged on 2026-11-12 because of conflicts; follow the replacement from upstream issue 21895. When it lands, check that delegated completions to a Claude parent arrive at the next tool boundary, including after a foreground Agent call returns."
     }
   ]
 }
