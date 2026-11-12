@@ -415,6 +415,7 @@ export interface ChatComposerProps {
     customAnswer: string;
     activeQuestion: {
       id: string;
+      options: ReadonlyArray<unknown>;
       initialAnswer?: string | undefined;
       multiSelect?: boolean | undefined;
       allowCustomAnswer?: boolean | undefined;
@@ -1278,9 +1279,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const activePendingUserInput = pendingUserInputs[0] ?? null;
   const isChoiceOnlyPendingQuestion =
     activePendingProgress?.activeQuestion?.allowCustomAnswer === false;
-  const pendingQuestionPlaceholder = activePendingProgress?.activeQuestion?.multiSelect
-    ? "Add another answer, or leave this blank to use the selected options"
-    : "Type your own answer, or leave this blank to use the selected option";
+  const pendingQuestionPlaceholder =
+    activePendingProgress?.activeQuestion?.options.length === 0
+      ? "Type your answer"
+      : activePendingProgress?.activeQuestion?.multiSelect
+        ? "Add another answer, or leave this blank to use the selected options"
+        : "Type your own answer, or leave this blank to use the selected option";
   const showComposerTopDrawer = pendingUserInputs.length > 0;
   const showCollapsedMobilePromptRow = isComposerCollapsedMobile;
   const showComposerAttachAction =
