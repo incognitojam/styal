@@ -915,6 +915,12 @@ const layerConfigSources = Layer.mergeAll(
   Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );
 
+const configTestLauncher = {
+  kind: "t3-launcher" as const,
+  launcher: "/home/example-user/.styal/bin/styal",
+  baseDir: "/home/example-user/.styal",
+};
+
 it.effect.each([
   "pending",
   "cached",
@@ -1007,7 +1013,7 @@ it.effect.each([
             label: "Config test",
             platform: { os: "linux", arch: "x64" },
             serverVersion: "0.0.0",
-            capabilities: { repositoryIdentity: false },
+            capabilities: { repositoryIdentity: false, serverInstallation: configTestLauncher },
           }),
         }),
         Layer.mock(EnvironmentAuth.EnvironmentAuth)({
@@ -1086,6 +1092,11 @@ it.effect.each([
       );
       assert.isFalse(snapshot.config.settings.defaultAutoPull);
       assert.deepEqual(snapshot.config.keybindings, initialKeybindings);
+      // Authenticated clients get the launcher the unauthenticated descriptor leaves out.
+      assert.deepEqual(
+        snapshot.config.environment.capabilities.serverInstallation,
+        configTestLauncher,
+      );
       const duringAck = yield* keybindings.upsertKeybindingRule({
         key: "mod+alt+y",
         command: "terminal.toggle",

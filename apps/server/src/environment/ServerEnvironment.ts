@@ -60,6 +60,15 @@ export class ServerEnvironmentIdentity extends Context.Service<
 >()("@styal/cli/environment/ServerEnvironment/ServerEnvironmentIdentity") {}
 
 /** The host clock's IANA zone; absent when the runtime cannot name one. */
+/** The descriptor anyone who reaches the server may read: a launcher's paths name its home and usually its user. */
+export function publicEnvironmentDescriptor(
+  descriptor: ExecutionEnvironmentDescriptor,
+): ExecutionEnvironmentDescriptor {
+  if (descriptor.capabilities.serverInstallation?.kind !== "t3-launcher") return descriptor;
+  const { serverInstallation: _launcher, ...capabilities } = descriptor.capabilities;
+  return { ...descriptor, capabilities };
+}
+
 export function hostTimeZone(): string | undefined {
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone?.trim();
   return timeZone && timeZone !== "Etc/Unknown" ? timeZone : undefined;
