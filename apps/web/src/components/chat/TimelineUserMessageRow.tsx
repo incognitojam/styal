@@ -9,6 +9,7 @@ import {
   type ServerProviderSkill,
   ThreadId,
 } from "@t3tools/contracts";
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
   resolveUserMessageIntent,
   resolveUserMessagePresentation,
@@ -16,6 +17,7 @@ import {
 import { extractTrailingIssueContexts } from "~/lib/issueContext";
 import { Link } from "@tanstack/react-router";
 import { useQuietThreadShell } from "../../state/entities";
+import { useEnvironment } from "../../state/environments";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";
@@ -585,7 +587,11 @@ export function ReportAnswerMessageBody(props: {
 function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
   const coarsePointer = useMediaQuery({ pointer: "coarse" });
-  const senderThreadId = row.message.senderThreadId;
+  const senderRef =
+    row.message.linkedSender ??
+    (row.message.senderThreadId === undefined
+      ? null
+      : scopeThreadRef(ctx.activeThreadEnvironmentId, row.message.senderThreadId));
   const previewUrlsById = useAttachmentPreviewUrls(row.message.attachments);
   const [projectPreviews] = useState(createMessageAttachmentPreviewProjector);
   const messageWithPreviews = projectPreviews(row.message, (attachment) =>
@@ -612,12 +618,14 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
   const folded = userMessage.attribution === "agent";
   const [expanded, setExpanded] = useState(false);
   const revealFoldRef = findRevealRef(() => setExpanded(true));
-  const senderShell = useQuietThreadShell(
-    folded && senderThreadId
-      ? { environmentId: ctx.activeThreadEnvironmentId, threadId: senderThreadId }
-      : null,
-  );
-  const senderLabel = senderShell?.title.trim() || "Agent";
+  const senderShell = useQuietThreadShell(folded ? senderRef : null);
+  const senderLabel =
+    senderShell?.title.trim() || row.message.linkedSender?.title.trim() || "Agent";
+  // Only an environment this client is connected to can open the sender's thread there.
+  const linkedSenderEnvironment = useEnvironment(row.message.linkedSender?.environmentId ?? null);
+  const canOpenSender =
+    senderRef !== null &&
+    (row.message.linkedSender === undefined || linkedSenderEnvironment !== null);
   const rawResolvedContext = resolveUserMessageContext({ ...row.message, text: userMessage.text });
   const issueContextState = extractTrailingIssueContexts(rawResolvedContext.text);
   const issueContexts = issueContextState.contexts;
@@ -915,8 +923,11 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
         floatActions ? "flex-wrap" : "shrink-0",
       )}
     >
-      {folded && senderThreadId ? (
-        <InlineButton onClick={() => ctx.onOpenThread(senderThreadId)} tone="muted">
+      {folded && senderRef && canOpenSender ? (
+        <InlineButton
+          onClick={() => ctx.onOpenThread(senderRef.threadId, senderRef.environmentId)}
+          tone="muted"
+        >
           Open thread
         </InlineButton>
       ) : null}

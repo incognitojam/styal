@@ -198,6 +198,18 @@ export const OrchestrationV2ThreadReportTarget = Schema.Struct({
 });
 export type OrchestrationV2ThreadReportTarget = typeof OrchestrationV2ThreadReportTarget.Type;
 
+/**
+ * The thread in a linked environment whose agent sent this message here, and its title
+ * then, for a client that cannot reach that environment. `senderThreadId` names only a
+ * thread in this environment.
+ */
+export const OrchestrationV2LinkedSender = Schema.Struct({
+  environmentId: EnvironmentId,
+  threadId: ThreadId,
+  title: Schema.String,
+});
+export type OrchestrationV2LinkedSender = typeof OrchestrationV2LinkedSender.Type;
+
 export const OrchestrationV2NativeRefStrength = Schema.Literals(["strong", "weak", "none"]);
 export type OrchestrationV2NativeRefStrength = typeof OrchestrationV2NativeRefStrength.Type;
 
@@ -1507,6 +1519,7 @@ export const OrchestrationV2ConversationMessage = Schema.Struct({
   ...OrchestrationV2CreationFields,
   scheduledTaskId: Schema.optional(ScheduledTaskId),
   senderThreadId: Schema.optional(ThreadId),
+  linkedSender: Schema.optional(OrchestrationV2LinkedSender),
   idleCompaction: Schema.optional(OrchestrationV2IdleCompaction),
   /** The usage-limited run this message automatically resumes. */
   usageLimitContinuationOfRunId: Schema.optional(RunId),
@@ -1895,6 +1908,7 @@ export const OrchestrationV2TurnItem = Schema.Union([
     messageId: MessageId,
     scheduledTaskId: Schema.optional(ScheduledTaskId),
     senderThreadId: Schema.optional(ThreadId),
+    linkedSender: Schema.optional(OrchestrationV2LinkedSender),
     idleCompaction: Schema.optional(OrchestrationV2IdleCompaction),
     workflowScript: OrchestrationV2ConversationMessage.fields.workflowScript,
     freshContext: OrchestrationV2Run.fields.freshContext,
@@ -2792,6 +2806,7 @@ export const OrchestrationV2TurnItemJson = Schema.Union([
     messageId: MessageId,
     scheduledTaskId: Schema.optional(ScheduledTaskId),
     senderThreadId: Schema.optional(ThreadId),
+    linkedSender: Schema.optional(OrchestrationV2LinkedSender),
     idleCompaction: Schema.optional(OrchestrationV2IdleCompaction),
     workflowScript: OrchestrationV2ConversationMessage.fields.workflowScript,
     freshContext: OrchestrationV2Run.fields.freshContext,
@@ -3565,6 +3580,7 @@ export const OrchestrationV2Command = Schema.Union([
     ...OrchestrationV2CreationFields,
     scheduledTaskId: Schema.optional(ScheduledTaskId),
     senderThreadId: Schema.optional(ThreadId),
+    linkedSender: Schema.optional(OrchestrationV2LinkedSender),
     idleCompaction: Schema.optional(OrchestrationV2IdleCompaction),
     /** Start a new provider session without the thread's earlier context. Never steers. */
     freshContext: Schema.optional(Schema.Boolean),

@@ -26,6 +26,7 @@ import {
   type OrchestrationV2ServerCommand,
   type OrchestrationV2ConversationMessage,
   type OrchestrationV2CreationSource,
+  type OrchestrationV2LinkedSender,
   type OrchestrationV2Run,
   type OrchestrationV2RuntimeRequest,
   type OrchestrationV2ThreadShellSnapshot,
@@ -158,6 +159,7 @@ export interface ThreadManagementSendInput {
   readonly scheduledTaskId?: ScheduledTaskId;
   readonly senderThreadId?: ThreadId;
   readonly notification?: OrchestrationV2Notification;
+  readonly linkedSender?: OrchestrationV2LinkedSender;
   readonly text: string;
   readonly attachments: ReadonlyArray<ChatAttachment>;
   readonly modelSelection?: ModelSelection;
@@ -963,6 +965,7 @@ const make = Effect.gen(function* () {
       ...(input.scheduledTaskId === undefined ? {} : { scheduledTaskId: input.scheduledTaskId }),
       ...(input.senderThreadId === undefined ? {} : { senderThreadId: input.senderThreadId }),
       ...(input.notification === undefined ? {} : { notification: input.notification }),
+      ...(input.linkedSender === undefined ? {} : { linkedSender: input.linkedSender }),
       text: input.text,
       attachments: input.attachments,
       ...(input.modelSelection === undefined ? {} : { modelSelection: input.modelSelection }),
