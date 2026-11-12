@@ -21,6 +21,7 @@ import {
   DEFAULT_TAILSCALE_SERVE_PORT,
   ensureTailscaleServe,
   hasExactTailscaleServe,
+  readTailscaleServeRootHolder,
   readTailscaleStatus,
 } from "@t3tools/tailscale";
 import * as Config from "effect/Config";
@@ -431,6 +432,16 @@ const resolveTailscalePairingBase = Effect.fn("pair.resolveTailscalePairingBase"
 
     if (isDevServerNotProxiableError(localTarget)) {
       return yield* localTarget;
+    }
+    // The probe above fails whenever this host cannot reach its own MagicDNS name, so the Serve
+    // config, not the probe, decides whether the port is free. A dev server's verified handler
+    // fronts this environment's live backend, so it is never another app's.
+    const holder = yield* readTailscaleServeRootHolder(input.servePort, {
+      host: (localTarget.localHost ?? "127.0.0.1").replace(/^\[|\]$/gu, ""),
+      port: localTarget.localPort,
+    }).pipe(Effect.mapError((cause) => new TailscaleUnavailableError({ cause })));
+    if (holder === "other" && !replaceVerifiedHandler) {
+      return yield* new ServePortOccupiedError({ servePort: input.servePort });
     }
     yield* ensureTailscaleServe({
       localPort: localTarget.localPort,
