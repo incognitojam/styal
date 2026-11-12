@@ -998,7 +998,6 @@ export const make = Effect.gen(function* () {
     );
     yield* Effect.sleep(AUTO_UPDATE_POLL_INTERVAL).pipe(
       Effect.andThen(checkForUpdates("poll")),
-      Effect.forever,
       Effect.catchCause((cause) => {
         if (Cause.hasInterruptsOnly(cause)) {
           return Effect.void;
@@ -1010,6 +1009,7 @@ export const make = Effect.gen(function* () {
           poller: error.poller,
         });
       }),
+      Effect.forever,
       Effect.forkScoped,
     );
     yield* idleRestart.startChecks;
