@@ -2,22 +2,25 @@ import {
   CommandId,
   type OrchestrationProjectShell,
   type OrchestrationV2ThreadShell,
-  type SourceControlProviderKind,
   type ThreadId,
   type ThreadPullRequestLink,
 } from "@t3tools/contracts";
-import { canonicalizeGitCafePullRequestUrl } from "@t3tools/source-control-definitions/registry";
 import * as Cause from "effect/Cause";
-import * as Clock from "effect/Clock";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
 import * as Orchestrator from "../../../orchestration-v2/Orchestrator.ts";
-import { startedPullRequestWatch } from "../../../orchestration-v2/pullRequestWatch.ts";
 import * as ProjectEnrichment from "../../../project/ProjectEnrichmentService.ts";
 import * as ProjectService from "../../../project/ProjectService.ts";
 import * as PullRequestService from "../../../pullRequest/PullRequestService.ts";
+import * as PullRequestWatchService from "../../../pullRequest/PullRequestWatchService.ts";
+import {
+  PullRequestHostRequiredError,
+  projectHostAndProvider,
+  resolveTarget,
+  type ResolvedTarget,
+} from "../../../pullRequest/pullRequestTarget.ts";
 import * as PullRequestReviewGuideService from "../../../pullRequest/PullRequestReviewGuideService.ts";
 import { pullRequestSyncKey } from "../../../pullRequest/pullRequestSyncKey.ts";
 import { sourceControlDefinitions } from "../../../sourceControl/sourceControlDefinitions.ts";
@@ -35,16 +38,9 @@ import { threadNotFound } from "../../threadAccess.ts";
 import {
   type ListThreadPullRequestsResult,
   PullRequestLinkFailedError,
-  PullRequestUrlInvalidError,
-  PullRequestTargetIncompleteError,
-  PullRequestHostRequiredError,
-  PullRequestUrlUnavailableError,
   PullRequestUnlinkFailedError,
   PullRequestListFailedError,
-  PullRequestNotOpenError,
   type PullRequestTargetInput,
-  PullRequestWatchFailedError,
-  PullRequestWatchFromSubagentError,
   PullRequestThreadRequiredError,
   PullRequestGuideFailedError,
   PullRequestProjectNotFoundError,
@@ -58,73 +54,6 @@ import {
   CHILD_PULL_REQUEST_REPORT_NEXT,
   CHECKS_ALREADY_PASSED_WATCH_NEXT,
 } from "./tools.ts";
-
-interface ResolvedTarget {
-  readonly host: string;
-  readonly repository: string;
-  readonly number: number;
-  readonly url: string;
-}
-
-function projectHostAndProvider(project: OrchestrationProjectShell | undefined): {
-  readonly host: string | null;
-  readonly kind: SourceControlProviderKind | null;
-} {
-  const identity = project?.repositoryIdentity;
-  const kind = identity?.provider ?? null;
-  if (!identity || kind === null) return { host: null, kind: null };
-  return {
-    host: sourceControlDefinitions.changeRequestHost(identity, kind),
-    kind,
-  };
-}
-
-const resolveTarget = Effect.fn("PullRequestsToolkit.resolveTarget")(function* (
-  input: PullRequestTargetInput,
-  project: OrchestrationProjectShell | undefined,
-) {
-  if (input.url !== undefined) {
-    const parsed = sourceControlDefinitions.parseChangeRequestUrl(input.url)?.link;
-    if (parsed === undefined) {
-      return yield* new PullRequestUrlInvalidError({});
-    }
-    return {
-      ...normalizeThreadPullRequestKey(parsed),
-      url: canonicalizeGitCafePullRequestUrl(input.url),
-    } satisfies ResolvedTarget;
-  }
-  if (input.repository === undefined || input.number === undefined) {
-    return yield* new PullRequestTargetIncompleteError({});
-  }
-  const projectHost = projectHostAndProvider(project);
-  const host = (input.host ?? projectHost.host)?.toLowerCase();
-  if (host === undefined) {
-    return yield* new PullRequestHostRequiredError({});
-  }
-  const repository = input.repository.toLowerCase();
-  // Without a URL, a public forge host says what shape its change request URLs take;
-  // any other host is taken to run the project's own forge.
-  const recognizedKind = sourceControlDefinitions.recognizeRemote(`https://${host}`)?.kind;
-  const kind =
-    sourceControlDefinitions.findByPublicHost(host)?.kind ??
-    (recognizedKind === "gitcafe" ? recognizedKind : projectHost.kind);
-  const url =
-    kind === null
-      ? null
-      : sourceControlDefinitions.get(kind).changeRequestUrl({
-          host,
-          repository,
-          number: input.number,
-          remoteUrl: project?.repositoryIdentity?.locator.remoteUrl,
-        });
-  if (url === null) {
-    return yield* new PullRequestUrlUnavailableError({});
-  }
-  return {
-    ...normalizeThreadPullRequestKey({ host, repository, number: input.number, url }),
-    url: canonicalizeGitCafePullRequestUrl(url),
-  } satisfies ResolvedTarget;
-});
 
 /** Host, repository and run ID from a workflow run URL, or a job URL below one. */
 export function parseWorkflowRunUrl(
@@ -237,6 +166,7 @@ function projectForPullRequest(
 const make = Effect.gen(function* () {
   const engine = yield* Orchestrator.OrchestratorV2;
   const reviewGuides = yield* PullRequestReviewGuideService.PullRequestReviewGuideService;
+  const watches = yield* PullRequestWatchService.PullRequestWatchService;
 
   const projects = yield* ProjectService.ProjectService;
   const projectEnrichment = yield* ProjectEnrichment.ProjectEnrichmentService;
@@ -263,7 +193,6 @@ const make = Effect.gen(function* () {
       | typeof PullRequestLinkFailedError
       | typeof PullRequestUnlinkFailedError
       | typeof PullRequestListFailedError
-      | typeof PullRequestWatchFailedError
       | typeof WorkflowRunWatchFailedError,
     requested: ThreadId | undefined,
   ) {
@@ -287,7 +216,6 @@ const make = Effect.gen(function* () {
     Failure:
       | typeof PullRequestLinkFailedError
       | typeof PullRequestUnlinkFailedError
-      | typeof PullRequestWatchFailedError
       | typeof WorkflowRunWatchFailedError,
   ) {
     const project = yield* projects
@@ -302,115 +230,59 @@ const make = Effect.gen(function* () {
       Failure:
         | typeof PullRequestLinkFailedError
         | typeof PullRequestUnlinkFailedError
-        | typeof PullRequestWatchFailedError
         | typeof WorkflowRunWatchFailedError,
     ) =>
     <E>(
       cause: Cause.Cause<E>,
     ): Effect.Effect<
       never,
-      | PullRequestLinkFailedError
-      | PullRequestUnlinkFailedError
-      | PullRequestWatchFailedError
-      | WorkflowRunWatchFailedError
+      PullRequestLinkFailedError | PullRequestUnlinkFailedError | WorkflowRunWatchFailedError
     > =>
       Cause.hasInterruptsOnly(cause)
         ? Effect.failCause(cause as Cause.Cause<never>)
         : Effect.fail(new Failure({ cause }));
 
-  const setWatching = Effect.fn("PullRequestsToolkit.setWatching")(function* (
+  // The domain service owns the registration span.
+  const setWatching = Effect.fnUntraced(function* (
     input: PullRequestTargetInput,
     watching: boolean,
   ) {
-    const thread = yield* requireThread(PullRequestWatchFailedError, input.threadId);
-    const project = yield* projectOf(thread, PullRequestWatchFailedError);
-    const target = yield* resolveTarget(input, project);
-    const watchedLink = (shell: OrchestrationV2ThreadShell) =>
-      threadPullRequestsOf(shell).find(
-        (link) => link.source !== "stack-dismissed" && threadPullRequestKeysEqual(link, target),
+    const scope = yield* McpInvocationContext.requireMcpCapability("pull-requests");
+    const threadId = input.threadId ?? scope.thread?.threadId;
+    if (threadId === undefined) return yield* new PullRequestThreadRequiredError();
+    const { startUnread, ...result } = yield* watches
+      .setWatching({ threadId, target: input, watching })
+      .pipe(
+        Effect.catchTags({
+          PullRequestWatchThreadNotFoundError: (error) =>
+            threadNotFound(engine, error.threadId, error.message),
+        }),
       );
-    if (watching && thread.lineage.relationshipToParent === "subagent") {
-      return yield* new PullRequestWatchFromSubagentError();
-    }
-    const before = watchedLink(thread);
-    if (watching && before?.snapshot?.state === "merged") {
-      return yield* new PullRequestNotOpenError({ state: "merged" });
-    }
-    // The watch records exactly what this read shows, so the reply has to say all of it.
-    const fresh = watching && before?.watch === undefined;
-    const read = fresh
-      ? yield* pullRequests.detail({ projectId: thread.projectId, ...target }).pipe(
-          Effect.catchTags({
-            PullRequestOperationError: () => Effect.undefined,
-            PullRequestUnavailableError: (cause) =>
-              Effect.fail(new PullRequestWatchFailedError({ cause })),
-          }),
-        )
-      : undefined;
-    const start = fresh ? startedPullRequestWatch(read, yield* Clock.currentTimeMillis) : undefined;
-    const checks = read?.checks.filter((check) => check.placeholder !== true) ?? [];
-    const failed = checks.filter(
-      (check) => check.status === "failure" || check.status === "cancelled",
-    );
-    const failedChecks = failed.length > 0 ? failed : undefined;
-    const awaiting = checks.filter((check) => check.status === "action-required");
-    const awaitingApproval = awaiting.length > 0 ? awaiting : undefined;
-    const conflicting = start?.conflicting === true;
-    const checksState = failedChecks
-      ? ("failing" as const)
-      : start?.passed
-        ? ("passing" as const)
-        : checks.some((check) => check.status === "pending")
-          ? ("pending" as const)
-          : undefined;
     const names = (checks: ReadonlyArray<{ readonly name: string }>) =>
       checks.map((check) => check.name).join(", ");
     const facts = [
-      ...(failedChecks
-        ? [`Checks already failed: ${names(failedChecks)}. No wake will repeat these failures.`]
+      ...(result.failedChecks
+        ? [
+            `Checks already failed: ${names(result.failedChecks)}. No wake will repeat these failures.`,
+          ]
         : []),
-      ...(awaitingApproval
-        ? [`Checks already require action: ${names(awaitingApproval)}. No wake will repeat this.`]
+      ...(result.awaitingApproval
+        ? [
+            `Checks already require action: ${names(result.awaitingApproval)}. No wake will repeat this.`,
+          ]
         : []),
-      ...(conflicting
+      ...(result.conflicting
         ? ["The pull request already conflicts with its base. No wake will repeat this."]
         : []),
     ];
-    const next =
-      fresh && read === undefined
-        ? "styal could not read the pull request yet, so the watch's first update reports the checks and conflicts it finds."
-        : facts.length > 0
-          ? `${facts.join(" ")} Act on that now; the watch still wakes you on later changes.`
-          : checksState === "passing"
-            ? CHECKS_ALREADY_PASSED_WATCH_NEXT
-            : undefined;
-    yield* engine
-      .dispatch({
-        type: "thread.pull-request.watch",
-        commandId: yield* commandId("mcp-pr-watch", thread.id),
-        threadId: thread.id,
-        host: target.host,
-        repository: target.repository,
-        number: target.number,
-        watching,
-        ...(start !== undefined && { start }),
-        ...(watching ? { link: { url: target.url, source: "agent" as const } } : {}),
-      })
-      .pipe(Effect.catchCause(dispatchFailure(PullRequestWatchFailedError)));
-    const after = yield* requireThread(PullRequestWatchFailedError, thread.id);
-    return {
-      host: target.host,
-      repository: target.repository,
-      number: target.number,
-      url: target.url,
-      watching: watchedLink(after)?.watch !== undefined,
-      wasWatching: before?.watch !== undefined,
-      ...(checksState !== undefined && { checksState }),
-      ...(failedChecks !== undefined && { failedChecks }),
-      ...(awaitingApproval !== undefined && { awaitingApproval }),
-      ...(conflicting && { conflicting }),
-      ...(next !== undefined && { next }),
-    };
+    const next = startUnread
+      ? "styal could not read the pull request yet, so the watch's first update reports the checks and conflicts it finds."
+      : facts.length > 0
+        ? `${facts.join(" ")} Act on that now; the watch still wakes you on later changes.`
+        : result.checksState === "passing"
+          ? CHECKS_ALREADY_PASSED_WATCH_NEXT
+          : undefined;
+    return { ...result, ...(next !== undefined && { next }) };
   });
 
   /**
@@ -432,7 +304,7 @@ const make = Effect.gen(function* () {
           run.repository.toLowerCase() === target.repository,
       );
     if (watching && thread.lineage.relationshipToParent === "subagent") {
-      return yield* new PullRequestWatchFromSubagentError();
+      return yield* new PullRequestWatchService.PullRequestWatchFromSubagentError();
     }
     const before = watchOf(thread);
     const result = {

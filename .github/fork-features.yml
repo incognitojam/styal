@@ -7873,6 +7873,7 @@ features:
       - apps/server/src/orchestration-v2/ThreadForkService.ts
       - apps/server/src/orchestration-v2/WorkflowRunWatchReactor.ts
       - apps/server/src/orchestration-v2/workflowRunWatch.ts
+      - apps/server/src/pullRequest/PullRequestWatchService.ts
       - apps/web/src/components/ChatView.logic.ts
       - apps/web/src/components/ChatView.tsx
       - apps/web/src/components/chat/ChatComposer.tsx
