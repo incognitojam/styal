@@ -147,7 +147,7 @@ export function WorkTogetherSection({
     machines.find((machine) => machine.environmentId === chosenId) ??
     machines.find((machine) => needsAttention(machine.environmentId)) ??
     machines[0];
-  if (selected === undefined) return null;
+  if (selected === undefined) return <NoMachines />;
   const connected = selected.connection.phase === "connected";
   const connection = remote.connectedEnvironments.find(
     (environment) => environment.environmentId === selected.environmentId,
@@ -220,7 +220,8 @@ export function WorkTogetherSection({
             title="Add your other computers"
             description="Add a server or another computer and its agents can work with this one, and this app can run threads there."
           />
-        ) : (
+        ) : null}
+        {selected.added ? (
           <>
             <MachineAccessChoices machine={selected} />
             {connected ? (
@@ -234,13 +235,13 @@ export function WorkTogetherSection({
               />
             )}
           </>
-        )}
+        ) : null}
         {pairs.map(({ a, b, key }) => (
           <MachinePair
             key={key}
             a={a}
             b={b}
-            selectedId={connected && machines.length > 1 ? selected.environmentId : null}
+            selectedId={connected ? selected.environmentId : null}
             onOpen={() => setChosenId(selected.environmentId)}
             onAttentionChange={(value) =>
               setAttention((current) =>
@@ -249,11 +250,28 @@ export function WorkTogetherSection({
             }
           />
         ))}
-        {connected && machines.length > 1 ? (
-          <OtherMachineLinks machine={selected} machines={machines} />
-        ) : null}
+        {connected ? <OtherMachineLinks machine={selected} machines={machines} /> : null}
         <MachineStatus machine={selected} machines={machines} />
       </View>
+    </View>
+  );
+}
+
+function NoMachines() {
+  return (
+    <View className="mt-5 items-center gap-3 rounded-[24px] bg-grouped-card px-6 py-8">
+      <View className="h-12 w-12 items-center justify-center rounded-[16px] bg-subtle">
+        <SymbolView
+          name="point.3.connected.trianglepath.dotted"
+          size={20}
+          tintColorClassName="accent-icon-muted"
+          type="monochrome"
+        />
+      </View>
+      <Text className="text-center text-sm leading-normal text-foreground-muted">
+        No machines yet.{"\n"}Tap <Text className="font-t3-bold text-foreground">+</Text> to add
+        one.
+      </Text>
     </View>
   );
 }
