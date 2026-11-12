@@ -25,6 +25,7 @@ import {
   RunAttemptId,
   RunId,
   ThreadId,
+  TurnId,
   TurnItemId,
   type ThreadPullRequestLink,
   isLiveSubagentShell,
@@ -2547,6 +2548,50 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
           capturedAt: now,
         },
       });
+      // V1 turns import as run-less checkpoints, so no windowed item references them.
+      const legacyScopeId = CheckpointScopeId.make("import:v1:checkpoint-scope:bounded");
+      const legacyCheckpointId = CheckpointId.make("import:v1:checkpoint:bounded:turn-1");
+      yield* projectionStore.apply({
+        id: EventId.make("event:bounded-sql-history:legacy-scope"),
+        type: "checkpoint-scope.created",
+        threadId,
+        occurredAt: now,
+        payload: {
+          id: legacyScopeId,
+          threadId,
+          runId: null,
+          nodeId: NodeId.make("import:v1:history-root:bounded"),
+          parentScopeId: null,
+          providerThreadId: null,
+          kind: "manual",
+          ordinalWithinParent: 0,
+          advancesAppRunCount: false,
+          cwd: "/repo/worktree",
+          createdAt: now,
+        },
+      });
+      yield* projectionStore.apply({
+        id: EventId.make("event:bounded-sql-history:legacy-checkpoint"),
+        type: "checkpoint.captured",
+        threadId,
+        occurredAt: now,
+        payload: {
+          id: legacyCheckpointId,
+          threadId,
+          scopeId: legacyScopeId,
+          runId: null,
+          nodeId: NodeId.make("import:v1:history-root:bounded"),
+          parentCheckpointId: null,
+          ordinalWithinScope: 1,
+          appRunOrdinal: null,
+          ref: CheckpointRef.make("refs/t3/checkpoints/bounded/turn/1"),
+          status: "ready",
+          files: [],
+          capturedAt: now,
+          legacyTurnId: TurnId.make("turn-1"),
+          legacyCheckpointTurnCount: 1,
+        },
+      });
 
       const snapshots = yield* Effect.all(
         Array.from({ length: 4 }, () =>
@@ -2570,7 +2615,7 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
         );
         assert.deepEqual(
           snapshot.projection.checkpoints.map((checkpoint) => checkpoint.id),
-          [baselineId],
+          [legacyCheckpointId, baselineId],
         );
       }
       const humanWindow = () =>
