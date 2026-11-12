@@ -243,6 +243,10 @@
     {
       "pr": 21158,
       "reason": "Claude parents get no mid-turn delegated-completion notices. Since upstream #15892, a Claude parent queues every notice behind its active run, because ClaudeAdapterV2 steers with priority \"now\", which cancels the running tool. An async delegate that finishes during a long parent turn is only seen when that turn ends, so the agent reports finished delegates as still running. This PR switched agent and background messages to Claude's priority \"next\" input at the next root tool boundary. It closed unmerged on 2026-11-12 because of conflicts; follow the replacement from upstream issue 21895. When it lands, check that delegated completions to a Claude parent arrive at the next tool boundary, including after a foreground Agent call returns."
+    },
+    {
+      "pr": 34128,
+      "reason": "Fork issue 1438 asks for the machine to stay awake while a thread runs. This PR is the cross-platform implementation (macOS caffeinate, Linux systemd-inhibit, Windows SetThreadExecutionState) and the one to take; 33992 is the macOS-only alternative. It holds a sleep inhibitor while any run is preparing, starting or running, with a 60-second grace. At intake check the gaps: background commands and subagents that outlive their run's turn do not count, so the machine can sleep under them (33992 counts pending background work); approvals and questions keep the run running, so they do count, and should keep doing so because the fork lets the user answer from a phone. Delegated and scheduled-task threads count through their own runs. Also check that the setting appears on web and mobile."
     }
   ]
 }
