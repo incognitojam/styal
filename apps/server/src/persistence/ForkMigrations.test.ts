@@ -107,6 +107,7 @@ organizedLayer("ForkMigrations project pins from fork migration 11", (it) => {
         [83, "CommandReadIndexes"],
         [84, "LastExecutedRunIndex"],
         [85, "TurnItemCounts"],
+        [86, "QueuedTurnInputIndex"],
       ]);
       assert.deepStrictEqual(
         yield* sql`

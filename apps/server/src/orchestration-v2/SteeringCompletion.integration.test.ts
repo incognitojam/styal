@@ -385,6 +385,13 @@ it.effect.each(
         }
         if (delivery !== null && !question) {
           const requeued = yield* orchestrator.getThreadProjection(threadId);
+          assert.isTrue(requeued.runs.some((run) => run.status === "queued"));
+          assert.isFalse(
+            requeued.visibleTurnItems.some(
+              ({ item }) => item.type === "user_message" && item.messageId === messageId,
+            ),
+            "a steer that fell back to the queue must not appear delivered",
+          );
           const item = requeued.turnItems.find(
             (item) => item.type === "user_message" && item.messageId === messageId,
           );
@@ -472,6 +479,14 @@ it.effect.each(
           ).length,
           1,
         );
+        if (!mailbox && !question) {
+          assert.equal(
+            final.visibleTurnItems.filter(
+              ({ item }) => item.type === "user_message" && item.messageId === messageId,
+            ).length,
+            1,
+          );
+        }
         yield* worker.drain();
         assert.equal(started.length, 2);
       }).pipe(
