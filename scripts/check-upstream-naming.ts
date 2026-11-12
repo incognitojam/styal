@@ -16,7 +16,7 @@ if (process.argv.includes("--fix")) {
   }
 }
 
-const findings = findRepositoryUpstreamNames(repoRoot);
+const findings = findRepositoryUpstreamNames(repoRoot, process.argv.includes("--worktree"));
 if (findings.length === 0) {
   process.stdout.write("No upstream product names in user- or agent-facing strings.\n");
 } else {

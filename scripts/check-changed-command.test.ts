@@ -155,9 +155,9 @@ it.each([
     ["naming", "migrations"],
     [],
   ],
-  ["apps/server/src/persistence/ForkMigrations/001_Test.ts", ["naming", "migrations"], []],
+  ["apps/server/src/persistence/ForkMigrations/001_Test.ts", ["naming"], []],
   ["apps/server/src/persistence/Migrations.ts", ["naming", "migrations"], []],
-  ["apps/server/src/persistence/ForkMigrations.ts", ["naming", "migrations"], []],
+  ["apps/server/src/persistence/ForkMigrations.ts", ["naming"], []],
   ["scripts/upstream/check-migrations.ts", ["migrations"], []],
   [
     ".github/scripts/superseded-dependency-caches.jq",

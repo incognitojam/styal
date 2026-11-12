@@ -41,7 +41,7 @@ export function repositoryChecks(files: ReadonlyArray<string>, ledgerPaths: Read
     ),
     migrations: files.some(
       (file) =>
-        /^apps\/server\/src\/persistence\/(?:Fork)?Migrations(?:\/|\.ts$)/u.test(file) ||
+        /^apps\/server\/src\/persistence\/Migrations(?:\/|\.ts$)/u.test(file) ||
         [
           "scripts/upstream/check-migrations.ts",
           "scripts/upstream/migration-git.ts",

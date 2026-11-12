@@ -120,12 +120,13 @@ const collectBytes = (stream: Stream.Stream<Uint8Array, PlatformError.PlatformEr
 export const git = Effect.fn("checkChanged.git")(function* (
   cwd: string,
   args: ReadonlyArray<string>,
+  options: ChildProcess.CommandOptions = {},
 ) {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   return yield* Effect.scoped(
     Effect.gen(function* () {
       const handle = yield* spawner.spawn(
-        ChildProcess.make("git", ["-c", "core.quotePath=false", ...args], { cwd }),
+        ChildProcess.make("git", ["-c", "core.quotePath=false", ...args], { cwd, ...options }),
       );
       const [stdout, stderr, exitCode] = yield* Effect.all(
         [collectBytes(handle.stdout), collectBytes(handle.stderr), handle.exitCode],
@@ -140,6 +141,48 @@ export const git = Effect.fn("checkChanged.git")(function* (
     }),
   );
 });
+export const fetchUpstream = (root: string) =>
+  git(
+    root,
+    [
+      "-c",
+      "core.askPass=",
+      "fetch",
+      "--no-tags",
+      "https://github.com/pingdotgg/t3code.git",
+      "+refs/heads/main:refs/remotes/upstream/main",
+    ],
+    {
+      forceKillAfter: "1 second",
+      env: { GIT_TERMINAL_PROMPT: "0", GIT_ASKPASS: "", SSH_ASKPASS: "", GCM_INTERACTIVE: "Never" },
+      extendEnv: true,
+    },
+  ).pipe(
+    Effect.timeoutOption("30 seconds"),
+    Effect.option,
+    Effect.map((result) => Option.isSome(result) && Option.isSome(result.value)),
+  );
+
+export const checkMigrations = Effect.fn("checkChanged.migrations")(function* (input: {
+  readonly recent: boolean;
+  readonly check: Effect.Effect<{ ok: boolean; output: string }>;
+  readonly refresh: Effect.Effect<boolean>;
+}) {
+  if (input.recent) {
+    const cached = yield* input.check;
+    if (cached.ok) return { ...cached, skipped: false };
+  }
+  if (!(yield* input.refresh)) {
+    return {
+      ok: true,
+      skipped: true,
+      output:
+        "migrations skipped: could not fetch upstream (unavailable, timed out, or concurrent fetch), CI will run it",
+    };
+  }
+  return { ...(yield* input.check), skipped: false };
+});
+
 export const gitLines = (cwd: string, args: ReadonlyArray<string>) =>
   git(cwd, args).pipe(Effect.map((stdout) => stdout.toString().split("\n").filter(Boolean)));
 
@@ -483,48 +526,16 @@ const checkChanged = Effect.fn("checkChanged")(function* (input: {
       Effect.map((value) => Number(value.toString().trim())),
       Effect.orElseSucceed(() => 0),
     );
-    // A tip committed in the last day is fresh enough for a local pre-push check.
-    if (stamp < (yield* Clock.currentTimeMillis) / 1000 - 86400) {
-      const fetched = yield* git(root, [
-        "fetch",
-        "--no-tags",
-        "https://github.com/pingdotgg/t3code.git",
-        "+refs/heads/main:refs/remotes/upstream/main",
-      ]).pipe(Effect.timeoutOption("30 seconds"), Effect.option);
-      if (Option.isNone(fetched) || Option.isNone(fetched.value)) {
-        skippedMigrations = true;
-        return { ok: true, output: "migrations skipped: could not fetch upstream, CI will run it" };
-      }
-    }
-    return yield* vp([
-      "run",
-      "--filter",
-      "@t3tools/scripts",
-      "migrations:check",
-      "--",
-      "--worktree",
-    ]);
+    const result = yield* checkMigrations({
+      recent: stamp >= (yield* Clock.currentTimeMillis) / 1000 - 86400,
+      refresh: fetchUpstream(root).pipe(
+        Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+      ),
+      check: vp(["run", "--filter", "@t3tools/scripts", "migrations:check", "--", "--worktree"]),
+    });
+    skippedMigrations = result.skipped;
+    return result;
   }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner));
-  const ledger = Effect.scoped(
-    Effect.gen(function* () {
-      yield* fs.makeDirectory(inRoot("node_modules/.cache"), { recursive: true });
-      const temp = yield* fs.makeTempDirectoryScoped({
-        directory: inRoot("node_modules/.cache"),
-        prefix: "changed-paths-",
-      });
-      const changedPaths = path.join(temp, "paths.txt");
-      yield* fs.writeFileString(changedPaths, files.join("\n") + "\n");
-      return yield* vp([
-        "run",
-        "--filter",
-        "@t3tools/scripts",
-        "ledger:check",
-        "--",
-        "--changed-paths",
-        changedPaths,
-      ]);
-    }),
-  ).pipe(Effect.catch((error) => Effect.succeed({ ok: false, output: error.message })));
 
   const steps: Array<Step<never>> = [
     ...(files.some((file) => file.startsWith(".github/pr-assets/") && present.includes(file))
@@ -538,9 +549,20 @@ const checkChanged = Effect.fn("checkChanged")(function* (input: {
           },
         ]
       : []),
-    ...(checks.ledger ? [{ name: "ledger", run: ledger }] : []),
+    ...(checks.ledger
+      ? [command("ledger", ["run", "--filter", "@t3tools/scripts", "ledger:check"])]
+      : []),
     ...(checks.naming
-      ? [command("naming", ["run", "--filter", "@t3tools/scripts", "naming:check"])]
+      ? [
+          command("naming", [
+            "run",
+            "--filter",
+            "@t3tools/scripts",
+            "naming:check",
+            "--",
+            "--worktree",
+          ]),
+        ]
       : []),
     ...(checks.migrations ? [{ name: "migrations", run: migrations }] : []),
     ...(runPatchCheck ? [{ name: "unused patches", run: checkPatches }] : []),

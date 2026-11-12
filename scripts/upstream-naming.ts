@@ -369,8 +369,19 @@ const trackedFiles = (repoRoot: string) =>
   }).split("\0");
 
 /** Upstream names in tracked application and package sources outside the exceptions. */
-export function findRepositoryUpstreamNames(repoRoot: string): ReadonlyArray<UpstreamNameFinding> {
-  return trackedFiles(repoRoot)
+export function findRepositoryUpstreamNames(
+  repoRoot: string,
+  worktree = false,
+): ReadonlyArray<UpstreamNameFinding> {
+  const files = worktree
+    ? NodeChildProcess.execFileSync(
+        "git",
+        ["ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", ...SCANNED_ROOTS],
+        { cwd: repoRoot, encoding: "utf8" },
+      ).split("\0")
+    : trackedFiles(repoRoot);
+  return [...new Set(files)]
+    .filter((path) => !worktree || NodeFS.existsSync(NodePath.join(repoRoot, path)))
     .filter(isCheckedSource)
     .flatMap((path) =>
       findUpstreamNames(path, NodeFS.readFileSync(NodePath.join(repoRoot, path), "utf8")),

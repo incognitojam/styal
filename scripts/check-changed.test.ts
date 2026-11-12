@@ -7,6 +7,7 @@ import { expect } from "vite-plus/test";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Option from "effect/Option";
 import { assert, describe, it } from "@effect/vitest";
+import * as Deferred from "effect/Deferred";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -16,6 +17,8 @@ import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import * as TestClock from "effect/testing/TestClock";
 
 import {
+  checkMigrations,
+  fetchUpstream,
   comparisonBase,
   defaultConcurrency,
   docReaderTests,
@@ -449,3 +452,134 @@ it.each(["install", "lint"])("reports a failing %s step with its output", (step)
     NodeFS.existsSync(NodePath.join(project.root, "node_modules/.cache/check-changed.json")),
   ).toBe(false);
 });
+
+it.effect.each([
+  {
+    recent: true,
+    cachedOk: true,
+    refreshedOk: false,
+    fetchOk: true,
+    checks: 1,
+    fetches: 0,
+    ok: true,
+    skipped: false,
+  },
+  {
+    recent: true,
+    cachedOk: false,
+    refreshedOk: true,
+    fetchOk: true,
+    checks: 2,
+    fetches: 1,
+    ok: true,
+    skipped: false,
+  },
+  {
+    recent: true,
+    cachedOk: false,
+    refreshedOk: false,
+    fetchOk: true,
+    checks: 2,
+    fetches: 1,
+    ok: false,
+    skipped: false,
+  },
+  {
+    recent: true,
+    cachedOk: false,
+    refreshedOk: false,
+    fetchOk: false,
+    checks: 1,
+    fetches: 1,
+    ok: true,
+    skipped: true,
+  },
+  {
+    recent: false,
+    cachedOk: false,
+    refreshedOk: true,
+    fetchOk: true,
+    checks: 1,
+    fetches: 1,
+    ok: true,
+    skipped: false,
+  },
+  {
+    recent: false,
+    cachedOk: false,
+    refreshedOk: false,
+    fetchOk: false,
+    checks: 0,
+    fetches: 1,
+    ok: true,
+    skipped: true,
+  },
+])("refreshes before rejecting cached migration history: %j", (row) =>
+  Effect.gen(function* () {
+    let checks = 0;
+    let fetches = 0;
+    const result = yield* checkMigrations({
+      recent: row.recent,
+      check: Effect.sync(() => {
+        checks++;
+        return { ok: fetches ? row.refreshedOk : row.cachedOk, output: "migration result" };
+      }),
+      refresh: Effect.sync(() => {
+        fetches++;
+        return row.fetchOk;
+      }),
+    });
+    expect({ checks, fetches, ok: result.ok, skipped: result.skipped }).toEqual({
+      checks: row.checks,
+      fetches: row.fetches,
+      ok: row.ok,
+      skipped: row.skipped,
+    });
+    if (row.skipped) expect(result.output).toContain("CI will run it");
+  }),
+);
+
+it.live("terminates a fetch subprocess that ignores SIGTERM without credential prompts", () =>
+  Effect.gen(function* () {
+    const real = yield* ChildProcessSpawner.ChildProcessSpawner;
+    const ready = yield* Deferred.make<void>();
+    const spawned = yield* Deferred.make<ChildProcessSpawner.ChildProcessHandle>();
+    const spawner = ChildProcessSpawner.make((command) =>
+      Effect.gen(function* () {
+        assert.isTrue(ChildProcess.isStandardCommand(command));
+        if (!ChildProcess.isStandardCommand(command))
+          return yield* Effect.die("Expected git command");
+        expect(command.options.forceKillAfter).toBe("1 second");
+        expect(command.options.env).toMatchObject({
+          GIT_TERMINAL_PROMPT: "0",
+          GIT_ASKPASS: "",
+          SSH_ASKPASS: "",
+        });
+        expect(command.args).toContain("core.askPass=");
+        const handle = yield* real.spawn(
+          ChildProcess.make(
+            process.execPath,
+            [
+              "-e",
+              'process.on("SIGTERM", () => {}); process.stdout.write("ready"); setInterval(() => {}, 1000);',
+            ],
+            command.options,
+          ),
+        );
+        yield* Deferred.succeed(spawned, handle);
+        return {
+          ...handle,
+          stdout: handle.stdout.pipe(Stream.tap(() => Deferred.succeed(ready, undefined))),
+        };
+      }),
+    );
+    const fiber = yield* fetchUpstream(process.cwd()).pipe(
+      Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+      Effect.forkChild,
+    );
+    yield* Deferred.await(ready);
+    yield* Fiber.interrupt(fiber);
+    const handle = yield* Deferred.await(spawned);
+    assert.isFalse(yield* handle.isRunning);
+  }).pipe(Effect.provide(NodeServices.layer)),
+);
