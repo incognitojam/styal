@@ -153,6 +153,7 @@ export interface ProjectSetupScriptRunnerResultStarted {
 
 export interface ProjectSetupScriptCompletion {
   readonly exitCode: number | null;
+  readonly exitSignal: number | null;
   readonly durationMs: number;
 }
 
@@ -573,13 +574,13 @@ export const make = Effect.gen(function* () {
       let lineBuffer = "";
       let settled = false;
 
-      const settle = (exitCode: number | null) =>
+      const settle = (exitCode: number | null, exitSignal: number | null) =>
         Effect.suspend(() => {
           if (settled) return Effect.void;
           settled = true;
           return Clock.currentTimeMillis.pipe(
             Effect.flatMap((nowMs) =>
-              Deferred.succeed(done, { exitCode, durationMs: nowMs - startedAtMs }),
+              Deferred.succeed(done, { exitCode, exitSignal, durationMs: nowMs - startedAtMs }),
             ),
             Effect.asVoid,
           );
@@ -611,11 +612,11 @@ export const make = Effect.gen(function* () {
             return Effect.forEach(lines, handleLine, { discard: true });
           }
           case "exited":
-            return settle(event.exitCode);
+            return settle(event.exitCode, event.exitSignal);
           case "closed":
           case "error":
           case "restarted":
-            return settle(null);
+            return settle(null, null);
           default:
             return Effect.void;
         }
