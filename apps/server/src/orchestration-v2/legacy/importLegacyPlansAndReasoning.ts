@@ -6,6 +6,7 @@ import { readLegacyTextItems } from "./LegacyTextItems.ts";
 import { orderLegacyHistory } from "./orderLegacyHistory.ts";
 
 const DONE_MARKER = "legacy-plans-reasoning-imported";
+const WRITE_BATCH_SIZE = 100;
 
 export const importLegacyPlansAndReasoning = Effect.fn("importLegacyPlansAndReasoning")(
   function* () {
@@ -21,34 +22,35 @@ export const importLegacyPlansAndReasoning = Effect.fn("importLegacyPlansAndReas
     let reasoning = 0;
     let plans = 0;
     for (const row of threads) {
-      const counts = yield* sql.withTransaction(
-        Effect.gen(function* () {
-          const threadId = ThreadId.make(row.thread_id);
-          const events = yield* readLegacyTextItems(sql, threadId);
-          const existing = yield* sql<{ readonly turn_item_id: string }>`
+      const threadId = ThreadId.make(row.thread_id);
+      const counts = yield* Effect.gen(function* () {
+        const events = yield* readLegacyTextItems(sql, threadId);
+        const existing = yield* sql<{ readonly turn_item_id: string }>`
         SELECT turn_item_id FROM orchestration_v2_projection_turn_items
         WHERE thread_id = ${threadId} AND
           (turn_item_id LIKE 'migration:v1:turn-item:reasoning:%' OR turn_item_id LIKE 'migration:v1:turn-item:plan:%')
       `;
-          const ids = new Set(existing.map((item) => item.turn_item_id));
-          const missing = events.filter(
-            (event) => event.type === "turn-item.updated" && !ids.has(event.payload.id),
+        const ids = new Set(existing.map((item) => item.turn_item_id));
+        const missing = events.filter(
+          (event) => event.type === "turn-item.updated" && !ids.has(event.payload.id),
+        );
+        // Short transactions keep foreground writes from waiting behind a long thread.
+        for (let start = 0; start < missing.length; start += WRITE_BATCH_SIZE) {
+          yield* sql.withTransaction(
+            sink.write({ events: missing.slice(start, start + WRITE_BATCH_SIZE) }),
           );
-          if (missing.length > 0) {
-            yield* sink.write({ events: missing });
-            yield* orderLegacyHistory(sql, [threadId]);
-          }
-          return {
-            reasoning: missing.filter(
-              (event) => event.type === "turn-item.updated" && event.payload.type === "reasoning",
-            ).length,
-            plans: missing.filter(
-              (event) =>
-                event.type === "turn-item.updated" && event.payload.type === "proposed_plan",
-            ).length,
-          };
-        }),
-      );
+        }
+        // Always ordered, so a pass interrupted between writing and ordering recovers.
+        yield* sql.withTransaction(orderLegacyHistory(sql, [threadId]));
+        return {
+          reasoning: missing.filter(
+            (event) => event.type === "turn-item.updated" && event.payload.type === "reasoning",
+          ).length,
+          plans: missing.filter(
+            (event) => event.type === "turn-item.updated" && event.payload.type === "proposed_plan",
+          ).length,
+        };
+      });
       reasoning += counts.reasoning;
       plans += counts.plans;
       yield* Effect.yieldNow;
