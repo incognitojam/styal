@@ -29,6 +29,7 @@ import { ProjectFavicon } from "../../components/ProjectFavicon";
 import { useProjects, useServerConfigs } from "../../state/entities";
 import { projectEnvironment } from "../../state/projects";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { retargetSavedNewTaskDraft } from "../../state/use-composer-drafts";
 import { useRemoteConnectionStatus } from "../../state/use-remote-environment-registry";
 import type { WorkspaceState } from "../../state/workspaceModel";
 import { useWorkspaceState } from "../../state/workspace";
@@ -45,6 +46,8 @@ import { useSelectWorkspaceDetail } from "../layout/workspace/useSelectWorkspace
 
 type NewTaskRouteParams = {
   readonly incomingShareId?: string | string[];
+  /** An existing draft whose project is gone; the chosen project takes it over. */
+  readonly draftId?: string | string[];
   // A `styal://new?…` prompt link. See usePromptLinkResolver.
   readonly prompt?: string | string[];
   readonly repo?: string | string[];
@@ -170,6 +173,9 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
   // A share already headed into a project draft finishes there.
   const canShareToThread = incomingShare !== null && !incomingShare.destination;
   const shareTarget = canShareToThread ? "a thread or project" : "a project";
+  const routeDraftId = Array.isArray(route.params?.draftId)
+    ? route.params.draftId[0]
+    : route.params?.draftId;
   const incomingShareSubtitle = incomingShare
     ? incomingShare.attachments.length === 0
       ? `Choose ${shareTarget} for what you shared`
@@ -236,17 +242,34 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
       : navigation.getParent();
     const rootState = root?.getState();
     const threadRoute = rootState?.routes[rootState.index - 1];
-    if (isDraftThreadRoute(threadRoute)) {
+    if (routeDraftId === undefined && isDraftThreadRoute(threadRoute)) {
       setProject(project);
       root?.goBack();
       return;
     }
+    // Restamp only on choice, so backing out leaves the draft as it was.
+    const retargeted =
+      routeDraftId === undefined
+        ? false
+        : await retargetSavedNewTaskDraft(routeDraftId, {
+            environmentId: project.environmentId,
+            projectId: project.id,
+          }).then(
+            (found) => found,
+            () => null,
+          );
+    if (retargeted === null) {
+      Dialog.alert("Could not change project", "Saved drafts could not be loaded. Try again.");
+      return;
+    }
+    const draftId = retargeted ? routeDraftId : undefined;
     selectDetail({
       name: "Thread",
       params: {
         draft: {
           environmentId: String(project.environmentId),
           projectId: String(project.id),
+          draftId,
           incomingShareId: incomingShare?.id,
         },
       },
