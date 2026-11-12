@@ -25,6 +25,7 @@ const workerSource = String.raw`
 const {parentPort,workerData}=require('node:worker_threads');
 const {Agent,createAgentPlatform}=require(workerData.modulePath);
 let agent;
+let storePlatform;
 const runs=new Map();
 parentPort.on('message',async ({id,method,args})=>{
   try {
@@ -40,7 +41,8 @@ parentPort.on('message',async ({id,method,args})=>{
             await release();
           } catch {}
         }
-        agent=operation==='create'?await Agent.create(options):await Agent.resume(agentId,options);
+        if(operation==='resume'&&workerData.storeCwd!==undefined&&workerData.storeCwd!==options.local?.cwd){storePlatform=await createAgentPlatform({workspaceRef:workerData.storeCwd,...(options.local?.store===undefined?{}:{localStore:options.local.store})});}
+        agent=operation==='create'?await Agent.create(options):storePlatform===undefined?await Agent.resume(agentId,options):await storePlatform.resumeAgent(agentId,options);
         result={agentId:agent.agentId}; break;
       }
       case 'summarize':
@@ -51,9 +53,9 @@ parentPort.on('message',async ({id,method,args})=>{
       case 'wait': result=await runs.get(args[0]).wait();break;
       case 'cancel': result=await runs.get(args[0]).cancel();break;
       case 'steer': result=await runs.get(args[0]).steer?.(args[1])??'revert_to_followup';break;
-      case 'listRuns': result=await Agent.listRuns(...args);break;
-      case 'cancelRun': result=await Agent.cancelRun(...args);break;
-      case 'messages': result=await Agent.messages.list(...args);break;
+      case 'listRuns': result=storePlatform===undefined?await Agent.listRuns(...args):await storePlatform.listRuns(args[0],args[1]);break;
+      case 'cancelRun': result=storePlatform===undefined?await Agent.cancelRun(...args):await storePlatform.cancelRun(args[0]);break;
+      case 'messages': result=storePlatform===undefined?await Agent.messages.list(...args):await storePlatform.getAgentMessages(args[0]);break;
       case 'close': result=await agent.close();break;
       default: throw new Error('Unknown Cursor worker operation.');
     }
@@ -65,11 +67,12 @@ parentPort.on('message',async ({id,method,args})=>{
 export function makeCursorSdkWorkerApi(
   modulePath: string,
   environment: NodeJS.ProcessEnv,
+  storeCwd?: string,
 ): CursorSdkApi {
   const worker = new NodeWorkerThreads.Worker(workerSource, {
     eval: true,
     env: environment,
-    workerData: { modulePath },
+    workerData: { modulePath, storeCwd },
   });
   let nextId = 0;
   const pending = new Map<

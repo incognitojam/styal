@@ -1216,6 +1216,7 @@ export type OrchestrationV2PendingBackgroundTask = typeof OrchestrationV2Pending
 export const OrchestrationV2ProviderThreadNativeMetadata = Schema.Struct({
   /** Keep the MCP tool identity of an existing provider conversation. */
   mcpServerName: Schema.optional(Schema.Literals(["styal", "t3-code"])),
+  cursorStoreCwd: Schema.optional(TrimmedNonEmptyString),
   modelSelection: Schema.optional(ModelSelection),
   title: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   updatedAt: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
