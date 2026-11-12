@@ -2,7 +2,7 @@ import { createModelSelection } from "@t3tools/shared/model";
 import { resolveMentionedTimeCheckModelSelection } from "@t3tools/shared/serverSettings";
 
 import {
-  getCustomModelOptionsByInstance,
+  getTextGenerationModelOptionsByInstance,
   resolveAppModelSelectionState,
 } from "../../modelSelection";
 import { providerInstanceEntriesFor } from "../../providerInstances";
@@ -81,7 +81,7 @@ export function MentionedTimeCheckModelSettings() {
   const projectEffectiveTextGenerationProviders = textGenerationProviders.filter((provider) =>
     projectEnabledInstanceIds.has(provider.instanceId),
   );
-  const writerModelDisabledReason = useScopedModelDisabledReason(settings, instanceEntries);
+  const writerModelDisabledReason = useScopedModelDisabledReason(settings, instanceEntries, true);
   const usesTimeCheckModel = settings.mentionedTimeCheckModelSelection !== null;
   const timeCheckSelection = resolveAppModelSelectionState(
     {
@@ -94,7 +94,7 @@ export function MentionedTimeCheckModelSettings() {
     },
     projectEffectiveTextGenerationProviders,
   );
-  const timeCheckModelOptionsByInstance = getCustomModelOptionsByInstance(
+  const timeCheckModelOptionsByInstance = getTextGenerationModelOptionsByInstance(
     settings,
     projectEffectiveTextGenerationProviders,
     timeCheckSelection.instanceId,

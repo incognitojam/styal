@@ -62,6 +62,7 @@ const makeStubInstance = (
         enabled: true,
         status: "ready",
         auth: { status: "authenticated" },
+        models: [],
         ...snapshotOverrides,
       } as ServerProvider),
     } as ProviderInstance["snapshot"],
@@ -177,15 +178,11 @@ describe("TextGeneration.make", () => {
           ...codexBase,
           snapshot: {
             ...codexBase.snapshot,
-            getSnapshot: Effect.sync(
-              () =>
-                ({
-                  instanceId: requested.instanceId,
-                  driver: "codex",
-                  enabled: true,
-                  status: "ready",
-                  auth: { status: signedIn ? "authenticated" : "unauthenticated" },
-                }) as ServerProvider,
+            getSnapshot: codexBase.snapshot.getSnapshot.pipe(
+              Effect.map((snapshot): ServerProvider => ({
+                ...snapshot,
+                auth: { status: signedIn ? "authenticated" : "unauthenticated" },
+              })),
             ),
           },
         };

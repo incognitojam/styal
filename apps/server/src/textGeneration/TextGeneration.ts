@@ -182,8 +182,11 @@ export const make = Effect.gen(function* () {
     const unusable =
       textGeneratorCannotRun ||
       (selected?.enabled === true &&
-        selected.status === "error" &&
-        (!selected.installed || selected.auth.status === "unauthenticated"));
+        (!isProviderTextGenerationCapable(selected) ||
+          selected.models.find((model) => model.slug === selection.model)
+            ?.supportsTextGeneration === false ||
+          (selected.status === "error" &&
+            (!selected.installed || selected.auth.status === "unauthenticated"))));
     if (unusable || exhaustedUsageWindow(selected, now, selection.model)) {
       const settings = yield* serverSettings.getSettings.pipe(
         Effect.mapError(
@@ -220,7 +223,9 @@ export const make = Effect.gen(function* () {
         {
           providerInstances: settings.providerInstances,
           defaultModelSelection: settings.defaultModelSelection,
-          isModelUsable: (provider, model) => !exhaustedUsageWindow(provider, now, model),
+          isModelUsable: (provider, model) =>
+            provider.models.find((entry) => entry.slug === model)?.supportsTextGeneration !==
+              false && !exhaustedUsageWindow(provider, now, model),
         },
       );
     }
