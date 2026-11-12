@@ -164,6 +164,8 @@ export interface SshEnvironmentManagerShape {
   readonly disconnectEnvironment: (
     target: DesktopSshEnvironmentTarget,
   ) => Effect.Effect<void, SshEnvironmentEffectError, SshEnvironmentEffectContext>;
+  /** Closes every tunnel, as the manager's scope finalizer does. */
+  readonly closeAllTunnels: Effect.Effect<void>;
 }
 
 const RemoteLaunchResult = Schema.Struct({
@@ -1532,15 +1534,14 @@ const makeSshEnvironmentManager = Effect.fn("ssh/tunnel.SshEnvironmentManager.ma
     });
   });
 
-  yield* Scope.addFinalizer(
-    managerScope,
-    Effect.sync(() => [...tunnels.values()]).pipe(
-      Effect.flatMap((entries) =>
-        Effect.forEach(entries, closeTunnelEntry, { concurrency: "unbounded" }),
-      ),
-      Effect.ignore,
+  const closeAllTunnels = Effect.sync(() => [...tunnels.values()]).pipe(
+    Effect.flatMap((entries) =>
+      Effect.forEach(entries, closeTunnelEntry, { concurrency: "unbounded" }),
     ),
+    Effect.ignore,
   );
+
+  yield* Scope.addFinalizer(managerScope, closeAllTunnels);
 
   const promptForPassword = Effect.fn("ssh/tunnel.promptForPassword")(function* (
     target: DesktopSshEnvironmentTarget,
@@ -1931,7 +1932,7 @@ const makeSshEnvironmentManager = Effect.fn("ssh/tunnel.SshEnvironmentManager.ma
     );
   });
 
-  return SshEnvironmentManager.of({ ensureEnvironment, disconnectEnvironment });
+  return SshEnvironmentManager.of({ ensureEnvironment, disconnectEnvironment, closeAllTunnels });
 });
 
 /**
