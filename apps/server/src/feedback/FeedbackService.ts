@@ -30,7 +30,7 @@ import { SourceControlDrivers } from "../sourceControl/builtInDrivers.ts";
 const FEEDBACK_HOST = "github.com";
 const APPROVAL_TIMEOUT = Duration.minutes(10);
 const APPROVAL_POLL_INTERVAL = Duration.seconds(1);
-// Browsers and GitHub reject very long URLs. Percent-encoding can triple the length of the text.
+// This bounds UTF-16 body units, not the percent-encoded URL length.
 const MANUAL_URL_MAX_BODY_LENGTH = 2_500;
 
 /**
@@ -38,12 +38,21 @@ const MANUAL_URL_MAX_BODY_LENGTH = 2_500;
  * forms take values by field id rather than `body`.
  */
 export const manualIssueUrl = (title: string, body: string) => {
+  body = body.replace(
+    /(\nWritten by an agent) \([^\n]{2000,}\)( and approved by the user\.)$/,
+    "$1$2",
+  );
+  const suffix =
+    /\n\n---\nstyal [^\n]+\n(?:Sent from styal by the user\.|Written by an agent(?: \([^\n]+\))? and approved by the user\.)$/.exec(
+      body,
+    )?.[0] ?? "";
+  const shortened = "\n\n(shortened to fit in a link)";
   const params = new URLSearchParams({
     template: "bug_report.yml",
     title,
     actual:
       body.length > MANUAL_URL_MAX_BODY_LENGTH
-        ? `${body.slice(0, MANUAL_URL_MAX_BODY_LENGTH)}\n\n(shortened to fit in a link)`
+        ? `${body.slice(0, Math.max(0, MANUAL_URL_MAX_BODY_LENGTH - suffix.length - shortened.length))}${shortened}${suffix}`
         : body,
   });
   return `https://${FEEDBACK_HOST}/${FEEDBACK_REPOSITORY}/issues/new?${params.toString()}`;
