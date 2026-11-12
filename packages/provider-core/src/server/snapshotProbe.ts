@@ -45,6 +45,23 @@ export const isWindowsCommandNotFound = Effect.fn("isWindowsCommandNotFound")(fu
 export const DEFAULT_TIMEOUT_MS = 4_000;
 export const AUTH_PROBE_TIMEOUT_MS = 10_000;
 
+export const resolveProviderProbeTimeoutMs = (
+  provider: string,
+  defaultTimeoutMs: number,
+  environment: NodeJS.ProcessEnv = process.env,
+  hostEnvironment: NodeJS.ProcessEnv = process.env,
+): number => {
+  const name = `T3CODE_${provider.toUpperCase()}_PROBE_TIMEOUT_MS`;
+  // Provider environments drop the server's own T3CODE_* variables, so a server-wide value is read
+  // from the server's environment; an instance's own value wins.
+  const timeoutMs = Number(environment[name] ?? hostEnvironment[name]);
+  // Overrides only extend: callers nest these deadlines and size optional work inside them
+  // against the defaults. Node timers overflow above a signed 32-bit delay.
+  return Number.isInteger(timeoutMs) && timeoutMs > defaultTimeoutMs && timeoutMs <= 2_147_483_647
+    ? timeoutMs
+    : defaultTimeoutMs;
+};
+
 export const COMPACT_SLASH_COMMAND = {
   name: "compact",
   description: "Summarize the conversation and reduce context usage",
