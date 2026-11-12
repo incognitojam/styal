@@ -435,7 +435,7 @@ export const make = Effect.gen(function* () {
         ...(input.pinOrderKey === undefined ? {} : { pinOrderKey: input.pinOrderKey }),
         ...(input.archived === undefined ? {} : { archived: input.archived }),
       });
-      if (workspaceRoot !== previousRoot) {
+      if (workspaceRoot !== previousRoot || input.faviconPath !== undefined) {
         yield* projectEnrichment.invalidate([previousRoot, workspaceRoot]);
       }
       return yield* readCommitted(input.projectId);
