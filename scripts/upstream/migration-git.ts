@@ -2,6 +2,9 @@
 
 import * as NodeChildProcess from "node:child_process";
 
+import * as NodeFS from "node:fs";
+import * as NodePath from "node:path";
+
 import type { UpstreamMigrationGit } from "./lib/migrations.ts";
 
 function run(repoRoot: string, args: ReadonlyArray<string>) {
@@ -21,14 +24,36 @@ function output(repoRoot: string, args: ReadonlyArray<string>): string {
 }
 
 /** Reads migration files from a local repository whose refs include the fork and upstream. */
-export function makeUpstreamMigrationGit(repoRoot: string): UpstreamMigrationGit {
+export function makeUpstreamMigrationGit(repoRoot: string, worktree = false): UpstreamMigrationGit {
   return {
     show: (revision, path) => {
+      if (worktree && revision === "WORKTREE") {
+        const file = NodePath.join(repoRoot, path);
+        return NodeFS.existsSync(file) ? NodeFS.readFileSync(file, "utf8") : null;
+      }
       const result = run(repoRoot, ["show", `${revision}:${path}`]);
       return result.status === 0 ? result.stdout : null;
     },
     blobs: (revision, paths) => {
       const blobs = new Map<string, string>();
+      if (worktree && revision === "WORKTREE") {
+        for (const path of output(repoRoot, [
+          "ls-files",
+          "-z",
+          "--cached",
+          "--others",
+          "--exclude-standard",
+          "--",
+          ...paths,
+        ])
+          .split("\0")
+          .filter(Boolean)) {
+          if (NodeFS.existsSync(NodePath.join(repoRoot, path))) {
+            blobs.set(path, output(repoRoot, ["hash-object", "--", path]).trim());
+          }
+        }
+        return blobs;
+      }
       for (const line of output(repoRoot, ["ls-tree", "-r", revision, "--", ...paths]).split(
         "\n",
       )) {

@@ -1,6 +1,15 @@
+// @effect-diagnostics nodeBuiltinImport:off
+import * as NodeChildProcess from "node:child_process";
+import * as NodeFS from "node:fs";
+import * as NodePath from "node:path";
 import { describe, expect, it } from "vite-plus/test";
 
-import { findUpstreamNames, renameTestStrings, renameUpstreamNames } from "./upstream-naming.ts";
+import {
+  findRepositoryUpstreamNames,
+  findUpstreamNames,
+  renameTestStrings,
+  renameUpstreamNames,
+} from "./upstream-naming.ts";
 
 const names = (path: string, source: string) =>
   findUpstreamNames(path, source).map(({ line, name }) => `${line}:${name}`);
@@ -154,4 +163,41 @@ describe("renameUpstreamNames identity strings", () => {
     const { text } = renameUpstreamNames("apps/desktop/src/example.ts", source);
     expect(text).toBe(source.replace('label: "T3 Connect"', 'label: "styal Link"'));
   });
+});
+
+it("scans untracked working-tree sources, excludes ignored files, and tolerates deletions", () => {
+  NodeFS.mkdirSync(NodePath.join(import.meta.dirname, "../.scratch"), { recursive: true });
+  const root = NodeFS.mkdtempSync(
+    NodePath.join(import.meta.dirname, "../.scratch/naming-worktree-"),
+  );
+  const file = "apps/mobile/modules/example/Example.swift";
+  const write = (path: string, text: string) => {
+    NodeFS.mkdirSync(NodePath.dirname(NodePath.join(root, path)), { recursive: true });
+    NodeFS.writeFileSync(NodePath.join(root, path), text);
+  };
+  const git = (...args: Array<string>) => NodeChildProcess.execFileSync("git", args, { cwd: root });
+  try {
+    git("init", "--quiet");
+    write(".gitignore", "Ignored.swift\n");
+    write(file, 'print("T3 Code")');
+    write("apps/mobile/modules/example/Ignored.swift", 'print("T3 Code")');
+    const assets = NodePath.join(
+      root,
+      "apps/mobile/modules/example",
+      "generated-" + "x".repeat(100),
+    );
+    NodeFS.mkdirSync(assets);
+    for (let index = 0; index < 10_000; index++) {
+      NodeFS.writeFileSync(NodePath.join(assets, `${index}.bin`), "T3 Code");
+    }
+    const source = "packages/example/src/index.ts";
+    write(source, 'console.log("T3 Code");');
+    expect(findRepositoryUpstreamNames(root, true).map(({ path }) => path)).toEqual([file, source]);
+    NodeFS.unlinkSync(NodePath.join(root, source));
+    git("add", file);
+    NodeFS.unlinkSync(NodePath.join(root, file));
+    expect(findRepositoryUpstreamNames(root, true)).toEqual([]);
+  } finally {
+    NodeFS.rmSync(root, { recursive: true, force: true });
+  }
 });

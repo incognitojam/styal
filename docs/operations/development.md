@@ -190,7 +190,18 @@ Things to keep in mind when comparing builds:
 changed files, `knip:check` when code or a manifest changes, the generated GraphQL checks, typecheck
 of the affected packages and their dependents, and the test files beside the changed files. It also
 runs the checks that read other files: the agent context budget when the server is affected, and
-React Compiler coverage for only the changed web and mobile files. It maps
+React Compiler coverage for only the changed web and mobile files. Fork ledger validation runs for
+ledger/checker edits or changes to recorded paths; ledger edits also run the ledger and settings
+feature tests. Naming checks run for scanned source roots or checker edits, including untracked
+sources and excluding working-tree deletions. Upstream migration directory, manifest, or checker
+edits check working-tree bytes against upstream history. A tip committed within the last day can
+pass locally; a rejection always refreshes upstream once and re-checks. Other migration runs fetch
+first. Fetching updates the shared local `upstream/main` ref, with a 30-second timeout followed by
+up to one second of termination grace before forced killing. Fetches cannot prompt for credentials.
+An unavailable or conflicting fetch prints a skip and exits successfully: migration failures may
+go undetected offline, so CI remains the gate.
+Migration runs bypass the pass cache, and skipped checks are never cached. Knip configuration and
+provider-canary workflow edits also select their cross-file tests. It maps
 files to packages with [ci-changes.cjs](../../.github/scripts/ci-changes.cjs), as CI does. It
 compares against the closest merge base with any remote's `main`, so a fork whose `main` lags
 upstream still compares against upstream, or with a ref you pass. CI still runs the full

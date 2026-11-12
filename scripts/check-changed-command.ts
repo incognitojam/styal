@@ -17,3 +17,51 @@ export function vitePlusCommand(
   }
   return ["vp", [...args]];
 }
+
+export function repositoryChecks(files: ReadonlyArray<string>, ledgerPaths: ReadonlyArray<string>) {
+  const ledgerSources = [
+    ".github/fork-features.yml",
+    "scripts/fork-feature-ledger.ts",
+    "scripts/check-fork-feature-ledger.ts",
+  ];
+  const ledgerChanged = files.some((file) => ledgerSources.includes(file));
+  return {
+    ledger: ledgerChanged || files.some((file) => ledgerPaths.includes(file)),
+    naming: files.some(
+      (file) =>
+        /^(?:apps\/[^/]+\/src\/|apps\/mobile\/(?:modules|plugins)\/|apps\/desktop\/gnome-extension\/|packages\/[^/]+\/src\/)/u.test(
+          file,
+        ) ||
+        [
+          "apps/mobile/app.config.ts",
+          "scripts/build-desktop-artifact.ts",
+          "scripts/upstream-naming.ts",
+          "scripts/check-upstream-naming.ts",
+        ].includes(file),
+    ),
+    migrations: files.some(
+      (file) =>
+        /^apps\/server\/src\/persistence\/Migrations(?:\/|\.ts$)/u.test(file) ||
+        [
+          "scripts/upstream/check-migrations.ts",
+          "scripts/upstream/migration-git.ts",
+          "scripts/upstream/lib/migrations.ts",
+        ].includes(file),
+    ),
+    tests: [
+      ...(ledgerChanged
+        ? [
+            "scripts/fork-feature-ledger.test.ts",
+            "apps/web/src/components/settings/forkFeatures.test.ts",
+          ]
+        : []),
+      ...(files.includes(".github/scripts/superseded-dependency-caches.jq")
+        ? [".github/scripts/superseded-dependency-caches.test.cjs"]
+        : []),
+      ...(files.includes("knip.jsonc") ? ["scripts/knip-schemas.test.ts"] : []),
+      ...(files.includes(".github/workflows/provider-canary.yml")
+        ? ["scripts/provider-canary.test.ts"]
+        : []),
+    ],
+  };
+}

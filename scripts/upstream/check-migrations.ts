@@ -33,7 +33,8 @@ function resolveCommit(revision: string): string | null {
 try {
   const ref = option("--ref", "HEAD");
   const upstreamRef = option("--upstream-ref", "refs/remotes/upstream/main");
-  const revision = resolveCommit(ref);
+  const worktree = process.argv.includes("--worktree");
+  const revision = worktree ? "WORKTREE" : resolveCommit(ref);
   if (revision === null) throw new Error(`${ref} is not a commit.`);
   const upstreamRevision = resolveCommit(upstreamRef);
   if (upstreamRevision === null) {
@@ -42,7 +43,7 @@ try {
     );
   }
   const errors = checkUpstreamMigrationsAtRevision({
-    git: makeUpstreamMigrationGit(repoRoot),
+    git: makeUpstreamMigrationGit(repoRoot, worktree),
     revision,
     upstreamRevision,
   });
