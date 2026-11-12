@@ -156,9 +156,13 @@ function LinkedEnvironmentRow({
             </h3>
           </div>
           <p className="text-xs text-muted-foreground">
-            {[status, link.access === LINK_DEFAULT_ACCESS ? null : linkAccessLabel(link.access)]
+            {[
+              status.replace(/\.$/, ""),
+              link.access === LINK_DEFAULT_ACCESS ? null : linkAccessLabel(link.access),
+            ]
               .filter(Boolean)
-              .join(" · ")}{" "}
+              .join(" · ")}
+            {" · "}
             <InlineButton onClick={() => setShowAddresses((shown) => !shown)}>
               {showAddresses ? "Hide addresses" : "Show addresses"}
             </InlineButton>

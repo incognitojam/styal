@@ -229,6 +229,7 @@ export function WorkTogetherSettings({
                       machineLabel={selected.label}
                       level={selected.serverConfig.settings.incomingMachineAccess}
                       supported
+                      connected={connected}
                     />
                   </SettingsRow>
                 ) : null}
@@ -738,7 +739,7 @@ function MachinePair({
                 ? absent === undefined
                   ? "Partly set up"
                   : `Partly set up · ${absent.label} isn't connected`
-                : "Not set up"
+                : undefined
           }
           description={
             unmanaged !== undefined
