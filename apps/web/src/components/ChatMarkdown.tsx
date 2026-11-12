@@ -163,6 +163,7 @@ import {
 } from "../markdown-links";
 import {
   markdownFileCopyPaths,
+  markdownFileEditorProjectRoot,
   markdownFileEditorTarget,
   resolveMarkdownFileHostPath,
 } from "../markdownFileHostPath";
@@ -696,7 +697,7 @@ function useChatMarkdownState({
   const projects = useProjects();
   const [preferredEditor] = usePreferredEditor(availableEditors);
   const preferredEditorMenuLabel = openInEditorMenuLabel(preferredEditor);
-  const openInPreferredEditor = useOpenInPreferredEditor(environmentId, availableEditors);
+  const openInPreferredEditor = useOpenInPreferredEditor(environmentId, availableEditors, cwd);
   const openInEditor = useAtomCommand(shellEnvironment.openInEditor, {
     reportFailure: false,
   });
@@ -961,7 +962,16 @@ function useChatMarkdownState({
                 })
             : canUseShellActions
               ? openResolved((hostPath) =>
-                  openInPreferredEditor(markdownFileEditorTarget(fileLinkMeta, hostPath)),
+                  openInPreferredEditor(
+                    markdownFileEditorTarget(fileLinkMeta, hostPath),
+                    markdownFileEditorProjectRoot(
+                      hostPath.absolutePath,
+                      cwd,
+                      projects.flatMap((project) =>
+                        project.environmentId === environmentId ? [project.workspaceRoot] : [],
+                      ),
+                    ),
+                  ),
                 )
               : undefined
         }

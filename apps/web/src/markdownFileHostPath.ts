@@ -23,6 +23,22 @@ export async function resolveMarkdownFileHostPath(input: {
     : { absolutePath: meta.filePath, matched: false };
 }
 
+/** The project an editor opens a link in: the deepest root holding the file, else the thread's. */
+export function markdownFileEditorProjectRoot(
+  absolutePath: string,
+  cwd: string | undefined,
+  projectRoots: ReadonlyArray<string>,
+) {
+  return (
+    [cwd, ...projectRoots]
+      .filter(
+        (root): root is string =>
+          root !== undefined && workspaceRelativeFilePath(absolutePath, root) !== null,
+      )
+      .toSorted((left, right) => right.length - left.length)[0] ?? cwd
+  );
+}
+
 export function markdownFileEditorTarget(
   meta: MarkdownFileLinkMeta,
   hostPath: MarkdownFileHostPath,
