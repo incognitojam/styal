@@ -33,6 +33,8 @@ import { desktopUpdateChannelOf } from "@t3tools/shared/cliRelease";
 import { createModelSelection } from "@t3tools/shared/model";
 import { resolvePastedPath } from "@t3tools/shared/path";
 import * as Equal from "effect/Equal";
+import { AsyncResult } from "effect/reactivity";
+import { npmReleaseAtom } from "~/state/npmRelease";
 import * as Schema from "effect/Schema";
 import {
   APP_BASE_NAME,
@@ -188,6 +190,21 @@ function AboutBuildProvenance() {
         <TooltipTrigger render={<span />}>commit {commitLabel}</TooltipTrigger>
         <TooltipPopup>{APP_COMMIT_HASH}</TooltipPopup>
       </Tooltip>
+    </span>
+  );
+}
+
+function UpdateTrackOption({ channel }: { channel: DesktopUpdateChannel }) {
+  const release = useAtomValue(npmReleaseAtom(channel));
+  const version = AsyncResult.isSuccess(release)
+    ? (release.value?.version ?? "No release")
+    : AsyncResult.isFailure(release)
+      ? "Version unavailable"
+      : "Checking…";
+  return (
+    <span className="flex flex-col">
+      <span>{channelSwitchLabel(channel)}</span>
+      <span className="text-xs text-muted-foreground">{version}</span>
     </span>
   );
 }
@@ -397,14 +414,14 @@ function AboutVersionSection() {
               </SelectTrigger>
               <SelectPopup align="end" alignItemWithTrigger={false}>
                 <SelectItem hideIndicator value="latest">
-                  Stable
+                  <UpdateTrackOption channel="latest" />
                 </SelectItem>
                 <SelectItem
                   hideIndicator
                   value="nightly"
                   disabled={nightlyDeniedBy !== undefined && selectedUpdateChannel !== "nightly"}
                 >
-                  Nightly
+                  <UpdateTrackOption channel="nightly" />
                 </SelectItem>
               </SelectPopup>
             </Select>
