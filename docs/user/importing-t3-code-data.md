@@ -31,11 +31,11 @@ Differing preferences are selected by default. In the preferences section (the *
 - provider update checks and agent browser access;
 - defaults for new threads, worktrees, and the add-project directory;
 - source-control writing style, custom instructions, and change-request templates; and
-- legacy token streaming.
+- response streaming, where T3 Code's token streaming becomes **Show finished paragraphs**.
 
 When every value already matches, a **Preferences already match** status replaces the comparison and checkbox.
 
-Connections, provider sign-ins, credentials, tokens, and active sessions stay separate. Client-local choices such as appearance, fonts, and keybindings are not part of the server preference import.
+Connections, provider sign-ins, credentials, tokens, and active sessions stay separate. Client-local choices such as appearance and fonts are not part of the server preference import. Keybindings are not imported either; see [Keybindings](keybindings.md) to set them in styal.
 
 ## Older fork installations
 
