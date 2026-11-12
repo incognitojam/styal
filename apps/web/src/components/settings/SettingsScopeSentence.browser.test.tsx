@@ -12,6 +12,7 @@ const state = vi.hoisted(() => ({
     serverConfig: null;
   }>,
   discovered: new Map<string, { environment: { environmentId: string; label: string } }>(),
+  singleEnvironment: false,
   selectScope: (() => {}) as (next: unknown) => void,
 }));
 
@@ -25,14 +26,23 @@ vi.mock("./SettingsScopeContext", () => ({
     search: {},
     scope: { kind: "all" },
     groups: [],
-    singleEnvironment: state.environments.length === 1,
+    singleEnvironment: state.singleEnvironment,
     selectScope: state.selectScope,
   }),
 }));
 
 import { SettingsScopeSentence } from "./SettingsScopeSentence";
 
-function setup({ machines, notAdded = [] }: { machines: string[]; notAdded?: string[] }) {
+function setup({
+  machines,
+  notAdded = [],
+  singleEnvironment = false,
+}: {
+  machines: string[];
+  notAdded?: string[];
+  singleEnvironment?: boolean;
+}) {
+  state.singleEnvironment = singleEnvironment;
   state.environments = machines.map((label, index) => ({
     environmentId: `machine-${index}`,
     label,
@@ -66,15 +76,20 @@ describe("settings machine picker", () => {
     await expect.element(page.getByText("work-pc isn't added yet")).toBeVisible();
   });
 
-  it("counts several machines that aren't added", async () => {
-    setup({ machines: ["Studio Mac", "homelab"], notAdded: ["work-pc", "laptop"] });
+  it("counts several machines that aren't added, also on single-environment pages", async () => {
+    setup({
+      machines: ["Studio Mac", "homelab"],
+      notAdded: ["work-pc", "laptop"],
+      singleEnvironment: true,
+    });
     await using _screen = await render(<SettingsScopeSentence />, { router: "/settings/threads" });
     await userEvent.click(page.getByRole("button", { name: /Environment scope/ }));
     await expect.element(page.getByText("2 machines aren't added yet")).toBeVisible();
+    await expect.element(page.getByText("Manage machines…")).toBeVisible();
   });
 
   it("offers to add a machine when there is only one, and opens machine settings", async () => {
-    const { selectScope } = setup({ machines: ["Studio Mac"] });
+    const { selectScope } = setup({ machines: ["Studio Mac"], singleEnvironment: true });
     await using screen = await render(<SettingsScopeSentence />, { router: "/settings/threads" });
     await userEvent.click(page.getByRole("button", { name: /Environment scope/ }));
     await userEvent.click(page.getByRole("menuitem", { name: "Add a machine…" }));

@@ -326,7 +326,7 @@ function EnvironmentScopeMenu({
       footer={{
         option: {
           value: FOOTER_VALUE,
-          label: singleEnvironment ? "Add a machine…" : "Manage machines…",
+          label: environments.length <= 1 ? "Add a machine…" : "Manage machines…",
           secondary:
             notAdded.length === 1
               ? `${notAdded[0]!.label} isn't added yet`
