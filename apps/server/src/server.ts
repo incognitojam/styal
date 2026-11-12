@@ -806,7 +806,9 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   // back turns on the same CLI and count as running work.
   Layer.provideMerge(ProviderInstallGate.layer),
   Layer.provideMerge(ProviderRegistry.layer.pipe(traceShutdown("provider-registry"))),
-  Layer.provideMerge(ProviderInstanceRegistryHydration.layer),
+  Layer.provideMerge(
+    ProviderInstanceRegistryHydration.layer.pipe(Layer.provide(SqlitePersistence.layerConfig)),
+  ),
   // Provider drivers decide at construction whether the skill exists.
   Layer.provideMerge(
     Layer.effectDiscard(
@@ -820,6 +822,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
       ),
     ),
   ),
+
   // One gate for the server, below hydration so the Claude adapter sees it: layers memoize by
   // reference, so the runtime layer shares it.
   Layer.provideMerge(ProviderInstallationGate.layer),
