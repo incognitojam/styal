@@ -1913,6 +1913,33 @@ layer("GitHubPullRequestApi.layer", (it) => {
       }),
   );
 
+  it.effect("asks Enterprise watch fingerprints without the merge queue removal event", () =>
+    Effect.gen(function* () {
+      mockedExecute.mockImplementation(() =>
+        Effect.succeed(output(encodeJson({ data: { _0_repository: { pullRequest: null } } }))),
+      );
+      const api = yield* GitHubPullRequestApi.GitHubPullRequestApi;
+      const fingerprint = (host: string) =>
+        Effect.gen(function* () {
+          const read = yield* Effect.forkChild(
+            api.getPullRequestWatchFingerprint({
+              cwd: "/w",
+              repository: "acme/web",
+              host,
+              number: 7,
+            }),
+          );
+          yield* TestClock.adjust("10 millis");
+          return yield* Fiber.join(read);
+        });
+      expect(yield* fingerprint("github.com")).toBeNull();
+      expect(queryAt(0)).toContain("REMOVED_FROM_MERGE_QUEUE_EVENT");
+      // An Enterprise schema may lack the enum value, which fails the query even when not included.
+      expect(yield* fingerprint("github.example.test")).toBeNull();
+      expect(queryAt(1)).not.toContain("REMOVED_FROM_MERGE_QUEUE_EVENT");
+    }),
+  );
+
   it.effect("reads the line counts in chunks, and files them back by position", () =>
     Effect.gen(function* () {
       const changeRequests = Array.from({ length: 26 }, (_, index) => ({

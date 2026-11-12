@@ -1706,10 +1706,10 @@ export const make = Effect.gen(function* () {
             return asksRequired(input.host)
               ? deployments
                 ? client
-                    .PullRequestCore({ ...query, deployments: true })
+                    .PullRequestCore({ ...query, deployments: true, mergeQueue: true })
                     .pipe(toleratingMissingPullRef(decodePullRequestCore))
                 : client
-                    .PullRequestCoreWithoutDeployments(query)
+                    .PullRequestCoreWithoutDeployments({ ...query, mergeQueue: true })
                     .pipe(toleratingMissingPullRef(decodePullRequestCoreWithoutDeployments))
               : deployments
                 ? client
@@ -2003,11 +2003,22 @@ export const make = Effect.gen(function* () {
     RequestResolver.setDelay(SUMMARY_BATCH_WINDOW),
     RequestResolver.batchN(STAT_ALIASES_PER_REQUEST),
   );
+  const enterpriseWatchFingerprintResolver = GraphQLResolver.aliased(
+    client.PullRequestWatchFingerprintEnterprise,
+    { batchKey: GitHubGraphQlClient.batchKey },
+  ).pipe(
+    RequestResolver.setDelay(SUMMARY_BATCH_WINDOW),
+    RequestResolver.batchN(STAT_ALIASES_PER_REQUEST),
+  );
   const getPullRequestWatchFingerprint: GitHubPullRequestApi["Service"]["getPullRequestWatchFingerprint"] =
     (input) => {
       const lookup = pullRequestLookup(input);
       if (lookup === null) return Effect.succeed(null);
-      return GraphQLResolver.request(lookup, watchFingerprintResolver).pipe(
+      return (
+        asksRequired(input.host)
+          ? GraphQLResolver.request({ ...lookup, mergeQueue: true }, watchFingerprintResolver)
+          : GraphQLResolver.request(lookup, enterpriseWatchFingerprintResolver)
+      ).pipe(
         Effect.map((result) => {
           const pullRequest = result.repository?.pullRequest;
           return pullRequest == null ? null : toPullRequestWatchFingerprint(pullRequest);

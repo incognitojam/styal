@@ -20,6 +20,7 @@ import type {
   PullRequestMergeCapabilities,
   PullRequestMergeMethod,
   PullRequestMergeReadiness,
+  PullRequestMergeQueueRemoval,
   PullRequestOmittedFileStat,
   PullRequestMergeability,
   PullRequestReaction,
@@ -1315,6 +1316,7 @@ export function toPullRequestWatchFingerprint(
       pr.headRefOid,
       stateCounts(contexts?.checkRunCountsByState ?? null),
       stateCounts(contexts?.statusContextCountsByState ?? null),
+      pr.mergeQueueRemovals?.filteredCount ?? 0,
     ].join(" "),
     remarks: [
       pr.comments.totalCount,
@@ -1327,6 +1329,7 @@ export function toPullRequestWatchFingerprint(
 }
 
 export interface GitHubPullRequestCore extends GitHubPullRequestDetail {
+  readonly mergeQueueRemoval?: PullRequestMergeQueueRemoval;
   readonly maintainerCanModify: boolean;
   readonly canEditMaintainerEdits: boolean;
   readonly reviewRequestTeams: ReadonlyArray<PullRequestActor>;
@@ -1396,7 +1399,17 @@ export function toPullRequestCore(result: PullRequestCore.Result): GitHubPullReq
   if (repository == null || pr == null) return null;
   const contexts = nodesOf(pr.commits)[0]?.commit.statusCheckRollup?.contexts;
   const headDeployments = nodesOf(pr.commits)[0]?.commit.deployments;
+  const removal = nodesOf(pr.mergeQueueRemovals).at(-1);
   return {
+    ...(removal === undefined || !("id" in removal)
+      ? {}
+      : {
+          mergeQueueRemoval: {
+            id: removal.id,
+            removedAt: removal.createdAt,
+            reason: trimmed(removal.reason),
+          },
+        }),
     reviewRequestTeams: nodesOf(pr.reviewRequests).flatMap(
       ({ requestedReviewer }) => toRequestedTeam(requestedReviewer) ?? [],
     ),
