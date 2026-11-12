@@ -586,34 +586,51 @@ export const hasExactTailscaleServe = (input: {
   readonly proxy: string;
 }) => readTailscaleServePortState(input).pipe(Effect.map((state) => state === "exact"));
 
-export const ensureTailscaleServe = (input: {
+export class TailscaleServeHttpsDisabledError extends Schema.TaggedError<TailscaleServeHttpsDisabledError>()(
+  "TailscaleServeHttpsDisabledError",
+  {},
+) {
+  override get message(): string {
+    return "Tailscale Serve needs HTTPS enabled on the tailnet. Enable HTTPS certificates at https://login.tailscale.com/admin/dns.";
+  }
+}
+
+export const ensureTailscaleServe = Effect.fn("tailscale.ensureTailscaleServe")(function* (input: {
   readonly localPort: number;
   readonly servePort?: number;
   readonly localHost?: string;
   /** The caller has already verified that the current handler fronts this exact T3 environment. */
   readonly replaceVerifiedHandler?: boolean;
-}): Effect.Effect<void, TailscaleServeError, ChildProcessSpawner.ChildProcessSpawner> => {
+}): Effect.fn.Return<
+  void,
+  TailscaleServeError | TailscaleServeHttpsDisabledError,
+  ChildProcessSpawner.ChildProcessSpawner
+> {
   const servePort = input.servePort ?? DEFAULT_TAILSCALE_SERVE_PORT;
   const localHost = input.localHost ?? "127.0.0.1";
   const proxy = `http://${localHost}:${input.localPort}`;
-  return Effect.gen(function* () {
-    const state = yield* readTailscaleServePortState({ servePort, proxy });
-    if (state === "exact") {
-      return;
-    }
-    if (
-      state === "funnel" ||
-      state === "occupied" ||
-      (state === "replaceable" && input.replaceVerifiedHandler !== true)
-    ) {
-      return yield* new TailscaleServePortOccupiedError({ servePort });
-    }
-    yield* runTailscaleCommand(
-      ["serve", "--bg", `--https=${servePort}`, proxy],
-      TAILSCALE_SERVE_TIMEOUT,
-    );
-  });
-};
+  const state = yield* readTailscaleServePortState({ servePort, proxy });
+  if (state === "exact") {
+    return;
+  }
+  if (
+    state === "funnel" ||
+    state === "occupied" ||
+    (state === "replaceable" && input.replaceVerifiedHandler !== true)
+  ) {
+    return yield* new TailscaleServePortOccupiedError({ servePort });
+  }
+  // Without the capability `tailscale serve` prints an enablement notice and exits 0, or blocks on
+  // it, having configured nothing either way.
+  const status = yield* Effect.option(readTailscaleStatus);
+  if (Option.isSome(status) && status.value.httpsServeEnabled === false) {
+    return yield* new TailscaleServeHttpsDisabledError();
+  }
+  yield* runTailscaleCommand(
+    ["serve", "--bg", `--https=${servePort}`, proxy],
+    TAILSCALE_SERVE_TIMEOUT,
+  );
+});
 
 /** A Serve route: a web handler at `mount` on `servePort`, or a TCP forward without one. */
 export interface TailscaleServeRoute {

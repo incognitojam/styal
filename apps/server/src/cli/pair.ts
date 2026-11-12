@@ -22,7 +22,6 @@ import {
   ensureTailscaleServe,
   hasExactTailscaleServe,
   readTailscaleStatus,
-  type TailscaleServeError,
 } from "@t3tools/tailscale";
 import * as Config from "effect/Config";
 import * as Console from "effect/Console";
@@ -439,7 +438,7 @@ const resolveTailscalePairingBase = Effect.fn("pair.resolveTailscalePairingBase"
       replaceVerifiedHandler,
       ...(localTarget.localHost !== undefined ? { localHost: localTarget.localHost } : {}),
     }).pipe(
-      Effect.mapError((cause: TailscaleServeError) =>
+      Effect.mapError((cause) =>
         cause._tag === "TailscaleServePortOccupiedError"
           ? new ServePortOccupiedError({ servePort: input.servePort })
           : new TailscaleServeFailedError({ servePort: input.servePort, cause }),

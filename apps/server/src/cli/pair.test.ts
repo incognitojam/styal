@@ -372,6 +372,7 @@ describe("styal pair", () => {
             expect(commands).toEqual([
               ["status", "--json"],
               ["serve", "status", "--json"],
+              ["status", "--json"],
               ["serve", "--bg", "--https=443", "http://127.0.0.1:5733"],
             ]);
           }),

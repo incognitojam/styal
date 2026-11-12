@@ -6,6 +6,7 @@ import {
   ensureTailscaleServe,
   readTailscaleStatus,
   type TailscaleServeError,
+  type TailscaleServeHttpsDisabledError,
   type TailscaleStderrDiagnostic,
 } from "@t3tools/tailscale";
 import * as Effect from "effect/Effect";
@@ -21,12 +22,16 @@ const DIAGNOSTIC_EXPLANATIONS: Record<TailscaleStderrDiagnostic, string | undefi
   unknown: undefined,
 };
 
-const explainCommandFailure = (error: TailscaleServeError): string | undefined =>
-  error._tag === "TailscaleCommandExitError" && error.stderrDiagnostic !== undefined
-    ? (DIAGNOSTIC_EXPLANATIONS[error.stderrDiagnostic] ?? "run the command by hand to see why")
-    : error._tag === "TailscaleServePortOccupiedError"
-      ? "the port already belongs to a different Tailscale Serve handler"
-      : undefined;
+const explainCommandFailure = (
+  error: TailscaleServeError | TailscaleServeHttpsDisabledError,
+): string | undefined =>
+  error._tag === "TailscaleServeHttpsDisabledError"
+    ? "HTTPS is not enabled on this tailnet — enable HTTPS certificates at https://login.tailscale.com/admin/dns"
+    : error._tag === "TailscaleCommandExitError" && error.stderrDiagnostic !== undefined
+      ? (DIAGNOSTIC_EXPLANATIONS[error.stderrDiagnostic] ?? "run the command by hand to see why")
+      : error._tag === "TailscaleServePortOccupiedError"
+        ? "the port already belongs to a different Tailscale Serve handler"
+        : undefined;
 
 export class TailscaleUnavailableError extends Schema.TaggedError<TailscaleUnavailableError>()(
   "TailscaleUnavailableError",
