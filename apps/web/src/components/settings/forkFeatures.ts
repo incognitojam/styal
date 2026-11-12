@@ -49,6 +49,9 @@ export const SETTINGS_BADGED: Readonly<Record<string, SettingsForkFeature>> = {
 
 export const SETTINGS_NOT_BADGED: Readonly<Record<string, string>> = {
   "preview-app": "An install action, not a persistent setting.",
+  "legacy-plan-mode": "Upstream removed it in a change the fork has not taken in yet.",
+  "legacy-context-window-indicator":
+    "Upstream removed it in a change the fork has not taken in yet.",
   "work-together": "A connection setup section with no setting row to badge.",
   "remote-environments": "Machine tabs refine the upstream connection list.",
   "linked-environments": "A machine list with no setting row to badge.",
