@@ -2,6 +2,7 @@ import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as TestClock from "effect/testing/TestClock";
 import * as SqlClient from "effect/sql/SqlClient";
+import * as Statement from "effect/sql/Statement";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import { runAllMigrations } from "../../persistence/ForkMigrations.ts";
 import { readHistoryRewriteFence } from "../historyRewriteFence.ts";
@@ -105,7 +106,7 @@ describe("rederiveLegacyToolItems", () => {
         const sql = yield* SqlClient.SqlClient;
         const originals = yield* seed(sql);
         const before = yield* readHistoryRewriteFence(sql);
-        assert.deepEqual(yield* rederiveLegacyToolItems(sql), { threads: 1, items: 5 });
+        assert.deepEqual(yield* rederiveLegacyToolItems(sql), { threads: 1, items: 5, failed: 0 });
         const rows = yield* sql<{
           payload_json: string;
         }>`SELECT payload_json FROM orchestration_v2_projection_turn_items ORDER BY ordinal`;
@@ -137,16 +138,24 @@ describe("rederiveLegacyToolItems", () => {
         for (const event of events)
           assert.equal(event.payload_json, rows[event.ordinal - 1]?.payload_json);
         const undo = yield* sql<{
-          previous_payload_json: string;
-        }>`SELECT previous_payload_json FROM styal_legacy_v1_rederived_items ORDER BY turn_item_id`;
+          turn_item_id: string;
+          previous_fields_json: string;
+          absent_fields_json: string;
+        }>`SELECT turn_item_id, previous_fields_json, absent_fields_json FROM styal_legacy_v1_rederived_items ORDER BY turn_item_id`;
         assert.equal(undo.length, 5);
-        assert.include(
-          undo.map((row) => row.previous_payload_json),
-          originals[0],
-        );
+        // Restoring the recorded fields gives back each original item.
+        for (const entry of undo) {
+          const index = rows.findIndex(
+            (row) => JSON.parse(row.payload_json).id === entry.turn_item_id,
+          );
+          const restored = JSON.parse(rows[index]!.payload_json);
+          for (const field of JSON.parse(entry.absent_fields_json)) delete restored[field];
+          Object.assign(restored, JSON.parse(entry.previous_fields_json));
+          assert.deepEqual(restored, JSON.parse(originals[index]!));
+        }
         const fence = yield* readHistoryRewriteFence(sql);
         assert.isAbove(fence, before);
-        assert.deepEqual(yield* rederiveLegacyToolItems(sql), { threads: 0, items: 0 });
+        assert.deepEqual(yield* rederiveLegacyToolItems(sql), { threads: 0, items: 0, failed: 0 });
         assert.equal(yield* readHistoryRewriteFence(sql), fence);
         assert.deepEqual(
           yield* sql`SELECT payload_json FROM orchestration_v2_projection_turn_items ORDER BY ordinal`,
@@ -156,15 +165,14 @@ describe("rederiveLegacyToolItems", () => {
           (turn_item_id, thread_id, run_id, ordinal, type, status, updated_at, payload_json)
           VALUES ('import:v1:activity:thread-1:unreadable', 'thread-1', NULL, 100, 'command_execution', 'completed', ${at}, '{"id":"unreadable"}')`;
         yield* sql`DELETE FROM orchestration_v2_projection_metadata WHERE projection_name = 'legacy-tool-items-rederived'`;
-        // A run interrupted after changing items still moves the fence when it completes.
-        assert.deepEqual(yield* rederiveLegacyToolItems(sql), { threads: 1, items: 0 });
-        assert.isAbove(yield* readHistoryRewriteFence(sql), fence);
+        assert.deepEqual(yield* rederiveLegacyToolItems(sql), { threads: 1, items: 0, failed: 0 });
+        assert.equal(yield* readHistoryRewriteFence(sql), fence);
         assert.deepEqual(
           yield* sql`SELECT payload_json FROM orchestration_v2_projection_turn_items WHERE ordinal = 100`,
           [{ payload_json: '{"id":"unreadable"}' }],
         );
         assert.deepEqual(
-          yield* sql`SELECT previous_payload_json FROM styal_legacy_v1_rederived_items ORDER BY turn_item_id`,
+          yield* sql`SELECT turn_item_id, previous_fields_json, absent_fields_json FROM styal_legacy_v1_rederived_items ORDER BY turn_item_id`,
           undo,
         );
       }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
@@ -193,6 +201,50 @@ describe("rederiveLegacyToolItems", () => {
         yield* sql`SELECT * FROM orchestration_v2_projection_metadata WHERE projection_name = 'legacy-tool-items-rederived'`,
         marker,
       );
+    }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
+  );
+  it.effect("skips an item that fails, withholds the marker and still moves the fence", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      yield* seed(sql);
+      const before = yield* readHistoryRewriteFence(sql);
+      const failing = yield* rederiveLegacyToolItems(sql).pipe(
+        Effect.provideService(Statement.CurrentTransformer, (statement) => {
+          const [query, params] = statement.compile();
+          if (
+            query.includes("WHERE turn_item_id =") &&
+            params.includes("import:v1:activity:thread-1:read")
+          )
+            return Effect.die(new Error("unreadable item"));
+          return Effect.succeed(statement);
+        }),
+      );
+      assert.deepEqual(failing, { threads: 1, items: 4, failed: 1 });
+      assert.lengthOf(
+        yield* sql`SELECT 1 FROM orchestration_v2_projection_metadata WHERE projection_name = 'legacy-tool-items-rederived'`,
+        0,
+      );
+      const fence = yield* readHistoryRewriteFence(sql);
+      assert.isAbove(fence, before);
+      assert.deepEqual(yield* rederiveLegacyToolItems(sql), { threads: 1, items: 1, failed: 0 });
+      assert.isAbove(yield* readHistoryRewriteFence(sql), fence);
+      assert.lengthOf(
+        yield* sql`SELECT 1 FROM orchestration_v2_projection_metadata WHERE projection_name = 'legacy-tool-items-rederived'`,
+        1,
+      );
+    }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
+  );
+  it.effect("creates no undo table and leaves the fence alone when nothing changes", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      yield* runAllMigrations();
+      const fence = yield* readHistoryRewriteFence(sql);
+      assert.deepEqual(yield* rederiveLegacyToolItems(sql), { threads: 0, items: 0, failed: 0 });
+      assert.lengthOf(
+        yield* sql`SELECT name FROM sqlite_master WHERE name = 'styal_legacy_v1_rederived_items'`,
+        0,
+      );
+      assert.equal(yield* readHistoryRewriteFence(sql), fence);
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 });
