@@ -734,7 +734,11 @@ export const make = Effect.gen(function* () {
   );
   const writeInstallRecord = (targetVersion: string) =>
     encodeInstallRecord({ fromVersion: environment.appVersion, targetVersion }).pipe(
-      Effect.flatMap((text) => fileSystem.writeFileString(installRecordPath, text)),
+      Effect.flatMap((text) =>
+        fileSystem
+          .makeDirectory(updateRestartMarkerDir, { recursive: true })
+          .pipe(Effect.andThen(fileSystem.writeFileString(installRecordPath, text))),
+      ),
       Effect.catch((error) =>
         logUpdaterWarning("Could not record the update install.", { errorTag: error._tag }),
       ),

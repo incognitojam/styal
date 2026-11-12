@@ -882,9 +882,13 @@ describe("DesktopUpdates", () => {
   );
 
   it.effect(
-    "keeps a same-channel download eligible and installs only after shutdown begins",
+    "records an install on quit without an existing runtime directory or running backend",
     () => {
-      const harness = makeHarness();
+      const harness = makeHarness({
+        platform: "linux",
+        env: { APPIMAGE: "/synthetic/styal.AppImage" },
+        backendDesiredRunning: false,
+      });
       return Effect.scoped(
         Effect.gen(function* () {
           const updates = yield* DesktopUpdates.DesktopUpdates;
