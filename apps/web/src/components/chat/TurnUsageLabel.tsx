@@ -14,6 +14,7 @@ import {
 import { useState } from "react";
 
 import { useClientSettings } from "../../hooks/useSettings";
+import { cn } from "~/lib/utils";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 
 const selectUsageFigure = (settings: ClientSettings) => settings.turnUsageFigure;
@@ -143,7 +144,11 @@ export function TurnUsageLabel({
           <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-0.5 text-2xs leading-4">
             {view.rows.map((row) => (
               <div key={row.label} className="contents">
-                <dt className="whitespace-nowrap text-secondary-label">{row.label}</dt>
+                <dt
+                  className={cn("whitespace-nowrap text-secondary-label", row.indent && "pl-2.5")}
+                >
+                  {row.label}
+                </dt>
                 <dd className="whitespace-nowrap text-right font-medium tabular-nums text-secondary-label">
                   {row.value}
                 </dd>

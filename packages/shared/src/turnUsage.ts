@@ -18,7 +18,7 @@ import {
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
-import { formatPercent, formatTokens, formatUsd } from "./usageFormat.ts";
+import { formatTokens, formatUsd } from "./usageFormat.ts";
 import { getModelSelectionStringOptionValue } from "./model.ts";
 
 const decodeTurnTokenUsage = Schema.decodeUnknownOption(TurnTokenUsage);
@@ -328,7 +328,12 @@ export interface TurnUsageView {
   readonly tokens: string;
   /** The estimated API cost, when known, for those who lead with cost. */
   readonly costUsd: number | null;
-  readonly rows: ReadonlyArray<{ readonly label: string; readonly value: string }>;
+  /** `indent` marks a part of the row above it. */
+  readonly rows: ReadonlyArray<{
+    readonly label: string;
+    readonly value: string;
+    readonly indent?: boolean;
+  }>;
   readonly notes: ReadonlyArray<string>;
 }
 
@@ -350,6 +355,8 @@ function formatCost(usd: number): string {
 
 function usageView(
   usage: TokenCounts,
+  /** Whether the provider reported cache counts, so zero reads can show as a miss. */
+  reportsCache: boolean,
   subagents: number,
   costUsd: number | undefined,
   notes: ReadonlyArray<string>,
@@ -361,23 +368,25 @@ function usageView(
   const reasoning = usage.reasoningTokens ?? 0;
   const cacheWrites = usage.cacheCreationTokens ?? 0;
 
-  const rows = [
-    {
-      label: "Input",
-      value:
-        input > 0 && cached > 0
-          ? `${formatTokens(input)} (${formatTokens(Math.max(0, input - cached))} uncached, ${formatPercent(cached / input, 0)} cached)`
-          : formatTokens(input),
-    },
-    {
-      label: "Output",
-      value:
-        reasoning > 0
-          ? `${formatTokens(output)} (${formatTokens(reasoning)} reasoning)`
-          : formatTokens(output),
-    },
+  const rows: Array<TurnUsageView["rows"][number]> = [
+    { label: "Input", value: formatTokens(input) },
   ];
-  if (cacheWrites > 0) rows.push({ label: "Cache writes", value: formatTokens(cacheWrites) });
+  if (reportsCache) {
+    rows.push({ label: "Cache reads", value: formatTokens(cached), indent: true });
+    if (cacheWrites > 0) {
+      rows.push({ label: "Cache writes", value: formatTokens(cacheWrites), indent: true });
+    }
+    // Neither read from nor written to the cache, as in the usage summary's uncachedInputTokens.
+    const uncached = Math.max(0, input - cached - cacheWrites);
+    rows.push({ label: "Uncached", value: formatTokens(uncached), indent: true });
+  }
+  rows.push({
+    label: "Output",
+    value:
+      reasoning > 0
+        ? `${formatTokens(output)} (${formatTokens(reasoning)} reasoning)`
+        : formatTokens(output),
+  });
   // Already within the rows above; this shows their share.
   if (subagents > 0) rows.push({ label: "Subagents", value: formatTokens(subagents) });
   // What these tokens would cost at API rates; subscriptions bill separately.
@@ -493,7 +502,17 @@ export function turnUsageView(usage: TurnTokenUsage): TurnUsageView {
     notes.push("Subagent usage isn't included.");
   }
   if (usage.usageStatus === "partial") notes.push("The provider reported only some token counts.");
-  return usageView(combinedTokenCounts(usage), subagentTokens(usage), usage.costUsd, notes);
+  const reportsCache = [usage, usage.subagents].some(
+    (counts) =>
+      counts?.cachedInputTokens !== undefined || counts?.cacheCreationTokens !== undefined,
+  );
+  return usageView(
+    combinedTokenCounts(usage),
+    reportsCache,
+    subagentTokens(usage),
+    usage.costUsd,
+    notes,
+  );
 }
 
 export function threadUsageView(usage: ThreadTokenUsage): TurnUsageView {
@@ -515,6 +534,7 @@ export function threadUsageView(usage: ThreadTokenUsage): TurnUsageView {
   }
   return usageView(
     usage,
+    usage.cachedInputTokens > 0 || usage.cacheCreationTokens > 0,
     usage.subagentTokens ?? 0,
     pricedTurns > 0 ? usage.costUsd : undefined,
     notes,

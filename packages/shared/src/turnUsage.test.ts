@@ -5,6 +5,7 @@ import {
   ProviderInstanceId,
   TurnId,
   type ServerProviderModel,
+  type TurnTokenUsage,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
@@ -292,7 +293,9 @@ describe("turnUsageView", () => {
       tokens: "1.26M",
       costUsd: null,
       rows: [
-        { label: "Input", value: "1.20M (600K uncached, 50% cached)" },
+        { label: "Input", value: "1.20M" },
+        { label: "Cache reads", value: "600K", indent: true },
+        { label: "Uncached", value: "600K", indent: true },
         { label: "Output", value: "60K (24K reasoning)" },
         { label: "Subagents", value: "210K" },
       ],
@@ -300,27 +303,65 @@ describe("turnUsageView", () => {
     });
   });
 
-  it("leads with total tokens and details the cached share and reasoning", () => {
+  it("leads with total tokens and splits input into cache reads, cache writes and uncached", () => {
     expect(turnUsageView(usage)).toEqual({
       headline: "1.05M tokens",
       tokens: "1.05M",
       costUsd: null,
       rows: [
-        { label: "Input", value: "1M (400K uncached, 60% cached)" },
+        { label: "Input", value: "1M" },
+        { label: "Cache reads", value: "600K", indent: true },
+        { label: "Uncached", value: "400K", indent: true },
         { label: "Output", value: "50K (20K reasoning)" },
       ],
       notes: [],
     });
-    for (const [inputTokens, cachedInputTokens, cacheCreationTokens, value] of [
-      [1_300_000, 1_280_000, 10_000, "1.30M (20K uncached, 98% cached)"],
-      [1_300_000, 1_299_000, 0, "1.30M (1K uncached, 100% cached)"],
-      [1_000, 1_000, 0, "1K (0 uncached, 100% cached)"],
-      [1_000, 0, 400, "1K"],
-      [0, 0, 0, "0"],
+    const { cachedInputTokens: _, ...withoutCache } = usage;
+    const inputRows = (fields: {
+      readonly inputTokens: number;
+      readonly cachedInputTokens?: number;
+      readonly cacheCreationTokens?: number;
+      readonly hasSubagents?: boolean;
+      readonly subagents?: TurnTokenUsage["subagents"];
+    }) =>
+      turnUsageView({ ...withoutCache, ...fields })
+        .rows.filter((row) => row.label !== "Output" && row.label !== "Subagents")
+        .map((row) => `${row.indent ? "  " : ""}${row.label} ${row.value}`);
+    for (const [fields, rows] of [
+      // Warm: a rounded share would read "100% cached" while 1.3K was paid in full.
+      [
+        { inputTokens: 1_302_000, cachedInputTokens: 1_296_500, cacheCreationTokens: 4_200 },
+        ["Input 1.30M", "  Cache reads 1.30M", "  Cache writes 4.20K", "  Uncached 1.30K"],
+      ],
+      // Cold: the cache had expired, so it was written again.
+      [
+        { inputTokens: 96_400, cachedInputTokens: 0, cacheCreationTokens: 95_100 },
+        ["Input 96.4K", "  Cache reads 0", "  Cache writes 95.1K", "  Uncached 1.30K"],
+      ],
+      [
+        { inputTokens: 640_000, cachedInputTokens: 450_000, cacheCreationTokens: 150_000 },
+        ["Input 640K", "  Cache reads 450K", "  Cache writes 150K", "  Uncached 40K"],
+      ],
+      // A provider that reports reads but not writes, warm and then cold.
+      [
+        { inputTokens: 1_280_000, cachedInputTokens: 1_190_000 },
+        ["Input 1.28M", "  Cache reads 1.19M", "  Uncached 90K"],
+      ],
+      [
+        { inputTokens: 84_000, cachedInputTokens: 0 },
+        ["Input 84K", "  Cache reads 0", "  Uncached 84K"],
+      ],
+      [{ inputTokens: 84_000 }, ["Input 84K"]],
+      [
+        {
+          inputTokens: 10_000,
+          hasSubagents: true,
+          subagents: { inputTokens: 5_000, cachedInputTokens: 4_000, outputTokens: 100 },
+        },
+        ["Input 15K", "  Cache reads 4K", "  Uncached 11K"],
+      ],
     ] as const) {
-      expect(
-        turnUsageView({ ...usage, inputTokens, cachedInputTokens, cacheCreationTokens }).rows[0],
-      ).toEqual({ label: "Input", value });
+      expect(inputRows(fields)).toEqual(rows);
     }
   });
 
@@ -334,7 +375,7 @@ describe("turnUsageView", () => {
     });
 
     expect(view.headline).toBe("900 tokens");
-    expect(view.rows).toContainEqual({ label: "Cache writes", value: "40K" });
+    expect(view.rows).toContainEqual({ label: "Cache writes", value: "40K", indent: true });
     expect(view.notes).toEqual([
       "Subagent usage isn't included.",
       "The provider reported only some token counts.",
@@ -357,7 +398,9 @@ describe("cost", () => {
 
     expect(view.rows.at(-1)).toEqual({ label: "Est. API cost", value: "$4.20" });
     expect(view.notes).toEqual(["Cost covers 2 of 3 turns."]);
-    expect(threadUsageView({ ...threadTotal, costUsd: 0, pricedTurns: 0 }).rows).toHaveLength(2);
+    expect(
+      threadUsageView({ ...threadTotal, costUsd: 0, pricedTurns: 0 }).rows.map((row) => row.label),
+    ).not.toContain("Est. API cost");
   });
 });
 
@@ -453,11 +496,22 @@ describe("threadUsageView", () => {
       tokens: "3.12M",
       costUsd: null,
       rows: [
-        { label: "Input", value: "3M (1M uncached, 67% cached)" },
+        { label: "Input", value: "3M" },
+        { label: "Cache reads", value: "2M", indent: true },
+        { label: "Uncached", value: "1M", indent: true },
         { label: "Output", value: "120K (40K reasoning)" },
       ],
       notes: [],
     });
+    expect(
+      threadUsageView({ ...threadTotal, cacheCreationTokens: 250_000 }).rows.map(
+        (row) => row.label,
+      ),
+    ).toEqual(["Input", "Cache reads", "Cache writes", "Uncached", "Output"]);
+    expect(threadUsageView({ ...threadTotal, cachedInputTokens: 0 }).rows).toEqual([
+      { label: "Input", value: "3M" },
+      { label: "Output", value: "120K (40K reasoning)" },
+    ]);
   });
 
   it("says how many turns the total leaves out", () => {
