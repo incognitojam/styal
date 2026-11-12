@@ -18,24 +18,41 @@ broken UI, provider behaviour, or anything that does not persist.
 
 Do nothing when the defect is cosmetic and the next routine nightly carries the fix.
 
-Timing: a fix reaches a published nightly 17–30 minutes after it merges (Fork CI takes 5–8
-minutes, Fork Nightly 11–21). A running desktop app checks 15 seconds after launch and then every
-4 minutes, and downloads a new release at once. A pull takes about five minutes. When the harm is
-permanent, pull even if the fix is close: every app that checks before the fix is published
-takes the bad release. When the harm is not permanent, roll forward.
+### Hotfix or pull
+
+A newer release replaces a bad one that a desktop app has downloaded but not installed. The app
+keeps checking every 4 minutes with a download waiting, downloads the newer release, and discards
+the old download; on macOS it also removes the staged update first. Pulling cannot do that: with
+the bad release gone, the feed shows an older version, the app finds no update, and it installs
+the download it already has on the next quit. So the hotfix is what protects anyone who already
+downloaded the bad release, and pulling only protects apps that have not checked yet.
+
+A desktop app installs its download when it quits or the user chooses **Restart to update**, and
+on macOS at any exit once the update is staged. Nothing installs on launch or while idle.
+Background services and linked servers update only when someone runs `styal update` or uses the
+update button; they never update on their own.
+
+A fix reaches a published nightly 17–30 minutes after it merges (Fork CI takes 5–8 minutes,
+Fork Nightly 11–21). A pull takes about five minutes.
+
+- The fix can merge now: merge it. That is enough for the desktop app. Pull as well only if
+  the 17–30 minute wait matters for a permanent harm.
+- No fix is ready, and the harm is permanent: pull now, then ship the fix as soon as it is ready.
+  Until then, apps that already downloaded the bad release install it when they quit.
+- The harm is not permanent: roll forward.
 
 ## How installs find a release
 
-| Surface                               | Where the version comes from                                                                                           | After a pull                                                                                                                              |
-| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| Desktop, Nightly track                | Newest `-nightly.` entry in `releases.atom`, then that release's `nightly*.yml`                                        | Falls back to the previous nightly. Never downgrades. A download already staged still installs on quit until a newer release replaces it. |
-| Desktop, Stable track                 | The release marked Latest, then its `latest*.yml`                                                                      | Follows Latest.                                                                                                                           |
-| `styal update`, mobile server updates | `@styal/cli` npm dist-tag, offered only if the release's `SHA256SUMS` downloads                                        | Follows the dist-tag. Refuses to go below the installed version without `--allow-downgrade`.                                              |
-| `npx @styal/cli@<tag or version>`     | npm, then that version's archive from the GitHub Release                                                               | Fails to download a drafted release.                                                                                                      |
-| Update everything, remote updates     | The version the desktop app is installing, or the web app's version; a service downloads that archive from the release | A drafted release fails as "not available"; a version already on disk still installs.                                                     |
-| Mobile                                | EAS Update on merge to `main`; Android APKs from `android-*` releases                                                  | Not tied to nightly or stable releases. Roll forward with a revert on `main`.                                                             |
-| Web app and relay                     | Deploy on push to `main`                                                                                               | Not tied to releases. Roll forward with a revert on `main`.                                                                               |
-| Pull request previews                 | One rolling prerelease with no update feed                                                                             | Unaffected.                                                                                                                               |
+| Surface                               | Where the version comes from                                                                                           | After a pull                                                                                                                            |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Desktop, Nightly track                | Newest `-nightly.` entry in `releases.atom`, then that release's `nightly*.yml`                                        | Falls back to the previous nightly. Never downgrades. A download already made still installs on quit until a newer release replaces it. |
+| Desktop, Stable track                 | The release marked Latest, then its `latest*.yml`                                                                      | Follows Latest.                                                                                                                         |
+| `styal update`, mobile server updates | `@styal/cli` npm dist-tag, offered only if the release's `SHA256SUMS` downloads                                        | Follows the dist-tag. Refuses to go below the installed version without `--allow-downgrade`.                                            |
+| `npx @styal/cli@<tag or version>`     | npm, then that version's archive from the GitHub Release                                                               | Fails to download a drafted release.                                                                                                    |
+| Update everything, remote updates     | The version the desktop app is installing, or the web app's version; a service downloads that archive from the release | A drafted release fails as "not available"; a version already on disk still installs.                                                   |
+| Mobile                                | EAS Update on merge to `main`; Android APKs from `android-*` releases                                                  | Not tied to nightly or stable releases. Roll forward with a revert on `main`.                                                           |
+| Web app and relay                     | Deploy on push to `main`                                                                                               | Not tied to releases. Roll forward with a revert on `main`.                                                                             |
+| Pull request previews                 | One rolling prerelease with no update feed                                                                             | Unaffected.                                                                                                                             |
 
 Sources: [`DesktopUpdates.ts`](../../apps/desktop/src/updates/DesktopUpdates.ts),
 [`resolveGitHubPublishConfig`](../../scripts/build-desktop-artifact.ts),
