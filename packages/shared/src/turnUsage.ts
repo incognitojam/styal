@@ -18,7 +18,7 @@ import {
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
-import { formatPercent, formatTokens, formatUsd } from "./usageFormat.ts";
+import { formatTokens, formatUsd } from "./usageFormat.ts";
 import { getModelSelectionStringOptionValue } from "./model.ts";
 
 const decodeTurnTokenUsage = Schema.decodeUnknownOption(TurnTokenUsage);
@@ -53,6 +53,8 @@ export interface TurnUsageByTurn {
 
 export const EMPTY_TURN_USAGE: TurnUsageByTurn = { key: "", byTurnId: new Map(), thread: null };
 
+const inputFields = ["inputTokens", "cachedInputTokens", "cacheCreationTokens"] as const;
+
 /** Several native turns can complete one app run after compaction or a handoff. */
 export function addTurnTokenUsage(a: TurnTokenUsage, b: TurnTokenUsage): TurnTokenUsage {
   const fields = [
@@ -62,23 +64,27 @@ export function addTurnTokenUsage(a: TurnTokenUsage, b: TurnTokenUsage): TurnTok
     "cacheCreationTokens",
     "reasoningTokens",
   ] as const;
-  const counts = Object.fromEntries(
-    fields.flatMap((field) =>
-      a[field] === undefined && b[field] === undefined
-        ? []
-        : [[field, (a[field] ?? 0) + (b[field] ?? 0)]],
-    ),
-  );
+  // Each native turn's input is corrected before summing, as the server's thread total does.
+  const sum = (x: TokenCounts | undefined, y: TokenCounts | undefined) =>
+    Object.fromEntries(
+      fields.flatMap((field) => {
+        const present = (counts: TokenCounts | undefined) =>
+          field === "inputTokens"
+            ? inputFields.some((inputField) => counts?.[inputField] !== undefined)
+            : counts?.[field] !== undefined;
+        if (!present(x) && !present(y)) return [];
+        const value =
+          field === "inputTokens"
+            ? inputWithCache(x) + inputWithCache(y)
+            : (x?.[field] ?? 0) + (y?.[field] ?? 0);
+        return [[field, value] as const];
+      }),
+    );
+  const counts = sum(a, b);
   const subagents =
     a.subagents === undefined && b.subagents === undefined
       ? undefined
-      : Object.fromEntries(
-          fields.flatMap((field) =>
-            a.subagents?.[field] === undefined && b.subagents?.[field] === undefined
-              ? []
-              : [[field, (a.subagents?.[field] ?? 0) + (b.subagents?.[field] ?? 0)]],
-          ),
-        );
+      : sum(a.subagents, b.subagents);
   return decodeTurnTokenUsageSync({
     ...counts,
     usageScope: "main_agent",
@@ -305,11 +311,22 @@ export function addThreadTokenUsage(a: ThreadTokenUsage, b: ThreadTokenUsage): T
   };
 }
 
+/**
+ * Input includes cache reads and writes, but a partial record can carry cache counts without
+ * input, and counts clamped to input one at a time can together exceed it.
+ */
+function inputWithCache(counts: TokenCounts | undefined): number {
+  return Math.max(
+    counts?.inputTokens ?? 0,
+    (counts?.cachedInputTokens ?? 0) + (counts?.cacheCreationTokens ?? 0),
+  );
+}
+
 /** The main agent's usage plus any its subagents reported. */
 function combinedTokenCounts(usage: TurnTokenUsage) {
   const subagents = usage.subagents;
   return {
-    inputTokens: (usage.inputTokens ?? 0) + (subagents?.inputTokens ?? 0),
+    inputTokens: inputWithCache(usage) + inputWithCache(subagents),
     cachedInputTokens: (usage.cachedInputTokens ?? 0) + (subagents?.cachedInputTokens ?? 0),
     cacheCreationTokens: (usage.cacheCreationTokens ?? 0) + (subagents?.cacheCreationTokens ?? 0),
     outputTokens: (usage.outputTokens ?? 0) + (subagents?.outputTokens ?? 0),
@@ -318,7 +335,7 @@ function combinedTokenCounts(usage: TurnTokenUsage) {
 }
 
 function subagentTokens(usage: TurnTokenUsage): number {
-  return (usage.subagents?.inputTokens ?? 0) + (usage.subagents?.outputTokens ?? 0);
+  return inputWithCache(usage.subagents) + (usage.subagents?.outputTokens ?? 0);
 }
 
 export interface TurnUsageView {
@@ -328,7 +345,12 @@ export interface TurnUsageView {
   readonly tokens: string;
   /** The estimated API cost, when known, for those who lead with cost. */
   readonly costUsd: number | null;
-  readonly rows: ReadonlyArray<{ readonly label: string; readonly value: string }>;
+  /** `indent` marks a part of the row above it. */
+  readonly rows: ReadonlyArray<{
+    readonly label: string;
+    readonly value: string;
+    readonly indent?: boolean;
+  }>;
   readonly notes: ReadonlyArray<string>;
 }
 
@@ -350,34 +372,38 @@ function formatCost(usd: number): string {
 
 function usageView(
   usage: TokenCounts,
+  /** Whether the provider reported cache counts, so zero reads can show as a miss. */
+  reportsCache: boolean,
   subagents: number,
   costUsd: number | undefined,
   notes: ReadonlyArray<string>,
 ): TurnUsageView {
-  // Input already includes cache reads and writes.
-  const input = usage.inputTokens ?? 0;
+  // Thread totals stored before turns were counted this way can still fall short.
+  const input = inputWithCache(usage);
   const output = usage.outputTokens ?? 0;
   const cached = usage.cachedInputTokens ?? 0;
   const reasoning = usage.reasoningTokens ?? 0;
   const cacheWrites = usage.cacheCreationTokens ?? 0;
 
-  const rows = [
-    {
-      label: "Input",
-      value:
-        input > 0 && cached > 0
-          ? `${formatTokens(input)} (${formatPercent(cached / input, 0)} cached)`
-          : formatTokens(input),
-    },
-    {
-      label: "Output",
-      value:
-        reasoning > 0
-          ? `${formatTokens(output)} (${formatTokens(reasoning)} reasoning)`
-          : formatTokens(output),
-    },
+  const rows: Array<TurnUsageView["rows"][number]> = [
+    { label: "Input", value: formatTokens(input) },
   ];
-  if (cacheWrites > 0) rows.push({ label: "Cache writes", value: formatTokens(cacheWrites) });
+  if (reportsCache) {
+    rows.push({ label: "Cache reads", value: formatTokens(cached), indent: true });
+    if (cacheWrites > 0) {
+      rows.push({ label: "Cache writes", value: formatTokens(cacheWrites), indent: true });
+    }
+    // Input left after the cache counts the provider reported; unreported writes stay in it.
+    const uncached = Math.max(0, input - cached - cacheWrites);
+    rows.push({ label: "Uncached", value: formatTokens(uncached), indent: true });
+  }
+  rows.push({
+    label: "Output",
+    value:
+      reasoning > 0
+        ? `${formatTokens(output)} (${formatTokens(reasoning)} reasoning)`
+        : formatTokens(output),
+  });
   // Already within the rows above; this shows their share.
   if (subagents > 0) rows.push({ label: "Subagents", value: formatTokens(subagents) });
   // What these tokens would cost at API rates; subscriptions bill separately.
@@ -493,7 +519,17 @@ export function turnUsageView(usage: TurnTokenUsage): TurnUsageView {
     notes.push("Subagent usage isn't included.");
   }
   if (usage.usageStatus === "partial") notes.push("The provider reported only some token counts.");
-  return usageView(combinedTokenCounts(usage), subagentTokens(usage), usage.costUsd, notes);
+  const reportsCache = [usage, usage.subagents].some(
+    (counts) =>
+      counts?.cachedInputTokens !== undefined || counts?.cacheCreationTokens !== undefined,
+  );
+  return usageView(
+    combinedTokenCounts(usage),
+    reportsCache,
+    subagentTokens(usage),
+    usage.costUsd,
+    notes,
+  );
 }
 
 export function threadUsageView(usage: ThreadTokenUsage): TurnUsageView {
@@ -515,6 +551,7 @@ export function threadUsageView(usage: ThreadTokenUsage): TurnUsageView {
   }
   return usageView(
     usage,
+    usage.cachedInputTokens > 0 || usage.cacheCreationTokens > 0,
     usage.subagentTokens ?? 0,
     pricedTurns > 0 ? usage.costUsd : undefined,
     notes,
