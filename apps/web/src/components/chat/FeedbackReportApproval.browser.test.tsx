@@ -12,7 +12,7 @@ describe("FeedbackReportApprovalBanner", () => {
       <FeedbackReportApprovalBanner
         report={{
           title: "A title",
-          body: "The body that gets posted",
+          body: "The body that gets posted\n\n<!-- styal-report: kind=agent version=0.1.1 -->",
           repository: "incognitojam/styal",
           account: "octocat",
         }}
@@ -35,6 +35,9 @@ describe("FeedbackReportApprovalBanner", () => {
     await userEvent.click(screen.getByRole("button", { name: "Review" }));
     await expect.element(page.getByText("A title")).toBeVisible();
     await expect.element(page.getByText("The body that gets posted")).toBeVisible();
+    expect(document.querySelector(".chat-markdown")?.textContent).toContain(
+      "<!-- styal-report: kind=agent version=0.1.1 -->",
+    );
     await expect
       .element(
         page.getByText(/public GitHub issue on incognitojam\/styal, from the account @octocat/),

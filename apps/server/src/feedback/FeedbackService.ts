@@ -74,13 +74,14 @@ const make = Effect.gen(function* () {
   const platform = yield* HostProcess.Platform;
   const architecture = yield* HostProcess.Architecture;
 
-  const composeBody = (draft: FeedbackDraft, author: string) =>
+  const composeBody = (draft: FeedbackDraft, author: string, kind: "user" | "agent") =>
     [
       draft.body,
       "",
       "---",
       `styal ${packageJson.version} (${ServerConfig.telemetryChannel}), ${platform} ${architecture}`,
       author,
+      `<!-- styal-report: kind=${kind} version=${packageJson.version} -->`,
     ].join("\n");
 
   const notFiled = (title: string, body: string, reason: string) =>
@@ -156,7 +157,7 @@ const make = Effect.gen(function* () {
 
   const submit: FeedbackService["Service"]["submit"] = Effect.fn("FeedbackService.submit")(
     function* (draft) {
-      return yield* file(draft.title, composeBody(draft, "Sent from styal by the user."));
+      return yield* file(draft.title, composeBody(draft, "Sent from styal by the user.", "user"));
     },
   );
 
@@ -175,6 +176,7 @@ const make = Effect.gen(function* () {
         : `Written by an agent (${[providerName(model.instanceId), model.model]
             .filter((part) => part !== undefined)
             .join(", ")}) and approved by the user.`,
+      "agent",
     );
     const login = yield* account;
     if (login === null) {
