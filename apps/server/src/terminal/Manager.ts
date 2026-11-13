@@ -184,6 +184,7 @@ export class TerminalManager extends Context.Service<
      */
     readonly openCommand: (
       requestedInput: TerminalCommandOpenInput,
+      options?: { readonly workspaceLeaseHeld: boolean },
     ) => Effect.Effect<TerminalSessionSnapshot, TerminalError>;
 
     /**
@@ -3253,8 +3254,13 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       resolveLaunchInputEnvironment(input).pipe(Effect.flatMap(openLocked)),
     );
 
-  const openCommand: TerminalManager["Service"]["openCommand"] = (requestedInput) =>
-    withThreadLock(requestedInput.threadId, openLocked(requestedInput));
+  const openCommand: TerminalManager["Service"]["openCommand"] = (requestedInput, options) =>
+    withThreadLock(
+      requestedInput.threadId,
+      options?.workspaceLeaseHeld
+        ? openWithWorkspaceLease(requestedInput)
+        : openLocked(requestedInput),
+    );
 
   const openOrAttachForStream = Effect.fnUntraced(function* (requestedInput: TerminalAttachInput) {
     const terminalId = requestedInput.terminalId;

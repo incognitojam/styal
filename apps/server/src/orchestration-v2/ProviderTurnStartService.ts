@@ -31,6 +31,7 @@ import * as ServerConfig from "../config.ts";
 import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
+import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderAuthService from "../provider/ProviderAuthService.ts";
 import * as ProviderInstallGate from "../provider/ProviderInstallGate.ts";
@@ -147,6 +148,7 @@ export const layer: Layer.Layer<
   | ServerSettings.ServerSettingsService
   | GitWorkflowService.GitWorkflowService
   | GitVcsDriver.GitVcsDriver
+  | ProjectSetupScriptRunner.ProjectSetupScriptRunner
   | ProjectService.ProjectService
   | ProviderAuthService.ProviderAuthService
   | ProviderInstallGate.ProviderInstallGate
@@ -166,6 +168,7 @@ export const layer: Layer.Layer<
     const gitWorkflow = yield* GitWorkflowService.GitWorkflowService;
     const git = yield* GitVcsDriver.GitVcsDriver;
     const projects = yield* ProjectService.ProjectService;
+    const setupScripts = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
     const providerAuth = yield* ProviderAuthService.ProviderAuthService;
     const installGate = yield* ProviderInstallGate.ProviderInstallGate;
     const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
@@ -705,6 +708,29 @@ export const layer: Layer.Layer<
                 worktreePath,
                 branch,
               }).pipe(
+                Effect.andThen(
+                  Effect.gen(function* () {
+                    const setup = yield* setupScripts.runForThread({
+                      threadId: projection.thread.id,
+                      projectId: project.id,
+                      projectCwd: project.workspaceRoot,
+                      worktreePath,
+                      project,
+                      observeCompletion: {},
+                      workspaceLeaseHeld: true,
+                    });
+                    if (setup.status === "started" && !setup.async && setup.completion) {
+                      const completion = yield* setup.completion;
+                      if (completion.exitCode !== 0) {
+                        return yield* new WorktreeRecreateError({
+                          worktreePath,
+                          branch,
+                          cause: `Setup script exited with ${completion.exitCode ?? "no exit code"}.`,
+                        });
+                      }
+                    }
+                  }),
+                ),
                 Effect.mapError((cause) =>
                   cause._tag === "WorktreeRecreateNoBaseError"
                     ? cause

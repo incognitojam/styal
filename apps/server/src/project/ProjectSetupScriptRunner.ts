@@ -201,6 +201,8 @@ export type ProjectSetupScriptRunnerResult =
   | ProjectSetupScriptRunnerResultStarted;
 
 export interface ProjectSetupScriptRunnerInput {
+  /** Provider recovery already holds the lease while setup opens its terminal. */
+  readonly workspaceLeaseHeld?: boolean;
   readonly threadId: string;
   readonly projectId?: string;
   readonly projectCwd?: string;
@@ -930,15 +932,18 @@ export const make = Effect.gen(function* () {
       : undefined;
 
     const terminal = yield* terminalManager
-      .openCommand({
-        threadId: input.threadId,
-        terminalId,
-        cwd,
-        worktreePath: input.worktreePath,
-        env: { ...env, NO_COLOR: "1", FORCE_COLOR: "0" },
-        command: script.command,
-        label: script.name,
-      })
+      .openCommand(
+        {
+          threadId: input.threadId,
+          terminalId,
+          cwd,
+          worktreePath: input.worktreePath,
+          env: { ...env, NO_COLOR: "1", FORCE_COLOR: "0" },
+          command: script.command,
+          label: script.name,
+        },
+        { workspaceLeaseHeld: input.workspaceLeaseHeld === true },
+      )
       .pipe(
         Effect.mapError(
           (cause) =>

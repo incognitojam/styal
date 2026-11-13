@@ -1,3 +1,4 @@
+import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
@@ -770,11 +771,16 @@ it.layer(
       );
       yield* Effect.addFinalizer(() => Effect.sync(unsubscribe));
 
-      yield* manager.openCommand({
+      const commandInput = {
         ...openInput({ terminalId: "setup-setup" }),
         command: "vp i",
         label: "Setup Worktree",
-      });
+      };
+      const path = yield* Path.Path;
+      yield* withWorkspaceLease(
+        path.resolve(commandInput.worktreePath ?? commandInput.cwd),
+        manager.openCommand(commandInput, { workspaceLeaseHeld: true }),
+      );
 
       inspect = { hasRunningSubprocess: true, childCommand: "vp", processIds: [100] };
       yield* Deferred.await(childSeen);
