@@ -162,6 +162,8 @@ Auto environment operations report `feature.used` with `feature = auto-environme
 
 Machine-list actions on web and desktop report `feature.used`, `feature = machine-list`, `source = user`, `action = add | stop`, and `outcome = success | failure`, requiring client vocabulary version 31. These count completed attempts from a machine’s agent list, excluding cancelled confirmations. Machine names, addresses, pairing codes and identifiers are never reported.
 
+Automatic worktree setup recovery emits `feature.used` with feature `worktree-setup-recovery`, action `start`, and source `system` once a recovery setup terminal starts. No command, path, or thread data is collected. Adoption is versioned by `worktreeSetupRecoveryUsageVersion`.
+
 ## Measure a fork feature
 
 Measure use of a new or materially changed fork feature in the PR that ships it. Measure fork-maintained behavior only: usage of an upstream feature does not inform whether to keep a fork difference.

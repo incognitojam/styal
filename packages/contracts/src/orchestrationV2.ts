@@ -1867,6 +1867,7 @@ export const OrchestrationV2TurnItem = Schema.Union([
         scriptIcon: Schema.optional(ProjectScriptIcon),
         terminalId: Schema.String,
         worktreePath: Schema.String,
+        completionEvidence: Schema.optionalKey(Schema.Literal(1)),
         /** Set, with status "idle", while a styal.json action waits for its command to be approved. */
         awaitingApproval: Schema.optional(
           Schema.Struct({ projectId: ProjectId, actionId: Schema.String }),
@@ -2746,6 +2747,7 @@ export const OrchestrationV2TurnItemJson = Schema.Union([
         scriptIcon: Schema.optional(ProjectScriptIcon),
         terminalId: Schema.String,
         worktreePath: Schema.String,
+        completionEvidence: Schema.optionalKey(Schema.Literal(1)),
         /** Set, with status "idle", while a styal.json action waits for its command to be approved. */
         awaitingApproval: Schema.optional(
           Schema.Struct({ projectId: ProjectId, actionId: Schema.String }),

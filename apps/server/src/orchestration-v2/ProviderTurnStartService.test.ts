@@ -298,7 +298,13 @@ effectIt.effect.each([
     );
     yield* harness.start;
     expect(harness.createWorktree).toHaveBeenCalledTimes(input.recreated ? 1 : 0);
-    expect(harness.runSetup).toHaveBeenCalledTimes(input.recreated ? 1 : 0);
+    expect(harness.runSetup).toHaveBeenCalledTimes(
+      input.recreated || ("exists" in input && input.exists) ? 1 : 0,
+    );
+    if ("exists" in input && input.exists)
+      expect(harness.runSetup).toHaveBeenCalledWith(
+        expect.objectContaining({ recoverIfEvidenceMissing: true }),
+      );
   }),
 );
 

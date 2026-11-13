@@ -1,3 +1,5 @@
+import { isProcessAlive } from "../serverRuntimeState.ts";
+import { isLinkedProjectWorktree } from "./setupCompletionEvidence.ts";
 import {
   EventId,
   ProjectFileActionApprovalError,
@@ -17,6 +19,8 @@ import {
   settleProjectScript,
   setupProjectScript,
 } from "@t3tools/shared/projectScripts";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -44,6 +48,8 @@ import { forkParked } from "../serverActivation.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
+import * as FeatureUsage from "../telemetry/FeatureUsage.ts";
+import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
 import * as WorkspacePortAllocator from "../workspace/WorkspacePortAllocator.ts";
 
 type SetupRunOutcome =
@@ -74,6 +80,7 @@ const SetupRunActivityPayload = Schema.Struct({
   command: Schema.String,
   terminalId: Schema.String,
   worktreePath: Schema.String,
+  completionEvidence: Schema.optionalKey(Schema.Literal(1)),
   awaitingApproval: Schema.optionalKey(
     Schema.Struct({ projectId: ProjectId, actionId: Schema.String }),
   ),
@@ -203,6 +210,7 @@ export type ProjectSetupScriptRunnerResult =
 export interface ProjectSetupScriptRunnerInput {
   /** Provider recovery already holds the lease while setup opens its terminal. */
   readonly workspaceLeaseHeld?: boolean;
+  readonly recoverIfEvidenceMissing?: boolean;
   readonly threadId: string;
   readonly projectId?: string;
   readonly projectCwd?: string;
@@ -289,6 +297,9 @@ function stripTerminalControl(text: string): string {
 
 /** @public */
 export const make = Effect.gen(function* () {
+  const fileSystem = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const analytics = yield* AnalyticsService.AnalyticsService;
   const projects = yield* ProjectService.ProjectService;
   const threads = yield* ProjectionStore.ProjectionStoreV2;
   const terminalManager = yield* TerminalManager.TerminalManager;
@@ -356,6 +367,9 @@ export const make = Effect.gen(function* () {
               ...(metadata.scriptIcon === undefined ? {} : { scriptIcon: metadata.scriptIcon }),
               terminalId: metadata.terminalId,
               worktreePath: metadata.worktreePath,
+              ...(metadata.completionEvidence === undefined
+                ? {}
+                : { completionEvidence: metadata.completionEvidence }),
               ...(metadata.awaitingApproval === undefined
                 ? {}
                 : { awaitingApproval: metadata.awaitingApproval }),
@@ -401,6 +415,19 @@ export const make = Effect.gen(function* () {
       (outcome.reason === "server-restarted" ||
         outcome.reason === "terminal-closed" ||
         outcome.reason === "terminal-restarted");
+    const completionEvidence =
+      run.trigger === "setup" && succeeded
+        ? yield* Effect.gen(function* () {
+            yield* fileSystem.makeDirectory(path.join(run.worktreePath, ".styal"), {
+              recursive: true,
+            });
+            yield* fileSystem.writeFileString(
+              path.join(run.worktreePath, ".styal/setup-completed"),
+              `${run.threadId}\n${run.scriptId}\n${run.command}`,
+            );
+            return 1 as const;
+          }).pipe(Effect.orElseSucceed(() => undefined))
+        : undefined;
     yield* appendActivity({
       threadId: run.threadId,
       runId: run.runId,
@@ -420,6 +447,7 @@ export const make = Effect.gen(function* () {
         command: run.command,
         terminalId: run.terminalId,
         worktreePath: run.worktreePath,
+        ...(completionEvidence === undefined ? {} : { completionEvidence }),
         outcome: outcome.outcome,
         ...(outcome.outcome === "failed" ? { failureReason: outcome.reason } : {}),
         exitCode: outcome.exitCode,
@@ -773,6 +801,7 @@ export const make = Effect.gen(function* () {
       trigger === "settle" ? settleProjectScript(eligible) : setupProjectScript(eligible);
     if (!script && input.expectedActionId !== undefined) return { status: "no-script" } as const;
     if (!script) {
+      if (input.recoverIfEvidenceMissing) return { status: "no-script" } as const;
       // A styal.json action asking for this role runs only once its command is
       // approved; until then the thread says so instead of silently skipping.
       const awaiting = scripts.find((candidate) =>
@@ -815,6 +844,43 @@ export const make = Effect.gen(function* () {
       return {
         status: "no-script",
       } as const;
+    }
+
+    if (input.recoverIfEvidenceMissing) {
+      const recover = yield* Effect.gen(function* () {
+        const rows = yield* sql<{ readonly payload_json: string }>`
+          SELECT payload_json FROM orchestration_v2_projection_turn_items
+          WHERE thread_id = ${input.threadId} AND type = 'command_execution'
+            AND json_extract(payload_json, '$.setupScript.scriptId') = ${script.id}
+            AND json_extract(payload_json, '$.setupScript.worktreePath') = ${input.worktreePath}
+            AND json_extract(payload_json, '$.setupScript.terminalId') LIKE 'setup-%'
+            AND json_extract(payload_json, '$.input') = ${script.command}
+          ORDER BY ordinal DESC LIMIT 1
+        `;
+        if (!rows[0]) return false;
+        const previous = yield* decodeTurnItemJson(rows[0].payload_json);
+        if (
+          previous.type !== "command_execution" ||
+          previous.status !== "completed" ||
+          previous.setupScript?.completionEvidence !== 1
+        )
+          return false;
+        const markerPath = (name: string) => path.join(input.worktreePath, ".styal", name);
+        if (
+          (yield* fileSystem.exists(markerPath("setup-completed"))) ||
+          (yield* fileSystem.exists(markerPath("setup-failed")))
+        )
+          return false;
+        const marker = yield* fileSystem
+          .readFileString(markerPath("setup-running"))
+          .pipe(Effect.orElseSucceed(() => ""));
+        const pid = Number(marker.trim());
+        if (Number.isSafeInteger(pid) && pid > 0 && isProcessAlive(pid)) return false;
+        return yield* Effect.tryPromise(() =>
+          isLinkedProjectWorktree(project.workspaceRoot, input.worktreePath),
+        );
+      }).pipe(Effect.orElseSucceed(() => false));
+      if (!recover) return { status: "no-script" } as const;
     }
 
     // Each thread has one terminal per lifecycle script. A later run restarts
@@ -1049,6 +1115,11 @@ export const make = Effect.gen(function* () {
       yield* recordOutcome(...pendingOutcome.value);
     }
 
+    if (input.recoverIfEvidenceMissing)
+      yield* FeatureUsage.observe(
+        { feature: "worktree-setup-recovery", action: "start", source: "system" },
+        Effect.void,
+      ).pipe(Effect.provideService(AnalyticsService.AnalyticsService, analytics));
     return {
       status: "started",
       runId,

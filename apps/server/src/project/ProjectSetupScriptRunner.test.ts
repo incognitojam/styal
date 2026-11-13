@@ -1,3 +1,9 @@
+// @effect-diagnostics nodeBuiltinImport:off -- Real Git fixtures exercise repository scope and completion evidence.
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as NodeChildProcess from "node:child_process";
+import * as NodeFS from "node:fs";
+import * as NodePath from "node:path";
+import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
 import { assert, describe, it, vi } from "@effect/vitest";
 import { ProjectId, ThreadId, TurnItemId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
@@ -31,8 +37,25 @@ const reservedPorts = Layer.mock(WorkspacePortAllocator.WorkspacePortAllocator)(
 const importer = LegacyImporter.layer.pipe(Layer.provide(Layer.mergeAll(stores, sink)));
 
 it.effect(
-  "runs finite setup commands and records configured identity and actual outcomes in V2",
+  "recovers missing completion evidence once, binds it to the action, and retains failures",
   () => {
+    const root = NodeFS.mkdtempSync(NodePath.resolve(".scratch/setup-recovery-"));
+    const repo = NodePath.join(root, "repo");
+    const worktree = NodePath.join(root, "worktree");
+    NodeFS.mkdirSync(repo);
+    const git = (...args: string[]) => NodeChildProcess.execFileSync("git", ["-C", repo, ...args]);
+    git("init");
+    git(
+      "-c",
+      "user.name=Example",
+      "-c",
+      "user.email=example@example.invalid",
+      "commit",
+      "--allow-empty",
+      "-m",
+      "init",
+    );
+    git("worktree", "add", "-b", "feature", worktree);
     const listeners = new Set<
       Parameters<TerminalManager.TerminalManager["Service"]["subscribe"]>[0]
     >();
@@ -75,7 +98,7 @@ it.effect(
     const project = {
       id: projectId,
       title: "Project",
-      workspaceRoot: "/synthetic/repo",
+      workspaceRoot: repo,
       repositoryIdentity: null,
       faviconPath: null,
       defaultModelSelection: null,
@@ -104,7 +127,11 @@ it.effect(
       }),
       ServerSettings.layerTest(),
     );
-    const runner = ProjectSetupScriptRunner.layer.pipe(Layer.provide(dependencies));
+    const runner = ProjectSetupScriptRunner.layer.pipe(
+      Layer.provide(NodeServices.layer),
+      Layer.provide(AnalyticsService.AnalyticsService.layerTest),
+      Layer.provide(dependencies),
+    );
     return Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
       yield* sql`INSERT INTO projection_projects (project_id, title, workspace_root, scripts_json, created_at, updated_at)
@@ -115,10 +142,19 @@ it.effect(
       const service = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
       const projections = yield* ProjectionStore.ProjectionStoreV2;
       const output: string[] = [];
+      assert.equal(
+        (yield* service.runForThread({
+          threadId,
+          projectId,
+          worktreePath: worktree,
+          recoverIfEvidenceMissing: true,
+        })).status,
+        "no-script",
+      );
       const result = yield* service.runForThread({
         threadId,
         projectId,
-        worktreePath: "/synthetic/repo-worktree",
+        worktreePath: worktree,
         observeCompletion: {
           onOutputLine: (line) =>
             Effect.sync(() => {
@@ -131,10 +167,10 @@ it.effect(
       assert.equal(result.scriptName, "Install dependencies");
       assert.equal(openCommand.mock.calls[0]?.[0].command, "vp install");
       assert.deepEqual(openCommand.mock.calls[0]?.[0].env, {
-        STYAL_PROJECT_ROOT: "/synthetic/repo",
-        STYAL_WORKTREE_PATH: "/synthetic/repo-worktree",
-        T3CODE_PROJECT_ROOT: "/synthetic/repo",
-        T3CODE_WORKTREE_PATH: "/synthetic/repo-worktree",
+        STYAL_PROJECT_ROOT: repo,
+        STYAL_WORKTREE_PATH: worktree,
+        T3CODE_PROJECT_ROOT: repo,
+        T3CODE_WORKTREE_PATH: worktree,
         NO_COLOR: "1",
         FORCE_COLOR: "0",
       });
@@ -172,39 +208,82 @@ it.effect(
       assert.equal(completed?.status, "completed");
       assert.equal(completed?.type === "command_execution" && completed.exitCode, 0);
 
+      const recover = () =>
+        service.runForThread({
+          threadId,
+          projectId,
+          worktreePath: worktree,
+          recoverIfEvidenceMissing: true,
+          observeCompletion: {},
+        });
+      const exit = (terminalId: string, exitCode: number, exitSignal: number | null = null) =>
+        Effect.forEach(
+          [...listeners],
+          (listener) => listener({ type: "exited", threadId, terminalId, exitCode, exitSignal }),
+          { discard: true },
+        );
+      assert.ok(
+        NodeFS.readFileSync(NodePath.join(worktree, ".styal/setup-completed"), "utf8").includes(
+          "vp install",
+        ),
+      );
+      assert.equal((yield* recover()).status, "no-script");
+      NodeFS.rmSync(NodePath.join(worktree, ".styal/setup-completed"));
+      NodeFS.writeFileSync(NodePath.join(worktree, ".styal/setup-failed"), "");
+      assert.equal((yield* recover()).status, "no-script");
+      NodeFS.rmSync(NodePath.join(worktree, ".styal/setup-failed"));
+      NodeFS.writeFileSync(NodePath.join(worktree, ".styal/setup-running"), String(process.pid));
+      assert.equal((yield* recover()).status, "no-script");
+      NodeFS.rmSync(NodePath.join(worktree, ".styal/setup-running"));
+      const recovered = yield* recover();
+      assert.equal(recovered.status, "started");
+      if (recovered.status !== "started") return;
+      assert.equal((yield* recover()).status, "no-script");
+      yield* exit(recovered.terminalId, 0);
+      yield* recovered.completion!;
+      assert.equal((yield* recover()).status, "no-script");
+      project.scripts[0]!.command = "echo markerless";
+      NodeFS.rmSync(NodePath.join(worktree, ".styal/setup-completed"));
+      assert.equal((yield* recover()).status, "no-script");
+      const changed = yield* service.runForThread({
+        threadId,
+        projectId,
+        worktreePath: worktree,
+        observeCompletion: {},
+      });
+      if (changed.status !== "started") return assert.fail("manual setup did not start");
+      yield* exit(changed.terminalId, 0);
+      yield* changed.completion!;
+      assert.equal((yield* recover()).status, "no-script");
       for (const { exitCode, exitSignal } of [
         { exitCode: 2, exitSignal: null },
         { exitCode: 0, exitSignal: 15 },
       ]) {
-        const failed = yield* service.runForThread({
-          threadId,
-          projectId,
-          worktreePath: "/synthetic/repo-worktree",
-          observeCompletion: {},
-        });
-        assert.equal(failed.status, "started");
-        if (failed.status !== "started") return;
-        yield* Effect.forEach([...listeners], (listener) =>
-          listener({
-            type: "exited",
-            threadId,
-            terminalId: failed.terminalId,
-            exitCode,
-            exitSignal,
-          }),
-        );
+        NodeFS.rmSync(NodePath.join(worktree, ".styal/setup-completed"), { force: true });
+        const failed =
+          exitSignal === null
+            ? yield* recover()
+            : yield* service.runForThread({
+                threadId,
+                projectId,
+                worktreePath: worktree,
+                observeCompletion: {},
+              });
+        if (failed.status !== "started") return assert.fail("setup did not start");
+        yield* exit(failed.terminalId, exitCode, exitSignal);
         assert.deepEqual(yield* failed.completion!, { exitCode, exitSignal, durationMs: 0 });
         const failure = (yield* projections.getThreadProjection(threadId)).turnItems.find(
           (item) => item.type === "command_execution" && item.setupScript?.runId === failed.runId,
         );
         assert.equal(failure?.status, "failed");
         assert.equal(failure?.type === "command_execution" && failure.exitCode, exitCode);
+        assert.equal((yield* recover()).status, "no-script");
+        assert.equal((yield* recover()).status, "no-script");
       }
-
       const stopped = yield* service.runForThread({
         threadId,
         projectId,
-        worktreePath: "/synthetic/repo-worktree",
+        worktreePath: worktree,
       });
       assert.equal(stopped.status, "started");
       if (stopped.status !== "started") return;
@@ -221,8 +300,10 @@ it.effect(
         worktreePath: project.workspaceRoot,
       });
       assert.equal(guarded.status, "not-a-worktree");
-      assert.equal(openCommand.mock.calls.length, 4);
-    }).pipe(Effect.provide(Layer.mergeAll(dependencies, runner)));
+    }).pipe(
+      Effect.provide(Layer.mergeAll(dependencies, runner)),
+      Effect.ensuring(Effect.sync(() => NodeFS.rmSync(root, { recursive: true, force: true }))),
+    );
   },
 );
 
@@ -297,7 +378,11 @@ it.effect(
       }),
       ServerSettings.layerTest(),
     );
-    const runner = ProjectSetupScriptRunner.layer.pipe(Layer.provide(dependencies));
+    const runner = ProjectSetupScriptRunner.layer.pipe(
+      Layer.provide(NodeServices.layer),
+      Layer.provide(AnalyticsService.AnalyticsService.layerTest),
+      Layer.provide(dependencies),
+    );
     return Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
       yield* sql`INSERT INTO projection_projects (project_id, title, workspace_root, scripts_json, created_at, updated_at)
@@ -455,7 +540,11 @@ describe("styal.json setup actions", () => {
           : {},
       ),
     );
-    const runner = ProjectSetupScriptRunner.layer.pipe(Layer.provide(dependencies));
+    const runner = ProjectSetupScriptRunner.layer.pipe(
+      Layer.provide(NodeServices.layer),
+      Layer.provide(AnalyticsService.AnalyticsService.layerTest),
+      Layer.provide(dependencies),
+    );
     return Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
       yield* sql`INSERT INTO projection_projects (project_id, title, workspace_root, scripts_json, created_at, updated_at)

@@ -240,6 +240,8 @@ to **Uncommitted changes**, which protects tracked edits and untracked files but
 files such as `.env` and build output. **Any local files** also protects ignored files other than
 `node_modules`. **Edited tracked files** protects only tracked edits and allows untracked and
 ignored files to be deleted. Branches and thread history stay; starting another turn recreates the checkout.
+When a retained worktree loses its styal setup completion record, the next turn reruns the same approved setup action once. This applies after setup has succeeded with this version; older worktrees are left alone until you run setup again. Failed setup stays visible in the work log and can be rerun manually.
+
 Merge cleanup requires a merged pull request whose commits are included in the remote default
 branch. A squash or rebase merge on GitHub also counts when the pull request targeted the default
 branch and the worktree is still at the pull request's last commit.
