@@ -85,6 +85,8 @@ const formatPendingPrimaryActionLabel = (input: {
 };
 
 const STOP_PENDING_MAX_MS = 10_000;
+// The action that takes Stop's place ignores clicks this long, so repeat Stop clicks can't resume.
+const STOP_LANDED_CLICK_GUARD_MS = 500;
 
 const messageActionPillClassName =
   "inline-flex shrink-0 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-full bg-message-action font-medium text-base text-message-action-foreground shadow-xs shadow-message-action/24 outline-none hover:bg-message-action-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-64 disabled:shadow-none sm:text-sm";
@@ -132,14 +134,18 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
       setStopPhase("landed");
     else if (stopPhase === "landed" && canInterrupt) setStopPhase(null);
   }
-  const isStopDisabled = stopPhase === "pending" || stopPhase === "landed";
-  const stopLabel =
-    stopPhase === "landed" ? "Stopped" : stopPhase === "pending" ? "Stopping" : "Stop generation";
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- timer that re-enables Stop if the interrupt never settles
+  const isStopDisabled = stopPhase === "pending";
+  const stopLabel = stopPhase === "pending" ? "Stopping" : "Stop generation";
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- timers that re-enable an unsettled Stop and end the landed click guard
   useEffect(() => {
-    if (stopPhase !== "pending") return;
-    const timeout = setTimeout(() => setStopPhase("timedOut"), STOP_PENDING_MAX_MS);
-    return () => clearTimeout(timeout);
+    if (stopPhase === "pending") {
+      const timeout = setTimeout(() => setStopPhase("timedOut"), STOP_PENDING_MAX_MS);
+      return () => clearTimeout(timeout);
+    }
+    if (stopPhase === "landed") {
+      const timeout = setTimeout(() => setStopPhase(null), STOP_LANDED_CLICK_GUARD_MS);
+      return () => clearTimeout(timeout);
+    }
   }, [stopPhase]);
   const pointerFocusProps = preserveComposerFocusOnPointerDown
     ? { onPointerDown: preventPointerFocus }
@@ -183,9 +189,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
           <rect x="2" y="2" width="8" height="8" rx="1.5" />
         </svg>
       </TooltipTrigger>
-      <TooltipPopup>
-        {stopPhase === "pending" ? "Stopping…" : stopPhase === "landed" ? "Stopped" : "Interrupt"}
-      </TooltipPopup>
+      <TooltipPopup>{stopPhase === "pending" ? "Stopping…" : "Interrupt"}</TooltipPopup>
     </Tooltip>
   );
 
@@ -193,7 +197,9 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   const withStopButton = (action: ReactNode) => (
     <>
       {action}
-      {stopPhase === null ? null : renderStopGenerationButton(false)}
+      {stopPhase === "pending" || stopPhase === "timedOut"
+        ? renderStopGenerationButton(false)
+        : null}
     </>
   );
 
@@ -229,6 +235,9 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
           type="submit"
           className={cn(messageActionPillClassName, "h-8 sm:h-7", compact ? "px-3" : "px-4")}
           {...pointerFocusProps}
+          onClick={(event) => {
+            if (stopPhase === "landed") event.preventDefault();
+          }}
           disabled={
             !canOperateThread ||
             isEnvironmentUnavailable ||
@@ -247,7 +256,9 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
             questionIndex: pendingAction.questionIndex,
           })}
         </button>
-        {canInterrupt || stopPhase !== null ? renderStopGenerationButton(true) : null}
+        {canInterrupt || stopPhase === "pending" || stopPhase === "timedOut"
+          ? renderStopGenerationButton(true)
+          : null}
       </div>
     );
   }
@@ -312,7 +323,14 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
           : "bg-message-action text-message-action-foreground enabled:shadow-message-action/24 hover:bg-message-action-hover disabled:bg-foreground/12 disabled:text-muted-foreground",
       )}
       {...pointerFocusProps}
-      onClick={showResume ? onResume : onSubmitMessage}
+      onClick={(event) => {
+        if (stopPhase === "landed") {
+          event.preventDefault();
+          return;
+        }
+        if (showResume) onResume?.();
+        else onSubmitMessage?.(event);
+      }}
       disabled={
         isSendBusy ||
         isSendDisabled ||
