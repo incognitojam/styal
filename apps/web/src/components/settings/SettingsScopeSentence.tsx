@@ -1,10 +1,14 @@
 import { resolveEnvironmentMachineKind } from "@t3tools/contracts";
-import { useLocation } from "@tanstack/react-router";
-import { CheckIcon, ChevronDownIcon, LayersIcon } from "lucide-react";
+import { useLocation, useNavigate } from "@tanstack/react-router";
+import { CheckIcon, ChevronDownIcon, LayersIcon, Settings2Icon } from "lucide-react";
 import { Fragment, useState, type ReactNode } from "react";
 
 import type { SidebarProjectSnapshot } from "../../sidebarProjectGrouping";
-import { useEnvironments, type EnvironmentPresentation } from "../../state/environments";
+import {
+  useEnvironments,
+  useRelayEnvironmentDiscovery,
+  type EnvironmentPresentation,
+} from "../../state/environments";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import { ProjectFavicon } from "../ProjectFavicon";
 import { Button } from "../ui/button";
@@ -19,6 +23,7 @@ import {
 } from "../ui/combobox";
 import {
   Menu,
+  MenuItem,
   MenuPopup,
   MenuRadioGroup,
   MenuRadioItem,
@@ -36,7 +41,6 @@ import {
   projectScopeMenuGroups,
   selectEnvironmentAxis,
   selectProjectAxis,
-  settingsScopeEnvironmentAddress,
   settingsScopeEnvironmentLabel,
   settingsScopeEnvironmentLabels,
   settingsScopeProjectMachines,
@@ -139,6 +143,8 @@ function ScopeOptionLabel({ option }: { option: ScopeOption }) {
   );
 }
 
+const FOOTER_VALUE = "settings-scope-footer";
+
 function ScopeMenu({
   ariaLabel,
   icon,
@@ -146,6 +152,7 @@ function ScopeMenu({
   value,
   options,
   allOption,
+  footer,
   searchLabel,
   onChange,
 }: {
@@ -155,6 +162,8 @@ function ScopeMenu({
   value: string;
   options: ScopeOption[];
   allOption: ScopeOption | null;
+  /** A last entry that goes somewhere instead of choosing a scope. */
+  footer?: { option: ScopeOption; onSelect: () => void };
   searchLabel: string;
   onChange: (next: string) => void;
 }) {
@@ -178,12 +187,14 @@ function ScopeMenu({
   const choices = allOption ? [allOption, ...options] : options;
   if (options.length > 6) {
     const needle = query.trim().toLowerCase();
-    const filteredItems = choices.filter((option) =>
+    const matches = choices.filter((option) =>
       `${option.label} ${option.secondary ?? ""} ${option.value}`.toLowerCase().includes(needle),
     );
+    const footerOption = footer ? { ...footer.option, value: FOOTER_VALUE } : null;
+    const filteredItems = footerOption ? [...matches, footerOption] : matches;
     return (
       <Combobox
-        items={choices}
+        items={footerOption ? [...choices, footerOption] : choices}
         filteredItems={filteredItems}
         filter={null}
         autoHighlight
@@ -194,7 +205,8 @@ function ScopeMenu({
           if (!open) setQuery("");
         }}
         onValueChange={(option) => {
-          if (option) onChange(option.value);
+          if (option?.value === FOOTER_VALUE) footer?.onSelect();
+          else if (option) onChange(option.value);
         }}
       >
         {trigger}
@@ -243,6 +255,14 @@ function ScopeMenu({
               </Fragment>
             ))}
           </MenuRadioGroup>
+          {footer ? (
+            <>
+              <MenuSeparator />
+              <MenuItem onClick={footer.onSelect}>
+                <ScopeOptionLabel option={footer.option} />
+              </MenuItem>
+            </>
+          ) : null}
         </div>
       </MenuPopup>
     </Menu>
@@ -271,6 +291,14 @@ function EnvironmentScopeMenu({
   const options = memberEnvironmentIds
     ? environments.filter((environment) => memberEnvironmentIds.has(environment.environmentId))
     : environments;
+  const navigate = useNavigate();
+  const discovery = useRelayEnvironmentDiscovery();
+  const notAdded = [...discovery.environments.values()]
+    .map((entry) => entry.environment)
+    .filter(
+      (entry) =>
+        !environments.some((environment) => environment.environmentId === entry.environmentId),
+    );
   return (
     <ScopeMenu
       ariaLabel="Environment scope"
@@ -295,6 +323,20 @@ function EnvironmentScopeMenu({
       value={environmentValue}
       onChange={(next) => onChange(selectEnvironmentAxis(value, next))}
       searchLabel="Search environments"
+      footer={{
+        option: {
+          value: FOOTER_VALUE,
+          label: environments.length <= 1 ? "Add a machine…" : "Manage machines…",
+          secondary:
+            notAdded.length === 1
+              ? `${notAdded[0]!.label} isn't added yet`
+              : notAdded.length > 1
+                ? `${notAdded.length} machines aren't added yet`
+                : "",
+          icon: <Settings2Icon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />,
+        },
+        onSelect: () => void navigate({ to: "/settings/connections" }),
+      }}
       allOption={
         singleEnvironment
           ? null
@@ -309,10 +351,7 @@ function EnvironmentScopeMenu({
         return {
           value: environment.environmentId,
           label: primary,
-          secondary:
-            environments.length <= 1
-              ? ""
-              : secondary || settingsScopeEnvironmentAddress(environment),
+          secondary,
           icon: (
             <EnvironmentMachineIcon
               aria-hidden
@@ -331,7 +370,7 @@ function ProjectScopeMenu({ value, groups, environments, onChange }: SettingsSco
   const selected = groups.find((group) => group.projectKey === value.project);
   const projects = projectScopeMenuGroups(groups, value).map((group) => ({
     group,
-    machines: settingsScopeProjectMachines(group, environments, true).join(", "),
+    machines: settingsScopeProjectMachines(group, environments).join(", "),
   }));
   return (
     <ScopeMenu

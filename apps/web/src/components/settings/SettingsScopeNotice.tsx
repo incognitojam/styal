@@ -14,11 +14,7 @@ import { SettingsGroup } from "./SettingsGroup";
 import { SettingsPageContainer, SettingsSection } from "./settingsLayout";
 import { useSettingsScope } from "./SettingsScopeContext";
 import type { SettingsScopeSearch } from "./settingsScope";
-import {
-  settingsScopeEnvironmentAddress,
-  settingsScopeEnvironmentLabels,
-  settingsScopeProjectMachines,
-} from "./settingsScopeAxis";
+import { settingsScopeEnvironmentLabels, settingsScopeProjectMachines } from "./settingsScopeAxis";
 
 interface ScopeChoice {
   label: string;
@@ -107,7 +103,7 @@ export function SettingsScopeNotice({
                 const { primary, secondary } = settingsScopeEnvironmentLabels(entry, environments);
                 return {
                   label: primary,
-                  secondary: secondary || settingsScopeEnvironmentAddress(entry),
+                  secondary,
                   icon: environmentIcon(entry),
                   search: { machine: entry.environmentId },
                 };
