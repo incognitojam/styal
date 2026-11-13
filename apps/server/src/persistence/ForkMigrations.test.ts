@@ -10,6 +10,7 @@ import {
   runAllMigrations,
   runForkMigrations,
 } from "./ForkMigrations.ts";
+import SetupState from "./ForkMigrations/013_WorktreeSetupState.ts";
 import { migrationManifest, runMigrations } from "./Migrations.ts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 
@@ -24,7 +25,20 @@ upstreamLayer("ForkMigrations canonical upstream upgrade", (it) => {
       const sql = yield* SqlClient.SqlClient;
 
       yield* runMigrations();
+      yield* runAllMigrations({ forkToMigrationInclusive: 12 });
+      yield* sql`INSERT INTO orchestration_events (event_id, aggregate_kind, stream_id, stream_version, event_type, occurred_at, actor_kind, payload_json, metadata_json, application_event_version) VALUES ('malformed-fixture', 'thread', 'fixture', 1, 'turn-item.updated', '2026-01-01T00:00:00Z', 'server', 'malformed-json', '{}', 2)`;
       yield* runAllMigrations();
+      assert.deepEqual(yield* sql`SELECT * FROM worktree_setup_state`, []);
+      assert.deepEqual(
+        yield* sql`SELECT payload_json FROM orchestration_events WHERE event_id = 'malformed-fixture'`,
+        [{ payload_json: "malformed-json" }],
+      );
+      yield* sql`INSERT INTO worktree_setup_state (worktree_path, turn_item_id, thread_id, action_id, command, status, request_sequence) VALUES ('/synthetic/worktree', 'setup:fixture', 'thread:fixture', 'install', 'install', 'interrupted', 1)`;
+      yield* SetupState;
+      yield* SetupState;
+      assert.deepEqual(yield* sql`SELECT status FROM worktree_setup_state`, [
+        { status: "interrupted" },
+      ]);
 
       const upstreamMigration = yield* sql<{
         readonly migration_id: number;
@@ -61,6 +75,7 @@ upstreamLayer("ForkMigrations canonical upstream upgrade", (it) => {
         { migration_id: 10, name: "HardwareLeases" },
         { migration_id: 11, name: "ProjectionProjectsOrganization" },
         { migration_id: 12, name: "DropComposerDrafts" },
+        { migration_id: 13, name: "WorktreeSetupState" },
       ]);
     }),
   );
@@ -164,6 +179,7 @@ it("keeps fork migrations out of the upstream manifest", () => {
     [10, "HardwareLeases"],
     [11, "ProjectionProjectsOrganization"],
     [12, "DropComposerDrafts"],
+    [13, "WorktreeSetupState"],
   ]);
 });
 
