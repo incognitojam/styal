@@ -35,6 +35,7 @@ export class PreviewManager extends Context.Service<
     readonly open: (
       input: PreviewOpenInput & {
         readonly automationOwner?: string;
+        readonly terminalOpened?: boolean;
         readonly revealSurface?: PreviewSessionSnapshot["revealSurface"];
         /** Runs before the `opened` event publishes, so subscribers find state keyed by the tab. */
         readonly beforePublish?: (snapshot: PreviewSessionSnapshot) => void;
@@ -48,7 +49,11 @@ export class PreviewManager extends Context.Service<
       input: PreviewCloseInput & { readonly tabId: string },
     ) => Effect.Effect<void, PreviewError>;
     readonly requestReveal: (
-      input: PreviewCloseInput & { readonly tabId: string; readonly force: boolean },
+      input: PreviewCloseInput & {
+        readonly tabId: string;
+        readonly force: boolean;
+        readonly url?: string;
+      },
     ) => Effect.Effect<void, PreviewError>;
     readonly resize: (
       input: PreviewResizeInput,
@@ -193,6 +198,9 @@ export const make = Effect.gen(function* PreviewManagerMake() {
         ...(runtime === "server" && input.automationOwner !== undefined
           ? { automationOwner: input.automationOwner }
           : {}),
+        ...(input.terminalOpened && input.url
+          ? { terminalOrigin: new URL(yield* normalizeUrl(input.url)).origin }
+          : {}),
         ...(input.reveal === undefined ? {} : { reveal: input.reveal }),
         ...(input.revealSurface === undefined ? {} : { revealSurface: input.revealSurface }),
         updatedAt,
@@ -233,8 +241,15 @@ export const make = Effect.gen(function* PreviewManagerMake() {
         if (session.snapshot.runtime === "server" && !input.serverControlled)
           return yield* new PreviewControlRequiredError({ tabId: input.tabId });
         const updatedAt = yield* currentIsoTimestamp;
+        const { terminalOrigin, ...previous } = session.snapshot;
+        const retainTerminalOrigin =
+          terminalOrigin !== undefined &&
+          input.navStatus._tag !== "Idle" &&
+          URL.canParse(input.navStatus.url) &&
+          new URL(input.navStatus.url).origin === terminalOrigin;
         const snapshot: PreviewSessionSnapshot = {
-          ...session.snapshot,
+          ...previous,
+          ...(retainTerminalOrigin ? { terminalOrigin } : {}),
           navStatus: input.navStatus,
           canGoBack: input.canGoBack,
           canGoForward: input.canGoForward,
@@ -438,6 +453,7 @@ export const make = Effect.gen(function* PreviewManagerMake() {
           next: { ...session, snapshot },
           emit: {
             type: "navigated" as const,
+            ...(input.url === undefined ? {} : { navigateTo: yield* normalizeUrl(input.url) }),
             threadId: session.threadId,
             tabId: session.tabId,
             createdAt: snapshot.updatedAt,

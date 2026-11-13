@@ -479,6 +479,109 @@ it.live("tells the desktop once per thread when its agent turns start and end", 
   }).pipe(Effect.scoped, Effect.provide(layer)),
 );
 
+it.effect(
+  "terminal navigation and settings do not block other tabs and preserve per-tab ordering after failure",
+  () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { browser, tabId } = yield* ready;
+        const manager = yield* Manager.PreviewManager;
+        const otherThread = ThreadId.make("other-thread");
+        const victim = yield* manager.open({ threadId: otherThread, runtime: "server" });
+        yield* browser.attachViewer({ ...viewerInput(victim.tabId, false), threadId: otherThread });
+        const page = contexts[0]!.page;
+        const victimPage = contexts[1]!.page;
+        const started = Promise.withResolvers<void>();
+        const finish = Promise.withResolvers<void>();
+        const closed = Promise.withResolvers<void>();
+        const opened = Promise.withResolvers<void>();
+        const final = Promise.withResolvers<void>();
+        const order: string[] = [];
+        yield* Effect.addFinalizer(() => Effect.sync(() => finish.resolve()));
+        page.goto
+          .mockImplementationOnce(async () => {
+            order.push("slow");
+            started.resolve();
+            await finish.promise;
+          })
+          .mockImplementationOnce(async () => {
+            order.push("next");
+          })
+          .mockImplementationOnce(async () => {
+            order.push("final");
+            final.resolve();
+          });
+        const cdp = contexts[0]!.sessions[0]!;
+        cdp.send.mockClear();
+        page.setViewportSize.mockClear();
+        page.emulateMedia.mockClear();
+        victimPage.close.mockImplementationOnce(async () => {
+          order.push("closed");
+          closed.resolve();
+        });
+        yield* manager.requestReveal({
+          threadId: scope.thread.threadId,
+          tabId,
+          force: true,
+          url: "http://localhost:5173/slow",
+        });
+        yield* Effect.promise(() => started.promise);
+        yield* manager.requestReveal({
+          threadId: scope.thread.threadId,
+          tabId,
+          force: true,
+          url: "http://localhost:5173/next",
+        });
+        yield* manager.resize({
+          threadId: scope.thread.threadId,
+          tabId,
+          viewport: { _tag: "freeform", width: 900, height: 700 },
+        });
+        yield* manager.adjust({
+          threadId: scope.thread.threadId,
+          tabId,
+          colorScheme: "dark",
+          zoomFactor: 1.25,
+        });
+        yield* manager.adjust({ threadId: scope.thread.threadId, tabId, clear: "cookies" });
+        yield* manager.adjust({ threadId: scope.thread.threadId, tabId, clear: "cache" });
+        yield* manager.adjust({ threadId: scope.thread.threadId, tabId, hardReload: true });
+        yield* manager.requestReveal({
+          threadId: scope.thread.threadId,
+          tabId,
+          force: true,
+          url: "http://localhost:5173/final",
+        });
+        yield* manager.close({ threadId: otherThread, tabId: victim.tabId });
+        initialNavigation = async () => {
+          order.push("opened");
+          opened.resolve();
+        };
+        yield* manager.open({
+          threadId: otherThread,
+          runtime: "server",
+          url: "http://localhost:5174/",
+        });
+        yield* Effect.promise(() => Promise.all([closed.promise, opened.promise]));
+        expect(order).toEqual(["slow", "closed", "opened"]);
+        expect(page.setViewportSize).not.toHaveBeenCalled();
+        expect(page.emulateMedia).not.toHaveBeenCalled();
+        finish.reject(new Error("synthetic navigation failure"));
+        yield* Effect.promise(() => final.promise);
+        expect(order).toEqual(["slow", "closed", "opened", "next", "final"]);
+        expect(page.setViewportSize).toHaveBeenCalledWith({ width: 900, height: 700 });
+        expect(page.emulateMedia).toHaveBeenCalledWith({ colorScheme: "dark" });
+        expect(cdp.send).toHaveBeenCalledWith(
+          "Emulation.setDeviceMetricsOverride",
+          expect.anything(),
+        );
+        expect(cdp.send).toHaveBeenCalledWith("Network.clearBrowserCookies");
+        expect(cdp.send).toHaveBeenCalledWith("Network.clearBrowserCache");
+        expect(cdp.send).toHaveBeenCalledWith("Page.reload", { ignoreCache: true });
+      }),
+    ).pipe(Effect.provide(layer)),
+);
+
 it.live("preview_open reports its navigation timeout instead of the request budget", () =>
   Effect.scoped(
     Effect.gen(function* () {

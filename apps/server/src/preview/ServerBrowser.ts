@@ -2268,8 +2268,17 @@ const make = Effect.gen(function* () {
         closedSessions.delete(key);
         return;
       }
+      // Per-tab queues must not hold the shared consumer while navigation is pending.
+      if (event.type === "navigated" && event.navigateTo !== undefined) {
+        const url = event.navigateTo;
+        void tab.control
+          .system(() => tab.page.goto(url, VIEWER_NAVIGATION_OPTIONS))
+          .catch((cause: unknown) =>
+            runFork(Effect.logWarning("server preview could not navigate", { cause })),
+          );
+      }
       if (event.type === "resized") {
-        await tab.control
+        void tab.control
           .system(async () => {
             if (
               !viewportSettingsEqual(event.snapshot.viewport ?? FILL_PREVIEW_VIEWPORT, tab.setting)

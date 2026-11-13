@@ -11,6 +11,7 @@ import { ThreadId } from "@t3tools/contracts";
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as PubSub from "effect/PubSub";
 import * as FileSystem from "effect/FileSystem";
 
 import * as ServerConfig from "../config.ts";
@@ -39,68 +40,133 @@ function closeServer(server: NodeHttp.Server | NodeNet.Server): Promise<void> {
 }
 
 it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("TerminalBrowserOpen", (it) => {
-  it.effect("installs the helper and rotates terminal-scoped credentials", () =>
-    Effect.gen(function* () {
-      const fileSystem = yield* FileSystem.FileSystem;
-      const baseDir = yield* fileSystem.makeTempDirectoryScoped({
-        prefix: "t3-terminal-browser-open-",
-      });
-      const configLayer = ServerConfig.layerTest(process.cwd(), baseDir);
-      const { browserOpen, previews, config } = yield* Effect.gen(function* () {
-        const previews = yield* PreviewManager.make;
-        return {
-          browserOpen: yield* TerminalBrowserOpen.make.pipe(
-            Effect.provideService(PreviewManager.PreviewManager, previews),
-          ),
-          previews,
-          config: yield* ServerConfig.ServerConfig,
+  it.effect.each(["same URL", "changed URL"] as const)(
+    "installs the helper, rotates credentials and reuses tabs: %s",
+    (scenario) =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const baseDir = yield* fileSystem.makeTempDirectoryScoped({
+          prefix: "t3-terminal-browser-open-",
+        });
+        const configLayer = ServerConfig.layerTest(process.cwd(), baseDir);
+        const { browserOpen, previews, config } = yield* Effect.gen(function* () {
+          const previews = yield* PreviewManager.make;
+          return {
+            browserOpen: yield* TerminalBrowserOpen.make.pipe(
+              Effect.provideService(PreviewManager.PreviewManager, previews),
+            ),
+            previews,
+            config: yield* ServerConfig.ServerConfig,
+          };
+        }).pipe(Effect.provide(configLayer));
+        const owner = {
+          threadId: ThreadId.make("thread-1"),
+          terminalId: "default",
         };
-      }).pipe(Effect.provide(configLayer));
-      const owner = {
-        threadId: ThreadId.make("thread-1"),
-        terminalId: "default",
-      };
 
-      const first = yield* browserOpen.register(owner);
-      const firstToken = first[TerminalBrowserOpen.TERMINAL_BROWSER_OPEN_TOKEN_ENV];
-      expect(first.BROWSER).toMatch(/terminal-browser-open\.js$/u);
-      expect(first[TerminalBrowserOpen.TERMINAL_BROWSER_OPEN_RUNTIME_STATE_ENV]).toBe(
-        config.serverRuntimeStatePath,
-      );
-      expect(firstToken).toBeTypeOf("string");
-      expect(yield* browserOpen.resolve(firstToken ?? "")).toEqual(owner);
-      expect(yield* fileSystem.readFileString(first.BROWSER ?? "")).toBe(
-        TerminalBrowserOpen.TERMINAL_BROWSER_OPEN_HELPER_SOURCE,
-      );
-      const shimDir = first[TerminalBrowserOpen.TERMINAL_BROWSER_OPEN_SHIM_DIR_ENV];
-      expect(shimDir).toBeTypeOf("string");
-      expect(yield* fileSystem.readFileString(NodePath.join(shimDir ?? "", "open"))).toBe(
-        TerminalBrowserOpen.TERMINAL_BROWSER_OPEN_HELPER_SOURCE,
-      );
-      expect(yield* fileSystem.readFileString(NodePath.join(shimDir ?? "", "xdg-open"))).toBe(
-        TerminalBrowserOpen.TERMINAL_BROWSER_OPEN_HELPER_SOURCE,
-      );
+        const first = yield* browserOpen.register(owner);
+        const firstToken = first[TerminalBrowserOpen.TERMINAL_BROWSER_OPEN_TOKEN_ENV];
+        expect(first.BROWSER).toMatch(/terminal-browser-open\.js$/u);
+        expect(first[TerminalBrowserOpen.TERMINAL_BROWSER_OPEN_RUNTIME_STATE_ENV]).toBe(
+          config.serverRuntimeStatePath,
+        );
+        expect(firstToken).toBeTypeOf("string");
+        expect(yield* browserOpen.resolve(firstToken ?? "")).toEqual(owner);
+        expect(yield* fileSystem.readFileString(first.BROWSER ?? "")).toBe(
+          TerminalBrowserOpen.TERMINAL_BROWSER_OPEN_HELPER_SOURCE,
+        );
+        const shimDir = first[TerminalBrowserOpen.TERMINAL_BROWSER_OPEN_SHIM_DIR_ENV];
+        expect(shimDir).toBeTypeOf("string");
+        expect(yield* fileSystem.readFileString(NodePath.join(shimDir ?? "", "open"))).toBe(
+          TerminalBrowserOpen.TERMINAL_BROWSER_OPEN_HELPER_SOURCE,
+        );
+        expect(yield* fileSystem.readFileString(NodePath.join(shimDir ?? "", "xdg-open"))).toBe(
+          TerminalBrowserOpen.TERMINAL_BROWSER_OPEN_HELPER_SOURCE,
+        );
 
-      const second = yield* browserOpen.register(owner);
-      const secondToken = second[TerminalBrowserOpen.TERMINAL_BROWSER_OPEN_TOKEN_ENV];
-      expect(secondToken).not.toBe(firstToken);
-      expect(yield* browserOpen.resolve(firstToken ?? "")).toBeUndefined();
-      expect(yield* browserOpen.resolve(secondToken ?? "")).toEqual(owner);
+        const second = yield* browserOpen.register(owner);
+        const secondToken = second[TerminalBrowserOpen.TERMINAL_BROWSER_OPEN_TOKEN_ENV];
+        expect(secondToken).not.toBe(firstToken);
+        expect(yield* browserOpen.resolve(firstToken ?? "")).toBeUndefined();
+        expect(yield* browserOpen.resolve(secondToken ?? "")).toEqual(owner);
 
-      yield* browserOpen.openInPreview({ owner, url: "http://localhost:5173/app" });
-      const { sessions } = yield* previews.list({ threadId: owner.threadId });
-      expect(sessions).toHaveLength(1);
-      expect(sessions[0]).toMatchObject({
-        threadId: "thread-1",
-        runtime: "server",
-        reveal: true,
-        revealSurface: "right-panel",
-      });
-      expect(sessions[0]?.automationOwner).toBeUndefined();
+        yield* browserOpen.openInPreview({ owner, url: "http://localhost:5173/app" });
+        const { sessions } = yield* previews.list({ threadId: owner.threadId });
+        expect(sessions).toHaveLength(1);
+        expect(sessions[0]).toMatchObject({
+          threadId: "thread-1",
+          runtime: "server",
+          reveal: true,
+          revealSurface: "right-panel",
+        });
+        expect(sessions[0]?.automationOwner).toBeUndefined();
 
-      yield* browserOpen.unregister(owner);
-      expect(yield* browserOpen.resolve(secondToken ?? "")).toBeUndefined();
-    }),
+        const events = yield* previews.subscribeEvents;
+        const repeatedUrl =
+          scenario === "same URL"
+            ? "http://localhost:5173/app"
+            : "http://localhost:5173/updated?x=1";
+        yield* browserOpen.openInPreview({ owner, url: repeatedUrl });
+        expect(yield* PubSub.take(events)).toMatchObject({
+          type: "navigated",
+          tabId: sessions[0]?.tabId,
+          navigateTo: repeatedUrl,
+          snapshot: { revealRequest: { force: true } },
+        });
+        yield* Effect.forEach(
+          [1, 2, 3, 4, 5],
+          () => browserOpen.openInPreview({ owner, url: "http://localhost:5173/concurrent" }),
+          { concurrency: "unbounded" },
+        );
+        const repeated = yield* previews.list({ threadId: owner.threadId });
+        expect(repeated.sessions).toHaveLength(1);
+        expect(repeated.sessions[0]?.tabId).toBe(sessions[0]?.tabId);
+        yield* browserOpen.openInPreview({ owner, url: "http://localhost:5174/other" });
+        expect((yield* previews.list({ threadId: owner.threadId })).sessions).toHaveLength(2);
+
+        const original = repeated.sessions[0]!;
+        yield* previews.reportStatus({
+          threadId: owner.threadId,
+          tabId: original.tabId,
+          navStatus: { _tag: "Success", url: "http://localhost:6000/manual", title: "Manual" },
+          canGoBack: true,
+          canGoForward: false,
+          serverControlled: true,
+        });
+        yield* browserOpen.openInPreview({ owner, url: "http://localhost:6000/terminal" });
+        expect((yield* previews.list({ threadId: owner.threadId })).sessions).toHaveLength(3);
+        yield* previews.reportStatus({
+          threadId: owner.threadId,
+          tabId: original.tabId,
+          navStatus: {
+            _tag: "Success",
+            url: "http://localhost:5173/user-returned",
+            title: "Manual",
+          },
+          canGoBack: true,
+          canGoForward: false,
+          serverControlled: true,
+        });
+        const manual = yield* previews.open({
+          threadId: owner.threadId,
+          runtime: "server",
+          url: "http://localhost:5173/manual",
+        });
+        yield* browserOpen.openInPreview({ owner, url: "http://localhost:5173/new" });
+        const final = yield* previews.list({ threadId: owner.threadId });
+        expect(final.sessions).toHaveLength(5);
+        expect(final.sessions.find((tab) => tab.tabId === original.tabId)?.navStatus).toMatchObject(
+          {
+            url: "http://localhost:5173/user-returned",
+          },
+        );
+        expect(final.sessions.find((tab) => tab.tabId === manual.tabId)?.navStatus).toMatchObject({
+          url: "http://localhost:5173/manual",
+        });
+
+        yield* browserOpen.unregister(owner);
+        expect(yield* browserOpen.resolve(secondToken ?? "")).toBeUndefined();
+      }),
   );
 });
 
