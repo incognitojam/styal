@@ -84,7 +84,6 @@ function startWithMissingWorktree(
   },
   exists = false,
   setupResult: ProjectSetupScriptRunner.ProjectSetupScriptRunnerResult = { status: "no-script" },
-  markers: { protocol?: string; done?: boolean; running?: string; gitFile?: boolean } = {},
 ) {
   const threadId = ThreadId.make("thread_provider_turn_start_projection_failure");
   const runId = RunId.make("run_provider_turn_start_projection_failure");
@@ -155,17 +154,7 @@ function startWithMissingWorktree(
         Layer.mock(EventSink.EventSinkV2)({ writeIfRunCurrent }),
         IdAllocator.layer,
         Layer.succeed(FileSystem.FileSystem, {
-          exists: (target: string) =>
-            Effect.succeed(target === worktreePath ? folderExists : markers.done === true),
-          stat: () => Effect.succeed({ type: markers.gitFile === false ? "Directory" : "File" }),
-          readFileString: (target: string) =>
-            Effect.succeed(
-              target.endsWith("setup-marker-protocol")
-                ? (markers.protocol ?? "")
-                : target.endsWith("setup-running")
-                  ? (markers.running ?? "")
-                  : "",
-            ),
+          exists: () => Effect.succeed(folderExists),
           realPath: (target: string) =>
             normalize(target) in realPaths
               ? Effect.succeed(realPaths[normalize(target)])
@@ -236,7 +225,6 @@ function startWithMissingWorktree(
   return {
     start: startEffect,
     retry: startEffect,
-    startTwice: callStart.pipe(Effect.andThen(callStart), Effect.provide(layer)),
     pruneWorktrees,
     createWorktree,
     runSetup,
@@ -361,80 +349,6 @@ effectIt.effect.each([
       );
     }
   }),
-);
-
-effectIt.effect.each([
-  {
-    label: "marker-aware stripped worktree",
-    protocol: "1",
-    done: false,
-    gitFile: true,
-    expected: 1,
-  },
-  {
-    label: "completed marker-aware worktree",
-    protocol: "1",
-    done: true,
-    gitFile: true,
-    expected: 0,
-  },
-  { label: "action without markers", protocol: "", done: false, gitFile: true, expected: 0 },
-  { label: "main checkout metadata", protocol: "1", done: false, gitFile: false, expected: 0 },
-  {
-    label: "live marker writer",
-    protocol: "1",
-    done: false,
-    gitFile: true,
-    running: String(process.pid),
-    expected: 0,
-  },
-  {
-    label: "invalid running marker",
-    protocol: "1",
-    done: false,
-    gitFile: true,
-    running: "invalid",
-    expected: 1,
-  },
-])("reinstalls only recognized marker-aware worktrees: $label", (input) =>
-  Effect.gen(function* () {
-    const harness = startWithMissingWorktree(
-      `${managedWorktreesDir}/project/readiness`,
-      undefined,
-      true,
-      { status: "no-script" },
-      input,
-    );
-    yield* harness.start;
-    expect(harness.createWorktree).not.toHaveBeenCalled();
-    expect(harness.runSetup).toHaveBeenCalledTimes(input.expected);
-  }),
-);
-
-effectIt.effect(
-  "does not launch marker-aware asynchronous setup twice before its process writes markers",
-  () =>
-    Effect.gen(function* () {
-      const harness = startWithMissingWorktree(
-        `${managedWorktreesDir}/project/async-readiness`,
-        undefined,
-        true,
-        {
-          status: "started",
-          runId: "setup",
-          scriptId: "setup",
-          scriptName: "Setup",
-          scriptCommand: "echo setup",
-          terminalId: "setup",
-          cwd: "/fixture",
-          async: true,
-          completion: Effect.never,
-        },
-        { protocol: "1", done: false },
-      );
-      yield* harness.startTwice;
-      expect(harness.runSetup).toHaveBeenCalledTimes(1);
-    }),
 );
 
 function makeLocalCommandHarness(input: {

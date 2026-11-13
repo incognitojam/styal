@@ -1,5 +1,4 @@
 import * as Scope from "effect/Scope";
-import { isProcessAlive } from "../serverRuntimeState.ts";
 import { forkParked } from "../serverActivation.ts";
 import { isTemporaryWorktreeBranch } from "@t3tools/shared/git";
 import { modelSelectionsEqual } from "@t3tools/shared/model";
@@ -181,7 +180,6 @@ export const layer: Layer.Layer<
     const git = yield* GitVcsDriver.GitVcsDriver;
     const projects = yield* ProjectService.ProjectService;
     const setupScripts = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
-    const pendingSetup = new Set<string>();
     const serviceScope = yield* Effect.scope;
     const providerAuth = yield* ProviderAuthService.ProviderAuthService;
     const installGate = yield* ProviderInstallGate.ProviderInstallGate;
@@ -709,28 +707,7 @@ export const layer: Layer.Layer<
         const exists = yield* fileSystem
           .exists(worktreePath)
           .pipe(Effect.orElseSucceed(() => true));
-        const readMarker = (name: string) =>
-          fileSystem
-            .readFileString(path.join(worktreePath, ".styal", name))
-            .pipe(Effect.orElseSucceed(() => ""));
-        let needsSetup = !exists;
-        if (
-          exists &&
-          !pendingSetup.has(worktreePath) &&
-          (yield* readMarker("setup-marker-protocol")).trim() === "1"
-        ) {
-          const gitFile = yield* fileSystem.stat(path.join(worktreePath, ".git")).pipe(
-            Effect.map((stat) => stat.type === "File"),
-            Effect.orElseSucceed(() => false),
-          );
-          const done = yield* fileSystem
-            .exists(path.join(worktreePath, ".styal/setup-done"))
-            .pipe(Effect.orElseSucceed(() => true));
-          const pid = Number((yield* readMarker("setup-running")).trim());
-          const running = Number.isSafeInteger(pid) && pid > 0 && isProcessAlive(pid);
-          needsSetup = gitFile && !done && !running;
-        }
-        if (needsSetup) {
+        if (!exists) {
           const project = yield* projects.getById(projection.thread.projectId).pipe(
             Effect.map(Option.getOrUndefined),
             Effect.orElseSucceed(() => undefined),
@@ -739,35 +716,33 @@ export const layer: Layer.Layer<
             project !== undefined &&
             path.resolve(project.workspaceRoot) !== path.resolve(worktreePath)
           ) {
-            if (!exists) {
-              yield* Effect.logWarning("provider turn start recreating missing worktree", {
-                threadId: projection.thread.id,
+            yield* Effect.logWarning("provider turn start recreating missing worktree", {
+              threadId: projection.thread.id,
+              worktreePath,
+              branch,
+            });
+            const recreated = yield* Effect.result(
+              recreateMissingWorktree({
+                cwd: project.workspaceRoot,
                 worktreePath,
                 branch,
-              });
-              const recreated = yield* Effect.result(
-                recreateMissingWorktree({
-                  cwd: project.workspaceRoot,
-                  worktreePath,
-                  branch,
-                }).pipe(
-                  Effect.mapError((cause) =>
-                    cause._tag === "WorktreeRecreateNoBaseError"
-                      ? cause
-                      : new WorktreeRecreateError({ worktreePath, branch, cause }),
-                  ),
+              }).pipe(
+                Effect.mapError((cause) =>
+                  cause._tag === "WorktreeRecreateNoBaseError"
+                    ? cause
+                    : new WorktreeRecreateError({ worktreePath, branch, cause }),
                 ),
-              );
-              if (recreated._tag === "Failure") {
-                if (input.willRetry === true) return yield* recreated.failure;
-                yield* settleStartFailure({
-                  signal: "worktree-recreate-failure",
-                  title: "Couldn't recreate thread workspace",
-                  error: recreated.failure,
-                  message: recreated.failure.message,
-                });
-                return;
-              }
+              ),
+            );
+            if (recreated._tag === "Failure") {
+              if (input.willRetry === true) return yield* recreated.failure;
+              yield* settleStartFailure({
+                signal: "worktree-recreate-failure",
+                title: "Couldn't recreate thread workspace",
+                error: recreated.failure,
+                message: recreated.failure.message,
+              });
+              return;
             }
             const setupResult = yield* Effect.result(
               Effect.gen(function* () {
@@ -782,16 +757,9 @@ export const layer: Layer.Layer<
                 });
                 if (setup.status !== "started" || !setup.completion) return;
                 if (setup.async) {
-                  pendingSetup.add(worktreePath);
-                  yield* forkParked(
-                    setup.completion.pipe(
-                      Effect.ensuring(
-                        Effect.sync(() => {
-                          pendingSetup.delete(worktreePath);
-                        }),
-                      ),
-                    ),
-                  ).pipe(Effect.provideService(Scope.Scope, serviceScope));
+                  yield* forkParked(setup.completion).pipe(
+                    Effect.provideService(Scope.Scope, serviceScope),
+                  );
                 } else {
                   const completion = yield* setup.completion;
                   if (

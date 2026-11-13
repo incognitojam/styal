@@ -50,10 +50,6 @@ it.runIf(process.platform !== "win32").each(["/bin/sh", "/bin/bash"])(
       },
     );
     assert.deepEqual(result, { code: 1, signal: null });
-    assert.equal(
-      NodeFS.readFileSync(NodePath.join(worktree, ".styal/setup-marker-protocol"), "utf8"),
-      "1\n",
-    );
     assert.isFalse(NodeFS.existsSync(NodePath.join(worktree, ".styal/setup-done")));
     assert.isFalse(NodeFS.existsSync(NodePath.join(worktree, ".styal/setup-running")));
     const failure = NodeFS.readFileSync(NodePath.join(worktree, ".styal/setup-failed"), "utf8");

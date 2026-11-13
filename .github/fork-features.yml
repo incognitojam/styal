@@ -6532,7 +6532,6 @@ features:
       - Approve and run resumes the waiting lifecycle row through the same finite-command runner, checks the current file approval on the destination environment, and retains output and exit status.
       - The settle action runs as one finite command in a single settle terminal per thread, restarted in place by later settlements; a settlement during a running settle action starts nothing, and a thread whose worktree is the project checkout skips it without a work-log row.
       - Recreating a managed worktree reruns approved setup before provider startup; a blocking failure or signal exit settles that start even when the effect worker would retry.
-      - Existing linked worktrees opt into reinstall detection only when their setup wrote .styal/setup-marker-protocol version 1; missing setup-done with no live setup-running reruns setup, while generic actions without that receipt never rerun on every turn.
       - Workspace leases precede terminal thread locks; async setup completion observations are disposed independently of the startup wait.
       - Intake of terminal recovery from upstream PR 24156 must retain setup after recreation in its shared restoreMissingWorktree helper, including terminal-first recovery.
       - A signal-terminated setup fails the setup card with its signal and blocks a synchronous first turn; installer failure markers retain the signal and output tail.
@@ -6558,7 +6557,6 @@ features:
       - apps/web/src/session-logic.ts
       - packages/client-runtime/src/state/setupScriptActivity.ts
       - packages/shared/src/projectScripts.ts
-      - scripts/setup-worktree.ts
     upstream_paths:
       - apps/mobile/src/features/threads/ThreadRouteScreen.tsx
       - apps/mobile/src/features/threads/thread-work-log.tsx
@@ -6587,7 +6585,6 @@ features:
       - apps/web/src/lib/projectScriptTerminal.test.ts
       - apps/web/src/session-logic.test.ts
       - packages/shared/src/projectScripts.test.ts
-      - scripts/setup-worktree.test.ts
     upstream:
       status: partial
       tracking:
