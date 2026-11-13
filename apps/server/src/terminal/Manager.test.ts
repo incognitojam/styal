@@ -2025,6 +2025,24 @@ it.layer(
     }),
   );
 
+  it.effect("re-registers an inherited styal browser helper", () =>
+    Effect.gen(function* () {
+      const { manager, ptyAdapter } = yield* createManager(5, {
+        env: { BROWSER: "/parent/terminal-browser-open-bin/terminal-browser-open.js" },
+        registerBrowserOpen: () =>
+          Effect.succeed({
+            BROWSER: "/child/terminal-browser-open-bin/terminal-browser-open.js",
+            T3CODE_TERMINAL_BROWSER_OPEN_TOKEN: "child-token",
+          }),
+      });
+      yield* manager.open(openInput());
+      expect(ptyAdapter.spawnInputs[0]?.env.BROWSER).toBe(
+        "/child/terminal-browser-open-bin/terminal-browser-open.js",
+      );
+      expect(ptyAdapter.spawnInputs[0]?.env.T3CODE_TERMINAL_BROWSER_OPEN_TOKEN).toBe("child-token");
+    }),
+  );
+
   it.effect("preserves an explicitly configured browser", () =>
     Effect.gen(function* () {
       let registrations = 0;

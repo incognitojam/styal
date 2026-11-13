@@ -1459,15 +1459,15 @@ function createTerminalSpawnEnv(
   return stripAppImageRuntimeEnv(spawnEnv);
 }
 
-function hasTerminalEnvKey(
-  env: NodeJS.ProcessEnv,
-  expectedKey: string,
-  platform: NodeJS.Platform,
-): boolean {
-  if (platform !== "win32") return env[expectedKey] !== undefined;
-  const normalizedExpectedKey = expectedKey.toUpperCase();
-  return Object.entries(env).some(
-    ([key, value]) => value !== undefined && key.toUpperCase() === normalizedExpectedKey,
+function hasCustomTerminalBrowser(env: NodeJS.ProcessEnv, platform: NodeJS.Platform): boolean {
+  const key =
+    platform === "win32"
+      ? Object.keys(env).find((key) => key.toUpperCase() === "BROWSER")
+      : "BROWSER";
+  const browser = key === undefined ? undefined : env[key];
+  return (
+    browser !== undefined &&
+    !/(?:^|[\\/])terminal-browser-open-bin[\\/]terminal-browser-open\.(?:js|cmd)$/iu.test(browser)
   );
 }
 
@@ -2602,7 +2602,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
               platform,
               yield* HostProcess.HomeDirectory,
             );
-            const browserOpenEnv = hasTerminalEnvKey(baseTerminalEnv, "BROWSER", platform)
+            const browserOpenEnv = hasCustomTerminalBrowser(baseTerminalEnv, platform)
               ? {}
               : yield* registerBrowserOpen({
                   threadId: session.threadId,
