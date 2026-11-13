@@ -198,7 +198,9 @@ export const make = Effect.gen(function* PreviewManagerMake() {
         ...(runtime === "server" && input.automationOwner !== undefined
           ? { automationOwner: input.automationOwner }
           : {}),
-        ...(input.terminalOpened ? { terminalOpened: true } : {}),
+        ...(input.terminalOpened && input.url
+          ? { terminalOrigin: new URL(yield* normalizeUrl(input.url)).origin }
+          : {}),
         ...(input.reveal === undefined ? {} : { reveal: input.reveal }),
         ...(input.revealSurface === undefined ? {} : { revealSurface: input.revealSurface }),
         updatedAt,
@@ -239,8 +241,15 @@ export const make = Effect.gen(function* PreviewManagerMake() {
         if (session.snapshot.runtime === "server" && !input.serverControlled)
           return yield* new PreviewControlRequiredError({ tabId: input.tabId });
         const updatedAt = yield* currentIsoTimestamp;
+        const { terminalOrigin, ...previous } = session.snapshot;
+        const retainTerminalOrigin =
+          terminalOrigin !== undefined &&
+          input.navStatus._tag !== "Idle" &&
+          URL.canParse(input.navStatus.url) &&
+          new URL(input.navStatus.url).origin === terminalOrigin;
         const snapshot: PreviewSessionSnapshot = {
-          ...session.snapshot,
+          ...previous,
+          ...(retainTerminalOrigin ? { terminalOrigin } : {}),
           navStatus: input.navStatus,
           canGoBack: input.canGoBack,
           canGoForward: input.canGoForward,

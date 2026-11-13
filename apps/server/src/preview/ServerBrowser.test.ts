@@ -479,6 +479,71 @@ it.live("tells the desktop once per thread when its agent turns start and end", 
   }).pipe(Effect.scoped, Effect.provide(layer)),
 );
 
+it.effect(
+  "terminal navigation does not block other tabs and preserves per-tab ordering after failure",
+  () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { browser, tabId } = yield* ready;
+        const manager = yield* Manager.PreviewManager;
+        const otherThread = ThreadId.make("other-thread");
+        const victim = yield* manager.open({ threadId: otherThread, runtime: "server" });
+        yield* browser.attachViewer({ ...viewerInput(victim.tabId, false), threadId: otherThread });
+        const page = contexts[0]!.page;
+        const victimPage = contexts[1]!.page;
+        const started = Promise.withResolvers<void>();
+        const finish = Promise.withResolvers<void>();
+        const closed = Promise.withResolvers<void>();
+        const opened = Promise.withResolvers<void>();
+        const next = Promise.withResolvers<void>();
+        const order: string[] = [];
+        yield* Effect.addFinalizer(() => Effect.sync(() => finish.resolve()));
+        page.goto
+          .mockImplementationOnce(async () => {
+            order.push("slow");
+            started.resolve();
+            await finish.promise;
+          })
+          .mockImplementationOnce(async () => {
+            order.push("next");
+            next.resolve();
+          });
+        victimPage.close.mockImplementationOnce(async () => {
+          order.push("closed");
+          closed.resolve();
+        });
+        yield* manager.requestReveal({
+          threadId: scope.thread.threadId,
+          tabId,
+          force: true,
+          url: "http://localhost:5173/slow",
+        });
+        yield* Effect.promise(() => started.promise);
+        yield* manager.requestReveal({
+          threadId: scope.thread.threadId,
+          tabId,
+          force: true,
+          url: "http://localhost:5173/next",
+        });
+        yield* manager.close({ threadId: otherThread, tabId: victim.tabId });
+        initialNavigation = async () => {
+          order.push("opened");
+          opened.resolve();
+        };
+        yield* manager.open({
+          threadId: otherThread,
+          runtime: "server",
+          url: "http://localhost:5174/",
+        });
+        yield* Effect.promise(() => Promise.all([closed.promise, opened.promise]));
+        expect(order).toEqual(["slow", "closed", "opened"]);
+        finish.reject(new Error("synthetic navigation failure"));
+        yield* Effect.promise(() => next.promise);
+        expect(order).toEqual(["slow", "closed", "opened", "next"]);
+      }),
+    ).pipe(Effect.provide(layer)),
+);
+
 it.live("preview_open reports its navigation timeout instead of the request budget", () =>
   Effect.scoped(
     Effect.gen(function* () {

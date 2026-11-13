@@ -277,20 +277,19 @@ export const make = Effect.gen(function* TerminalBrowserOpenMake() {
       const existing = sessions.find(
         (session) =>
           URL.canParse(input.url) &&
-          session.terminalOpened &&
+          session.terminalOrigin !== undefined &&
           session.automationOwner === undefined &&
           session.runtime === "server" &&
           session.navStatus._tag !== "Idle" &&
-          new URL(session.navStatus.url).origin === new URL(input.url).origin,
+          session.terminalOrigin === new URL(input.url).origin &&
+          new URL(session.navStatus.url).origin === session.terminalOrigin,
       );
       if (existing) {
         yield* previews.requestReveal({
           threadId,
           tabId: existing.tabId,
           force: true,
-          ...(existing.navStatus._tag !== "Idle" && existing.navStatus.url === input.url
-            ? {}
-            : { url: input.url }),
+          url: input.url,
         });
         return;
       }
