@@ -29,6 +29,7 @@ const ledger = {
       id: "watched-capability",
       title: "Synthetic watched capability",
       status: "maintained",
+      tier: "yield",
       prs: [1],
       invariants: ["The watched behavior remains intact."],
       implementation_paths: ["apps/web/src/AppRoot.tsx"],

@@ -92,30 +92,40 @@ features: []
     assert.deepEqual(validateForkFeatureLedger(pending, repoRoot), []);
   });
 
-  it("rejects missing evidence files and unsupported upstream assessments", () => {
+  it("rejects missing evidence files, unsupported upstream assessments and missing tiers", () => {
     const ledger = loadForkFeatureLedger(repoRoot);
     const featureIndex = ledger.features.findIndex(
       (feature) => feature.upstream.status === "unassessed",
     );
     assert.isAtLeast(featureIndex, 0);
     const feature = ledger.features[featureIndex]!;
+    const untieredIndex = featureIndex === 0 ? 1 : 0;
+    const untiered = ledger.features[untieredIndex]!;
     const invalid = {
       ...ledger,
-      features: ledger.features.map((candidate, index) =>
-        index === featureIndex
-          ? {
-              ...candidate,
-              tests: ["apps/web/src/removed-feature.test.ts"],
-              upstream: { ...candidate.upstream, status: "tracking" as const },
-            }
-          : candidate,
-      ),
+      features: ledger.features.map((candidate, index) => {
+        if (index === featureIndex) {
+          return {
+            ...candidate,
+            tier: "drop",
+            tests: ["apps/web/src/removed-feature.test.ts"],
+            upstream: { ...candidate.upstream, status: "tracking" as const },
+          };
+        }
+        if (index === untieredIndex) {
+          const { tier: _tier, ...withoutTier } = candidate;
+          return withoutTier;
+        }
+        return candidate;
+      }),
     } satisfies ForkFeatureLedger;
 
     const errors = validate(invalid);
 
     assert.include(errors, `${feature.id}.tests does not name an existing file`);
     assert.include(errors, `${feature.id}.upstream.tracking must cite evidence`);
+    assert.include(errors, `${feature.id}.tier must be keep or yield`);
+    assert.include(errors, `${untiered.id}.tier must be keep or yield`);
   });
 
   it("can validate evidence paths against a trusted revision instead of the working tree", () => {
