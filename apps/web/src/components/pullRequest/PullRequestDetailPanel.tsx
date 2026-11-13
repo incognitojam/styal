@@ -730,18 +730,11 @@ function PullRequestDetailPanelBody({
         ...reference,
         action,
         ...(method ? { mergeMethod: method } : {}),
-        // The head at this panel's last read, so the host refuses commits pushed after it.
-        ...((action === "merge" || action === "enable-auto-merge") && detail?.headSha
-          ? { expectedHeadSha: detail.headSha }
-          : {}),
         ...(updateMethod ? { updateMethod } : {}),
       },
     });
     setPendingAction(null);
     if (result._tag === "Failure") {
-      // A refusal often means the panel is out of date, such as a head that moved before a
-      // merge. Rereading it means the next attempt is made against what the host now has.
-      refreshDetail();
       // Azure DevOps provides no strategy availability; show the host's own explanation of policy
       // failures after the attempt.
       const failure = squashAtomCommandFailure(result);

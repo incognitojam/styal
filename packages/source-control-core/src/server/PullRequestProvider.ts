@@ -216,7 +216,7 @@ export interface ProviderChangeRequestDetail extends ProviderChangeRequest {
   readonly inMergeQueue?: boolean;
   readonly autoMergeMethod?: PullRequestMergeMethod;
   readonly workflowApprovalsRequired?: number;
-  /** Only from a host whose `runAction` honours `expectedHeadSha`. */
+  /** The head commit observed by the host. */
   readonly headSha?: string;
 }
 
@@ -563,8 +563,6 @@ export interface PullRequestProviderApi {
       readonly expectedStackHeads?: ReadonlyArray<PullRequestStackHead>;
       readonly removeAgentCreditsOnMerge?: boolean;
       readonly mergeMethod?: PullRequestMergeMethod;
-      /** Meaningful for `merge` and `enable-auto-merge`; absent merges whatever the head is. */
-      readonly expectedHeadSha?: string;
       readonly updateMethod?: PullRequestUpdateMethod;
     },
   ) => Effect.Effect<void, PullRequestProviderError>;

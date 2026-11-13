@@ -1147,7 +1147,7 @@ it.effect.each([
   ),
 );
 
-it.effect("pins a quick merge to the head its fresh read saw", () =>
+it.effect("merges an open pull request and accepts an already merged one", () =>
   Effect.scoped(
     Effect.gen(function* () {
       const merges: Array<{ mergeMethod?: string; expectedHeadSha?: string }> = [];
@@ -1187,7 +1187,7 @@ it.effect("pins a quick merge to the head its fresh read saw", () =>
       expect(
         merges.map(({ mergeMethod, expectedHeadSha }) => ({ mergeMethod, expectedHeadSha })),
       ).toEqual([
-        { mergeMethod: "squash", expectedHeadSha: "fresh-head" },
+        { mergeMethod: "squash", expectedHeadSha: undefined },
         { mergeMethod: "squash", expectedHeadSha: undefined },
       ]);
     }),

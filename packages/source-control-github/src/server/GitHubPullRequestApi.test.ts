@@ -2476,7 +2476,7 @@ layer("GitHubPullRequestApi.layer", (it) => {
     }),
   );
 
-  it.effect("keeps the caller's expected head as the only pin on a cleaned merge", () =>
+  it.effect("pins a cleaned merge to the head read with the proposed message", () =>
     Effect.gen(function* () {
       route(
         [
@@ -2503,7 +2503,6 @@ layer("GitHubPullRequestApi.layer", (it) => {
         number: 7,
         action: "merge",
         mergeMethod: "squash",
-        expectedHeadSha: "abc123",
         removeAgentCreditsOnMerge: true,
       });
       expect(variablesOf("mergePullRequest(")).toEqual([
@@ -2511,7 +2510,7 @@ layer("GitHubPullRequestApi.layer", (it) => {
           input: {
             pullRequestId: "PR_7",
             mergeMethod: "SQUASH",
-            expectedHeadOid: "abc123",
+            expectedHeadOid: "def456",
             commitBody: "",
           },
         },
@@ -2559,89 +2558,6 @@ layer("GitHubPullRequestApi.layer", (it) => {
         { input: { pullRequestId: "PR_7", mergeMethod: "SQUASH" } },
       ]);
       expect(variablesOf("enablePullRequestAutoMerge(")).toEqual([]);
-    }),
-  );
-
-  it.effect("pins a merge and an armed auto-merge to the head the reader saw", () =>
-    Effect.gen(function* () {
-      const expectedHeadSha = "0962ce611d58a27a0baa269cc60804dbd5242a78";
-      route(["query PullRequestActionState", actionState({ headRefOid: expectedHeadSha })]);
-      const cli = yield* GitHubPullRequestApi.GitHubPullRequestApi;
-
-      for (const action of ["merge", "enable-auto-merge"] as const) {
-        yield* cli.runPullRequestAction({
-          cwd: "/w",
-          repository: "acme/web",
-          host: "github.com",
-          number: 7,
-          action,
-          mergeMethod: "squash",
-          expectedHeadSha,
-        });
-      }
-
-      const pinned = {
-        pullRequestId: "PR_7",
-        mergeMethod: "SQUASH",
-        expectedHeadOid: expectedHeadSha,
-      };
-      expect(variablesOf("mergePullRequest(")).toEqual([{ input: pinned }]);
-      expect(variablesOf("enablePullRequestAutoMerge(")).toEqual([{ input: pinned }]);
-    }),
-  );
-
-  it.effect("says the head moved when a pinned merge is refused for that reason", () =>
-    Effect.gen(function* () {
-      const refused = new GitHubRequestPolicy.GitHubApiResponseError({
-        host: "github.com",
-        operation: "runPullRequestAction",
-        status: 200,
-        githubErrors: ["Head branch was modified. Review and try the merge again."],
-      });
-      /** Answers the action state with each head in turn, and fails the merge mutation. */
-      const answer = (...heads: ReadonlyArray<string>) => {
-        let reads = 0;
-        mockedExecute.mockImplementation((call) => {
-          if (call.kind === "graphql" && matches(call, "mergePullRequest(")) {
-            return Effect.fail(refused);
-          }
-          const headRefOid = heads[Math.min(reads++, heads.length - 1)];
-          return Effect.succeed(output(encodeJson(actionState({ headRefOid }))));
-        });
-      };
-      const cli = yield* GitHubPullRequestApi.GitHubPullRequestApi;
-      const merge = () =>
-        cli.runPullRequestAction({
-          cwd: "/w",
-          repository: "acme/web",
-          host: "github.com",
-          number: 7,
-          action: "merge",
-          mergeMethod: "squash",
-          expectedHeadSha: "abc123",
-        });
-
-      // Already moved when the merge reads the pull request: nothing is sent.
-      answer("def456");
-      const early = yield* Effect.flip(merge());
-      expect(early).toMatchObject({ _tag: "GitHubMergeHeadChangedError", number: 7 });
-      expect(early.message).toContain("New commits were pushed to #7");
-      expect(variablesOf("mergePullRequest(")).toEqual([]);
-
-      // Moved between that read and the merge: GitHub refuses, and a second read says why.
-      mockedExecute.mockClear();
-      answer("abc123", "def456");
-      expect(yield* Effect.flip(merge())).toMatchObject({
-        _tag: "GitHubMergeHeadChangedError",
-        number: 7,
-      });
-
-      // Refused for some other reason while the head stayed put: the original failure stands.
-      answer("abc123");
-      expect(yield* Effect.flip(merge())).toMatchObject({
-        _tag: refused._tag,
-        status: refused.status,
-      });
     }),
   );
 

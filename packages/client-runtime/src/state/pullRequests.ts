@@ -513,11 +513,9 @@ export function createPullRequestEnvironmentAtoms<R, E>(
             detail: cause instanceof Error ? cause.message : "Could not choose a merge method.",
           }),
       });
-      // The merge pins the head this read saw, so the host refuses it if new commits landed.
       preparedInput = {
         ...actionInput,
         mergeMethod,
-        ...(detail.headSha ? { expectedHeadSha: detail.headSha } : {}),
       };
     }
     const supervisor = yield* EnvironmentSupervisor.EnvironmentSupervisor;
