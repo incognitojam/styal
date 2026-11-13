@@ -333,12 +333,16 @@ describe("SessionControl", () => {
     });
     await started.promise;
     const queued = expect(control.agent("agent", async () => "stale")).rejects.toThrow("closed");
+    const queuedSystem = expect(control.system(async () => "stale setting")).rejects.toThrow(
+      "closed",
+    );
     const closed = control.close();
     await expect(control.take("viewer")).rejects.toThrow("closed");
     await expect(control.agent("agent", async () => "new")).rejects.toThrow("closed");
+    expect(() => control.system(async () => "new setting")).toThrow("closed");
     finish.resolve();
     await expect(running).resolves.toBe("finished");
-    await Promise.all([queued, closed]);
+    await Promise.all([queued, queuedSystem, closed]);
     await control.disconnect("viewer");
     await control.close();
     expect(control.generation).toBe(1);

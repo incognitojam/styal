@@ -480,7 +480,7 @@ it.live("tells the desktop once per thread when its agent turns start and end", 
 );
 
 it.effect(
-  "terminal navigation does not block other tabs and preserves per-tab ordering after failure",
+  "terminal navigation and settings do not block other tabs and preserve per-tab ordering after failure",
   () =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -495,7 +495,7 @@ it.effect(
         const finish = Promise.withResolvers<void>();
         const closed = Promise.withResolvers<void>();
         const opened = Promise.withResolvers<void>();
-        const next = Promise.withResolvers<void>();
+        const final = Promise.withResolvers<void>();
         const order: string[] = [];
         yield* Effect.addFinalizer(() => Effect.sync(() => finish.resolve()));
         page.goto
@@ -506,8 +506,15 @@ it.effect(
           })
           .mockImplementationOnce(async () => {
             order.push("next");
-            next.resolve();
+          })
+          .mockImplementationOnce(async () => {
+            order.push("final");
+            final.resolve();
           });
+        const cdp = contexts[0]!.sessions[0]!;
+        cdp.send.mockClear();
+        page.setViewportSize.mockClear();
+        page.emulateMedia.mockClear();
         victimPage.close.mockImplementationOnce(async () => {
           order.push("closed");
           closed.resolve();
@@ -525,6 +532,26 @@ it.effect(
           force: true,
           url: "http://localhost:5173/next",
         });
+        yield* manager.resize({
+          threadId: scope.thread.threadId,
+          tabId,
+          viewport: { _tag: "freeform", width: 900, height: 700 },
+        });
+        yield* manager.adjust({
+          threadId: scope.thread.threadId,
+          tabId,
+          colorScheme: "dark",
+          zoomFactor: 1.25,
+        });
+        yield* manager.adjust({ threadId: scope.thread.threadId, tabId, clear: "cookies" });
+        yield* manager.adjust({ threadId: scope.thread.threadId, tabId, clear: "cache" });
+        yield* manager.adjust({ threadId: scope.thread.threadId, tabId, hardReload: true });
+        yield* manager.requestReveal({
+          threadId: scope.thread.threadId,
+          tabId,
+          force: true,
+          url: "http://localhost:5173/final",
+        });
         yield* manager.close({ threadId: otherThread, tabId: victim.tabId });
         initialNavigation = async () => {
           order.push("opened");
@@ -537,9 +564,20 @@ it.effect(
         });
         yield* Effect.promise(() => Promise.all([closed.promise, opened.promise]));
         expect(order).toEqual(["slow", "closed", "opened"]);
+        expect(page.setViewportSize).not.toHaveBeenCalled();
+        expect(page.emulateMedia).not.toHaveBeenCalled();
         finish.reject(new Error("synthetic navigation failure"));
-        yield* Effect.promise(() => next.promise);
-        expect(order).toEqual(["slow", "closed", "opened", "next"]);
+        yield* Effect.promise(() => final.promise);
+        expect(order).toEqual(["slow", "closed", "opened", "next", "final"]);
+        expect(page.setViewportSize).toHaveBeenCalledWith({ width: 900, height: 700 });
+        expect(page.emulateMedia).toHaveBeenCalledWith({ colorScheme: "dark" });
+        expect(cdp.send).toHaveBeenCalledWith(
+          "Emulation.setDeviceMetricsOverride",
+          expect.anything(),
+        );
+        expect(cdp.send).toHaveBeenCalledWith("Network.clearBrowserCookies");
+        expect(cdp.send).toHaveBeenCalledWith("Network.clearBrowserCache");
+        expect(cdp.send).toHaveBeenCalledWith("Page.reload", { ignoreCache: true });
       }),
     ).pipe(Effect.provide(layer)),
 );

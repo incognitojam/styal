@@ -3269,6 +3269,7 @@ features:
     tests:
       - apps/desktop/src/preview/BrowserSession.test.ts
       - apps/server/src/preview/ServerBrowser.test.ts
+      - apps/server/src/preview/SessionControl.test.ts
       - apps/server/src/preview/TerminalBrowserOpen.test.ts
       - apps/server/src/terminal/Manager.test.ts
       - apps/web/src/components/chat/loopbackLinkPreview.test.ts
