@@ -2059,42 +2059,57 @@ it.layer(
     }),
   );
 
-  it.effect.each(["disabled", "candidate list", "command", "unrelated script"] as const)(
-    "preserves an explicitly configured browser: %s",
-    (scenario) =>
-      Effect.gen(function* () {
-        const fileSystem = yield* FileSystem.FileSystem;
-        const path = yield* Path.Path;
-        const directory = yield* fileSystem.makeTempDirectoryScoped();
-        const helperDir = path.join(directory, "terminal-browser-open-bin");
-        yield* fileSystem.makeDirectory(helperDir);
-        const unrelated = path.join(helperDir, "terminal-browser-open.js");
-        yield* fileSystem.writeFileString(
-          unrelated,
-          "#!/usr/bin/env node\nconsole.log('user browser');\n",
-        );
-        const browser = {
-          disabled: "none",
-          "candidate list":
-            "/usr/bin/firefox:/parent/terminal-browser-open-bin/terminal-browser-open.js",
-          command:
-            "/usr/bin/firefox --profile /parent/terminal-browser-open-bin/terminal-browser-open.js",
-          "unrelated script": unrelated,
-        }[scenario];
-        let registrations = 0;
-        const { manager, ptyAdapter } = yield* createManager(5, {
-          env: { BROWSER: browser },
-          registerBrowserOpen: () =>
-            Effect.sync(() => {
-              registrations += 1;
-              return { BROWSER: "/tmp/t3-browser-open.js" };
-            }),
-        });
+  it.effect.each([
+    "disabled",
+    "candidate list",
+    "command",
+    "unrelated script",
+    "modified helper",
+  ] as const)("preserves an explicitly configured browser: %s", (scenario) =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const directory = yield* fileSystem.makeTempDirectoryScoped();
+      const helperDir = path.join(directory, "terminal-browser-open-bin");
+      yield* fileSystem.makeDirectory(helperDir);
+      const unrelated = path.join(helperDir, "terminal-browser-open.js");
+      yield* fileSystem.writeFileString(
+        unrelated,
+        "#!/usr/bin/env node\nconsole.log('user browser');\n",
+      );
+      const modifiedDir = path.join(directory, "custom", "terminal-browser-open-bin");
+      yield* fileSystem.makeDirectory(modifiedDir, { recursive: true });
+      const modified = path.join(modifiedDir, "terminal-browser-open.js");
+      yield* fileSystem.writeFileString(
+        modified,
+        TERMINAL_BROWSER_OPEN_HELPER_SOURCE.replace(
+          "void (async () => {",
+          "void (async () => {\n  console.log('custom browser');",
+        ),
+      );
+      const browser = {
+        disabled: "none",
+        "candidate list":
+          "/usr/bin/firefox:/parent/terminal-browser-open-bin/terminal-browser-open.js",
+        command:
+          "/usr/bin/firefox --profile /parent/terminal-browser-open-bin/terminal-browser-open.js",
+        "unrelated script": unrelated,
+        "modified helper": modified,
+      }[scenario];
+      let registrations = 0;
+      const { manager, ptyAdapter } = yield* createManager(5, {
+        env: { BROWSER: browser },
+        registerBrowserOpen: () =>
+          Effect.sync(() => {
+            registrations += 1;
+            return { BROWSER: "/tmp/t3-browser-open.js" };
+          }),
+      });
 
-        yield* manager.open(openInput());
-        expect(ptyAdapter.spawnInputs[0]?.env.BROWSER).toBe(browser);
-        expect(registrations).toBe(0);
-      }),
+      yield* manager.open(openInput());
+      expect(ptyAdapter.spawnInputs[0]?.env.BROWSER).toBe(browser);
+      expect(registrations).toBe(0);
+    }),
   );
 
   it.effect("strips AppImage runtime env from terminal sessions", () =>
