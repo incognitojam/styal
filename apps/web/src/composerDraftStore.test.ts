@@ -86,6 +86,7 @@ import {
   finalizePromotedDraftThreadByRef,
   markPromotedDraftThreadByRef,
   rememberUnconfirmedDraftSend,
+  subscribeUnconfirmedComposerSend,
   resolveDraftPromotionNavigationTarget,
   restoreFailedDraftThread,
   subscribeDraftThreadPromotion,
@@ -1268,6 +1269,93 @@ describe("composerDraftStore project draft thread mapping", () => {
 
     expect(useComposerDraftStore.getState().getDraftThread(threadRef)).toBeNull();
     expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.prompt).toBe("keep me");
+  });
+
+  it.each([false, true])(
+    "clears an unedited restored send when its exact message arrives (already synced: %s)",
+    (alreadySynced) => {
+      const registry = AtomRegistry.make();
+      onTestFinished(() => registry.dispose());
+      const target = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
+      const store = useComposerDraftStore.getState();
+      store.setPrompt(target, "sent before disconnecting");
+      using revokePreview = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+      store.addImages(target, [makeImage({ id: "sent-image", previewUrl: "blob:sent-image" })]);
+      store.addFiles(target, [makeFile("sent-file")]);
+      store.setThreadContexts(target, [threadContextRecord(target, "Referenced thread")]);
+      const messagesAtom = Atom.make<ReadonlyArray<{ id: string }>>(
+        alreadySynced ? [{ id: "sent-message" }] : [{ id: "previous-message" }],
+      );
+      const unsubscribe = subscribeUnconfirmedComposerSend({
+        registry,
+        target,
+        messageId: "sent-message",
+        messagesAtom,
+      });
+      onTestFinished(unsubscribe);
+      if (!alreadySynced) {
+        expect(useComposerDraftStore.getState().getComposerDraft(target)?.prompt).toContain(
+          "sent before disconnecting",
+        );
+        store.setRuntimeMode(target, "approval-required");
+        registry.set(messagesAtom, [{ id: "previous-message" }, { id: "sent-message" }]);
+      }
+      expect(useComposerDraftStore.getState().getComposerDraft(target)?.prompt ?? "").toBe("");
+      expect(useComposerDraftStore.getState().getComposerDraft(target)?.images ?? []).toEqual([]);
+      expect(useComposerDraftStore.getState().getComposerDraft(target)?.files ?? []).toEqual([]);
+      expect(
+        useComposerDraftStore.getState().getComposerDraft(target)?.threadContexts ?? [],
+      ).toEqual([]);
+      expect(revokePreview).toHaveBeenCalledWith("blob:sent-image");
+      if (!alreadySynced) {
+        expect(useComposerDraftStore.getState().getComposerDraft(target)?.runtimeMode).toBe(
+          "approval-required",
+        );
+      }
+    },
+  );
+
+  it.each([
+    "prompt",
+    "threadContext",
+    "environmentContext",
+    "image",
+    "file",
+    "editThenUndo",
+    "discard",
+  ])("keeps newer %s content when a restored send is confirmed", (edit) => {
+    const registry = AtomRegistry.make();
+    onTestFinished(() => registry.dispose());
+    const target = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
+    const store = useComposerDraftStore.getState();
+    store.setPrompt(target, "sent before disconnecting");
+    const messagesAtom = Atom.make<ReadonlyArray<{ id: string }>>([]);
+    onTestFinished(
+      subscribeUnconfirmedComposerSend({
+        registry,
+        target,
+        messageId: "sent-message",
+        messagesAtom,
+      }),
+    );
+    if (edit === "prompt") store.setPrompt(target, "a new follow-up");
+    else if (edit === "threadContext")
+      store.setThreadContexts(target, [threadContextRecord(target, "Another thread")]);
+    else if (edit === "environmentContext")
+      store.setEnvironmentContexts(target, [
+        environmentContextRecord(OTHER_TEST_ENVIRONMENT_ID, "Another environment"),
+      ]);
+    else if (edit === "image")
+      store.addImages(target, [makeImage({ id: "new-image", previewUrl: "blob:new-image" })]);
+    else if (edit === "file") store.addFiles(target, [makeFile("new-file")]);
+    else if (edit === "discard") store.clearComposerContent(target);
+    else {
+      store.setPrompt(target, "temporary edit");
+      store.setPrompt(target, "sent before disconnecting");
+    }
+    const edited = useComposerDraftStore.getState().getComposerDraft(target);
+    registry.set(messagesAtom, [{ id: "sent-message" }]);
+    expect(useComposerDraftStore.getState().getComposerDraft(target)).toBe(edited);
   });
 
   it("promotes matching thread ids separately for each environment", () => {

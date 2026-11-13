@@ -76,6 +76,7 @@ import {
   restoreFailedDraftThread,
   composerDraftHasUserContent,
   rememberUnconfirmedDraftSend,
+  subscribeUnconfirmedComposerSend,
   type ComposerFileAttachment,
   type ComposerImageAttachment,
   type DraftThreadEnvMode,
@@ -93,7 +94,8 @@ import {
   previewAnnotationContextReference,
 } from "../../lib/composerContextRecords";
 import { environmentServerConfigsAtom } from "../../state/server";
-import { threadEnvironment } from "../../state/threads";
+import { environmentThreadDetails, threadEnvironment } from "../../state/threads";
+import { Atom } from "effect/reactivity";
 import { runMobileComposerTransition } from "./draftHeroTransition";
 import { useClientSettingsHydrated, useEnvironmentSettings } from "../../hooks/useSettings";
 import { environmentPresentations } from "../../state/presentation";
@@ -1345,6 +1347,7 @@ export function useComposerSend(input: ComposerSendInput) {
 
     let backgroundDraftOpened = false;
     let turnStartSucceeded = false;
+    let turnStartAttempted = false;
     if (failure === null && turnAttachmentsResult._tag === "Success") {
       const bootstrap =
         isLocalDraftThread || baseBranchForWorktree
@@ -1380,6 +1383,7 @@ export function useComposerSend(input: ComposerSendInput) {
           ? scopeThreadRef(environmentId, threadIdForSend)
           : null;
       if (backgroundThreadRef) beginBackgroundDraftSubmissionByRef(backgroundThreadRef);
+      turnStartAttempted = true;
       const startPromise = startThreadTurn({
         environmentId,
         input: {
@@ -1529,6 +1533,23 @@ export function useComposerSend(input: ComposerSendInput) {
           !isOrchestrationDispatchCommandError(squashAtomCommandFailure(failure))
         ) {
           rememberUnconfirmedDraftSend(draftId);
+        }
+        if (
+          isServerThread &&
+          turnStartAttempted &&
+          !isOrchestrationDispatchCommandError(squashAtomCommandFailure(failure))
+        ) {
+          subscribeUnconfirmedComposerSend({
+            registry: appAtomRegistry,
+            target: scopeThreadRef(environmentId, threadIdForSend),
+            messageId: messageIdForSend,
+            messagesAtom: Atom.map(
+              environmentThreadDetails.quietThreadAtom(
+                scopeThreadRef(environmentId, threadIdForSend),
+              ),
+              (thread) => thread?.projection.messages ?? [],
+            ),
+          });
         }
       }
       if (!isAtomCommandInterrupted(failure)) {
