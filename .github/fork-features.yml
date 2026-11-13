@@ -840,42 +840,26 @@ features:
         - https://github.com/pingdotgg/t3code/pull/9831
       retire_when: Upstream gives clone authentication and rate-limit failures recovery guidance on web and mobile.
 
-  - id: codex-default-effort
-    title: Run Codex turns at the effort shown as default
-    status: retiring
-    tier: yield
-    prs: [544]
-    invariants:
-      - A Codex turn whose selection names no reasoning effort is sent the effort the provider snapshot marks as that model's default, which is the effort clients show.
-    implementation_paths:
-      - apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts
-      - apps/server/src/provider/Drivers/CodexDriver.ts
-    upstream_paths:
-      - apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts
-      - apps/server/src/provider/Drivers/CodexDriver.ts
-    tests:
-      - apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.test.ts
-    upstream:
-      status: tracking
-      tracking:
-        - https://github.com/pingdotgg/t3code/pull/14440
-      retire_when: Upstream sends Codex the effort its clients show as default when a turn names none.
-
   - id: codex-default-model
     title: Prefer GPT-6.1-Sol for new Codex threads
     status: maintained
     tier: yield
-    prs: [406]
+    prs: [406, 544]
     invariants:
       - New Codex threads select GPT-6.1-Sol when available, then GPT-6-Sol, then GPT-6-Astra, then an older available model; an unavailable preferred model never blocks the live Codex catalog.
       - A Codex model's default reasoning effort is the one a turn without an explicit effort actually runs at, medium when the model supports it.
     implementation_paths:
+      - apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts
       - apps/server/src/provider/CodexProvider.ts
+      - apps/server/src/provider/Drivers/CodexDriver.ts
       - packages/contracts/src/model.ts
     upstream_paths:
+      - apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts
       - apps/server/src/provider/CodexProvider.ts
+      - apps/server/src/provider/Drivers/CodexDriver.ts
       - packages/contracts/src/model.ts
     tests:
+      - apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.test.ts
       - apps/server/src/provider/CodexProvider.test.ts
     upstream:
       status: tracking
