@@ -112,23 +112,13 @@ describe("fork pull request workflows", () => {
     ).toBe(true);
   });
 
-  it("refuses a stale head, refreshes it, and pins the retried merge to the new commit", async () => {
-    // pull-request-merge-head-guard
+  it("merges after the head moves without pinning the previously loaded commit", async () => {
     const { page } = app;
     await page.goto(`${environment.origin}/pull-requests?q=43`);
     await page.getByRole("button", { name: /Fix sidebar navigation/ }).click();
     const merge = page.getByRole("button", { name: "Merge", exact: true });
     await merge.waitFor();
     ready.headSha = "c".repeat(40);
-    await merge.click();
-    await page.getByRole("button", { name: "Confirm merge?", exact: true }).click();
-    await page.getByText(/New commits were pushed to #43/).waitFor();
-    expect(
-      environment
-        .gitHubApiRequests()
-        .filter((request) => request.query?.includes("mergePullRequest(input:")),
-    ).toHaveLength(0);
-
     await merge.click();
     await page.getByRole("button", { name: "Confirm merge?", exact: true }).click();
     await page.getByText("Merged", { exact: true }).first().waitFor();
@@ -138,7 +128,7 @@ describe("fork pull request workflows", () => {
     expect(mutations).toHaveLength(1);
     expect(mutations[0]!.variables?.input).toMatchObject({
       pullRequestId: "PR_43",
-      expectedHeadOid: ready.headSha,
     });
+    expect(mutations[0]!.variables?.input).not.toHaveProperty("expectedHeadOid");
   });
 });

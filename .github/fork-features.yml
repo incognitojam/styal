@@ -5261,7 +5261,7 @@ features:
     prs: [1088, 1089]
     invariants:
       - A blocked GitHub pull request offers Bypass rules and merge only when GitHub reports viewerCanMergeAsAdmin, the viewer can write, and the repository has no merge queue.
-      - The bypassing merge is the ordinary direct merge with its head guard; nothing else changes on the server.
+      - The bypassing merge uses the ordinary direct merge path and the host enforces its permissions and repository rules.
       - Web reports each bypass merge with its outcome through the owning environment; reporting never blocks the merge.
     rationale: Upstream closed its administrator merge proposal (https://github.com/pingdotgg/t3code/pull/17281) pending product approval, so blocked pull requests offer no merge to administrators who could bypass the rules.
     implementation_paths:
