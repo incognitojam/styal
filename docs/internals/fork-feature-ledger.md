@@ -17,7 +17,10 @@ CI validates the file with `vp run --filter @t3tools/scripts ledger:check`.
 - `upstream_repository`: canonical GitHub `owner/name` identity for the upstream project.
 - `id`: stable lower-kebab-case capability ID. Do not rename it when implementation details move.
 - `title`: short maintainer-facing capability name.
-- `status`: `maintained`, `review-needed`, or `retiring`.
+- `status`: `maintained`, `review-needed` when its behavior needs a maintainer review (for example
+  because upstream now overlaps it), or `retiring` when its removal is decided and the removing pull
+  request has not landed.
+- `tier`: `keep` or `yield`, who decides at upstream intake. See [Tiers](#tiers).
 - `prs`: fork pull requests that introduced or materially repaired the capability. Leave empty until the first pull request exists.
 - `invariants`: observable behavior that must remain true after upstream integration.
 - `rationale` (optional): why the fork diverges, when the invariants do not make it obvious. Upstream
@@ -34,6 +37,25 @@ exist in the fork, making local renames and removals fail validation instead of 
 ledger. Upstream paths are audited when an entry is added to ensure they exist on the current upstream
 base; Fork Nightly disables rename detection when diffing upstream so a moved path is reported as both
 the watched deletion and a new addition.
+
+## Tiers
+
+Keeping every fork feature through intake costs a fork adaptation on a large share of upstream
+commits, so each entry states who decides when upstream changes its area. The tier is not a judgment
+of whether the feature is good.
+
+- `keep`: the feature is preserved through intake. If upstream rewrites its area, the intake batch
+  stops and the feature is rebuilt on upstream's code.
+- `yield`: intake re-applies the feature only while its own tests pass without editing their
+  assertions. If upstream now does the same thing, intake takes upstream's code and the entry
+  retires. If keeping the feature would mean rebuilding it, intake proposes its removal in a pull
+  request on `main` instead; the maintainer closes that pull request to keep the feature, which
+  makes it `keep`.
+
+New entries choose a tier when they are added; choose `keep` only for behavior worth rebuilding
+after an upstream rewrite. A feature decided for removal stays in the ledger as `retiring`, with
+tier `yield`, until the removing pull request lands. The exact intake steps are in [Follow upstream
+behavior by default](../operations/upstream-tracking.md#2-apply-in-order).
 
 ## Workflow
 

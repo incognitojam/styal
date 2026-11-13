@@ -89,6 +89,7 @@ describe("provisional PR lifecycle", () => {
               id: "fixture",
               title: "Fixture",
               status: "maintained",
+              tier: "yield",
               prs: [],
               invariants: ["Keep fixtures"],
               implementation_paths: ["fixture.txt"],

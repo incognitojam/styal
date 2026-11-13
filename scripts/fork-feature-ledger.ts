@@ -7,6 +7,8 @@ import * as NodePath from "node:path";
 import { fromYaml } from "@t3tools/shared/schemaYaml";
 import * as Schema from "effect/Schema";
 
+const forkFeatureTiers = ["keep", "yield"] as const;
+
 const PositiveInteger = Schema.Int.check(Schema.isGreaterThan(0));
 
 const UpstreamDisposition = Schema.Struct({
@@ -19,6 +21,8 @@ export const ForkFeatureLedgerEntry = Schema.Struct({
   id: Schema.NonEmptyString,
   title: Schema.NonEmptyString,
   status: Schema.Literals(["maintained", "review-needed", "retiring"]),
+  // Checked in validation rather than decoding so the error names the entry.
+  tier: Schema.optionalKey(Schema.String),
   prs: Schema.Array(PositiveInteger),
   invariants: Schema.Array(Schema.NonEmptyString),
   rationale: Schema.optionalKey(Schema.NonEmptyString),
@@ -126,6 +130,11 @@ export function validateForkFeatureLedger(
   for (const feature of ledger.features) {
     if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(feature.id)) {
       errors.push(`${feature.id}.id must use lower-kebab-case.`);
+    }
+    if (!(forkFeatureTiers as ReadonlyArray<string | undefined>).includes(feature.tier)) {
+      errors.push(
+        `${feature.id}.tier must be ${forkFeatureTiers.join(" or ")}; see docs/internals/fork-feature-ledger.md.`,
+      );
     }
     if (feature.invariants.length === 0) errors.push(`${feature.id}.invariants must not be empty.`);
     if (feature.implementation_paths.length === 0)

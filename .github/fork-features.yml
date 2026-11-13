@@ -8,6 +8,7 @@ features:
   - id: active-terminal-close-confirmation
     title: Confirm closing terminals only while work is active
     status: maintained
+    tier: yield
     prs: [22, 226]
     invariants:
       - Closing a terminal prompts only while a foreground subprocess or finite setup command is still active; idle shells and exited setup terminals close immediately.
@@ -50,6 +51,7 @@ features:
   - id: add-project-developer-default
     title: Start the Add Project browser in ~/Developer on macOS
     status: maintained
+    tier: yield
     prs: [453]
     invariants:
       - When "Add project starts in" is empty, a macOS server whose home contains a ~/Developer directory advertises ~/Developer/ as the Add Project default; other servers advertise ~/.
@@ -84,6 +86,7 @@ features:
   - id: agent-context-growth-comment
     title: PR comment names the tools and text behind agent context growth
     status: maintained
+    tier: yield
     prs: [1273]
     invariants:
       - AgentContextBudget.test.ts keeps agentContextTools.json equal to the measured size of each MCP tool, and each size includes one separator byte so the tool changes add up to the change in mcpToolListJsonBytes.
@@ -109,6 +112,7 @@ features:
   - id: agent-guides
     title: Agents read styal how-to guides through a session skill or an MCP tool
     status: maintained
+    tier: keep
     prs: [1265, 1308]
     invariants:
       - A Claude, Codex or OpenCode 2 session started by styal gets the `styal-guides` skill without writing to a provider home or provider config. The server writes it under its state directory at startup and passes it through the SDK `plugins` option, `skills/extraRoots/set`, or `OPENCODE_CONFIG_CONTENT` merged with the user's value.
@@ -169,6 +173,7 @@ features:
   - id: android-notification-settings
     title: Android notification settings match Android's categories
     status: maintained
+    tier: yield
     prs: [749]
     invariants:
       - styal's Android Notifications settings use the same names as the Android channels, Agent alerts and Ongoing agent activity, and the alert row and channel describe the same events as web and desktop notifications.
@@ -202,6 +207,7 @@ features:
   - id: antigravity-reasoning-effort
     title: Separate Antigravity model generations from reasoning effort
     status: maintained
+    tier: yield
     prs: [583, 603]
     invariants:
       - Antigravity advertises each Gemini family and generation once, with only account-available native thinking variants as reasoning choices.
@@ -254,6 +260,7 @@ features:
   - id: arbitrary-file-attachments
     title: Attach arbitrary files to agent messages
     status: review-needed
+    tier: yield
     prs: [228, 391]
     invariants:
       - Web and mobile can attach generic files while supported images retain native provider handling, and every provider receives a safe persisted local path with MIME type and size.
@@ -356,6 +363,7 @@ features:
   - id: assistant-selection-reply
     title: Place Reply above selected assistant text
     status: maintained
+    tier: yield
     prs: [402]
     invariants:
       - Web and desktop show a Reply action with a trailing reply arrow centered above the full assistant text selection, including wrapped selections.
@@ -376,6 +384,7 @@ features:
   - id: auto-environment-tools
     title: Allow bounded environment operations from Auto threads
     status: maintained
+    tier: yield
     prs: [1293]
     rationale: Auto agents need to prepare projects and request user-approved machine links without gaining machine-wide or destructive permissions.
     invariants:
@@ -416,6 +425,7 @@ features:
   - id: backend-startup-latency
     title: Avoid unused provider work before backend readiness
     status: maintained
+    tier: yield
     prs: []
     invariants:
       - Constructing the Cursor runtime, text generator, authentication controller, and catalog does not load the disk-backed SDK or its SQLite helper; actual SDK operations load them on demand while preserving the process-scoped shell spawn guard and per-session worker environments.
@@ -453,6 +463,7 @@ features:
   - id: background-task-endings
     title: Show background task endings on the call that started them and in the turn they wake
     status: maintained
+    tier: yield
     prs: [535, 601]
     invariants:
       - An async Claude Bash launch stays running until its task notification updates the original canonical command item and tool node with completed, failed, or cancelled status on web and mobile.
@@ -491,6 +502,7 @@ features:
   - id: claude-background-response-steering
     title: Keep Claude background responses intact when steered
     status: review-needed
+    tier: yield
     prs: [598]
     invariants:
       - A user message sent while a Claude background response is streaming preserves its turn and text block, so a word or sentence cannot split across turns on web, desktop, or mobile.
@@ -512,6 +524,7 @@ features:
   - id: claude-blocked-tool-calls
     title: Label Claude tool calls that were refused without running
     status: maintained
+    tier: yield
     prs: [1212]
     invariants:
       - A Claude tool call that Auto mode or Claude's permission settings refused without asking reads as blocked, with Claude Code's reason when it gives one, on web and mobile rather than as a plain failure.
@@ -536,6 +549,7 @@ features:
   - id: claude-default-provider
     title: Prefer Claude for new threads
     status: maintained
+    tier: yield
     prs: [743]
     invariants:
       - Provider snapshots list Claude before Codex, so web, desktop, and mobile give a new thread with no saved, carried, or project selection the first usable provider, Claude, at Opus 5.5.
@@ -560,6 +574,7 @@ features:
   - id: claude-exact-history-rewind
     title: Rewind Claude turns using the complete saved history
     status: maintained
+    tier: yield
     prs: [611, 631, 635]
     rationale: Claude's history reader can omit retained prompts and assistant messages even though the native fork preserves them; matching its filtered message bodies or positions cannot recover those turn boundaries. V2 persists human prompt references, reads the complete saved transcript, validates native forks before replacing the provider thread, and remaps retained prompt and assistant references.
     invariants:
@@ -590,6 +605,7 @@ features:
   - id: claude-mcp-registration-timeout-hint
     title: Point a Claude startup timeout at hanging hooks
     status: maintained
+    tier: yield
     prs: [1128]
     invariants:
       - When Claude Code does not answer T3 Code's MCP server registration in time, the turn's error says Claude Code took too long to start and names a hook that hangs at startup as a likely cause.
@@ -608,6 +624,7 @@ features:
   - id: claude-model-manifest-policy
     title: Source Claude models from the styal manifest
     status: review-needed
+    tier: keep
     prs: [285, 405, 519, 720]
     invariants:
       - Claude's complete built-in catalog comes from a validated manifest bundled for offline startup and refreshed from the styal fork, with invalid fetches preserving the last valid cache or bundle and a newer bundle replacing an older cache.
@@ -651,6 +668,7 @@ features:
   - id: claude-resume-compaction-cache-expiry
     title: Offer Claude resume compaction when the prompt cache expires
     status: maintained
+    tier: yield
     prs: [507]
     invariants:
       - The web composer shows the Compact chip, and Enter compacts first, for a Claude thread of at least 200,000 tokens (upstream's threshold) once 60 minutes have passed since its last context update, matching Claude Code's one-hour prompt cache TTL rather than upstream's and Claude Code's 70-minute resume threshold.
@@ -675,6 +693,7 @@ features:
   - id: claude-settings-change-cache-warning
     title: Warn when a Claude model or option change skips the prompt cache
     status: maintained
+    tier: yield
     prs: [534]
     invariants:
       - While a Claude thread of at least 200,000 tokens has a prompt cache less than 60 minutes old, the web composer warns before a pending model, provider instance, or fast mode change would resend the history uncached, and offers to undo it.
@@ -698,6 +717,7 @@ features:
   - id: claude-stop-waits-for-cli-exit
     title: Stop a Claude session only once its CLI has exited
     status: maintained
+    tier: keep
     prs: [620, 621, 1128]
     invariants:
       - Stopping a Claude session waits for its CLI process to exit, up to a grace measured from the SDK close, then kills the process itself; the session's exit event follows the process, not the close call.
@@ -722,6 +742,7 @@ features:
   - id: claude-subagent-task-ownership
     title: Keep a Claude subagent's own work inside its spawn card
     status: maintained
+    tier: yield
     prs: [539]
     invariants:
       - A task that a Claude subagent starts, such as a background shell or a nested agent, carries that subagent as its owner, including after the subagent is resumed through SendMessage and when the task starts after the resume.
@@ -748,6 +769,7 @@ features:
   - id: claude-windows-shell-commands
     title: Show Claude's Windows shell commands as commands
     status: maintained
+    tier: yield
     prs: [1123, 1131]
     invariants:
       - Claude Code's Windows `PowerShell` tool shows as a command row with its command and stdout/stderr output, like `Bash`, on every client.
@@ -774,6 +796,7 @@ features:
   - id: clipboard-failure-reason
     title: Clipboard failures name the browser's reason
     status: maintained
+    tier: yield
     prs: [223]
     invariants:
       - A failed clipboard write reports the browser's own reason when it gives one, and the generic message when it gives none.
@@ -792,6 +815,7 @@ features:
   - id: clone-failure-guidance
     title: Explain clone authentication and rate-limit failures
     status: maintained
+    tier: yield
     prs: [327]
     invariants:
       - A clone that fails because Git authentication failed says so and names how to set up Git credentials or SSH keys, including `gh auth login` and `gh auth setup-git` for GitHub HTTPS, instead of showing Git's output.
@@ -818,7 +842,8 @@ features:
 
   - id: codex-default-effort
     title: Run Codex turns at the effort shown as default
-    status: maintained
+    status: retiring
+    tier: yield
     prs: [544]
     invariants:
       - A Codex turn whose selection names no reasoning effort is sent the effort the provider snapshot marks as that model's default, which is the effort clients show.
@@ -839,6 +864,7 @@ features:
   - id: codex-default-model
     title: Prefer GPT-6.1-Sol for new Codex threads
     status: maintained
+    tier: yield
     prs: [406]
     invariants:
       - New Codex threads select GPT-6.1-Sol when available, then GPT-6-Sol, then GPT-6-Astra, then an older available model; an unavailable preferred model never blocks the live Codex catalog.
@@ -860,6 +886,7 @@ features:
   - id: codex-exit-reason
     title: Flag provider updates that leave the provider broken
     status: maintained
+    tier: yield
     prs: [675]
     invariants:
       - A provider update whose command exits 0 but leaves the provider in an error state is reported as unchanged with the provider's error, not as a success.
@@ -879,6 +906,7 @@ features:
   - id: codex-model-display-names
     title: Display Codex model word suffixes with spaces
     status: maintained
+    tier: yield
     prs: []
     invariants:
       - Codex catalog labels use spaces before word suffixes, such as GPT-6 Luna and GPT-6.1 Sol, while preserving model IDs and the hyphen before the version.
@@ -903,6 +931,7 @@ features:
   - id: completion-sounds
     title: Configurable thread notification sounds
     status: maintained
+    tier: keep
     prs: [5, 7, 19, 72, 249, 250, 742, 1357]
     invariants:
       - Users can independently select, preview, and disable sounds for completion, input, and approval events; the sound choices are nested under the Notification sounds switch and disabled while it is off.
@@ -943,6 +972,7 @@ features:
   - id: composer-pending-approvals
     title: Answer pending approvals on the composer on web and desktop
     status: maintained
+    tier: yield
     prs: [1347]
     invariants:
       - Web and desktop answer every pending approval in a banner attached to the composer, the surface pending questions use; timeline rows have no approval buttons.
@@ -972,6 +1002,7 @@ features:
   - id: data-import-from-t3-code
     title: T3 Code migration in setup and Settings
     status: review-needed
+    tier: keep
     prs: [294, 297, 298, 300, 306, 347, 349, 379, 478, 842]
     rationale: Upstream V2 supplies canonical orchestration and messages-only automatic V1 migration, but the maintained T3 import flow must retain full recorded history and costs. The batch explicitly preserves these values, converts V1 history at the boundary, imports native V2 projections through inert canonical events, and materializes unavailable fork ancestors.
     invariants:
@@ -1089,6 +1120,7 @@ features:
   - id: delegated-wake-all
     title: Wake a parent once when a group of delegated tasks has finished
     status: maintained
+    tier: keep
     prs: [1142]
     invariants:
       - delegate_task defaults to wake=each, unchanged. With wake=all, a finished task's completion wake waits until every wake=all task delegated by the same parent run is terminal, then one wake carries every held result.
@@ -1135,6 +1167,7 @@ features:
   - id: desktop-background-updates
     title: Download desktop updates in the background and install on quit
     status: maintained
+    tier: keep
     prs: [110, 128, 358, 390, 754, 758, 851]
     invariants:
       - Automatic update polling continues at the four-minute interval after an unexpected check failure.
@@ -1255,6 +1288,7 @@ features:
   - id: desktop-discord-rich-presence
     title: Opt-in Discord activity with active thread and project counts
     status: maintained
+    tier: yield
     prs: [369]
     invariants:
       - Desktop presence is off by default and publishes only aggregate unsettled thread and project counts from live environments.
@@ -1293,6 +1327,7 @@ features:
   - id: desktop-fullscreen-restore
     title: Reopen the macOS main window in native fullscreen
     status: maintained
+    tier: yield
     prs: [730]
     rationale: Native macOS apps reopen in fullscreen when they quit in fullscreen. Upstream closed both pull requests for scope and incomplete verification, not on the behavior.
     invariants:
@@ -1318,6 +1353,7 @@ features:
   - id: desktop-graceful-shutdown
     title: Bounded graceful desktop shutdown
     status: maintained
+    tier: yield
     prs: [203, 557]
     invariants:
       - Quitting flushes settings and gracefully closes the main window before destroying remaining windows and terminating the backend.
@@ -1348,6 +1384,7 @@ features:
   - id: desktop-notification-delivery
     title: Desktop warns when macOS blocks notifications
     status: maintained
+    tier: yield
     prs: []
     invariants:
       - On macOS, the desktop app presents thread and review-guide notifications from the main process and reports whether macOS showed or rejected each one.
@@ -1385,6 +1422,7 @@ features:
   - id: desktop-preview-app-install
     title: Install pull request preview builds from the desktop app
     status: maintained
+    tier: yield
     prs: []
     invariants:
       - A preview build is only found from finished release assets of the hard-coded fork repository whose names carry the pull request's full `-pr.<n>.` marker, and pull request comments are never read.
@@ -1418,6 +1456,7 @@ features:
   - id: desktop-update-notice
     title: Name the version the desktop app updated to
     status: maintained
+    tier: yield
     prs: [1128]
     invariants:
       - After the desktop app starts on a newer version than the window last recorded, one toast names that version and links to its styal release notes; it shows once per version, whichever update path installed it.
@@ -1445,6 +1484,7 @@ features:
   - id: device-automation-node-mode
     title: Run desktop device automation in Node mode
     status: maintained
+    tier: yield
     prs: [739, 740]
     invariants:
       - Generated POSIX and Windows agent-device wrappers run Electron in Node mode even when the calling provider has no Node-mode flag or sets a different value.
@@ -1469,6 +1509,7 @@ features:
   - id: device-environment-hosts
     title: Share local devices between connected environments
     status: maintained
+    tier: keep
     prs: [746, 805, 1171]
     invariants:
       - New remote device setup in settings uses environment sharing. Web and desktop hide SSH host configuration unless their connected environment has saved hosts, which remain editable and removable in a collapsed section. Editing or removing saved hosts only changes matching entries on connected environments; settings do not offer adding SSH hosts.
@@ -1527,6 +1568,7 @@ features:
   - id: device-idle-shutdown
     title: Hand devices back on demand and shut down unused simulators
     status: maintained
+    tier: yield
     prs: [832, 887]
     invariants:
       - The device_open quick start and the device guide tell an agent that the message it writes after device_close is the one the user reads, so that message reports what happened, including anything it could not finish and why.
@@ -1575,6 +1617,7 @@ features:
   - id: device-list-physical-section
     title: List plugged-in devices apart from simulators and emulators
     status: maintained
+    tier: yield
     prs: [1176]
     invariants:
       - The web Device panel lists physical devices in their own section per platform ("Android Devices", "iOS Devices") above that platform's simulators or emulators, instead of under the "Android Emulators" or "iOS Simulators" heading. Their rows say "Connected" rather than "Running", since a physical device is always running and cannot be started or powered off.
@@ -1594,6 +1637,7 @@ features:
   - id: device-panel-tabs
     title: Keep a panel tab for every live device
     status: maintained
+    tier: yield
     prs: [830]
     invariants:
       - Every device session on the thread has a right-panel tab, including devices that float over chat and devices opened while the thread was not shown; adding the tab does not open the panel or change its active tab.
@@ -1616,6 +1660,7 @@ features:
   - id: device-resource-isolation
     title: Keep device helpers out of the server resource group
     status: maintained
+    tier: yield
     prs: []
     invariants:
       - Newly launched local device hubs and agent-device daemons use shared agent scopes so emulator and helper descendants inherit agent CPU priority on supported Linux hosts.
@@ -1636,6 +1681,7 @@ features:
   - id: device-stream-stats
     title: Stream stats for device viewers
     status: maintained
+    tier: yield
     prs: []
     invariants:
       - Web, desktop and mobile device viewers offer **Show stream stats**, which shows the stream's frame rate, received data rate, delay growth behind the device, decoder resets, reconnects and pauses, refreshed once a second only while shown.
@@ -1666,6 +1712,7 @@ features:
   - id: device-tool-thread-awareness
     title: Agents see devices other threads have open
     status: maintained
+    tier: yield
     prs: [681, 887]
     invariants:
       - device_list reports devices that other threads have open, separately from the calling thread's own devices, naming each holding thread and whether it is using the device.
@@ -1693,6 +1740,7 @@ features:
   - id: diff-file-review-order
     title: Order diff files by review relevance
     status: maintained
+    tier: yield
     prs: [274, 275, 296, 636, 653]
     invariants:
       - Turn, working-tree, branch, and pull request diffs order source dependencies first, their tests next, and repository-attributed or recognized generated output last across web, desktop, and mobile review surfaces. A working-tree or branch diff too large to load at once loads its files in that tier order, by path within each tier, since their import lines are not known until they load.
@@ -1766,6 +1814,7 @@ features:
   - id: drive-cli
     title: Drive environments and synthetic scenarios from the command line
     status: maintained
+    tier: yield
     prs: [425]
     invariants:
       - "`styal drive snapshot`, `dispatch`, and `send` use the running environment's authenticated HTTP API: a short-lived session that is then revoked for a local home, or a bearer token for a remote origin. They never fall back to reading the database offline."
@@ -1793,6 +1842,7 @@ features:
   - id: editable-diff-comments
     title: Edit anchored diff comments in place
     status: maintained
+    tier: yield
     prs: [88]
     invariants:
       - Saved diff comments can be edited and replaced without changing their selected-line anchor or ordering.
@@ -1815,6 +1865,7 @@ features:
   - id: effort-picker-tooltip
     title: Composer effort picker tooltip names the menu and its shortcut
     status: maintained
+    tier: yield
     prs: [790]
     invariants:
       - The composer effort button's tooltip reads "Effort and options" with the user's bound shortcut, because the button already shows the selected values.
@@ -1840,6 +1891,7 @@ features:
   - id: failed-edit-open-diff
     title: Offer Open diff only on edits that may have applied
     status: maintained
+    tier: yield
     prs: [1260]
     invariants:
       - An expanded file edit on web offers Open diff only when the edit did not fail and was not cancelled; a blocked, failed, or cancelled edit changed nothing, so it has no diff to open. Interrupted edits keep the button because they may have partly applied.
@@ -1860,6 +1912,7 @@ features:
   - id: failed-edit-summary-count
     title: Count only applied edits in turn and tool group summaries
     status: maintained
+    tier: yield
     prs: [1259, 1268]
     invariants:
       - A tool group summary on web and mobile counts a file as changed only when its edit was not failed or declined; a blocked or declined edit never reads as "Changed N files".
@@ -1883,6 +1936,7 @@ features:
   - id: feedback-reports
     title: Report styal bugs and feedback as GitHub issues from an agent or the app
     status: maintained
+    tier: keep
     prs: [1278, 1431]
     invariants:
       - Reports only go to incognitojam/styal, never upstream or the repository a thread works in.
@@ -1931,6 +1985,7 @@ features:
   - id: first-turn-unread-state
     title: Mark first thread completions unread
     status: review-needed
+    tier: yield
     prs: [76]
     invariants:
       - When a user leaves a newly started thread before its first turn settles, that first completion becomes unread even if navigation happened before the server thread was available.
@@ -1961,6 +2016,7 @@ features:
   - id: floating-preview-overlay
     title: Floating previews overlay chat instead of reflowing it
     status: maintained
+    tier: yield
     prs: []
     invariants:
       - Dragging or resizing a floating browser or device preview never moves or narrows the conversation or composer; the preview may cover messages anywhere on the chat canvas.
@@ -1991,6 +2047,7 @@ features:
   - id: focused-panel-tab-close
     title: Keep panel focus and tab order stable when closing tabs
     status: review-needed
+    tier: yield
     prs: [192, 233]
     invariants:
       - Mod+W closes a focused terminal first, then the active browser or diff panel tab, and never closes the desktop window.
@@ -2025,6 +2082,7 @@ features:
   - id: follow-up-steering-default
     title: Steer active turns by default
     status: maintained
+    tier: yield
     prs: [775]
     invariants:
       - Web, desktop, and mobile default to steering follow-ups into the active turn instead of queueing a new turn.
@@ -2059,6 +2117,7 @@ features:
   - id: fork-agent-integration-identity
     title: Identify styal to agents and MCP clients
     status: review-needed
+    tier: keep
     prs: [284, 301]
     invariants:
       - Fresh provider sessions advertise the product-native MCP integration as `styal`, persist that choice for recovery, and identify styal as the harness in generated agent instructions and disclosures.
@@ -2144,6 +2203,7 @@ features:
   - id: fork-analytics-destination
     title: Deliver analytics to the styal PostHog project
     status: maintained
+    tier: keep
     prs: [314]
     invariants:
       - Server builds deliver anonymous product analytics to the styal PostHog EU Cloud project by default instead of the upstream T3 Code project, so fork usage never lands in upstream's analytics.
@@ -2162,6 +2222,7 @@ features:
   - id: fork-analytics-identity
     title: Identify fork builds in analytics
     status: maintained
+    tier: yield
     prs: [227, 235]
     invariants:
       - Every analytics event emitted by a fork build identifies the repository that produced the distribution.
@@ -2181,6 +2242,7 @@ features:
   - id: fork-distribution-identity
     title: Keep fork builds distinctly identifiable
     status: maintained
+    tier: keep
     prs:
       [
         3,
@@ -2431,7 +2493,8 @@ features:
 
   - id: fork-feature-usage
     title: Measure anonymous adoption of maintained features
-    status: maintained
+    status: retiring
+    tier: yield
     prs: [840, 859]
     rationale: Maintainers need observed feature adoption to evaluate the cost of retaining fork behavior.
     invariants:
@@ -2485,6 +2548,7 @@ features:
   - id: fork-first-turn-note
     title: Tell an agent on a forked thread that it is a fork
     status: maintained
+    tier: yield
     prs: [913]
     invariants:
       - A forked thread's turns carry a note saying the history was copied up to the forked response, work may have continued in the source thread, and background work started before the fork will not report back, until one of the fork's provider turns completes. Delivery is best effort; a refused or restarted turn sends it again.
@@ -2507,6 +2571,7 @@ features:
   - id: fork-managed-link
     title: Operate styal Link independently
     status: maintained
+    tier: keep
     prs: [264, 265, 266, 269, 317, 352, 475]
     invariants:
       - User-facing cloud connection surfaces target the styal-hosted app, relay, native schemes, and Clerk application while protocol-level T3 Connect identifiers remain compatible with upstream clients and servers.
@@ -2583,6 +2648,7 @@ features:
   - id: fork-runtime-storage-isolation
     title: Keep styal runtime storage separate from T3 Code
     status: maintained
+    tier: keep
     prs: [287, 292, 385]
     invariants:
       - Desktop, mobile, web, SSH, and server persistence use styal-owned directories, native identifiers, storage keys, cookies, partitions, and databases so styal and T3 Code can run in parallel without reading or overwriting each other's state.
@@ -2641,6 +2707,7 @@ features:
   - id: fork-server-error-reporting
     title: Report server errors to PostHog error tracking
     status: maintained
+    tier: keep
     prs: [1128]
     invariants:
       - Release server builds report every Error or Fatal log entry, and every RPC handler defect, as a PostHog `$exception` event through the analytics delivery path, sharing its identity and opt-out.
@@ -2682,6 +2749,7 @@ features:
   - id: fork-upstream-intake-provenance
     title: Reconcile provisional upstream imports explicitly
     status: maintained
+    tier: keep
     prs: []
     invariants:
       - An open upstream PR is imported as one attributed snapshot commit with PR provenance and a separate tracking commit recording the frozen base and head and the reconciliation plan.
@@ -2719,6 +2787,7 @@ features:
   - id: git-index-copy-without-block-clone
     title: Copy server files without a filesystem block clone
     status: maintained
+    tier: keep
     prs: [1011, 1122]
     invariants:
       - Checkpoint capture, commit-context preparation and the working-tree review diff copy `.git/index` into their private index by reading and writing its bytes, so a turn never waits on a filesystem sync before the provider starts.
@@ -2750,6 +2819,7 @@ features:
   - id: github-issue-thread-context
     title: Start a thread from a GitHub issue
     status: review-needed
+    tier: yield
     prs: [31, 773]
     invariants:
       - The command palette lists the current project's open GitHub issues through GitHub's API, with `gh` or an environment token supplying the credential, with distinct states for a missing CLI, missing authentication, and no open issues, and choosing one opens a new draft with the issue attached as an inline context chip.
@@ -2818,6 +2888,7 @@ features:
   - id: github-outage-status
     title: Provider outage status in the sidebar
     status: maintained
+    tier: yield
     prs: [14, 136, 180, 183, 196, 200, 212, 277, 280, 373, 542, 729, 752, 976]
     invariants:
       - Enabled clients distinguish GitHub, Claude, and OpenAI incidents from missing or malformed status responses.
@@ -2854,6 +2925,7 @@ features:
   - id: github-pull-request-query-budget
     title: Bound GitHub pull request query cost
     status: maintained
+    tier: yield
     prs: [131]
     invariants:
       - Opening and refreshing a pull request cannot exhaust the GitHub GraphQL quota through unbounded nested review-thread connections.
@@ -2882,6 +2954,7 @@ features:
   - id: github-reference-links
     title: Resolve GitHub references across chat and pull requests
     status: maintained
+    tier: keep
     prs: [31, 134, 329]
     invariants:
       - GitHub issue, pull request, commit, and repository references resolve against the project remote and become navigable links in chat and pull request Markdown.
@@ -2933,6 +3006,7 @@ features:
   - id: grok-prompt-settlement
     title: Settle Grok fallback completions after reply output quiets
     status: review-needed
+    tier: yield
     prs: [605]
     invariants:
       - A private xAI completion keeps the standard prompt RPC alive while waiting for 250 ms without root-session reply text or thoughts, so delayed transport output can arrive before the adapter drains its event queue.
@@ -2959,6 +3033,7 @@ features:
   - id: hardware-leases
     title: Lease network hardware to one thread at a time, with approvals and cleanup
     status: maintained
+    tier: keep
     prs: [1128]
     invariants:
       - Web and desktop hardware settings keep offline last-seen and recent-activity ages counting without device state changes.
@@ -3023,6 +3098,7 @@ features:
   - id: historical-checkpoint-review
     title: Keep migrated checkpoint changes available for review
     status: maintained
+    tier: yield
     prs: [1128]
     invariants:
       - Migrated V1 checkpoints retain their original refs, assistant-message association, files, and exact checkpoint count including zero, without synthetic native runs.
@@ -3062,6 +3138,7 @@ features:
   - id: inline-code-file-chips-need-a-target
     title: Inline-code paths become file chips only when they open something
     status: maintained
+    tier: yield
     prs: [1217]
     invariants:
       - A slashed path in assistant inline code renders as plain code once the host reports it missing and the workspace lookup that a chip click runs resolves no single file; a path that exists, or a shortened path that resolves to one indexed file, stays a chip.
@@ -3084,6 +3161,7 @@ features:
   - id: inspectable-tool-activity
     title: Keep tool activity concise and inspectable
     status: maintained
+    tier: keep
     prs:
       [
         4,
@@ -3177,7 +3255,8 @@ features:
 
   - id: integrated-browser-links
     title: Open local development links in the integrated browser
-    status: maintained
+    status: review-needed
+    tier: keep
     prs: [107, 145, 153, 156, 181]
     invariants:
       - Loopback links opened from chat or terminal activity resolve on the environment machine in the integrated browser, unless a Cmd/Ctrl-click asks for the system browser.
@@ -3217,6 +3296,7 @@ features:
   - id: keybindings-invalid-entry-recovery
     title: Show invalid keybindings entries and keep syncing defaults around them
     status: maintained
+    tier: yield
     prs: [1275]
     rationale: One stale or mistyped entry, such as a command removed by a later build, must not stop later default shortcuts from reaching the file, and the user needs to see which entry was ignored without watching for a toast or reading server logs.
     invariants:
@@ -3243,6 +3323,7 @@ features:
   - id: keyboard-shortcuts-overview
     title: Keyboard shortcuts overview
     status: maintained
+    tier: yield
     prs:
       - 1276
     invariants:
@@ -3278,6 +3359,7 @@ features:
   - id: launched-thread-reports
     title: A thread an agent launches reports back to the thread that launched it
     status: maintained
+    tier: keep
     prs: [1326]
     invariants:
       - "`reportBack` on `t3_thread_launch` and `create_threads` records the caller as the launched thread's report target; a client's `thread.create` cannot set one, forks do not inherit it, and a delegated child or a launch with `environmentId` is refused."
@@ -3319,6 +3401,7 @@ features:
   - id: machine-access
     title: Each machine sets one level for what the user's other machines can do there
     status: maintained
+    tier: keep
     prs: [1343]
     invariants:
       - "`incomingMachineAccess` (`everything`, `view-only`, `nothing`) is enforced by the receiving machine on every `/mcp` request from a machine, and for device sharing. It defaults to `everything`, which is what a new connection already allowed."
@@ -3353,6 +3436,7 @@ features:
   - id: mentioned-time-chips
     title: Explain times mentioned in agent messages in the reader's time zone
     status: maintained
+    tier: keep
     prs: [595, 711]
     invariants:
       - Times in assistant message prose (clock times with or without a zone or date, "N units ago", and cued "in N units") render as chips that keep the written text; code spans, code blocks and link labels are never marked.
@@ -3455,6 +3539,7 @@ features:
   - id: missing-workspace-provider-guard
     title: Fail provider startup clearly for missing workspaces
     status: review-needed
+    tier: yield
     prs: [222]
     invariants:
       - Provider startup validates the resolved project or worktree path before launching a session and reports a controlled actionable error when the workspace is missing.
@@ -3482,6 +3567,7 @@ features:
   - id: mobile-android-page-back
     title: Back on Android returns to the page a thread or pull request was opened from
     status: maintained
+    tier: yield
     prs: [1148]
     rationale: Opening a pull request linked in a thread replaced the thread, and Back always went to the list for the page's tab, so reading a linked pull request lost the thread. Compared with upstream revision 37fbefd147 on October 29, 2026, where only a thread opened from its delegator returns to it.
     invariants:
@@ -3509,6 +3595,7 @@ features:
   - id: mobile-attended-alert-delay
     title: Delay phone alerts while the user is at a computer
     status: maintained
+    tier: yield
     prs: [1138, 1157]
     invariants:
       - Desktop and web clients report whether they are in use through client activity leases; the desktop app adds OS-wide input (any app, 5-minute idle threshold), and mobile leases never count.
@@ -3550,6 +3637,7 @@ features:
   - id: mobile-chat-literal-html
     title: Preserve HTML-looking text in mobile user messages
     status: maintained
+    tier: yield
     prs: [747]
     rationale: User messages must retain authored angle-bracket text just as web and desktop do, rather than treating it as HTML to discard.
     invariants:
@@ -3577,6 +3665,7 @@ features:
   - id: mobile-clerk-load-recovery
     title: Recover and explain styal Link sign-in after a failed Clerk startup
     status: maintained
+    tier: yield
     prs: [436, 662, 680]
     invariants:
       - A Clerk GET request on mobile that has no caller abort signal is aborted after 15 seconds, so a stalled startup load fails instead of keeping the account in the loading state.
@@ -3612,6 +3701,7 @@ features:
   - id: mobile-message-image-grid
     title: Mobile folded, guest and assistant messages show several images as a grid
     status: review-needed
+    tier: yield
     prs: [1175, 1349]
     invariants:
       - In folded agent messages, guest messages and assistant messages, one image keeps its single layout; two or more images show as a two-column grid of square tiles, capped at 240px each, that fills the bubble or assistant content width.
@@ -3635,6 +3725,7 @@ features:
   - id: mobile-notification-types
     title: Choose which agent alerts reach the phone
     status: maintained
+    tier: yield
     prs: [1126]
     invariants:
       - Mobile Notifications settings has a switch for each alert type the relay filters (needs approval, needs input, done, failed); unset preferences mean on.
@@ -3657,6 +3748,7 @@ features:
   - id: mobile-permission-registry-synchronization
     title: Synchronize the iOS native permission registry
     status: maintained
+    tier: yield
     prs: []
     invariants:
       - Concurrent registration and lookup of Expo permission requesters on iOS cannot corrupt the native registry, and clean installs resolve the patched expo-modules-core version.
@@ -3678,6 +3770,7 @@ features:
   - id: mobile-provider-accounts-overview
     title: Mobile provider accounts list every provider
     status: maintained
+    tier: yield
     prs: [815]
     invariants:
       - Hidden account emails retain the shared same-shaped placeholder and platform-appropriate blur, with explicit reveal controls.
@@ -3701,6 +3794,7 @@ features:
   - id: mobile-runtime-mode-icons
     title: Mobile runtime modes carry web's icons
     status: maintained
+    tier: yield
     prs: [1231]
     invariants:
       - Every runtime mode choice on mobile has its own icon, matching web's lock, pencil, checked shield, and crossed shield, and Android draws each through its Tabler mapping.
@@ -3726,6 +3820,7 @@ features:
   - id: mobile-status-icon-theme-colors
     title: Mobile floating status icons follow the active theme
     status: maintained
+    tier: yield
     prs: [1200]
     invariants:
       - Waiting, background command, compacting, goal, preparing, settled, snoozed, woke, and subagent input icons use the active theme foreground in light and dark appearances, including Material You and system appearance changes.
@@ -3744,6 +3839,7 @@ features:
   - id: mobile-svg-thread-link-icons
     title: Show SVG project favicons on mobile thread links
     status: maintained
+    tier: yield
     prs: [1271]
     invariants:
       - A mobile thread link in chat shows the linked project's favicon when that favicon is a cached SVG, drawn from a PNG that the chip icon rasterizer produces.
@@ -3768,6 +3864,7 @@ features:
   - id: mobile-unsent-draft-markers
     title: Mark mobile threads that hold an unsent draft
     status: maintained
+    tier: yield
     prs: [473]
     invariants:
       - Mobile Home and tablet sidebar rows mark existing threads holding non-blank composer text or attachments with an amber pen and an unsent draft accessibility label; the currently open sidebar thread is not marked, and new-task drafts remain separate rows.
@@ -3798,6 +3895,7 @@ features:
   - id: mobile-update-restart-location
     title: Mobile update restarts reopen the page the user was on
     status: maintained
+    tier: yield
     prs: [1146]
     invariants:
       - An OTA update restart, deferred to the next background or started with Install Now, reopens the workspace page that was on screen (without sheets) instead of Home.
@@ -3823,7 +3921,8 @@ features:
 
   - id: network-condition-reports
     title: Report how connections behave on each network
-    status: maintained
+    status: retiring
+    tier: yield
     prs: [876]
     invariants:
       - Clients summarize each environment connection into windows of foreground use, at most 15 minutes long and split when the network type or route changes, recording time connected, drops by cause (heartbeat timeout, socket closed, health check timeout, other), failed attempts and setup timeouts, route switches and switches back after a failure, recovery time, heartbeat round trips, payload bytes and messages each way, and the peak receive rate.
@@ -3863,6 +3962,7 @@ features:
   - id: new-thread-send-recovery
     title: Keep a new thread's first message when its send fails
     status: maintained
+    tier: yield
     prs: [195, 503]
     invariants:
       - When the server rejects a web new-thread draft's bootstrap, the draft keeps its prompt and reserves a fresh thread id so the next send does not collide with the rejected one.
@@ -3887,6 +3987,7 @@ features:
   - id: next-unread-thread-shortcut
     title: Open the next unread thread
     status: maintained
+    tier: keep
     prs: []
     invariants:
       - "`thread.nextUnread` (`mod+shift+u` by default, outside terminals) and the command palette's Go to next unread thread open the pinned, active or Working thread with the most urgent attention, in the row status precedence: approval, input (including async questions), a waiting guest message, usage limit, failed run, woke, then an unread completion. Among the same kind, the thread waiting longest opens first: since it last came back to the inbox, or since it woke for a woken thread. Equal times keep sidebar order."
@@ -3932,6 +4033,7 @@ features:
   - id: notice-details-when-clipped
     title: Composer notice details appear only for clipped text
     status: maintained
+    tier: yield
     prs: [1334]
     invariants:
       - Opening a popover from composer notice text that fits does not add a details button, either while the popover is open or after it closes.
@@ -3952,6 +4054,7 @@ features:
   - id: offline-dev-seed
     title: Seed worktrees without routine live database reads
     status: maintained
+    tier: keep
     prs: []
     invariants:
       - Dev startup and migrate-dev-db consume only an offline seed; a missing seed never falls back to the live database.
@@ -3977,6 +4080,7 @@ features:
   - id: pair-cli-startup
     title: Avoid redundant CLI loading and Tailscale pairing probes
     status: maintained
+    tier: yield
     prs: [852, 857]
     invariants:
       - Direct pair invocations load the existing pairing command without evaluating unrelated server CLI commands, preserving pairing flags, global settings, help, version, token storage, and Tailscale occupancy and identity checks.
@@ -4004,6 +4108,7 @@ features:
   - id: pending-question-answer-history
     title: Keep submitted question answers visible outside collapsed work
     status: maintained
+    tier: yield
     prs: [839]
     rationale: Restore the visibility behavior imported from upstream 11363 that the V2 timeline rewrite lost. At upstream 00cdceb196edf661652dee6efe983c0d40662971, answered questions still join tool groups and turn folds; upstream 21086 later kept them visible after a turn settles on web, and 21393 did the same for mobile folds and tool groups. Discussion 16965 tracks discoverability; 17227 was closed pending approval for folding and user-bubble changes, while 18544 changes readability within the work log.
     invariants:
@@ -4037,6 +4142,7 @@ features:
   - id: pending-question-displaced-answers
     title: Keep custom answer drafts while choosing mobile question options
     status: maintained
+    tier: yield
     prs: [801]
     invariants:
       - On mobile, picking a single-select option keeps typed text in that question's field and submits only the selected option.
@@ -4066,6 +4172,7 @@ features:
   - id: pending-question-links
     title: Open links from pending input questions
     status: maintained
+    tier: yield
     prs: [778]
     invariants:
       - Pending question bodies on web, desktop, and mobile render bare URLs and Markdown links as interactive links while preserving line breaks.
@@ -4097,6 +4204,7 @@ features:
   - id: pending-question-multiple-answers
     title: Combine selected options and typed additions in multi-select answers
     status: maintained
+    tier: yield
     prs: [793]
     invariants:
       - Web, desktop, and mobile multi-select questions retain selected options while typing a custom addition and retain that text while toggling options.
@@ -4131,6 +4239,7 @@ features:
   - id: per-route-connection-failures
     title: Show why each route to an environment failed
     status: maintained
+    tier: keep
     prs: []
     invariants:
       - A connection attempt records, per saved route, the error it failed with or that its reachability check went unanswered, and the supervisor keeps the last finished attempt's list in its state until the next attempt finishes, through a setup timeout, and clears it when the environment is switched off.
@@ -4166,6 +4275,7 @@ features:
   - id: physical-android-device-hold
     title: Keep physical Android phones awake, and optionally dark, while a thread holds them
     status: maintained
+    tier: yield
     prs: [1130]
     invariants:
       - While device support is on, every local physical Android device with at least one styal device session (opened from the Device panel or by an agent; closing a panel tab does not end it) is held by a control-only scrcpy server with `stay_awake` set, so it does not sleep. With `keepPhysicalAndroidScreensOff`, the server also powers the display off. Mirroring and input continue either way.
@@ -4194,6 +4304,7 @@ features:
   - id: pinned-thread-auto-settlement
     title: Keep pinned threads active until unpinned or manually settled
     status: retiring
+    tier: yield
     prs: [719]
     invariants:
       - Sidebar pins block automatic settlement from inactivity and merged or closed pull requests, including a pin racing an in-flight settlement lookup.
@@ -4222,6 +4333,7 @@ features:
   - id: preview-hidden-tab-capture
     title: Capture hidden preview tabs reliably
     status: review-needed
+    tier: yield
     prs: [172, 174]
     invariants:
       - Screenshot and recording operations can capture a background preview tab without making it visibly active.
@@ -4253,6 +4365,7 @@ features:
   - id: preview-surface-continuity
     title: Preserve responsive preview presentation and ownership
     status: maintained
+    tier: yield
     prs: [193, 197, 198, 217, 833, 841]
     invariants:
       - Fitted previews apply logical viewport dimensions through device metrics while preserving sharp presentation scaling and a working DevTools fallback. Presentation accounts for independent desktop window and page zoom, including zoom changes, so the requested CSS viewport fits its visible and captured surface.
@@ -4303,6 +4416,7 @@ features:
   - id: proactive-panels-default
     title: Open proactive panels by default
     status: maintained
+    tier: yield
     prs: [404]
     invariants:
       - Clients without a persisted preference automatically open newly linked pull requests and switch to the completed turn's diff when agent work finishes.
@@ -4324,6 +4438,7 @@ features:
   - id: project-action-icons
     title: Give project actions role-specific icons
     status: maintained
+    tier: yield
     prs: [282]
     invariants:
       - Project actions can select desktop, database, and deployment roles in addition to the upstream icon set through the validated project-file contract.
@@ -4358,6 +4473,7 @@ features:
   - id: project-action-import-review
     title: Review project file actions before importing
     status: maintained
+    tier: yield
     prs: [399]
     invariants:
       - Selecting a t3.json action in the thread action menu or Project Settings opens a prefilled Add Action form without saving or running the command.
@@ -4382,6 +4498,7 @@ features:
   - id: project-agent-instructions
     title: Apply project instructions to every agent session
     status: review-needed
+    tier: yield
     prs: [157]
     invariants:
       - Additional instructions are persisted per logical project, shared across grouped checkouts, visible and clearable in Project Settings, and retained through projection recovery.
@@ -4443,6 +4560,7 @@ features:
   - id: project-emoji-search
     title: Search emoji by name in the project icon picker
     status: maintained
+    tier: yield
     prs: [911]
     invariants:
       - The project icon picker's Emoji tab searches every emoji by name and keyword, and an emoji pasted into the same field is selected directly.
@@ -4463,6 +4581,7 @@ features:
   - id: project-file-partial-recovery
     title: Preserve valid project file values when siblings are invalid
     status: maintained
+    tier: yield
     prs: [286, 1285]
     rationale: A malformed optional value must not hide unrelated actions, defaults, or project icons; ignored values remain visible as a warning that names each one so configuration mistakes can be corrected.
     invariants:
@@ -4502,6 +4621,7 @@ features:
   - id: project-filter-continuity
     title: Preserve project filters while navigating and creating threads
     status: maintained
+    tier: yield
     prs: [83, 162, 865, 954, 1391]
     invariants:
       - Reopening the sidebar does not discard the user's project filter.
@@ -4551,6 +4671,7 @@ features:
   - id: project-pin-archive-migration-reconciliation
     title: Keep project pins and archives from fork migration 11 when upstream migration 76 arrives
     status: maintained
+    tier: keep
     prs: []
     invariants:
       - A database that already has `pinned_at` and `archived_at` from fork migration 11 records upstream migration 76 instead of running it, and starts with its pins and archives unchanged. A fresh database runs upstream migration 76, and fork migration 11 then adds only `pin_order_key`. The upstream migration file stays verbatim.
@@ -4570,6 +4691,7 @@ features:
   - id: provider-auto-default
     title: Apply an Auto default only where the provider reviews actions
     status: maintained
+    tier: yield
     prs: [928, 930, 943]
     invariants:
       - The built-in default permission mode for new threads stays Full access, as upstream; Auto as the default is the user's choice.
@@ -4616,6 +4738,7 @@ features:
   - id: provider-auto-updates
     title: Automatic provider updates install canary-verified versions
     status: maintained
+    tier: keep
     prs: [868]
     invariants:
       - An absolute custom VP_HOME proves global Vite+ ownership only when its binary metadata names the provider package and agrees with the executed shim. npm-linked shims update the matching Node runtime prefix through its absolute Node executable and npm CLI, with an explicit prefix and that runtime first on PATH; proven vp-managed POSIX links or Windows trampolines with a matching single-root sidecar (or no sidecar and bounded bytes identical to that install's vp-shim.exe payload) use that home's absolute Vite+ launcher. Exact-version actions preserve these targets and the effective provider-instance environment. Unproven custom shims and a default-layout shim paired with another VP_HOME never update another global copy.
@@ -4725,6 +4848,7 @@ features:
   - id: provider-cli-sign-in
     title: Run a provider's own login from styal
     status: maintained
+    tier: yield
     prs: [1320]
     invariants:
       - Claude, Grok Build, OpenCode, Pi, fx and Muse Code sign in by running their own CLI login under the provider instance's environment, on the machine that runs the provider. Credentials stay where that CLI keeps them and no client or other machine receives them.
@@ -4765,6 +4889,7 @@ features:
   - id: provider-history-retention
     title: Surface Claude session history cleanup settings
     status: maintained
+    tier: yield
     prs: [856]
     invariants:
       - Each Claude instance reports the user-level cleanupPeriodDays from settings.json in the config directory its CLI uses; a missing, unreadable, malformed, or invalid value reports Claude Code's 30-day default.
@@ -4795,7 +4920,8 @@ features:
       retire_when: Upstream shows provider-owned session cleanup rules with their source per instance and links to them from Usage.
   - id: provider-send-analytics
     title: Preserve provider send analytics through orchestration V2
-    status: maintained
+    status: retiring
+    tier: yield
     prs: [1003]
     invariants:
       - Each successful provider prompt submission or steering delivery records provider.turn.sent after acceptance, including server-originated scheduled messages, restart continuations, and delegated results; rejected and interrupted sends, native compaction, and unsolicited provider turns do not record sends.
@@ -4820,6 +4946,7 @@ features:
   - id: provider-server-settings-isolation
     title: Keep the server's own settings out of agent processes
     status: maintained
+    tier: keep
     prs: [365, 1094, 1379]
     invariants:
       - Agent processes and provider status probes do not inherit the server's settings, service launcher variables, or dev web build variables, so a styal server started by an agent does not use the running server's port, state directory, or Tailscale Serve mapping.
@@ -4854,6 +4981,7 @@ features:
   - id: provider-settings-environment-scope
     title: Scope provider configuration only to its owning environment
     status: maintained
+    tier: yield
     prs: [727]
     invariants:
       - Settings → Providers offers one environment picker and no project picker because binaries, credentials, and provider instances belong to the environment.
@@ -4874,6 +5002,7 @@ features:
   - id: provider-sign-in-recovery
     title: Continue threads after their provider signs in again
     status: maintained
+    tier: yield
     prs: [1321]
     invariants:
       - A run stopped by a structured authentication failure waits and continues at most once per sign-in; a run that fails again after resuming needs a further sign-in, so there is no retry loop. Other errors and user-stopped runs never wait.
@@ -4907,6 +5036,7 @@ features:
   - id: provider-stall-detection
     title: Record and surface suspected provider stalls
     status: maintained
+    tier: yield
     prs: []
     invariants:
       - A server-owned monitor records prolonged startup and provider silence once per attempt and inactivity episode, independently of provider streams, clients, and blocked effect lanes.
@@ -4945,6 +5075,7 @@ features:
   - id: provider-subscription-limits
     title: Keep provider usage limits across restarts and sign-out
     status: maintained
+    tier: yield
     prs: [225, 409]
     invariants:
       - Upstream's provider `usageLimits` snapshot is the only server model for subscription windows; the fork adds no parallel limit schema or runtime event shape.
@@ -4972,6 +5103,7 @@ features:
   - id: provider-task-identity-recovery
     title: Recover background task identity after provider restarts
     status: maintained
+    tier: yield
     prs: [291]
     invariants:
       - A delayed Claude command completion recovers missing tool linkage, command text, task kind, and original item, node, run, and provider-turn ownership from the persisted provider-thread task roster after a runtime or server restart.
@@ -4996,6 +5128,7 @@ features:
   - id: provider-working-state-recovery
     title: Recover truthful Claude working state after compaction
     status: review-needed
+    tier: yield
     prs: [290]
     invariants:
       - A cleared Claude transient status keeps an active turn running but returns an idle session to ready after manual context compaction completes.
@@ -5026,6 +5159,7 @@ features:
   - id: publish-push-failure-transport
     title: Explain publish failures using the effective push transport
     status: maintained
+    tier: yield
     prs: []
     invariants:
       - Publish authentication failures use the effective push URL of the selected remote for SSH or Git credential guidance, including reused remotes and configured push URLs.
@@ -5046,6 +5180,7 @@ features:
   - id: pull-request-aggregate-draft-state
     title: Show linked pull request counts as draft when only drafts remain open
     status: maintained
+    tier: yield
     prs: [1263]
     invariants:
       - A stack or linked count with at least one open pull request shows draft when every open pull request is a draft, regardless of merged or closed links beside them, and open otherwise; a link without a synced snapshot counts as open and not draft.
@@ -5066,6 +5201,7 @@ features:
   - id: pull-request-association-continuity
     title: Keep worktrees associated with the correct pull request
     status: maintained
+    tier: yield
     prs: [79, 125]
     invariants:
       - Repository identity uses the checkout's `gh repo set-default` choice (`remote.<name>.gh-resolved`, including an `owner/repo` value), else `upstream`, then `origin`, then the first remote, and never the remote the current branch tracks.
@@ -5097,6 +5233,7 @@ features:
   - id: pull-request-base-move-freshness
     title: Show sibling pull requests out of date as soon as a merge moves their base
     status: maintained
+    tier: yield
     prs: [1228]
     invariants:
       - When this server sees a pull request merge, through its own merge action or an open-to-merged read, it drops held detail for other open pull requests in the same repository with the same base branch and tells clients to refresh, so an open panel shows them behind without waiting for the detail cache to expire.
@@ -5120,6 +5257,7 @@ features:
   - id: pull-request-bypass-merge
     title: Merge past GitHub requirements for viewers allowed to bypass them
     status: maintained
+    tier: yield
     prs: [1088, 1089]
     invariants:
       - A blocked GitHub pull request offers Bypass rules and merge only when GitHub reports viewerCanMergeAsAdmin, the viewer can write, and the repository has no merge queue.
@@ -5156,6 +5294,7 @@ features:
   - id: pull-request-chip-context-menu
     title: Give pull request chips the chat link menu
     status: maintained
+    tier: yield
     prs: [597]
     invariants:
       - Pull request chips in sent messages and the composer share Markdown links' Copy Link, system browser, and available integrated browser actions on web and desktop.
@@ -5190,6 +5329,7 @@ features:
   - id: pull-request-comment-drafts
     title: Preserve pull request comment drafts across panel tabs
     status: maintained
+    tier: yield
     prs: [234]
     invariants:
       - An unsent pull request conversation comment survives switching to Diff, Files, another pull request, or another right-panel surface and is restored when its pull request is reopened.
@@ -5212,6 +5352,7 @@ features:
   - id: pull-request-deployments
     title: Surface GitHub deployment environments in pull requests
     status: maintained
+    tier: yield
     prs: [883]
     invariants:
       - Web, desktop, and mobile deployment ages keep counting without waiting for a pull request detail refresh.
@@ -5254,6 +5395,7 @@ features:
   - id: pull-request-description-images
     title: Render relative repository images in pull request descriptions
     status: maintained
+    tier: yield
     prs: [103, 288]
     invariants:
       - Repository-relative image references in GitHub pull request descriptions and comments resolve against the pull request head, not the local checkout, through a bounded short-lived same-origin asset URL read through GitHub's API with the environment's GitHub credential.
@@ -5294,6 +5436,7 @@ features:
   - id: pull-request-diff-expansion
     title: Fold generated files in pull request diffs
     status: maintained
+    tier: yield
     prs: [105, 275]
     invariants:
       - When the default diff file state is Expanded, the pull request Code tab opens generated files, such as lockfiles and paths the repository marks `linguist-generated`, folded and every other file expanded; Collapsed folds every file.
@@ -5319,6 +5462,7 @@ features:
   - id: pull-request-label-catalogue-cache
     title: Responsive pull request label pickers
     status: maintained
+    tier: yield
     prs: [602]
     invariants:
       - These invariants cover the web label picker and the mobile labels screen.
@@ -5350,6 +5494,7 @@ features:
   - id: pull-request-linked-extras
     title: List the branch pull request in the thread hover card
     status: maintained
+    tier: yield
     prs: [587]
     invariants:
       - The sidebar thread hover card lists the badge's pull request when the thread has no linked pull requests, including one found through the thread's branch; linked pull requests are listed as before.
@@ -5371,6 +5516,7 @@ features:
   - id: pull-request-live-refresh
     title: Keep open pull request details current
     status: maintained
+    tier: yield
     prs: [101, 457, 825]
     rationale: Upstream detail reads return the held value and refresh it in the background unless a caller opts out, so opening a cached pull request can show old header totals beside a current diff. The fork returns the current detail cache read and uses held detail only on a transient failure; detail-only invalidation refreshes host state without discarding an unchanged diff.
     invariants:
@@ -5407,6 +5553,7 @@ features:
   - id: pull-request-merge-controls-during-refresh
     title: Keep pull request merge controls visible while the stack lookup refreshes
     status: maintained
+    tier: yield
     prs: [591]
     invariants:
       - After the stack lookup has answered that a pull request is not in a stack, refreshing that answer keeps Merge, Auto-merge, and Merge now visible.
@@ -5427,7 +5574,8 @@ features:
 
   - id: pull-request-merge-head-guard
     title: Refuse GitHub merges when the head moved since the panel loaded
-    status: maintained
+    status: retiring
+    tier: yield
     prs: [589]
     invariants:
       - A GitHub merge, or turning on auto-merge, from the pull request panel or quick actions sends the head commit from the client's last read, and GitHub refuses it when the branch has moved since.
@@ -5464,6 +5612,7 @@ features:
   - id: pull-request-merge-intent-badges
     title: Show automatic merge intent on pull request status icons
     status: maintained
+    tier: yield
     prs: [853, 1004]
     invariants:
       - Sidebar, composer, linked pull request panels, pull request lists, detail headers, web tabs and hover previews retain the pull request state glyph and color while a filled merge-violet corner dot marks enabled auto-merge or confirmed merge-queue membership on web, desktop and mobile where applicable.
@@ -5524,6 +5673,7 @@ features:
   - id: pull-request-number-search-url
     title: Search pull requests by number from the URL
     status: maintained
+    tier: yield
     prs: [504]
     invariants:
       - A Pull Requests page URL whose search is only digits or `true`, such as `/pull-requests?q=13565`, opens with that text in the search box and searches for it instead of dropping it.
@@ -5543,6 +5693,7 @@ features:
   - id: pull-request-open-entry-points
     title: Open associated pull requests from every workflow
     status: maintained
+    tier: yield
     prs: [46, 166, 531, 579]
     invariants:
       - Sidebar links and proactive panels reuse the same pull request tab when the linked reference supplies its host through the URL; reopening consolidates existing duplicates without merging different hosts or environments. URL-derived hosts are resolved before rendering and on saved-panel migration, so clicking the same PR link preserves the component and cache identity.
@@ -5588,6 +5739,7 @@ features:
   - id: pull-request-required-checks
     title: Separate pull request checks and show merge readiness
     status: maintained
+    tier: keep
     prs: [138, 151, 159, 185, 209, 495, 984, 1088, 1089]
     invariants:
       - Pull request checks have a dedicated tab that distinguishes host-required checks from optional jobs and represents required checks that have not reported yet.
@@ -5648,6 +5800,7 @@ features:
   - id: pull-request-stack-merge-layer-refresh
     title: Refresh every layer a stack merge landed
     status: maintained
+    tier: yield
     prs: [1224]
     invariants:
       - After Merge stack, every listed layer that the host reports as merged gets a merge announcement and an immediate linked-thread refresh, not only the pull request the merge started from.
@@ -5667,6 +5820,7 @@ features:
   - id: pull-requests-page-archived-projects
     title: Leave archived projects off the Pull Requests page
     status: maintained
+    tier: yield
     prs: []
     invariants:
       - The Pull Requests page lists no pull requests from archived projects and does not offer them as project filter choices. A link scoped to an archived project still opens that scope.
@@ -5689,6 +5843,7 @@ features:
   - id: quiet-workflow-reports
     title: Quiet routine workflow reports
     status: maintained
+    tier: yield
     prs: []
     rationale: Routine report edits must not spend agent turns or exhaust the comment wake limit.
     invariants:
@@ -5723,6 +5878,7 @@ features:
   - id: relay-email-sign-in
     title: Sign in to styal Link with an emailed code and a relay-owned session
     status: maintained
+    tier: keep
     prs: []
     invariants:
       - The relay signs users in with an eight-digit emailed code bound to the requesting DPoP key; only the newest code for an address and key is live, each code allows five attempts and expires after 10 minutes. A key can request five codes per address per hour, an address receives at most 20 per hour from all keys, bounding guesses to 100 per hour against 100 million codes; issuance and per-code caps hold under concurrent requests.
@@ -5773,6 +5929,7 @@ features:
   - id: relay-mobile-axiom-removal
     title: The relay and mobile app run without Axiom and its crash reporting
     status: maintained
+    tier: keep
     prs: []
     invariants:
       - The relay stack declares no Axiom dataset, token, view, monitor or dashboard, and the Worker exports no spans. The relay stack loads no Axiom provider and its package and deploy workflows need no `@alchemy.run/axiom` dependency or `AXIOM_*` values.
@@ -5824,6 +5981,7 @@ features:
   - id: relay-no-t3-chat
     title: styal Link does not offer T3 Chat account linking
     status: maintained
+    tier: keep
     prs: []
     invariants:
       - Account pages expose no T3 Chat linking page or client-only linking commands.
@@ -5854,6 +6012,7 @@ features:
   - id: restart-stopped-tool-calls
     title: Show tool calls a server restart killed as stopped
     status: review-needed
+    tier: yield
     prs: [532]
     invariants:
       - When startup reconciliation finds a thread whose turn was running before the restart, every tool item in that turn with no completion is terminalized with native cancelled status, whether or not the thread is continued afterwards; ordinary live runtime activity is left alone.
@@ -5891,6 +6050,7 @@ features:
   - id: retire-legacy-pairing-with-link
     title: Drop a pre-split pairing when styal Link reaches the same environment
     status: maintained
+    tier: yield
     prs: [907]
     invariants:
       - When a client's session over a saved pairing has only pre-split permissions and the environment also has a styal Link route, the client removes that pairing route (and learned routes borrowing its token) instead of telling the user to pair again.
@@ -5923,6 +6083,7 @@ features:
   - id: review-findings-card
     title: Show code-review findings as a card
     status: maintained
+    tier: yield
     prs: [516, 751]
     invariants:
       - An accepted Claude Code ReportFindings call renders on web and mobile as a findings card listing each finding with a linked file location, instead of a collapsed tool row.
@@ -5971,6 +6132,7 @@ features:
   - id: rich-text-composer-restored-text
     title: Keep restored and recalled rich-text prompts intact
     status: maintained
+    tier: yield
     prs: [1055, 1071]
     invariants:
       - Restored web and desktop rich-text drafts persist the displayed document's Markdown separators before sending, keeping paragraphs after quotes outside the quote without requiring another edit; plain-text input and literal question answers keep their source text.
@@ -5996,6 +6158,7 @@ features:
   - id: same-turn-follow-up-lifecycle
     title: Keep follow-up turn lifecycle state truthful
     status: review-needed
+    tier: yield
     prs: [65, 106, 149, 206]
     invariants:
       - A queued replacement turn keeps the thread active across provider completion without briefly presenting completed work.
@@ -6022,6 +6185,7 @@ features:
   - id: server-restart-continuation-note
     title: Response continuity and timing
     status: review-needed
+    tier: keep
     prs: [515, 744, 802, 877, 889, 892]
     invariants:
       - Restart recovery records a durable server-created continuation message and an explicit restartContinuationOfRunId link; retries do not dispatch the same recovery message twice and newer user work takes precedence.
@@ -6085,6 +6249,7 @@ features:
   - id: server-shutdown-diagnostics
     title: Stop providers first and report slow server shutdowns
     status: review-needed
+    tier: yield
     prs: [529, 530, 558]
     invariants:
       - Server shutdown stops provider sessions before any other shutdown step, so a launcher kill after a stalled step cannot leave a provider CLI working on its own.
@@ -6114,6 +6279,7 @@ features:
   - id: server-update-guidance
     title: Match server update instructions to the advertised capability
     status: maintained
+    tier: keep
     prs: [351, 623]
     invariants:
       - Normal managed services retain the direct in-app Update action in the sidebar update controls and Environments settings.
@@ -6175,6 +6341,7 @@ features:
   - id: settings-integration-environments
     title: Show integration setup separately for every environment
     status: maintained
+    tier: keep
     prs: [1059]
     invariants:
       - The web and desktop Browser and Devices settings pages list every known environment, including disconnected ones, without project or environment scope pickers. Retained URL filters do not restrict those pages.
@@ -6223,6 +6390,7 @@ features:
   - id: settings-scope-persistent-header
     title: Keep settings scope visible while scrolling
     status: maintained
+    tier: yield
     prs: [849]
     invariants:
       - Web and desktop settings retain the original scope sentence above the content and move its project and environment pickers into the existing toolbar only after the sentence scrolls out of view; scrolling back restores the sentence without changing the toolbar height or shifting the settings content.
@@ -6250,7 +6418,8 @@ features:
 
   - id: settings-snapshot-telemetry
     title: Report server and device preference values to see which defaults people change
-    status: maintained
+    status: retiring
+    tier: yield
     prs: [938, 1156]
     rationale: Maintainers decide which opinionated defaults to keep, change, or move into setup from how many installations change them.
     invariants:
@@ -6294,6 +6463,7 @@ features:
   - id: settle-action-last-open-thread
     title: Run a worktree's settle action when its last open thread settles
     status: maintained
+    tier: yield
     prs: [1281]
     invariants:
       - A settling thread does not run the settle action while another thread in the same worktree is unsettled and not a subagent, or is working, waiting on a request, or has queued work.
@@ -6322,6 +6492,7 @@ features:
   - id: settled-shelf-auto-collapse
     title: Close the settled shelf once the user moves on
     status: maintained
+    tier: yield
     prs: []
     invariants:
       - On web, desktop, and mobile, an expanded settled shelf collapses when the user opens a thread outside it or a new user message arrives in the open thread.
@@ -6349,6 +6520,7 @@ features:
   - id: setup-script-observability
     title: Keep setup scripts safe and inspectable
     status: maintained
+    tier: keep
     prs: [40, 207, 208, 214, 216, 236, 237, 241]
     invariants:
       - A setup or settle terminal is titled with its configured script name from start through exit, in every client's terminal list.
@@ -6421,6 +6593,7 @@ features:
   - id: setup-thread-settlement
     title: Choose automatic settlement during setup
     status: maintained
+    tier: yield
     prs: [935]
     invariants:
       - Web and desktop setup ends with a Workflow step that offers automatic settlement on selected computers whose configuration has loaded; other computers are left out, and when none remain the import steps finish setup as before.
@@ -6449,6 +6622,7 @@ features:
   - id: sidebar-attention-prominence
     title: Keep threads awaiting approval visually prominent
     status: maintained
+    tier: yield
     prs: [224]
     invariants:
       - Inactive threads awaiting approval stay at full visual prominence after they are read, like threads awaiting user input, because they require immediate attention.
@@ -6468,6 +6642,7 @@ features:
   - id: sidebar-last-message-time
     title: Choose the timestamp shown for thread activity
     status: maintained
+    tier: yield
     prs: [538]
     invariants:
       - Active thread rows on web and mobile, and web command palette thread actions, default to time since the last user prompt; a local preference can instead show the latest message including agent replies. The preference does not change thread ordering.
@@ -6518,6 +6693,7 @@ features:
   - id: sidebar-project-thread-groups
     title: Group active sidebar threads under project headers
     status: maintained
+    tier: keep
     prs: [533, 546, 585, 745]
     invariants:
       - Settings → General → Sidebar → Group threads by project is off by default; when off, active threads stay one flat list.
@@ -6583,6 +6759,7 @@ features:
   - id: simulator-memory-profiles
     title: Apply project memory modes at simulator startup
     status: maintained
+    tier: yield
     prs: [1056]
     invariants:
       - Standard is the default, with an optional Low memory preference per project. Clients and agents inherit the same preference when opening a device; Android is unchanged.
@@ -6624,6 +6801,7 @@ features:
   - id: slow-network-route-stability
     title: Keep slow networks from bouncing a connection between routes
     status: maintained
+    tier: yield
     prs: []
     invariants:
       - A route the client switched to from a better-route check, whose session then drops within five minutes, is skipped by better-route checks for five minutes, doubling on each repeat up to 30 minutes, and is tried last when reconnecting while it cools down.
@@ -6651,6 +6829,7 @@ features:
   - id: source-control-fork-remotes
     title: Configure fork remotes and default repositories
     status: maintained
+    tier: keep
     prs: [123]
     invariants:
       - Parent-remote wiring follows the successful clone transport, including HTTPS fallback with automatic protocol selection; background clones preserve explicit protocol requests.
@@ -6707,6 +6886,7 @@ features:
   - id: stable-workspace-ports
     title: Assign stable development ports per workspace
     status: maintained
+    tier: keep
     prs: [100, 299]
     invariants:
       - Each normalized workspace receives a persistent non-overlapping range of ten development ports that is reused across server restarts and threads sharing that workspace.
@@ -6774,6 +6954,7 @@ features:
   - id: startup-navigation-continuity
     title: Prevent late startup project switches
     status: maintained
+    tier: yield
     prs: [152]
     invariants:
       - Cached index-draft navigation and server bootstrap restoration share a one-shot owner so a late bootstrap route cannot switch projects after the composer becomes editable.
@@ -6795,6 +6976,7 @@ features:
   - id: styal-project-file
     title: Read project configuration and shared actions from styal.json
     status: maintained
+    tier: keep
     prs: [1128, 1280]
     rationale: styal owns its checked-in project file so its schema can drop T3 Code fields the fork removed and add stable action ids, while repositories that only have a t3.json keep their settings.
     invariants:
@@ -6873,6 +7055,7 @@ features:
   - id: tagged-thread-fork-surfaces
     title: Hide tagged threads on fork-only surfaces
     status: maintained
+    tier: yield
     prs: []
     rationale: Hiding tagged threads exists so a recording shows nothing from them, and upstream's filter only reaches the lists upstream has. Compared with upstream revision 30654b3e91a51937d1dba18fc83af19d8003f5ca.
     invariants:
@@ -6898,6 +7081,7 @@ features:
   - id: terminal-scroll-on-input
     title: Return the terminal to the live screen when the user types
     status: maintained
+    tier: yield
     prs: [509]
     invariants:
       - Key presses that send input, pastes, committed IME text, and terminal key shortcuts return a scrolled-back viewport to the live screen before the input is sent.
@@ -6918,6 +7102,7 @@ features:
   - id: text-generation-provider-preference
     title: Pick a signed-in provider for text generation
     status: maintained
+    tier: yield
     prs: [732, 823, 845, 997]
     invariants:
       - Text generation defaults to GPT-6 Luna at low effort, matching upstream.
@@ -6960,6 +7145,7 @@ features:
   - id: thread-action-undo-shortcut
     title: Undo thread actions from the focused composer
     status: maintained
+    tier: yield
     prs: [734]
     invariants:
       - A visible thread Undo notice claims the configured shortcut from focused text fields until another keypress or text edit; terminals and Settings keep their native behavior.
@@ -6985,6 +7171,7 @@ features:
   - id: thread-handoff-pending-work
     title: Show pending context handoffs as working immediately
     status: maintained
+    tier: yield
     prs: []
     invariants:
       - Sending a message on an existing idle thread moves it into the Working section while context handoff dispatch is pending on web, desktop, and mobile.
@@ -7006,7 +7193,8 @@ features:
 
   - id: thread-lifecycle-analytics
     title: Record thread lifecycle analytics
-    status: maintained
+    status: retiring
+    tier: yield
     prs: [330]
     invariants:
       - Accepted thread settle, unsettle, archive, unarchive, and delete commands each record a client analytics event that carries the connecting client's metadata.
@@ -7027,6 +7215,7 @@ features:
   - id: thread-settle-reasons
     title: Show why a thread settled
     status: maintained
+    tier: yield
     prs: [942]
     invariants:
       - Each automatic settlement records exactly one reason on the thread, a merged or closed pull request with its number and link or inactivity with the threshold in days; an explicit settle records `user`, re-settling keeps the first reason, and un-settling, pinning, or new work clears it.
@@ -7081,6 +7270,7 @@ features:
   - id: thread-transcript-export
     title: Copy a complete thread transcript
     status: maintained
+    tier: yield
     prs: [143]
     invariants:
       - The shared thread action menu offers Transcript inside its Copy submenu on both sidebar and chat-header surfaces.
@@ -7110,6 +7300,7 @@ features:
   - id: turn-token-usage
     title: Show the model, token usage, and estimated cost under each agent turn, and the thread's total
     status: review-needed
+    tier: keep
     prs: [735, 736, 737]
     invariants:
       - Completed or aborted provider turns retain reported token usage and model choices; turns with neither contribute no usage. Legacy threads preserve their recorded usage and exact cost as a frozen history baseline.
@@ -7200,6 +7391,7 @@ features:
   - id: usage-carbon-estimate
     title: Estimate operational carbon emissions from usage
     status: maintained
+    tier: yield
     prs: [161]
     invariants:
       - Web and mobile usage views estimate operational CO₂ from generated tokens with consistent formatting and an understandable real-world comparison.
@@ -7224,6 +7416,7 @@ features:
   - id: usage-limits-single-account
     title: Show a provider with one account like its own usage screen
     status: maintained
+    tier: yield
     prs: [753, 803]
     invariants:
       - On Usage → Limits, a provider window backed by one account shows its percentage left, a bar, and when it resets, without pool segment numbers, the per-account row, or the pool refill line.
@@ -7249,6 +7442,7 @@ features:
   - id: usage-reset-credit-expiries
     title: List when each banked reset credit expires
     status: maintained
+    tier: yield
     prs: [753]
     invariants:
       - Codex, Claude, and CLIProxyAPI hub reset credits report every banked credit's expiry, soonest first, alongside the existing next-expiry field.
@@ -7284,6 +7478,7 @@ features:
   - id: video-own-aspect-ratio
     title: Videos keep their own aspect ratio once loaded
     status: maintained
+    tier: yield
     prs: [707]
     invariants:
       - Video previews in chat, the Files panel and pull request descriptions hold a 16:9 slot only until metadata loads, then size to the video's own shape, so portrait and square recordings are not letterboxed.
@@ -7303,6 +7498,7 @@ features:
   - id: web-build-update-notice
     title: Offer a refresh when a new web build is deployed
     status: maintained
+    tier: yield
     prs: [858]
     invariants:
       - Visible notices emit feature.exposed and explicit refresh clicks emit feature.used through one supported paired environment with the shared opt-out; skipped or failed exposure reports can retry on a later sighting, and a blocked reload allows another refresh after two seconds. Polls, hidden sidebars, deployment identifiers, and composer content are not collected, and telemetry cannot prevent a refresh.
@@ -7338,6 +7534,7 @@ features:
   - id: work-together
     title: Let two machines work together in one step, and stop
     status: maintained
+    tier: keep
     prs: [1301]
     invariants:
       - Work together on web, desktop and mobile settings uses only existing client APIs, from one action in packages/client-runtime, and adds no server protocol.
@@ -7370,6 +7567,7 @@ features:
   - id: workflow-approvals-same-repository
     title: Surface and approve GitHub workflow runs waiting on same-repository pull requests
     status: maintained
+    tier: yield
     prs: [986]
     invariants:
       - GitHub pull request detail and checks list Actions runs on the head that wait for approval (`action_required`) for same-repository pull requests as well as forks, as action-required checks with `workflowApprovalsRequired`.
@@ -7415,6 +7613,7 @@ features:
   - id: workflow-run-watch
     title: Wake agents when a watched CI workflow run fails a job or completes
     status: maintained
+    tier: keep
     prs: [896]
     invariants:
       - watch_workflow_run reads the GitHub Actions run first; a run that already completed is reported to the agent instead of watched, and an unreadable run is an error.
@@ -7493,6 +7692,7 @@ features:
   - id: workspace-path-presentation
     title: Keep workspace file paths concise and actionable
     status: review-needed
+    tier: yield
     prs: [89, 129, 337, 354, 580, 1262]
     invariants:
       - Scoped tool activity and Markdown file chips on web and mobile omit generated worktree directory names and display workspace-relative paths, while paths outside the workspace remain absolute. This includes ACP file reads (Antigravity, Cursor, Grok), which report no tool name and carry their path only as the row detail, changed-file row labels, and the paths in expanded tool details (edited files, renamed files' old paths, and file search results).
@@ -7549,6 +7749,7 @@ features:
   - id: workspace-thread-organization
     title: Default new threads to isolated worktrees
     status: maintained
+    tier: keep
     prs: [199, 271]
     invariants:
       - New-thread workspace mode resolves the project override, environment setting, and repository t3.json before the built-in worktree default in PROJECT_FILE_BACKED_SETTINGS.defaultThreadEnvMode.builtIn.
@@ -7601,6 +7802,7 @@ features:
   - id: worktree-base-fetch-fallback
     title: Start a worktree from the local remote branch when the fetch fails
     status: maintained
+    tier: yield
     prs: [1205]
     invariants:
       - When a new worktree starts from origin and fetching its base fails or times out, setup continues from the existing local remote-tracking ref instead of failing the thread.
@@ -7628,6 +7830,7 @@ features:
   - id: worktree-branch-rename-note
     title: Tell an agent when its worktree branch is temporary or renamed
     status: maintained
+    tier: yield
     prs: [1251]
     invariants:
       - A turn that starts as the first on its provider thread, in a worktree created on a temporary branch that is still checked out, carries a note saying the branch name is temporary and may change, and to check the current branch before naming it.
@@ -7652,6 +7855,7 @@ features:
   - id: your-machines-wording
     title: Name pairs of machines "your machines", and link only styal Link
     status: maintained
+    tier: yield
     prs: [1294]
     invariants:
       - Clients call pairs of machines "your machines"; "link" in client text means styal Link. Server, contract and agent-facing text, including t3_environment_link, peerLink and --access, keeps "linked environment" until it changes with the mcp-tool-use eval.
