@@ -2248,9 +2248,6 @@ export const make = Effect.gen(function* () {
                       ? {}
                       : { expectedStackHeads: input.expectedStackHeads }),
                     ...(input.mergeMethod === undefined ? {} : { mergeMethod: input.mergeMethod }),
-                    ...(input.expectedHeadSha === undefined
-                      ? {}
-                      : { expectedHeadSha: input.expectedHeadSha }),
                     ...(input.updateMethod === undefined
                       ? {}
                       : { updateMethod: input.updateMethod }),
@@ -3796,8 +3793,6 @@ export const make = Effect.gen(function* () {
     yield* readCache.invalidate(refScope(ref));
     const repository = yield* runAction(input).pipe(
       Effect.ensuring(readCache.invalidate(refScope(ref))),
-      // Refresh a refused action so the next attempt uses the current host state.
-      Effect.tapError(() => Effect.sync(() => bumpRefEpoch(ref, "detail"))),
     );
     bumpRefEpoch({ ...ref, repository });
     listingsEpoch = ++epochCounter;

@@ -285,19 +285,6 @@ export class GitHubWorkflowApprovalHeadChangedError extends Schema.TaggedError<G
   }
 }
 
-/** A merge pinned to the head the reader saw, refused because the branch has moved since. */
-export class GitHubMergeHeadChangedError extends Schema.TaggedError<GitHubMergeHeadChangedError>()(
-  "GitHubMergeHeadChangedError",
-  {
-    cwd: Schema.String,
-    number: Schema.Int,
-  },
-) {
-  override get message(): string {
-    return `New commits were pushed to #${this.number} since it was last loaded. Review them, then merge again.`;
-  }
-}
-
 export class GitHubBranchDeletionRefusedError extends Schema.TaggedError<GitHubBranchDeletionRefusedError>()(
   "GitHubBranchDeletionRefusedError",
   {
@@ -330,7 +317,6 @@ export class GitHubBranchDeletionRefusedError extends Schema.TaggedError<GitHubB
 export type GitHubPullRequestApiError =
   | GitHubBranchDeletionRefusedError
   | GitHubStackActionError
-  | GitHubMergeHeadChangedError
   | GitHubRequestPolicy.GitHubApiError
   | GitHubPullRequestReadError
   | GitHubDiffCursorError
@@ -762,7 +748,6 @@ export class GitHubPullRequestApi extends Context.Service<
       readonly expectedStackHeads?: ReadonlyArray<PullRequestStackHead>;
       readonly removeAgentCreditsOnMerge?: boolean;
       readonly mergeMethod?: PullRequestMergeMethod;
-      readonly expectedHeadSha?: string;
       readonly updateMethod?: PullRequestUpdateMethod;
     }) => Effect.Effect<void, GitHubPullRequestApiError>;
 
@@ -3049,15 +3034,11 @@ export const make = Effect.gen(function* () {
           ),
         );
       }
-      // GitHub refuses an immediate merge, or turning on auto-merge, when the head is no longer this
-      // commit. Auto-merge does not keep the check: commits pushed after it is on are merged too.
-      const expectedHeadSha =
-        action === "merge" || action === "enable-auto-merge" ? input.expectedHeadSha : undefined;
       return Effect.gen(function* () {
         const { owner, name } = parseRepositorySelector(input.repository);
         // Fresh head and merge-queue state determine the mutation's revision and route.
         const target = { ...input, operation: "runPullRequestAction" };
-        const readActionState = client
+        const state = yield* client
           .PullRequestActionState({
             owner,
             name,
@@ -3069,7 +3050,6 @@ export const make = Effect.gen(function* () {
             Effect.map((result) => result.repository?.pullRequest ?? null),
             Effect.flatMap(found(target)),
           );
-        const state = yield* readActionState;
         if (action === "update-branch") {
           if (state.baseRef?.compare?.behindBy === 0) return;
           return yield* client
@@ -3104,13 +3084,6 @@ export const make = Effect.gen(function* () {
             }
           }
         }
-        // The cleaned message pins its own head only when the caller gave none.
-        const pinnedHead = expectedHeadSha ?? expectedHead;
-        const headChanged = () =>
-          new GitHubMergeHeadChangedError({ cwd: input.cwd, number: input.number });
-        if (expectedHeadSha !== undefined && state.headRefOid !== expectedHeadSha) {
-          return yield* headChanged();
-        }
         // Merge queues always use auto-merge. A PR that became ready since detail loaded
         // merges directly, matching `gh pr merge --auto`.
         const auto =
@@ -3120,31 +3093,14 @@ export const make = Effect.gen(function* () {
         const merge = {
           pullRequestId: state.id,
           mergeMethod: GRAPHQL_MERGE_METHODS[input.mergeMethod ?? "merge"],
-          ...(pinnedHead === undefined ? {} : { expectedHeadOid: pinnedHead }),
+          ...(expectedHead === undefined ? {} : { expectedHeadOid: expectedHead }),
           ...(body === undefined ? {} : { commitBody: body }),
         };
         yield* (
           auto
             ? client.EnablePullRequestAutoMerge({ input: merge }).pipe(Effect.asVoid)
             : client.MergePullRequest({ input: merge }).pipe(Effect.asVoid)
-        ).pipe(
-          graphql(target),
-          Effect.catchTags({
-            GitHubApiResponseError: (error) =>
-              pinnedHead === undefined
-                ? Effect.fail(error)
-                : readActionState.pipe(
-                    Effect.orElseSucceed(() => null),
-                    Effect.flatMap((current) =>
-                      Effect.fail(
-                        current !== null && current.headRefOid !== pinnedHead
-                          ? headChanged()
-                          : error,
-                      ),
-                    ),
-                  ),
-          }),
-        );
+        ).pipe(graphql(target));
       });
     }),
 

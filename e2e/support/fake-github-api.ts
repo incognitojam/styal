@@ -270,7 +270,11 @@ export async function startFakeGitHubApi(
     if (request.operationName === "MergePullRequest") {
       const input = variables.input as { pullRequestId: string; expectedHeadOid?: string };
       const merging = pullRequests.find((item) => `PR_${item.number}` === input.pullRequestId);
-      if (merging && input.expectedHeadOid !== merging.headSha) {
+      if (
+        merging &&
+        input.expectedHeadOid !== undefined &&
+        input.expectedHeadOid !== merging.headSha
+      ) {
         return { errors: [{ message: "Head branch was modified" }] };
       }
     }

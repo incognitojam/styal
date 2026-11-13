@@ -5246,7 +5246,7 @@ features:
     prs: [1088, 1089]
     invariants:
       - A blocked GitHub pull request offers Bypass rules and merge only when GitHub reports viewerCanMergeAsAdmin, the viewer can write, and the repository has no merge queue.
-      - The bypassing merge is the ordinary direct merge with its head guard; nothing else changes on the server.
+      - The bypassing merge uses the ordinary direct merge path and the host enforces its permissions and repository rules.
       - Web reports each bypass merge with its outcome through the owning environment; reporting never blocks the merge.
     rationale: Upstream closed its administrator merge proposal (https://github.com/pingdotgg/t3code/pull/17281) pending product approval, so blocked pull requests offer no merge to administrators who could bypass the rules.
     implementation_paths:
@@ -5556,43 +5556,6 @@ features:
       status: unassessed
       tracking: []
       retire_when: Upstream keeps single pull request merge controls visible while an earlier stack lookup answer is refreshed.
-
-  - id: pull-request-merge-head-guard
-    title: Refuse GitHub merges when the head moved since the panel loaded
-    status: retiring
-    tier: yield
-    prs: [589]
-    invariants:
-      - A GitHub merge, or turning on auto-merge, from the pull request panel or quick actions sends the head commit from the client's last read, and GitHub refuses it when the branch has moved since.
-      - After a refused action, the next detail read goes to the host, so retrying a merge uses the current head.
-      - A merge refused because the head moved reports that new commits were pushed instead of the generic access hint.
-      - Hosts that do not report a head commit, older clients, and older servers merge as before.
-    rationale: Upstream pins a single pull request merge to a head only when removing agent credits from its merge message, and then pins the head read at merge time. The fork also guards against pushes since the reader last loaded the pull request.
-    implementation_paths:
-      - apps/server/src/pullRequest/PullRequestService.ts
-      - apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx
-      - packages/client-runtime/src/state/pullRequests.ts
-      - packages/contracts/src/pullRequest.ts
-      - packages/source-control-github/src/server/GitHubPullRequestApi.ts
-      - packages/source-control-github/src/server/GitHubPullRequestProvider.ts
-      - packages/source-control-github/src/server/gitHubPullRequestJson.ts
-    upstream_paths:
-      - apps/server/src/pullRequest/PullRequestService.ts
-      - apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx
-      - packages/client-runtime/src/state/pullRequests.ts
-      - packages/contracts/src/pullRequest.ts
-      - packages/source-control-github/src/server/GitHubPullRequestApi.ts
-      - packages/source-control-github/src/server/GitHubPullRequestProvider.ts
-      - packages/source-control-github/src/server/gitHubPullRequestJson.ts
-    tests:
-      - apps/server/src/pullRequest/PullRequestService.test.ts
-      - packages/client-runtime/src/state/pullRequests.test.ts
-      - packages/source-control-github/src/server/GitHubPullRequestApi.test.ts
-    upstream:
-      status: tracking
-      tracking:
-        - https://github.com/pingdotgg/t3code/pull/16192
-      retire_when: Upstream pins single pull request merges and auto-merges to the head commit the reader saw.
 
   - id: pull-request-merge-intent-badges
     title: Show automatic merge intent on pull request status icons
