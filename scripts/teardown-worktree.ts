@@ -93,9 +93,23 @@ const protectedRelative = (relative: string) => {
   );
 };
 
-function safeTree(root: string, relative: string): boolean {
+const fileIdentity = (path: string) => {
+  const info = NodeFS.lstatSync(path, { bigint: true });
+  return { dev: String(info.dev), ino: String(info.ino) };
+};
+
+function safeTree(root: string, relative: string) {
+  const ancestors: Array<{ path: string; dev: string; ino: string }> = [];
+  const entries: typeof ancestors = [];
+  const components = relative.split(NodePath.sep);
+  for (let index = 1; index <= components.length; index++) {
+    const part = components.slice(0, index).join(NodePath.sep);
+    const absolute = NodePath.join(root, part);
+    if (NodeFS.lstatSync(absolute).isSymbolicLink()) return undefined;
+    if (index < components.length) ancestors.push({ path: part, ...fileIdentity(absolute) });
+  }
   if (!NodeFS.realpathSync(NodePath.join(root, relative)).startsWith(root + NodePath.sep))
-    return false;
+    return undefined;
   const paths: Array<string> = [];
   function visit(target: string): boolean {
     const absolute = NodePath.join(root, target);
@@ -110,19 +124,22 @@ function safeTree(root: string, relative: string): boolean {
       return false;
     }
     paths.push(target);
+    entries.push({ path: target, ...fileIdentity(absolute) });
     if (stat.isSymbolicLink()) return true;
     if (!stat.isDirectory()) return stat.isFile();
     if (NodeFS.existsSync(NodePath.join(absolute, ".git"))) return false;
     return NodeFS.readdirSync(absolute).every((name) => visit(NodePath.join(target, name)));
   }
-  if (!visit(relative)) return false;
+  if (!visit(relative)) return undefined;
   const result = NodeChildProcess.spawnSync("git", ["-C", root, "check-ignore", "--stdin", "-z"], {
     encoding: "utf8",
     env: gitEnv(),
     input: paths.join("\0") + "\0",
     maxBuffer: 64 * 1024 * 1024,
   });
-  return result.status === 0 && result.stdout.split("\0").length - 1 === paths.length;
+  return result.status === 0 && result.stdout.split("\0").length - 1 === paths.length
+    ? { ancestors, entries }
+    : undefined;
 }
 
 function sizeOf(absolute: string): number {
@@ -306,6 +323,7 @@ export async function teardownWorktree(input: {
   readonly stripRegenerable?: boolean;
 }): Promise<void> {
   const root = verifyWorktree(input.worktree);
+  const rootIdentity = fileIdentity(root);
   const dryRun = input.dryRun === true || input.stripRegenerable !== true;
   if (input.dryRun !== true) await stopDevServers(root, input.workspacePort);
   const userdata = NodePath.join(root, ".styal/userdata");
@@ -316,24 +334,50 @@ export async function teardownWorktree(input: {
   let bytes = 0;
   let count = 0;
   const removed: Array<string> = [];
-  function remove(relative: string) {
-    const absolute = NodePath.join(root, relative);
-    const stat = NodeFS.lstatSync(absolute);
-    if (stat.isDirectory() && !stat.isSymbolicLink()) {
-      for (const name of NodeFS.readdirSync(absolute)) remove(NodePath.join(relative, name));
-      NodeFS.rmdirSync(absolute);
-    } else {
-      NodeFS.unlinkSync(absolute);
-      bytes += stat.isSymbolicLink() ? 0 : stat.size;
-    }
-    removed.push(relative);
-  }
+  let notDeleted = selected.map((entry) => entry.path);
+  let rootDescriptor: number | undefined;
   try {
     for (const entry of selected) {
       if (!dryRun) {
-        if (!safeTree(root, entry.path))
-          throw new Error("Cleanup candidate changed; refusing deletion.");
-        remove(entry.path);
+        const checked = safeTree(root, entry.path);
+        if (!checked) throw new Error("Cleanup candidate changed; refusing deletion.");
+        if (rootDescriptor === undefined) {
+          if (!NodeFS.constants.O_NOFOLLOW || !NodeFS.constants.O_DIRECTORY)
+            throw new Error("Descriptor-relative deletion is unavailable on this platform.");
+          rootDescriptor = NodeFS.openSync(
+            root,
+            NodeFS.constants.O_RDONLY | NodeFS.constants.O_NOFOLLOW | NodeFS.constants.O_DIRECTORY,
+          );
+          const opened = NodeFS.fstatSync(rootDescriptor, { bigint: true });
+          if (String(opened.dev) !== rootIdentity.dev || String(opened.ino) !== rootIdentity.ino)
+            throw new Error("Worktree root changed; refusing deletion.");
+        }
+        // Node has no unlinkat; the stdlib helper deletes relative to inherited directory handles.
+        const result = NodeChildProcess.spawnSync(
+          "python3",
+          ["-I", "-S", NodePath.join(import.meta.dirname, "teardown-worktree-delete.py")],
+          {
+            input: JSON.stringify({ root: rootIdentity, candidate: entry.path, ...checked }),
+            encoding: "utf8",
+            stdio: ["pipe", "pipe", "pipe", rootDescriptor],
+            maxBuffer: 64 * 1024 * 1024,
+          },
+        );
+        if (result.error || !result.stdout)
+          throw new Error("Descriptor-relative deletion helper could not run.", {
+            cause: result.error,
+          });
+        const report = JSON.parse(result.stdout) as {
+          removed: Array<string>;
+          bytes: number;
+          remaining: Array<string>;
+          error?: string;
+        };
+        removed.push(...report.removed);
+        bytes += report.bytes;
+        notDeleted = [...report.remaining, ...selected.slice(count + 1).map((next) => next.path)];
+        if (result.status !== 0)
+          throw new Error(report.error ?? "Descriptor-relative deletion failed.");
       } else bytes += entry.bytes;
       count++;
       console.log(
@@ -344,24 +388,10 @@ export async function teardownWorktree(input: {
     console.error(
       `[teardown] removed before failure: ${JSON.stringify(removed)}; ${bytes} logical bytes`,
     );
-    function remaining(relative: string): Array<string> {
-      const absolute = NodePath.join(root, relative);
-      let stat;
-      try {
-        stat = NodeFS.lstatSync(absolute);
-      } catch {
-        return [];
-      }
-      if (!stat.isDirectory() || stat.isSymbolicLink()) return [relative];
-      return [
-        relative,
-        ...NodeFS.readdirSync(absolute).flatMap((name) => remaining(NodePath.join(relative, name))),
-      ];
-    }
-    console.error(
-      `[teardown] not deleted: ${JSON.stringify(selected.flatMap((entry) => remaining(entry.path)))}`,
-    );
+    console.error(`[teardown] not deleted: ${JSON.stringify(notDeleted)}`);
     throw cause;
+  } finally {
+    if (rootDescriptor !== undefined) NodeFS.closeSync(rootDescriptor);
   }
   console.log(
     `[teardown] ${dryRun ? "dry run: would remove" : "removed"} ${count} paths, ${bytes} bytes ${dryRun ? "reclaimable" : "freed (logical size)"}`,

@@ -376,3 +376,137 @@ it("reports partial deletion precisely and leaves a failed strip retryable", asy
   await teardownWorktree({ worktree, workspacePort: undefined, stripRegenerable: true });
   assert.isFalse(NodeFS.existsSync(NodePath.join(worktree, "build")));
 });
+
+it.each([
+  { swapped: "parent", replacement: "symlink" },
+  { swapped: "parent/level", replacement: "symlink" },
+  { swapped: "parent/level/node_modules", replacement: "symlink" },
+  { swapped: "parent/level/node_modules", replacement: "directory" },
+  { swapped: "parent/level", replacement: "symlink", afterOpen: true },
+  { swapped: "parent", replacement: "symlink", beforeFinalCheck: true },
+])(
+  "keeps outside files when $swapped is replaced with a $replacement (opened=$afterOpen)",
+  async ({ swapped, replacement, afterOpen, beforeFinalCheck }) => {
+    const { worktree, main } = fixture();
+    const candidate = "parent/level/node_modules";
+    const source = NodePath.join(worktree, candidate);
+    NodeFS.mkdirSync(source, { recursive: true });
+    NodeFS.writeFileSync(NodePath.join(source, "cache"), "synthetic");
+    const outside = beforeFinalCheck
+      ? NodePath.join(worktree, ".scratch/inside")
+      : NodePath.join(main, "outside");
+    const tail = NodePath.relative(swapped, candidate);
+    const outsideCandidate = NodePath.join(outside, tail);
+    NodeFS.mkdirSync(outsideCandidate, { recursive: true });
+    NodeFS.writeFileSync(NodePath.join(outsideCandidate, "irreplaceable-source"), "synthetic");
+    const hook = NodePath.join(main, "race-hook.mjs");
+    NodeFS.writeFileSync(
+      hook,
+      `
+      import cp from "node:child_process";
+      import fs from "node:fs";
+      import { syncBuiltinESMExports } from "node:module";
+      const spawn = cp.spawnSync;
+      let checks = 0;
+      cp.spawnSync = function(...args) {
+        if (args[0] === "python3" && process.env.RACE_AFTER_OPEN === "1") {
+          const intercept = [
+            'import os, runpy, sys',
+            'original = os.open',
+            'swapped = False',
+            'def opened(name, flags, *args, **kwargs):',
+            '    global swapped',
+            '    descriptor = original(name, flags, *args, **kwargs)',
+            '    if name == "level" and not swapped:',
+            '        swapped = True',
+            '        os.rename(os.environ["RACE_PARENT"], os.environ["RACE_PARENT"] + ".saved")',
+            '        os.symlink(os.environ["RACE_OUTSIDE"], os.environ["RACE_PARENT"])',
+            '    return descriptor',
+            'os.open = opened',
+            'os.supports_dir_fd.add(opened)',
+            'runpy.run_path(sys.argv[1], run_name="__main__")',
+          ].join(String.fromCharCode(10));
+          args[1] = ["-I", "-S", "-c", intercept, args[1].at(-1)];
+        }
+        const result = spawn(...args);
+        if (args[0] === "git" && args[1].includes("check-ignore") && ++checks === Number(process.env.RACE_IGNORE_COUNT) && process.env.RACE_AFTER_OPEN !== "1") {
+          fs.renameSync(process.env.RACE_PARENT, process.env.RACE_PARENT + ".saved");
+          if (process.env.RACE_REPLACEMENT === "directory") {
+            fs.mkdirSync(process.env.RACE_PARENT);
+            fs.writeFileSync(process.env.RACE_PARENT + "/new-source", "synthetic");
+          } else fs.symlinkSync(process.env.RACE_OUTSIDE, process.env.RACE_PARENT);
+        }
+        return result;
+      };
+      syncBuiltinESMExports();
+    `,
+    );
+    const result = NodeChildProcess.spawnSync(
+      process.execPath,
+      [
+        "--import",
+        hook,
+        NodePath.join(import.meta.dirname, "teardown-worktree.ts"),
+        "--strip-regenerable",
+      ],
+      {
+        cwd: worktree,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          STYAL_WORKTREE_PATH: worktree,
+          RACE_PARENT: NodePath.join(worktree, swapped),
+          RACE_OUTSIDE: outside,
+          RACE_REPLACEMENT: replacement,
+          RACE_AFTER_OPEN: afterOpen ? "1" : "0",
+          RACE_IGNORE_COUNT: beforeFinalCheck ? "1" : "2",
+        },
+      },
+    );
+    assert.equal(result.status === 0, afterOpen === true, result.stdout + result.stderr);
+    if (beforeFinalCheck) assert.include(result.stderr, "Cleanup candidate changed");
+    assert.equal(
+      NodeFS.readFileSync(NodePath.join(outsideCandidate, "irreplaceable-source"), "utf8"),
+      "synthetic",
+    );
+    const kept = NodePath.join(worktree, swapped + ".saved", tail, "cache");
+    if (afterOpen) assert.isFalse(NodeFS.existsSync(kept));
+    else assert.equal(NodeFS.readFileSync(kept, "utf8"), "synthetic");
+    if (replacement === "directory") {
+      assert.equal(
+        NodeFS.readFileSync(NodePath.join(worktree, swapped, "new-source"), "utf8"),
+        "synthetic",
+      );
+    } else assert.isTrue(NodeFS.lstatSync(NodePath.join(worktree, swapped)).isSymbolicLink());
+  },
+);
+
+it("fails closed when the deletion helper cannot run, while default and dry-run need no helper", () => {
+  const { worktree, main } = fixture();
+  NodeFS.mkdirSync(NodePath.join(worktree, "node_modules"));
+  const file = NodePath.join(worktree, "node_modules/cache");
+  NodeFS.writeFileSync(file, "synthetic");
+  const hook = NodePath.join(main, "no-python.mjs");
+  NodeFS.writeFileSync(
+    hook,
+    `
+    import cp from "node:child_process";
+    import { syncBuiltinESMExports } from "node:module";
+    const spawn = cp.spawnSync;
+    cp.spawnSync = function(...args) {
+      if (args[0] === "python3") args[0] = "missing-python-fixture";
+      return spawn(...args);
+    };
+    syncBuiltinESMExports();
+  `,
+  );
+  for (const args of [[], ["--dry-run"], ["--strip-regenerable"]]) {
+    const result = NodeChildProcess.spawnSync(
+      process.execPath,
+      ["--import", hook, NodePath.join(import.meta.dirname, "teardown-worktree.ts"), ...args],
+      { cwd: worktree, encoding: "utf8", env: { ...process.env, STYAL_WORKTREE_PATH: worktree } },
+    );
+    assert.equal(result.status === 0, !args.includes("--strip-regenerable"), result.stderr);
+    assert.equal(NodeFS.readFileSync(file, "utf8"), "synthetic");
+  }
+});
