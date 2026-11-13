@@ -340,7 +340,7 @@ Windows) with the default data directory. Other installs have \`styal\`, or use
   signed in on this environment, only after the user approves the exact text, so leave out paths,
   secrets, private code and names. If it returns \`not_filed\`, give the user \`manualUrl\`. The user
   can also choose **Send feedback** in the command palette or Settings → About, or on mobile under
-  Settings → Environments, on that environment.
+  Settings → Machines, on that environment.
 - For crashes, sign-in failures or broken setups that need diagnosing, the user runs
   \`npx @styal/cli triage\` in a terminal outside styal. With \`claude\` or \`codex\` installed, it
   starts a separate agent session with a triage playbook and machine facts, and helps file an issue.

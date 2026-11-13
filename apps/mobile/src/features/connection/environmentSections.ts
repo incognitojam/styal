@@ -45,3 +45,30 @@ export function splitEnvironmentSections(input: EnvironmentSectionsInput): Envir
     ),
   };
 }
+
+export function machineListEntries<
+  T extends { readonly environmentId: EnvironmentId; readonly label: string },
+>(saved: ReadonlyArray<T>, discovered: ReadonlyArray<RelayClientEnvironmentRecord>) {
+  const known = new Set(saved.map((machine) => machine.environmentId));
+  return [
+    ...saved.map((machine) => ({
+      environmentId: machine.environmentId,
+      label: machine.label,
+      saved: machine,
+    })),
+    ...discovered
+      .filter((machine) => !known.has(machine.environmentId))
+      .map((machine) => ({
+        environmentId: machine.environmentId,
+        label: machine.label,
+        saved: null,
+      })),
+  ];
+}
+export function untabbedMachineLinks<T extends { readonly environmentId: EnvironmentId }>(
+  links: ReadonlyArray<T>,
+  machines: ReadonlyArray<{ readonly environmentId: EnvironmentId }>,
+) {
+  const known = new Set(machines.map((machine) => machine.environmentId));
+  return links.filter((link) => !known.has(link.environmentId));
+}

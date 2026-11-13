@@ -254,7 +254,7 @@ const SETTINGS_SCREENS = {
     linking: "settings/environments",
     options: {
       ...SETTINGS_PAGE_OPTIONS,
-      title: "Environments",
+      title: "Machines",
     },
   }),
   SettingsEnvironmentDetail: createNativeStackScreen({
@@ -1026,7 +1026,7 @@ const RootStackConfig = createWorkspaceStackNavigator({
       screen: ConnectionsRouteScreen,
       linking: "connections",
       options: {
-        title: "Environments",
+        title: "Machines",
         ...(Platform.OS === "android"
           ? { presentation: "card" as const, headerShown: false }
           : {

@@ -148,7 +148,7 @@ function environmentsRow(count: number): SettingsListRow {
   return {
     id: "SettingsEnvironments",
     icon: "desktopcomputer",
-    label: "Environments",
+    label: "Machines",
     value: `${count}`,
     valuePosition: "trailing",
     target: "SettingsEnvironments",

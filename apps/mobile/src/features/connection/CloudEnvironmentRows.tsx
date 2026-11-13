@@ -33,8 +33,9 @@ import { environmentStatusText } from "./environmentStatusText";
 import { type RelayEnvironmentView, useConnectionController } from "./useConnectionController";
 
 interface CloudEnvironmentRowsProps {
+  readonly environmentId?: EnvironmentId;
   readonly connectedCloudEnvironments: ReadonlyArray<ConnectedEnvironmentSummary>;
-  readonly onOpenEnvironment?: (environmentId: EnvironmentId) => void;
+  readonly onOpenEnvironment?: ((environmentId: EnvironmentId) => void) | undefined;
   readonly onSetEnvironmentEnabled: (environmentId: EnvironmentId, enabled: boolean) => void;
   readonly onRemoveEnvironment: (environmentId: EnvironmentId) => void;
   readonly showcaseAvailableEnvironments?: ReadonlyArray<RelayEnvironmentView>;
@@ -78,9 +79,14 @@ function CloudEnvironmentRowsContent(
 ) {
   const controller = useConnectionController();
   const discoveryAvailable = props.discoveryAvailable ?? true;
-  const availableCloudEnvironments = discoveryAvailable
-    ? (props.showcaseAvailableEnvironments ?? controller.availableRelayEnvironments)
-    : [];
+  const availableCloudEnvironments = (
+    discoveryAvailable
+      ? (props.showcaseAvailableEnvironments ?? controller.availableRelayEnvironments)
+      : []
+  ).filter(
+    (entry) =>
+      props.environmentId === undefined || entry.environment.environmentId === props.environmentId,
+  );
   const [expandedErrorId, setExpandedErrorId] = useState<string | null>(null);
   const hasCloudRows =
     props.connectedCloudEnvironments.length > 0 || availableCloudEnvironments.length > 0;
