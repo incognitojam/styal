@@ -14,6 +14,7 @@ import {
   buildMessages,
   failedEarly,
   executeCodex,
+  expectForModel,
   gradeSample,
   makeSample,
   ranCalls,
@@ -153,6 +154,22 @@ const failed = (expect: Parameters<typeof gradeSample>[0], run: SampleRun) =>
   gradeSample(expect, run)
     .filter((check) => !check.pass)
     .map((check) => check.check);
+
+it("grades a footer against the model and harness of the run", () => {
+  const footer = { textMust: ["\\({harness}, ({model}|{modelName})\\)"] };
+  const said = (text: string) => ({ calls: [], text, stopReason: "end_turn" });
+  const sonnet = expectForModel(footer, "claude-sonnet-5-5");
+  assert.deepEqual(
+    failed(sonnet, said("Written by an agent (Claude Code, claude-sonnet-5-5).")),
+    [],
+  );
+  assert.deepEqual(failed(sonnet, said("Written by an agent (Claude Code, Sonnet 5.5).")), []);
+  assert.lengthOf(failed(sonnet, said("Written by an agent (Claude Code, claude-opus-5).")), 1);
+  assert.lengthOf(failed(sonnet, said("Written by an agent (Claude Code, Sonnet 5x5).")), 1);
+  const sol = expectForModel(footer, "gpt-6.1-sol");
+  assert.deepEqual(failed(sol, said("Written by an agent (Codex, gpt-6.1-sol).")), []);
+  assert.lengthOf(failed(sol, said("Written by an agent (Codex, gpt-6x1-sol).")), 1);
+});
 
 it("passes a good run and names every rule a bad run breaks", () => {
   const expect = {
