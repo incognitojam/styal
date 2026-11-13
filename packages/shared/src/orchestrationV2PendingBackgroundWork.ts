@@ -111,13 +111,24 @@ function backgroundWorkKindHoldsCompletion(kind: PendingBackgroundWorkTask["kind
   }
 }
 
-/** A monitor wakes the agent once per line, so a progress wake run's completion waits for the monitor to end. */
+const WORKFLOW_RUN_WATCH_TASK_PREFIX = "workflow-run-watch:";
+const PULL_REQUEST_WATCH_TASK_PREFIX = "pull-request-watch:";
+
+export const isPullRequestWatchTask = (task: Pick<PendingBackgroundWorkTask, "taskId">) =>
+  task.taskId.startsWith(PULL_REQUEST_WATCH_TASK_PREFIX);
+
+/**
+ * A monitor wakes the agent once per line, so a progress wake run's completion waits for the
+ * monitor to end. A pull request watch wakes only on news and holds while its checks run.
+ */
 export function monitorHoldsWakeCompletion(
   thread: Pick<OrchestrationV2ThreadShell, "latestRunBackgroundWake" | "pendingBackgroundTasks">,
 ): boolean {
   return (
     thread.latestRunBackgroundWake === true &&
-    (thread.pendingBackgroundTasks ?? []).some((task) => task.kind === "monitor")
+    (thread.pendingBackgroundTasks ?? []).some(
+      (task) => task.kind === "monitor" && !isPullRequestWatchTask(task),
+    )
   );
 }
 
@@ -311,9 +322,6 @@ export function derivePendingBackgroundWork(input: {
   return Array.from(byTaskId.values());
 }
 
-const WORKFLOW_RUN_WATCH_TASK_PREFIX = "workflow-run-watch:";
-const PULL_REQUEST_WATCH_TASK_PREFIX = "pull-request-watch:";
-
 /** Watches are saved on the thread and polled by the server, so they outlive a restart. */
 export function isWatchTask(task: Pick<PendingBackgroundWorkTask, "taskId">): boolean {
   return (
@@ -358,7 +366,8 @@ function pullRequestWatchTasks(
             taskId: `${PULL_REQUEST_WATCH_TASK_PREFIX}${link.host.toLowerCase()}/${link.repository.toLowerCase()}#${link.number}`,
             description: `Watching pull request #${link.number}`,
             kind: "monitor" as const,
-            awaited: true as const,
+            // Once every check finished, a person moves the PR next: the watch stays on but holds nothing.
+            ...(link.watch.checksPending === false ? {} : { awaited: true as const }),
           },
         ],
   );
