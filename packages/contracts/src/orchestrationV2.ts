@@ -1783,6 +1783,16 @@ const OrchestrationV2LinkRequestFields = {
   failure: Schema.optional(Schema.String),
 } as const;
 
+export const WorktreeSetupCompletionEvidence = Schema.Union([
+  Schema.Literal(1),
+  Schema.Struct({
+    version: Schema.Literal(2),
+    device: Schema.String,
+    inode: Schema.String,
+    gitDirectory: Schema.String,
+  }),
+]);
+
 export const OrchestrationV2TurnItem = Schema.Union([
   Schema.Struct({
     ...OrchestrationV2TurnItemBaseFields,
@@ -1867,7 +1877,7 @@ export const OrchestrationV2TurnItem = Schema.Union([
         scriptIcon: Schema.optional(ProjectScriptIcon),
         terminalId: Schema.String,
         worktreePath: Schema.String,
-        completionEvidence: Schema.optionalKey(Schema.Literal(1)),
+        completionEvidence: Schema.optionalKey(WorktreeSetupCompletionEvidence),
         /** Set, with status "idle", while a styal.json action waits for its command to be approved. */
         awaitingApproval: Schema.optional(
           Schema.Struct({ projectId: ProjectId, actionId: Schema.String }),
@@ -2747,7 +2757,7 @@ export const OrchestrationV2TurnItemJson = Schema.Union([
         scriptIcon: Schema.optional(ProjectScriptIcon),
         terminalId: Schema.String,
         worktreePath: Schema.String,
-        completionEvidence: Schema.optionalKey(Schema.Literal(1)),
+        completionEvidence: Schema.optionalKey(WorktreeSetupCompletionEvidence),
         /** Set, with status "idle", while a styal.json action waits for its command to be approved. */
         awaitingApproval: Schema.optional(
           Schema.Struct({ projectId: ProjectId, actionId: Schema.String }),

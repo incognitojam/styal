@@ -6485,7 +6485,7 @@ features:
       - Setup and settle terminal output remains inspectable after exit, and later toolbar actions start on the first click without reusing the finite session.
       - Approve and run resumes the waiting lifecycle row through the same finite-command runner, checks the current file approval on the destination environment, and retains output and exit status.
       - The settle action runs as one finite command in a single settle terminal per thread, restarted in place by later settlements; a settlement during a running settle action starts nothing, and a thread whose worktree is the project checkout skips it without a work-log row.
-      - After setup succeeds under this version, loss of styal-written .styal/setup-completed evidence reruns the same approved action once in a Git-validated linked worktree; older worktrees, changed actions, live installers, and failed attempts never automatically retry.
+      - After styal-run setup succeeds with version-2 checkout evidence, loss of .styal/setup-completed reruns the same approved action once in the same Git-validated linked checkout (device, inode, and Git admin directory); older or replaced worktrees, changed actions, live installers across all threads sharing the path, and failed attempts never automatically retry.
       - Recreating a managed worktree reruns approved setup before provider startup; a blocking failure or signal exit settles that start even when the effect worker would retry.
       - Workspace leases precede terminal thread locks; async setup completion observations are disposed independently of the startup wait.
       - Intake of terminal recovery from upstream PR 24156 must retain setup after recreation in its shared restoreMissingWorktree helper, including terminal-first recovery.
@@ -6499,6 +6499,7 @@ features:
       - apps/server/src/orchestration-v2/ProviderTurnStartService.ts
       - apps/server/src/orchestration-v2/ThreadSettlementService.ts
       - apps/server/src/project/ProjectSetupScriptRunner.ts
+      - apps/server/src/project/setupCompletionEvidence.ts
       - apps/web/src/components/ChatView.logic.ts
       - apps/web/src/components/ChatView.tsx
       - apps/web/src/components/PersistentThreadTerminals.tsx
@@ -6532,6 +6533,7 @@ features:
       - apps/mobile/src/lib/threadActivity.test.ts
       - apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts
       - apps/server/src/project/ProjectSetupScriptRunner.test.ts
+      - apps/server/src/project/setupCompletionEvidence.test.ts
       - apps/server/src/terminal/Manager.test.ts
       - apps/web/src/components/ChatView.logic.test.ts
       - apps/web/src/components/ThreadTerminalDrawer.test.ts

@@ -6,6 +6,8 @@ import * as NodePath from "node:path";
 import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
 import { assert, describe, it, vi } from "@effect/vitest";
 import { ProjectId, ThreadId, TurnItemId } from "@t3tools/contracts";
+import * as Deferred from "effect/Deferred";
+import * as Fiber from "effect/Fiber";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -39,7 +41,9 @@ const importer = LegacyImporter.layer.pipe(Layer.provide(Layer.mergeAll(stores, 
 it.effect(
   "recovers missing completion evidence once, binds it to the action, and retains failures",
   () => {
-    const root = NodeFS.mkdtempSync(NodePath.resolve(".scratch/setup-recovery-"));
+    const scratch = NodePath.resolve(import.meta.dirname, "../../../../.scratch");
+    NodeFS.mkdirSync(scratch, { recursive: true });
+    const root = NodeFS.mkdtempSync(NodePath.join(scratch, "setup-recovery-"));
     const repo = NodePath.join(root, "repo");
     const worktree = NodePath.join(root, "worktree");
     NodeFS.mkdirSync(repo);
@@ -59,9 +63,11 @@ it.effect(
     const listeners = new Set<
       Parameters<TerminalManager.TerminalManager["Service"]["subscribe"]>[0]
     >();
+    let beforeOpen = Effect.void;
     const openCommand = vi.fn(
       (input: Parameters<TerminalManager.TerminalManager["Service"]["openCommand"]>[0]) =>
         Effect.gen(function* () {
+          yield* beforeOpen;
           const snapshot = {
             threadId: input.threadId,
             terminalId: input.terminalId,
@@ -115,15 +121,17 @@ it.effect(
       updatedAt: "2026-06-20T00:00:00.000Z",
       deletedAt: null,
     };
+    const automationConfig = vi.fn(() => Effect.succeed(null));
+    const getProject = vi.fn(() => Effect.succeedSome(project));
     const dependencies = Layer.mergeAll(
       stores,
       sink,
       importer,
-      Layer.mock(ProjectService.ProjectService)({ getById: () => Effect.succeedSome(project) }),
+      Layer.mock(ProjectService.ProjectService)({ getById: getProject }),
       Layer.mock(TerminalManager.TerminalManager)({ openCommand, subscribe }),
       reservedPorts,
       Layer.mock(ProjectFileActionApprovals.ProjectFileActionApprovals)({
-        automationConfig: () => Effect.succeed(null),
+        automationConfig,
       }),
       ServerSettings.layerTest(),
     );
@@ -208,6 +216,40 @@ it.effect(
       assert.equal(completed?.status, "completed");
       assert.equal(completed?.type === "command_execution" && completed.exitCode, 0);
 
+      const otherThreadId = ThreadId.make("thread:shared-worktree");
+      yield* sql`INSERT INTO projection_threads (thread_id, project_id, title, runtime_mode, interaction_mode, created_at, updated_at)
+        VALUES (${otherThreadId}, ${projectId}, 'Shared', 'full-access', 'default', ${project.createdAt}, ${project.updatedAt})`;
+      yield* (yield* LegacyImporter.LegacyV1ThreadImporter).reconcileShells;
+      const otherSetup = yield* service.runForThread({
+        threadId: otherThreadId,
+        projectId,
+        worktreePath: worktree,
+        observeCompletion: {},
+      });
+      if (otherSetup.status !== "started") return assert.fail("shared setup did not start");
+      const exitOther = () =>
+        Effect.forEach(
+          [...listeners],
+          (listener) =>
+            listener({
+              type: "exited",
+              threadId: otherThreadId,
+              terminalId: otherSetup.terminalId,
+              exitCode: 0,
+              exitSignal: null,
+            }),
+          { discard: true },
+        );
+      yield* exitOther();
+      yield* otherSetup.completion!;
+      const recoverOther = () =>
+        service.runForThread({
+          threadId: otherThreadId,
+          projectId,
+          worktreePath: worktree,
+          recoverIfEvidenceMissing: true,
+          observeCompletion: {},
+        });
       const recover = () =>
         service.runForThread({
           threadId,
@@ -227,7 +269,11 @@ it.effect(
           "vp install",
         ),
       );
+      const projectReads = getProject.mock.calls.length;
+      const configReads = automationConfig.mock.calls.length;
       assert.equal((yield* recover()).status, "no-script");
+      assert.equal(getProject.mock.calls.length, projectReads);
+      assert.equal(automationConfig.mock.calls.length, configReads);
       NodeFS.rmSync(NodePath.join(worktree, ".styal/setup-completed"));
       NodeFS.writeFileSync(NodePath.join(worktree, ".styal/setup-failed"), "");
       assert.equal((yield* recover()).status, "no-script");
@@ -235,26 +281,41 @@ it.effect(
       NodeFS.writeFileSync(NodePath.join(worktree, ".styal/setup-running"), String(process.pid));
       assert.equal((yield* recover()).status, "no-script");
       NodeFS.rmSync(NodePath.join(worktree, ".styal/setup-running"));
-      const recovered = yield* recover();
+      const launchEntered = yield* Deferred.make<void>();
+      const releaseLaunch = yield* Deferred.make<void>();
+      beforeOpen = Deferred.succeed(launchEntered, undefined).pipe(
+        Effect.andThen(Deferred.await(releaseLaunch)),
+        Effect.asVoid,
+      );
+      const launching = yield* recover().pipe(Effect.forkChild);
+      yield* Deferred.await(launchEntered);
+      assert.equal((yield* recoverOther()).status, "no-script");
+      yield* Deferred.succeed(releaseLaunch, undefined);
+      const recovered = yield* Fiber.join(launching);
+      beforeOpen = Effect.void;
       assert.equal(recovered.status, "started");
       if (recovered.status !== "started") return;
       assert.equal((yield* recover()).status, "no-script");
-      yield* exit(recovered.terminalId, 0);
+      const releaseInstaller = yield* Deferred.make<void>();
+      const installer = yield* Deferred.await(releaseInstaller).pipe(
+        Effect.andThen(exit(recovered.terminalId, 0)),
+        Effect.forkChild,
+      );
+      assert.equal((yield* recoverOther()).status, "no-script");
+      yield* Deferred.succeed(releaseInstaller, undefined);
+      yield* Fiber.join(installer);
       yield* recovered.completion!;
+      NodeFS.rmSync(NodePath.join(worktree, ".styal/setup-completed"));
+      const otherRecovered = yield* recoverOther();
+      if (otherRecovered.status !== "started")
+        return assert.fail("shared recovery stayed suppressed after exit");
+      yield* exitOther();
+      yield* otherRecovered.completion!;
       assert.equal((yield* recover()).status, "no-script");
       project.scripts[0]!.command = "echo markerless";
       NodeFS.rmSync(NodePath.join(worktree, ".styal/setup-completed"));
       assert.equal((yield* recover()).status, "no-script");
-      const changed = yield* service.runForThread({
-        threadId,
-        projectId,
-        worktreePath: worktree,
-        observeCompletion: {},
-      });
-      if (changed.status !== "started") return assert.fail("manual setup did not start");
-      yield* exit(changed.terminalId, 0);
-      yield* changed.completion!;
-      assert.equal((yield* recover()).status, "no-script");
+      project.scripts[0]!.command = "vp install";
       for (const { exitCode, exitSignal } of [
         { exitCode: 2, exitSignal: null },
         { exitCode: 0, exitSignal: 15 },
@@ -280,6 +341,21 @@ it.effect(
         assert.equal((yield* recover()).status, "no-script");
         assert.equal((yield* recover()).status, "no-script");
       }
+      project.scripts[0]!.command = "vp install";
+      const evidenceRows = yield* sql<{
+        readonly payload_json: string;
+      }>`SELECT payload_json FROM orchestration_v2_projection_turn_items WHERE turn_item_id = ${`setup:${otherRecovered.runId}`}`;
+      const savedPayload = evidenceRows[0]!.payload_json;
+      for (const field of ["device", "inode", "gitDirectory"] as const) {
+        yield* sql`UPDATE orchestration_v2_projection_turn_items SET payload_json = json_set(${savedPayload}, ${`$.setupScript.completionEvidence.${field}`}, 'different-checkout') WHERE turn_item_id = ${`setup:${otherRecovered.runId}`}`;
+        assert.equal((yield* recoverOther()).status, "no-script");
+      }
+      yield* sql`UPDATE orchestration_v2_projection_turn_items SET payload_json = json_set(${savedPayload}, '$.setupScript.completionEvidence', 1) WHERE turn_item_id = ${`setup:${otherRecovered.runId}`}`;
+      assert.equal((yield* recoverOther()).status, "no-script");
+      yield* sql`UPDATE orchestration_v2_projection_turn_items SET payload_json = ${savedPayload} WHERE turn_item_id = ${`setup:${otherRecovered.runId}`}`;
+      git("worktree", "move", worktree, NodePath.join(root, "previous-worktree"));
+      git("worktree", "add", "-b", "replacement", worktree);
+      assert.equal((yield* recoverOther()).status, "no-script");
       const stopped = yield* service.runForThread({
         threadId,
         projectId,

@@ -5,12 +5,31 @@ import * as NodeUtil from "node:util";
 
 const exec = NodeUtil.promisify(NodeChildProcess.execFile);
 
-export async function isLinkedProjectWorktree(projectRoot: string, worktreePath: string) {
+function cleanGit() {
   const env = Object.fromEntries(
     Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")),
   );
-  const git = async (cwd: string, args: string[]) =>
-    (await exec("git", ["-C", cwd, ...args], { env })).stdout.trimEnd();
+  return async (cwd: string, args: string[]) =>
+    (await exec("git", ["-C", cwd, ...args], { env })).stdout.replace(/\n$/, "");
+}
+
+export async function readSetupCheckoutIdentity(worktreePath: string) {
+  try {
+    const git = cleanGit();
+    const root = await NodeFSP.stat(worktreePath, { bigint: true });
+    return {
+      version: 2 as const,
+      device: String(root.dev),
+      inode: String(root.ino),
+      gitDirectory: await git(worktreePath, ["rev-parse", "--absolute-git-dir"]),
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function isLinkedProjectWorktree(projectRoot: string, worktreePath: string) {
+  const git = cleanGit();
   try {
     const target = await NodeFSP.realpath(worktreePath);
     const project = await NodeFSP.realpath(projectRoot);

@@ -4,10 +4,12 @@ import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 import { expect, it, vi } from "vite-plus/test";
 
-import { isLinkedProjectWorktree } from "./setupCompletionEvidence.ts";
+import { isLinkedProjectWorktree, readSetupCheckoutIdentity } from "./setupCompletionEvidence.ts";
 
 it("accepts only linked worktrees of the project repository under a clean Git environment", async () => {
-  const root = NodeFS.mkdtempSync(NodePath.resolve(".scratch/setup-scope-"));
+  const scratch = NodePath.resolve(import.meta.dirname, "../../../../.scratch");
+  NodeFS.mkdirSync(scratch, { recursive: true });
+  const root = NodeFS.mkdtempSync(NodePath.join(scratch, "setup-scope-"));
   try {
     const main = NodePath.join(root, "main");
     const linked = NodePath.join(root, "linked");
@@ -29,11 +31,19 @@ it("accepts only linked worktrees of the project repository under a clean Git en
     git("worktree", "add", "-b", "feature", linked);
     NodeFS.symlinkSync(main, NodePath.join(root, "alias"));
     NodeFS.writeFileSync(NodePath.join(stale, ".git"), "gitdir: /missing/repository\n");
+    const gitDirectory = git("-C", linked, "rev-parse", "--absolute-git-dir").toString().trimEnd();
+    const rootStat = NodeFS.statSync(linked, { bigint: true });
     vi.stubEnv("GIT_DIR", NodePath.join(root, "git"));
     vi.stubEnv("GIT_WORK_TREE", main);
     vi.stubEnv("GIT_CONFIG_COUNT", "1");
     vi.stubEnv("GIT_CONFIG_KEY_0", "core.worktree");
     vi.stubEnv("GIT_CONFIG_VALUE_0", stale);
+    expect(await readSetupCheckoutIdentity(linked)).toEqual({
+      version: 2,
+      device: String(rootStat.dev),
+      inode: String(rootStat.ino),
+      gitDirectory,
+    });
     expect(await isLinkedProjectWorktree(main, linked)).toBe(true);
     expect(await isLinkedProjectWorktree(NodePath.join(root, "alias"), main)).toBe(false);
     expect(await isLinkedProjectWorktree(main, stale)).toBe(false);

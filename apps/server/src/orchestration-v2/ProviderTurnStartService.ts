@@ -707,7 +707,12 @@ export const layer: Layer.Layer<
         const exists = yield* fileSystem
           .exists(worktreePath)
           .pipe(Effect.orElseSucceed(() => true));
-        {
+        if (
+          !exists ||
+          !(yield* fileSystem
+            .exists(path.join(worktreePath, ".styal/setup-completed"))
+            .pipe(Effect.orElseSucceed(() => true)))
+        ) {
           const project = yield* projects.getById(projection.thread.projectId).pipe(
             Effect.map(Option.getOrUndefined),
             Effect.orElseSucceed(() => undefined),

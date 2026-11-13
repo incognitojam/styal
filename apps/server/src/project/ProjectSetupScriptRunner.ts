@@ -1,5 +1,5 @@
 import { isProcessAlive } from "../serverRuntimeState.ts";
-import { isLinkedProjectWorktree } from "./setupCompletionEvidence.ts";
+import { isLinkedProjectWorktree, readSetupCheckoutIdentity } from "./setupCompletionEvidence.ts";
 import {
   EventId,
   ProjectFileActionApprovalError,
@@ -9,6 +9,7 @@ import {
   ThreadId,
   TurnItemId,
   OrchestrationV2TurnItemJson,
+  WorktreeSetupCompletionEvidence,
   type ProjectScript,
 } from "@t3tools/contracts";
 import {
@@ -80,7 +81,7 @@ const SetupRunActivityPayload = Schema.Struct({
   command: Schema.String,
   terminalId: Schema.String,
   worktreePath: Schema.String,
-  completionEvidence: Schema.optionalKey(Schema.Literal(1)),
+  completionEvidence: Schema.optionalKey(WorktreeSetupCompletionEvidence),
   awaitingApproval: Schema.optionalKey(
     Schema.Struct({ projectId: ProjectId, actionId: Schema.String }),
   ),
@@ -418,6 +419,10 @@ export const make = Effect.gen(function* () {
     const completionEvidence =
       run.trigger === "setup" && succeeded
         ? yield* Effect.gen(function* () {
+            const identity = yield* Effect.tryPromise(() =>
+              readSetupCheckoutIdentity(run.worktreePath),
+            );
+            if (identity === null) return undefined;
             yield* fileSystem.makeDirectory(path.join(run.worktreePath, ".styal"), {
               recursive: true,
             });
@@ -425,7 +430,7 @@ export const make = Effect.gen(function* () {
               path.join(run.worktreePath, ".styal/setup-completed"),
               `${run.threadId}\n${run.scriptId}\n${run.command}`,
             );
-            return 1 as const;
+            return identity;
           }).pipe(Effect.orElseSucceed(() => undefined))
         : undefined;
     yield* appendActivity({
@@ -722,6 +727,13 @@ export const make = Effect.gen(function* () {
   const runForThread: ProjectSetupScriptRunner["Service"]["runForThread"] = Effect.fn(
     "ProjectSetupScriptRunner.runForThread",
   )(function* (input) {
+    if (
+      input.recoverIfEvidenceMissing &&
+      (yield* fileSystem
+        .exists(path.join(input.worktreePath, ".styal/setup-completed"))
+        .pipe(Effect.orElseSucceed(() => true)))
+    )
+      return { status: "no-script" } as const;
     const errorContext = {
       threadId: input.threadId,
       worktreePath: input.worktreePath,
@@ -848,6 +860,14 @@ export const make = Effect.gen(function* () {
 
     if (input.recoverIfEvidenceMissing) {
       const recover = yield* Effect.gen(function* () {
+        const active = yield* sql<{ readonly active: number }>`
+          SELECT 1 AS active FROM orchestration_v2_projection_turn_items
+          WHERE type = 'command_execution' AND status IN ('pending', 'running')
+            AND json_extract(payload_json, '$.setupScript.worktreePath') = ${input.worktreePath}
+            AND json_extract(payload_json, '$.setupScript.terminalId') LIKE 'setup-%'
+          LIMIT 1
+        `;
+        if (active.length > 0) return false;
         const rows = yield* sql<{ readonly payload_json: string }>`
           SELECT payload_json FROM orchestration_v2_projection_turn_items
           WHERE thread_id = ${input.threadId} AND type = 'command_execution'
@@ -859,10 +879,17 @@ export const make = Effect.gen(function* () {
         `;
         if (!rows[0]) return false;
         const previous = yield* decodeTurnItemJson(rows[0].payload_json);
+        if (previous.type !== "command_execution" || previous.status !== "completed") return false;
+        const evidence = previous.setupScript?.completionEvidence;
+        if (evidence === undefined || evidence === 1) return false;
+        const identity = yield* Effect.tryPromise(() =>
+          readSetupCheckoutIdentity(input.worktreePath),
+        );
         if (
-          previous.type !== "command_execution" ||
-          previous.status !== "completed" ||
-          previous.setupScript?.completionEvidence !== 1
+          identity === null ||
+          identity.device !== evidence.device ||
+          identity.inode !== evidence.inode ||
+          identity.gitDirectory !== evidence.gitDirectory
         )
           return false;
         const markerPath = (name: string) => path.join(input.worktreePath, ".styal", name);
