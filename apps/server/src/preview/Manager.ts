@@ -35,6 +35,7 @@ export class PreviewManager extends Context.Service<
     readonly open: (
       input: PreviewOpenInput & {
         readonly automationOwner?: string;
+        readonly terminalOpened?: boolean;
         readonly revealSurface?: PreviewSessionSnapshot["revealSurface"];
         /** Runs before the `opened` event publishes, so subscribers find state keyed by the tab. */
         readonly beforePublish?: (snapshot: PreviewSessionSnapshot) => void;
@@ -48,7 +49,11 @@ export class PreviewManager extends Context.Service<
       input: PreviewCloseInput & { readonly tabId: string },
     ) => Effect.Effect<void, PreviewError>;
     readonly requestReveal: (
-      input: PreviewCloseInput & { readonly tabId: string; readonly force: boolean },
+      input: PreviewCloseInput & {
+        readonly tabId: string;
+        readonly force: boolean;
+        readonly url?: string;
+      },
     ) => Effect.Effect<void, PreviewError>;
     readonly resize: (
       input: PreviewResizeInput,
@@ -193,6 +198,7 @@ export const make = Effect.gen(function* PreviewManagerMake() {
         ...(runtime === "server" && input.automationOwner !== undefined
           ? { automationOwner: input.automationOwner }
           : {}),
+        ...(input.terminalOpened ? { terminalOpened: true } : {}),
         ...(input.reveal === undefined ? {} : { reveal: input.reveal }),
         ...(input.revealSurface === undefined ? {} : { revealSurface: input.revealSurface }),
         updatedAt,
@@ -438,6 +444,7 @@ export const make = Effect.gen(function* PreviewManagerMake() {
           next: { ...session, snapshot },
           emit: {
             type: "navigated" as const,
+            ...(input.url === undefined ? {} : { navigateTo: yield* normalizeUrl(input.url) }),
             threadId: session.threadId,
             tabId: session.tabId,
             createdAt: snapshot.updatedAt,

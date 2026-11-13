@@ -1,4 +1,5 @@
 import { ThreadId, type PreviewError } from "@t3tools/contracts";
+import * as KeyedLock from "@t3tools/shared/KeyedLock";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
@@ -264,20 +265,46 @@ export const make = Effect.gen(function* TerminalBrowserOpenMake() {
     SynchronizedRef.get(state).pipe(Effect.map((current) => current.ownersByToken.get(token))),
   );
 
+  const openLocks = yield* KeyedLock.make<string>();
+
   // A link the user opens from a terminal is the user's tab, not an agent's:
   // it has no automation owner, so idle cleanup and agent tab limits leave it
   // alone, and it opens in the right panel rather than floating.
-  const openInPreview = Effect.fn("TerminalBrowserOpen.openInPreview")(function* (
-    input: TerminalBrowserOpenPreviewInput,
-  ) {
-    yield* previews.open({
-      threadId: ThreadId.make(input.owner.threadId),
-      url: input.url,
-      runtime: "server",
-      reveal: true,
-      revealSurface: "right-panel",
-    });
-  });
+  const openInPreview = Effect.fn("TerminalBrowserOpen.openInPreview")(
+    function* (input: TerminalBrowserOpenPreviewInput) {
+      const threadId = ThreadId.make(input.owner.threadId);
+      const { sessions } = yield* previews.list({ threadId });
+      const existing = sessions.find(
+        (session) =>
+          URL.canParse(input.url) &&
+          session.terminalOpened &&
+          session.automationOwner === undefined &&
+          session.runtime === "server" &&
+          session.navStatus._tag !== "Idle" &&
+          new URL(session.navStatus.url).origin === new URL(input.url).origin,
+      );
+      if (existing) {
+        yield* previews.requestReveal({
+          threadId,
+          tabId: existing.tabId,
+          force: true,
+          ...(existing.navStatus._tag !== "Idle" && existing.navStatus.url === input.url
+            ? {}
+            : { url: input.url }),
+        });
+        return;
+      }
+      yield* previews.open({
+        threadId,
+        terminalOpened: true,
+        url: input.url,
+        runtime: "server",
+        reveal: true,
+        revealSurface: "right-panel",
+      });
+    },
+    (effect, input) => openLocks.withLock(input.owner.threadId, effect),
+  );
 
   return TerminalBrowserOpen.of({ register, unregister, resolve, openInPreview });
 }).pipe(Effect.withSpan("TerminalBrowserOpen.make"));

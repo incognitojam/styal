@@ -11,6 +11,7 @@ import { ThreadId } from "@t3tools/contracts";
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as PubSub from "effect/PubSub";
 import * as FileSystem from "effect/FileSystem";
 
 import * as ServerConfig from "../config.ts";
@@ -97,6 +98,49 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("TerminalBrowserO
         revealSurface: "right-panel",
       });
       expect(sessions[0]?.automationOwner).toBeUndefined();
+
+      const events = yield* previews.subscribeEvents;
+      yield* browserOpen.openInPreview({ owner, url: "http://localhost:5173/updated?x=1" });
+      expect(yield* PubSub.take(events)).toMatchObject({
+        type: "navigated",
+        tabId: sessions[0]?.tabId,
+        navigateTo: "http://localhost:5173/updated?x=1",
+        snapshot: { revealRequest: { force: true }, terminalOpened: true },
+      });
+      yield* Effect.forEach(
+        [1, 2, 3, 4, 5],
+        () => browserOpen.openInPreview({ owner, url: "http://localhost:5173/concurrent" }),
+        { concurrency: "unbounded" },
+      );
+      const repeated = yield* previews.list({ threadId: owner.threadId });
+      expect(repeated.sessions).toHaveLength(1);
+      expect(repeated.sessions[0]?.tabId).toBe(sessions[0]?.tabId);
+      yield* browserOpen.openInPreview({ owner, url: "http://localhost:5174/other" });
+      expect((yield* previews.list({ threadId: owner.threadId })).sessions).toHaveLength(2);
+
+      const original = repeated.sessions[0]!;
+      yield* previews.reportStatus({
+        threadId: owner.threadId,
+        tabId: original.tabId,
+        navStatus: { _tag: "Success", url: "http://localhost:6000/manual", title: "Manual" },
+        canGoBack: true,
+        canGoForward: false,
+        serverControlled: true,
+      });
+      const manual = yield* previews.open({
+        threadId: owner.threadId,
+        runtime: "server",
+        url: "http://localhost:5173/manual",
+      });
+      yield* browserOpen.openInPreview({ owner, url: "http://localhost:5173/new" });
+      const final = yield* previews.list({ threadId: owner.threadId });
+      expect(final.sessions).toHaveLength(4);
+      expect(final.sessions.find((tab) => tab.tabId === original.tabId)?.navStatus).toMatchObject({
+        url: "http://localhost:6000/manual",
+      });
+      expect(final.sessions.find((tab) => tab.tabId === manual.tabId)?.navStatus).toMatchObject({
+        url: "http://localhost:5173/manual",
+      });
 
       yield* browserOpen.unregister(owner);
       expect(yield* browserOpen.resolve(secondToken ?? "")).toBeUndefined();

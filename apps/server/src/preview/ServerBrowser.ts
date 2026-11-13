@@ -2268,6 +2268,14 @@ const make = Effect.gen(function* () {
         closedSessions.delete(key);
         return;
       }
+      if (event.type === "navigated" && event.navigateTo !== undefined) {
+        const url = event.navigateTo;
+        await tab.control
+          .system(() => tab.page.goto(url, VIEWER_NAVIGATION_OPTIONS))
+          .catch((cause: unknown) =>
+            runFork(Effect.logWarning("server preview could not navigate", { cause })),
+          );
+      }
       if (event.type === "resized") {
         await tab.control
           .system(async () => {

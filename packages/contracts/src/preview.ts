@@ -164,6 +164,7 @@ export const PreviewSessionSnapshot = Schema.Struct({
   /** The server runs this tab in headless Chromium, so the desktop streams it like other clients. */
   headless: Schema.optional(Schema.Boolean),
   automationOwner: Schema.optional(Schema.String),
+  terminalOpened: Schema.optional(Schema.Boolean),
   reveal: Schema.optional(Schema.Boolean),
   revealRequest: Schema.optional(Schema.Struct({ id: Schema.String, force: Schema.Boolean })),
   /** The tab opens in the right panel whatever the floating-preview setting, as terminal links do. */
@@ -265,6 +266,7 @@ const PreviewNavigatedEvent = Schema.Struct({
   ...PreviewEventBaseSchema.fields,
   type: Schema.Literal("navigated"),
   snapshot: PreviewSessionSnapshot,
+  navigateTo: Schema.optional(Url),
 });
 
 const PreviewResizedEvent = Schema.Struct({
