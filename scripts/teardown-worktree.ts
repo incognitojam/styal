@@ -1,11 +1,24 @@
 // @effect-diagnostics nodeBuiltinImport:off globalConsole:off globalDate:off - a settle action must run even if the install is broken.
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
+import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeTimersPromises from "node:timers/promises";
 
+// Stripping is opt-in. Do not save --strip-regenerable in a settle action until reinstall-on-reopen exists.
+const gitEnv = () => ({
+  ...Object.fromEntries(
+    Object.entries(process.env).filter(([name]) => !name.toUpperCase().startsWith("GIT_")),
+  ),
+  GIT_CONFIG_NOSYSTEM: "1",
+  GIT_CONFIG_GLOBAL: NodeOS.devNull,
+});
+
 function git(worktree: string, args: ReadonlyArray<string>): string {
-  const result = NodeChildProcess.spawnSync("git", ["-C", worktree, ...args], { encoding: "utf8" });
+  const result = NodeChildProcess.spawnSync("git", ["-C", worktree, ...args], {
+    encoding: "utf8",
+    env: gitEnv(),
+  });
   if (result.status !== 0) throw new Error("Could not verify worktree with git.");
   return result.stdout.trim();
 }
@@ -21,6 +34,9 @@ function verifyWorktree(worktree: string): string {
     NodePath.resolve(root, git(root, ["rev-parse", "--git-common-dir"])),
   );
   if (gitDir === common) throw new Error("Refusing the main checkout.");
+  const registeredDotGit = NodeFS.readFileSync(NodePath.join(gitDir, "gitdir"), "utf8").trim();
+  if (NodeFS.realpathSync(registeredDotGit) !== NodeFS.realpathSync(NodePath.join(root, ".git")))
+    throw new Error("Target does not match its registered worktree metadata.");
   if (
     !root
       .split(NodePath.sep)
@@ -57,12 +73,25 @@ const REGENERABLE_PATHS = new Set([
   "dist-electron",
   "apps/desktop/dist-electron",
 ]);
-const protectedName = (name: string) =>
-  name === ".git" ||
-  name === ".repos" ||
-  name === ".scratch" ||
-  name.startsWith(".env") ||
-  name === "test-results";
+const normalizeName = (name: string) => name.normalize("NFKC").toLowerCase();
+const protectedName = (raw: string) => {
+  const name = normalizeName(raw);
+  return (
+    name === ".git" ||
+    name === ".repos" ||
+    name === ".scratch" ||
+    name.startsWith(".env") ||
+    name === "test-results"
+  );
+};
+const protectedRelative = (relative: string) => {
+  const normalized = relative.split(NodePath.sep).map(normalizeName).join("/");
+  return (
+    normalized === ".styal/userdata" ||
+    normalized.endsWith("/.styal/userdata") ||
+    normalized === ".styal/worktrees"
+  );
+};
 
 function safeTree(root: string, relative: string): boolean {
   if (!NodeFS.realpathSync(NodePath.join(root, relative)).startsWith(root + NodePath.sep))
@@ -71,13 +100,7 @@ function safeTree(root: string, relative: string): boolean {
   function visit(target: string): boolean {
     const absolute = NodePath.join(root, target);
     const stat = NodeFS.lstatSync(absolute);
-    if (
-      protectedName(NodePath.basename(target)) ||
-      target === ".styal/userdata" ||
-      target.endsWith("/.styal/userdata") ||
-      target === ".styal/worktrees"
-    )
-      return false;
+    if (protectedName(NodePath.basename(target)) || protectedRelative(target)) return false;
     try {
       const resolved = stat.isSymbolicLink()
         ? NodeFS.realpathSync(absolute)
@@ -95,6 +118,7 @@ function safeTree(root: string, relative: string): boolean {
   if (!visit(relative)) return false;
   const result = NodeChildProcess.spawnSync("git", ["-C", root, "check-ignore", "--stdin", "-z"], {
     encoding: "utf8",
+    env: gitEnv(),
     input: paths.join("\0") + "\0",
     maxBuffer: 64 * 1024 * 1024,
   });
@@ -112,6 +136,14 @@ function sizeOf(absolute: string): number {
     : stat.size;
 }
 
+function hasPackageManifest(directory: string): boolean {
+  try {
+    return NodeFS.lstatSync(NodePath.join(directory, "package.json")).isFile();
+  } catch {
+    return false;
+  }
+}
+
 function selectRegenerable(root: string): Array<{ path: string; bytes: number }> {
   const selected: Array<{ path: string; bytes: number }> = [];
   function visit(relative: string) {
@@ -120,16 +152,18 @@ function selectRegenerable(root: string): Array<{ path: string; bytes: number }>
     if (
       stat.isSymbolicLink() ||
       protectedName(NodePath.basename(relative)) ||
-      relative === ".styal/userdata" ||
-      relative.endsWith("/.styal/userdata") ||
-      relative === ".styal/worktrees"
+      protectedRelative(relative)
     )
       return;
     if (stat.isDirectory() && relative !== "" && NodeFS.existsSync(NodePath.join(absolute, ".git")))
       return;
     const candidate =
       REGENERABLE_PATHS.has(relative) ||
-      (stat.isDirectory() && REGENERABLE_DIRECTORIES.has(NodePath.basename(relative))) ||
+      (stat.isDirectory() &&
+        REGENERABLE_DIRECTORIES.has(NodePath.basename(relative)) &&
+        (NodePath.basename(relative) === "node_modules" ||
+          (NodeFS.lstatSync(NodePath.dirname(absolute)).isDirectory() &&
+            hasPackageManifest(NodePath.dirname(absolute))))) ||
       (stat.isFile() && relative.endsWith(".tsbuildinfo"));
     if (candidate) {
       if (safeTree(root, relative)) selected.push({ path: relative, bytes: sizeOf(absolute) });
@@ -269,10 +303,11 @@ export async function teardownWorktree(input: {
   readonly worktree: string;
   readonly workspacePort: number | undefined;
   readonly dryRun?: boolean;
+  readonly stripRegenerable?: boolean;
 }): Promise<void> {
   const root = verifyWorktree(input.worktree);
-  const dryRun = input.dryRun === true;
-  if (!dryRun) await stopDevServers(root, input.workspacePort);
+  const dryRun = input.dryRun === true || input.stripRegenerable !== true;
+  if (input.dryRun !== true) await stopDevServers(root, input.workspacePort);
   const userdata = NodePath.join(root, ".styal/userdata");
   console.log(
     `[teardown] keeping .styal/userdata: ${NodeFS.existsSync(userdata) ? sizeOf(userdata) : 0} bytes`,
@@ -280,17 +315,53 @@ export async function teardownWorktree(input: {
   const selected = selectRegenerable(root);
   let bytes = 0;
   let count = 0;
-  for (const entry of selected) {
-    if (!dryRun) {
-      if (!safeTree(root, entry.path))
-        throw new Error("Cleanup candidate changed; refusing deletion.");
-      NodeFS.rmSync(NodePath.join(root, entry.path), { recursive: true });
+  const removed: Array<string> = [];
+  function remove(relative: string) {
+    const absolute = NodePath.join(root, relative);
+    const stat = NodeFS.lstatSync(absolute);
+    if (stat.isDirectory() && !stat.isSymbolicLink()) {
+      for (const name of NodeFS.readdirSync(absolute)) remove(NodePath.join(relative, name));
+      NodeFS.rmdirSync(absolute);
+    } else {
+      NodeFS.unlinkSync(absolute);
+      bytes += stat.isSymbolicLink() ? 0 : stat.size;
     }
-    bytes += entry.bytes;
-    count++;
-    console.log(
-      `[teardown] ${dryRun ? "would remove" : "removed"} ${entry.path}: ${entry.bytes} bytes`,
+    removed.push(relative);
+  }
+  try {
+    for (const entry of selected) {
+      if (!dryRun) {
+        if (!safeTree(root, entry.path))
+          throw new Error("Cleanup candidate changed; refusing deletion.");
+        remove(entry.path);
+      } else bytes += entry.bytes;
+      count++;
+      console.log(
+        `[teardown] ${dryRun ? "would remove" : "removed"} ${entry.path}: ${entry.bytes} bytes`,
+      );
+    }
+  } catch (cause) {
+    console.error(
+      `[teardown] removed before failure: ${JSON.stringify(removed)}; ${bytes} logical bytes`,
     );
+    function remaining(relative: string): Array<string> {
+      const absolute = NodePath.join(root, relative);
+      let stat;
+      try {
+        stat = NodeFS.lstatSync(absolute);
+      } catch {
+        return [];
+      }
+      if (!stat.isDirectory() || stat.isSymbolicLink()) return [relative];
+      return [
+        relative,
+        ...NodeFS.readdirSync(absolute).flatMap((name) => remaining(NodePath.join(relative, name))),
+      ];
+    }
+    console.error(
+      `[teardown] not deleted: ${JSON.stringify(selected.flatMap((entry) => remaining(entry.path)))}`,
+    );
+    throw cause;
   }
   console.log(
     `[teardown] ${dryRun ? "dry run: would remove" : "removed"} ${count} paths, ${bytes} bytes ${dryRun ? "reclaimable" : "freed (logical size)"}`,
@@ -299,7 +370,8 @@ export async function teardownWorktree(input: {
 
 if (import.meta.main) {
   const args = process.argv.slice(2);
-  if (args.some((arg) => arg !== "--dry-run")) throw new Error("Only --dry-run is supported.");
+  if (args.some((arg) => arg !== "--dry-run" && arg !== "--strip-regenerable"))
+    throw new Error("Only --dry-run and --strip-regenerable are supported.");
   const dryRun = args.includes("--dry-run");
   const target = resolveTeardownTarget(
     dryRun ? { ...process.env, STYAL_WORKTREE_PATH: process.cwd() } : process.env,
@@ -311,6 +383,10 @@ if (import.meta.main) {
     );
     process.exitCode = 1;
   } else {
-    await teardownWorktree({ ...target, dryRun });
+    await teardownWorktree({
+      ...target,
+      dryRun,
+      stripRegenerable: args.includes("--strip-regenerable"),
+    });
   }
 }

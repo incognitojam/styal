@@ -42,6 +42,7 @@ const fixture = () => {
     NodePath.join(worktree, ".gitignore"),
     ".styal/\nnode_modules/\nbuild/\n.turbo/\n*.tsbuildinfo\n.scratch/\n.env*\ntest-results/\n",
   );
+  NodeFS.writeFileSync(NodePath.join(worktree, "package.json"), "{}");
   const cwd = vi.spyOn(process, "cwd").mockReturnValue(worktree);
   onTestFinished(() => cwd.mockRestore());
   return { worktree, main, git };
@@ -92,7 +93,7 @@ describe("teardownWorktree", () => {
     const outside = await startListener(elsewhere, workspacePort + 1);
     const insideExit = NodeEvents.EventEmitter.once(inside, "exit");
 
-    await teardownWorktree({ worktree, workspacePort });
+    await teardownWorktree({ worktree, workspacePort, stripRegenerable: true });
 
     await insideExit;
     assert.strictEqual(outside.exitCode, null);
@@ -132,7 +133,7 @@ describe("teardownWorktree registered runners", () => {
     }
     const runnerExit = NodeEvents.EventEmitter.once(runner, "exit");
 
-    await teardownWorktree({ worktree, workspacePort: undefined });
+    await teardownWorktree({ worktree, workspacePort: undefined, stripRegenerable: true });
 
     await runnerExit;
     assert.strictEqual(reused.exitCode, null);
@@ -164,7 +165,7 @@ describe("teardownWorktree process groups", () => {
     NodeFS.writeFileSync(NodePath.join(runners, String(runner.pid)), "");
     const groupGone = NodeEvents.EventEmitter.once(runner.stdout, "close");
 
-    await teardownWorktree({ worktree, workspacePort: await freePort() });
+    await teardownWorktree({ worktree, workspacePort: await freePort(), stripRegenerable: true });
 
     await groupGone;
   });
@@ -250,7 +251,7 @@ it("selects only listed ignored paths, preserving work, links and nested checkou
   for (const entry of cases)
     assert.isTrue(NodeFS.existsSync(NodePath.join(worktree, entry.path)), entry.path);
 
-  await teardownWorktree({ worktree, workspacePort: undefined });
+  await teardownWorktree({ worktree, workspacePort: undefined, stripRegenerable: true });
   // A protected file or symlink keeps its entire enclosing candidate intact.
   for (const entry of cases) {
     assert.equal(
@@ -273,4 +274,105 @@ it("refuses the main checkout even under a styal worktrees directory", async () 
   await expect(
     teardownWorktree({ worktree: main, workspacePort: undefined, dryRun: true }),
   ).rejects.toThrow(/main checkout/);
+});
+
+it("uses the target index despite inherited Git overrides, and refuses fake and main roots", async () => {
+  const { worktree, main, git } = fixture();
+  NodeFS.writeFileSync(NodePath.join(worktree, "package.json"), "{}");
+  NodeFS.appendFileSync(NodePath.join(worktree, ".gitignore"), "dist/\n");
+  NodeFS.mkdirSync(NodePath.join(worktree, "dist"));
+  NodeFS.writeFileSync(NodePath.join(worktree, "dist/source.ts"), "synthetic source");
+  git(worktree, ["add", "-f", "dist/source.ts"]);
+  const sibling = NodePath.join(main, "../other");
+  git(main, ["worktree", "add", "--detach", sibling]);
+  const siblingGitDir = NodeChildProcess.spawnSync(
+    "git",
+    ["-C", sibling, "rev-parse", "--absolute-git-dir"],
+    { encoding: "utf8" },
+  ).stdout.trim();
+  vi.stubEnv("GIT_DIR", siblingGitDir);
+  vi.stubEnv("GIT_WORK_TREE", worktree);
+  vi.stubEnv("GIT_INDEX_FILE", NodePath.join(siblingGitDir, "index"));
+  vi.stubEnv("GIT_CONFIG_COUNT", "1");
+  vi.stubEnv("GIT_CONFIG_KEY_0", "core.excludesFile");
+  vi.stubEnv("GIT_CONFIG_VALUE_0", NodePath.join(main, "ignore"));
+  NodeFS.writeFileSync(NodePath.join(main, "ignore"), "*\n");
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+  });
+
+  await teardownWorktree({ worktree, workspacePort: undefined, stripRegenerable: true });
+  assert.isTrue(NodeFS.existsSync(NodePath.join(worktree, "dist/source.ts")));
+  const fake = NodePath.join(main, "../fake");
+  NodeFS.mkdirSync(fake);
+  const cwd = vi.spyOn(process, "cwd");
+  onTestFinished(() => cwd.mockRestore());
+  for (const target of [main, fake]) {
+    cwd.mockReturnValue(target);
+    vi.stubEnv("GIT_WORK_TREE", target);
+    await expect(
+      teardownWorktree({ worktree: target, workspacePort: undefined, stripRegenerable: true }),
+    ).rejects.toThrow();
+  }
+});
+
+it("preserves case variants of protected work and source directories without package manifests", async () => {
+  const { worktree, git } = fixture();
+  git(worktree, ["config", "core.ignorecase", "true"]);
+  NodeFS.appendFileSync(NodePath.join(worktree, ".gitignore"), "dist/\ncoverage/\n");
+  const paths = [
+    ".SCRATCH/build/source",
+    ".SCRATCH/dist/source",
+    ".ＳＣＲＡＴＣＨ/node_modules/source",
+    "test-RESULTS/dist/source",
+    ".STYAL/USERDATA/build/source",
+    "plain/build/ignored-source",
+    "plain/dist/ignored-source",
+    "plain/coverage/source",
+  ];
+  for (const relative of paths) {
+    const target = NodePath.join(worktree, relative);
+    NodeFS.mkdirSync(NodePath.dirname(target), { recursive: true });
+    NodeFS.writeFileSync(target, "synthetic source");
+    NodeFS.writeFileSync(NodePath.join(NodePath.dirname(target), "package.json"), "{}");
+  }
+  await teardownWorktree({ worktree, workspacePort: undefined, stripRegenerable: true });
+  for (const relative of paths)
+    assert.isTrue(NodeFS.existsSync(NodePath.join(worktree, relative)), relative);
+});
+
+it("reports eligible files without stripping unless explicitly opted in", async () => {
+  const { worktree } = fixture();
+  NodeFS.mkdirSync(NodePath.join(worktree, "node_modules"));
+  NodeFS.mkdirSync(NodePath.join(worktree, ".styal"));
+  NodeFS.writeFileSync(NodePath.join(worktree, "node_modules/file"), "synthetic");
+  NodeFS.writeFileSync(NodePath.join(worktree, ".styal/setup-done"), "");
+  await teardownWorktree({ worktree, workspacePort: undefined });
+  assert.isTrue(NodeFS.existsSync(NodePath.join(worktree, "node_modules/file")));
+  assert.isTrue(NodeFS.existsSync(NodePath.join(worktree, ".styal/setup-done")));
+});
+
+it("reports partial deletion precisely and leaves a failed strip retryable", async () => {
+  const { worktree } = fixture();
+  const readonly = NodePath.join(worktree, "build/readonly");
+  NodeFS.mkdirSync(readonly, { recursive: true });
+  NodeFS.mkdirSync(NodePath.join(worktree, ".styal"));
+  NodeFS.writeFileSync(NodePath.join(worktree, ".styal/setup-done"), "");
+  NodeFS.writeFileSync(NodePath.join(readonly, "file"), "synthetic");
+  NodeFS.chmodSync(readonly, 0o555);
+  onTestFinished(() => {
+    if (NodeFS.existsSync(readonly)) NodeFS.chmodSync(readonly, 0o755);
+  });
+  const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+  onTestFinished(() => errors.mockRestore());
+  await expect(
+    teardownWorktree({ worktree, workspacePort: undefined, stripRegenerable: true }),
+  ).rejects.toThrow();
+  assert.isFalse(NodeFS.existsSync(NodePath.join(worktree, ".styal/setup-done")));
+  assert.isTrue(NodeFS.existsSync(NodePath.join(readonly, "file")));
+  assert.include(String(errors.mock.calls[0]), ".styal/setup-done");
+  assert.include(String(errors.mock.calls[1]), "build/readonly/file");
+  NodeFS.chmodSync(readonly, 0o755);
+  await teardownWorktree({ worktree, workspacePort: undefined, stripRegenerable: true });
+  assert.isFalse(NodeFS.existsSync(NodePath.join(worktree, "build")));
 });
