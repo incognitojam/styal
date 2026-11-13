@@ -1,3 +1,4 @@
+import { recordSetupAttempts } from "../project/WorktreeSetupState.ts";
 import {
   CommandId,
   type OrchestrationV2Run,
@@ -389,6 +390,9 @@ const layerBase: Layer.Layer<
         yield* Effect.forEach(storedEvents, (stored) => projectionStore.apply(stored.event), {
           concurrency: 1,
         });
+        yield* recordSetupAttempts(storedEvents).pipe(
+          Effect.provideService(SqlClient.SqlClient, sql),
+        );
         yield* enqueueThreadReportChecks(storedEvents);
         const sequence = storedEvents.at(-1)?.sequence;
         if (sequence !== undefined) {

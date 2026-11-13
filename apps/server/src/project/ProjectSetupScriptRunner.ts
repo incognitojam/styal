@@ -242,7 +242,13 @@ export class ProjectSetupScriptOperationError extends Schema.TaggedError<Project
     projectId: Schema.optional(Schema.String),
     projectCwd: Schema.optional(Schema.String),
     worktreePath: Schema.String,
-    operation: Schema.Literals(["readThread", "resolveProject", "readSettings", "openTerminal"]),
+    operation: Schema.Literals([
+      "readThread",
+      "resolveProject",
+      "readSettings",
+      "openTerminal",
+      "recordSetup",
+    ]),
     cause: Schema.Defect(),
   },
 ) {
@@ -863,40 +869,37 @@ export const make = Effect.gen(function* () {
 
     if (input.recoverIfEvidenceMissing) {
       const recover = yield* Effect.gen(function* () {
-        const worktreeKey = yield* fileSystem.realPath(input.worktreePath);
-        // Request sequence orders attempts across threads; later completion updates must not reorder them.
-        const rows = yield* sql<{ readonly payload_json: string }>`
-          SELECT payload_json FROM orchestration_v2_projection_turn_items
-          WHERE turn_item_id = (
-            SELECT json_extract(payload_json, '$.id') FROM orchestration_events
-              INDEXED BY idx_orchestration_events_setup_worktree_request
-            WHERE application_event_version = 2 AND aggregate_kind = 'thread'
-              AND event_type = 'turn-item.updated'
-              AND json_extract(payload_json, '$.status') = 'pending'
-              AND substr(json_extract(payload_json, '$.setupScript.terminalId'), 1, 6) = 'setup-'
-              AND json_extract(payload_json, '$.setupScript.worktreePath') = ${worktreeKey}
-            ORDER BY sequence DESC LIMIT 1
-          )
-        `;
-        if (!rows[0]) return false;
-        const previous = yield* decodeTurnItemJson(rows[0].payload_json);
+        const worktreeKey = yield* fileSystem
+          .realPath(input.worktreePath)
+          .pipe(Effect.orElseSucceed(() => undefined));
+        if (worktreeKey === undefined) return false;
+        const rows = yield* sql<{
+          readonly status: string;
+          readonly action_id: string;
+          readonly command: string;
+          readonly evidence_version: number | null;
+          readonly device: string | null;
+          readonly inode: string | null;
+          readonly git_directory: string | null;
+        }>`SELECT status, action_id, command, evidence_version, device, inode, git_directory
+          FROM worktree_setup_state WHERE worktree_path = ${worktreeKey}`;
+        const previous = rows[0];
         if (
-          previous.type !== "command_execution" ||
-          previous.status !== "completed" ||
-          previous.setupScript?.scriptId !== script.id ||
-          previous.input !== script.command
+          previous === undefined ||
+          previous.status !== "succeeded" ||
+          previous.action_id !== script.id ||
+          previous.command !== script.command ||
+          previous.evidence_version !== 2
         )
           return false;
-        const evidence = previous.setupScript?.completionEvidence;
-        if (evidence === undefined || evidence === 1) return false;
         const identity = yield* Effect.tryPromise(() =>
           readSetupCheckoutIdentity(input.worktreePath),
         );
         if (
           identity === null ||
-          identity.device !== evidence.device ||
-          identity.inode !== evidence.inode ||
-          identity.gitDirectory !== evidence.gitDirectory
+          identity.device !== previous.device ||
+          identity.inode !== previous.inode ||
+          identity.gitDirectory !== previous.git_directory
         )
           return false;
         const markerPath = (name: string) => path.join(input.worktreePath, ".styal", name);
@@ -913,7 +916,16 @@ export const make = Effect.gen(function* () {
         return yield* Effect.tryPromise(() =>
           isLinkedProjectWorktree(project.workspaceRoot, input.worktreePath),
         );
-      }).pipe(Effect.orElseSucceed(() => false));
+      }).pipe(
+        Effect.mapError(
+          (cause) =>
+            new ProjectSetupScriptOperationError({
+              ...errorContext,
+              operation: "recordSetup",
+              cause,
+            }),
+        ),
+      );
       if (!recover) return { status: "no-script" } as const;
     }
 
@@ -1037,7 +1049,23 @@ export const make = Effect.gen(function* () {
         terminalId,
         worktreePath: input.worktreePath,
       },
-    }).pipe(Effect.ignoreCause({ log: true }));
+    }).pipe(
+      Effect.tapError(() =>
+        SynchronizedRef.update(activeRunsRef, (runs) => {
+          const next = new Map(runs);
+          next.delete(terminalKey(input.threadId, terminalId));
+          return next;
+        }),
+      ),
+      Effect.mapError(
+        (cause) =>
+          new ProjectSetupScriptOperationError({
+            ...errorContext,
+            operation: "recordSetup",
+            cause,
+          }),
+      ),
+    );
 
     // Subscribe before opening so an exit during the open cannot be missed.
     const observed = input.observeCompletion

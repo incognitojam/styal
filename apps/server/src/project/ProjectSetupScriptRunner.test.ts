@@ -5,7 +5,11 @@ import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
 import { assert, describe, it, vi } from "@effect/vitest";
-import { ProjectId, ThreadId, TurnItemId } from "@t3tools/contracts";
+import { EventId, ProjectId, ThreadId, TurnItemId } from "@t3tools/contracts";
+import * as ConfigProvider from "effect/ConfigProvider";
+import * as TestClock from "effect/testing/TestClock";
+import * as ProjectionMaintenance from "../orchestration-v2/ProjectionMaintenance.ts";
+import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Fiber from "effect/Fiber";
 import * as Effect from "effect/Effect";
@@ -129,6 +133,7 @@ it.effect(
       stores,
       sink,
       importer,
+      ProjectionMaintenance.layer.pipe(Layer.provide(stores)),
       Layer.mock(ProjectService.ProjectService)({ getById: getProject }),
       Layer.mock(TerminalManager.TerminalManager)({ openCommand, subscribe }),
       reservedPorts,
@@ -151,6 +156,42 @@ it.effect(
       yield* (yield* LegacyImporter.LegacyV1ThreadImporter).reconcileShells;
       const service = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
       const projections = yield* ProjectionStore.ProjectionStoreV2;
+      const state = () =>
+        sql<{
+          readonly turn_item_id: string;
+          readonly thread_id: string;
+          readonly action_id: string;
+          readonly command: string;
+          readonly status: string;
+          readonly evidence_version: number | null;
+          readonly device: string | null;
+          readonly inode: string | null;
+          readonly git_directory: string | null;
+          readonly request_sequence: number;
+        }>`SELECT * FROM worktree_setup_state WHERE worktree_path = ${NodeFS.realpathSync(worktree)}`;
+      const assertState = (owner: ThreadId, runId: string, expected: string) =>
+        Effect.gen(function* () {
+          const row = (yield* state())[0]!;
+          const item = (yield* projections.getThreadProjection(owner)).turnItems.find(
+            (item) => item.type === "command_execution" && item.setupScript?.runId === runId,
+          );
+          assert.equal(row.turn_item_id, item?.id);
+          assert.equal(row.thread_id, owner);
+          assert.equal(row.status, expected);
+          assert.equal(
+            item?.status === "completed"
+              ? "succeeded"
+              : item?.status === "running"
+                ? "pending"
+                : item?.status,
+            expected,
+          );
+          const request = yield* sql<{
+            readonly sequence: number;
+          }>`SELECT sequence FROM orchestration_events WHERE event_id = ${`setup:${runId}:setup-script.requested`}`;
+          if (request[0]) assert.equal(row.request_sequence, request[0].sequence);
+        });
+      assert.deepEqual(yield* state(), []);
       const output: string[] = [];
       assert.equal(
         (yield* service.runForThread({
@@ -174,6 +215,7 @@ it.effect(
       });
       assert.equal(result.status, "started");
       if (result.status !== "started") return;
+      yield* assertState(threadId, result.runId, "pending");
       assert.equal(result.scriptName, "Install dependencies");
       assert.equal(openCommand.mock.calls[0]?.[0].command, "vp install");
       assert.deepEqual(openCommand.mock.calls[0]?.[0].env, {
@@ -217,6 +259,30 @@ it.effect(
       );
       assert.equal(completed?.status, "completed");
       assert.equal(completed?.type === "command_execution" && completed.exitCode, 0);
+      yield* assertState(threadId, result.runId, "succeeded");
+      const beforeRejected = yield* state();
+      const beforeEvents = yield* sql`SELECT COUNT(*) AS count FROM orchestration_events`;
+      const beforeProjections =
+        yield* sql`SELECT COUNT(*) AS count FROM orchestration_v2_projection_turn_items`;
+      const beforeCommands = openCommand.mock.calls.length;
+      yield* sql`CREATE TRIGGER reject_setup_state BEFORE INSERT ON worktree_setup_state BEGIN SELECT RAISE(ABORT, 'synthetic state write failure'); END`;
+      assert.equal(
+        (yield* service
+          .runForThread({ threadId, projectId, worktreePath: worktree })
+          .pipe(Effect.result))._tag,
+        "Failure",
+      );
+      assert.deepEqual(yield* state(), beforeRejected);
+      assert.deepEqual(
+        yield* sql`SELECT COUNT(*) AS count FROM orchestration_events`,
+        beforeEvents,
+      );
+      assert.deepEqual(
+        yield* sql`SELECT COUNT(*) AS count FROM orchestration_v2_projection_turn_items`,
+        beforeProjections,
+      );
+      assert.equal(openCommand.mock.calls.length, beforeCommands);
+      yield* sql`DROP TRIGGER reject_setup_state`;
 
       const otherThreadId = ThreadId.make("thread:shared-worktree");
       yield* sql`INSERT INTO projection_threads (thread_id, project_id, title, runtime_mode, interaction_mode, created_at, updated_at)
@@ -251,6 +317,22 @@ it.effect(
         aliasSetup?.type === "command_execution" && aliasSetup.setupScript?.worktreePath,
         NodeFS.realpathSync(worktree),
       );
+      const preservedState = yield* state();
+      const pruning = Layer.mergeAll(
+        ConfigProvider.layer(ConfigProvider.fromEnv({ env: { T3CODE_EVENT_PRUNING: "1" } })),
+      );
+      const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
+      yield* maintenance.pruneEventStore().pipe(Effect.provide(pruning));
+      yield* TestClock.adjust("1 day");
+      assert.isAbove(
+        (yield* maintenance.pruneEventStore().pipe(Effect.provide(pruning))).deletedEventCount,
+        0,
+      );
+      assert.deepEqual(
+        yield* sql`SELECT event_id FROM orchestration_events WHERE event_id = ${`setup:${otherSetup.runId}:setup-script.requested`}`,
+        [],
+      );
+      assert.deepEqual(yield* state(), preservedState);
       const recoverOther = () =>
         service.runForThread({
           threadId: otherThreadId,
@@ -305,6 +387,20 @@ it.effect(
       assert.equal(recovered.status, "started");
       if (recovered.status !== "started") return;
       assert.equal((yield* recover()).status, "no-script");
+      if (aliasSetup?.type !== "command_execution")
+        return assert.fail("initial sharing setup row missing");
+      yield* (yield* EventSink.EventSinkV2).write({
+        events: [
+          {
+            id: EventId.make("late-setup-outcome"),
+            type: "turn-item.updated",
+            threadId: otherThreadId,
+            occurredAt: yield* DateTime.now,
+            payload: aliasSetup,
+          },
+        ],
+      });
+      yield* assertState(threadId, recovered.runId, "pending");
       const releaseInstaller = yield* Deferred.make<void>();
       const installer = yield* Deferred.await(releaseInstaller).pipe(
         Effect.andThen(exit(recovered.terminalId, 0)),
@@ -325,18 +421,18 @@ it.effect(
       NodeFS.rmSync(NodePath.join(worktree, ".styal/setup-completed"));
       assert.equal((yield* recover()).status, "no-script");
       project.scripts[0]!.command = "vp install";
-      project.scripts[0]!.command = "vp install";
-      const evidenceRows = yield* sql<{
-        readonly payload_json: string;
-      }>`SELECT payload_json FROM orchestration_v2_projection_turn_items WHERE turn_item_id = ${`setup:${otherRecovered.runId}`}`;
-      const savedPayload = evidenceRows[0]!.payload_json;
-      for (const field of ["device", "inode", "gitDirectory"] as const) {
-        yield* sql`UPDATE orchestration_v2_projection_turn_items SET payload_json = json_set(${savedPayload}, ${`$.setupScript.completionEvidence.${field}`}, 'different-checkout') WHERE turn_item_id = ${`setup:${otherRecovered.runId}`}`;
+      const savedState = (yield* state())[0]!;
+      for (const field of ["device", "inode", "git_directory"] as const) {
+        yield* sql.unsafe(`UPDATE worktree_setup_state SET ${field} = ? WHERE worktree_path = ?`, [
+          "different-checkout",
+          NodeFS.realpathSync(worktree),
+        ]);
         assert.equal((yield* recoverOther()).status, "no-script");
+        yield* sql`UPDATE worktree_setup_state SET device = ${savedState.device}, inode = ${savedState.inode}, git_directory = ${savedState.git_directory} WHERE worktree_path = ${worktree}`;
       }
-      yield* sql`UPDATE orchestration_v2_projection_turn_items SET payload_json = json_set(${savedPayload}, '$.setupScript.completionEvidence', 1) WHERE turn_item_id = ${`setup:${otherRecovered.runId}`}`;
+      yield* sql`UPDATE worktree_setup_state SET evidence_version = 1 WHERE worktree_path = ${worktree}`;
       assert.equal((yield* recoverOther()).status, "no-script");
-      yield* sql`UPDATE orchestration_v2_projection_turn_items SET payload_json = ${savedPayload} WHERE turn_item_id = ${`setup:${otherRecovered.runId}`}`;
+      yield* sql`UPDATE worktree_setup_state SET evidence_version = 2 WHERE worktree_path = ${worktree}`;
       git("worktree", "move", worktree, NodePath.join(root, "previous-worktree"));
       git("worktree", "add", "-b", "replacement", worktree);
       assert.equal((yield* recoverOther()).status, "no-script");
@@ -370,6 +466,7 @@ it.effect(
           (item) => item.type === "command_execution" && item.setupScript?.runId === failed.runId,
         );
         assert.equal(failure?.status, "failed");
+        yield* assertState(threadId, failed.runId, "failed");
         assert.equal(failure?.type === "command_execution" && failure.exitCode, exitCode);
         assert.equal((yield* recover()).status, "no-script");
         assert.equal((yield* recoverOther()).status, "no-script");
@@ -388,6 +485,7 @@ it.effect(
         (item) => item.type === "command_execution" && item.setupScript?.runId === stopped.runId,
       );
       assert.equal(interrupted?.status, "interrupted");
+      yield* assertState(threadId, stopped.runId, "interrupted");
       const guarded = yield* service.runForThread({
         threadId,
         projectId,
@@ -447,6 +545,17 @@ it.effect(
         ),
       );
       yield* Deferred.await(persistedInterruption);
+      yield* assertState(threadId, beforeRestart.runId, "interrupted");
+      const blockedState = yield* state();
+      yield* TestClock.adjust("1 day");
+      yield* maintenance.pruneEventStore().pipe(Effect.provide(pruning));
+      yield* TestClock.adjust("1 day");
+      yield* maintenance.pruneEventStore().pipe(Effect.provide(pruning));
+      assert.deepEqual(
+        yield* sql`SELECT event_id FROM orchestration_events WHERE event_id = ${`setup:${beforeRestart.runId}:setup-script.requested`}`,
+        [],
+      );
+      assert.deepEqual(yield* state(), blockedState);
       const launchesBeforeRetry = openCommand.mock.calls.length;
       for (const owner of [otherThreadId, threadId]) {
         assert.equal(

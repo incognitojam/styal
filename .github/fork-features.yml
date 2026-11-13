@@ -6485,7 +6485,7 @@ features:
       - Setup and settle terminal output remains inspectable after exit, and later toolbar actions start on the first click without reusing the finite session.
       - Approve and run resumes the waiting lifecycle row through the same finite-command runner, checks the current file approval on the destination environment, and retains output and exit status.
       - The settle action runs as one finite command in a single settle terminal per thread, restarted in place by later settlements; a settlement during a running settle action starts nothing, and a thread whose worktree is the project checkout skips it without a work-log row.
-      - After styal-run setup succeeds with version-2 checkout evidence, loss of .styal/setup-completed reruns the same approved action once in the same Git-validated linked checkout (device, inode, and Git admin directory); older or replaced worktrees and changed actions never automatically retry; the latest setup attempt across all threads sharing the canonical real path must succeed, so pending, failed, or interrupted setup suppresses recovery even across server restarts.
+      - After styal-run setup succeeds with version-2 checkout evidence, loss of .styal/setup-completed reruns the same approved action once in the same Git-validated linked checkout (device, inode, and Git admin directory); older or replaced worktrees and changed actions never automatically retry; the latest setup attempt is stored per canonical real path in a pruning-independent table and committed atomically with its events; pending, failed, or interrupted setup suppresses recovery across shared threads and server restarts.
       - Recreating a managed worktree reruns approved setup before provider startup; a blocking failure or signal exit settles that start even when the effect worker would retry.
       - Workspace leases precede terminal thread locks; async setup completion observations are disposed independently of the startup wait.
       - Intake of terminal recovery from upstream PR 24156 must retain setup after recreation in its shared restoreMissingWorktree helper, including terminal-first recovery.
@@ -6496,10 +6496,12 @@ features:
       - apps/mobile/src/features/threads/ThreadRouteScreen.tsx
       - apps/mobile/src/features/threads/thread-work-log.tsx
       - apps/mobile/src/lib/threadActivity.ts
+      - apps/server/src/orchestration-v2/EventSink.ts
       - apps/server/src/orchestration-v2/ProviderTurnStartService.ts
       - apps/server/src/orchestration-v2/ThreadSettlementService.ts
-      - apps/server/src/persistence/ForkMigrations/013_WorktreeSetupRequestIndex.ts
+      - apps/server/src/persistence/ForkMigrations/013_WorktreeSetupState.ts
       - apps/server/src/project/ProjectSetupScriptRunner.ts
+      - apps/server/src/project/WorktreeSetupState.ts
       - apps/server/src/project/setupCompletionEvidence.ts
       - apps/web/src/components/ChatView.logic.ts
       - apps/web/src/components/ChatView.tsx
