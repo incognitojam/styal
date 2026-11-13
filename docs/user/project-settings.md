@@ -240,7 +240,7 @@ to **Uncommitted changes**, which protects tracked edits and untracked files but
 files such as `.env` and build output. **Any local files** also protects ignored files other than
 `node_modules`. **Edited tracked files** protects only tracked edits and allows untracked and
 ignored files to be deleted. Branches and thread history stay; starting another turn recreates the checkout.
-When a retained worktree loses its styal setup completion record, the next turn reruns the same approved setup action once. This applies to new and recreated worktrees whose setup styal itself ran and observed succeeding after this change. Older worktrees are not recovered, and running setup through the toolbar does not enable recovery. Failed setup stays visible in the work log.
+When a retained worktree loses its styal setup completion record, the next turn reruns the same approved setup action once. Recovery applies to new and recreated worktrees whose setup styal itself ran and observed succeeding after this change; older retained worktrees are left alone. The latest setup attempt applies to every thread sharing the worktree. Failed or interrupted setup prevents automatic recovery, even after restarting styal. To become eligible again, create a new worktree or let styal recreate the removed worktree and complete setup. Running setup through the toolbar does not record a new success or reset this state.
 
 Merge cleanup requires a merged pull request whose commits are included in the remote default
 branch. A squash or rebase merge on GitHub also counts when the pull request targeted the default

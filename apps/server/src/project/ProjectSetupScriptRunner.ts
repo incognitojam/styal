@@ -860,26 +860,29 @@ export const make = Effect.gen(function* () {
 
     if (input.recoverIfEvidenceMissing) {
       const recover = yield* Effect.gen(function* () {
-        const active = yield* sql<{ readonly active: number }>`
-          SELECT 1 AS active FROM orchestration_v2_projection_turn_items
-          WHERE type = 'command_execution' AND status IN ('pending', 'running')
-            AND json_extract(payload_json, '$.setupScript.worktreePath') = ${input.worktreePath}
-            AND json_extract(payload_json, '$.setupScript.terminalId') LIKE 'setup-%'
-          LIMIT 1
-        `;
-        if (active.length > 0) return false;
+        // Request sequence orders attempts across threads; later completion updates must not reorder them.
         const rows = yield* sql<{ readonly payload_json: string }>`
           SELECT payload_json FROM orchestration_v2_projection_turn_items
-          WHERE thread_id = ${input.threadId} AND type = 'command_execution'
-            AND json_extract(payload_json, '$.setupScript.scriptId') = ${script.id}
-            AND json_extract(payload_json, '$.setupScript.worktreePath') = ${input.worktreePath}
-            AND json_extract(payload_json, '$.setupScript.terminalId') LIKE 'setup-%'
-            AND json_extract(payload_json, '$.input') = ${script.command}
-          ORDER BY ordinal DESC LIMIT 1
+          WHERE turn_item_id = (
+            SELECT json_extract(payload_json, '$.id') FROM orchestration_events
+              INDEXED BY idx_orchestration_events_setup_worktree_request
+            WHERE application_event_version = 2 AND aggregate_kind = 'thread'
+              AND event_type = 'turn-item.updated'
+              AND json_extract(payload_json, '$.status') = 'pending'
+              AND substr(json_extract(payload_json, '$.setupScript.terminalId'), 1, 6) = 'setup-'
+              AND json_extract(payload_json, '$.setupScript.worktreePath') = ${input.worktreePath}
+            ORDER BY sequence DESC LIMIT 1
+          )
         `;
         if (!rows[0]) return false;
         const previous = yield* decodeTurnItemJson(rows[0].payload_json);
-        if (previous.type !== "command_execution" || previous.status !== "completed") return false;
+        if (
+          previous.type !== "command_execution" ||
+          previous.status !== "completed" ||
+          previous.setupScript?.scriptId !== script.id ||
+          previous.input !== script.command
+        )
+          return false;
         const evidence = previous.setupScript?.completionEvidence;
         if (evidence === undefined || evidence === 1) return false;
         const identity = yield* Effect.tryPromise(() =>

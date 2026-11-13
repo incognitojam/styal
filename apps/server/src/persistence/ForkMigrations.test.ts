@@ -61,6 +61,7 @@ upstreamLayer("ForkMigrations canonical upstream upgrade", (it) => {
         { migration_id: 10, name: "HardwareLeases" },
         { migration_id: 11, name: "ProjectionProjectsOrganization" },
         { migration_id: 12, name: "DropComposerDrafts" },
+        { migration_id: 13, name: "WorktreeSetupRequestIndex" },
       ]);
     }),
   );
@@ -164,6 +165,7 @@ it("keeps fork migrations out of the upstream manifest", () => {
     [10, "HardwareLeases"],
     [11, "ProjectionProjectsOrganization"],
     [12, "DropComposerDrafts"],
+    [13, "WorktreeSetupRequestIndex"],
   ]);
 });
 
