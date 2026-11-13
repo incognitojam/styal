@@ -60,6 +60,7 @@ const REGENERABLE_DIRECTORIES = new Set([
 ]);
 const REGENERABLE_PATHS = new Set([
   ".styal/setup-done",
+  ".styal/setup-completed",
   ".styal/caches",
   ".styal/dev-runners",
   "apps/mobile/.expo",
@@ -93,6 +94,83 @@ const protectedRelative = (relative: string) => {
   );
 };
 
+const isWithin = (root: string, target: string) =>
+  target === root || target.startsWith(root + NodePath.sep);
+
+function readDirectoryExact(directory: string) {
+  return NodeFS.readdirSync(directory, { encoding: "buffer" }).map((bytes) => {
+    const name = bytes.toString("utf8");
+    if (!Buffer.from(name, "utf8").equals(bytes))
+      throw new Error("Non-UTF-8 filename; refusing the whole candidate before deletion.");
+    return name;
+  });
+}
+
+function deletionRuntime(root: string) {
+  const directory = NodeFS.realpathSync(import.meta.dirname);
+  if (isWithin(root, directory)) {
+    const origin = git(root, ["remote", "get-url", "origin"]);
+    if (
+      NodePath.dirname(directory) !== root ||
+      !/^(?:https:\/\/github\.com\/|git@github\.com:|ssh:\/\/git@github\.com\/)incognitojam\/styal(?:\.git)?$/.test(
+        origin,
+      )
+    )
+      throw new Error("Refusing helper source inside a foreign target worktree.");
+  }
+  const descriptor = NodeFS.openSync(
+    NodePath.join(directory, "teardown-worktree-delete.py"),
+    NodeFS.constants.O_RDONLY | NodeFS.constants.O_NOFOLLOW,
+  );
+  let source;
+  try {
+    if (!NodeFS.fstatSync(descriptor).isFile())
+      throw new Error("Deletion helper is not a regular file.");
+    source = NodeFS.readFileSync(descriptor, "utf8");
+  } finally {
+    NodeFS.closeSync(descriptor);
+  }
+  const searchPaths: string[] = [];
+  for (const entry of (process.env.PATH ?? "").split(NodePath.delimiter)) {
+    if (!NodePath.isAbsolute(entry)) continue;
+    try {
+      const search = NodeFS.realpathSync(entry);
+      if (!isWithin(root, search)) searchPaths.push(search);
+    } catch {
+      /* Ignore unavailable PATH entries. */
+    }
+  }
+  const env = { ...process.env, PATH: searchPaths.join(NodePath.delimiter) };
+  for (const search of searchPaths) {
+    try {
+      const executable = NodePath.join(search, "python3");
+      if (isWithin(root, NodeFS.realpathSync(executable))) continue;
+      NodeFS.accessSync(executable, NodeFS.constants.X_OK);
+      const probe = NodeChildProcess.spawnSync(
+        executable,
+        ["-I", "-S", "-c", "import os, sys; sys.stdout.write(os.path.realpath(sys.executable))"],
+        {
+          cwd: isWithin(root, directory) ? NodePath.dirname(root) : directory,
+          encoding: "utf8",
+          env,
+        },
+      );
+      if (probe.status !== 0 || !NodePath.isAbsolute(probe.stdout)) continue;
+      const interpreter = NodeFS.realpathSync(probe.stdout);
+      if (isWithin(root, interpreter) || !NodeFS.statSync(interpreter).isFile()) continue;
+      return {
+        interpreter,
+        source,
+        env,
+        cwd: isWithin(root, directory) ? NodePath.dirname(root) : directory,
+      };
+    } catch {
+      /* Ignore unavailable PATH entries. */
+    }
+  }
+  throw new Error("Python 3.8 or newer is required outside the target worktree PATH.");
+}
+
 const fileIdentity = (path: string) => {
   const info = NodeFS.lstatSync(path, { bigint: true });
   return { dev: String(info.dev), ino: String(info.ino) };
@@ -111,26 +189,32 @@ function safeTree(root: string, relative: string) {
   if (!NodeFS.realpathSync(NodePath.join(root, relative)).startsWith(root + NodePath.sep))
     return undefined;
   const paths: Array<string> = [];
-  function visit(target: string): boolean {
+  const pending = [relative];
+  while (pending.length > 0) {
+    const target = pending.pop()!;
     const absolute = NodePath.join(root, target);
     const stat = NodeFS.lstatSync(absolute);
-    if (protectedName(NodePath.basename(target)) || protectedRelative(target)) return false;
+    if (protectedName(NodePath.basename(target)) || protectedRelative(target)) return undefined;
     try {
       const resolved = stat.isSymbolicLink()
         ? NodeFS.realpathSync(absolute)
         : NodePath.resolve(absolute);
-      if (!resolved.startsWith(root + NodePath.sep)) return false;
+      if (!resolved.startsWith(root + NodePath.sep)) return undefined;
     } catch {
-      return false;
+      return undefined;
     }
     paths.push(target);
     entries.push({ path: target, ...fileIdentity(absolute) });
-    if (stat.isSymbolicLink()) return true;
-    if (!stat.isDirectory()) return stat.isFile();
-    if (NodeFS.existsSync(NodePath.join(absolute, ".git"))) return false;
-    return NodeFS.readdirSync(absolute).every((name) => visit(NodePath.join(target, name)));
+    if (stat.isSymbolicLink()) continue;
+    if (!stat.isDirectory()) {
+      if (!stat.isFile()) return undefined;
+      continue;
+    }
+    if (NodeFS.existsSync(NodePath.join(absolute, ".git"))) return undefined;
+    const names = readDirectoryExact(absolute);
+    for (let index = names.length - 1; index >= 0; index--)
+      pending.push(NodePath.join(target, names[index]!));
   }
-  if (!visit(relative)) return undefined;
   const result = NodeChildProcess.spawnSync("git", ["-C", root, "check-ignore", "--stdin", "-z"], {
     encoding: "utf8",
     env: gitEnv(),
@@ -143,14 +227,18 @@ function safeTree(root: string, relative: string) {
 }
 
 function sizeOf(absolute: string): number {
-  const stat = NodeFS.lstatSync(absolute);
-  if (stat.isSymbolicLink()) return 0;
-  return stat.isDirectory()
-    ? NodeFS.readdirSync(absolute).reduce(
-        (sum, name) => sum + sizeOf(NodePath.join(absolute, name)),
-        0,
-      )
-    : stat.size;
+  let bytes = 0;
+  const pending = [Buffer.from(absolute)];
+  while (pending.length > 0) {
+    const current = pending.pop()!;
+    const stat = NodeFS.lstatSync(current);
+    if (stat.isSymbolicLink()) continue;
+    if (!stat.isDirectory()) bytes += stat.size;
+    else
+      for (const name of NodeFS.readdirSync(current, { encoding: "buffer" }))
+        pending.push(Buffer.concat([current, Buffer.from(NodePath.sep), name]));
+  }
+  return bytes;
 }
 
 function hasPackageManifest(directory: string): boolean {
@@ -161,9 +249,43 @@ function hasPackageManifest(directory: string): boolean {
   }
 }
 
-function selectRegenerable(root: string): Array<{ path: string; bytes: number }> {
+function dependenciesWithin(root: string, relative: string) {
+  let bytes = 0;
+  let found = false;
+  const pending = [relative];
+  while (pending.length > 0) {
+    const entry = pending.pop()!;
+    const absolute = NodePath.join(root, entry);
+    const stat = NodeFS.lstatSync(absolute);
+    if (
+      stat.isSymbolicLink() ||
+      protectedName(NodePath.basename(entry)) ||
+      protectedRelative(entry)
+    )
+      continue;
+    if (
+      (stat.isDirectory() && NodePath.basename(entry) === "node_modules") ||
+      entry === ".styal/setup-done" ||
+      entry === ".styal/setup-completed"
+    ) {
+      found = true;
+      bytes += sizeOf(absolute);
+      continue;
+    }
+    if (stat.isDirectory()) {
+      if (NodeFS.existsSync(NodePath.join(absolute, ".git"))) continue;
+      for (const name of readDirectoryExact(absolute)) pending.push(NodePath.join(entry, name));
+    }
+  }
+  return { found, bytes };
+}
+
+function selectRegenerable(root: string, dependenciesReady: boolean) {
+  let dependenciesKept = 0;
   const selected: Array<{ path: string; bytes: number }> = [];
-  function visit(relative: string) {
+  const pending = [""];
+  while (pending.length > 0) {
+    const relative = pending.pop()!;
     const absolute = NodePath.join(root, relative);
     const stat = NodeFS.lstatSync(absolute);
     if (
@@ -171,9 +293,9 @@ function selectRegenerable(root: string): Array<{ path: string; bytes: number }>
       protectedName(NodePath.basename(relative)) ||
       protectedRelative(relative)
     )
-      return;
+      continue;
     if (stat.isDirectory() && relative !== "" && NodeFS.existsSync(NodePath.join(absolute, ".git")))
-      return;
+      continue;
     const candidate =
       REGENERABLE_PATHS.has(relative) ||
       (stat.isDirectory() &&
@@ -183,15 +305,25 @@ function selectRegenerable(root: string): Array<{ path: string; bytes: number }>
             hasPackageManifest(NodePath.dirname(absolute))))) ||
       (stat.isFile() && relative.endsWith(".tsbuildinfo"));
     if (candidate) {
+      if (!dependenciesReady) {
+        const kept = dependenciesWithin(root, relative);
+        if (kept.found) {
+          dependenciesKept += kept.bytes;
+          console.log(`[teardown] keeping dependency candidate: ${relative}`);
+          continue;
+        }
+      }
       if (safeTree(root, relative)) selected.push({ path: relative, bytes: sizeOf(absolute) });
       else console.log(`[teardown] keeping protected or unignored candidate: ${relative}`);
-      return;
+      continue;
     }
-    if (stat.isDirectory())
-      for (const name of NodeFS.readdirSync(absolute)) visit(NodePath.join(relative, name));
+    if (stat.isDirectory()) {
+      const names = readDirectoryExact(absolute);
+      for (let index = names.length - 1; index >= 0; index--)
+        pending.push(NodePath.join(relative, names[index]!));
+    }
   }
-  visit("");
-  return selected;
+  return { selected, dependenciesKept };
 }
 
 const DEV_RUNNERS_PATH = ".styal/dev-runners";
@@ -330,14 +462,28 @@ export async function teardownWorktree(input: {
   console.log(
     `[teardown] keeping .styal/userdata: ${NodeFS.existsSync(userdata) ? sizeOf(userdata) : 0} bytes`,
   );
-  const selected = selectRegenerable(root);
+  let dependenciesReady = false;
+  try {
+    dependenciesReady =
+      NodeFS.lstatSync(NodePath.join(root, ".styal/setup-completed")).isFile() &&
+      Boolean(safeTree(root, ".styal/setup-completed"));
+  } catch {
+    /* Missing completion evidence keeps dependencies. */
+  }
+  const { selected, dependenciesKept } = selectRegenerable(root, dependenciesReady);
+  if (!dependenciesReady)
+    console.log(
+      `[teardown] dependencies kept: setup would not rerun here; ${dependenciesKept} bytes kept`,
+    );
   let bytes = 0;
   let count = 0;
   const removed: Array<string> = [];
   let notDeleted = selected.map((entry) => entry.path);
   let rootDescriptor: number | undefined;
+  let runtime: ReturnType<typeof deletionRuntime> | undefined;
   try {
     for (const entry of selected) {
+      let observedBytes = entry.bytes;
       if (!dryRun) {
         const checked = safeTree(root, entry.path);
         if (!checked) throw new Error("Cleanup candidate changed; refusing deletion.");
@@ -354,19 +500,29 @@ export async function teardownWorktree(input: {
         }
         // Node has no unlinkat; the stdlib helper deletes relative to inherited directory handles.
         const result = NodeChildProcess.spawnSync(
-          "python3",
-          ["-I", "-S", NodePath.join(import.meta.dirname, "teardown-worktree-delete.py")],
+          (runtime ??= deletionRuntime(root)).interpreter,
+          ["-I", "-S", "-c", runtime.source],
           {
-            input: JSON.stringify({ root: rootIdentity, candidate: entry.path, ...checked }),
+            input: JSON.stringify({
+              root: rootIdentity,
+              rootPath: root,
+              candidate: entry.path,
+              ...checked,
+            }),
+            cwd: runtime.cwd,
+            env: runtime.env,
             encoding: "utf8",
             stdio: ["pipe", "pipe", "pipe", rootDescriptor],
             maxBuffer: 64 * 1024 * 1024,
           },
         );
         if (result.error || !result.stdout)
-          throw new Error("Descriptor-relative deletion helper could not run.", {
-            cause: result.error,
-          });
+          throw new Error(
+            `Descriptor-relative deletion helper could not run: ${result.stderr?.trim() || result.error?.message || "no output"}`,
+            {
+              cause: result.error,
+            },
+          );
         const report = JSON.parse(result.stdout) as {
           removed: Array<string>;
           bytes: number;
@@ -375,18 +531,19 @@ export async function teardownWorktree(input: {
         };
         removed.push(...report.removed);
         bytes += report.bytes;
+        observedBytes = report.bytes;
         notDeleted = [...report.remaining, ...selected.slice(count + 1).map((next) => next.path)];
         if (result.status !== 0)
           throw new Error(report.error ?? "Descriptor-relative deletion failed.");
       } else bytes += entry.bytes;
       count++;
       console.log(
-        `[teardown] ${dryRun ? "would remove" : "removed"} ${entry.path}: ${entry.bytes} bytes`,
+        `[teardown] ${dryRun ? "would remove" : "removed"} ${entry.path}: ${observedBytes} bytes${dryRun ? "" : " observed before unlink"}`,
       );
     }
   } catch (cause) {
     console.error(
-      `[teardown] removed before failure: ${JSON.stringify(removed)}; ${bytes} logical bytes`,
+      `[teardown] removed before failure: ${JSON.stringify(removed)}; ${bytes} logical bytes observed before unlink; at least 0 bytes reclaimed`,
     );
     console.error(`[teardown] not deleted: ${JSON.stringify(notDeleted)}`);
     throw cause;
@@ -394,7 +551,7 @@ export async function teardownWorktree(input: {
     if (rootDescriptor !== undefined) NodeFS.closeSync(rootDescriptor);
   }
   console.log(
-    `[teardown] ${dryRun ? "dry run: would remove" : "removed"} ${count} paths, ${bytes} bytes ${dryRun ? "reclaimable" : "freed (logical size)"}`,
+    `[teardown] ${dryRun ? "dry run: would remove" : "removed"} ${count} paths, ${dryRun ? `${bytes} bytes reclaimable` : `at least 0 bytes reclaimed; ${bytes} logical bytes observed before unlink`}`,
   );
 }
 

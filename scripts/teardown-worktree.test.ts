@@ -43,6 +43,8 @@ const fixture = () => {
     ".styal/\nnode_modules/\nbuild/\n.turbo/\n*.tsbuildinfo\n.scratch/\n.env*\ntest-results/\n",
   );
   NodeFS.writeFileSync(NodePath.join(worktree, "package.json"), "{}");
+  NodeFS.mkdirSync(NodePath.join(worktree, ".styal"), { recursive: true });
+  NodeFS.writeFileSync(NodePath.join(worktree, ".styal/setup-completed"), "");
   const cwd = vi.spyOn(process, "cwd").mockReturnValue(worktree);
   onTestFinished(() => cwd.mockRestore());
   return { worktree, main, git };
@@ -344,7 +346,7 @@ it("preserves case variants of protected work and source directories without pac
 it("reports eligible files without stripping unless explicitly opted in", async () => {
   const { worktree } = fixture();
   NodeFS.mkdirSync(NodePath.join(worktree, "node_modules"));
-  NodeFS.mkdirSync(NodePath.join(worktree, ".styal"));
+  NodeFS.mkdirSync(NodePath.join(worktree, ".styal"), { recursive: true });
   NodeFS.writeFileSync(NodePath.join(worktree, "node_modules/file"), "synthetic");
   NodeFS.writeFileSync(NodePath.join(worktree, ".styal/setup-done"), "");
   await teardownWorktree({ worktree, workspacePort: undefined });
@@ -356,7 +358,7 @@ it("reports partial deletion precisely and leaves a failed strip retryable", asy
   const { worktree } = fixture();
   const readonly = NodePath.join(worktree, "build/readonly");
   NodeFS.mkdirSync(readonly, { recursive: true });
-  NodeFS.mkdirSync(NodePath.join(worktree, ".styal"));
+  NodeFS.mkdirSync(NodePath.join(worktree, ".styal"), { recursive: true });
   NodeFS.writeFileSync(NodePath.join(worktree, ".styal/setup-done"), "");
   NodeFS.writeFileSync(NodePath.join(readonly, "file"), "synthetic");
   NodeFS.chmodSync(readonly, 0o555);
@@ -409,7 +411,7 @@ it.each([
       const spawn = cp.spawnSync;
       let checks = 0;
       cp.spawnSync = function(...args) {
-        if (args[0] === "python3" && process.env.RACE_AFTER_OPEN === "1") {
+        if (Array.isArray(args[1]) && args[1].includes("-I") && args[1].includes("-S") && process.env.RACE_AFTER_OPEN === "1") {
           const intercept = [
             'import os, runpy, sys',
             'original = os.open',
@@ -424,12 +426,12 @@ it.each([
             '    return descriptor',
             'os.open = opened',
             'os.supports_dir_fd.add(opened)',
-            'runpy.run_path(sys.argv[1], run_name="__main__")',
+            'exec(sys.argv[1], {"__name__": "__main__"})',
           ].join(String.fromCharCode(10));
           args[1] = ["-I", "-S", "-c", intercept, args[1].at(-1)];
         }
         const result = spawn(...args);
-        if (args[0] === "git" && args[1].includes("check-ignore") && ++checks === Number(process.env.RACE_IGNORE_COUNT) && process.env.RACE_AFTER_OPEN !== "1") {
+        if (args[0] === "git" && args[1].includes("check-ignore") && args[2].input.startsWith("parent/level/node_modules") && ++checks === Number(process.env.RACE_IGNORE_COUNT) && process.env.RACE_AFTER_OPEN !== "1") {
           fs.renameSync(process.env.RACE_PARENT, process.env.RACE_PARENT + ".saved");
           if (process.env.RACE_REPLACEMENT === "directory") {
             fs.mkdirSync(process.env.RACE_PARENT);
@@ -463,15 +465,14 @@ it.each([
         },
       },
     );
-    assert.equal(result.status === 0, afterOpen === true, result.stdout + result.stderr);
+    assert.notEqual(result.status, 0, result.stdout + result.stderr);
     if (beforeFinalCheck) assert.include(result.stderr, "Cleanup candidate changed");
     assert.equal(
       NodeFS.readFileSync(NodePath.join(outsideCandidate, "irreplaceable-source"), "utf8"),
       "synthetic",
     );
     const kept = NodePath.join(worktree, swapped + ".saved", tail, "cache");
-    if (afterOpen) assert.isFalse(NodeFS.existsSync(kept));
-    else assert.equal(NodeFS.readFileSync(kept, "utf8"), "synthetic");
+    assert.equal(NodeFS.readFileSync(kept, "utf8"), "synthetic");
     if (replacement === "directory") {
       assert.equal(
         NodeFS.readFileSync(NodePath.join(worktree, swapped, "new-source"), "utf8"),
@@ -494,7 +495,7 @@ it("fails closed when the deletion helper cannot run, while default and dry-run 
     import { syncBuiltinESMExports } from "node:module";
     const spawn = cp.spawnSync;
     cp.spawnSync = function(...args) {
-      if (args[0] === "python3") args[0] = "missing-python-fixture";
+      if (Array.isArray(args[1]) && args[1].includes("-I") && args[1].includes("-S")) args[0] = "missing-python-fixture";
       return spawn(...args);
     };
     syncBuiltinESMExports();
@@ -510,3 +511,208 @@ it("fails closed when the deletion helper cannot run, while default and dry-run 
     assert.equal(NodeFS.readFileSync(file, "utf8"), "synthetic");
   }
 });
+
+it.each(["file", "absent", "symlink", "directory", "tracked"])(
+  "keeps dependencies unless completion evidence is a regular file: %s",
+  async (evidence) => {
+    const { worktree, main, git } = fixture();
+    const completed = NodePath.join(worktree, ".styal/setup-completed");
+    NodeFS.unlinkSync(completed);
+    if (evidence === "file" || evidence === "tracked") NodeFS.writeFileSync(completed, "");
+    if (evidence === "tracked") git(worktree, ["add", "-f", ".styal/setup-completed"]);
+    if (evidence === "directory") NodeFS.mkdirSync(completed);
+    if (evidence === "symlink") {
+      NodeFS.writeFileSync(NodePath.join(main, "proof"), "");
+      NodeFS.symlinkSync(NodePath.join(main, "proof"), completed);
+    }
+    NodeFS.mkdirSync(NodePath.join(worktree, "node_modules"));
+    NodeFS.mkdirSync(NodePath.join(worktree, "build"));
+    NodeFS.writeFileSync(NodePath.join(worktree, "node_modules/cache"), "synthetic");
+    NodeFS.writeFileSync(NodePath.join(worktree, "build/output"), "synthetic");
+    NodeFS.writeFileSync(NodePath.join(worktree, ".styal/setup-done"), "");
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    onTestFinished(() => log.mockRestore());
+    await teardownWorktree({ worktree, workspacePort: undefined, dryRun: true });
+    assert.isTrue(NodeFS.existsSync(NodePath.join(worktree, "build/output")));
+    assert.isTrue(NodeFS.existsSync(NodePath.join(worktree, "node_modules/cache")));
+    await teardownWorktree({ worktree, workspacePort: undefined, stripRegenerable: true });
+    assert.isFalse(NodeFS.existsSync(NodePath.join(worktree, "build/output")));
+    assert.equal(
+      NodeFS.existsSync(NodePath.join(worktree, "node_modules/cache")),
+      evidence !== "file",
+    );
+    assert.equal(
+      NodeFS.existsSync(NodePath.join(worktree, ".styal/setup-done")),
+      evidence !== "file",
+    );
+    assert.equal(NodeFS.existsSync(completed), evidence !== "file" && evidence !== "absent");
+    if (evidence !== "file")
+      assert.include(
+        log.mock.calls.flat().join("\n"),
+        "dependencies kept: setup would not rerun here; 9 bytes kept",
+      );
+  },
+);
+
+it("refuses invalid UTF-8 names before deleting a candidate, without colliding with replacement characters", async () => {
+  const { worktree } = fixture();
+  const candidate = NodePath.join(worktree, "node_modules");
+  NodeFS.mkdirSync(candidate);
+  const prefix = Buffer.from(candidate + NodePath.sep);
+  const invalid = Buffer.concat([prefix, Buffer.from([255])]);
+  NodeFS.writeFileSync(invalid, "raw source");
+  NodeFS.writeFileSync(NodePath.join(candidate, "\uFFFD"), "unicode source");
+  await expect(
+    teardownWorktree({ worktree, workspacePort: undefined, stripRegenerable: true }),
+  ).rejects.toThrow(/Non-UTF-8/);
+  assert.equal(NodeFS.readFileSync(invalid, "utf8"), "raw source");
+  assert.equal(NodeFS.readFileSync(NodePath.join(candidate, "\uFFFD"), "utf8"), "unicode source");
+});
+
+it("keeps an eligible container with nested dependencies when completion evidence is absent", async () => {
+  const { worktree } = fixture();
+  NodeFS.unlinkSync(NodePath.join(worktree, ".styal/setup-completed"));
+  NodeFS.mkdirSync(NodePath.join(worktree, "build/node_modules"), { recursive: true });
+  NodeFS.mkdirSync(NodePath.join(worktree, ".turbo"));
+  NodeFS.writeFileSync(NodePath.join(worktree, "build/node_modules/source"), "synthetic");
+  NodeFS.writeFileSync(NodePath.join(worktree, ".turbo/cache"), "synthetic");
+  await teardownWorktree({ worktree, workspacePort: undefined, stripRegenerable: true });
+  assert.equal(
+    NodeFS.readFileSync(NodePath.join(worktree, "build/node_modules/source"), "utf8"),
+    "synthetic",
+  );
+  assert.isFalse(NodeFS.existsSync(NodePath.join(worktree, ".turbo")));
+});
+
+it("runs the helper's mount, reachability, version and deep-walk scenarios", () => {
+  const result = NodeChildProcess.spawnSync(
+    "python3",
+    ["-I", "-S", NodePath.join(import.meta.dirname, "teardown-worktree-delete.test.py")],
+    { encoding: "utf8" },
+  );
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+});
+
+it("ignores target-local, relative, empty and redirected interpreter search entries", () => {
+  const { worktree, main } = fixture();
+  const bin = NodePath.join(worktree, "bin");
+  const redirected = NodePath.join(main, "redirected-bin");
+  NodeFS.mkdirSync(bin);
+  NodeFS.symlinkSync(bin, redirected, "dir");
+  const marker = NodePath.join(worktree, "wrong-interpreter");
+  NodeFS.writeFileSync(
+    NodePath.join(bin, "python3"),
+    '#!/bin/sh\nprintf selected > "$STYAL_WORKTREE_PATH/wrong-interpreter"\nexit 99\n',
+    { mode: 0o755 },
+  );
+  NodeFS.mkdirSync(NodePath.join(worktree, "node_modules"));
+  NodeFS.writeFileSync(NodePath.join(worktree, "node_modules/cache"), "synthetic");
+  const result = NodeChildProcess.spawnSync(
+    process.execPath,
+    [NodePath.join(import.meta.dirname, "teardown-worktree.ts"), "--strip-regenerable"],
+    {
+      cwd: worktree,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        STYAL_WORKTREE_PATH: worktree,
+        PATH: [bin, ".", "", "bin", redirected, process.env.PATH ?? ""].join(NodePath.delimiter),
+      },
+    },
+  );
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.isFalse(NodeFS.existsSync(marker));
+  assert.isFalse(NodeFS.existsSync(NodePath.join(worktree, "node_modules")));
+});
+
+it("retains helper stderr and reports the explicit minimum Python version", () => {
+  const { worktree, main } = fixture();
+  NodeFS.mkdirSync(NodePath.join(worktree, "node_modules"));
+  NodeFS.writeFileSync(NodePath.join(worktree, "node_modules/cache"), "synthetic");
+  const hook = NodePath.join(main, "old-python.mjs");
+  NodeFS.writeFileSync(
+    hook,
+    `
+    import cp from "node:child_process";
+    import { syncBuiltinESMExports } from "node:module";
+    const spawn = cp.spawnSync;
+    cp.spawnSync = function(...args) {
+      if (args[2]?.input && args[1].includes("-I")) {
+        args[1] = ["-I", "-S", "-c",
+          'import sys; sys.version_info=(3,7,0); exec(sys.argv[1], {"__name__":"__main__"})',
+          args[1].at(-1)];
+      }
+      return spawn(...args);
+    };
+    syncBuiltinESMExports();
+  `,
+  );
+  const result = NodeChildProcess.spawnSync(
+    process.execPath,
+    [
+      "--import",
+      hook,
+      NodePath.join(import.meta.dirname, "teardown-worktree.ts"),
+      "--strip-regenerable",
+    ],
+    { cwd: worktree, encoding: "utf8", env: { ...process.env, STYAL_WORKTREE_PATH: worktree } },
+  );
+  assert.notEqual(result.status, 0);
+  assert.include(result.stderr, "requires Python 3.8 or newer");
+  assert.equal(
+    NodeFS.readFileSync(NodePath.join(worktree, "node_modules/cache"), "utf8"),
+    "synthetic",
+  );
+});
+
+it.each([false, true])(
+  "uses helper source inside the target only for this repository, cached before deletion: %s",
+  (ownRepository) => {
+    const { worktree, main, git } = fixture();
+    if (ownRepository)
+      git(worktree, ["remote", "add", "origin", "https://github.com/incognitojam/styal.git"]);
+    const directory = NodePath.join(worktree, "scripts");
+    NodeFS.mkdirSync(directory);
+    const helper = NodePath.join(directory, "teardown-worktree-delete.py");
+    NodeFS.copyFileSync(
+      NodePath.join(import.meta.dirname, "teardown-worktree.ts"),
+      NodePath.join(directory, "teardown-worktree.ts"),
+    );
+    NodeFS.copyFileSync(NodePath.join(import.meta.dirname, "teardown-worktree-delete.py"), helper);
+    NodeFS.mkdirSync(NodePath.join(worktree, "node_modules"));
+    NodeFS.writeFileSync(NodePath.join(worktree, "node_modules/cache"), "synthetic");
+    const hook = NodePath.join(main, "replace-helper.mjs");
+    NodeFS.writeFileSync(
+      hook,
+      `
+    import cp from "node:child_process";
+    import fs from "node:fs";
+    import path from "node:path";
+    import { syncBuiltinESMExports } from "node:module";
+    const spawn = cp.spawnSync;
+    cp.spawnSync = function(...args) {
+      if (args[2]?.input && args[1].includes("-I")) {
+        if (!path.isAbsolute(args[0]) || args[2].cwd !== path.dirname(process.env.STYAL_WORKTREE_PATH))
+          throw Error("Unsafe interpreter or helper cwd");
+        const result = spawn(...args);
+        fs.writeFileSync(process.env.FIXTURE_HELPER, 'raise RuntimeError("replacement helper must not run")');
+        return result;
+      }
+      return spawn(...args);
+    };
+    syncBuiltinESMExports();
+  `,
+    );
+    const result = NodeChildProcess.spawnSync(
+      process.execPath,
+      ["--import", hook, NodePath.join(directory, "teardown-worktree.ts"), "--strip-regenerable"],
+      {
+        cwd: worktree,
+        encoding: "utf8",
+        env: { ...process.env, STYAL_WORKTREE_PATH: worktree, FIXTURE_HELPER: helper },
+      },
+    );
+    assert.equal(result.status === 0, ownRepository, result.stdout + result.stderr);
+    assert.equal(NodeFS.existsSync(NodePath.join(worktree, "node_modules/cache")), !ownRepository);
+  },
+);

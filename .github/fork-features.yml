@@ -6424,6 +6424,7 @@ features:
       - An idle subagent that never settled does not hold the action back, so a settling parent still runs it.
       - A delegated child settling inside its active parent's worktree does not run the action.
       - The repository teardown action strips only with explicit --strip-regenerable opt-in and only explicitly listed ignored regenerable paths in its own managed linked worktree using a clean Git environment, protects names without case or Unicode spelling sensitivity, skips symlinked candidates and nested checkouts, preserves scratch work and dev databases, and supports a deletion-free dry run.
+      - Dependency directories and setup markers survive stripping unless a regular ignored .styal/setup-completed marker allows setup to rerun; other eligible build output remains independent.
     rationale: Settle actions delete worktree state and stop dev servers, so running them for one thread can destroy another thread's work. Upstream's open fix only excludes subagents sharing a parent's worktree, which leaves sibling threads and running children exposed.
     implementation_paths:
       - apps/server/src/orchestration-v2/ThreadSettlementService.ts
