@@ -10,6 +10,7 @@ import { assert, expect, describe, it, onTestFinished, vi } from "vite-plus/test
 import { resolveTeardownTarget, teardownWorktree } from "./teardown-worktree.ts";
 
 const tempDir = () => {
+  NodeFS.mkdirSync(NodePath.join(import.meta.dirname, "../.scratch"), { recursive: true });
   const dir = NodeFS.realpathSync(
     NodeFS.mkdtempSync(NodePath.join(import.meta.dirname, "../.scratch/settle-test-")),
   );
@@ -582,6 +583,69 @@ it("keeps an eligible container with nested dependencies when completion evidenc
     "synthetic",
   );
   assert.isFalse(NodeFS.existsSync(NodePath.join(worktree, ".turbo")));
+});
+
+it.each([
+  [".packages/web/node_modules", "setup-completed"],
+  ["packages/web/node_modules", "setup-completed"],
+  [".styal/caches/node_modules", "setup-completed"],
+  ["packages/web/node_modules", "setup-done"],
+])("keeps dependencies when removing %s's %s marker fails", (dependency, failedMarker) => {
+  const { worktree, main } = fixture();
+  const state = NodePath.join(worktree, ".styal");
+  for (const path of [dependency, "node_modules", ".turbo"])
+    NodeFS.mkdirSync(NodePath.join(worktree, path), { recursive: true });
+  for (const path of [dependency + "/cache", "node_modules/cache", ".turbo/cache"])
+    NodeFS.writeFileSync(NodePath.join(worktree, path), "synthetic");
+  NodeFS.writeFileSync(NodePath.join(state, "setup-done"), "done");
+  const hook = NodePath.join(main, "marker-permissions.mjs");
+  NodeFS.writeFileSync(
+    hook,
+    `
+    import cp from "node:child_process";
+    import fs from "node:fs";
+    import { syncBuiltinESMExports } from "node:module";
+    const spawn = cp.spawnSync;
+    cp.spawnSync = function(...args) {
+      const result = spawn(...args);
+      if (process.env.FAIL_MARKER === "setup-done" && args[1]?.includes("-I") &&
+          typeof args[2]?.input === "string" && JSON.parse(args[2].input).candidate === ".styal/setup-completed")
+        fs.chmodSync(process.env.STYAL_WORKTREE_PATH + "/.styal", 0o555);
+      return result;
+    };
+    syncBuiltinESMExports();
+  `,
+  );
+  onTestFinished(() => NodeFS.chmodSync(state, 0o755));
+  if (failedMarker === "setup-completed") NodeFS.chmodSync(state, 0o555);
+  const result = NodeChildProcess.spawnSync(
+    process.execPath,
+    [
+      "--import",
+      hook,
+      NodePath.join(import.meta.dirname, "teardown-worktree.ts"),
+      "--strip-regenerable",
+    ],
+    {
+      cwd: worktree,
+      encoding: "utf8",
+      env: { ...process.env, STYAL_WORKTREE_PATH: worktree, FAIL_MARKER: failedMarker },
+    },
+  );
+  assert.notEqual(result.status, 0, result.stdout + result.stderr);
+  assert.include(result.stderr, "Permission denied");
+  assert.equal(
+    NodeFS.readFileSync(NodePath.join(worktree, dependency, "cache"), "utf8"),
+    "synthetic",
+  );
+  assert.equal(
+    NodeFS.readFileSync(NodePath.join(worktree, "node_modules/cache"), "utf8"),
+    "synthetic",
+  );
+  assert.isTrue(NodeFS.existsSync(NodePath.join(state, failedMarker)));
+  assert.isFalse(NodeFS.existsSync(NodePath.join(worktree, ".turbo")));
+  assert.include(result.stdout, "dependencies kept: setup markers could not be removed");
+  assert.include(result.stdout, "18 bytes kept");
 });
 
 it("runs the helper's mount, reachability, version and deep-walk scenarios", () => {

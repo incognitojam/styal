@@ -14,6 +14,7 @@ HELPER = Path(__file__).with_name("teardown-worktree-delete.py")
 
 class DeletionTests(unittest.TestCase):
     def setUp(self):
+        (Path(__file__).resolve().parent.parent / ".scratch").mkdir(exist_ok=True)
         self.temporary = tempfile.TemporaryDirectory(
             dir=Path(__file__).resolve().parent.parent / ".scratch",
             prefix="teardown-third-review-",

@@ -471,6 +471,29 @@ export async function teardownWorktree(input: {
     /* Missing completion evidence keeps dependencies. */
   }
   const { selected, dependenciesKept } = selectRegenerable(root, dependenciesReady);
+  const markers = [".styal/setup-completed", ".styal/setup-done"];
+  selected.sort((left, right) => {
+    const rank = (path: string) => {
+      const index = markers.indexOf(path);
+      return index === -1 ? markers.length : index;
+    };
+    return rank(left.path) - rank(right.path);
+  });
+  const dependencyCandidates = new Map(
+    selected
+      .filter((entry) => !markers.includes(entry.path))
+      .map((entry) => [entry.path, dependenciesWithin(root, entry.path)]),
+  );
+  let markerFailure: unknown;
+  if (dependenciesReady && !dryRun) {
+    try {
+      const done = NodeFS.lstatSync(NodePath.join(root, ".styal/setup-done"));
+      if (!done.isFile() || !selected.some((entry) => entry.path === ".styal/setup-done"))
+        markerFailure = new Error("Setup-done marker is not eligible for removal.");
+    } catch (cause) {
+      if ((cause as NodeJS.ErrnoException).code !== "ENOENT") markerFailure = cause;
+    }
+  }
   if (!dependenciesReady)
     console.log(
       `[teardown] dependencies kept: setup would not rerun here; ${dependenciesKept} bytes kept`,
@@ -478,76 +501,107 @@ export async function teardownWorktree(input: {
   let bytes = 0;
   let count = 0;
   const removed: Array<string> = [];
-  let notDeleted = selected.map((entry) => entry.path);
+  const notDeleted = new Set(selected.map((entry) => entry.path));
   let rootDescriptor: number | undefined;
   let runtime: ReturnType<typeof deletionRuntime> | undefined;
   try {
     for (const entry of selected) {
-      let observedBytes = entry.bytes;
-      if (!dryRun) {
-        const checked = safeTree(root, entry.path);
-        if (!checked) throw new Error("Cleanup candidate changed; refusing deletion.");
-        if (rootDescriptor === undefined) {
-          if (!NodeFS.constants.O_NOFOLLOW || !NodeFS.constants.O_DIRECTORY)
-            throw new Error("Descriptor-relative deletion is unavailable on this platform.");
-          rootDescriptor = NodeFS.openSync(
-            root,
-            NodeFS.constants.O_RDONLY | NodeFS.constants.O_NOFOLLOW | NodeFS.constants.O_DIRECTORY,
-          );
-          const opened = NodeFS.fstatSync(rootDescriptor, { bigint: true });
-          if (String(opened.dev) !== rootIdentity.dev || String(opened.ino) !== rootIdentity.ino)
-            throw new Error("Worktree root changed; refusing deletion.");
-        }
-        // Node has no unlinkat; the stdlib helper deletes relative to inherited directory handles.
-        const result = NodeChildProcess.spawnSync(
-          (runtime ??= deletionRuntime(root)).interpreter,
-          ["-I", "-S", "-c", runtime.source],
-          {
-            input: JSON.stringify({
-              root: rootIdentity,
-              rootPath: root,
-              candidate: entry.path,
-              ...checked,
-            }),
-            cwd: runtime.cwd,
-            env: runtime.env,
-            encoding: "utf8",
-            stdio: ["pipe", "pipe", "pipe", rootDescriptor],
-            maxBuffer: 64 * 1024 * 1024,
-          },
-        );
-        if (result.error || !result.stdout)
-          throw new Error(
-            `Descriptor-relative deletion helper could not run: ${result.stderr?.trim() || result.error?.message || "no output"}`,
+      const marker = markers.includes(entry.path);
+      if (markerFailure !== undefined && (marker || dependencyCandidates.get(entry.path)?.found))
+        continue;
+      try {
+        let observedBytes = entry.bytes;
+        if (!dryRun) {
+          if (entry.path === ".styal/setup-done") {
+            try {
+              NodeFS.lstatSync(NodePath.join(root, entry.path));
+            } catch (cause) {
+              if ((cause as NodeJS.ErrnoException).code !== "ENOENT") throw cause;
+              notDeleted.delete(entry.path);
+              continue;
+            }
+          }
+          const checked = safeTree(root, entry.path);
+          if (!checked) throw new Error("Cleanup candidate changed; refusing deletion.");
+          if (marker && !NodeFS.lstatSync(NodePath.join(root, entry.path)).isFile())
+            throw new Error("Setup marker is no longer a regular file.");
+          if (rootDescriptor === undefined) {
+            if (!NodeFS.constants.O_NOFOLLOW || !NodeFS.constants.O_DIRECTORY)
+              throw new Error("Descriptor-relative deletion is unavailable on this platform.");
+            rootDescriptor = NodeFS.openSync(
+              root,
+              NodeFS.constants.O_RDONLY |
+                NodeFS.constants.O_NOFOLLOW |
+                NodeFS.constants.O_DIRECTORY,
+            );
+            const opened = NodeFS.fstatSync(rootDescriptor, { bigint: true });
+            if (String(opened.dev) !== rootIdentity.dev || String(opened.ino) !== rootIdentity.ino)
+              throw new Error("Worktree root changed; refusing deletion.");
+          }
+          // Node has no unlinkat; the stdlib helper deletes relative to inherited directory handles.
+          const result = NodeChildProcess.spawnSync(
+            (runtime ??= deletionRuntime(root)).interpreter,
+            ["-I", "-S", "-c", runtime.source],
             {
-              cause: result.error,
+              input: JSON.stringify({
+                root: rootIdentity,
+                rootPath: root,
+                candidate: entry.path,
+                ...checked,
+              }),
+              cwd: runtime.cwd,
+              env: runtime.env,
+              encoding: "utf8",
+              stdio: ["pipe", "pipe", "pipe", rootDescriptor],
+              maxBuffer: 64 * 1024 * 1024,
             },
           );
-        const report = JSON.parse(result.stdout) as {
-          removed: Array<string>;
-          bytes: number;
-          remaining: Array<string>;
-          error?: string;
-        };
-        removed.push(...report.removed);
-        bytes += report.bytes;
-        observedBytes = report.bytes;
-        notDeleted = [...report.remaining, ...selected.slice(count + 1).map((next) => next.path)];
-        if (result.status !== 0)
-          throw new Error(report.error ?? "Descriptor-relative deletion failed.");
-      } else bytes += entry.bytes;
-      count++;
-      console.log(
-        `[teardown] ${dryRun ? "would remove" : "removed"} ${entry.path}: ${observedBytes} bytes${dryRun ? "" : " observed before unlink"}`,
-      );
+          if (result.error || !result.stdout)
+            throw new Error(
+              `Descriptor-relative deletion helper could not run: ${result.stderr?.trim() || result.error?.message || "no output"}`,
+              {
+                cause: result.error,
+              },
+            );
+          const report = JSON.parse(result.stdout) as {
+            removed: Array<string>;
+            bytes: number;
+            remaining: Array<string>;
+            error?: string;
+          };
+          removed.push(...report.removed);
+          bytes += report.bytes;
+          observedBytes = report.bytes;
+          notDeleted.delete(entry.path);
+          for (const path of report.remaining) notDeleted.add(path);
+          if (result.status !== 0)
+            throw new Error(report.error ?? "Descriptor-relative deletion failed.");
+        } else bytes += entry.bytes;
+        count++;
+        console.log(
+          `[teardown] ${dryRun ? "would remove" : "removed"} ${entry.path}: ${observedBytes} bytes${dryRun ? "" : " observed before unlink"}`,
+        );
+        notDeleted.delete(entry.path);
+      } catch (cause) {
+        if (!marker) throw cause;
+        markerFailure = cause;
+        console.error(`[teardown] setup marker removal failed: ${String(cause)}`);
+      }
     }
+    if (markerFailure !== undefined) throw markerFailure;
   } catch (cause) {
     console.error(
       `[teardown] removed before failure: ${JSON.stringify(removed)}; ${bytes} logical bytes observed before unlink; at least 0 bytes reclaimed`,
     );
-    console.error(`[teardown] not deleted: ${JSON.stringify(notDeleted)}`);
+    console.error(`[teardown] not deleted: ${JSON.stringify([...notDeleted])}`);
     throw cause;
   } finally {
+    if (markerFailure !== undefined) {
+      const kept = [...dependencyCandidates.values()].reduce((sum, entry) => sum + entry.bytes, 0);
+      console.log(
+        `[teardown] dependencies kept: setup markers could not be removed; ${kept} bytes kept`,
+      );
+    }
     if (rootDescriptor !== undefined) NodeFS.closeSync(rootDescriptor);
   }
   console.log(
