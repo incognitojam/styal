@@ -1522,6 +1522,16 @@ interface TerminalManagerOptions {
   processKillGraceMs?: number;
   maxRetainedInactiveSessions?: number;
   resolveWorkspaceEnvironment?: (workspacePath: string) => Effect.Effect<Record<string, string>>;
+  /** Keeps the workspace's port range reserved while the terminal's process runs. */
+  holdWorkspace?: (input: {
+    readonly threadId: string;
+    readonly terminalId: string;
+    readonly workspacePath: string;
+  }) => Effect.Effect<void>;
+  releaseWorkspaceHold?: (input: {
+    readonly threadId: string;
+    readonly terminalId: string;
+  }) => Effect.Effect<void>;
   registerTerminalProcesses?: (input: {
     readonly threadId: string;
     readonly terminalId: string;
@@ -1605,6 +1615,8 @@ export const make = Effect.fn("TerminalManager.make")(function* () {
     logsDir: terminalLogsDir,
     ptyAdapter,
     resolveWorkspaceEnvironment: workspacePortAllocator.environmentFor,
+    holdWorkspace: workspacePortAllocator.holdForTerminal,
+    releaseWorkspaceHold: workspacePortAllocator.releaseTerminalHold,
     processTable: nativeTelemetry.processTable.pipe(
       Effect.mapError(
         (cause) => new TerminalSubprocessCheckError({ cause, command: "resource-monitor" }),
@@ -1733,7 +1745,13 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
   const maxRetainedInactiveSessions =
     options.maxRetainedInactiveSessions ?? DEFAULT_MAX_RETAINED_INACTIVE_SESSIONS;
   const registerTerminalProcesses = options.registerTerminalProcesses ?? (() => Effect.void);
-  const unregisterTerminal = options.unregisterTerminal ?? (() => Effect.void);
+  const holdWorkspace = options.holdWorkspace ?? (() => Effect.void);
+  const releaseWorkspaceHold = options.releaseWorkspaceHold ?? (() => Effect.void);
+  // Every path that ends a terminal's process unregisters it, so the port hold ends there too.
+  const unregisterTerminal = (input: { readonly threadId: string; readonly terminalId: string }) =>
+    releaseWorkspaceHold(input).pipe(
+      Effect.andThen((options.unregisterTerminal ?? (() => Effect.void))(input)),
+    );
   const registerBrowserOpen =
     options.registerBrowserOpen ?? (() => Effect.succeed<Record<string, string>>({}));
   const unregisterBrowserOpen = options.unregisterBrowserOpen ?? (() => Effect.void);
@@ -2566,9 +2584,15 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         Effect.andThen(
           Effect.gen(function* () {
             const shellCandidates = resolveShellCandidates(shellResolver, platform, baseEnv);
+            const workspacePath = session.worktreePath ?? session.cwd;
             const workspaceEnvironment = options.resolveWorkspaceEnvironment
-              ? yield* options.resolveWorkspaceEnvironment(session.worktreePath ?? session.cwd)
+              ? yield* options.resolveWorkspaceEnvironment(workspacePath)
               : {};
+            yield* holdWorkspace({
+              threadId: session.threadId,
+              terminalId: session.terminalId,
+              workspacePath,
+            });
             const baseTerminalEnv = createTerminalSpawnEnv(
               baseEnv,
               {

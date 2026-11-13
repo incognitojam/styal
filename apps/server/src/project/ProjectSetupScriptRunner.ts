@@ -660,7 +660,7 @@ export const make = Effect.gen(function* () {
               type: "system_notice",
               status: "completed",
               title: "No reserved development ports",
-              message: `No free development ports, so this workspace has no reserved ports and ${WorkspacePortAllocator.WORKSPACE_PORT_ENV_VAR} is not set. Settling or archiving threads in other worktrees frees ports; terminals and agent turns started here after that get them.`,
+              message: `No free development ports, so this workspace has no reserved ports and ${WorkspacePortAllocator.WORKSPACE_PORT_ENV_VAR} is not set. Ports free up as threads in other worktrees are settled or archived; terminals and agent turns started here after that get them.`,
               startedAt: at,
               completedAt: at,
               updatedAt: at,

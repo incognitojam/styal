@@ -5,6 +5,8 @@ export const BOOT_SERVICE_UNIT_ENV = "T3_BOOT_SERVICE_UNIT";
 
 const SERVER_OWNED_ENV_KEYS = new Set([
   "STYAL_HOME",
+  // Set per workspace; one inherited from the server's own workspace would hand its ports out again.
+  "STYAL_WORKSPACE_PORT",
   "PORT",
   "ELECTRON_RENDERER_PORT",
   "ELECTRON_RUN_AS_NODE",

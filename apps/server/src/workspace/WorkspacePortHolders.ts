@@ -8,13 +8,11 @@ import type { OrchestrationV2ThreadShell } from "@t3tools/contracts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import { threadHoldsWorktree } from "../orchestration-v2/ThreadSettlementService.ts";
-import * as PortScanner from "../preview/PortScanner.ts";
 import { WorkspacePortHolders, WorkspacePortHoldersError } from "./WorkspacePortAllocator.ts";
 
 const make = Effect.gen(function* () {
   const projections = yield* ProjectionStore.ProjectionStoreV2;
   const projects = yield* ProjectStore.ProjectStoreV2;
-  const portDiscovery = yield* PortScanner.PortDiscovery;
   const sql = yield* SqlClient.SqlClient;
   const path = yield* Path.Path;
 
@@ -66,10 +64,6 @@ const make = Effect.gen(function* () {
     };
     for (const thread of [...unsettled.threads, ...busy.threads]) {
       if (threadHoldsWorktree(thread, nowMs)) addThread(thread);
-    }
-    for (const threadId of yield* portDiscovery.terminalThreadIds) {
-      const thread = yield* projections.getThreadShell(threadId);
-      if (thread !== null) addThread(thread);
     }
     return { openPaths, lastActivityMs };
   }).pipe(

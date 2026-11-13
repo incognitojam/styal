@@ -4821,6 +4821,8 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
                 getBasePort: () => Effect.die("unused"),
                 environmentFor: () => Effect.die("unused"),
                 release: () => Effect.void,
+                holdForTerminal: () => Effect.die("unused"),
+                releaseTerminalHold: () => Effect.die("unused"),
               }),
             ),
             Effect.provideService(VcsDriverRegistry.VcsDriverRegistry, {

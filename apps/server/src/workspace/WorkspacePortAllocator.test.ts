@@ -2,6 +2,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
+import * as TestClock from "effect/testing/TestClock";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
@@ -148,11 +149,15 @@ it.effect("reclaims deleted workspaces at capacity while keeping existing ports 
 const holders = (input: {
   readonly open: ReadonlyArray<string>;
   readonly lastActivityMs?: ReadonlyArray<readonly [string, number]>;
+  readonly onSnapshot?: () => void;
 }) =>
   WorkspacePortAllocator.WorkspacePortHolders.of({
-    snapshot: Effect.succeed({
-      openPaths: new Set(input.open),
-      lastActivityMs: new Map(input.lastActivityMs ?? []),
+    snapshot: Effect.sync(() => {
+      input.onSnapshot?.();
+      return {
+        openPaths: new Set(input.open),
+        lastActivityMs: new Map(input.lastActivityMs ?? []),
+      };
     }),
   });
 
@@ -195,8 +200,14 @@ const allocatorWithExistingPaths = Effect.fn("allocatorWithExistingPaths")(funct
 it.effect("a full pool of open workspaces leaves new workspaces without ports", () =>
   Effect.gen(function* () {
     const rows = yield* fillPortPool("/synthetic/workspaces");
+    let snapshots = 0;
     const allocator = yield* allocatorWithExistingPaths({
-      holders: holders({ open: rows.slice(1).map((row) => row.workspace_path) }),
+      holders: holders({
+        open: rows.slice(1).map((row) => row.workspace_path),
+        onSnapshot: () => {
+          snapshots += 1;
+        },
+      }),
       uninspectable: [rows[0]!.workspace_path],
     });
 
@@ -204,6 +215,11 @@ it.effect("a full pool of open workspaces leaves new workspaces without ports", 
     assert.deepStrictEqual(yield* allocator.environmentFor("/synthetic/new-workspace"), {});
     assert.strictEqual((yield* reservedPaths()).size, rows.length);
     assert.strictEqual(yield* allocator.getBasePort(rows[0]!.workspace_path), rows[0]!.base_port);
+    // A pass that freed nothing is not repeated for every request.
+    assert.strictEqual(snapshots, 1);
+    yield* TestClock.adjust("61 seconds");
+    assert.isNull(yield* allocator.getBasePort("/synthetic/other-workspace"));
+    assert.strictEqual(snapshots, 2);
   }).pipe(Effect.provide(isolatedLayer)),
 );
 
@@ -250,13 +266,48 @@ it.effect("a closed workspace whose ports have a listener keeps its range", () =
           [idle.workspace_path, 2_000],
         ],
       }),
-      listeningPorts: [serving.base_port + 1],
+      listeningPorts: [serving.base_port + 7],
     });
 
     assert.strictEqual(yield* allocator.getBasePort("/synthetic/new-workspace"), idle.base_port);
     const reserved = yield* reservedPaths();
     assert.isTrue(reserved.has(serving.workspace_path));
     assert.isFalse(reserved.has(idle.workspace_path));
+  }).pipe(Effect.provide(isolatedLayer)),
+);
+
+it.effect("a closed workspace keeps its range while a terminal or a recent hand-out uses it", () =>
+  Effect.gen(function* () {
+    const rows = yield* fillPortPool("/synthetic/workspaces");
+    const [inTerminal, justUsed, idle] = [rows[10]!, rows[11]!, rows[12]!];
+    const allocator = yield* allocatorWithExistingPaths({
+      holders: holders({
+        open: rows
+          .slice(13)
+          .concat(rows.slice(0, 10))
+          .map((row) => row.workspace_path),
+        lastActivityMs: [inTerminal, justUsed, idle].map(
+          (row, index) => [row.workspace_path, index] as const,
+        ),
+      }),
+    });
+    yield* allocator.holdForTerminal({
+      threadId: "thread-a",
+      terminalId: "shell",
+      workspacePath: inTerminal.workspace_path,
+    });
+    assert.strictEqual(yield* allocator.getBasePort(justUsed.workspace_path), justUsed.base_port);
+
+    assert.strictEqual(yield* allocator.getBasePort("/synthetic/new-workspace"), idle.base_port);
+    const reserved = yield* reservedPaths();
+    assert.isTrue(reserved.has(inTerminal.workspace_path));
+    assert.isTrue(reserved.has(justUsed.workspace_path));
+
+    yield* allocator.releaseTerminalHold({ threadId: "thread-a", terminalId: "shell" });
+    assert.strictEqual(
+      yield* allocator.getBasePort("/synthetic/second-workspace"),
+      inTerminal.base_port,
+    );
   }).pipe(Effect.provide(isolatedLayer)),
 );
 

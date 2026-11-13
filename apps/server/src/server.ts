@@ -283,11 +283,10 @@ const layerProviderEventLoggers = Layer.effect(
 );
 
 const layerPtyAdapter = NodePtyAdapter.layer;
-const layerPortScanner = PortScanner.layer.pipe(Layer.provide(ProcessRunner.layer));
 const layerWorkspacePortAllocator = WorkspacePortAllocator.layer.pipe(
   Layer.provide(
     WorkspacePortHolders.layer.pipe(
-      Layer.provide(Layer.mergeAll(ProjectionStoreV2.layer, ProjectStore.layer, layerPortScanner)),
+      Layer.provide(Layer.merge(ProjectionStoreV2.layer, ProjectStore.layer)),
     ),
   ),
   Layer.provide(SqlitePersistence.layerConfig),
@@ -531,6 +530,8 @@ const layerVcs = Layer.empty.pipe(
 );
 
 const layerCheckpointStore = CheckpointStore.layer.pipe(Layer.provide(layerVcsDriverRegistry));
+
+const layerPortScanner = PortScanner.layer.pipe(Layer.provide(ProcessRunner.layer));
 
 const layerPreviewAutomationBroker = PreviewAutomationBroker.layer;
 

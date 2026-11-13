@@ -20,10 +20,10 @@ const WORKSPACE_PORT_RANGE_COUNT =
   (WORKSPACE_PORT_MAX - WORKSPACE_PORT_MIN) / WORKSPACE_PORT_RANGE_SIZE + 1;
 /** Blocks freed beyond the one needed, so the next few new workspaces skip another reclaim pass. */
 const RECLAIM_MARGIN = 7;
-/** The dev runner takes the first two ports; a listener on any of these means the block is in use. */
-const PROBED_PORT_OFFSETS = [0, 1, 2] as const;
-/** A fresh range may belong to a thread the projections do not show yet. */
-const FRESH_ALLOCATION_GRACE_MS = 10 * 60 * 1_000;
+/** A range handed out recently may belong to a thread the projections do not show as open yet. */
+const HANDED_OUT_GRACE_MS = 10 * 60 * 1_000;
+/** After a reclaim pass frees nothing, later allocations skip the pass for this long. */
+const FRUITLESS_RECLAIM_BACKOFF_MS = 60 * 1_000;
 
 interface WorkspacePortRow {
   readonly basePort: number;
@@ -52,7 +52,7 @@ export class WorkspacePortHoldersError extends Schema.TaggedError<WorkspacePortH
 ) {}
 
 export interface WorkspacePortHolderSnapshot {
-  /** Resolved workspace paths with an open thread or a live terminal. */
+  /** Resolved workspace paths with an open thread. */
   readonly openPaths: ReadonlySet<string>;
   /** Latest thread activity per resolved workspace path, closed threads included. */
   readonly lastActivityMs: ReadonlyMap<string, number>;
@@ -75,6 +75,16 @@ export class WorkspacePortAllocator extends Context.Service<
     readonly environmentFor: (workspacePath: string) => Effect.Effect<Record<string, string>>;
     /** Frees the workspace's range after its directory is deleted for good. */
     readonly release: (workspacePath: string) => Effect.Effect<void, WorkspacePortReleaseError>;
+    /** A live terminal started with the workspace's ports keeps its range until it ends. */
+    readonly holdForTerminal: (input: {
+      readonly threadId: string;
+      readonly terminalId: string;
+      readonly workspacePath: string;
+    }) => Effect.Effect<void>;
+    readonly releaseTerminalHold: (input: {
+      readonly threadId: string;
+      readonly terminalId: string;
+    }) => Effect.Effect<void>;
   }
 >()("@styal/cli/workspace/WorkspacePortAllocator") {}
 
@@ -101,7 +111,8 @@ interface PoolCensus {
   readonly uncheckedPath: number;
   readonly inUseByListener: number;
   readonly existingPath: number;
-  readonly recentlyAllocated: number;
+  readonly recentlyHandedOut: number;
+  readonly heldByTerminal: number;
 }
 
 export const make = Effect.fn("WorkspacePortAllocator.make")(function* (options?: {
@@ -123,14 +134,26 @@ export const make = Effect.fn("WorkspacePortAllocator.make")(function* (options?
       ));
   // Probes run per candidate block, inside allocation spans that already trace them.
   const blockHasListener = Effect.fnUntraced(function* (basePort: number) {
-    for (const offset of PROBED_PORT_OFFSETS) {
+    for (let offset = 0; offset < WORKSPACE_PORT_RANGE_SIZE; offset += 1) {
       if (yield* hasListener(basePort + offset)) return true;
     }
     return false;
   });
-  const allocatedAtMs = new Map<string, number>();
+  const handedOutAtMs = new Map<string, number>();
+  const terminalHolds = new Map<string, string>();
+  const terminalKey = (input: { readonly threadId: string; readonly terminalId: string }) =>
+    `${input.threadId}\0${input.terminalId}`;
   // One warning per exhausted episode, so a full pool does not log once per thread.
   let exhaustionReported = false;
+  let fruitlessReclaimAtMs: number | null = null;
+
+  const noteHandedOut = Effect.fnUntraced(function* (normalizedPath: string) {
+    const nowMs = yield* Clock.currentTimeMillis;
+    for (const [workspacePath, at] of handedOutAtMs) {
+      if (nowMs - at >= HANDED_OUT_GRACE_MS) handedOutAtMs.delete(workspacePath);
+    }
+    handedOutAtMs.set(normalizedPath, nowMs);
+  });
 
   const findExisting = (normalizedPath: string) =>
     sql<WorkspacePortRow>`
@@ -148,8 +171,8 @@ export const make = Effect.fn("WorkspacePortAllocator.make")(function* (options?
         `.pipe(Effect.asVoid);
 
   // Reservations are only a cache: deleted folders lose theirs first, then the
-  // least recently active workspaces without an open thread, never ones a
-  // listener still uses. Paths the filesystem cannot confirm keep their ports.
+  // least recently active workspaces without an open thread or live terminal,
+  // never ones a listener still uses. Paths the filesystem cannot confirm keep their ports.
   const reclaim = Effect.fn("WorkspacePortAllocator.reclaim")(function* () {
     const allocations = yield* sql<{ readonly workspacePath: string; readonly basePort: number }>`
       SELECT workspace_path AS "workspacePath", base_port AS "basePort"
@@ -173,9 +196,11 @@ export const make = Effect.fn("WorkspacePortAllocator.make")(function* (options?
     yield* deleteReservations(missing.map((entry) => entry.workspacePath));
 
     const nowMs = yield* Clock.currentTimeMillis;
-    for (const [workspacePath, at] of allocatedAtMs) {
-      if (nowMs - at >= FRESH_ALLOCATION_GRACE_MS) allocatedAtMs.delete(workspacePath);
-    }
+    const terminalPaths = new Set(terminalHolds.values());
+    const recentlyHandedOut = (workspacePath: string) => {
+      const at = handedOutAtMs.get(workspacePath);
+      return at !== undefined && nowMs - at < HANDED_OUT_GRACE_MS;
+    };
     const existing = checked.filter((entry) => entry.state === "exists");
     const snapshot = Option.isNone(holders)
       ? null
@@ -193,7 +218,8 @@ export const make = Effect.fn("WorkspacePortAllocator.make")(function* (options?
             .filter(
               (entry) =>
                 !snapshot.openPaths.has(entry.workspacePath) &&
-                !allocatedAtMs.has(entry.workspacePath),
+                !terminalPaths.has(entry.workspacePath) &&
+                !recentlyHandedOut(entry.workspacePath),
             )
             .map((entry) => ({
               ...entry,
@@ -214,6 +240,8 @@ export const make = Effect.fn("WorkspacePortAllocator.make")(function* (options?
       reclaimed.push(entry.workspacePath);
     }
     yield* deleteReservations(reclaimed);
+    for (const workspacePath of reclaimed) handedOutAtMs.delete(workspacePath);
+    fruitlessReclaimAtMs = missing.length + reclaimed.length > 0 ? null : nowMs;
     if (missing.length + reclaimed.length > 0) {
       yield* Effect.logInfo("reclaimed workspace port ranges", {
         missingPaths: missing.length,
@@ -229,7 +257,8 @@ export const make = Effect.fn("WorkspacePortAllocator.make")(function* (options?
       uncheckedPath: checked.filter((entry) => entry.state === "unknown").length,
       inUseByListener,
       existingPath: existing.length,
-      recentlyAllocated: allocatedAtMs.size,
+      recentlyHandedOut: existing.filter((entry) => recentlyHandedOut(entry.workspacePath)).length,
+      heldByTerminal: terminalPaths.size,
     } satisfies PoolCensus;
   });
 
@@ -259,10 +288,7 @@ export const make = Effect.fn("WorkspacePortAllocator.make")(function* (options?
         RETURNING base_port AS "basePort"
       `;
       const insertedPort = inserted[0]?.basePort;
-      if (insertedPort !== undefined) {
-        allocatedAtMs.set(normalizedPath, yield* Clock.currentTimeMillis);
-        return insertedPort;
-      }
+      if (insertedPort !== undefined) return insertedPort;
       const concurrentPort = yield* findExisting(normalizedPath);
       if (concurrentPort !== undefined) return concurrentPort;
     }
@@ -277,6 +303,13 @@ export const make = Effect.fn("WorkspacePortAllocator.make")(function* (options?
       );
       const first = yield* allocateOrNull;
       if (first !== null) return first;
+      const nowMs = yield* Clock.currentTimeMillis;
+      if (
+        fruitlessReclaimAtMs !== null &&
+        nowMs - fruitlessReclaimAtMs < FRUITLESS_RECLAIM_BACKOFF_MS
+      ) {
+        return null;
+      }
       const census = yield* reclaim();
       const retried = yield* allocateOrNull;
       if (retried !== null) return retried;
@@ -296,9 +329,14 @@ export const make = Effect.fn("WorkspacePortAllocator.make")(function* (options?
   )(
     function* (workspacePath) {
       const normalizedPath = path.resolve(workspacePath);
-      const existingPort = yield* findExisting(normalizedPath);
-      if (existingPort !== undefined) return existingPort;
-      const basePort = yield* allocationLock.withPermits(1)(allocateUnderPressure(normalizedPath));
+      // Under the lock, so a reclaim pass cannot free a range while it is being handed out.
+      const basePort = yield* allocationLock.withPermits(1)(
+        Effect.gen(function* () {
+          const port = yield* allocateUnderPressure(normalizedPath);
+          if (port !== null) yield* noteHandedOut(normalizedPath);
+          return port;
+        }),
+      );
       if (basePort !== null) exhaustionReported = false;
       return basePort;
     },
@@ -326,10 +364,35 @@ export const make = Effect.fn("WorkspacePortAllocator.make")(function* (options?
 
   const release: WorkspacePortAllocator["Service"]["release"] = (workspacePath) =>
     allocationLock
-      .withPermits(1)(deleteReservations([path.resolve(workspacePath)]))
+      .withPermits(1)(
+        deleteReservations([path.resolve(workspacePath)]).pipe(
+          Effect.tap(() =>
+            Effect.sync(() => {
+              handedOutAtMs.delete(path.resolve(workspacePath));
+              fruitlessReclaimAtMs = null;
+            }),
+          ),
+        ),
+      )
       .pipe(Effect.mapError((cause) => new WorkspacePortReleaseError({ workspacePath, cause })));
 
-  return WorkspacePortAllocator.of({ getBasePort, environmentFor, release });
+  const holdForTerminal: WorkspacePortAllocator["Service"]["holdForTerminal"] = (input) =>
+    Effect.sync(() => {
+      terminalHolds.set(terminalKey(input), path.resolve(input.workspacePath));
+    });
+
+  const releaseTerminalHold: WorkspacePortAllocator["Service"]["releaseTerminalHold"] = (input) =>
+    Effect.sync(() => {
+      terminalHolds.delete(terminalKey(input));
+    });
+
+  return WorkspacePortAllocator.of({
+    getBasePort,
+    environmentFor,
+    release,
+    holdForTerminal,
+    releaseTerminalHold,
+  });
 });
 
 export const layer = Layer.effect(WorkspacePortAllocator, make());

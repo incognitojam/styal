@@ -6890,9 +6890,10 @@ features:
     prs: [100, 299]
     invariants:
       - Each normalized workspace receives a persistent non-overlapping range of ten development ports that is reused across server restarts and threads sharing that workspace.
-      - When the range pool fills, reservations for confirmed-missing workspace paths are reclaimed first, then those of the least recently active existing workspaces with no thread the settle cleanup treats as holding the worktree and no live terminal, up to a small margin; paths that cannot be inspected, ranges with a listener, and ranges allocated in the last ten minutes are kept.
-      - A new range is never handed out while something listens on its first ports.
+      - When the range pool fills, reservations for confirmed-missing workspace paths are reclaimed first, then those of the least recently active existing workspaces with no thread the settle cleanup treats as holding the worktree, up to a small margin; paths that cannot be inspected, ranges with a live terminal or a loopback listener on any of their ports, and ranges handed out in the last ten minutes are kept. A pass that frees nothing is not repeated for a minute.
+      - A new range is never handed out while something listens on any of its ports on loopback.
       - Allocation never fails a thread, terminal, script, or provider session. Without a free range they start without the port variables, the server logs one warning per exhausted episode with a census of what holds the pool, and a new worktree thread gets one system notice saying it has no reserved ports.
+      - Terminals and provider processes never inherit `STYAL_WORKSPACE_PORT` from the server's own environment.
       - Deleting a worktree through styal (client request or agent tool) releases its range; storage cleanup keeps ranges for worktrees it may recreate on resume.
       - The first port is exposed canonically as `STYAL_WORKSPACE_PORT` to terminal children, project scripts, and fresh or resumed Codex, Claude, Cursor, Grok, and OpenCode sessions, with a one-way `T3CODE_WORKSPACE_PORT` compatibility alias for existing scripts.
       - The repository dev runner uses the workspace base port for the server and the next port for Vite while preserving explicit port, offset, instance, and development URL overrides.
@@ -6904,7 +6905,6 @@ features:
       - apps/server/src/orchestration-v2/RuntimePolicy.ts
       - apps/server/src/orchestration-v2/ThreadSettlementService.ts
       - apps/server/src/persistence/ForkMigrations/002_WorkspacePortAllocations.ts
-      - apps/server/src/preview/PortScanner.ts
       - apps/server/src/project/ProjectSetupScriptRunner.ts
       - apps/server/src/server.ts
       - apps/server/src/terminal/Manager.ts
@@ -6918,6 +6918,7 @@ features:
       - packages/provider-opencode/src/server/adapter.ts
       - packages/provider-opencode/src/server/v2/adapter.ts
       - packages/provider-pi/src/server/adapter.ts
+      - packages/shared/src/serverOwnedEnvironment.ts
       - scripts/dev-runner.ts
       - scripts/teardown-worktree.ts
       - t3.json
@@ -6926,7 +6927,6 @@ features:
       - apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts
       - apps/server/src/orchestration-v2/RuntimePolicy.ts
       - apps/server/src/orchestration-v2/ThreadSettlementService.ts
-      - apps/server/src/preview/PortScanner.ts
       - apps/server/src/project/ProjectSetupScriptRunner.ts
       - apps/server/src/terminal/Manager.ts
       - packages/provider-acp/src/server/adapter.ts
@@ -6951,6 +6951,7 @@ features:
       - apps/server/src/project/ProjectSetupScriptRunner.test.ts
       - apps/server/src/terminal/Manager.test.ts
       - apps/server/src/workspace/WorkspacePortAllocator.test.ts
+      - packages/provider-core/src/server/instanceEnvironment.test.ts
       - packages/provider-cursor/src/server/CursorSdkWorker.test.ts
       - packages/provider-cursor/src/server/adapter.test.ts
       - packages/provider-opencode/src/server/adapter.test.ts
