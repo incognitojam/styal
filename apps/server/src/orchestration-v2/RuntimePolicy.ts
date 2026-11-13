@@ -182,16 +182,7 @@ export const layerFromProjectStore: Layer.Layer<
         const additionalInstructions = Option.getOrNull(project)?.additionalInstructions;
         const workspaceEnvironment = Option.isNone(portAllocator)
           ? undefined
-          : yield* portAllocator.value.environmentFor(cwd).pipe(
-              Effect.mapError(
-                (cause) =>
-                  new RuntimePolicyResolveError({
-                    projectId: input.thread.projectId,
-                    providerInstanceId: input.modelSelection.instanceId,
-                    cause,
-                  }),
-              ),
-            );
+          : yield* portAllocator.value.environmentFor(cwd);
         return ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
           runtimeMode: providerRuntimeMode(input.thread.runtimeMode, supportedRuntimeModes),
           interactionMode: input.thread.interactionMode,

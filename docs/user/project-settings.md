@@ -291,8 +291,12 @@ Every workspace receives a persistent range of ten development ports; there is n
 enable. Agents, terminals, and project scripts launched locally for the workspace receive the first
 port as `STYAL_WORKSPACE_PORT`, and the range continues with the next nine numbers. A worktree
 keeps its range across restarts, and local threads share the range of the project's main checkout.
-Deleting a worktree from styal frees its range, and when the available ranges fill up,
-reservations for other deleted workspace directories are reclaimed.
+Deleting a worktree from styal frees its range. When all ranges are taken, styal first frees the
+ranges of deleted workspace directories, then those of the least recently used workspaces whose
+threads are all settled or archived, skipping any with an open terminal or a program listening on
+their ports. A workspace that loses its range gets a new one, possibly different, the next time it
+needs one. If no range is free, threads, terminals, and scripts still start without
+`STYAL_WORKSPACE_PORT`, and a new worktree thread's work log says so.
 
 For example, a project script can run `npm run dev -- --port "$STYAL_WORKSPACE_PORT"` and give a
 second service `$((STYAL_WORKSPACE_PORT + 1))`. Workspaces in the same environment never receive

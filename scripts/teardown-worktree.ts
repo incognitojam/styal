@@ -32,15 +32,25 @@ function runsInside(worktree: string, pid: number): boolean {
 }
 
 /** Stopping a runner stops its whole tree, including parts that listen on nothing. */
-function devServerProcesses(worktree: string, workspacePort: number): ReadonlyArray<number> {
+function devServerProcesses(
+  worktree: string,
+  workspacePort: number | undefined,
+): ReadonlyArray<number> {
   const runners = NodeFS.existsSync(NodePath.join(worktree, DEV_RUNNERS_PATH))
     ? NodeFS.readdirSync(NodePath.join(worktree, DEV_RUNNERS_PATH)).map(Number)
     : [];
-  const range = `tcp:${workspacePort}-${workspacePort + WORKSPACE_PORT_COUNT - 1}`;
-  const listeners = lsof(["-t", `-i${range}`, "-sTCP:LISTEN"])
-    .split("\n")
-    .filter(Boolean)
-    .map(Number);
+  // Without a reserved range the dev runner picked its own ports, so only its record finds it.
+  const listeners =
+    workspacePort === undefined
+      ? []
+      : lsof([
+          "-t",
+          `-itcp:${workspacePort}-${workspacePort + WORKSPACE_PORT_COUNT - 1}`,
+          "-sTCP:LISTEN",
+        ])
+          .split("\n")
+          .filter(Boolean)
+          .map(Number);
   // A leftover file can name a PID since reused, so both sources need the same check.
   return [...new Set([...runners, ...listeners])].filter(
     (pid) => Number.isInteger(pid) && pid > 0 && runsInside(worktree, pid),
@@ -84,7 +94,7 @@ const signalAll = (targets: ReadonlySet<number>, signal: NodeJS.Signals) => {
   }
 };
 
-async function stopDevServers(worktree: string, workspacePort: number): Promise<void> {
+async function stopDevServers(worktree: string, workspacePort: number | undefined): Promise<void> {
   for (const signal of ["SIGTERM", "SIGKILL"] as const) {
     const remaining = devServerProcesses(worktree, workspacePort);
     if (remaining.length === 0) return;
@@ -104,17 +114,21 @@ async function stopDevServers(worktree: string, workspacePort: number): Promise<
 export function resolveTeardownTarget(
   env: NodeJS.ProcessEnv,
   checkout: string,
-): { readonly worktree: string; readonly workspacePort: number } | undefined {
+): { readonly worktree: string; readonly workspacePort: number | undefined } | undefined {
   const worktree = env.STYAL_WORKTREE_PATH;
-  const workspacePort = Number(env.STYAL_WORKSPACE_PORT);
-  if (!worktree || !Number.isInteger(workspacePort) || workspacePort <= 0) return undefined;
+  // styal leaves the port unset when no range was free; a set but invalid value is a mistake.
+  const workspacePort =
+    env.STYAL_WORKSPACE_PORT === undefined ? undefined : Number(env.STYAL_WORKSPACE_PORT);
+  if (!worktree) return undefined;
+  if (workspacePort !== undefined && (!Number.isInteger(workspacePort) || workspacePort <= 0))
+    return undefined;
   if (NodeFS.realpathSync(worktree) !== NodeFS.realpathSync(checkout)) return undefined;
   return { worktree: NodeFS.realpathSync(worktree), workspacePort };
 }
 
 export async function teardownWorktree(input: {
   readonly worktree: string;
-  readonly workspacePort: number;
+  readonly workspacePort: number | undefined;
 }): Promise<void> {
   // Stop first: a server still running would keep writing to the state being deleted.
   await stopDevServers(input.worktree, input.workspacePort);
@@ -128,7 +142,7 @@ if (import.meta.main) {
   const target = resolveTeardownTarget(process.env, NodePath.dirname(import.meta.dirname));
   if (target === undefined) {
     console.error(
-      "[teardown] refusing to run: STYAL_WORKTREE_PATH must name this worktree and STYAL_WORKSPACE_PORT must be set. Run this as a settle action.",
+      "[teardown] refusing to run: STYAL_WORKTREE_PATH must name this worktree. Run this as a settle action.",
     );
     process.exitCode = 1;
   } else {

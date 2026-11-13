@@ -176,7 +176,7 @@ export function isAutoSettlementCandidate(
  * Whether a thread still needs its worktree, so another thread settling there must not clean it
  * up. An idle subagent does not count: most never settle, and their parent decides.
  */
-function threadHoldsWorktree(thread: OrchestrationV2ThreadShell, nowMs: number): boolean {
+export function threadHoldsWorktree(thread: OrchestrationV2ThreadShell, nowMs: number): boolean {
   if (
     thread.activeRunId !== null ||
     thread.pendingRuntimeRequest !== null ||

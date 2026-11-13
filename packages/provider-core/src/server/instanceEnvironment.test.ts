@@ -17,6 +17,7 @@ describe("inheritedProviderEnvironment", () => {
         PATH: "/bin",
         ANTHROPIC_API_KEY: "sk-ant-test",
         STYAL_HOME: "/home/example/.styal",
+        STYAL_WORKSPACE_PORT: "20000",
         T3CODE_PORT: "3773",
         T3CODE_HOST: "0.0.0.0",
         T3CODE_TAILSCALE_SERVE: "true",

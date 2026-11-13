@@ -84,7 +84,7 @@ describe("teardownWorktree registered runners", () => {
     return child;
   };
 
-  it("stops a registered runner that listens on nothing, and ignores a reused or dead PID", async () => {
+  it("stops a registered runner without a reserved range, and ignores a reused or dead PID", async () => {
     const worktree = tempDir();
     const elsewhere = tempDir();
     const runners = NodePath.join(worktree, ".styal/dev-runners");
@@ -101,7 +101,7 @@ describe("teardownWorktree registered runners", () => {
     }
     const runnerExit = NodeEvents.EventEmitter.once(runner, "exit");
 
-    await teardownWorktree({ worktree, workspacePort: await freePort() });
+    await teardownWorktree({ worktree, workspacePort: undefined });
 
     await runnerExit;
     assert.strictEqual(reused.exitCode, null);
@@ -150,7 +150,13 @@ describe("resolveTeardownTarget", () => {
         checkout,
       ),
     );
-    assert.isUndefined(resolveTeardownTarget({ STYAL_WORKTREE_PATH: checkout }, checkout));
+    assert.isUndefined(
+      resolveTeardownTarget({ STYAL_WORKTREE_PATH: checkout, STYAL_WORKSPACE_PORT: "" }, checkout),
+    );
+    assert.deepStrictEqual(resolveTeardownTarget({ STYAL_WORKTREE_PATH: checkout }, checkout), {
+      worktree: checkout,
+      workspacePort: undefined,
+    });
     assert.deepStrictEqual(
       resolveTeardownTarget(
         { STYAL_WORKTREE_PATH: checkout, STYAL_WORKSPACE_PORT: "20020" },

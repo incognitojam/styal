@@ -44,6 +44,7 @@ import { forkParked } from "../serverActivation.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
+import * as WorkspacePortAllocator from "../workspace/WorkspacePortAllocator.ts";
 
 type SetupRunOutcome =
   | {
@@ -292,6 +293,7 @@ export const make = Effect.gen(function* () {
   const eventSink = yield* EventSink.EventSinkV2;
   const positions = yield* TurnItemPositions.TurnItemPositionStoreV2;
   const sql = yield* SqlClient.SqlClient;
+  const portAllocator = yield* WorkspacePortAllocator.WorkspacePortAllocator;
   const activeRunsRef = yield* SynchronizedRef.make(new Map<string, ActiveSetupRun>());
   // Runs this process started. Startup recovery runs alongside new runs and
   // must only close runs a previous server left behind.
@@ -629,6 +631,47 @@ export const make = Effect.gen(function* () {
     },
   );
 
+  // Reserving the range here, as the worktree is created, lets the thread say
+  // once that it has no ports instead of each terminal or turn failing.
+  const noteMissingWorkspacePorts = Effect.fn("ProjectSetupScriptRunner.noteMissingWorkspacePorts")(
+    function* (input: { readonly threadId: string; readonly worktreePath: string }) {
+      if ((yield* portAllocator.getBasePort(input.worktreePath)) !== null) return;
+      const threadId = ThreadId.make(input.threadId);
+      const id = TurnItemId.make(`workspace-ports-unavailable:${input.threadId}`);
+      if ((yield* threads.getTurnItem({ threadId, itemId: id })) !== null) return;
+      const at = yield* DateTime.now;
+      yield* eventSink.write({
+        events: [
+          {
+            id: EventId.make(`workspace-ports-unavailable:${input.threadId}`),
+            type: "turn-item.updated",
+            threadId,
+            occurredAt: at,
+            payload: {
+              id,
+              threadId,
+              runId: null,
+              nodeId: null,
+              providerThreadId: null,
+              providerTurnId: null,
+              nativeItemRef: null,
+              parentItemId: null,
+              ordinal: yield* positions.allocate({ threadId, turnItemId: id, runId: null }),
+              type: "system_notice",
+              status: "completed",
+              title: "No reserved development ports",
+              message: `No free development ports, so this workspace has no reserved ports and ${WorkspacePortAllocator.WORKSPACE_PORT_ENV_VAR} is not set. Ports free up as threads in other worktrees are settled or archived; terminals and agent turns started here after that get them.`,
+              startedAt: at,
+              completedAt: at,
+              updatedAt: at,
+            },
+          },
+        ],
+      });
+    },
+    Effect.ignoreCause({ log: true }),
+  );
+
   const runForThread: ProjectSetupScriptRunner["Service"]["runForThread"] = Effect.fn(
     "ProjectSetupScriptRunner.runForThread",
   )(function* (input) {
@@ -697,6 +740,7 @@ export const make = Effect.gen(function* () {
       ),
     );
     const trigger = input.trigger ?? "setup";
+    if (trigger === "setup") yield* noteMissingWorkspacePorts(input);
     const scripts = resolveProjectActions(
       settings,
       project,

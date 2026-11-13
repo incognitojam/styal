@@ -11,6 +11,7 @@ import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as TurnItemPositions from "../orchestration-v2/TurnItemPositionStore.ts";
 import * as LegacyImporter from "../orchestration-v2/legacy/LegacyV1ThreadImporter.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
+import * as WorkspacePortAllocator from "../workspace/WorkspacePortAllocator.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as ProjectFileActionApprovals from "./ProjectFileActionApprovals.ts";
 import * as ProjectService from "./ProjectService.ts";
@@ -24,6 +25,9 @@ const stores = Layer.mergeAll(
   TurnItemPositions.layer.pipe(Layer.provide(database)),
 );
 const sink = EventSink.layer.pipe(Layer.provide(stores));
+const reservedPorts = Layer.mock(WorkspacePortAllocator.WorkspacePortAllocator)({
+  getBasePort: () => Effect.succeed(20_000),
+});
 const importer = LegacyImporter.layer.pipe(Layer.provide(Layer.mergeAll(stores, sink)));
 
 it.effect(
@@ -83,6 +87,7 @@ it.effect(
       importer,
       Layer.mock(ProjectService.ProjectService)({ getById: () => Effect.succeedSome(project) }),
       Layer.mock(TerminalManager.TerminalManager)({ openCommand, subscribe }),
+      reservedPorts,
       Layer.mock(ProjectFileActionApprovals.ProjectFileActionApprovals)({
         automationConfig: () => Effect.succeed(null),
       }),
@@ -274,6 +279,7 @@ it.effect(
       importer,
       Layer.mock(ProjectService.ProjectService)({ getById: () => Effect.succeedSome(project) }),
       Layer.mock(TerminalManager.TerminalManager)({ openCommand, subscribe }),
+      reservedPorts,
       Layer.mock(ProjectFileActionApprovals.ProjectFileActionApprovals)({
         automationConfig: () => Effect.succeed(null),
       }),
@@ -373,6 +379,7 @@ describe("styal.json setup actions", () => {
     readonly approved: boolean;
     readonly approveAfterWaiting?: boolean;
     readonly exitCode?: number;
+    readonly portsExhausted?: boolean;
   }) => {
     const openCommand = vi.fn(
       (input: Parameters<TerminalManager.TerminalManager["Service"]["openCommand"]>[0]) =>
@@ -422,6 +429,9 @@ describe("styal.json setup actions", () => {
       Layer.mock(TerminalManager.TerminalManager)({ openCommand, subscribe }),
       Layer.mock(ProjectFileActionApprovals.ProjectFileActionApprovals)({
         automationConfig: () => Effect.succeed({ source: "styal.json", actions: [fileSetup] }),
+      }),
+      Layer.mock(WorkspacePortAllocator.WorkspacePortAllocator)({
+        getBasePort: () => Effect.succeed(options.portsExhausted ? null : 20_000),
       }),
       ServerSettings.layerTest(
         options.approved
@@ -480,10 +490,11 @@ describe("styal.json setup actions", () => {
         }
       }
       const result = initial;
-      const rows = (yield* projections.getThreadProjection(threadId)).turnItems.filter(
-        (item) => item.type === "command_execution",
-      );
-      return { result, rows, openCommand, projectId, waitingId };
+      if (options.portsExhausted) yield* service.runForThread(runInput);
+      const turnItems = (yield* projections.getThreadProjection(threadId)).turnItems;
+      const rows = turnItems.filter((item) => item.type === "command_execution");
+      const notices = turnItems.filter((item) => item.type === "system_notice");
+      return { result, rows, notices, openCommand, projectId, waitingId };
     }).pipe(Effect.provide(Layer.mergeAll(dependencies, runner)));
   };
 
@@ -532,6 +543,24 @@ describe("styal.json setup actions", () => {
           undefined,
         );
       }),
+  );
+
+  it.effect("runs setup without ports and says so once when no range is free", () =>
+    Effect.gen(function* () {
+      const { result, notices, openCommand } = yield* runWith({
+        suffix: "no-ports",
+        localScripts: [],
+        approved: true,
+        portsExhausted: true,
+      });
+      assert.equal(result.status, "started");
+      assert.equal(openCommand.mock.calls.length, 2);
+      assert.equal(notices.length, 1);
+      assert.match(
+        notices[0]?.type === "system_notice" ? notices[0].message : "",
+        /^No free development ports/,
+      );
+    }),
   );
 
   it.effect("prefers a saved setup action over an approved file one", () =>
