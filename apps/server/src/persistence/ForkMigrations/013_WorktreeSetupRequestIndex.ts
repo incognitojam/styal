@@ -4,7 +4,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 export default Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   yield* sql`
-    CREATE INDEX idx_orchestration_events_setup_worktree_request
+    CREATE INDEX IF NOT EXISTS idx_orchestration_events_setup_worktree_request
     ON orchestration_events(json_extract(payload_json, '$.setupScript.worktreePath'), sequence DESC)
     WHERE application_event_version = 2 AND aggregate_kind = 'thread'
       AND event_type = 'turn-item.updated'

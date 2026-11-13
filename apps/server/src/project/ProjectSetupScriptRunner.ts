@@ -327,6 +327,9 @@ export const make = Effect.gen(function* () {
     readonly payload: Record<string, unknown>;
   }) {
     const metadata = yield* decodeSetupRunActivityPayloadEffect(input.payload);
+    const worktreeKey = yield* fileSystem
+      .realPath(metadata.worktreePath)
+      .pipe(Effect.orElseSucceed(() => metadata.worktreePath));
     const threadId = ThreadId.make(input.threadId);
     const id = TurnItemId.make(`setup:${input.runId}`);
     const rows = yield* sql<{ readonly payload_json: string }>`
@@ -367,7 +370,7 @@ export const make = Effect.gen(function* () {
               scriptName: metadata.scriptName,
               ...(metadata.scriptIcon === undefined ? {} : { scriptIcon: metadata.scriptIcon }),
               terminalId: metadata.terminalId,
-              worktreePath: metadata.worktreePath,
+              worktreePath: worktreeKey,
               ...(metadata.completionEvidence === undefined
                 ? {}
                 : { completionEvidence: metadata.completionEvidence }),
@@ -860,6 +863,7 @@ export const make = Effect.gen(function* () {
 
     if (input.recoverIfEvidenceMissing) {
       const recover = yield* Effect.gen(function* () {
+        const worktreeKey = yield* fileSystem.realPath(input.worktreePath);
         // Request sequence orders attempts across threads; later completion updates must not reorder them.
         const rows = yield* sql<{ readonly payload_json: string }>`
           SELECT payload_json FROM orchestration_v2_projection_turn_items
@@ -870,7 +874,7 @@ export const make = Effect.gen(function* () {
               AND event_type = 'turn-item.updated'
               AND json_extract(payload_json, '$.status') = 'pending'
               AND substr(json_extract(payload_json, '$.setupScript.terminalId'), 1, 6) = 'setup-'
-              AND json_extract(payload_json, '$.setupScript.worktreePath') = ${input.worktreePath}
+              AND json_extract(payload_json, '$.setupScript.worktreePath') = ${worktreeKey}
             ORDER BY sequence DESC LIMIT 1
           )
         `;

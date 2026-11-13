@@ -10,6 +10,7 @@ import {
   runAllMigrations,
   runForkMigrations,
 } from "./ForkMigrations.ts";
+import SetupRequestIndex from "./ForkMigrations/013_WorktreeSetupRequestIndex.ts";
 import { migrationManifest, runMigrations } from "./Migrations.ts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 
@@ -25,6 +26,8 @@ upstreamLayer("ForkMigrations canonical upstream upgrade", (it) => {
 
       yield* runMigrations();
       yield* runAllMigrations();
+      yield* SetupRequestIndex;
+      yield* SetupRequestIndex;
 
       const upstreamMigration = yield* sql<{
         readonly migration_id: number;

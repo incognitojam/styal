@@ -46,6 +46,7 @@ it.effect(
     const root = NodeFS.mkdtempSync(NodePath.join(scratch, "setup-recovery-"));
     const repo = NodePath.join(root, "repo");
     const worktree = NodePath.join(root, "worktree");
+    const worktreeAlias = NodePath.join(root, "worktree-alias");
     NodeFS.mkdirSync(repo);
     const git = (...args: string[]) => NodeChildProcess.execFileSync("git", ["-C", repo, ...args]);
     git("init");
@@ -60,6 +61,7 @@ it.effect(
       "init",
     );
     git("worktree", "add", "-b", "feature", worktree);
+    NodeFS.symlinkSync(worktree, worktreeAlias, "junction");
     const listeners = new Set<
       Parameters<TerminalManager.TerminalManager["Service"]["subscribe"]>[0]
     >();
@@ -67,7 +69,7 @@ it.effect(
     const openCommand = vi.fn(
       (input: Parameters<TerminalManager.TerminalManager["Service"]["openCommand"]>[0]) =>
         Effect.gen(function* () {
-          yield* beforeOpen;
+          yield* input.threadId === threadId ? beforeOpen : Effect.void;
           const snapshot = {
             threadId: input.threadId,
             terminalId: input.terminalId,
@@ -223,7 +225,7 @@ it.effect(
       const otherSetup = yield* service.runForThread({
         threadId: otherThreadId,
         projectId,
-        worktreePath: worktree,
+        worktreePath: worktreeAlias,
         observeCompletion: {},
       });
       if (otherSetup.status !== "started") return assert.fail("shared setup did not start");
@@ -242,11 +244,18 @@ it.effect(
         );
       yield* exitOther();
       yield* otherSetup.completion!;
+      const aliasSetup = (yield* projections.getThreadProjection(otherThreadId)).turnItems.find(
+        (item) => item.type === "command_execution" && item.setupScript?.runId === otherSetup.runId,
+      );
+      assert.equal(
+        aliasSetup?.type === "command_execution" && aliasSetup.setupScript?.worktreePath,
+        NodeFS.realpathSync(worktree),
+      );
       const recoverOther = () =>
         service.runForThread({
           threadId: otherThreadId,
           projectId,
-          worktreePath: worktree,
+          worktreePath: worktreeAlias,
           recoverIfEvidenceMissing: true,
           observeCompletion: {},
         });
