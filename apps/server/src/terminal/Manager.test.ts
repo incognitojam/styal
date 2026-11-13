@@ -792,6 +792,47 @@ it.layer(
     }),
   );
 
+  it.effect("opens recovery setup while a concurrent terminal waits for the workspace", () =>
+    Effect.gen(function* () {
+      const entered = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      const { manager } = yield* createManager(5, {
+        resolveProviderInstanceEnvironment: () =>
+          Deferred.succeed(entered, undefined).pipe(
+            Effect.andThen(Deferred.await(release)),
+            Effect.as({}),
+          ),
+      });
+      const input = openInput();
+      const path = yield* Path.Path;
+      const terminal = yield* withWorkspaceLease(
+        path.resolve(input.cwd),
+        Effect.gen(function* () {
+          const concurrent = yield* manager
+            .open({
+              ...input,
+              terminalId: "interactive",
+              providerInstanceId: ProviderInstanceId.make("fixture"),
+            })
+            .pipe(Effect.forkChild);
+          yield* Deferred.await(entered);
+          const setup = yield* manager.openCommand(
+            {
+              ...input,
+              terminalId: "setup-recovery",
+              command: "echo setup",
+            },
+            { workspaceLeaseHeld: true },
+          );
+          expect(setup.status).toBe("running");
+          yield* Deferred.succeed(release, undefined);
+          return concurrent;
+        }),
+      );
+      expect((yield* Fiber.join(terminal)).status).toBe("running");
+    }),
+  );
+
   it.effect("falls back to the terminal id when a command has no label", () =>
     Effect.gen(function* () {
       const { manager } = yield* createManager(5);

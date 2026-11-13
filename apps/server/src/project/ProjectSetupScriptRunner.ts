@@ -507,12 +507,19 @@ export const make = Effect.gen(function* () {
           detail: event.message,
         });
       case "restarted":
-        return finishRun(event.threadId, event.terminalId, {
-          outcome: "failed",
-          reason: "terminal-restarted",
-          exitCode: null,
-          exitSignal: null,
-        });
+        return SynchronizedRef.get(activeRunsRef).pipe(
+          Effect.flatMap((runs) =>
+            runs.get(terminalKey(event.threadId, event.terminalId))?.startedActivityRecorded ===
+            false
+              ? Effect.void
+              : finishRun(event.threadId, event.terminalId, {
+                  outcome: "failed",
+                  reason: "terminal-restarted",
+                  exitCode: null,
+                  exitSignal: null,
+                }),
+          ),
+        );
       default:
         return Effect.void;
     }
@@ -577,7 +584,9 @@ export const make = Effect.gen(function* () {
       const done = yield* Deferred.make<ProjectSetupScriptCompletion>();
       let lineBuffer = "";
       let settled = false;
+      let opening = true;
 
+      let unsubscribe = () => {};
       const settle = (exitCode: number | null, exitSignal: number | null) =>
         Effect.suspend(() => {
           if (settled) return Effect.void;
@@ -587,6 +596,7 @@ export const make = Effect.gen(function* () {
               Deferred.succeed(done, { exitCode, exitSignal, durationMs: nowMs - startedAtMs }),
             ),
             Effect.asVoid,
+            Effect.ensuring(Effect.sync(() => unsubscribe())),
           );
         });
 
@@ -599,7 +609,7 @@ export const make = Effect.gen(function* () {
           return input.onOutputLine(cleaned.slice(0, OUTPUT_LINE_MAX_LENGTH));
         });
 
-      const unsubscribe = yield* terminalManager.subscribe((event) => {
+      unsubscribe = yield* terminalManager.subscribe((event) => {
         if (event.threadId !== input.threadId || event.terminalId !== input.terminalId) {
           return Effect.void;
         }
@@ -617,9 +627,10 @@ export const make = Effect.gen(function* () {
           }
           case "exited":
             return settle(event.exitCode, event.exitSignal);
+          case "restarted":
+            return opening ? Effect.void : settle(null, null);
           case "closed":
           case "error":
-          case "restarted":
             return settle(null, null);
           default:
             return Effect.void;
@@ -629,7 +640,13 @@ export const make = Effect.gen(function* () {
       const completion = Deferred.await(done).pipe(
         Effect.ensuring(Effect.sync(() => unsubscribe())),
       );
-      return { completion, unsubscribe };
+      return {
+        completion,
+        unsubscribe,
+        opened: () => {
+          opening = false;
+        },
+      };
     },
   );
 
@@ -973,6 +990,7 @@ export const make = Effect.gen(function* () {
         Effect.tapError(() => Effect.sync(() => observed?.unsubscribe())),
       );
 
+    observed?.opened();
     if (terminal.status === "error") {
       observed?.unsubscribe();
       const startError = new ProjectSetupScriptOperationError({

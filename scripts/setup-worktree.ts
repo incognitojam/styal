@@ -17,6 +17,7 @@ const failedMarker = NodePath.join(markerDir, "setup-failed");
 NodeFS.rmSync(doneMarker, { force: true });
 NodeFS.rmSync(failedMarker, { force: true });
 NodeFS.mkdirSync(markerDir, { recursive: true });
+NodeFS.writeFileSync(NodePath.join(markerDir, "setup-marker-protocol"), "1\n");
 NodeFS.writeFileSync(runningMarker, `${process.pid}\n`);
 let failureDetail = "";
 process.on("uncaughtExceptionMonitor", (error) => {

@@ -6531,6 +6531,10 @@ features:
       - Setup and settle terminal output remains inspectable after exit, and later toolbar actions start on the first click without reusing the finite session.
       - Approve and run resumes the waiting lifecycle row through the same finite-command runner, checks the current file approval on the destination environment, and retains output and exit status.
       - The settle action runs as one finite command in a single settle terminal per thread, restarted in place by later settlements; a settlement during a running settle action starts nothing, and a thread whose worktree is the project checkout skips it without a work-log row.
+      - Recreating a managed worktree reruns approved setup before provider startup; a blocking failure or signal exit settles that start even when the effect worker would retry.
+      - Existing linked worktrees opt into reinstall detection only when their setup wrote .styal/setup-marker-protocol version 1; missing setup-done with no live setup-running reruns setup, while generic actions without that receipt never rerun on every turn.
+      - Workspace leases precede terminal thread locks; async setup completion observations are disposed independently of the startup wait.
+      - Intake of terminal recovery from upstream PR 24156 must retain setup after recreation in its shared restoreMissingWorktree helper, including terminal-first recovery.
       - A signal-terminated setup fails the setup card with its signal and blocks a synchronous first turn; installer failure markers retain the signal and output tail.
       - A setup or settle command whose preferred shell fails to spawn runs through the same fallback shells as an interactive terminal, using each fallback's own command syntax, and the run's outcome comes from that process's exit.
     rationale: Setup runs as the terminal's own process, so the exit code is exact on every shell and setup cannot hang on a sentinel. That finite session is what makes the titled, retained setup terminal and the per-run work log possible. Upstream's settle action is built into its sentinel runner, so the fork runs it on the same process runner.
@@ -6538,6 +6542,7 @@ features:
       - apps/mobile/src/features/threads/ThreadRouteScreen.tsx
       - apps/mobile/src/features/threads/thread-work-log.tsx
       - apps/mobile/src/lib/threadActivity.ts
+      - apps/server/src/orchestration-v2/ProviderTurnStartService.ts
       - apps/server/src/orchestration-v2/ThreadSettlementService.ts
       - apps/server/src/project/ProjectSetupScriptRunner.ts
       - apps/web/src/components/ChatView.logic.ts
@@ -6553,10 +6558,12 @@ features:
       - apps/web/src/session-logic.ts
       - packages/client-runtime/src/state/setupScriptActivity.ts
       - packages/shared/src/projectScripts.ts
+      - scripts/setup-worktree.ts
     upstream_paths:
       - apps/mobile/src/features/threads/ThreadRouteScreen.tsx
       - apps/mobile/src/features/threads/thread-work-log.tsx
       - apps/mobile/src/lib/threadActivity.ts
+      - apps/server/src/orchestration-v2/ProviderTurnStartService.ts
       - apps/server/src/project/ProjectSetupScriptRunner.ts
       - apps/server/src/terminal/Manager.ts
       - apps/web/src/components/ChatView.tsx
@@ -6570,6 +6577,7 @@ features:
       - packages/shared/src/projectScripts.ts
     tests:
       - apps/mobile/src/lib/threadActivity.test.ts
+      - apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts
       - apps/server/src/project/ProjectSetupScriptRunner.test.ts
       - apps/server/src/terminal/Manager.test.ts
       - apps/web/src/components/ChatView.logic.test.ts
@@ -6579,6 +6587,7 @@ features:
       - apps/web/src/lib/projectScriptTerminal.test.ts
       - apps/web/src/session-logic.test.ts
       - packages/shared/src/projectScripts.test.ts
+      - scripts/setup-worktree.test.ts
     upstream:
       status: partial
       tracking:
@@ -6587,6 +6596,7 @@ features:
         - https://github.com/pingdotgg/t3code/pull/12177
         - https://github.com/pingdotgg/t3code/pull/16290
         - https://github.com/pingdotgg/t3code/pull/18891
+        - https://github.com/pingdotgg/t3code/pull/24156
         - https://github.com/pingdotgg/t3code/pull/2829
       retire_when: Upstream exposes equivalent cross-client setup action lifecycle detail, retained output, worktree-only setup safety, and isolation from later interactive terminal actions.
 

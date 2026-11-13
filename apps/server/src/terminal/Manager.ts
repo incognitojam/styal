@@ -3242,25 +3242,35 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     return snapshot(liveSession);
   });
 
+  const withSessionWorkspaceLease = Effect.fn("terminal.withSessionWorkspaceLease")(function* <
+    A,
+    E,
+    R,
+  >(
+    input: TerminalObserveInput & { readonly cwd?: string; readonly worktreePath?: string | null },
+    effect: Effect.Effect<A, E, R>,
+  ) {
+    const existing = yield* getSession(input.threadId, input.terminalId);
+    const session = Option.getOrUndefined(existing);
+    const workspace = input.worktreePath ?? session?.worktreePath ?? input.cwd ?? session?.cwd;
+    return yield* workspace === undefined
+      ? effect
+      : withWorkspaceLease(path.resolve(workspace), effect);
+  });
+
   const openLocked = (input: TerminalOpenInput | TerminalCommandOpenInput) =>
     withWorkspaceLease(
       path.resolve(input.worktreePath ?? input.cwd),
-      openWithWorkspaceLease(input),
+      withThreadLock(input.threadId, openWithWorkspaceLease(input)),
     );
 
   const open: TerminalManager["Service"]["open"] = (input) =>
-    withThreadLock(
-      input.threadId,
-      resolveLaunchInputEnvironment(input).pipe(Effect.flatMap(openLocked)),
-    );
+    resolveLaunchInputEnvironment(input).pipe(Effect.flatMap(openLocked));
 
   const openCommand: TerminalManager["Service"]["openCommand"] = (requestedInput, options) =>
-    withThreadLock(
-      requestedInput.threadId,
-      options?.workspaceLeaseHeld
-        ? openWithWorkspaceLease(requestedInput)
-        : openLocked(requestedInput),
-    );
+    options?.workspaceLeaseHeld
+      ? withThreadLock(requestedInput.threadId, openWithWorkspaceLease(requestedInput))
+      : openLocked(requestedInput);
 
   const openOrAttachForStream = Effect.fnUntraced(function* (requestedInput: TerminalAttachInput) {
     const terminalId = requestedInput.terminalId;
@@ -3283,7 +3293,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         terminalId,
         cwd: input.cwd,
       });
-      return yield* Effect.uninterruptible(openLocked(resolvedInput));
+      return yield* Effect.uninterruptible(openWithWorkspaceLease(resolvedInput));
     }
 
     const session = existing.value;
@@ -3296,7 +3306,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         terminalId,
         cwd: input.cwd,
       });
-      return yield* Effect.uninterruptible(openLocked(resolvedInput));
+      return yield* Effect.uninterruptible(openWithWorkspaceLease(resolvedInput));
     }
 
     if (
@@ -3420,7 +3430,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       deliverLive = true;
       return stop;
     }).pipe(
-      (effect) => withThreadLock(input.threadId, effect),
+      (effect) => withSessionWorkspaceLease(input, withThreadLock(input.threadId, effect)),
       Effect.onError(() => Effect.sync(stop)),
     );
   };
@@ -3461,7 +3471,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       );
       return openOrAttachForStream(input);
     });
-    return streamSession(
+    const attach = streamSession(
       input,
       initial,
       listener,
@@ -3478,6 +3488,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       }),
       Effect.onError(() => Effect.sync(detach)),
     );
+    return attach;
   };
 
   const observeStream: TerminalManager["Service"]["observeStream"] = (

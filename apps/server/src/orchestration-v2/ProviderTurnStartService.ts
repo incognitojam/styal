@@ -1,3 +1,6 @@
+import * as Scope from "effect/Scope";
+import { isProcessAlive } from "../serverRuntimeState.ts";
+import { forkParked } from "../serverActivation.ts";
 import { isTemporaryWorktreeBranch } from "@t3tools/shared/git";
 import { modelSelectionsEqual } from "@t3tools/shared/model";
 import { projectComposerContextForProvider } from "@t3tools/shared/composerContextReferences";
@@ -92,6 +95,15 @@ class WorktreeRecreateError extends Schema.TaggedError<WorktreeRecreateError>()(
   }
 }
 
+class WorktreeSetupError extends Schema.TaggedError<WorktreeSetupError>()("WorktreeSetupError", {
+  worktreePath: Schema.String,
+  cause: Schema.Defect(),
+}) {
+  override get message(): string {
+    return `Could not set up the thread workspace at ${this.worktreePath}.`;
+  }
+}
+
 class WorktreeRecreateNoBaseError extends Schema.TaggedError<WorktreeRecreateNoBaseError>()(
   "WorktreeRecreateNoBaseError",
   { worktreePath: Schema.String, branch: Schema.String },
@@ -169,6 +181,8 @@ export const layer: Layer.Layer<
     const git = yield* GitVcsDriver.GitVcsDriver;
     const projects = yield* ProjectService.ProjectService;
     const setupScripts = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
+    const pendingSetup = new Set<string>();
+    const serviceScope = yield* Effect.scope;
     const providerAuth = yield* ProviderAuthService.ProviderAuthService;
     const installGate = yield* ProviderInstallGate.ProviderInstallGate;
     const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
@@ -687,64 +701,119 @@ export const layer: Layer.Layer<
         }
       }
       const { worktreePath, branch } = projection.thread;
-      if (worktreePath !== null && branch !== null) {
+      if (
+        worktreePath !== null &&
+        branch !== null &&
+        (yield* isManagedWorktreePath(worktreePath))
+      ) {
         const exists = yield* fileSystem
           .exists(worktreePath)
           .pipe(Effect.orElseSucceed(() => true));
-        if (!exists && (yield* isManagedWorktreePath(worktreePath))) {
+        const readMarker = (name: string) =>
+          fileSystem
+            .readFileString(path.join(worktreePath, ".styal", name))
+            .pipe(Effect.orElseSucceed(() => ""));
+        let needsSetup = !exists;
+        if (
+          exists &&
+          !pendingSetup.has(worktreePath) &&
+          (yield* readMarker("setup-marker-protocol")).trim() === "1"
+        ) {
+          const gitFile = yield* fileSystem.stat(path.join(worktreePath, ".git")).pipe(
+            Effect.map((stat) => stat.type === "File"),
+            Effect.orElseSucceed(() => false),
+          );
+          const done = yield* fileSystem
+            .exists(path.join(worktreePath, ".styal/setup-done"))
+            .pipe(Effect.orElseSucceed(() => true));
+          const pid = Number((yield* readMarker("setup-running")).trim());
+          const running = Number.isSafeInteger(pid) && pid > 0 && isProcessAlive(pid);
+          needsSetup = gitFile && !done && !running;
+        }
+        if (needsSetup) {
           const project = yield* projects.getById(projection.thread.projectId).pipe(
             Effect.map(Option.getOrUndefined),
             Effect.orElseSucceed(() => undefined),
           );
-          if (project !== undefined) {
-            yield* Effect.logWarning("provider turn start recreating missing worktree", {
-              threadId: projection.thread.id,
-              worktreePath,
-              branch,
-            });
-            const recreateResult = yield* Effect.result(
-              recreateMissingWorktree({
-                cwd: project.workspaceRoot,
+          if (
+            project !== undefined &&
+            path.resolve(project.workspaceRoot) !== path.resolve(worktreePath)
+          ) {
+            if (!exists) {
+              yield* Effect.logWarning("provider turn start recreating missing worktree", {
+                threadId: projection.thread.id,
                 worktreePath,
                 branch,
-              }).pipe(
-                Effect.andThen(
-                  Effect.gen(function* () {
-                    const setup = yield* setupScripts.runForThread({
-                      threadId: projection.thread.id,
-                      projectId: project.id,
-                      projectCwd: project.workspaceRoot,
-                      worktreePath,
-                      project,
-                      observeCompletion: {},
-                      workspaceLeaseHeld: true,
-                    });
-                    if (setup.status === "started" && !setup.async && setup.completion) {
-                      const completion = yield* setup.completion;
-                      if (completion.exitCode !== 0) {
-                        return yield* new WorktreeRecreateError({
-                          worktreePath,
-                          branch,
-                          cause: `Setup script exited with ${completion.exitCode ?? "no exit code"}.`,
-                        });
-                      }
-                    }
-                  }),
+              });
+              const recreated = yield* Effect.result(
+                recreateMissingWorktree({
+                  cwd: project.workspaceRoot,
+                  worktreePath,
+                  branch,
+                }).pipe(
+                  Effect.mapError((cause) =>
+                    cause._tag === "WorktreeRecreateNoBaseError"
+                      ? cause
+                      : new WorktreeRecreateError({ worktreePath, branch, cause }),
+                  ),
                 ),
+              );
+              if (recreated._tag === "Failure") {
+                if (input.willRetry === true) return yield* recreated.failure;
+                yield* settleStartFailure({
+                  signal: "worktree-recreate-failure",
+                  title: "Couldn't recreate thread workspace",
+                  error: recreated.failure,
+                  message: recreated.failure.message,
+                });
+                return;
+              }
+            }
+            const setupResult = yield* Effect.result(
+              Effect.gen(function* () {
+                const setup = yield* setupScripts.runForThread({
+                  threadId: projection.thread.id,
+                  projectId: project.id,
+                  projectCwd: project.workspaceRoot,
+                  worktreePath,
+                  project,
+                  observeCompletion: {},
+                  workspaceLeaseHeld: true,
+                });
+                if (setup.status !== "started" || !setup.completion) return;
+                if (setup.async) {
+                  pendingSetup.add(worktreePath);
+                  yield* forkParked(
+                    setup.completion.pipe(
+                      Effect.ensuring(
+                        Effect.sync(() => {
+                          pendingSetup.delete(worktreePath);
+                        }),
+                      ),
+                    ),
+                  ).pipe(Effect.provideService(Scope.Scope, serviceScope));
+                } else {
+                  const completion = yield* setup.completion;
+                  if (
+                    completion.exitCode !== 0 ||
+                    (completion.exitSignal !== null && completion.exitSignal !== 0)
+                  )
+                    return yield* new WorktreeSetupError({ worktreePath, cause: completion });
+                }
+              }).pipe(
                 Effect.mapError((cause) =>
-                  cause._tag === "WorktreeRecreateNoBaseError"
+                  cause._tag === "WorktreeSetupError"
                     ? cause
-                    : new WorktreeRecreateError({ worktreePath, branch, cause }),
+                    : new WorktreeSetupError({ worktreePath, cause }),
                 ),
               ),
             );
-            if (recreateResult._tag === "Failure") {
-              if (input.willRetry === true) return yield* recreateResult.failure;
+            if (setupResult._tag === "Failure") {
               yield* settleStartFailure({
-                signal: "worktree-recreate-failure",
-                title: "Couldn't recreate thread workspace",
-                error: recreateResult.failure,
-                message: recreateResult.failure.message,
+                signal: "worktree-setup-failure",
+                title: "Couldn't set up thread workspace",
+                error: setupResult.failure,
+                message: setupResult.failure.message,
               });
               return;
             }

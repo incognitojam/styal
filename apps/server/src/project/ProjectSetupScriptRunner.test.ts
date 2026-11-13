@@ -38,18 +38,29 @@ it.effect(
     >();
     const openCommand = vi.fn(
       (input: Parameters<TerminalManager.TerminalManager["Service"]["openCommand"]>[0]) =>
-        Effect.succeed({
-          threadId: input.threadId,
-          terminalId: input.terminalId,
-          cwd: input.cwd,
-          worktreePath: input.worktreePath ?? null,
-          status: "running" as const,
-          pid: 123,
-          history: "",
-          exitCode: null,
-          exitSignal: null,
-          label: "Shell",
-          updatedAt: "2026-06-20T00:00:00.000Z",
+        Effect.gen(function* () {
+          const snapshot = {
+            threadId: input.threadId,
+            terminalId: input.terminalId,
+            cwd: input.cwd,
+            worktreePath: input.worktreePath ?? null,
+            status: "running" as const,
+            pid: 123,
+            history: "",
+            exitCode: null,
+            exitSignal: null,
+            label: "Shell",
+            updatedAt: "2026-06-20T00:00:00.000Z",
+          };
+          yield* Effect.forEach([...listeners], (listener) =>
+            listener({
+              type: "restarted",
+              threadId: input.threadId,
+              terminalId: input.terminalId,
+              snapshot,
+            }),
+          );
+          return snapshot;
         }),
     );
     const subscribe: TerminalManager.TerminalManager["Service"]["subscribe"] = (listener) =>
@@ -153,6 +164,7 @@ it.effect(
           exitSignal: null,
         }),
       );
+      assert.equal(listeners.size, 1);
       assert.equal((yield* result.completion!).exitCode, 0);
       const completed = (yield* projections.getThreadProjection(threadId)).turnItems.find(
         (item) => item.id === running?.id,

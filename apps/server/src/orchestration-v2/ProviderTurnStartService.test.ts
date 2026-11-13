@@ -1,6 +1,6 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { expect, it, vi } from "vite-plus/test";
+import { expect, vi } from "vite-plus/test";
 import { it as effectIt } from "@effect/vitest";
 import {
   CheckpointScopeId,
@@ -84,6 +84,7 @@ function startWithMissingWorktree(
   },
   exists = false,
   setupResult: ProjectSetupScriptRunner.ProjectSetupScriptRunnerResult = { status: "no-script" },
+  markers: { protocol?: string; done?: boolean; running?: string; gitFile?: boolean } = {},
 ) {
   const threadId = ThreadId.make("thread_provider_turn_start_projection_failure");
   const runId = RunId.make("run_provider_turn_start_projection_failure");
@@ -99,7 +100,7 @@ function startWithMissingWorktree(
   const checkpointScopeId = CheckpointScopeId.make(
     "checkpoint_scope_provider_turn_start_projection_failure",
   );
-  const projection = {
+  let projection = {
     thread: {
       id: threadId,
       projectId: ProjectId.make("project_provider_turn_start_projection_failure"),
@@ -128,13 +129,24 @@ function startWithMissingWorktree(
     turnItems: [],
   } as unknown as OrchestrationV2ThreadProjection;
   let projectionReadCount = 0;
-  const writeIfRunCurrent = vi.fn(() =>
-    Effect.succeed({ committed: true, storedEvents: [] } as never),
+  const writeIfRunCurrent = vi.fn(
+    (input: Parameters<EventSink.EventSinkV2["Service"]["writeIfRunCurrent"]>[0]) =>
+      Effect.sync(() => {
+        const update = input.events.findLast((event) => event.type === "run.updated");
+        if (update?.type === "run.updated") projection = { ...projection, runs: [update.payload] };
+        return { committed: true, storedEvents: [] } as never;
+      }),
   );
   const startRootRun = vi.fn(() => Effect.void);
   const pruneWorktrees = vi.fn(() => Effect.void);
   const runSetup = vi.fn(() => Effect.succeed(setupResult));
-  const createWorktree = vi.fn(() => Effect.succeed({} as never));
+  let folderExists = exists;
+  const createWorktree = vi.fn(() =>
+    Effect.sync(() => {
+      folderExists = true;
+      return {} as never;
+    }),
+  );
   const listLocalBranchNames = vi.fn(() => Effect.succeed(["feature/restore"]));
   const layer = ProviderTurnStart.layer.pipe(
     Layer.provide(
@@ -143,7 +155,17 @@ function startWithMissingWorktree(
         Layer.mock(EventSink.EventSinkV2)({ writeIfRunCurrent }),
         IdAllocator.layer,
         Layer.succeed(FileSystem.FileSystem, {
-          exists: () => Effect.succeed(exists),
+          exists: (target: string) =>
+            Effect.succeed(target === worktreePath ? folderExists : markers.done === true),
+          stat: () => Effect.succeed({ type: markers.gitFile === false ? "Directory" : "File" }),
+          readFileString: (target: string) =>
+            Effect.succeed(
+              target.endsWith("setup-marker-protocol")
+                ? (markers.protocol ?? "")
+                : target.endsWith("setup-running")
+                  ? (markers.running ?? "")
+                  : "",
+            ),
           realPath: (target: string) =>
             normalize(target) in realPaths
               ? Effect.succeed(realPaths[normalize(target)])
@@ -205,13 +227,16 @@ function startWithMissingWorktree(
     ),
   );
 
-  const start = Effect.gen(function* () {
+  const callStart = Effect.gen(function* () {
     return yield* (yield* ProviderTurnStart.ProviderTurnStartServiceV2)
-      .start({ threadId, runId })
+      .start({ threadId, runId, willRetry: true })
       .pipe(Effect.exit);
-  }).pipe(Effect.provide(layer), Effect.runPromise);
+  });
+  const startEffect = callStart.pipe(Effect.provide(layer));
   return {
-    start,
+    start: startEffect,
+    retry: startEffect,
+    startTwice: callStart.pipe(Effect.andThen(callStart), Effect.provide(layer)),
     pruneWorktrees,
     createWorktree,
     runSetup,
@@ -221,7 +246,7 @@ function startWithMissingWorktree(
   };
 }
 
-it.each([
+effectIt.effect.each([
   {
     label: "<managed>/<repo>/<branch>",
     worktreePath: `${managedWorktreesDir}/project/feature-restore`,
@@ -276,46 +301,141 @@ it.each([
     recreated: false,
   },
   { label: "a relative path", worktreePath: "project/feature-restore", recreated: false },
-])("recreates a missing worktree only at the managed location: $label", async (input) => {
-  const harness = startWithMissingWorktree(
-    input.worktreePath,
-    input.realPaths,
-    "exists" in input && input.exists === true,
-  );
-  await harness.start;
-  expect(harness.createWorktree).toHaveBeenCalledTimes(input.recreated ? 1 : 0);
-  expect(harness.runSetup).toHaveBeenCalledTimes(input.recreated ? 1 : 0);
-});
+])("recreates a missing worktree only at the managed location: $label", (input) =>
+  Effect.gen(function* () {
+    const harness = startWithMissingWorktree(
+      input.worktreePath,
+      input.realPaths,
+      "exists" in input && input.exists === true,
+    );
+    yield* harness.start;
+    expect(harness.createWorktree).toHaveBeenCalledTimes(input.recreated ? 1 : 0);
+    expect(harness.runSetup).toHaveBeenCalledTimes(input.recreated ? 1 : 0);
+  }),
+);
 
-it.each([
-  { async: false, exitCode: 0, observed: true, proceeds: true },
-  { async: false, exitCode: 1, observed: true, proceeds: false },
-  { async: true, exitCode: 1, observed: false, proceeds: true },
-])("recreated setup async=$async exit=$exitCode controls provider startup", async (input) => {
-  let observed = false;
-  const harness = startWithMissingWorktree(
-    `${managedWorktreesDir}/project/setup`,
-    undefined,
-    false,
-    {
-      status: "started",
-      runId: "setup",
-      scriptId: "setup",
-      scriptName: "Setup",
-      scriptCommand: "echo setup",
-      terminalId: "setup",
-      cwd: "/fixture",
-      async: input.async,
-      completion: Effect.sync(() => {
-        observed = true;
-        return { exitCode: input.exitCode, exitSignal: null, durationMs: 0 };
-      }),
-    },
-  );
-  await harness.start;
-  expect(observed).toBe(input.observed);
-  expect(harness.projectionReads()).toBe(input.proceeds ? 3 : 2);
-});
+effectIt.effect.each([
+  { async: false, exitCode: 0, exitSignal: null, observed: true, proceeds: true },
+  { async: false, exitCode: 0, exitSignal: 0, observed: true, proceeds: true },
+  { async: false, exitCode: 1, exitSignal: null, observed: true, proceeds: false },
+  { async: false, exitCode: 0, exitSignal: 15, observed: true, proceeds: false },
+  { async: true, exitCode: 1, exitSignal: null, observed: false, proceeds: true },
+])("recreated setup async=$async exit=$exitCode controls provider startup", (input) =>
+  Effect.gen(function* () {
+    let observed = false;
+    const harness = startWithMissingWorktree(
+      `${managedWorktreesDir}/project/setup`,
+      undefined,
+      false,
+      {
+        status: "started",
+        runId: "setup",
+        scriptId: "setup",
+        scriptName: "Setup",
+        scriptCommand: "echo setup",
+        terminalId: "setup",
+        cwd: "/fixture",
+        async: input.async,
+        completion: input.async
+          ? Effect.never
+          : Effect.sync(() => {
+              observed = true;
+              return { exitCode: input.exitCode, exitSignal: input.exitSignal, durationMs: 0 };
+            }),
+      },
+    );
+    yield* harness.start;
+    expect(observed).toBe(input.observed);
+    expect(harness.projectionReads()).toBe(input.proceeds ? 3 : 2);
+    if (!input.proceeds) {
+      yield* harness.retry;
+      expect(harness.runSetup).toHaveBeenCalledTimes(1);
+      expect(harness.startRootRun).not.toHaveBeenCalled();
+      expect(harness.writeIfRunCurrent.mock.calls[0]?.[0].events).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: "run.updated",
+            payload: expect.objectContaining({ status: "failed" }),
+          }),
+        ]),
+      );
+    }
+  }),
+);
+
+effectIt.effect.each([
+  {
+    label: "marker-aware stripped worktree",
+    protocol: "1",
+    done: false,
+    gitFile: true,
+    expected: 1,
+  },
+  {
+    label: "completed marker-aware worktree",
+    protocol: "1",
+    done: true,
+    gitFile: true,
+    expected: 0,
+  },
+  { label: "action without markers", protocol: "", done: false, gitFile: true, expected: 0 },
+  { label: "main checkout metadata", protocol: "1", done: false, gitFile: false, expected: 0 },
+  {
+    label: "live marker writer",
+    protocol: "1",
+    done: false,
+    gitFile: true,
+    running: String(process.pid),
+    expected: 0,
+  },
+  {
+    label: "invalid running marker",
+    protocol: "1",
+    done: false,
+    gitFile: true,
+    running: "invalid",
+    expected: 1,
+  },
+])("reinstalls only recognized marker-aware worktrees: $label", (input) =>
+  Effect.gen(function* () {
+    const harness = startWithMissingWorktree(
+      `${managedWorktreesDir}/project/readiness`,
+      undefined,
+      true,
+      { status: "no-script" },
+      input,
+    );
+    yield* harness.start;
+    expect(harness.createWorktree).not.toHaveBeenCalled();
+    expect(harness.runSetup).toHaveBeenCalledTimes(input.expected);
+  }),
+);
+
+effectIt.effect(
+  "does not launch marker-aware asynchronous setup twice before its process writes markers",
+  () =>
+    Effect.gen(function* () {
+      const harness = startWithMissingWorktree(
+        `${managedWorktreesDir}/project/async-readiness`,
+        undefined,
+        true,
+        {
+          status: "started",
+          runId: "setup",
+          scriptId: "setup",
+          scriptName: "Setup",
+          scriptCommand: "echo setup",
+          terminalId: "setup",
+          cwd: "/fixture",
+          async: true,
+          completion: Effect.never,
+        },
+        { protocol: "1", done: false },
+      );
+      yield* harness.startTwice;
+      expect(harness.runSetup).toHaveBeenCalledTimes(1);
+    }),
+);
 
 function makeLocalCommandHarness(input: {
   readonly text: string;
