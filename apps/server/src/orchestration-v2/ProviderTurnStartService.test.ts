@@ -1,6 +1,6 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { expect, it, vi } from "vite-plus/test";
+import { expect, vi } from "vite-plus/test";
 import { it as effectIt } from "@effect/vitest";
 import {
   CheckpointScopeId,
@@ -39,6 +39,7 @@ import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
 import * as GitWorkflow from "../git/GitWorkflowService.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import { layerRealGit } from "./ProviderTurnStartService.testkit.ts";
+import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderAuthService from "../provider/ProviderAuthService.ts";
 import * as ProviderInstallGate from "../provider/ProviderInstallGate.ts";
@@ -81,6 +82,8 @@ function startWithMissingWorktree(
     [managedWorktreesDir]: managedWorktreesDir,
     [`${managedWorktreesDir}/project`]: `${managedWorktreesDir}/project`,
   },
+  exists = false,
+  setupResult: ProjectSetupScriptRunner.ProjectSetupScriptRunnerResult = { status: "no-script" },
 ) {
   const threadId = ThreadId.make("thread_provider_turn_start_projection_failure");
   const runId = RunId.make("run_provider_turn_start_projection_failure");
@@ -96,7 +99,7 @@ function startWithMissingWorktree(
   const checkpointScopeId = CheckpointScopeId.make(
     "checkpoint_scope_provider_turn_start_projection_failure",
   );
-  const projection = {
+  let projection = {
     thread: {
       id: threadId,
       projectId: ProjectId.make("project_provider_turn_start_projection_failure"),
@@ -125,12 +128,24 @@ function startWithMissingWorktree(
     turnItems: [],
   } as unknown as OrchestrationV2ThreadProjection;
   let projectionReadCount = 0;
-  const writeIfRunCurrent = vi.fn(() =>
-    Effect.succeed({ committed: true, storedEvents: [] } as never),
+  const writeIfRunCurrent = vi.fn(
+    (input: Parameters<EventSink.EventSinkV2["Service"]["writeIfRunCurrent"]>[0]) =>
+      Effect.sync(() => {
+        const update = input.events.findLast((event) => event.type === "run.updated");
+        if (update?.type === "run.updated") projection = { ...projection, runs: [update.payload] };
+        return { committed: true, storedEvents: [] } as never;
+      }),
   );
   const startRootRun = vi.fn(() => Effect.void);
   const pruneWorktrees = vi.fn(() => Effect.void);
-  const createWorktree = vi.fn(() => Effect.succeed({} as never));
+  const runSetup = vi.fn(() => Effect.succeed(setupResult));
+  let folderExists = exists;
+  const createWorktree = vi.fn(() =>
+    Effect.sync(() => {
+      folderExists = true;
+      return {} as never;
+    }),
+  );
   const listLocalBranchNames = vi.fn(() => Effect.succeed(["feature/restore"]));
   const layer = ProviderTurnStart.layer.pipe(
     Layer.provide(
@@ -139,7 +154,7 @@ function startWithMissingWorktree(
         Layer.mock(EventSink.EventSinkV2)({ writeIfRunCurrent }),
         IdAllocator.layer,
         Layer.succeed(FileSystem.FileSystem, {
-          exists: () => Effect.succeed(false),
+          exists: () => Effect.succeed(folderExists),
           realPath: (target: string) =>
             normalize(target) in realPaths
               ? Effect.succeed(realPaths[normalize(target)])
@@ -159,6 +174,7 @@ function startWithMissingWorktree(
           listLocalBranchNames,
         }),
         Layer.mock(GitVcsDriver.GitVcsDriver)({}),
+        Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({ runForThread: runSetup }),
         Layer.mock(ProjectService.ProjectService)({
           getById: () =>
             Effect.succeedSome({ workspaceRoot: "/tmp/provider-turn-start-project" } as never),
@@ -200,22 +216,25 @@ function startWithMissingWorktree(
     ),
   );
 
-  const start = Effect.gen(function* () {
+  const callStart = Effect.gen(function* () {
     return yield* (yield* ProviderTurnStart.ProviderTurnStartServiceV2)
-      .start({ threadId, runId })
-      .pipe(Effect.flip);
-  }).pipe(Effect.provide(layer), Effect.runPromise);
+      .start({ threadId, runId, willRetry: true })
+      .pipe(Effect.exit);
+  });
+  const startEffect = callStart.pipe(Effect.provide(layer));
   return {
-    start,
+    start: startEffect,
+    retry: startEffect,
     pruneWorktrees,
     createWorktree,
+    runSetup,
     writeIfRunCurrent,
     startRootRun,
     projectionReads: () => projectionReadCount,
   };
 }
 
-it.each([
+effectIt.effect.each([
   {
     label: "<managed>/<repo>/<branch>",
     worktreePath: `${managedWorktreesDir}/project/feature-restore`,
@@ -263,12 +282,74 @@ it.each([
     },
     recreated: false,
   },
+  {
+    label: "an existing worktree",
+    worktreePath: `${managedWorktreesDir}/project/existing`,
+    exists: true,
+    recreated: false,
+  },
   { label: "a relative path", worktreePath: "project/feature-restore", recreated: false },
-])("recreates a missing worktree only at the managed location: $label", async (input) => {
-  const harness = startWithMissingWorktree(input.worktreePath, input.realPaths);
-  await harness.start;
-  expect(harness.createWorktree).toHaveBeenCalledTimes(input.recreated ? 1 : 0);
-});
+])("recreates a missing worktree only at the managed location: $label", (input) =>
+  Effect.gen(function* () {
+    const harness = startWithMissingWorktree(
+      input.worktreePath,
+      input.realPaths,
+      "exists" in input && input.exists === true,
+    );
+    yield* harness.start;
+    expect(harness.createWorktree).toHaveBeenCalledTimes(input.recreated ? 1 : 0);
+    expect(harness.runSetup).toHaveBeenCalledTimes(input.recreated ? 1 : 0);
+  }),
+);
+
+effectIt.effect.each([
+  { async: false, exitCode: 0, exitSignal: null, observed: true, proceeds: true },
+  { async: false, exitCode: 0, exitSignal: 0, observed: true, proceeds: true },
+  { async: false, exitCode: 1, exitSignal: null, observed: true, proceeds: false },
+  { async: false, exitCode: 0, exitSignal: 15, observed: true, proceeds: false },
+  { async: true, exitCode: 1, exitSignal: null, observed: false, proceeds: true },
+])("recreated setup async=$async exit=$exitCode controls provider startup", (input) =>
+  Effect.gen(function* () {
+    let observed = false;
+    const harness = startWithMissingWorktree(
+      `${managedWorktreesDir}/project/setup`,
+      undefined,
+      false,
+      {
+        status: "started",
+        runId: "setup",
+        scriptId: "setup",
+        scriptName: "Setup",
+        scriptCommand: "echo setup",
+        terminalId: "setup",
+        cwd: "/fixture",
+        async: input.async,
+        completion: input.async
+          ? Effect.never
+          : Effect.sync(() => {
+              observed = true;
+              return { exitCode: input.exitCode, exitSignal: input.exitSignal, durationMs: 0 };
+            }),
+      },
+    );
+    yield* harness.start;
+    expect(observed).toBe(input.observed);
+    expect(harness.projectionReads()).toBe(input.proceeds ? 3 : 2);
+    if (!input.proceeds) {
+      yield* harness.retry;
+      expect(harness.runSetup).toHaveBeenCalledTimes(1);
+      expect(harness.startRootRun).not.toHaveBeenCalled();
+      expect(harness.writeIfRunCurrent.mock.calls[0]?.[0].events).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: "run.updated",
+            payload: expect.objectContaining({ status: "failed" }),
+          }),
+        ]),
+      );
+    }
+  }),
+);
 
 function makeLocalCommandHarness(input: {
   readonly text: string;
@@ -952,6 +1033,9 @@ function makeLocalCommandHarness(input: {
             })
           : Layer.succeed(GitWorkflow.GitWorkflowService, input.gitWorkflow),
         Layer.mock(GitVcsDriver.GitVcsDriver)({}),
+        Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({
+          runForThread: () => Effect.succeed({ status: "no-script" }),
+        }),
         Layer.mock(ProjectService.ProjectService)({
           getById: () =>
             Effect.succeedSome({
@@ -1826,6 +1910,7 @@ effectIt.effect("holds a starting run back until an install of its provider CLI 
           layerWorktreeLocation(),
           Layer.mock(GitWorkflow.GitWorkflowService)({}),
           Layer.mock(GitVcsDriver.GitVcsDriver)({}),
+          Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({}),
           Layer.mock(ProjectService.ProjectService)({}),
           Layer.mock(ProjectionStore.ProjectionStoreV2)({
             getThreadRecords: () =>

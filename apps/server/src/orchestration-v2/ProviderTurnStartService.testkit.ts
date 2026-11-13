@@ -23,6 +23,9 @@ import * as ProviderInstallGate from "../provider/ProviderInstallGate.ts";
 import * as WorkspacePortAllocator from "../workspace/WorkspacePortAllocator.ts";
 
 export const layer = Layer.mergeAll(
+  Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({
+    runForThread: () => Effect.succeed({ status: "no-script" }),
+  }),
   Layer.mock(GitWorkflow.GitWorkflowService)({
     pruneWorktrees: () => Effect.void,
     createWorktree: () => Effect.succeed({} as never),

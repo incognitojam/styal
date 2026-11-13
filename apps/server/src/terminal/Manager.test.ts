@@ -1,3 +1,4 @@
+import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
@@ -770,11 +771,16 @@ it.layer(
       );
       yield* Effect.addFinalizer(() => Effect.sync(unsubscribe));
 
-      yield* manager.openCommand({
+      const commandInput = {
         ...openInput({ terminalId: "setup-setup" }),
         command: "vp i",
         label: "Setup Worktree",
-      });
+      };
+      const path = yield* Path.Path;
+      yield* withWorkspaceLease(
+        path.resolve(commandInput.worktreePath ?? commandInput.cwd),
+        manager.openCommand(commandInput, { workspaceLeaseHeld: true }),
+      );
 
       inspect = { hasRunningSubprocess: true, childCommand: "vp", processIds: [100] };
       yield* Deferred.await(childSeen);
@@ -783,6 +789,47 @@ it.layer(
         event.type === "activity" ? [event.label] : [],
       );
       expect(labels.every((label) => label === "Setup Worktree")).toBe(true);
+    }),
+  );
+
+  it.effect("opens recovery setup while a concurrent terminal waits for the workspace", () =>
+    Effect.gen(function* () {
+      const entered = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      const { manager } = yield* createManager(5, {
+        resolveProviderInstanceEnvironment: () =>
+          Deferred.succeed(entered, undefined).pipe(
+            Effect.andThen(Deferred.await(release)),
+            Effect.as({}),
+          ),
+      });
+      const input = openInput();
+      const path = yield* Path.Path;
+      const terminal = yield* withWorkspaceLease(
+        path.resolve(input.cwd),
+        Effect.gen(function* () {
+          const concurrent = yield* manager
+            .open({
+              ...input,
+              terminalId: "interactive",
+              providerInstanceId: ProviderInstanceId.make("fixture"),
+            })
+            .pipe(Effect.forkChild);
+          yield* Deferred.await(entered);
+          const setup = yield* manager.openCommand(
+            {
+              ...input,
+              terminalId: "setup-recovery",
+              command: "echo setup",
+            },
+            { workspaceLeaseHeld: true },
+          );
+          expect(setup.status).toBe("running");
+          yield* Deferred.succeed(release, undefined);
+          return concurrent;
+        }),
+      );
+      expect((yield* Fiber.join(terminal)).status).toBe("running");
     }),
   );
 
