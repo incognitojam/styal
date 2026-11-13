@@ -143,6 +143,7 @@ it("posts browser intent through the generated OS launcher shim", async () => {
     const child = NodeChildProcess.spawn(process.execPath, [helperPath, targetUrl], {
       env: {
         ...process.env,
+        T3CODE_BROWSER_OPEN_FALLBACK: "1",
         [TerminalBrowserOpen.TERMINAL_BROWSER_OPEN_RUNTIME_STATE_ENV]: runtimeStatePath,
         [TerminalBrowserOpen.TERMINAL_BROWSER_OPEN_TOKEN_ENV]: "terminal-token",
       },

@@ -28,10 +28,6 @@ node "%~dp0${HELPER_FILE_NAME}" %*\r
 
 export const TERMINAL_BROWSER_OPEN_HELPER_SOURCE = `#!/usr/bin/env node
 void (async () => {
-  if (process.env.T3CODE_BROWSER_OPEN_FALLBACK === "1") {
-    process.exitCode = 1;
-    return;
-  }
   const args = process.argv.slice(2);
   const reversedArgs = [...args].reverse();
   const httpUrl = reversedArgs.find((value) => /^https?:\\/\\//iu.test(value));
@@ -43,19 +39,25 @@ void (async () => {
   const launcherHasOptions = interceptedLauncher && args.some((value) => value.startsWith("-"));
 
   const fallbackToSystemBrowser = async () => {
+    if (process.env.T3CODE_BROWSER_OPEN_FALLBACK === "1") {
+      process.exitCode = 1;
+      return;
+    }
+    const { resolve } = await import("node:path");
     const { spawn } = await import("node:child_process");
     const childEnv = { ...process.env, T3CODE_BROWSER_OPEN_FALLBACK: "1" };
     const shimDir = process.env.${TERMINAL_BROWSER_OPEN_SHIM_DIR_ENV};
     const pathKey = Object.keys(childEnv).find((key) => key.toUpperCase() === "PATH");
     if (pathKey && childEnv[pathKey]) {
       const delimiter = process.platform === "win32" ? ";" : ":";
-      const normalizedShimDir = process.platform === "win32" ? shimDir?.toLowerCase() : shimDir;
+      const normalize = (entry) => process.platform === "win32" ? resolve(entry).toLowerCase() : resolve(entry);
+      const normalizedShimDir = shimDir ? normalize(shimDir) : undefined;
       childEnv[pathKey] = childEnv[pathKey]
         .split(delimiter)
         .filter((entry) => {
-          const normalizedEntry = process.platform === "win32" ? entry.toLowerCase() : entry;
+          const normalizedEntry = normalize(entry);
           return normalizedEntry !== normalizedShimDir &&
-            !/(?:^|[\\\\/])${SHIM_DIRECTORY_NAME}[\\\\/]?$/iu.test(entry);
+            !/(?:^|[\\\\/])${SHIM_DIRECTORY_NAME}[\\\\/]?$/iu.test(normalizedEntry);
         })
         .join(delimiter);
     }

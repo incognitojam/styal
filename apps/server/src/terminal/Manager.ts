@@ -1459,18 +1459,6 @@ function createTerminalSpawnEnv(
   return stripAppImageRuntimeEnv(spawnEnv);
 }
 
-function hasCustomTerminalBrowser(env: NodeJS.ProcessEnv, platform: NodeJS.Platform): boolean {
-  const key =
-    platform === "win32"
-      ? Object.keys(env).find((key) => key.toUpperCase() === "BROWSER")
-      : "BROWSER";
-  const browser = key === undefined ? undefined : env[key];
-  return (
-    browser !== undefined &&
-    !/(?:^|[\\/])terminal-browser-open-bin[\\/]terminal-browser-open\.(?:js|cmd)$/iu.test(browser)
-  );
-}
-
 function prependTerminalPath(
   env: NodeJS.ProcessEnv,
   preferredPath: string,
@@ -1639,6 +1627,46 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
   const path = yield* Path.Path;
   const context = yield* Effect.context<never>();
   const runFork = Effect.runForkWith(context);
+
+  const hasCustomTerminalBrowser = Effect.fn("TerminalManager.hasCustomTerminalBrowser")(function* (
+    env: NodeJS.ProcessEnv,
+    platform: NodeJS.Platform,
+  ) {
+    const key =
+      platform === "win32"
+        ? Object.keys(env).find((key) => key.toUpperCase() === "BROWSER")
+        : "BROWSER";
+    const browser = key === undefined ? undefined : env[key];
+    if (browser === undefined) return false;
+    const helper = browser.replace(/ %s$/u, "");
+    if (
+      !path.isAbsolute(helper) ||
+      !/(?:^|[\\/])terminal-browser-open-bin[\\/]terminal-browser-open\.(?:js|cmd)$/iu.test(
+        helper,
+      ) ||
+      (platform === "win32" ? helper.slice(2).includes(":") : helper.includes(":"))
+    )
+      return true;
+    const windowsHelper = helper.toLowerCase().endsWith(".cmd");
+    if (windowsHelper) {
+      const wrapper = yield* fileSystem.readFileString(helper).pipe(Effect.orElseSucceed(() => ""));
+      if (wrapper !== '@echo off\r\nnode "%~dp0terminal-browser-open.js" %*\r\n') return true;
+    }
+    const scriptPath = windowsHelper
+      ? path.join(path.dirname(helper), "terminal-browser-open.js")
+      : helper;
+    const source = yield* fileSystem
+      .readFileString(scriptPath)
+      .pipe(Effect.orElseSucceed(() => ""));
+    // The generated request block stays stable across helper versions; a matching filename is insufficient.
+    const requestBlock = TerminalBrowserOpen.TERMINAL_BROWSER_OPEN_HELPER_SOURCE.slice(
+      TerminalBrowserOpen.TERMINAL_BROWSER_OPEN_HELPER_SOURCE.indexOf("\n  try {"),
+    );
+    return (
+      !source.startsWith("#!/usr/bin/env node\nvoid (async () => {") ||
+      !source.endsWith(requestBlock)
+    );
+  });
 
   const logsDir = options.logsDir;
   const historyLineLimit = options.historyLineLimit ?? DEFAULT_HISTORY_LINE_LIMIT;
@@ -2602,7 +2630,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
               platform,
               yield* HostProcess.HomeDirectory,
             );
-            const browserOpenEnv = hasCustomTerminalBrowser(baseTerminalEnv, platform)
+            const browserOpenEnv = (yield* hasCustomTerminalBrowser(baseTerminalEnv, platform))
               ? {}
               : yield* registerBrowserOpen({
                   threadId: session.threadId,

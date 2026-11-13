@@ -34,7 +34,10 @@ import { expect, vi } from "vite-plus/test";
 
 import * as ProcessRunner from "../processRunner.ts";
 import * as ServerSettings from "../serverSettings.ts";
-import type { TerminalBrowserOpenOwner } from "../preview/TerminalBrowserOpen.ts";
+import {
+  TERMINAL_BROWSER_OPEN_HELPER_SOURCE,
+  type TerminalBrowserOpenOwner,
+} from "../preview/TerminalBrowserOpen.ts";
 import * as TerminalManager from "./Manager.ts";
 import { terminalOutputStream } from "./OutputProtocol.ts";
 import * as PtyAdapter from "@t3tools/shared/PtyAdapter";
@@ -2027,38 +2030,71 @@ it.layer(
 
   it.effect("re-registers an inherited styal browser helper", () =>
     Effect.gen(function* () {
-      const { manager, ptyAdapter } = yield* createManager(5, {
-        env: { BROWSER: "/parent/terminal-browser-open-bin/terminal-browser-open.js" },
-        registerBrowserOpen: () =>
-          Effect.succeed({
-            BROWSER: "/child/terminal-browser-open-bin/terminal-browser-open.js",
-            T3CODE_TERMINAL_BROWSER_OPEN_TOKEN: "child-token",
-          }),
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const directory = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "parent with spaces-",
       });
-      yield* manager.open(openInput());
-      expect(ptyAdapter.spawnInputs[0]?.env.BROWSER).toBe(
-        "/child/terminal-browser-open-bin/terminal-browser-open.js",
-      );
-      expect(ptyAdapter.spawnInputs[0]?.env.T3CODE_TERMINAL_BROWSER_OPEN_TOKEN).toBe("child-token");
+      const helperDir = path.join(directory, "terminal-browser-open-bin");
+      yield* fileSystem.makeDirectory(helperDir);
+      const helperPath = path.join(helperDir, "terminal-browser-open.js");
+      yield* fileSystem.writeFileString(helperPath, TERMINAL_BROWSER_OPEN_HELPER_SOURCE);
+      for (const browser of [helperPath, `${helperPath} %s`]) {
+        const { manager, ptyAdapter } = yield* createManager(5, {
+          env: { BROWSER: browser },
+          registerBrowserOpen: () =>
+            Effect.succeed({
+              BROWSER: "/child/terminal-browser-open-bin/terminal-browser-open.js",
+              T3CODE_TERMINAL_BROWSER_OPEN_TOKEN: "child-token",
+            }),
+        });
+        yield* manager.open(openInput());
+        expect(ptyAdapter.spawnInputs[0]?.env.BROWSER).toBe(
+          "/child/terminal-browser-open-bin/terminal-browser-open.js",
+        );
+        expect(ptyAdapter.spawnInputs[0]?.env.T3CODE_TERMINAL_BROWSER_OPEN_TOKEN).toBe(
+          "child-token",
+        );
+      }
     }),
   );
 
-  it.effect("preserves an explicitly configured browser", () =>
-    Effect.gen(function* () {
-      let registrations = 0;
-      const { manager, ptyAdapter } = yield* createManager(5, {
-        env: { BROWSER: "none" },
-        registerBrowserOpen: () =>
-          Effect.sync(() => {
-            registrations += 1;
-            return { BROWSER: "/tmp/t3-browser-open.js" };
-          }),
-      });
+  it.effect.each(["disabled", "candidate list", "command", "unrelated script"] as const)(
+    "preserves an explicitly configured browser: %s",
+    (scenario) =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const directory = yield* fileSystem.makeTempDirectoryScoped();
+        const helperDir = path.join(directory, "terminal-browser-open-bin");
+        yield* fileSystem.makeDirectory(helperDir);
+        const unrelated = path.join(helperDir, "terminal-browser-open.js");
+        yield* fileSystem.writeFileString(
+          unrelated,
+          "#!/usr/bin/env node\nconsole.log('user browser');\n",
+        );
+        const browser = {
+          disabled: "none",
+          "candidate list":
+            "/usr/bin/firefox:/parent/terminal-browser-open-bin/terminal-browser-open.js",
+          command:
+            "/usr/bin/firefox --profile /parent/terminal-browser-open-bin/terminal-browser-open.js",
+          "unrelated script": unrelated,
+        }[scenario];
+        let registrations = 0;
+        const { manager, ptyAdapter } = yield* createManager(5, {
+          env: { BROWSER: browser },
+          registerBrowserOpen: () =>
+            Effect.sync(() => {
+              registrations += 1;
+              return { BROWSER: "/tmp/t3-browser-open.js" };
+            }),
+        });
 
-      yield* manager.open(openInput());
-      expect(ptyAdapter.spawnInputs[0]?.env.BROWSER).toBe("none");
-      expect(registrations).toBe(0);
-    }),
+        yield* manager.open(openInput());
+        expect(ptyAdapter.spawnInputs[0]?.env.BROWSER).toBe(browser);
+        expect(registrations).toBe(0);
+      }),
   );
 
   it.effect("strips AppImage runtime env from terminal sessions", () =>
