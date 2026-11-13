@@ -142,6 +142,7 @@ import * as KnownWorkspaces from "./workspace/KnownWorkspaces.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
 import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
 import * as WorkspacePortAllocator from "./workspace/WorkspacePortAllocator.ts";
+import * as WorkspacePortHolders from "./workspace/WorkspacePortHolders.ts";
 import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "./vcs/VcsDriverRegistry.ts";
 import * as VcsProjectConfig from "./vcs/VcsProjectConfig.ts";
@@ -282,7 +283,13 @@ const layerProviderEventLoggers = Layer.effect(
 );
 
 const layerPtyAdapter = NodePtyAdapter.layer;
+const layerPortScanner = PortScanner.layer.pipe(Layer.provide(ProcessRunner.layer));
 const layerWorkspacePortAllocator = WorkspacePortAllocator.layer.pipe(
+  Layer.provide(
+    WorkspacePortHolders.layer.pipe(
+      Layer.provide(Layer.mergeAll(ProjectionStoreV2.layer, ProjectStore.layer, layerPortScanner)),
+    ),
+  ),
   Layer.provide(SqlitePersistence.layerConfig),
 );
 
@@ -460,6 +467,7 @@ const layerPullRequestService = PullRequestService.layer.pipe(
 const layerGitManager = GitManager.layer.pipe(
   Layer.provide(Layer.merge(ProjectionStoreV2.layer, ProjectStore.layer)),
   Layer.provideMerge(RuntimeLayer.layerProjectSetupScriptRunner),
+  Layer.provide(layerWorkspacePortAllocator),
   Layer.provideMerge(WorktreeSetupTracker.layer),
   Layer.provideMerge(GitVcsDriver.layer),
   Layer.provideMerge(layerSourceControlProviderRegistry),
@@ -523,8 +531,6 @@ const layerVcs = Layer.empty.pipe(
 );
 
 const layerCheckpointStore = CheckpointStore.layer.pipe(Layer.provide(layerVcsDriverRegistry));
-
-const layerPortScanner = PortScanner.layer.pipe(Layer.provide(ProcessRunner.layer));
 
 const layerPreviewAutomationBroker = PreviewAutomationBroker.layer;
 

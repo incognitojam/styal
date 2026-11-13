@@ -1521,9 +1521,7 @@ interface TerminalManagerOptions {
   subprocessPollIntervalMs?: number;
   processKillGraceMs?: number;
   maxRetainedInactiveSessions?: number;
-  resolveWorkspaceEnvironment?: (
-    workspacePath: string,
-  ) => Effect.Effect<Record<string, string>, WorkspacePortAllocator.WorkspacePortAllocationError>;
+  resolveWorkspaceEnvironment?: (workspacePath: string) => Effect.Effect<Record<string, string>>;
   registerTerminalProcesses?: (input: {
     readonly threadId: string;
     readonly terminalId: string;

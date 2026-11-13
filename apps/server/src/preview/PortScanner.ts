@@ -49,6 +49,8 @@ export class PortDiscovery extends Context.Service<
       readonly threadId: string;
       readonly terminalId: string;
     }) => Effect.Effect<void>;
+    /** Threads with a terminal whose processes are still running. */
+    readonly terminalThreadIds: Effect.Effect<ReadonlySet<ThreadId>>;
     /**
      * Counts a running agent until the returned function is called. While one runs, any
      * listener may be a server it started. Synchronous because provider spawn callbacks run
@@ -1140,6 +1142,12 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
     retain,
     registerTerminalProcesses,
     unregisterTerminal,
+    terminalThreadIds: Ref.get(stateRef).pipe(
+      Effect.map(
+        (state) =>
+          new Set([...state.terminalProcesses.values()].map((entry) => entry.owner.threadId)),
+      ),
+    ),
     trackAgent,
     stopServer,
   });

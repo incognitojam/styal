@@ -22,7 +22,7 @@ allocatorLayer("WorkspacePortAllocator", (it) => {
   it.effect("keeps a workspace's ten-port range stable", () =>
     Effect.gen(function* () {
       const allocator = yield* WorkspacePortAllocator.WorkspacePortAllocator;
-      const first = yield* allocator.getBasePort("/repo/worktrees/feature/../feature");
+      const first = (yield* allocator.getBasePort("/repo/worktrees/feature/../feature"))!;
       const repeated = yield* allocator.getBasePort("/repo/worktrees/feature");
       const reloadedAllocator = yield* WorkspacePortAllocator.make();
       const afterReload = yield* reloadedAllocator.getBasePort("/repo/worktrees/feature");
@@ -46,7 +46,7 @@ allocatorLayer("WorkspacePortAllocator", (it) => {
 
       assert.strictEqual(new Set(ports).size, ports.length);
       for (const port of ports) {
-        assert.strictEqual(port % WorkspacePortAllocator.WORKSPACE_PORT_RANGE_SIZE, 0);
+        assert.strictEqual(port! % WorkspacePortAllocator.WORKSPACE_PORT_RANGE_SIZE, 0);
       }
 
       const environment = yield* allocator.environmentFor("/repo/worktrees/workspace-0");
@@ -145,36 +145,142 @@ it.effect("reclaims deleted workspaces at capacity while keeping existing ports 
   }).pipe(Effect.provide(isolatedLayer)),
 );
 
-it.effect("retains a full pool when paths exist or cannot be inspected", () =>
+const holders = (input: {
+  readonly open: ReadonlyArray<string>;
+  readonly lastActivityMs?: ReadonlyArray<readonly [string, number]>;
+}) =>
+  WorkspacePortAllocator.WorkspacePortHolders.of({
+    snapshot: Effect.succeed({
+      openPaths: new Set(input.open),
+      lastActivityMs: new Map(input.lastActivityMs ?? []),
+    }),
+  });
+
+const reservedPaths = Effect.fn("reservedPaths")(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  const rows = yield* sql<{ readonly workspacePath: string }>`
+    SELECT workspace_path AS "workspacePath" FROM workspace_port_allocations
+  `;
+  return new Set(rows.map(({ workspacePath }) => workspacePath));
+});
+
+/** Every path exists, except the ones the test says cannot be inspected. */
+const allocatorWithExistingPaths = Effect.fn("allocatorWithExistingPaths")(function* (input: {
+  readonly holders: WorkspacePortAllocator.WorkspacePortHolders["Service"];
+  readonly uninspectable?: ReadonlyArray<string>;
+  readonly listeningPorts?: ReadonlyArray<number>;
+}) {
+  const fs = yield* FileSystem.FileSystem;
+  return yield* WorkspacePortAllocator.make({
+    hasListener: (port) => Effect.succeed(input.listeningPorts?.includes(port) ?? false),
+  }).pipe(
+    Effect.provideService(FileSystem.FileSystem, {
+      ...fs,
+      stat: (workspacePath) =>
+        input.uninspectable?.includes(workspacePath)
+          ? Effect.fail(
+              PlatformError.systemError({
+                _tag: "PermissionDenied",
+                module: "FileSystem",
+                method: "stat",
+                pathOrDescriptor: workspacePath,
+              }),
+            )
+          : fs.stat("."),
+    }),
+    Effect.provideService(WorkspacePortAllocator.WorkspacePortHolders, input.holders),
+  );
+});
+
+it.effect("a full pool of open workspaces leaves new workspaces without ports", () =>
   Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
-    const sql = yield* SqlClient.SqlClient;
     const rows = yield* fillPortPool("/synthetic/workspaces");
-    const allocator = yield* WorkspacePortAllocator.make().pipe(
-      Effect.provideService(FileSystem.FileSystem, {
-        ...fs,
-        stat: (workspacePath) =>
-          workspacePath === rows[0]!.workspace_path || workspacePath === rows[1]!.workspace_path
-            ? Effect.fail(
-                PlatformError.systemError({
-                  _tag: workspacePath === rows[0]!.workspace_path ? "PermissionDenied" : "Unknown",
-                  module: "FileSystem",
-                  method: "stat",
-                  pathOrDescriptor: workspacePath,
-                }),
-              )
-            : fs.stat("."),
+    const allocator = yield* allocatorWithExistingPaths({
+      holders: holders({ open: rows.slice(1).map((row) => row.workspace_path) }),
+      uninspectable: [rows[0]!.workspace_path],
+    });
+
+    assert.isNull(yield* allocator.getBasePort("/synthetic/new-workspace"));
+    assert.deepStrictEqual(yield* allocator.environmentFor("/synthetic/new-workspace"), {});
+    assert.strictEqual((yield* reservedPaths()).size, rows.length);
+    assert.strictEqual(yield* allocator.getBasePort(rows[0]!.workspace_path), rows[0]!.base_port);
+  }).pipe(Effect.provide(isolatedLayer)),
+);
+
+it.effect("a full pool reclaims the least recently active closed workspaces", () =>
+  Effect.gen(function* () {
+    const rows = yield* fillPortPool("/synthetic/workspaces");
+    const closed = rows.slice(10, 20);
+    const withoutThread = rows[20]!;
+    const allocator = yield* allocatorWithExistingPaths({
+      holders: holders({
+        open: rows
+          .filter((row) => !closed.includes(row) && row !== withoutThread)
+          .map((row) => row.workspace_path),
+        lastActivityMs: closed.map((row, index) => [row.workspace_path, 1_000 + index] as const),
       }),
+    });
+
+    const port = yield* allocator.getBasePort("/synthetic/new-workspace");
+
+    // The workspace with no thread goes first, then the oldest closed ones, up to the margin.
+    const reclaimed = [withoutThread, ...closed.slice(0, 7)];
+    assert.include(
+      reclaimed.map((row) => row.base_port),
+      port,
+    );
+    const reserved = yield* reservedPaths();
+    for (const row of reclaimed) assert.isFalse(reserved.has(row.workspace_path));
+    for (const row of closed.slice(7)) assert.isTrue(reserved.has(row.workspace_path));
+    assert.strictEqual(reserved.size, rows.length - reclaimed.length + 1);
+  }).pipe(Effect.provide(isolatedLayer)),
+);
+
+it.effect("a closed workspace whose ports have a listener keeps its range", () =>
+  Effect.gen(function* () {
+    const rows = yield* fillPortPool("/synthetic/workspaces");
+    const [serving, idle] = [rows[10]!, rows[11]!];
+    const allocator = yield* allocatorWithExistingPaths({
+      holders: holders({
+        open: rows
+          .filter((row) => row !== serving && row !== idle)
+          .map((row) => row.workspace_path),
+        lastActivityMs: [
+          [serving.workspace_path, 1_000],
+          [idle.workspace_path, 2_000],
+        ],
+      }),
+      listeningPorts: [serving.base_port + 1],
+    });
+
+    assert.strictEqual(yield* allocator.getBasePort("/synthetic/new-workspace"), idle.base_port);
+    const reserved = yield* reservedPaths();
+    assert.isTrue(reserved.has(serving.workspace_path));
+    assert.isFalse(reserved.has(idle.workspace_path));
+  }).pipe(Effect.provide(isolatedLayer)),
+);
+
+it.effect("concurrent allocations at capacity each take a different reclaimed range", () =>
+  Effect.gen(function* () {
+    const rows = yield* fillPortPool("/synthetic/workspaces");
+    const closed = rows.slice(0, 3);
+    const allocator = yield* allocatorWithExistingPaths({
+      holders: holders({
+        open: rows.slice(3).map((row) => row.workspace_path),
+        lastActivityMs: closed.map((row, index) => [row.workspace_path, index] as const),
+      }),
+    });
+
+    const ports = yield* Effect.forEach(
+      ["/synthetic/new-a", "/synthetic/new-b", "/synthetic/new-c", "/synthetic/new-d"],
+      allocator.getBasePort,
+      { concurrency: "unbounded" },
     );
 
-    const failure = yield* allocator.getBasePort("/synthetic/new-workspace").pipe(Effect.flip);
-    assert.strictEqual(failure._tag, "WorkspacePortAllocationError");
-    assert.propertyVal(failure.cause, "_tag", "WorkspacePortRangesExhaustedError");
-    const reservations = yield* sql<{ readonly count: number }>`
-      SELECT COUNT(*) AS "count" FROM workspace_port_allocations
-    `;
-    assert.strictEqual(reservations[0]!.count, rows.length);
-    assert.strictEqual(yield* allocator.getBasePort(rows[0]!.workspace_path), rows[0]!.base_port);
-    assert.strictEqual(yield* allocator.getBasePort(rows[1]!.workspace_path), rows[1]!.base_port);
+    assert.sameMembers(
+      ports.filter((port) => port !== null),
+      closed.map((row) => row.base_port),
+    );
+    assert.strictEqual(ports.filter((port) => port === null).length, 1);
   }).pipe(Effect.provide(isolatedLayer)),
 );
