@@ -1,12 +1,15 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as NodeNet from "node:net";
 import { assert, it } from "@effect/vitest";
 import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
 import * as TestClock from "effect/testing/TestClock";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Logger from "effect/Logger";
 import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
+import * as NetService from "@t3tools/shared/Net";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import { layerMemory } from "../persistence/Sqlite.ts";
@@ -197,8 +200,13 @@ const allocatorWithExistingPaths = Effect.fn("allocatorWithExistingPaths")(funct
   );
 });
 
-it.effect("a full pool of open workspaces leaves new workspaces without ports", () =>
-  Effect.gen(function* () {
+it.effect("a full pool of open workspaces leaves new workspaces without ports", () => {
+  const messages: string[] = [];
+  const logger = Logger.make(({ message }) => {
+    messages.push(String(message));
+  });
+  const logged = (text: string) => messages.filter((message) => message.includes(text)).length;
+  return Effect.gen(function* () {
     const rows = yield* fillPortPool("/synthetic/workspaces");
     let snapshots = 0;
     const allocator = yield* allocatorWithExistingPaths({
@@ -220,8 +228,15 @@ it.effect("a full pool of open workspaces leaves new workspaces without ports", 
     yield* TestClock.adjust("61 seconds");
     assert.isNull(yield* allocator.getBasePort("/synthetic/other-workspace"));
     assert.strictEqual(snapshots, 2);
-  }).pipe(Effect.provide(isolatedLayer)),
-);
+    // Existing ranges handed out meanwhile do not start a new episode.
+    assert.strictEqual(logged("no free workspace port ranges"), 1);
+    assert.strictEqual(logged("workspace starts without reserved ports"), 2);
+  }).pipe(
+    Effect.provide(
+      Layer.merge(isolatedLayer, Logger.layer([logger], { mergeWithExisting: false })),
+    ),
+  );
+});
 
 it.effect("a full pool reclaims the least recently active closed workspaces", () =>
   Effect.gen(function* () {
@@ -308,6 +323,79 @@ it.effect("a closed workspace keeps its range while a terminal or a recent hand-
       yield* allocator.getBasePort("/synthetic/second-workspace"),
       inTerminal.base_port,
     );
+  }).pipe(Effect.provide(isolatedLayer)),
+);
+
+it.live("a closed workspace with a real loopback listener keeps its range", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const net = NetService.make();
+    const rows = yield* fillPortPool("/synthetic/workspaces");
+    // Other servers on this machine may hold workspace ports, so pick blocks that are idle now.
+    const idleBlocks: Array<(typeof rows)[number]> = [];
+    for (const row of rows) {
+      if (idleBlocks.length === 2) break;
+      let busy = false;
+      for (let offset = 0; offset < WorkspacePortAllocator.WORKSPACE_PORT_RANGE_SIZE; offset += 1) {
+        busy ||= yield* net.hasListenerOnHost(row.base_port + offset, "127.0.0.1");
+      }
+      if (!busy) idleBlocks.push(row);
+    }
+    const [serving, idle] = idleBlocks as [(typeof rows)[number], (typeof rows)[number]];
+    const listener = NodeNet.createServer();
+    yield* Effect.acquireRelease(
+      Effect.callback<void>((resume) => {
+        listener.listen(serving.base_port + 6, "127.0.0.1", () => resume(Effect.void));
+      }),
+      () =>
+        Effect.callback<void>((resume) => {
+          listener.close(() => resume(Effect.void));
+        }),
+    );
+    const allocator = yield* WorkspacePortAllocator.make().pipe(
+      Effect.provideService(FileSystem.FileSystem, { ...fs, stat: () => fs.stat(".") }),
+      Effect.provideService(
+        WorkspacePortAllocator.WorkspacePortHolders,
+        holders({
+          open: rows
+            .filter((row) => row !== serving && row !== idle)
+            .map((row) => row.workspace_path),
+          lastActivityMs: [
+            [serving.workspace_path, 1_000],
+            [idle.workspace_path, 2_000],
+          ],
+        }),
+      ),
+    );
+
+    assert.strictEqual(yield* allocator.getBasePort("/synthetic/new-workspace"), idle.base_port);
+    assert.isTrue((yield* reservedPaths()).has(serving.workspace_path));
+  }).pipe(Effect.scoped, Effect.provide(isolatedLayer)),
+);
+
+it.effect("a range handed out while a reclaim pass runs is not freed", () =>
+  Effect.gen(function* () {
+    const rows = yield* fillPortPool("/synthetic/workspaces");
+    const [resumed, idle] = [rows[10]!, rows[11]!];
+    let allocator: WorkspacePortAllocator.WorkspacePortAllocator["Service"] | undefined;
+    const snapshot = holders({
+      open: rows.filter((row) => row !== resumed && row !== idle).map((row) => row.workspace_path),
+      lastActivityMs: [
+        [resumed.workspace_path, 1_000],
+        [idle.workspace_path, 2_000],
+      ],
+    }).snapshot;
+    allocator = yield* allocatorWithExistingPaths({
+      holders: WorkspacePortAllocator.WorkspacePortHolders.of({
+        // The resumed workspace's thread starts a turn after the pass has read who holds what.
+        snapshot: snapshot.pipe(
+          Effect.tap(() => allocator!.getBasePort(resumed.workspace_path).pipe(Effect.asVoid)),
+        ),
+      }),
+    });
+
+    assert.strictEqual(yield* allocator.getBasePort("/synthetic/new-workspace"), idle.base_port);
+    assert.isTrue((yield* reservedPaths()).has(resumed.workspace_path));
   }).pipe(Effect.provide(isolatedLayer)),
 );
 

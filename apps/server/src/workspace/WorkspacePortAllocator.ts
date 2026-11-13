@@ -145,6 +145,8 @@ export const make = Effect.fn("WorkspacePortAllocator.make")(function* (options?
     `${input.threadId}\0${input.terminalId}`;
   // One warning per exhausted episode, so a full pool does not log once per thread.
   let exhaustionReported = false;
+  // Local threads get no notice row, so every workspace left without ports is named once in the log.
+  const workspacesWithoutPorts = new Set<string>();
   let fruitlessReclaimAtMs: number | null = null;
 
   const noteHandedOut = Effect.fnUntraced(function* (normalizedPath: string) {
@@ -239,13 +241,14 @@ export const make = Effect.fn("WorkspacePortAllocator.make")(function* (options?
       }
       reclaimed.push(entry.workspacePath);
     }
-    yield* deleteReservations(reclaimed);
-    for (const workspacePath of reclaimed) handedOutAtMs.delete(workspacePath);
-    fruitlessReclaimAtMs = missing.length + reclaimed.length > 0 ? null : nowMs;
-    if (missing.length + reclaimed.length > 0) {
+    // A lookup may have handed one of these out since the snapshot; it marks the path first.
+    const stillUnused = reclaimed.filter((workspacePath) => !recentlyHandedOut(workspacePath));
+    yield* deleteReservations(stillUnused);
+    fruitlessReclaimAtMs = missing.length + stillUnused.length > 0 ? null : nowMs;
+    if (missing.length + stillUnused.length > 0) {
       yield* Effect.logInfo("reclaimed workspace port ranges", {
         missingPaths: missing.length,
-        closedWorkspaces: reclaimed.length,
+        closedWorkspaces: stillUnused.length,
       });
     }
 
@@ -288,7 +291,11 @@ export const make = Effect.fn("WorkspacePortAllocator.make")(function* (options?
         RETURNING base_port AS "basePort"
       `;
       const insertedPort = inserted[0]?.basePort;
-      if (insertedPort !== undefined) return insertedPort;
+      if (insertedPort !== undefined) {
+        // A new range was free, so the next exhaustion is a new episode worth a warning.
+        exhaustionReported = false;
+        return insertedPort;
+      }
       const concurrentPort = yield* findExisting(normalizedPath);
       if (concurrentPort !== undefined) return concurrentPort;
     }
@@ -329,15 +336,19 @@ export const make = Effect.fn("WorkspacePortAllocator.make")(function* (options?
   )(
     function* (workspacePath) {
       const normalizedPath = path.resolve(workspacePath);
-      // Under the lock, so a reclaim pass cannot free a range while it is being handed out.
-      const basePort = yield* allocationLock.withPermits(1)(
-        Effect.gen(function* () {
-          const port = yield* allocateUnderPressure(normalizedPath);
-          if (port !== null) yield* noteHandedOut(normalizedPath);
-          return port;
-        }),
-      );
-      if (basePort !== null) exhaustionReported = false;
+      // Marked before the read, so a reclaim pass that is about to delete this row skips it.
+      yield* noteHandedOut(normalizedPath);
+      const existingPort = yield* findExisting(normalizedPath);
+      if (existingPort !== undefined) return existingPort;
+      const basePort = yield* allocationLock.withPermits(1)(allocateUnderPressure(normalizedPath));
+      if (basePort !== null) {
+        workspacesWithoutPorts.delete(normalizedPath);
+      } else if (!workspacesWithoutPorts.has(normalizedPath)) {
+        workspacesWithoutPorts.add(normalizedPath);
+        yield* Effect.logInfo("workspace starts without reserved ports", {
+          workspacePath: normalizedPath,
+        });
+      }
       return basePort;
     },
     (effect, workspacePath) =>
