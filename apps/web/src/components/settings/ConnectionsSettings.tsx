@@ -131,11 +131,7 @@ import {
   PairingClientsList,
 } from "./AuthorizedClientsSettings";
 import { ITEM_ROW_CLASSNAME } from "./itemRows";
-import {
-  CloudLinkRow,
-  CloudRemoteEnvironmentRows,
-  SavedBackendListRow,
-} from "./SavedEnvironmentRows";
+import { CloudLinkRow, SavedBackendListRow } from "./SavedEnvironmentRows";
 import { AddEnvironmentDialog } from "./AddEnvironmentDialog";
 
 const DEFAULT_TAILSCALE_SERVE_PORT = 443;
@@ -172,9 +168,6 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
   const currentAuthPolicy = desktopBridge ? null : (primarySessionState.data?.auth.policy ?? null);
   const savedEnvironments = environments.filter(
     (environment) => environment.entry.target._tag !== "PrimaryConnectionTarget",
-  );
-  const listedEnvironments = savedEnvironments.filter(
-    (environment) => !isDesktopLocalConnectionTarget(environment.entry.target),
   );
   const savedUpdateStates = useAtomValue(
     environmentUpdateStatesAtom(
@@ -1472,20 +1465,17 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
 
   return (
     <SettingsPageContainer>
-      {desktopBridge ? (
-        <SettingsSection id="this-app" title="This app">
-          <LocalEnvironmentSetting />
-        </SettingsSection>
-      ) : null}
-      <SettingsSection
-        {...searchableSetting("remote-environments")}
-        title="Environments"
+      <WorkTogetherSettings
+        listedEnvironments={savedEnvironments}
+        primaryEnvironment={primaryEnvironment}
+        localSetting={<LocalEnvironmentSetting />}
         headerAction={
           <div className="flex items-center gap-1">
             {savedServerUpdateTargets.length > 0 ? (
               <ServerUpdatesAction targets={savedServerUpdateTargets} variant="ghost-muted" />
             ) : null}
             <AddEnvironmentDialog
+              triggerLabel="Add machine"
               open={addBackendDialogOpen}
               routeTarget={routeTarget}
               error={savedBackendError}
@@ -1495,26 +1485,23 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
             />
           </div>
         }
-      >
-        {listedEnvironments.map((environment) => (
-          <SavedBackendListRow
-            key={environment.environmentId}
-            environment={environment}
-            removingEnvironmentId={removingSavedEnvironmentId}
-            onSetEnabled={handleSetSavedBackendEnabled}
-            onRemove={handleRemoveSavedBackend}
-            onAddRoute={(target) => {
-              setRouteTarget(target);
-              setSavedBackendError(null);
-              setAddBackendDialogOpen(true);
-            }}
-          />
-        ))}
-        <CloudRemoteEnvironmentRows
-          primaryEnvironmentId={primaryEnvironmentId}
-          savedEnvironments={savedEnvironments}
-        />
-      </SettingsSection>
+        renderConnectionRow={(environment) =>
+          isDesktopLocalConnectionTarget(environment.entry.target) ? null : (
+            <SavedBackendListRow
+              key={environment.environmentId}
+              environment={environment}
+              removingEnvironmentId={removingSavedEnvironmentId}
+              onSetEnabled={handleSetSavedBackendEnabled}
+              onRemove={handleRemoveSavedBackend}
+              onAddRoute={(target) => {
+                setRouteTarget(target);
+                setSavedBackendError(null);
+                setAddBackendDialogOpen(true);
+              }}
+            />
+          )
+        }
+      />
       {hasCloudPublicConfig() ? (
         <RemoveT3ConnectEnvironmentDialog
           environmentLabel={pendingT3ConnectRemoval?.label ?? null}
@@ -1527,7 +1514,6 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
           }}
         />
       ) : null}
-      <WorkTogetherSettings />
       <LoadBalancingSettings environments={loadBalancingEnvironments} />
       <PullRequestRoutingSettings environments={loadBalancingEnvironments} />
     </SettingsPageContainer>

@@ -28,12 +28,14 @@ export function MachineAccessSetting({
   machineLabel,
   level,
   supported,
+  connected,
 }: {
   readonly environmentId: EnvironmentId;
   readonly machineLabel: string;
   readonly level: IncomingMachineAccess;
   /** The machine runs a version that enforces this. */
   readonly supported: boolean;
+  readonly connected: boolean;
 }) {
   const mayChange = useEnvironmentScope(environmentId, AuthAccessWriteScope);
   const incomingWork = useAtomCommand(peerLinkEnvironment.incomingWork, { reportFailure: false });
@@ -85,7 +87,7 @@ export function MachineAccessSetting({
     });
   };
 
-  const disabled = busy || !supported || !mayChange;
+  const disabled = busy || !supported || !connected || !mayChange;
   return (
     <div className="space-y-2 pb-2 pt-3">
       <RadioGroup
@@ -117,7 +119,7 @@ export function MachineAccessSetting({
           ))}
         </div>
       </RadioGroup>
-      {!supported ? (
+      {!connected ? null : !supported ? (
         <p className="text-xs text-muted-foreground">
           Update styal on {machineLabel} to choose this.
         </p>

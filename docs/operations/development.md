@@ -94,7 +94,7 @@ Neither the Vite ready message nor the HTTP listener proves that a browser has r
 
 `vp run dev --share` publishes the web port over the machine's tailnet and prints a pairing URL
 for that origin. Give the tester the complete URL, including its token. A desktop build, such as
-a PR preview DMG, can pair with it from **Settings → Environments → Add environment** to test
+a PR preview DMG, can pair with it from **Settings → Machines → Add machine** to test
 against the shared server. The dev runner removes its mapping on exit.
 
 Leave `VITE_HTTP_URL` and `VITE_WS_URL` unset. Vite proxies the backend through the browser's

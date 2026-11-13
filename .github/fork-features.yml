@@ -3410,6 +3410,7 @@ features:
       - Moving to `view-only` or `nothing` stops threads other machines started with `thread.stop`, not an interrupt, so queued messages are held and pull request and workflow watches end, and closes devices they hold. Clients show how many threads will stop and ask first. Raising the setting restarts nothing, and a person resumes each thread on that machine.
       - Refused requests are not failures of the connection, so they don't show as failing on the calling machine.
       - The wording states two limits. Can control means the same reach as that machine's user. Nothing doesn't isolate the machine from what comes back when its own agents work elsewhere.
+      - Web and desktop show supported machines' access in their own tab, including offline machines, and hide it when this app knows only one machine.
     rationale: Access per pair of machines was the noisiest part of setting up several machines and offered no real boundary, because agents run as the machine's user. Per-pair exceptions were cut on purpose.
     implementation_paths:
       - apps/mobile/src/features/connection/WorkTogetherSection.tsx
@@ -7556,11 +7557,13 @@ features:
       - Stop working together removes both links, ends the link and device sessions each machine gave the other, and stops device sharing. It leaves the links and device settings as they are.
       - A connection paired with less than full access is replaced when the pair is finished, and its old session ended.
       - Pairing codes never appear in the progress list; only known errors show their own message.
-      - Web, desktop and mobile settings show one tab per machine, joined to a panel with its setting, devices, status and anything needing attention. Each tab shows when the machine or one of its pairs needs something, the first such machine opens by default, every pair stays reachable under Each machine so it can be stopped, and the last failure stays on its row after the dialog closes.
+      - Web, desktop and mobile settings show one tab per machine, joined to a panel with its setting, devices, status and anything needing attention. Each tab shows when the machine or one of its pairs needs something, the first such machine opens by default, every pair stays reachable so it can be stopped, and the last failure stays on its row after the dialog closes.
       - Duplicate machine names use known connection addresses and types, differing machine icons, and only a short ID as a last resort in pair rows, confirmations and progress on every client; long values have details and unique names stay concise.
+      - Web and desktop use Settings → Machines with one tab per local, saved or not-added account machine; connection controls stay in its panel. The per-machine agent list stays visible, excludes tabbed machines from untabbed links, and adds from that machine only. Mobile keeps its existing screen.
     rationale: Linking in each direction, device sharing and agent device access each took separate steps per machine, which the fork removes for someone who controls both machines. Upstream's mesh (#24863) was not imported, and this action is where it would be swapped in.
     implementation_paths:
       - apps/mobile/src/features/connection/WorkTogetherSection.tsx
+      - apps/web/src/components/settings/LinkedEnvironmentsSettings.tsx
       - apps/web/src/components/settings/WorkTogetherSettings.tsx
       - packages/client-runtime/src/state/workTogether.ts
     upstream_paths:
@@ -7568,6 +7571,7 @@ features:
       - apps/web/src/components/settings/LinkedEnvironmentsSettings.tsx
       - packages/client-runtime/src/state/peerPairingCode.ts
     tests:
+      - apps/web/src/components/settings/WorkTogetherSettings.browser.test.tsx
       - packages/client-runtime/src/state/workTogether.test.ts
     upstream:
       status: tracking

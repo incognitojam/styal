@@ -7,7 +7,7 @@ A styal Link connection goes through four parts, in this order:
 3. **The host's tunnel** (cloudflared on the host) carries the request to the host.
 4. **styal on the host** answers.
 
-When a connection fails, open **Settings > Environments**, find the environment,
+When a connection fails, open **Settings > Machines**, find the environment,
 and select **Details**. The first part marked as failed is the cause. Find its
 section below.
 
