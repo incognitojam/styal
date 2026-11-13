@@ -3,17 +3,48 @@ import * as NodeChildProcess from "node:child_process";
 import * as NodeEvents from "node:events";
 import * as NodeFS from "node:fs";
 import * as NodeNet from "node:net";
-import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
-import { assert, describe, it, onTestFinished } from "vite-plus/test";
+import { assert, expect, describe, it, onTestFinished, vi } from "vite-plus/test";
 
 import { resolveTeardownTarget, teardownWorktree } from "./teardown-worktree.ts";
 
 const tempDir = () => {
-  const dir = NodeFS.realpathSync(NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "teardown-")));
+  const dir = NodeFS.realpathSync(
+    NodeFS.mkdtempSync(NodePath.join(import.meta.dirname, "../.scratch/settle-test-")),
+  );
   onTestFinished(() => NodeFS.rmSync(dir, { recursive: true, force: true }));
   return dir;
+};
+
+const fixture = () => {
+  const root = tempDir();
+  const main = NodePath.join(root, ".styal/worktrees/main");
+  const worktree = NodePath.join(root, ".styal/worktrees/fixture");
+  NodeFS.mkdirSync(main, { recursive: true });
+  const git = (cwd: string, args: Array<string>) => {
+    const result = NodeChildProcess.spawnSync("git", ["-C", cwd, ...args], { encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+  };
+  git(main, ["init"]);
+  git(main, [
+    "-c",
+    "user.name=Fixture",
+    "-c",
+    "user.email=fixture@example.test",
+    "commit",
+    "--allow-empty",
+    "-m",
+    "fixture",
+  ]);
+  git(main, ["worktree", "add", "--detach", worktree]);
+  NodeFS.writeFileSync(
+    NodePath.join(worktree, ".gitignore"),
+    ".styal/\nnode_modules/\nbuild/\n.turbo/\n*.tsbuildinfo\n.scratch/\n.env*\ntest-results/\n",
+  );
+  const cwd = vi.spyOn(process, "cwd").mockReturnValue(worktree);
+  onTestFinished(() => cwd.mockRestore());
+  return { worktree, main, git };
 };
 
 const freePort = async () => {
@@ -41,7 +72,7 @@ const startListener = async (cwd: string, port: number) => {
 
 describe("teardownWorktree", () => {
   it("stops listeners run from the worktree, leaves others, and deletes only listed paths", async () => {
-    const worktree = tempDir();
+    const { worktree } = fixture();
     const elsewhere = tempDir();
     const appDir = NodePath.join(worktree, "apps/web");
     for (const dir of [
@@ -66,10 +97,10 @@ describe("teardownWorktree", () => {
     await insideExit;
     assert.strictEqual(outside.exitCode, null);
     assert.isNull(outside.signalCode);
-    assert.isFalse(NodeFS.existsSync(NodePath.join(worktree, ".styal/userdata")));
+    assert.isTrue(NodeFS.existsSync(NodePath.join(worktree, ".styal/userdata")));
     assert.isFalse(NodeFS.existsSync(NodePath.join(worktree, ".styal/caches")));
     assert.isTrue(NodeFS.existsSync(NodePath.join(worktree, ".styal/worktrees/nested")));
-    assert.isTrue(NodeFS.existsSync(NodePath.join(worktree, ".styal/setup-done")));
+    assert.isFalse(NodeFS.existsSync(NodePath.join(worktree, ".styal/setup-done")));
     assert.isTrue(NodeFS.existsSync(NodePath.join(worktree, ".scratch/notes.md")));
   });
 });
@@ -85,7 +116,7 @@ describe("teardownWorktree registered runners", () => {
   };
 
   it("stops a registered runner without a reserved range, and ignores a reused or dead PID", async () => {
-    const worktree = tempDir();
+    const { worktree } = fixture();
     const elsewhere = tempDir();
     const runners = NodePath.join(worktree, ".styal/dev-runners");
     NodeFS.mkdirSync(runners, { recursive: true });
@@ -112,7 +143,7 @@ describe("teardownWorktree registered runners", () => {
 
 describe("teardownWorktree process groups", () => {
   it("stops a runner's whole group when every member is inside the worktree", async () => {
-    const worktree = tempDir();
+    const { worktree } = fixture();
     const runners = NodePath.join(worktree, ".styal/dev-runners");
     NodeFS.mkdirSync(runners, { recursive: true });
     // The grandchild shares stdout, so the pipe closes only once the whole group has gone.
@@ -141,7 +172,7 @@ describe("teardownWorktree process groups", () => {
 
 describe("resolveTeardownTarget", () => {
   it("refuses a checkout that is not the thread's worktree", () => {
-    const checkout = tempDir();
+    const { worktree: checkout } = fixture();
     const other = tempDir();
     assert.isUndefined(resolveTeardownTarget({ STYAL_WORKSPACE_PORT: "20020" }, checkout));
     assert.isUndefined(
@@ -165,4 +196,81 @@ describe("resolveTeardownTarget", () => {
       { worktree: checkout, workspacePort: 20020 },
     );
   });
+});
+
+it("selects only listed ignored paths, preserving work, links and nested checkouts", async () => {
+  const { worktree, main, git } = fixture();
+  const cases = [
+    { path: "node_modules/pkg/index.js", ignored: true, listed: true, removed: true },
+    { path: "apps/web/node_modules/pkg/file", ignored: true, listed: true, removed: true },
+    { path: "build/output", ignored: true, listed: true, removed: false },
+    { path: ".turbo/cache", ignored: true, listed: true, removed: true },
+    { path: "cache.tsbuildinfo", ignored: true, listed: true, removed: true },
+    { path: "dist/untracked", ignored: false, listed: true, removed: false },
+    { path: "notes/ignored", ignored: true, listed: false, removed: false },
+    { path: "source/untracked", ignored: false, listed: false, removed: false },
+    { path: ".scratch/notes", ignored: true, listed: false, removed: false },
+    { path: ".env.local", ignored: true, listed: false, removed: false },
+    { path: ".styal/userdata/state.sqlite", ignored: true, listed: false, removed: false },
+    { path: "test-results/result", ignored: true, listed: false, removed: false },
+    { path: "tracked/build/source", ignored: false, listed: true, removed: false },
+    { path: "build/.env.secret", ignored: true, listed: false, removed: false },
+  ];
+  NodeFS.appendFileSync(NodePath.join(worktree, ".gitignore"), "notes/\n");
+  for (const entry of cases) {
+    NodeFS.mkdirSync(NodePath.dirname(NodePath.join(worktree, entry.path)), { recursive: true });
+    NodeFS.writeFileSync(NodePath.join(worktree, entry.path), "synthetic");
+  }
+  git(worktree, ["add", "-f", "tracked/build/source"]);
+  for (const entry of cases) {
+    const result = NodeChildProcess.spawnSync("git", [
+      "-C",
+      worktree,
+      "check-ignore",
+      "-q",
+      "--",
+      entry.path,
+    ]);
+    assert.equal(result.status === 0, entry.ignored, entry.path);
+  }
+  NodeFS.symlinkSync(main, NodePath.join(worktree, "build/outside"), "dir");
+  NodeFS.mkdirSync(NodePath.join(worktree, "linked"));
+  NodeFS.symlinkSync(main, NodePath.join(worktree, "linked/node_modules"), "dir");
+  NodeFS.writeFileSync(NodePath.join(main, "keep"), "synthetic");
+  NodeFS.symlinkSync(NodePath.join(main, "keep"), NodePath.join(worktree, ".env"));
+  NodeFS.symlinkSync(
+    NodePath.join(worktree, "source/untracked"),
+    NodePath.join(worktree, "node_modules/internal"),
+  );
+  git(worktree, ["worktree", "add", "--detach", NodePath.join(worktree, "nested")]);
+  NodeFS.mkdirSync(NodePath.join(worktree, "nested/build"));
+  NodeFS.writeFileSync(NodePath.join(worktree, "nested/build/keep"), "synthetic");
+
+  await teardownWorktree({ worktree, workspacePort: undefined, dryRun: true });
+  for (const entry of cases)
+    assert.isTrue(NodeFS.existsSync(NodePath.join(worktree, entry.path)), entry.path);
+
+  await teardownWorktree({ worktree, workspacePort: undefined });
+  // A protected file or symlink keeps its entire enclosing candidate intact.
+  for (const entry of cases) {
+    assert.equal(
+      NodeFS.existsSync(NodePath.join(worktree, entry.path)),
+      !entry.removed,
+      entry.path,
+    );
+  }
+  assert.isTrue(NodeFS.lstatSync(NodePath.join(worktree, "linked/node_modules")).isSymbolicLink());
+  assert.isTrue(NodeFS.existsSync(NodePath.join(main, "keep")));
+  assert.isTrue(NodeFS.lstatSync(NodePath.join(worktree, ".env")).isSymbolicLink());
+  assert.equal(NodeFS.readFileSync(NodePath.join(main, "keep"), "utf8"), "synthetic");
+  assert.isTrue(NodeFS.existsSync(NodePath.join(worktree, "nested/build/keep")));
+});
+
+it("refuses the main checkout even under a styal worktrees directory", async () => {
+  const { main } = fixture();
+  const cwd = vi.spyOn(process, "cwd").mockReturnValue(main);
+  onTestFinished(() => cwd.mockRestore());
+  await expect(
+    teardownWorktree({ worktree: main, workspacePort: undefined, dryRun: true }),
+  ).rejects.toThrow(/main checkout/);
 });
