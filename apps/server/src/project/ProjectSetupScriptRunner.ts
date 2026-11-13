@@ -413,6 +413,11 @@ export const make = Effect.gen(function* () {
     });
   });
 
+  const removeCompletionMarker = Effect.fn("ProjectSetupScriptRunner.removeCompletionMarker")(
+    (worktreePath: string) =>
+      fileSystem.remove(path.join(worktreePath, ".styal/setup-completed"), { force: true }),
+  );
+
   const recordOutcome = Effect.fn("ProjectSetupScriptRunner.recordOutcome")(function* (
     run: ActiveSetupRun,
     outcome: SetupRunOutcome,
@@ -427,21 +432,22 @@ export const make = Effect.gen(function* () {
         outcome.reason === "terminal-restarted");
     const completionEvidence =
       run.trigger === "setup" && succeeded
-        ? yield* Effect.gen(function* () {
-            const identity = yield* Effect.tryPromise(() =>
-              readSetupCheckoutIdentity(run.worktreePath),
-            );
-            if (identity === null) return undefined;
-            yield* fileSystem.makeDirectory(path.join(run.worktreePath, ".styal"), {
-              recursive: true,
-            });
-            yield* fileSystem.writeFileString(
-              path.join(run.worktreePath, ".styal/setup-completed"),
-              `${run.threadId}\n${run.scriptId}\n${run.command}`,
-            );
-            return identity;
-          }).pipe(Effect.orElseSucceed(() => undefined))
+        ? yield* Effect.tryPromise(() => readSetupCheckoutIdentity(run.worktreePath)).pipe(
+            Effect.map((identity) => identity ?? undefined),
+            Effect.orElseSucceed(() => undefined),
+          )
         : undefined;
+    if (run.trigger === "setup" && completionEvidence === undefined) {
+      yield* removeCompletionMarker(run.worktreePath).pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("failed to remove setup completion marker", {
+            threadId: run.threadId,
+            runId: run.runId,
+            cause,
+          }),
+        ),
+      );
+    }
     yield* appendActivity({
       threadId: run.threadId,
       runId: run.runId,
@@ -472,6 +478,25 @@ export const make = Effect.gen(function* () {
           : {}),
       },
     }).pipe(
+      Effect.tap(() =>
+        Effect.gen(function* () {
+          if (completionEvidence === undefined) return;
+          const worktreeKey = yield* fileSystem.realPath(run.worktreePath);
+          const rows = yield* sql`
+            SELECT turn_item_id FROM worktree_setup_state
+            WHERE worktree_path = ${worktreeKey} AND turn_item_id = ${`setup:${run.runId}`}
+              AND status = 'succeeded' AND evidence_version = 2
+          `;
+          if (rows.length === 0) return;
+          yield* fileSystem.makeDirectory(path.join(run.worktreePath, ".styal"), {
+            recursive: true,
+          });
+          yield* fileSystem.writeFileString(
+            path.join(run.worktreePath, ".styal/setup-completed"),
+            `${run.threadId}\n${run.scriptId}\n${run.command}`,
+          );
+        }),
+      ),
       Effect.catchCause((cause) =>
         Effect.logWarning("failed to record setup script outcome", {
           threadId: run.threadId,
@@ -1027,6 +1052,18 @@ export const make = Effect.gen(function* () {
       startedActivityRecorded: false,
       pendingOutcome: null,
     };
+    if (trigger === "setup") {
+      yield* removeCompletionMarker(input.worktreePath).pipe(
+        Effect.mapError(
+          (cause) =>
+            new ProjectSetupScriptOperationError({
+              ...errorContext,
+              operation: "recordSetup",
+              cause,
+            }),
+        ),
+      );
+    }
     ownRunIds.add(runId);
     yield* SynchronizedRef.update(activeRunsRef, (runs) => {
       const next = new Map(runs);

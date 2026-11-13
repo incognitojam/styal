@@ -14,6 +14,7 @@ import * as Deferred from "effect/Deferred";
 import * as Fiber from "effect/Fiber";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Logger from "effect/Logger";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import { layerMemory } from "../persistence/Sqlite.ts";
@@ -50,6 +51,7 @@ it.effect(
     const root = NodeFS.mkdtempSync(NodePath.join(scratch, "setup-recovery-"));
     const repo = NodePath.join(root, "repo");
     const worktree = NodePath.join(root, "worktree");
+    const completionMarker = NodePath.join(worktree, ".styal/setup-completed");
     const worktreeAlias = NodePath.join(root, "worktree-alias");
     NodeFS.mkdirSync(repo);
     const git = (...args: string[]) => NodeChildProcess.execFileSync("git", ["-C", repo, ...args]);
@@ -73,6 +75,7 @@ it.effect(
     const openCommand = vi.fn(
       (input: Parameters<TerminalManager.TerminalManager["Service"]["openCommand"]>[0]) =>
         Effect.gen(function* () {
+          assert.isFalse(NodeFS.existsSync(completionMarker));
           yield* input.threadId === threadId ? beforeOpen : Effect.void;
           const snapshot = {
             threadId: input.threadId,
@@ -179,6 +182,11 @@ it.effect(
           assert.equal(row.thread_id, owner);
           assert.equal(row.status, expected);
           assert.equal(
+            NodeFS.existsSync(completionMarker),
+            row.status === "succeeded" && row.evidence_version === 2,
+            `completion marker must agree with recoverable state (${expected})`,
+          );
+          assert.equal(
             item?.status === "completed"
               ? "succeeded"
               : item?.status === "running"
@@ -202,6 +210,8 @@ it.effect(
         })).status,
         "no-script",
       );
+      NodeFS.mkdirSync(NodePath.dirname(completionMarker), { recursive: true });
+      NodeFS.writeFileSync(completionMarker, "stale completion");
       const result = yield* service.runForThread({
         threadId,
         projectId,
@@ -283,6 +293,26 @@ it.effect(
       );
       assert.equal(openCommand.mock.calls.length, beforeCommands);
       yield* sql`DROP TRIGGER reject_setup_state`;
+      const rejectedOutcome = yield* service.runForThread({
+        threadId,
+        projectId,
+        worktreePath: worktree,
+        observeCompletion: {},
+      });
+      if (rejectedOutcome.status !== "started") return assert.fail("setup did not start");
+      yield* sql`CREATE TRIGGER reject_setup_outcome BEFORE UPDATE ON worktree_setup_state BEGIN SELECT RAISE(ABORT, 'synthetic outcome write failure'); END`;
+      yield* Effect.forEach([...listeners], (listener) =>
+        listener({
+          type: "exited",
+          threadId,
+          terminalId: rejectedOutcome.terminalId,
+          exitCode: 0,
+          exitSignal: null,
+        }),
+      );
+      yield* rejectedOutcome.completion!;
+      yield* assertState(threadId, rejectedOutcome.runId, "pending");
+      yield* sql`DROP TRIGGER reject_setup_outcome`;
 
       const otherThreadId = ThreadId.make("thread:shared-worktree");
       yield* sql`INSERT INTO projection_threads (thread_id, project_id, title, runtime_mode, interaction_mode, created_at, updated_at)
@@ -295,6 +325,7 @@ it.effect(
         observeCompletion: {},
       });
       if (otherSetup.status !== "started") return assert.fail("shared setup did not start");
+      yield* assertState(otherThreadId, otherSetup.runId, "pending");
       const exitOther = () =>
         Effect.forEach(
           [...listeners],
@@ -310,6 +341,7 @@ it.effect(
         );
       yield* exitOther();
       yield* otherSetup.completion!;
+      yield* assertState(otherThreadId, otherSetup.runId, "succeeded");
       const aliasSetup = (yield* projections.getThreadProjection(otherThreadId)).turnItems.find(
         (item) => item.type === "command_execution" && item.setupScript?.runId === otherSetup.runId,
       );
@@ -443,8 +475,10 @@ it.effect(
         observeCompletion: {},
       });
       if (recreatedSetup.status !== "started") return assert.fail("recreated setup did not start");
+      yield* assertState(threadId, recreatedSetup.runId, "pending");
       yield* exit(recreatedSetup.terminalId, 0);
       yield* recreatedSetup.completion!;
+      yield* assertState(threadId, recreatedSetup.runId, "succeeded");
       for (const { exitCode, exitSignal } of [
         { exitCode: 2, exitSignal: null },
         { exitCode: 0, exitSignal: 15 },
@@ -460,6 +494,8 @@ it.effect(
                 observeCompletion: {},
               });
         if (failed.status !== "started") return assert.fail("setup did not start");
+        yield* assertState(threadId, failed.runId, "pending");
+        NodeFS.writeFileSync(completionMarker, "stale completion");
         yield* exit(failed.terminalId, exitCode, exitSignal);
         assert.deepEqual(yield* failed.completion!, { exitCode, exitSignal, durationMs: 0 });
         const failure = (yield* projections.getThreadProjection(threadId)).turnItems.find(
@@ -486,6 +522,22 @@ it.effect(
       );
       assert.equal(interrupted?.status, "interrupted");
       yield* assertState(threadId, stopped.runId, "interrupted");
+      const withoutEvidence = yield* service.runForThread({
+        threadId,
+        projectId,
+        worktreePath: worktree,
+        observeCompletion: {},
+      });
+      if (withoutEvidence.status !== "started") return assert.fail("setup did not start");
+      const gitFile = NodePath.join(worktree, ".git");
+      const savedGitFile = NodeFS.readFileSync(gitFile);
+      NodeFS.writeFileSync(gitFile, "gitdir: missing-admin-directory\n");
+      NodeFS.writeFileSync(completionMarker, "stale completion");
+      yield* exit(withoutEvidence.terminalId, 0);
+      yield* withoutEvidence.completion!;
+      NodeFS.writeFileSync(gitFile, savedGitFile);
+      yield* assertState(threadId, withoutEvidence.runId, "succeeded");
+      assert.isNull((yield* state())[0]!.evidence_version);
       const guarded = yield* service.runForThread({
         threadId,
         projectId,
@@ -518,6 +570,7 @@ it.effect(
       const beforeRestart = yield* recover();
       if (beforeRestart.status !== "started")
         return assert.fail("recovery did not start before restart");
+      NodeFS.writeFileSync(completionMarker, "stale completion at restart");
       listeners.clear();
       const persistedInterruption = yield* Deferred.make<void>();
       const eventSink = yield* EventSink.EventSinkV2;
@@ -569,6 +622,50 @@ it.effect(
         );
       }
       assert.equal(openCommand.mock.calls.length, launchesBeforeRetry);
+      const unremovable = yield* restarted.runForThread({
+        threadId,
+        projectId,
+        worktreePath: worktree,
+      });
+      if (unremovable.status !== "started") return assert.fail("setup did not start");
+      NodeFS.mkdirSync(completionMarker);
+      listeners.clear();
+      const interruptedDespiteRemovalError = yield* Deferred.make<void>();
+      const warnings: unknown[] = [];
+      yield* ProjectSetupScriptRunner.make.pipe(
+        Effect.provideService(EventSink.EventSinkV2, {
+          ...eventSink,
+          write: (input) =>
+            eventSink
+              .write(input)
+              .pipe(
+                Effect.tap(() =>
+                  input.events.some(
+                    (event) =>
+                      event.type === "turn-item.updated" &&
+                      event.payload.id === `setup:${unremovable.runId}` &&
+                      event.payload.status === "interrupted",
+                  )
+                    ? Deferred.succeed(interruptedDespiteRemovalError, undefined)
+                    : Effect.void,
+                ),
+              ),
+        }),
+        Effect.provide(
+          Layer.mergeAll(
+            NodeServices.layer,
+            AnalyticsService.AnalyticsService.layerTest,
+            Logger.layer([Logger.make(({ message }) => warnings.push(message))], {
+              mergeWithExisting: false,
+            }),
+          ),
+        ),
+      );
+      yield* Deferred.await(interruptedDespiteRemovalError);
+      assert.equal((yield* state())[0]!.status, "interrupted");
+      assert.include(JSON.stringify(warnings), "failed to remove setup completion marker");
+      NodeFS.rmdirSync(completionMarker);
+      yield* assertState(threadId, unremovable.runId, "interrupted");
     }).pipe(
       Effect.provide(Layer.mergeAll(dependencies, runner)),
       Effect.ensuring(Effect.sync(() => NodeFS.rmSync(root, { recursive: true, force: true }))),
