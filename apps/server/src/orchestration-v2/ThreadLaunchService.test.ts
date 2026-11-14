@@ -1474,8 +1474,7 @@ it.effect.each(["fails", "is interrupted"] as const)(
           messageId: MessageId.make("message:next-turn-during-setup"),
           text: "Acknowledged",
           attachments: [],
-          mode: "queue",
-          withNextTurn: true,
+          mode: "next_turn",
           createdBy: "user",
           creationSource: "web",
         });
@@ -1598,8 +1597,7 @@ it.effect.each(["failed", "interrupted"] as const)(
         messageId: MessageId.make("message:next-turn-after-setup"),
         text: "Acknowledged",
         attachments: [],
-        mode: "queue",
-        withNextTurn: true,
+        mode: "next_turn",
         createdBy: "user",
         creationSource: "web",
       });

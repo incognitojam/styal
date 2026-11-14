@@ -4278,6 +4278,7 @@ interface ActiveClaudeTurnContext {
   readonly promptUuid: string | null;
   promptEcho: "pending" | "confirmed";
   promptStarted: boolean;
+  inputAccepted: boolean;
   nativeWakeStarted: boolean;
   gatedFramesBeforeEcho: number;
   readonly heldRootFrames: Array<SDKMessage>;
@@ -10193,12 +10194,29 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             ),
           );
 
+        const acceptTurnInput = Effect.fn("ClaudeAdapterV2.acceptTurnInput")(function* (
+          context: ActiveClaudeTurnContext,
+        ) {
+          if (context.inputAccepted) return;
+          yield* emitProviderEvent({
+            type: "provider_turn.updated",
+            driver: CLAUDE_PROVIDER,
+            inputAccepted: true,
+            providerTurn: providerTurnPayload({ context, status: "running", completedAt: null }),
+          });
+          context.inputAccepted = true;
+        });
+        const provesInputAccepted = (message: SDKMessage) =>
+          ((message.type === "assistant" || message.type === "stream_event") &&
+            message.parent_tool_use_id == null) ||
+          (message.type === "result" && message.num_turns > 0);
         const releaseHeldRootFrames = Effect.fnUntraced(function* (
           context: ActiveClaudeTurnContext,
         ) {
           context.promptEcho = "confirmed";
           const liveQuery = yield* Ref.get(queryContext);
           const held = context.heldRootFrames.splice(0);
+          if (held.some(provesInputAccepted)) yield* acceptTurnInput(context);
           if (liveQuery === null) {
             return;
           }
@@ -10214,6 +10232,13 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           const message = input.message;
           const context = yield* Ref.get(activeTurn);
           const liveQuery = yield* Ref.get(queryContext);
+          if (
+            context !== null &&
+            context.promptEcho === "confirmed" &&
+            liveQuery?.query === input.query &&
+            provesInputAccepted(message)
+          )
+            yield* acceptTurnInput(context);
           if (
             context?.promptUuid === null &&
             liveQuery?.query === input.query &&
@@ -10241,6 +10266,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                   : "result_only";
             }
             yield* releaseHeldRootFrames(context);
+            if (provesInputAccepted(message)) yield* acceptTurnInput(context);
             yield* handleRoutedSdkMessage(input);
             return;
           }
@@ -10250,6 +10276,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               liveQuery.promptEchoMode = "acknowledged";
             }
             if (lifecycle.state === "started") {
+              yield* acceptTurnInput(context);
               context.promptStarted = true;
             }
             // Previously recorded prompt uuids complete without starting a turn.
@@ -11331,6 +11358,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               streamedUsageByMessageId: new Map(),
               streamingMessageId: undefined,
               promptStarted: false,
+              inputAccepted: false,
               nativeWakeStarted: false,
               gatedFramesBeforeEcho: 0,
               heldRootFrames: [],

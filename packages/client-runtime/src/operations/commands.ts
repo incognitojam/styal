@@ -779,7 +779,7 @@ export const startThreadTurn = Effect.fn("EnvironmentCommands.startThreadTurn")(
     requestedMode === "queue"
       ? ({ type: "queue_after_active" } as const)
       : requestedMode === "next_turn"
-        ? ({ type: "with_next_turn" } as const)
+        ? ({ type: "next_turn" } as const)
         : ({ type: "start_immediately" } as const);
   return yield* dispatch({
     type: "message.dispatch",

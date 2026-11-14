@@ -1,4 +1,4 @@
-import { CommandId } from "@t3tools/contracts";
+import { CommandId, type RunId, type MessageId } from "@t3tools/contracts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
 import * as FeatureUsage from "../telemetry/FeatureUsage.ts";
@@ -107,6 +107,24 @@ export const layerExecutor: Layer.Layer<
     return OrchestrationEffectExecutorV2.of({
       execute: Effect.fn("OrchestrationEffectExecutorV2.execute")(function (effect, options) {
         const willRetry = options?.willRetry ?? false;
+        const acceptNextTurnMessages = Effect.fn(
+          "OrchestrationEffectExecutorV2.acceptNextTurnMessages",
+        )((runId: RunId, messageIds: ReadonlyArray<MessageId>) =>
+          threads
+            .dispatch({
+              type: "next-turn-messages.accept",
+              commandId: CommandId.make(`command:next-turn-accepted:${effect.id}`),
+              threadId: effect.threadId,
+              runId,
+              messageIds,
+            })
+            .pipe(
+              Effect.asVoid,
+              Effect.mapError(
+                (cause) => new ProviderTurnStartService.ProviderTurnStartError({ runId, cause }),
+              ),
+            ),
+        );
         switch (effect.request.type) {
           case "provider-runtime.continue": {
             const sourceRunId = effect.request.sourceRunId;
@@ -150,7 +168,12 @@ export const layerExecutor: Layer.Layer<
               );
           case "provider-turn.start":
             return providerTurnStart
-              .start({ threadId: effect.threadId, runId: effect.request.runId, willRetry })
+              .start({
+                threadId: effect.threadId,
+                runId: effect.request.runId,
+                willRetry,
+                onInputAccepted: acceptNextTurnMessages.bind(null, effect.request.runId),
+              })
               .pipe(
                 Effect.mapError(
                   (cause) =>
@@ -385,6 +408,7 @@ export const layerExecutor: Layer.Layer<
                     threadId: effect.threadId,
                     runId: effect.request.runId,
                     willRetry,
+                    onInputAccepted: acceptNextTurnMessages.bind(null, effect.request.runId),
                   }),
                 ),
                 Effect.mapError(

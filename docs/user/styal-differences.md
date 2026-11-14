@@ -89,6 +89,8 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 
 ## Workspaces and agent sessions
 
+- **Send a message with the next turn.** A message sent with the next turn waits in the queue without starting a turn or waking the agent, and goes to the agent, in order, with the next turn that starts for another reason. Web and desktop send it from the send button's right-click menu or `Alt+Enter`; agents can leave one for another thread with `t3_thread_send`. T3 Code has no way to send without starting or joining a turn as of [revision 7f81aa8](https://github.com/pingdotgg/t3code/tree/7f81aa8386737ecb244e3fd21c95afdb0649aeb7), checked November 14, 2026. [Send with the next turn](./composer.md#send-with-the-next-turn).
+
 - **Follow-ups steer by default.** Messages sent while an agent is working join
   the active turn. Choose Queue in Follow-up behavior to wait for the turn to finish;
   saved Queue preferences are preserved. T3 Code defaults to Queue as of

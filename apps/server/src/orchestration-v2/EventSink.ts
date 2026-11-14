@@ -348,6 +348,15 @@ const layerBase: Layer.Layer<
             : [],
         ),
       );
+      const nextTurnOrdinals = new Map(
+        events.flatMap((event) =>
+          event.type === "run.updated"
+            ? (event.payload.nextTurnMessageIds ?? []).map(
+                (id) => [id, event.payload.ordinal - 1] as const,
+              )
+            : [],
+        ),
+      );
       return Effect.forEach(
         events,
         (event): Effect.Effect<OrchestrationV2DomainEvent, unknown> =>
@@ -355,7 +364,12 @@ const layerBase: Layer.Layer<
             ? turnItemPositions
                 .normalize(
                   event.payload,
-                  event.payload.runId === null ? undefined : runOrdinals.get(event.payload.runId),
+                  event.payload.type === "user_message" &&
+                    nextTurnOrdinals.has(event.payload.messageId)
+                    ? nextTurnOrdinals.get(event.payload.messageId)
+                    : event.payload.runId === null
+                      ? undefined
+                      : runOrdinals.get(event.payload.runId),
                 )
                 .pipe(Effect.map((payload) => ({ ...event, payload })))
             : Effect.succeed(event),

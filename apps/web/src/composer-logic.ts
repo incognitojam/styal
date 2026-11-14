@@ -63,6 +63,8 @@ export function composerSubmissionIntentForKey(input: {
   isSoftwareKeyboardOpen: boolean;
   isDraftThread: boolean;
   isRunning?: boolean;
+  /** The server keeps messages for the thread's next turn; without it the shortcut does nothing. */
+  canSendWithNextTurn?: boolean;
   sendShortcut?: ClientSettings["sendShortcut"];
   prompt?: string;
 }): ComposerSubmissionIntent | null {
@@ -82,7 +84,9 @@ export function composerSubmissionIntentForKey(input: {
   if (command === "composer.sendAlternate" && input.isRunning) return "alternate";
   if (command === "composer.sendBackground" && input.isDraftThread) return "background";
   if (command === "composer.sendAndNewThread" && !input.isDraftThread) return "background";
-  if (command === "composer.sendWithNextTurn" && !input.isDraftThread) return "next_turn";
+  if (command === "composer.sendWithNextTurn") {
+    return !input.isDraftThread && input.canSendWithNextTurn === true ? "next_turn" : null;
+  }
   if (command !== null || event.key !== "Enter" || event.shiftKey || event.altKey) return null;
   if (
     composerRequiresModifier(input.sendShortcut, input.prompt ?? "") &&

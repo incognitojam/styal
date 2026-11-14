@@ -1987,6 +1987,24 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
           return candidates.filter((value): value is string => typeof value === "string").join("");
         };
 
+        const acceptedInputs = new WeakSet<ActiveCursorTurn>();
+        const acceptTurnInput = Effect.fn("CursorAdapterV2.acceptTurnInput")(function* (
+          turn: ActiveCursorTurn,
+        ) {
+          if (acceptedInputs.has(turn)) return;
+          acceptedInputs.add(turn);
+          yield* emitProviderEvent({
+            type: "provider_turn.updated",
+            driver: CursorAgentSdk.CURSOR_PROVIDER,
+            inputAccepted: true,
+            providerTurn: providerTurnPayload({
+              context: turn,
+              status: "running",
+              completedAt: null,
+            }),
+          });
+        });
+
         const handleInteractionUpdate = Effect.fnUntraced(function* (
           context: ActiveCursorTurn,
           update: InteractionUpdate,
@@ -2005,6 +2023,7 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
             update.type === "tool-call-started"
           ) {
             context.turnEnded = false;
+            if (!acceptedInputs.has(context)) yield* acceptTurnInput(context);
           }
           switch (update.type) {
             case "text-delta":
@@ -2521,6 +2540,8 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
                     const transportFailure = context.assistantReply.failure;
                     const status =
                       transportFailure === undefined ? terminalStatus(context, result) : "failed";
+                    if (status === "completed")
+                      if (!acceptedInputs.has(context)) yield* acceptTurnInput(context);
                     yield* finalizeTurn({
                       context,
                       status,

@@ -1208,7 +1208,12 @@ describe("planComposerTurn", () => {
       compactBeforeSend: false,
       turnDispatchMode: "next_turn",
       shouldQueueBehindActiveRun: true,
+      // Nothing starts for the server to acknowledge; the composer must not stay "Submitting".
+      endsDispatchWhenAccepted: true,
     });
+    expect(planComposerTurn({ ...stale, messageText: "/compact" }).endsDispatchWhenAccepted).toBe(
+      false,
+    );
     for (const messageText of ["/COMPACT", "/compact keep the API notes", "/compact\n  tests"]) {
       expect(planComposerTurn({ ...stale, messageText })).toMatchObject({
         compactBeforeSend: false,

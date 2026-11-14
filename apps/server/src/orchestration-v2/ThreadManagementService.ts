@@ -71,7 +71,7 @@ import { projectTurnItemForDetail } from "./WireProjection.ts";
 import * as LegacyV1ThreadImporter from "./legacy/LegacyV1ThreadImporter.ts";
 import * as ServerSettings from "../serverSettings.ts";
 
-export type ThreadManagementSendMode = "auto" | "queue" | "steer" | "restart";
+export type ThreadManagementSendMode = "auto" | "queue" | "steer" | "restart" | "next_turn";
 
 export interface ThreadManagementProvenance {
   readonly createdBy: OrchestrationV2Actor;
@@ -147,7 +147,6 @@ export type ThreadManagementTerminalRunStatus = Extract<
 >;
 
 export interface ThreadManagementSendInput {
-  readonly withNextTurn?: boolean;
   readonly projectId: ProjectId;
   readonly commandId: CommandId;
   readonly threadId: ThreadId;
@@ -388,6 +387,11 @@ export interface ThreadManagementServiceShape {
     Orchestrator.OrchestratorV2DispatchResult,
     Orchestrator.OrchestratorV2Error | ThreadManagementProviderInstanceDisabledError
   >;
+  readonly startQueuedMessage: (input: {
+    readonly threadId: ThreadId;
+    readonly commandId: CommandId;
+    readonly runId: RunId;
+  }) => ReturnType<ThreadManagementServiceShape["dispatch"]>;
   readonly getThreadHistoryPage: Orchestrator.OrchestratorV2["Service"]["getThreadHistoryPage"];
   readonly getTimelinePage: Orchestrator.OrchestratorV2["Service"]["getTimelinePage"];
   readonly getMessageCount: Orchestrator.OrchestratorV2["Service"]["getMessageCount"];
@@ -837,8 +841,8 @@ const make = Effect.gen(function* () {
       OrchestrationV2Command,
       { readonly type: "message.dispatch" }
     >["dispatchMode"];
-    if (input.withNextTurn === true) {
-      dispatchMode = { type: "with_next_turn" };
+    if (input.mode === "next_turn") {
+      dispatchMode = { type: "next_turn" };
     } else if (input.mode === "steer" || input.mode === "restart") {
       if (steerableRun === undefined) {
         return yield* new ThreadManagementNoSteerableRunError({
@@ -969,7 +973,7 @@ const make = Effect.gen(function* () {
       );
       const progress = delegatedTaskProgress({
         ...records,
-        runs: records.runs.filter((run) => run.status !== "queued" || run.withNextTurn !== true),
+        runs: records.runs.filter((run) => run.withNextTurn !== true),
       });
       // A thread rolled back past all its work, with nothing left running, has no answer to wait for.
       if (
@@ -1523,6 +1527,24 @@ const make = Effect.gen(function* () {
       );
     }),
     dispatch,
+    startQueuedMessage: Effect.fn("ThreadManagementService.startQueuedMessage")(function* (input) {
+      const records = yield* orchestrator.getThreadRecords(input.threadId, [
+        "runs",
+        "providerTurns",
+      ]);
+      const active = latestSteerableRun(records);
+      return yield* dispatch(
+        active === undefined
+          ? { ...input, type: "queued-run.start" }
+          : {
+              type: "queued-message.promote-to-steer",
+              commandId: input.commandId,
+              threadId: input.threadId,
+              queuedRunId: input.runId,
+              targetRunId: active.id,
+            },
+      );
+    }),
     getThreadHistoryPage: Effect.fn("ThreadManagementService.getThreadHistoryPage")(
       function (threadId, cursor, throughEntryId, conversationOnly, workMode) {
         return ensureProjectionTranscript(threadId).pipe(

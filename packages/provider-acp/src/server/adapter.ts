@@ -1399,6 +1399,7 @@ interface ActiveAcpTurn {
   promptSettled: boolean;
   promptSettledStatus: "completed" | "interrupted" | "failed" | "cancelled" | null;
   workAccepted: boolean;
+  inputAccepted: boolean;
   readonly promptWireSettled: Deferred.Deferred<void, never>;
   /** Completed once `session/prompt` is the runtime's active prompt. */
   readonly promptDispatched: Deferred.Deferred<void, never>;
@@ -4887,11 +4888,36 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                   ),
             );
 
+        const acceptPromptInput = Effect.fn("AcpAdapterV2.acceptPromptInput")(function* (
+          context: ActiveAcpTurn,
+        ) {
+          if (context.inputAccepted) return;
+          context.inputAccepted = true;
+          yield* emitProviderEvent({
+            type: "provider_turn.updated",
+            driver,
+            inputAccepted: true,
+            threadId: context.input.threadId,
+            providerTurn: providerTurnPayload(context, "running", null),
+          });
+        });
         const handleSessionUpdate = Effect.fnUntraced(function* (
           notification: EffectAcpSchema.SessionNotification,
         ) {
           const context = yield* Ref.get(activeTurn);
           const update = notification.update;
+          if (
+            context !== null &&
+            !context.finalized &&
+            !context.inputAccepted &&
+            context.promptSentAt !== null &&
+            context.nativeThreadId === notification.sessionId &&
+            ((update.sessionUpdate === "state_update" && update.state === "running") ||
+              /^(agent_message|agent_thought|user_message|tool_call|plan)/.test(
+                update.sessionUpdate,
+              ))
+          )
+            yield* acceptPromptInput(context);
           if (
             followsAgentWorkState &&
             flavor.extractSubagentSessionEvent !== undefined &&
@@ -8019,6 +8045,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
               promptSettled: false,
               promptSettledStatus: null,
               workAccepted: false,
+              inputAccepted: false,
               promptWireSettled,
               promptDispatched,
               promptSentAt: null,
@@ -8221,7 +8248,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                 runRuntimeCallbackAtGeneration(
                   promptGeneration,
                   Effect.gen(function* () {
-                    if (context.finalized || followsAgentWorkState) return;
+                    if (context.finalized) return;
                     // ACP v2 reports a failed prompt as an idle `error`, not an RPC error.
                     const idleError = result.stopReason === "error" && !context.interrupted;
                     const hiddenFailure =
@@ -8236,6 +8263,13 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                     }
                     const failure =
                       hiddenFailure ?? (idleError ? idleErrorFailure(result.error) : undefined);
+                    if (
+                      failure === undefined &&
+                      result.stopReason !== "cancelled" &&
+                      result.stopReason !== "error"
+                    )
+                      yield* acceptPromptInput(context);
+                    if (followsAgentWorkState) return;
                     const status =
                       failure !== undefined
                         ? "failed"

@@ -5,6 +5,7 @@ import { modelSelectionsEqual } from "@t3tools/shared/model";
 import { projectComposerContextForProvider } from "@t3tools/shared/composerContextReferences";
 import {
   CommandId,
+  type MessageId,
   latestProviderTurnForAttempt,
   type OrchestrationV2DomainEvent,
   type OrchestrationV2ContextHandoff,
@@ -62,6 +63,7 @@ import {
   knownProviderFailureMessage,
   makeProviderFailure,
 } from "@t3tools/provider-core/server/failure";
+import { queuedRunsInDeliveryOrder } from "./QueuedRunOrder.ts";
 import * as RunExecutionService from "./RunExecutionService.ts";
 import * as RuntimePolicy from "./RuntimePolicy.ts";
 import {
@@ -139,6 +141,9 @@ export interface ProviderTurnStartServiceV2Shape {
     readonly threadId: ThreadId;
     readonly runId: RunId;
     readonly willRetry?: boolean;
+    readonly onInputAccepted?: (
+      messageIds: ReadonlyArray<MessageId>,
+    ) => Effect.Effect<void, ProviderTurnStartError>;
   }) => Effect.Effect<void, ProviderTurnStartError>;
 }
 
@@ -404,6 +409,9 @@ export const layer: Layer.Layer<
       readonly threadId: ThreadId;
       readonly runId: RunId;
       readonly willRetry?: boolean;
+      readonly onInputAccepted?: (
+        messageIds: ReadonlyArray<MessageId>,
+      ) => Effect.Effect<void, ProviderTurnStartError>;
     }) {
       const { runId } = input;
       const projection = yield* projectionStore.getTurnStartContext(input.threadId, runId);
@@ -956,10 +964,17 @@ export const layer: Layer.Layer<
       });
       let effectiveHandoffs = handoffs;
       let resumeFellBack = false;
-      const nextTurnMessages = (run.nextTurnMessageIds ?? []).flatMap((id) => {
-        const pending = projection.messages.find((candidate) => candidate.id === id);
-        return pending === undefined ? [] : [pending];
-      });
+      const nextTurnMessages =
+        run.restartContinuationOfRunId !== undefined ||
+        (message.createdBy === "agent" && message.creationSource === "provider") ||
+        isCompactionCommandMessage(message) ||
+        parseGoalCommand(message) !== null
+          ? []
+          : queuedRunsInDeliveryOrder(projection)
+              .filter((candidate) => candidate.withNextTurn === true)
+              .flatMap((candidate) =>
+                projection.messages.filter((message) => message.id === candidate.userMessageId),
+              );
       const userText = [
         ...nextTurnMessages.map(
           (pending) =>
@@ -1832,6 +1847,21 @@ export const layer: Layer.Layer<
           ? session
           : makeDeliverySession(session, startWithHandoffs);
       return runExecution.startRootRun({
+        ...(nextTurnMessages.length === 0
+          ? {}
+          : {
+              onInputAccepted: () =>
+                (
+                  input.onInputAccepted?.(nextTurnMessages.map((message) => message.id)) ??
+                  Effect.void
+                ).pipe(
+                  Effect.catchCause(() =>
+                    Effect.logWarning("Failed to record accepted next-turn messages", {
+                      runId: run.id,
+                    }),
+                  ),
+                ),
+            }),
         commandId: CommandId.make(`command:effect:provider-turn.start:${run.id}`),
         appThread: projection.thread,
         providerSessionId,

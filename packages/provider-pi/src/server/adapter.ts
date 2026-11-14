@@ -1766,6 +1766,14 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
               yield* connection.terminate;
               return;
             }
+            if (!turn.adoptedWake)
+              yield* emit({
+                type: "provider_turn.updated",
+                driver: PI_PROVIDER,
+                inputAccepted: true,
+                threadId: turn.turnInput.threadId,
+                providerTurn: turn.providerTurn,
+              });
             turn.sawAgentActivity = true;
             turn.nativeAborted = false;
             turn.settleProbeGeneration += 1;
@@ -2066,6 +2074,14 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
               yield* scheduleSettleProbe(responseTurn, true);
             }
             if (event["success"] === true) {
+              if (pendingPrompt?.kind === "turn_start" && responseTurn !== null)
+                yield* emit({
+                  type: "provider_turn.updated",
+                  driver: PI_PROVIDER,
+                  inputAccepted: true,
+                  threadId: responseTurn.turnInput.threadId,
+                  providerTurn: responseTurn.providerTurn,
+                });
               // Command-only prompts emit no agent_settled; probe idle and re-queue behind preceding native events.
               if (
                 pendingPrompt?.kind === "turn_start" &&

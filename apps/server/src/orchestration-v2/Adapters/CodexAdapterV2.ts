@@ -2184,6 +2184,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
           }
           yield* emitProviderEvent({
             type: "provider_turn.updated",
+            inputAccepted: true,
             driver: CODEX_PROVIDER,
             threadId: input.turnInput.threadId,
             providerTurn: {

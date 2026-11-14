@@ -491,21 +491,3 @@ export const recordThreadReport = (report: {
       reportOutcome: report.outcome,
     }),
   );
-
-export const messagesWithNextTurn = Effect.fn("FeatureUsage.messagesWithNextTurn")(function* (
-  action: "send" | "deliver",
-  source: "user" | "agent" | "system",
-  messageCount: number,
-) {
-  const analytics = yield* Effect.serviceOption(AnalyticsService.AnalyticsService);
-  if (Option.isNone(analytics)) return;
-  yield* analytics.value
-    .record("feature.used", {
-      feature: "messages-with-next-turn",
-      action,
-      source,
-      messageCount,
-      outcome: "success",
-    })
-    .pipe(Effect.ignoreCause);
-});

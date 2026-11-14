@@ -118,6 +118,8 @@ export const ProviderAdapterV2Event = Schema.Union([
   }),
   Schema.Struct({
     type: Schema.Literal("provider_turn.updated"),
+    // Native acknowledgement or activity; optimistic local running does not set this.
+    inputAccepted: Schema.optional(Schema.Literal(true)),
     driver: ProviderDriverKind,
     threadId: Schema.optional(ThreadId),
     providerTurn: OrchestrationV2ProviderTurn,

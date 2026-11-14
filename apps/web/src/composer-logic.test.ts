@@ -177,15 +177,20 @@ describe("composerSubmissionIntentForKey", () => {
           event: { ...enter, key: "b", altKey: true },
         }),
       ).toBe("background");
-      expect(composerSubmissionIntentForKey({ ...custom, event: { ...enter, altKey: true } })).toBe(
-        "next_turn",
-      );
+      const withNextTurn = { ...custom, canSendWithNextTurn: true };
+      expect(
+        composerSubmissionIntentForKey({ ...withNextTurn, event: { ...enter, altKey: true } }),
+      ).toBe("next_turn");
       expect(
         composerSubmissionIntentForKey({
-          ...custom,
+          ...withNextTurn,
           isDraftThread: true,
           event: { ...enter, altKey: true },
         }),
+      ).toBeNull();
+      // An older server can't hold the message, so the shortcut does nothing.
+      expect(
+        composerSubmissionIntentForKey({ ...custom, event: { ...enter, altKey: true } }),
       ).toBeNull();
       expect(
         composerSubmissionIntentForKey({

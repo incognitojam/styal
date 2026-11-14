@@ -146,7 +146,6 @@ import {
   type GuestShareCommand,
 } from "./GuestShareDecider.ts";
 import * as EffectOutbox from "./EffectOutbox.ts";
-import * as FeatureUsage from "../telemetry/FeatureUsage.ts";
 import { withCommandMetrics } from "../observability/Metrics.ts";
 import type { OrchestrationEffectRequestV2, PendingOrchestrationEffectV2 } from "./EffectOutbox.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
@@ -606,6 +605,7 @@ function commandThreadId(command: OrchestrationV2ServerCommand): ThreadId {
     case "thread.model-selection.set":
     case "provider-session.detach":
     case "message.dispatch":
+    case "next-turn-messages.accept":
     case "notification.delivery.accept":
     case "prepared-run.release":
     case "prepared-run.progress":
@@ -723,7 +723,7 @@ function mayStartSubagentFollowup(
   command: Extract<OrchestrationV2Command, { readonly type: "message.dispatch" }>,
 ): boolean {
   if (
-    command.dispatchMode.type === "with_next_turn" ||
+    command.dispatchMode.type === "next_turn" ||
     command.scheduledTaskId !== undefined ||
     command.restartContinuationOfRunId !== undefined
   )
@@ -1412,45 +1412,23 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
 
   const attachNextTurnMessages = Effect.fn("Orchestrator.attachNextTurnMessages")(function* (
     event: Omit<OrchestrationV2DomainEvent, "id">,
-    incomingMessage?: Pick<OrchestrationV2ConversationMessage, "text" | "attachments">,
+    acceptedMessageIds: ReadonlyArray<MessageId>,
   ) {
     if (event.type !== "run.created" && event.type !== "run.updated") return [event];
     const run = event.payload as OrchestrationV2Run;
-    if (run.status !== "starting" || run.nextTurnMessageIds !== undefined) return [event];
-    // A fork can create its thread and first run in the same transaction.
-    const shell = yield* projectionStore
-      .getThreadShell(event.threadId)
-      .pipe(
-        Effect.mapError(
-          (cause) => new OrchestratorProjectionError({ threadId: event.threadId, cause }),
-        ),
-      );
-    if (shell === null) return [event];
+    if (run.nextTurnMessageIds !== undefined) return [event];
     const projection = yield* readCommandProjection(event.threadId);
-    const trigger =
-      incomingMessage ?? projection.messages.find((message) => message.id === run.userMessageId);
-    // Native controls defer messages just as they defer history handoffs.
-    if (
-      trigger !== undefined &&
-      (isNativeMaintenanceCommand(trigger) || parseGoalCommand(trigger) !== null)
-    )
-      return [event];
-    const waiting = queuedRunsInDeliveryOrder(projection).filter(
-      (candidate) => candidate.id !== run.id && candidate.withNextTurn === true,
+    const waiting = acceptedMessageIds.flatMap((id) =>
+      projection.runs.filter(
+        (candidate) =>
+          candidate.withNextTurn === true &&
+          candidate.userMessageId === id &&
+          projection.messages.some(
+            (message) => message.id === id && message.runId === candidate.id,
+          ),
+      ),
     );
-    const carriedMessageIds = projection.runs.flatMap((source) =>
-      source.id !== run.id &&
-      source.startedAt === null &&
-      (source.status === "failed" ||
-        source.status === "cancelled" ||
-        source.status === "completed" ||
-        source.status === "interrupted")
-        ? (source.nextTurnMessageIds ?? []).filter((id) =>
-            projection.messages.some((message) => message.id === id && message.runId === source.id),
-          )
-        : [],
-    );
-    if (waiting.length === 0 && carriedMessageIds.length === 0) return [event];
+    if (waiting.length === 0) return [event];
     const extra: Array<Omit<OrchestrationV2DomainEvent, "id">> = [];
     for (const queued of waiting) {
       const message = projection.messages.find(
@@ -1467,21 +1445,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         payload: { ...message, runId: run.id, nodeId: run.rootNodeId },
       });
     }
-    for (const id of carriedMessageIds) {
-      const message = projection.messages.find((candidate) => candidate.id === id)!;
-      extra.push({
-        type: "message.updated",
-        threadId: run.threadId,
-        runId: run.id,
-        nodeId: run.rootNodeId ?? undefined,
-        occurredAt: event.occurredAt,
-        payload: { ...message, runId: run.id, nodeId: run.rootNodeId },
-      });
-    }
-    const messageIds = [
-      ...carriedMessageIds,
-      ...waiting.map((candidate) => candidate.userMessageId),
-    ];
+    const messageIds = waiting.map((candidate) => candidate.userMessageId);
     for (const messageId of messageIds) {
       const message = projection.messages.find((candidate) => candidate.id === messageId)!;
       const existing = projection.turnItems.find(
@@ -1542,13 +1506,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     (events: Ref.Ref<Array<OrchestrationV2DomainEvent>>, command: OrchestrationV2ServerCommand) =>
     <Event extends OrchestrationV2DomainEvent>(event: Omit<Event, "id">) =>
       Effect.gen(function* () {
-        const expanded =
-          event.type === "run.created" || event.type === "run.updated"
-            ? yield* attachNextTurnMessages(
-                event,
-                command.type === "message.dispatch" ? command : undefined,
-              )
-            : [event];
+        const expanded = [event];
         const withIds = yield* Effect.forEach(expanded, (entry) => makeEvent(command, entry));
         yield* Ref.update(events, (existing) => [...existing, ...withIds]);
         return withIds[withIds.length - 1] as Event;
@@ -1731,26 +1689,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       effects: ReadonlyArray<PendingOrchestrationEffectV2> = [],
       options: { readonly updateDelegatedCompletionOnly?: boolean } = {},
     ) {
-      const expanded = (yield* Effect.forEach(events, (event) =>
-        event.type === "run.created" || event.type === "run.updated"
-          ? attachNextTurnMessages(event)
-          : Effect.succeed([event]),
-      )).flat();
+      const expanded = events;
       const withIds = yield* Effect.forEach(expanded, (event) => makeSystemEvent(event));
       yield* eventSink.writeWithEffects({ events: withIds, effects, ...options });
-      for (const event of withIds) {
-        if (
-          (event.type === "run.created" || event.type === "run.updated") &&
-          event.payload.status === "starting" &&
-          (event.payload.nextTurnMessageIds?.length ?? 0) > 0
-        ) {
-          yield* FeatureUsage.messagesWithNextTurn(
-            "deliver",
-            "system",
-            event.payload.nextTurnMessageIds!.length,
-          );
-        }
-      }
     });
 
   const completionDeliveryRun = (
@@ -3886,7 +3827,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           cause: `Thread ${command.threadId} has a pending approval or user-input request and cannot be snoozed.`,
         });
       }
-      const queuedRuns = projection.runs.filter((run) => run.status === "queued");
+      const queuedRuns = projection.runs.filter(
+        (run) => run.status === "queued" && run.withNextTurn !== true,
+      );
       const queuedMessages =
         queuedRuns.length === 0
           ? []
@@ -6100,10 +6043,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       (run) => run.id === command.restartContinuationOfRunId,
     )?.delegatedTaskId;
 
-    if (
-      projection.thread.settledOverride !== null &&
-      command.dispatchMode.type !== "with_next_turn"
-    ) {
+    if (projection.thread.settledOverride !== null && command.dispatchMode.type !== "next_turn") {
       const now = yield* DateTime.now;
       const thread: OrchestrationV2AppThread = {
         ...projection.thread,
@@ -6135,7 +6075,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     if (
       projection.thread.snoozedUntil != null &&
       !automaticWake &&
-      command.dispatchMode.type !== "with_next_turn"
+      command.dispatchMode.type !== "next_turn"
     ) {
       const now = yield* DateTime.now;
       const thread: OrchestrationV2AppThread = {
@@ -6273,6 +6213,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       (command.createdBy !== "agent" ||
         (command.creationSource !== "server" && command.creationSource !== "provider") ||
         (dispatchMode.type !== "queue_after_active" &&
+          dispatchMode.type !== "next_turn" &&
           !(
             command.restartContinuationOfRunId !== undefined &&
             dispatchMode.type === "start_immediately"
@@ -6471,7 +6412,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       dispatchMode.type === "start_immediately" ||
       dispatchMode.type === "queue_after_active";
     const shouldQueue =
-      dispatchMode.type === "with_next_turn" || (queueBehindRun !== undefined && startsOrQueuesRun);
+      dispatchMode.type === "next_turn" || (queueBehindRun !== undefined && startsOrQueuesRun);
     // Client messages resume held queues; server continuations and scheduled tasks do not.
     // Provider failure or usage limits re-hold the queue.
     const worktreeSetupUnresolved = worktreeSetupPending(projection);
@@ -6510,7 +6451,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         projection.providerThreads.find(
           (candidate) => candidate.id === queueBehindRun?.providerThreadId,
         );
-      if (queueProviderThread === undefined && dispatchMode.type !== "with_next_turn") {
+      if (queueProviderThread === undefined && dispatchMode.type !== "next_turn") {
         return yield* new OrchestratorDispatchError({
           commandId: command.commandId,
           commandType: command.type,
@@ -6617,8 +6558,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         rootNodeId,
         activeAttemptId: attemptId,
         status: "queued",
-        ...(dispatchMode.type === "with_next_turn" ? { withNextTurn: true } : {}),
-        ...(dispatchMode.type !== "with_next_turn" &&
+        ...(dispatchMode.type === "next_turn" ? { withNextTurn: true } : {}),
+        ...(dispatchMode.type !== "next_turn" &&
         (worktreeMissingRun !== undefined ||
           (heldRunsToRelease.length === 0 && queueIsHeld && !wakeSkipsHold))
           ? { queueHeld: true }
@@ -6701,7 +6642,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           type: "provider-thread.updated",
           threadId: command.threadId,
           providerInstanceId: modelSelection.instanceId,
-          occurredAt: now,
+          occurredAt: dispatchMode.type === "next_turn" ? projection.thread.updatedAt : now,
           payload: queuedProviderThread,
         });
       }
@@ -14258,6 +14199,23 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         yield* recordSubagentFollowup(dispatched, events).pipe(mapDispatchError(command));
         break;
       }
+      case "next-turn-messages.accept": {
+        const projection = yield* getProjectionWithPendingEvents(command.threadId, events);
+        const run = projection.runs.find((candidate) => candidate.id === command.runId);
+        if (run === undefined) break;
+        const expanded = yield* attachNextTurnMessages(
+          {
+            type: "run.updated",
+            threadId: command.threadId,
+            runId: run.id,
+            occurredAt: yield* DateTime.now,
+            payload: run,
+          },
+          command.messageIds,
+        );
+        for (const event of expanded) yield* emit(events, command)(event);
+        break;
+      }
       case "notification.delivery.accept":
         updateDelegatedCompletionOnlyRunId = yield* dispatchNotificationAccepted(command, events);
         break;
@@ -14704,30 +14662,6 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         commandType: command.type,
         detail: committed.receipt.error ?? "Previously rejected.",
       });
-    }
-    if (committed.committed) {
-      if (command.type === "message.dispatch" && command.dispatchMode.type === "with_next_turn") {
-        yield* FeatureUsage.messagesWithNextTurn(
-          "send",
-          command.createdBy === "user" ? "user" : "agent",
-          1,
-        );
-      }
-      const withIds = committed.storedEvents.map((stored) => stored.event);
-
-      for (const event of withIds) {
-        if (
-          (event.type === "run.created" || event.type === "run.updated") &&
-          event.payload.status === "starting" &&
-          (event.payload.nextTurnMessageIds?.length ?? 0) > 0
-        ) {
-          yield* FeatureUsage.messagesWithNextTurn(
-            "deliver",
-            "system",
-            event.payload.nextTurnMessageIds!.length,
-          );
-        }
-      }
     }
     if (
       command.type === "queue.resume" ||

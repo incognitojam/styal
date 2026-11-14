@@ -17,6 +17,8 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
+import * as Schema from "effect/Schema";
+import * as Option from "effect/Option";
 import { McpSchema, McpServer } from "effect/ai";
 
 import * as ServerConfig from "../config.ts";
@@ -43,6 +45,9 @@ import * as PeerLinks from "./PeerLinks.ts";
 import * as PeerLinkRequests from "./PeerLinkRequests.ts";
 import { descriptorOf, layerLinkingEnvironment, linkTo, servePeer } from "./PeerLinks.testkit.ts";
 
+const decodeOlderSend = Schema.decodeUnknownOption(
+  Schema.Struct({ mode: Schema.optional(Schema.Literals(["auto", "queue", "steer", "restart"])) }),
+);
 const laptop = descriptorOf("environment-laptop", "Laptop");
 const box = descriptorOf("environment-box", "Box");
 const boxProject = ProjectId.make("project:box");
@@ -376,6 +381,17 @@ it.effect("an agent here works on a linked environment's threads within its own 
       yield* linkTo(a.links, b, "auto");
       yield* Ref.set(linkSession, (yield* b.linkedSessions)[0]!.sessionId);
 
+      expect(Option.isNone(decodeOlderSend({ mode: "next_turn" }))).toBe(true);
+      const waiting = yield* a.call("thread:laptop-full", "t3_thread_send", {
+        environmentId: box.environmentId,
+        threadId: boxThread,
+        message: "Acknowledged",
+        mode: "next_turn",
+      });
+      expect(failureOf(waiting)?.message).toContain(
+        "Box runs an older styal that can't hold a message for the next turn",
+      );
+      expect((yield* Ref.get(seen)).sends).toHaveLength(0);
       const listed = yield* a.call("thread:laptop-full", "t3_environment_links", {});
       expect(listed.structuredContent).toMatchObject({
         environmentId: laptop.environmentId,

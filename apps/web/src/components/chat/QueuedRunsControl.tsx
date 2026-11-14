@@ -1,5 +1,6 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { deriveThreadQueueWorkflowState } from "@t3tools/client-runtime/state/thread-workflows";
+import { NEXT_TURN_QUEUED_LABEL } from "@t3tools/client-runtime/state/composer-dispatch";
 import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";
 import {
   isAttachmentOnlyBootstrapPrompt,
@@ -285,7 +286,7 @@ export function QueuedRunsControl({
                       }
                     >
                       <Clock3Icon aria-hidden className="size-3" />
-                      With next turn
+                      {NEXT_TURN_QUEUED_LABEL}
                     </TooltipTrigger>
                     <TooltipPopup>
                       Goes with the agent&apos;s next turn, whatever starts it. It doesn&apos;t wake

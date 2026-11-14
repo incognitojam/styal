@@ -77,10 +77,12 @@ export class PeerLinks extends Context.Service<
      * The environment answering at `url`, or nothing when it is not a usable
      * address or does not answer as T3 Code. Sends no credential.
      */
-    readonly describe: (
-      url: string,
-    ) => Effect.Effect<
-      Option.Option<{ readonly environmentId: EnvironmentId; readonly label: string }>
+    readonly describe: (url: string) => Effect.Effect<
+      Option.Option<{
+        readonly environmentId: EnvironmentId;
+        readonly label: string;
+        readonly capabilities: ExecutionEnvironmentCapabilities;
+      }>
     >;
     readonly list: Effect.Effect<ReadonlyArray<PeerLinkSummary>, PeerLinkError>;
     /** The stored link, without asking the peer whether it answers. */
@@ -490,7 +492,13 @@ const make = Effect.gen(function* () {
   const describeUrl: PeerLinks["Service"]["describe"] = (url) =>
     peerOrigin(url).pipe(
       Effect.flatMap(describe),
-      Effect.map(Option.map((peer) => ({ environmentId: peer.environmentId, label: peer.label }))),
+      Effect.map(
+        Option.map((peer) => ({
+          environmentId: peer.environmentId,
+          label: peer.label,
+          capabilities: peer.capabilities,
+        })),
+      ),
       Effect.orElseSucceed(() => Option.none()),
     );
 

@@ -3506,3 +3506,31 @@ it("passes a waiting parent only once it answers the child's question, and judge
   );
   assert.isNotEmpty(reported(`It needs approval in ${threadId}. I will approve it now.`));
 });
+
+it("rejects a waking send after a next-turn send", () => {
+  const expectation = {
+    calls: [
+      {
+        tool: "t3_thread_send",
+        args: { threadId: "child", mode: "next_turn", message: "Acknowledged, thanks." },
+      },
+    ],
+    nextTurnOnly: "child",
+  };
+  const waiting = {
+    step: 1,
+    tool: "t3_thread_send",
+    input: { threadId: "child", mode: "next_turn", message: "Acknowledged, thanks." },
+  };
+  assert.deepEqual(failed(expectation, { calls: [waiting], text: "", stopReason: "end_turn" }), []);
+  assert.isNotEmpty(
+    failed(expectation, {
+      calls: [
+        waiting,
+        { step: 2, tool: "t3_thread_send", input: { threadId: "child", message: "Wake up" } },
+      ],
+      text: "",
+      stopReason: "end_turn",
+    }),
+  );
+});

@@ -35,6 +35,7 @@ import {
 import { hasOnlyPairedSurrogates } from "./threadMetadataMcp.ts";
 import { ThreadTitleRegeneration } from "./threadTitle.ts";
 import {
+  NextTurnSendMode,
   OrchestrationV2Actor,
   OrchestrationV2CreationSource,
   OrchestrationV2RunStatus,
@@ -595,11 +596,12 @@ export const OrchestratorMcpThreadReadResult = Schema.Struct({
 export type OrchestratorMcpThreadReadResult = typeof OrchestratorMcpThreadReadResult.Type;
 
 export const OrchestratorMcpThreadSendInput = Schema.Struct({
-  withNextTurn: Schema.optional(Schema.Boolean),
   environmentId: OrchestratorMcpEnvironmentTarget,
   threadId: ThreadId,
   message: OrchestratorMcpPrompt,
-  mode: Schema.optional(Schema.Literals(["auto", "queue", "steer", "restart"])),
+  mode: Schema.optional(
+    Schema.Union([Schema.Literals(["auto", "queue", "steer", "restart"]), NextTurnSendMode]),
+  ),
   clientRequestId: Schema.optional(OrchestratorMcpClientRequestId),
 });
 export type OrchestratorMcpThreadSendInput = typeof OrchestratorMcpThreadSendInput.Type;

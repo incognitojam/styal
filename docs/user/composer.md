@@ -91,14 +91,18 @@ keyboard. The button only offers Steer when the running agent supports it.
 A message sent with the next turn doesn't start a turn and doesn't wake the agent. It
 waits in the queue, marked **With next turn**, and goes to the agent at the start of
 the next turn that begins for any other reason: your next message, a finished
-delegated task, a notification or a scheduled task. Use it for acknowledgements
-and small answers that can wait.
+delegated task, a notification or a scheduled task. A turn that continues
+interrupted work, or a `/compact` or `/goal` command, leaves them waiting. If the
+turn fails before the agent receives it, they go back to waiting. Use it for
+acknowledgements and small answers that can wait.
 
 On web and desktop, right-click the send button and choose **Send with next turn**,
 or press `Option+Enter` on macOS or `Alt+Enter` on Windows and Linux. Change
 `composer.sendWithNextTurn` in **Settings → Keybindings** to use another shortcut.
-Choose **Send now** on the queued message to send it straight away. Settling a
-thread keeps these messages; they go with its next turn.
+Choose **Send now** on the queued message to send it straight away. Settling or
+snoozing a thread keeps these messages, and they don't make the thread look busy.
+On mobile, waiting messages are labelled the same way and **Send now** works on
+them; sending one from mobile isn't available yet.
 
 ## Queue messages offline on mobile
 

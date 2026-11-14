@@ -554,6 +554,7 @@ export const RunExecutionServiceV2Error = Schema.Union([
 export type RunExecutionServiceV2Error = typeof RunExecutionServiceV2Error.Type;
 
 export interface RunExecutionServiceV2StartRootRunInput {
+  readonly onInputAccepted?: () => Effect.Effect<void>;
   readonly commandId: CommandId;
   readonly appThread: OrchestrationV2AppThread;
   readonly providerSessionId: ProviderSessionId;
@@ -885,6 +886,7 @@ export const layer: Layer.Layer<
 
     return RunExecutionServiceV2.of({
       startRootRun: Effect.fn("RunExecutionService.startRootRun")(function* (input) {
+        let inputAccepted = false;
         const rootTurnOrigin: ProviderUsageAnalytics.ProviderTurnOrigin = {
           createdBy: input.message.createdBy,
           creationSource: input.message.creationSource,
@@ -1406,6 +1408,15 @@ export const layer: Layer.Layer<
           Stream.tap(({ event, accepted }) =>
             Effect.gen(function* () {
               if (!accepted) return;
+              const acceptsInput =
+                event.type === "provider_turn.updated" &&
+                event.inputAccepted === true &&
+                event.providerTurn.runAttemptId === input.attempt.id &&
+                event.providerTurn.providerThreadId === input.providerThread.id;
+              if (!inputAccepted && acceptsInput) {
+                yield* input.onInputAccepted?.() ?? Effect.void;
+                inputAccepted = true;
+              }
               if (
                 event.type === "provider_turn.updated" &&
                 event.providerTurn.runAttemptId === input.attempt.id &&

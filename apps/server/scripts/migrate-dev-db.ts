@@ -312,6 +312,20 @@ const copySourceSlice = Effect.fn("copyDevDbSourceSlice")(function* (sourcePath:
 const pruneSnapshot = Effect.fn("pruneDevDbSnapshot")(function* (input: RunMigrateDevDbInput) {
   const sql = yield* SqlClient.SqlClient;
 
+  yield* sql`CREATE TEMP TABLE waiting_runs AS SELECT run_id, json_extract(payload_json, '$.userMessageId') AS message_id
+    FROM orchestration_v2_projection_runs WHERE status = 'queued' AND json_extract(payload_json, '$.withNextTurn') IS 1`;
+  yield* sql`DELETE FROM orchestration_events WHERE json_extract(metadata_json, '$.runId') IN (SELECT run_id FROM waiting_runs)
+    OR json_extract(payload_json, '$.id') IN (SELECT run_id FROM waiting_runs)
+    OR json_extract(payload_json, '$.id') IN (SELECT message_id FROM waiting_runs)`;
+  const runTables = yield* sql<{
+    name: string;
+  }>`SELECT m.name FROM sqlite_master m, pragma_table_info(m.name) c
+    WHERE m.type = 'table' AND c.name = 'run_id' AND m.name <> 'orchestration_v2_projection_runs'`;
+  for (const { name } of runTables)
+    yield* sql.unsafe(`DELETE FROM "${name}" WHERE run_id IN (SELECT run_id FROM waiting_runs)`)
+      .unprepared;
+  yield* sql`DELETE FROM orchestration_v2_projection_messages WHERE message_id IN (SELECT message_id FROM waiting_runs)`;
+  yield* sql`DELETE FROM orchestration_v2_projection_runs WHERE run_id IN (SELECT run_id FROM waiting_runs)`;
   // Usage-limit recovery also depends on settings; exclude latest-run failures and recovery choices.
   const projections = yield* ProjectionStore.ProjectionStoreV2;
   const recoveryThreadIds = yield* Effect.forEach(RECOVERY_KINDS, (kind) =>

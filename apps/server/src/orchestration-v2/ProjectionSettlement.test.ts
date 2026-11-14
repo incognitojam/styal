@@ -326,6 +326,32 @@ it.effect("sql: the user-authored message time ignores agent notifications", () 
     yield* message("written", "user", "web", written);
     yield* message("notification", "agent", "provider", now);
 
+    yield* message("waiting", "user", "web", DateTime.add(now, { hours: 1 }));
+    const waitingId = yield* createRun(threadId, "queued", 2);
+    const records = yield* store.getThreadRecords(threadId, ["runs", "messages"]);
+    const waiting = records.runs.find((run) => run.id === waitingId)!;
+    yield* store.apply({
+      id: EventId.make("event:waiting-mode"),
+      type: "run.updated",
+      threadId,
+      occurredAt: now,
+      payload: {
+        ...waiting,
+        withNextTurn: true,
+        userMessageId: MessageId.make("message:settlement:waiting"),
+      },
+    });
+    const waitingMessage = records.messages.find(
+      (message) => message.id === MessageId.make("message:settlement:waiting"),
+    )!;
+    yield* store.apply({
+      id: EventId.make("event:waiting-owner"),
+      type: "message.updated",
+      threadId,
+      runId: waitingId,
+      occurredAt: DateTime.add(now, { hours: 1 }),
+      payload: { ...waitingMessage, runId: waitingId },
+    });
     const [candidate] = yield* store.getSettlementCandidates(threadId);
     assert.isDefined(candidate);
     assert.equal(DateTime.formatIso(candidate.latestUserMessageAt!), DateTime.formatIso(now));
@@ -338,6 +364,25 @@ it.effect("sql: the user-authored message time ignores agent notifications", () 
     );
     assert.equal(
       DateTime.formatIso(shellThread!.latestUserAuthoredMessageAt!),
+      DateTime.formatIso(written),
+    );
+    yield* store.apply({
+      id: EventId.make("event:waiting-cancel"),
+      type: "run.updated",
+      threadId,
+      runId: waitingId,
+      occurredAt: now,
+      payload: {
+        ...waiting,
+        userMessageId: waitingMessage.id,
+        withNextTurn: true,
+        status: "cancelled",
+      },
+    });
+    const [cancelled] = yield* store.getSettlementCandidates(threadId);
+    assert.isDefined(cancelled);
+    assert.equal(
+      DateTime.formatIso(cancelled.latestUserAuthoredMessageAt!),
       DateTime.formatIso(written),
     );
   }).pipe(Effect.provide(layerSql)),

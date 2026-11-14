@@ -1296,6 +1296,21 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
           }
         }
       });
+      const acceptedInputs = new WeakSet<ActiveTurn>();
+      const acceptTurnInput = Effect.fn("MuseAdapterV2.acceptTurnInput")(function* (
+        turn: ActiveTurn,
+      ) {
+        if (acceptedInputs.has(turn)) return;
+        acceptedInputs.add(turn);
+        yield* emit({
+          type: "provider_turn.updated",
+          driver: MUSE_PROVIDER,
+          inputAccepted: true,
+          threadId: turn.input.threadId,
+          providerTurn: turn.providerTurn,
+        });
+      });
+
       const handleNotification = Effect.fnUntraced(function* (method: string, data: unknown) {
         const params = yield* decode(recordSchema, data);
         // usage/changed is account-wide and carries no session ID.
@@ -1384,6 +1399,13 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
         if (!turn) return;
         if (typeof params.turnId === "string" && !owns(turn, params.turnId) && !turn.compact)
           return;
+        if (
+          !acceptedInputs.has(turn) &&
+          ((method === "turn/started" && params.turnId === turn.nativeId) ||
+            (itemEvent?.turnId === turn.nativeId &&
+              (method === "item/started" || method === "item/updated")))
+        )
+          yield* acceptTurnInput(turn);
         switch (method) {
           case "item/started":
           case "item/updated":
@@ -2090,6 +2112,7 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
               );
               return yield* protocolError("Muse admitted the turn under an unexpected identity");
             }
+            yield* eventPermit.withPermits(1)(acceptTurnInput(turn));
           }
         }).pipe(
           Effect.onError((cause) => {

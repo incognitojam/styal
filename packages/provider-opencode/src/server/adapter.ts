@@ -1132,6 +1132,21 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
           return ordinal;
         };
 
+        const acceptedInputs = new WeakSet<ActiveOpenCodeTurn>();
+        const acceptTurnInput = Effect.fn("OpenCodeAdapterV2.acceptTurnInput")(function* (
+          turn: ActiveOpenCodeTurn,
+        ) {
+          if (acceptedInputs.has(turn)) return;
+          acceptedInputs.add(turn);
+          yield* emitProviderEvent({
+            type: "provider_turn.updated",
+            driver: OPENCODE_PROVIDER,
+            inputAccepted: true,
+            threadId: turn.threadId,
+            providerTurn: turn.providerTurn,
+          });
+        });
+
         const emitProviderTurn = (
           state: OpenCodeThreadState,
           turn: ActiveOpenCodeTurn,
@@ -2438,6 +2453,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
             turn !== null &&
             (turn.admissionMessageId === null || turn.admissionMessageId === message.id);
           if (turn !== null && matchesAdmission) turn.usage.promptMessageIds.add(message.id);
+          if (turn !== null && turn.admissionMessageId === message.id) yield* acceptTurnInput(turn);
           if (turn !== null && matchesAdmission && turn.nativeUserMessageId === null) {
             turn.nativeUserMessageId = message.id;
             yield* emitProviderTurn(state, turn, "running", null);
@@ -2532,6 +2548,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
           if (state === undefined || turn === null || turn === undefined) return;
           // Versions may ignore supplied message IDs; completed assistant output admits settlement on idle.
           advanceOpenCodePromptAdmission(turn, "assistant-completed");
+          yield* acceptTurnInput(turn);
           for (const partId of turn.partIdsByMessage.get(message.id) ?? []) {
             const part = turn.parts.get(partId);
             if (part?.type === "text" || part?.type === "reasoning") {
@@ -3338,6 +3355,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
               );
               if (state.activeTurn === turn && !turn.finalized && !turn.interrupted) {
                 const admissionAction = advanceOpenCodePromptAdmission(turn, "accepted");
+                yield* acceptTurnInput(turn);
                 if (admissionAction === "reconcile-idle") {
                   yield* reconcilePromptAdmission(state, turn);
                 }

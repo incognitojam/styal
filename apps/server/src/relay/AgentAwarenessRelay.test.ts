@@ -219,6 +219,7 @@ const makeTestRelay = Effect.fnUntraced(function* (
     readShellSnapshot: unused,
     ensureLegacyTranscript: unused,
     dispatch: unused,
+    startQueuedMessage: unused,
     searchThread: () => Effect.die("unused"),
     searchThreadStream: () => Stream.empty,
     getThreadHistoryPage: () => Effect.die("unused"),

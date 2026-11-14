@@ -801,6 +801,9 @@ function preserveRunRecordedFields(
   if (current === undefined) return next;
   return {
     ...next,
+    ...(next.nextTurnMessageIds === undefined && current.nextTurnMessageIds !== undefined
+      ? { nextTurnMessageIds: current.nextTurnMessageIds }
+      : {}),
     ...(next.delegatedCompletion === undefined && current.delegatedCompletion !== undefined
       ? { delegatedCompletion: current.delegatedCompletion }
       : {}),
@@ -859,11 +862,16 @@ export function applyToProjection(
   projection: OrchestrationV2ThreadProjection,
   event: OrchestrationV2DomainEvent,
 ): OrchestrationV2ThreadProjection {
+  const waitingEvent =
+    event.type === "run.created" || event.type === "run.updated"
+      ? event.payload.withNextTurn === true
+      : event.runId !== undefined &&
+        projection.runs.some((run) => run.id === event.runId && run.withNextTurn === true);
   const base = {
     ...projection,
     thread: {
       ...projection.thread,
-      updatedAt: event.occurredAt,
+      updatedAt: waitingEvent ? projection.thread.updatedAt : event.occurredAt,
     },
     updatedAt: event.occurredAt,
   };
@@ -1600,14 +1608,15 @@ export function threadShellFromProjection(
       )[0] ?? null;
   // T3 Code's own idle compactions stay out of the shell unless they fail, so thread lists,
   // notifications and the relay keep presenting the user's last turn.
-  const runs = projection.runs.filter((run) => !isSilentRunForShell(run, projection));
+  const runs = projection.runs.filter(
+    (run) => run.withNextTurn !== true && !isSilentRunForShell(run, projection),
+  );
   const latestRun =
     usageLimitRunPresentedAsLatest(
       runs,
       projection.turnItems,
       providerSession?.lastError ?? null,
-    ) ??
-    latestUnheldRun(runs.filter((run) => run.status !== "queued" || run.withNextTurn !== true));
+    ) ?? latestUnheldRun(runs);
   const activeRun =
     runs
       .filter(isInterruptibleRunForShell)
@@ -1624,8 +1633,16 @@ export function threadShellFromProjection(
           DateTime.toEpochMillis(right.createdAt) - DateTime.toEpochMillis(left.createdAt),
       )[0] ?? null,
   );
+  const waitingRunIds = new Set(
+    projection.runs.filter((run) => run.withNextTurn === true).map((run) => run.id),
+  );
   const userMessages = projection.messages
-    .filter((message) => message.role === "user" && idleCompactionOf(message) === undefined)
+    .filter(
+      (message) =>
+        message.role === "user" &&
+        idleCompactionOf(message) === undefined &&
+        (message.runId === null || !waitingRunIds.has(message.runId)),
+    )
     .toSorted(
       (left, right) =>
         DateTime.toEpochMillis(right.updatedAt) - DateTime.toEpochMillis(left.updatedAt),
@@ -2210,7 +2227,10 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                 requested_at = excluded.requested_at,
                 completed_at = excluded.completed_at,
                 payload_json = ${keepRecordedRunField(
-                  keepRecordedRunField(sql`excluded.payload_json`, "$.delegatedCompletion"),
+                  keepRecordedRunField(
+                    keepRecordedRunField(sql`excluded.payload_json`, "$.nextTurnMessageIds"),
+                    "$.delegatedCompletion",
+                  ),
                   "$.restartCancelledBackgroundWork",
                 )}
             `;
@@ -2971,6 +2991,8 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
               updated_at = ${updatedAt},
               payload_json = json_set(payload_json, '$.updatedAt', ${updatedAt})
             WHERE thread_id = ${event.threadId}
+              AND NOT EXISTS (SELECT 1 FROM orchestration_v2_projection_runs waiting
+                WHERE waiting.run_id = ${event.runId ?? null} AND json_extract(waiting.payload_json, '$.withNextTurn') IS 1)
           `;
           }
         },
@@ -4754,6 +4776,8 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                 message_id IN (SELECT json_extract(payload_json, '$.userMessageId') FROM orchestration_v2_projection_runs
                   WHERE thread_id = ${threadId} AND run_id = ${runId})
                 OR (run_id = ${runId} AND role = 'user')
+                OR message_id IN (SELECT json_extract(payload_json, '$.userMessageId') FROM orchestration_v2_projection_runs
+                  WHERE thread_id = ${threadId} AND status = 'queued' AND json_extract(payload_json, '$.withNextTurn') IS 1)
                 OR (role = 'user' AND lower(trim(json_extract(payload_json, '$.text'), ${javascriptTrimWhitespace})) = '/compact')
                 -- Earlier /goal turns defer context too; parseGoalCommand narrows this prefix match.
                 OR (role = 'user' AND trim(json_extract(payload_json, '$.text'), ${javascriptTrimWhitespace}) GLOB '/goal*')
@@ -6527,6 +6551,9 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                 WHERE message.thread_id = t.thread_id
                   AND message.role = 'user'
                   AND NOT ${isIdleCompactionMessage("message")}
+                  AND NOT EXISTS (SELECT 1 FROM orchestration_v2_projection_runs waiting
+                    WHERE waiting.thread_id = message.thread_id AND waiting.run_id = message.run_id
+                      AND json_extract(waiting.payload_json, '$.withNextTurn') IS 1)
                 ORDER BY message.updated_at DESC, message.message_id DESC
                 LIMIT 1
               ) AS latest_user_message_at,
@@ -6539,6 +6566,9 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                   AND message.role = 'user'
                   AND json_extract(message.payload_json, '$.createdBy') = 'user'
                   AND NOT ${isIdleCompactionMessage("message")}
+                  AND NOT EXISTS (SELECT 1 FROM orchestration_v2_projection_runs waiting
+                    WHERE waiting.thread_id = message.thread_id AND waiting.run_id = message.run_id
+                      AND json_extract(waiting.payload_json, '$.withNextTurn') IS 1)
                 ORDER BY message.updated_at DESC, message.message_id DESC
                 LIMIT 1
               ) AS latest_user_authored_message_at,
@@ -6564,6 +6594,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
               SELECT candidate.run_id
               FROM orchestration_v2_projection_runs candidate
               WHERE candidate.thread_id = t.thread_id
+                AND json_extract(candidate.payload_json, '$.withNextTurn') IS NOT 1
                 AND NOT (
                   candidate.status = 'queued'
                   AND (json_extract(candidate.payload_json, '$.queueHeld') IS 1 OR json_extract(candidate.payload_json, '$.withNextTurn') IS 1)
@@ -6836,6 +6867,9 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                 FROM orchestration_v2_projection_messages message
                 WHERE message.thread_id = t.thread_id AND message.role = 'user'
                   AND NOT ${isIdleCompactionMessage("message")}
+                  AND NOT EXISTS (SELECT 1 FROM orchestration_v2_projection_runs waiting
+                    WHERE waiting.thread_id = message.thread_id AND waiting.run_id = message.run_id
+                      AND json_extract(waiting.payload_json, '$.withNextTurn') IS 1)
                 ORDER BY message.updated_at DESC, message.message_id DESC
                 LIMIT 1
               ) AS latest_user_message_at,
@@ -6845,6 +6879,9 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                 WHERE message.thread_id = t.thread_id AND message.role = 'user'
                   AND json_extract(message.payload_json, '$.createdBy') = 'user'
                   AND NOT ${isIdleCompactionMessage("message")}
+                  AND NOT EXISTS (SELECT 1 FROM orchestration_v2_projection_runs waiting
+                    WHERE waiting.thread_id = message.thread_id AND waiting.run_id = message.run_id
+                      AND json_extract(waiting.payload_json, '$.withNextTurn') IS 1)
                 ORDER BY message.updated_at DESC, message.message_id DESC
                 LIMIT 1
               ) AS latest_user_authored_message_at
@@ -6853,7 +6890,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
               SELECT latest.run_id FROM orchestration_v2_projection_runs latest
               WHERE latest.thread_id = t.thread_id
                 AND NOT ${isSilentShellRun("latest")}
-                AND NOT (latest.status = 'queued' AND json_extract(latest.payload_json, '$.withNextTurn') IS 1)
+                AND json_extract(latest.payload_json, '$.withNextTurn') IS NOT 1
               ORDER BY latest.ordinal DESC, latest.run_id DESC
               LIMIT 1
             )

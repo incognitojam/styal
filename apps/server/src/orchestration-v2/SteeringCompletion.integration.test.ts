@@ -21,6 +21,8 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
+import * as TestClock from "effect/testing/TestClock";
+import * as Option from "effect/Option";
 import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
 import * as EffectWorker from "./EffectWorker.ts";
 import * as EventSink from "./EventSink.ts";
@@ -504,6 +506,7 @@ const nextTurnSelectionHarness = Effect.fn("nextTurnSelectionHarness")(function*
       activeSteeringAcceptsAttachments: steeringAcceptsAttachments,
     },
   };
+  let openAttempts = 0;
   const adapter: ProviderAdapter.ProviderAdapterV2["Service"] = {
     instanceId,
     driver,
@@ -511,6 +514,12 @@ const nextTurnSelectionHarness = Effect.fn("nextTurnSelectionHarness")(function*
     planSelectionTransition: () => Effect.succeed({ type: "apply_on_next_turn" }),
     openSession: (input) =>
       Effect.gen(function* () {
+        if (name === "next-turn-worker-retry" && openAttempts++ === 0)
+          return yield* new ProviderAdapter.ProviderAdapterOpenSessionError({
+            driver,
+            providerSessionId: input.providerSessionId,
+            cause: new Error("Transient startup failure"),
+          });
         const now = yield* DateTime.now;
         const turnUpdated = (
           turn: ProviderAdapter.ProviderAdapterV2TurnInput,
@@ -518,6 +527,7 @@ const nextTurnSelectionHarness = Effect.fn("nextTurnSelectionHarness")(function*
         ) =>
           Queue.offer(events, {
             type: "provider_turn.updated",
+            ...(status === "running" ? { inputAccepted: true as const } : {}),
             driver,
             providerTurn: {
               id: ProviderTurnId.make(`provider-turn:${turn.attemptId}`),
@@ -538,6 +548,17 @@ const nextTurnSelectionHarness = Effect.fn("nextTurnSelectionHarness")(function*
         const startTurn = (turn: ProviderAdapter.ProviderAdapterV2TurnInput) =>
           Effect.gen(function* () {
             started.push(turn);
+            if (name === "next-turn-rejected" || name === "next-turn-usage-limit") {
+              return yield* new ProviderAdapter.ProviderAdapterTurnStartError({
+                driver,
+                threadId: turn.threadId,
+                providerThreadId: turn.providerThread.id,
+                runId: turn.runId,
+                cause: new Error(
+                  name === "next-turn-usage-limit" ? "Usage limit reached" : "Rejected test input",
+                ),
+              });
+            }
             yield* turnUpdated(turn, "running");
           });
         return {
@@ -1906,11 +1927,19 @@ it.effect.each([
   "normal",
   "notification",
   "send-now",
+  "send-now-first",
   "settle-archive",
   "active",
   "promote",
   "cross-thread",
   "maintenance",
+  "snooze",
+  "rejected",
+  "report",
+  "restart-continuation",
+  "usage-limit",
+  "worker-retry",
+  "interrupt-before-submission",
 ] as const)("delivers with-next-turn messages via %s", (scenario) =>
   Effect.scoped(
     Effect.gen(function* () {
@@ -1928,10 +1957,11 @@ it.effect.each([
       yield* Effect.gen(function* () {
         const orchestrator = yield* Orchestrator.OrchestratorV2;
         const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
-        const active = scenario === "active" || scenario === "promote";
+        const active =
+          scenario === "active" || scenario === "promote" || scenario === "restart-continuation";
         const threadId = yield* active ? startFirstTurn : createThread;
         for (const text of ["acknowledged", "dismissed"]) {
-          if (scenario === "cross-thread") {
+          if (scenario === "cross-thread" || scenario === "report") {
             const threads = yield* ThreadManagement.ThreadManagementService;
             const projection = yield* orchestrator.getThreadProjection(threadId);
             yield* threads.sendToThread({
@@ -1941,10 +1971,18 @@ it.effect.each([
               messageId: MessageId.make(`message:${text}`),
               text,
               attachments: [],
-              withNextTurn: true,
-              mode: "auto",
+              ...(scenario === "report"
+                ? {
+                    notification: {
+                      source: { kind: "system" as const },
+                      outcome: "updated" as const,
+                      summary: text,
+                    },
+                  }
+                : {}),
+              mode: "next_turn",
               createdBy: "agent",
-              creationSource: "mcp",
+              creationSource: scenario === "report" ? "server" : "mcp",
             });
             continue;
           }
@@ -1955,7 +1993,7 @@ it.effect.each([
             messageId: MessageId.make(`message:${text}`),
             text,
             attachments: [],
-            dispatchMode: { type: "with_next_turn" },
+            dispatchMode: { type: "next_turn" },
             createdBy: "user",
             creationSource: "web",
           });
@@ -1969,6 +2007,15 @@ it.effect.each([
         const queued = projection.runs.filter((run) => run.status === "queued");
         assert.equal(queued.length, 2);
         assert.isTrue(queued.every((run) => run.withNextTurn));
+        if (scenario === "snooze") {
+          yield* orchestrator.dispatch({
+            type: "thread.snooze",
+            commandId: CommandId.make("snooze"),
+            threadId,
+            snoozedUntil: DateTime.formatIso(DateTime.add(yield* DateTime.now, { days: 1 })),
+          });
+          return;
+        }
         if (scenario === "settle-archive") {
           for (const type of ["thread.settle", "thread.archive", "thread.unarchive"] as const) {
             yield* orchestrator.dispatch({ type, commandId: CommandId.make(type), threadId });
@@ -2004,18 +2051,35 @@ it.effect.each([
           yield* worker.drain();
         }
         if (scenario === "promote") {
-          yield* orchestrator.dispatch({
-            type: "queued-message.promote-to-steer",
+          const threads = yield* ThreadManagement.ThreadManagementService;
+          yield* threads.startQueuedMessage({
             commandId: CommandId.make("promote"),
             threadId,
-            queuedRunId: queued[0]!.id,
-            targetRunId: started[0]!.runId,
+            runId: queued[0]!.id,
           });
           yield* worker.drain();
           assert.deepEqual(steered, ["acknowledged"]);
           return;
         }
-        if (active) {
+        if (scenario === "restart-continuation") {
+          const sink = yield* EventSink.EventSinkV2;
+          const source = (yield* orchestrator.getThreadProjection(threadId)).runs.find(
+            (run) => run.id === started[0]!.runId,
+          )!;
+          const now = yield* DateTime.now;
+          yield* sink.write({
+            events: [
+              {
+                id: EventId.make("event:restart-recovery-cancel"),
+                type: "run.updated",
+                threadId,
+                runId: source.id,
+                occurredAt: now,
+                payload: { ...source, status: "cancelled", completedAt: now },
+              },
+            ],
+          });
+        } else if (active) {
           yield* orchestrator.dispatch({
             type: "run.interrupt",
             commandId: CommandId.make("stop"),
@@ -2024,12 +2088,12 @@ it.effect.each([
           });
           yield* worker.drain();
         }
-        if (scenario === "send-now") {
-          yield* orchestrator.dispatch({
-            type: "queued-run.start",
+        if (scenario === "send-now" || scenario === "send-now-first") {
+          const threads = yield* ThreadManagement.ThreadManagementService;
+          yield* threads.startQueuedMessage({
             commandId: CommandId.make("send-now"),
             threadId,
-            runId: queued[1]!.id,
+            runId: queued[scenario === "send-now-first" ? 0 : 1]!.id,
           });
         } else {
           yield* orchestrator.dispatch({
@@ -2044,6 +2108,9 @@ it.effect.each([
             },
             createdBy: "agent",
             creationSource: "server",
+            ...(scenario === "restart-continuation"
+              ? { restartContinuationOfRunId: started[0]!.runId }
+              : {}),
             ...(scenario === "notification"
               ? {
                   notification: {
@@ -2055,8 +2122,76 @@ it.effect.each([
               : {}),
           });
         }
+        if (scenario === "interrupt-before-submission") {
+          const current = yield* orchestrator.getThreadProjection(threadId);
+          const triggerRun = current.runs.find(
+            (run) => run.userMessageId === MessageId.make("message:trigger"),
+          )!;
+          yield* orchestrator.dispatch({
+            type: "run.interrupt",
+            commandId: CommandId.make("stop-before-submit"),
+            threadId,
+            runId: triggerRun.id,
+          });
+        }
         yield* worker.drain();
+        if (scenario === "restart-continuation") {
+          assert.lengthOf(started, 2);
+          assert.equal(started[1]!.restartContinuationOfRunId, started[0]!.runId);
+        }
+        if (
+          scenario === "rejected" ||
+          scenario === "usage-limit" ||
+          scenario === "restart-continuation" ||
+          scenario === "interrupt-before-submission"
+        ) {
+          const after = yield* orchestrator.getThreadProjection(threadId);
+          assert.equal(
+            after.runs.filter((run) => run.withNextTurn && run.status === "queued").length,
+            2,
+          );
+          return;
+        }
+        if (scenario === "worker-retry") {
+          assert.lengthOf(started, 0);
+          assert.equal(
+            (yield* orchestrator.getThreadProjection(threadId)).runs.filter(
+              (run) => run.withNextTurn && run.status === "queued",
+            ).length,
+            2,
+          );
+          const next = yield* worker.nextClaimableAt;
+          assert.isTrue(Option.isSome(next));
+          if (Option.isSome(next)) yield* TestClock.setTime(DateTime.toEpochMillis(next.value));
+          yield* worker.drain();
+          assert.lengthOf(started, 1);
+        }
+        yield* orchestrator.streamStoredEventsFrom({ threadId, afterSequence: 0 }).pipe(
+          Stream.filter(
+            (stored) =>
+              stored.event.type === "run.updated" &&
+              (stored.event.payload.nextTurnMessageIds?.length ?? 0) > 0,
+          ),
+          Stream.take(1),
+          Stream.runDrain,
+        );
         const last = started.at(-1)!;
+        if (scenario === "send-now-first") {
+          const shell = (yield* orchestrator.getShellSnapshot()).threads.find(
+            (thread) => thread.id === threadId,
+          )!;
+          assert.equal(shell.latestRunId, last.runId);
+          assert.isBelow(
+            last.message.text.indexOf("dismissed"),
+            last.message.text.indexOf("acknowledged"),
+          );
+          assert.isFalse(
+            (yield* orchestrator.getThreadProjection(threadId)).runs.some(
+              (run) => run.status === "queued",
+            ),
+          );
+          return;
+        }
         assert.include(last.message.text, "acknowledged");
         assert.include(last.message.text, "dismissed");
         if (scenario !== "send-now") {

@@ -5,6 +5,7 @@ import {
   queuedRunEditBlockedReason,
 } from "@t3tools/client-runtime/queued-run-edit";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { NEXT_TURN_QUEUED_LABEL } from "@t3tools/client-runtime/state/composer-dispatch";
 import { resolveUserMessagePresentation } from "@t3tools/client-runtime/user-message";
 import type { ChatAttachment, EnvironmentId, RunId, ThreadId } from "@t3tools/contracts";
 import { Atom } from "effect/reactivity";
@@ -323,7 +324,7 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
                       </Text>
                       {run.withNextTurn === true ? (
                         <Text className="text-2xs text-foreground-muted">
-                          With next turn · doesn&apos;t wake the agent
+                          {`${NEXT_TURN_QUEUED_LABEL} · doesn't wake the agent`}
                         </Text>
                       ) : null}
                     </View>

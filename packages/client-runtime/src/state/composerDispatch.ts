@@ -1,4 +1,8 @@
 /** `next_turn` waits in the queue without starting a turn and goes with the thread's next turn. */
+/** What clients call a message that waits for the thread's next turn. */
+export const NEXT_TURN_SEND_LABEL = "Send with next turn";
+export const NEXT_TURN_QUEUED_LABEL = "With next turn";
+
 export type ComposerDispatchMode = "auto" | "queue" | "steer" | "restart" | "next_turn";
 export type ActiveTurnComposerAction = Exclude<ComposerDispatchMode, "auto" | "next_turn">;
 

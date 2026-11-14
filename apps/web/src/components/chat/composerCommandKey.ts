@@ -40,6 +40,7 @@ export function composerCommandKeyHandler(input: {
   readonly phase: ChatComposerProps["phase"];
   readonly isCompacting: boolean;
   readonly followUpBehavior: ChatComposerProps["settings"]["followUpBehavior"];
+  readonly canSendWithNextTurn: boolean;
   readonly isSoftwareKeyboardOpen: boolean;
   readonly planModeUiEnabled: boolean;
   readonly isLiteralPendingAnswer: boolean;
@@ -92,6 +93,7 @@ export function composerCommandKeyHandler(input: {
     phase,
     isCompacting,
     followUpBehavior,
+    canSendWithNextTurn,
     isSoftwareKeyboardOpen,
     planModeUiEnabled,
     isLiteralPendingAnswer,
@@ -206,6 +208,7 @@ export function composerCommandKeyHandler(input: {
       isSoftwareKeyboardOpen,
       isDraftThread: routeKind === "draft",
       isRunning: phase === "running",
+      canSendWithNextTurn,
       sendShortcut,
       prompt: promptRef.current,
     });

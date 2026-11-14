@@ -387,30 +387,3 @@ it("counts the owner's guest share actions, and only guest message sends", () =>
     feature: "guest_share.create",
   });
 });
-
-it.effect.each([
-  ["send", "user", 1],
-  ["send", "agent", 1],
-  ["deliver", "system", 2],
-] as const)(
-  "records with-next-turn %s from %s without operation data",
-  ([action, source, messageCount]) =>
-    Effect.gen(function* () {
-      const events: Array<unknown> = [];
-      yield* FeatureUsage.messagesWithNextTurn(action, source, messageCount).pipe(
-        Effect.provideService(AnalyticsService.AnalyticsService, capture(events)),
-      );
-      expect(events).toEqual([
-        {
-          event: "feature.used",
-          properties: {
-            feature: "messages-with-next-turn",
-            action,
-            source,
-            messageCount,
-            outcome: "success",
-          },
-        },
-      ]);
-    }),
-);

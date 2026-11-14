@@ -4998,6 +4998,11 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
           delivery: "steer",
         }),
         event("session.inbox.delivered", { sessionID: SESSION, inboxID: steerId }),
+        event("session.text.started", {
+          sessionID: SESSION,
+          assistantMessageID: "msg_followup",
+          ordinal: 0,
+        }),
         event("session.text.ended", {
           sessionID: SESSION,
           assistantMessageID: "msg_followup",
@@ -5016,10 +5021,13 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
         }),
       );
       const terminals: Array<string> = [];
+      const accepted: Array<RunAttemptId | null> = [];
       const followUpEnded = yield* Deferred.make<void>();
       yield* runtime.events.pipe(
         Stream.tap((event) =>
           Effect.gen(function* () {
+            if (event.type === "provider_turn.updated" && event.inputAccepted)
+              accepted.push(event.providerTurn.runAttemptId);
             if (event.type !== "turn.terminal") return;
             terminals.push(event.status);
             if (terminals.length === 2) yield* Deferred.succeed(followUpEnded, undefined);
@@ -5050,6 +5058,7 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       yield* Deferred.await(followUpEnded);
       yield* Effect.yieldNow;
       assert.deepEqual(terminals, ["completed", "completed"]);
+      assert.deepEqual(accepted, [turnInput(thread).attemptId]);
       assert.lengthOf(offers, 1);
     }).pipe(Effect.scoped, Effect.provide(IdAllocator.layer)),
   );

@@ -11939,8 +11939,12 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         // Claude answers previously recorded prompt uuids with only a completed lifecycle frame.
         const harness = yield* makeWakeHarness;
         const now = yield* DateTime.now;
-        yield* harness.runtime.startTurn(
-          makeClaudeTestTurnInput({
+        const accepted = () =>
+          harness.events.filter(
+            (event) => event.type === "provider_turn.updated" && event.inputAccepted === true,
+          ).length;
+        yield* harness.runtime.startTurn({
+          ...makeClaudeTestTurnInput({
             threadId: harness.threadId,
             providerThread: harness.providerThread,
             now,
@@ -11948,7 +11952,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
             text: "Bump this PR to the latest main.",
             attachments: [],
           }),
-        );
+        });
         yield* Queue.offer(
           harness.sdkMessages,
           claudeSdkFrame({
@@ -11960,11 +11964,35 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           }),
         );
         yield* harness.awaitTerminal(1);
+        assert.equal(accepted(), 0);
         const [terminal] = harness.terminalEvents();
         assert.equal(terminal?.status, "failed");
         if (terminal?.status !== "failed") return;
         assert.equal(terminal.threadDisposition, "reusable");
         assert.include(terminal.failure.message, "never started a turn");
+        yield* harness.runtime.startTurn({
+          ...makeClaudeTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: harness.providerThread,
+            now,
+            attemptId: RunAttemptId.make("attempt-claude-accepted-prompt"),
+            text: "New work",
+            attachments: [],
+            providerTurnOrdinal: 2,
+          }),
+        });
+        assert.equal(accepted(), 0);
+        yield* harness.offerAndWait(
+          claudeSdkFrame({
+            type: "command_lifecycle",
+            command_uuid: harness.promptUuid(1),
+            state: "started",
+            uuid: "00000000-0000-4000-8000-000000000791",
+            session_id: WAKE_NATIVE_SESSION,
+          }),
+        );
+        yield* harness.until(() => accepted() === 1);
+        assert.equal(accepted(), 1);
       }).pipe(
         Effect.provide(
           Layer.mergeAll(

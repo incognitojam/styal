@@ -1483,6 +1483,8 @@ export function planComposerTurn(input: {
       input.dispatchMode !== "next_turn" && (compactBeforeSend || input.sendQueuesBehindSetup)
         ? ("queue" as const)
         : input.dispatchMode,
+    // No run starts for the server to acknowledge, so an accepted send ends the dispatch.
+    endsDispatchWhenAccepted: input.dispatchMode === "next_turn",
     shouldQueueBehindActiveRun:
       input.dispatchMode === "next_turn" ||
       compactBeforeSend ||

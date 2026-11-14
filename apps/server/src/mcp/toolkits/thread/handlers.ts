@@ -329,12 +329,17 @@ export const declarations = {
               text,
             }));
           }
-          case "start":
-            return yield* dispatch(input.threadId, (common) => ({
-              ...common,
-              type: "queued-run.start",
-              runId,
-            }));
+          case "start": {
+            const { threads, projection } = yield* readThread(input.threadId);
+            const result = yield* threads
+              .startQueuedMessage({
+                threadId: projection.thread.id,
+                commandId: yield* newCommandId(),
+                runId,
+              })
+              .pipe(Effect.mapError(dispatchFailure));
+            return { sequence: result.sequence };
+          }
           case "reorder": {
             const beforeRunId = yield* required(input.beforeRunId, "beforeRunId");
             return yield* dispatch(input.threadId, (common) => ({

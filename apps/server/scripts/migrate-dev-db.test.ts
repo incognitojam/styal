@@ -83,6 +83,12 @@ const createFixtureSource = Effect.fn("createMigrateDevDbFixtureSource")(functio
           (event_id, aggregate_kind, stream_id, stream_version, event_type, occurred_at, actor_kind, payload_json, metadata_json)
           VALUES (${`event-${threadId}`}, 'thread', ${threadId}, 0, 'thread.created', '2026-08-01', 'user', '{}', '{}')`;
       }
+      yield* sql`INSERT INTO orchestration_v2_projection_runs
+        (run_id, thread_id, ordinal, provider, status, requested_at, payload_json)
+        VALUES ('waiting-run', 'stopped-thread', 2, 'codex', 'queued', '2026-08-02', '{"withNextTurn":true,"userMessageId":"waiting-message"}')`;
+      yield* sql`INSERT INTO orchestration_events
+        (event_id, aggregate_kind, stream_id, stream_version, event_type, occurred_at, actor_kind, payload_json, metadata_json)
+        VALUES ('waiting-event', 'thread', 'stopped-thread', 1, 'run.created', '2026-08-02', 'user', '{"id":"waiting-run","withNextTurn":true}', '{"runId":"waiting-run"}')`;
       yield* sql`INSERT INTO orchestration_v2_projection_provider_sessions
         (provider_session_id, thread_id, provider, status, updated_at, payload_json)
         VALUES ('session-shared', 'running-thread', 'codex', 'stopped', '2026-08-01', '{}')`;
@@ -143,6 +149,7 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
           const sessions = yield* sql<{ provider_session_id: string }>`
             SELECT provider_session_id FROM orchestration_v2_projection_provider_sessions`;
           const [leftovers] = yield* sql<{
+            waiting: number;
             auth: number;
             tasks: number;
             webhooks: number;
@@ -150,6 +157,7 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
             links: number;
           }>`
             SELECT
+              (SELECT COUNT(*) FROM orchestration_v2_projection_runs WHERE run_id = 'waiting-run') AS waiting,
               (SELECT COUNT(*) FROM auth_sessions) AS auth,
               (SELECT COUNT(*) FROM scheduled_tasks) AS tasks,
               (SELECT COUNT(*) FROM scheduled_task_webhook_replay_keys) +
@@ -172,6 +180,7 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
         ["session-shared"],
       );
       assert.deepStrictEqual(kept.leftovers, {
+        waiting: 0,
         auth: 0,
         tasks: 0,
         webhooks: 0,

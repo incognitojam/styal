@@ -3139,11 +3139,11 @@ const make = Effect.gen(function* () {
       // The launcher asked to hear back, so this is the report it opted in to, not driving it.
       const isReport =
         parent?.thread.reportTo?.threadId === input.threadId &&
-        (mode === "auto" || mode === "queue");
+        (mode === "auto" || mode === "queue" || mode === "next_turn");
       if (!isReport) {
         yield* resolveRuntimeMode(limits.runtimeMode, target.thread.runtimeMode);
         yield* resolveInteractionMode(limits.interactionMode, target.thread.interactionMode);
-      } else if (!launcherTakesReports(target.thread) && input.withNextTurn !== true) {
+      } else if (!launcherTakesReports(target.thread) && mode !== "next_turn") {
         return yield* failure(
           "invalid_request",
           "The thread that launched this one was settled or archived on purpose, so it is not taking reports. Tell the user in this thread instead.",
@@ -3165,7 +3165,6 @@ const make = Effect.gen(function* () {
             operation: "thread-send",
           }),
           threadId: input.threadId,
-          ...(input.withNextTurn === undefined ? {} : { withNextTurn: input.withNextTurn }),
           ...(parent === undefined ? {} : { senderThreadId: parent.thread.id }),
           messageId,
           attachments: [],
@@ -3177,7 +3176,7 @@ const make = Effect.gen(function* () {
                   thread: parent.thread,
                   message: input.message,
                 }),
-                mode: "queue" as const,
+                mode: mode === "next_turn" ? mode : ("queue" as const),
                 creationSource: "server" as const,
               }
             : { text: input.message, mode, creationSource: "mcp" as const }),

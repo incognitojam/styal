@@ -3575,42 +3575,55 @@ features:
     prs: []
     invariants:
       - A message sent with the next turn is a queued run marked `withNextTurn`; it never starts a turn on its own, including on an idle thread, after a restart, or when the queue is resumed.
-      - When any other turn starts in the thread (a message, delegated completion, notification, scheduled task or continuation), every waiting message is attached to that run before its trigger, in queue order, as separate user messages with their own times; the provider input marks each with `[Sent with your next turn, <UTC time>]`.
-      - Waiting messages are not steered into an active turn, do not block or undo settling or snoozing, survive settle, archive and restart without being paused, and go to whichever provider runs the next turn.
-      - Send now on a waiting message starts it as a normal turn when the thread is idle or steers it into the active turn; `t3_queue` `start` does the same for agents, and `t3_thread_send` `withNextTurn` lets an agent leave a message for another thread without waking it.
-      - Clients offer the option only to servers that report `messagesWithNextTurn`; web and desktop use the send button's context menu and `composer.sendWithNextTurn` (Alt+Enter), and web, desktop and mobile label waiting rows "With next turn".
-      - Sends and deliveries record structural feature-usage events with source and message count only.
+      - When another turn whose input can carry them starts (a message, delegated completion, notification or scheduled task), the waiting messages go first, in queue order, with `[Sent with your next turn, <UTC time>]`; they leave the queue only when the provider accepts that input, and become separate user messages in that run with their own times. A failed, rejected, retried or interrupted start leaves them waiting in order.
+      - Restart and provider continuations, native goal continuations that keep their run, `/compact` and `/goal` leave them waiting for a later turn.
+      - Waiting messages are not steered into an active turn, do not block or undo settling or snoozing, do not count as activity (latest user message, settlement and cleanup anchors, latest run), survive settle, archive and restart without being paused, and go to whichever provider runs the next turn.
+      - Send now in clients and `t3_queue` `start` both start the message as a normal turn when the thread is idle or steer it into the active turn.
+      - "`t3_thread_send` `mode: 'next_turn'` leaves a message for another thread, a finished child or the launcher a thread reports to without waking it or starting a task; a linked machine without `messagesWithNextTurn` refuses it with a clear error."
+      - Clients offer the option, the send button's context menu and `composer.sendWithNextTurn` (Alt+Enter), only when the server reports `messagesWithNextTurn`; the shortcut does nothing otherwise. Web, desktop and mobile label waiting rows from one shared constant.
+      - Development database copies drop waiting messages so a copy never delivers them.
     implementation_paths:
       - apps/mobile/src/features/threads/ThreadQueueControl.tsx
+      - apps/server/scripts/migrate-dev-db.ts
       - apps/server/src/mcp/OrchestratorMcpService.ts
       - apps/server/src/mcp/toolkits/orchestrator/tools.ts
       - apps/server/src/mcp/toolkits/thread/handlers.ts
       - apps/server/src/mcp/toolkits/thread/tools.ts
       - apps/server/src/orchestration-v2/Orchestrator.ts
+      - apps/server/src/orchestration-v2/ProjectionStore.ts
       - apps/server/src/orchestration-v2/ProviderRuntimeRecoveryService.ts
       - apps/server/src/orchestration-v2/ProviderTurnStartService.ts
+      - apps/server/src/orchestration-v2/ThreadManagementService.ts
       - apps/server/src/orchestration-v2/ThreadReports.ts
-      - apps/server/src/telemetry/FeatureUsage.ts
+      - apps/server/src/peer/PeerForwarding.ts
       - apps/web/src/components/ChatView.logic.ts
       - apps/web/src/components/chat/ComposerPrimaryActions.tsx
       - apps/web/src/components/chat/QueuedRunsControl.tsx
       - apps/web/src/composer-logic.ts
       - packages/client-runtime/src/operations/commands.ts
+      - packages/client-runtime/src/state/composerDispatch.ts
       - packages/client-runtime/src/state/threadWorkflows.ts
       - packages/contracts/src/environment.ts
       - packages/contracts/src/orchestrationV2.ts
     upstream_paths:
       - apps/server/src/orchestration-v2/Orchestrator.ts
       - apps/server/src/orchestration-v2/ProviderTurnStartService.ts
+      - apps/server/src/orchestration-v2/QueuedRunOrder.ts
       - apps/web/src/components/chat/QueuedRunsControl.tsx
       - packages/contracts/src/orchestrationV2.ts
     tests:
+      - apps/server/scripts/migrate-dev-db.test.ts
       - apps/server/src/mcp/OrchestratorMcpToolkit.integration.test.ts
+      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.test.ts
+      - apps/server/src/orchestration-v2/Adapters/OpenCode2AdapterV2.test.ts
+      - apps/server/src/orchestration-v2/NextTurnAcp.integration.test.ts
+      - apps/server/src/orchestration-v2/ProjectionSettlement.test.ts
       - apps/server/src/orchestration-v2/ProviderRuntimeRecoveryService.test.ts
       - apps/server/src/orchestration-v2/SteeringCompletion.integration.test.ts
-      - apps/server/src/telemetry/FeatureUsage.test.ts
+      - apps/server/src/peer/PeerForwarding.test.ts
       - apps/web/src/components/ChatView.logic.test.ts
       - apps/web/src/composer-logic.test.ts
+      - evals/mcp-tool-use/run.test.ts
     upstream:
       status: unassessed
       tracking: []

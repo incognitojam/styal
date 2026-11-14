@@ -94,6 +94,8 @@ import {
 } from "./providerRuntime.ts";
 import { ThreadTokenUsageSnapshot } from "./providerRuntime.ts";
 
+export const NextTurnSendMode = Schema.Literal("next_turn");
+
 export const OrchestrationV2Actor = Schema.Literals(["user", "agent", "system"]);
 export type OrchestrationV2Actor = typeof OrchestrationV2Actor.Type;
 
@@ -3491,7 +3493,7 @@ export const OrchestrationV2Command = Schema.Union([
       Schema.Struct({ type: Schema.Literal("steer_active"), targetRunId: RunId }),
       Schema.Struct({ type: Schema.Literal("restart_active"), targetRunId: RunId }),
       Schema.Struct({ type: Schema.Literal("queue_after_active") }),
-      Schema.Struct({ type: Schema.Literal("with_next_turn") }),
+      Schema.Struct({ type: NextTurnSendMode }),
       Schema.Struct({ type: Schema.Literal("start_immediately") }),
     ]),
   }),
@@ -3500,6 +3502,13 @@ export const OrchestrationV2Command = Schema.Union([
     commandId: CommandId,
     threadId: ThreadId,
     runId: RunId,
+  }),
+  Schema.Struct({
+    type: Schema.Literal("next-turn-messages.accept"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    runId: RunId,
+    messageIds: Schema.Array(MessageId),
   }),
   Schema.Struct({
     type: Schema.Literal("notification.delivery.accept"),

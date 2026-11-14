@@ -14,6 +14,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { composerFloatingLayerProps } from "./composerEventScope";
 import {
   alternateComposerDispatchAction,
+  NEXT_TURN_SEND_LABEL,
   resolveComposerDispatchMode,
 } from "@t3tools/client-runtime/state/composer-dispatch";
 
@@ -307,7 +308,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
         ? `Click to ${followUpBehavior}, ${isMacPlatform(navigator.platform) ? "⌘" : "Ctrl"}-click${alternateShortcutLabel ? ` or ${alternateShortcutLabel}` : ""} to ${alternateAction}`
         : submitLabel) +
       (onSendWithNextTurn && !showResume && !isEditingQueuedMessage
-        ? `. Right-click to send with the next turn${sendWithNextTurnShortcutLabel ? ` (${sendWithNextTurnShortcutLabel})` : ""}`
+        ? `. Right-click: ${NEXT_TURN_SEND_LABEL}${sendWithNextTurnShortcutLabel ? ` (${sendWithNextTurnShortcutLabel})` : ""}`
         : "");
 
   const sendButton = (
@@ -392,7 +393,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
           disabled={isSendBusy || isSendDisabled || isEnvironmentUnavailable || !hasSendableContent}
           onClick={onSendWithNextTurn}
         >
-          <MenuItemLabel>Send with next turn</MenuItemLabel>
+          <MenuItemLabel>{NEXT_TURN_SEND_LABEL}</MenuItemLabel>
           {sendWithNextTurnShortcutLabel ? (
             <MenuShortcut>{sendWithNextTurnShortcutLabel}</MenuShortcut>
           ) : null}

@@ -43,6 +43,9 @@ const latestUserMessageAt = (sql: SqlClient.SqlClient) => sql`(
   FROM orchestration_v2_projection_messages AS messages
   WHERE messages.thread_id = threads.thread_id
     AND messages.role = 'user'
+    AND NOT EXISTS (SELECT 1 FROM orchestration_v2_projection_runs waiting
+      WHERE waiting.thread_id = messages.thread_id AND waiting.run_id = messages.run_id
+        AND json_extract(waiting.payload_json, '$.withNextTurn') IS 1)
     AND COALESCE(json_extract(messages.payload_json, '$.createdBy'), 'user') = 'user'
   ORDER BY messages.updated_at DESC, messages.message_id DESC
   LIMIT 1

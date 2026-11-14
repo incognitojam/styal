@@ -1194,6 +1194,22 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (
       yield* emitRetry(state, turn, "running");
     });
 
+    const submittedInputs = new WeakSet<ActiveTurn>();
+    const acceptedInputs = new WeakSet<ActiveTurn>();
+    const acceptTurnInput = Effect.fn("OpenCode2AdapterV2.acceptTurnInput")(function* (
+      turn: ActiveTurn,
+    ) {
+      if (!submittedInputs.has(turn) || acceptedInputs.has(turn)) return;
+      acceptedInputs.add(turn);
+      yield* emit({
+        type: "provider_turn.updated",
+        driver,
+        inputAccepted: true,
+        threadId: turn.input.threadId,
+        providerTurn: turn.providerTurn,
+      });
+    });
+
     const emitProviderTurn = (
       state: ThreadState,
       turn: ActiveTurn,
@@ -2110,6 +2126,13 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (
       turn: ActiveTurn,
       event: OpenCode2Client.OpenCode2StreamEvent,
     ) {
+      if (
+        event.type === "session.execution.started" ||
+        event.type === "session.text.started" ||
+        event.type === "session.reasoning.started" ||
+        event.type === "session.tool.input.started"
+      )
+        yield* acceptTurnInput(turn);
       // OpenCode sends nothing when a retry goes through; the provider's first output marks it.
       if (
         turn.retry !== undefined &&
@@ -2545,7 +2568,10 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (
         return;
       }
       if (turn.awaitingStart) {
-        if (event.type === "session.execution.started") turn.awaitingStart = false;
+        if (event.type === "session.execution.started") {
+          turn.awaitingStart = false;
+          yield* acceptTurnInput(turn);
+        }
         return;
       }
       return yield* onTurnEvent(state, turn, event);
@@ -3461,6 +3487,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (
       const sessionID = Session.ID.make(sessionId);
       const sending = () => {
         if (state.active !== turn || turn.interrupted) return false;
+        submittedInputs.add(turn);
         turn.unsent = false;
         return true;
       };
@@ -3756,6 +3783,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (
           if (started === undefined) return;
           const { state, sessionId, turn } = started;
           yield* submit(sessionId, turnInput, state, turn).pipe(
+            Effect.tap(() => (turn.unsent ? Effect.void : acceptTurnInput(turn))),
             // Forget externally deleted sessions so the next turn recreates them with handoff.
             Effect.catchTags({
               SessionNotFoundError: () =>

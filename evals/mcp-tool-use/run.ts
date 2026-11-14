@@ -180,6 +180,7 @@ type McpToolUseCall = typeof McpToolUseCall.Type;
 
 /** Grading rules. Tool names are bare: `delegate_task`, `Bash`, `Agent`. */
 const McpToolUseExpect = Schema.Struct({
+  nextTurnOnly: Schema.optional(Schema.String),
   /** Each entry needs one matching call. */
   calls: Schema.optional(Schema.Array(McpToolUseCall)),
   /** No call may match any entry. */
@@ -1720,6 +1721,18 @@ export const gradeSample = (expect: McpToolUseCase["expect"], run: SampleRun) =>
   const found = ({ tool, args = {} }: McpToolUseCall) =>
     calls.some((call) => tool.split("|").includes(call.tool) && matches(args, call.input));
   const label = ({ tool, args }: McpToolUseCall) => (args ? `${tool} ${valueText(args)}` : tool);
+  if (expect.nextTurnOnly !== undefined)
+    add(
+      "nextTurnOnly",
+      calls
+        .filter(
+          (call) =>
+            call.tool === "t3_thread_send" &&
+            isRecord(call.input) &&
+            call.input.threadId === expect.nextTurnOnly,
+        )
+        .every((call) => isRecord(call.input) && call.input.mode === "next_turn"),
+    );
   for (const call of expect.calls ?? []) add(`calls ${label(call)}`, found(call));
   for (const call of expect.callsMustNot ?? []) add(`callsMustNot ${label(call)}`, !found(call));
   for (const tool of expect.notCalls ?? []) add(`notCalls ${tool}`, count(tool) === 0);
@@ -1786,7 +1799,7 @@ export const gradeSample = (expect: McpToolUseCase["expect"], run: SampleRun) =>
 };
 
 // Checks that can only go from pass to fail as a sample goes on.
-const SETTLED = /^(notCalls|callsMustNot|shellMustNot|maxCalls|textMustNot) /;
+const SETTLED = /^(nextTurnOnly$|(?:notCalls|callsMustNot|shellMustNot|maxCalls|textMustNot) )/;
 /** True once the sample has failed for good, so the rest of it cannot change the result. */
 export const failedEarly = (expect: McpToolUseCase["expect"], run: SampleRun) =>
   gradeSample(expect, run).some((check) => !check.pass && SETTLED.test(check.check));

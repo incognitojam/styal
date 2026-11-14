@@ -117,7 +117,7 @@ const watch = (threadId: ThreadId, number: number) =>
 const send = (
   threadId: ThreadId,
   text: string,
-  type: "start_immediately" | "queue_after_active" | "with_next_turn",
+  type: "start_immediately" | "queue_after_active" | "next_turn",
 ) =>
   Effect.gen(function* () {
     const orchestrator = yield* Orchestrator.OrchestratorV2;
@@ -667,7 +667,7 @@ it.effect.each(["thread.stop", "run.interrupt"] as const)(
       yield* createWatchingThread(threadId, 5);
       yield* send(threadId, "active", "start_immediately");
       yield* send(threadId, "user follow-up", "queue_after_active");
-      yield* send(threadId, "acknowledged", "with_next_turn");
+      yield* send(threadId, "acknowledged", "next_turn");
       for (const creationSource of ["provider", "server"] as const) {
         yield* orchestrator.dispatch({
           type: "message.dispatch",

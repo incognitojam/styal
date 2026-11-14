@@ -17,6 +17,7 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import type * as Tool from "effect/ai/Tool";
 
@@ -143,6 +144,30 @@ const make = Effect.gen(function* () {
       params,
     ).pipe(Effect.mapError(unavailable))) as Record<string, unknown>;
     const { environmentId: _target, ...args } = encoded;
+    if (toolName === "t3_thread_send" && args.mode === "next_turn") {
+      const linked = yield* links.get(environmentId).pipe(Effect.mapError(unavailable));
+      if (Option.isSome(linked)) {
+        const peer = yield* Effect.findFirst(linked.value.urls, (url) =>
+          links
+            .describe(url)
+            .pipe(
+              Effect.map(
+                (found) => Option.isSome(found) && found.value.environmentId === environmentId,
+              ),
+            ),
+        );
+        const descriptor = Option.isSome(peer) ? yield* links.describe(peer.value) : Option.none();
+        if (
+          Option.isNone(descriptor) ||
+          descriptor.value.capabilities.messagesWithNextTurn !== true
+        ) {
+          return yield* new OrchestratorMcpFailure({
+            code: "capability_denied",
+            message: `${linked.value.label} runs an older styal that can't hold a message for the next turn`,
+          });
+        }
+      }
+    }
     // A pending upload lives here, so it cannot go with the call.
     if (Array.isArray(args.attachments) && args.attachments.length > 0) {
       return yield* new OrchestratorMcpFailure({

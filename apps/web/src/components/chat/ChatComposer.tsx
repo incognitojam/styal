@@ -1307,6 +1307,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const shownPendingApprovals = pendingApprovals.filter(
     (approval) => !heldRequestIds.has(approval.requestId),
   );
+  const canSendWithNextTurn = props.supportsSendWithNextTurn && routeKind === "server";
   // A send declines the approvals shown here to redirect the agent, so it steers the waiting
   // turn instead of queueing behind it. Approvals the typing guard holds stay unseen and pending.
   const followUpBehavior = pendingApprovals.some(
@@ -2219,6 +2220,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     dispatchMode?: ComposerDispatchMode,
     submissionIntent?: ComposerSubmissionIntent,
   ) => {
+    if (dispatchMode === "next_turn" && !canSendWithNextTurn) {
+      event?.preventDefault();
+      return;
+    }
     if (
       noProviderAvailable ||
       isSendDisabled ||
@@ -2360,6 +2365,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       phase,
       isCompacting,
       followUpBehavior,
+      canSendWithNextTurn: canSendWithNextTurn,
       isSoftwareKeyboardOpen,
       planModeUiEnabled,
       isLiteralPendingAnswer,
@@ -3727,7 +3733,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     preserveComposerFocusOnPointerDown={isMobileViewport}
                     isEditingQueuedMessage={isEditingQueuedMessage}
                     onSubmitMessage={handleSubmitMessageStable}
-                    {...(props.supportsSendWithNextTurn && routeKind === "server"
+                    {...(canSendWithNextTurn
                       ? {
                           onSendWithNextTurn: handleSendWithNextTurnStable,
                           sendWithNextTurnShortcutLabel: shortcutLabelForCommand(
