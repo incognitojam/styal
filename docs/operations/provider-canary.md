@@ -26,7 +26,7 @@ Auto that must not ask for approval (on providers that report an Auto reviewer),
 a rewind after which the provider must forget the rewound turn but remember the
 one before it, a native subagent, and follow-ups after a server restart. It
 fails on error items or server warnings any of them leave behind. A failed run is retried once; a pass
-on the retry is still recorded and is listed in the status issue. Versions that
+on the retry is still recorded and is listed in an open canary issue. Versions that
 pass are recorded in one pull request from `automation/provider-canary`, which
 also keeps that pull request's earlier additions. Builds whose tag predates the
 canary are skipped. Publication dates come from npm; stable builds are not
@@ -55,15 +55,19 @@ for the required checks. A merge by `GITHUB_TOKEN` starts no workflows, so
 `main` gets no Fork CI run or nightly for it. Servers read the manifest from
 `main`, so they need neither.
 
-## Status issue
+## Failure reporting
 
-The workflow keeps one issue titled **Provider canary status**, assigned to the
-repository owner. It lists, per provider, releases that failed verification,
-releases outside every supported range, and verifications skipped for missing
-secrets, plus failed jobs. It comments when a new problem appears and closes
-when every check passes. A problem that persists, even across new releases of
-the same provider, is not reported again, and it clears only when a later run
-checks that provider again.
+The report job runs from `main`, while verification runs from release tags. Reporting changes take effect on the next run after merge without publishing a nightly. A new problem opens an issue labeled `provider-canary` and `bug`, with the run, failing versions, first error lines, and last passing versions where known. Opening it sends a Discord announcement and a repository webhook for issue triage. The old **Provider canary status** issue is no longer used.
+
+While an issue is open, the report comments only when the problem set changes, including a new failing version or a provider recovering while others still fail. It retains problems for providers a dispatch did not check. Held failing versions remain listed on every hourly report without another issue or comment; they are verified again after six hours, on a new build or provider release, or with `force`. When every problem clears, the report comments once and closes open canary issues as completed. Issue API errors fail the job; Discord delivery errors warn.
+
+For a read-only report, download a run's `canary-plan` and `canary-outcome-*` artifacts, then run:
+
+```sh
+GITHUB_REPOSITORY=incognitojam/styal GITHUB_TOKEN="$(GH_REPO=incognitojam/styal gh auth token)" node scripts/provider-canary.ts report --dry-run --plan path/to/plan.json --outcomes path/to/outcomes --plan-result success --record-result skipped --run-url https://github.com/incognitojam/styal/actions/runs/RUN_ID
+```
+
+The dry run reads open labeled issues and prints the proposed action without changing issues or sending Discord messages.
 
 - **Failed verification:** download the evidence artifact from the linked run.
   If the provider changed its protocol, fix the adapter on `main`; the run that

@@ -469,11 +469,11 @@ describe("provider canary report", () => {
     expect(update?.body).toContain("@openai/codex@0.163.0** on styal");
   });
 
-  it("does not comment again while the same provider keeps failing on new releases", () => {
+  it("comments when the same provider fails on a new release", () => {
     const opened = reconcileStatusIssue(null, codexFails("0.163.0"), [], RUN)!;
     const issue = { number: 5, open: true, body: opened.body };
     const next = reconcileStatusIssue(issue, codexFails("0.164.0"), [], LATER_RUN);
-    expect(next?.comment).toBeUndefined();
+    expect(next?.comment).toContain("0.164.0");
     expect(next?.body).toContain("0.164.0");
   });
 
@@ -489,7 +489,7 @@ describe("provider canary report", () => {
     );
     const update = reconcileStatusIssue(issue, run, [], LATER_RUN);
     expect(update?.comment).toContain("**opencode** on styal");
-    expect(update?.comment).not.toContain("codex");
+    expect(update?.comment).toContain("codex");
   });
 
   it("keeps problems for providers this run did not check", () => {
@@ -517,7 +517,7 @@ describe("provider canary report", () => {
     const run = runWith([verifyPlan("codex", "@openai/codex", "0.163.0")], []);
     expect(run.problems).toEqual([
       expect.objectContaining({
-        key: "failed:codex",
+        key: "failed:codex:0.163.0",
         summary: expect.stringContaining("no verification result"),
       }),
     ]);
@@ -546,7 +546,7 @@ describe("provider canary report", () => {
       RUN,
     );
     expect(reopened).toMatchObject({ state: "open" });
-    expect(reopened?.comment).toContain("0.165.0");
+    expect(reopened?.comment).toBeUndefined();
   });
 
   it("keeps a failed verification held across runs without commenting again", () => {
@@ -593,7 +593,7 @@ describe("provider canary report", () => {
         ),
       ],
     );
-    expect(run.problems.map((problem) => problem.key)).toEqual(["skipped:claudeAgent"]);
+    expect(run.problems.map((problem) => problem.key)).toEqual(["skipped:claudeAgent:2.1.301"]);
     const update = reconcileStatusIssue(
       null,
       run,

@@ -8,6 +8,16 @@ import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 import * as NodeUtil from "node:util";
+import {
+  inertText,
+  openIssues,
+  ensureLabels,
+  commentOnce,
+  announceIssue,
+  type Request,
+  type CreatedIssue,
+} from "./health-issues.ts";
+import { discordPayload, postDiscord } from "./issue-routing.ts";
 
 import { compareSemverVersions, satisfiesSemverRange } from "@t3tools/shared/semver";
 
@@ -253,7 +263,7 @@ export interface VerifyEntry {
 }
 
 /**
- * A verification that failed twice, kept in the status issue so the next runs
+ * A verification that failed twice, kept in the open labeled issue so the next runs
  * do not spend model usage on the same release and build again right away.
  */
 export interface CanaryFailure {
@@ -546,8 +556,6 @@ function mergeGuard(args: ReadonlyArray<string>) {
   if (blocker) console.log(blocker);
 }
 
-const STATUS_ISSUE_TITLE = "Provider canary status";
-
 /** One verify job's result, written by the workflow. */
 export interface CanaryOutcome {
   readonly provider: string;
@@ -619,9 +627,9 @@ export function collectRun(input: {
       const { entry, failure } = plan;
       failures.push(failure);
       add(
-        `failed:${entry.provider}`,
+        `failed:${entry.provider}:${entry.version}`,
         entry.provider,
-        `**${entry.packageName}@${entry.version}** on styal ${entry.styal} failed verification twice: ${failure.detail} It is verified again ${FAILURE_RETRY_HOURS} hours after it failed, or sooner on a new styal build or release.`,
+        `**${entry.packageName}@${entry.version}** on styal ${entry.styal} failed verification twice: ${failure.detail.split(/\r?\n/)[0]} It is verified again ${FAILURE_RETRY_HOURS} hours after it failed, or sooner on a new styal build or release.`,
       );
       continue;
     }
@@ -633,7 +641,7 @@ export function collectRun(input: {
     const release = `**${entry.packageName}@${entry.version}** on styal ${entry.styal}`;
     if (!outcome)
       add(
-        `failed:${entry.provider}`,
+        `failed:${entry.provider}:${entry.version}`,
         entry.provider,
         `${release}: no verification result was saved.`,
       );
@@ -647,15 +655,15 @@ export function collectRun(input: {
         at: (input.now ?? new Date()).toISOString(),
       });
       add(
-        `failed:${entry.provider}`,
+        `failed:${entry.provider}:${entry.version}`,
         entry.provider,
-        `${release} failed verification twice: ${outcome.detail}`,
+        `${release} failed verification twice: ${outcome.detail.split(/\r?\n/)[0]}`,
       );
     } else if (outcome.outcome === "skipped")
       add(
-        `skipped:${entry.provider}`,
+        `skipped:${entry.provider}:${entry.version}`,
         entry.provider,
-        `${release} was not verified: ${outcome.detail}`,
+        `${release} was not verified: ${outcome.detail.split(/\r?\n/)[0]}`,
       );
   }
   return { problems: [...found.values()], evaluated, failures };
@@ -674,7 +682,7 @@ export interface StatusIssueUpdate {
   readonly comment?: string;
 }
 
-const STATE_MARKER = /<!-- provider-canary-state (.*) -->/;
+const STATE_MARKER = /<!-- provider-canary-state ([a-f0-9]+) -->/;
 
 interface StatusState {
   readonly problems?: ReadonlyArray<CanaryProblem>;
@@ -682,14 +690,16 @@ interface StatusState {
 }
 
 const readStatusState = (issue: StatusIssue | null): StatusState =>
-  issue?.open ? JSON.parse(STATE_MARKER.exec(issue.body)?.[1] ?? "{}") : {};
+  issue?.open
+    ? JSON.parse(Buffer.from(STATE_MARKER.exec(issue.body)?.[1] ?? "7b7d", "hex").toString("utf8"))
+    : {};
 
-/** Failed verifications the open status issue still holds back. */
+/** Failed verifications the open labeled issue still holds back. */
 export const statusFailures = (issue: StatusIssue | null): ReadonlyArray<CanaryFailure> =>
   readStatusState(issue).failures ?? [];
 
 /**
- * How the status issue changes after a run. Problems this run did not
+ * How the labeled issue changes after a run. Problems this run did not
  * evaluate carry over from the open issue. A comment is posted only when a
  * problem appears that the open issue does not list, or when every problem
  * clears and the issue closes. Returns null when nothing changes.
@@ -718,10 +728,12 @@ export function reconcileStatusIssue(
     problems.length > 0
       ? "The provider canary found problems that hold back automatic provider updates. This issue is updated on each run and closes when every check passes."
       : "Every provider canary check passed.",
-    problems.map((problem) => `- ${problem.summary}`).join("\n"),
-    notes.length > 0 ? `Passed on retry:\n\n${notes.map((note) => `- ${note}`).join("\n")}` : "",
+    problems.map((problem) => `- ${inertText(problem.summary)}`).join("\n"),
+    notes.length > 0
+      ? `Passed on retry:\n\n${notes.map((note) => `- ${inertText(note)}`).join("\n")}`
+      : "",
     `Last run: ${runUrl}`,
-    `<!-- provider-canary-state ${JSON.stringify(failures.length > 0 ? { problems, failures } : { problems })} -->`,
+    `<!-- provider-canary-state ${Buffer.from(JSON.stringify(failures.length > 0 ? { problems, failures } : { problems })).toString("hex")} -->`,
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -730,18 +742,104 @@ export function reconcileStatusIssue(
       ? { body, state: "closed", comment: `Every check passed in ${runUrl}. Closing.` }
       : null;
   }
-  const added = problems.filter(
-    (problem) => !previous.some((existing) => existing.key === problem.key),
-  );
+  const identity = (items: ReadonlyArray<CanaryProblem>, held: ReadonlyArray<CanaryFailure>) =>
+    JSON.stringify(
+      items
+        .map((problem) => [
+          problem.key,
+          ...held
+            .filter((f) => f.provider === problem.scope)
+            .map((f) => `${f.packageName}@${f.version}`)
+            .sort(),
+        ])
+        .sort(),
+    );
+  const changed = identity(previous, state.failures ?? []) !== identity(problems, failures);
   return {
     body,
     state: "open",
-    ...(issue !== null && added.length > 0
+    ...(issue?.open && changed
       ? {
-          comment: `New in ${runUrl}:\n\n${added.map((problem) => `- ${problem.summary}`).join("\n")}`,
+          comment: `Problems changed in ${runUrl}:\n\n${problems.map((problem) => `- ${inertText(problem.summary)}`).join("\n")}`,
         }
       : {}),
   };
+}
+
+export async function syncCanaryReport(options: {
+  request: Request;
+  repo: string;
+  run: Parameters<typeof reconcileStatusIssue>[1];
+  notes: ReadonlyArray<string>;
+  runUrl: string;
+  dryRun: boolean;
+  announce?: (issue: CreatedIssue) => Promise<void>;
+  warn?: (message: string) => void;
+}) {
+  const { request, repo, run, notes, runUrl, dryRun } = options;
+  const root = `/repos/${repo}`;
+  // The retired status issue is never read or changed, even if someone labels it.
+  const issues = (await openIssues<StatusIssue>(request, repo, "provider-canary"))
+    .filter((issue) => issue.number !== 861)
+    .map((issue) => ({ ...issue, open: true }));
+  const targets = issues.length ? issues : [null];
+  const actions: string[] = [];
+  for (const issue of targets) {
+    const update = reconcileStatusIssue(issue, run, notes, runUrl);
+    if (!update) continue;
+    if (issue) {
+      const action = update.state === "closed" ? "close" : update.comment ? "comment" : "keep";
+      actions.push(`would ${action} #${issue.number}`);
+      if (dryRun) continue;
+      if (update.state === "closed") {
+        await commentOnce(
+          request,
+          root,
+          issue.number,
+          `${update.comment}\n\n<!-- provider-canary-recovered -->`,
+          "<!-- provider-canary-recovered -->",
+        );
+        await request("PATCH", `${root}/issues/${issue.number}`, {
+          state: "closed",
+          state_reason: "completed",
+        });
+      } else {
+        if (update.comment) await commentOnce(request, root, issue.number, update.comment);
+        await request("PATCH", `${root}/issues/${issue.number}`, { body: update.body });
+      }
+    } else {
+      const providers = [...new Set(run.problems.map((p) => p.scope))];
+      const failure = run.failures?.[0];
+      const title =
+        providers.length > 1
+          ? `Provider canary: ${providers.length} providers failing`
+          : failure
+            ? `Provider canary: ${inertText(failure.provider === "claudeAgent" ? "Claude Code" : failure.provider, 50)} ${inertText(failure.version, 80)} fails verification`
+            : `Provider canary: ${inertText(run.problems[0]!.scope, 80)} needs attention`;
+      actions.push(
+        `would open: ${title}\n${update.body
+          .split("\n")
+          .filter((line) => !line.startsWith("<!--"))
+          .join("\n")}`,
+      );
+      if (dryRun) continue;
+      await ensureLabels(request, root, [
+        {
+          name: "provider-canary",
+          color: "b60205",
+          description: "Provider canary problems; closes on recovery.",
+        },
+        { name: "bug", color: "d73a4a", description: "Something isn't working" },
+      ]);
+      const created = await request<CreatedIssue>("POST", `${root}/issues`, {
+        title,
+        body: update.body,
+        labels: ["provider-canary", "bug"],
+      });
+      await announceIssue(created, options.announce, options.warn);
+    }
+  }
+  return actions.join("\n") || "No canary problems and no open issue.";
 }
 
 async function fetchDistTags(packageName: string): Promise<Record<string, string>> {
@@ -957,25 +1055,28 @@ async function github(path: string, init?: { method: string; body: unknown }) {
     signal: AbortSignal.timeout(30_000),
   });
   if (!response.ok)
-    throw new Error(`GitHub ${path}: HTTP ${response.status} ${await response.text()}`);
+    throw Object.assign(new Error(`GitHub ${path}: HTTP ${response.status}`), {
+      status: response.status,
+    });
   return response.json() as Promise<unknown>;
 }
 
 async function findStatusIssue(repo: string): Promise<StatusIssue | null> {
-  const issues = (await github(
-    `/repos/${repo}/issues?state=all&creator=${encodeURIComponent("github-actions[bot]")}&per_page=100`,
-  )) as Array<{
-    number: number;
-    state: string;
-    title: string;
-    body: string | null;
-    pull_request?: unknown;
-  }>;
-  const found = issues.find((issue) => issue.title === STATUS_ISSUE_TITLE && !issue.pull_request);
-  return found
-    ? { number: found.number, open: found.state === "open", body: found.body ?? "" }
+  const issues = (await openIssues<StatusIssue>(githubRequest, repo, "provider-canary")).filter(
+    (issue) => issue.number !== 861,
+  );
+  return issues.length
+    ? { number: issues[0]!.number, open: true, body: reconcileBodies(issues) }
     : null;
 }
+
+function reconcileBodies(issues: StatusIssue[]) {
+  const states = issues.map((issue) => readStatusState({ ...issue, open: true }));
+  return `<!-- provider-canary-state ${Buffer.from(JSON.stringify({ problems: states.flatMap((s) => s.problems ?? []), failures: states.flatMap((s) => s.failures ?? []) })).toString("hex")} -->`;
+}
+
+const githubRequest: Request = async <T>(method: string, path: string, body?: object) =>
+  (await github(path, method === "GET" ? undefined : { method, body })) as T;
 
 async function report(args: ReadonlyArray<string>) {
   const { values } = NodeUtil.parseArgs({
@@ -1008,51 +1109,39 @@ async function report(args: ReadonlyArray<string>) {
     .filter((outcome) => outcome.outcome === "flaky")
     .map(
       (outcome) =>
-        `${outcome.packageName}@${outcome.version} on styal ${outcome.styal}: ${outcome.detail}`,
+        `${outcome.packageName}@${outcome.version} on styal ${outcome.styal}: ${outcome.detail.split(/\r?\n/)[0]}`,
     );
 
-  const issue = await findStatusIssue(repo);
-  const update = reconcileStatusIssue(issue, run, notes, values["run-url"]);
-  if (update === null) {
-    console.log("No canary problems and no open status issue.");
-    return;
-  }
-  if (values["dry-run"]) {
-    console.log(`Would ${issue ? `update #${issue.number}` : "open the status issue"}:`);
-    console.log(JSON.stringify(update, null, 2));
-    return;
-  }
-  let number = issue?.number;
-  if (number === undefined) {
-    const created = (await github(`/repos/${repo}/issues`, {
-      method: "POST",
-      body: {
-        title: STATUS_ISSUE_TITLE,
-        body: update.body,
-        // Assignment notifies the owner even when they do not watch the repository.
-        assignees: [repo.split("/")[0]],
+  const manifest = readJson<Manifest>(MANIFEST_PATH);
+  const enriched = {
+    ...run,
+    problems: run.problems.map((problem) => {
+      const passed = manifest?.compatibility
+        ?.filter((p) => p.driver === problem.scope)
+        .flatMap((p) => p.autoUpdates ?? [])
+        .toSorted((a, b) => compareSemverVersions(b.version, a.version))[0];
+      return {
+        ...problem,
+        summary: `${problem.summary}${passed ? ` Last version passed: ${passed.version}.` : ""}`,
+      };
+    }),
+  };
+  console.log(
+    await syncCanaryReport({
+      request: githubRequest,
+      repo,
+      run: enriched,
+      notes,
+      runUrl: values["run-url"],
+      dryRun: values["dry-run"],
+      warn: (message) => console.warn(`::warning::${message}`),
+      announce: async (issue) => {
+        const webhook = process.env.DISCORD_WEBHOOK_URL;
+        if (webhook && !(await postDiscord(webhook, discordPayload(issue, "other"))))
+          throw new Error("Discord delivery failed");
       },
-    })) as { number: number };
-    number = created.number;
-    console.log(`Opened status issue #${number}.`);
-  } else {
-    // Comment before closing so the closing comment is part of the notification.
-    if (update.comment && update.state === "closed")
-      await github(`/repos/${repo}/issues/${number}/comments`, {
-        method: "POST",
-        body: { body: update.comment },
-      });
-    await github(`/repos/${repo}/issues/${number}`, {
-      method: "PATCH",
-      body: { body: update.body, state: update.state },
-    });
-    if (update.comment && update.state === "open")
-      await github(`/repos/${repo}/issues/${number}/comments`, {
-        method: "POST",
-        body: { body: update.comment },
-      });
-    console.log(`Updated status issue #${number} (${update.state}).`);
-  }
+    }),
+  );
 }
 
 function rewindPlan(args: ReadonlyArray<string>) {

@@ -5,7 +5,7 @@ name: Provider canary
 # records each passing version in the model manifest's `autoUpdates` with the
 # build it passed on. Servers fetch that manifest from main and automatically
 # update only to a version verified on a build their code contains. Problems
-# are kept in one "Provider canary status" issue.
+# open a provider-canary issue, which closes on recovery.
 #
 # It checks npm hourly and again after each nightly build, which may carry an
 # adapter fix. A run with nothing new to verify ends after the plan and report.
@@ -439,8 +439,7 @@ jobs:
             GH_TOKEN="$MERGE_TOKEN" gh pr merge "$number" --disable-auto || true
           fi
 
-  # Keeps the "Provider canary status" issue in step with this run. It comments
-  # only when a new problem appears or every problem clears.
+  # Serialized labeled-issue reporting runs from main, not the verifier tag.
   report:
     name: Report
     needs: [plan, verify, record]
@@ -450,10 +449,14 @@ jobs:
     permissions:
       contents: read
       issues: write
+    concurrency:
+      group: provider-canary-report
+      cancel-in-progress: false
     steps:
       - name: Checkout
         uses: actions/checkout@v7
         with:
+          ref: main
           sparse-checkout: |
             /*
             !/.repos/
@@ -483,8 +486,9 @@ jobs:
           merge-multiple: true
           path: ${{ runner.temp }}/canary-outcomes
 
-      - name: Update the status issue
+      - name: Report canary problems
         env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_CI }}
           GITHUB_TOKEN: ${{ github.token }}
           PLAN_RESULT: ${{ needs.plan.result }}
           RECORD_RESULT: ${{ needs.record.result }}
