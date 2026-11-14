@@ -130,3 +130,39 @@ describe("mobile overview check status", () => {
     ).toMatchObject({ title: "1 check failing", count: "1 of 3" });
   });
 });
+
+describe("mobile skipped check counts", () => {
+  it.each([
+    [
+      ["success", "success", "success", "skipped", "skipped"],
+      { label: "All checks passed", title: "All checks passed", count: "3 of 3" },
+    ],
+    [
+      ["success", "neutral"],
+      { label: "All checks passed", title: "All checks passed", count: "1 of 1" },
+    ],
+    [["skipped", "neutral"], { label: "2 completed", title: "Checks completed", count: "0 of 2" }],
+    [
+      ["failure", "skipped"],
+      {
+        label: "1 check failing · 1 skipped",
+        title: "1 check failing",
+        count: "0 of 1 · 1 skipped",
+      },
+    ],
+    [
+      ["pending", "neutral"],
+      { label: "1 pending · 1 skipped", title: "Checks running", count: "1 pending · 1 skipped" },
+    ],
+    [
+      ["success", "cancelled", "skipped"],
+      {
+        label: "1 of 2 passed · 1 skipped",
+        title: "Checks completed",
+        count: "1 of 2 · 1 skipped",
+      },
+    ],
+  ] as const)("summarizes %j", (statuses, expected) => {
+    expect(pullRequestChecksSummary({ checks: statuses.map(check) })).toMatchObject(expected);
+  });
+});

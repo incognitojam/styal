@@ -1,3 +1,4 @@
+import { summarizePullRequestChecks } from "./pullRequestPresentation";
 import { SourceControlProviderKind } from "@t3tools/contracts";
 import { resolvePlanFollowUpSubmission } from "../../proposedPlan";
 import {
@@ -18,6 +19,7 @@ import { formatInlineContextReference } from "~/lib/composerContextReferences";
 import { buildMessageContext, reviewCommentContextReference } from "~/lib/composerContextRecords";
 
 import {
+  describePullRequestChecks,
   buildAddSelectionToAgentHandoff,
   buildExplainPullRequestHandoff,
   buildResolveConflictsPrompt,
@@ -1523,3 +1525,41 @@ describe("readableFailure", () => {
     );
   });
 });
+
+describe.each([summarizePullRequestChecks, describePullRequestChecks])(
+  "%s check summary counts",
+  (summarize) => {
+    const check = (status: PullRequestCheck["status"]): PullRequestCheck => ({
+      name: status,
+      status,
+      url: null,
+      description: null,
+    });
+    it.each([
+      [
+        ["success", "success", "success", "skipped", "skipped"],
+        "All checks passed",
+        "All checks passed",
+      ],
+      [["success", "neutral"], "All checks passed", "All checks passed"],
+      [["skipped", "neutral"], "No checks ran", "No checks ran"],
+      [["failure", "skipped"], "1 of 2 failing · 1 skipped", "1 of 2 failing · 1 skipped"],
+      [["pending", "neutral"], "1 of 2 running · 1 skipped", "1 of 2 running · 1 skipped"],
+      [
+        ["success", "expected", "skipped"],
+        "1 of 3 waiting · 1 skipped",
+        "1 of 2 passing · 1 skipped",
+      ],
+      [
+        ["failure", "pending", "skipped"],
+        "1 of 3 failing · 1 skipped",
+        "1 of 3 running · 1 failed · 1 skipped",
+      ],
+      [["success"], "All checks passed", "All checks passed"],
+      [[], "No checks reported", "No checks reported"],
+    ] as const)("summarizes %j", (statuses, popover, row) => {
+      const checks = statuses.map(check);
+      expect(summarize(checks)).toBe(summarize === summarizePullRequestChecks ? popover : row);
+    });
+  },
+);

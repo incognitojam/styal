@@ -1,3 +1,4 @@
+import { pullRequestCheckCounts } from "@t3tools/client-runtime/pull-request-checks";
 import type {
   PullRequestActivity,
   PullRequestCheck,
@@ -116,44 +117,44 @@ export function pullRequestChecksSummary(pr: Pick<PullRequestDetail, "checks">) 
   const pending = pr.checks.filter(
     (check) => check.status === "pending" || check.status === "expected",
   ).length;
-  const passed = pr.checks.filter((check) => check.status === "success").length;
-  const count = pr.checks.length ? `${passed} of ${pr.checks.length}` : undefined;
+  const { passed, runnable, allPassed, skippedSummary } = pullRequestCheckCounts(pr.checks);
+  const count = pr.checks.length ? `${passed} of ${runnable}` : undefined;
   if (failed)
     return {
-      label: `${failed} ${failed === 1 ? "check" : "checks"} failing`,
+      label: `${failed} ${failed === 1 ? "check" : "checks"} failing${skippedSummary}`,
       title: `${failed} ${failed === 1 ? "check" : "checks"} failing`,
-      count,
+      count: count + skippedSummary,
       icon: "exclamationmark.circle",
       tint: "accent-danger-foreground",
     } as const;
   if (required)
     return {
-      label: `${required} need attention`,
+      label: `${required} need attention${skippedSummary}`,
       title: "Checks need attention",
-      count: `${required} awaiting action`,
+      count: `${required} awaiting action${skippedSummary}`,
       icon: "exclamationmark.circle",
       tint: "accent-warning-foreground",
     } as const;
   if (pending)
     return {
-      label: `${pending} pending`,
+      label: `${pending} pending${skippedSummary}`,
       title: "Checks running",
-      count: `${pending} pending`,
+      count: `${pending} pending${skippedSummary}`,
       icon: "clock",
       tint: "accent-warning-foreground",
     } as const;
   if (passed)
     return {
-      label: `${passed} of ${pr.checks.length} passed`,
-      title: passed === pr.checks.length ? "All checks passed" : "Checks completed",
-      count,
+      label: allPassed ? "All checks passed" : `${passed} of ${runnable} passed${skippedSummary}`,
+      title: allPassed ? "All checks passed" : "Checks completed",
+      count: allPassed ? count : count + skippedSummary,
       icon: "checkmark.circle",
       tint: "accent-adaptive-emerald-600-400",
     } as const;
   return {
     label: pr.checks.length ? `${pr.checks.length} completed` : "No checks reported",
     title: pr.checks.length ? "Checks completed" : "No checks reported",
-    count,
+    count: pr.checks.length ? `0 of ${pr.checks.length}` : undefined,
     icon: "minus",
     tint: "accent-icon-muted",
   } as const;

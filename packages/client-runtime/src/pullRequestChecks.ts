@@ -52,3 +52,18 @@ export function pullRequestChecksRefreshIntervalMs(
     ? 45_000
     : 60_000;
 }
+
+export function pullRequestCheckCounts(checks: ReadonlyArray<PullRequestCheck>) {
+  const passed = checks.filter((check) => check.status === "success").length;
+  const skipped = checks.filter(
+    (check) => check.status === "skipped" || check.status === "neutral",
+  ).length;
+  const runnable = checks.length - skipped;
+  return {
+    passed,
+    skipped,
+    runnable,
+    allPassed: passed > 0 && passed === runnable,
+    skippedSummary: skipped > 0 ? ` · ${skipped} skipped` : "",
+  };
+}
