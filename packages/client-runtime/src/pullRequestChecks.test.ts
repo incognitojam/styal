@@ -1,7 +1,7 @@
 import type { PullRequestCheck, PullRequestDetail } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { resolvePullRequestDetailChecks } from "./pullRequestChecks.ts";
+import { pullRequestCheckCounts, resolvePullRequestDetailChecks } from "./pullRequestChecks.ts";
 
 const detail = (overrides: Partial<PullRequestDetail> = {}): PullRequestDetail =>
   ({ title: "Cache the title", state: "open", checks: [], ...overrides }) as PullRequestDetail;
@@ -84,5 +84,32 @@ describe("resolvePullRequestDetailChecks", () => {
     expect(
       resolvePullRequestDetailChecks(merged, { state: "open", observedAt: 2_000, checks }, true),
     ).toEqual({ ...merged, checks });
+  });
+});
+
+describe("pullRequestCheckCounts", () => {
+  it.each([
+    [[], 0, 0, 0, false],
+    [["success"], 1, 0, 1, true],
+    [["success", "success", "success", "skipped", "neutral"], 3, 2, 3, true],
+    [["skipped", "neutral"], 0, 2, 0, false],
+    [["success", "failure", "skipped"], 1, 1, 2, false],
+    [["success", "pending", "neutral"], 1, 1, 2, false],
+    [["cancelled", "skipped"], 0, 1, 1, false],
+    [["expected", "action-required", "skipped"], 0, 1, 2, false],
+  ] as const)("counts %j", (statuses, passed, skipped, runnable, allPassed) => {
+    const checks = statuses.map((status) => ({
+      name: status,
+      status,
+      url: null,
+      description: null,
+    }));
+    expect(pullRequestCheckCounts(checks)).toEqual({
+      passed,
+      skipped,
+      runnable,
+      allPassed,
+      skippedSummary: skipped ? ` · ${skipped} skipped` : "",
+    });
   });
 });

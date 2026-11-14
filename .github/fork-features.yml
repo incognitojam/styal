@@ -5696,6 +5696,7 @@ features:
     tier: keep
     prs: [138, 151, 159, 185, 209, 495, 984, 1088, 1089]
     invariants:
+      - Web and mobile check summaries exclude skipped and neutral runs from every summary fraction denominator, report them separately beside outstanding checks, and recognize a completed mix with successful runs as all passed.
       - Pull request checks have a dedicated tab that distinguishes host-required checks from optional jobs and represents required checks that have not reported yet.
       - Check rows share one set of columns, so the Required badge, status and link mark line up whatever each row's status says or whether it has a link.
       - A watched pull request reports its required checks as passed only once each has finished green; a required check that has not reported yet holds the news back.

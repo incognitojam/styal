@@ -1,3 +1,4 @@
+import { pullRequestCheckCounts } from "@t3tools/client-runtime/pull-request-checks";
 import { Spinner } from "~/components/ui/spinner";
 import {
   pullRequestMergeIntentLabel,
@@ -565,19 +566,24 @@ export function summarizePullRequestChecks(checks: ReadonlyArray<PullRequestChec
   ).length;
   const running = checks.filter((check) => check.status === "pending").length;
   const expected = checks.filter((check) => check.status === "expected").length;
-  const passed = checks.filter((check) => check.status === "success").length;
-  if (failed > 0) return `${failed} of ${checks.length} failing`;
+  const { passed, runnable, allPassed, skippedSummary } = pullRequestCheckCounts(checks);
+  if (failed > 0) return `${failed} of ${runnable} failing${skippedSummary}`;
   if (workflowApprovalRequired > 0 && otherActionRequired > 0) {
-    return `${workflowApprovalRequired} ${workflowApprovalRequired === 1 ? "workflow" : "workflows"} and ${otherActionRequired} ${otherActionRequired === 1 ? "check" : "checks"} awaiting action`;
+    return `${workflowApprovalRequired} ${workflowApprovalRequired === 1 ? "workflow" : "workflows"} and ${otherActionRequired} ${otherActionRequired === 1 ? "check" : "checks"} awaiting action${skippedSummary}`;
   }
   if (workflowApprovalRequired > 0) {
-    return `${workflowApprovalRequired} ${workflowApprovalRequired === 1 ? "workflow" : "workflows"} awaiting approval`;
+    return `${workflowApprovalRequired} ${workflowApprovalRequired === 1 ? "workflow" : "workflows"} awaiting approval${skippedSummary}`;
   }
   if (otherActionRequired > 0) {
-    return `${otherActionRequired} ${otherActionRequired === 1 ? "check" : "checks"} awaiting action`;
+    return `${otherActionRequired} ${otherActionRequired === 1 ? "check" : "checks"} awaiting action${skippedSummary}`;
   }
-  if (running > 0 && expected > 0) return `${running + expected} of ${checks.length} pending`;
-  if (running > 0) return `${running} of ${checks.length} running`;
-  if (expected > 0) return `${expected} of ${checks.length} waiting`;
-  return passed === checks.length ? "All checks passed" : `${passed} of ${checks.length} passing`;
+  if (running > 0 && expected > 0)
+    return `${running + expected} of ${runnable} pending${skippedSummary}`;
+  if (running > 0) return `${running} of ${runnable} running${skippedSummary}`;
+  if (expected > 0) return `${expected} of ${runnable} waiting${skippedSummary}`;
+  return allPassed
+    ? "All checks passed"
+    : runnable === 0
+      ? "No checks ran"
+      : `${passed} of ${runnable} passing${skippedSummary}`;
 }
