@@ -1,15 +1,53 @@
 import type { WorktreeCleanupPreview, WorktreeCleanupPreviewEntry } from "@t3tools/contracts";
+import { ProjectId, RepositoryIdentity } from "@t3tools/contracts";
+import * as Schema from "effect/Schema";
+import { projectFileApprovalKey } from "@t3tools/shared/projectFileApprovals";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  worktreeCleanupApprovalsFor,
   worktreeCleanupMatchesByPattern,
   worktreeCleanupPatternList,
   worktreeCleanupPatternShape,
+  worktreeCleanupPreviewComplete,
   worktreeCleanupResults,
   worktreeCleanupWorkFolders,
 } from "./worktreeCleanup.ts";
 
+const decodeRepositoryIdentity = Schema.decodeUnknownSync(RepositoryIdentity);
 const at = (day: number) => `2026-11-${String(day).padStart(2, "0")}T00:00:00.000Z`;
+
+describe("worktreeCleanupApprovalsFor", () => {
+  it("reads a project's approvals by its id, not by its repository", () => {
+    const project = {
+      id: ProjectId.make("project-a"),
+      workspaceRoot: "/work/widgets",
+      repositoryIdentity: decodeRepositoryIdentity({
+        canonicalKey: "github.com/acme/widgets",
+        locator: {
+          source: "git-remote",
+          remoteName: "origin",
+          remoteUrl: "git@github.com:acme/widgets.git",
+        },
+        rootPath: "/work/widgets",
+      }),
+    };
+    const repositoryKey = projectFileApprovalKey(project);
+    expect(repositoryKey).not.toBe(project.id);
+    const settings = {
+      worktreeCleanupApprovals: {
+        [project.id]: { dist: { approvedAt: at(1) } },
+        [repositoryKey]: { ".cache": { approvedAt: at(1) } },
+      },
+    };
+    expect(
+      worktreeCleanupPatternList(
+        ["dist", ".cache"],
+        worktreeCleanupApprovalsFor(settings, project),
+      ),
+    ).toEqual({ pending: [".cache"], approved: ["dist"], earlier: [] });
+  });
+});
 
 describe("worktreeCleanupPatternList", () => {
   it("lists pending patterns, then approved ones, each in styal.json order", () => {
@@ -148,6 +186,22 @@ describe("worktreeCleanupResults", () => {
     expect(results.totalBytes).toBe(512);
   });
 
+  it("counts an approved path inside a pending one, and a nested path only once", () => {
+    const nested = preview([
+      entry({
+        selected: [
+          selected("dist", "dist", 1024, "pending"),
+          { ...selected("dist/sub", "dist/sub", 512), insideSelected: "dist" },
+        ],
+      }),
+    ]);
+    expect(worktreeCleanupResults(nested, new Set(["dist/sub"])).totalBytes).toBe(512);
+    expect(worktreeCleanupResults(nested, new Set(["dist", "dist/sub"])).totalBytes).toBe(1024);
+    const matches = worktreeCleanupMatchesByPattern(nested);
+    expect(matches.get("dist")?.bytes).toBe(1024);
+    expect(matches.get("dist/sub")?.bytes).toBe(512);
+  });
+
   it("keeps unmeasured and cut-short results as lower bounds", () => {
     const results = worktreeCleanupResults(
       preview([
@@ -170,6 +224,43 @@ describe("worktreeCleanupResults", () => {
     ]);
     expect(results.incomplete).toBe(true);
     expect(results.notCleaned.map((row) => row.reason)).toEqual(["too-large"]);
+  });
+});
+
+describe("unknown results stay unknown", () => {
+  it("reports a walk that stopped early as not fully checked, never as nothing matched", () => {
+    const stopped = preview([
+      entry({ entriesTruncated: true, measurementComplete: false, freedBytes: null }),
+    ]);
+    expect(worktreeCleanupResults(stopped, new Set(["**/node_modules"])).notCleaned).toEqual([
+      expect.objectContaining({ reason: "not-fully-checked", incomplete: true }),
+    ]);
+    expect(worktreeCleanupPreviewComplete(stopped)).toBe(false);
+  });
+
+  it("marks a measured path next to an over-limit candidate as a lower bound", () => {
+    const results = worktreeCleanupResults(
+      preview([
+        entry({
+          measurementComplete: false,
+          selected: [selected("dist", "dist", 100)],
+          kept: [{ path: "node_modules", pattern: "nm", reason: "too-large-to-verify" }],
+        }),
+      ]),
+      new Set(["dist", "nm"]),
+    );
+    expect(results.cleaned.map((row) => [row.freedBytes, row.incomplete])).toEqual([[100, true]]);
+    expect(results.incomplete).toBe(true);
+  });
+
+  it("marks every pattern total incomplete when part of the preview was not checked", () => {
+    const matches = worktreeCleanupMatchesByPattern(
+      preview([
+        entry({ worktreePath: "/w/a", selected: [selected("dist", "dist", 10)] }),
+        entry({ worktreePath: "/w/b", entriesTruncated: true, measurementComplete: false }),
+      ]),
+    );
+    expect(matches.get("dist")?.incomplete).toBe(true);
   });
 });
 

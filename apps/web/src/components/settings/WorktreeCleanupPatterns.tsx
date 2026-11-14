@@ -1,11 +1,13 @@
 import { useAtomValue } from "@effect/atom-react";
 import {
   type WorktreeCleanupPatternMatches as WorktreeCleanupMatches,
+  worktreeCleanupApprovalsFor,
   worktreeCleanupApprovedSelection,
   worktreeCleanupMatchesByPattern,
   worktreeCleanupPatternList,
   worktreeCleanupPathsByPattern,
   worktreeCleanupPatternShape,
+  worktreeCleanupPreviewComplete,
   worktreeCleanupWorkFolders,
   worktreeCleanupResults,
   type WorktreeCleanupNotCleanedReason,
@@ -23,7 +25,7 @@ import {
   Undo2Icon,
   XIcon,
 } from "lucide-react";
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 
 import { projectConfigRoot, useProjectConfigState } from "../../hooks/useProjectConfig";
 import { formatBytes } from "../../lib/formatBytes";
@@ -75,7 +77,7 @@ export function WorktreeCleanupPatternsSection() {
       {
         member,
         environment,
-        approvals: serverConfig.settings.worktreeCleanupApprovals[member.id],
+        approvals: worktreeCleanupApprovalsFor(serverConfig.settings, member),
       },
     ];
   });
@@ -106,16 +108,22 @@ function CheckoutCleanup({
   const [state, setState] = useState<PreviewState>(null);
   const [checking, setChecking] = useState(false);
   const [reviewing, setReviewing] = useState(false);
+  const running = useRef<AbortController | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- stops a running preview on the server when the page goes away
+  useEffect(() => () => running.current?.abort(), []);
 
   if (list.pending.length + list.approved.length + list.earlier.length === 0) return null;
 
   const preview = async () => {
     if (checking) return;
     setChecking(true);
+    const controller = new AbortController();
+    running.current = controller;
     const result = await runPreview({
       environmentId,
-      input: { projectId: member.id, list: "declared" },
+      input: { projectId: member.id, list: "declared", signal: controller.signal },
     });
+    if (running.current === controller) running.current = null;
     setChecking(false);
     if (
       reportHardwareResult(result, "Could not preview worktree cleanup") &&
@@ -127,7 +135,12 @@ function CheckoutCleanup({
     setReviewing(true);
     if (state === null && canPreview) void preview();
   };
-  const matches = state ? worktreeCleanupMatchesByPattern(state.preview) : null;
+  const matches: PreviewMatches | null = state
+    ? {
+        byPattern: worktreeCleanupMatchesByPattern(state.preview),
+        complete: worktreeCleanupPreviewComplete(state.preview),
+      }
+    : null;
   const approved = new Set(list.approved);
 
   return (
@@ -185,7 +198,7 @@ function PatternListRow({
   onReview,
 }: {
   list: WorktreeCleanupPatternList;
-  matches: ReadonlyMap<string, WorktreeCleanupMatches> | null;
+  matches: PreviewMatches | null;
   environmentId: EnvironmentId;
   projectId: SidebarProjectGroupMember["id"];
   onReview: () => void;
@@ -294,8 +307,15 @@ function IconAction({
   );
 }
 
-function matchText(found: WorktreeCleanupMatches | undefined) {
-  if (!found) return "Matches nothing right now";
+interface PreviewMatches {
+  readonly byPattern: ReadonlyMap<string, WorktreeCleanupMatches>;
+  /** False when part of the preview was not checked, so "no match" is unknown. */
+  readonly complete: boolean;
+}
+
+function matchText(matches: PreviewMatches, pattern: string) {
+  const found = matches.byPattern.get(pattern);
+  if (!found) return matches.complete ? "Matches nothing right now" : "Not fully checked";
   const noun =
     found.kind === "file"
       ? found.count === 1
@@ -320,10 +340,10 @@ function PatternRow({
 }: {
   pattern: string;
   pending: boolean;
-  matches: ReadonlyMap<string, WorktreeCleanupMatches> | null;
+  matches: PreviewMatches | null;
   onRevoke?: () => void;
 }) {
-  const found = matches?.get(pattern);
+  const found = matches?.byPattern.get(pattern);
   const kind = found ? found.kind : worktreeCleanupPatternShape(pattern);
   const Glyph = kind === "file" ? FileIcon : FolderIcon;
   return (
@@ -350,7 +370,7 @@ function PatternRow({
             !found && "italic opacity-80",
           )}
         >
-          {matchText(found)}
+          {matchText(matches, pattern)}
         </span>
       ) : null}
       {!pending && onRevoke ? (
@@ -458,12 +478,15 @@ const NOT_CLEANED_LABEL: Record<WorktreeCleanupNotCleanedReason, string> = {
   "symbolic-link": "Symbolic link",
   "not-managed": "Not a styal worktree",
   "too-large": "Too many files to check",
+  "not-fully-checked": "Not fully checked",
 };
 
 function notCleanedTitle(row: WorktreeCleanupResultRow) {
   switch (row.reason) {
     case "frees-nothing":
       return "Its files share disk space with other files, such as a pnpm store, so deleting them frees nothing.";
+    case "not-fully-checked":
+      return "The check stopped before it reached everything in this worktree.";
     case "not-settled":
       return row.entry.holdingThread
         ? `“${row.entry.holdingThread.title}” has not settled.`
@@ -533,6 +556,12 @@ function PreviewResults({
             {showOthers ? "Hide them" : "Show them"}
           </Button>
         </div>
+      ) : null}
+      {preview.deadlineReached ? (
+        <p className="border-t px-3 py-2 text-xs text-muted-foreground sm:px-4">
+          The preview stopped after 30 seconds, so some worktrees were not fully checked and sizes
+          are lower bounds.
+        </p>
       ) : null}
       {preview.worktreesTruncated ? (
         <p className="border-t px-3 py-2 text-xs text-muted-foreground sm:px-4">
@@ -661,7 +690,7 @@ function ApprovalDialog({
 }: {
   open: boolean;
   list: WorktreeCleanupPatternList;
-  matches: ReadonlyMap<string, WorktreeCleanupMatches> | null;
+  matches: PreviewMatches | null;
   pathsByPattern: ReadonlyMap<string, readonly string[]> | null;
   checking: boolean;
   environmentId: EnvironmentId;
@@ -726,11 +755,7 @@ function ApprovalDialog({
                 <div key={pattern} className="flex items-start justify-between gap-3 px-3 py-2">
                   <code className="min-w-0 font-mono break-all select-text">{pattern}</code>
                   <span className="shrink-0 text-right text-muted-foreground tabular-nums">
-                    {matches
-                      ? matchText(matches.get(pattern))
-                      : checking
-                        ? "Checking…"
-                        : "Not checked"}
+                    {matches ? matchText(matches, pattern) : checking ? "Checking…" : "Not checked"}
                   </span>
                 </div>
               ))}

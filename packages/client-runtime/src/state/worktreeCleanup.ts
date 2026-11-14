@@ -1,12 +1,17 @@
 import {
   type WorktreeCleanupPreview,
   type WorktreeCleanupPreviewEntry,
+  type WorktreeCleanupPreviewInput,
+  type ProjectId,
+  type ServerSettings,
   WS_METHODS,
 } from "@t3tools/contracts";
+import * as Effect from "effect/Effect";
 import { matchesWorktreeCleanupPattern } from "@t3tools/shared/worktreeCleanupPatterns";
 import { Atom } from "effect/reactivity";
 
 import { EnvironmentRegistry } from "../connection/registry.ts";
+import { requestGuarded } from "../rpc/client.ts";
 import { createAtomCommandScheduler, createEnvironmentRpcCommand } from "./runtime.ts";
 
 /** Preview, approval and revocation of a project's `worktreeCleanup` patterns. */
@@ -21,9 +26,31 @@ export function createWorktreeCleanupAtoms<R, E>(
     },
   };
   return {
-    preview: createEnvironmentRpcCommand(runtime, {
+    /**
+     * Aborting `signal` interrupts the request, which stops the walk on the
+     * server; a preview reads many files, so a page that goes away cancels it.
+     */
+    preview: createEnvironmentRpcCommand<
+      EnvironmentRegistry | R,
+      E,
+      typeof WS_METHODS.projectsWorktreeCleanupPreview,
+      WorktreeCleanupPreviewInput & { readonly signal?: AbortSignal }
+    >(runtime, {
       label: "environment-data:worktree-cleanup:preview",
       tag: WS_METHODS.projectsWorktreeCleanupPreview,
+      execute: ({ signal, ...input }) => {
+        const request = requestGuarded(WS_METHODS.projectsWorktreeCleanupPreview, input);
+        if (signal === undefined) return request;
+        return Effect.raceFirst(
+          request,
+          Effect.callback<never>((resume) => {
+            const abort = () => resume(Effect.interrupt);
+            if (signal.aborted) abort();
+            else signal.addEventListener("abort", abort, { once: true });
+            return Effect.sync(() => signal.removeEventListener("abort", abort));
+          }),
+        );
+      },
     }),
     /** Approves the given patterns that styal.json declares now; user clients only. */
     approve: createEnvironmentRpcCommand(runtime, {
@@ -38,6 +65,19 @@ export function createWorktreeCleanupAtoms<R, E>(
       ...serial,
     }),
   };
+}
+
+/**
+ * This machine's approvals for one project. They are keyed by the project's
+ * id, never by its repository, so two checkouts of one repository stay apart.
+ */
+export function worktreeCleanupApprovalsFor(
+  settings: { readonly worktreeCleanupApprovals: ServerSettings["worktreeCleanupApprovals"] },
+  project: { readonly id: ProjectId },
+): Readonly<Record<string, { readonly approvedAt: string }>> | undefined {
+  return Object.hasOwn(settings.worktreeCleanupApprovals, project.id)
+    ? settings.worktreeCleanupApprovals[project.id]
+    : undefined;
 }
 
 export interface WorktreeCleanupPatternList {
@@ -115,9 +155,29 @@ export interface WorktreeCleanupPatternMatches {
  * What each pattern matches now in worktrees that could be cleaned. A path
  * matched by several patterns counts towards each of them.
  */
+/**
+ * Whether the preview looked at everything: every worktree reached, every
+ * walk finished and every candidate measured. When it did not, a pattern
+ * with no matches may still match something.
+ */
+export function worktreeCleanupPreviewComplete(preview: WorktreeCleanupPreview): boolean {
+  return (
+    !preview.worktreesTruncated &&
+    !preview.deadlineReached &&
+    preview.worktrees.every(
+      (entry) =>
+        (entry.status !== "eligible" && entry.reason !== "not-checked") ||
+        (!entry.entriesTruncated &&
+          entry.measurementComplete &&
+          !entry.kept.some((kept) => kept.reason === "too-large-to-verify")),
+    )
+  );
+}
+
 export function worktreeCleanupMatchesByPattern(
   preview: WorktreeCleanupPreview,
 ): ReadonlyMap<string, WorktreeCleanupPatternMatches> {
+  const complete = worktreeCleanupPreviewComplete(preview);
   const totals = new Map<
     string,
     {
@@ -131,7 +191,10 @@ export function worktreeCleanupMatchesByPattern(
   for (const entry of preview.worktrees) {
     if (entry.status !== "eligible") continue;
     for (const selected of entry.selected) {
+      const ancestors = selectedAncestors(entry, selected);
       for (const pattern of selected.patterns) {
+        // A path inside another match of the same pattern is already in that match's bytes.
+        if (ancestors.some((ancestor) => ancestor.patterns.includes(pattern))) continue;
         const total = totals.get(pattern) ?? {
           kinds: new Set<string>(),
           count: 0,
@@ -161,7 +224,7 @@ export function worktreeCleanupMatchesByPattern(
         count: total.count,
         worktrees: total.worktrees.size,
         bytes: total.bytes,
-        incomplete: total.incomplete,
+        incomplete: total.incomplete || !complete,
       },
     ]),
   );
@@ -189,6 +252,7 @@ export function worktreeCleanupPathsByPattern(
 export type WorktreeCleanupNotCleanedReason =
   | "frees-nothing"
   | "nothing-matched"
+  | "not-fully-checked"
   | "too-large"
   | "not-settled"
   | "missing"
@@ -222,8 +286,14 @@ export function worktreeCleanupResults(
   const rows = preview.worktrees.map((entry): WorktreeCleanupResultRow => {
     const approved = worktreeCleanupApprovedSelection(entry, approvedPatterns);
     const freedBytes = approved.reduce((sum, selected) => sum + (selected.freedBytes ?? 0), 0);
+    const tooLarge = entry.kept.some(
+      (kept) => kept.reason === "too-large-to-verify" && approvedPatterns.has(kept.pattern),
+    );
     const incomplete =
-      entry.entriesTruncated || approved.some((selected) => selected.freedBytes === null);
+      entry.entriesTruncated ||
+      !entry.measurementComplete ||
+      tooLarge ||
+      approved.some((selected) => selected.freedBytes === null);
     if (entry.status === "kept") {
       const reason =
         entry.reason === "unsettled-thread"
@@ -232,19 +302,14 @@ export function worktreeCleanupResults(
             ? "missing"
             : entry.reason === "symbolic-link"
               ? "symbolic-link"
-              : "not-managed";
+              : entry.reason === "not-checked"
+                ? "not-fully-checked"
+                : "not-managed";
       return { entry, freedBytes: 0, incomplete: false, reason };
     }
     if (approved.length === 0) {
-      const tooLarge = entry.kept.some(
-        (kept) => kept.reason === "too-large-to-verify" && approvedPatterns.has(kept.pattern),
-      );
-      return {
-        entry,
-        freedBytes: 0,
-        incomplete: false,
-        reason: tooLarge ? "too-large" : "nothing-matched",
-      };
+      const reason = tooLarge ? "too-large" : incomplete ? "not-fully-checked" : "nothing-matched";
+      return { entry, freedBytes: 0, incomplete, reason };
     }
     return {
       entry,
@@ -264,12 +329,33 @@ export function worktreeCleanupResults(
   };
 }
 
-/** Selected paths in a worktree that at least one approved pattern matches. */
+/**
+ * Selected paths in a worktree that at least one approved pattern matches,
+ * leaving out paths inside another approved path, whose bytes that path
+ * already counts.
+ */
 export function worktreeCleanupApprovedSelection(
   entry: WorktreeCleanupPreviewEntry,
   approvedPatterns: ReadonlySet<string>,
 ) {
-  return entry.selected.filter((selected) =>
-    selected.patterns.some((pattern) => approvedPatterns.has(pattern)),
+  const approved = (selected: WorktreeCleanupPreviewEntry["selected"][number]) =>
+    selected.patterns.some((pattern) => approvedPatterns.has(pattern));
+  return entry.selected.filter(
+    (selected) => approved(selected) && !selectedAncestors(entry, selected).some(approved),
   );
+}
+
+/** The selected paths that contain this one, nearest first. */
+function selectedAncestors(
+  entry: WorktreeCleanupPreviewEntry,
+  selected: WorktreeCleanupPreviewEntry["selected"][number],
+) {
+  const byPath = new Map(entry.selected.map((item) => [item.path, item]));
+  const ancestors: WorktreeCleanupPreviewEntry["selected"][number][] = [];
+  let parent = selected.insideSelected === null ? undefined : byPath.get(selected.insideSelected);
+  while (parent !== undefined && !ancestors.includes(parent)) {
+    ancestors.push(parent);
+    parent = parent.insideSelected === null ? undefined : byPath.get(parent.insideSelected);
+  }
+  return ancestors;
 }
