@@ -15,6 +15,7 @@ import ForkMigration0010 from "./ForkMigrations/010_HardwareLeases.ts";
 import ForkMigration0011 from "./ForkMigrations/011_ProjectionProjectsOrganization.ts";
 import ForkMigration0012 from "./ForkMigrations/012_DropComposerDrafts.ts";
 import ForkMigration0013 from "./ForkMigrations/013_WorktreeSetupState.ts";
+import ForkMigration0014 from "./ForkMigrations/014_DropWorktreeSetupState.ts";
 import { runMigrations } from "./Migrations.ts";
 
 export const FORK_MIGRATIONS_TABLE = "yngatech_sql_migrations";
@@ -36,6 +37,7 @@ export const forkMigrationEntries = [
   [11, "ProjectionProjectsOrganization", ForkMigration0011],
   [12, "DropComposerDrafts", ForkMigration0012],
   [13, "WorktreeSetupState", ForkMigration0013],
+  [14, "DropWorktreeSetupState", ForkMigration0014],
 ] as const;
 
 export const forkMigrationManifest = forkMigrationEntries.map(([id, name]) => [id, name] as const);

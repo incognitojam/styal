@@ -6423,8 +6423,6 @@ features:
       - A settling thread does not run the settle action while another thread in the same worktree is unsettled and not a subagent, or is working, waiting on a request, or has queued work.
       - An idle subagent that never settled does not hold the action back, so a settling parent still runs it.
       - A delegated child settling inside its active parent's worktree does not run the action.
-      - The repository teardown action strips only with explicit --strip-regenerable opt-in and only explicitly listed ignored regenerable paths in its own managed linked worktree using a clean Git environment, protects names without case or Unicode spelling sensitivity, skips symlinked candidates and nested checkouts, preserves scratch work and dev databases, and supports a deletion-free dry run.
-      - Dependency directories and setup markers survive stripping unless a regular ignored .styal/setup-completed marker allows setup to rerun; other eligible build output remains independent.
     rationale: Settle actions delete worktree state and stop dev servers, so running them for one thread can destroy another thread's work. Upstream's open fix only excludes subagents sharing a parent's worktree, which leaves sibling threads and running children exposed.
     implementation_paths:
       - apps/server/src/orchestration-v2/ThreadSettlementService.ts
@@ -6487,7 +6485,6 @@ features:
       - Setup and settle terminal output remains inspectable after exit, and later toolbar actions start on the first click without reusing the finite session.
       - Approve and run resumes the waiting lifecycle row through the same finite-command runner, checks the current file approval on the destination environment, and retains output and exit status.
       - The settle action runs as one finite command in a single settle terminal per thread, restarted in place by later settlements; a settlement during a running settle action starts nothing, and a thread whose worktree is the project checkout skips it without a work-log row.
-      - After styal-run setup succeeds with version-2 checkout evidence, loss of .styal/setup-completed reruns the same approved action once in the same Git-validated linked checkout (device, inode, and Git admin directory); older or replaced worktrees and changed actions never automatically retry; the latest setup attempt is stored per canonical real path in a pruning-independent table and committed atomically with its events; pending, failed, or interrupted setup suppresses recovery across shared threads and server restarts.
       - Recreating a managed worktree reruns approved setup before provider startup; a blocking failure or signal exit settles that start even when the effect worker would retry.
       - Workspace leases precede terminal thread locks; async setup completion observations are disposed independently of the startup wait.
       - Intake of terminal recovery from upstream PR 24156 must retain setup after recreation in its shared restoreMissingWorktree helper, including terminal-first recovery.
@@ -6498,13 +6495,9 @@ features:
       - apps/mobile/src/features/threads/ThreadRouteScreen.tsx
       - apps/mobile/src/features/threads/thread-work-log.tsx
       - apps/mobile/src/lib/threadActivity.ts
-      - apps/server/src/orchestration-v2/EventSink.ts
       - apps/server/src/orchestration-v2/ProviderTurnStartService.ts
       - apps/server/src/orchestration-v2/ThreadSettlementService.ts
-      - apps/server/src/persistence/ForkMigrations/013_WorktreeSetupState.ts
       - apps/server/src/project/ProjectSetupScriptRunner.ts
-      - apps/server/src/project/WorktreeSetupState.ts
-      - apps/server/src/project/setupCompletionEvidence.ts
       - apps/web/src/components/ChatView.logic.ts
       - apps/web/src/components/ChatView.tsx
       - apps/web/src/components/PersistentThreadTerminals.tsx
@@ -6538,7 +6531,6 @@ features:
       - apps/mobile/src/lib/threadActivity.test.ts
       - apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts
       - apps/server/src/project/ProjectSetupScriptRunner.test.ts
-      - apps/server/src/project/setupCompletionEvidence.test.ts
       - apps/server/src/terminal/Manager.test.ts
       - apps/web/src/components/ChatView.logic.test.ts
       - apps/web/src/components/ThreadTerminalDrawer.test.ts

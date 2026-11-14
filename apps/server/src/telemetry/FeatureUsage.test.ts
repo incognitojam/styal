@@ -36,10 +36,7 @@ const capture = (events: Array<unknown>) =>
     flush: Effect.void,
   });
 
-it.effect.each([
-  usage,
-  { feature: "worktree-setup-recovery", action: "start", source: "system" } as const,
-])("records completion once, with duration and no operation data: $feature", (usage) =>
+it.effect("records completion once, with duration and no operation data", () =>
   Effect.gen(function* () {
     const events: Array<unknown> = [];
     const result = yield* FeatureUsage.observe(

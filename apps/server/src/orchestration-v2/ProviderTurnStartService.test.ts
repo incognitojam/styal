@@ -84,7 +84,6 @@ function startWithMissingWorktree(
   },
   exists = false,
   setupResult: ProjectSetupScriptRunner.ProjectSetupScriptRunnerResult = { status: "no-script" },
-  completionExists = exists,
 ) {
   const threadId = ThreadId.make("thread_provider_turn_start_projection_failure");
   const runId = RunId.make("run_provider_turn_start_projection_failure");
@@ -155,10 +154,7 @@ function startWithMissingWorktree(
         Layer.mock(EventSink.EventSinkV2)({ writeIfRunCurrent }),
         IdAllocator.layer,
         Layer.succeed(FileSystem.FileSystem, {
-          exists: (target: string) =>
-            Effect.succeed(
-              target.endsWith("/.styal/setup-completed") ? completionExists : folderExists,
-            ),
+          exists: () => Effect.succeed(folderExists),
           realPath: (target: string) =>
             normalize(target) in realPaths
               ? Effect.succeed(realPaths[normalize(target)])
@@ -287,16 +283,9 @@ effectIt.effect.each([
     recreated: false,
   },
   {
-    label: "an existing worktree with completion evidence",
+    label: "an existing worktree",
     worktreePath: `${managedWorktreesDir}/project/existing`,
     exists: true,
-    recreated: false,
-  },
-  {
-    label: "an existing worktree missing completion evidence",
-    worktreePath: `${managedWorktreesDir}/project/existing`,
-    exists: true,
-    completionExists: false,
     recreated: false,
   },
   { label: "a relative path", worktreePath: "project/feature-restore", recreated: false },
@@ -306,18 +295,10 @@ effectIt.effect.each([
       input.worktreePath,
       input.realPaths,
       "exists" in input && input.exists === true,
-      undefined,
-      "completionExists" in input ? input.completionExists : "exists" in input && input.exists,
     );
     yield* harness.start;
     expect(harness.createWorktree).toHaveBeenCalledTimes(input.recreated ? 1 : 0);
-    expect(harness.runSetup).toHaveBeenCalledTimes(
-      input.recreated || ("completionExists" in input && input.completionExists === false) ? 1 : 0,
-    );
-    if ("completionExists" in input && input.completionExists === false)
-      expect(harness.runSetup).toHaveBeenCalledWith(
-        expect.objectContaining({ recoverIfEvidenceMissing: true }),
-      );
+    expect(harness.runSetup).toHaveBeenCalledTimes(input.recreated ? 1 : 0);
   }),
 );
 

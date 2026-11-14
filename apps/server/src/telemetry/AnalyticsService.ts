@@ -273,7 +273,6 @@ export const make = Effect.gen(function* () {
           desktopPreviewAppUsageVersion: 1,
           delegatedWakeUsageVersion: 1,
           mentionedTimeCheckUsageVersion: 1,
-          worktreeSetupRecoveryUsageVersion: 1,
           ...buildContext,
           telemetryChannel: ServerConfig.telemetryChannel,
           clientType,
