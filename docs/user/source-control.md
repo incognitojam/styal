@@ -233,6 +233,12 @@ The pull request panel names these as awaiting approval and offers **Approve wor
 Auto-merge does not start them. A watched pull request wakes its agent when runs wait for
 approval; the agent asks you to approve them unless you told it to.
 
+For GitHub, the pull request Summary (the pull request screen on mobile) lists the latest
+deployment to each environment, with links to open the environment and its logs when the
+deployment provides them. Only GitHub Deployments appear there: a workflow that posts a preview
+link in a comment does not create one. To list a preview, deploy it from a workflow job that sets
+an `environment`, or record it through GitHub's Deployments API.
+
 Pull request sharing is off by default. In Settings → Machines → Pull request sharing (Pull
 request routing on mobile), choose **Read PRs** or **Read and act** for each
 environment you trust to share its source control access.

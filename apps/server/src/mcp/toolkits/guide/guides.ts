@@ -81,6 +81,16 @@ Environment variables available to actions:
   \`$((STYAL_WORKSPACE_PORT + 1))\` and so on, instead of fixed ports so parallel worktrees do not
   collide.
 
+## Pull request deployments
+
+The Deployments section of styal's pull request panel shows GitHub Deployments made from the pull
+request's commits: the newest one for each environment, with its environment name, latest status,
+\`environment_url\` as **Open** and \`log_url\` as **Logs** (http and https URLs only). A workflow
+that only posts a preview URL in a comment creates no deployment, so nothing appears. To show a
+preview there, give the deploy job an \`environment:\`, or create a deployment and a deployment
+status through the GitHub Deployments API; a row appears without a URL, and \`url:\` or
+\`environment_url\` only adds **Open**.
+
 ## What stops a dev server
 
 | Rule | Scope | When | Covers |
