@@ -47,7 +47,7 @@ export function resolveRuntimeMode(
     return Effect.fail(
       new OrchestratorMcpFailure({
         code: "runtime_mode_escalation_denied",
-        message: `Child runtime mode ${resolved} is broader than parent mode ${parentMode}.`,
+        message: `Child runtime mode ${resolved} is broader than parent mode ${parentMode}. A thread you start never runs in a broader mode than yours, and only the user can change a thread's mode.`,
       }),
     );
   }
@@ -81,7 +81,7 @@ export function resolveInteractionMode(
     ? Effect.fail(
         new OrchestratorMcpFailure({
           code: "interaction_mode_escalation_denied",
-          message: `Child interaction mode ${resolved} is broader than parent mode ${parentMode}.`,
+          message: `Child interaction mode ${resolved} is broader than parent mode ${parentMode}. A thread you start never runs in a broader mode than yours, and only the user can change a thread's mode.`,
         }),
       )
     : Effect.succeed(resolved);

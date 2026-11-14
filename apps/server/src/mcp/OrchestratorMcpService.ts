@@ -1,4 +1,9 @@
 import {
+  describePendingRequests,
+  pendingRequestNeedsAttention,
+  isApprovalRequestKind,
+} from "./pendingRequests.ts";
+import {
   CommandId,
   type RunId,
   isProviderAvailable,
@@ -54,7 +59,6 @@ import {
   type ProviderInteractionMode,
   type ProviderOptionDescriptor,
   type ProviderOptionSelection,
-  ProviderRequestKind,
   type RuntimeMode,
   type ScheduledTask,
   type ScheduledTaskUpsertInput,
@@ -494,9 +498,7 @@ function endsTaskWait(result: OrchestratorMcpDelegateTaskResult): boolean {
   );
 }
 
-const isApprovalRequestKind = Schema.is(ProviderRequestKind);
-
-function pendingTaskApproval(
+function pendingTaskApprovals(
   child: Pick<OrchestrationV2ThreadProjection, "runs" | "nodes" | "runtimeRequests">,
   taskId: NodeId,
   originalRun: OrchestrationV2Run | undefined,
@@ -512,25 +514,22 @@ function pendingTaskApproval(
       )
       .map((run) => run.id),
   );
-  let approval: OrchestratorMcpDelegateTaskResult["pendingApproval"] = null;
-  let oldestCreatedAt = Infinity;
-  for (const request of child.runtimeRequests) {
+  const approvals: Array<NonNullable<OrchestratorMcpDelegateTaskResult["pendingApproval"]>> = [];
+  for (const request of child.runtimeRequests.toSorted(
+    (a, b) => DateTime.toEpochMillis(a.createdAt) - DateTime.toEpochMillis(b.createdAt),
+  )) {
     if (
       request.status !== "pending" ||
-      request.responseCapability.type !== "live" ||
+      !pendingRequestNeedsAttention(request) ||
       !isApprovalRequestKind(request.kind)
     ) {
       continue;
     }
     const runId = child.nodes.find((node) => node.id === request.nodeId)?.runId;
     if (runId === undefined || runId === null || !taskRunIds.has(runId)) continue;
-    const createdAt = DateTime.toEpochMillis(request.createdAt);
-    if (createdAt < oldestCreatedAt) {
-      oldestCreatedAt = createdAt;
-      approval = { requestId: request.id, kind: request.kind, runId };
-    }
+    approvals.push({ requestId: request.id, kind: request.kind, runId });
   }
-  return approval;
+  return approvals;
 }
 
 /** Every task `directAppOwnedChildTasks` can return, so callers load only those. */
@@ -1509,10 +1508,16 @@ const make = Effect.gen(function* () {
           "subagents",
           "providerThreads",
           "runtimeRequests",
+          "turnItems",
           "nodes",
         ],
         // Progress reads only active or undelivered tasks under the child.
-        { messageRoles: ["user"], omitSettledLeafNodes: true, omitSettledSubagents: true },
+        {
+          messageRoles: ["user"],
+          turnItemTypes: ["user_input_request", "approval_request"],
+          omitSettledLeafNodes: true,
+          omitSettledSubagents: true,
+        },
       )
       .pipe(Effect.mapError(threadManagementFailure));
     const childRun = delegatedTaskRun(childControls, task);
@@ -1605,6 +1610,23 @@ const make = Effect.gen(function* () {
         instanceId: task.providerInstanceId,
         model: task.model,
       };
+    const pendingApprovals =
+      isTerminalTaskStatus(status) || task.completionDelivery?.state === "disposed"
+        ? []
+        : pendingTaskApprovals(childControls, task.id, childRun);
+    const pendingApproval = pendingApprovals[0] ?? null;
+    const pendingRequests = isTerminalTaskStatus(status)
+      ? []
+      : describePendingRequests(
+          childControls.runtimeRequests.filter(
+            (request) =>
+              request.kind === "user_input" ||
+              pendingApprovals.some((approval) => approval.requestId === request.id),
+          ),
+          childControls.turnItems,
+          task.childThreadId,
+          threadLinkFor(scope, task.childThreadId),
+        );
     const result = {
       taskId: task.id,
       childThreadId: task.childThreadId,
@@ -1636,12 +1658,10 @@ const make = Effect.gen(function* () {
           (request) =>
             request.kind === "user_input" &&
             request.status === "pending" &&
-            request.responseCapability.type === "live",
+            pendingRequestNeedsAttention(request),
         ),
-      pendingApproval:
-        isTerminalTaskStatus(status) || task.completionDelivery?.state === "disposed"
-          ? null
-          : pendingTaskApproval(childControls, task.id, childRun),
+      pendingApproval,
+      ...(pendingRequests.length === 0 ? {} : { pendingRequests }),
       waitTimedOut,
     } satisfies OrchestratorMcpDelegateTaskResult;
     const response: OrchestratorMcpDelegateTaskResult =
@@ -3213,6 +3233,7 @@ const make = Effect.gen(function* () {
         .waitForThread({
           projectId: target.thread.projectId,
           threadId: input.threadId,
+          returnOnPendingRequest: scope.thread !== undefined,
           ...(input.runId === undefined ? {} : { runId: input.runId }),
           timeoutMs: Math.min(
             MAX_WAIT_TIMEOUT_MS,
@@ -3221,6 +3242,19 @@ const make = Effect.gen(function* () {
           ...(input.untilDelegatedWorkSettled === true ? { untilDelegatedWorkSettled: true } : {}),
         })
         .pipe(Effect.mapError(threadManagementFailure));
+      const pendingRequests = result.pendingRequests?.length
+        ? describePendingRequests(
+            result.pendingRequests,
+            (yield* threadManagement
+              .getThreadRecords(input.threadId, ["turnItems"], {
+                turnItemTypes: ["user_input_request", "approval_request"],
+              })
+              .pipe(Effect.mapError(threadManagementFailure))).turnItems,
+            input.threadId,
+            threadLinkFor(scope, input.threadId),
+            true,
+          )
+        : [];
       const status = result.run === null ? "idle" : runOutcome(result.run);
       const taskId = result.run?.delegatedTaskId;
       const ownedTask =
@@ -3243,12 +3277,15 @@ const make = Effect.gen(function* () {
             .pipe(Effect.mapError(threadManagementFailure))).runtimeRequests
         : [];
       const wakesCaller =
-        ownedTask && !childRequests.some((request) => request.status === "pending");
+        ownedTask &&
+        pendingRequests.length === 0 &&
+        !childRequests.some((request) => request.status === "pending");
       return {
         threadId: input.threadId,
         runId: result.run?.id ?? null,
         status,
         timedOut: result.timedOut,
+        ...(pendingRequests.length === 0 ? {} : { pendingRequests }),
         ...(wakesCaller ? { next: ORCHESTRATOR_MCP_RUNNING_TASK_NEXT } : {}),
         ...(result.resultRun === undefined
           ? {}

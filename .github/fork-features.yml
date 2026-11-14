@@ -1101,6 +1101,44 @@ features:
         - https://github.com/pingdotgg/t3code/pull/2829
       retire_when: The fork replaces this implementation with equivalent safe T3 Code migration in setup and Settings, with CLI history limited to setup, preserving computer scope, sequential preference review, per-computer opt-out, retry behavior, and pending-import locks, or deliberately retires those capabilities.
 
+  - id: delegated-wait-pending-requests
+    title: Agent waits return when the waited thread needs an answer or approval
+    status: maintained
+    tier: keep
+    prs: [1474]
+    invariants:
+      - When an agent thread calls t3_thread_wait, the wait also returns, with timedOut false and the run still active, as soon as a non-finished run of that thread has a pending question (live, asynchronous message, or server-asked input) or a pending approval. External clients, the CLI and linked-environment followers keep terminal-only waits.
+      - t3_thread_wait, delegate_task and task_status results carry pendingRequests only when there are some. Each entry names the request, whether it is a question or an approval, its text, and who can act; an approval says only the user can approve it, in the child's thread, and that a child never runs broader than its parent.
+      - hasPendingQuestion counts asynchronous Codex questions as well as live ones, so a delegate_task wait ends on them.
+      - t3_pending_request list adds questions and approvals as `requests`; read or respond on an approval refuses with the same account.
+    rationale: A parent blocked in a wait cannot see the question notification queued behind its own turn, and without a stated fact it guessed the child's state.
+    implementation_paths:
+      - apps/server/src/mcp/OrchestratorMcpService.ts
+      - apps/server/src/mcp/delegatedTaskModes.ts
+      - apps/server/src/mcp/pendingRequests.ts
+      - apps/server/src/mcp/threadAccess.ts
+      - apps/server/src/mcp/toolkits/thread/handlers.ts
+      - apps/server/src/mcp/toolkits/thread/tools.ts
+      - apps/server/src/orchestration-v2/ThreadManagementService.ts
+      - packages/contracts/src/orchestratorMcp.ts
+    upstream_paths:
+      - apps/server/src/mcp/OrchestratorMcpService.ts
+      - apps/server/src/mcp/delegatedTaskModes.ts
+      - apps/server/src/mcp/threadAccess.ts
+      - apps/server/src/mcp/toolkits/thread/handlers.ts
+      - apps/server/src/mcp/toolkits/thread/tools.ts
+      - apps/server/src/orchestration-v2/ThreadManagementService.ts
+      - packages/contracts/src/orchestratorMcp.ts
+    tests:
+      - apps/server/src/mcp/OrchestratorMcpService.test.ts
+      - apps/server/src/mcp/OrchestratorMcpToolkit.integration.test.ts
+      - apps/server/src/orchestration-v2/ThreadManagementService.test.ts
+    upstream:
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/24712
+      retire_when: Upstream's thread and task waits return on pending questions, asynchronous questions included, and on approvals, with results that say who can act.
+
   - id: delegated-wake-all
     title: Wake a parent once when a group of delegated tasks has finished
     status: maintained

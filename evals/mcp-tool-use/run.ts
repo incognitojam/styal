@@ -41,6 +41,8 @@ import { advertisedJsonSchema } from "../../apps/server/src/mcp/advertisedJsonSc
 import {
   EnvironmentId,
   ORCHESTRATOR_MCP_RUNNING_TASK_NEXT,
+  orchestratorMcpPendingApprovalNext,
+  orchestratorMcpPendingQuestionNext,
   PullRequestState,
   ThreadId,
 } from "@t3tools/contracts";
@@ -183,6 +185,13 @@ const McpToolUseExpect = Schema.Struct({
   /** No call may match any entry. */
   callsMustNot: Schema.optional(Schema.Array(McpToolUseCall)),
   notCalls: Schema.optional(Schema.Array(Schema.String)),
+  /**
+   * A `t3_pending_request` respond with these ids and a non-empty answer, before any further
+   * `t3_thread_wait` on `threadId`.
+   */
+  answerBeforeWait: Schema.optional(
+    Schema.Struct({ threadId: Schema.String, requestId: Schema.String }),
+  ),
   /** First calls of these tools happen in this order. */
   order: Schema.optional(Schema.Array(Schema.String)),
   minCalls: Schema.optional(Schema.Record(Schema.String, Schema.Number)),
@@ -1003,7 +1012,7 @@ export const buildMessages = (sample: Sample) => {
       const replayed =
         normalizeToolName(tool.name) === "orchestrator_capabilities"
           ? capabilities(sample, result)
-          : (sample.priorResults.get(prior) ?? result);
+          : (sample.priorResults.get(prior) ?? withPendingRequestText(result));
       push("user", toolResult(id, replayed));
     }
     if (turn.text) {
@@ -1332,6 +1341,40 @@ const withProductFields = (name: string, value: unknown, child: boolean): unknow
   }
 };
 
+/**
+ * T3's `next` for each pending question or approval a wait, task or request list reports. Cases
+ * give `requestId`, `kind` and `text`; `threadId` (or the result's) names the thread asking.
+ */
+export const withPendingRequestText = (value: unknown): unknown => {
+  if (!isRecord(value)) return value;
+  const owner = value.childThreadId ?? value.threadId;
+  const described = (entry: unknown) => {
+    if (!isRecord(entry) || entry.next !== undefined) return entry;
+    const { threadId: entryThreadId, ...rest } = entry;
+    const threadId = ThreadId.make(valueText(entryThreadId ?? owner));
+    const requestId = valueText(entry.requestId);
+    const next =
+      entry.kind === "approval"
+        ? orchestratorMcpPendingApprovalNext({
+            link: formatThreadLink({ environmentId: EVAL_ENVIRONMENT_ID, threadId }),
+          })
+        : orchestratorMcpPendingQuestionNext({ threadId, requestId });
+    return { ...rest, next };
+  };
+  const result: Record<string, unknown> = { ...value };
+  for (const key of ["pendingRequests", "requests"]) {
+    const entries = result[key];
+    if (Array.isArray(entries)) result[key] = entries.map(described);
+  }
+  return result;
+};
+
+/** A mock of `{ "byAction": { list: …, read: … } }` answers by the call's `action`. */
+const mockForCall = (mock: unknown, input: Readonly<Record<string, unknown>>): unknown =>
+  isRecord(mock) && isRecord(mock.byAction)
+    ? (mock.byAction[valueText(input.action)] ?? "default")
+    : mock;
+
 /** Cases mock a Claude caller, so the inherited fields follow the model under test. */
 const capabilities = ({ base }: Sample, value: unknown) =>
   isRecord(value)
@@ -1552,7 +1595,7 @@ const answerToolCall = Effect.fn("evaluateMcpToolUse.answerToolCall")(function* 
     if (found.length === 0) return toolResult(call.id, "No matching deferred tools found");
     return loadTools(tools, call.id, found);
   }
-  const mock = testCase.setup.mocks?.[name];
+  const mock = mockForCall(testCase.setup.mocks?.[name], isRecord(input) ? input : {});
   // T3 answers device calls from the world. A mock that is a T3 device error fails inside T3.
   const failure = deviceFailure(mock);
   const fromWorld = mock === undefined || mock === "default" || failure !== undefined;
@@ -1565,7 +1608,9 @@ const answerToolCall = Effect.fn("evaluateMcpToolUse.answerToolCall")(function* 
       call.id,
       name === "orchestrator_capabilities"
         ? capabilities(sample, mock)
-        : withProductFields(name, mock, testCase.setup.role === "delegated-child"),
+        : withPendingRequestText(
+            withProductFields(name, mock, testCase.setup.role === "delegated-child"),
+          ),
     );
   if (isT3Name(call.name)) {
     // T3 refuses a watch from a delegated child.
@@ -1660,6 +1705,12 @@ const withOptionsObject = (input: unknown) => {
   return { ...input, target: { ...input.target, options } };
 };
 
+/** An answer T3 delivers as text: a non-empty string, or a list (multi-select) holding one. */
+const hasAnswerText = (answer: unknown): boolean =>
+  typeof answer === "string"
+    ? answer.trim() !== ""
+    : Array.isArray(answer) && answer.some(hasAnswerText);
+
 export const gradeSample = (expect: McpToolUseCase["expect"], run: SampleRun) => {
   const checks: Array<{ readonly check: string; readonly pass: boolean }> = [];
   const add = (check: string, pass: boolean) => checks.push({ check, pass });
@@ -1672,6 +1723,26 @@ export const gradeSample = (expect: McpToolUseCase["expect"], run: SampleRun) =>
   for (const call of expect.calls ?? []) add(`calls ${label(call)}`, found(call));
   for (const call of expect.callsMustNot ?? []) add(`callsMustNot ${label(call)}`, !found(call));
   for (const tool of expect.notCalls ?? []) add(`notCalls ${tool}`, count(tool) === 0);
+  if (expect.answerBeforeWait !== undefined) {
+    const { threadId, requestId } = expect.answerBeforeWait;
+    const field = (input: unknown, key: string) => (isRecord(input) ? input[key] : undefined);
+    const answered = calls.findIndex(
+      (call) =>
+        call.tool === "t3_pending_request" &&
+        field(call.input, "action") === "respond" &&
+        field(call.input, "threadId") === threadId &&
+        field(call.input, "requestId") === requestId &&
+        isRecord(field(call.input, "answers")) &&
+        Object.values(field(call.input, "answers") as Record<string, unknown>).some(hasAnswerText),
+    );
+    const waitedFirst = calls.some(
+      (call, at) =>
+        call.tool === "t3_thread_wait" &&
+        field(call.input, "threadId") === threadId &&
+        (answered === -1 || at < answered),
+    );
+    add(`answerBeforeWait ${requestId}`, answered !== -1 && !waitedFirst);
+  }
   if (expect.order !== undefined) {
     const firsts = expect.order.map((tool) => calls.findIndex((call) => call.tool === tool));
     const inOrder = firsts.every((at, i) => at > (firsts[i - 1] ?? -1));

@@ -27,6 +27,7 @@ import * as TestClock from "effect/testing/TestClock";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { McpAttachmentInput } from "./attachment/input.ts";
+import { ThreadToolkit } from "./thread/tools.ts";
 import { McpSchema, McpServer, Tool } from "effect/ai";
 import { FetchHttpClient } from "effect/http";
 
@@ -166,6 +167,15 @@ it.effect("checks capability through the production registration", () =>
       ),
     ),
   ),
+);
+
+it.effect("a linked server from before request entries answers list with ids alone", () =>
+  Effect.gen(function* () {
+    const decode = Schema.decodeUnknownEffect(ThreadToolkit.tools.t3_pending_request.successSchema);
+    expect(yield* decode({ requestIds: ["request:old-peer"] })).toEqual({
+      requestIds: ["request:old-peer"],
+    });
+  }),
 );
 
 it.effect("an answered question reports already answered instead of not found", () => {

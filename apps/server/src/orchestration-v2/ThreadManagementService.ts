@@ -27,6 +27,7 @@ import {
   type OrchestrationV2ConversationMessage,
   type OrchestrationV2CreationSource,
   type OrchestrationV2Run,
+  type OrchestrationV2RuntimeRequest,
   type OrchestrationV2ThreadShellSnapshot,
   type OrchestrationV2ThreadProjection,
   type OrchestrationV2ThreadTranscript,
@@ -56,6 +57,8 @@ import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
+
+import { pendingRequestNeedsAttention } from "../mcp/pendingRequests.ts";
 
 import * as CommandReceiptStore from "./CommandReceiptStore.ts";
 import * as Orchestrator from "./Orchestrator.ts";
@@ -182,12 +185,14 @@ export interface ThreadManagementWaitInput {
    * completion delivery will wake it again, as a delegated task's result does.
    */
   readonly untilDelegatedWorkSettled?: boolean;
+  readonly returnOnPendingRequest?: boolean;
 }
 
 export interface ThreadManagementWaitResult {
   readonly threadId: ThreadId;
   readonly run: OrchestrationV2Run | null;
   readonly timedOut: boolean;
+  readonly pendingRequests?: ReadonlyArray<OrchestrationV2RuntimeRequest>;
   /** With `untilDelegatedWorkSettled`, once settled: the run with the thread's final answer. */
   readonly resultRun?: OrchestrationV2Run;
 }
@@ -919,7 +924,10 @@ const make = Effect.gen(function* () {
     const afterSequence = yield* orchestrator
       .getThreadEventSequence(input.threadId)
       .pipe(Effect.mapError(loadError));
-    const target = yield* getProjectThreadRecords(input, ["runs"]);
+    const waitFields = input.returnOnPendingRequest
+      ? (["runs", "nodes", "runtimeRequests"] as const)
+      : (["runs"] as const);
+    const target = yield* getProjectThreadRecords(input, waitFields);
     const selectedRun =
       input.runId === undefined
         ? latestRun(target)
@@ -971,9 +979,29 @@ const make = Effect.gen(function* () {
       return pending ? undefined : progress.resultRun;
     });
     const evaluate = Effect.fn("orchestrationV2.threadManagement.evaluate")(function* (
-      runs: ReadonlyArray<OrchestrationV2Run>,
+      records: Pick<OrchestrationV2ThreadProjection, "runs"> &
+        Partial<Pick<OrchestrationV2ThreadProjection, "nodes" | "runtimeRequests">>,
     ) {
-      const current = yield* outcome(runs);
+      const followed = yield* outcome(records.runs);
+      // Runs the wait cannot return without: the awaited run, its continuation, earlier active
+      // runs it is queued behind, and with untilDelegatedWorkSettled every follow-up run.
+      const pendingRequests = input.returnOnPendingRequest
+        ? (records.runtimeRequests ?? [])
+            .filter((request) => {
+              if (!pendingRequestNeedsAttention(request)) return false;
+              const runId = records.nodes?.find((node) => node.id === request.nodeId)?.runId;
+              return records.runs.some(
+                (run) =>
+                  run.id === runId &&
+                  !isTerminalRunStatus(run.status) &&
+                  (untilDelegatedWorkSettled || run.ordinal <= followed.run.ordinal),
+              );
+            })
+            .toSorted(
+              (a, b) => DateTime.toEpochMillis(a.createdAt) - DateTime.toEpochMillis(b.createdAt),
+            )
+        : [];
+      const current = { ...followed, pendingRequests };
       if (!current.settled || !untilDelegatedWorkSettled) {
         return { ...current, resultRun: undefined };
       }
@@ -983,11 +1011,12 @@ const make = Effect.gen(function* () {
     const settledResult = (current: Effect.Success<ReturnType<typeof evaluate>>) => ({
       threadId: input.threadId,
       run: current.run,
-      timedOut: !current.settled,
+      timedOut: !current.settled && current.pendingRequests.length === 0,
+      ...(current.pendingRequests.length === 0 ? {} : { pendingRequests: current.pendingRequests }),
       ...(current.resultRun === undefined ? {} : { resultRun: current.resultRun }),
     });
-    const initial = yield* evaluate(target.runs);
-    if (initial.settled) return settledResult(initial);
+    const initial = yield* evaluate(target);
+    if (initial.settled || initial.pendingRequests.length > 0) return settledResult(initial);
 
     // A declined continuation records no event, so its effect settling wakes
     // the wait too.
@@ -997,6 +1026,7 @@ const make = Effect.gen(function* () {
           [
             "run.updated",
             "thread.deleted",
+            ...(input.returnOnPendingRequest ? (["runtime-request.updated"] as const) : []),
             // What delegated work reads besides runs: tasks and their
             // deliveries, and a provider thread's background tasks.
             ...(untilDelegatedWorkSettled
@@ -1026,11 +1056,11 @@ const make = Effect.gen(function* () {
         : Stream.empty,
     ).pipe(
       Stream.mapEffect(() =>
-        getProjectThreadRecords(input, ["runs"]).pipe(
-          Effect.flatMap((current) => evaluate(current.runs)),
+        getProjectThreadRecords(input, waitFields).pipe(
+          Effect.flatMap((current) => evaluate(current)),
         ),
       ),
-      Stream.filter((current) => current.settled),
+      Stream.filter((current) => current.settled || current.pendingRequests.length > 0),
       Stream.runHead,
       Effect.timeoutOption(Duration.millis(Math.max(1, input.timeoutMs))),
     );
@@ -1039,7 +1069,7 @@ const make = Effect.gen(function* () {
     // The run may have reached a terminal status while the timeout was
     // winning the race; the final projection read decides what actually
     // happened, so only a still-active run counts as timed out.
-    return settledResult(yield* evaluate((yield* getProjectThreadRecords(input, ["runs"])).runs));
+    return settledResult(yield* evaluate(yield* getProjectThreadRecords(input, waitFields)));
   });
 
   const settleAfterRun: ThreadManagementServiceShape["settleAfterRun"] = Effect.fn(

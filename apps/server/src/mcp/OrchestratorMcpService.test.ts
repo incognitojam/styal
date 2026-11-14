@@ -351,7 +351,7 @@ describe("OrchestratorMcpService", () => {
       const childThreadId = ThreadId.make("thread:mcp-next-child");
       const taskId = NodeId.make("node:mcp-next-task");
       let finished = false;
-      let pendingRequest = false;
+      let pendingRequest: false | "question" | "approval" = false;
       const parentProjection = () =>
         ({
           thread: { id: parentThreadId },
@@ -385,9 +385,30 @@ describe("OrchestratorMcpService", () => {
           messages: [],
           subagents: [],
           providerThreads: [],
-          runtimeRequests: pendingRequest ? [{ status: "pending" }] : [],
+          runtimeRequests: pendingRequest
+            ? [
+                {
+                  id: "request:next",
+                  kind: pendingRequest === "question" ? "user_input" : "command",
+                  nodeId: "node:next",
+                  status: "pending",
+                  responseCapability: { type: "message" },
+                  createdAt: DateTime.makeUnsafe(0),
+                },
+              ]
+            : [],
           nodes: [],
-          turnItems: [],
+          turnItems: pendingRequest
+            ? [
+                pendingRequest === "question"
+                  ? {
+                      type: "user_input_request",
+                      requestId: "request:next",
+                      questions: [{ header: "Choice", question: "Which target?" }],
+                    }
+                  : { type: "approval_request", requestId: "request:next", prompt: "Run build?" },
+              ]
+            : [],
         }) as unknown as OrchestrationV2ThreadProjection;
       const layerDependencies = Layer.mergeAll(
         NodeServices.layer,
@@ -401,7 +422,18 @@ describe("OrchestratorMcpService", () => {
             Effect.succeed({
               threadId: childThreadId,
               run: childRun() as unknown as OrchestrationV2ThreadProjection["runs"][number],
-              timedOut: !finished,
+              timedOut: !finished && !pendingRequest,
+              ...(pendingRequest
+                ? {
+                    pendingRequests: childProjection().runtimeRequests.map((request) => ({
+                      ...request,
+                      responseCapability:
+                        pendingRequest === "approval"
+                          ? { type: "live" as const, providerSessionId: "session:next" }
+                          : request.responseCapability,
+                    })) as never,
+                  }
+                : {}),
             }),
           dispatch: () => Effect.succeed({} as never),
         }),
@@ -438,10 +470,22 @@ describe("OrchestratorMcpService", () => {
         assert.equal(waiting.next, ORCHESTRATOR_MCP_RUNNING_TASK_NEXT);
 
         // A child waiting on a question or approval needs an answer, not a wake.
-        pendingRequest = true;
+        pendingRequest = "question";
         const asking = yield* service.waitForThread(scope, { threadId: childThreadId });
-        assert.isTrue(asking.timedOut);
+        assert.isFalse(asking.timedOut);
         assert.notProperty(asking, "next");
+        assert.equal(asking.pendingRequests?.[0]?.text, "Choice\nWhich target?");
+        assert.equal(asking.pendingRequests?.[0]?.kind, "question");
+        assert.include(asking.pendingRequests?.[0]?.next ?? "", "returns at once");
+        const questionStatus = yield* service.taskStatus(scope, taskId);
+        assert.isTrue(questionStatus.hasPendingQuestion);
+        // Only a wait result says that waiting again returns at once.
+        assert.notInclude(questionStatus.pendingRequests?.[0]?.next ?? "", "returns at once");
+        pendingRequest = "approval";
+        const approval = yield* service.waitForThread(scope, { threadId: childThreadId });
+        assert.equal(approval.pendingRequests?.[0]?.kind, "approval");
+        assert.include(approval.pendingRequests?.[0]?.next ?? "", "only the user can");
+        assert.notProperty(approval, "next");
         pendingRequest = false;
 
         finished = true;
@@ -1242,6 +1286,7 @@ describe("OrchestratorMcpService provider resolution", () => {
     "nested child completion",
     "child run completion",
     "child question",
+    "child message question",
     "child approval",
   ] as const)("a task wait still returns on %s", (wake) =>
     Effect.gen(function* () {
@@ -1254,7 +1299,7 @@ describe("OrchestratorMcpService provider resolution", () => {
       const eventType =
         wake === "child run completion"
           ? "run.updated"
-          : wake === "child question" || wake === "child approval"
+          : wake.includes("question") || wake === "child approval"
             ? "runtime-request.updated"
             : "subagent.updated";
       const terminal = wake.endsWith("completion");
@@ -1296,9 +1341,11 @@ describe("OrchestratorMcpService provider resolution", () => {
                   {
                     id: "request:mcp-wait-answer",
                     nodeId: childRootId,
-                    kind: wake === "child question" ? "user_input" : "command",
+                    kind: wake.includes("question") ? "user_input" : "command",
                     status: "pending",
-                    responseCapability: { type: "live" },
+                    responseCapability: {
+                      type: wake === "child message question" ? "message" : "live",
+                    },
                     createdAt: DateTime.makeUnsafe(0),
                   },
                 ]
@@ -1374,7 +1421,7 @@ describe("OrchestratorMcpService provider resolution", () => {
           if (wake === "parent completion") assert.equal(result.summary, "done");
         } else {
           assert.equal(result.status, "running");
-          if (wake === "child question") assert.isTrue(result.hasPendingQuestion);
+          if (wake.includes("question")) assert.isTrue(result.hasPendingQuestion);
           else {
             assert.deepEqual(result.pendingApproval, {
               requestId: "request:mcp-wait-answer",
