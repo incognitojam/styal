@@ -15,7 +15,7 @@ import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import { threadHoldsWorktree } from "../orchestration-v2/ThreadSettlementService.ts";
 import { makeIsManagedWorktreePath } from "../worktreesDirectory.ts";
-import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
+import { makeInspectGit } from "./gitInspection.ts";
 import * as Approvals from "./Approvals.ts";
 import { makeSelect } from "./Selection.ts";
 
@@ -34,7 +34,7 @@ const make = Effect.gen(function* () {
   const projects = yield* ProjectService.ProjectService;
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const git = yield* GitVcsDriver.GitVcsDriver;
+  const inspectGit = yield* makeInspectGit;
   const managed = yield* makeIsManagedWorktreePath;
   const select = yield* makeSelect;
   const preview = Effect.fn("WorktreeCleanup.preview")(function* (
@@ -75,8 +75,9 @@ const make = Effect.gen(function* () {
         status: "eligible",
         selected: [],
         kept: [],
-        freedBytes: 0,
-        truncated: false,
+        freedBytes: null,
+        entriesTruncated: false,
+        measurementComplete: false,
       };
       if (
         path.resolve(worktreePath) === path.resolve(project.value.workspaceRoot) ||
@@ -97,13 +98,12 @@ const make = Effect.gen(function* () {
         worktrees.push({ ...entry, status: "kept", reason: "missing" });
         continue;
       }
-      const probe = yield* git
-        .execute({
-          operation: "WorktreeCleanup.verify",
-          cwd: worktreePath,
-          args: ["rev-parse", "--show-toplevel", "--git-common-dir", "--git-dir"],
-        })
-        .pipe(Effect.option);
+      const probe = yield* inspectGit(worktreePath, [
+        "rev-parse",
+        "--show-toplevel",
+        "--git-common-dir",
+        "--git-dir",
+      ]).pipe(Effect.option);
       const lines = Option.isSome(probe) ? probe.value.stdout.trim().split("\n") : [];
       if (
         lines.length !== 3 ||
@@ -114,7 +114,12 @@ const make = Effect.gen(function* () {
         continue;
       }
       const holding = threads.find((thread) => threadHoldsWorktree(thread, now));
-      const selection = yield* select(worktreePath, patterns).pipe(
+      const selection = yield* select(
+        worktreePath,
+        patterns,
+        review.declared.map((entry) => entry.pattern),
+        approved,
+      ).pipe(
         Effect.mapError(
           () =>
             new WorktreeCleanupError({
@@ -126,10 +131,6 @@ const make = Effect.gen(function* () {
       worktrees.push({
         ...entry,
         ...selection,
-        selected: selection.selected.map((entry) => ({
-          ...entry,
-          patternStatus: approved.has(entry.pattern) ? "approved" : "pending",
-        })),
         ...(holding === undefined
           ? {}
           : {
@@ -143,7 +144,7 @@ const make = Effect.gen(function* () {
       review,
       patterns,
       worktrees,
-      truncated: groups.size > 200 || worktrees.some((entry) => entry.truncated),
+      worktreesTruncated: groups.size > 200,
     };
   });
   return WorktreeCleanup.of({ preview });

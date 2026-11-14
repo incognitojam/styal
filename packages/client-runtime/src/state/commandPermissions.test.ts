@@ -7,6 +7,7 @@ import type { RpcSession } from "../rpc/session.ts";
 import { describe, expect, it } from "@effect/vitest";
 import { vi } from "vite-plus/test";
 import {
+  AuthFilesystemReadScope,
   AuthAccessReadScope,
   AuthAccessWriteScope,
   AuthOrchestrationOperateScope,
@@ -129,6 +130,33 @@ describe("command permissions", () => {
         );
       }),
     ),
+  );
+
+  it.effect("requires filesystem read permission for cleanup previews", () =>
+    Effect.gen(function* () {
+      const registry = yield* setup;
+      const preview = createCommandPermissions(runtime, WS_METHODS.projectsWorktreeCleanupPreview);
+      registry.set(
+        sessions(env),
+        AsyncResult.success({
+          ...grant(false),
+          scopes: [AuthOrchestrationReadScope],
+          permissions: [AuthOrchestrationReadScope],
+        }),
+      );
+      expect((yield* preview.authorize(registry, env).pipe(Effect.flip)).requiredPermission).toBe(
+        AuthFilesystemReadScope,
+      );
+      registry.set(
+        sessions(env),
+        AsyncResult.success({
+          ...grant(false),
+          scopes: [AuthFilesystemReadScope],
+          permissions: [AuthFilesystemReadScope],
+        }),
+      );
+      yield* preview.authorize(registry, env);
+    }).pipe(Effect.scoped),
   );
 
   it.effect.each([

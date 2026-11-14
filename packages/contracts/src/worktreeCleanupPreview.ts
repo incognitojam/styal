@@ -40,6 +40,11 @@ export const WorktreeCleanupReview = Schema.Struct({
   ),
 });
 export type WorktreeCleanupReview = typeof WorktreeCleanupReview.Type;
+export const WorktreeCleanupApproveResult = Schema.Struct({
+  ...WorktreeCleanupReview.fields,
+  notDeclared: Schema.Array(Schema.String),
+});
+export type WorktreeCleanupApproveResult = typeof WorktreeCleanupApproveResult.Type;
 export const WorktreeCleanupPreviewInput = Schema.Struct({
   projectId: ProjectId,
   list: Schema.Literals(["approved", "declared"]),
@@ -48,6 +53,7 @@ export type WorktreeCleanupPreviewInput = typeof WorktreeCleanupPreviewInput.Typ
 export const WorktreeCleanupSelected = Schema.Struct({
   path: Schema.String,
   pattern: Schema.String,
+  patterns: Schema.Array(Schema.String),
   patternStatus: Schema.Literals(["approved", "pending"]),
   kind: Schema.Literals(["file", "directory"]),
   freedBytes: Schema.NullOr(Schema.Number),
@@ -62,6 +68,7 @@ export const WorktreeCleanupKept = Schema.Struct({
     "symbolic-link",
     "mount-point",
     "nested-checkout",
+    "too-large-to-verify",
   ]),
   detail: Schema.optionalKey(Schema.String),
 });
@@ -77,13 +84,14 @@ export const WorktreeCleanupPreviewEntry = Schema.Struct({
   selected: Schema.Array(WorktreeCleanupSelected),
   kept: Schema.Array(WorktreeCleanupKept),
   freedBytes: Schema.NullOr(Schema.Number),
-  truncated: Schema.Boolean,
+  entriesTruncated: Schema.Boolean,
+  measurementComplete: Schema.Boolean,
 });
 export type WorktreeCleanupPreviewEntry = typeof WorktreeCleanupPreviewEntry.Type;
 export const WorktreeCleanupPreview = Schema.Struct({
   review: WorktreeCleanupReview,
   patterns: Schema.Array(Schema.String),
   worktrees: Schema.Array(WorktreeCleanupPreviewEntry),
-  truncated: Schema.Boolean,
+  worktreesTruncated: Schema.Boolean,
 });
 export type WorktreeCleanupPreview = typeof WorktreeCleanupPreview.Type;

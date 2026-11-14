@@ -458,6 +458,7 @@ it.effect("denies cleanup list approval before the handler without settings perm
             Effect.sync(() => {
               handled = true;
               return {
+                notDeclared: [],
                 status: "approved" as const,
                 declared: [{ pattern: "dist", status: "approved" as const }],
                 approvedNotDeclared: [],

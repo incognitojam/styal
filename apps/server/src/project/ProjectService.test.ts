@@ -547,7 +547,17 @@ it.layer(layerTest)("ProjectService", (it) => {
         workspaceRoot: "/work/delete-retry",
       });
       const input = { commandId: CommandId.make("command:delete-retry:delete"), projectId };
+      const settings = yield* ServerSettings.ServerSettingsService;
+      yield* settings.updateSettings({
+        worktreeCleanupApprovals: {
+          [projectId]: { dist: { approvedAt: "2026-01-01T00:00:00.000Z" } },
+          other: { target: { approvedAt: "2026-01-01T00:00:00.000Z" } },
+        },
+      });
       const deleted = yield* service.delete(input);
+      assert.deepEqual((yield* settings.getSettings).worktreeCleanupApprovals, {
+        other: { target: { approvedAt: "2026-01-01T00:00:00.000Z" } },
+      });
       assert.deepEqual(yield* service.delete(input), deleted);
       const events = yield* sql<{ readonly command_id: string }>`
         SELECT command_id FROM orchestration_events

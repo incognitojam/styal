@@ -15,6 +15,10 @@ describe("worktree cleanup patterns", () => {
     "a/./b",
     "a\\b",
     "!dist",
+    "?*",
+    "cache[ab]",
+    "cache]",
+    "cache{a,b}",
     "a**b",
     "a/**b/c",
     "*",
@@ -31,6 +35,8 @@ describe("worktree cleanup patterns", () => {
   });
   it.each([
     ["dist", "dist", true],
+    ["dist", "Dist", false],
+    ["café", "cafe\u0301", false],
     ["dist", "dist\n", false],
     ["dist", "apps/dist", false],
     ["**/dist", "dist", true],
@@ -45,7 +51,7 @@ describe("worktree cleanup patterns", () => {
     ["**/dist", ".git/dist", false],
     ["**/dist", "a/.git/dist", false],
     ["[ab]", "a", false],
-    ["[ab]", "[ab]", true],
+    ["[ab]", "[ab]", false],
     ["dist", "../dist", false],
     ["**/dist", "/dist", false],
   ])("matches %j against %j as %j", (pattern, path, matches) => {

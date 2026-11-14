@@ -1,3 +1,4 @@
+import { makeMeasureSubtree } from "./worktreeCleanup/measureSubtree.ts";
 import {
   GitCommandError,
   OrchestrationV2AppThreadJson,
@@ -323,14 +324,13 @@ const make = Effect.gen(function* () {
     Effect.orElseSucceed(() => null),
   );
 
+  const measureSubtree = yield* makeMeasureSubtree;
   const measureWorktree = Effect.fn("storageCleanup.measureWorktree")(
     function* (worktreePath: string, targetPath?: string) {
       const root = yield* fs.realPath(worktreePath);
       const skipped = yield* sharedPnpmVirtualStore(root);
-      const start = targetPath === undefined ? root : path.resolve(targetPath);
-      if (start !== root && !inside(root, start)) return null;
-      if (start !== root && skipped !== null && inside(skipped, start)) return 0;
-      const pending = [start];
+      if (targetPath !== undefined) return yield* measureSubtree(root, targetPath, skipped);
+      const pending = [root];
       let entries = 1;
       let bytes = 0;
       while (pending.length > 0) {

@@ -82,6 +82,8 @@ export function worktreeCleanupPatternProblem(pattern: string): string | null {
   else if (pattern.includes("\\")) rule = "use forward slashes";
   // Per-pattern approval needs independent patterns: removing a negation or ordered rule could delete more.
   else if (pattern.includes("!")) rule = "negation is not supported";
+  else if (["?", "[", "]", "{", "}"].some((character) => pattern.includes(character)))
+    rule = "only * and ** wildcards are supported; ?, [, ], { and } are not allowed";
   else if (segments.some((segment) => segment === "" || segment === "." || segment === ".."))
     rule = "use relative nonempty segments without . or ..";
   else if (segments.some((segment) => segment.includes("**") && segment !== "**"))

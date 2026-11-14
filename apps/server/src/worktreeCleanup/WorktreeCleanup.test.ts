@@ -1,3 +1,5 @@
+import * as Deferred from "effect/Deferred";
+import * as Fiber from "effect/Fiber";
 import * as StorageCleanup from "../storageCleanup.ts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as Stream from "effect/Stream";
@@ -29,7 +31,8 @@ import * as ProjectService from "../project/ProjectService.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as Approvals from "./Approvals.ts";
 import * as WorktreeCleanup from "./WorktreeCleanup.ts";
-import { makeSelect } from "./Selection.ts";
+import { makeSelect, SelectionLimits } from "./Selection.ts";
+import { TestClock } from "effect/testing";
 
 function shell(overrides: Partial<OrchestrationV2ThreadShell> = {}): OrchestrationV2ThreadShell {
   return {
@@ -108,6 +111,7 @@ const fixture = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
   const config = yield* ServerConfig.ServerConfig;
   const git = yield* GitVcsDriver.GitVcsDriver;
+  yield* fs.makeDirectory(`${process.cwd()}/.scratch`, { recursive: true });
   const root = yield* fs.makeTempDirectoryScoped({
     directory: `${process.cwd()}/.scratch`,
     prefix: "cleanup-preview-",
@@ -137,6 +141,61 @@ const fixture = Effect.gen(function* () {
 });
 
 describe("WorktreeCleanup", () => {
+  it.effect("ignores an inherited index when protecting tracked files inside ignored output", () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      yield* f.write("dist/tracked", "source");
+      yield* f.command(f.worktree, ["add", "-f", "dist/tracked"]);
+      const select = yield* makeSelect;
+      const previous = process.env.GIT_INDEX_FILE;
+      process.env.GIT_INDEX_FILE = `${f.root}/nonexistent-index`;
+      try {
+        const result = yield* select(f.worktree, ["dist"]);
+        assert.equal(result.selected.length, 0);
+        assert.equal(result.kept[0]?.reason, "contains-tracked-files");
+      } finally {
+        if (previous === undefined) delete process.env.GIT_INDEX_FILE;
+        else process.env.GIT_INDEX_FILE = previous;
+      }
+    }).pipe(Effect.provide(dependencies), Effect.scoped),
+  );
+
+  it.effect("keeps a bare repository at any depth of a matched directory", () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      yield* f.write("dist/deep/placeholder");
+      yield* f.command(`${f.worktree}/dist/deep`, ["init", "--bare", "archive.git"]);
+      const select = yield* makeSelect;
+      const result = yield* select(f.worktree, ["dist"]);
+      assert.equal(result.selected.length, 0);
+      assert.equal(result.kept[0]?.reason, "nested-checkout");
+      assert.equal(result.kept[0]?.detail, "dist/deep/archive.git");
+      yield* f.write("node_modules/HEAD");
+      yield* f.fs.makeDirectory(`${f.worktree}/node_modules/refs`);
+      yield* f.fs.symlink(`${f.root}/missing-objects`, `${f.worktree}/node_modules/objects`);
+      const dangling = yield* select(f.worktree, ["node_modules"]);
+      assert.equal(dangling.selected.length, 0);
+      assert.equal(dangling.kept[0]?.reason, "nested-checkout");
+    }).pipe(Effect.provide(dependencies), Effect.scoped),
+  );
+
+  it.effect("marks a 1001-file preview as entry-truncated with incomplete totals", () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      yield* Effect.forEach(
+        Array.from({ length: 1001 }, (_, i) => i),
+        (i) => f.write(`file-${i}.tsbuildinfo`),
+        { concurrency: 32, discard: true },
+      );
+      const select = yield* makeSelect;
+      const result = yield* select(f.worktree, ["*.tsbuildinfo"]);
+      assert.isTrue(result.entriesTruncated);
+      assert.isFalse(result.measurementComplete);
+      assert.isNull(result.freedBytes);
+      assert.equal(result.selected.length, 1000);
+    }).pipe(Effect.provide(dependencies), Effect.scoped),
+  );
+
   it.effect(
     "selects ignored outputs whole and keeps work, links and nested checkouts without changing files",
     () =>
@@ -189,7 +248,7 @@ describe("WorktreeCleanup", () => {
           },
         );
         assert.isAbove(result.freedBytes!, 0);
-        assert.isFalse(result.truncated);
+        assert.isFalse(result.entriesTruncated);
         assert.equal(
           yield* f.fs.readFileString(`${f.worktree}/node_modules/pkg/index.js`),
           "synthetic payload",
@@ -236,6 +295,81 @@ describe("WorktreeCleanup", () => {
         const whole = yield* select(f.worktree, ["node_modules"]);
         assert.equal(whole.freedBytes, manifestBlocks + (sameDevice ? 0 : blocks));
       }
+    }).pipe(Effect.provide(dependencies), Effect.scoped),
+  );
+
+  it.effect("verifies the reviewer's 100002-file candidate under the raised limit", () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      yield* f.write("node_modules/template");
+      const info = yield* f.fs.stat(`${f.worktree}/node_modules/template`);
+      const regular = yield* f.fs.readLink(`${f.worktree}/node_modules/template`).pipe(Effect.flip);
+      const storage = yield* StorageCleanup.StorageCleanup;
+      const select = yield* makeSelect.pipe(
+        Effect.provideService(StorageCleanup.StorageCleanup, {
+          ...storage,
+          measureWorktree: () => Effect.succeed(0),
+        }),
+        Effect.provideService(FileSystem.FileSystem, {
+          ...f.fs,
+          readDirectory: (file) =>
+            file === `${f.worktree}/node_modules`
+              ? Effect.succeed(Array.from({ length: 100002 }, (_, i) => `synthetic-${i}`))
+              : f.fs.readDirectory(file),
+          readLink: (file) =>
+            file.includes("/synthetic-") ? Effect.fail(regular) : f.fs.readLink(file),
+          stat: (file) => (file.includes("/synthetic-") ? Effect.succeed(info) : f.fs.stat(file)),
+        }),
+      );
+      const result = yield* select(f.worktree, ["node_modules"]);
+      assert.equal(result.selected.length, 1);
+      assert.isTrue(result.measurementComplete);
+    }).pipe(Effect.provide(dependencies), Effect.scoped),
+  );
+
+  it.effect(
+    "keeps a candidate when verification exceeds its budget instead of silently omitting it",
+    () =>
+      Effect.gen(function* () {
+        const f = yield* fixture;
+        for (let i = 0; i < 10; i++) yield* f.write(`dist/file-${i}`);
+        const select = yield* makeSelect.pipe(
+          Effect.provideService(SelectionLimits, {
+            verificationEntries: 5,
+            traversalEntries: 1000,
+            reportEntries: 1000,
+          }),
+        );
+        const result = yield* select(f.worktree, ["dist"]);
+        assert.equal(result.selected.length, 0);
+        assert.equal(result.kept[0]?.reason, "too-large-to-verify");
+        assert.include(result.kept[0]?.detail ?? "", "4 files");
+        assert.isFalse(result.measurementComplete);
+      }).pipe(Effect.provide(dependencies), Effect.scoped),
+  );
+
+  it.effect("keeps a timed-out candidate and marks totals incomplete", () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      yield* f.write("dist/output");
+      const entered = yield* Deferred.make<void>();
+      const storage = yield* StorageCleanup.StorageCleanup;
+      const select = yield* makeSelect.pipe(
+        Effect.provideService(StorageCleanup.StorageCleanup, {
+          ...storage,
+          measureWorktree: () =>
+            Deferred.succeed(entered, undefined).pipe(Effect.andThen(Effect.never)),
+        }),
+      );
+      const running = yield* select(f.worktree, ["dist"]).pipe(Effect.forkChild);
+      yield* Deferred.await(entered);
+      yield* TestClock.adjust("30 seconds");
+      const result = yield* Fiber.join(running);
+      assert.equal(result.selected.length, 0);
+      assert.equal(result.kept[0]?.reason, "too-large-to-verify");
+      assert.include(result.kept[0]?.detail ?? "", "1 files");
+      assert.isNull(result.freedBytes);
+      assert.isFalse(result.measurementComplete);
     }).pipe(Effect.provide(dependencies), Effect.scoped),
   );
 
@@ -306,7 +440,7 @@ describe("WorktreeCleanup", () => {
           updatedAt: "2026-01-01T00:00:00.000Z",
           deletedAt: null,
         };
-        const threads = [
+        let threads = [
           shell({ worktreePath: f.worktree, settledOverride: "settled" }),
           shell({ id: ThreadId.make("empty"), worktreePath: empty, settledOverride: "settled" }),
           shell({ id: ThreadId.make("busy"), worktreePath: busy }),
@@ -389,6 +523,32 @@ describe("WorktreeCleanup", () => {
             `${f.root}/styal.json`,
             JSON.stringify({ worktreeCleanup: ["dist", "node_modules"] }),
           );
+          yield* f.write("info-only/output");
+          yield* f.fs.writeFileString(
+            `${f.worktree}/.gitignore`,
+            "dist/\nnode_modules/\ninfo-only/\n",
+          );
+          yield* f.fs.writeFileString(
+            `${f.root}/styal.json`,
+            JSON.stringify({ worktreeCleanup: ["info-only"] }),
+          );
+          yield* approvals.approve({ ...input, patterns: ["info-only"] });
+          yield* f.fs.writeFileString(
+            `${f.root}/styal.json`,
+            JSON.stringify({ worktreeCleanup: ["**/info-only", "info-only"] }),
+          );
+          const overlapping = yield* cleanup.preview({ ...input, list: "declared" });
+          const overlap = overlapping.worktrees.find((entry) => entry.worktreePath === f.worktree)!
+            .selected[0]!;
+          assert.deepEqual(overlap.patterns, ["**/info-only", "info-only"]);
+          assert.equal(overlap.pattern, "info-only");
+          assert.equal(overlap.patternStatus, "approved");
+          assert.isFalse(overlapping.worktreesTruncated);
+          yield* approvals.revoke({ ...input, pattern: "info-only" });
+          yield* f.fs.writeFileString(
+            `${f.root}/styal.json`,
+            JSON.stringify({ worktreeCleanup: ["dist", "node_modules"] }),
+          );
           const pending = yield* approvals.review(input);
           assert.equal(pending.status, "pending");
           assert.deepEqual(pending.declared, [
@@ -453,10 +613,12 @@ describe("WorktreeCleanup", () => {
             (yield* approvals.revoke({ ...input, pattern: "dist" })).approvedNotDeclared.length,
             0,
           );
-          assert.equal(
-            (yield* approvals.approve({ ...input, patterns: ["dist", "toString"] })).status,
-            "pending",
-          );
+          const notDeclared = yield* approvals.approve({
+            ...input,
+            patterns: ["dist", " toString ", "dist"],
+          });
+          assert.equal(notDeclared.status, "pending");
+          assert.deepEqual(notDeclared.notDeclared, ["dist", "toString"]);
           assert.equal((yield* approvals.review(input)).approvedNotDeclared.length, 0);
           yield* approvals.approve({ ...input, patterns: ["node_modules"] });
           const forgotten = yield* approvals.revoke({ ...input, pattern: null });
@@ -465,7 +627,128 @@ describe("WorktreeCleanup", () => {
           const saved = yield* (yield* Settings.ServerSettingsService).getSettings;
           assert.deepEqual(saved.worktreeCleanupApprovals, {});
           assert.deepEqual(saved.projectFileActionApprovals, {});
+          threads = Array.from({ length: 201 }, (_, index) =>
+            shell({
+              id: ThreadId.make(`cap-${index}`),
+              worktreePath: `${f.root}/unmanaged-${index}`,
+            }),
+          );
+          const capped = yield* cleanup.preview({ ...input, list: "declared" });
+          assert.isTrue(capped.worktreesTruncated);
+          assert.equal(capped.worktrees.length, 200);
+          assert.isTrue(capped.worktrees.every((entry) => !entry.entriesTruncated));
+          assert.isTrue(
+            capped.worktrees.every(
+              (entry) => entry.freedBytes === null && !entry.measurementComplete,
+            ),
+          );
         }).pipe(Effect.provide(service));
       }).pipe(Effect.provide(dependencies), Effect.scoped),
   );
 });
+
+const approvalProjectsLayer = Layer.mock(ProjectService.ProjectService)({
+  getById: (id) =>
+    Effect.succeedSome({
+      id,
+      title: "Fixture",
+      workspaceRoot: `/synthetic/${id}`,
+      repositoryIdentity: {
+        canonicalKey: "github.com/acme/shared",
+        rootPath: `/synthetic/${id}`,
+        locator: {
+          source: "git-remote",
+          remoteName: "origin",
+          remoteUrl: "https://github.com/acme/shared.git",
+        },
+      },
+      faviconPath: null,
+      defaultModelSelection: null,
+      scripts: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      deletedAt: null,
+    }),
+});
+const approvalConfigLayer = Layer.mock(ProjectConfigLoader.ProjectConfigLoader)({
+  load: () =>
+    Effect.succeed({
+      status: "valid",
+      source: "styal.json",
+      config: { source: "styal.json", actions: [], worktreeCleanup: ["dist", "node_modules"] },
+      legacyScripts: [],
+      issues: [],
+    }),
+});
+
+it.effect("separates approvals for different project ids with the same repository identity", () =>
+  Effect.gen(function* () {
+    const approvals = yield* Approvals.Approvals;
+    yield* approvals.approve({ projectId: ProjectId.make("a"), patterns: ["dist"] });
+    assert.equal(
+      (yield* approvals.review({ projectId: ProjectId.make("b") })).declared[0]?.status,
+      "pending",
+    );
+  }).pipe(
+    Effect.provide(
+      Approvals.layer.pipe(
+        Layer.provide(
+          Layer.mergeAll(approvalProjectsLayer, approvalConfigLayer, Settings.layerTest()),
+        ),
+      ),
+    ),
+  ),
+);
+
+it.effect("does not restore dist when approving node_modules interleaves with revoking dist", () =>
+  Effect.gen(function* () {
+    const settings = yield* Settings.ServerSettingsService;
+    const reached = yield* Deferred.make<void>();
+    const release = yield* Deferred.make<void>();
+    let gated = false;
+    const wrapped = {
+      ...settings,
+      modifySettings: (patch: Parameters<typeof settings.modifySettings>[0]) => {
+        if (!gated) {
+          gated = true;
+          return Deferred.succeed(reached, undefined).pipe(
+            Effect.andThen(Deferred.await(release)),
+            Effect.andThen(settings.modifySettings(patch)),
+          );
+        }
+        return settings.modifySettings(patch);
+      },
+      updateSettings: (patch: Parameters<typeof settings.updateSettings>[0]) => {
+        if (!gated) {
+          gated = true;
+          return Deferred.succeed(reached, undefined).pipe(
+            Effect.andThen(Deferred.await(release)),
+            Effect.andThen(settings.updateSettings(patch)),
+          );
+        }
+        return settings.updateSettings(patch);
+      },
+    };
+    const base = Approvals.layer.pipe(
+      Layer.provide(Layer.mergeAll(approvalProjectsLayer, approvalConfigLayer)),
+    );
+    const initial = yield* Approvals.Approvals.pipe(Effect.provide(base));
+    const projectId = ProjectId.make("race");
+    yield* initial.approve({ projectId, patterns: ["dist"] });
+    const approvals = yield* Approvals.Approvals.pipe(
+      Effect.provide(base),
+      Effect.provideService(Settings.ServerSettingsService, wrapped),
+    );
+    const approving = yield* approvals
+      .approve({ projectId, patterns: ["node_modules"] })
+      .pipe(Effect.forkChild);
+    yield* Deferred.await(reached);
+    yield* approvals.revoke({ projectId, pattern: "dist" });
+    yield* Deferred.succeed(release, undefined);
+    yield* Fiber.join(approving);
+    assert.deepEqual((yield* initial.review({ projectId })).declared, [
+      { pattern: "dist", status: "pending" },
+      { pattern: "node_modules", status: "approved" },
+    ]);
+  }).pipe(Effect.provide(Settings.layerTest()), Effect.scoped),
+);

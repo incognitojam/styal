@@ -1,6 +1,7 @@
 import {
   WorktreeCleanupError,
   WorktreeCleanupApproveInput,
+  WorktreeCleanupApproveResult,
   WorktreeCleanupRevokeInput,
   WorktreeCleanupReviewInput,
   WorktreeCleanupReview,
@@ -1498,7 +1499,7 @@ const WsWorktreeCleanupReviewRpc = Rpc.make(WS_METHODS.projectsWorktreeCleanupRe
 });
 const WsWorktreeCleanupApproveRpc = Rpc.make(WS_METHODS.projectsWorktreeCleanupApprove, {
   payload: WorktreeCleanupApproveInput,
-  success: WorktreeCleanupReview,
+  success: WorktreeCleanupApproveResult,
   error: Schema.Union([WorktreeCleanupError, EnvironmentAuthorizationError]),
 });
 const WsWorktreeCleanupRevokeRpc = Rpc.make(WS_METHODS.projectsWorktreeCleanupRevoke, {

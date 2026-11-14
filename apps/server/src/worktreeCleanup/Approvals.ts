@@ -7,11 +7,11 @@ import * as Option from "effect/Option";
 import {
   WorktreeCleanupError,
   type WorktreeCleanupReview,
+  type WorktreeCleanupApproveResult,
   type WorktreeCleanupApproveInput,
   type WorktreeCleanupRevokeInput,
   type ProjectId,
 } from "@t3tools/contracts";
-import { projectFileApprovalKey } from "@t3tools/shared/projectFileApprovals";
 import * as ProjectConfigLoader from "../project/ProjectConfigLoader.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ServerSettings from "../serverSettings.ts";
@@ -24,7 +24,7 @@ export class Approvals extends Context.Service<
     }) => Effect.Effect<WorktreeCleanupReview, WorktreeCleanupError>;
     readonly approve: (
       input: WorktreeCleanupApproveInput,
-    ) => Effect.Effect<WorktreeCleanupReview, WorktreeCleanupError>;
+    ) => Effect.Effect<WorktreeCleanupApproveResult, WorktreeCleanupError>;
     readonly revoke: (
       input: WorktreeCleanupRevokeInput,
     ) => Effect.Effect<WorktreeCleanupReview, WorktreeCleanupError>;
@@ -63,7 +63,7 @@ const make = Effect.gen(function* () {
     }
     const patterns = state.config?.worktreeCleanup;
     return {
-      key: projectFileApprovalKey(project.value),
+      key: project.value.id,
       hasField: patterns !== undefined,
       patterns: [...new Set(patterns?.map((pattern) => pattern.trim()) ?? [])],
     };
@@ -105,33 +105,40 @@ const make = Effect.gen(function* () {
     const resolved = yield* resolve(input.projectId);
     const shown = new Set(input.patterns.map((pattern) => pattern.trim()));
     const approvedAt = DateTime.formatIso(DateTime.makeUnsafe(yield* Clock.currentTimeMillis));
-    yield* settings.getSettings.pipe(
-      Effect.flatMap((saved) => {
+    yield* settings
+      .modifySettings((saved) => {
         const previous = saved.worktreeCleanupApprovals[resolved.key] ?? {};
         const additions = Object.fromEntries(
           resolved.patterns
             .filter((pattern) => shown.has(pattern) && !Object.hasOwn(previous, pattern))
             .map((pattern) => [pattern, { approvedAt }]),
         );
-        if (Object.keys(additions).length === 0) return Effect.void;
-        return settings.updateSettings({
+        if (Object.keys(additions).length === 0) return {};
+        return {
           worktreeCleanupApprovals: {
             ...saved.worktreeCleanupApprovals,
             [resolved.key]: { ...previous, ...additions },
           },
-        });
-      }),
-      Effect.mapError(
-        () =>
-          new WorktreeCleanupError({ reason: "save-failed", message: "Could not save settings." }),
-      ),
-    );
-    return yield* reviewOf(resolved);
+        };
+      })
+      .pipe(
+        Effect.mapError(
+          () =>
+            new WorktreeCleanupError({
+              reason: "save-failed",
+              message: "Could not save settings.",
+            }),
+        ),
+      );
+    return {
+      ...(yield* reviewOf(resolved)),
+      notDeclared: [...shown].filter((pattern) => !resolved.patterns.includes(pattern)),
+    };
   });
   const revoke = Effect.fn("WorktreeCleanup.revoke")(function* (input: WorktreeCleanupRevokeInput) {
     const resolved = yield* resolve(input.projectId);
-    yield* settings.getSettings.pipe(
-      Effect.flatMap((saved) => {
+    yield* settings
+      .modifySettings((saved) => {
         const previous = saved.worktreeCleanupApprovals[resolved.key] ?? {};
         const remaining = Object.fromEntries(
           Object.entries(previous).filter(
@@ -139,16 +146,20 @@ const make = Effect.gen(function* () {
           ),
         );
         const { [resolved.key]: _previous, ...others } = saved.worktreeCleanupApprovals;
-        return settings.updateSettings({
+        return {
           worktreeCleanupApprovals:
             Object.keys(remaining).length === 0 ? others : { ...others, [resolved.key]: remaining },
-        });
-      }),
-      Effect.mapError(
-        () =>
-          new WorktreeCleanupError({ reason: "save-failed", message: "Could not save settings." }),
-      ),
-    );
+        };
+      })
+      .pipe(
+        Effect.mapError(
+          () =>
+            new WorktreeCleanupError({
+              reason: "save-failed",
+              message: "Could not save settings.",
+            }),
+        ),
+      );
     return yield* reviewOf(resolved);
   });
   return Approvals.of({ review, approve, revoke });

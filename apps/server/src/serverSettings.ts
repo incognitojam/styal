@@ -220,6 +220,8 @@ function ensureProviderInstanceMutationAllowed(
   return Effect.void;
 }
 
+type SettingsUpdate = ServerSettingsPatch | ((current: ServerSettings) => ServerSettingsPatch);
+
 export class ServerSettingsService extends Context.Service<
   ServerSettingsService,
   {
@@ -234,6 +236,10 @@ export class ServerSettingsService extends Context.Service<
 
     readonly updateSettings: (
       patch: ServerSettingsPatch,
+    ) => Effect.Effect<ServerSettings, ServerSettingsError>;
+
+    readonly modifySettings: (
+      update: (current: ServerSettings) => ServerSettingsPatch,
     ) => Effect.Effect<ServerSettings, ServerSettingsError>;
 
     readonly updateProviderInstance: (
@@ -294,6 +300,10 @@ const makeTest = Effect.fn("serverSettings.makeTest")(function* (
     start: Effect.void,
     ready: Effect.void,
     getSettings,
+    modifySettings: (update) =>
+      updateTestSettings((current) =>
+        Effect.succeed(applyServerSettingsPatch(current, update(current))),
+      ),
     updateSettings: (patch) =>
       updateTestSettings((currentSettings) =>
         Effect.succeed(applyServerSettingsPatch(currentSettings, patch)),
@@ -1129,8 +1139,11 @@ const make = Effect.gen(function* () {
   };
 
   const updateAndPersistSettings = (
-    patch: ServerSettingsPatch,
-    update: (current: ServerSettings) => Effect.Effect<ServerSettings, ServerSettingsError>,
+    patchInput: SettingsUpdate,
+    update: (
+      current: ServerSettings,
+      patch: ServerSettingsPatch,
+    ) => Effect.Effect<ServerSettings, ServerSettingsError>,
   ): Effect.Effect<ServerSettings, ServerSettingsError> =>
     writeSemaphore.withPermits(1)(
       Effect.gen(function* () {
@@ -1142,7 +1155,8 @@ const make = Effect.gen(function* () {
             cause: parseFailure.value,
           });
         }
-        const updated = yield* update(current);
+        const patch = typeof patchInput === "function" ? patchInput(current) : patchInput;
+        const updated = yield* update(current, patch);
         // Vet before secrets: a variable the policy hides from clients is not one they removed.
         const vetted = managed.vetWrite(current, yield* normalizeServerSettings(updated), patch);
         if (vetted._tag === "Locked") {
@@ -1306,8 +1320,14 @@ const make = Effect.gen(function* () {
     start,
     ready: Deferred.await(startedDeferred),
     getSettings: getMaterializedSettings,
+    modifySettings: (update) =>
+      updateAndPersistSettings(update, (current, patch) =>
+        ensureSecretProviderWritesAllowed(patch, settingsPath).pipe(
+          Effect.as(applyServerSettingsPatch(current, patch)),
+        ),
+      ),
     updateSettings: (patch) =>
-      updateAndPersistSettings(patch, (current) =>
+      updateAndPersistSettings(patch, (current, patch) =>
         ensureSecretProviderWritesAllowed(patch, settingsPath).pipe(
           Effect.as(applyServerSettingsPatch(current, patch)),
         ),

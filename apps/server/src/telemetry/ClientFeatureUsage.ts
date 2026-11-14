@@ -278,10 +278,12 @@ export const worktreeCleanup = Effect.fnUntraced(function* (client: FeatureUsage
             worktreeCount: result.worktrees.length,
             cleanableWorktreeCount: eligible.filter((entry) => entry.selected.length > 0).length,
             freedBytes:
-              result.truncated || eligible.some((entry) => entry.freedBytes === null)
+              result.worktreesTruncated ||
+              eligible.some((entry) => !entry.measurementComplete || entry.freedBytes === null)
                 ? null
                 : eligible.reduce((bytes, entry) => bytes + entry.freedBytes!, 0),
-            truncated: result.truncated,
+            truncated:
+              result.worktreesTruncated || result.worktrees.some((entry) => entry.entriesTruncated),
           };
         });
       }),

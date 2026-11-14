@@ -231,7 +231,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.hardwareAuditList]: AuthOrchestrationReadScope,
   [WS_METHODS.projectsFileActionReview]: AuthOrchestrationReadScope,
   [WS_METHODS.projectsWorktreeCleanupReview]: AuthOrchestrationReadScope,
-  [WS_METHODS.projectsWorktreeCleanupPreview]: AuthOrchestrationReadScope,
+  [WS_METHODS.projectsWorktreeCleanupPreview]: AuthFilesystemReadScope,
   [WS_METHODS.projectsWorktreeCleanupRevoke]: AuthSettingsWriteScope,
   [WS_METHODS.projectsWorktreeCleanupApprove]: AuthSettingsWriteScope,
   [WS_METHODS.projectsFileActionApprovalSet]: AuthSettingsWriteScope,

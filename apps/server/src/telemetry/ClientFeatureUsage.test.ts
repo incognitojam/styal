@@ -751,7 +751,8 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const events: Array<{ event: string; properties: Record<string, unknown> | undefined }> = [];
-      const review: WorktreeCleanupReview = {
+      const review: WorktreeCleanupReview & { notDeclared: string[] } = {
+        notDeclared: [],
         status: "approved",
         declared: [{ pattern: "dist-private", status: "approved" }],
         approvedNotDeclared: [{ pattern: "cache-private", approvedAt: "2026-01-01T00:00:00.000Z" }],
@@ -761,7 +762,7 @@ it.effect(
       const preview = (): WorktreeCleanupPreview => ({
         review,
         patterns: ["dist-private"],
-        truncated: false,
+        worktreesTruncated: false,
         worktrees: [
           {
             worktreePath: "/synthetic/checkout",
@@ -771,6 +772,7 @@ it.effect(
               {
                 path: "private-output",
                 pattern: "dist-private",
+                patterns: ["dist-private"],
                 patternStatus: "approved",
                 kind: "directory",
                 freedBytes: bytes,
@@ -778,7 +780,8 @@ it.effect(
             ],
             kept: [],
             freedBytes: bytes,
-            truncated: false,
+            entriesTruncated: false,
+            measurementComplete: bytes !== null,
           },
           {
             worktreePath: "/synthetic/empty",
@@ -787,7 +790,8 @@ it.effect(
             selected: [],
             kept: [],
             freedBytes: 0,
-            truncated: false,
+            entriesTruncated: false,
+            measurementComplete: bytes !== null,
           },
           {
             worktreePath: "/synthetic/held",
@@ -797,7 +801,8 @@ it.effect(
             selected: [],
             kept: [],
             freedBytes: 2048,
-            truncated: false,
+            entriesTruncated: false,
+            measurementComplete: bytes !== null,
           },
         ],
       });

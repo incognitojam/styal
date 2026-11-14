@@ -1,6 +1,7 @@
 import * as Schema from "effect/Schema";
 import { GitPreparePullRequestThreadInput, GitRunStackedActionInput } from "./git.ts";
 import {
+  AuthFilesystemReadScope,
   AuthAccessReadScope,
   AuthAccessWriteScope,
   AuthOrchestrationOperateScope,
@@ -70,6 +71,7 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
 
   [WS_METHODS.hardwareControl]: AuthOrchestrationOperateScope,
   [WS_METHODS.hardwareConfigure]: AuthSettingsWriteScope,
+  [WS_METHODS.projectsWorktreeCleanupPreview]: AuthFilesystemReadScope,
   [WS_METHODS.projectsWorktreeCleanupRevoke]: AuthSettingsWriteScope,
   [WS_METHODS.projectsWorktreeCleanupApprove]: AuthSettingsWriteScope,
   [WS_METHODS.projectsFileActionApprovalSet]: AuthSettingsWriteScope,

@@ -59,21 +59,29 @@ const entry = (overrides: Partial<WorktreeCleanupPreviewEntry>): WorktreeCleanup
   selected: [],
   kept: [],
   freedBytes: 0,
-  truncated: false,
+  entriesTruncated: false,
+  measurementComplete: true,
   ...overrides,
 });
 const preview = (worktrees: WorktreeCleanupPreviewEntry[]): WorktreeCleanupPreview => ({
   review: { status: "approved", declared: [], approvedNotDeclared: [] },
   patterns: [],
   worktrees,
-  truncated: false,
+  worktreesTruncated: false,
 });
 const selected = (
   path: string,
   pattern: string,
   freedBytes: number,
   patternStatus: "approved" | "pending" = "approved",
-) => ({ path, pattern, patternStatus, kind: "directory" as const, freedBytes });
+) => ({
+  path,
+  pattern,
+  patterns: [pattern],
+  patternStatus,
+  kind: "directory" as const,
+  freedBytes,
+});
 
 describe("worktreeCleanupResults", () => {
   it("counts only currently approved patterns and sorts cleaned worktrees by bytes freed", () => {
