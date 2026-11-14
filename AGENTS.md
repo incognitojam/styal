@@ -169,7 +169,7 @@ For mobile verification, a missing or outdated native client is an install step,
 - Conventional commit titles, plain language: `fix(web): new threads no longer spike CPU`.
 - Body: the problem in a sentence or two, then what happens now as a short table or list of situations and what the user or maintainer sees in each, not as prose paragraphs. A reviewer should be able to decide from the first screen; when the body runs longer, begin it with a `> [!NOTE]` callout containing a TL;DR.
 - Leave constants, limits, field names and function names in the code; name one only when a reviewer needs it to judge the change. Name a test only when it is the evidence for a claim the reader would otherwise doubt; otherwise list the scenarios exercised and what was not verified.
-- Describe the final change, never review rounds or earlier states of the PR. End after a `---` rule with ``Written by `<harness>/<model id>` in [styal 🧵](https://github.com/incognitojam/styal).`` (outside styal, end after the label), naming each agent that worked on it with what it did.
+- Describe the final change, never review rounds or earlier states of the PR. End with the model and harness that did the work.
 - **Upstream intake follows [the upstream intake runbook](docs/operations/upstream-tracking.md).** Upstream is never auto-synced. Intake batches land on `intake/**` branches through the promotion workflow, never through a pull request. Never rebase `main` onto upstream or force-push it.
 - Referencing upstream:
   - A bare #123 always means a fork PR or issue, and styal and GitHub both link it to the fork. For an upstream one, write the plain URL with no link text; it is shown as pingdotgg/t3code#123.
