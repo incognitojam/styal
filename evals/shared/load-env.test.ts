@@ -6,9 +6,9 @@ import * as NodeURL from "node:url";
 import * as NodePath from "node:path";
 
 it("loads an optional shared env file while preserving existing values", () => {
-  const home = NodeFS.mkdtempSync(
-    NodeURL.fileURLToPath(new URL("../../.scratch/intake-eval-home-", import.meta.url)),
-  );
+  const scratch = NodeURL.fileURLToPath(new URL("../../.scratch/", import.meta.url));
+  NodeFS.mkdirSync(scratch, { recursive: true });
+  const home = NodeFS.mkdtempSync(NodePath.join(scratch, "intake-eval-home-"));
   try {
     const run = (existing?: string, expected = existing ?? "synthetic") => {
       const env: NodeJS.ProcessEnv = { ...process.env, HOME: home };
