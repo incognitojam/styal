@@ -183,6 +183,10 @@ features: []
           paths: ["apps/web/src/components/sidebar/SidebarChrome.tsx"],
         },
         { id: "settings-snapshot-telemetry", paths: ["apps/web/src/AppRoot.tsx"] },
+        {
+          id: "shortcut-hints-on-buttons",
+          paths: ["apps/web/src/components/sidebar/SidebarChrome.tsx"],
+        },
         { id: "web-build-update-notice", paths: ["apps/web/src/AppRoot.tsx"] },
       ],
     );

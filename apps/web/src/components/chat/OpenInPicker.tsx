@@ -26,6 +26,7 @@ import {
   SquareArrowOutUpRightIcon,
 } from "lucide-react";
 
+import { ShortcutHintBadge, ShortcutHintSlot } from "../ShortcutHint";
 import { Group, GroupSeparator } from "../ui/group";
 import {
   Menu,
@@ -392,6 +393,22 @@ export const OpenInPicker = memo(function OpenInPicker({
     );
   }
 
+  const primaryIcon = primaryOption?.Icon ? (
+    <primaryOption.Icon
+      aria-hidden="true"
+      className={cn(
+        isPanel ? THREAD_DETAILS_PANEL_ICON_CLASS : "size-3.5",
+        getOpenInIconClass(primaryOption.kind),
+      )}
+    />
+  ) : isPanel ? (
+    <SquareArrowOutUpRightIcon aria-hidden="true" className={THREAD_DETAILS_PANEL_ICON_CLASS} />
+  ) : null;
+  const openFavoriteShortcutHinted =
+    openFavoriteEditorShortcutLabel !== null &&
+    !backgroundThread &&
+    Boolean(preferredEditor && openInCwd && canOpenEditor);
+
   return (
     <ActionGroup
       aria-label="Open in editor"
@@ -416,19 +433,13 @@ export const OpenInPicker = memo(function OpenInPicker({
           });
         }}
       >
-        {primaryOption?.Icon ? (
-          <primaryOption.Icon
-            aria-hidden="true"
-            className={cn(
-              isPanel ? THREAD_DETAILS_PANEL_ICON_CLASS : "size-3.5",
-              getOpenInIconClass(primaryOption.kind),
-            )}
-          />
-        ) : isPanel ? (
-          <SquareArrowOutUpRightIcon
-            aria-hidden="true"
-            className={THREAD_DETAILS_PANEL_ICON_CLASS}
-          />
+        {primaryIcon !== null && openFavoriteShortcutHinted && isPanel ? (
+          <ShortcutHintSlot command="editor.openFavorite">{primaryIcon}</ShortcutHintSlot>
+        ) : (
+          primaryIcon
+        )}
+        {openFavoriteShortcutHinted && !isPanel ? (
+          <ShortcutHintBadge command="editor.openFavorite" />
         ) : null}
         <span
           className={cn(

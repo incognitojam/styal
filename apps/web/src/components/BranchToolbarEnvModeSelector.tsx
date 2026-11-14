@@ -1,5 +1,6 @@
 import { ComposerSelectControl } from "./chat/ComposerControl";
 import { ComposerContextLabel } from "./ComposerContextLabel";
+import { ShortcutHintSlot } from "./ShortcutHint";
 import { FolderGit2Icon, FolderGitIcon, FolderIcon } from "lucide-react";
 import { memo, type MouseEvent as ReactMouseEvent } from "react";
 
@@ -132,13 +133,15 @@ export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSe
             />
           }
         >
-          {effectiveEnvMode === "worktree" ? (
-            <FolderGit2Icon className="size-3" />
-          ) : activeWorktreePath ? (
-            <FolderGitIcon className="size-3" />
-          ) : (
-            <FolderIcon className="size-3" />
-          )}
+          <ShortcutHintSlot command="composer.workspace">
+            {effectiveEnvMode === "worktree" ? (
+              <FolderGit2Icon className="size-3" />
+            ) : activeWorktreePath ? (
+              <FolderGitIcon className="size-3" />
+            ) : (
+              <FolderIcon className="size-3" />
+            )}
+          </ShortcutHintSlot>
           <ComposerContextLabel>
             <SelectValue />
           </ComposerContextLabel>

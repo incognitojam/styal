@@ -3521,13 +3521,17 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
 
   // With a filter, chat.new opens the chooser and chat.newLocal follows the current thread,
   // so neither shortcut represents a button that creates in the filtered project.
-  const newThreadShortcutLabel =
+  const newThreadShortcutCommand =
     scopeGroups.length === 1 ||
     projectGroups.length === 0 ||
     (legacySidebarEnabled ? scopedProjectGroups.length === 0 : newThreadPicksProject)
-      ? (shortcutLabelForCommand(keybindings, "chat.new") ??
-        (newThreadPicksProject ? undefined : shortcutLabelForCommand(keybindings, "chat.newLocal")))
-      : undefined;
+      ? shortcutLabelForCommand(keybindings, "chat.new") !== null
+        ? "chat.new"
+        : newThreadPicksProject
+          ? null
+          : "chat.newLocal"
+      : null;
+  const newThreadShortcutLabel = shortcutLabelForCommand(keybindings, newThreadShortcutCommand);
   // The second tooltip line advertises shift+click and its keyboard twin
   // chat.newLocal for direct create, and is pointless once a plain click
   // already creates in place.
@@ -3768,6 +3772,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
               onNewProject={openAddProjectCommandPalette}
               onNewThread={handleNewThreadClick}
               newThreadDisabled={projects.length === 0}
+              newThreadShortcutCommand={newThreadShortcutCommand}
               newThreadShortcutLabel={newThreadShortcutLabel}
               newThreadInProjectShortcutLabel={newThreadInProjectShortcutLabel}
               showNewThreadInProjectHint={newThreadPicksProject}

@@ -29,6 +29,7 @@ import {
   SidebarTrigger,
   useSidebar,
 } from "../ui/sidebar";
+import { ShortcutHintBadge } from "../ShortcutHint";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ClaudeStatusNotice } from "./ClaudeStatusNotice";
 import { OpenAIStatusNotice } from "./OpenAIStatusNotice";
@@ -142,6 +143,11 @@ function HistoryNavigationButton({
         }
       >
         <Icon className="size-3.5" />
+        {enabled ? (
+          <ShortcutHintBadge
+            command={direction === "back" ? "navigation.back" : "navigation.forward"}
+          />
+        ) : null}
       </TooltipTrigger>
       <TooltipPopup side="bottom">
         {label}

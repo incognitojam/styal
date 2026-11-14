@@ -20,6 +20,7 @@ import {
   resolveChatShortcutCommand,
   resolveShortcutCommand,
   shouldShowThreadJumpHintsForModifiers,
+  shortcutHintLabelForModifiers,
   shortcutLabelForCommand,
   terminalNavigationShortcutData,
   type ShortcutEventLike,
@@ -480,6 +481,46 @@ describe("thread navigation helpers", () => {
           context: { isDesktop: true },
         },
       ),
+    );
+  });
+});
+
+describe("shortcutHintLabelForModifiers", () => {
+  const mac = { platform: "MacIntel" };
+  it.each([
+    ["the exact held modifiers", { metaKey: true }, "terminal.toggle", mac, "⌘J"],
+    ["Shift held as well", { metaKey: true, shiftKey: true }, "terminal.toggle", mac, null],
+    [
+      "Shift shortcuts once Shift joins",
+      { metaKey: true, shiftKey: true },
+      "modelPicker.toggle",
+      mac,
+      "⇧⌘M",
+    ],
+    ["the binding a command has for the held modifiers", { metaKey: true }, "chat.new", mac, "⌘N"],
+    [
+      "Ctrl for mod off macOS",
+      { ctrlKey: true },
+      "terminal.toggle",
+      { platform: "Linux x86_64" },
+      "Ctrl+J",
+    ],
+    [
+      "a binding whose when clause is false",
+      { metaKey: true },
+      "terminal.split",
+      { ...mac, context: { terminalFocus: false } },
+      null,
+    ],
+  ] as const)("labels %s", (_name, modifiers, command, options, expected) => {
+    assert.strictEqual(
+      shortcutHintLabelForModifiers(
+        event(modifiers),
+        DEFAULT_RESOLVED_KEYBINDINGS,
+        command,
+        options,
+      ),
+      expected,
     );
   });
 });
