@@ -15,6 +15,7 @@ import {
   failedEarly,
   executeCodex,
   gradeSample,
+  leadingGuideReads,
   makeSample,
   ranCalls,
   McpToolUseCase,
@@ -3424,4 +3425,20 @@ it.each([
     }),
     [],
   );
+});
+
+it("answers a command's leading reads of styal guides from the real files", () => {
+  const guide =
+    "/home/user/.styal/userdata/agent-skills/styal/skills/styal-guides/references/project-setup.md";
+  const read = leadingGuideReads(`cat ${guide}; echo "----" && cat .github/workflows/preview.yml`);
+  assert.match(read?.output ?? "", /^# Project setup[\s\S]*\n----\n$/);
+  assert.equal(read?.rest, "cat .github/workflows/preview.yml");
+  assert.equal(leadingGuideReads(`cat '${guide}'`)?.rest, "");
+  assert.equal(
+    leadingGuideReads(`sed -n '1,2p' ${guide}`)?.output,
+    "# Project setup: styal.json, actions and worktrees\n\n",
+  );
+  assert.isUndefined(leadingGuideReads(`ls .github; cat ${guide}`));
+  assert.isUndefined(leadingGuideReads(`cat ${guide} | grep deploy`));
+  assert.isUndefined(leadingGuideReads(`cat ${guide.replace("project-setup", "deployments")}`));
 });

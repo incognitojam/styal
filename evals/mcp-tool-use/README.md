@@ -21,7 +21,7 @@ pnpm mcp-tool-use --model claude-opus-5-5 --out runs/opus
 
 ## The styal skill
 
-`--styal-skill` runs `cases-skill/` on Claude models with what a session that has the styal skill sees: the skill listed in a reminder, no `read_styal_guide`, and no always-on line about it. The skill and guide files come from this checkout. Without the flag, the guide cases measure the tool and line that providers without the skill keep.
+`--styal-skill` runs `cases-skill/` on Claude models with what a session that has the styal skill sees: the skill listed in a reminder, no `read_styal_guide`, and no always-on line about it. The skill and guide files come from this checkout. A `Read`, or the `cat`, `head` or `sed -n` reads a shell command starts with, gets the real file text; the shell simulator gets the files too, for greps and later reads, so it never invents a guide or reports one missing. Without the flag, the guide cases measure the tool and line that providers without the skill keep.
 
 ## Add a case
 

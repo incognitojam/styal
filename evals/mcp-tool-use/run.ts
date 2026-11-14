@@ -1371,20 +1371,77 @@ const STYAL_SKILL_STATE_DIR = "/home/user/.styal/userdata";
 const STYAL_SKILL_PATHS = styalSkillPaths(NodePath.posix, STYAL_SKILL_STATE_DIR);
 const STYAL_SKILL_REMINDER = `The following skills are available for use with the Skill tool:\n\n- styal:${STYAL_SKILL_NAME}: ${STYAL_SKILL_DESCRIPTION}`;
 
+const STYAL_SKILL_FILES = new Map(renderStyalSkillFiles(NodePath.posix, STYAL_SKILL_STATE_DIR));
+
 /** The skill and its guides come from this checkout, like every other text under test. */
 const styalSkillResult = (name: string, input: Readonly<Record<string, unknown>>) => {
-  const files = new Map(renderStyalSkillFiles(NodePath.posix, STYAL_SKILL_STATE_DIR));
   if (name === "Skill" && valueText(input.skill).includes(STYAL_SKILL_NAME)) {
-    return `Launching skill: styal:${STYAL_SKILL_NAME}\n\n${files.get(STYAL_SKILL_PATHS.skillFile)}`;
+    return `Launching skill: styal:${STYAL_SKILL_NAME}\n\n${STYAL_SKILL_FILES.get(STYAL_SKILL_PATHS.skillFile)}`;
   }
-  // Only a plain read: anything else goes to the shell simulator so its grading still sees it.
-  const file =
-    name === "Read"
-      ? valueText(input.file_path)
-      : name === "Bash"
-        ? /^\s*cat\s+(\S+)\s*$/.exec(valueText(input.command))?.[1]
-        : undefined;
-  return file === undefined ? undefined : files.get(file);
+  return name === "Read" ? STYAL_SKILL_FILES.get(valueText(input.file_path)) : undefined;
+};
+
+/** Splits on top-level `;`, `&&` and newlines; quoted text stays whole. */
+const commandSegments = (command: string) => {
+  const segments: Array<string> = [];
+  let quote: string | undefined;
+  let start = 0;
+  for (let i = 0; i < command.length; i++) {
+    const char = command[i];
+    if (quote !== undefined) {
+      if (char === quote) quote = undefined;
+    } else if (char === "'" || char === '"') quote = char;
+    else if (char === ";" || char === "\n" || (char === "&" && command[i + 1] === "&")) {
+      segments.push(command.slice(start, i));
+      if (char === "&") i++;
+      start = i + 1;
+    }
+  }
+  return [...segments, command.slice(start)].map((segment) => segment.trim());
+};
+
+const unquote = (word: string) => word.replace(/^(['"])(.*)\1$/s, "$2");
+
+/** Output of one `cat`, `head` or `sed -n` of skill files, or of an `echo`. */
+const guideSegmentOutput = (segment: string) => {
+  if (/[|<>$`*?]/.test(segment.replace(/'[^']*'|"[^"]*"/g, ""))) return undefined;
+  const echo = /^echo(?:\s+(.*))?$/s.exec(segment);
+  if (echo) return `${unquote(echo[1] ?? "")}\n`;
+  const read = /^(cat|head(?:\s+-n)?\s+-?(\d+)|sed\s+-n\s+['"]?(\d+),(\d+)p['"]?)\s+(.+)$/s.exec(
+    segment,
+  );
+  if (!read) return undefined;
+  const files = (read[5] ?? "").split(/\s+/).map((path) => STYAL_SKILL_FILES.get(unquote(path)));
+  if (files.length === 0 || files.some((file) => file === undefined)) return undefined;
+  const lines = (file: string, from: number, to: number) =>
+    `${file.split("\n").slice(from, to).join("\n")}\n`;
+  return files
+    .map((file = "") =>
+      read[2] !== undefined
+        ? lines(file, 0, Number(read[2]))
+        : read[3] !== undefined
+          ? lines(file, Number(read[3]) - 1, Number(read[4]))
+          : file,
+    )
+    .join("");
+};
+
+/**
+ * The real output of a command's leading reads of skill files, and the rest of the command for the
+ * simulator, so it never invents a guide's text or says one is missing.
+ */
+export const leadingGuideReads = (command: string) => {
+  const segments = commandSegments(command);
+  let output = "";
+  let count = 0;
+  for (const segment of segments) {
+    const part = guideSegmentOutput(segment);
+    if (part === undefined) break;
+    output += part;
+    count++;
+  }
+  const readsGuide = segments.slice(0, count).some((segment) => !segment.startsWith("echo"));
+  return readsGuide ? { output, rest: segments.slice(count).join("; ") } : undefined;
 };
 
 /** Result for a native tool the case does not mock, other than shell, file, and web tools. */
@@ -1442,6 +1499,11 @@ export const shellRequest = (sample: Sample, call: Omit<ShellEntry, "output">, m
         ]
       : []),
     ...(context ? [`The agent was told: ${context}`] : []),
+    ...(base.styalSkill === true
+      ? [
+          `The styal skill's files are exactly these, with this content; nothing else exists under ${STYAL_SKILL_PATHS.pluginRoot}. Reads, grep, ls and find over them print this content verbatim: ${valueText(Object.fromEntries(STYAL_SKILL_FILES))}`,
+        ]
+      : []),
     `The agent's task: ${testCase.prompt}`,
   ];
   const history = shell.map((entry) => `${callText(entry)}\n<output>\n${entry.output}\n</output>`);
@@ -1504,9 +1566,15 @@ const simulate = Effect.fn("evaluateMcpToolUse.simulate")(function* (
   call: Omit<ShellEntry, "output">,
 ) {
   const command = call.tool === "Bash" && isRecord(call.input) ? call.input.command : undefined;
-  let output = typeof command === "string" ? cannedOutput(sample, command) : undefined;
+  const guide =
+    sample.base.styalSkill === true && typeof command === "string"
+      ? leadingGuideReads(command)
+      : undefined;
+  const rest = guide === undefined ? command : guide.rest;
+  let output = rest === "" ? "" : typeof rest === "string" ? cannedOutput(sample, rest) : undefined;
   if (output === undefined) {
-    const body = shellRequest(sample, call, config.shellModel);
+    const restCall = guide === undefined ? call : { ...call, input: { command: rest } };
+    const body = shellRequest(sample, restCall, config.shellModel);
     const response = yield* callModel(
       config.apiKey,
       body,
@@ -1515,6 +1583,7 @@ const simulate = Effect.fn("evaluateMcpToolUse.simulate")(function* (
     addUsage(sample.shellUsage, response.usage);
     output = shellOutput(response.content);
   }
+  output = `${guide?.output ?? ""}${output}`.trimEnd();
   if (call.tool === "Bash" && output === "") output = "(Bash completed with no output)";
   const entry = { ...call, output };
   sample.shell.push(entry);
