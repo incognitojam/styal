@@ -301,6 +301,8 @@ export const McpToolUseCase = Schema.Struct({
     branchNote: Schema.optional(Schema.Literals(["temporary", "renamed"])),
     /** This launcher asked to hear back: its note goes on the thread's first user turn, as in T3. */
     reportTo: Schema.optional(Schema.String),
+    /** The harness runs without styal: no runtime note, orchestration text or T3 tools. */
+    outsideStyal: Schema.optional(Schema.Boolean),
     /**
      * Canned tool results by bare name, T3 or native. `"default"` uses the runner's result. For a
      * device tool, a T3 `DeviceError` (`{"_tag": ..., "cause": null}`) fails it inside T3.
@@ -583,13 +585,14 @@ export const buildBase = (
     readonly links?: boolean;
     /** A native subagent starts from its task: T3 appends nothing to its system prompt. */
     readonly nativeSubagent?: boolean;
+    readonly outsideStyal?: boolean;
     /** false: the thread has no agent device access, so T3's text leaves devices out. */
     readonly deviceAccess?: boolean;
     /** Claude Code lists the session's skills in a reminder; this adds the styal skill to it. */
     readonly styalSkill?: boolean;
   },
 ) => {
-  const t3 = visibleT3Tools(options);
+  const t3 = options.outsideStyal === true ? [] : visibleT3Tools(options);
   const firstAssistant = template.messages.findIndex((message) => message.role === "assistant");
   const head = template.messages.slice(0, firstAssistant === -1 ? undefined : firstAssistant);
   const systemTexts = [
@@ -605,9 +608,10 @@ export const buildBase = (
   const nativeDeferred = deferredList.split("\n").filter((name) => name && !isT3Name(name));
   const names = [...nativeDeferred, ...t3.map((tool) => tool.name)].toSorted().join("\n");
   const { model } = options;
-  const append = options.nativeSubagent
-    ? ""
-    : t3SystemAppend(model, options.deviceAccess, options.styalSkill);
+  const append =
+    options.nativeSubagent || options.outsideStyal
+      ? ""
+      : t3SystemAppend(model, options.deviceAccess, options.styalSkill);
   const modelLine = `You are powered by the model named ${MODELS[model]}. The exact model ID is ${model}.`;
   const joined = systemTexts.join("\n");
   // The capture's home directory names its user. Cases use `/home/user` paths instead.
@@ -681,9 +685,10 @@ const buildCodexBase = (
     readonly links?: boolean;
     /** false: the thread has no agent device access, so T3's text leaves devices out. */
     readonly deviceAccess?: boolean;
+    readonly outsideStyal?: boolean;
   },
 ): Base => {
-  const t3 = visibleT3Tools(options);
+  const t3 = options.outsideStyal === true ? [] : visibleT3Tools(options);
   const contentText = (item: Block) =>
     Array.isArray(item.content)
       ? item.content.map((block: Block) => valueText(block.text)).join("\n")
@@ -718,9 +723,10 @@ const buildCodexBase = (
     { model: options.model, reasoningEffort: effort },
     { browser: true, device: options.deviceAccess ?? true },
   );
-  input.push(
-    ...Object.entries(context).map(([key, entry]) => message(`<${key}>${entry.value}</${key}>`)),
-  );
+  if (options.outsideStyal !== true)
+    input.push(
+      ...Object.entries(context).map(([key, entry]) => message(`<${key}>${entry.value}</${key}>`)),
+    );
   const nativeTools = input
     .flatMap((item) =>
       item.type === "additional_tools" && Array.isArray(item.tools)
@@ -1728,14 +1734,16 @@ export const gradeSample = (expect: McpToolUseCase["expect"], run: SampleRun) =>
 const escapeRegex = (value: string) => value.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&");
 /**
  * Fills the run's own identity into `textMust` and `textMustNot`: `{model}` is the model id,
- * `{modelName}` its display name, and `{harness}` the harness T3 runs it in.
+ * `{modelName}` its display name, `{harness}` the harness T3 runs it in, and `{cli}` that
+ * harness's command name.
  */
 export const expectForModel = (expect: McpToolUseCase["expect"], model: Model) => {
   const fill = (pattern: string) =>
     pattern
       .replaceAll("{modelName}", escapeRegex(MODELS[model]))
       .replaceAll("{model}", escapeRegex(model))
-      .replaceAll("{harness}", isCodex(model) ? "Codex" : "Claude Code");
+      .replaceAll("{harness}", isCodex(model) ? "Codex" : "Claude Code")
+      .replaceAll("{cli}", isCodex(model) ? "codex" : "claude");
   return {
     ...expect,
     ...(expect.textMust ? { textMust: expect.textMust.map(fill) } : {}),
@@ -2343,6 +2351,7 @@ const main = Effect.gen(function* () {
     role: McpToolUseCase["setup"]["role"],
     deviceAccess: boolean,
     links: boolean,
+    outsideStyal: boolean,
   ): Effect.Effect<Base, Schema.SchemaError> =>
     codex
       ? decodeCodexCapture(template).pipe(
@@ -2354,6 +2363,7 @@ const main = Effect.gen(function* () {
               subagent: role === "delegated-child",
               links,
               deviceAccess,
+              outsideStyal,
             }),
           ),
         )
@@ -2366,6 +2376,7 @@ const main = Effect.gen(function* () {
               nativeSubagent: role === "native-subagent",
               links,
               deviceAccess,
+              outsideStyal,
               styalSkill: flags["styal-skill"],
             });
             return role === "native-subagent"
@@ -2377,18 +2388,19 @@ const main = Effect.gen(function* () {
         );
   // Codex has no native subagents; its cases with that role run as top-level threads.
   const baseKey = ({ setup }: McpToolUseCase) =>
-    `${codex && setup.role === "native-subagent" ? "top" : setup.role}:${setup.world?.deviceAgentAccess !== false}:${setup.linkedEnvironments === true}`;
-  const base = yield* buildFor("top", true, false);
-  const bases = new Map<string, Base>([["top:true:false", base]]);
+    `${codex && setup.role === "native-subagent" ? "top" : setup.role}:${setup.world?.deviceAgentAccess !== false}:${setup.linkedEnvironments === true}:${setup.outsideStyal === true}`;
+  const base = yield* buildFor("top", true, false, false);
+  const bases = new Map<string, Base>([["top:true:false:false", base]]);
   for (const testCase of selected) {
     const key = baseKey(testCase);
     if (bases.has(key)) continue;
-    const [role = "top", access, links] = key.split(":") as [
+    const [role = "top", access, links, outside] = key.split(":") as [
       McpToolUseCase["setup"]["role"],
       string,
       string,
+      string,
     ];
-    bases.set(key, yield* buildFor(role, access === "true", links === "true"));
+    bases.set(key, yield* buildFor(role, access === "true", links === "true", outside === "true"));
   }
   const baseFor = (testCase: McpToolUseCase) => bases.get(baseKey(testCase)) ?? base;
   const effort = flags.effort ?? base.codex?.reasoning.effort ?? "high";

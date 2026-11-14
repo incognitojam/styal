@@ -169,6 +169,15 @@ it("grades a footer against the model and harness of the run", () => {
   const sol = expectForModel(footer, "gpt-6.1-sol");
   assert.deepEqual(failed(sol, said("Written by an agent (Codex, gpt-6.1-sol).")), []);
   assert.lengthOf(failed(sol, said("Written by an agent (Codex, gpt-6x1-sol).")), 1);
+  const label = { textMust: ["Written by `{cli}/{model}`"] };
+  assert.deepEqual(
+    failed(expectForModel(label, "gpt-6.1-sol"), said("Written by `codex/gpt-6.1-sol`")),
+    [],
+  );
+  assert.lengthOf(
+    failed(expectForModel(label, "claude-opus-5-5"), said("Written by `codex/claude-opus-5-5`")),
+    1,
+  );
 });
 
 it("passes a good run and names every rule a bad run breaks", () => {
