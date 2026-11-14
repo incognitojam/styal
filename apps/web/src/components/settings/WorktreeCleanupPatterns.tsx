@@ -155,7 +155,7 @@ function CheckoutCleanup({
         checking={checking}
         environmentId={environmentId}
         projectId={member.id}
-        projectName={member.name}
+        projectName={member.title}
         onClose={() => setReviewing(false)}
       />
     </SettingsSection>
@@ -197,10 +197,10 @@ function PatternListRow({
     declared === 0
       ? "styal.json no longer lists cleanup patterns. Patterns approved earlier apply again if it lists them."
       : pending === 0
-        ? `All ${declared} ${declared === 1 ? "pattern" : "patterns"} in styal.json ${declared === 1 ? "is" : "are"} approved on this machine. styal may delete matching ignored files from settled worktrees.`
+        ? `Every pattern in styal.json is approved on this machine. styal may delete matching ignored files from settled worktrees.`
         : list.approved.length === 0
           ? "styal.json lists ignored files styal may delete from settled worktrees. Nothing is deleted until you approve them on this machine."
-          : `${list.approved.length} of ${declared} patterns are approved on this machine. The new ${pending === 1 ? "one deletes" : "ones delete"} nothing until you approve ${pending === 1 ? "it" : "them"}.`;
+          : `${list.approved.length} of ${declared} patterns are approved on this machine. ${pending === 1 ? "The other one deletes" : "The others delete"} nothing until you approve ${pending === 1 ? "it" : "them"}.`;
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
       <SettingsRow
@@ -462,6 +462,20 @@ function notCleanedTitle(row: WorktreeCleanupResultRow) {
   }
 }
 
+function NotCleanedValue({ row }: { row: WorktreeCleanupResultRow }) {
+  if (row.reason === null)
+    return <span className="tabular-nums">{formatBytes(row.freedBytes)}</span>;
+  const label = <span className="text-muted-foreground">{NOT_CLEANED_LABEL[row.reason]}</span>;
+  const explanation = notCleanedTitle(row);
+  if (explanation === undefined) return label;
+  return (
+    <Tooltip>
+      <TooltipTrigger render={label} />
+      <TooltipPopup>{explanation}</TooltipPopup>
+    </Tooltip>
+  );
+}
+
 function folderName(path: string) {
   return path.split(/[\\/]/).findLast(Boolean) ?? path;
 }
@@ -569,21 +583,14 @@ function ResultTable({
                     </span>
                   )}
                 </TableCell>
-                <TableCell className="text-right" title={notCleanedTitle(row)}>
-                  <span
-                    className={cn("tabular-nums", row.reason !== null && "text-muted-foreground")}
-                  >
-                    {row.reason === null
-                      ? formatBytes(row.freedBytes)
-                      : NOT_CLEANED_LABEL[row.reason]}
-                  </span>
+                <TableCell className="text-right">
+                  <NotCleanedValue row={row} />
                 </TableCell>
               </TableRow>
               {expanded ? (
                 <TableRow>
                   <TableCell colSpan={2}>
                     <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-6 gap-y-0.5 py-1 pl-5 text-muted-foreground">
-                      <span className="col-span-2 truncate select-text">{entry.worktreePath}</span>
                       {selected.map((item) => (
                         <Fragment key={item.path}>
                           <code className="truncate text-foreground/80 select-text">

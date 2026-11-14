@@ -256,11 +256,21 @@ Results also list folders in the worktree folder that no thread uses, with their
 Browser captures and rotated logs have separate retention periods. Expired capture links stop
 working. Current logs, message attachments, and browser profiles are kept.
 
-### Preview regenerable worktree files
+### Regenerable worktree files
 
-Declare `"worktreeCleanup": ["node_modules", "**/dist"]` in `styal.json` to list git-ignored files and folders your setup action or build recreates. This release only previews the selection and the disk space it would free; it deletes nothing. Each machine approves individual patterns after trimming surrounding whitespace. Order and duplicate entries do not matter. New patterns remain pending until approved; approved patterns stay active when other lines are removed. Removed patterns are remembered, so adding one again needs no approval. Revoke one pattern, including a remembered pattern no longer declared, or revoke all project approvals to forget them.
+List the git-ignored files and folders your setup action or build recreates under `worktreeCleanup` in `styal.json`:
 
-Patterns are relative to the worktree root and use `/`. `*` matches within one path segment; `**` must be a whole segment and matches any number of segments. `dist` matches only at the root; `**/dist` matches at any depth. Empty segments, `.` and `..`, backslashes, leading `/`, and `!` negation are invalid. The last segment must include a literal character, so `*` and `**/*` are invalid. `.git` is always excluded. A matched directory is selected whole only when all its contents are safe to remove; tracked files, unignored files, links, mount points, and nested checkouts keep it.
+```json
+"worktreeCleanup": ["**/node_modules", "apps/*/dist", ".cache"]
+```
+
+Open **Settings → Worktrees**, select the project, and find **Regenerable files**. Each machine approves the patterns itself: **Review** lists the patterns that need approval and what each would delete now. **Preview** lists the worktrees the approved patterns would free space in, largest first, and why the others are kept. This release only previews; nothing is deleted.
+
+- Patterns are approved one at a time. Reordering the list, repeating a pattern or removing one needs no approval. A new pattern does nothing until you approve it.
+- A removed pattern stays approved on that machine, so adding it back applies without asking. **Show details** lists these under "approved earlier", where **Forget** removes one. **Revoke all** removes every approval for the project.
+- Patterns are relative to the worktree root and use `/`. `*` matches within one name and `**` matches any number of folders. `dist` matches only at the root; write `**/dist` for any depth. `!` negation is not supported, and patterns that would match everything, such as `*` or `**/*`, are refused.
+- Only files git ignores are selected, and never `.git` or the project's own checkout. A matched folder is kept whole when it contains a file git tracks or does not ignore, a symbolic link, another git checkout or a mount point.
+- Files shared with another copy, such as those hard-linked from a pnpm store, count as freeing nothing.
 
 ## Project icons
 

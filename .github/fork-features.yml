@@ -7820,10 +7820,13 @@ features:
       - Preview inspects only managed linked worktrees, includes archived thread references, and marks worktrees held by unsettled threads.
       - Only ignored paths are selected; tracked or unignored contents, links, mount points, nested checkouts and .git are preserved. Preview deletes nothing.
       - Freed bytes exclude hardlinks and same-device pnpm virtual stores, and bounded incomplete measurements report null.
+      - Settings → Worktrees lists pending patterns first, then approved ones, each in styal.json order; patterns approved earlier and no longer declared sit behind one collapsed line, newest approval first, and nothing shows when there are none. Preview runs only on request and is not stored.
     implementation_paths:
       - apps/server/src/worktreeCleanup/Approvals.ts
       - apps/server/src/worktreeCleanup/Selection.ts
       - apps/server/src/worktreeCleanup/WorktreeCleanup.ts
+      - apps/web/src/components/settings/WorktreeCleanupPatterns.tsx
+      - packages/client-runtime/src/state/worktreeCleanup.ts
       - packages/contracts/src/worktreeCleanupPreview.ts
       - packages/shared/src/worktreeCleanupPatterns.ts
     upstream_paths:
@@ -7833,6 +7836,7 @@ features:
     tests:
       - apps/server/src/telemetry/ClientFeatureUsage.test.ts
       - apps/server/src/worktreeCleanup/WorktreeCleanup.test.ts
+      - packages/client-runtime/src/state/worktreeCleanup.test.ts
       - packages/shared/src/worktreeCleanupPatterns.test.ts
     upstream:
       status: tracking
