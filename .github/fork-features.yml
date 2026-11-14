@@ -4840,7 +4840,7 @@ features:
     title: Run a provider's own login from styal
     status: maintained
     tier: yield
-    prs: [1320]
+    prs: [1320, 1471]
     invariants:
       - Claude, Grok Build, OpenCode, Pi, fx and Muse Code sign in by running their own CLI login under the provider instance's environment, on the machine that runs the provider. Credentials stay where that CLI keeps them and no client or other machine receives them.
       - A login's printed prompt becomes a form when it is recognized as a pasted code, a device code or a localhost redirect. Anything else stays in the terminal, so an unfamiliar or changed CLI can still finish. A pasted redirect is only replayed to the listener and state of that sign-in.
