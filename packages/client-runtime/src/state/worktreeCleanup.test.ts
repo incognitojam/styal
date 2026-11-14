@@ -236,6 +236,14 @@ describe("unknown results stay unknown", () => {
       expect.objectContaining({ reason: "not-fully-checked", incomplete: true }),
     ]);
     expect(worktreeCleanupPreviewComplete(stopped)).toBe(false);
+    const cut = preview([
+      entry({
+        worktreePath: "/w/done",
+        selected: [selected("node_modules", "**/node_modules", 10)],
+      }),
+      entry({ worktreePath: "/w/late", status: "kept", reason: "not-checked" }),
+    ]);
+    expect(worktreeCleanupResults(cut, new Set(["**/node_modules"])).incomplete).toBe(true);
   });
 
   it("marks a measured path next to an over-limit candidate as a lower bound", () => {

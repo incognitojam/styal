@@ -166,10 +166,11 @@ export function worktreeCleanupPreviewComplete(preview: WorktreeCleanupPreview):
     !preview.deadlineReached &&
     preview.worktrees.every(
       (entry) =>
-        (entry.status !== "eligible" && entry.reason !== "not-checked") ||
-        (!entry.entriesTruncated &&
-          entry.measurementComplete &&
-          !entry.kept.some((kept) => kept.reason === "too-large-to-verify")),
+        entry.reason !== "not-checked" &&
+        (entry.status !== "eligible" ||
+          (!entry.entriesTruncated &&
+            entry.measurementComplete &&
+            !entry.kept.some((kept) => kept.reason === "too-large-to-verify"))),
     )
   );
 }
@@ -325,7 +326,7 @@ export function worktreeCleanupResults(
     cleaned,
     notCleaned: rows.filter((row) => row.reason !== null),
     totalBytes: cleaned.reduce((sum, row) => sum + row.freedBytes, 0),
-    incomplete: cleaned.some((row) => row.incomplete),
+    incomplete: cleaned.some((row) => row.incomplete) || !worktreeCleanupPreviewComplete(preview),
   };
 }
 
