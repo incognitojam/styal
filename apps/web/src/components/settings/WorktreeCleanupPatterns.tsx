@@ -13,7 +13,6 @@ import {
   type WorktreeCleanupResultRow,
 } from "@t3tools/client-runtime/state/worktreeCleanup";
 import type { EnvironmentId, WorktreeCleanupPreview } from "@t3tools/contracts";
-import { projectFileApprovalKey } from "@t3tools/shared/projectFileApprovals";
 import {
   ChevronDownIcon,
   ChevronRightIcon,
@@ -76,7 +75,7 @@ export function WorktreeCleanupPatternsSection() {
       {
         member,
         environment,
-        approvals: serverConfig.settings.worktreeCleanupApprovals[projectFileApprovalKey(member)],
+        approvals: serverConfig.settings.worktreeCleanupApprovals[member.id],
       },
     ];
   });
@@ -337,7 +336,7 @@ function PatternRow({
             matches && !found && "opacity-50",
           )}
         />
-        <code className="min-w-0 truncate font-mono text-xs select-text">{pattern}</code>
+        <code className="min-w-0 font-mono text-xs break-all select-text">{pattern}</code>
         {pending ? (
           <Badge size="sm" variant="warning">
             Needs approval
