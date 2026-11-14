@@ -2271,6 +2271,7 @@ features:
       - The styal executables are hosted only as GitHub Release archives. npm carries only the dependency-free `@styal/cli` launcher, which downloads its exact version's archive from the styal GitHub Release into `<styal home>/runtime/styal-executable/versions/<version>`, runs it only after the download matches the release's SHA256SUMS, and keeps the legacy `dist/bin.mjs` entry for older service updaters.
       - The GitHub Release with desktop artifacts, CLI archives, and SHA256SUMS publishes after build verification without waiting for npm; the `@styal/cli` launcher publishes to its channel dist-tag only after that release succeeded and its SHA256SUMS is downloadable, so an npm failure never blocks or rolls back the release.
       - npm publication waits for the launcher to become readable with the uploaded integrity, and a retry accepts an existing version only when its registry integrity matches the exact tarball being released and its channel tag points to that version.
+      - Failed nightlies maintain one nightly-failure issue with failed jobs and steps, announce its creation through issue routing helpers, and close it on the next successful run; a job concurrency group serializes updates and cancellations are ignored.
       - Stale release retries are rejected before npm publication or integrity acceptance when the launcher's channel tag is newer; nightly source promotion cannot move the branch backward.
       - Mobile environment checks and CLI channel updates read the compact @styal/cli npm dist-tags endpoint once, reject missing, malformed, or mismatched channel versions without fallback, offer a version only after its GitHub release checksums are downloadable, and retain downgrade protection; publication and runtime discovery share the release version parser.
       - Provider compatibility policies in the model manifest select styal release versions rather than T3 Code's, because every installed build fetches the manifest from fork main. Releases up to styal 0.1.0 keep the OpenCode 1 policy their V1 orchestrator needs, and the OpenCode 2 and Pi policies start at styal 0.1.1.
@@ -2407,6 +2408,7 @@ features:
       - scripts/export-brand-icons.ts
       - scripts/lib/brand-assets.ts
       - scripts/lib/macos-icon-safe-area.ts
+      - scripts/nightly-health.ts
       - scripts/npm-launcher/styal.mjs
       - scripts/upstream-naming.ts
     upstream_paths:
@@ -2465,6 +2467,7 @@ features:
       - scripts/lib/cli-external-packages.test.ts
       - scripts/lib/macos-icon-safe-area.test.ts
       - scripts/lib/smoke-native-terminal.test.ts
+      - scripts/nightly-health.test.ts
       - scripts/release-changelog.test.ts
       - scripts/smoke-cli-archive.mjs
       - scripts/upstream-naming.test.ts

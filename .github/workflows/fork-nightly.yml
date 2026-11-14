@@ -554,3 +554,68 @@ jobs:
             --header 'Content-Type: application/json' \
             --data "$payload" \
             "$DISCORD_WEBHOOK_URL"
+
+  nightly_health:
+    name: Track nightly health
+    needs:
+      [
+        prepare,
+        build_bundle,
+        build_desktop_mac,
+        build_desktop_linux,
+        build_desktop_windows,
+        build_cli_archives,
+        build_cli,
+        release,
+        publish_cli,
+        notify_failure,
+      ]
+    if: ${{ always() && !cancelled() && needs.prepare.result != 'skipped' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      issues: write
+      actions: read
+    concurrency:
+      group: fork-nightly-health
+      cancel-in-progress: false
+    steps:
+      - name: Update failure issue
+        uses: actions/github-script@v9
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+          CANDIDATE_REF: ${{ needs.prepare.outputs.ref }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_CI }}
+        with:
+          script: |
+            const needs = JSON.parse(process.env.NEEDS);
+            const results = Object.entries(needs)
+              .filter(([name]) => name !== 'notify_failure').map(([, job]) => job.result);
+            if (results.includes('cancelled')) return;
+            const conclusion = results.includes('failure') ? 'failure' :
+              needs.prepare.result === 'success' ? 'success' : null;
+            if (!conclusion) return;
+            const { stripTypeScriptTypes } = require('node:module');
+            const moduleUrl = source => `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`;
+            const load = async path => {
+              const response = await fetch(`https://raw.githubusercontent.com/${context.repo.owner}/${context.repo.repo}/${context.sha}/${path}`);
+              if (!response.ok) throw new Error(`Cannot load nightly module: ${response.status}`);
+              return stripTypeScriptTypes(await response.text());
+            };
+            const footer = moduleUrl(await load('packages/shared/src/feedbackFooter.ts'));
+            const routing = (await load('scripts/issue-routing.ts')).replaceAll('@t3tools/shared/feedbackFooter', footer);
+            const { discordPayload, postDiscord } = await import(moduleUrl(routing));
+            const { syncNightlyHealth } = await import(moduleUrl(await load('scripts/nightly-health.ts')));
+            const result = await syncNightlyHealth({
+              request: async (method, path, body) => (await github.request(`${method} ${path}`, body)).data,
+              repo: `${context.repo.owner}/${context.repo.repo}`,
+              runId: String(context.runId), conclusion, commit: process.env.CANDIDATE_REF,
+              dryRun: false,
+              announce: async issue => {
+                const webhook = process.env.DISCORD_WEBHOOK_URL;
+                if (webhook && !await postDiscord(webhook, discordPayload(issue, 'other'))) {
+                  core.warning('Discord issue announcement could not be delivered.');
+                }
+              },
+            });
+            core.info(result);

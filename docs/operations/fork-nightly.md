@@ -29,6 +29,8 @@ nightly. The stable version is the one in the nightly's tag, so `v0.1.1-nightly.
 Its release notes list the changes since the previous stable release; the first stable release has
 none to compare against, so write its notes by hand after it is published.
 
+A failed nightly opens one `Fork Nightly is failing` issue labelled `nightly-failure`, `bug`, and `needs-triage`, with the run, candidate commit, and failed jobs and steps. Repeated failures leave it alone; cancelled runs do nothing, and the next successful run comments with its run URL and closes the issue as completed. The final job serializes issue updates and announces a new issue once to Discord using the existing routing helper, because `GITHUB_TOKEN` does not trigger the issue-routing workflow; the repository issue webhook still wakes triage. Error annotations are included when readable without extra permissions; full logs are never downloaded. To inspect a historical run without writes, use `GH_REPO=incognitojam/styal node scripts/nightly-health.ts <run-id> --dry-run`.
+
 ## Versions
 
 `styal-version.json` names the next version to ship until a stable release reaches it. After that,
