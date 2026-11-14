@@ -1,3 +1,4 @@
+import { reconcilePendingSetupAttempts } from "./WorktreeSetupState.ts";
 // @effect-diagnostics nodeBuiltinImport:off -- Real Git fixtures exercise repository scope and completion evidence.
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeChildProcess from "node:child_process";
@@ -666,6 +667,41 @@ it.effect(
       assert.include(JSON.stringify(warnings), "failed to remove setup completion marker");
       NodeFS.rmdirSync(completionMarker);
       yield* assertState(threadId, unremovable.runId, "interrupted");
+      const terminalItem = (yield* projections.getThreadProjection(threadId)).turnItems.find(
+        (item) => item.id === `setup:${unremovable.runId}`,
+      );
+      if (terminalItem?.type !== "command_execution") return assert.fail("missing setup item");
+      for (const status of ["completed", "failed", "cancelled", "interrupted"] as const) {
+        const expected =
+          status === "completed" ? "succeeded" : status === "failed" ? "failed" : "interrupted";
+        for (const next of ["pending", status] as const) {
+          if (next !== "pending") NodeFS.writeFileSync(completionMarker, "stale evidence");
+          yield* eventSink.write({
+            events: [
+              {
+                id: EventId.make(`terminal-${status}-${next}`),
+                type: "turn-item.updated",
+                threadId,
+                occurredAt: yield* DateTime.now,
+                payload: { ...terminalItem, status: next },
+              },
+            ],
+          });
+        }
+        assert.equal((yield* state())[0]!.status, expected);
+        assert.isFalse(NodeFS.existsSync(completionMarker));
+        yield* sql`UPDATE worktree_setup_state SET status = 'pending' WHERE worktree_path = ${worktree}`;
+        NodeFS.writeFileSync(completionMarker, "legacy pending evidence");
+        yield* reconcilePendingSetupAttempts();
+        assert.equal((yield* state())[0]!.status, expected);
+        assert.isFalse(NodeFS.existsSync(completionMarker));
+      }
+      yield* sql`DELETE FROM orchestration_v2_projection_turn_items WHERE turn_item_id = ${terminalItem.id}`;
+      yield* sql`UPDATE worktree_setup_state SET status = 'pending' WHERE worktree_path = ${worktree}`;
+      NodeFS.writeFileSync(completionMarker, "orphaned evidence");
+      yield* reconcilePendingSetupAttempts();
+      assert.equal((yield* state())[0]!.status, "interrupted");
+      assert.isFalse(NodeFS.existsSync(completionMarker));
     }).pipe(
       Effect.provide(Layer.mergeAll(dependencies, runner)),
       Effect.ensuring(Effect.sync(() => NodeFS.rmSync(root, { recursive: true, force: true }))),

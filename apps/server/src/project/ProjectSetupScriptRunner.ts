@@ -1,3 +1,4 @@
+import { reconcilePendingSetupAttempts } from "./WorktreeSetupState.ts";
 import { isProcessAlive } from "../serverRuntimeState.ts";
 import { isLinkedProjectWorktree, readSetupCheckoutIdentity } from "./setupCompletionEvidence.ts";
 import {
@@ -595,6 +596,7 @@ export const make = Effect.gen(function* () {
 
   const recoverInterruptedRuns = Effect.fn("ProjectSetupScriptRunner.recoverInterruptedRuns")(
     function* () {
+      yield* reconcilePendingSetupAttempts().pipe(Effect.provideService(SqlClient.SqlClient, sql));
       const rows = yield* sql<{ readonly thread_id: string; readonly payload_json: string }>`
         SELECT thread_id, payload_json FROM orchestration_v2_projection_turn_items
         WHERE type = 'command_execution' AND status IN ('pending', 'running')
