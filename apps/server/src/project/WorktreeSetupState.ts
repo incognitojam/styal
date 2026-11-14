@@ -42,6 +42,7 @@ const updateOutcome = Effect.fn("WorktreeSetupState.updateOutcome")(function* (
   itemId: string,
   status: "succeeded" | "failed" | "interrupted",
   evidence: typeof WorktreeSetupCompletionEvidence.Type | undefined,
+  cleanupMarker = true,
 ) {
   const sql = yield* SqlClient.SqlClient;
   const identity = status === "succeeded" && evidence !== 1 ? evidence : undefined;
@@ -53,7 +54,7 @@ const updateOutcome = Effect.fn("WorktreeSetupState.updateOutcome")(function* (
     WHERE worktree_path = ${worktreePath} AND turn_item_id = ${itemId}
     RETURNING worktree_path
   `;
-  if (rows.length > 0 && identity === undefined) {
+  if (cleanupMarker && rows.length > 0 && identity === undefined) {
     yield* removeMarker(worktreePath, itemId);
   }
 });
@@ -83,8 +84,15 @@ export const reconcilePendingSetupAttempts = Effect.fn(
           row.turn_item_id,
           item === undefined ? "interrupted" : (terminalStatus[item.status] ?? "interrupted"),
           item?.type === "command_execution" ? item.setupScript?.completionEvidence : undefined,
+          false,
         );
       }
+      const unrecoverable = yield* sql<{ worktree_path: string; turn_item_id: string }>`
+        SELECT worktree_path, turn_item_id FROM worktree_setup_state
+        WHERE status <> 'succeeded' OR evidence_version IS NOT 2
+          OR device IS NULL OR inode IS NULL OR git_directory IS NULL
+      `;
+      for (const row of unrecoverable) yield* removeMarker(row.worktree_path, row.turn_item_id);
     }),
   );
 });

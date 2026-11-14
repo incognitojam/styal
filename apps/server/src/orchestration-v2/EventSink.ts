@@ -342,7 +342,7 @@ const layerBase: Layer.Layer<
       });
 
     // Setup exit callbacks and shutdown cleanup can race after reading the same running item.
-    // The first terminal event wins for both the event log and its projections.
+    // Like stale user-input cancellations, rejected setup updates are omitted before event append.
     const guardSetupTerminalUpdates = Effect.fnUntraced(function* (
       events: ReadonlyArray<OrchestrationV2DomainEvent>,
     ) {

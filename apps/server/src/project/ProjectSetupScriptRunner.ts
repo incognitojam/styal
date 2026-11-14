@@ -498,8 +498,9 @@ export const make = Effect.gen(function* () {
           );
           const latest = yield* sql`
             SELECT turn_item_id FROM worktree_setup_state
-            WHERE worktree_path = ${worktreeKey} AND turn_item_id = ${`setup:${run.runId}`}
+            WHERE worktree_path = ${worktreeKey}
               AND status = 'succeeded' AND evidence_version = 2
+              AND device IS NOT NULL AND inode IS NOT NULL AND git_directory IS NOT NULL
           `;
           if (latest.length === 0) yield* removeCompletionMarker(run.worktreePath);
         }),

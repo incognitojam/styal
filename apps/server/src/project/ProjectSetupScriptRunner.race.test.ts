@@ -1,3 +1,4 @@
+import { reconcilePendingSetupAttempts } from "./WorktreeSetupState.ts";
 import * as FileSystem from "effect/FileSystem";
 // @effect-diagnostics nodeBuiltinImport:off -- Real Git fixtures exercise repository scope and completion evidence.
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -41,7 +42,16 @@ const reservedPorts = Layer.mock(WorkspacePortAllocator.WorkspacePortAllocator)(
 });
 const importer = LegacyImporter.layer.pipe(Layer.provide(Layer.mergeAll(stores, sink)));
 
-it.effect.each(["late-cancel", "late-marker", "cancel-first", "new-attempt"] as const)(
+const setupCompletionMarkerRaceScenarios = [
+  "late-cancel",
+  "late-marker",
+  "cancel-first",
+  "new-attempt",
+  "newer-success",
+  "crash-after-write",
+] as const;
+
+it.effect.each(setupCompletionMarkerRaceScenarios)(
   "keeps setup outcomes and completion markers consistent: %s",
   (scenario) => {
     const scratch = NodePath.resolve(import.meta.dirname, "../../../../.scratch");
@@ -68,6 +78,7 @@ it.effect.each(["late-cancel", "late-marker", "cancel-first", "new-attempt"] as 
       Parameters<TerminalManager.TerminalManager["Service"]["subscribe"]>[0]
     >();
     let beforeMarkerWrite = Effect.void;
+    let afterMarkerWrite = Effect.void;
     const openCommand = vi.fn(
       (input: Parameters<TerminalManager.TerminalManager["Service"]["openCommand"]>[0]) =>
         Effect.gen(function* () {
@@ -149,7 +160,9 @@ it.effect.each(["late-cancel", "late-marker", "cancel-first", "new-attempt"] as 
             Effect.map(FileSystem.FileSystem, (fs) => ({
               ...fs,
               writeFileString: (...args) =>
-                Effect.andThen(beforeMarkerWrite, fs.writeFileString(...args)),
+                Effect.andThen(beforeMarkerWrite, fs.writeFileString(...args)).pipe(
+                  Effect.andThen(Effect.suspend(() => afterMarkerWrite)),
+                ),
             })),
           ).pipe(Layer.provide(NodeServices.layer)),
         ),
@@ -197,11 +210,16 @@ it.effect.each(["late-cancel", "late-marker", "cancel-first", "new-attempt"] as 
       );
 
       if (running?.type !== "command_execution") return assert.fail("setup absent");
+      const markerWritten = yield* Deferred.make<void>();
       const markerReady = yield* Deferred.make<void>();
       const allowMarker = yield* Deferred.make<void>();
-      if (scenario === "late-marker" || scenario === "new-attempt")
+      if (["late-marker", "new-attempt", "newer-success", "crash-after-write"].includes(scenario))
         beforeMarkerWrite = Deferred.succeed(markerReady, undefined).pipe(
           Effect.andThen(Deferred.await(allowMarker)),
+        );
+      if (scenario === "crash-after-write")
+        afterMarkerWrite = Deferred.succeed(markerWritten, undefined).pipe(
+          Effect.andThen(Effect.never),
         );
       const finish = Effect.forEach([...listeners], (listener) =>
         listener({
@@ -228,17 +246,85 @@ it.effect.each(["late-cancel", "late-marker", "cancel-first", "new-attempt"] as 
         });
       if (scenario === "cancel-first") yield* cancel();
       const fiber = yield* finish.pipe(Effect.forkChild);
-      if (scenario === "late-marker" || scenario === "new-attempt")
+      if (["late-marker", "new-attempt", "newer-success", "crash-after-write"].includes(scenario))
         yield* Deferred.await(markerReady);
       else yield* Fiber.join(fiber);
+      if (scenario === "newer-success" || scenario === "crash-after-write") {
+        const other = ThreadId.make("thread:second-setup");
+        yield* sql`INSERT INTO projection_threads (thread_id, project_id, title, runtime_mode, interaction_mode, created_at, updated_at)
+          VALUES (${other}, ${projectId}, 'Other', 'full-access', 'default', ${project.createdAt}, ${project.updatedAt})`;
+        yield* (yield* LegacyImporter.LegacyV1ThreadImporter).reconcileShells;
+        const next = yield* service.runForThread({
+          threadId: other,
+          projectId,
+          worktreePath: worktree,
+        });
+        if (next.status !== "started") return assert.fail("new attempt absent");
+        if (scenario === "newer-success") {
+          beforeMarkerWrite = Effect.void;
+          yield* Effect.forEach([...listeners], (listener) =>
+            listener({
+              type: "exited",
+              threadId: other,
+              terminalId: next.terminalId,
+              exitCode: 0,
+              exitSignal: null,
+            }),
+          );
+          assert.equal((yield* state())[0]!.status, "succeeded");
+          assert.isTrue(NodeFS.existsSync(completionMarker));
+          yield* Deferred.succeed(allowMarker, undefined);
+          yield* Fiber.join(fiber);
+          assert.isTrue(NodeFS.existsSync(completionMarker));
+        } else {
+          const nextItem = (yield* projections.getThreadProjection(other)).turnItems.find(
+            (item) => item.type === "command_execution",
+          );
+          if (nextItem === undefined) return assert.fail("new setup item absent");
+          yield* (yield* EventSink.EventSinkV2).write({
+            events: [
+              {
+                id: EventId.make("cancel-new-attempt"),
+                type: "turn-item.updated",
+                threadId: other,
+                occurredAt: yield* DateTime.now,
+                payload: { ...nextItem, status: "cancelled" },
+              },
+            ],
+          });
+          assert.equal((yield* state())[0]!.status, "interrupted");
+          yield* Deferred.succeed(allowMarker, undefined);
+          yield* Deferred.await(markerWritten);
+          yield* Fiber.interrupt(fiber);
+          assert.isTrue(NodeFS.existsSync(completionMarker));
+          yield* reconcilePendingSetupAttempts();
+          assert.equal((yield* state())[0]!.status, "interrupted");
+          assert.isFalse(NodeFS.existsSync(completionMarker));
+        }
+        assert.equal(
+          (yield* service.runForThread({
+            threadId: other,
+            projectId,
+            worktreePath: worktree,
+            recoverIfEvidenceMissing: true,
+          })).status,
+          "no-script",
+        );
+        return;
+      }
       if (scenario === "new-attempt") {
         const next = yield* service.runForThread({ threadId, projectId, worktreePath: worktree });
         assert.equal(next.status, "started");
       } else if (scenario !== "cancel-first") yield* cancel();
-      if (scenario === "late-marker" || scenario === "new-attempt") {
+      if (["late-marker", "new-attempt", "newer-success", "crash-after-write"].includes(scenario)) {
         yield* Deferred.succeed(allowMarker, undefined);
         yield* Fiber.join(fiber);
       }
+      if (scenario === "late-cancel")
+        assert.deepEqual(
+          yield* sql`SELECT event_id FROM orchestration_events WHERE event_id = 'review-stale-shutdown-cancel'`,
+          [],
+        );
       const expected =
         scenario === "cancel-first"
           ? "interrupted"

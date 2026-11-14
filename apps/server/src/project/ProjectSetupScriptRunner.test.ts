@@ -691,6 +691,10 @@ it.effect(
         }
         assert.equal((yield* state())[0]!.status, expected);
         assert.isFalse(NodeFS.existsSync(completionMarker));
+        NodeFS.writeFileSync(completionMarker, "terminal crash residue");
+        yield* reconcilePendingSetupAttempts();
+        assert.equal((yield* state())[0]!.status, expected);
+        assert.isFalse(NodeFS.existsSync(completionMarker));
         yield* sql`UPDATE worktree_setup_state SET status = 'pending' WHERE worktree_path = ${worktree}`;
         NodeFS.writeFileSync(completionMarker, "legacy pending evidence");
         yield* reconcilePendingSetupAttempts();
