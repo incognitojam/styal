@@ -241,13 +241,36 @@ export class StorageCleanup extends Context.Service<
     readonly runNow: Effect.Effect<StorageCleanupReport, ServerSettingsError>;
     readonly latestReport: Effect.Effect<StorageCleanupReport | null>;
     readonly reports: Stream.Stream<StorageCleanupReport | null>;
+    readonly measureWorktree: (
+      worktreePath: string,
+      targetPath?: string,
+    ) => Effect.Effect<number | null>;
     readonly drain: Effect.Effect<void>;
   }
 >()("@styal/cli/storageCleanup") {}
 
-export const makeMeasureWorktree = Effect.gen(function* () {
+const make = Effect.gen(function* () {
+  const config = yield* ServerConfig.ServerConfig;
+  const settingsService = yield* Settings.ServerSettingsService;
+  const projectStore = yield* ProjectStore.ProjectStoreV2;
+  const engine = yield* Orchestrator.OrchestratorV2;
+  const projections = yield* ProjectionStore.ProjectionStoreV2;
+  const providerSessions = yield* ProviderSessionManager.ProviderSessionManagerV2;
+  const sql = yield* SqlClient.SqlClient;
+  const git = yield* GitVcsDriver.GitVcsDriver;
+  const gitManager = yield* GitManager.GitManager;
+  const terminals = yield* TerminalManager.TerminalManager;
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
+  const liveTerminals = new Map<string, Map<string, TerminalSummary>>();
+  const orphanSizes = new Map<string, number | null>();
+  const noteTerminal = (terminal: TerminalSummary) => {
+    const threadTerminals =
+      liveTerminals.get(terminal.threadId) ?? new Map<string, TerminalSummary>();
+    threadTerminals.set(terminal.terminalId, terminal);
+    liveTerminals.set(terminal.threadId, threadTerminals);
+  };
+
   const isWindows = yield* HostProcess.isWindows;
   const pathKey = (target: string) => {
     const resolved = path.resolve(target);
@@ -262,6 +285,20 @@ export const makeMeasureWorktree = Effect.gen(function* () {
       !path.isAbsolute(relative)
     );
   };
+  const hasTerminal = (worktreePath: string) =>
+    [...liveTerminals.values()]
+      .flatMap((entries) => [...entries.values()])
+      .some((terminal) => {
+        if (terminal.status !== "starting" && terminal.status !== "running") return false;
+        const cwd = path.resolve(terminal.cwd);
+        return (
+          (terminal.worktreePath !== null &&
+            pathKey(terminal.worktreePath) === pathKey(worktreePath)) ||
+          pathKey(cwd) === pathKey(worktreePath) ||
+          inside(worktreePath, cwd)
+        );
+      });
+
   // pnpm imports packages by clone or reflink when its store shares a device
   // with the worktree. Those files have one link but share blocks with the
   // store, so removing them frees almost nothing. A store on another device
@@ -337,61 +374,6 @@ export const makeMeasureWorktree = Effect.gen(function* () {
     Effect.timeout("30 seconds"),
     Effect.orElseSucceed(() => null),
   );
-
-  return measureWorktree;
-});
-
-const make = Effect.gen(function* () {
-  const config = yield* ServerConfig.ServerConfig;
-  const settingsService = yield* Settings.ServerSettingsService;
-  const projectStore = yield* ProjectStore.ProjectStoreV2;
-  const engine = yield* Orchestrator.OrchestratorV2;
-  const projections = yield* ProjectionStore.ProjectionStoreV2;
-  const providerSessions = yield* ProviderSessionManager.ProviderSessionManagerV2;
-  const sql = yield* SqlClient.SqlClient;
-  const git = yield* GitVcsDriver.GitVcsDriver;
-  const gitManager = yield* GitManager.GitManager;
-  const terminals = yield* TerminalManager.TerminalManager;
-  const fs = yield* FileSystem.FileSystem;
-  const path = yield* Path.Path;
-  const liveTerminals = new Map<string, Map<string, TerminalSummary>>();
-  const orphanSizes = new Map<string, number | null>();
-  const noteTerminal = (terminal: TerminalSummary) => {
-    const threadTerminals =
-      liveTerminals.get(terminal.threadId) ?? new Map<string, TerminalSummary>();
-    threadTerminals.set(terminal.terminalId, terminal);
-    liveTerminals.set(terminal.threadId, threadTerminals);
-  };
-
-  const isWindows = yield* HostProcess.isWindows;
-  const pathKey = (target: string) => {
-    const resolved = path.resolve(target);
-    return isWindows ? resolved.toLowerCase() : resolved;
-  };
-  const inside = (root: string, target: string) => {
-    const relative = path.relative(pathKey(root), pathKey(target));
-    return (
-      relative !== "" &&
-      relative !== ".." &&
-      !relative.startsWith(`..${path.sep}`) &&
-      !path.isAbsolute(relative)
-    );
-  };
-  const hasTerminal = (worktreePath: string) =>
-    [...liveTerminals.values()]
-      .flatMap((entries) => [...entries.values()])
-      .some((terminal) => {
-        if (terminal.status !== "starting" && terminal.status !== "running") return false;
-        const cwd = path.resolve(terminal.cwd);
-        return (
-          (terminal.worktreePath !== null &&
-            pathKey(terminal.worktreePath) === pathKey(worktreePath)) ||
-          pathKey(cwd) === pathKey(worktreePath) ||
-          inside(worktreePath, cwd)
-        );
-      });
-
-  const measureWorktree = yield* makeMeasureWorktree;
 
   // Large snapshots take seconds; use the reader worker instead of blocking the event loop.
   const readThreads = Effect.fn("StorageCleanup.readThreads")(function* () {
@@ -1411,6 +1393,7 @@ const make = Effect.gen(function* () {
   });
   yield* start();
   return StorageCleanup.of({
+    measureWorktree,
     runNow,
     latestReport: SubscriptionRef.get(reportRef),
     reports: SubscriptionRef.changes(reportRef),

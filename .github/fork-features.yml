@@ -7831,6 +7831,7 @@ features:
       - apps/server/src/ws.ts
       - packages/contracts/src/rpc.ts
     tests:
+      - apps/server/src/telemetry/ClientFeatureUsage.test.ts
       - apps/server/src/worktreeCleanup/WorktreeCleanup.test.ts
       - packages/shared/src/worktreeCleanupPatterns.test.ts
     upstream:
