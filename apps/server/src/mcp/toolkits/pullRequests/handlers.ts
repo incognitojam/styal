@@ -13,6 +13,7 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
 import * as Orchestrator from "../../../orchestration-v2/Orchestrator.ts";
+import * as ProjectEnrichment from "../../../project/ProjectEnrichmentService.ts";
 import * as ProjectService from "../../../project/ProjectService.ts";
 import * as PullRequestService from "../../../pullRequest/PullRequestService.ts";
 import * as WorkflowRunWatchUsage from "../../../telemetry/WorkflowRunWatchUsage.ts";
@@ -236,6 +237,16 @@ const make = Effect.gen(function* () {
   const reviewGuides = yield* PullRequestReviewGuideService.PullRequestReviewGuideService;
 
   const projects = yield* ProjectService.ProjectService;
+  const projectEnrichment = yield* ProjectEnrichment.ProjectEnrichmentService;
+  const resolveProjectIdentity = Effect.fn("PullRequestsToolkit.resolveProjectIdentity")(function* (
+    project: OrchestrationProjectShell,
+  ) {
+    if (project.repositoryIdentity != null) return project;
+    const repositoryIdentity = yield* projectEnrichment.readRepositoryIdentity(
+      project.workspaceRoot,
+    );
+    return { ...project, repositoryIdentity };
+  });
   const pullRequests = yield* PullRequestService.PullRequestService;
   const random = yield* SecureRandom.SecureRandom;
 
@@ -269,18 +280,20 @@ const make = Effect.gen(function* () {
     return thread.value;
   });
 
-  const projectOf = (
+  const projectOf = Effect.fn("PullRequestsToolkit.projectOf")(function* (
     thread: OrchestrationV2ThreadShell,
     Failure:
       | typeof PullRequestLinkFailedError
       | typeof PullRequestUnlinkFailedError
       | typeof PullRequestWatchFailedError
       | typeof WorkflowRunWatchFailedError,
-  ) =>
-    projects.getShell(thread.projectId).pipe(
-      Effect.map(Option.getOrUndefined),
-      Effect.mapError((cause) => new Failure({ cause })),
-    );
+  ) {
+    const project = yield* projects
+      .getShell(thread.projectId)
+      .pipe(Effect.mapError((cause) => new Failure({ cause })));
+    if (Option.isNone(project)) return undefined;
+    return yield* resolveProjectIdentity(project.value);
+  });
 
   const dispatchFailure =
     (
@@ -431,9 +444,12 @@ const make = Effect.gen(function* () {
             Effect.orElseSucceed(() => null),
             Effect.map((shell) => shell ?? undefined),
           );
-    const known = yield* projects
-      .listShells()
-      .pipe(Effect.mapError((cause) => new PullRequestListFailedError({ cause })));
+    const known = yield* projects.listShells().pipe(
+      Effect.mapError((cause) => new PullRequestListFailedError({ cause })),
+      Effect.flatMap((shells) =>
+        Effect.forEach(shells, resolveProjectIdentity, { concurrency: 8 }),
+      ),
+    );
     const callerProject = known.find((project) => project.id === callerThread?.projectId);
     // A pull request named by host and repository builds its URL through the project that holds
     // it, which need not be the caller's.
