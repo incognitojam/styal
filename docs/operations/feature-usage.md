@@ -12,6 +12,8 @@ Upstream's `mcp.tool.invoked` records one event per agent MCP tool call with `to
 
 Additional measured operations are:
 
+- `worktree-declared-cleanup`, `source = user`: `preview`, `approve`, `revoke` and `forget` report once per user request with a client surface, excluding environment relays. Preview records `previewList`, returned `worktreeCount`, `cleanableWorktreeCount` (eligible worktrees with selected paths), `freedBytes` for eligible worktrees, and `truncated`; bytes are null when the report is truncated or eligible measurements are incomplete. Approval records `patternCount`, counting unique requested patterns that are still declared and approved, including reaffirmed approvals. Revoke records `revokeScope = one | all`; forgetting a remembered approval no longer declared records `forget` with scope `one`. All include outcome and duration; expected failures use `not_found`, `invalid_request` or `refused`, otherwise `operation_failed`. Filter `worktreeDeclaredCleanupUsageVersion = 1`. Project identifiers, patterns, paths, titles and error text are never reported.
+
 - `fleet-thread-search`, `source = agent`, `action = search`: one outcome per default cross-machine search, with `fleetThreadSearchUsageVersion = 1`. Forwarded and explicit single-machine searches are excluded. Queries, matches, machine labels and identifiers are never sent.
 
 - `completion-sounds`, `source = system`: `feature.exposed` with `action = viewed_completion_suppressed` records a completion kept quiet for a visible, focused routed thread, at most once per notification. Reports require client vocabulary version 29 and include no thread or environment identifiers, titles, or sound choices.

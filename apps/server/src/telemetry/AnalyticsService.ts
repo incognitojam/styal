@@ -260,6 +260,7 @@ export const make = Effect.gen(function* () {
           hardwareUsageVersion: 1,
           feedbackUsageVersion: 1,
           projectFileApprovalsUsageVersion: 1,
+          worktreeDeclaredCleanupUsageVersion: 1,
           workflowApprovalsUsageVersion: 1,
           workflowRunWatchUsageVersion: 2,
           threadReportsUsageVersion: 1,

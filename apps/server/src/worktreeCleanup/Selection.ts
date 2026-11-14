@@ -6,13 +6,13 @@ import * as Path from "effect/Path";
 import { type WorktreeCleanupKept, type WorktreeCleanupSelected } from "@t3tools/contracts";
 import { matchesWorktreeCleanupPattern } from "@t3tools/shared/worktreeCleanupPatterns";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
-import { makeMeasureWorktree } from "../storageCleanup.ts";
+import * as StorageCleanup from "../storageCleanup.ts";
 
 export const makeSelect = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const git = yield* GitVcsDriver.GitVcsDriver;
-  const measure = yield* makeMeasureWorktree;
+  const { measureWorktree: measure } = yield* StorageCleanup.StorageCleanup;
   const platform = yield* HostProcess.Platform;
   const isLink = (target: string) =>
     fs.readLink(target).pipe(

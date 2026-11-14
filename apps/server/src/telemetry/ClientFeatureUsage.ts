@@ -1,3 +1,6 @@
+import * as WorktreeCleanup from "../worktreeCleanup/WorktreeCleanup.ts";
+import * as WorktreeCleanupApprovals from "../worktreeCleanup/Approvals.ts";
+import * as Option from "effect/Option";
 import {
   FORK_CLIENT_USAGE_VERSION,
   LOCAL_DEVICE_HOST_ID,
@@ -252,4 +255,63 @@ export const workflowApprovals = Effect.fnUntraced(function* (
           client,
         ).pipe(Effect.provideService(AnalyticsService.AnalyticsService, analytics))
       : effect;
+});
+
+// Forwarders retain service spans; requests without a surface are relays, not manual use.
+export const worktreeCleanup = Effect.fnUntraced(function* (client: FeatureUsage.ClientDimensions) {
+  const cleanup = yield* WorktreeCleanup.WorktreeCleanup;
+  const approvals = yield* WorktreeCleanupApprovals.Approvals;
+  const analytics = yield* AnalyticsService.AnalyticsService;
+  if (!client.surface) return { cleanup, approvals };
+  const observe = <A, E, R>(
+    action: "preview" | "approve" | "revoke" | "forget",
+    effect: Effect.Effect<A, E, R>,
+    properties: (result: A) => Readonly<Record<string, string | number | boolean | null>>,
+  ) =>
+    FeatureUsage.observe(
+      { feature: "worktree-declared-cleanup", action, source: "user" },
+      effect,
+      client,
+      properties,
+    ).pipe(Effect.provideService(AnalyticsService.AnalyticsService, analytics));
+  return {
+    cleanup: WorktreeCleanup.WorktreeCleanup.of({
+      preview: Effect.fnUntraced(function* (input) {
+        return yield* observe("preview", cleanup.preview(input), (result) => {
+          const eligible = result.worktrees.filter((entry) => entry.status === "eligible");
+          return {
+            previewList: input.list,
+            worktreeCount: result.worktrees.length,
+            cleanableWorktreeCount: eligible.filter((entry) => entry.selected.length > 0).length,
+            freedBytes:
+              result.truncated || eligible.some((entry) => entry.freedBytes === null)
+                ? null
+                : eligible.reduce((bytes, entry) => bytes + entry.freedBytes!, 0),
+            truncated: result.truncated,
+          };
+        });
+      }),
+    }),
+    approvals: WorktreeCleanupApprovals.Approvals.of({
+      ...approvals,
+      approve: Effect.fnUntraced(function* (input) {
+        const shown = new Set(input.patterns.map((pattern) => pattern.trim()));
+        return yield* observe("approve", approvals.approve(input), (result) => ({
+          patternCount: result.declared.filter(
+            (entry) => entry.status === "approved" && shown.has(entry.pattern),
+          ).length,
+        }));
+      }),
+      revoke: Effect.fnUntraced(function* (input) {
+        const before = yield* approvals.review(input).pipe(Effect.option);
+        const forgotten =
+          input.pattern !== null &&
+          Option.isSome(before) &&
+          before.value.approvedNotDeclared.some((entry) => entry.pattern === input.pattern!.trim());
+        return yield* observe(forgotten ? "forget" : "revoke", approvals.revoke(input), () => ({
+          revokeScope: input.pattern === null ? "all" : "one",
+        }));
+      }),
+    }),
+  };
 });

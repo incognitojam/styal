@@ -1,3 +1,12 @@
+import * as StorageCleanup from "../storageCleanup.ts";
+import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
+import * as Stream from "effect/Stream";
+import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
+import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
+import * as ProviderSessionManager from "../orchestration-v2/ProviderSessionManager.ts";
+import * as GitManager from "../git/GitManager.ts";
+import * as TerminalManager from "../terminal/Manager.ts";
+import { ServerActivation } from "../serverActivation.ts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
@@ -70,9 +79,30 @@ function shell(overrides: Partial<OrchestrationV2ThreadShell> = {}): Orchestrati
     ...overrides,
   };
 }
-const dependencies = GitVcsDriver.layer.pipe(
-  Layer.provideMerge(ServerConfig.layerTest(process.cwd(), { prefix: "cleanup-preview-" })),
-  Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+const measurementLayer = StorageCleanup.layer.pipe(
+  Layer.provide(
+    Layer.mergeAll(
+      Settings.layerTest(),
+      Layer.mock(ProjectStore.ProjectStoreV2)({}),
+      Layer.mock(ProjectionStore.ProjectionStoreV2)({}),
+      Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({}),
+      Layer.mock(Orchestrator.OrchestratorV2)({ streamDomainEvents: Stream.empty }),
+      NodeSqliteClient.layer({ filename: ":memory:" }),
+      Layer.mock(GitManager.GitManager)({}),
+      Layer.mock(TerminalManager.TerminalManager)({
+        subscribeMetadata: () => Effect.succeed(() => {}),
+      }),
+      Layer.succeed(ServerActivation, Effect.never),
+    ),
+  ),
+);
+const dependencies = measurementLayer.pipe(
+  Layer.provideMerge(
+    GitVcsDriver.layer.pipe(
+      Layer.provideMerge(ServerConfig.layerTest(process.cwd(), { prefix: "cleanup-preview-" })),
+      Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+    ),
+  ),
 );
 const fixture = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
@@ -187,6 +217,7 @@ describe("WorktreeCleanup", () => {
       });
       for (const sameDevice of [true, false]) {
         const select = yield* makeSelect.pipe(
+          Effect.provide(Layer.fresh(measurementLayer)),
           Effect.provideService(FileSystem.FileSystem, {
             ...f.fs,
             stat: (file) =>
@@ -257,6 +288,10 @@ describe("WorktreeCleanup", () => {
         yield* f.write("dist/output", "x".repeat(8192));
         yield* f.write("dist/shared", "y".repeat(8192));
         yield* f.fs.link(`${f.worktree}/dist/shared`, `${f.root}/shared`);
+        const select = yield* makeSelect;
+        const shared = yield* select(f.worktree, ["dist/shared"]);
+        assert.equal(shared.selected.length, 1);
+        assert.equal(shared.freedBytes, 0);
         yield* f.fs.makeDirectory(`${busy}/dist`);
         yield* f.fs.writeFileString(`${busy}/dist/output`, "synthetic");
         const project = {

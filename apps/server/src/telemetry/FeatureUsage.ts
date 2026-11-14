@@ -135,6 +135,11 @@ export type AutoEnvironmentAction = "link" | "project_create" | "project_clone" 
 
 type ObservedUsage =
   | {
+      readonly feature: "worktree-declared-cleanup";
+      readonly action: "preview" | "approve" | "revoke" | "forget";
+      readonly source: "user";
+    }
+  | {
       readonly feature: "fleet-thread-search";
       readonly action: "search";
       readonly source: "agent";
@@ -341,7 +346,11 @@ function projectFileApprovalFailureReason(cause: Cause.Cause<unknown>) {
   const failure = typeof error === "object" && error !== null ? error : undefined;
   if (failure === undefined || !("_tag" in failure)) return "operation_failed";
   if (failure._tag === "EnvironmentAuthorizationError") return "refused";
-  if (failure._tag !== "ProjectFileActionApprovalError" || !("reason" in failure)) {
+  if (
+    (failure._tag !== "ProjectFileActionApprovalError" &&
+      failure._tag !== "WorktreeCleanupError") ||
+    !("reason" in failure)
+  ) {
     return "operation_failed";
   }
   switch (failure.reason) {
@@ -403,7 +412,7 @@ export const observe = Effect.fnUntraced(function* <A, E, R>(
   usage: ObservedUsage,
   effect: Effect.Effect<A, E, R>,
   client: ClientDimensions = {},
-  resultProperties?: (value: A) => Readonly<Record<string, string>>,
+  resultProperties?: (value: A) => Readonly<Record<string, string | number | boolean | null>>,
 ) {
   const analytics = yield* AnalyticsService.AnalyticsService;
   const startedAt = yield* Clock.currentTimeMillis;
@@ -430,7 +439,8 @@ export const observe = Effect.fnUntraced(function* <A, E, R>(
           !Cause.hasInterruptsOnly(exit.cause)
             ? { failureReason: hardwareFailureReason(exit.cause) }
             : {}),
-          ...(usage.feature === "project-file-approvals" &&
+          ...((usage.feature === "project-file-approvals" ||
+            usage.feature === "worktree-declared-cleanup") &&
           Exit.isFailure(exit) &&
           !Cause.hasInterruptsOnly(exit.cause)
             ? { failureReason: projectFileApprovalFailureReason(exit.cause) }
