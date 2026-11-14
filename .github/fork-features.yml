@@ -4848,7 +4848,8 @@ features:
       - Signing in leaves running sessions alone and only replaces idle sessions of threads whose latest failure needed a sign-in, never a shared process that is doing other work.
       - An instance using an API key, or OpenCode on an external server, does not offer the login.
       - A thread stopped by an authentication failure offers Sign in on web, desktop and mobile. Authentication failures are recognized from each provider's structured signal, never from error text.
-      - On web and desktop, a selected provider that reads signed out and that styal can sign in shows the same sign-in banner above the composer instead of the provider status banner, on a new thread too. The status banner stays for every other problem, including a sign-out styal cannot fix. One provider never shows both.
+      - On web and desktop, a selected provider that reads signed out and that the sign-in dialog alone can fix shows the same sign-in banner above the composer instead of the provider status banner, on a new thread too, with Refresh for a login finished elsewhere. The status banner stays for every other problem, such as not installed, a broken or unsupported version, credentials edited in provider setup, or a sign-out styal cannot fix. One provider never shows both.
+      - Sign in shows only to clients with the providers:manage grant on that environment, and an open sign-in dialog never acts on another environment.
     rationale: Upstream's in-app sign-in covers Codex, Cursor and ACP agents. An expired Claude login otherwise means finding a terminal on the right machine.
     implementation_paths:
       - apps/mobile/src/features/settings/SettingsProviderAccountsRouteScreen.tsx
@@ -4868,9 +4869,13 @@ features:
       - packages/provider-pi/src/server/driver.ts
     upstream_paths:
       - apps/server/src/provider/ProviderAuthService.ts
+      - apps/web/src/components/ChatView.tsx
+      - apps/web/src/components/chat/ProviderStatusBanner.tsx
+      - packages/contracts/src/clientRpcPermissions.ts
       - packages/provider-core/src/server/providerAuthFlow.ts
     tests:
       - apps/web/src/components/chat/ProviderStatusBanner.test.ts
+      - packages/client-runtime/src/state/commandPermissions.test.ts
       - packages/provider-core/src/server/failure.test.ts
       - packages/provider-core/src/server/providerCliLogin.test.ts
     upstream:

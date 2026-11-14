@@ -16,6 +16,7 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { Button } from "../ui/button";
 import { Dialog, DialogHeader, DialogPopup, DialogTitle } from "../ui/dialog";
 import { ProviderAuthenticationSection } from "../settings/ProviderAuthenticationSection";
+import { RefreshIcon } from "../ui/refresh-icon";
 import { toastManager } from "../ui/toast";
 import type { ComposerBannerStackItem } from "./ComposerBannerStack";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
@@ -33,23 +34,26 @@ export function useProviderSignInBanner(input: {
   readonly onDismiss: () => void;
 }) {
   // The dialog outlives the banner, so it can say "Signed in." once the provider reads signed in.
-  const [signIn, setSignIn] = useState<{
-    readonly instanceId: ProviderInstanceId;
-    readonly entryPoint: "thread" | "signed_out";
-    readonly open: boolean;
-  } | null>(null);
+  const [signIn, setSignIn] = useState<SignInDialogTarget | null>(null);
+  // A dialog opened for one environment never acts on another environment's provider.
+  if (signIn && signIn.environmentId !== input.environmentId) setSignIn(null);
   const close = () => setSignIn((current) => (current ? { ...current, open: false } : null));
   const start = useAtomCommand(serverEnvironment.startProviderAuth, {
     reportFailure: false,
     reportDefect: false,
   });
+  const refreshProviders = useAtomCommand(serverEnvironment.refreshProviders, {
+    label: "Refresh provider status",
+  });
   const [pending, setPending] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const canSignIn = useAtomValue(
     serverEnvironment.startProviderAuth.permissionAtom(input.environmentId),
   );
-  const dialogProvider = signIn
-    ? input.providers.find((candidate) => candidate.instanceId === signIn.instanceId)
-    : undefined;
+  const canRefresh = useAtomValue(
+    serverEnvironment.refreshProviders.permissionAtom(input.environmentId),
+  );
+  const dialogProvider = signInDialogProvider(signIn, input.environmentId, input.providers);
   const dialog =
     signIn && dialogProvider ? (
       <Dialog open={signIn.open} onOpenChange={(open) => (open ? undefined : close())}>
@@ -84,7 +88,12 @@ export function useProviderSignInBanner(input: {
   const name = providerName(provider);
   // A CLI login has one way in and stops nothing, so opening the dialog can start it right away.
   function openSignIn() {
-    setSignIn({ instanceId: provider.instanceId, entryPoint, open: true });
+    setSignIn({
+      environmentId: input.environmentId,
+      instanceId: provider.instanceId,
+      entryPoint,
+      open: true,
+    });
     if (provider.auth.canLogout !== false || !provider.setup?.canAuthenticate) return;
     reportForkClientUsage(input.environmentId, {
       feature: "provider-sign-in",
@@ -108,6 +117,15 @@ export function useProviderSignInBanner(input: {
       });
     }
     setPending(false);
+  }
+  // A login finished in a terminal shows up at the next status check; this checks now.
+  async function refresh() {
+    setRefreshing(true);
+    await refreshProviders({
+      environmentId: input.environmentId,
+      input: { instanceId: provider.instanceId, refreshModels: true },
+    });
+    setRefreshing(false);
   }
   const item: ComposerBannerStackItem = {
     id: `provider-sign-in:${provider.instanceId}`,
@@ -134,6 +152,18 @@ export function useProviderSignInBanner(input: {
             {waiting ? "Stop waiting" : "Continue after sign-in"}
           </Button>
         ) : null}
+        {!afterFailedTurn && canRefresh ? (
+          <Button
+            size="xs"
+            variant="ghost"
+            aria-label={`Refresh ${name} status`}
+            disabled={refreshing}
+            onClick={() => void refresh()}
+          >
+            <RefreshIcon />
+            {refreshing ? "Refreshing..." : "Refresh"}
+          </Button>
+        ) : null}
         {canSignIn ? (
           <Button size="xs" variant="outline" onClick={openSignIn}>
             Sign in
@@ -143,6 +173,23 @@ export function useProviderSignInBanner(input: {
     ),
   };
   return { item, dialog };
+}
+
+interface SignInDialogTarget {
+  readonly environmentId: EnvironmentId;
+  readonly instanceId: ProviderInstanceId;
+  readonly entryPoint: "thread" | "signed_out";
+  readonly open: boolean;
+}
+
+/** The provider an open sign-in dialog acts on, only on the environment it was opened for. */
+export function signInDialogProvider(
+  target: SignInDialogTarget | null,
+  environmentId: EnvironmentId,
+  providers: ReadonlyArray<ServerProvider>,
+): ServerProvider | undefined {
+  if (!target || target.environmentId !== environmentId) return undefined;
+  return providers.find((provider) => provider.instanceId === target.instanceId);
 }
 
 function providerName(provider: ServerProvider) {

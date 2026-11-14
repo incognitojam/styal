@@ -45,9 +45,16 @@ export function getProviderStatusBannerKey(status: ServerProvider | null): strin
   ) {
     return null;
   }
-  return [status.instanceId, status.status, status.auth.status, status.message ?? ""].join(
-    "\u0000",
-  );
+  // A changed install or version advisory is a new problem, so a dismissed banner shows again.
+  const advisory = status.compatibilityAdvisory?.status;
+  return [
+    status.instanceId,
+    status.status,
+    status.auth.status,
+    status.message ?? "",
+    status.installed ? "installed" : "missing",
+    advisory === "broken" || advisory === "unsupported" ? advisory : "",
+  ].join("\u0000");
 }
 
 /** styal can run this provider's sign-in itself, from the sign-in dialog. */
@@ -57,15 +64,20 @@ function supportsInAppSignIn(status: ServerProvider): boolean {
   );
 }
 
-/** The status banner would only say "signed out", so the sign-in banner takes its place. */
-function providerStatusOffersSignIn(status: ServerProvider | null): boolean {
+/** Signing in from the dialog is all this provider needs; anything else keeps the status banner. */
+function signInFixesProvider(status: ServerProvider): boolean {
+  const advisory = status.compatibilityAdvisory?.status;
   return (
-    status !== null &&
-    getProviderStatusBannerKey(status) !== null &&
-    getIncompatibleVersion(status) === null &&
     status.installed &&
     status.auth.status === "unauthenticated" &&
-    supportsInAppSignIn(status)
+    status.setup?.canAuthenticate === true &&
+    advisory !== "broken" &&
+    advisory !== "unsupported" &&
+    // Antigravity's API key, project and location are edited in provider setup, not the dialog.
+    !(
+      status.driver === "antigravity" &&
+      (status.auth.type === "gemini-api-key" || status.auth.type === "agent-platform")
+    )
   );
 }
 
@@ -74,7 +86,12 @@ export function shouldShowProviderStatusBanner(
   dismissedBannerKey: string | null,
 ): boolean {
   const bannerKey = getProviderStatusBannerKey(status);
-  return bannerKey !== null && bannerKey !== dismissedBannerKey;
+  return (
+    status !== null &&
+    bannerKey !== null &&
+    bannerKey !== dismissedBannerKey &&
+    !signInFixesProvider(status)
+  );
 }
 
 export type ProviderBanner =
@@ -103,15 +120,16 @@ export function resolveProviderBanner(input: {
   ) {
     return { kind: "sign-in", provider: turnProvider, afterFailedTurn: true };
   }
-  if (
-    !selectedProvider ||
-    !shouldShowProviderStatusBanner(selectedProvider, input.dismissedStatusBannerKey)
-  ) {
-    return null;
+  if (!selectedProvider) return null;
+  if (shouldShowProviderStatusBanner(selectedProvider, input.dismissedStatusBannerKey)) {
+    return { kind: "status", provider: selectedProvider };
   }
-  return providerStatusOffersSignIn(selectedProvider)
+  const bannerKey = getProviderStatusBannerKey(selectedProvider);
+  return bannerKey !== null &&
+    bannerKey !== input.dismissedStatusBannerKey &&
+    signInFixesProvider(selectedProvider)
     ? { kind: "sign-in", provider: selectedProvider, afterFailedTurn: false }
-    : { kind: "status", provider: selectedProvider };
+    : null;
 }
 
 export function hasProviderSetup(status: ServerProvider): boolean {

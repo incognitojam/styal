@@ -12,6 +12,7 @@ import {
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
   AuthPreviewOperateScope,
+  AuthProvidersManageScope,
   AuthSettingsWriteScope,
   AuthSourceControlWriteScope,
   ThreadId,
@@ -157,6 +158,39 @@ describe("command permissions", () => {
         yield* cleanup.authorize(registry, env);
         registry.set(sessions(other), AsyncResult.success(grant(false)));
         expect(registry.get(cleanup.permissionAtom(other))).toBe(false);
+      }),
+    ),
+  );
+
+  it.effect("requires the destination providers grant to start a provider sign-in", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const registry = yield* setup;
+        const start = createCommandPermissions(runtime, WS_METHODS.providerAuthStart);
+        registry.set(
+          sessions(env),
+          AsyncResult.success({
+            ...grant(false),
+            scopes: [AuthOrchestrationReadScope],
+            permissions: [AuthOrchestrationReadScope],
+          }),
+        );
+        expect(registry.get(start.permissionAtom(env))).toBe(false);
+        expect((yield* start.authorize(registry, env).pipe(Effect.flip))._tag).toBe(
+          "EnvironmentAuthorizationError",
+        );
+        registry.set(
+          sessions(env),
+          AsyncResult.success({
+            ...grant(false),
+            scopes: [AuthProvidersManageScope],
+            permissions: [AuthProvidersManageScope],
+          }),
+        );
+        expect(registry.get(start.permissionAtom(env))).toBe(true);
+        yield* start.authorize(registry, env);
+        registry.set(sessions(other), AsyncResult.success(grant(false)));
+        expect(registry.get(start.permissionAtom(other))).toBe(false);
       }),
     ),
   );

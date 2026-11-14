@@ -1,11 +1,17 @@
 import { describe, expect, it } from "vite-plus/test";
-import { ProviderDriverKind, ProviderInstanceId, type ServerProvider } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  ProviderDriverKind,
+  ProviderInstanceId,
+  type ServerProvider,
+} from "@t3tools/contracts";
 import {
   getProviderStatusBannerKey,
   getProviderStatusMessage,
   resolveProviderBanner,
   shouldShowProviderStatusBanner,
 } from "./ProviderStatusBanner";
+import { signInDialogProvider } from "./useProviderSignInBanner";
 
 const provider: ServerProvider = {
   instanceId: ProviderInstanceId.make("codex-work"),
@@ -112,7 +118,7 @@ describe("compatibility banners", () => {
   });
 });
 
-describe("resolveProviderBanner", () => {
+describe("which banner a provider shows", () => {
   const { compatibilityAdvisory: _advisory, ...base } = provider;
   const healthy: ServerProvider = {
     ...base,
@@ -128,81 +134,110 @@ describe("resolveProviderBanner", () => {
   };
   const cliOnly: ServerProvider = {
     ...signedOut,
+    driver: ProviderDriverKind.make("codex"),
     setup: { canAuthenticate: false, canInstall: false },
   };
-  const acpSignedOut: ServerProvider = {
+  const cursorApiKey: ServerProvider = {
     ...signedOut,
-    driver: ProviderDriverKind.make("acpRegistry"),
+    driver: ProviderDriverKind.make("cursor"),
     setup: { canAuthenticate: false, canInstall: false },
   };
-  const antigravitySignedOut: ServerProvider = {
+  const acp = ProviderDriverKind.make("acpRegistry");
+  const acpWithSignIn: ServerProvider = { ...signedOut, driver: acp, status: "warning" };
+  const acpWithoutSignIn: ServerProvider = {
+    ...acpWithSignIn,
+    setup: { canAuthenticate: false, canInstall: false },
+  };
+  const antigravityGoogle: ServerProvider = {
     ...signedOut,
     driver: ProviderDriverKind.make("antigravity"),
     status: "warning",
     setup: { canAuthenticate: true, canInstall: true },
+  };
+  const antigravityApiKey: ServerProvider = {
+    ...antigravityGoogle,
+    auth: { status: "unauthenticated", type: "gemini-api-key" },
   };
   const notInstalled: ServerProvider = {
     ...signedOut,
     installed: false,
     setup: { canAuthenticate: false, canInstall: true },
   };
+  const advisory = (status: "broken" | "unsupported") => ({
+    status,
+    message: "Use 2.0.0.",
+    recommendedVersion: "2.0.0",
+    recommendedRange: null,
+  });
   const brokenSignedOut: ServerProvider = {
     ...signedOut,
-    status: "warning",
-    compatibilityAdvisory: { ...provider.compatibilityAdvisory!, status: "broken" },
+    compatibilityAdvisory: advisory("broken"),
   };
+  const unsupportedSignedOut: ServerProvider = {
+    ...signedOut,
+    compatibilityAdvisory: advisory("unsupported"),
+  };
+  const unsupportedWarning: ServerProvider = { ...unsupportedSignedOut, status: "warning" };
+  const dismissedSignedOut = getProviderStatusBannerKey(signedOut);
   const turnFailed = { failed: true, lastErrorCode: "provider_auth_required" };
   const noTurn = { failed: false, lastErrorCode: undefined };
 
+  // [state, turn, provider of the failed turn, selected provider, dismissed key, expected banner]
   it.each([
-    ["new thread, signed out, styal can sign in", noTurn, undefined, signedOut, null, "sign-in"],
-    ["new thread, ACP agent signed out", noTurn, undefined, acpSignedOut, null, "sign-in"],
+    ["provider status still loading", noTurn, undefined, null, null, null],
+    ["healthy", noTurn, undefined, healthy, null, null],
+    ["signed out, sign-in dialog can fix it", noTurn, undefined, signedOut, null, "sign-in"],
+    ["ACP agent with a sign-in method", noTurn, undefined, acpWithSignIn, null, "sign-in"],
+    ["ACP agent without a sign-in method", noTurn, undefined, acpWithoutSignIn, null, "status"],
+    ["Antigravity signed in with Google", noTurn, undefined, antigravityGoogle, null, "sign-in"],
+    ["Antigravity with an API key", noTurn, undefined, antigravityApiKey, null, "status"],
+    ["Cursor with an API key", noTurn, undefined, cursorApiKey, null, "status"],
+    ["signed out, CLI login only", noTurn, undefined, cliOnly, null, "status"],
+    ["not installed", noTurn, undefined, notInstalled, null, "status"],
+    ["signed out on a broken version", noTurn, undefined, brokenSignedOut, null, "status"],
     [
-      "new thread, Antigravity signed out",
+      "signed out on an unsupported version",
       noTurn,
       undefined,
-      antigravitySignedOut,
-      null,
-      "sign-in",
-    ],
-    ["new thread, signed out, CLI sign-in only", noTurn, undefined, cliOnly, null, "status"],
-    ["new thread, not installed", noTurn, undefined, notInstalled, null, "status"],
-    [
-      "new thread, signed out on a broken version",
-      noTurn,
-      undefined,
-      brokenSignedOut,
+      unsupportedSignedOut,
       null,
       "status",
     ],
-    ["new thread, healthy", noTurn, undefined, healthy, null, null],
+    ["warning on an unsupported version", noTurn, undefined, unsupportedWarning, null, "status"],
+    ["signed out, dismissed", noTurn, undefined, signedOut, dismissedSignedOut, null],
     [
-      "failed turn, provider still reads signed in",
-      turnFailed,
-      healthy,
-      healthy,
-      null,
-      "failed-turn",
+      "dismissed, then a broken version",
+      noTurn,
+      undefined,
+      brokenSignedOut,
+      dismissedSignedOut,
+      "status",
     ],
-    ["failed turn, provider signed out", turnFailed, signedOut, signedOut, null, "failed-turn"],
-    ["failed turn, CLI sign-in only", turnFailed, cliOnly, cliOnly, null, "status"],
     [
-      "failed turn for another reason, signed out",
+      "dismissed, then not installed",
+      noTurn,
+      undefined,
+      notInstalled,
+      dismissedSignedOut,
+      "status",
+    ],
+    ["failed turn, provider reads signed in", turnFailed, healthy, healthy, null, "failed-turn"],
+    ["failed turn, provider signed out", turnFailed, signedOut, signedOut, null, "failed-turn"],
+    ["failed turn, CLI login only", turnFailed, cliOnly, cliOnly, null, "status"],
+    [
+      "turn failed for another reason, signed out",
       { failed: true, lastErrorCode: "provider_error" },
       signedOut,
       signedOut,
       null,
       "sign-in",
     ],
-    [
-      "signed out, dismissed",
-      noTurn,
-      undefined,
-      signedOut,
-      getProviderStatusBannerKey(signedOut),
-      null,
-    ],
   ] as const)("%s", (_state, turn, turnProvider, selectedProvider, dismissed, expected) => {
+    if (!turn.failed) {
+      expect(shouldShowProviderStatusBanner(selectedProvider, dismissed)).toBe(
+        expected === "status",
+      );
+    }
     const banner = resolveProviderBanner({
       ...turn,
       turnProvider,
@@ -218,5 +253,17 @@ describe("resolveProviderBanner", () => {
             ? "failed-turn"
             : "sign-in",
     ).toBe(expected);
+  });
+
+  it("acts only on the environment the sign-in dialog was opened for", () => {
+    const opened = EnvironmentId.make("laptop");
+    const target = {
+      environmentId: opened,
+      instanceId: signedOut.instanceId,
+      entryPoint: "signed_out",
+      open: true,
+    } as const;
+    expect(signInDialogProvider(target, opened, [signedOut])).toBe(signedOut);
+    expect(signInDialogProvider(target, EnvironmentId.make("server"), [signedOut])).toBeUndefined();
   });
 });
