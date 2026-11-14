@@ -24,7 +24,7 @@ export const makeSelect = Effect.gen(function* () {
       ),
     );
   return Effect.fn("WorktreeCleanup.select")(function* (root: string, patterns: readonly string[]) {
-    const selected: WorktreeCleanupSelected[] = [];
+    const selected: Omit<WorktreeCleanupSelected, "patternStatus">[] = [];
     const kept: WorktreeCleanupKept[] = [];
     if (patterns.length === 0) return { selected, kept, freedBytes: 0, truncated: false };
     const read = (args: readonly string[]) =>

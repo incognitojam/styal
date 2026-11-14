@@ -7814,9 +7814,9 @@ features:
     status: maintained
     tier: keep
     prs: []
-    rationale: Upstream closed worktree lifecycle proposals 8771 and 10342 pending Orchestrator V2. Projects need an explicit per-machine-approved list of regenerable paths before cleanup can remove build output safely.
+    rationale: Upstream closed worktree lifecycle proposals 8771 and 10342 pending Orchestrator V2. Projects need explicit per-machine approval of regenerable path patterns before cleanup can remove build output safely.
     invariants:
-      - A machine approves the exact ordered worktreeCleanup list read from styal.json; edits void approval and agents cannot approve through MCP.
+      - Approvals are remembered per trimmed pattern and machine; order and duplicates do not matter, removing declarations preserves approvals, and new patterns stay pending. Approval covers only patterns both shown by the client and still declared on the server; agents cannot approve through MCP.
       - Preview inspects only managed linked worktrees, includes archived thread references, and marks worktrees held by unsettled threads.
       - Only ignored paths are selected; tracked or unignored contents, links, mount points, nested checkouts and .git are preserved. Preview deletes nothing.
       - Freed bytes exclude hardlinks and same-device pnpm virtual stores, and bounded incomplete measurements report null.
@@ -7838,7 +7838,7 @@ features:
       tracking:
         - https://github.com/pingdotgg/t3code/pull/10342
         - https://github.com/pingdotgg/t3code/pull/8771
-      retire_when: Upstream supports exact per-machine approval and read-only previews of safe ignored regenerable paths with honest freed-byte accounting.
+      retire_when: Upstream supports remembered per-pattern machine approvals and read-only previews of safe ignored regenerable paths with honest freed-byte accounting.
 
   - id: your-machines-wording
     title: Name pairs of machines "your machines", and link only styal Link

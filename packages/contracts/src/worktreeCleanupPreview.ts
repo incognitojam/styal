@@ -1,5 +1,5 @@
 import * as Schema from "effect/Schema";
-import { ProjectId, ThreadId } from "./baseSchemas.ts";
+import { ProjectId, ThreadId, IsoDateTime } from "./baseSchemas.ts";
 
 export class WorktreeCleanupError extends Schema.TaggedError<WorktreeCleanupError>()(
   "WorktreeCleanupError",
@@ -14,10 +14,30 @@ export class WorktreeCleanupError extends Schema.TaggedError<WorktreeCleanupErro
   },
 ) {}
 export const WorktreeCleanupReviewInput = Schema.Struct({ projectId: ProjectId });
+export const WorktreeCleanupApprovals = Schema.Record(
+  Schema.String,
+  Schema.Record(Schema.String, Schema.Struct({ approvedAt: IsoDateTime })),
+);
+export const WorktreeCleanupApproveInput = Schema.Struct({
+  projectId: ProjectId,
+  patterns: Schema.Array(Schema.String.check(Schema.isMaxLength(1024))).check(
+    Schema.isMaxLength(100),
+  ),
+});
+export type WorktreeCleanupApproveInput = typeof WorktreeCleanupApproveInput.Type;
+export const WorktreeCleanupRevokeInput = Schema.Struct({
+  projectId: ProjectId,
+  pattern: Schema.NullOr(Schema.String.check(Schema.isMaxLength(1024))),
+});
+export type WorktreeCleanupRevokeInput = typeof WorktreeCleanupRevokeInput.Type;
 export const WorktreeCleanupReview = Schema.Struct({
-  status: Schema.Literals(["none", "unapproved", "changed", "approved"]),
-  patterns: Schema.Array(Schema.String),
-  previouslyApprovedPatterns: Schema.NullOr(Schema.Array(Schema.String)),
+  status: Schema.Literals(["none", "pending", "approved"]),
+  declared: Schema.Array(
+    Schema.Struct({ pattern: Schema.String, status: Schema.Literals(["approved", "pending"]) }),
+  ),
+  approvedNotDeclared: Schema.Array(
+    Schema.Struct({ pattern: Schema.String, approvedAt: IsoDateTime }),
+  ),
 });
 export type WorktreeCleanupReview = typeof WorktreeCleanupReview.Type;
 export const WorktreeCleanupPreviewInput = Schema.Struct({
@@ -28,6 +48,7 @@ export type WorktreeCleanupPreviewInput = typeof WorktreeCleanupPreviewInput.Typ
 export const WorktreeCleanupSelected = Schema.Struct({
   path: Schema.String,
   pattern: Schema.String,
+  patternStatus: Schema.Literals(["approved", "pending"]),
   kind: Schema.Literals(["file", "directory"]),
   freedBytes: Schema.NullOr(Schema.Number),
 });

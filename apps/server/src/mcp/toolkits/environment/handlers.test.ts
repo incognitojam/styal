@@ -102,16 +102,9 @@ it("does not let agent preference updates carry cleanup approvals", () => {
     EnvironmentToolkit.tools.t3_environment_preferences_update.parametersSchema,
   );
   const decoded = decode({
-    projectFileActionApprovals: {
-      "project:fixture": {
-        $worktreeCleanup: {
-          command: "worktreeCleanup",
-          roles: [],
-          patterns: ["dist"],
-          approvedAt: "2026-01-01T00:00:00.000Z",
-        },
-      },
+    worktreeCleanupApprovals: {
+      "project:fixture": { dist: { approvedAt: "2026-01-01T00:00:00.000Z" } },
     },
   });
-  expect(decoded).not.toHaveProperty("projectFileActionApprovals");
+  expect(decoded).not.toHaveProperty("worktreeCleanupApprovals");
 });

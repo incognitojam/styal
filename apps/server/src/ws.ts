@@ -2933,9 +2933,9 @@ export const layerWsRpc = (
             ),
           ),
         [WS_METHODS.projectsFileActionRun]: (input) => projectScriptRunner.runPending(input),
+        [WS_METHODS.projectsWorktreeCleanupRevoke]: (input) => cleanupApprovals.revoke(input),
         [WS_METHODS.projectsWorktreeCleanupReview]: (input) => cleanupApprovals.review(input),
-        [WS_METHODS.projectsWorktreeCleanupApprovalSet]: (input) =>
-          cleanupApprovals.setApproved(input),
+        [WS_METHODS.projectsWorktreeCleanupApprove]: (input) => cleanupApprovals.approve(input),
         [WS_METHODS.projectsWorktreeCleanupPreview]: (input) => declaredCleanup.preview(input),
         [WS_METHODS.projectsFileActionReview]: (input) => fileActionApprovals.review(input),
         [WS_METHODS.projectsFileActionApprovalSet]: (input) =>

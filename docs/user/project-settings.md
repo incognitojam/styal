@@ -258,7 +258,7 @@ working. Current logs, message attachments, and browser profiles are kept.
 
 ### Preview regenerable worktree files
 
-Declare `"worktreeCleanup": ["node_modules", "**/dist"]` in `styal.json` to list git-ignored files and folders your setup action or build recreates. This release only previews the selection and the disk space it would free; it deletes nothing. Each machine must approve the exact list. Changing the list requires approval again.
+Declare `"worktreeCleanup": ["node_modules", "**/dist"]` in `styal.json` to list git-ignored files and folders your setup action or build recreates. This release only previews the selection and the disk space it would free; it deletes nothing. Each machine approves individual patterns after trimming surrounding whitespace. Order and duplicate entries do not matter. New patterns remain pending until approved; approved patterns stay active when other lines are removed. Removed patterns are remembered, so adding one again needs no approval. Revoke one pattern, including a remembered pattern no longer declared, or revoke all project approvals to forget them.
 
 Patterns are relative to the worktree root and use `/`. `*` matches within one path segment; `**` must be a whole segment and matches any number of segments. `dist` matches only at the root; `**/dist` matches at any depth. Empty segments, `.` and `..`, backslashes, leading `/`, and `!` negation are invalid. The last segment must include a literal character, so `*` and `**/*` are invalid. `.git` is always excluded. A matched directory is selected whole only when all its contents are safe to remove; tracked files, unignored files, links, mount points, and nested checkouts keep it.
 
