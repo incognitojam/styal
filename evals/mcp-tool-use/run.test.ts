@@ -3478,6 +3478,7 @@ it("passes a waiting parent only once it answers the child's question, and judge
     "Restarting it with full access would not help, and it does not need it.",
     "Only you can approve permission prompts, but this was a question.",
     "I answered the child's question.",
+    "The child was waiting for my answer to its question, and I gave it.",
   ]) {
     assert.deepEqual(said(text), [], text);
   }
@@ -3487,6 +3488,7 @@ it("passes a waiting parent only once it answers the child's question, and judge
     "I can restart the builder with full access so it stops asking.",
     "I'll let the user approve the question.",
     "The user needs to answer this question before the builder can go on.",
+    "The child is waiting for the user to approve the question.",
   ]) {
     assert.isNotEmpty(said(text), text);
   }
