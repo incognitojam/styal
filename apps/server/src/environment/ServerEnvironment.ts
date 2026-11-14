@@ -238,6 +238,7 @@ export const make = Effect.gen(function* () {
       pullRequestChecks: true,
       sideChats: true,
       inlineMessageContext: true,
+      messagesWithNextTurn: true,
       requiredWorktreeBootstrap: true,
       threadSettlement: true,
       threadAutoSettlement: true,

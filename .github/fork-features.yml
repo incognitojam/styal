@@ -3568,6 +3568,54 @@ features:
       tracking: []
       retire_when: Upstream marks times in agent messages and explains them in the reader's time zone, including zone-less times read in the environment's zone.
 
+  - id: messages-with-next-turn
+    title: Send a message that waits for the thread's next turn
+    status: maintained
+    tier: keep
+    prs: []
+    invariants:
+      - A message sent with the next turn is a queued run marked `withNextTurn`; it never starts a turn on its own, including on an idle thread, after a restart, or when the queue is resumed.
+      - When any other turn starts in the thread (a message, delegated completion, notification, scheduled task or continuation), every waiting message is attached to that run before its trigger, in queue order, as separate user messages with their own times; the provider input marks each with `[Sent with your next turn, <UTC time>]`.
+      - Waiting messages are not steered into an active turn, do not block or undo settling or snoozing, survive settle, archive and restart without being paused, and go to whichever provider runs the next turn.
+      - Send now on a waiting message starts it as a normal turn when the thread is idle or steers it into the active turn; `t3_queue` `start` does the same for agents, and `t3_thread_send` `withNextTurn` lets an agent leave a message for another thread without waking it.
+      - Clients offer the option only to servers that report `messagesWithNextTurn`; web and desktop use the send button's context menu and `composer.sendWithNextTurn` (Alt+Enter), and web, desktop and mobile label waiting rows "With next turn".
+      - Sends and deliveries record structural feature-usage events with source and message count only.
+    implementation_paths:
+      - apps/mobile/src/features/threads/ThreadQueueControl.tsx
+      - apps/server/src/mcp/OrchestratorMcpService.ts
+      - apps/server/src/mcp/toolkits/orchestrator/tools.ts
+      - apps/server/src/mcp/toolkits/thread/handlers.ts
+      - apps/server/src/mcp/toolkits/thread/tools.ts
+      - apps/server/src/orchestration-v2/Orchestrator.ts
+      - apps/server/src/orchestration-v2/ProviderRuntimeRecoveryService.ts
+      - apps/server/src/orchestration-v2/ProviderTurnStartService.ts
+      - apps/server/src/orchestration-v2/ThreadReports.ts
+      - apps/server/src/telemetry/FeatureUsage.ts
+      - apps/web/src/components/ChatView.logic.ts
+      - apps/web/src/components/chat/ComposerPrimaryActions.tsx
+      - apps/web/src/components/chat/QueuedRunsControl.tsx
+      - apps/web/src/composer-logic.ts
+      - packages/client-runtime/src/operations/commands.ts
+      - packages/client-runtime/src/state/threadWorkflows.ts
+      - packages/contracts/src/environment.ts
+      - packages/contracts/src/orchestrationV2.ts
+    upstream_paths:
+      - apps/server/src/orchestration-v2/Orchestrator.ts
+      - apps/server/src/orchestration-v2/ProviderTurnStartService.ts
+      - apps/web/src/components/chat/QueuedRunsControl.tsx
+      - packages/contracts/src/orchestrationV2.ts
+    tests:
+      - apps/server/src/mcp/OrchestratorMcpToolkit.integration.test.ts
+      - apps/server/src/orchestration-v2/ProviderRuntimeRecoveryService.test.ts
+      - apps/server/src/orchestration-v2/SteeringCompletion.integration.test.ts
+      - apps/server/src/telemetry/FeatureUsage.test.ts
+      - apps/web/src/components/ChatView.logic.test.ts
+      - apps/web/src/composer-logic.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream lets a queued message wait for the thread's next turn without starting one, delivered in order with that turn.
+
   - id: missing-workspace-provider-guard
     title: Fail provider startup clearly for missing workspaces
     status: review-needed

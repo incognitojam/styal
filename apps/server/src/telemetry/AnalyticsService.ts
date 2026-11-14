@@ -254,6 +254,7 @@ export const make = Effect.gen(function* () {
           featureUsageVersion: 1,
           autoEnvironmentToolsUsageVersion: 1,
           fleetThreadSearchUsageVersion: 1,
+          messagesWithNextTurnUsageVersion: 1,
           agentGuidesUsageVersion: 2,
           browserToolsUsageVersion: 1,
           deviceUsageVersion: 2,

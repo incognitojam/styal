@@ -86,6 +86,20 @@ running the send button shows which action it will take. Long-press it to use th
 other action for a single message, or hold `Cmd` while sending from a hardware
 keyboard. The button only offers Steer when the running agent supports it.
 
+## Send with the next turn
+
+A message sent with the next turn doesn't start a turn and doesn't wake the agent. It
+waits in the queue, marked **With next turn**, and goes to the agent at the start of
+the next turn that begins for any other reason: your next message, a finished
+delegated task, a notification or a scheduled task. Use it for acknowledgements
+and small answers that can wait.
+
+On web and desktop, right-click the send button and choose **Send with next turn**,
+or press `Option+Enter` on macOS or `Alt+Enter` on Windows and Linux. Change
+`composer.sendWithNextTurn` in **Settings → Keybindings** to use another shortcut.
+Choose **Send now** on the queued message to send it straight away. Settling a
+thread keeps these messages; they go with its next turn.
+
 ## Queue messages offline on mobile
 
 Mobile keeps local copies of draft attachments, so you can preview them and queue

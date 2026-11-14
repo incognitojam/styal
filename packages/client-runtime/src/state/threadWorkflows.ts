@@ -164,7 +164,9 @@ export function deriveThreadQueueWorkflowState(projection: Projection): ThreadQu
   return {
     activeRun,
     queuedRuns,
-    isHeld: projection.runs.some((run) => run.status === "queued" && run.queueHeld === true),
+    isHeld: projection.runs.some(
+      (run) => run.status === "queued" && run.queueHeld === true && run.withNextTurn !== true,
+    ),
     canSendNow:
       activeRun === null &&
       projection.thread.archivedAt == null &&

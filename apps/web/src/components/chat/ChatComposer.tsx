@@ -373,6 +373,8 @@ export interface ChatComposerProps {
   supportsQuestionAttachments: boolean;
   maxFileAttachmentBytes: number | null;
   routeKind: "server" | "draft";
+  /** The server keeps messages for the thread's next turn without starting one. */
+  supportsSendWithNextTurn: boolean;
   routeThreadRef: ScopedThreadRef;
   draftId: DraftId | null;
   multipleModelSelections: ReadonlyArray<ModelSelection> | null;
@@ -2287,6 +2289,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     );
   };
   const handleSubmitMessageStable = useStableCallback(handleSubmitMessage);
+  const handleSendWithNextTurnStable = useStableCallback(() =>
+    submitComposer(undefined, "next_turn", "next_turn"),
+  );
   const submitCitationAndSend = () => {
     submitComposer(
       undefined,
@@ -3722,6 +3727,21 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     preserveComposerFocusOnPointerDown={isMobileViewport}
                     isEditingQueuedMessage={isEditingQueuedMessage}
                     onSubmitMessage={handleSubmitMessageStable}
+                    {...(props.supportsSendWithNextTurn && routeKind === "server"
+                      ? {
+                          onSendWithNextTurn: handleSendWithNextTurnStable,
+                          sendWithNextTurnShortcutLabel: shortcutLabelForCommand(
+                            keybindings,
+                            "composer.sendWithNextTurn",
+                            {
+                              context: {
+                                composerFocus: true,
+                                draftThreadRoute: false,
+                              },
+                            },
+                          ),
+                        }
+                      : {})}
                     onResume={onResume}
                     onPreviousPendingQuestion={onPreviousActivePendingUserInputQuestion}
                     onInterrupt={handleInterruptPrimaryActionStable}

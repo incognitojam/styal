@@ -321,6 +321,11 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
                         )}
                         {title}
                       </Text>
+                      {run.withNextTurn === true ? (
+                        <Text className="text-2xs text-foreground-muted">
+                          With next turn · doesn&apos;t wake the agent
+                        </Text>
+                      ) : null}
                     </View>
                     {controls.isEditing ? (
                       <Text className="shrink-0 text-2xs uppercase tracking-wide text-primary">

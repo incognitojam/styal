@@ -956,10 +956,29 @@ export const layer: Layer.Layer<
       });
       let effectiveHandoffs = handoffs;
       let resumeFellBack = false;
-      const userText = projectComposerContextForProvider({
-        text: message.text,
-        records: message.context?.records ?? [],
+      const nextTurnMessages = (run.nextTurnMessageIds ?? []).flatMap((id) => {
+        const pending = projection.messages.find((candidate) => candidate.id === id);
+        return pending === undefined ? [] : [pending];
       });
+      const userText = [
+        ...nextTurnMessages.map(
+          (pending) =>
+            `[Sent with your next turn, ${DateTime.formatIso(pending.createdAt)}]\n${projectComposerContextForProvider(
+              {
+                text: pending.text,
+                records: pending.context?.records ?? [],
+              },
+            )}`,
+        ),
+        projectComposerContextForProvider({
+          text: message.text,
+          records: message.context?.records ?? [],
+        }),
+      ].join("\n\n");
+      const turnAttachments = [
+        ...nextTurnMessages.flatMap((pending) => pending.attachments),
+        ...message.attachments,
+      ];
       // Codex and Claude parse /goal from the prompt, so it goes verbatim and history waits a turn.
       const goalDriver = session.driver === "codex" || session.driver === "claudeAgent";
       const goalCommand = goalDriver && parseGoalCommand(message) !== null;
@@ -1165,7 +1184,7 @@ export const layer: Layer.Layer<
               tokenCap,
               modelContextWindow,
               userText: turnNote === "" ? userText : `${turnNote}\n\n${userText}`,
-              attachments: message.attachments,
+              attachments: turnAttachments,
               providerThread: budgetProviderThread,
               nativeContextEstimate:
                 budgetProviderThread.contextUsage?.usedTokens === undefined
@@ -1849,7 +1868,7 @@ export const layer: Layer.Layer<
         message: {
           messageId: message.id,
           text: userText,
-          attachments: message.attachments,
+          attachments: turnAttachments,
           createdBy: message.createdBy,
           creationSource: message.creationSource,
           ...(message.scheduledTaskId === undefined

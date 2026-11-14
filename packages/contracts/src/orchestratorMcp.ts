@@ -595,6 +595,7 @@ export const OrchestratorMcpThreadReadResult = Schema.Struct({
 export type OrchestratorMcpThreadReadResult = typeof OrchestratorMcpThreadReadResult.Type;
 
 export const OrchestratorMcpThreadSendInput = Schema.Struct({
+  withNextTurn: Schema.optional(Schema.Boolean),
   environmentId: OrchestratorMcpEnvironmentTarget,
   threadId: ThreadId,
   message: OrchestratorMcpPrompt,

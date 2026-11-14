@@ -1467,6 +1467,18 @@ it.effect.each(["fails", "is interrupted"] as const)(
           }),
         );
         yield* Deferred.await(fetchEntered);
+        const nextTurn = yield* threads.sendToThread({
+          projectId,
+          threadId: launched.threadId,
+          commandId: CommandId.make("next-turn-during-setup"),
+          messageId: MessageId.make("message:next-turn-during-setup"),
+          text: "Acknowledged",
+          attachments: [],
+          mode: "queue",
+          withNextTurn: true,
+          createdBy: "user",
+          creationSource: "web",
+        });
         const queued = yield* threads.sendToThread({
           projectId,
           commandId: CommandId.make(`command:launch:queued-setup-${ending}:follow-up`),
@@ -1500,6 +1512,9 @@ it.effect.each(["fails", "is interrupted"] as const)(
         const projection = yield* threads.getThreadProjection(launched.threadId);
         assert.equal(projection.runs.at(-1)?.status, "queued");
         assert.equal(projection.thread.worktreePath, null);
+        assert.isFalse(
+          projection.runs.find((run) => run.id === nextTurn.run.id)?.queueHeld === true,
+        );
 
         if (ending === "fails") {
           yield* launches.retryPreparation({
@@ -1576,6 +1591,19 @@ it.effect.each(["failed", "interrupted"] as const)(
       const held = projection.runs.at(-1)!;
       assert.equal(held.status, "queued");
       assert.equal(held.queueHeld, true);
+      const nextTurn = yield* threads.sendToThread({
+        projectId,
+        threadId: launched.threadId,
+        commandId: CommandId.make("next-turn-after-setup"),
+        messageId: MessageId.make("message:next-turn-after-setup"),
+        text: "Acknowledged",
+        attachments: [],
+        mode: "queue",
+        withNextTurn: true,
+        createdBy: "user",
+        creationSource: "web",
+      });
+      assert.isFalse(nextTurn.run.queueHeld === true);
 
       // A message the user starts does not release it: the held message would
       // run after it in the project checkout.

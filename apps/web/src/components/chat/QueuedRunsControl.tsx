@@ -132,6 +132,7 @@ export function QueuedRunsControl({
       runId: run.id,
       messageId: run.userMessageId,
       serverIndex,
+      withNextTurn: run.withNextTurn === true,
       text,
       // A guest's message keeps the guest's words; the owner can cancel it, not rewrite it.
       editable: context?.guest === undefined,
@@ -152,6 +153,7 @@ export function QueuedRunsControl({
       runId: null,
       messageId: null,
       serverIndex: null,
+      withNextTurn: false,
       text: message.text,
       editable: true,
       attachments: [] as ReadonlyArray<ContractChatAttachment>,
@@ -260,7 +262,7 @@ export function QueuedRunsControl({
           return (
             <li
               key={item.key}
-              aria-label={`Queued message ${position + 1} of ${items.length}, not sent`}
+              aria-label={`Queued message ${position + 1} of ${items.length}, ${item.withNextTurn ? "waiting for the next turn" : "not sent"}`}
               aria-posinset={position + 1}
               aria-setsize={items.length}
               aria-current={isEditing ? "true" : undefined}
@@ -275,6 +277,22 @@ export function QueuedRunsControl({
                 timestampFormat={props.timestampFormat}
                 onOpenThread={props.onOpenThread}
               >
+                {item.withNextTurn && !isEditing ? (
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <span className="flex items-center gap-1 px-1 text-muted-foreground" />
+                      }
+                    >
+                      <Clock3Icon aria-hidden className="size-3" />
+                      With next turn
+                    </TooltipTrigger>
+                    <TooltipPopup>
+                      Goes with the agent&apos;s next turn, whatever starts it. It doesn&apos;t wake
+                      the agent.
+                    </TooltipPopup>
+                  </Tooltip>
+                ) : null}
                 {canSend && !isEditing ? (
                   <>
                     <Tooltip>

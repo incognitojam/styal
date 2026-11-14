@@ -2946,122 +2946,152 @@ it.layer(layerTest)("delegated tasks across a server restart", (it) => {
     }),
   );
 
-  it.effect("settles a child whose provider failure holds its queued wakes", () =>
-    Effect.gen(function* () {
-      const orchestrator = yield* Orchestrator.OrchestratorV2;
-      const eventSink = yield* EventSink.EventSinkV2;
-      const now = yield* DateTime.now;
-      const threadId = ThreadId.make("thread:failed-hold-parent");
-      const projectId = ProjectId.make("project:failed-hold-parent");
-      const runId = RunId.make("run:failed-hold-parent");
-      const rootNodeId = NodeId.make("node:failed-hold-parent-root");
-      yield* seedParentWithTerminalTask({
-        threadId,
-        projectId,
-        runId,
-        rootNodeId,
-        taskId: NodeId.make("node:failed-hold-parent-settled"),
-        deliveryState: "delivered",
-        now,
-      });
-      const child = yield* seedRestartCancelledChild({
-        parentThreadId: threadId,
-        projectId,
-        parentRunId: runId,
-        rootNodeId,
-        name: "failed-hold-child",
-        completionWake: "always",
-        continuationPending: false,
-        now,
-      });
-      const activeRun = runEvent({
-        threadId: child.childThreadId,
-        runId: RunId.make("run:failed-hold-child:2"),
-        ordinal: 2,
-        status: "running",
-        now,
-      });
-      const queued = runEvent({
-        threadId: child.childThreadId,
-        runId: RunId.make("run:failed-hold-child:3"),
-        ordinal: 3,
-        status: "queued",
-        now,
-      });
-      yield* eventSink.write({
-        commandId: CommandId.make("command:failed-hold-child:resumed"),
-        events: [
-          activeRun,
-          { ...queued, payload: { ...queued.payload, startedAt: null, completedAt: null } },
-        ],
-      });
-      const afterSequence = yield* eventSink.latestSequence();
-      const errorItemId = TurnItemId.make("turn-item:failed-hold-child:error");
-      yield* eventSink.write({
-        commandId: CommandId.make("command:failed-hold-child:failed"),
-        events: [
-          {
-            id: EventId.make("event:failed-hold-child:error"),
-            type: "turn-item.updated",
-            threadId: child.childThreadId,
-            runId: activeRun.runId,
-            providerInstanceId: modelSelection.instanceId,
-            occurredAt: now,
-            payload: {
-              id: errorItemId,
-              type: "error",
-              threadId: child.childThreadId,
-              runId: activeRun.runId,
-              nodeId: null,
-              providerThreadId: null,
-              providerTurnId: null,
-              nativeItemRef: null,
-              parentItemId: null,
-              ordinal: 1,
-              status: "failed",
-              title: "Provider failure",
-              startedAt: now,
-              completedAt: now,
-              updatedAt: now,
-              failure: {
-                class: "provider_error",
-                message: "Provider failed.",
-                code: "provider_failed",
-                retryable: null,
+  it.effect.each(["provider_error", "usage_limit"] as const)(
+    "settles a child whose %s preserves next-turn messages",
+    (failureClass) =>
+      Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const eventSink = yield* EventSink.EventSinkV2;
+        const now = yield* DateTime.now;
+        const threadId = ThreadId.make(`thread:failed-hold-parent-${failureClass}`);
+        const projectId = ProjectId.make(`project:failed-hold-parent-${failureClass}`);
+        const runId = RunId.make(`run:failed-hold-parent-${failureClass}`);
+        const rootNodeId = NodeId.make(`node:failed-hold-parent-root-${failureClass}`);
+        yield* seedParentWithTerminalTask({
+          threadId,
+          projectId,
+          runId,
+          rootNodeId,
+          taskId: NodeId.make(`node:failed-hold-parent-settled-${failureClass}`),
+          deliveryState: "delivered",
+          now,
+        });
+        const child = yield* seedRestartCancelledChild({
+          parentThreadId: threadId,
+          projectId,
+          parentRunId: runId,
+          rootNodeId,
+          name: `failed-hold-child-${failureClass}`,
+          completionWake: "always",
+          continuationPending: false,
+          now,
+        });
+        const activeRun = runEvent({
+          threadId: child.childThreadId,
+          runId: RunId.make(`run:failed-hold-child:2-${failureClass}`),
+          ordinal: 2,
+          status: "running",
+          now,
+        });
+        const queued = runEvent({
+          threadId: child.childThreadId,
+          runId: RunId.make(`run:failed-hold-child:3-${failureClass}`),
+          ordinal: 3,
+          status: "queued",
+          now,
+        });
+        const nextTurn = runEvent({
+          threadId: child.childThreadId,
+          runId: RunId.make(`run:failed-hold-child:4-${failureClass}`),
+          ordinal: 4,
+          status: "queued",
+          now,
+        });
+        yield* eventSink.write({
+          commandId: CommandId.make(`command:failed-hold-child:resumed-${failureClass}`),
+          events: [
+            activeRun,
+            {
+              ...nextTurn,
+              payload: {
+                ...nextTurn.payload,
+                withNextTurn: true,
+                startedAt: null,
+                completedAt: null,
               },
             },
-          },
-          {
-            ...activeRun,
-            id: EventId.make("event:failed-hold-child:failed"),
-            payload: { ...activeRun.payload, status: "failed", completedAt: now },
-          },
-        ],
-      });
+            { ...queued, payload: { ...queued.payload, startedAt: null, completedAt: null } },
+          ],
+        });
+        const afterSequence = yield* eventSink.latestSequence();
+        const errorItemId = TurnItemId.make(`turn-item:failed-hold-child:error-${failureClass}`);
+        yield* eventSink.write({
+          commandId: CommandId.make(`command:failed-hold-child:failed-${failureClass}`),
+          events: [
+            {
+              id: EventId.make(`event:failed-hold-child:error-${failureClass}`),
+              type: "turn-item.updated",
+              threadId: child.childThreadId,
+              runId: activeRun.runId,
+              providerInstanceId: modelSelection.instanceId,
+              occurredAt: now,
+              payload: {
+                id: errorItemId,
+                type: "error",
+                threadId: child.childThreadId,
+                runId: activeRun.runId,
+                nodeId: null,
+                providerThreadId: null,
+                providerTurnId: null,
+                nativeItemRef: null,
+                parentItemId: null,
+                ordinal: 1,
+                status: "failed",
+                title: "Provider failure",
+                startedAt: now,
+                completedAt: now,
+                updatedAt: now,
+                failure: {
+                  class: failureClass,
+                  message: "Provider failed.",
+                  code: "provider_failed",
+                  retryable: null,
+                },
+              },
+            },
+            {
+              ...activeRun,
+              id: EventId.make(`event:failed-hold-child:failed-${failureClass}`),
+              payload: { ...activeRun.payload, status: "failed", completedAt: now },
+            },
+          ],
+        });
 
-      const settled = yield* eventSink
-        .stream({ afterSequence, eventType: "subagent.updated" })
-        .pipe(
-          Stream.filter(
-            (stored) =>
-              stored.event.type === "subagent.updated" && stored.event.payload.id === child.taskId,
-          ),
-          Stream.take(1),
-          Stream.runHead,
+        if (failureClass === "usage_limit") {
+          yield* orchestrator.resumeQueuedRuns;
+          const childProjection = yield* orchestrator.getThreadProjection(child.childThreadId);
+          const waiting = childProjection.runs.find((run) => run.id === nextTurn.payload.id)!;
+          assert.equal(waiting.status, "queued");
+          assert.isTrue(waiting.withNextTurn);
+          assert.isFalse(waiting.queueHeld === true);
+          return;
+        }
+
+        const settled = yield* eventSink
+          .stream({ afterSequence, eventType: "subagent.updated" })
+          .pipe(
+            Stream.filter(
+              (stored) =>
+                stored.event.type === "subagent.updated" &&
+                stored.event.payload.id === child.taskId,
+            ),
+            Stream.take(1),
+            Stream.runHead,
+          );
+        assert.isTrue(settled._tag === "Some");
+        const recovered = yield* orchestrator.getThreadProjection(threadId);
+        assert.equal(recovered.subagents.find((row) => row.id === child.taskId)?.status, "failed");
+        const childProjection = yield* orchestrator.getThreadProjection(child.childThreadId);
+        assert.deepEqual(
+          childProjection.runs.map((run) => [run.status, run.queueHeld ?? false]),
+          [
+            ["cancelled", false],
+            ["failed", false],
+            ["queued", true],
+            ["queued", false],
+          ],
         );
-      assert.isTrue(settled._tag === "Some");
-      const recovered = yield* orchestrator.getThreadProjection(threadId);
-      assert.equal(recovered.subagents.find((row) => row.id === child.taskId)?.status, "failed");
-      const childProjection = yield* orchestrator.getThreadProjection(child.childThreadId);
-      assert.deepEqual(
-        childProjection.runs.map((run) => [run.status, run.queueHeld ?? false]),
-        [
-          ["cancelled", false],
-          ["failed", false],
-          ["queued", true],
-        ],
-      );
-    }),
+      }),
   );
 
   it.effect(

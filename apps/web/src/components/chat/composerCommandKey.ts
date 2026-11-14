@@ -246,12 +246,14 @@ export function composerCommandKeyHandler(input: {
     if (submissionIntent) {
       submitComposer(
         undefined,
-        resolveComposerDispatchMode({
-          running: phase === "running",
-          alternateModifier: submissionIntent === "alternate",
-          activeTurnDefault: followUpBehavior,
-          canSteer: !isCompacting,
-        }),
+        submissionIntent === "next_turn"
+          ? "next_turn"
+          : resolveComposerDispatchMode({
+              running: phase === "running",
+              alternateModifier: submissionIntent === "alternate",
+              activeTurnDefault: followUpBehavior,
+              canSteer: !isCompacting,
+            }),
         submissionIntent,
       );
       return true;

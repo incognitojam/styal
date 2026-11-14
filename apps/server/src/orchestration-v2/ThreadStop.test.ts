@@ -114,7 +114,11 @@ const watch = (threadId: ThreadId, number: number) =>
     });
   });
 
-const send = (threadId: ThreadId, text: string, type: "start_immediately" | "queue_after_active") =>
+const send = (
+  threadId: ThreadId,
+  text: string,
+  type: "start_immediately" | "queue_after_active" | "with_next_turn",
+) =>
   Effect.gen(function* () {
     const orchestrator = yield* Orchestrator.OrchestratorV2;
     yield* orchestrator.dispatch({
@@ -663,6 +667,7 @@ it.effect.each(["thread.stop", "run.interrupt"] as const)(
       yield* createWatchingThread(threadId, 5);
       yield* send(threadId, "active", "start_immediately");
       yield* send(threadId, "user follow-up", "queue_after_active");
+      yield* send(threadId, "acknowledged", "with_next_turn");
       for (const creationSource of ["provider", "server"] as const) {
         yield* orchestrator.dispatch({
           type: "message.dispatch",
@@ -704,8 +709,15 @@ it.effect.each(["thread.stop", "run.interrupt"] as const)(
         "cancelled",
       );
       assert.deepEqual(
-        stopped.runs.filter((run) => run.status === "queued").map((run) => run.queueHeld),
+        stopped.runs
+          .filter((run) => run.status === "queued" && run.withNextTurn !== true)
+          .map((run) => run.queueHeld),
         [true, true],
+      );
+      assert.isTrue(
+        stopped.runs.some(
+          (run) => run.withNextTurn === true && run.status === "queued" && run.queueHeld !== true,
+        ),
       );
     }).pipe(Effect.provide(layerTest)),
 );

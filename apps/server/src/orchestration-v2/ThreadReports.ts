@@ -106,7 +106,9 @@ export const startedByPerson = (
  */
 export function runReportKind(input: {
   readonly run: Pick<OrchestrationV2Run, "id" | "status" | "ordinal">;
-  readonly runs: ReadonlyArray<Pick<OrchestrationV2Run, "status" | "ordinal" | "queueHeld">>;
+  readonly runs: ReadonlyArray<
+    Pick<OrchestrationV2Run, "status" | "ordinal" | "queueHeld" | "withNextTurn">
+  >;
   readonly reportedInRunId: RunId | undefined;
   readonly startedByPerson: boolean;
   readonly hasOpenDelegatedTask: boolean;
@@ -118,7 +120,8 @@ export function runReportKind(input: {
       run.ordinal > input.run.ordinal &&
       run.status !== "cancelled" &&
       run.status !== "rolled_back" &&
-      run.queueHeld !== true,
+      run.queueHeld !== true &&
+      run.withNextTurn !== true,
   );
   if (superseded) return null;
   if (input.run.status === "failed") return "failed";

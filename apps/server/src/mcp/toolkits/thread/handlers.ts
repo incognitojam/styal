@@ -36,6 +36,7 @@ function queueEntry(
   const characters = Array.from(message.text);
   return {
     queuedRunId: run.id,
+    ...(run.withNextTurn === undefined ? {} : { withNextTurn: run.withNextTurn }),
     text: characters.slice(0, limit).join(""),
     truncated: characters.length > limit,
   };
@@ -328,6 +329,12 @@ export const declarations = {
               text,
             }));
           }
+          case "start":
+            return yield* dispatch(input.threadId, (common) => ({
+              ...common,
+              type: "queued-run.start",
+              runId,
+            }));
           case "reorder": {
             const beforeRunId = yield* required(input.beforeRunId, "beforeRunId");
             return yield* dispatch(input.threadId, (common) => ({

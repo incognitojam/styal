@@ -1606,7 +1606,8 @@ export function threadShellFromProjection(
       runs,
       projection.turnItems,
       providerSession?.lastError ?? null,
-    ) ?? latestUnheldRun(runs);
+    ) ??
+    latestUnheldRun(runs.filter((run) => run.status !== "queued" || run.withNextTurn !== true));
   const activeRun =
     runs
       .filter(isInterruptibleRunForShell)
@@ -4424,7 +4425,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                     -- The original task still waits for the latest unheld work.
                     (SELECT status FROM orchestration_v2_projection_runs
                      WHERE thread_id = child.thread_id
-                       AND NOT (status = 'queued' AND json_extract(payload_json, '$.queueHeld') IS 1)
+                       AND NOT (status = 'queued' AND (json_extract(payload_json, '$.queueHeld') IS 1 OR json_extract(payload_json, '$.withNextTurn') IS 1))
                      ORDER BY ordinal DESC LIMIT 1
                     ) IN ('completed', 'interrupted', 'failed', 'cancelled', 'rolled_back')
                     AND NOT EXISTS (
@@ -4752,6 +4753,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
               WHERE thread_id = ${threadId} AND (
                 message_id IN (SELECT json_extract(payload_json, '$.userMessageId') FROM orchestration_v2_projection_runs
                   WHERE thread_id = ${threadId} AND run_id = ${runId})
+                OR (run_id = ${runId} AND role = 'user')
                 OR (role = 'user' AND lower(trim(json_extract(payload_json, '$.text'), ${javascriptTrimWhitespace})) = '/compact')
                 -- Earlier /goal turns defer context too; parseGoalCommand narrows this prefix match.
                 OR (role = 'user' AND trim(json_extract(payload_json, '$.text'), ${javascriptTrimWhitespace}) GLOB '/goal*')
@@ -6564,7 +6566,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
               WHERE candidate.thread_id = t.thread_id
                 AND NOT (
                   candidate.status = 'queued'
-                  AND json_extract(candidate.payload_json, '$.queueHeld') IS 1
+                  AND (json_extract(candidate.payload_json, '$.queueHeld') IS 1 OR json_extract(candidate.payload_json, '$.withNextTurn') IS 1)
                 )
                 AND NOT ${isSilentShellRun("candidate")}
               ORDER BY candidate.ordinal DESC, candidate.run_id DESC
@@ -6851,6 +6853,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
               SELECT latest.run_id FROM orchestration_v2_projection_runs latest
               WHERE latest.thread_id = t.thread_id
                 AND NOT ${isSilentShellRun("latest")}
+                AND NOT (latest.status = 'queued' AND json_extract(latest.payload_json, '$.withNextTurn') IS 1)
               ORDER BY latest.ordinal DESC, latest.run_id DESC
               LIMIT 1
             )

@@ -147,6 +147,7 @@ export type ThreadManagementTerminalRunStatus = Extract<
 >;
 
 export interface ThreadManagementSendInput {
+  readonly withNextTurn?: boolean;
   readonly projectId: ProjectId;
   readonly commandId: CommandId;
   readonly threadId: ThreadId;
@@ -836,7 +837,9 @@ const make = Effect.gen(function* () {
       OrchestrationV2Command,
       { readonly type: "message.dispatch" }
     >["dispatchMode"];
-    if (input.mode === "steer" || input.mode === "restart") {
+    if (input.withNextTurn === true) {
+      dispatchMode = { type: "with_next_turn" };
+    } else if (input.mode === "steer" || input.mode === "restart") {
       if (steerableRun === undefined) {
         return yield* new ThreadManagementNoSteerableRunError({
           threadId: input.threadId,
@@ -964,7 +967,10 @@ const make = Effect.gen(function* () {
         ["runs", "messages", "subagents", "providerThreads"],
         { messageRoles: ["user"], monitorNotificationsOnly: true },
       );
-      const progress = delegatedTaskProgress(records);
+      const progress = delegatedTaskProgress({
+        ...records,
+        runs: records.runs.filter((run) => run.status !== "queued" || run.withNextTurn !== true),
+      });
       // A thread rolled back past all its work, with nothing left running, has no answer to wait for.
       if (
         progress.resultRun === undefined &&

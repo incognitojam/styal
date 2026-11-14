@@ -1,5 +1,6 @@
-export type ComposerDispatchMode = "auto" | "queue" | "steer" | "restart";
-export type ActiveTurnComposerAction = Exclude<ComposerDispatchMode, "auto">;
+/** `next_turn` waits in the queue without starting a turn and goes with the thread's next turn. */
+export type ComposerDispatchMode = "auto" | "queue" | "steer" | "restart" | "next_turn";
+export type ActiveTurnComposerAction = Exclude<ComposerDispatchMode, "auto" | "next_turn">;
 
 export function resolveComposerDispatchMode(input: {
   readonly running: boolean;

@@ -1,4 +1,4 @@
-import { memo, type MouseEventHandler, type PointerEventHandler } from "react";
+import { memo, useRef, useState, type MouseEventHandler, type PointerEventHandler } from "react";
 import { CheckIcon, ChevronDownIcon, ChevronLeftIcon, Minimize2Icon, PlayIcon } from "lucide-react";
 import { CornerUpRight, ListPlus } from "lucide";
 import { MorphIcon } from "~/components/MorphIcon";
@@ -8,7 +8,7 @@ import { cn, isMacPlatform } from "~/lib/utils";
 import { useShortcutModifierState } from "../../shortcutModifierState";
 import { StageBackdropButtonArt, useSidebarStageBackdropVariant } from "../SidebarStageBackdrop";
 import { Button } from "../ui/button";
-import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
+import { Menu, MenuItem, MenuItemLabel, MenuPopup, MenuShortcut, MenuTrigger } from "../ui/menu";
 import { Spinner } from "../ui/spinner";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { composerFloatingLayerProps } from "./composerEventScope";
@@ -45,6 +45,9 @@ interface ComposerPrimaryActionsProps {
   preserveComposerFocusOnPointerDown?: boolean;
   isEditingQueuedMessage?: boolean;
   onSubmitMessage?: MouseEventHandler<HTMLButtonElement>;
+  /** Set when the server accepts messages that wait for the thread's next turn. */
+  onSendWithNextTurn?: (() => void) | undefined;
+  sendWithNextTurnShortcutLabel?: string | null;
   onResume?: () => void;
   onPreviousPendingQuestion: () => void;
   onInterrupt: () => void;
@@ -99,6 +102,8 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   preserveComposerFocusOnPointerDown = false,
   isEditingQueuedMessage = false,
   onSubmitMessage,
+  onSendWithNextTurn,
+  sendWithNextTurnShortcutLabel = null,
   onResume,
   onPreviousPendingQuestion,
   onInterrupt,
@@ -122,6 +127,8 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     }) === "queue";
   const alternateAction = alternateComposerDispatchAction(followUpBehavior);
   const isSendDisabled = !canOperateThread || sendDisabledReason !== null;
+  const sendButtonRef = useRef<HTMLButtonElement>(null);
+  const [sendMenuOpen, setSendMenuOpen] = useState(false);
   const stageBackdropVariant = useSidebarStageBackdropVariant(environmentIdentificationMode);
 
   const renderStopGenerationButton = (insidePendingAction: boolean) => (
@@ -298,7 +305,10 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
       ? `Summarize ${compactTokens} tokens of history, then send`
       : isRunning && !isEditingQueuedMessage && canSteer
         ? `Click to ${followUpBehavior}, ${isMacPlatform(navigator.platform) ? "⌘" : "Ctrl"}-click${alternateShortcutLabel ? ` or ${alternateShortcutLabel}` : ""} to ${alternateAction}`
-        : submitLabel);
+        : submitLabel) +
+      (onSendWithNextTurn && !showResume && !isEditingQueuedMessage
+        ? `. Right-click to send with the next turn${sendWithNextTurnShortcutLabel ? ` (${sendWithNextTurnShortcutLabel})` : ""}`
+        : "");
 
   const sendButton = (
     <button
@@ -310,7 +320,16 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
           : "bg-message-action text-message-action-foreground enabled:shadow-message-action/24 hover:bg-message-action-hover disabled:bg-foreground/12 disabled:text-muted-foreground",
       )}
       {...pointerFocusProps}
+      ref={sendButtonRef}
       onClick={showResume ? onResume : onSubmitMessage}
+      onContextMenu={
+        onSendWithNextTurn && !showResume && !isEditingQueuedMessage && hasSendableContent
+          ? (event) => {
+              event.preventDefault();
+              setSendMenuOpen(true);
+            }
+          : undefined
+      }
       disabled={
         isSendBusy ||
         isSendDisabled ||
@@ -366,13 +385,31 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     sendButton
   );
 
+  const sendMenu = onSendWithNextTurn ? (
+    <Menu open={sendMenuOpen} onOpenChange={setSendMenuOpen}>
+      <MenuPopup anchor={sendButtonRef} align="end" side="top" {...composerFloatingLayerProps}>
+        <MenuItem
+          disabled={isSendBusy || isSendDisabled || isEnvironmentUnavailable || !hasSendableContent}
+          onClick={onSendWithNextTurn}
+        >
+          <MenuItemLabel>Send with next turn</MenuItemLabel>
+          {sendWithNextTurnShortcutLabel ? (
+            <MenuShortcut>{sendWithNextTurnShortcutLabel}</MenuShortcut>
+          ) : null}
+        </MenuItem>
+      </MenuPopup>
+    </Menu>
+  ) : null;
   const submit = sendDisabledReason ? (
     sendButtonWithDisabledReason
   ) : (
-    <Tooltip key="submit">
-      <TooltipTrigger render={<span className="inline-flex" />}>{sendButton}</TooltipTrigger>
-      <TooltipPopup>{submitTooltip}</TooltipPopup>
-    </Tooltip>
+    <>
+      <Tooltip key="submit">
+        <TooltipTrigger render={<span className="inline-flex" />}>{sendButton}</TooltipTrigger>
+        <TooltipPopup>{submitTooltip}</TooltipPopup>
+      </Tooltip>
+      {sendMenu}
+    </>
   );
   if (compactTokens === null) return submit;
 

@@ -2066,6 +2066,19 @@ describe("orchestrator MCP toolkit", () => {
                 legacyDelegatedRun,
               ),
             ).toBe(false);
+            expect(
+              hasPendingChildRuns(
+                {
+                  ...legacyChildProjection,
+                  runs: legacyChildProjection.runs.map((run) =>
+                    run.id === activeChildFollowup.runId
+                      ? { ...run, status: "queued", withNextTurn: true }
+                      : run,
+                  ),
+                },
+                legacyDelegatedRun,
+              ),
+            ).toBe(false);
             const heldFollowupCall = yield* invoke("t3_thread_send", {
               threadId: delegated.childThreadId,
               message: "This queued follow-up must remain stopped until resumed.",

@@ -24,6 +24,10 @@ import * as Stream from "effect/Stream";
 import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
 import * as EffectWorker from "./EffectWorker.ts";
 import * as EventSink from "./EventSink.ts";
+import * as ThreadManagement from "./ThreadManagementService.ts";
+import * as CommandReceipts from "./CommandReceiptStore.ts";
+import * as ServerSettings from "../serverSettings.ts";
+import * as Layer from "effect/Layer";
 import * as Orchestrator from "./Orchestrator.ts";
 import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
 import * as ProviderReplayHarness from "./testkit/ProviderReplayHarness.ts";
@@ -606,9 +610,8 @@ const nextTurnSelectionHarness = Effect.fn("nextTurnSelectionHarness")(function*
     ProviderAdapterRegistry.layerSingle(adapter),
     { runEffectWorker: false },
   );
-  const startFirstTurn = Effect.gen(function* () {
+  const createThread = Effect.gen(function* () {
     const orchestrator = yield* Orchestrator.OrchestratorV2;
-    const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
     const threadId = ThreadId.make(`thread:${name}`);
     yield* orchestrator.dispatch({
       type: "thread.create",
@@ -624,6 +627,12 @@ const nextTurnSelectionHarness = Effect.fn("nextTurnSelectionHarness")(function*
       createdBy: "user",
       creationSource: "web",
     });
+    return threadId;
+  });
+  const startFirstTurn = Effect.gen(function* () {
+    const orchestrator = yield* Orchestrator.OrchestratorV2;
+    const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+    const threadId = yield* createThread;
     const running = yield* orchestrator.streamDomainEvents.pipe(
       Stream.filter(
         (event) => event.type === "provider-turn.updated" && event.payload.status === "running",
@@ -648,7 +657,7 @@ const nextTurnSelectionHarness = Effect.fn("nextTurnSelectionHarness")(function*
     yield* Fiber.join(running);
     return threadId;
   });
-  return { cwd, events, started, steered, interrupted, layer, startFirstTurn };
+  return { cwd, events, started, steered, interrupted, layer, startFirstTurn, createThread };
 });
 
 it.effect("steers a delegated task question notice into the running parent turn", () =>
@@ -1889,6 +1898,204 @@ it.effect("a side chat that opens with /goal gets its context on the next questi
         assert.include(question, "- User: first");
         assert.isTrue(question?.endsWith("What is the main thread doing?"));
       }).pipe(Effect.provide(layer));
+    }),
+  ),
+);
+
+it.effect.each([
+  "normal",
+  "notification",
+  "send-now",
+  "settle-archive",
+  "active",
+  "promote",
+  "cross-thread",
+  "maintenance",
+] as const)("delivers with-next-turn messages via %s", (scenario) =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const { started, steered, layer, createThread, startFirstTurn } =
+        yield* nextTurnSelectionHarness(`next-turn-${scenario}`);
+      const testLayer = ThreadManagement.layer.pipe(
+        Layer.provideMerge(layer),
+        Layer.provide(ServerSettings.layerTest()),
+        Layer.provide(
+          Layer.mock(CommandReceipts.CommandReceiptStoreV2)({
+            getByCommandId: () => Effect.succeedNone,
+          }),
+        ),
+      );
+      yield* Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+        const active = scenario === "active" || scenario === "promote";
+        const threadId = yield* active ? startFirstTurn : createThread;
+        for (const text of ["acknowledged", "dismissed"]) {
+          if (scenario === "cross-thread") {
+            const threads = yield* ThreadManagement.ThreadManagementService;
+            const projection = yield* orchestrator.getThreadProjection(threadId);
+            yield* threads.sendToThread({
+              projectId: projection.thread.projectId,
+              threadId,
+              commandId: CommandId.make(text),
+              messageId: MessageId.make(`message:${text}`),
+              text,
+              attachments: [],
+              withNextTurn: true,
+              mode: "auto",
+              createdBy: "agent",
+              creationSource: "mcp",
+            });
+            continue;
+          }
+          yield* orchestrator.dispatch({
+            type: "message.dispatch",
+            commandId: CommandId.make(text),
+            threadId,
+            messageId: MessageId.make(`message:${text}`),
+            text,
+            attachments: [],
+            dispatchMode: { type: "with_next_turn" },
+            createdBy: "user",
+            creationSource: "web",
+          });
+        }
+        yield* worker.drain();
+        yield* orchestrator.resumeQueuedRuns;
+        yield* worker.drain();
+        assert.equal(started.length, active ? 1 : 0);
+        assert.deepEqual(steered, []);
+        let projection = yield* orchestrator.getThreadProjection(threadId);
+        const queued = projection.runs.filter((run) => run.status === "queued");
+        assert.equal(queued.length, 2);
+        assert.isTrue(queued.every((run) => run.withNextTurn));
+        if (scenario === "settle-archive") {
+          for (const type of ["thread.settle", "thread.archive", "thread.unarchive"] as const) {
+            yield* orchestrator.dispatch({ type, commandId: CommandId.make(type), threadId });
+          }
+          projection = yield* orchestrator.getThreadProjection(threadId);
+          assert.equal(projection.runs.filter((run) => run.status === "queued").length, 2);
+        }
+        if (scenario === "maintenance") {
+          yield* orchestrator.dispatch({
+            type: "message.dispatch",
+            commandId: CommandId.make("compact"),
+            threadId,
+            messageId: MessageId.make("message:compact"),
+            text: "/compact",
+            attachments: [],
+            dispatchMode: { type: "start_immediately" },
+            createdBy: "user",
+            creationSource: "web",
+          });
+          yield* worker.drain();
+          assert.equal(
+            (yield* orchestrator.getThreadProjection(threadId)).runs.filter(
+              (run) => run.status === "queued",
+            ).length,
+            2,
+          );
+          yield* orchestrator.dispatch({
+            type: "run.interrupt",
+            commandId: CommandId.make("stop-compact"),
+            threadId,
+            runId: started.at(-1)!.runId,
+          });
+          yield* worker.drain();
+        }
+        if (scenario === "promote") {
+          yield* orchestrator.dispatch({
+            type: "queued-message.promote-to-steer",
+            commandId: CommandId.make("promote"),
+            threadId,
+            queuedRunId: queued[0]!.id,
+            targetRunId: started[0]!.runId,
+          });
+          yield* worker.drain();
+          assert.deepEqual(steered, ["acknowledged"]);
+          return;
+        }
+        if (active) {
+          yield* orchestrator.dispatch({
+            type: "run.interrupt",
+            commandId: CommandId.make("stop"),
+            threadId,
+            runId: started[0]!.runId,
+          });
+          yield* worker.drain();
+        }
+        if (scenario === "send-now") {
+          yield* orchestrator.dispatch({
+            type: "queued-run.start",
+            commandId: CommandId.make("send-now"),
+            threadId,
+            runId: queued[1]!.id,
+          });
+        } else {
+          yield* orchestrator.dispatch({
+            type: "message.dispatch",
+            commandId: CommandId.make("trigger"),
+            threadId,
+            messageId: MessageId.make("message:trigger"),
+            text: "continue",
+            attachments: [],
+            dispatchMode: {
+              type: scenario === "notification" ? "queue_after_active" : "start_immediately",
+            },
+            createdBy: "agent",
+            creationSource: "server",
+            ...(scenario === "notification"
+              ? {
+                  notification: {
+                    source: { kind: "system" as const },
+                    outcome: "updated" as const,
+                    summary: "continue",
+                  },
+                }
+              : {}),
+          });
+        }
+        yield* worker.drain();
+        const last = started.at(-1)!;
+        assert.include(last.message.text, "acknowledged");
+        assert.include(last.message.text, "dismissed");
+        if (scenario !== "send-now") {
+          assert.isBelow(
+            last.message.text.indexOf("acknowledged"),
+            last.message.text.indexOf("dismissed"),
+          );
+          assert.isBelow(
+            last.message.text.indexOf("dismissed"),
+            last.message.text.indexOf("continue"),
+          );
+        }
+        projection = yield* orchestrator.getThreadProjection(threadId);
+        const messages = projection.messages.filter((message) => message.runId === last.runId);
+        assert.equal(messages.length, scenario === "send-now" ? 2 : 3);
+        if (scenario === "normal" || scenario === "send-now" || scenario === "active") {
+          const items = projection.turnItems
+            .filter((item) => item.runId === last.runId && item.type === "user_message")
+            .toSorted((left, right) => left.ordinal - right.ordinal);
+          assert.deepEqual(
+            items.map((item) => (item.type === "user_message" ? String(item.messageId) : null)),
+            scenario === "send-now"
+              ? ["message:acknowledged", "message:dismissed"]
+              : ["message:acknowledged", "message:dismissed", "message:trigger"],
+          );
+          assert.equal(new Set(items.map((item) => item.ordinal)).size, items.length);
+          for (const item of items.slice(0, -1)) {
+            assert.equal(item.type === "user_message" ? item.inputIntent : null, "turn_start");
+            assert.equal(item.status, "completed");
+            assert.deepEqual(
+              item.startedAt,
+              messages.find(
+                (message) => message.id === (item.type === "user_message" ? item.messageId : null),
+              )?.createdAt,
+            );
+          }
+        }
+        assert.isFalse(projection.runs.some((run) => run.status === "queued"));
+      }).pipe(Effect.provide(testLayer));
     }),
   ),
 );

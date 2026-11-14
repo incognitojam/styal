@@ -177,6 +177,16 @@ describe("composerSubmissionIntentForKey", () => {
           event: { ...enter, key: "b", altKey: true },
         }),
       ).toBe("background");
+      expect(composerSubmissionIntentForKey({ ...custom, event: { ...enter, altKey: true } })).toBe(
+        "next_turn",
+      );
+      expect(
+        composerSubmissionIntentForKey({
+          ...custom,
+          isDraftThread: true,
+          event: { ...enter, altKey: true },
+        }),
+      ).toBeNull();
       expect(
         composerSubmissionIntentForKey({
           ...custom,

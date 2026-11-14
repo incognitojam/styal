@@ -19,7 +19,7 @@ import { resolveShortcutCommand, type ShortcutEventLike } from "./keybindings";
 
 export type ComposerTriggerKind = "path" | "pull-request" | "slash-command" | "skill";
 export type ComposerSlashCommand = "model" | "plan" | "default" | "side" | "btw";
-export type ComposerSubmissionIntent = "foreground" | "background" | "alternate";
+export type ComposerSubmissionIntent = "foreground" | "background" | "alternate" | "next_turn";
 
 export interface ComposerTrigger {
   kind: ComposerTriggerKind;
@@ -82,6 +82,7 @@ export function composerSubmissionIntentForKey(input: {
   if (command === "composer.sendAlternate" && input.isRunning) return "alternate";
   if (command === "composer.sendBackground" && input.isDraftThread) return "background";
   if (command === "composer.sendAndNewThread" && !input.isDraftThread) return "background";
+  if (command === "composer.sendWithNextTurn" && !input.isDraftThread) return "next_turn";
   if (command !== null || event.key !== "Enter" || event.shiftKey || event.altKey) return null;
   if (
     composerRequiresModifier(input.sendShortcut, input.prompt ?? "") &&

@@ -12,6 +12,8 @@ Upstream's `mcp.tool.invoked` records one event per agent MCP tool call with `to
 
 Additional measured operations are:
 
+- `messages-with-next-turn`: `send` records each accepted queued message (`source = user | agent`); `deliver` records each turn folding messages in (`source = system`). `messageCount` is the number of messages. Filter on `messagesWithNextTurnUsageVersion = 1`. No content, attachments, thread identifiers, or model selections are collected.
+
 - `fleet-thread-search`, `source = agent`, `action = search`: one outcome per default cross-machine search, with `fleetThreadSearchUsageVersion = 1`. Forwarded and explicit single-machine searches are excluded. Queries, matches, machine labels and identifiers are never sent.
 
 - `completion-sounds`, `source = system`: `feature.exposed` with `action = viewed_completion_suppressed` records a completion kept quiet for a visible, focused routed thread, at most once per notification. Reports require client vocabulary version 29 and include no thread or environment identifiers, titles, or sound choices.

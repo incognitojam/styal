@@ -170,3 +170,5 @@ settings. An overridden signal shows **Set by environment** and names the variab
 receivers that need authentication and `T3CODE_OTLP_PROTOCOL=http/protobuf` for receivers that do
 not accept JSON. An endpoint set with `OTEL_EXPORTER_OTLP_*` takes its headers and protocol from
 `OTEL_EXPORTER_OTLP_HEADERS` and `OTEL_EXPORTER_OTLP_PROTOCOL` instead.
+
+Messages sent with the next turn report accepted sends and delivery batches, their message counts, and whether a person, agent, or system initiated the operation. Message content, attachments, and thread identifiers are never included.

@@ -3755,6 +3755,9 @@ export default function ChatView(props: ChatViewProps) {
                           {!composerMounted ? null : (
                             <ChatComposer
                               canOperateThread={canOperateThread}
+                              supportsSendWithNextTurn={
+                                serverConfig?.environment.capabilities.messagesWithNextTurn === true
+                              }
                               reportedModelSelection={reportedModelSelection}
                               multipleModelSelections={multipleModelSelections}
                               supportsMultipleModels={

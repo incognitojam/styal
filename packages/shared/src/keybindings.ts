@@ -203,6 +203,11 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
     command: "composer.sendAndNewThread",
     when: "composerFocus && !draftThreadRoute",
   },
+  {
+    key: "alt+enter",
+    command: "composer.sendWithNextTurn",
+    when: "composerFocus && !draftThreadRoute",
+  },
   { key: "mod+n", command: "chat.new", when: "!terminalFocus" },
   { key: "mod+shift+o", command: "chat.new", when: "!terminalFocus" },
   { key: "mod+shift+n", command: "chat.newLocal", when: "!terminalFocus" },

@@ -474,7 +474,7 @@ export function hasPendingChildRuns(
   return childProjection.runs.some(
     (run) =>
       !ThreadManagementService.isTerminalRunStatus(run.status) &&
-      !(run.status === "queued" && run.queueHeld === true) &&
+      !(run.status === "queued" && (run.queueHeld === true || run.withNextTurn === true)) &&
       (delegatedRun === undefined || run.ordinal > delegatedRun.ordinal),
   );
 }
@@ -3143,7 +3143,7 @@ const make = Effect.gen(function* () {
       if (!isReport) {
         yield* resolveRuntimeMode(limits.runtimeMode, target.thread.runtimeMode);
         yield* resolveInteractionMode(limits.interactionMode, target.thread.interactionMode);
-      } else if (!launcherTakesReports(target.thread)) {
+      } else if (!launcherTakesReports(target.thread) && input.withNextTurn !== true) {
         return yield* failure(
           "invalid_request",
           "The thread that launched this one was settled or archived on purpose, so it is not taking reports. Tell the user in this thread instead.",
@@ -3165,6 +3165,7 @@ const make = Effect.gen(function* () {
             operation: "thread-send",
           }),
           threadId: input.threadId,
+          ...(input.withNextTurn === undefined ? {} : { withNextTurn: input.withNextTurn }),
           ...(parent === undefined ? {} : { senderThreadId: parent.thread.id }),
           messageId,
           attachments: [],

@@ -1567,6 +1567,9 @@ export function useComposerSend(input: ComposerSendInput) {
         currentThreadKey === activeThreadKey ? null : currentThreadKey,
       );
       if (!sendQueuesBehindSetup) resetLocalDispatch();
+    } else if (turnDispatchMode === "next_turn") {
+      // No run starts for the server to acknowledge, so the accepted send ends the dispatch.
+      resetLocalDispatch();
     }
   };
 
