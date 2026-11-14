@@ -1,6 +1,12 @@
 import { expect, it } from "@effect/vitest";
-import { FORK_CLIENT_USAGE_VERSION, ForkClientUsageInput, ProjectId } from "@t3tools/contracts";
+import {
+  FORK_CLIENT_USAGE_VERSION,
+  ForkClientUsageInput,
+  ReportForkClientUsageInput,
+  ProjectId,
+} from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as Logger from "effect/Logger";
 import * as Schema from "effect/Schema";
 
 import * as FeedbackService from "../feedback/FeedbackService.ts";
@@ -600,237 +606,48 @@ it.effect("observes deployment reviews with their state only, from a user surfac
   }),
 );
 
-const snapshot = {
-  feature: "client-settings",
-  action: "snapshot",
-  sendShortcut: "mod-enter",
-  followUpBehavior: "queue",
-  composerRichTextEnabled: true,
-  persistComposerContextStrip: false,
-  proactivePanelsEnabled: true,
-  showSkillsInSlashMenu: true,
-  planModeEnabled: false,
-  contextWindowMeterEnabled: false,
-  turnUsageEnabled: true,
-  turnUsageFigure: "tokens",
-  chatWidth: "comfortable",
-  effortDisplay: "label",
-  wordWrap: true,
-  mathRenderingEnabled: false,
-  timestampFormat: "locale",
-  loadBalancingEnabled: false,
-  boringSidebarEnabled: false,
-  boringSidebarMultilineRows: false,
-  legacySidebarEnabled: false,
-  sidebarWorkingShelfEnabled: true,
-  sidebarThreadGrouping: "project",
-  sidebarProjectGroupingMode: "repository",
-  sidebarProjectGroupingOverrideCount: 2,
-  sidebarProjectSortOrder: "manual",
-  sidebarManualProjectOrderSaved: true,
-  sidebarThreadSortOrder: "updated_at",
-  sidebarThreadTimestampMode: "last_prompted",
-  confirmThreadArchive: false,
-  confirmThreadDelete: true,
-  confirmThreadUnpin: false,
-  notificationMode: "sound",
-  inAppNotificationsEnabled: false,
-  completionSound: "t3-completion",
-  inputSound: "t3-input",
-  approvalSound: "t3-input",
-  claudeStatusAlertsEnabled: true,
-  openaiStatusAlertsEnabled: true,
-  githubStatusAlertsEnabled: true,
-  appearanceContrast: 100,
-  glassOpacity: 80,
-  panelAnimationDurationMs: 0,
-  environmentIdentificationMode: "artwork",
-  fontSizeInterface: 14,
-  fontSizePrompt: 14,
-  fontSizeCode: 13,
-  fontSizeTerminal: 13,
-  fontFamilySansCustomized: false,
-  fontFamilyComposerCustomized: false,
-  fontFamilyCodeCustomized: true,
-  fontFamilyTerminalCustomized: false,
-  fontSmoothing: true,
-  diffColorScheme: "red-green",
-  diffLayout: "stacked",
-  diffFilesCollapsed: true,
-  diffIgnoreWhitespace: true,
-  browserLinkTarget: "system",
-  pullRequestLinksOpenInApp: true,
-  browserAutoShowFloatingPreview: true,
-  browserDefaultViewport: "fill",
-  browserDefaultZoomFactor: 1,
-  browserDefaultAppearance: "system",
-  browserSearchEngine: "google",
-  browserCustomSearchUrlCustomized: false,
-  browserProfileCount: 1,
-  browserDefaultProfileCustomized: false,
-  browserRecordingFrameRate: 30,
-  browserRecordingShowKeyPresses: false,
-  browserRecordingShowMousePresses: false,
-  confirmQuit: "hold",
-  discordRichPresence: false,
-  snapShotEnabled: false,
-  snapShotShortcutCustomized: false,
-  snapShotIncludeAccessibility: true,
-  snapShotPlaySound: true,
-  snapShotSound: "soft-pop",
-  snapShotFlash: true,
-  snapShotAnimations: true,
-} as const;
-
-it.effect(
-  "records a client settings snapshot as its own event without project or profile content",
-  () =>
-    Effect.gen(function* () {
-      const events: Array<{ event: string; properties: Record<string, unknown> | undefined }> = [];
-      const analytics = {
-        record: (event: string, properties?: Record<string, unknown>) =>
-          Effect.sync(() => {
-            events.push({ event, properties });
-          }),
-        flush: Effect.void,
-      };
-      const report = yield* ClientFeatureUsage.reporter({ surface: "desktop" }).pipe(
-        Effect.provideService(AnalyticsService.AnalyticsService, analytics),
-      );
-      yield* report(
-        yield* decode({
-          ...snapshot,
-          projectOrder: ["synthetic-project-key"],
-          fontFamilyCode: "Synthetic Mono",
-        }),
-      );
-
-      const { feature: _feature, action: _action, ...settings } = snapshot;
-      expect(events).toEqual([
-        {
-          event: "client.settings.snapshot",
-          properties: {
-            ...settings,
-            forkClientUsageVersion: FORK_CLIENT_USAGE_VERSION,
-            surface: "desktop",
-          },
-        },
-      ]);
-      expect(isUsage({ ...snapshot, sidebarThreadGrouping: "synthetic-project-key" })).toBe(false);
-    }),
-);
-
-it.effect("records a snapshot from an older client with its missing settings absent", () =>
+it.effect("silently discards legacy settings snapshots from every client surface", () =>
   Effect.gen(function* () {
-    const events: Array<{ event: string; properties: Record<string, unknown> | undefined }> = [];
-    const analytics = {
-      record: (event: string, properties?: Record<string, unknown>) =>
-        Effect.sync(() => {
-          events.push({ event, properties });
+    const events: unknown[] = [];
+    const logs: unknown[] = [];
+    const decodeReport = Schema.decodeUnknownEffect(ReportForkClientUsageInput);
+    for (const surface of ["web", "desktop", "mobile"] as const) {
+      const report = yield* ClientFeatureUsage.reporter({ surface }).pipe(
+        Effect.provideService(AnalyticsService.AnalyticsService, {
+          recordOwners: () => Effect.void,
+          record: (event, properties) =>
+            Effect.sync(() => {
+              events.push({ event, properties });
+            }),
+          flush: Effect.void,
         }),
-      flush: Effect.void,
-    };
-    const report = yield* ClientFeatureUsage.reporter({ surface: "web" }).pipe(
-      Effect.provideService(AnalyticsService.AnalyticsService, analytics),
-    );
-    // Settings that later vocabulary versions added, missing from a client that predates them.
-    const {
-      mathRenderingEnabled: _mathRenderingEnabled,
-      pullRequestLinksOpenInApp: _pullRequestLinksOpenInApp,
-      browserSearchEngine: _browserSearchEngine,
-      browserCustomSearchUrlCustomized: _browserCustomSearchUrlCustomized,
-      ...olderSnapshot
-    } = snapshot;
-    yield* report(yield* decode(olderSnapshot));
-
-    const { feature: _feature, action: _action, ...settings } = olderSnapshot;
-    expect(events).toHaveLength(1);
-    expect(events[0]?.event).toBe("client.settings.snapshot");
-    expect(Object.keys(events[0]?.properties ?? {}).toSorted()).toEqual(
-      [...Object.keys(settings), "forkClientUsageVersion", "surface"].toSorted(),
-    );
-    expect(events[0]?.properties).toMatchObject(settings);
-    expect(isUsage({ ...olderSnapshot, chatWidth: "synthetic" })).toBe(false);
-  }),
-);
-
-const mobileSnapshot = {
-  feature: "mobile-settings",
-  action: "snapshot",
-  notificationsEnabled: true,
-  liveActivitiesEnabled: false,
-  notifyOnApproval: true,
-  notifyOnInput: true,
-  notifyOnCompletion: false,
-  notifyOnFailure: true,
-  attendedAlertDelaySeconds: 0,
-  composerEnterBehavior: "send",
-  followUpBehavior: "steer",
-  planModeEnabled: false,
-  turnUsageEnabled: true,
-  turnUsageFigure: "cost",
-  threadTimestampMode: "last_prompted",
-  threadGrouping: "none",
-  projectGroupingMode: "repository",
-  workingShelfEnabled: false,
-  threadListWorkingShelfExpanded: false,
-  threadListSettledShelfExpanded: true,
-  threadListSnoozedShelfExpanded: false,
-  modelFavoriteCount: 2,
-  microphoneOrderCustomized: false,
-  themeMode: "system",
-  lightThemeId: "t3-code",
-  darkThemeId: "material-you",
-  androidNavigationStyle: "material",
-  baseFontSize: 15,
-  terminalFontSize: null,
-  codeFontSize: 12,
-  codeWordBreak: false,
-  mathRenderingEnabled: false,
-  diffSortMode: "relevance",
-  pullRequestHideTestFiles: false,
-  pullRequestMergeMethod: "squash",
-} as const;
-
-it.effect("records a mobile settings snapshot only from mobile, as the client settings event", () =>
-  Effect.gen(function* () {
-    const events: Array<{ event: string; properties: Record<string, unknown> | undefined }> = [];
-    const analytics = {
-      record: (event: string, properties?: Record<string, unknown>) =>
-        Effect.sync(() => {
-          events.push({ event, properties });
-        }),
-      flush: Effect.void,
-    };
-    const reporter = (surface: "web" | "desktop" | "mobile") =>
-      ClientFeatureUsage.reporter({ surface, clientOs: "iOS", clientAppVersion: "9.9.9" }).pipe(
-        Effect.provideService(AnalyticsService.AnalyticsService, analytics),
       );
-    const input = yield* decode({
-      ...mobileSnapshot,
-      connectOnboardingOptOutAccounts: ["x"],
-      useLastProjectForNewThreads: false,
-    });
-    yield* (yield* reporter("web"))(input);
-    yield* (yield* reporter("desktop"))(input);
-    yield* (yield* reporter("mobile"))(yield* decode(snapshot));
+      for (const feature of ["client-settings", "mobile-settings"] as const) {
+        const legacy = {
+          feature,
+          action: "snapshot",
+          sendShortcut: "enter",
+          notificationsEnabled: true,
+        };
+        const input = yield* decodeReport(legacy);
+        expect(input).toEqual({ feature, action: "snapshot" });
+        expect(isUsage(legacy)).toBe(false);
+        yield* report(input).pipe(
+          Effect.provide(
+            Logger.layer(
+              [
+                Logger.make((entry) => {
+                  logs.push(entry.message);
+                }),
+              ],
+              { mergeWithExisting: false },
+            ),
+          ),
+        );
+      }
+    }
     expect(events).toEqual([]);
-
-    yield* (yield* reporter("mobile"))(input);
-    const { feature: _feature, action: _action, ...settings } = mobileSnapshot;
-    expect(events).toEqual([
-      {
-        event: "client.settings.snapshot",
-        properties: {
-          ...settings,
-          forkClientUsageVersion: FORK_CLIENT_USAGE_VERSION,
-          surface: "mobile",
-          clientOs: "iOS",
-          clientAppVersion: "9.9.9",
-        },
-      },
-    ]);
-    expect(isUsage({ ...mobileSnapshot, darkThemeId: "Synthetic Theme Name" })).toBe(false);
+    expect(logs).toEqual([]);
   }),
 );
 

@@ -451,7 +451,7 @@ import {
 } from "./sourceControl.ts";
 import { VcsError } from "./vcs.ts";
 import { Project, ProjectMutation, ProjectMutationError } from "./project.ts";
-import { ForkClientUsageInput } from "./forkClientUsage.ts";
+import { ReportForkClientUsageInput } from "./forkClientUsage.ts";
 import {
   ProjectFileActionApprovalError,
   ProjectFileActionApprovalInput,
@@ -1115,7 +1115,7 @@ const WsServerReportNetworkConditionsRpc = Rpc.make(WS_METHODS.serverReportNetwo
 });
 
 const WsServerReportForkClientUsageRpc = Rpc.make(WS_METHODS.serverReportForkClientUsage, {
-  payload: ForkClientUsageInput,
+  payload: ReportForkClientUsageInput,
   error: EnvironmentAuthorizationError,
 });
 

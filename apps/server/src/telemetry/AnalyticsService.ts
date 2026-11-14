@@ -267,7 +267,6 @@ export const make = Effect.gen(function* () {
           providerAnalyticsUsageVersion: 1,
           providerSendUsageVersion: 1,
           providerStallUsageVersion: 1,
-          settingsSnapshotUsageVersion: 1,
           simulatorMemoryUsageVersion: 1,
           desktopUpdateIdleRestartUsageVersion: 1,
           desktopPreviewAppUsageVersion: 1,
