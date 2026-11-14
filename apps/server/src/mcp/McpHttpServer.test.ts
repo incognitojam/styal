@@ -27,6 +27,7 @@ import * as Stream from "effect/Stream";
 import { McpSchema, McpServer, Tool, Toolkit } from "effect/ai";
 import { HttpBody, HttpClient, HttpClientRequest, HttpRouter } from "effect/http";
 
+import * as ProjectEnrichment from "../project/ProjectEnrichmentService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as PullRequestService from "../pullRequest/PullRequestService.ts";
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
@@ -96,6 +97,7 @@ const layerPullRequestsTest = McpHttpServer.layerPullRequestsToolkit.pipe(
     Layer.mergeAll(
       Layer.mock(ProjectService.ProjectService)({}),
       Layer.mock(PullRequestReviewGuideService.PullRequestReviewGuideService)({}),
+      Layer.mock(ProjectEnrichment.ProjectEnrichmentService)({}),
       Layer.mock(Orchestrator.OrchestratorV2)({}),
       Layer.mock(ProjectionStore.ProjectionStoreV2)({}),
       Layer.mock(PullRequestService.PullRequestService)({}),
@@ -1251,6 +1253,7 @@ it.effect("lists pull request watch tools only to threads that are not delegated
             McpToolAccessTestkit.liveThreadsLayer,
             Layer.mock(ProjectService.ProjectService)({}),
             Layer.mock(PullRequestReviewGuideService.PullRequestReviewGuideService)({}),
+            Layer.mock(ProjectEnrichment.ProjectEnrichmentService)({}),
             Layer.mock(Orchestrator.OrchestratorV2)({}),
             Layer.mock(ProjectionStore.ProjectionStoreV2)({}),
             Layer.mock(PullRequestService.PullRequestService)({}),

@@ -7593,6 +7593,7 @@ features:
     tier: keep
     prs: [896]
     invariants:
+      - MCP workflow and pull request targets wait for repository identity when the nonblocking project shell cache is empty; missing remotes and failed lookups still require an explicit host or URL. Guide project selection uses the same fallback.
       - watch_workflow_run reads the GitHub Actions run first; a run that already completed is reported to the agent instead of watched, and an unreadable run is an error.
       - The server reads each watched run every 30 seconds, respecting host quota pauses. While the run is going, it wakes the agent once for each newly failed job of the latest attempt, recording the names it reported on the watch, as a watched pull request does for failed checks. When the run completes, it wakes the agent once with the conclusion and the failed jobs it had not yet reported, then ends the watch in the same step.
       - A watched run keeps the thread in the Working list as a monitor background task until the watch ends.

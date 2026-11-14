@@ -19,6 +19,10 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
+import * as TestClock from "effect/testing/TestClock";
+import * as ProjectEnrichment from "../../../project/ProjectEnrichmentService.ts";
+import * as ProjectFaviconResolver from "../../../project/ProjectFaviconResolver.ts";
+import * as RepositoryIdentityResolver from "../../../project/RepositoryIdentityResolver.ts";
 import type { Tool } from "effect/ai";
 
 import * as Orchestrator from "../../../orchestration-v2/Orchestrator.ts";
@@ -139,6 +143,7 @@ function makeLink(
 }
 
 interface HarnessOptions {
+  readonly enrichment?: ProjectEnrichment.ProjectEnrichmentService["Service"];
   readonly thread?: PullRequestTestThread | null;
   readonly project?: OrchestrationProjectShell | null;
   readonly reject?: (command: OrchestrationCommand) => string | null;
@@ -190,9 +195,30 @@ const makeHarness = Effect.fn("makePullRequestsToolkitHarness")(function* (
     });
   const layerDependencies = Layer.mergeAll(
     Layer.mock(ProjectService.ProjectService)({
-      getShell: () => Effect.succeed(Option.fromNullishOr(project)),
-      listShells: () => Effect.succeed(options.projects ?? (project ? [project] : [])),
+      getShell: () =>
+        project && options.enrichment
+          ? options.enrichment
+              .getAvailable(project.workspaceRoot)
+              .pipe(
+                Effect.map(({ repositoryIdentity }) =>
+                  Option.some({ ...project, repositoryIdentity }),
+                ),
+              )
+          : Effect.succeed(Option.fromNullishOr(project)),
+      listShells: () =>
+        Effect.forEach(options.projects ?? (project ? [project] : []), (shell) =>
+          options.enrichment
+            ? options.enrichment
+                .getAvailable(shell.workspaceRoot)
+                .pipe(Effect.map(({ repositoryIdentity }) => ({ ...shell, repositoryIdentity })))
+            : Effect.succeed(shell),
+        ),
     }),
+    options.enrichment
+      ? Layer.succeed(ProjectEnrichment.ProjectEnrichmentService, options.enrichment)
+      : Layer.mock(ProjectEnrichment.ProjectEnrichmentService)({
+          readRepositoryIdentity: () => Effect.succeed(null),
+        }),
     Layer.mock(PullRequestReviewGuideService.PullRequestReviewGuideService)({
       get: () => Effect.succeed(NO_GUIDE),
       generate: (input) =>
@@ -287,6 +313,90 @@ const watchFields = (run: ThreadWorkflowRunWatch): ThreadWorkflowRunWatch => ({
   url: run.url,
   name: run.name,
   startedAt: run.startedAt,
+});
+
+describe("repository identity refresh", () => {
+  it.effect.each([
+    "watch_workflow_run",
+    "link_pull_request",
+    "watch_pull_request",
+    "unwatch_pull_request",
+    "unlink_pull_request",
+    "unwatch_workflow_run",
+  ] as const)("%s resolves a host after the identity cache expires", (tool) =>
+    Effect.gen(function* () {
+      const enrichment = yield* ProjectEnrichment.make().pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            Layer.succeed(RepositoryIdentityResolver.RepositoryIdentityResolver, {
+              resolve: () => Effect.succeed(makeProject().repositoryIdentity ?? null),
+            }),
+            Layer.mock(ProjectFaviconResolver.ProjectFaviconResolver)({
+              resolvePath: () => Effect.succeed(null),
+            }),
+          ),
+        ),
+      );
+      yield* enrichment.readRepositoryIdentity("/workspace/project");
+      yield* TestClock.adjust("61 seconds");
+      expect((yield* enrichment.peek("/workspace/project")).repositoryIdentity).toBeNull();
+      const harness = yield* makeHarness({ enrichment, workflowRun: runningRun });
+      const result = yield* harness.call(tool, {
+        repository: "t3tools/t3code",
+        number: 123,
+        runId: 9001,
+      });
+      expect(result).toMatchObject({ host: "github.com", repository: "t3tools/t3code" });
+    }),
+  );
+  it.effect("finds the guide project after the identity cache expires", () =>
+    Effect.gen(function* () {
+      const enrichment = yield* ProjectEnrichment.make().pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            Layer.succeed(RepositoryIdentityResolver.RepositoryIdentityResolver, {
+              resolve: () => Effect.succeed(makeProject().repositoryIdentity ?? null),
+            }),
+            Layer.mock(ProjectFaviconResolver.ProjectFaviconResolver)({
+              resolvePath: () => Effect.succeed(null),
+            }),
+          ),
+        ),
+      );
+      yield* enrichment.readRepositoryIdentity("/workspace/project");
+      yield* TestClock.adjust("61 seconds");
+      const harness = yield* makeHarness({ enrichment });
+      const result = yield* harness.call("write_pull_request_guides", {
+        pullRequests: [{ repository: "t3tools/t3code", number: 123 }],
+      });
+      expect(result.guides.map((guide) => guide.outcome)).toEqual(["started"]);
+      expect(yield* Ref.get(harness.guideRequests)).toMatchObject([
+        { projectId: PROJECT_ID, number: 123 },
+      ]);
+    }),
+  );
+  it.effect.each([false, true])("returns the host-required error (lookup failure: %s)", (failure) =>
+    Effect.gen(function* () {
+      const enrichment = yield* ProjectEnrichment.make().pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            Layer.succeed(RepositoryIdentityResolver.RepositoryIdentityResolver, {
+              resolve: () =>
+                failure ? Effect.die("synthetic lookup failure") : Effect.succeed(null),
+            }),
+            Layer.mock(ProjectFaviconResolver.ProjectFaviconResolver)({
+              resolvePath: () => Effect.succeed(null),
+            }),
+          ),
+        ),
+      );
+      const harness = yield* makeHarness({ enrichment });
+      const error = yield* harness
+        .call("watch_workflow_run", { repository: "t3tools/t3code", runId: 9001 })
+        .pipe(Effect.flip);
+      expect(error).toMatchObject({ _tag: "PullRequestHostRequiredError" });
+    }),
+  );
 });
 
 describe("pull request toolkit handlers", () => {
