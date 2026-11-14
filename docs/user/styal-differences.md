@@ -184,7 +184,7 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 
 - **Agents know how styal is set up.** Claude, Codex and OpenCode 2 sessions come with a built-in styal skill covering `styal.json`, actions, devices, hardware, imports and troubleshooting, so asking an agent to set these up works without installing anything. It doesn't touch your provider's own skills or settings, and it updates with styal. Other providers read the same guides through a styal tool.
 
-- **Sign in to any provider from styal.** Claude, Grok Build, OpenCode, Pi, fx and Muse Code run their own login from **Settings → Providers**, the mobile provider list, or the thread a signed-out provider stopped. It works from a phone and on a remote environment, and each machine keeps its own login.
+- **Sign in to any provider from styal.** Claude, Grok Build, OpenCode, Pi, fx and Muse Code run their own login from **Settings → Providers**, the mobile provider list, or any thread whose provider is signed out. It works from a phone and on a remote environment, and each machine keeps its own login.
 
 - **Threads continue after sign-in.** A thread stopped because its provider is signed out waits, including a delegated thread and whatever is waiting on it. Sign in from styal or that provider's own CLI and it continues once. **Stop waiting** ends the wait, and it never counts as working.
 

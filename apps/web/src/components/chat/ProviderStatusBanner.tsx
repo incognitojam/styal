@@ -1,4 +1,5 @@
 import {
+  isProviderAuthFailureCode,
   type EnvironmentId,
   type ProviderInstanceId,
   type ServerProvider,
@@ -44,8 +45,39 @@ export function getProviderStatusBannerKey(status: ServerProvider | null): strin
   ) {
     return null;
   }
-  return [status.instanceId, status.status, status.auth.status, status.message ?? ""].join(
-    "\u0000",
+  // A changed install or version advisory is a new problem, so a dismissed banner shows again.
+  const advisory = status.compatibilityAdvisory?.status;
+  return [
+    status.instanceId,
+    status.status,
+    status.auth.status,
+    status.message ?? "",
+    status.installed ? "installed" : "missing",
+    advisory === "broken" || advisory === "unsupported" ? advisory : "",
+  ].join("\u0000");
+}
+
+/** styal can run this provider's sign-in itself, from the sign-in dialog. */
+function supportsInAppSignIn(status: ServerProvider): boolean {
+  return (
+    status.setup?.canAuthenticate === true || (status.driver === "acpRegistry" && status.installed)
+  );
+}
+
+/** Signing in from the dialog is all this provider needs; anything else keeps the status banner. */
+function signInFixesProvider(status: ServerProvider): boolean {
+  const advisory = status.compatibilityAdvisory?.status;
+  return (
+    status.installed &&
+    status.auth.status === "unauthenticated" &&
+    status.setup?.canAuthenticate === true &&
+    advisory !== "broken" &&
+    advisory !== "unsupported" &&
+    // Antigravity's API key, project and location are edited in provider setup, not the dialog.
+    !(
+      status.driver === "antigravity" &&
+      (status.auth.type === "gemini-api-key" || status.auth.type === "agent-platform")
+    )
   );
 }
 
@@ -54,7 +86,50 @@ export function shouldShowProviderStatusBanner(
   dismissedBannerKey: string | null,
 ): boolean {
   const bannerKey = getProviderStatusBannerKey(status);
-  return bannerKey !== null && bannerKey !== dismissedBannerKey;
+  return (
+    status !== null &&
+    bannerKey !== null &&
+    bannerKey !== dismissedBannerKey &&
+    !signInFixesProvider(status)
+  );
+}
+
+export type ProviderBanner =
+  | {
+      readonly kind: "sign-in";
+      readonly provider: ServerProvider;
+      readonly afterFailedTurn: boolean;
+    }
+  | { readonly kind: "status"; readonly provider: ServerProvider }
+  | null;
+
+/** One banner per thread: sign-in wherever styal can sign the provider in, else the status. */
+export function resolveProviderBanner(input: {
+  readonly failed: boolean;
+  readonly lastErrorCode: string | null | undefined;
+  readonly turnProvider: ServerProvider | undefined;
+  readonly selectedProvider: ServerProvider | null;
+  readonly dismissedStatusBannerKey: string | null;
+}): ProviderBanner {
+  const { turnProvider, selectedProvider } = input;
+  if (
+    input.failed &&
+    isProviderAuthFailureCode(input.lastErrorCode) &&
+    turnProvider &&
+    supportsInAppSignIn(turnProvider)
+  ) {
+    return { kind: "sign-in", provider: turnProvider, afterFailedTurn: true };
+  }
+  if (!selectedProvider) return null;
+  if (shouldShowProviderStatusBanner(selectedProvider, input.dismissedStatusBannerKey)) {
+    return { kind: "status", provider: selectedProvider };
+  }
+  const bannerKey = getProviderStatusBannerKey(selectedProvider);
+  return bannerKey !== null &&
+    bannerKey !== input.dismissedStatusBannerKey &&
+    signInFixesProvider(selectedProvider)
+    ? { kind: "sign-in", provider: selectedProvider, afterFailedTurn: false }
+    : null;
 }
 
 export function hasProviderSetup(status: ServerProvider): boolean {

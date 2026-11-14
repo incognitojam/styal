@@ -50,7 +50,7 @@ export function ProviderAuthenticationSection({
   readonly instanceId: ProviderInstanceId;
   readonly provider: ServerProvider;
   readonly readOnly: boolean;
-  readonly usageEntryPoint?: "settings" | "thread";
+  readonly usageEntryPoint?: "settings" | "thread" | "signed_out";
   readonly layout?: "settings" | "dialog";
   readonly onDone?: () => void;
 }) {
