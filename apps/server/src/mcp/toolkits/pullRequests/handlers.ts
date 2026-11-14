@@ -16,7 +16,6 @@ import * as Orchestrator from "../../../orchestration-v2/Orchestrator.ts";
 import * as ProjectEnrichment from "../../../project/ProjectEnrichmentService.ts";
 import * as ProjectService from "../../../project/ProjectService.ts";
 import * as PullRequestService from "../../../pullRequest/PullRequestService.ts";
-import * as WorkflowRunWatchUsage from "../../../telemetry/WorkflowRunWatchUsage.ts";
 import * as PullRequestReviewGuideService from "../../../pullRequest/PullRequestReviewGuideService.ts";
 import { pullRequestSyncKey } from "../../../pullRequest/pullRequestSyncKey.ts";
 import { sourceControlDefinitions } from "../../../sourceControl/sourceControlDefinitions.ts";
@@ -749,11 +748,4 @@ const make = Effect.gen(function* () {
   } satisfies McpToolAccess.Handlers<typeof PullRequestsToolkit.tools>;
 });
 
-export const layer = McpToolAccess.toLayer(
-  PullRequestsToolkit,
-  make.pipe(
-    Effect.flatMap((handlers) =>
-      McpToolAccess.wrapHandlers(handlers, WorkflowRunWatchUsage.observeHandlers),
-    ),
-  ),
-);
+export const layer = McpToolAccess.toLayer(PullRequestsToolkit, make);

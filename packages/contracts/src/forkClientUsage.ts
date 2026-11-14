@@ -2,165 +2,54 @@ import * as Schema from "effect/Schema";
 
 import { NonNegativeInt } from "./baseSchemas.ts";
 
-/** Bump when extending the vocabulary; clients require the complete version before reporting. */
+/** Keep the advertised version compatible with clients that still send retired reports. */
 export const FORK_CLIENT_USAGE_VERSION = 32;
 
-export const WebBuildUpdateUsageAction = Schema.Literals(["notice_shown", "refresh_requested"]);
-export type WebBuildUpdateUsageAction = typeof WebBuildUpdateUsageAction.Type;
-
-/** Closed UI observations only: content, paths and identifiers stay in the client. */
-export const ForkClientUsageInput = Schema.Union([
-  Schema.Struct({
-    feature: Schema.Literal("integration-settings"),
-    action: Schema.Literal("change_requested"),
-    setting: Schema.Literals([
-      "browser_access",
-      "device_support",
-      "device_access",
-      "device_idle_shutdown",
-      "device_sharing",
-    ]),
-    settingScope: Schema.Literals(["environment", "project"]),
-  }),
-  Schema.Struct({
-    feature: Schema.Literal("pull-request-deployments"),
-    action: Schema.Literals(["open_environment", "open_logs", "show_all"]),
-    outcome: Schema.Literals(["success", "failure"]),
-  }),
-  Schema.Struct({
-    feature: Schema.Literal("web-build-update-notice"),
-    action: WebBuildUpdateUsageAction,
-  }),
-  Schema.Struct({
-    feature: Schema.Literal("combined-update-confirmation"),
-    action: Schema.Literals(["shown", "confirmed", "cancelled"]),
-  }),
-  Schema.Struct({
-    feature: Schema.Literal("diff-file-review-order"),
-    action: Schema.Literals(["relevance_selected", "alphabetical_selected"]),
-    view: Schema.Literals(["changes", "pull_request"]),
-  }),
-  Schema.Struct({
-    feature: Schema.Literal("device-stream-health"),
-    action: Schema.Literal("session_ended"),
-    platform: Schema.Literals(["android", "ios"]),
-    transport: Schema.Literals(["h264", "avcc", "mjpeg"]),
-    connection: Schema.Literals(["loopback", "network"]),
-    durationSeconds: NonNegativeInt,
-    averageFps: NonNegativeInt,
-    decoderResets: NonNegativeInt,
-    reconnects: NonNegativeInt,
-    stalls: Schema.NullOr(NonNegativeInt),
-    longestGapMs: Schema.NullOr(NonNegativeInt),
-    maxAddedDelayMs: Schema.NullOr(NonNegativeInt),
-  }),
-  Schema.Struct({
-    feature: Schema.Literal("mentioned-time-chips"),
-    action: Schema.Literal("details_opened"),
-  }),
-  Schema.Struct({
-    feature: Schema.Literal("setup-thread-settlement"),
-    action: Schema.Literal("continued"),
-    settleOnMerge: Schema.Boolean,
-    settleWhenInactive: Schema.Boolean,
-  }),
-  Schema.Struct({
-    feature: Schema.Literal("sidebar-project-filter"),
-    action: Schema.Literals(["filter_set", "filter_cleared"]),
-    entryPoint: Schema.Literals(["filter_menu", "project_menu", "thread_menu"]),
-  }),
-  Schema.Struct({
-    feature: Schema.Literal("sidebar-project-filter"),
-    action: Schema.Literal("thread_started"),
-  }),
-  Schema.Struct({
-    feature: Schema.Literal("sidebar-project-groups"),
-    /** `reordered` moves an unpinned project; the others change its pin or archive state. */
-    action: Schema.Literals(["reordered", "pinned", "unpinned", "pins_reordered", "archived"]),
-    entryPoint: Schema.Literals(["header_drag", "header_menu"]),
-  }),
-  Schema.Struct({
-    feature: Schema.Literal("next-unread-thread"),
-    action: Schema.Literal("opened"),
-    /** What the opened thread was waiting for. */
-    attention: Schema.Literals([
-      "approval",
-      "input",
-      "request",
-      "limited",
-      "failed",
-      "question",
-      "woke",
-      "done",
-    ]),
-    entryPoint: Schema.Literals(["shortcut", "command_palette", "chip"]),
-  }),
-  Schema.Struct({
-    feature: Schema.Literal("next-unread-thread"),
-    action: Schema.Literal("nothing_waiting"),
-    entryPoint: Schema.Literals(["shortcut", "command_palette", "chip"]),
-  }),
-  Schema.Struct({
-    feature: Schema.Literal("desktop-update-notice"),
-    action: Schema.Literals(["notice_shown", "release_notes_opened"]),
-  }),
-  Schema.Struct({
-    feature: Schema.Literal("project-actions"),
-    action: Schema.Literal("run"),
-    /** Where the action came from: saved in styal, the project's styal.json, or a local edit of one. */
-    actionSource: Schema.Literals(["local", "file", "override"]),
-    /** The project file in effect at the project root, so adoption of styal.json and t3.json shows. */
-    projectFile: Schema.Literals(["styal.json", "t3.json", "none"]),
-  }),
-  Schema.Struct({
-    feature: Schema.Literal("pull-request-bypass-merge"),
-    action: Schema.Literal("merge"),
-    outcome: Schema.Literals(["success", "failure"]),
-  }),
-  Schema.Struct({
-    feature: Schema.Literal("incoming-share-thread"),
-    action: Schema.Literal("added"),
-    outcome: Schema.Literals(["success", "failure"]),
-  }),
-  Schema.Struct({
-    feature: Schema.Literal("shortcuts-overview"),
-    action: Schema.Literal("opened"),
-    entryPoint: Schema.Literals(["shortcut", "command_palette", "help_menu"]),
-  }),
-  Schema.Struct({
-    feature: Schema.Literal("work-together"),
-    action: Schema.Literals(["start", "stop"]),
-    outcome: Schema.Literals(["complete", "waiting", "failed"]),
-  }),
-  Schema.Struct({
-    feature: Schema.Literal("provider-sign-in"),
-    action: Schema.Literal("start"),
-    entryPoint: Schema.Literals(["settings", "thread", "signed_out"]),
-  }),
-  Schema.Struct({
-    feature: Schema.Literal("completion-sounds"),
-    action: Schema.Literal("viewed_completion_suppressed"),
-  }),
-  Schema.Struct({
-    feature: Schema.Literal("machine-access"),
-    action: Schema.Literal("set"),
-    level: Schema.Literals(["everything", "view-only", "nothing"]),
-    stoppedThreads: Schema.Boolean,
-  }),
-  Schema.Struct({
-    feature: Schema.Literal("machine-list"),
-    action: Schema.Literals(["add", "stop"]),
-    outcome: Schema.Literals(["success", "failure"]),
-  }),
-]);
+export const ForkClientUsageInput = Schema.Struct({
+  feature: Schema.Literal("device-stream-health"),
+  action: Schema.Literal("session_ended"),
+  platform: Schema.Literals(["android", "ios"]),
+  transport: Schema.Literals(["h264", "avcc", "mjpeg"]),
+  connection: Schema.Literals(["loopback", "network"]),
+  durationSeconds: NonNegativeInt,
+  averageFps: NonNegativeInt,
+  decoderResets: NonNegativeInt,
+  reconnects: NonNegativeInt,
+  stalls: Schema.NullOr(NonNegativeInt),
+  longestGapMs: Schema.NullOr(NonNegativeInt),
+  maxAddedDelayMs: Schema.NullOr(NonNegativeInt),
+});
 export type ForkClientUsageInput = typeof ForkClientUsageInput.Type;
 
-// Older clients still send snapshots; discard their values at the RPC boundary.
+// Older clients still send retired usage; discard their values at the RPC boundary.
 export const ReportForkClientUsageInput = Schema.Union([
   ForkClientUsageInput,
   Schema.Struct({
-    feature: Schema.Literals(["client-settings", "mobile-settings"]),
-    action: Schema.Literal("snapshot"),
+    feature: Schema.Literals([
+      "integration-settings",
+      "pull-request-deployments",
+      "web-build-update-notice",
+      "combined-update-confirmation",
+      "diff-file-review-order",
+      "mentioned-time-chips",
+      "setup-thread-settlement",
+      "sidebar-project-filter",
+      "sidebar-project-groups",
+      "next-unread-thread",
+      "desktop-update-notice",
+      "project-actions",
+      "pull-request-bypass-merge",
+      "incoming-share-thread",
+      "shortcuts-overview",
+      "work-together",
+      "provider-sign-in",
+      "completion-sounds",
+      "machine-access",
+      "machine-list",
+      "client-settings",
+      "mobile-settings",
+    ]),
+    action: Schema.String,
   }),
 ]);
 export type ReportForkClientUsageInput = typeof ReportForkClientUsageInput.Type;

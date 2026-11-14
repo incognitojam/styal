@@ -1,7 +1,6 @@
 import {
   DesktopHostTelemetryMessage,
   type DesktopHostTelemetrySnapshot,
-  type DesktopFeatureUsageReport,
   type DesktopTelemetryControlMessage,
   type DesktopTelemetryCancelDesktopUpdate,
   type DesktopTelemetryCommitDesktopUpdate,
@@ -76,9 +75,6 @@ export class DesktopTelemetryPublisher extends Context.Service<
     readonly publishUpdateActivity: (report: DesktopUpdateActivityReport) => Effect.Effect<void>;
     readonly updateActivityRequests: Stream.Stream<DesktopTelemetryRequestUpdateActivity>;
     readonly publishUpdateReport: (report: DesktopUpdateStatusReport) => Effect.Effect<void>;
-    /** Queues a usage observation until one attached backend takes it, so
-        an observation made before any backend attaches is still sent once. */
-    readonly publishFeatureUsage: (report: DesktopFeatureUsageReport) => Effect.Effect<void>;
     readonly updateRequests: Stream.Stream<DesktopTelemetryRequestDesktopUpdate>;
     readonly updateCommits: Stream.Stream<DesktopTelemetryCommitDesktopUpdate>;
     readonly updateCancellations: Stream.Stream<DesktopTelemetryCancelDesktopUpdate>;
@@ -182,7 +178,6 @@ export const make = Effect.fn("desktop.telemetryPublisher.make")(function* () {
   const sequence = yield* Ref.make(0);
   const latestUpdateReport = yield* Ref.make(Option.none<DesktopUpdateStatusReport>());
   const updateReportChanges = yield* PubSub.sliding<DesktopUpdateStatusReport>(16);
-  const featureUsageQueue = yield* Queue.unbounded<DesktopFeatureUsageReport>();
   const activityReports = yield* PubSub.unbounded<DesktopUpdateActivityReport>();
   const activityRequests = yield* Queue.unbounded<DesktopTelemetryRequestUpdateActivity>();
   const updateRequestQueue = yield* Queue.unbounded<DesktopTelemetryRequestDesktopUpdate>();
@@ -416,12 +411,8 @@ export const make = Effect.fn("desktop.telemetryPublisher.make")(function* () {
       electronPid: process.pid,
     } as const),
     Stream.merge(
-      Stream.merge(
-        Stream.merge(Stream.merge(snapshots, updateReports), Stream.fromPubSub(activityReports)),
-        shellEnvironment.updates,
-      ),
-      // A queue, not a PubSub: each observation goes to one backend.
-      Stream.fromQueue(featureUsageQueue),
+      Stream.merge(Stream.merge(snapshots, updateReports), Stream.fromPubSub(activityReports)),
+      shellEnvironment.updates,
     ),
   ).pipe(Stream.map((message) => textEncoder.encode(`${encodeMessage(message)}\n`)));
 
@@ -446,11 +437,6 @@ export const make = Effect.fn("desktop.telemetryPublisher.make")(function* () {
       },
     ),
     updateActivityRequests: Stream.fromQueue(activityRequests),
-    publishFeatureUsage: Effect.fn("DesktopTelemetryPublisher.publishFeatureUsage")(
-      function (report) {
-        return Queue.offer(featureUsageQueue, report).pipe(Effect.asVoid);
-      },
-    ),
     updateRequests: Stream.fromQueue(updateRequestQueue),
     updateCommits: Stream.fromQueue(updateCommitQueue),
     updateCancellations: Stream.fromQueue(updateCancellationQueue),

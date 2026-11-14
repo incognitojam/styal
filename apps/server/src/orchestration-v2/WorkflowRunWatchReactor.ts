@@ -8,7 +8,6 @@ import {
   type WorkflowRunReviewInput,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
-import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
@@ -22,8 +21,6 @@ import type * as Scope from "effect/Scope";
 import { PullRequestProviderError } from "@t3tools/source-control-core/server/PullRequestProvider";
 import * as PullRequestService from "../pullRequest/PullRequestService.ts";
 import { forkParked } from "../serverActivation.ts";
-import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
-import * as WorkflowRunWatchUsage from "../telemetry/WorkflowRunWatchUsage.ts";
 import * as Orchestrator from "./Orchestrator.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import {
@@ -86,27 +83,9 @@ export const make = Effect.gen(function* () {
   const projections = yield* ProjectionStore.ProjectionStoreV2;
   const pullRequests = yield* PullRequestService.PullRequestService;
   const random = yield* SecureRandom.SecureRandom;
-  const analytics = yield* AnalyticsService.AnalyticsService;
   // Reads in a row that failed, per watch. Kept in memory: a restart only delays the stop.
   const readFailures = new Map<string, number>();
-  // Watches seen by a pass, to record how each one ended. Kept in memory: a watch that starts
-  // and ends between two passes, or ends while the server is down, is not recorded.
-  const seen = new Map<string, number>();
 
-  const recordEnd = Effect.fn("WorkflowRunWatchReactor.recordEnd")(function* (
-    key: string,
-    end: WorkflowRunWatchUsage.WorkflowRunWatchEnd,
-  ) {
-    const startedAt = seen.get(key);
-    seen.delete(key);
-    if (startedAt === undefined) return;
-    const now = yield* Clock.currentTimeMillis;
-    yield* WorkflowRunWatchUsage.recordEnd(end, now - startedAt).pipe(
-      Effect.provideService(AnalyticsService.AnalyticsService, analytics),
-    );
-  });
-
-  /** Ends the watch, waking the agent when `wake` is set. Refused if the watch already ended. */
   const finish = Effect.fn("WorkflowRunWatchReactor.finish")(function* (
     target: WatchTarget,
     wake?: { readonly text: string; readonly notification: OrchestrationV2Notification },
@@ -153,7 +132,6 @@ export const make = Effect.gen(function* () {
           Effect.catch(() => finish(target)),
         );
         readFailures.delete(key);
-        yield* recordEnd(key, { reason: "unreadable" });
       }
       return yield* Effect.failCause(read.cause);
     }
@@ -186,7 +164,6 @@ export const make = Effect.gen(function* () {
       });
     }
     yield* finish(target, workflowRunCompletedMessage(target.watch, read.value));
-    yield* recordEnd(key, { reason: "completed", conclusion: read.value.conclusion });
   });
 
   const sweep = Effect.gen(function* () {
@@ -196,14 +173,6 @@ export const make = Effect.gen(function* () {
     );
     const present = new Set(targets.map(targetKey));
     for (const key of readFailures.keys()) if (!present.has(key)) readFailures.delete(key);
-    // A watch seen last pass and gone now was ended outside this reactor.
-    for (const key of seen.keys()) {
-      if (!present.has(key)) yield* recordEnd(key, { reason: "stopped" });
-    }
-    for (const target of targets) {
-      const key = targetKey(target);
-      if (!seen.has(key)) seen.set(key, Date.parse(target.watch.startedAt));
-    }
     yield* Effect.forEach(
       targets,
       (target) =>

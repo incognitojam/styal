@@ -140,18 +140,7 @@ it.effect(
           reason: "The link has expired.",
         },
       ]);
-      expect(events).toEqual([
-        {
-          event: "feature.used",
-          properties: {
-            feature: "fleet-thread-search",
-            action: "search",
-            source: "agent",
-            outcome: "success",
-            durationMs: 0,
-          },
-        },
-      ]);
+      expect(events).toEqual([]);
     }),
 );
 

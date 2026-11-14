@@ -1,5 +1,4 @@
 import { assert, describe, it } from "@effect/vitest";
-import type { DesktopFeatureUsageReport, DesktopIdleRestartDelayBucket } from "@t3tools/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -7,25 +6,13 @@ import * as Ref from "effect/Ref";
 import * as TestClock from "effect/testing/TestClock";
 
 import * as DesktopState from "../app/DesktopState.ts";
-import * as DesktopIdleRestart from "./DesktopIdleRestart.ts";
 import * as DesktopUpdates from "./DesktopUpdates.ts";
 
 import { quietHost } from "./nativeUpdatesTestFakes.ts";
 import { flushCallbacks, makeHarness } from "./updatesTestHarness.ts";
 
-describe("idle restart measurement", () => {
+describe("local idle restart state", () => {
   const tick = TestClock.adjust("30 seconds").pipe(Effect.andThen(flushCallbacks));
-  const report = (
-    delayBucket: DesktopIdleRestartDelayBucket,
-    updateVersion = "1.2.4",
-  ): DesktopFeatureUsageReport => ({
-    version: 1,
-    type: "desktopFeatureUsage",
-    feature: "desktop-update-idle-restart",
-    action: "would_restart",
-    updateVersion,
-    delayBucket,
-  });
   // Checks keep polling while an update is staged; each finds the same release.
   const makeStagingHarness = () => {
     const harness = makeHarness({
@@ -48,30 +35,19 @@ describe("idle restart measurement", () => {
       }),
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
 
-  it("buckets the delay since staging", () => {
-    const hour = 3_600_000;
-    assert.equal(DesktopIdleRestart.idleRestartDelayBucket(0), "<1h");
-    assert.equal(DesktopIdleRestart.idleRestartDelayBucket(hour - 1), "<1h");
-    assert.equal(DesktopIdleRestart.idleRestartDelayBucket(hour), "1-8h");
-    assert.equal(DesktopIdleRestart.idleRestartDelayBucket(8 * hour - 1), "1-8h");
-    assert.equal(DesktopIdleRestart.idleRestartDelayBucket(8 * hour), "8-24h");
-    assert.equal(DesktopIdleRestart.idleRestartDelayBucket(24 * hour - 1), "8-24h");
-    assert.equal(DesktopIdleRestart.idleRestartDelayBucket(24 * hour), ">24h");
-  });
-
-  it.effect("records the first idle moment once and never installs", () => {
+  it.effect("keeps an idle staged update ready without installing", () => {
     const harness = makeStagingHarness();
     return withStagedUpdate(harness, (updates) =>
       Effect.gen(function* () {
         assert.equal(harness.idleRestart.pendingFile, "1.2.4");
         harness.idleRestart.idleState = "idle";
         yield* tick;
-        assert.deepEqual(harness.idleRestart.reports, [report("<1h")]);
+
         assert.isUndefined(harness.idleRestart.pendingFile);
 
         yield* tick;
         yield* tick;
-        assert.equal(harness.idleRestart.reports.length, 1);
+
         assert.equal(harness.idleRestart.inspections, 1);
         assert.equal(harness.quitAndInstalls(), 0);
         assert.equal((yield* updates.getState).status, "downloaded");
@@ -84,16 +60,14 @@ describe("idle restart measurement", () => {
     return withStagedUpdate(harness, () =>
       Effect.gen(function* () {
         yield* TestClock.adjust("2 hours");
-        assert.deepEqual(harness.idleRestart.reports, []);
+
         assert.equal(harness.idleRestart.inspections, 0);
 
         harness.idleRestart.idleState = "unknown";
         yield* tick;
-        assert.deepEqual(harness.idleRestart.reports, []);
 
         harness.idleRestart.idleState = "locked";
         yield* tick;
-        assert.deepEqual(harness.idleRestart.reports, [report("1-8h")]);
       }),
     );
   });
@@ -111,13 +85,12 @@ describe("idle restart measurement", () => {
         harness.idleRestart.hosts = [quietHost, blockingHost];
         yield* tick;
         yield* tick;
-        assert.deepEqual(harness.idleRestart.reports, []);
+
         assert.equal(harness.idleRestart.inspections, 2);
 
         harness.idleRestart.hosts = [quietHost, quietHost];
         yield* tick;
         yield* tick;
-        assert.deepEqual(harness.idleRestart.reports, [report("<1h")]);
       }),
     );
   });
@@ -136,11 +109,9 @@ describe("idle restart measurement", () => {
         };
         harness.idleRestart.hosts = [busyHost];
         yield* tick;
-        assert.deepEqual(harness.idleRestart.reports, []);
 
         harness.idleRestart.hosts = [{ ...busyHost, continuableSessions: 2 }];
         yield* tick;
-        assert.deepEqual(harness.idleRestart.reports, [report("<1h")]);
       }),
     );
   });
@@ -155,7 +126,7 @@ describe("idle restart measurement", () => {
         };
         yield* tick;
         assert.equal(harness.idleRestart.inspections, 1);
-        assert.deepEqual(harness.idleRestart.reports, []);
+
         assert.equal(harness.idleRestart.pendingFile, "1.2.4");
       }),
     );
@@ -168,7 +139,7 @@ describe("idle restart measurement", () => {
         harness.idleRestart.idleState = "idle";
         yield* tick;
         assert.equal(harness.idleRestart.inspections, 0);
-        assert.deepEqual(harness.idleRestart.reports, []);
+
         assert.isUndefined(harness.idleRestart.pendingFile);
       }),
     );
@@ -182,7 +153,6 @@ describe("idle restart measurement", () => {
         harness.idleRestart.idleState = "idle";
         yield* tick;
         assert.equal(harness.idleRestart.inspections, 0);
-        assert.deepEqual(harness.idleRestart.reports, []);
       }),
     );
   });
@@ -196,7 +166,6 @@ describe("idle restart measurement", () => {
         yield* Ref.set(desktopState.quitting, true);
         yield* tick;
         assert.equal(harness.idleRestart.inspections, 0);
-        assert.deepEqual(harness.idleRestart.reports, []);
       }),
     );
   });
@@ -216,7 +185,6 @@ describe("idle restart measurement", () => {
           harness.idleRestart.idleState = "idle";
           yield* tick;
           assert.equal(harness.idleRestart.inspections, 0);
-          assert.deepEqual(harness.idleRestart.reports, []);
         }),
       );
     }),
@@ -227,12 +195,11 @@ describe("idle restart measurement", () => {
     return withStagedUpdate(harness, (updates) =>
       Effect.gen(function* () {
         yield* updates.setChannel("nightly");
-        assert.deepEqual(harness.idleRestart.reports, [report("never")]);
+
         assert.isUndefined(harness.idleRestart.pendingFile);
 
         harness.idleRestart.idleState = "idle";
         yield* tick;
-        assert.equal(harness.idleRestart.reports.length, 1);
       }),
     );
   });
@@ -243,7 +210,7 @@ describe("idle restart measurement", () => {
     return Effect.scoped(
       Effect.gen(function* () {
         yield* (yield* DesktopUpdates.DesktopUpdates).configure;
-        assert.deepEqual(harness.idleRestart.reports, [report("installed_first", "1.2.3")]);
+
         assert.isUndefined(harness.idleRestart.pendingFile);
       }),
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
@@ -254,14 +221,13 @@ describe("idle restart measurement", () => {
     return Effect.gen(function* () {
       yield* withStagedUpdate(harness, () => Effect.void);
       assert.equal(harness.idleRestart.pendingFile, "1.2.4");
-      assert.deepEqual(harness.idleRestart.reports, []);
 
       yield* Effect.scoped(
         Effect.gen(function* () {
           yield* (yield* DesktopUpdates.DesktopUpdates).configure;
         }),
       ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
-      assert.deepEqual(harness.idleRestart.reports, [report("never")]);
+
       assert.isUndefined(harness.idleRestart.pendingFile);
     });
   });

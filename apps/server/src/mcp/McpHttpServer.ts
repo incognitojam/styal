@@ -30,8 +30,6 @@ import { renderStyalProductName } from "@t3tools/provider-core/server/orchestrat
 import packageJson from "../../package.json" with { type: "json" };
 import { parseBearerToken } from "../auth/EnvironmentAuth.ts";
 import * as ServerConfig from "../config.ts";
-import * as BrowserFeatureUsage from "../telemetry/BrowserFeatureUsage.ts";
-import * as FeatureUsage from "../telemetry/FeatureUsage.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as DeviceService from "../device/DeviceService.ts";
 import * as HtmlRender from "../htmlRender/HtmlRender.ts";
@@ -541,7 +539,6 @@ const previewSnapshotFailure = Effect.fn("previewSnapshotFailure")(function <E>(
 });
 
 const registerPreviewSnapshot = Effect.fn("McpHttpServer.registerPreviewSnapshot")(function* () {
-  const observeSnapshot = yield* BrowserFeatureUsage.snapshotObserver;
   const server = yield* McpServer.McpServer;
   const broker = yield* PreviewAutomationBroker.PreviewAutomationBroker;
   const threads = yield* ThreadManagementService.ThreadManagementService;
@@ -648,7 +645,6 @@ const registerPreviewSnapshot = Effect.fn("McpHttpServer.registerPreviewSnapshot
             }),
           ),
           Effect.provide(saveServices),
-          observeSnapshot,
           Effect.matchCauseEffect({
             onFailure: previewSnapshotFailure,
             onSuccess: Effect.succeed,
@@ -1043,8 +1039,6 @@ const withToolAnalytics =
                   const result = exit._tag === "Success" ? exit.value : undefined;
                   // A call that asks for input is retried with it, and that call is the one counted.
                   if (result instanceof McpSchema.InputRequired) return Effect.void;
-                  if (FeatureUsage.toolReportedAsFeatureUsage(options.tool.name))
-                    return Effect.void;
                   // Handoff tools look up threads to record; the response must not wait on them.
                   return Clock.currentTimeMillis.pipe(
                     Effect.flatMap((endedAt) =>

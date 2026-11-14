@@ -11,7 +11,6 @@ import { NavigationRow } from "../../components/ui/NavigationRow";
 import { cn } from "../../lib/cn";
 import { appAtomRegistry } from "../../state/atom-registry";
 import { useProjects, useVisibleThreadShells } from "../../state/entities";
-import { reportForkClientUsage } from "../../state/forkClientUsage";
 import { serverEnvironment } from "../../state/server";
 import {
   getComposerDraftSnapshot,
@@ -102,21 +101,12 @@ async function addShareToThread(
       consumeShare,
       releaseUnusedAttachments: scheduleUnusedComposerAttachmentCleanup,
     });
-    void reportForkClientUsage(environmentId, {
-      feature: "incoming-share-thread",
-      action: "added",
-      outcome: "success",
-    });
+
     if (warnings.length > 0) {
       Dialog.alert("Some shared content was skipped", warnings.join("\n"));
     }
     return true;
   } catch (error) {
-    void reportForkClientUsage(environmentId, {
-      feature: "incoming-share-thread",
-      action: "added",
-      outcome: "failure",
-    });
     Dialog.alert(
       "Could not add to thread",
       error instanceof Error ? error.message : "The shared content could not be saved.",

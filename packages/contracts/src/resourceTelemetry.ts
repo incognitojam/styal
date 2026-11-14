@@ -347,11 +347,7 @@ export const DesktopLaunchTimingReport = Schema.Struct({
 });
 export type DesktopLaunchTimingReport = typeof DesktopLaunchTimingReport.Type;
 
-/**
- * Desktop main -> server: an observation the server records as an analytics
- * event, `feature.used` for idle restart and preview installs and `desktop.launched` for launch
- * timing. Delivered once, to one attached backend.
- */
+/** Legacy desktop usage messages are accepted and silently discarded by the server. */
 export const DesktopFeatureUsageReport = Schema.Union([
   Schema.Struct({
     version: Schema.Literal(1),

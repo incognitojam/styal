@@ -1,3 +1,6 @@
+import * as FeedbackService from "./feedback/FeedbackService.ts";
+import * as HardwareService from "./hardware/HardwareService.ts";
+import * as ProjectFileActionApprovals from "./project/ProjectFileActionApprovals.ts";
 import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts";
 import { OrchestrationGetCommandOutputError } from "@t3tools/contracts";
 import { resolveAddProjectDefaultDirectory } from "./project/AddProjectDefaultDirectory.ts";
@@ -1409,14 +1412,14 @@ export const layerWsRpc = (
       const providerSessionManager = yield* ProviderSessionManager.ProviderSessionManagerV2;
       const scheduledTasks = yield* ScheduledTasks.ScheduledTaskService;
       const secretRequests = yield* SecretRequests.SecretRequests;
-      const feedback = yield* ClientFeatureUsage.feedback(clientAnalyticsProps);
+      const feedback = yield* FeedbackService.FeedbackService;
       const guestShares = yield* GuestShareService.GuestShareService;
       const pullRequests = yield* PullRequestService.PullRequestService;
       const reviewGuides = yield* PullRequestReviewGuideService.PullRequestReviewGuideService;
       const pullRequestSync = yield* PullRequestSyncReactor.PullRequestSyncReactor;
       const workflowRunWatch = yield* WorkflowRunWatchReactor.WorkflowRunWatchReactor;
-      const deviceService = yield* ClientFeatureUsage.devices(clientAnalyticsProps);
-      const hardware = yield* ClientFeatureUsage.hardware(clientAnalyticsProps);
+      const deviceService = yield* DeviceService.DeviceService;
+      const hardware = yield* HardwareService.HardwareService;
       const deviceSharing = yield* DeviceSharing.DeviceSharing;
       const deviceHostContext =
         yield* Effect.context<Effect.Services<ReturnType<typeof remoteSshDeviceHosts>>>();
@@ -1491,12 +1494,7 @@ export const layerWsRpc = (
       const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
       const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
       const projectScriptRunner = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
-      const fileActionApprovals =
-        yield* ClientFeatureUsage.projectFileApprovals(clientAnalyticsProps);
-      const observeWorkflowApprovals =
-        yield* ClientFeatureUsage.workflowApprovals(clientAnalyticsProps);
-      const observeWorkflowRunReviews =
-        yield* ClientFeatureUsage.workflowRunReviews(clientAnalyticsProps);
+      const fileActionApprovals = yield* ProjectFileActionApprovals.ProjectFileActionApprovals;
       const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
       const backgroundPolicy = yield* BackgroundPolicy.BackgroundPolicy;
       const rpcClientIds = yield* Ref.make(new Set<RpcClientId>());
@@ -3460,12 +3458,7 @@ export const layerWsRpc = (
         [WS_METHODS.pullRequestsSetFilesViewed]: (input) =>
           withPullRequestViewer(input, pullRequests.setFilesViewed(input)),
         [WS_METHODS.pullRequestsRunAction]: (input) =>
-          withPullRequestViewer(
-            input,
-            input.action === "approve-workflows"
-              ? observeWorkflowApprovals(pullRequests.runAction(input))
-              : pullRequests.runAction(input),
-          ).pipe(
+          withPullRequestViewer(input, pullRequests.runAction(input)).pipe(
             Effect.tap(() =>
               resolvePullRequestSyncKey(input).pipe(
                 Effect.flatMap((key) =>
@@ -3512,8 +3505,7 @@ export const layerWsRpc = (
           withPullRequestViewer(input, pullRequests.labelCandidates(input)),
         [WS_METHODS.pullRequestsSetLabels]: (input) =>
           withPullRequestViewer(input, pullRequests.setLabels(input)),
-        [WS_METHODS.pullRequestsReviewWorkflowRun]: (input) =>
-          observeWorkflowRunReviews(input.state, workflowRunWatch.review(input)),
+        [WS_METHODS.pullRequestsReviewWorkflowRun]: (input) => workflowRunWatch.review(input),
       });
       const splitHandlers: Pick<typeof handlers, SplitWsRpc["_tag"]> = handlers;
       const otherHandlers: Pick<typeof handlers, Exclude<ServerWsRpc, SplitWsRpc>["_tag"]> =

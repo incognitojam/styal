@@ -3,12 +3,10 @@ import {
   DEVICE_IDLE_SHUTDOWN_CHOICES,
   deviceIdleShutdownLabel,
 } from "@t3tools/contracts";
-import { reportForkClientUsage } from "~/forkClientUsage";
 
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { SettingResetButton, SettingsRow } from "./settingsLayout";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
-import { useSettingsScope } from "./SettingsScopeContext";
 
 /** Idle period after which the environment shuts down devices it started. */
 export function DeviceIdleShutdownSetting({
@@ -20,14 +18,7 @@ export function DeviceIdleShutdownSetting({
 }) {
   const minutes = useScopedSettings().deviceIdleShutdownMinutes;
   const updateSettings = useUpdateScopedSettings();
-  const { environment } = useSettingsScope();
   const change = (deviceIdleShutdownMinutes: number | null) => {
-    void reportForkClientUsage(environment?.environmentId, {
-      feature: "integration-settings",
-      action: "change_requested",
-      setting: "device_idle_shutdown",
-      settingScope: "environment",
-    });
     return updateSettings({ deviceIdleShutdownMinutes });
   };
   const choices = DEVICE_IDLE_SHUTDOWN_CHOICES.includes(minutes)

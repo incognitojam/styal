@@ -952,10 +952,7 @@ describe("ThreadSettlementServiceV2 worker", () => {
             number: 42,
             url: "https://example.test/owner/repository/pull/42",
           });
-          // The analytics event carries the rule only, no thread or PR identity.
-          expect(yield* Ref.get(fixture.analyticsRecords)).toEqual([
-            { event: "server.thread.settled", properties: { reason: "merged" } },
-          ]);
+          expect(yield* Ref.get(fixture.analyticsRecords)).toEqual([]);
         }).pipe(Effect.provide(fixture.layer));
       }),
     ),
@@ -1010,9 +1007,7 @@ describe("ThreadSettlementServiceV2 worker", () => {
           const commands = yield* Ref.get(fixture.commands);
           expect(commands.map((command) => command.threadId)).toEqual([thread.id]);
           expect(commands[0]?.reason).toEqual({ kind: "inactivity", days: 2 });
-          expect(yield* Ref.get(fixture.analyticsRecords)).toEqual([
-            { event: "server.thread.settled", properties: { reason: "inactivity", afterDays: 2 } },
-          ]);
+          expect(yield* Ref.get(fixture.analyticsRecords)).toEqual([]);
         }).pipe(Effect.provide(fixture.layer));
       }),
     ),
@@ -1566,9 +1561,7 @@ describe("ThreadSettlementServiceV2 worker", () => {
               url: "https://example.test/owner/repository/pull/42",
             },
           ]);
-          expect(yield* Ref.get(fixture.analyticsRecords)).toEqual([
-            { event: "server.thread.settled", properties: { reason: "closed" } },
-          ]);
+          expect(yield* Ref.get(fixture.analyticsRecords)).toEqual([]);
         }).pipe(Effect.provide(fixture.layer));
       }),
     ),

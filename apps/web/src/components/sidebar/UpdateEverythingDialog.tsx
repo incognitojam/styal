@@ -1,6 +1,5 @@
 import type { ConfirmDialogThreadActivity } from "@t3tools/contracts";
 import { useEnvironmentMachines } from "~/state/environments";
-import { useCombinedUpdateConfirmationUsage } from "../../combinedUpdateConfirmationUsage";
 import { CONTENT_UPDATE_CLICK_GUARD_MS } from "../../confirmDialog";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import { HostActivityThreadList } from "../HostActivityThreadList";
@@ -57,13 +56,10 @@ export function UpdateEverythingDialog({
   ...content
 }: UpdateEverythingDialogProps) {
   const cancelRef = useRef<HTMLButtonElement>(null);
-  // A track switch always asks, so it says nothing about how often updates need consent.
-  const reportDecision = useCombinedUpdateConfirmationUsage(open && content.title === undefined);
   return (
     <AlertDialog
       open={open}
       onOpenChange={(nextOpen) => {
-        if (!nextOpen) reportDecision("cancelled");
         onOpenChange(nextOpen);
       }}
     >
@@ -82,7 +78,6 @@ export function UpdateEverythingDialog({
               Date.now() - content.contentUpdatedAt < CONTENT_UPDATE_CLICK_GUARD_MS
             )
               return;
-            reportDecision("confirmed");
             content.onConfirm();
           }}
         />

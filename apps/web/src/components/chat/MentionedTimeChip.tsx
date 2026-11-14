@@ -4,10 +4,9 @@ import {
   resolveMentionedTime,
   type ResolvedMentionedTime,
 } from "@t3tools/client-runtime/mentioned-times";
-import { type ReactNode, useRef } from "react";
+import { type ReactNode } from "react";
 import type { EnvironmentId } from "@t3tools/contracts";
 
-import { reportForkClientUsage } from "../../forkClientUsage";
 import { useClientSettings } from "../../hooks/useSettings";
 import { describeMentionedTime } from "./mentionedTimeDetails";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -27,21 +26,9 @@ export function MentionedTimeChip(props: {
 }) {
   const { time, anchor } = props;
   const resolved = resolveMentionedTime(time, anchor);
-  const reported = useRef(false);
   if (resolved === null) return props.children;
   return (
-    <Tooltip
-      onOpenChange={(open, details) => {
-        if (open && !details.isCanceled && !reported.current) {
-          const pending = reportForkClientUsage(props.environmentId, {
-            feature: "mentioned-time-chips",
-            action: "details_opened",
-          });
-          // Unsupported servers leave the chip eligible if support arrives later.
-          if (pending) reported.current = true;
-        }
-      }}
-    >
+    <Tooltip>
       <TooltipTrigger
         render={
           <span className="cursor-default rounded-sm bg-foreground/[0.06] px-0.75 box-decoration-clone hover:bg-foreground/10" />

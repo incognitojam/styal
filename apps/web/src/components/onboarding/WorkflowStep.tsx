@@ -2,7 +2,6 @@ import { DEFAULT_UNIFIED_SETTINGS } from "@t3tools/contracts";
 import { ArrowRightIcon, CircleCheckIcon } from "lucide-react";
 import { useState } from "react";
 
-import { reportForkClientUsage } from "../../forkClientUsage";
 import { cn } from "../../lib/utils";
 import {
   AUTO_SETTLE_DEFAULT_DAYS,
@@ -53,12 +52,7 @@ export function WorkflowStep({
       setSaving(false);
       return;
     }
-    void reportForkClientUsage(environments[0]?.environmentId, {
-      feature: "setup-thread-settlement",
-      action: "continued",
-      settleOnMerge: onMerge,
-      settleWhenInactive: whenInactive,
-    });
+
     await onContinue().finally(() => setSaving(false));
   };
 

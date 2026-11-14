@@ -30,7 +30,6 @@ import {
 } from "../../../attachmentStore.ts";
 import { resolveAttachmentRelativePath } from "../../../attachmentPaths.ts";
 import * as ServerConfig from "../../../config.ts";
-import * as BrowserFeatureUsage from "../../../telemetry/BrowserFeatureUsage.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import * as PreviewAutomationBroker from "../../PreviewAutomationBroker.ts";
@@ -271,10 +270,7 @@ const handlers = {
 
 const { preview_snapshot, ...standardHandlers } = handlers;
 
-export const layerStandard = McpToolAccess.toLayer(
-  PreviewStandardToolkit,
-  McpToolAccess.wrapHandlers(standardHandlers, BrowserFeatureUsage.observeHandlers),
-);
+export const layerStandard = McpToolAccess.toLayer(PreviewStandardToolkit, standardHandlers);
 
 export const layerSnapshot = McpToolAccess.toLayer(PreviewSnapshotToolkit, {
   preview_snapshot,

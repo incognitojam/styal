@@ -10,39 +10,7 @@ counts are reported separately from the main agent's. Model names are sent only 
 a provider's public model list. Approval and review counts never include the command or file
 involved.
 
-Cross-machine agent searches record their outcome and duration, without queries, results or machine names and identifiers.
-
-Agent browser usage includes the operation name, whether it succeeded, failed, or was cancelled,
-and its duration. It does not include visited URLs, page content, screenshots, selectors, typed
-input, or evaluated code. Device panel actions and agent device tools record their operation and
-outcome, whether the device is local or remote when known, and its platform when reported. Device
-names, identifiers, screenshots and action arguments are not collected. When a device stream that
-showed video for at least five seconds closes, web, desktop and mobile viewers report its platform,
-video format, whether the server was on the same machine, its length, average frame rate, and its
-counts of decoder resets, reconnects and pauses with the largest pause and delay.
-Web and desktop integration settings record requests to change browser access, device support,
-agent device access, idle shutdown, or sharing, and whether the control applies to an environment
-or project. These requests do not report whether a save succeeded. Environment and project names,
-addresses, identifiers, and chosen values are not collected.
-Hardware tools and the hardware lease controls in Settings and the thread header record their
-operation, its outcome, and for an agent's device call the action's access tier. Device names,
-addresses, action names, arguments, responses and uploaded files are not collected, and calls
-scripts make through a lease's proxy are not recorded.
-Sending feedback, from the form or through an agent, records how it ended: posted, not posted,
-declined or not answered. The report itself and the GitHub account are not collected.
-When an agent reads one of styal's built-in setup guides, the guide's topic is recorded.
-Reviewing, approving and revoking a `styal.json` action that runs on its own records which of the
-three it was and its outcome. Projects, action names, commands and file paths are not collected.
-Approving a pull request's waiting workflows records that you did and its outcome. Repositories,
-pull requests and workflow names are not collected.
-Agent workflow run watches record whether each watch or unwatch call started, stopped, or
-found a run already finished, and how each watch ended: the run's conclusion, a failure to read
-it, or being stopped, with how many minutes it was watched. Approving or rejecting a watched run's
-deployments records which of the two it was and its outcome. Repositories, run links, environments,
-comments, and workflow or job names are not collected.
-When an agent delegates a task, styal records whether the agent asked to be woken for each task or
-once for the whole group, whether it set a timeout, and the call's outcome. Prompts, task
-identifiers, and timeout values are not collected.
+When a device stream that showed video for at least five seconds closes, web, desktop and mobile viewers report its platform, video format, whether the server was on the same machine, its length, average frame rate, and counts of decoder resets, reconnects and pauses with the largest pause and delay. Device names, identifiers, addresses and images are not collected.
 
 Once after startup and then daily, the server reports each configured provider: its type, whether
 it is the default or an added instance, whether it is installed, enabled and healthy, its version
@@ -58,47 +26,9 @@ clears because activity resumed, work or a request appeared, or the turn ended. 
 session identifiers, prompts, output, commands, and paths are not collected. Local incident
 records remain in the activity log even when telemetry is disabled.
 
-Viewed-thread completion sound suppression reports a count without thread identifiers, titles, or sound choices.
-
-Simulator memory reporting records whether each simulator start applied the mode or fell back to a normal start. Project names, identifiers, and app capabilities are not collected.
-
-When the mentioned time check is on, each check a model runs records whether it succeeded and how long it took. The reply and the times in it are not collected.
-
-The mobile app records when you turn diff relevance sorting on or off, and whether adding shared
-content to an existing thread succeeded. The thread and the shared content are not collected.
-
-Web and desktop clients also record explicit diff-order selections, when you open a
-mentioned time's explanation, which automatic settling rules you keep when finishing setup, when
-you change the sidebar's project filter or start a thread while it is applied, when you reorder,
-pin, unpin, or archive a project from its header in the grouped sidebar, whether a project
-action you run is saved in styal or comes from the project's `styal.json`, and whether the project
-has a `styal.json`, a `t3.json` or neither, and when you open the keyboard shortcuts overview and from where, and when you start or stop two machines working together and whether that finished, had to wait or failed. The web app records when a new-build notice is visible and
-when you choose Refresh. The desktop app records when its notice
-naming the version it updated to is shown and when you open that version's release notes. These events use the relevant paired environment's telemetry setting.
-File paths, written times, deployment identifiers, project names, action names and commands, and composer drafts are not collected.
-
 The server also counts when someone uses a feature from any client, such as launching, forking or pinning a thread, rolling back a checkpoint, changing a thread's permission or interaction mode, opening a terminal, preview or editor, creating a worktree, running a git or pull request action, saving or running a scheduled task, cloning a project, publishing a repository or customizing a keybinding. Where a feature has options, the choice is recorded from a fixed list, such as the editor or worktree strategy. Paths, titles, branch names, messages and other text are not collected.
 
-Each call an agent makes to one of styal's own tools records the tool's name, the provider type of the calling agent, whether the call succeeded with a fixed error code when it failed, and how long it took. When the tool hands work to another thread, such as delegating a task, launching a thread or sending it a message, the event also records settings the agent chose, such as the workspace type or how many threads it started, and the provider type, model and modes of each agent involved. When a delegated task finishes, its final status, both agents' provider types and models, and its run time are recorded. Models are recorded only when they come from a provider's published list, not models you added yourself or from tools like OpenCode that list your own configuration. Provider instance names, thread identifiers, prompts, titles and tool arguments are not collected.
-
-Auto environment tool usage records which operation an Auto agent attempted (request a machine link, create or clone a project, or run a scheduled task), whether it succeeded, failed or was cancelled, its duration, and whether a failure was a refusal or an operation error. It does not include tool arguments or results, paths, machine names, task names or model selections.
-
-Web and desktop apps record when the sidebar's combined update confirmation shows affected
-work and whether you confirm or cancel it. Checks and updates that need no confirmation
-are not recorded. These events follow one paired environment's telemetry setting.
-Computer, provider and thread names, update versions and confirmation text are not collected.
-
-Each automatic thread settlement records its rule (a merged or closed pull request, or inactivity with the configured number of days), and un-settling a thread records which of those rules, or a manual settle, had settled it. Thread titles, pull request numbers and links are not collected.
-
-When you install, open, remove, or reset a pull request preview on macOS, or styal removes one after its pull request closes, the desktop app records which action ran, whether you or styal started it, and whether it completed, was cancelled, or failed with a fixed reason. It does not record the pull request, the version, or any path.
-
-On macOS, the desktop app records how long after an update was ready the computer first sat idle or locked with no threads waiting on you, as a rough range, so we can learn whether installing updates while you are away would work. It does not record when you were idle, what you were doing, or any thread details.
-
-Each time the desktop app starts, it records how long its local server and window took to become ready. After an update restart it also records how long the old version took to close and the new one to start, so we can tell whether update restarts are quick enough to go unnoticed. These durations are the only details recorded.
-
-Bypassing a repository's rules to merge a pull request records whether the merge succeeded. The repository and pull request are not collected.
-
-Pull request deployment controls record whether someone opens an environment, opens deployment logs, or expands the environment list, and whether the action succeeded. Environment names, URLs, repositories, pull request numbers, and commit hashes are not collected.
+Failed calls to styal's tools and successful calls that hand off work record the tool's name, the provider type of the calling agent, whether the call succeeded with a fixed error code when it failed, and how long it took. When the tool hands work to another thread, such as delegating a task, launching a thread or sending it a message, the event also records settings the agent chose, such as the workspace type or how many threads it started, and the provider type, model and modes of each agent involved. When a delegated task finishes, its final status, both agents' provider types and models, and its run time are recorded. Models are recorded only when they come from a provider's published list, not models you added yourself or from tools like OpenCode that list your own configuration. Provider instance names, thread identifiers, prompts, titles and tool arguments are not collected.
 
 Usage events do not include prompts, responses, file contents, authentication tokens, conversation
 IDs, raw provider events, or child-agent output.
@@ -139,8 +69,6 @@ a [managed policy](./managed-policy.md#other-capabilities).
 
 The desktop app reads `T3CODE_TELEMETRY_ENABLED` from your shell profile (for example `~/.zshrc`) on macOS and
 Linux, so export it there and restart the app. On Windows, set it as a user environment variable.
-
-Adding or stopping a machine from another machine’s agent list on web or desktop records whether the attempt succeeded or failed. Cancelled confirmations are not counted. Machine names, addresses, pairing codes and identifiers are never included.
 
 ## Export diagnostics to your own receiver
 

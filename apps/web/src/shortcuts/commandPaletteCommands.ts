@@ -135,7 +135,7 @@ export function installCommandPaletteCommands(
   const disposeMenuAction = registerMenuAction("shortcuts-overview", () => {
     if (!isCommandPaletteMounted()) return;
     dispatchCommandPalette({ _tag: "SetOpen", open: false });
-    openShortcutsOverview("help_menu");
+    openShortcutsOverview();
   });
 
   return () => {

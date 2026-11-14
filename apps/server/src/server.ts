@@ -31,7 +31,6 @@ import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
 import * as HostPowerMonitor from "./background/HostPowerMonitor.ts";
 import * as ServerConfig from "./config.ts";
 import { writeStyalSkill } from "./mcp/toolkits/guide/skill.ts";
-import * as StyalSkillUsage from "./telemetry/StyalSkillUsage.ts";
 import { withUntracedRequests } from "./http.ts";
 import * as ServerHttp from "./http.ts";
 import {
@@ -52,7 +51,6 @@ import * as PullRequestReviewGuideService from "./pullRequest/PullRequestReviewG
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
 import * as ErrorReporting from "./telemetry/ErrorReporting.ts";
-import * as DesktopFeatureUsage from "./telemetry/DesktopFeatureUsage.ts";
 import * as DelegatedTaskAnalytics from "./telemetry/DelegatedTaskAnalytics.ts";
 import * as ProviderUsageAnalytics from "./telemetry/ProviderUsageAnalytics.ts";
 import * as ProviderSessionManager from "./orchestration-v2/ProviderSessionManager.ts";
@@ -626,7 +624,6 @@ const layerOrchestrationV2Runtime = RuntimeLayer.layerProduction.pipe(
   Layer.provide(layerWorkspacePortAllocator),
   Layer.provide(layerScheduledTaskWebhookOrigin),
   Layer.provide(ProviderUsageAnalytics.layer),
-  Layer.provide(StyalSkillUsage.layer),
   Layer.provide(layerCheckpointStore),
   Layer.provide(layerGitWorkflow),
   Layer.provide(
@@ -855,7 +852,6 @@ const layerRuntimeDependencies = layerRuntimeCoreDependencies.pipe(
   Layer.provideMerge(layerUsage.pipe(traceShutdown("usage"))),
   Layer.provideMerge(layerBackground.pipe(traceShutdown("background"))),
   Layer.provideMerge(layerResourceDiagnostics.pipe(traceShutdown("resource-diagnostics"))),
-  Layer.provideMerge(DesktopFeatureUsage.layer.pipe(Layer.provide(layerDesktopTelemetryReceiver))),
   Layer.provideMerge(TraceDiagnostics.layer),
   Layer.provideMerge(TriageService.layer.pipe(Layer.provide(GitVcsDriver.layer))),
   Layer.provideMerge(ErrorReporting.layer),

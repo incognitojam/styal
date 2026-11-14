@@ -36,7 +36,6 @@ import * as DesktopObservability from "../app/DesktopObservability.ts";
 import * as ElectronDialog from "../electron/ElectronDialog.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as IpcChannels from "../ipc/channels.ts";
-import * as DesktopTelemetryPublisher from "../telemetry/DesktopTelemetryPublisher.ts";
 
 // Installs a pull request's unsigned macOS build as `styal (Preview)`. The app in ~/Applications is
 // the only record of what is installed. Files this process writes should not be quarantined; a
@@ -182,7 +181,6 @@ export const make = Effect.fn("DesktopPreviewApp.make")(function* (options?: {
   const http = (yield* HttpClient.HttpClient).pipe(HttpClient.followRedirects(5));
   const electronWindow = yield* ElectronWindow.ElectronWindow;
   const electronDialog = yield* ElectronDialog.ElectronDialog;
-  const telemetry = yield* DesktopTelemetryPublisher.DesktopTelemetryPublisher;
   const scope = yield* Scope.Scope;
   const { path } = environment;
   // Like the updater, a policy that cannot be read refuses.
@@ -646,24 +644,10 @@ export const make = Effect.fn("DesktopPreviewApp.make")(function* (options?: {
     activity: DesktopPreviewAppActivity,
     body: Effect.Effect<void | "skipped", DesktopPreviewAppError>,
   ) {
-    const report = (
-      outcome: DesktopPreviewAppActionResult["outcome"],
-      failureReason?: DesktopPreviewAppFailureReason,
-    ) =>
-      telemetry.publishFeatureUsage({
-        version: 1,
-        type: "desktopFeatureUsage",
-        feature: "desktop-preview-app",
-        action,
-        source,
-        outcome,
-        ...(failureReason === undefined ? {} : { failureReason }),
-      });
     const claimed = yield* Ref.modify(activityRef, (current) =>
       current.status === "idle" ? ([true, activity] as const) : ([false, current] as const),
     );
     if (!claimed) {
-      yield* report("failed", "busy");
       return {
         outcome: "failed",
         message: "Another preview action is still running.",
@@ -679,7 +663,6 @@ export const make = Effect.fn("DesktopPreviewApp.make")(function* (options?: {
     yield* publishState;
 
     if (Exit.isSuccess(exit)) {
-      if (exit.value !== "skipped") yield* report("completed");
       return {
         outcome: "completed",
         message: null,
@@ -690,7 +673,6 @@ export const make = Effect.fn("DesktopPreviewApp.make")(function* (options?: {
     if (error === undefined) {
       const defect = exit.cause.reasons.find((reason) => reason._tag === "Die");
       if (defect === undefined) {
-        yield* report("cancelled");
         return {
           outcome: "cancelled",
           message: null,
@@ -698,7 +680,6 @@ export const make = Effect.fn("DesktopPreviewApp.make")(function* (options?: {
         } satisfies DesktopPreviewAppActionResult;
       }
       yield* logWarning("preview action died", { action, defect: String(defect.defect) });
-      yield* report("failed", "unexpected");
       return {
         outcome: "failed",
         message: "The preview action stopped unexpectedly. Check the desktop log.",
@@ -706,7 +687,6 @@ export const make = Effect.fn("DesktopPreviewApp.make")(function* (options?: {
       } satisfies DesktopPreviewAppActionResult;
     }
     yield* logWarning("preview action failed", { action, reason: error.reason });
-    yield* report("failed", error.reason);
     return {
       outcome: "failed",
       message: error.message,

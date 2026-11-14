@@ -39,9 +39,6 @@ interface RecordedBatchRequest {
         readonly serverMode?: string;
         readonly t3CodeVersion?: string;
         readonly t3CodeRepository?: string;
-        readonly featureUsageVersion?: number;
-        readonly deviceUsageVersion?: number;
-        readonly workflowRunWatchUsageVersion?: number;
         readonly providerAnalyticsUsageVersion?: number;
         readonly buildKind?: string;
         readonly releaseChannel?: string;
@@ -63,9 +60,6 @@ interface RecordedBatchBody {
       readonly serverMode?: string;
       readonly t3CodeVersion?: string;
       readonly t3CodeRepository?: string;
-      readonly featureUsageVersion?: number;
-      readonly deviceUsageVersion?: number;
-      readonly workflowRunWatchUsageVersion?: number;
       readonly providerAnalyticsUsageVersion?: number;
       readonly buildKind?: string;
       readonly releaseChannel?: string;
@@ -388,9 +382,6 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("AnalyticsService
               event.properties.serverAppVersion === event.properties.t3CodeVersion &&
               event.properties.serverMode === "web" &&
               event.properties.t3CodeRepository === "incognitojam/styal" &&
-              event.properties.featureUsageVersion === 1 &&
-              event.properties.deviceUsageVersion === 2 &&
-              event.properties.workflowRunWatchUsageVersion === 2 &&
               event.properties.providerAnalyticsUsageVersion === 1 &&
               event.properties.buildKind === "test" &&
               event.properties.releaseChannel === "unknown",

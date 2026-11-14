@@ -17,7 +17,6 @@ import {
   ShieldQuestionIcon,
 } from "lucide-react";
 
-import { reportForkClientUsage } from "../forkClientUsage";
 import { getClientSettings, subscribeClientSettings } from "../hooks/useSettings";
 import { getDocumentActivity } from "../lib/documentActivity";
 import { isWindowsPlatform } from "../lib/utils";
@@ -166,18 +165,7 @@ export function startThreadNotifications(
               : status === "request"
                 ? "Guest request"
                 : "Input needed";
-    let suppressionReported = false;
-    const allowSound = () => {
-      if (shouldSound()) return true;
-      if (!suppressionReported && getClientSettings().completionSound !== "none") {
-        suppressionReported = true;
-        void reportForkClientUsage(environmentId, {
-          feature: "completion-sounds",
-          action: "viewed_completion_suppressed",
-        });
-      }
-      return false;
-    };
+    const allowSound = shouldSound;
     if (hasNotificationSound(mode) && allowSound()) {
       const event = status === "approval" ? "approval" : kind;
       const sound = notificationSoundForEvent(getClientSettings(), event);

@@ -1,5 +1,4 @@
 import { DEFAULT_SERVER_SETTINGS } from "@t3tools/contracts";
-import { reportForkClientUsage } from "~/forkClientUsage";
 
 import { ScopedSwitch } from "./ScopedSwitch";
 import { useSettingsScope } from "./SettingsScopeContext";
@@ -11,20 +10,12 @@ import {
 } from "./useScopedSettings";
 
 export function AgentBrowserAccessSetting({ id }: { readonly id: string }) {
-  const { scope, environment } = useSettingsScope();
+  const { scope } = useSettingsScope();
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   const clearOverrides = useClearScopedSettings();
   const projectScope = scope.kind === "project" || scope.kind === "checkout";
-  const recordChange = () =>
-    reportForkClientUsage(environment?.environmentId, {
-      feature: "integration-settings",
-      action: "change_requested",
-      setting: "browser_access",
-      settingScope: projectScope ? "project" : "environment",
-    });
   const change = (enabled: boolean) => {
-    void recordChange();
     return updateSettings({ enableAgentBrowserAccess: enabled });
   };
   return (
@@ -34,7 +25,6 @@ export function AgentBrowserAccessSetting({ id }: { readonly id: string }) {
       settingKeys={["enableAgentBrowserAccess"]}
       title="Agent browser access"
       onResetOverride={() => {
-        void recordChange();
         return clearOverrides(["enableAgentBrowserAccess"]);
       }}
       description={
@@ -63,17 +53,9 @@ export function AgentBrowserAccessSetting({ id }: { readonly id: string }) {
 }
 
 export function ProjectAgentAccessSettings() {
-  const { environment } = useSettingsScope();
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   const clearOverrides = useClearScopedSettings();
-  const recordChange = () =>
-    reportForkClientUsage(environment?.environmentId, {
-      feature: "integration-settings",
-      action: "change_requested",
-      setting: "device_access",
-      settingScope: "project",
-    });
   return (
     <SettingsSection id="project-agent-access" title="Agent access">
       <AgentBrowserAccessSetting id="project-agent-browser-access" />
@@ -83,7 +65,6 @@ export function ProjectAgentAccessSettings() {
         settingKeys={["enableAgentDeviceAccess"]}
         title="Agent device access"
         onResetOverride={() => {
-          void recordChange();
           return clearOverrides(["enableAgentDeviceAccess"]);
         }}
         description="Allow agents in this project to control devices. Device support must be enabled on the environment. Applies when the agent session next starts."
@@ -93,7 +74,6 @@ export function ProjectAgentAccessSettings() {
             aria-label="Agent device access"
             checked={settings.enableAgentDeviceAccess}
             onCheckedChange={(enabled) => {
-              void recordChange();
               updateSettings({ enableAgentDeviceAccess: enabled });
             }}
           />

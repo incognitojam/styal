@@ -2,7 +2,6 @@ import { HardwareToolError } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 
 import * as HardwareService from "../../../hardware/HardwareService.ts";
-import * as HardwareFeatureUsage from "../../../telemetry/HardwareFeatureUsage.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import { HardwareToolkit } from "./tools.ts";
@@ -49,7 +48,4 @@ const handlers = {
   ),
 } satisfies McpToolAccess.Handlers<typeof HardwareToolkit.tools>;
 
-export const layer = McpToolAccess.toLayer(
-  HardwareToolkit,
-  McpToolAccess.wrapHandlers(handlers, HardwareFeatureUsage.observeHandlers),
-);
+export const layer = McpToolAccess.toLayer(HardwareToolkit, handlers);

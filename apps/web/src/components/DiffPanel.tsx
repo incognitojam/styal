@@ -114,7 +114,6 @@ import { createGitDiffFileContentsLoader } from "../lib/diffFileContents";
 import { useReviewFilePatches } from "./diffs/useReviewFilePatches";
 import { DiffFileLoadingBoundary } from "./diffs/DiffFileLoadingBoundary";
 import { DiffFileStatus } from "./diffs/DiffFileStatus";
-import { reportForkClientUsage } from "../forkClientUsage";
 import { useThreadRouteRef } from "../hooks/useThreadRouteTarget";
 import { projectCommitUrl } from "@t3tools/client-runtime/change-request-links";
 import { useOpenLink } from "../browser/useOpenLink";
@@ -1198,11 +1197,6 @@ export default function DiffPanel({
                 pressed={diffSortMode === "smart"}
                 onPressedChange={(pressed) => {
                   setDiffSortMode(pressed ? "smart" : "alphabetical");
-                  void reportForkClientUsage(activeThread?.environmentId, {
-                    feature: "diff-file-review-order",
-                    action: pressed ? "relevance_selected" : "alphabetical_selected",
-                    view: "changes",
-                  });
                 }}
               />
             }

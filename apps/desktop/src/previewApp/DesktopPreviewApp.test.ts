@@ -2,7 +2,7 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeCrypto from "node:crypto";
 import { assert, describe, it } from "@effect/vitest";
-import type { DesktopFeatureUsageReport, ManagedPolicyDocument } from "@t3tools/contracts";
+import type { ManagedPolicyDocument } from "@t3tools/contracts";
 import type * as Electron from "electron";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -135,7 +135,6 @@ const setup = (scenario: Scenario) =>
       `.styal-preview-install-${scenario.variant ?? "production"}`,
     );
     const commands: Array<ReadonlyArray<string>> = [];
-    const reports: Array<DesktopFeatureUsageReport> = [];
     const states: Array<unknown> = [];
     const urls: Array<string> = [];
     let signalled = false;
@@ -307,10 +306,9 @@ const setup = (scenario: Scenario) =>
           ),
           Layer.succeed(
             DesktopTelemetryPublisher.DesktopTelemetryPublisher,
-            DesktopTelemetryPublisher.DesktopTelemetryPublisher.of({
-              publishFeatureUsage: (report: DesktopFeatureUsageReport) =>
-                Effect.sync(() => void reports.push(report)),
-            } as unknown as DesktopTelemetryPublisher.DesktopTelemetryPublisher["Service"]),
+            DesktopTelemetryPublisher.DesktopTelemetryPublisher.of(
+              {} as unknown as DesktopTelemetryPublisher.DesktopTelemetryPublisher["Service"],
+            ),
           ),
         ),
       ),
@@ -330,7 +328,6 @@ const setup = (scenario: Scenario) =>
       appData,
       slot,
       commands,
-      reports,
       states,
       urls,
       dialogs,
@@ -389,16 +386,7 @@ describe("DesktopPreviewApp", () => {
         assert.isBelow(order.indexOf("/bin/kill"), order.indexOf("/usr/bin/open"));
         assert.deepStrictEqual(app.ran("/usr/bin/open"), [["/usr/bin/open", app.slot]]);
         assert.deepStrictEqual(app.ran("/bin/kill"), [["/bin/kill", "-TERM", "100"]]);
-        assert.deepStrictEqual(app.reports, [
-          {
-            version: 1,
-            type: "desktopFeatureUsage",
-            feature: "desktop-preview-app",
-            action: "install",
-            source: "user",
-            outcome: "completed",
-          },
-        ]);
+
         assert.isTrue(
           app.urls.some((url) =>
             url.startsWith(
@@ -495,11 +483,7 @@ describe("DesktopPreviewApp", () => {
         const result = yield* app.service.install(12);
 
         assert.strictEqual(result.outcome, "failed");
-        assert.strictEqual(app.reports[0]?.feature, "desktop-preview-app");
-        assert.strictEqual(
-          (app.reports[0] as { readonly failureReason?: string }).failureReason,
-          reason,
-        );
+
         assert.strictEqual(yield* installedVersion(app.slot), "1.2.3-pr.12.6");
         assert.isTrue(yield* app.stagingIsGone);
         if (reason !== "digest_mismatch" && reason !== "mount") {
@@ -851,10 +835,6 @@ describe("DesktopPreviewApp", () => {
           yield* app.service.removeIfPullRequestClosed;
           assert.strictEqual(yield* app.fs.exists(app.slot), kept);
           if (!kept) {
-            assert.deepStrictEqual(
-              app.reports.map((report) => (report as { readonly source?: string }).source),
-              ["system"],
-            );
           }
         }),
       ),
@@ -872,7 +852,6 @@ describe("DesktopPreviewApp", () => {
         yield* app.service.removeIfPullRequestClosed;
 
         assert.strictEqual(yield* installedVersion(app.slot), "1.2.3-pr.99.1");
-        assert.lengthOf(app.reports, 0);
       }),
     ),
   );

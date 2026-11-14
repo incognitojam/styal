@@ -456,7 +456,7 @@ export function ReviewSheet(props: ReviewSheetProps) {
   const isEnvironmentReady = environment.presentation?.connection.phase === "connected";
   const { draftMessage, draftContext } = useThreadDraftForThread({ environmentId, threadId });
   const reviewCache = useReviewCacheForThread({ environmentId, threadId });
-  const diffSort = useDiffSortMode({ view: "changes", environmentId });
+  const diffSort = useDiffSortMode();
   const { selectedThreadCwd } = useSelectedThreadWorktree();
   const columnMetrics = useNativeColumnLayoutMetrics();
   const safeArea = columnMetrics?.safeArea ?? insets;

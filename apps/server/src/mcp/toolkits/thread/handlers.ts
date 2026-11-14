@@ -147,7 +147,7 @@ export const declarations = {
           nextRunAt: task.nextRunAt,
         };
       }),
-    { auto: "allowed", autoUsage: "scheduled_run" },
+    { auto: "allowed" },
   ),
   t3_thread_search: McpToolAccess.reads((input) =>
     ThreadSearchMcpService.ThreadSearchMcpService.pipe(

@@ -6,11 +6,7 @@ import {
   pullRequestDeploymentCommit,
   pullRequestDeploymentsTitle,
 } from "@t3tools/client-runtime/pull-request-deployments";
-import {
-  EnvironmentId,
-  type PullRequestDeployment,
-  type PullRequestDeploymentStatus,
-} from "@t3tools/contracts";
+import { type PullRequestDeployment, type PullRequestDeploymentStatus } from "@t3tools/contracts";
 import { useState } from "react";
 import { Pressable, View } from "react-native";
 import Animated from "react-native-reanimated";
@@ -19,7 +15,6 @@ import { AppText as Text } from "../../components/ui/AppText";
 import { SymbolView, type AppSymbolName } from "../../components/ui/AppSymbol";
 import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
 import { relativeTime } from "../../lib/time";
-import { reportForkClientUsage } from "../../state/forkClientUsage";
 import { useVisibleSecondClock } from "../threads/use-visible-second-clock";
 import { PR_ROW_LAYOUT } from "./pullRequestAnimations";
 import { PullRequestCardGroup, PullRequestCardRow } from "./PullRequestControls";
@@ -37,8 +32,6 @@ const STATUS_ICONS: Record<PullRequestDeploymentStatus, { icon: AppSymbolName; t
   unknown: { icon: "circle.dashed", tint: "accent-icon-muted" },
 };
 
-type UsageAction = "open_environment" | "open_logs";
-
 /** Render only when the PR has deployments: the section keeps a clock running for its ages. */
 export function PullRequestDeployments(props: {
   readonly deployments: ReadonlyArray<PullRequestDeployment>;
@@ -50,18 +43,12 @@ export function PullRequestDeployments(props: {
   const [showAll, setShowAll] = useState(false);
   // Ages are shown in whole minutes, so a per-second tick would only re-render unchanged rows.
   const nowMs = useVisibleSecondClock(true, 60_000);
-  const environmentId = EnvironmentId.make(props.environmentId);
   const ordered = orderPullRequestDeployments(deployments);
   const canCollapse = ordered.length > PULL_REQUEST_DEPLOYMENT_PAGE;
   const visible =
     showAll || !canCollapse ? ordered : ordered.slice(0, PULL_REQUEST_DEPLOYMENT_PAGE);
-  const open = async (url: string, action: UsageAction) => {
-    const opened = await tryOpenExternalUrl(url, "deployment");
-    void reportForkClientUsage(environmentId, {
-      feature: "pull-request-deployments",
-      action,
-      outcome: opened ? "success" : "failure",
-    });
+  const open = async (url: string) => {
+    await tryOpenExternalUrl(url, "deployment");
   };
   return (
     <Animated.View layout={PR_ROW_LAYOUT} className="gap-3">
@@ -76,7 +63,7 @@ export function PullRequestDeployments(props: {
             headSha={props.headSha}
             nowMs={nowMs}
             last={index === visible.length - 1 && !canCollapse && !props.truncated}
-            onOpen={(url, action) => void open(url, action)}
+            onOpen={(url) => void open(url)}
           />
         ))}
         {props.truncated ? (
@@ -94,12 +81,6 @@ export function PullRequestDeployments(props: {
             expanded={showAll}
             onPress={() => {
               setShowAll(!showAll);
-              if (!showAll)
-                void reportForkClientUsage(environmentId, {
-                  feature: "pull-request-deployments",
-                  action: "show_all",
-                  outcome: "success",
-                });
             }}
           />
         ) : null}
@@ -113,7 +94,7 @@ function DeploymentRow(props: {
   readonly headSha: string | undefined;
   readonly nowMs: number;
   readonly last: boolean;
-  readonly onOpen: (url: string, action: UsageAction) => void;
+  readonly onOpen: (url: string) => void;
 }) {
   const { deployment } = props;
   const { icon, tint } = STATUS_ICONS[deployment.status];
@@ -173,7 +154,7 @@ function DeploymentRow(props: {
         <DeploymentLink
           label="Logs"
           accessibilityLabel={`View deployment logs for ${deployment.environment}`}
-          onPress={() => props.onOpen(logUrl, "open_logs")}
+          onPress={() => props.onOpen(logUrl)}
         />
       ) : null}
       {environmentUrl ? (
@@ -181,7 +162,7 @@ function DeploymentRow(props: {
           label="Open"
           icon="arrow.up.right"
           accessibilityLabel={`Open ${deployment.environment}`}
-          onPress={() => props.onOpen(environmentUrl, "open_environment")}
+          onPress={() => props.onOpen(environmentUrl)}
         />
       ) : null}
     </View>

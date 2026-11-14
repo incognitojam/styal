@@ -11,7 +11,6 @@ import * as Schema from "effect/Schema";
 
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as DesktopObservability from "../app/DesktopObservability.ts";
-import * as DesktopTelemetryPublisher from "./DesktopTelemetryPublisher.ts";
 
 const { logInfo } = DesktopObservability.makeComponentLogger("desktop-launch");
 
@@ -34,7 +33,7 @@ const reportedPlatform = (platform: NodeJS.Platform) =>
 /**
  * Times each desktop launch from the process start to the backend being ready
  * and the main window first being shown, and an update restart from the
- * user's request through the relaunch. `layerReporter` sends one report per
+ * user's request through the relaunch. `layerReporter` logs timing for each
  * launch once the window shows.
  */
 export class DesktopLaunchTiming extends Context.Service<
@@ -139,15 +138,12 @@ export const make = Effect.fn("desktop.launchTiming.make")(function* (options?: 
 
 export const layer = Layer.effect(DesktopLaunchTiming, make());
 
-/** Sends this launch's timing through the backend telemetry pipe once the
-    main window has been shown. */
+/** Logs local launch timing once the main window has been shown. */
 export const layerReporter = Layer.effectDiscard(
   Effect.gen(function* () {
     const timing = yield* DesktopLaunchTiming;
-    const telemetry = yield* DesktopTelemetryPublisher.DesktopTelemetryPublisher;
     yield* timing.report.pipe(
       Effect.tap((report) => logInfo("launch timing", { ...report })),
-      Effect.flatMap(telemetry.publishFeatureUsage),
       Effect.forkScoped,
     );
   }),

@@ -6,7 +6,6 @@ import type {
   ScopedProjectRef,
 } from "@t3tools/contracts";
 import type { ComposerThreadDraftState, DraftThreadEnvMode } from "../composerDraftStore";
-import { reportNewThreadWhileFiltered } from "../sidebarProjectFilterUsage";
 
 type ComposerModelSelectionState = Pick<
   ComposerThreadDraftState,
@@ -140,6 +139,6 @@ export async function startNewThreadFromContext(
   }
 
   await context.handleNewThread(projectRef);
-  void reportNewThreadWhileFiltered();
+
   return true;
 }

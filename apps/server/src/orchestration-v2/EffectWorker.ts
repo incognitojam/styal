@@ -1,7 +1,5 @@
 import { CommandId } from "@t3tools/contracts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
-import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
-import * as FeatureUsage from "../telemetry/FeatureUsage.ts";
 import { checkThreadReport } from "./ThreadReports.ts";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
@@ -101,9 +99,8 @@ export const layerExecutor: Layer.Layer<
     const mentionedTimesCheck = yield* MentionedTimesCheckService.MentionedTimesCheckService;
     const threads = yield* ThreadManagementService.ThreadManagementService;
     const settings = yield* ServerSettings.ServerSettingsService;
-    // Optional so a harness without them still delivers reports, unlinked and uncounted.
+    // An isolated harness can deliver reports without a linked environment identity.
     const identity = yield* Effect.serviceOption(ServerEnvironment.ServerEnvironmentIdentity);
-    const analytics = yield* Effect.serviceOption(AnalyticsService.AnalyticsService);
     return OrchestrationEffectExecutorV2.of({
       execute: Effect.fn("OrchestrationEffectExecutorV2.execute")(function (effect, options) {
         const willRetry = options?.willRetry ?? false;
@@ -590,18 +587,13 @@ export const layerExecutor: Layer.Layer<
           case "thread-report.check": {
             const { trigger } = effect.request;
             return Effect.gen(function* () {
-              const report = yield* checkThreadReport(threads, {
+              yield* checkThreadReport(threads, {
                 environmentId: Option.isSome(identity)
                   ? yield* identity.value.getEnvironmentId
                   : undefined,
                 threadId: effect.threadId,
                 trigger,
               });
-              if (report !== undefined && Option.isSome(analytics)) {
-                yield* FeatureUsage.recordThreadReport(report).pipe(
-                  Effect.provideService(AnalyticsService.AnalyticsService, analytics.value),
-                );
-              }
             }).pipe(
               Effect.mapError(
                 (cause) =>
