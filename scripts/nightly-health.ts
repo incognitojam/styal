@@ -1,6 +1,14 @@
 // @effect-diagnostics nodeBuiltinImport:off globalConsole:off -- Runs in github-script and a dependency-free read-only gh CLI.
 import * as NodeChildProcess from "node:child_process";
 import * as NodeURL from "node:url";
+import {
+  inertText,
+  openIssues,
+  ensureLabels,
+  commentOnce,
+  announceIssue,
+  type Request,
+} from "./health-issues.ts";
 
 type Job = {
   name: string;
@@ -15,7 +23,6 @@ type Outcome = {
   npmRequired: boolean;
 };
 type Run = Outcome & { html_url: string; head_sha: string; runId: string; runAttempt: number };
-type Request = <T>(method: string, path: string, body?: object) => Promise<T>;
 
 export function healthAction(outcome: Outcome, issues: Issue[]) {
   const results = Object.entries(outcome.results)
@@ -31,10 +38,6 @@ export function healthAction(outcome: Outcome, issues: Issue[]) {
   )
     return issues.length ? "would close" : "nothing to close";
   return "ignored";
-}
-
-function inertText(text: string, limit = 500) {
-  return "`" + text.replaceAll("`", "'").replace(/\s+/g, " ").trim().slice(0, limit) + "`";
 }
 
 export function failureBody(run: Run, jobs: Job[], errors: Record<string, string> = {}) {
@@ -73,34 +76,14 @@ export async function syncNightlyHealth(options: {
   const runId = run.runId;
   const root = `/repos/${repo}`;
   if (healthAction(run, []) === "ignored") return "ignored";
-  const issues: Issue[] = [];
-  for (let page = 1; ; page++) {
-    const batch = await request<Issue[]>(
-      "GET",
-      `${root}/issues?state=open&labels=nightly-failure&per_page=100&page=${page}`,
-    );
-    issues.push(...batch.filter((issue) => !issue.pull_request));
-    if (batch.length < 100) break;
-  }
+  const issues = await openIssues<Issue>(request, repo, "nightly-failure");
   const action = healthAction(run, issues);
   if (action === "would skip" || action === "nothing to close") return action;
   if (action === "would close") {
     if (!dryRun) {
       for (const issue of issues) {
         const body = `Fork Nightly recovered: ${run.html_url}`;
-        let commented = false;
-        for (let page = 1; ; page++) {
-          const comments = await request<{ body: string }[]>(
-            "GET",
-            `${root}/issues/${issue.number}/comments?per_page=100&page=${page}`,
-          );
-          if (comments.some((comment) => comment.body === body)) {
-            commented = true;
-            break;
-          }
-          if (comments.length < 100) break;
-        }
-        if (!commented) await request("POST", `${root}/issues/${issue.number}/comments`, { body });
+        await commentOnce(request, root, issue.number, body);
         await request("PATCH", `${root}/issues/${issue.number}`, {
           state: "closed",
           state_reason: "completed",
@@ -139,7 +122,7 @@ export async function syncNightlyHealth(options: {
   }
   const body = failureBody(run, jobs, errors);
   if (dryRun) return `${action}\n${body}`;
-  for (const label of [
+  await ensureLabels(request, root, [
     {
       name: "nightly-failure",
       color: "b60205",
@@ -151,20 +134,7 @@ export async function syncNightlyHealth(options: {
       color: "fbca04",
       description: "Issue needs maintainer review and initial categorization.",
     },
-  ]) {
-    // POST is idempotent here only when the label already exists (422).
-    try {
-      await request("GET", `${root}/labels/${label.name}`);
-    } catch (error) {
-      if ((error as { status?: number }).status !== 404) throw error;
-      try {
-        await request("POST", `${root}/labels`, label);
-      } catch (creationError) {
-        if ((creationError as { status?: number }).status !== 422) throw creationError;
-        await request("GET", `${root}/labels/${label.name}`);
-      }
-    }
-  }
+  ]);
   const issue = await request<Parameters<NonNullable<typeof announce>>[0]>(
     "POST",
     `${root}/issues`,
@@ -174,11 +144,7 @@ export async function syncNightlyHealth(options: {
       labels: ["nightly-failure", "bug", "needs-triage"],
     },
   );
-  try {
-    await announce?.(issue);
-  } catch {
-    warn?.("Discord issue announcement could not be delivered.");
-  }
+  await announceIssue(issue, announce, warn);
   return `opened #${issue.number}`;
 }
 

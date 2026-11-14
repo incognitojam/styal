@@ -8,6 +8,18 @@ import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 import * as NodeUtil from "node:util";
+import * as Schema from "effect/Schema";
+import { redactCanary } from "./canary-redaction.ts";
+import {
+  inertText,
+  openIssues,
+  ensureLabels,
+  commentOnce,
+  announceIssue,
+  type Request,
+  type CreatedIssue,
+} from "./health-issues.ts";
+import { discordPayload, postDiscord } from "./issue-routing.ts";
 
 import { compareSemverVersions, satisfiesSemverRange } from "@t3tools/shared/semver";
 
@@ -253,7 +265,7 @@ export interface VerifyEntry {
 }
 
 /**
- * A verification that failed twice, kept in the status issue so the next runs
+ * A verification that failed twice, kept in the open labeled issue so the next runs
  * do not spend model usage on the same release and build again right away.
  */
 export interface CanaryFailure {
@@ -349,6 +361,7 @@ export function planProvider(
           candidate.packageName === entry.packageName &&
           candidate.version === entry.version &&
           candidate.styal === build &&
+          now.getTime() >= Date.parse(candidate.at) &&
           now.getTime() - Date.parse(candidate.at) < FAILURE_RETRY_HOURS * 3_600_000,
       );
   if (failure) return { kind: "held", provider: canary.provider, entry, failure };
@@ -546,8 +559,6 @@ function mergeGuard(args: ReadonlyArray<string>) {
   if (blocker) console.log(blocker);
 }
 
-const STATUS_ISSUE_TITLE = "Provider canary status";
-
 /** One verify job's result, written by the workflow. */
 export interface CanaryOutcome {
   readonly provider: string;
@@ -560,7 +571,6 @@ export interface CanaryOutcome {
 }
 
 export interface CanaryProblem {
-  /** One per provider and kind, so a problem that persists across releases is reported once. */
   readonly key: string;
   /** The provider id or `job:<name>` whose evaluation can clear it. */
   readonly scope: string;
@@ -585,8 +595,15 @@ export function collectRun(input: {
   readonly planResult: JobResult;
   readonly recordResult: JobResult;
   readonly now?: Date;
-}): { problems: Array<CanaryProblem>; evaluated: Set<string>; failures: Array<CanaryFailure> } {
+}): {
+  problems: Array<CanaryProblem>;
+  evaluated: Set<string>;
+  failures: Array<CanaryFailure>;
+  cancelled: boolean;
+} {
   const evaluated = new Set<string>();
+  const cancelled = input.planResult === "cancelled" || input.recordResult === "cancelled";
+  if (cancelled) return { problems: [], evaluated, failures: [], cancelled };
   const failures: Array<CanaryFailure> = [];
   const found = new Map<string, CanaryProblem>();
   const add = (key: string, scope: string, summary: string) => {
@@ -618,11 +635,7 @@ export function collectRun(input: {
     if (plan.kind === "held") {
       const { entry, failure } = plan;
       failures.push(failure);
-      add(
-        `failed:${entry.provider}`,
-        entry.provider,
-        `**${entry.packageName}@${entry.version}** on styal ${entry.styal} failed verification twice: ${failure.detail} It is verified again ${FAILURE_RETRY_HOURS} hours after it failed, or sooner on a new styal build or release.`,
-      );
+      add(`failed:${entry.provider}:${entry.version}`, entry.provider, failure.detail);
       continue;
     }
     if (plan.kind !== "verify") continue;
@@ -633,7 +646,7 @@ export function collectRun(input: {
     const release = `**${entry.packageName}@${entry.version}** on styal ${entry.styal}`;
     if (!outcome)
       add(
-        `failed:${entry.provider}`,
+        `failed:${entry.provider}:${entry.version}`,
         entry.provider,
         `${release}: no verification result was saved.`,
       );
@@ -647,18 +660,18 @@ export function collectRun(input: {
         at: (input.now ?? new Date()).toISOString(),
       });
       add(
-        `failed:${entry.provider}`,
+        `failed:${entry.provider}:${entry.version}`,
         entry.provider,
-        `${release} failed verification twice: ${outcome.detail}`,
+        `${release} failed verification twice: ${outcome.detail.split(/\r?\n/)[0]}`,
       );
     } else if (outcome.outcome === "skipped")
       add(
-        `skipped:${entry.provider}`,
+        `skipped:${entry.provider}:${entry.version}`,
         entry.provider,
-        `${release} was not verified: ${outcome.detail}`,
+        `${release} was not verified: ${outcome.detail.split(/\r?\n/)[0]}`,
       );
   }
-  return { problems: [...found.values()], evaluated, failures };
+  return { problems: [...found.values()], evaluated, failures, cancelled };
 }
 
 export interface StatusIssue {
@@ -672,24 +685,86 @@ export interface StatusIssueUpdate {
   readonly state: "open" | "closed";
   /** Posted as a comment, so it notifies; body edits do not. */
   readonly comment?: string;
+  readonly title?: string;
 }
 
-const STATE_MARKER = /<!-- provider-canary-state (.*) -->/;
+const STATE_MARKER = /<!-- provider-canary-state ([a-f0-9]+) -->/;
 
-interface StatusState {
-  readonly problems?: ReadonlyArray<CanaryProblem>;
-  readonly failures?: ReadonlyArray<CanaryFailure>;
-}
+const StateString = (limit: number) => Schema.String.check(Schema.isMaxLength(limit));
+const StatusState = Schema.Struct({
+  problems: Schema.optionalKey(
+    Schema.Array(
+      Schema.Struct({
+        key: StateString(160),
+        scope: StateString(64),
+        summary: StateString(200),
+      }),
+    ).check(Schema.isMaxLength(8)),
+  ),
+  failures: Schema.optionalKey(
+    Schema.Array(
+      Schema.Struct({
+        provider: StateString(64),
+        packageName: StateString(128),
+        version: StateString(80),
+        styal: StateString(80),
+        at: StateString(32).check(
+          Schema.isPattern(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/),
+        ),
+      }),
+    ).check(Schema.isMaxLength(8)),
+  ),
+});
 
-const readStatusState = (issue: StatusIssue | null): StatusState =>
-  issue?.open ? JSON.parse(STATE_MARKER.exec(issue.body)?.[1] ?? "{}") : {};
+const decodeStatusState = Schema.decodeUnknownSync(Schema.fromJsonString(StatusState));
 
-/** Failed verifications the open status issue still holds back. */
-export const statusFailures = (issue: StatusIssue | null): ReadonlyArray<CanaryFailure> =>
-  readStatusState(issue).failures ?? [];
+const readStatusState = (
+  issue: StatusIssue | null,
+  warn: (message: string) => void = (message) => console.warn(message),
+): typeof StatusState.Type => {
+  if (!issue?.open) return {};
+  const marker = STATE_MARKER.exec(issue.body)?.[1];
+  if (!marker) {
+    if (issue.body.includes("<!-- provider-canary-state"))
+      warn("Ignoring malformed provider canary issue state.");
+    return {};
+  }
+  try {
+    if (marker.length > 30_000 || marker.length % 2 !== 0)
+      throw new Error("Invalid state encoding");
+    return decodeStatusState(Buffer.from(marker, "hex").toString("utf8"));
+  } catch {
+    warn("Ignoring malformed provider canary issue state.");
+    return {};
+  }
+};
+
+/** Failed verifications the open labeled issue still holds back. */
+export const statusFailures = (
+  issue: StatusIssue | null,
+  now = new Date(),
+  warn: (message: string) => void = (message) => console.warn(message),
+): ReadonlyArray<CanaryFailure> => {
+  const state = readStatusState(issue, warn);
+  return (state.failures ?? [])
+    .filter((failure) => {
+      const age = now.getTime() - Date.parse(failure.at);
+      if (!Number.isFinite(age) || age < 0) {
+        warn("Ignoring provider canary hold with an invalid or future timestamp.");
+        return false;
+      }
+      return age < FAILURE_RETRY_HOURS * 3_600_000;
+    })
+    .map((failure) => ({
+      ...failure,
+      detail:
+        state.problems?.find((problem) => problem.scope === failure.provider)?.summary ??
+        "Failed verification; see original run.",
+    }));
+};
 
 /**
- * How the status issue changes after a run. Problems this run did not
+ * How the labeled issue changes after a run. Problems this run did not
  * evaluate carry over from the open issue. A comment is posted only when a
  * problem appears that the open issue does not list, or when every problem
  * clears and the issue closes. Returns null when nothing changes.
@@ -699,12 +774,19 @@ export function reconcileStatusIssue(
   run: {
     readonly problems: ReadonlyArray<CanaryProblem>;
     readonly evaluated: ReadonlySet<string>;
+    readonly cancelled?: boolean;
     readonly failures?: ReadonlyArray<CanaryFailure>;
   },
   notes: ReadonlyArray<string>,
   runUrl: string,
 ): StatusIssueUpdate | null {
-  const state = readStatusState(issue);
+  if (run.cancelled) return null;
+  run = { ...redactCanary({ ...run, evaluated: undefined }), evaluated: run.evaluated };
+  notes = redactCanary(notes)
+    .slice(0, 4)
+    .map((note) => note.slice(0, 300));
+  runUrl = redactCanary(runUrl).slice(0, 500);
+  const state = redactCanary(readStatusState(issue));
   const previous = state.problems ?? [];
   const problems = [
     ...previous.filter((problem) => !run.evaluated.has(problem.scope)),
@@ -714,34 +796,168 @@ export function reconcileStatusIssue(
     ...(state.failures ?? []).filter((failure) => !run.evaluated.has(failure.provider)),
     ...(run.failures ?? []),
   ];
+  if (problems.length > 8 || failures.length > 8)
+    throw new Error("Canary report exceeds supported problem count");
+  const stored = {
+    problems: problems.map((p) => ({
+      key: p.key.slice(0, 160),
+      scope: p.scope.slice(0, 64),
+      summary: p.summary.slice(0, 200),
+    })),
+    ...(failures.length
+      ? {
+          failures: failures.map((f) => ({
+            provider: f.provider.slice(0, 64),
+            packageName: f.packageName.slice(0, 128),
+            version: f.version.slice(0, 80),
+            styal: f.styal.slice(0, 80),
+            at: f.at.slice(0, 32),
+          })),
+        }
+      : {}),
+  };
   const body = [
     problems.length > 0
       ? "The provider canary found problems that hold back automatic provider updates. This issue is updated on each run and closes when every check passes."
-      : "Every provider canary check passed.",
-    problems.map((problem) => `- ${problem.summary}`).join("\n"),
-    notes.length > 0 ? `Passed on retry:\n\n${notes.map((note) => `- ${note}`).join("\n")}` : "",
+      : `Every provider canary check passed. Recovered at ${new Date().toISOString()}.`,
+    problems.map((problem) => `- ${inertText(problem.summary)}`).join("\n"),
+    notes.length > 0
+      ? `Passed on retry:\n\n${notes.map((note) => `- ${inertText(note)}`).join("\n")}`
+      : "",
     `Last run: ${runUrl}`,
-    `<!-- provider-canary-state ${JSON.stringify(failures.length > 0 ? { problems, failures } : { problems })} -->`,
+    `<!-- provider-canary-state ${Buffer.from(JSON.stringify(stored)).toString("hex")} -->`,
   ]
     .filter(Boolean)
     .join("\n\n");
+  if (Buffer.byteLength(body) >= 30_000) throw new Error("Canary report exceeds body budget");
   if (problems.length === 0) {
     return issue?.open
       ? { body, state: "closed", comment: `Every check passed in ${runUrl}. Closing.` }
       : null;
   }
-  const added = problems.filter(
-    (problem) => !previous.some((existing) => existing.key === problem.key),
-  );
+  const identity = (
+    items: ReadonlyArray<CanaryProblem>,
+    held: ReadonlyArray<Omit<CanaryFailure, "detail">>,
+  ) =>
+    JSON.stringify(
+      items
+        .map((problem) => [
+          problem.key,
+          ...held
+            .filter((f) => f.provider === problem.scope)
+            .map((f) => `${f.packageName}@${f.version}`)
+            .sort(),
+        ])
+        .sort(),
+    );
+  const changed = identity(previous, state.failures ?? []) !== identity(problems, failures);
   return {
     body,
+    title: canaryTitle(problems, failures),
     state: "open",
-    ...(issue !== null && added.length > 0
+    ...(issue?.open && changed
       ? {
-          comment: `New in ${runUrl}:\n\n${added.map((problem) => `- ${problem.summary}`).join("\n")}`,
+          comment: `Problems changed in ${runUrl}:\n\n${problems.map((problem) => `- ${inertText(problem.summary)}`).join("\n")}`,
         }
       : {}),
   };
+}
+
+function canaryTitle(
+  problems: ReadonlyArray<CanaryProblem>,
+  failures: ReadonlyArray<Omit<CanaryFailure, "detail">>,
+) {
+  const providers = [...new Set(problems.map((p) => p.scope))];
+  const failure = failures.find((f) => providers.includes(f.provider));
+  return providers.length > 1
+    ? `Provider canary: ${providers.length} providers failing`
+    : failure
+      ? `Provider canary: ${inertText(failure.provider === "claudeAgent" ? "Claude Code" : failure.provider, 50)} ${inertText(failure.version, 80)} fails verification`
+      : `Provider canary: ${inertText(providers[0]!, 80)} needs attention`;
+}
+
+export async function syncCanaryReport(options: {
+  request: Request;
+  repo: string;
+  run: Parameters<typeof reconcileStatusIssue>[1];
+  notes: ReadonlyArray<string>;
+  runUrl: string;
+  dryRun: boolean;
+  owner?: string;
+  announce?: (issue: CreatedIssue) => Promise<void>;
+  warn?: (message: string) => void;
+}) {
+  if (options.run.cancelled) return "Cancelled; no issue changes.";
+  const { request, repo, run, notes, runUrl, dryRun } = options;
+  const root = `/repos/${repo}`;
+  // The retired status issue is never read or changed, even if someone labels it.
+  const issues = (await openIssues<StatusIssue>(request, repo, "provider-canary"))
+    .filter((issue) => issue.number !== 861)
+    .map((issue) => ({ ...issue, open: true }));
+  const targets = issues.length ? issues : [null];
+  const actions: string[] = [];
+  for (const issue of targets) {
+    const update = reconcileStatusIssue(issue, run, notes, runUrl);
+    if (!update) continue;
+    if (issue) {
+      const action = update.state === "closed" ? "close" : update.comment ? "comment" : "keep";
+      actions.push(`would ${action} #${issue.number}`);
+      if (dryRun) continue;
+      if (update.state === "closed") {
+        await request("PATCH", `${root}/issues/${issue.number}`, { body: update.body });
+        await commentOnce(
+          request,
+          root,
+          issue.number,
+          `${update.comment}\n\n<!-- provider-canary-recovered -->`,
+          "<!-- provider-canary-recovered -->",
+        );
+        await request("PATCH", `${root}/issues/${issue.number}`, {
+          state: "closed",
+          state_reason: "completed",
+        });
+      } else {
+        if (update.comment) await commentOnce(request, root, issue.number, update.comment);
+        await request("PATCH", `${root}/issues/${issue.number}`, {
+          body: update.body,
+          ...(update.comment ? { title: update.title } : {}),
+        });
+      }
+    } else {
+      const title = update.title!;
+      actions.push(
+        `would open: ${title}\n${update.body
+          .split("\n")
+          .filter((line) => !line.startsWith("<!--"))
+          .join("\n")}`,
+      );
+      if (dryRun) continue;
+      await ensureLabels(request, root, [
+        {
+          name: "provider-canary",
+          color: "b60205",
+          description: "Provider canary problems; closes on recovery.",
+        },
+        { name: "bug", color: "d73a4a", description: "Something isn't working" },
+      ]);
+      const created = await request<CreatedIssue>("POST", `${root}/issues`, {
+        title,
+        body: update.body,
+        labels: ["provider-canary", "bug"],
+      });
+      if (options.owner) {
+        try {
+          await request("POST", `${root}/issues/${created.number}/assignees`, {
+            assignees: [options.owner],
+          });
+        } catch {
+          options.warn?.("Canary issue opened, but repository owner assignment failed.");
+        }
+      }
+      await announceIssue(created, options.announce, options.warn);
+    }
+  }
+  return actions.join("\n") || "No canary problems and no open issue.";
 }
 
 async function fetchDistTags(packageName: string): Promise<Record<string, string>> {
@@ -867,8 +1083,7 @@ async function plan(args: ReadonlyArray<string>) {
   );
   // Without GitHub access, as when run locally, no failure is held back.
   const repo = process.env.GITHUB_REPOSITORY;
-  const failures =
-    repo && process.env.GITHUB_TOKEN ? statusFailures(await findStatusIssue(repo)) : [];
+  const failures = repo && process.env.GITHUB_TOKEN ? await findStatusFailures(repo) : [];
   const now = new Date();
   const plans: Array<ProviderPlan & { styal: string }> = [];
   const include: Array<VerifyEntry & { ref: string }> = [];
@@ -957,25 +1172,21 @@ async function github(path: string, init?: { method: string; body: unknown }) {
     signal: AbortSignal.timeout(30_000),
   });
   if (!response.ok)
-    throw new Error(`GitHub ${path}: HTTP ${response.status} ${await response.text()}`);
+    throw Object.assign(new Error(`GitHub ${path}: HTTP ${response.status}`), {
+      status: response.status,
+    });
   return response.json() as Promise<unknown>;
 }
 
-async function findStatusIssue(repo: string): Promise<StatusIssue | null> {
-  const issues = (await github(
-    `/repos/${repo}/issues?state=all&creator=${encodeURIComponent("github-actions[bot]")}&per_page=100`,
-  )) as Array<{
-    number: number;
-    state: string;
-    title: string;
-    body: string | null;
-    pull_request?: unknown;
-  }>;
-  const found = issues.find((issue) => issue.title === STATUS_ISSUE_TITLE && !issue.pull_request);
-  return found
-    ? { number: found.number, open: found.state === "open", body: found.body ?? "" }
-    : null;
+async function findStatusFailures(repo: string): Promise<ReadonlyArray<CanaryFailure>> {
+  const issues = await openIssues<StatusIssue>(githubRequest, repo, "provider-canary");
+  return issues
+    .filter((issue) => issue.number !== 861)
+    .flatMap((issue) => statusFailures({ ...issue, open: true }));
 }
+
+const githubRequest: Request = async <T>(method: string, path: string, body?: object) =>
+  (await github(path, method === "GET" ? undefined : { method, body })) as T;
 
 async function report(args: ReadonlyArray<string>) {
   const { values } = NodeUtil.parseArgs({
@@ -1008,51 +1219,40 @@ async function report(args: ReadonlyArray<string>) {
     .filter((outcome) => outcome.outcome === "flaky")
     .map(
       (outcome) =>
-        `${outcome.packageName}@${outcome.version} on styal ${outcome.styal}: ${outcome.detail}`,
+        `${outcome.packageName}@${outcome.version} on styal ${outcome.styal}: ${outcome.detail.split(/\r?\n/)[0]}`,
     );
 
-  const issue = await findStatusIssue(repo);
-  const update = reconcileStatusIssue(issue, run, notes, values["run-url"]);
-  if (update === null) {
-    console.log("No canary problems and no open status issue.");
-    return;
-  }
-  if (values["dry-run"]) {
-    console.log(`Would ${issue ? `update #${issue.number}` : "open the status issue"}:`);
-    console.log(JSON.stringify(update, null, 2));
-    return;
-  }
-  let number = issue?.number;
-  if (number === undefined) {
-    const created = (await github(`/repos/${repo}/issues`, {
-      method: "POST",
-      body: {
-        title: STATUS_ISSUE_TITLE,
-        body: update.body,
-        // Assignment notifies the owner even when they do not watch the repository.
-        assignees: [repo.split("/")[0]],
+  const manifest = readJson<Manifest>(MANIFEST_PATH);
+  const enriched = {
+    ...run,
+    problems: run.problems.map((problem) => {
+      const passed = manifest?.compatibility
+        ?.filter((p) => p.driver === problem.scope)
+        .flatMap((p) => p.autoUpdates ?? [])
+        .toSorted((a, b) => compareSemverVersions(b.version, a.version))[0];
+      return {
+        ...problem,
+        summary: `${problem.summary}${passed ? ` Last version passed: ${passed.version}.` : ""}`,
+      };
+    }),
+  };
+  console.log(
+    await syncCanaryReport({
+      request: githubRequest,
+      repo,
+      run: enriched,
+      notes,
+      runUrl: values["run-url"],
+      dryRun: values["dry-run"],
+      ...(process.env.REPOSITORY_OWNER ? { owner: process.env.REPOSITORY_OWNER } : {}),
+      warn: (message) => console.warn(`::warning::${message}`),
+      announce: async (issue) => {
+        const webhook = process.env.DISCORD_WEBHOOK_URL;
+        if (webhook && !(await postDiscord(webhook, discordPayload(issue, "other"))))
+          throw new Error("Discord delivery failed");
       },
-    })) as { number: number };
-    number = created.number;
-    console.log(`Opened status issue #${number}.`);
-  } else {
-    // Comment before closing so the closing comment is part of the notification.
-    if (update.comment && update.state === "closed")
-      await github(`/repos/${repo}/issues/${number}/comments`, {
-        method: "POST",
-        body: { body: update.comment },
-      });
-    await github(`/repos/${repo}/issues/${number}`, {
-      method: "PATCH",
-      body: { body: update.body, state: update.state },
-    });
-    if (update.comment && update.state === "open")
-      await github(`/repos/${repo}/issues/${number}/comments`, {
-        method: "POST",
-        body: { body: update.comment },
-      });
-    console.log(`Updated status issue #${number} (${update.state}).`);
-  }
+    }),
+  );
 }
 
 function rewindPlan(args: ReadonlyArray<string>) {

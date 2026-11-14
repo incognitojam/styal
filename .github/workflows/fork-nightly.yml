@@ -599,7 +599,9 @@ jobs:
               if (!response.ok) throw new Error(`Cannot load nightly module: ${response.status}`);
               return stripTypeScriptTypes(await response.text());
             };
-            const { syncNightlyHealth } = await import(moduleUrl(await load('scripts/nightly-health.ts')));
+            const helpers = moduleUrl(await load('scripts/health-issues.ts'));
+            const health = (await load('scripts/nightly-health.ts')).replaceAll('./health-issues.ts', helpers);
+            const { syncNightlyHealth } = await import(moduleUrl(health));
             const result = await syncNightlyHealth({
               request: async (method, path, body) => (await github.request(`${method} ${path}`, body)).data,
               repo: `${context.repo.owner}/${context.repo.repo}`,

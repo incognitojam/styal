@@ -5,7 +5,7 @@ name: Provider canary
 # records each passing version in the model manifest's `autoUpdates` with the
 # build it passed on. Servers fetch that manifest from main and automatically
 # update only to a version verified on a build their code contains. Problems
-# are kept in one "Provider canary status" issue.
+# open a provider-canary issue, which closes on recovery.
 #
 # It checks npm hourly and again after each nightly build, which may carry an
 # adapter fix. A run with nothing new to verify ends after the plan and report.
@@ -158,6 +158,17 @@ jobs:
             !/.repos/
           sparse-checkout-cone-mode: false
 
+      # Reporting safety fixes must apply even when the verified tag predates them.
+      - name: Checkout outcome sanitizer from main
+        if: always()
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          path: .canary-tools
+          persist-credentials: false
+          sparse-checkout: scripts/canary-redaction.ts
+          sparse-checkout-cone-mode: false
+
       - name: Setup dependencies
         if: steps.secret.outputs.present == 'true'
         uses: ./.github/actions/setup-deps
@@ -209,21 +220,27 @@ jobs:
             local status=${PIPESTATUS[0]}
             evidence="$(sed -n 's/^Evidence: //p' "$log" | head -n 1)"
             if [[ -n "$evidence" && -f "$evidence/result.json" ]]; then
+              if ! node "$GITHUB_WORKSPACE/.canary-tools/scripts/canary-redaction.ts" "$evidence/result.json"; then
+                publish_evidence=false
+                detail="Verification result could not be published safely because sanitization failed."
+                return 1
+              fi
               jq -r --arg attempt "$1" '"### \(.provider) \(.version) (\(.model)), attempt \($attempt)\n\n| Scenario | Status | Seconds | Detail |\n| --- | --- | --- | --- |", (.scenarios[] | "| \(.name) | \(.status) | \(.seconds // "") | \(.detail) |")' \
                 "$evidence/result.json" >> "$GITHUB_STEP_SUMMARY"
-              detail="$(jq -r '[.scenarios[] | select(.status == "failed") | "\(.name): \(.detail)"] | join("; ")' "$evidence/result.json" | cut -c1-500)"
+              detail="$(jq -r '[.scenarios[] | select(.status == "failed") | "\(.name): \(.detail)"] | join("; ") | .[0:500]' "$evidence/result.json")"
             else
               detail="the verifier did not finish; see the evidence artifact"
             fi
             [[ -n "$detail" ]] || detail="the verifier exited with status $status"
             return "$status"
           }
+          publish_evidence=true
           set +e
           run_verifier 1
           first=$?
           first_detail="$detail"
           outcome=passed
-          if [[ "$first" != 0 ]]; then
+          if [[ "$first" != 0 && "$publish_evidence" == true ]]; then
             run_verifier 2
             if [[ $? == 0 ]]; then
               outcome=flaky
@@ -232,6 +249,8 @@ jobs:
               outcome=failed
             fi
           fi
+          [[ "$publish_evidence" == false ]] && outcome=failed
+          echo "publish_evidence=$publish_evidence" >> "$GITHUB_OUTPUT"
           set -e
           [[ "$outcome" == passed ]] && detail=""
           echo "outcome=$outcome" >> "$GITHUB_OUTPUT"
@@ -259,8 +278,16 @@ jobs:
             '{provider: $provider, packageName: $package, version: $version, styal: $styal, outcome: "failed", detail: "setup or install failed before the verifier ran; see the job log"}' \
             > "$outcome_file"
 
-      - name: Upload outcome
+      - id: redact
+        name: Redact outcome before upload
         if: always()
+        run: |
+          if [[ -d "$RUNNER_TEMP/canary-outcome" ]]; then
+            node "$GITHUB_WORKSPACE/.canary-tools/scripts/canary-redaction.ts" "$RUNNER_TEMP/canary-outcome"
+          fi
+
+      - name: Upload outcome
+        if: ${{ always() && steps.redact.outcome == 'success' }}
         uses: actions/upload-artifact@v7
         with:
           name: canary-outcome-${{ matrix.provider }}-${{ matrix.styal }}
@@ -271,7 +298,7 @@ jobs:
       # provider's own home directory or credentials. Both attempts are kept,
       # so a pass on the retry still shows why the first attempt failed.
       - name: Upload evidence
-        if: always() && steps.secret.outputs.present == 'true' && steps.verify.outputs.outcome != 'passed'
+        if: always() && steps.redact.outcome == 'success' && steps.verify.outputs.publish_evidence == 'true' && steps.verify.outputs.outcome != 'passed'
         uses: actions/upload-artifact@v7
         with:
           name: canary-evidence-${{ matrix.provider }}-${{ matrix.version }}-${{ matrix.styal }}
@@ -439,8 +466,7 @@ jobs:
             GH_TOKEN="$MERGE_TOKEN" gh pr merge "$number" --disable-auto || true
           fi
 
-  # Keeps the "Provider canary status" issue in step with this run. It comments
-  # only when a new problem appears or every problem clears.
+  # Serialized labeled-issue reporting runs from main, not the verifier tag.
   report:
     name: Report
     needs: [plan, verify, record]
@@ -450,10 +476,14 @@ jobs:
     permissions:
       contents: read
       issues: write
+    concurrency:
+      group: provider-canary-report
+      cancel-in-progress: false
     steps:
       - name: Checkout
         uses: actions/checkout@v7
         with:
+          ref: main
           sparse-checkout: |
             /*
             !/.repos/
@@ -483,9 +513,11 @@ jobs:
           merge-multiple: true
           path: ${{ runner.temp }}/canary-outcomes
 
-      - name: Update the status issue
+      - name: Report canary problems
         env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_CI }}
           GITHUB_TOKEN: ${{ github.token }}
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
           PLAN_RESULT: ${{ needs.plan.result }}
           RECORD_RESULT: ${{ needs.record.result }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

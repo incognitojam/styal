@@ -193,7 +193,23 @@ describe("provider canary plan", () => {
     const plan = (build: string, now: Date, force = false) =>
       planProvider(canary("codex"), manifest, build, latest, force, [failure], now).kind;
     expect(plan(NIGHTLY, NOW)).toBe("held");
+    // Closing the labeled issue, or migrating with none open, removes the hold.
+    expect(
+      planProvider(canary("codex"), manifest, NIGHTLY, latest, false, statusFailures(null), NOW)
+        .kind,
+    ).toBe("verify");
     expect(plan(NIGHTLY, NOW, true)).toBe("verify");
+    expect(
+      planProvider(
+        canary("codex"),
+        manifest,
+        NIGHTLY,
+        latest,
+        false,
+        [{ ...failure, at: "9999-01-01" }],
+        NOW,
+      ).kind,
+    ).toBe("verify");
     // A new nightly may carry the fix, so it is verified at once.
     expect(plan(LATER_NIGHTLY, NOW)).toBe("verify");
     expect(plan(NIGHTLY, new Date("2026-10-14T14:00:00.000Z"))).toBe("verify");
@@ -469,11 +485,11 @@ describe("provider canary report", () => {
     expect(update?.body).toContain("@openai/codex@0.163.0** on styal");
   });
 
-  it("does not comment again while the same provider keeps failing on new releases", () => {
+  it("comments when the same provider fails on a new release", () => {
     const opened = reconcileStatusIssue(null, codexFails("0.163.0"), [], RUN)!;
     const issue = { number: 5, open: true, body: opened.body };
     const next = reconcileStatusIssue(issue, codexFails("0.164.0"), [], LATER_RUN);
-    expect(next?.comment).toBeUndefined();
+    expect(next?.comment).toContain("0.164.0");
     expect(next?.body).toContain("0.164.0");
   });
 
@@ -489,7 +505,7 @@ describe("provider canary report", () => {
     );
     const update = reconcileStatusIssue(issue, run, [], LATER_RUN);
     expect(update?.comment).toContain("**opencode** on styal");
-    expect(update?.comment).not.toContain("codex");
+    expect(update?.comment).toContain("codex");
   });
 
   it("keeps problems for providers this run did not check", () => {
@@ -517,7 +533,7 @@ describe("provider canary report", () => {
     const run = runWith([verifyPlan("codex", "@openai/codex", "0.163.0")], []);
     expect(run.problems).toEqual([
       expect.objectContaining({
-        key: "failed:codex",
+        key: "failed:codex:0.163.0",
         summary: expect.stringContaining("no verification result"),
       }),
     ]);
@@ -546,7 +562,7 @@ describe("provider canary report", () => {
       RUN,
     );
     expect(reopened).toMatchObject({ state: "open" });
-    expect(reopened?.comment).toContain("0.165.0");
+    expect(reopened?.comment).toBeUndefined();
   });
 
   it("keeps a failed verification held across runs without commenting again", () => {
@@ -559,7 +575,7 @@ describe("provider canary report", () => {
     });
     const opened = reconcileStatusIssue(null, failed, [], RUN)!;
     const issue = { number: 5, open: true, body: opened.body };
-    const [failure] = statusFailures(issue);
+    const [failure] = statusFailures(issue, NOW);
     expect(failure).toMatchObject({ version: "0.163.0", styal: NIGHTLY, at: NOW.toISOString() });
 
     const { entry } = verifyPlan("codex", "@openai/codex", "0.163.0");
@@ -570,7 +586,7 @@ describe("provider canary report", () => {
     const update = reconcileStatusIssue(issue, held, [], LATER_RUN);
     expect(update).toMatchObject({ state: "open" });
     expect(update?.comment).toBeUndefined();
-    expect(statusFailures({ ...issue, body: update!.body })).toEqual([failure]);
+    expect(statusFailures({ ...issue, body: update!.body }, NOW)).toEqual([failure]);
 
     // A pass on a later run clears the failure with the problem.
     const passing = runWith(
@@ -593,7 +609,7 @@ describe("provider canary report", () => {
         ),
       ],
     );
-    expect(run.problems.map((problem) => problem.key)).toEqual(["skipped:claudeAgent"]);
+    expect(run.problems.map((problem) => problem.key)).toEqual(["skipped:claudeAgent:2.1.301"]);
     const update = reconcileStatusIssue(
       null,
       run,
