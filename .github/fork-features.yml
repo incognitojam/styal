@@ -6596,6 +6596,38 @@ features:
       tracking: []
       retire_when: Upstream setup explains settling and offers the automatic settlement rules before the first sidebar view.
 
+  - id: shortcut-hints-on-buttons
+    title: Holding Cmd or Ctrl shows shortcuts on buttons
+    status: maintained
+    tier: yield
+    prs: [1477]
+    invariants:
+      - After Cmd or Ctrl has been held for the thread jump hint delay, each visible, enabled button whose bound shortcut needs exactly the held modifiers shows that shortcut; changing the held modifiers swaps the set at once, and releasing them hides every hint.
+      - Icon-only buttons show the shortcut as a badge over their top-right corner, drawn above any clipping container; labelled controls show it in place of their icon.
+      - A command with several bindings shows the one that matches the held modifiers, labels follow the user's own keybindings, and no hint shows while a terminal has focus or on a control the shortcut cannot reach.
+    rationale: Shortcuts were only discoverable through tooltips one button at a time; the sidebar's thread jump hints showed that holding the modifier is a quick way to learn them.
+    implementation_paths:
+      - apps/web/src/components/ShortcutHint.tsx
+    upstream_paths:
+      - apps/web/src/components/AppSidebarLayout.tsx
+      - apps/web/src/components/BranchToolbarEnvModeSelector.tsx
+      - apps/web/src/components/BranchToolbarEnvironmentSelector.tsx
+      - apps/web/src/components/Sidebar.tsx
+      - apps/web/src/components/chat/ComposerFooterControls.tsx
+      - apps/web/src/components/chat/OpenInPicker.tsx
+      - apps/web/src/components/chat/PanelLayoutControls.tsx
+      - apps/web/src/components/chat/ProviderModelPicker.tsx
+      - apps/web/src/components/sidebar/SidebarChrome.tsx
+      - apps/web/src/components/sidebar/SidebarThreadHeader.tsx
+      - apps/web/src/keybindings.ts
+      - apps/web/src/routes/__root.tsx
+    tests:
+      - apps/web/src/keybindings.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream shows bound shortcuts on buttons while their modifiers are held.
+
   - id: sidebar-attention-prominence
     title: Keep threads awaiting approval visually prominent
     status: maintained

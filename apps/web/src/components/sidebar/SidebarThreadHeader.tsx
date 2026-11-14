@@ -7,7 +7,10 @@ import {
   type RefObject,
 } from "react";
 
+import type { KeybindingCommand } from "@t3tools/contracts";
+
 import { cn } from "~/lib/utils";
+import { ShortcutHintBadge } from "../ShortcutHint";
 import { Button } from "../ui/button";
 import { SidebarInput, SidebarMenuButton } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -19,6 +22,7 @@ export interface SidebarThreadHeaderProps {
   onNewProject: () => void;
   onNewThread: (event: ReactMouseEvent) => void;
   newThreadDisabled: boolean;
+  newThreadShortcutCommand: KeybindingCommand | null;
   newThreadShortcutLabel: string | null | undefined;
   newThreadInProjectShortcutLabel: string | null | undefined;
   showNewThreadInProjectHint: boolean;
@@ -39,6 +43,7 @@ export function SidebarThreadHeader({
   onNewProject,
   onNewThread,
   newThreadDisabled,
+  newThreadShortcutCommand,
   newThreadShortcutLabel,
   newThreadInProjectShortcutLabel,
   showNewThreadInProjectHint,
@@ -142,6 +147,9 @@ export function SidebarThreadHeader({
         onClick={onNewThread}
       >
         <SquarePenIcon />
+        {newThreadShortcutCommand && !newThreadDisabled ? (
+          <ShortcutHintBadge command={newThreadShortcutCommand} />
+        ) : null}
       </SidebarHeaderIconButton>
     </div>
   );

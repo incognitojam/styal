@@ -51,6 +51,7 @@ import {
   useSidebar,
   useSidebarVisibility,
 } from "./ui/sidebar";
+import { ShortcutHintBadge } from "./ShortcutHint";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { registerCommands, registerMenuAction } from "../shortcuts/dispatcher";
 import { resolveThreadRouteRef } from "../threadRoutes";
@@ -316,7 +317,9 @@ function SidebarControl() {
               aria-label="Toggle main sidebar"
             />
           }
-        />
+        >
+          <ShortcutHintBadge command="sidebar.toggle" context={{ usagePageOpen }} />
+        </TooltipTrigger>
         <TooltipPopup side="bottom">
           Toggle main sidebar{shortcutLabel ? ` (${shortcutLabel})` : ""}
         </TooltipPopup>

@@ -39,6 +39,7 @@ import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { Button } from "../components/ui/button";
 import { MorphIcon } from "~/components/MorphIcon";
 import { StandalonePage, StandalonePageHeader } from "../components/ui/standalone-page";
+import { ShortcutHintProvider } from "../components/ShortcutHint";
 import { AnchoredToastProvider, ToastProvider } from "../components/ui/toast";
 import { isElectron } from "../env";
 import { cn } from "../lib/utils";
@@ -137,7 +138,9 @@ function RootRouteView() {
   return (
     <ToastProvider>
       <AnchoredToastProvider>
-        <RootRouteBranch />
+        <ShortcutHintProvider>
+          <RootRouteBranch />
+        </ShortcutHintProvider>
       </AnchoredToastProvider>
     </ToastProvider>
   );

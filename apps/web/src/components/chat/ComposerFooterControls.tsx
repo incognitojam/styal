@@ -11,6 +11,7 @@ import { type ComponentProps, memo, useId, useRef, useState } from "react";
 import type { ContextWindowSnapshot } from "../../lib/contextWindow";
 import { Menu as MenuPrimitive } from "@base-ui/react/menu";
 import { Menu, MenuPopup, MenuTrigger } from "../ui/menu";
+import { ShortcutHintSlot } from "../ShortcutHint";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ComposerControl, ComposerControlIcon } from "./ComposerControl";
 import { focusRequestedPermission, useComposerMenuProps } from "./composerEventScope";
@@ -123,12 +124,14 @@ export const ComposerFooterModeControls = memo(function ComposerFooterModeContro
             />
           }
         >
-          <ComposerControlIcon
-            icon={RuntimeModeIcon}
-            size={size}
-            // Match the label, not full foreground: the chip's presence already marks the mode.
-            {...(props.emphasized ? { className: "text-current" } : {})}
-          />
+          <ShortcutHintSlot command={props.hidden ? null : "composer.mode"}>
+            <ComposerControlIcon
+              icon={RuntimeModeIcon}
+              size={size}
+              // Match the label, not full foreground: the chip's presence already marks the mode.
+              {...(props.emphasized ? { className: "text-current" } : {})}
+            />
+          </ShortcutHintSlot>
           <span
             data-composer-control-label
             className={accessDisplay === "icon" ? "sr-only" : undefined}

@@ -366,6 +366,12 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   [T3 Code revision 4b87a45](https://github.com/pingdotgg/t3code/tree/4b87a45770d24a47f7e6bc40e3f19011e41c7724),
   checked November 5, 2026, which shows shortcuts beside command palette items and in Settings.
   [Keybindings](./keybindings.md).
+- **Hold Cmd or Ctrl to see button shortcuts.** On web and desktop, holding Cmd (Ctrl on
+  Windows and Linux) shows shortcuts on the buttons they trigger, and adding Shift or another
+  modifier swaps to the shortcuts that use them. Compared with
+  [T3 Code revision c041761](https://github.com/pingdotgg/t3code/tree/c041761d89ef12b8659fc9bf3e98c26eb5140656),
+  checked November 14, 2026, which shows these hints only on sidebar threads.
+  [Keybindings](./keybindings.md).
 
 ## Bringing your work from T3 Code
 

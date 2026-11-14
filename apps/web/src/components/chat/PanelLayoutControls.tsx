@@ -6,6 +6,7 @@ import { memo, type ReactNode } from "react";
 import { cn } from "~/lib/utils";
 
 import type { ThreadPanelPresentation } from "../../rightPanelLayout";
+import { ShortcutHintBadge } from "../ShortcutHint";
 import { PopoverCreateHandle, PopoverTrigger } from "../ui/popover";
 import { Toggle } from "../ui/toggle";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -59,6 +60,7 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
       size="sm"
     >
       <SquareMenuIcon className="size-4" />
+      {threadPanelShortcutLabel ? <ShortcutHintBadge command="threadPanel.toggle" /> : null}
     </Toggle>
   );
   const threadPanelControl = (
@@ -96,6 +98,9 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
               disabled={!terminalAvailable}
             >
               <PanelBottomIcon className="size-4" />
+              {terminalAvailable && terminalShortcutLabel ? (
+                <ShortcutHintBadge command="terminal.toggle" />
+              ) : null}
             </Toggle>
           </TooltipTrigger>
           <TooltipPopup side="bottom">
@@ -119,6 +124,9 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
               disabled={!rightPanelAvailable}
             >
               <PanelRightIcon className="size-4" />
+              {rightPanelAvailable && rightPanelShortcutLabel ? (
+                <ShortcutHintBadge command="rightPanel.toggle" />
+              ) : null}
             </Toggle>
           </TooltipTrigger>
           <TooltipPopup side="bottom">

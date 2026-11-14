@@ -310,6 +310,20 @@ export function shouldShowThreadJumpHintsForModifiers(
   return false;
 }
 
+/** The label of the command's shortcut that needs exactly the held modifiers, if it has one. */
+export function shortcutHintLabelForModifiers(
+  modifiers: ShortcutModifierStateLike,
+  keybindings: ResolvedKeybindingsConfig,
+  command: KeybindingCommand,
+  options?: ShortcutMatchOptions,
+): string | null {
+  const platform = resolvePlatform(options);
+  const shortcut = effectiveShortcutsForCommand(keybindings, command, options).find((candidate) =>
+    matchesKeybindingShortcutModifiers(modifiers, candidate, platform),
+  );
+  return shortcut ? formatShortcutLabel(shortcut, platform) : null;
+}
+
 export function modelPickerJumpCommandForIndex(
   index: number,
 ): ModelPickerJumpKeybindingCommand | null {
