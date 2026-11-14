@@ -1,3 +1,4 @@
+import { WorktreeCleanupApprovals } from "./worktreeCleanupPreview.ts";
 import {
   EasDeviceHostConfigs,
   EnvironmentDeviceHostConfigs,
@@ -1369,6 +1370,9 @@ export const ServerSettings = Schema.Struct({
   enableAgentHardwareAccess: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   /** Network devices on this environment; definitions live in project repositories. */
   hardwareDevices: HardwareDeviceConfigs.pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  worktreeCleanupApprovals: WorktreeCleanupApprovals.pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
+  ),
   /**
    * Commands the user approved for styal.json actions that run on their own.
    * Written by `projects.fileActionApprovalSet`, which reads the command from
@@ -1790,6 +1794,7 @@ export const ServerSettingsPatch = Schema.Struct({
       ),
     ),
   ),
+  worktreeCleanupApprovals: Schema.optionalKey(WorktreeCleanupApprovals),
   projectFileActionApprovals: Schema.optionalKey(ProjectFileActionApprovals),
   enableAgentDeviceAccess: Schema.optionalKey(Schema.Boolean),
   enableDeviceSupport: Schema.optionalKey(Schema.Boolean),

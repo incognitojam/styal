@@ -80,6 +80,7 @@ export function worktreeCleanupPatternProblem(pattern: string): string | null {
   if (pattern.length === 0 || pattern.length > 512) rule = "use 1 to 512 characters";
   else if (/^[a-zA-Z]:/.test(pattern)) rule = "use a relative path without a drive prefix";
   else if (pattern.includes("\\")) rule = "use forward slashes";
+  // Per-pattern approval needs independent patterns: removing a negation or ordered rule could delete more.
   else if (pattern.includes("!")) rule = "negation is not supported";
   else if (segments.some((segment) => segment === "" || segment === "." || segment === ".."))
     rule = "use relative nonempty segments without . or ..";
@@ -91,10 +92,15 @@ export function worktreeCleanupPatternProblem(pattern: string): string | null {
 }
 
 export const WorktreeCleanupPatterns = Schema.Array(
-  Schema.String.check(
-    Schema.makeFilter((pattern) => worktreeCleanupPatternProblem(pattern) ?? true),
-    Schema.isMinLength(1),
-    Schema.isMaxLength(512),
+  Schema.String.pipe(
+    Schema.decodeTo(
+      Schema.String.check(
+        Schema.makeFilter((pattern) => worktreeCleanupPatternProblem(pattern) ?? true),
+        Schema.isMinLength(1),
+        Schema.isMaxLength(512),
+      ),
+      SchemaTransformation.trim(),
+    ),
   ),
 ).check(Schema.isMaxLength(100));
 
@@ -122,7 +128,7 @@ export const StyalProjectFile = Schema.Struct({
   worktreeCleanup: Schema.optionalKey(
     WorktreeCleanupPatterns.annotate({
       description:
-        "Git-ignored files and folders your setup action or build recreates. styal may delete them from settled worktrees once you approve this list on each machine.",
+        "Git-ignored files and folders your setup action or build recreates. styal may delete them from settled worktrees once you approve each pattern on each machine.",
     }),
   ),
   worktreeSubmodules: Schema.optionalKey(

@@ -51,6 +51,18 @@ describe("worktree cleanup patterns", () => {
   ])("matches %j against %j as %j", (pattern, path, matches) => {
     expect(matchesWorktreeCleanupPattern(pattern, path)).toBe(matches);
   });
+  it("normalizes whitespace before validating and exposes independent pattern rules", () => {
+    const parsed = parseStyalProjectFileResult(
+      JSON.stringify({ worktreeCleanup: [" dist ", "  **/node_modules  "] }),
+    );
+    expect(parsed.file?.worktreeCleanup).toEqual(["dist", "**/node_modules"]);
+    expect(parseStyalProjectFileResult(JSON.stringify({ worktreeCleanup: ["   "] })).status).toBe(
+      "partial",
+    );
+    expect(
+      parseStyalProjectFileResult(JSON.stringify({ worktreeCleanup: ["  **/*  "] })).status,
+    ).toBe("partial");
+  });
   it("publishes the field and preserves the entire list exactly", () => {
     const patterns = ["node_modules", "**/dist", "node_modules"];
     const parsed = parseStyalProjectFileResult(JSON.stringify({ worktreeCleanup: patterns }));

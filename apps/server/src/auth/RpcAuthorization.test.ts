@@ -446,21 +446,21 @@ it.effect("denies cleanup list approval before the handler without settings perm
           tag,
         ): tag is Exclude<
           keyof typeof RPC_REQUIRED_SCOPES,
-          typeof WS_METHODS.projectsWorktreeCleanupApprovalSet
-        > => tag !== WS_METHODS.projectsWorktreeCleanupApprovalSet,
+          typeof WS_METHODS.projectsWorktreeCleanupApprove
+        > => tag !== WS_METHODS.projectsWorktreeCleanupApprove,
       ),
     );
     let handled = false;
     const client = yield* RpcTest.makeClient(group).pipe(
       Effect.provide(
         Layer.mergeAll(
-          group.toLayerHandler(WS_METHODS.projectsWorktreeCleanupApprovalSet, () =>
+          group.toLayerHandler(WS_METHODS.projectsWorktreeCleanupApprove, () =>
             Effect.sync(() => {
               handled = true;
               return {
                 status: "approved" as const,
-                patterns: ["dist"],
-                previouslyApprovedPatterns: ["dist"],
+                declared: [{ pattern: "dist", status: "approved" as const }],
+                approvedNotDeclared: [],
               };
             }),
           ),
@@ -469,9 +469,9 @@ it.effect("denies cleanup list approval before the handler without settings perm
       ),
     );
     expect(
-      yield* client[WS_METHODS.projectsWorktreeCleanupApprovalSet]({
+      yield* client[WS_METHODS.projectsWorktreeCleanupApprove]({
         projectId: ProjectId.make("fixture"),
-        approved: true,
+        patterns: ["dist"],
       }).pipe(Effect.flip),
     ).toMatchObject({
       requiredPermission: AuthSettingsWriteScope,

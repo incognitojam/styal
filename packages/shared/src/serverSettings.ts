@@ -508,6 +508,7 @@ export function applyServerSettingsPatch(
     projectSettingsOverrides: projectSettingsOverridesPatch,
     // Whole-value replacement, so revoking an approval removes it.
     projectFileActionApprovals: projectFileActionApprovalsPatch,
+    worktreeCleanupApprovals: worktreeCleanupApprovalsPatch,
     projectAgentBrowserAccessOverrides: _legacyBrowserAccess,
     projectAutoPullOverrides: _legacyAutoPull,
     projectScriptOverrides: _legacyScripts,
@@ -707,6 +708,9 @@ export function applyServerSettingsPatch(
       : {}),
     ...(patch.defaultProjectScripts !== undefined
       ? { defaultProjectScripts: patch.defaultProjectScripts }
+      : {}),
+    ...(worktreeCleanupApprovalsPatch !== undefined
+      ? { worktreeCleanupApprovals: worktreeCleanupApprovalsPatch }
       : {}),
     ...(projectFileActionApprovalsPatch !== undefined
       ? { projectFileActionApprovals: projectFileActionApprovalsPatch }

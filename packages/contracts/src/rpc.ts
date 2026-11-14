@@ -1,5 +1,7 @@
 import {
   WorktreeCleanupError,
+  WorktreeCleanupApproveInput,
+  WorktreeCleanupRevokeInput,
   WorktreeCleanupReviewInput,
   WorktreeCleanupReview,
   WorktreeCleanupPreviewInput,
@@ -473,7 +475,8 @@ export const WS_METHODS = {
   projectsSearchEntries: "projects.searchEntries",
   projectsWriteFile: "projects.writeFile",
   projectsWorktreeCleanupReview: "projects.worktreeCleanupReview",
-  projectsWorktreeCleanupApprovalSet: "projects.worktreeCleanupApprovalSet",
+  projectsWorktreeCleanupApprove: "projects.worktreeCleanupApprove",
+  projectsWorktreeCleanupRevoke: "projects.worktreeCleanupRevoke",
   projectsWorktreeCleanupPreview: "projects.worktreeCleanupPreview",
   projectsFileActionRun: "projects.fileActionRun",
   projectsFileActionReview: "projects.fileActionReview",
@@ -1500,8 +1503,13 @@ const WsWorktreeCleanupReviewRpc = Rpc.make(WS_METHODS.projectsWorktreeCleanupRe
   success: WorktreeCleanupReview,
   error: Schema.Union([WorktreeCleanupError, EnvironmentAuthorizationError]),
 });
-const WsWorktreeCleanupApprovalSetRpc = Rpc.make(WS_METHODS.projectsWorktreeCleanupApprovalSet, {
-  payload: Schema.Struct({ ...WorktreeCleanupReviewInput.fields, approved: Schema.Boolean }),
+const WsWorktreeCleanupApproveRpc = Rpc.make(WS_METHODS.projectsWorktreeCleanupApprove, {
+  payload: WorktreeCleanupApproveInput,
+  success: WorktreeCleanupReview,
+  error: Schema.Union([WorktreeCleanupError, EnvironmentAuthorizationError]),
+});
+const WsWorktreeCleanupRevokeRpc = Rpc.make(WS_METHODS.projectsWorktreeCleanupRevoke, {
+  payload: WorktreeCleanupRevokeInput,
   success: WorktreeCleanupReview,
   error: Schema.Union([WorktreeCleanupError, EnvironmentAuthorizationError]),
 });
@@ -2474,7 +2482,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsHardwareConfigureRpc,
   WsHardwareAuditListRpc,
   WsWorktreeCleanupReviewRpc,
-  WsWorktreeCleanupApprovalSetRpc,
+  WsWorktreeCleanupApproveRpc,
+  WsWorktreeCleanupRevokeRpc,
   WsWorktreeCleanupPreviewRpc,
   WsProjectsFileActionReviewRpc,
   WsProjectsFileActionApprovalSetRpc,

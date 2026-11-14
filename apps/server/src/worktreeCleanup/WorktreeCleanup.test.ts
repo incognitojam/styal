@@ -241,7 +241,7 @@ describe("WorktreeCleanup", () => {
   );
 
   it.effect(
-    "reviews exact lists, revokes changed approvals, and previews settled, empty and unsettled worktrees with honest hardlink bytes",
+    "remembers per-pattern approvals and previews settled, empty and unsettled worktrees with honest hardlink bytes",
     () =>
       Effect.gen(function* () {
         const f = yield* fixture;
@@ -308,10 +308,10 @@ describe("WorktreeCleanup", () => {
             `${f.root}/styal.json`,
             JSON.stringify({ worktreeCleanup: ["dist"] }),
           );
-          assert.equal((yield* approvals.review(input)).status, "unapproved");
+          assert.equal((yield* approvals.review(input)).status, "pending");
           assert.deepEqual((yield* cleanup.preview({ ...input, list: "approved" })).patterns, []);
           assert.equal(
-            (yield* approvals.setApproved({ ...input, approved: true })).status,
+            (yield* approvals.approve({ ...input, patterns: [" dist ", "not-declared"] })).status,
             "approved",
           );
           const preview = yield* cleanup.preview({ ...input, list: "approved" });
@@ -354,18 +354,82 @@ describe("WorktreeCleanup", () => {
             `${f.root}/styal.json`,
             JSON.stringify({ worktreeCleanup: ["dist", "node_modules"] }),
           );
-          const changed = yield* approvals.review(input);
-          assert.equal(changed.status, "changed");
-          assert.deepEqual(changed.previouslyApprovedPatterns, ["dist"]);
-          assert.deepEqual((yield* cleanup.preview({ ...input, list: "approved" })).patterns, []);
-          assert.deepEqual((yield* cleanup.preview({ ...input, list: "declared" })).patterns, [
+          const pending = yield* approvals.review(input);
+          assert.equal(pending.status, "pending");
+          assert.deepEqual(pending.declared, [
+            { pattern: "dist", status: "approved" },
+            { pattern: "node_modules", status: "pending" },
+          ]);
+          assert.deepEqual((yield* cleanup.preview({ ...input, list: "approved" })).patterns, [
             "dist",
+          ]);
+          yield* f.write("node_modules/output");
+          const declaredPreview = yield* cleanup.preview({ ...input, list: "declared" });
+          const candidates = declaredPreview.worktrees.find(
+            (entry) => entry.worktreePath === f.worktree,
+          )!.selected;
+          assert.equal(
+            candidates.find((entry) => entry.pattern === "dist")?.patternStatus,
+            "approved",
+          );
+          assert.equal(
+            candidates.find((entry) => entry.pattern === "node_modules")?.patternStatus,
+            "pending",
+          );
+          yield* approvals.approve({ ...input, patterns: ["node_modules"] });
+          yield* f.fs.writeFileString(
+            `${f.root}/styal.json`,
+            JSON.stringify({ worktreeCleanup: [" node_modules ", "dist", "dist"] }),
+          );
+          const reordered = yield* approvals.review(input);
+          assert.equal(reordered.status, "approved");
+          assert.deepEqual(
+            reordered.declared.map((entry) => entry.pattern),
+            ["node_modules", "dist"],
+          );
+          yield* f.fs.writeFileString(
+            `${f.root}/styal.json`,
+            JSON.stringify({ worktreeCleanup: ["dist"] }),
+          );
+          const subset = yield* approvals.review(input);
+          assert.equal(subset.status, "approved");
+          assert.equal(subset.approvedNotDeclared[0]?.pattern, "node_modules");
+          assert.deepEqual((yield* cleanup.preview({ ...input, list: "approved" })).patterns, [
+            "dist",
+          ]);
+          yield* f.fs.writeFileString(`${f.root}/styal.json`, "{}");
+          const absent = yield* approvals.review(input);
+          assert.equal(absent.status, "none");
+          assert.equal(absent.approvedNotDeclared.length, 2);
+          yield* f.fs.writeFileString(
+            `${f.root}/styal.json`,
+            JSON.stringify({ worktreeCleanup: ["node_modules"] }),
+          );
+          assert.equal((yield* approvals.review(input)).status, "approved");
+          assert.deepEqual((yield* cleanup.preview({ ...input, list: "approved" })).patterns, [
             "node_modules",
           ]);
           assert.equal(
-            (yield* approvals.setApproved({ ...input, approved: false })).status,
-            "unapproved",
+            (yield* approvals.revoke({ ...input, pattern: " node_modules " })).status,
+            "pending",
           );
+          assert.deepEqual((yield* cleanup.preview({ ...input, list: "approved" })).patterns, []);
+          assert.equal(
+            (yield* approvals.revoke({ ...input, pattern: "dist" })).approvedNotDeclared.length,
+            0,
+          );
+          assert.equal(
+            (yield* approvals.approve({ ...input, patterns: ["dist", "toString"] })).status,
+            "pending",
+          );
+          assert.equal((yield* approvals.review(input)).approvedNotDeclared.length, 0);
+          yield* approvals.approve({ ...input, patterns: ["node_modules"] });
+          const forgotten = yield* approvals.revoke({ ...input, pattern: null });
+          assert.equal(forgotten.status, "pending");
+          assert.equal(forgotten.approvedNotDeclared.length, 0);
+          const saved = yield* (yield* Settings.ServerSettingsService).getSettings;
+          assert.deepEqual(saved.worktreeCleanupApprovals, {});
+          assert.deepEqual(saved.projectFileActionApprovals, {});
         }).pipe(Effect.provide(service));
       }).pipe(Effect.provide(dependencies), Effect.scoped),
   );

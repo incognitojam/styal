@@ -41,9 +41,12 @@ const make = Effect.gen(function* () {
     input: WorktreeCleanupPreviewInput,
   ) {
     const review = yield* approvals.review(input);
-    // A stale approval never supplies patterns for inspection.
-    const patterns =
-      input.list === "declared" || review.status === "approved" ? review.patterns : [];
+    const patterns = review.declared
+      .filter((entry) => input.list === "declared" || entry.status === "approved")
+      .map((entry) => entry.pattern);
+    const approved = new Set(
+      review.declared.filter((entry) => entry.status === "approved").map((entry) => entry.pattern),
+    );
     const project = yield* projects.getById(input.projectId).pipe(Effect.orDie);
     if (Option.isNone(project))
       return yield* new WorktreeCleanupError({
@@ -123,6 +126,10 @@ const make = Effect.gen(function* () {
       worktrees.push({
         ...entry,
         ...selection,
+        selected: selection.selected.map((entry) => ({
+          ...entry,
+          patternStatus: approved.has(entry.pattern) ? "approved" : "pending",
+        })),
         ...(holding === undefined
           ? {}
           : {
