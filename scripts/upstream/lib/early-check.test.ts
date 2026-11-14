@@ -38,9 +38,9 @@ it.live(
   "verifies the merged checkout and reruns its failure on the base without changing source HEAD",
   () =>
     Effect.promise(async () => {
-      const root = NodeFS.mkdtempSync(
-        NodeURL.fileURLToPath(new URL("../../../.scratch/early-check-test-", import.meta.url)),
-      );
+      const scratch = NodeURL.fileURLToPath(new URL("../../../.scratch/", import.meta.url));
+      NodeFS.mkdirSync(scratch, { recursive: true });
+      const root = NodeFS.mkdtempSync(NodePath.join(scratch, "early-check-test-"));
       const git = (...args: string[]) =>
         NodeChildProcess.execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
       try {
