@@ -15,7 +15,7 @@ import {
   failedEarly,
   executeCodex,
   gradeSample,
-  leadingGuideReads,
+  exactGuideReads,
   makeSample,
   ranCalls,
   McpToolUseCase,
@@ -3427,18 +3427,36 @@ it.each([
   );
 });
 
-it("answers a command's leading reads of styal guides from the real files", () => {
-  const guide =
+it("answers only commands that do nothing but read styal guides, from the real files", () => {
+  const G =
     "/home/user/.styal/userdata/agent-skills/styal/skills/styal-guides/references/project-setup.md";
-  const read = leadingGuideReads(`cat ${guide}; echo "----" && cat .github/workflows/preview.yml`);
-  assert.match(read?.output ?? "", /^# Project setup[\s\S]*\n----\n$/);
-  assert.equal(read?.rest, "cat .github/workflows/preview.yml");
-  assert.equal(leadingGuideReads(`cat '${guide}'`)?.rest, "");
+  const guide = exactGuideReads(`cat ${G}`) ?? "";
+  assert.match(guide, /^# Project setup: styal\.json, actions and worktrees\n/);
+  assert.equal(exactGuideReads(`cat '${G}'`), guide);
+  assert.equal(exactGuideReads(`cat ${G}; echo ----\ncat ${G}`), `${guide}----\n${guide}`);
   assert.equal(
-    leadingGuideReads(`sed -n '1,2p' ${guide}`)?.output,
+    exactGuideReads(`head -n 2 ${G}`),
     "# Project setup: styal.json, actions and worktrees\n\n",
   );
-  assert.isUndefined(leadingGuideReads(`ls .github; cat ${guide}`));
-  assert.isUndefined(leadingGuideReads(`cat ${guide} | grep deploy`));
-  assert.isUndefined(leadingGuideReads(`cat ${guide.replace("project-setup", "deployments")}`));
+  assert.equal(exactGuideReads(`sed -n '3,3p' ${G}`), "## styal.json\n");
+  for (const command of [
+    `cat ${G}; false && echo done`,
+    `(false && echo done); cat ${G}`,
+    `cat ${G}; echo "$(cat ${G})"`,
+    `cat ${G} | grep deploy`,
+    `cat ${G} && echo done`,
+    `cat ${G} || echo missing`,
+    `cat ${G} > copy.md`,
+    `(cat ${G})`,
+    `cat ${G.replace("project-setup", "*")}`,
+    "cat references/project-setup.md",
+    `ls .github; cat ${G}`,
+    `cat ${G}; cat .github/workflows/preview.yml`,
+    `echo -n x; cat ${G}`,
+    `echo "a;b"; cat ${G}`,
+    `cat ${G.replace("project-setup", "deployments")}`,
+    "echo ----",
+  ]) {
+    assert.isUndefined(exactGuideReads(command), command);
+  }
 });
