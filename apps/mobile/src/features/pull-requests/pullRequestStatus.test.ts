@@ -131,38 +131,50 @@ describe("mobile overview check status", () => {
   });
 });
 
-describe("mobile skipped check counts", () => {
-  it.each([
-    [
-      ["success", "success", "success", "skipped", "skipped"],
-      { label: "All checks passed", title: "All checks passed", count: "3 of 3" },
-    ],
-    [
-      ["success", "neutral"],
-      { label: "All checks passed", title: "All checks passed", count: "1 of 1" },
-    ],
-    [["skipped", "neutral"], { label: "2 completed", title: "Checks completed", count: "0 of 2" }],
-    [
-      ["failure", "skipped"],
-      {
-        label: "1 check failing · 1 skipped",
-        title: "1 check failing",
-        count: "0 of 1 · 1 skipped",
-      },
-    ],
-    [
-      ["pending", "neutral"],
-      { label: "1 pending · 1 skipped", title: "Checks running", count: "1 pending · 1 skipped" },
-    ],
-    [
-      ["success", "cancelled", "skipped"],
-      {
-        label: "1 of 2 passed · 1 skipped",
-        title: "Checks completed",
-        count: "1 of 2 · 1 skipped",
-      },
-    ],
-  ] as const)("summarizes %j", (statuses, expected) => {
-    expect(pullRequestChecksSummary({ checks: statuses.map(check) })).toMatchObject(expected);
+describe("mobile check summary wording", () => {
+  it("keeps the legacy all-success label unless checks were skipped", () => {
+    expect(pullRequestChecksSummary({ checks: [check("success")] })).toMatchObject({
+      label: "1 of 1 passed",
+      title: "All checks passed",
+      count: "1 of 1",
+    });
+    expect(
+      pullRequestChecksSummary({ checks: [check("success"), check("skipped")] }),
+    ).toMatchObject({ label: "All checks passed", title: "All checks passed", count: "1 of 1" });
+  });
+  it("keeps the completed fallback and reports skipped runs beside its count", () => {
+    expect(
+      pullRequestChecksSummary({ checks: [check("cancelled"), check("skipped")] }),
+    ).toMatchObject({
+      label: "2 completed",
+      title: "Checks completed",
+      count: "0 of 1 · 1 skipped",
+    });
+    expect(
+      pullRequestChecksSummary({ checks: [check("neutral"), check("skipped")] }),
+    ).toMatchObject({ label: "2 completed", title: "Checks completed", count: "0 of 2" });
+  });
+  it("keeps failure, action and pending labels distinct from titles and counts", () => {
+    expect(
+      pullRequestChecksSummary({ checks: [check("failure"), check("pending"), check("skipped")] }),
+    ).toMatchObject({
+      label: "1 check failing · 1 skipped",
+      title: "1 check failing",
+      count: "0 of 2 · 1 skipped",
+    });
+    expect(
+      pullRequestChecksSummary({ checks: [check("action-required"), check("skipped")] }),
+    ).toMatchObject({
+      label: "1 need attention · 1 skipped",
+      title: "Checks need attention",
+      count: "1 awaiting action · 1 skipped",
+    });
+    expect(
+      pullRequestChecksSummary({ checks: [check("expected"), check("skipped")] }),
+    ).toMatchObject({
+      label: "1 pending · 1 skipped",
+      title: "Checks running",
+      count: "1 pending · 1 skipped",
+    });
   });
 });

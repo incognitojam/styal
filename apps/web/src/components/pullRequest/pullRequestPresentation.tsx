@@ -567,7 +567,7 @@ export function summarizePullRequestChecks(checks: ReadonlyArray<PullRequestChec
   const running = checks.filter((check) => check.status === "pending").length;
   const expected = checks.filter((check) => check.status === "expected").length;
   const { passed, runnable, allPassed, skippedSummary } = pullRequestCheckCounts(checks);
-  if (failed > 0) return `${failed} of ${checks.length} failing${skippedSummary}`;
+  if (failed > 0) return `${failed} of ${runnable} failing${skippedSummary}`;
   if (workflowApprovalRequired > 0 && otherActionRequired > 0) {
     return `${workflowApprovalRequired} ${workflowApprovalRequired === 1 ? "workflow" : "workflows"} and ${otherActionRequired} ${otherActionRequired === 1 ? "check" : "checks"} awaiting action${skippedSummary}`;
   }
@@ -578,9 +578,9 @@ export function summarizePullRequestChecks(checks: ReadonlyArray<PullRequestChec
     return `${otherActionRequired} ${otherActionRequired === 1 ? "check" : "checks"} awaiting action${skippedSummary}`;
   }
   if (running > 0 && expected > 0)
-    return `${running + expected} of ${checks.length} pending${skippedSummary}`;
-  if (running > 0) return `${running} of ${checks.length} running${skippedSummary}`;
-  if (expected > 0) return `${expected} of ${checks.length} waiting${skippedSummary}`;
+    return `${running + expected} of ${runnable} pending${skippedSummary}`;
+  if (running > 0) return `${running} of ${runnable} running${skippedSummary}`;
+  if (expected > 0) return `${expected} of ${runnable} waiting${skippedSummary}`;
   return allPassed
     ? "All checks passed"
     : runnable === 0

@@ -117,7 +117,9 @@ export function pullRequestChecksSummary(pr: Pick<PullRequestDetail, "checks">) 
   const pending = pr.checks.filter(
     (check) => check.status === "pending" || check.status === "expected",
   ).length;
-  const { passed, runnable, allPassed, skippedSummary } = pullRequestCheckCounts(pr.checks);
+  const { passed, skipped, runnable, allPassed, skippedSummary } = pullRequestCheckCounts(
+    pr.checks,
+  );
   const count = pr.checks.length ? `${passed} of ${runnable}` : undefined;
   if (failed)
     return {
@@ -145,7 +147,10 @@ export function pullRequestChecksSummary(pr: Pick<PullRequestDetail, "checks">) 
     } as const;
   if (passed)
     return {
-      label: allPassed ? "All checks passed" : `${passed} of ${runnable} passed${skippedSummary}`,
+      label:
+        allPassed && skipped > 0
+          ? "All checks passed"
+          : `${passed} of ${runnable} passed${skippedSummary}`,
       title: allPassed ? "All checks passed" : "Checks completed",
       count: allPassed ? count : count + skippedSummary,
       icon: "checkmark.circle",
@@ -154,7 +159,12 @@ export function pullRequestChecksSummary(pr: Pick<PullRequestDetail, "checks">) 
   return {
     label: pr.checks.length ? `${pr.checks.length} completed` : "No checks reported",
     title: pr.checks.length ? "Checks completed" : "No checks reported",
-    count: pr.checks.length ? `0 of ${pr.checks.length}` : undefined,
+    count:
+      runnable > 0
+        ? count + skippedSummary
+        : pr.checks.length
+          ? `0 of ${pr.checks.length}`
+          : undefined,
     icon: "minus",
     tint: "accent-icon-muted",
   } as const;

@@ -294,10 +294,10 @@ export function describePullRequestChecks(checks: ReadonlyArray<PullRequestCheck
   const actionRequired = checks.filter((check) => check.status === "action-required").length;
   const { passed, runnable, allPassed, skippedSummary } = pullRequestCheckCounts(checks);
   const parts: string[] = [];
-  if (pending > 0) parts.push(`${pending} of ${checks.length} running`);
-  if (actionRequired > 0) parts.push(`${actionRequired} of ${checks.length} awaiting action`);
+  if (pending > 0) parts.push(`${pending} of ${runnable} running`);
+  if (actionRequired > 0) parts.push(`${actionRequired} of ${runnable} awaiting action`);
   if (failed > 0) {
-    parts.push(parts.length > 0 ? `${failed} failed` : `${failed} of ${checks.length} failing`);
+    parts.push(parts.length > 0 ? `${failed} failed` : `${failed} of ${runnable} failing`);
   }
   if (parts.length === 0) {
     return allPassed
