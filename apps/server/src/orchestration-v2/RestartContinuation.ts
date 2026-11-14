@@ -204,7 +204,11 @@ export function declinesRestartContinuation(
 }
 
 export const continueRestartedRun = Effect.fn("RestartContinuation.continueRestartedRun")(
-  function* (input: { readonly threadId: ThreadId; readonly sourceRunId: RunId }) {
+  function* (input: {
+    readonly threadId: ThreadId;
+    readonly sourceRunId: RunId;
+    readonly processLossCount?: number;
+  }) {
     const settings = yield* ServerSettings.ServerSettingsService;
     const enabled = yield* settings.getSettings.pipe(Effect.orElseSucceed(() => null));
     if (!enabled) return;
@@ -263,7 +267,12 @@ export const continueRestartedRun = Effect.fn("RestartContinuation.continueResta
       return;
     if (!automaticCompaction && projection.thread.providerInstanceId !== source.providerInstanceId)
       return;
-    if (!automaticCompaction && restartContinuationChainFull(source, projection.runs)) {
+    if (
+      !automaticCompaction &&
+      (input.processLossCount === undefined
+        ? restartContinuationChainFull(source, projection.runs)
+        : input.processLossCount > MAX_CONTINUATION_CHAIN)
+    ) {
       yield* Effect.logWarning("Not continuing a run restarted too many times in a row", {
         threadId: input.threadId,
         sourceRunId: input.sourceRunId,
