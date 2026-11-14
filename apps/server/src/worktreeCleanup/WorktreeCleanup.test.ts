@@ -167,6 +167,47 @@ describe("WorktreeCleanup", () => {
       }).pipe(Effect.provide(dependencies), Effect.scoped),
   );
 
+  it.effect("measures pnpm candidates using the worktree manifest and store device", () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      yield* f.write("node_modules/.pnpm/pkg/index.js", "x".repeat(8192));
+      yield* f.write(
+        "node_modules/.modules.yaml",
+        JSON.stringify({ storeDir: f.root, virtualStoreDir: ".pnpm" }),
+      );
+      const stat = yield* f.fs.stat(`${f.worktree}/node_modules/.pnpm/pkg/index.js`);
+      const blocks = Option.match(stat.blocks, {
+        onSome: (value) => Number(value * 512n),
+        onNone: () => Number(stat.size),
+      });
+      const manifest = yield* f.fs.stat(`${f.worktree}/node_modules/.modules.yaml`);
+      const manifestBlocks = Option.match(manifest.blocks, {
+        onSome: (value) => Number(value * 512n),
+        onNone: () => Number(manifest.size),
+      });
+      for (const sameDevice of [true, false]) {
+        const select = yield* makeSelect.pipe(
+          Effect.provideService(FileSystem.FileSystem, {
+            ...f.fs,
+            stat: (file) =>
+              f.fs
+                .stat(file)
+                .pipe(
+                  Effect.map((info) =>
+                    !sameDevice && file === f.root ? { ...info, dev: info.dev + 1n } : info,
+                  ),
+                ),
+          }),
+        );
+        const nested = yield* select(f.worktree, ["node_modules/.pnpm/pkg"]);
+        assert.equal(nested.freedBytes, sameDevice ? 0 : blocks);
+        assert.equal(nested.selected.length, 1);
+        const whole = yield* select(f.worktree, ["node_modules"]);
+        assert.equal(whole.freedBytes, manifestBlocks + (sameDevice ? 0 : blocks));
+      }
+    }).pipe(Effect.provide(dependencies), Effect.scoped),
+  );
+
   it.effect("keeps same-device bind mounts and cross-device candidates", () =>
     Effect.gen(function* () {
       const f = yield* fixture;

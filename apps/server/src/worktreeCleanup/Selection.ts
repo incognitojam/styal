@@ -6,7 +6,7 @@ import * as Path from "effect/Path";
 import { type WorktreeCleanupKept, type WorktreeCleanupSelected } from "@t3tools/contracts";
 import { matchesWorktreeCleanupPattern } from "@t3tools/shared/worktreeCleanupPatterns";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
-import { makeMeasureWorktree } from "./measureWorktree.ts";
+import { makeMeasureWorktree } from "../storageCleanup.ts";
 
 export const makeSelect = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
