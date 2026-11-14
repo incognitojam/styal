@@ -43,7 +43,7 @@
   "t3_environment_preferences_update": 1004,
   "t3_environment_read": 224,
   "t3_environment_unlink": 253,
-  "t3_pending_request": 512,
+  "t3_pending_request": 500,
   "t3_preview_close": 241,
   "t3_preview_list": 456,
   "t3_project_clone": 530,

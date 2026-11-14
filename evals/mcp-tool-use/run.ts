@@ -41,6 +41,8 @@ import { advertisedJsonSchema } from "../../apps/server/src/mcp/advertisedJsonSc
 import {
   EnvironmentId,
   ORCHESTRATOR_MCP_RUNNING_TASK_NEXT,
+  orchestratorMcpPendingApprovalNext,
+  orchestratorMcpPendingQuestionNext,
   PullRequestState,
   ThreadId,
 } from "@t3tools/contracts";
@@ -1003,7 +1005,7 @@ export const buildMessages = (sample: Sample) => {
       const replayed =
         normalizeToolName(tool.name) === "orchestrator_capabilities"
           ? capabilities(sample, result)
-          : (sample.priorResults.get(prior) ?? result);
+          : (sample.priorResults.get(prior) ?? withPendingRequestText(result));
       push("user", toolResult(id, replayed));
     }
     if (turn.text) {
@@ -1332,6 +1334,40 @@ const withProductFields = (name: string, value: unknown, child: boolean): unknow
   }
 };
 
+/**
+ * T3's `next` for each pending question or approval a wait, task or request list reports. Cases
+ * give `requestId`, `kind` and `text`; `threadId` (or the result's) names the thread asking.
+ */
+export const withPendingRequestText = (value: unknown): unknown => {
+  if (!isRecord(value)) return value;
+  const owner = value.childThreadId ?? value.threadId;
+  const described = (entry: unknown) => {
+    if (!isRecord(entry) || entry.next !== undefined) return entry;
+    const { threadId: entryThreadId, ...rest } = entry;
+    const threadId = ThreadId.make(valueText(entryThreadId ?? owner));
+    const requestId = valueText(entry.requestId);
+    const next =
+      entry.kind === "approval"
+        ? orchestratorMcpPendingApprovalNext({
+            link: formatThreadLink({ environmentId: EVAL_ENVIRONMENT_ID, threadId }),
+          })
+        : orchestratorMcpPendingQuestionNext({ threadId, requestId });
+    return { ...rest, next };
+  };
+  const result: Record<string, unknown> = { ...value };
+  for (const key of ["pendingRequests", "requests"]) {
+    const entries = result[key];
+    if (Array.isArray(entries)) result[key] = entries.map(described);
+  }
+  return result;
+};
+
+/** A mock of `{ "byAction": { list: …, read: … } }` answers by the call's `action`. */
+const mockForCall = (mock: unknown, input: Readonly<Record<string, unknown>>): unknown =>
+  isRecord(mock) && isRecord(mock.byAction)
+    ? (mock.byAction[valueText(input.action)] ?? "default")
+    : mock;
+
 /** Cases mock a Claude caller, so the inherited fields follow the model under test. */
 const capabilities = ({ base }: Sample, value: unknown) =>
   isRecord(value)
@@ -1552,7 +1588,7 @@ const answerToolCall = Effect.fn("evaluateMcpToolUse.answerToolCall")(function* 
     if (found.length === 0) return toolResult(call.id, "No matching deferred tools found");
     return loadTools(tools, call.id, found);
   }
-  const mock = testCase.setup.mocks?.[name];
+  const mock = mockForCall(testCase.setup.mocks?.[name], isRecord(input) ? input : {});
   // T3 answers device calls from the world. A mock that is a T3 device error fails inside T3.
   const failure = deviceFailure(mock);
   const fromWorld = mock === undefined || mock === "default" || failure !== undefined;
@@ -1565,7 +1601,9 @@ const answerToolCall = Effect.fn("evaluateMcpToolUse.answerToolCall")(function* 
       call.id,
       name === "orchestrator_capabilities"
         ? capabilities(sample, mock)
-        : withProductFields(name, mock, testCase.setup.role === "delegated-child"),
+        : withPendingRequestText(
+            withProductFields(name, mock, testCase.setup.role === "delegated-child"),
+          ),
     );
   if (isT3Name(call.name)) {
     // T3 refuses a watch from a delegated child.

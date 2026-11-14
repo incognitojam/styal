@@ -1,3 +1,4 @@
+import { describePendingRequests, isApprovalRequestKind } from "../../pendingRequests.ts";
 import {
   type CommandId,
   type RuntimeRequestId,
@@ -55,6 +56,17 @@ const readQuestion = Effect.fn("mcp.readQuestion")(function* (input: {
   requestId: RuntimeRequestId;
 }) {
   const context = yield* readThread(input.threadId, ["runtimeRequests", "turnItems"]);
+  const approval = context.projection.runtimeRequests.find(
+    (request) =>
+      request.id === input.requestId &&
+      request.status === "pending" &&
+      isApprovalRequestKind(request.kind),
+  );
+  if (approval !== undefined)
+    return yield* new OrchestratorMcpFailure({
+      code: "invalid_request",
+      message: `The request ${input.requestId} is a permission approval, not a question. No agent can approve it: only the user can, in that thread: ${McpInvocationContext.threadLinkFor(context.scope, context.projection.thread.id)}. A thread you start never runs in a broader mode than yours.`,
+    });
   const request = context.projection.runtimeRequests.find(
     (request) => request.id === input.requestId && request.kind === "user_input",
   );
@@ -234,8 +246,17 @@ export const declarations = {
     McpToolAccess.reads((input) =>
       Effect.gen(function* () {
         if (input.action === "list") {
-          const { projection } = yield* readThread(input.threadId, ["runtimeRequests"]);
+          const { projection, scope } = yield* readThread(input.threadId, [
+            "runtimeRequests",
+            "turnItems",
+          ]);
           return {
+            requests: describePendingRequests(
+              projection.runtimeRequests,
+              projection.turnItems,
+              projection.thread.id,
+              McpInvocationContext.threadLinkFor(scope, projection.thread.id),
+            ),
             requestIds: projection.runtimeRequests
               .filter((request) => request.kind === "user_input" && request.status === "pending")
               .map((request) => request.id),
@@ -249,11 +270,11 @@ export const declarations = {
     writesThread((input) =>
       Effect.gen(function* () {
         const requestId = yield* required(input.requestId, "requestId");
-        const answers = yield* required(input.answers, "answers");
         const { threads, projection } = yield* readQuestion({
           threadId: input.threadId,
           requestId,
         });
+        const answers = yield* required(input.answers, "answers");
         const result = yield* threads
           .dispatch({
             type: "runtime-request.respond",

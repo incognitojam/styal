@@ -198,6 +198,97 @@ it.effect(
   },
 );
 
+it.effect.each(["message", "approval", "existing", "terminal", "default"] as const)(
+  "waitForThread pending requests: %s",
+  (scenario) =>
+    Effect.gen(function* () {
+      const projectId = ProjectId.make("project:pending");
+      const threadId = ThreadId.make("thread:pending");
+      const runId = RunId.make("run:pending");
+      const subscribed = yield* Deferred.make<void>();
+      const events = yield* Queue.unbounded<OrchestrationV2StoredEvent>();
+      const request = {
+        id: "request:pending",
+        nodeId: "node:pending",
+        status: "pending",
+        kind: scenario === "approval" ? "command" : "user_input",
+        responseCapability:
+          scenario === "approval"
+            ? { type: "live", providerSessionId: "session:pending" }
+            : { type: "message" },
+        createdAt: DateTime.makeUnsafe(0),
+      };
+      let runtimeRequests = scenario === "message" || scenario === "approval" ? [] : [request];
+      const layerTest = ThreadManagementService.layer.pipe(
+        Layer.provide(Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({})),
+        Layer.provide(
+          Layer.mock(Orchestrator.OrchestratorV2)({
+            getThreadEventSequence: () => Effect.succeed(0),
+            restartContinuationPending: () => Effect.succeed(false),
+            streamStoredEventsFrom: (input) =>
+              input?.eventType === "runtime-request.updated" ||
+              (scenario === "default" && input?.eventType === "run.updated")
+                ? Stream.fromEffect(Deferred.succeed(subscribed, undefined)).pipe(
+                    Stream.drain,
+                    Stream.concat(
+                      input?.eventType === "runtime-request.updated"
+                        ? Stream.fromQueue(events)
+                        : Stream.never,
+                    ),
+                  )
+                : Stream.never,
+            getThreadRecords: () =>
+              Effect.sync(
+                () =>
+                  ({
+                    thread: { id: threadId, projectId, deletedAt: null },
+                    runs: [
+                      { id: runId, status: "running" },
+                      { id: "run:old", status: "completed" },
+                    ],
+                    nodes: [
+                      { id: "node:pending", runId: scenario === "terminal" ? "run:old" : runId },
+                    ],
+                    runtimeRequests,
+                  }) as unknown as OrchestrationV2ThreadProjection,
+              ),
+          }),
+        ),
+        Layer.provide(ServerSettings.layerTest()),
+        Layer.provide(layerReceiptsTest),
+      );
+      const service = yield* ThreadManagementService.ThreadManagementService.pipe(
+        Effect.provide(layerTest),
+      );
+      const fiber = yield* service
+        .waitForThread({
+          projectId,
+          threadId,
+          runId,
+          timeoutMs: 1000,
+          ...(scenario === "default" ? {} : { returnOnPendingRequest: true }),
+        })
+        .pipe(Effect.forkChild);
+      if (scenario !== "existing") {
+        yield* Deferred.await(subscribed);
+        runtimeRequests = [request];
+        yield* Queue.offer(events, {
+          sequence: 1,
+          event: { threadId, type: "runtime-request.updated", payload: request },
+        } as unknown as OrchestrationV2StoredEvent);
+      }
+      const expectsRequest = scenario !== "terminal" && scenario !== "default";
+      if (!expectsRequest) yield* TestClock.adjust(Duration.millis(1000));
+      const result = yield* Fiber.join(fiber);
+      expect(result).toMatchObject({
+        timedOut: !expectsRequest,
+        run: { id: runId, status: "running" },
+      });
+      if (expectsRequest) expect(result).toHaveProperty("pendingRequests", [request]);
+      else expect(result).not.toHaveProperty("pendingRequests");
+    }),
+);
+
 it.effect("waitForThread follows a restart continuation instead of the cut run", () =>
   Effect.gen(function* () {
     const projectId = ProjectId.make("project:thread-management:wait-restart");

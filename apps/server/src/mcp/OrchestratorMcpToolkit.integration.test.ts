@@ -1757,6 +1757,31 @@ describe("orchestrator MCP toolkit", () => {
                 (item) => item.type === "approval_request" && item.requestId === approvalId,
               ),
             ).toMatchObject({ toolName: "hardware_call", status: "waiting" });
+            const requestList = yield* invoke("t3_pending_request", { action: "list" });
+            expect(requestList.isError).toBe(false);
+            expect(requestList.structuredContent).toMatchObject({
+              requestIds: [],
+              requests: [
+                {
+                  requestId: approvalId,
+                  kind: "approval",
+                  text: 'Run "reboot" on tree: POST /reboot',
+                },
+              ],
+            });
+            for (const action of ["read", "respond"]) {
+              const refused = yield* invoke("t3_pending_request", {
+                action,
+                requestId: approvalId,
+              });
+              expect(refused.isError).toBe(true);
+              expect(JSON.stringify(refused.content)).toContain(
+                `The request ${approvalId} is a permission approval, not a question. No agent can approve it: only the user can, in that thread:`,
+              );
+              expect(JSON.stringify(refused.content)).toContain(
+                "A thread you start never runs in a broader mode than yours.",
+              );
+            }
             yield* orchestrator.dispatch({
               type: "runtime-request.respond",
               commandId: CommandId.make("command:test:server-approval:respond"),
@@ -4341,10 +4366,6 @@ describe("orchestrator MCP toolkit", () => {
               approvalRequest("message", { responseCapability: { type: "message" } }),
               approvalRequest("not-live", {
                 responseCapability: { type: "not_resumable", reason: "Session ended." },
-              }),
-              approvalRequest("question", {
-                kind: "user_input",
-                responseCapability: { type: "message" },
               }),
               approvalRequest("auth", { kind: "auth_refresh" }),
               approvalRequest("tool", { kind: "dynamic_tool_call" }),
