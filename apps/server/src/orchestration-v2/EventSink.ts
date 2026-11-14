@@ -341,7 +341,40 @@ const layerBase: Layer.Layer<
         });
       });
 
-    const normalizeEvents = (events: ReadonlyArray<OrchestrationV2DomainEvent>) => {
+    // Setup exit callbacks and shutdown cleanup can race after reading the same running item.
+    // The first terminal event wins for both the event log and its projections.
+    const guardSetupTerminalUpdates = Effect.fnUntraced(function* (
+      events: ReadonlyArray<OrchestrationV2DomainEvent>,
+    ) {
+      const terminalItems = new Set<string>();
+      const accepted: OrchestrationV2DomainEvent[] = [];
+      for (const event of events) {
+        if (
+          event.type === "turn-item.updated" &&
+          event.payload.type === "command_execution" &&
+          event.payload.setupScript?.terminalId.startsWith("setup-")
+        ) {
+          const item = event.payload;
+          if (terminalItems.has(item.id)) continue;
+          const current = yield* sql`
+            SELECT turn_item_id FROM orchestration_v2_projection_turn_items
+            WHERE turn_item_id = ${item.id} AND thread_id = ${event.threadId}
+              AND status IN ('completed', 'failed', 'cancelled', 'interrupted')
+          `;
+          if (current.length > 0) continue;
+          if (["completed", "failed", "cancelled", "interrupted"].includes(item.status)) {
+            terminalItems.add(item.id);
+          }
+        }
+        accepted.push(event);
+      }
+      return accepted;
+    });
+
+    const normalizeEvents = Effect.fn("EventSink.normalizeEvents")(function* (
+      inputEvents: ReadonlyArray<OrchestrationV2DomainEvent>,
+    ) {
+      const events = yield* guardSetupTerminalUpdates(inputEvents);
       const runOrdinals = new Map(
         events.flatMap((event) =>
           event.type === "run.created" || event.type === "run.updated"
@@ -349,7 +382,7 @@ const layerBase: Layer.Layer<
             : [],
         ),
       );
-      return Effect.forEach(
+      return yield* Effect.forEach(
         events,
         (event): Effect.Effect<OrchestrationV2DomainEvent, unknown> =>
           event.type === "turn-item.updated"
@@ -362,7 +395,7 @@ const layerBase: Layer.Layer<
             : Effect.succeed(event),
         { concurrency: 1 },
       );
-    };
+    });
 
     // Every write path comes through here, so a run end or request can never commit without the
     // check it owes a thread that reports back, and a crash after the commit cannot lose it.

@@ -496,6 +496,12 @@ export const make = Effect.gen(function* () {
             path.join(run.worktreePath, ".styal/setup-completed"),
             `${run.threadId}\n${run.scriptId}\n${run.command}`,
           );
+          const latest = yield* sql`
+            SELECT turn_item_id FROM worktree_setup_state
+            WHERE worktree_path = ${worktreeKey} AND turn_item_id = ${`setup:${run.runId}`}
+              AND status = 'succeeded' AND evidence_version = 2
+          `;
+          if (latest.length === 0) yield* removeCompletionMarker(run.worktreePath);
         }),
       ),
       Effect.catchCause((cause) =>
@@ -633,6 +639,7 @@ export const make = Effect.gen(function* () {
       Effect.logWarning("failed to recover interrupted setup script runs", { cause }),
     ),
   );
+  // Startup repair is asynchronous; pending rows block recovery until it finishes.
   yield* forkParked(recoverInterruptedRuns());
   const serverSettings = yield* ServerSettings.ServerSettingsService;
   const fileActionApprovals = yield* ProjectFileActionApprovals.ProjectFileActionApprovals;

@@ -24,6 +24,19 @@ const terminalStatus = {
   interrupted: "interrupted",
 } as const satisfies Record<OrchestrationV2TurnItemStatus, string | undefined>;
 
+const removeMarker = Effect.fn("WorktreeSetupState.removeMarker")(function* (
+  worktreePath: string,
+  itemId: string,
+) {
+  yield* Effect.tryPromise(() =>
+    NodeFSP.rm(NodePath.join(worktreePath, ".styal/setup-completed"), { force: true }),
+  ).pipe(
+    Effect.catchCause((cause) =>
+      Effect.logWarning("failed to remove setup completion marker", { itemId, cause }),
+    ),
+  );
+});
+
 const updateOutcome = Effect.fn("WorktreeSetupState.updateOutcome")(function* (
   worktreePath: string,
   itemId: string,
@@ -41,13 +54,7 @@ const updateOutcome = Effect.fn("WorktreeSetupState.updateOutcome")(function* (
     RETURNING worktree_path
   `;
   if (rows.length > 0 && identity === undefined) {
-    yield* Effect.tryPromise(() =>
-      NodeFSP.rm(NodePath.join(worktreePath, ".styal/setup-completed"), { force: true }),
-    ).pipe(
-      Effect.catchCause((cause) =>
-        Effect.logWarning("failed to remove setup completion marker", { itemId, cause }),
-      ),
-    );
+    yield* removeMarker(worktreePath, itemId);
   }
 });
 
@@ -94,7 +101,7 @@ export const recordSetupAttempts = Effect.fnUntraced(function* (
     if (setup === undefined || !setup.terminalId.startsWith("setup-")) continue;
     const sql = yield* SqlClient.SqlClient;
     if (item.status === "pending") {
-      yield* sql`
+      const rows = yield* sql`
         INSERT INTO worktree_setup_state (
           worktree_path, turn_item_id, thread_id, action_id, command, status, request_sequence
         ) VALUES (
@@ -106,7 +113,9 @@ export const recordSetupAttempts = Effect.fnUntraced(function* (
           evidence_version = NULL, device = NULL, inode = NULL, git_directory = NULL,
           request_sequence = excluded.request_sequence
         WHERE excluded.request_sequence > worktree_setup_state.request_sequence
+        RETURNING worktree_path
       `;
+      if (rows.length > 0) yield* removeMarker(setup.worktreePath, item.id);
       continue;
     }
     const status = terminalStatus[item.status];

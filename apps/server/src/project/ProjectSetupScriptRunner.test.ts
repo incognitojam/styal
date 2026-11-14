@@ -674,6 +674,7 @@ it.effect(
       for (const status of ["completed", "failed", "cancelled", "interrupted"] as const) {
         const expected =
           status === "completed" ? "succeeded" : status === "failed" ? "failed" : "interrupted";
+        const caseItem = { ...terminalItem, id: TurnItemId.make(`setup:terminal-${status}`) };
         for (const next of ["pending", status] as const) {
           if (next !== "pending") NodeFS.writeFileSync(completionMarker, "stale evidence");
           yield* eventSink.write({
@@ -683,7 +684,7 @@ it.effect(
                 type: "turn-item.updated",
                 threadId,
                 occurredAt: yield* DateTime.now,
-                payload: { ...terminalItem, status: next },
+                payload: { ...caseItem, status: next },
               },
             ],
           });
@@ -696,7 +697,7 @@ it.effect(
         assert.equal((yield* state())[0]!.status, expected);
         assert.isFalse(NodeFS.existsSync(completionMarker));
       }
-      yield* sql`DELETE FROM orchestration_v2_projection_turn_items WHERE turn_item_id = ${terminalItem.id}`;
+      yield* sql`DELETE FROM orchestration_v2_projection_turn_items WHERE turn_item_id = ${TurnItemId.make("setup:terminal-interrupted")}`;
       yield* sql`UPDATE worktree_setup_state SET status = 'pending' WHERE worktree_path = ${worktree}`;
       NodeFS.writeFileSync(completionMarker, "orphaned evidence");
       yield* reconcilePendingSetupAttempts();
