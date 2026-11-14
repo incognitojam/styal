@@ -12,6 +12,7 @@ export type ProjectFileActionRole = typeof ProjectFileActionRole.Type;
  * command is still this one and it asks for no role beyond these.
  */
 export const ProjectFileActionApproval = Schema.Struct({
+  patterns: Schema.optionalKey(Schema.Array(Schema.String)),
   command: TrimmedNonEmptyString,
   roles: Schema.Array(ProjectFileActionRole),
   approvedAt: IsoDateTime,

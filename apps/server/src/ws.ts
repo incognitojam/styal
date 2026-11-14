@@ -1,3 +1,5 @@
+import * as WorktreeCleanup from "./worktreeCleanup/WorktreeCleanup.ts";
+import * as WorktreeCleanupApprovals from "./worktreeCleanup/Approvals.ts";
 import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts";
 import { OrchestrationGetCommandOutputError } from "@t3tools/contracts";
 import { resolveAddProjectDefaultDirectory } from "./project/AddProjectDefaultDirectory.ts";
@@ -1519,6 +1521,8 @@ export const layerWsRpc = (
       const npmRelease = yield* NpmRelease.NpmRelease;
       const config = yield* ServerConfig.ServerConfig;
       const lifecycleEvents = yield* ServerLifecycleEvents.ServerLifecycleEvents;
+      const declaredCleanup = yield* WorktreeCleanup.WorktreeCleanup;
+      const cleanupApprovals = yield* WorktreeCleanupApprovals.Approvals;
       const storageCleanup = yield* StorageCleanup.StorageCleanup;
       const databaseStorage = yield* DatabaseStorage.DatabaseStorage;
       const serverSettings = yield* ServerSettings.ServerSettingsService;
@@ -2973,6 +2977,10 @@ export const layerWsRpc = (
             ),
           ),
         [WS_METHODS.projectsFileActionRun]: (input) => projectScriptRunner.runPending(input),
+        [WS_METHODS.projectsWorktreeCleanupReview]: (input) => cleanupApprovals.review(input),
+        [WS_METHODS.projectsWorktreeCleanupApprovalSet]: (input) =>
+          cleanupApprovals.setApproved(input),
+        [WS_METHODS.projectsWorktreeCleanupPreview]: (input) => declaredCleanup.preview(input),
         [WS_METHODS.projectsFileActionReview]: (input) => fileActionApprovals.review(input),
         [WS_METHODS.projectsFileActionApprovalSet]: (input) =>
           fileActionApprovals.setApproved(input),

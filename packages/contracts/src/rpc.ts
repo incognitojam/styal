@@ -1,4 +1,11 @@
 import {
+  WorktreeCleanupError,
+  WorktreeCleanupReviewInput,
+  WorktreeCleanupReview,
+  WorktreeCleanupPreviewInput,
+  WorktreeCleanupPreview,
+} from "./worktreeCleanupPreview.ts";
+import {
   OrchestrationGetCommandOutputInput,
   OrchestrationGetCommandOutputResult,
   OrchestrationGetCommandOutputError,
@@ -465,6 +472,9 @@ export const WS_METHODS = {
   projectsSearchContents: "projects.searchContents",
   projectsSearchEntries: "projects.searchEntries",
   projectsWriteFile: "projects.writeFile",
+  projectsWorktreeCleanupReview: "projects.worktreeCleanupReview",
+  projectsWorktreeCleanupApprovalSet: "projects.worktreeCleanupApprovalSet",
+  projectsWorktreeCleanupPreview: "projects.worktreeCleanupPreview",
   projectsFileActionRun: "projects.fileActionRun",
   projectsFileActionReview: "projects.fileActionReview",
   projectsFileActionApprovalSet: "projects.fileActionApprovalSet",
@@ -1485,6 +1495,21 @@ const ProjectFileActionRpcError = Schema.Union([
   ProjectFileActionApprovalError,
   EnvironmentAuthorizationError,
 ]);
+const WsWorktreeCleanupReviewRpc = Rpc.make(WS_METHODS.projectsWorktreeCleanupReview, {
+  payload: WorktreeCleanupReviewInput,
+  success: WorktreeCleanupReview,
+  error: Schema.Union([WorktreeCleanupError, EnvironmentAuthorizationError]),
+});
+const WsWorktreeCleanupApprovalSetRpc = Rpc.make(WS_METHODS.projectsWorktreeCleanupApprovalSet, {
+  payload: Schema.Struct({ ...WorktreeCleanupReviewInput.fields, approved: Schema.Boolean }),
+  success: WorktreeCleanupReview,
+  error: Schema.Union([WorktreeCleanupError, EnvironmentAuthorizationError]),
+});
+const WsWorktreeCleanupPreviewRpc = Rpc.make(WS_METHODS.projectsWorktreeCleanupPreview, {
+  payload: WorktreeCleanupPreviewInput,
+  success: WorktreeCleanupPreview,
+  error: Schema.Union([WorktreeCleanupError, EnvironmentAuthorizationError]),
+});
 /** What approving a styal.json action would cover, read from the project root. */
 const WsProjectsFileActionReviewRpc = Rpc.make(WS_METHODS.projectsFileActionReview, {
   payload: ProjectFileActionApprovalInput,
@@ -2448,6 +2473,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsHardwareControlRpc,
   WsHardwareConfigureRpc,
   WsHardwareAuditListRpc,
+  WsWorktreeCleanupReviewRpc,
+  WsWorktreeCleanupApprovalSetRpc,
+  WsWorktreeCleanupPreviewRpc,
   WsProjectsFileActionReviewRpc,
   WsProjectsFileActionApprovalSetRpc,
   WsProjectsFileActionRunRpc,

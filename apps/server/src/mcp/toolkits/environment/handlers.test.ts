@@ -1,3 +1,4 @@
+import * as Schema from "effect/Schema";
 import { expect, it } from "@effect/vitest";
 import {
   DEFAULT_SERVER_SETTINGS,
@@ -95,3 +96,22 @@ it.effect("refuses a preferences update when the caller's turn ends while it wai
     );
   }),
 );
+
+it("does not let agent preference updates carry cleanup approvals", () => {
+  const decode = Schema.decodeUnknownSync(
+    EnvironmentToolkit.tools.t3_environment_preferences_update.parametersSchema,
+  );
+  const decoded = decode({
+    projectFileActionApprovals: {
+      "project:fixture": {
+        $worktreeCleanup: {
+          command: "worktreeCleanup",
+          roles: [],
+          patterns: ["dist"],
+          approvedAt: "2026-01-01T00:00:00.000Z",
+        },
+      },
+    },
+  });
+  expect(decoded).not.toHaveProperty("projectFileActionApprovals");
+});

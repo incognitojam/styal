@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./worktreeCleanupPatterns": {
+      "types": "./src/worktreeCleanupPatterns.ts",
+      "import": "./src/worktreeCleanupPatterns.ts"
+    },
     "./feedbackFooter": {
       "types": "./src/feedbackFooter.ts",
       "import": "./src/feedbackFooter.ts"

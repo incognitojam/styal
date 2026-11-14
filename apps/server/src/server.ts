@@ -1,3 +1,5 @@
+import * as WorktreeCleanup from "./worktreeCleanup/WorktreeCleanup.ts";
+import * as WorktreeCleanupApprovals from "./worktreeCleanup/Approvals.ts";
 import * as AutoPullStatus from "./vcs/AutoPullStatus.ts";
 import * as PreEventPruneSafety from "./persistence/preEventPruneSafety.ts";
 import * as Scope from "effect/Scope";
@@ -706,6 +708,16 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   HeldHooksWaker.layer,
   layerThreadSettlementWorker,
   layerIdleCompactionWorker,
+  WorktreeCleanup.layer.pipe(
+    Layer.provideMerge(
+      WorktreeCleanupApprovals.layer.pipe(
+        Layer.provide(ProjectConfigLoader.layer),
+        Layer.provide(RuntimeLayer.layerProjectService),
+      ),
+    ),
+    Layer.provide(ProjectionStoreV2.layer),
+    Layer.provide(RuntimeLayer.layerProjectService),
+  ),
   StorageCleanup.layer.pipe(Layer.provide(ProjectionStoreV2.layer)),
   DatabaseStorage.layer.pipe(Layer.provide(ProjectionMaintenance.layer)),
   layerThreadPullRequestWorker,
