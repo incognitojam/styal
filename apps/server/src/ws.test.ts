@@ -140,7 +140,6 @@ import * as ExternalLauncher from "./process/externalLauncher.ts";
 import * as ProjectEnrichment from "./project/ProjectEnrichmentService.ts";
 import * as ProjectService from "./project/ProjectService.ts";
 import {
-  recordAcceptedClientCommandAnalytics,
   layerWsRpc,
   resolveOpenDiscoveryForConfig,
   subscribeOrchestrationV2Shell,
@@ -148,46 +147,6 @@ import {
   WS_RPC_SERVER_OPTIONS,
   withLateConfigDiscovery,
 } from "./ws.ts";
-
-it.effect(
-  "records accepted lifecycle outcomes with client metadata and ignores rejected commands",
-  () =>
-    Effect.gen(function* () {
-      const records: Array<{ event: string; properties?: Readonly<Record<string, unknown>> }> = [];
-      const analytics = {
-        record: (event: string, properties?: Readonly<Record<string, unknown>>) =>
-          Effect.sync(() => {
-            records.push({ event, ...(properties === undefined ? {} : { properties }) });
-          }),
-      };
-      const properties = { clientSurface: "mobile", appVersion: "1.2.3" };
-      for (const type of [
-        "thread.settle",
-        "thread.unsettle",
-        "thread.archive",
-        "thread.unarchive",
-        "thread.delete",
-      ] as const) {
-        yield* Effect.succeed("accepted").pipe(
-          Effect.tap(() => recordAcceptedClientCommandAnalytics({ type }, analytics, properties)),
-        );
-      }
-      yield* Effect.fail("rejected").pipe(
-        Effect.tap(() =>
-          recordAcceptedClientCommandAnalytics({ type: "thread.delete" }, analytics, properties),
-        ),
-        Effect.ignore,
-      );
-      yield* recordAcceptedClientCommandAnalytics({ type: "thread.pin" }, analytics, properties);
-      assert.deepEqual(
-        records,
-        ["settled", "unsettled", "archived", "unarchived", "deleted"].map((outcome) => ({
-          event: `client.thread.${outcome}`,
-          properties,
-        })),
-      );
-    }),
-);
 
 const snapshotConfig = (fields: Partial<ServerConfig>) =>
   ({ availableEditors: [], settings: {}, ...fields }) as unknown as ServerConfig;

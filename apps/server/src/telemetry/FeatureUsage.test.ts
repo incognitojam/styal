@@ -339,8 +339,12 @@ it("leaves actions the fork reports under its own events to those events", () =>
   expect(
     featureUsage(WS_METHODS.pullRequestsRunAction, { action: "update-branch", number: 7 }),
   ).toEqual({ feature: "pull_request.action", variant: "update-branch" });
-  expect(commandFeatureUsage(command({ ...ids, type: "thread.settle" }))).toBe(undefined);
-  expect(commandFeatureUsage(command({ ...ids, type: "thread.archive" }))).toBe(undefined);
+  expect(commandFeatureUsage(command({ ...ids, type: "thread.settle" }))).toEqual({
+    feature: "thread.settle",
+  });
+  expect(commandFeatureUsage(command({ ...ids, type: "thread.archive" }))).toEqual({
+    feature: "thread.archive",
+  });
   expect(
     commandFeatureUsage(
       command({ ...ids, type: "thread.snooze", snoozedUntil: "2026-10-25T00:00:00.000Z" }),
