@@ -352,7 +352,6 @@ describe("OrchestratorMcpService", () => {
       const taskId = NodeId.make("node:mcp-next-task");
       let finished = false;
       let pendingRequest: false | "question" | "approval" = false;
-      let waitTimedOut = false;
       const parentProjection = () =>
         ({
           thread: { id: parentThreadId },
@@ -423,7 +422,7 @@ describe("OrchestratorMcpService", () => {
             Effect.succeed({
               threadId: childThreadId,
               run: childRun() as unknown as OrchestrationV2ThreadProjection["runs"][number],
-              timedOut: !finished && (!pendingRequest || waitTimedOut),
+              timedOut: !finished && !pendingRequest,
               ...(pendingRequest
                 ? {
                     pendingRequests: childProjection().runtimeRequests.map((request) => ({
@@ -484,12 +483,6 @@ describe("OrchestratorMcpService", () => {
         assert.equal(approval.pendingRequests?.[0]?.kind, "approval");
         assert.include(approval.pendingRequests?.[0]?.next ?? "", "only the user can");
         assert.notProperty(approval, "next");
-        pendingRequest = "question";
-        waitTimedOut = true;
-        const timeout = yield* service.waitForThread(scope, { threadId: childThreadId });
-        assert.isTrue(timeout.timedOut);
-        assert.deepEqual(timeout.pendingRequests, asking.pendingRequests);
-        assert.notProperty(timeout, "next");
         pendingRequest = false;
 
         finished = true;

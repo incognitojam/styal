@@ -198,7 +198,7 @@ it.effect(
   },
 );
 
-it.effect.each(["message", "approval", "existing", "terminal", "default"] as const)(
+it.effect.each(["message", "approval", "existing", "terminal", "later", "default"] as const)(
   "waitForThread pending requests: %s",
   (scenario) =>
     Effect.gen(function* () {
@@ -243,11 +243,20 @@ it.effect.each(["message", "approval", "existing", "terminal", "default"] as con
                   ({
                     thread: { id: threadId, projectId, deletedAt: null },
                     runs: [
-                      { id: runId, status: "running" },
-                      { id: "run:old", status: "completed" },
+                      { id: runId, ordinal: 2, status: "running" },
+                      { id: "run:old", ordinal: 1, status: "completed" },
+                      { id: "run:later", ordinal: 3, status: "running" },
                     ],
                     nodes: [
-                      { id: "node:pending", runId: scenario === "terminal" ? "run:old" : runId },
+                      {
+                        id: "node:pending",
+                        runId:
+                          scenario === "terminal"
+                            ? "run:old"
+                            : scenario === "later"
+                              ? "run:later"
+                              : runId,
+                      },
                     ],
                     runtimeRequests,
                   }) as unknown as OrchestrationV2ThreadProjection,
@@ -277,7 +286,8 @@ it.effect.each(["message", "approval", "existing", "terminal", "default"] as con
           event: { threadId, type: "runtime-request.updated", payload: request },
         } as unknown as OrchestrationV2StoredEvent);
       }
-      const expectsRequest = scenario !== "terminal" && scenario !== "default";
+      const expectsRequest =
+        scenario !== "terminal" && scenario !== "later" && scenario !== "default";
       if (!expectsRequest) yield* TestClock.adjust(Duration.millis(1000));
       const result = yield* Fiber.join(fiber);
       expect(result).toMatchObject({

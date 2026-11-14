@@ -982,20 +982,25 @@ const make = Effect.gen(function* () {
       records: Pick<OrchestrationV2ThreadProjection, "runs"> &
         Partial<Pick<OrchestrationV2ThreadProjection, "nodes" | "runtimeRequests">>,
     ) {
+      const followed = yield* outcome(records.runs);
+      // The awaited run, its continuation, and earlier active runs a queued run waits behind.
       const pendingRequests = input.returnOnPendingRequest
         ? (records.runtimeRequests ?? [])
             .filter((request) => {
               if (!pendingRequestNeedsAttention(request)) return false;
               const runId = records.nodes?.find((node) => node.id === request.nodeId)?.runId;
               return records.runs.some(
-                (run) => run.id === runId && !isTerminalRunStatus(run.status),
+                (run) =>
+                  run.id === runId &&
+                  !isTerminalRunStatus(run.status) &&
+                  run.ordinal <= followed.run.ordinal,
               );
             })
             .toSorted(
               (a, b) => DateTime.toEpochMillis(a.createdAt) - DateTime.toEpochMillis(b.createdAt),
             )
         : [];
-      const current = { ...(yield* outcome(records.runs)), pendingRequests };
+      const current = { ...followed, pendingRequests };
       if (!current.settled || !untilDelegatedWorkSettled) {
         return { ...current, resultRun: undefined };
       }

@@ -138,7 +138,8 @@ const PendingRequestTool = Tool.make("t3_pending_request", {
   success: Schema.Union([
     Schema.Struct({
       requestIds: Schema.Array(RuntimeRequestId),
-      requests: Schema.Array(OrchestratorMcpPendingRequest),
+      // Absent from servers before it.
+      requests: Schema.optional(Schema.Array(OrchestratorMcpPendingRequest)),
     }),
     Schema.Struct({ requestId: RuntimeRequestId, questions: Schema.Array(question) }),
     OrchestrationV2DispatchCommandResult,

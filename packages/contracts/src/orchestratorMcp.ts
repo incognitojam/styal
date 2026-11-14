@@ -222,10 +222,10 @@ export const orchestratorMcpPendingQuestionNext = ({
   threadId: string;
   requestId: string;
 }) =>
-  `The thread asked you a question and is waiting for your answer. Answer it with t3_pending_request action respond, threadId ${threadId}, requestId ${requestId}; action read shows its options. If the answer does not follow from your task or the user's instructions, ask the user, then answer it.`;
+  `The thread asked you a question that is still unanswered. Answer it with t3_pending_request action respond, threadId ${threadId}, requestId ${requestId}; action read shows its options. If the answer does not follow from your task or instructions, ask the user, or the thread that started you, then answer it. Until it is answered, waiting on this thread returns at once.`;
 
 export const orchestratorMcpPendingApprovalNext = ({ link }: { link: string }) =>
-  `The thread is waiting for a permission approval. No agent can give it: only the user can, in that thread: ${link}. A thread you start never runs in a broader mode than yours, so restarting it in another mode will not help. Tell the user, or the thread that started you, what it wants to do and where to approve it.`;
+  `The thread is waiting for a permission approval. No agent can give it: only the user can, in that thread: ${link}. A thread you start never runs in a broader mode than yours, so restarting it in another mode will not help. Tell the user, or the thread that started you, what it wants to do and where to approve it, then stop waiting: until it is approved or denied, waiting on this thread returns at once.`;
 
 export const OrchestratorMcpPendingRequest = Schema.Struct({
   requestId: RuntimeRequestId,

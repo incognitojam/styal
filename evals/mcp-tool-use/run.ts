@@ -185,6 +185,13 @@ const McpToolUseExpect = Schema.Struct({
   /** No call may match any entry. */
   callsMustNot: Schema.optional(Schema.Array(McpToolUseCall)),
   notCalls: Schema.optional(Schema.Array(Schema.String)),
+  /**
+   * A `t3_pending_request` respond with these ids and a non-empty answer, before any further
+   * `t3_thread_wait` on `threadId`.
+   */
+  answerBeforeWait: Schema.optional(
+    Schema.Struct({ threadId: Schema.String, requestId: Schema.String }),
+  ),
   /** First calls of these tools happen in this order. */
   order: Schema.optional(Schema.Array(Schema.String)),
   minCalls: Schema.optional(Schema.Record(Schema.String, Schema.Number)),
@@ -1710,6 +1717,28 @@ export const gradeSample = (expect: McpToolUseCase["expect"], run: SampleRun) =>
   for (const call of expect.calls ?? []) add(`calls ${label(call)}`, found(call));
   for (const call of expect.callsMustNot ?? []) add(`callsMustNot ${label(call)}`, !found(call));
   for (const tool of expect.notCalls ?? []) add(`notCalls ${tool}`, count(tool) === 0);
+  if (expect.answerBeforeWait !== undefined) {
+    const { threadId, requestId } = expect.answerBeforeWait;
+    const field = (input: unknown, key: string) => (isRecord(input) ? input[key] : undefined);
+    const answered = calls.findIndex(
+      (call) =>
+        call.tool === "t3_pending_request" &&
+        field(call.input, "action") === "respond" &&
+        field(call.input, "threadId") === threadId &&
+        field(call.input, "requestId") === requestId &&
+        isRecord(field(call.input, "answers")) &&
+        Object.values(field(call.input, "answers") as Record<string, unknown>).some(
+          (answer) => valueText(answer).trim() !== "",
+        ),
+    );
+    const waitedFirst = calls.some(
+      (call, at) =>
+        call.tool === "t3_thread_wait" &&
+        field(call.input, "threadId") === threadId &&
+        (answered === -1 || at < answered),
+    );
+    add(`answerBeforeWait ${requestId}`, answered !== -1 && !waitedFirst);
+  }
   if (expect.order !== undefined) {
     const firsts = expect.order.map((tool) => calls.findIndex((call) => call.tool === tool));
     const inOrder = firsts.every((at, i) => at > (firsts[i - 1] ?? -1));
