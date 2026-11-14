@@ -3252,6 +3252,7 @@ const make = Effect.gen(function* () {
               .pipe(Effect.mapError(threadManagementFailure))).turnItems,
             input.threadId,
             threadLinkFor(scope, input.threadId),
+            true,
           )
         : [];
       const status = result.run === null ? "idle" : runOutcome(result.run);

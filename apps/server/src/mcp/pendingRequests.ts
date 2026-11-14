@@ -28,6 +28,7 @@ export function describePendingRequests(
   turnItems: OrchestrationV2ThreadProjection["turnItems"],
   threadId: ThreadId,
   link: string,
+  fromWait = false,
 ): OrchestratorMcpPendingRequest[] {
   return requests
     .filter(pendingRequestNeedsAttention)
@@ -64,8 +65,8 @@ export function describePendingRequests(
         text: text.slice(0, 2000),
         next:
           kind === "question"
-            ? orchestratorMcpPendingQuestionNext({ threadId, requestId: request.id })
-            : orchestratorMcpPendingApprovalNext({ link }),
+            ? orchestratorMcpPendingQuestionNext({ threadId, requestId: request.id, fromWait })
+            : orchestratorMcpPendingApprovalNext({ link, fromWait }),
       };
     });
 }

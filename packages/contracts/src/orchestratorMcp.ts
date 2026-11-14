@@ -215,17 +215,26 @@ export const ORCHESTRATOR_MCP_RUNNING_TASK_NEXT =
   "Completion wakes this thread, so end your turn. Do not wait on it or poll it.";
 const OrchestratorMcpRunningTaskNext = Schema.Literal(ORCHESTRATOR_MCP_RUNNING_TASK_NEXT);
 
+/** `fromWait`: the text is for a wait result, whose next call on the thread returns at once. */
 export const orchestratorMcpPendingQuestionNext = ({
   threadId,
   requestId,
+  fromWait = false,
 }: {
   threadId: string;
   requestId: string;
+  fromWait?: boolean;
 }) =>
-  `The thread asked you a question that is still unanswered. Answer it with t3_pending_request action respond, threadId ${threadId}, requestId ${requestId}; action read shows its options. If the answer does not follow from your task or instructions, ask the user, or the thread that started you, then answer it. Until it is answered, waiting on this thread returns at once.`;
+  `The thread asked you a question that is still unanswered. Answer it with t3_pending_request action respond, threadId ${threadId}, requestId ${requestId}; action read shows its options. If the answer does not follow from your task or instructions, ask the user, or the thread that started you, then answer it.${fromWait ? " Until it is answered, waiting on this thread returns at once." : ""}`;
 
-export const orchestratorMcpPendingApprovalNext = ({ link }: { link: string }) =>
-  `The thread is waiting for a permission approval. No agent can give it: only the user can, in that thread: ${link}. A thread you start never runs in a broader mode than yours, so restarting it in another mode will not help. Tell the user, or the thread that started you, what it wants to do and where to approve it, then stop waiting: until it is approved or denied, waiting on this thread returns at once.`;
+export const orchestratorMcpPendingApprovalNext = ({
+  link,
+  fromWait = false,
+}: {
+  link: string;
+  fromWait?: boolean;
+}) =>
+  `The thread is waiting for a permission approval. No agent can give it: only the user can, in that thread: ${link}. A thread you start never runs in a broader mode than yours, so restarting it in another mode will not help. Tell the user, or the thread that started you, what it wants to do and where to approve it.${fromWait ? " Then stop waiting: until it is approved or denied, waiting on this thread returns at once." : ""}`;
 
 export const OrchestratorMcpPendingRequest = Schema.Struct({
   requestId: RuntimeRequestId,

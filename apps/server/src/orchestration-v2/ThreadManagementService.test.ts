@@ -299,6 +299,99 @@ it.effect.each(["message", "approval", "existing", "terminal", "later", "default
     }),
 );
 
+it.effect.each(["question", "timeout", "unrelated"] as const)(
+  "waitForThread on delegated work reports a follow-up run's request: %s",
+  (scenario) =>
+    Effect.gen(function* () {
+      const projectId = ProjectId.make("project:follow-up");
+      const threadId = ThreadId.make("thread:follow-up");
+      const awaitedRunId = RunId.make("run:awaited");
+      const subscribed = yield* Deferred.make<void>();
+      const events = yield* Queue.unbounded<OrchestrationV2StoredEvent>();
+      const request = {
+        id: "request:follow-up",
+        nodeId: "node:follow-up",
+        status: "pending",
+        kind: "user_input",
+        responseCapability: { type: "message" },
+        createdAt: DateTime.makeUnsafe(0),
+      };
+      // The awaited run delegated and finished; its completion started the follow-up run.
+      let runtimeRequests: Array<typeof request> = scenario === "unrelated" ? [request] : [];
+      const layerTest = ThreadManagementService.layer.pipe(
+        Layer.provide(Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({})),
+        Layer.provide(
+          Layer.mock(Orchestrator.OrchestratorV2)({
+            getThreadEventSequence: () => Effect.succeed(0),
+            restartContinuationPending: () => Effect.succeed(false),
+            delegatedTaskResultPending: () => Effect.succeed(false),
+            streamStoredEventsFrom: (input) =>
+              input?.eventType === "runtime-request.updated"
+                ? Stream.fromEffect(Deferred.succeed(subscribed, undefined)).pipe(
+                    Stream.drain,
+                    Stream.concat(Stream.fromQueue(events)),
+                  )
+                : Stream.never,
+            getThreadRecords: () =>
+              Effect.sync(
+                () =>
+                  ({
+                    thread: { id: threadId, projectId, deletedAt: null },
+                    runs: [
+                      {
+                        id: awaitedRunId,
+                        ordinal: 1,
+                        status: "completed",
+                        startedAt: DateTime.makeUnsafe(0),
+                      },
+                      { id: "run:follow-up", ordinal: 2, status: "running", startedAt: null },
+                    ],
+                    nodes: [{ id: "node:follow-up", runId: "run:follow-up" }],
+                    runtimeRequests,
+                    messages: [],
+                    subagents: [],
+                    providerThreads: [],
+                  }) as unknown as OrchestrationV2ThreadProjection,
+              ),
+          }),
+        ),
+        Layer.provide(ServerSettings.layerTest()),
+        Layer.provide(layerReceiptsTest),
+      );
+      const service = yield* ThreadManagementService.ThreadManagementService.pipe(
+        Effect.provide(layerTest),
+      );
+      const fiber = yield* service
+        .waitForThread({
+          projectId,
+          threadId,
+          runId: awaitedRunId,
+          timeoutMs: 1000,
+          returnOnPendingRequest: true,
+          // Without it the awaited run alone decides, so a later run's request is not reported.
+          ...(scenario === "unrelated" ? {} : { untilDelegatedWorkSettled: true }),
+        })
+        .pipe(Effect.forkChild);
+      if (scenario !== "unrelated") {
+        yield* Deferred.await(subscribed);
+        runtimeRequests = [request];
+        if (scenario === "question") {
+          yield* Queue.offer(events, {
+            sequence: 1,
+            event: { threadId, type: "runtime-request.updated", payload: request },
+          } as unknown as OrchestrationV2StoredEvent);
+        } else {
+          // No event reaches the wait: the read when it times out must still find the request.
+          yield* TestClock.adjust(Duration.millis(1000));
+        }
+      }
+      const result = yield* Fiber.join(fiber);
+      expect(result).toMatchObject({ timedOut: false, run: { id: awaitedRunId } });
+      if (scenario === "unrelated") expect(result).not.toHaveProperty("pendingRequests");
+      else expect(result).toHaveProperty("pendingRequests", [request]);
+    }),
+);
+
 it.effect("waitForThread follows a restart continuation instead of the cut run", () =>
   Effect.gen(function* () {
     const projectId = ProjectId.make("project:thread-management:wait-restart");

@@ -476,8 +476,11 @@ describe("OrchestratorMcpService", () => {
         assert.notProperty(asking, "next");
         assert.equal(asking.pendingRequests?.[0]?.text, "Choice\nWhich target?");
         assert.equal(asking.pendingRequests?.[0]?.kind, "question");
+        assert.include(asking.pendingRequests?.[0]?.next ?? "", "returns at once");
         const questionStatus = yield* service.taskStatus(scope, taskId);
         assert.isTrue(questionStatus.hasPendingQuestion);
+        // Only a wait result says that waiting again returns at once.
+        assert.notInclude(questionStatus.pendingRequests?.[0]?.next ?? "", "returns at once");
         pendingRequest = "approval";
         const approval = yield* service.waitForThread(scope, { threadId: childThreadId });
         assert.equal(approval.pendingRequests?.[0]?.kind, "approval");

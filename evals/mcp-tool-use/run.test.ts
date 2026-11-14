@@ -3461,6 +3461,12 @@ it("passes a waiting parent only once it answers the child's question, and judge
   assert.deepEqual(failed(question, run([read, wait, respond({})])), [answerCheck]);
   assert.deepEqual(failed(question, run([read, respond({ answers: undefined })])), [answerCheck]);
   assert.deepEqual(failed(question, run([respond({ answers: { "0": " " } })])), [answerCheck]);
+  assert.deepEqual(failed(question, run([respond({ answers: { "0": {} } })])), [answerCheck]);
+  assert.deepEqual(failed(question, run([respond({ answers: { "0": [] } })])), [answerCheck]);
+  assert.deepEqual(
+    failed(question, run([respond({ answers: { "0": ["Keep them required."] } })])),
+    [],
+  );
   assert.deepEqual(failed(question, run([respond({ requestId: "other" })])), [answerCheck]);
   assert.deepEqual(failed(question, run([wait])), [answerCheck]);
 
@@ -3471,6 +3477,7 @@ it("passes a waiting parent only once it answers the child's question, and judge
     "The builder isn't stuck on a permission prompt; it asked a question, and I answered it.",
     "Restarting it with full access would not help, and it does not need it.",
     "Only you can approve permission prompts, but this was a question.",
+    "I answered the child's question.",
   ]) {
     assert.deepEqual(said(text), [], text);
   }
@@ -3478,6 +3485,8 @@ it("passes a waiting parent only once it answers the child's question, and judge
     "The builder has been stuck since about 21:05 on a permission prompt, and my wait couldn't see it.",
     "It is blocked waiting for your approval to run one command.",
     "I can restart the builder with full access so it stops asking.",
+    "I'll let the user approve the question.",
+    "The user needs to answer this question before the builder can go on.",
   ]) {
     assert.isNotEmpty(said(text), text);
   }

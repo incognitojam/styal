@@ -983,7 +983,8 @@ const make = Effect.gen(function* () {
         Partial<Pick<OrchestrationV2ThreadProjection, "nodes" | "runtimeRequests">>,
     ) {
       const followed = yield* outcome(records.runs);
-      // The awaited run, its continuation, and earlier active runs a queued run waits behind.
+      // Runs the wait cannot return without: the awaited run, its continuation, earlier active
+      // runs it is queued behind, and with untilDelegatedWorkSettled every follow-up run.
       const pendingRequests = input.returnOnPendingRequest
         ? (records.runtimeRequests ?? [])
             .filter((request) => {
@@ -993,7 +994,7 @@ const make = Effect.gen(function* () {
                 (run) =>
                   run.id === runId &&
                   !isTerminalRunStatus(run.status) &&
-                  run.ordinal <= followed.run.ordinal,
+                  (untilDelegatedWorkSettled || run.ordinal <= followed.run.ordinal),
               );
             })
             .toSorted(

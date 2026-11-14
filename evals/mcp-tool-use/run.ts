@@ -1705,6 +1705,12 @@ const withOptionsObject = (input: unknown) => {
   return { ...input, target: { ...input.target, options } };
 };
 
+/** An answer T3 delivers as text: a non-empty string, or a list (multi-select) holding one. */
+const hasAnswerText = (answer: unknown): boolean =>
+  typeof answer === "string"
+    ? answer.trim() !== ""
+    : Array.isArray(answer) && answer.some(hasAnswerText);
+
 export const gradeSample = (expect: McpToolUseCase["expect"], run: SampleRun) => {
   const checks: Array<{ readonly check: string; readonly pass: boolean }> = [];
   const add = (check: string, pass: boolean) => checks.push({ check, pass });
@@ -1727,9 +1733,7 @@ export const gradeSample = (expect: McpToolUseCase["expect"], run: SampleRun) =>
         field(call.input, "threadId") === threadId &&
         field(call.input, "requestId") === requestId &&
         isRecord(field(call.input, "answers")) &&
-        Object.values(field(call.input, "answers") as Record<string, unknown>).some(
-          (answer) => valueText(answer).trim() !== "",
-        ),
+        Object.values(field(call.input, "answers") as Record<string, unknown>).some(hasAnswerText),
     );
     const waitedFirst = calls.some(
       (call, at) =>
