@@ -4790,6 +4790,7 @@ features:
       - packages/provider-core/src/server/maintenanceResolver.ts
       - packages/provider-opencode/src/server/driver.ts
       - packages/shared/src/hostActivity.ts
+      - scripts/canary-redaction.ts
       - scripts/health-issues.ts
       - scripts/provider-canary.ts
     upstream_paths:
@@ -4834,6 +4835,7 @@ features:
       - packages/provider-core/src/server/maintenanceResolver.test.ts
       - packages/provider-opencode/src/server/driver.test.ts
       - packages/shared/src/hostActivity.test.ts
+      - scripts/canary-redaction.test.ts
       - scripts/provider-canary-report.test.ts
       - scripts/provider-canary.test.ts
     upstream:

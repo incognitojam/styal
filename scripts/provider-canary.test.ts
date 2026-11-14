@@ -193,6 +193,11 @@ describe("provider canary plan", () => {
     const plan = (build: string, now: Date, force = false) =>
       planProvider(canary("codex"), manifest, build, latest, force, [failure], now).kind;
     expect(plan(NIGHTLY, NOW)).toBe("held");
+    // Closing the labeled issue, or migrating with none open, removes the hold.
+    expect(
+      planProvider(canary("codex"), manifest, NIGHTLY, latest, false, statusFailures(null), NOW)
+        .kind,
+    ).toBe("verify");
     expect(plan(NIGHTLY, NOW, true)).toBe("verify");
     // A new nightly may carry the fix, so it is verified at once.
     expect(plan(LATER_NIGHTLY, NOW)).toBe("verify");

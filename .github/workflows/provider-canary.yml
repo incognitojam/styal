@@ -158,6 +158,17 @@ jobs:
             !/.repos/
           sparse-checkout-cone-mode: false
 
+      # Reporting safety fixes must apply even when the verified tag predates them.
+      - name: Checkout outcome sanitizer from main
+        if: always()
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          path: .canary-tools
+          persist-credentials: false
+          sparse-checkout: scripts/canary-redaction.ts
+          sparse-checkout-cone-mode: false
+
       - name: Setup dependencies
         if: steps.secret.outputs.present == 'true'
         uses: ./.github/actions/setup-deps
@@ -209,9 +220,10 @@ jobs:
             local status=${PIPESTATUS[0]}
             evidence="$(sed -n 's/^Evidence: //p' "$log" | head -n 1)"
             if [[ -n "$evidence" && -f "$evidence/result.json" ]]; then
+              node "$GITHUB_WORKSPACE/.canary-tools/scripts/canary-redaction.ts" "$evidence/result.json" || return 1
               jq -r --arg attempt "$1" '"### \(.provider) \(.version) (\(.model)), attempt \($attempt)\n\n| Scenario | Status | Seconds | Detail |\n| --- | --- | --- | --- |", (.scenarios[] | "| \(.name) | \(.status) | \(.seconds // "") | \(.detail) |")' \
                 "$evidence/result.json" >> "$GITHUB_STEP_SUMMARY"
-              detail="$(jq -r '[.scenarios[] | select(.status == "failed") | "\(.name): \(.detail)"] | join("; ")' "$evidence/result.json" | cut -c1-500)"
+              detail="$(jq -r '[.scenarios[] | select(.status == "failed") | "\(.name): \(.detail)"] | join("; ") | .[0:500]' "$evidence/result.json")"
             else
               detail="the verifier did not finish; see the evidence artifact"
             fi
@@ -259,8 +271,16 @@ jobs:
             '{provider: $provider, packageName: $package, version: $version, styal: $styal, outcome: "failed", detail: "setup or install failed before the verifier ran; see the job log"}' \
             > "$outcome_file"
 
-      - name: Upload outcome
+      - id: redact
+        name: Redact outcome before upload
         if: always()
+        run: |
+          if [[ -d "$RUNNER_TEMP/canary-outcome" ]]; then
+            node "$GITHUB_WORKSPACE/.canary-tools/scripts/canary-redaction.ts" "$RUNNER_TEMP/canary-outcome"
+          fi
+
+      - name: Upload outcome
+        if: ${{ always() && steps.redact.outcome == 'success' }}
         uses: actions/upload-artifact@v7
         with:
           name: canary-outcome-${{ matrix.provider }}-${{ matrix.styal }}
@@ -490,6 +510,7 @@ jobs:
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_CI }}
           GITHUB_TOKEN: ${{ github.token }}
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
           PLAN_RESULT: ${{ needs.plan.result }}
           RECORD_RESULT: ${{ needs.record.result }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

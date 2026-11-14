@@ -8,6 +8,7 @@ import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 import * as NodeUtil from "node:util";
+import { redactCanary } from "./canary-redaction.ts";
 import {
   inertText,
   openIssues,
@@ -568,7 +569,6 @@ export interface CanaryOutcome {
 }
 
 export interface CanaryProblem {
-  /** One per provider and kind, so a problem that persists across releases is reported once. */
   readonly key: string;
   /** The provider id or `job:<name>` whose evaluation can clear it. */
   readonly scope: string;
@@ -593,8 +593,15 @@ export function collectRun(input: {
   readonly planResult: JobResult;
   readonly recordResult: JobResult;
   readonly now?: Date;
-}): { problems: Array<CanaryProblem>; evaluated: Set<string>; failures: Array<CanaryFailure> } {
+}): {
+  problems: Array<CanaryProblem>;
+  evaluated: Set<string>;
+  failures: Array<CanaryFailure>;
+  cancelled: boolean;
+} {
   const evaluated = new Set<string>();
+  const cancelled = input.planResult === "cancelled" || input.recordResult === "cancelled";
+  if (cancelled) return { problems: [], evaluated, failures: [], cancelled };
   const failures: Array<CanaryFailure> = [];
   const found = new Map<string, CanaryProblem>();
   const add = (key: string, scope: string, summary: string) => {
@@ -626,11 +633,7 @@ export function collectRun(input: {
     if (plan.kind === "held") {
       const { entry, failure } = plan;
       failures.push(failure);
-      add(
-        `failed:${entry.provider}:${entry.version}`,
-        entry.provider,
-        `**${entry.packageName}@${entry.version}** on styal ${entry.styal} failed verification twice: ${failure.detail.split(/\r?\n/)[0]} It is verified again ${FAILURE_RETRY_HOURS} hours after it failed, or sooner on a new styal build or release.`,
-      );
+      add(`failed:${entry.provider}:${entry.version}`, entry.provider, failure.detail);
       continue;
     }
     if (plan.kind !== "verify") continue;
@@ -666,7 +669,7 @@ export function collectRun(input: {
         `${release} was not verified: ${outcome.detail.split(/\r?\n/)[0]}`,
       );
   }
-  return { problems: [...found.values()], evaluated, failures };
+  return { problems: [...found.values()], evaluated, failures, cancelled };
 }
 
 export interface StatusIssue {
@@ -680,13 +683,14 @@ export interface StatusIssueUpdate {
   readonly state: "open" | "closed";
   /** Posted as a comment, so it notifies; body edits do not. */
   readonly comment?: string;
+  readonly title?: string;
 }
 
 const STATE_MARKER = /<!-- provider-canary-state ([a-f0-9]+) -->/;
 
 interface StatusState {
   readonly problems?: ReadonlyArray<CanaryProblem>;
-  readonly failures?: ReadonlyArray<CanaryFailure>;
+  readonly failures?: ReadonlyArray<Omit<CanaryFailure, "detail">>;
 }
 
 const readStatusState = (issue: StatusIssue | null): StatusState =>
@@ -696,7 +700,12 @@ const readStatusState = (issue: StatusIssue | null): StatusState =>
 
 /** Failed verifications the open labeled issue still holds back. */
 export const statusFailures = (issue: StatusIssue | null): ReadonlyArray<CanaryFailure> =>
-  readStatusState(issue).failures ?? [];
+  (readStatusState(issue).failures ?? []).map((failure) => ({
+    ...failure,
+    detail:
+      readStatusState(issue).problems?.find((problem) => problem.scope === failure.provider)
+        ?.summary ?? "Failed verification; see original run.",
+  }));
 
 /**
  * How the labeled issue changes after a run. Problems this run did not
@@ -709,12 +718,19 @@ export function reconcileStatusIssue(
   run: {
     readonly problems: ReadonlyArray<CanaryProblem>;
     readonly evaluated: ReadonlySet<string>;
+    readonly cancelled?: boolean;
     readonly failures?: ReadonlyArray<CanaryFailure>;
   },
   notes: ReadonlyArray<string>,
   runUrl: string,
 ): StatusIssueUpdate | null {
-  const state = readStatusState(issue);
+  if (run.cancelled) return null;
+  run = { ...redactCanary({ ...run, evaluated: undefined }), evaluated: run.evaluated };
+  notes = redactCanary(notes)
+    .slice(0, 4)
+    .map((note) => note.slice(0, 300));
+  runUrl = redactCanary(runUrl).slice(0, 500);
+  const state = redactCanary(readStatusState(issue));
   const previous = state.problems ?? [];
   const problems = [
     ...previous.filter((problem) => !run.evaluated.has(problem.scope)),
@@ -724,25 +740,49 @@ export function reconcileStatusIssue(
     ...(state.failures ?? []).filter((failure) => !run.evaluated.has(failure.provider)),
     ...(run.failures ?? []),
   ];
+  if (problems.length > 8 || failures.length > 8)
+    throw new Error("Canary report exceeds supported problem count");
+  const stored = {
+    problems: problems.map((p) => ({
+      key: p.key.slice(0, 160),
+      scope: p.scope.slice(0, 64),
+      summary: p.summary.slice(0, 200),
+    })),
+    ...(failures.length
+      ? {
+          failures: failures.map((f) => ({
+            provider: f.provider.slice(0, 64),
+            packageName: f.packageName.slice(0, 128),
+            version: f.version.slice(0, 80),
+            styal: f.styal.slice(0, 80),
+            at: f.at.slice(0, 32),
+          })),
+        }
+      : {}),
+  };
   const body = [
     problems.length > 0
       ? "The provider canary found problems that hold back automatic provider updates. This issue is updated on each run and closes when every check passes."
-      : "Every provider canary check passed.",
+      : `Every provider canary check passed. Recovered at ${new Date().toISOString()}.`,
     problems.map((problem) => `- ${inertText(problem.summary)}`).join("\n"),
     notes.length > 0
       ? `Passed on retry:\n\n${notes.map((note) => `- ${inertText(note)}`).join("\n")}`
       : "",
     `Last run: ${runUrl}`,
-    `<!-- provider-canary-state ${Buffer.from(JSON.stringify(failures.length > 0 ? { problems, failures } : { problems })).toString("hex")} -->`,
+    `<!-- provider-canary-state ${Buffer.from(JSON.stringify(stored)).toString("hex")} -->`,
   ]
     .filter(Boolean)
     .join("\n\n");
+  if (Buffer.byteLength(body) >= 30_000) throw new Error("Canary report exceeds body budget");
   if (problems.length === 0) {
     return issue?.open
       ? { body, state: "closed", comment: `Every check passed in ${runUrl}. Closing.` }
       : null;
   }
-  const identity = (items: ReadonlyArray<CanaryProblem>, held: ReadonlyArray<CanaryFailure>) =>
+  const identity = (
+    items: ReadonlyArray<CanaryProblem>,
+    held: ReadonlyArray<Omit<CanaryFailure, "detail">>,
+  ) =>
     JSON.stringify(
       items
         .map((problem) => [
@@ -757,6 +797,7 @@ export function reconcileStatusIssue(
   const changed = identity(previous, state.failures ?? []) !== identity(problems, failures);
   return {
     body,
+    title: canaryTitle(problems, failures),
     state: "open",
     ...(issue?.open && changed
       ? {
@@ -766,6 +807,19 @@ export function reconcileStatusIssue(
   };
 }
 
+function canaryTitle(
+  problems: ReadonlyArray<CanaryProblem>,
+  failures: ReadonlyArray<Omit<CanaryFailure, "detail">>,
+) {
+  const providers = [...new Set(problems.map((p) => p.scope))];
+  const failure = failures.find((f) => providers.includes(f.provider));
+  return providers.length > 1
+    ? `Provider canary: ${providers.length} providers failing`
+    : failure
+      ? `Provider canary: ${inertText(failure.provider === "claudeAgent" ? "Claude Code" : failure.provider, 50)} ${inertText(failure.version, 80)} fails verification`
+      : `Provider canary: ${inertText(providers[0]!, 80)} needs attention`;
+}
+
 export async function syncCanaryReport(options: {
   request: Request;
   repo: string;
@@ -773,9 +827,11 @@ export async function syncCanaryReport(options: {
   notes: ReadonlyArray<string>;
   runUrl: string;
   dryRun: boolean;
+  owner?: string;
   announce?: (issue: CreatedIssue) => Promise<void>;
   warn?: (message: string) => void;
 }) {
+  if (options.run.cancelled) return "Cancelled; no issue changes.";
   const { request, repo, run, notes, runUrl, dryRun } = options;
   const root = `/repos/${repo}`;
   // The retired status issue is never read or changed, even if someone labels it.
@@ -792,6 +848,7 @@ export async function syncCanaryReport(options: {
       actions.push(`would ${action} #${issue.number}`);
       if (dryRun) continue;
       if (update.state === "closed") {
+        await request("PATCH", `${root}/issues/${issue.number}`, { body: update.body });
         await commentOnce(
           request,
           root,
@@ -805,17 +862,13 @@ export async function syncCanaryReport(options: {
         });
       } else {
         if (update.comment) await commentOnce(request, root, issue.number, update.comment);
-        await request("PATCH", `${root}/issues/${issue.number}`, { body: update.body });
+        await request("PATCH", `${root}/issues/${issue.number}`, {
+          body: update.body,
+          ...(update.comment ? { title: update.title } : {}),
+        });
       }
     } else {
-      const providers = [...new Set(run.problems.map((p) => p.scope))];
-      const failure = run.failures?.[0];
-      const title =
-        providers.length > 1
-          ? `Provider canary: ${providers.length} providers failing`
-          : failure
-            ? `Provider canary: ${inertText(failure.provider === "claudeAgent" ? "Claude Code" : failure.provider, 50)} ${inertText(failure.version, 80)} fails verification`
-            : `Provider canary: ${inertText(run.problems[0]!.scope, 80)} needs attention`;
+      const title = update.title!;
       actions.push(
         `would open: ${title}\n${update.body
           .split("\n")
@@ -836,6 +889,15 @@ export async function syncCanaryReport(options: {
         body: update.body,
         labels: ["provider-canary", "bug"],
       });
+      if (options.owner) {
+        try {
+          await request("POST", `${root}/issues/${created.number}/assignees`, {
+            assignees: [options.owner],
+          });
+        } catch {
+          options.warn?.("Canary issue opened, but repository owner assignment failed.");
+        }
+      }
       await announceIssue(created, options.announce, options.warn);
     }
   }
@@ -1134,6 +1196,7 @@ async function report(args: ReadonlyArray<string>) {
       notes,
       runUrl: values["run-url"],
       dryRun: values["dry-run"],
+      ...(process.env.REPOSITORY_OWNER ? { owner: process.env.REPOSITORY_OWNER } : {}),
       warn: (message) => console.warn(`::warning::${message}`),
       announce: async (issue) => {
         const webhook = process.env.DISCORD_WEBHOOK_URL;
