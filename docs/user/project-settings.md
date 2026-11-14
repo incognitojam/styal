@@ -256,6 +256,12 @@ Results also list folders in the worktree folder that no thread uses, with their
 Browser captures and rotated logs have separate retention periods. Expired capture links stop
 working. Current logs, message attachments, and browser profiles are kept.
 
+### Preview regenerable worktree files
+
+Declare `"worktreeCleanup": ["node_modules", "**/dist"]` in `styal.json` to list git-ignored files and folders your setup action or build recreates. This release only previews the selection and the disk space it would free; it deletes nothing. Each machine must approve the exact list. Changing the list requires approval again.
+
+Patterns are relative to the worktree root and use `/`. `*` matches within one path segment; `**` must be a whole segment and matches any number of segments. `dist` matches only at the root; `**/dist` matches at any depth. Empty segments, `.` and `..`, backslashes, leading `/`, and `!` negation are invalid. The last segment must include a literal character, so `*` and `**/*` are invalid. `.git` is always excluded. A matched directory is selected whole only when all its contents are safe to remove; tracked files, unignored files, links, mount points, and nested checkouts keep it.
+
 ## Project icons
 
 Select the project and open Project to choose an icon, emoji, monogram, or image. The choice applies to

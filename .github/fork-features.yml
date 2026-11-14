@@ -7809,6 +7809,38 @@ features:
       tracking: []
       retire_when: Upstream tells the agent when the worktree branch it started on is renamed.
 
+  - id: worktree-declared-cleanup
+    title: Preview approved project-declared regenerable worktree files
+    status: maintained
+    tier: keep
+    prs: []
+    rationale: Upstream closed worktree lifecycle proposals 8771 and 10342 pending Orchestrator V2. Projects need an explicit per-machine-approved list of regenerable paths before cleanup can remove build output safely.
+    invariants:
+      - A machine approves the exact ordered worktreeCleanup list read from styal.json; edits void approval and agents cannot approve through MCP.
+      - Preview inspects only managed linked worktrees, includes archived thread references, and marks worktrees held by unsettled threads.
+      - Only ignored paths are selected; tracked or unignored contents, links, mount points, nested checkouts and .git are preserved. Preview deletes nothing.
+      - Freed bytes exclude hardlinks and same-device pnpm virtual stores, and bounded incomplete measurements report null.
+    implementation_paths:
+      - apps/server/src/worktreeCleanup/Approvals.ts
+      - apps/server/src/worktreeCleanup/Selection.ts
+      - apps/server/src/worktreeCleanup/WorktreeCleanup.ts
+      - apps/server/src/worktreeCleanup/measureWorktree.ts
+      - packages/contracts/src/worktreeCleanupPreview.ts
+      - packages/shared/src/worktreeCleanupPatterns.ts
+    upstream_paths:
+      - apps/server/src/storageCleanup.ts
+      - apps/server/src/ws.ts
+      - packages/contracts/src/rpc.ts
+    tests:
+      - apps/server/src/worktreeCleanup/WorktreeCleanup.test.ts
+      - packages/shared/src/worktreeCleanupPatterns.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/10342
+        - https://github.com/pingdotgg/t3code/pull/8771
+      retire_when: Upstream supports exact per-machine approval and read-only previews of safe ignored regenerable paths with honest freed-byte accounting.
+
   - id: your-machines-wording
     title: Name pairs of machines "your machines", and link only styal Link
     status: maintained

@@ -74,6 +74,30 @@ export const StyalProjectFileAction = Schema.Struct({
 });
 export type StyalProjectFileAction = typeof StyalProjectFileAction.Type;
 
+export function worktreeCleanupPatternProblem(pattern: string): string | null {
+  const segments = pattern.split("/");
+  let rule: string | null = null;
+  if (pattern.length === 0 || pattern.length > 512) rule = "use 1 to 512 characters";
+  else if (/^[a-zA-Z]:/.test(pattern)) rule = "use a relative path without a drive prefix";
+  else if (pattern.includes("\\")) rule = "use forward slashes";
+  else if (pattern.includes("!")) rule = "negation is not supported";
+  else if (segments.some((segment) => segment === "" || segment === "." || segment === ".."))
+    rule = "use relative nonempty segments without . or ..";
+  else if (segments.some((segment) => segment.includes("**") && segment !== "**"))
+    rule = "** must occupy a whole segment";
+  else if (!segments.at(-1)!.replaceAll("*", "").length)
+    rule = "the last segment must contain a literal character";
+  return rule === null ? null : `Invalid cleanup pattern ${JSON.stringify(pattern)}: ${rule}.`;
+}
+
+export const WorktreeCleanupPatterns = Schema.Array(
+  Schema.String.check(
+    Schema.makeFilter((pattern) => worktreeCleanupPatternProblem(pattern) ?? true),
+    Schema.isMinLength(1),
+    Schema.isMaxLength(512),
+  ),
+).check(Schema.isMaxLength(100));
+
 export const StyalProjectFile = Schema.Struct({
   $schema: Schema.optionalKey(
     Schema.String.annotate({
@@ -93,6 +117,12 @@ export const StyalProjectFile = Schema.Struct({
     ThreadEnvMode.annotate({
       description:
         'Where new threads start for this repository: "worktree" for a fresh git worktree, "local" for the current checkout. A project or environment setting in styal overrides this.',
+    }),
+  ),
+  worktreeCleanup: Schema.optionalKey(
+    WorktreeCleanupPatterns.annotate({
+      description:
+        "Git-ignored files and folders your setup action or build recreates. styal may delete them from settled worktrees once you approve this list on each machine.",
     }),
   ),
   worktreeSubmodules: Schema.optionalKey(

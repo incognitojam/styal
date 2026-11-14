@@ -438,6 +438,48 @@ it.effect("denies manual cleanup before the handler without settings permission"
   }).pipe(Effect.scoped),
 );
 
+it.effect("denies cleanup list approval before the handler without settings permission", () =>
+  Effect.gen(function* () {
+    const group = WsRpcGroup.omit(
+      ...[...WsRpcGroup.requests.keys()].filter(
+        (
+          tag,
+        ): tag is Exclude<
+          keyof typeof RPC_REQUIRED_SCOPES,
+          typeof WS_METHODS.projectsWorktreeCleanupApprovalSet
+        > => tag !== WS_METHODS.projectsWorktreeCleanupApprovalSet,
+      ),
+    );
+    let handled = false;
+    const client = yield* RpcTest.makeClient(group).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          group.toLayerHandler(WS_METHODS.projectsWorktreeCleanupApprovalSet, () =>
+            Effect.sync(() => {
+              handled = true;
+              return {
+                status: "approved" as const,
+                patterns: ["dist"],
+                previouslyApprovedPatterns: ["dist"],
+              };
+            }),
+          ),
+          RpcAuthorization.layer([AuthOrchestrationReadScope]),
+        ),
+      ),
+    );
+    expect(
+      yield* client[WS_METHODS.projectsWorktreeCleanupApprovalSet]({
+        projectId: ProjectId.make("fixture"),
+        approved: true,
+      }).pipe(Effect.flip),
+    ).toMatchObject({
+      requiredPermission: AuthSettingsWriteScope,
+    });
+    expect(handled).toBe(false);
+  }).pipe(Effect.scoped),
+);
+
 it.effect("guards native subagent work with thread read permission", () =>
   Effect.gen(function* () {
     const method = ORCHESTRATION_V2_WS_METHODS.getNativeChildWork;
