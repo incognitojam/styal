@@ -1,9 +1,12 @@
 import { useAtomValue } from "@effect/atom-react";
 import {
   type WorktreeCleanupPatternMatches as WorktreeCleanupMatches,
+  worktreeCleanupApprovedSelection,
   worktreeCleanupMatchesByPattern,
   worktreeCleanupPatternList,
+  worktreeCleanupPathsByPattern,
   worktreeCleanupPatternShape,
+  worktreeCleanupWorkFolders,
   worktreeCleanupResults,
   type WorktreeCleanupNotCleanedReason,
   type WorktreeCleanupPatternList,
@@ -43,6 +46,7 @@ import {
   DialogPopup,
   DialogTitle,
 } from "../ui/dialog";
+import { toastManager } from "../ui/toast";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../ui/table";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { FoldedSettingsSection } from "./FoldedSettingsSection";
@@ -99,6 +103,7 @@ function CheckoutCleanup({
   const config = useProjectConfigState(environmentId, projectConfigRoot(member)).config;
   const list = worktreeCleanupPatternList(config?.worktreeCleanup, approvals);
   const runPreview = useAtomCommand(worktreeCleanup.preview, { reportFailure: false });
+  const canPreview = useAtomValue(worktreeCleanup.preview.permissionAtom(environmentId));
   const [state, setState] = useState<PreviewState>(null);
   const [checking, setChecking] = useState(false);
   const [reviewing, setReviewing] = useState(false);
@@ -121,7 +126,7 @@ function CheckoutCleanup({
   };
   const openReview = () => {
     setReviewing(true);
-    if (state === null) void preview();
+    if (state === null && canPreview) void preview();
   };
   const matches = state ? worktreeCleanupMatchesByPattern(state.preview) : null;
   const approved = new Set(list.approved);
@@ -144,6 +149,7 @@ function CheckoutCleanup({
           state={state}
           approved={approved}
           checking={checking}
+          canPreview={canPreview}
           onPreview={() => void preview()}
         />
       </SettingsGroup>
@@ -152,6 +158,7 @@ function CheckoutCleanup({
         open={reviewing}
         list={list}
         matches={matches}
+        pathsByPattern={state ? worktreeCleanupPathsByPattern(state.preview) : null}
         checking={checking}
         environmentId={environmentId}
         projectId={member.id}
@@ -302,7 +309,7 @@ function matchText(found: WorktreeCleanupMatches | undefined) {
         : found.count === 1
           ? "item"
           : "items";
-  return `${found.count} ${noun} in ${found.worktrees} ${found.worktrees === 1 ? "worktree" : "worktrees"} · ${formatBytes(found.bytes)}`;
+  return `${found.count} ${noun} in ${found.worktrees} ${found.worktrees === 1 ? "worktree" : "worktrees"} · ${found.incomplete ? "at least " : ""}${formatBytes(found.bytes)}`;
 }
 
 /** One pattern, drawn like the files or folders it deletes. */
@@ -414,11 +421,13 @@ function PreviewRow({
   state,
   approved,
   checking,
+  canPreview,
   onPreview,
 }: {
   state: PreviewState;
   approved: ReadonlySet<string>;
   checking: boolean;
+  canPreview: boolean;
   onPreview: () => void;
 }) {
   const results = state ? worktreeCleanupResults(state.preview, approved) : null;
@@ -428,11 +437,13 @@ function PreviewRow({
       title="Preview"
       description={
         results
-          ? `Checked ${checked} ${checked === 1 ? "worktree" : "worktrees"}. ${results.cleaned.length === 0 ? "None would be cleaned." : `${results.cleaned.length} would be cleaned, freeing ${formatBytes(results.totalBytes)}.`}`
-          : "See what the approved patterns would delete from this project's worktrees right now. Nothing is deleted."
+          ? `Checked ${checked} ${checked === 1 ? "worktree" : "worktrees"}. ${results.cleaned.length === 0 ? "None would be cleaned." : `${results.cleaned.length} would be cleaned, freeing ${results.incomplete ? "at least " : ""}${formatBytes(results.totalBytes)}.`}`
+          : canPreview
+            ? "See what the approved patterns would delete from this project's worktrees right now. Nothing is deleted."
+            : "Preview lists file names in this machine's worktrees, so it needs permission to read files here."
       }
       control={
-        <Button size="sm" variant="outline" disabled={checking} onClick={onPreview}>
+        <Button size="sm" variant="outline" disabled={checking || !canPreview} onClick={onPreview}>
           {checking ? "Checking…" : state ? "Check again" : "Preview"}
         </Button>
       }
@@ -447,6 +458,7 @@ const NOT_CLEANED_LABEL: Record<WorktreeCleanupNotCleanedReason, string> = {
   missing: "Folder missing",
   "symbolic-link": "Symbolic link",
   "not-managed": "Not a styal worktree",
+  "too-large": "Too many files to check",
 };
 
 function notCleanedTitle(row: WorktreeCleanupResultRow) {
@@ -464,7 +476,12 @@ function notCleanedTitle(row: WorktreeCleanupResultRow) {
 
 function NotCleanedValue({ row }: { row: WorktreeCleanupResultRow }) {
   if (row.reason === null)
-    return <span className="tabular-nums">{formatBytes(row.freedBytes)}</span>;
+    return (
+      <span className="tabular-nums">
+        {row.incomplete ? "at least " : ""}
+        {formatBytes(row.freedBytes)}
+      </span>
+    );
   const label = <span className="text-muted-foreground">{NOT_CLEANED_LABEL[row.reason]}</span>;
   const explanation = notCleanedTitle(row);
   if (explanation === undefined) return label;
@@ -500,7 +517,7 @@ function PreviewResults({
       id="worktree-cleanup-preview-results"
       title="Preview results"
       headerPlacement="inside"
-      summary={`${results.cleaned.length} of ${preview.worktrees.length} worktrees · ${formatBytes(results.totalBytes)}`}
+      summary={`${results.cleaned.length} of ${preview.worktrees.length} worktrees · ${results.incomplete ? "at least " : ""}${formatBytes(results.totalBytes)}`}
     >
       {rows.length > 0 ? (
         <div className="max-h-[26rem] overflow-y-auto px-1 sm:px-2">
@@ -518,9 +535,10 @@ function PreviewResults({
           </Button>
         </div>
       ) : null}
-      {preview.truncated ? (
+      {preview.worktreesTruncated ? (
         <p className="border-t px-3 py-2 text-xs text-muted-foreground sm:px-4">
-          Only the first worktrees were checked.
+          Only the first {preview.worktrees.length} worktrees were checked. The rest of this
+          project's worktrees are not included.
         </p>
       ) : null}
     </FoldedSettingsSection>
@@ -532,7 +550,8 @@ const KEPT_LABEL = {
   "contains-tracked-files": "kept: contains files git tracks or does not ignore",
   "symbolic-link": "kept: symbolic link",
   "mount-point": "kept: another file system is mounted there",
-  "nested-checkout": "kept: contains another git checkout",
+  "nested-checkout": "kept: contains a git repository",
+  "too-large-to-verify": "kept: too many files to check",
 } as const;
 
 function ResultTable({
@@ -554,8 +573,8 @@ function ResultTable({
       <TableBody>
         {rows.map((row) => {
           const { entry } = row;
-          const selected = entry.selected.filter((s) => approved.has(s.pattern));
-          const canExpand = selected.length + entry.kept.length > 0;
+          const selected = worktreeCleanupApprovedSelection(entry, approved);
+          const canExpand = selected.length + entry.kept.length > 0 || entry.entriesTruncated;
           const expanded = open === entry.worktreePath;
           return (
             <Fragment key={entry.worktreePath}>
@@ -597,7 +616,9 @@ function ResultTable({
                             {item.path}
                           </code>
                           <span className="text-right tabular-nums">
-                            {item.freedBytes === null ? "?" : formatBytes(item.freedBytes)}
+                            {item.freedBytes === null
+                              ? "Not measured"
+                              : formatBytes(item.freedBytes)}
                           </span>
                         </Fragment>
                       ))}
@@ -611,6 +632,11 @@ function ResultTable({
                           <span />
                         </Fragment>
                       ))}
+                      {entry.entriesTruncated ? (
+                        <span className="col-span-2">
+                          More paths matched than are listed here, so the size is a lower bound.
+                        </span>
+                      ) : null}
                     </div>
                   </TableCell>
                 </TableRow>
@@ -627,6 +653,7 @@ function ApprovalDialog({
   open,
   list,
   matches,
+  pathsByPattern,
   checking,
   environmentId,
   projectId,
@@ -636,6 +663,7 @@ function ApprovalDialog({
   open: boolean;
   list: WorktreeCleanupPatternList;
   matches: ReadonlyMap<string, WorktreeCleanupMatches> | null;
+  pathsByPattern: ReadonlyMap<string, readonly string[]> | null;
   checking: boolean;
   environmentId: EnvironmentId;
   projectId: SidebarProjectGroupMember["id"];
@@ -650,9 +678,27 @@ function ApprovalDialog({
     setSaving(true);
     const result = await approve({ environmentId, input: { projectId, patterns: [...pending] } });
     setSaving(false);
-    if (reportHardwareResult(result, "Could not approve the patterns")) onClose();
+    if (!reportHardwareResult(result, "Could not approve the patterns")) return;
+    if (result._tag === "Success" && result.value.notDeclared.length > 0) {
+      toastManager.add({
+        type: "warning",
+        title:
+          result.value.notDeclared.length === 1
+            ? "One pattern was not approved"
+            : `${result.value.notDeclared.length} patterns were not approved`,
+        description: "styal.json no longer lists them. Review the list again.",
+      });
+    }
+    onClose();
   };
   const onlyNew = list.approved.length > 0 || list.earlier.length > 0;
+  const workFolders = [
+    ...new Set(
+      pending.flatMap((pattern) =>
+        worktreeCleanupWorkFolders(pattern, pathsByPattern?.get(pattern) ?? []),
+      ),
+    ),
+  ];
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
       <DialogPopup>
@@ -678,9 +724,9 @@ function ApprovalDialog({
                 <span>Would delete now</span>
               </div>
               {pending.map((pattern) => (
-                <div key={pattern} className="flex items-center justify-between gap-3 px-3 py-2">
-                  <code className="min-w-0 truncate font-mono select-text">{pattern}</code>
-                  <span className="shrink-0 text-muted-foreground tabular-nums">
+                <div key={pattern} className="flex items-start justify-between gap-3 px-3 py-2">
+                  <code className="min-w-0 font-mono break-all select-text">{pattern}</code>
+                  <span className="shrink-0 text-right text-muted-foreground tabular-nums">
                     {matches
                       ? matchText(matches.get(pattern))
                       : checking
@@ -692,8 +738,21 @@ function ApprovalDialog({
             </div>
             <p className="flex gap-1.5 text-xs text-warning-foreground">
               <TriangleAlertIcon aria-hidden className="mt-px size-3.5 shrink-0 text-warning" />
-              Deleted files cannot be restored. Setup recreates them on the next turn.
+              Matching files will be deleted from settled worktrees and cannot be restored. The
+              project's setup or build is expected to recreate them.
             </p>
+            {workFolders.length > 0 ? (
+              <p className="text-xs text-warning-foreground">
+                {workFolders.map((folder, index) => (
+                  <Fragment key={folder}>
+                    {index > 0 ? " and " : ""}
+                    <code>{folder}</code>
+                  </Fragment>
+                ))}{" "}
+                {workFolders.length === 1 ? "often holds" : "often hold"} notes and work in
+                progress, not build output. Approve only if nothing there needs keeping.
+              </p>
+            ) : null}
             {list.approved.length > 0 ? (
               <p className="text-xs text-muted-foreground">
                 Already approved:{" "}

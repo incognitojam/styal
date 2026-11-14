@@ -6,6 +6,7 @@ import {
   worktreeCleanupPatternList,
   worktreeCleanupPatternShape,
   worktreeCleanupResults,
+  worktreeCleanupWorkFolders,
 } from "./worktreeCleanup.ts";
 
 const at = (day: number) => `2026-11-${String(day).padStart(2, "0")}T00:00:00.000Z`;
@@ -30,6 +31,14 @@ describe("worktreeCleanupPatternList", () => {
     ).toEqual({ pending: [], approved: ["dist"], earlier: [] });
   });
 
+  it("never treats inherited object properties as approvals", () => {
+    expect(worktreeCleanupPatternList(["constructor", "toString", "__proto__"], {})).toEqual({
+      pending: ["constructor", "toString", "__proto__"],
+      approved: [],
+      earlier: [],
+    });
+  });
+
   it("keeps patterns no longer declared, newest approval first", () => {
     expect(
       worktreeCleanupPatternList(["dist"], {
@@ -40,6 +49,17 @@ describe("worktreeCleanupPatternList", () => {
     ).toEqual([
       { pattern: "apps/*/out", approvedAt: at(5) },
       { pattern: "build", approvedAt: at(3) },
+    ]);
+  });
+});
+
+describe("worktreeCleanupWorkFolders", () => {
+  it("names work folders a pattern deletes from, by pattern or by what a preview found", () => {
+    expect(worktreeCleanupWorkFolders(".scratch")).toEqual([".scratch"]);
+    expect(worktreeCleanupWorkFolders(".plans/drafts")).toEqual([".plans"]);
+    expect(worktreeCleanupWorkFolders("**/node_modules")).toEqual([]);
+    expect(worktreeCleanupWorkFolders("**/notes", [".scratch/notes", "apps/notes"])).toEqual([
+      ".scratch",
     ]);
   });
 });
@@ -72,12 +92,13 @@ const preview = (worktrees: WorktreeCleanupPreviewEntry[]): WorktreeCleanupPrevi
 const selected = (
   path: string,
   pattern: string,
-  freedBytes: number,
+  freedBytes: number | null,
   patternStatus: "approved" | "pending" = "approved",
+  patterns: string[] = [pattern],
 ) => ({
   path,
   pattern,
-  patterns: [pattern],
+  patterns,
   patternStatus,
   kind: "directory" as const,
   freedBytes,
@@ -109,6 +130,45 @@ describe("worktreeCleanupResults", () => {
       ["/w/busy", "not-settled"],
     ]);
   });
+
+  it("counts a path matched by a pending and an approved pattern as covered", () => {
+    const results = worktreeCleanupResults(
+      preview([
+        entry({
+          selected: [
+            selected("info-only", "**/info-only", 512, "pending", ["**/info-only", "info-only"]),
+          ],
+        }),
+      ]),
+      new Set(["info-only"]),
+    );
+    expect(results.cleaned.map((row) => row.freedBytes)).toEqual([512]);
+    expect(results.totalBytes).toBe(512);
+  });
+
+  it("keeps unmeasured and cut-short results as lower bounds", () => {
+    const results = worktreeCleanupResults(
+      preview([
+        entry({
+          worktreePath: "/w/cut",
+          entriesTruncated: true,
+          selected: [selected("a", "dist", 500)],
+        }),
+        entry({ worktreePath: "/w/unmeasured", selected: [selected("dist", "dist", null)] }),
+        entry({
+          worktreePath: "/w/huge",
+          kept: [{ path: "node_modules", pattern: "nm", reason: "too-large-to-verify" }],
+        }),
+      ]),
+      new Set(["dist", "nm"]),
+    );
+    expect(results.cleaned.map((row) => [row.entry.worktreePath, row.incomplete])).toEqual([
+      ["/w/cut", true],
+      ["/w/unmeasured", true],
+    ]);
+    expect(results.incomplete).toBe(true);
+    expect(results.notCleaned.map((row) => row.reason)).toEqual(["too-large"]);
+  });
 });
 
 describe("worktreeCleanupMatchesByPattern", () => {
@@ -136,7 +196,22 @@ describe("worktreeCleanupMatchesByPattern", () => {
       count: 3,
       worktrees: 2,
       bytes: 15,
+      incomplete: false,
     });
     expect(matches.has("dist")).toBe(false);
+  });
+
+  it("counts a path towards every pattern that matches it", () => {
+    const matches = worktreeCleanupMatchesByPattern(
+      preview([
+        entry({
+          selected: [
+            selected("info-only", "info-only", 512, "approved", ["**/info-only", "info-only"]),
+          ],
+        }),
+      ]),
+    );
+    expect(matches.get("**/info-only")?.bytes).toBe(512);
+    expect(matches.get("info-only")?.bytes).toBe(512);
   });
 });
