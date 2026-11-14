@@ -220,7 +220,11 @@ jobs:
             local status=${PIPESTATUS[0]}
             evidence="$(sed -n 's/^Evidence: //p' "$log" | head -n 1)"
             if [[ -n "$evidence" && -f "$evidence/result.json" ]]; then
-              node "$GITHUB_WORKSPACE/.canary-tools/scripts/canary-redaction.ts" "$evidence/result.json" || return 1
+              if ! node "$GITHUB_WORKSPACE/.canary-tools/scripts/canary-redaction.ts" "$evidence/result.json"; then
+                publish_evidence=false
+                detail="Verification result could not be published safely because sanitization failed."
+                return 1
+              fi
               jq -r --arg attempt "$1" '"### \(.provider) \(.version) (\(.model)), attempt \($attempt)\n\n| Scenario | Status | Seconds | Detail |\n| --- | --- | --- | --- |", (.scenarios[] | "| \(.name) | \(.status) | \(.seconds // "") | \(.detail) |")' \
                 "$evidence/result.json" >> "$GITHUB_STEP_SUMMARY"
               detail="$(jq -r '[.scenarios[] | select(.status == "failed") | "\(.name): \(.detail)"] | join("; ") | .[0:500]' "$evidence/result.json")"
@@ -230,12 +234,13 @@ jobs:
             [[ -n "$detail" ]] || detail="the verifier exited with status $status"
             return "$status"
           }
+          publish_evidence=true
           set +e
           run_verifier 1
           first=$?
           first_detail="$detail"
           outcome=passed
-          if [[ "$first" != 0 ]]; then
+          if [[ "$first" != 0 && "$publish_evidence" == true ]]; then
             run_verifier 2
             if [[ $? == 0 ]]; then
               outcome=flaky
@@ -244,6 +249,8 @@ jobs:
               outcome=failed
             fi
           fi
+          [[ "$publish_evidence" == false ]] && outcome=failed
+          echo "publish_evidence=$publish_evidence" >> "$GITHUB_OUTPUT"
           set -e
           [[ "$outcome" == passed ]] && detail=""
           echo "outcome=$outcome" >> "$GITHUB_OUTPUT"
@@ -291,7 +298,7 @@ jobs:
       # provider's own home directory or credentials. Both attempts are kept,
       # so a pass on the retry still shows why the first attempt failed.
       - name: Upload evidence
-        if: always() && steps.secret.outputs.present == 'true' && steps.verify.outputs.outcome != 'passed'
+        if: always() && steps.redact.outcome == 'success' && steps.verify.outputs.publish_evidence == 'true' && steps.verify.outputs.outcome != 'passed'
         uses: actions/upload-artifact@v7
         with:
           name: canary-evidence-${{ matrix.provider }}-${{ matrix.version }}-${{ matrix.styal }}

@@ -1,21 +1,49 @@
-// @effect-diagnostics nodeBuiltinImport:off preferSchemaOverJson:off -- Dependency-free sanitizer also runs against release-tag verifier files.
+// @effect-diagnostics nodeBuiltinImport:off preferSchemaOverJson:off globalConsole:off -- Dependency-free sanitizer also runs against release-tag verifier files.
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 
-export function redactCanary<T>(value: T, secrets: ReadonlyArray<string> = []): T {
+export function redactCanary<T>(
+  value: T,
+  secrets: ReadonlyArray<string> = [],
+  warn: (message: string) => void = (message) => console.warn(message),
+): T {
   const gaps = String.raw`(?:\s|\\[nrt]|\\u000[aAdD9])*`;
-  const exact = secrets.filter(Boolean).map(
-    (secret) =>
-      new RegExp(
-        Array.from(secret)
-          .map(
-            (char) =>
-              `(?:${RegExp.escape(char)}|\\\\u${char.charCodeAt(0).toString(16).padStart(4, "0")})`,
-          )
-          .join(gaps),
-        "g",
-      ),
-  );
+  if (secrets.some((secret) => secret.length > 0 && secret.length < 8))
+    warn("Ignoring API_KEY shorter than 8 characters for exact redaction.");
+  const variants = secrets
+    .filter((secret) => secret.length >= 8)
+    .flatMap((secret) => {
+      const encoded = Buffer.from(secret);
+      const url = encodeURIComponent(secret);
+      return [
+        secret,
+        url,
+        url.replace(/%[0-9A-F]{2}/g, (match) => match.toLowerCase()),
+        new URLSearchParams({ key: secret }).toString().slice(4),
+        // Some form encoders use '+' for spaces while leaving literal plus signs intact.
+        url.replaceAll("%20", "+"),
+        url.replaceAll("%2B", "+"),
+        encoded.toString("base64"),
+        encoded.toString("base64").replace(/=+$/, ""),
+        encoded.toString("base64url"),
+        encoded.toString("base64").replaceAll("+", "-").replaceAll("/", "_"),
+        JSON.stringify(secret).slice(1, -1),
+      ];
+    });
+  const exact = [...new Set(variants)]
+    .sort((a, b) => b.length - a.length)
+    .map(
+      (secret) =>
+        new RegExp(
+          Array.from(secret)
+            .map(
+              (char) =>
+                `(?:${RegExp.escape(char)}|\\\\u${char.charCodeAt(0).toString(16).padStart(4, "0")})`,
+            )
+            .join(gaps),
+          "g",
+        ),
+    );
   const text = (input: string) => {
     for (const pattern of exact) input = input.replace(pattern, "[redacted]");
     return input
@@ -44,17 +72,22 @@ export function redactCanary<T>(value: T, secrets: ReadonlyArray<string> = []): 
 }
 
 if (import.meta.main) {
-  const target = process.argv[2];
-  if (!target) throw new Error("Usage: canary-redaction.ts FILE_OR_DIRECTORY");
-  const files = NodeFS.statSync(target).isDirectory()
-    ? NodeFS.readdirSync(target)
-        .filter((name) => name.endsWith(".json"))
-        .map((name) => NodePath.join(target, name))
-    : [target];
-  for (const file of files) {
-    const clean = redactCanary(JSON.parse(NodeFS.readFileSync(file, "utf8")), [
-      process.env.API_KEY ?? "",
-    ]);
-    NodeFS.writeFileSync(file, `${JSON.stringify(clean)}\n`);
+  try {
+    const target = process.argv[2];
+    if (!target) throw new Error("Usage: canary-redaction.ts FILE_OR_DIRECTORY");
+    const files = NodeFS.statSync(target).isDirectory()
+      ? NodeFS.readdirSync(target)
+          .filter((name) => name.endsWith(".json"))
+          .map((name) => NodePath.join(target, name))
+      : [target];
+    for (const file of files) {
+      const clean = redactCanary(JSON.parse(NodeFS.readFileSync(file, "utf8")), [
+        process.env.API_KEY ?? "",
+      ]);
+      NodeFS.writeFileSync(file, `${JSON.stringify(clean)}\n`);
+    }
+  } catch {
+    console.error("Canary data sanitization failed; result withheld.");
+    process.exitCode = 1;
   }
 }

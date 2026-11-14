@@ -1,4 +1,4 @@
-// @effect-diagnostics nodeBuiltinImport:off -- Reads the report workflow to verify serialization.
+// @effect-diagnostics nodeBuiltinImport:off globalDate:off -- Reads the report workflow and checks hold dates with explicit timestamps.
 import { expect, it } from "vite-plus/test";
 import {
   collectRun,
@@ -354,3 +354,31 @@ it("bounds the real serialized issue body with 40,000-character hostile details"
   expect(stored.failures[0]).not.toHaveProperty("detail");
   expect(stored.problems[0].summary.length).toBeLessThanOrEqual(200);
 });
+it.each(["{", '{"failures":{}}'])("ignores malformed hidden state: %s", (text) => {
+  const warnings: string[] = [];
+  const issue = {
+    number: 7,
+    open: true,
+    body: `<!-- provider-canary-state ${Buffer.from(text).toString("hex")} -->`,
+  };
+  expect(
+    statusFailures(issue, new Date("2026-11-14T12:00:00Z"), (message) => warnings.push(message)),
+  ).toEqual([]);
+  expect(warnings).toHaveLength(1);
+  expect(reconcileStatusIssue(issue, passed, [], runUrl)?.state).toBe("closed");
+});
+it.each(["9999-01-01", "2026-11-14T05:59:59Z", "invalid-date", "2026-11-14T12:00:01Z"])(
+  "rejects invalid, future or expired hold dates: %s",
+  (at) => {
+    const issue = {
+      number: 7,
+      open: true,
+      body: `<!-- provider-canary-state ${Buffer.from(JSON.stringify({ failures: [{ provider: "codex", packageName: "@openai/codex", version: "1.0.0", styal: "1.0.0", at }] })).toString("hex")} -->`,
+    };
+    const warnings: string[] = [];
+    expect(
+      statusFailures(issue, new Date("2026-11-14T12:00:00Z"), (message) => warnings.push(message)),
+    ).toEqual([]);
+    expect(warnings.length).toBe(at === "2026-11-14T05:59:59Z" ? 0 : 1);
+  },
+);

@@ -8,6 +8,7 @@ import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 import * as NodeUtil from "node:util";
+import * as Schema from "effect/Schema";
 import { redactCanary } from "./canary-redaction.ts";
 import {
   inertText,
@@ -360,6 +361,7 @@ export function planProvider(
           candidate.packageName === entry.packageName &&
           candidate.version === entry.version &&
           candidate.styal === build &&
+          now.getTime() >= Date.parse(candidate.at) &&
           now.getTime() - Date.parse(candidate.at) < FAILURE_RETRY_HOURS * 3_600_000,
       );
   if (failure) return { kind: "held", provider: canary.provider, entry, failure };
@@ -688,24 +690,78 @@ export interface StatusIssueUpdate {
 
 const STATE_MARKER = /<!-- provider-canary-state ([a-f0-9]+) -->/;
 
-interface StatusState {
-  readonly problems?: ReadonlyArray<CanaryProblem>;
-  readonly failures?: ReadonlyArray<Omit<CanaryFailure, "detail">>;
-}
+const StateString = (limit: number) => Schema.String.check(Schema.isMaxLength(limit));
+const StatusState = Schema.Struct({
+  problems: Schema.optionalKey(
+    Schema.Array(
+      Schema.Struct({
+        key: StateString(160),
+        scope: StateString(64),
+        summary: StateString(200),
+      }),
+    ).check(Schema.isMaxLength(8)),
+  ),
+  failures: Schema.optionalKey(
+    Schema.Array(
+      Schema.Struct({
+        provider: StateString(64),
+        packageName: StateString(128),
+        version: StateString(80),
+        styal: StateString(80),
+        at: StateString(32).check(
+          Schema.isPattern(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/),
+        ),
+      }),
+    ).check(Schema.isMaxLength(8)),
+  ),
+});
 
-const readStatusState = (issue: StatusIssue | null): StatusState =>
-  issue?.open
-    ? JSON.parse(Buffer.from(STATE_MARKER.exec(issue.body)?.[1] ?? "7b7d", "hex").toString("utf8"))
-    : {};
+const decodeStatusState = Schema.decodeUnknownSync(Schema.fromJsonString(StatusState));
+
+const readStatusState = (
+  issue: StatusIssue | null,
+  warn: (message: string) => void = (message) => console.warn(message),
+): typeof StatusState.Type => {
+  if (!issue?.open) return {};
+  const marker = STATE_MARKER.exec(issue.body)?.[1];
+  if (!marker) {
+    if (issue.body.includes("<!-- provider-canary-state"))
+      warn("Ignoring malformed provider canary issue state.");
+    return {};
+  }
+  try {
+    if (marker.length > 30_000 || marker.length % 2 !== 0)
+      throw new Error("Invalid state encoding");
+    return decodeStatusState(Buffer.from(marker, "hex").toString("utf8"));
+  } catch {
+    warn("Ignoring malformed provider canary issue state.");
+    return {};
+  }
+};
 
 /** Failed verifications the open labeled issue still holds back. */
-export const statusFailures = (issue: StatusIssue | null): ReadonlyArray<CanaryFailure> =>
-  (readStatusState(issue).failures ?? []).map((failure) => ({
-    ...failure,
-    detail:
-      readStatusState(issue).problems?.find((problem) => problem.scope === failure.provider)
-        ?.summary ?? "Failed verification; see original run.",
-  }));
+export const statusFailures = (
+  issue: StatusIssue | null,
+  now = new Date(),
+  warn: (message: string) => void = (message) => console.warn(message),
+): ReadonlyArray<CanaryFailure> => {
+  const state = readStatusState(issue, warn);
+  return (state.failures ?? [])
+    .filter((failure) => {
+      const age = now.getTime() - Date.parse(failure.at);
+      if (!Number.isFinite(age) || age < 0) {
+        warn("Ignoring provider canary hold with an invalid or future timestamp.");
+        return false;
+      }
+      return age < FAILURE_RETRY_HOURS * 3_600_000;
+    })
+    .map((failure) => ({
+      ...failure,
+      detail:
+        state.problems?.find((problem) => problem.scope === failure.provider)?.summary ??
+        "Failed verification; see original run.",
+    }));
+};
 
 /**
  * How the labeled issue changes after a run. Problems this run did not
@@ -1027,8 +1083,7 @@ async function plan(args: ReadonlyArray<string>) {
   );
   // Without GitHub access, as when run locally, no failure is held back.
   const repo = process.env.GITHUB_REPOSITORY;
-  const failures =
-    repo && process.env.GITHUB_TOKEN ? statusFailures(await findStatusIssue(repo)) : [];
+  const failures = repo && process.env.GITHUB_TOKEN ? await findStatusFailures(repo) : [];
   const now = new Date();
   const plans: Array<ProviderPlan & { styal: string }> = [];
   const include: Array<VerifyEntry & { ref: string }> = [];
@@ -1123,18 +1178,11 @@ async function github(path: string, init?: { method: string; body: unknown }) {
   return response.json() as Promise<unknown>;
 }
 
-async function findStatusIssue(repo: string): Promise<StatusIssue | null> {
-  const issues = (await openIssues<StatusIssue>(githubRequest, repo, "provider-canary")).filter(
-    (issue) => issue.number !== 861,
-  );
-  return issues.length
-    ? { number: issues[0]!.number, open: true, body: reconcileBodies(issues) }
-    : null;
-}
-
-function reconcileBodies(issues: StatusIssue[]) {
-  const states = issues.map((issue) => readStatusState({ ...issue, open: true }));
-  return `<!-- provider-canary-state ${Buffer.from(JSON.stringify({ problems: states.flatMap((s) => s.problems ?? []), failures: states.flatMap((s) => s.failures ?? []) })).toString("hex")} -->`;
+async function findStatusFailures(repo: string): Promise<ReadonlyArray<CanaryFailure>> {
+  const issues = await openIssues<StatusIssue>(githubRequest, repo, "provider-canary");
+  return issues
+    .filter((issue) => issue.number !== 861)
+    .flatMap((issue) => statusFailures({ ...issue, open: true }));
 }
 
 const githubRequest: Request = async <T>(method: string, path: string, body?: object) =>

@@ -199,6 +199,17 @@ describe("provider canary plan", () => {
         .kind,
     ).toBe("verify");
     expect(plan(NIGHTLY, NOW, true)).toBe("verify");
+    expect(
+      planProvider(
+        canary("codex"),
+        manifest,
+        NIGHTLY,
+        latest,
+        false,
+        [{ ...failure, at: "9999-01-01" }],
+        NOW,
+      ).kind,
+    ).toBe("verify");
     // A new nightly may carry the fix, so it is verified at once.
     expect(plan(LATER_NIGHTLY, NOW)).toBe("verify");
     expect(plan(NIGHTLY, new Date("2026-10-14T14:00:00.000Z"))).toBe("verify");
@@ -564,7 +575,7 @@ describe("provider canary report", () => {
     });
     const opened = reconcileStatusIssue(null, failed, [], RUN)!;
     const issue = { number: 5, open: true, body: opened.body };
-    const [failure] = statusFailures(issue);
+    const [failure] = statusFailures(issue, NOW);
     expect(failure).toMatchObject({ version: "0.163.0", styal: NIGHTLY, at: NOW.toISOString() });
 
     const { entry } = verifyPlan("codex", "@openai/codex", "0.163.0");
@@ -575,7 +586,7 @@ describe("provider canary report", () => {
     const update = reconcileStatusIssue(issue, held, [], LATER_RUN);
     expect(update).toMatchObject({ state: "open" });
     expect(update?.comment).toBeUndefined();
-    expect(statusFailures({ ...issue, body: update!.body })).toEqual([failure]);
+    expect(statusFailures({ ...issue, body: update!.body }, NOW)).toEqual([failure]);
 
     // A pass on a later run clears the failure with the problem.
     const passing = runWith(
