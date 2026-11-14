@@ -17,7 +17,8 @@ export function matchesWorktreeCleanupPattern(pattern: string, relative: string)
           .split("*")
           .map((literal) => literal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
           .join("[^/]*");
-        if (new RegExp(`^${expression}$`).test(names[index]!)) next.add(index + 1);
+        if (new RegExp(`^${expression}$`).exec(names[index]!)?.[0] === names[index])
+          next.add(index + 1);
       }
     }
     reachable = next;

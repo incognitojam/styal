@@ -31,6 +31,7 @@ describe("worktree cleanup patterns", () => {
   });
   it.each([
     ["dist", "dist", true],
+    ["dist", "dist\n", false],
     ["dist", "apps/dist", false],
     ["**/dist", "dist", true],
     ["**/dist", "apps/web/dist", true],
