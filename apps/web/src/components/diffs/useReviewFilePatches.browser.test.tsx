@@ -126,8 +126,34 @@ it.each([false, true])(
     );
     await expect.element(screen.getByText("e.txt:loaded")).toBeVisible();
     await screen.rerender(
-      view(source(["a-new.txt", ...tracked.files!.map((f) => f.path)], "complete")),
+      view({
+        ...source(
+          ["a-new.txt", ...tracked.files!.map((f) => f.path), "y-new.txt", "z-deleted.txt"],
+          "complete",
+        ),
+        files: [
+          { path: "a-new.txt", previousPath: null, additions: 1, deletions: 0 },
+          ...tracked.files!,
+          { path: "y-new.txt", previousPath: null, changeType: "new", additions: 1, deletions: 0 },
+          {
+            path: "z-deleted.txt",
+            previousPath: null,
+            changeType: "deleted",
+            additions: 0,
+            deletions: 1,
+          },
+        ],
+      }),
     );
+    await expect.element(screen.getByText("y-new.txt:pending")).toBeVisible();
+    await expect.element(screen.getByText("new", { exact: true })).toBeVisible();
+    await expect.element(screen.getByText("z-deleted.txt:pending")).toBeVisible();
+    await expect.element(screen.getByText("deleted", { exact: true })).toBeVisible();
+    expect(
+      [...state.patches.keys()].some((key) =>
+        ["y-new.txt", "z-deleted.txt"].includes(JSON.parse(key)[1]),
+      ),
+    ).toBe(false);
     await expect.element(screen.getByText("e.txt:loaded")).toBeVisible();
     await expect.element(screen.getByText("f.txt:loaded")).toBeVisible();
     act(() =>
