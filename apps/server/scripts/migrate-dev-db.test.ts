@@ -365,6 +365,7 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
         { migration_id: 11, name: "ProjectionProjectsOrganization" },
         { migration_id: 12, name: "DropComposerDrafts" },
         { migration_id: 13, name: "WorktreeSetupState" },
+        { migration_id: 14, name: "DropWorktreeSetupState" },
       ]);
       assert.deepStrictEqual(migrated.drafts, []);
       assert.deepStrictEqual(migrated.usage, [{ payload_json: migrated.recordedUsage }]);

@@ -10,9 +10,10 @@ import {
   runAllMigrations,
   runForkMigrations,
 } from "./ForkMigrations.ts";
-import SetupState from "./ForkMigrations/013_WorktreeSetupState.ts";
 import { migrationManifest, runMigrations } from "./Migrations.ts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
+
+import dropWorktreeSetupState from "./ForkMigrations/014_DropWorktreeSetupState.ts";
 
 const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 const decodeJson = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown));
@@ -25,20 +26,7 @@ upstreamLayer("ForkMigrations canonical upstream upgrade", (it) => {
       const sql = yield* SqlClient.SqlClient;
 
       yield* runMigrations();
-      yield* runAllMigrations({ forkToMigrationInclusive: 12 });
-      yield* sql`INSERT INTO orchestration_events (event_id, aggregate_kind, stream_id, stream_version, event_type, occurred_at, actor_kind, payload_json, metadata_json, application_event_version) VALUES ('malformed-fixture', 'thread', 'fixture', 1, 'turn-item.updated', '2026-01-01T00:00:00Z', 'server', 'malformed-json', '{}', 2)`;
       yield* runAllMigrations();
-      assert.deepEqual(yield* sql`SELECT * FROM worktree_setup_state`, []);
-      assert.deepEqual(
-        yield* sql`SELECT payload_json FROM orchestration_events WHERE event_id = 'malformed-fixture'`,
-        [{ payload_json: "malformed-json" }],
-      );
-      yield* sql`INSERT INTO worktree_setup_state (worktree_path, turn_item_id, thread_id, action_id, command, status, request_sequence) VALUES ('/synthetic/worktree', 'setup:fixture', 'thread:fixture', 'install', 'install', 'interrupted', 1)`;
-      yield* SetupState;
-      yield* SetupState;
-      assert.deepEqual(yield* sql`SELECT status FROM worktree_setup_state`, [
-        { status: "interrupted" },
-      ]);
 
       const upstreamMigration = yield* sql<{
         readonly migration_id: number;
@@ -76,6 +64,7 @@ upstreamLayer("ForkMigrations canonical upstream upgrade", (it) => {
         { migration_id: 11, name: "ProjectionProjectsOrganization" },
         { migration_id: 12, name: "DropComposerDrafts" },
         { migration_id: 13, name: "WorktreeSetupState" },
+        { migration_id: 14, name: "DropWorktreeSetupState" },
       ]);
     }),
   );
@@ -180,6 +169,7 @@ it("keeps fork migrations out of the upstream manifest", () => {
     [11, "ProjectionProjectsOrganization"],
     [12, "DropComposerDrafts"],
     [13, "WorktreeSetupState"],
+    [14, "DropWorktreeSetupState"],
   ]);
 });
 
@@ -310,3 +300,51 @@ it.layer(NodeSqliteClient.layer({ filename: ":memory:" }))(
     );
   },
 );
+
+for (const hasTable of [true, false]) {
+  it.layer(NodeSqliteClient.layer({ filename: ":memory:" }))(
+    `ForkMigrations retired setup state, table present: ${hasTable}`,
+    (it) => {
+      it.effect("drops only setup state and is safe to run twice", () =>
+        Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          yield* runAllMigrations({ forkToMigrationInclusive: 13 });
+          if (hasTable) {
+            yield* sql`
+              INSERT INTO worktree_setup_state (
+                worktree_path, turn_item_id, thread_id, action_id, command, status, request_sequence
+              ) VALUES ('/synthetic/worktree', 'item', 'thread', 'setup', 'echo setup', 'succeeded', 1)
+            `;
+          } else {
+            yield* sql`DROP TABLE worktree_setup_state`;
+          }
+          yield* sql`CREATE TABLE retained_fixture (value TEXT)`;
+          yield* sql`INSERT INTO retained_fixture VALUES ('retained')`;
+          const schema = yield* sql`
+            SELECT type, name, tbl_name, sql FROM sqlite_master
+            WHERE tbl_name <> 'worktree_setup_state' ORDER BY type, name
+          `;
+          assert.deepStrictEqual(yield* runForkMigrations(), [[14, "DropWorktreeSetupState"]]);
+          yield* dropWorktreeSetupState;
+          assert.deepStrictEqual(yield* runForkMigrations(), []);
+          assert.deepStrictEqual(
+            yield* sql`
+            SELECT name FROM sqlite_master WHERE name = 'worktree_setup_state'
+          `,
+            [],
+          );
+          assert.deepStrictEqual(
+            yield* sql`
+            SELECT type, name, tbl_name, sql FROM sqlite_master
+            WHERE tbl_name <> 'worktree_setup_state' ORDER BY type, name
+          `,
+            schema,
+          );
+          assert.deepStrictEqual(yield* sql`SELECT * FROM retained_fixture`, [
+            { value: "retained" },
+          ]);
+        }),
+      );
+    },
+  );
+}

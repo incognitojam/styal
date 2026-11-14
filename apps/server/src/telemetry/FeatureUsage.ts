@@ -135,11 +135,6 @@ export type AutoEnvironmentAction = "link" | "project_create" | "project_clone" 
 
 type ObservedUsage =
   | {
-      readonly feature: "worktree-setup-recovery";
-      readonly action: "start";
-      readonly source: "system";
-    }
-  | {
       readonly feature: "fleet-thread-search";
       readonly action: "search";
       readonly source: "agent";

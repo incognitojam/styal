@@ -707,12 +707,7 @@ export const layer: Layer.Layer<
         const exists = yield* fileSystem
           .exists(worktreePath)
           .pipe(Effect.orElseSucceed(() => true));
-        if (
-          !exists ||
-          !(yield* fileSystem
-            .exists(path.join(worktreePath, ".styal/setup-completed"))
-            .pipe(Effect.orElseSucceed(() => true)))
-        ) {
+        if (!exists) {
           const project = yield* projects.getById(projection.thread.projectId).pipe(
             Effect.map(Option.getOrUndefined),
             Effect.orElseSucceed(() => undefined),
@@ -721,35 +716,33 @@ export const layer: Layer.Layer<
             project !== undefined &&
             path.resolve(project.workspaceRoot) !== path.resolve(worktreePath)
           ) {
-            if (!exists) {
-              yield* Effect.logWarning("provider turn start recreating missing worktree", {
-                threadId: projection.thread.id,
+            yield* Effect.logWarning("provider turn start recreating missing worktree", {
+              threadId: projection.thread.id,
+              worktreePath,
+              branch,
+            });
+            const recreated = yield* Effect.result(
+              recreateMissingWorktree({
+                cwd: project.workspaceRoot,
                 worktreePath,
                 branch,
-              });
-              const recreated = yield* Effect.result(
-                recreateMissingWorktree({
-                  cwd: project.workspaceRoot,
-                  worktreePath,
-                  branch,
-                }).pipe(
-                  Effect.mapError((cause) =>
-                    cause._tag === "WorktreeRecreateNoBaseError"
-                      ? cause
-                      : new WorktreeRecreateError({ worktreePath, branch, cause }),
-                  ),
+              }).pipe(
+                Effect.mapError((cause) =>
+                  cause._tag === "WorktreeRecreateNoBaseError"
+                    ? cause
+                    : new WorktreeRecreateError({ worktreePath, branch, cause }),
                 ),
-              );
-              if (recreated._tag === "Failure") {
-                if (input.willRetry === true) return yield* recreated.failure;
-                yield* settleStartFailure({
-                  signal: "worktree-recreate-failure",
-                  title: "Couldn't recreate thread workspace",
-                  error: recreated.failure,
-                  message: recreated.failure.message,
-                });
-                return;
-              }
+              ),
+            );
+            if (recreated._tag === "Failure") {
+              if (input.willRetry === true) return yield* recreated.failure;
+              yield* settleStartFailure({
+                signal: "worktree-recreate-failure",
+                title: "Couldn't recreate thread workspace",
+                error: recreated.failure,
+                message: recreated.failure.message,
+              });
+              return;
             }
             const setupResult = yield* Effect.result(
               Effect.gen(function* () {
@@ -761,7 +754,6 @@ export const layer: Layer.Layer<
                   project,
                   observeCompletion: {},
                   workspaceLeaseHeld: true,
-                  recoverIfEvidenceMissing: exists,
                 });
                 if (setup.status !== "started" || !setup.completion) return;
                 if (setup.async) {
