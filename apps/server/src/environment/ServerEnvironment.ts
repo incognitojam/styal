@@ -246,6 +246,7 @@ export const make = Effect.gen(function* () {
       databaseStorage: true,
       otlpEndpointCheck: true,
       projectWorktreeCleanup: true,
+      worktreeCleanupPatterns: true,
       settledWorktreeCleanup: true,
       worktreesDirectory: true,
       threadAutoSettlementScope: true,

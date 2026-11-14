@@ -117,6 +117,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("ServerEnvironmen
           settledWorktreeCleanup: true,
           storageCleanupRun: true,
           projectWorktreeCleanup: true,
+          worktreeCleanupPatterns: true,
           worktreesDirectory: true,
           threadAutoSettlementScope: true,
         });
