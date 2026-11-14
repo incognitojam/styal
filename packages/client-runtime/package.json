@@ -239,6 +239,10 @@
       "types": "./src/state/projectFileActions.ts",
       "default": "./src/state/projectFileActions.ts"
     },
+    "./state/worktreeCleanup": {
+      "types": "./src/state/worktreeCleanup.ts",
+      "default": "./src/state/worktreeCleanup.ts"
+    },
     "./state/hardware": {
       "types": "./src/state/hardware.ts",
       "default": "./src/state/hardware.ts"

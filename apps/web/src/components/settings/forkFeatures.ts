@@ -21,6 +21,7 @@ export const SETTINGS_FORK_FEATURES = [
   "sidebar-project-thread-groups",
   "source-control-fork-remotes",
   "turn-token-usage",
+  "worktree-declared-cleanup",
 ] as const;
 
 export type SettingsForkFeature = (typeof SETTINGS_FORK_FEATURES)[number];

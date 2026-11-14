@@ -13,6 +13,7 @@ import {
 } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 import { WorktreeCleanupSection, WorktreesDirectoryRow } from "./StorageSettings";
+import { WorktreeCleanupPatternsSection } from "./WorktreeCleanupPatterns";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
 
 function StartFromRemoteRow() {
@@ -68,6 +69,7 @@ export function WorktreesSettingsPanel() {
         <BranchNamingSettings />
       </SettingsSection>
       <WorktreeCleanupSection />
+      <WorktreeCleanupPatternsSection />
     </SettingsPageContainer>
   );
 }
