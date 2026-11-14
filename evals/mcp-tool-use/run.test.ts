@@ -3434,6 +3434,7 @@ it("answers only commands that do nothing but read styal guides, from the real f
   assert.match(guide, /^# Project setup: styal\.json, actions and worktrees\n/);
   assert.equal(exactGuideReads(`cat '${G}'`), guide);
   assert.equal(exactGuideReads(`cat ${G}; echo ----\ncat ${G}`), `${guide}----\n${guide}`);
+  assert.equal(exactGuideReads(`cat ${G};\n\ncat ${G};`), `${guide}${guide}`);
   assert.equal(
     exactGuideReads(`head -n 2 ${G}`),
     "# Project setup: styal.json, actions and worktrees\n\n",
@@ -3456,6 +3457,11 @@ it("answers only commands that do nothing but read styal guides, from the real f
     `echo "a;b"; cat ${G}`,
     `cat ${G.replace("project-setup", "deployments")}`,
     "echo ----",
+    `sed -n '3,1p' ${G}`,
+    `sed -n '0,2p' ${G}`,
+    `head -n 1 ${G}\r\n`,
+    `cat ${G};; echo done`,
+    `; cat ${G}`,
   ]) {
     assert.isUndefined(exactGuideReads(command), command);
   }

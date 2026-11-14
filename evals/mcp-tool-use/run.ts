@@ -1382,7 +1382,8 @@ const styalSkillResult = (name: string, input: Readonly<Record<string, unknown>>
   return name === "Read" ? STYAL_SKILL_FILES.get(valueText(input.file_path)) : undefined;
 };
 
-const UNSAFE_SHELL = /[&|<>$`()*?[\]{}\\!#~]/;
+// Also `\r`, which Bash keeps in a word, and an empty statement such as `;;`, which it rejects.
+const UNSAFE_SHELL = /[&|<>$`()*?[\]{}\\!#~\r]|(?:^|[;\n])[ \t]*;/;
 /** A plain or fully quoted word; anything else could expand, so it is not answered here. */
 const plainWord = (token: string) =>
   /^'[^']*'$|^"[^"]*"$/.test(token) ? token.slice(1, -1) : /['"]/.test(token) ? undefined : token;
@@ -1419,7 +1420,7 @@ export const exactGuideReads = (command: string) => {
           ? { from: 0, to: Number(args[1]), paths: args.slice(2) }
           : program === "sed" && args.length === 3 && args[0] === "-n"
             ? (([, from, to]) =>
-                from === undefined
+                from === undefined || Number(from) < 1 || Number(to) < Number(from)
                   ? undefined
                   : { from: Number(from) - 1, to: Number(to), paths: args.slice(2) })(
                 /^(\d+),(\d+)p$/.exec(args[1] ?? "") ?? [],
