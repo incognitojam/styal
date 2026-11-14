@@ -1,11 +1,11 @@
 import { useAtomValue } from "@effect/atom-react";
-import {
-  isProviderAuthFailureCode,
-  type EnvironmentId,
-  type OrchestrationV2AuthRecovery,
-  type OrchestrationV2AuthRecoveryUpdate,
-  type RunId,
-  type ServerProvider,
+import type {
+  EnvironmentId,
+  OrchestrationV2AuthRecovery,
+  OrchestrationV2AuthRecoveryUpdate,
+  ProviderInstanceId,
+  RunId,
+  ServerProvider,
 } from "@t3tools/contracts";
 import { KeyRoundIcon } from "lucide-react";
 import { useState } from "react";
@@ -19,19 +19,26 @@ import { ProviderAuthenticationSection } from "../settings/ProviderAuthenticatio
 import { toastManager } from "../ui/toast";
 import type { ComposerBannerStackItem } from "./ComposerBannerStack";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
+import type { ProviderBanner } from "./ProviderStatusBanner";
 
-/** Offers the provider's sign-in where a thread failed because that provider is signed out. */
+/** Offers the provider's sign-in where it is signed out, before or after a turn failed for it. */
 export function useProviderSignInBanner(input: {
   readonly environmentId: EnvironmentId;
   readonly environmentLabel: string;
-  readonly failed: boolean;
-  readonly lastErrorCode: string | null | undefined;
-  readonly provider: ServerProvider | undefined;
+  readonly banner: ProviderBanner;
+  readonly providers: ReadonlyArray<ServerProvider>;
   readonly runId: RunId | null | undefined;
   readonly recovery: OrchestrationV2AuthRecovery | null | undefined;
   readonly onChangeWaiting: (update: OrchestrationV2AuthRecoveryUpdate) => Promise<void>;
+  readonly onDismiss: () => void;
 }) {
-  const [open, setOpen] = useState(false);
+  // The dialog outlives the banner, so it can say "Signed in." once the provider reads signed in.
+  const [signIn, setSignIn] = useState<{
+    readonly instanceId: ProviderInstanceId;
+    readonly entryPoint: "thread" | "signed_out";
+    readonly open: boolean;
+  } | null>(null);
+  const close = () => setSignIn((current) => (current ? { ...current, open: false } : null));
   const start = useAtomCommand(serverEnvironment.startProviderAuth, {
     reportFailure: false,
     reportDefect: false,
@@ -40,27 +47,53 @@ export function useProviderSignInBanner(input: {
   const canSignIn = useAtomValue(
     serverEnvironment.startProviderAuth.permissionAtom(input.environmentId),
   );
-  const { provider } = input;
-  if (
-    !input.failed ||
-    !isProviderAuthFailureCode(input.lastErrorCode) ||
-    !provider ||
-    !(provider.setup?.canAuthenticate || (provider.driver === "acpRegistry" && provider.installed))
-  )
-    return { item: null, dialog: null };
-  const name = provider.displayName?.trim() || provider.driver;
+  const dialogProvider = signIn
+    ? input.providers.find((candidate) => candidate.instanceId === signIn.instanceId)
+    : undefined;
+  const dialog =
+    signIn && dialogProvider ? (
+      <Dialog open={signIn.open} onOpenChange={(open) => (open ? undefined : close())}>
+        <DialogPopup>
+          <DialogHeader>
+            <div className="flex items-center gap-2">
+              <ProviderInstanceIcon
+                driverKind={dialogProvider.driver}
+                displayName={providerName(dialogProvider)}
+                accentColor={dialogProvider.accentColor}
+                showBadge={false}
+              />
+              <DialogTitle>Sign in to {providerName(dialogProvider)}</DialogTitle>
+            </div>
+          </DialogHeader>
+          <ProviderAuthenticationSection
+            environmentId={input.environmentId}
+            environmentLabel={input.environmentLabel}
+            instanceId={dialogProvider.instanceId}
+            provider={dialogProvider}
+            readOnly={false}
+            usageEntryPoint={signIn.entryPoint}
+            layout="dialog"
+            onDone={close}
+          />
+        </DialogPopup>
+      </Dialog>
+    ) : null;
+  if (input.banner?.kind !== "sign-in") return { item: null, dialog };
+  const { provider, afterFailedTurn } = input.banner;
+  const entryPoint = afterFailedTurn ? "thread" : "signed_out";
+  const name = providerName(provider);
   // A CLI login has one way in and stops nothing, so opening the dialog can start it right away.
   function openSignIn() {
-    setOpen(true);
-    if (provider?.auth.canLogout !== false || !provider.setup?.canAuthenticate) return;
+    setSignIn({ instanceId: provider.instanceId, entryPoint, open: true });
+    if (provider.auth.canLogout !== false || !provider.setup?.canAuthenticate) return;
     reportForkClientUsage(input.environmentId, {
       feature: "provider-sign-in",
       action: "start",
-      entryPoint: "thread",
+      entryPoint,
     });
     void start({ environmentId: input.environmentId, input: { instanceId: provider.instanceId } });
   }
-  const recovery = input.recovery?.runId === input.runId ? input.recovery : null;
+  const recovery = afterFailedTurn && input.recovery?.runId === input.runId ? input.recovery : null;
   const waiting = recovery?.waiting === true;
   async function setWaiting(next: boolean) {
     if (!input.runId) return;
@@ -81,9 +114,14 @@ export function useProviderSignInBanner(input: {
     variant: "warning",
     icon: <KeyRoundIcon />,
     title: `${name} needs you to sign in`,
-    description: waiting
-      ? "It continues after you sign in."
-      : "Sign in, then send your message again.",
+    description: !afterFailedTurn
+      ? "Sign in to send messages."
+      : waiting
+        ? "It continues after you sign in."
+        : "Sign in, then send your message again.",
+    ...(afterFailedTurn
+      ? {}
+      : { dismissLabel: `Dismiss ${name} sign-in`, onDismiss: input.onDismiss }),
     actions: (
       <>
         {recovery ? (
@@ -104,32 +142,9 @@ export function useProviderSignInBanner(input: {
       </>
     ),
   };
-  const dialog = (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogPopup>
-        <DialogHeader>
-          <div className="flex items-center gap-2">
-            <ProviderInstanceIcon
-              driverKind={provider.driver}
-              displayName={name}
-              accentColor={provider.accentColor}
-              showBadge={false}
-            />
-            <DialogTitle>Sign in to {name}</DialogTitle>
-          </div>
-        </DialogHeader>
-        <ProviderAuthenticationSection
-          environmentId={input.environmentId}
-          environmentLabel={input.environmentLabel}
-          instanceId={provider.instanceId}
-          provider={provider}
-          readOnly={false}
-          usageEntryPoint="thread"
-          layout="dialog"
-          onDone={() => setOpen(false)}
-        />
-      </DialogPopup>
-    </Dialog>
-  );
   return { item, dialog };
+}
+
+function providerName(provider: ServerProvider) {
+  return provider.displayName?.trim() || provider.driver;
 }

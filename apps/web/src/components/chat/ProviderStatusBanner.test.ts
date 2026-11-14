@@ -3,6 +3,7 @@ import { ProviderDriverKind, ProviderInstanceId, type ServerProvider } from "@t3
 import {
   getProviderStatusBannerKey,
   getProviderStatusMessage,
+  resolveProviderBanner,
   shouldShowProviderStatusBanner,
 } from "./ProviderStatusBanner";
 
@@ -108,5 +109,114 @@ describe("compatibility banners", () => {
     expect(getProviderStatusMessage({ ...broken, auth: { status: "unauthenticated" } })).toBe(
       broken.message,
     );
+  });
+});
+
+describe("resolveProviderBanner", () => {
+  const { compatibilityAdvisory: _advisory, ...base } = provider;
+  const healthy: ServerProvider = {
+    ...base,
+    instanceId: ProviderInstanceId.make("claude"),
+    driver: ProviderDriverKind.make("claudeAgent"),
+    setup: { canAuthenticate: true, canInstall: false },
+  };
+  const signedOut: ServerProvider = {
+    ...healthy,
+    status: "error",
+    auth: { status: "unauthenticated" },
+    message: "Claude Code is not authenticated.",
+  };
+  const cliOnly: ServerProvider = {
+    ...signedOut,
+    setup: { canAuthenticate: false, canInstall: false },
+  };
+  const acpSignedOut: ServerProvider = {
+    ...signedOut,
+    driver: ProviderDriverKind.make("acpRegistry"),
+    setup: { canAuthenticate: false, canInstall: false },
+  };
+  const antigravitySignedOut: ServerProvider = {
+    ...signedOut,
+    driver: ProviderDriverKind.make("antigravity"),
+    status: "warning",
+    setup: { canAuthenticate: true, canInstall: true },
+  };
+  const notInstalled: ServerProvider = {
+    ...signedOut,
+    installed: false,
+    setup: { canAuthenticate: false, canInstall: true },
+  };
+  const brokenSignedOut: ServerProvider = {
+    ...signedOut,
+    status: "warning",
+    compatibilityAdvisory: { ...provider.compatibilityAdvisory!, status: "broken" },
+  };
+  const turnFailed = { failed: true, lastErrorCode: "provider_auth_required" };
+  const noTurn = { failed: false, lastErrorCode: undefined };
+
+  it.each([
+    ["new thread, signed out, styal can sign in", noTurn, undefined, signedOut, null, "sign-in"],
+    ["new thread, ACP agent signed out", noTurn, undefined, acpSignedOut, null, "sign-in"],
+    [
+      "new thread, Antigravity signed out",
+      noTurn,
+      undefined,
+      antigravitySignedOut,
+      null,
+      "sign-in",
+    ],
+    ["new thread, signed out, CLI sign-in only", noTurn, undefined, cliOnly, null, "status"],
+    ["new thread, not installed", noTurn, undefined, notInstalled, null, "status"],
+    [
+      "new thread, signed out on a broken version",
+      noTurn,
+      undefined,
+      brokenSignedOut,
+      null,
+      "status",
+    ],
+    ["new thread, healthy", noTurn, undefined, healthy, null, null],
+    [
+      "failed turn, provider still reads signed in",
+      turnFailed,
+      healthy,
+      healthy,
+      null,
+      "failed-turn",
+    ],
+    ["failed turn, provider signed out", turnFailed, signedOut, signedOut, null, "failed-turn"],
+    ["failed turn, CLI sign-in only", turnFailed, cliOnly, cliOnly, null, "status"],
+    [
+      "failed turn for another reason, signed out",
+      { failed: true, lastErrorCode: "provider_error" },
+      signedOut,
+      signedOut,
+      null,
+      "sign-in",
+    ],
+    [
+      "signed out, dismissed",
+      noTurn,
+      undefined,
+      signedOut,
+      getProviderStatusBannerKey(signedOut),
+      null,
+    ],
+  ] as const)("%s", (_state, turn, turnProvider, selectedProvider, dismissed, expected) => {
+    const banner = resolveProviderBanner({
+      ...turn,
+      turnProvider,
+      selectedProvider,
+      dismissedStatusBannerKey: dismissed,
+    });
+    expect(
+      banner === null
+        ? null
+        : banner.kind === "status"
+          ? "status"
+          : banner.afterFailedTurn
+            ? "failed-turn"
+            : "sign-in",
+    ).toBe(expected);
   });
 });

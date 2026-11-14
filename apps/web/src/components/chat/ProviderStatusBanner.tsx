@@ -1,4 +1,5 @@
 import {
+  isProviderAuthFailureCode,
   type EnvironmentId,
   type ProviderInstanceId,
   type ServerProvider,
@@ -49,12 +50,68 @@ export function getProviderStatusBannerKey(status: ServerProvider | null): strin
   );
 }
 
+/** styal can run this provider's sign-in itself, from the sign-in dialog. */
+function supportsInAppSignIn(status: ServerProvider): boolean {
+  return (
+    status.setup?.canAuthenticate === true || (status.driver === "acpRegistry" && status.installed)
+  );
+}
+
+/** The status banner would only say "signed out", so the sign-in banner takes its place. */
+function providerStatusOffersSignIn(status: ServerProvider | null): boolean {
+  return (
+    status !== null &&
+    getProviderStatusBannerKey(status) !== null &&
+    getIncompatibleVersion(status) === null &&
+    status.installed &&
+    status.auth.status === "unauthenticated" &&
+    supportsInAppSignIn(status)
+  );
+}
+
 export function shouldShowProviderStatusBanner(
   status: ServerProvider | null,
   dismissedBannerKey: string | null,
 ): boolean {
   const bannerKey = getProviderStatusBannerKey(status);
   return bannerKey !== null && bannerKey !== dismissedBannerKey;
+}
+
+export type ProviderBanner =
+  | {
+      readonly kind: "sign-in";
+      readonly provider: ServerProvider;
+      readonly afterFailedTurn: boolean;
+    }
+  | { readonly kind: "status"; readonly provider: ServerProvider }
+  | null;
+
+/** One banner per thread: sign-in wherever styal can sign the provider in, else the status. */
+export function resolveProviderBanner(input: {
+  readonly failed: boolean;
+  readonly lastErrorCode: string | null | undefined;
+  readonly turnProvider: ServerProvider | undefined;
+  readonly selectedProvider: ServerProvider | null;
+  readonly dismissedStatusBannerKey: string | null;
+}): ProviderBanner {
+  const { turnProvider, selectedProvider } = input;
+  if (
+    input.failed &&
+    isProviderAuthFailureCode(input.lastErrorCode) &&
+    turnProvider &&
+    supportsInAppSignIn(turnProvider)
+  ) {
+    return { kind: "sign-in", provider: turnProvider, afterFailedTurn: true };
+  }
+  if (
+    !selectedProvider ||
+    !shouldShowProviderStatusBanner(selectedProvider, input.dismissedStatusBannerKey)
+  ) {
+    return null;
+  }
+  return providerStatusOffersSignIn(selectedProvider)
+    ? { kind: "sign-in", provider: selectedProvider, afterFailedTurn: false }
+    : { kind: "status", provider: selectedProvider };
 }
 
 export function hasProviderSetup(status: ServerProvider): boolean {

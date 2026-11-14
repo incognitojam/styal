@@ -317,10 +317,7 @@ import {
   shouldShowComposerContextStrip,
   shouldShowEnvironmentIndicator,
 } from "./BranchToolbar.logic";
-import {
-  getProviderStatusBannerKey,
-  shouldShowProviderStatusBanner,
-} from "./chat/ProviderStatusBanner";
+import { getProviderStatusBannerKey, resolveProviderBanner } from "./chat/ProviderStatusBanner";
 import {
   getThreadErrorBannerKey,
   isThreadErrorBannerDismissedForSession,
@@ -1758,14 +1755,20 @@ export default function ChatView(props: ChatViewProps) {
   if (providerStatusBannerKey === null && dismissedProviderStatusBannerKey !== null) {
     setDismissedProviderStatusBannerKey(null);
   }
+  const providerBanner = resolveProviderBanner({
+    failed: serverRuntime?.status === "failed",
+    lastErrorCode: serverRuntime?.lastErrorCode,
+    turnProvider: providerStatuses.find(
+      (provider) => provider.instanceId === serverRuntime?.providerInstanceId,
+    ),
+    selectedProvider: activeProviderStatus,
+    dismissedStatusBannerKey: dismissedProviderStatusBannerKey,
+  });
   const providerSignIn = useProviderSignInBanner({
     environmentId,
     environmentLabel: activeEnvironment?.label ?? "this environment",
-    failed: serverRuntime?.status === "failed",
-    lastErrorCode: serverRuntime?.lastErrorCode,
-    provider: providerStatuses.find(
-      (provider) => provider.instanceId === serverRuntime?.providerInstanceId,
-    ),
+    banner: providerBanner,
+    providers: providerStatuses,
     runId: activeThreadShell?.latestRun?.runId,
     recovery: activeThreadShell?.authRecovery,
     onChangeWaiting: async (authRecovery) => {
@@ -1776,14 +1779,14 @@ export default function ChatView(props: ChatViewProps) {
       });
       if (result._tag === "Failure") throw squashAtomCommandFailure(result);
     },
+    onDismiss: () => setDismissedProviderStatusBannerKey(providerStatusBannerKey),
   });
-  // The sign-in banner says what these two say, and offers the fix.
-  const visibleProviderStatus =
-    providerSignIn.item === null &&
-    shouldShowProviderStatusBanner(activeProviderStatus, dismissedProviderStatusBannerKey)
-      ? activeProviderStatus
-      : null;
-  const bannerThreadError = providerSignIn.item === null ? timelineThreadError : null;
+  const visibleProviderStatus = providerBanner?.kind === "status" ? providerBanner.provider : null;
+  // The sign-in banner after a failed turn says what the thread error says, and offers the fix.
+  const bannerThreadError =
+    providerBanner?.kind === "sign-in" && providerBanner.afterFailedTurn
+      ? null
+      : timelineThreadError;
   const hasTimelineTopBanner = Boolean(bannerThreadError) || visibleProviderStatus !== null;
   const activeProjectCwd = activeProject?.workspaceRoot ?? null;
   const activeThreadWorktreePath = activeThread?.worktreePath ?? null;

@@ -328,7 +328,7 @@ export const ForkClientUsageInput = Schema.Union([
   Schema.Struct({
     feature: Schema.Literal("provider-sign-in"),
     action: Schema.Literal("start"),
-    entryPoint: Schema.Literals(["settings", "thread"]),
+    entryPoint: Schema.Literals(["settings", "thread", "signed_out"]),
   }),
   Schema.Struct({
     feature: Schema.Literal("completion-sounds"),
