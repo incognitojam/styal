@@ -584,17 +584,14 @@ jobs:
         uses: actions/github-script@v9
         env:
           NEEDS: ${{ toJSON(needs) }}
+          WORKFLOW_DRY_RUN: ${{ inputs.dry_run == true }}
+          NPM_REQUIRED: ${{ vars.STYAL_CLI_PUBLISH_ENABLED == 'true' }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          WORKFLOW_SHA: ${{ github.sha }}
           CANDIDATE_REF: ${{ needs.prepare.outputs.ref }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_CI }}
         with:
           script: |
-            const needs = JSON.parse(process.env.NEEDS);
-            const results = Object.entries(needs)
-              .filter(([name]) => name !== 'notify_failure').map(([, job]) => job.result);
-            if (results.includes('cancelled')) return;
-            const conclusion = results.includes('failure') ? 'failure' :
-              needs.prepare.result === 'success' ? 'success' : null;
-            if (!conclusion) return;
             const { stripTypeScriptTypes } = require('node:module');
             const moduleUrl = source => `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`;
             const load = async path => {
@@ -602,18 +599,27 @@ jobs:
               if (!response.ok) throw new Error(`Cannot load nightly module: ${response.status}`);
               return stripTypeScriptTypes(await response.text());
             };
-            const footer = moduleUrl(await load('packages/shared/src/feedbackFooter.ts'));
-            const routing = (await load('scripts/issue-routing.ts')).replaceAll('@t3tools/shared/feedbackFooter', footer);
-            const { discordPayload, postDiscord } = await import(moduleUrl(routing));
             const { syncNightlyHealth } = await import(moduleUrl(await load('scripts/nightly-health.ts')));
             const result = await syncNightlyHealth({
               request: async (method, path, body) => (await github.request(`${method} ${path}`, body)).data,
               repo: `${context.repo.owner}/${context.repo.repo}`,
-              runId: String(context.runId), conclusion, commit: process.env.CANDIDATE_REF,
+              run: {
+                runId: String(context.runId), runAttempt: Number(process.env.RUN_ATTEMPT),
+                html_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+                head_sha: process.env.CANDIDATE_REF || process.env.WORKFLOW_SHA,
+                results: Object.fromEntries(Object.entries(JSON.parse(process.env.NEEDS)).map(([name, job]) => [name, job.result])),
+                workflowDryRun: process.env.WORKFLOW_DRY_RUN === 'true',
+                npmRequired: process.env.NPM_REQUIRED === 'true',
+              },
+              warn: message => core.warning(message),
               dryRun: false,
               announce: async issue => {
                 const webhook = process.env.DISCORD_WEBHOOK_URL;
-                if (webhook && !await postDiscord(webhook, discordPayload(issue, 'other'))) {
+                if (!webhook) return;
+                const footer = moduleUrl(await load('packages/shared/src/feedbackFooter.ts'));
+                const routing = (await load('scripts/issue-routing.ts')).replaceAll('@t3tools/shared/feedbackFooter', footer);
+                const { discordPayload, postDiscord } = await import(moduleUrl(routing));
+                if (!await postDiscord(webhook, discordPayload(issue, 'other'))) {
                   core.warning('Discord issue announcement could not be delivered.');
                 }
               },

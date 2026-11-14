@@ -9,18 +9,37 @@ type Job = {
   steps?: { name: string; conclusion: string | null }[];
 };
 type Issue = { number: number; pull_request?: unknown };
-type Run = { html_url: string; head_sha: string; conclusion: string | null; name: string };
+type Outcome = {
+  results: Readonly<Record<string, string>>;
+  workflowDryRun: boolean;
+  npmRequired: boolean;
+};
+type Run = Outcome & { html_url: string; head_sha: string; runId: string; runAttempt: number };
 type Request = <T>(method: string, path: string, body?: object) => Promise<T>;
 
-export function healthAction(conclusion: string | null, issues: Issue[]) {
-  if (conclusion === "failure") return issues.length ? "would skip" : "would open";
-  if (conclusion === "success") return issues.length ? "would close" : "nothing to close";
+export function healthAction(outcome: Outcome, issues: Issue[]) {
+  const results = Object.entries(outcome.results)
+    .filter(([name]) => name !== "notify_failure" && name !== "nightly_health")
+    .map(([, result]) => result);
+  if (results.includes("cancelled")) return "ignored";
+  if (results.includes("failure")) return issues.length ? "would skip" : "would open";
+  if (
+    !outcome.workflowDryRun &&
+    outcome.results.release === "success" &&
+    (!outcome.npmRequired || outcome.results.publish_cli === "success") &&
+    results.every((result) => result === "success" || result === "skipped")
+  )
+    return issues.length ? "would close" : "nothing to close";
   return "ignored";
+}
+
+function inertText(text: string, limit = 500) {
+  return "`" + text.replaceAll("`", "'").replace(/\s+/g, " ").trim().slice(0, limit) + "`";
 }
 
 export function failureBody(run: Run, jobs: Job[], errors: Record<string, string> = {}) {
   return [
-    `Run: ${run.html_url}`,
+    `Run: ${run.html_url} (attempt ${run.runAttempt})`,
     `Commit: ${run.head_sha}`,
     "",
     ...jobs
@@ -30,9 +49,9 @@ export function failureBody(run: Run, jobs: Job[], errors: Record<string, string
         return steps.length
           ? steps.map(
               (step) =>
-                `- ${job.name}: ${step.name}${errors[job.name] ? ` — ${errors[job.name]}` : ""}`,
+                `- ${inertText(job.name, 200)}: ${inertText(step.name, 200)}${Object.hasOwn(errors, job.name) ? ` — ${inertText(errors[job.name]!)}` : ""}`,
             )
-          : [`- ${job.name}: failed step unavailable`];
+          : [`- ${inertText(job.name, 200)}: failed step unavailable`];
       }),
   ].join("\n");
 }
@@ -40,9 +59,8 @@ export function failureBody(run: Run, jobs: Job[], errors: Record<string, string
 export async function syncNightlyHealth(options: {
   request: Request;
   repo: string;
-  runId: string;
-  conclusion?: string;
-  commit?: string;
+  run: Run;
+  warn?: (message: string) => void;
   dryRun: boolean;
   announce?: (issue: {
     number: number;
@@ -51,12 +69,10 @@ export async function syncNightlyHealth(options: {
     user: { login: string } | null;
   }) => Promise<void>;
 }) {
-  const { request, repo, runId, dryRun, announce } = options;
+  const { request, repo, run, dryRun, announce, warn } = options;
+  const runId = run.runId;
   const root = `/repos/${repo}`;
-  const run = await request<Run>("GET", `${root}/actions/runs/${runId}`);
-  if (run.name !== "Fork Nightly") throw new Error("Expected a Fork Nightly run");
-  const conclusion = options.conclusion ?? run.conclusion;
-  if (conclusion !== "failure" && conclusion !== "success") return "ignored";
+  if (healthAction(run, []) === "ignored") return "ignored";
   const issues: Issue[] = [];
   for (let page = 1; ; page++) {
     const batch = await request<Issue[]>(
@@ -66,14 +82,25 @@ export async function syncNightlyHealth(options: {
     issues.push(...batch.filter((issue) => !issue.pull_request));
     if (batch.length < 100) break;
   }
-  const action = healthAction(conclusion, issues);
+  const action = healthAction(run, issues);
   if (action === "would skip" || action === "nothing to close") return action;
   if (action === "would close") {
     if (!dryRun) {
       for (const issue of issues) {
-        await request("POST", `${root}/issues/${issue.number}/comments`, {
-          body: `Fork Nightly recovered: ${run.html_url}`,
-        });
+        const body = `Fork Nightly recovered: ${run.html_url}`;
+        let commented = false;
+        for (let page = 1; ; page++) {
+          const comments = await request<{ body: string }[]>(
+            "GET",
+            `${root}/issues/${issue.number}/comments?per_page=100&page=${page}`,
+          );
+          if (comments.some((comment) => comment.body === body)) {
+            commented = true;
+            break;
+          }
+          if (comments.length < 100) break;
+        }
+        if (!commented) await request("POST", `${root}/issues/${issue.number}/comments`, { body });
         await request("PATCH", `${root}/issues/${issue.number}`, {
           state: "closed",
           state_reason: "completed",
@@ -91,7 +118,7 @@ export async function syncNightlyHealth(options: {
     jobs.push(...batch.jobs);
     if (batch.jobs.length < 100) break;
   }
-  const errors: Record<string, string> = {};
+  const errors: Record<string, string> = Object.create(null);
   for (const job of jobs.filter((job) => job.conclusion === "failure")) {
     // Annotations are already runner-marked errors; never copy unfiltered logs.
     if (
@@ -110,7 +137,7 @@ export async function syncNightlyHealth(options: {
       // Some tokens cannot read check annotations; job and step names still identify the failure.
     }
   }
-  const body = failureBody({ ...run, head_sha: options.commit || run.head_sha }, jobs, errors);
+  const body = failureBody(run, jobs, errors);
   if (dryRun) return `${action}\n${body}`;
   for (const label of [
     {
@@ -147,7 +174,11 @@ export async function syncNightlyHealth(options: {
       labels: ["nightly-failure", "bug", "needs-triage"],
     },
   );
-  await announce?.(issue);
+  try {
+    await announce?.(issue);
+  } catch {
+    warn?.("Discord issue announcement could not be delivered.");
+  }
   return `opened #${issue.number}`;
 }
 
@@ -155,15 +186,66 @@ if (process.argv[1] && import.meta.url === NodeURL.pathToFileURL(process.argv[1]
   const runId = process.argv[2];
   if (!runId || !process.argv.includes("--dry-run"))
     throw new Error("Usage: node scripts/nightly-health.ts RUN_ID --dry-run");
-  const request: Request = async <T>(_method: string, path: string) =>
-    JSON.parse(
+  const request: Request = async <T>(method: string, path: string) => {
+    if (method !== "GET") throw new Error("Dry run permits GET requests only");
+    return JSON.parse(
       NodeChildProcess.execFileSync("gh", ["api", path], {
         encoding: "utf8",
         env: { ...process.env, GH_REPO: "incognitojam/styal" },
         stdio: ["ignore", "pipe", "ignore"],
       }),
     ) as T;
-  console.log(
-    await syncNightlyHealth({ request, repo: "incognitojam/styal", runId, dryRun: true }),
-  );
+  };
+  const root = "/repos/incognitojam/styal";
+  const metadata = await request<{
+    name: string;
+    conclusion: string | null;
+    html_url: string;
+    head_sha: string;
+    run_attempt: number;
+  }>("GET", `${root}/actions/runs/${runId}`);
+  if (metadata.name !== "Fork Nightly") throw new Error("Expected a Fork Nightly run");
+  const jobs: Job[] = [];
+  for (let page = 1; ; page++) {
+    const batch = await request<{ jobs: Job[] }>(
+      "GET",
+      `${root}/actions/runs/${runId}/jobs?filter=latest&per_page=100&page=${page}`,
+    );
+    jobs.push(...batch.jobs);
+    if (batch.jobs.length < 100) break;
+  }
+  const release = jobs.find((job) => job.name === "Publish GitHub prerelease");
+  const npm = jobs.filter((job) => job.name.startsWith("Publish CLI to npm /"));
+  const run: Run = {
+    ...metadata,
+    runId,
+    runAttempt: metadata.run_attempt,
+    results: {
+      ...Object.fromEntries(
+        jobs
+          .filter(
+            (job) =>
+              job.name !== "Notify Discord of failure" && job.name !== "Track nightly health",
+          )
+          .map((job) => [job.name, job.conclusion ?? "in_progress"]),
+      ),
+      release: release?.conclusion ?? "skipped",
+      publish_cli: npm.some((job) => job.conclusion === "failure")
+        ? "failure"
+        : npm.some((job) => job.conclusion === "success")
+          ? "success"
+          : "skipped",
+      workflow:
+        metadata.conclusion === "cancelled"
+          ? "cancelled"
+          : metadata.conclusion === null
+            ? "in_progress"
+            : "success",
+    },
+    workflowDryRun: !release?.steps?.some(
+      (step) => step.name === "Publish complete prerelease" && step.conclusion === "success",
+    ),
+    npmRequired: npm.length > 0,
+  };
+  console.log(await syncNightlyHealth({ request, repo: "incognitojam/styal", run, dryRun: true }));
 }

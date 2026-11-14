@@ -1,156 +1,264 @@
 import { describe, expect, it } from "vite-plus/test";
 import { failureBody, healthAction, syncNightlyHealth } from "./nightly-health.ts";
-import { classifyReport, issueLabels } from "./issue-routing.ts";
+import { classifyReport, issueLabels, postDiscord } from "./issue-routing.ts";
+
+const published = {
+  results: { prepare: "success", release: "success", publish_cli: "success" },
+  workflowDryRun: false,
+  npmRequired: true,
+};
+const run = {
+  html_url: "https://example.test/run/1",
+  head_sha: "abc123",
+  runId: "1",
+  runAttempt: 2,
+  ...published,
+};
+
+function fixture(numbers: number[] = []) {
+  const open = new Set(numbers);
+  const comments = new Map<number, object[]>();
+  const calls: { method: string; path: string; body?: object }[] = [];
+  const request = async <T>(method: string, path: string, body?: object): Promise<T> => {
+    calls.push({ method, path, ...(body ? { body } : {}) });
+    let result: unknown = {};
+    if (path.includes("/issues?")) result = [...open].map((number) => ({ number }));
+    else if (path.includes("/jobs?")) result = { jobs: [] };
+    else if (path.includes("/comments")) {
+      const number = Number(path.split("/").at(-2));
+      if (method === "GET") result = comments.get(number) ?? [];
+      else comments.set(number, [...(comments.get(number) ?? []), body!]);
+    } else if (method === "POST" && path.endsWith("/issues")) {
+      open.add(7);
+      result = { number: 7 };
+    } else if (method === "PATCH") open.delete(Number(path.split("/").at(-1)));
+    return result as T;
+  };
+  return {
+    open,
+    comments,
+    calls,
+    options: { request, repo: "example/project", run, dryRun: false },
+  };
+}
 
 describe("nightly health", () => {
   it.each([
-    ["failure", [], "would open"],
-    ["failure", [{ number: 1 }], "would skip"],
-    ["success", [], "nothing to close"],
-    ["success", [{ number: 1 }], "would close"],
-    ["cancelled", [], "ignored"],
-    [null, [], "ignored"],
-  ] as const)("decides %s with %j", (conclusion, issues, expected) => {
-    expect(healthAction(conclusion, [...issues])).toBe(expected);
+    ["failure, no issue", { ...published, results: { prepare: "failure" } }, [], "would open"],
+    [
+      "failure, one issue",
+      { ...published, results: { release: "failure" } },
+      [{ number: 1 }],
+      "would skip",
+    ],
+    [
+      "failure, two issues",
+      { ...published, results: { publish_cli: "failure" } },
+      [{ number: 1 }, { number: 2 }],
+      "would skip",
+    ],
+    ["published, one issue", published, [{ number: 1 }], "would close"],
+    ["published, two issues", published, [{ number: 1 }, { number: 2 }], "would close"],
+    ["published, no issue", published, [], "nothing to close"],
+    [
+      "cancelled even with failure",
+      { ...published, results: { prepare: "failure", release: "cancelled" } },
+      [{ number: 1 }],
+      "ignored",
+    ],
+    [
+      "prepare succeeded, release skipped",
+      { ...published, results: { prepare: "success", release: "skipped" } },
+      [{ number: 1 }],
+      "ignored",
+    ],
+    [
+      "successful workflow dry run",
+      { ...published, workflowDryRun: true },
+      [{ number: 1 }],
+      "ignored",
+    ],
+    [
+      "failed workflow dry run",
+      { ...published, workflowDryRun: true, results: { prepare: "failure" } },
+      [],
+      "would open",
+    ],
+    [
+      "npm enabled but skipped",
+      { ...published, results: { release: "success", publish_cli: "skipped" } },
+      [{ number: 1 }],
+      "ignored",
+    ],
+    [
+      "npm disabled",
+      { ...published, npmRequired: false, results: { release: "success", publish_cli: "skipped" } },
+      [{ number: 1 }],
+      "would close",
+    ],
+    ["incomplete", { ...published, results: { release: "in_progress" } }, [], "ignored"],
+    [
+      "rejected request",
+      { ...published, results: { prepare: "skipped", release: "skipped" } },
+      [{ number: 1 }],
+      "ignored",
+    ],
+    [
+      "notification failure only",
+      { ...published, results: { ...published.results, notify_failure: "failure" } },
+      [],
+      "nothing to close",
+    ],
+  ] as const)("%s", async (_name, outcome, issues, expected) => {
+    expect(healthAction(outcome, [...issues])).toBe(expected);
+    if (expected === "ignored") {
+      const state = fixture();
+      expect(await syncNightlyHealth({ ...state.options, run: { ...run, ...outcome } })).toBe(
+        "ignored",
+      );
+      expect(state.calls).toEqual([]);
+    }
   });
 
-  it("reports every failed step without successful job output or app-report labels", () => {
+  it("renders hostile names and annotations as bounded inert text", () => {
+    const name = "odd\n`job` @example-user Fixes #42 <details>…</details>";
     const body = failureBody(
-      {
-        html_url: "https://example.test/run/1",
-        head_sha: "abc123",
-        conclusion: "failure",
-        name: "Fork Nightly",
-      },
+      run,
       [
-        {
-          name: "macOS",
-          conclusion: "failure",
-          steps: [{ name: "Notarize", conclusion: "failure" }],
-        },
-        {
-          name: "CLI",
-          conclusion: "failure",
-          steps: [
-            { name: "Build", conclusion: "failure" },
-            { name: "Cleanup", conclusion: "failure" },
-          ],
-        },
+        { name, conclusion: "failure", steps: [{ name: "step\r\n```", conclusion: "failure" }] },
+        { name: "x".repeat(1000), conclusion: "failure" },
         { name: "Linux", conclusion: "success" },
-        { name: "Windows", conclusion: "failure" },
       ],
-      { macOS: "Agreement expired" },
+      { [name]: "@example-user Fixes #42 <details>…</details>\n" + "x".repeat(1000) },
     );
-    expect(body).toBe(
-      "Run: https://example.test/run/1\nCommit: abc123\n\n- macOS: Notarize — Agreement expired\n- CLI: Build\n- CLI: Cleanup\n- Windows: failed step unavailable",
-    );
-    expect(classifyReport(body)).toBe("other");
+    expect(body).toContain("`odd 'job' @example-user Fixes #42 <details>…</details>`");
+    expect(body).toContain("`step '''`");
+    expect(body).toContain(" — `@example-user Fixes #42 <details>…</details> ");
+    expect(body).not.toContain("x".repeat(501));
+    expect(body.split("\n")).toHaveLength(5);
+    expect(body).not.toContain("Linux");
     expect(issueLabels(classifyReport(body))).toEqual(["needs-triage"]);
   });
 
-  it("opens once across seven failures, then comments and closes once on recovery", async () => {
-    let conclusion = "failure";
-    let open = false;
-    const writes: { method: string; path: string; body?: object }[] = [];
-    let announcements = 0;
-    const request = async <T>(method: string, path: string, body?: object): Promise<T> => {
-      if (method !== "GET") writes.push({ method, path, ...(body ? { body } : {}) });
-      let result: unknown = {};
-      if (path.endsWith("/actions/runs/1"))
-        result = {
-          name: "Fork Nightly",
-          html_url: "https://example.test/run/1",
-          head_sha: "abc123",
-          conclusion,
-        };
-      else if (path.includes("/issues?")) result = open ? [{ number: 7 }] : [];
-      else if (path.includes("/jobs?")) result = { jobs: [] };
-      else if (method === "POST" && path.endsWith("/issues")) {
-        open = true;
-        result = { number: 7 };
-      } else if (method === "PATCH") open = false;
-      return result as T;
-    };
-    const options = {
-      request,
-      repo: "example/project",
-      runId: "1",
-      dryRun: false,
-      announce: async () => {
-        announcements++;
-      },
-    };
+  it("opens once across seven failures, leaves two issues on failure, and recovers both once", async () => {
+    const state = fixture();
+    const options = { ...state.options, run: { ...run, results: { release: "failure" } } };
     for (let failure = 0; failure < 7; failure++) await syncNightlyHealth(options);
-    expect(writes).toHaveLength(1);
-    expect(writes[0]?.body).toMatchObject({
-      title: "Fork Nightly is failing",
-      labels: ["nightly-failure", "bug", "needs-triage"],
-    });
-    expect(announcements).toBe(1);
-    conclusion = "success";
-    expect(await syncNightlyHealth(options)).toBe("would close");
-    expect(writes.slice(1)).toEqual([
-      {
-        method: "POST",
-        path: "/repos/example/project/issues/7/comments",
-        body: { body: "Fork Nightly recovered: https://example.test/run/1" },
-      },
-      {
-        method: "PATCH",
-        path: "/repos/example/project/issues/7",
-        body: { state: "closed", state_reason: "completed" },
-      },
-    ]);
-    expect(await syncNightlyHealth(options)).toBe("nothing to close");
-    expect(writes).toHaveLength(3);
-    open = true;
-    expect(await syncNightlyHealth({ ...options, dryRun: true })).toBe("would close");
-    open = false;
-    conclusion = "failure";
-    expect(await syncNightlyHealth({ ...options, dryRun: true })).toContain("would open");
-    expect(writes).toHaveLength(3);
+    expect(state.calls.filter((call) => call.method === "POST")).toHaveLength(1);
+    state.open.add(8);
+    expect(await syncNightlyHealth(options)).toBe("would skip");
+    expect([...state.open]).toEqual([7, 8]);
+    expect(await syncNightlyHealth(state.options)).toBe("would close");
+    expect([...state.open]).toEqual([]);
+    expect(state.comments.get(7)).toEqual([{ body: `Fork Nightly recovered: ${run.html_url}` }]);
+    expect(state.comments.get(8)).toHaveLength(1);
+    const before = state.calls.length;
+    expect(await syncNightlyHealth(state.options)).toBe("nothing to close");
+    expect(state.calls.slice(before)).toHaveLength(1);
+    expect(state.calls.at(-1)?.path).toContain("/issues?");
   });
+
+  it("does not repeat a recovery comment after closure fails and the attempt is retried", async () => {
+    const state = fixture([7, 8]);
+    let failClose = true;
+    const request: typeof state.options.request = async (method, path, body) => {
+      if (method === "PATCH" && failClose) {
+        failClose = false;
+        throw new Error("Close failed");
+      }
+      return state.options.request(method, path, body);
+    };
+    await expect(syncNightlyHealth({ ...state.options, request })).rejects.toThrow("Close failed");
+    await syncNightlyHealth({ ...state.options, request, run: { ...run, runAttempt: 3 } });
+    expect(state.comments.get(7)).toHaveLength(1);
+    expect(state.comments.get(8)).toHaveLength(1);
+    expect([...state.open]).toEqual([]);
+  });
+
+  it.each(["failure", "recovery"])("keeps %s dry runs read-only", async (kind) => {
+    const state = fixture(kind === "recovery" ? [7] : []);
+    await syncNightlyHealth({
+      ...state.options,
+      dryRun: true,
+      run: kind === "failure" ? { ...run, results: { release: "failure" } } : run,
+    });
+    expect(state.calls.every((call) => call.method === "GET")).toBe(true);
+  });
+
+  it.each(["GET", "POST", "PATCH"])("propagates issue API %s failures", async (failedMethod) => {
+    const state = fixture(failedMethod === "PATCH" ? [7] : []);
+    const request: typeof state.options.request = async (method, path, body) => {
+      if (method === failedMethod) throw new Error("GitHub unavailable");
+      return state.options.request(method, path, body);
+    };
+    await expect(
+      syncNightlyHealth({
+        ...state.options,
+        request,
+        run: failedMethod === "PATCH" ? run : { ...run, results: { release: "failure" } },
+      }),
+    ).rejects.toThrow("GitHub unavailable");
+  });
+
+  it.each([403, 500])(
+    "warns for Discord HTTP %s without hiding successful issue creation",
+    async (status) => {
+      const state = fixture();
+      const warnings: string[] = [];
+      const result = await syncNightlyHealth({
+        ...state.options,
+        run: { ...run, results: { release: "failure" } },
+        warn: (message) => warnings.push(message),
+        announce: async () => {
+          await postDiscord(
+            "https://example.invalid/webhook",
+            { allowed_mentions: { parse: [] }, embeds: [] },
+            async () => new Response(null, { status }),
+          );
+        },
+      });
+      expect(result).toBe("opened #7");
+      expect([...state.open]).toEqual([7]);
+      expect(warnings).toEqual(["Discord issue announcement could not be delivered."]);
+    },
+  );
+
   it.each([true, false])(
     "uses only the first failure annotation when readable=%s",
     async (readable) => {
-      const request = async <T>(method: string, path: string): Promise<T> => {
-        expect(method).toBe("GET");
-        let result: unknown;
-        if (path.includes("/issues?")) result = [];
-        else if (path.includes("/jobs?"))
-          result = {
+      const state = fixture();
+      const request: typeof state.options.request = async <T>(
+        method: string,
+        path: string,
+        body?: object,
+      ): Promise<T> => {
+        if (path.includes("/jobs?"))
+          return {
             jobs: [
               {
-                name: "macOS",
+                name: "__proto__",
                 conclusion: "failure",
                 check_run_url: "https://api.github.com/repos/example/project/check-runs/1",
                 steps: [{ name: "Notarize", conclusion: "failure" }],
               },
             ],
-          };
-        else if (path.includes("/annotations?")) {
-          if (!readable) throw Object.assign(new Error("Forbidden"), { status: 403 });
-          result = [
+          } as T;
+        if (path.includes("/annotations?")) {
+          if (!readable) throw new Error("Forbidden");
+          return [
             { annotation_level: "warning", message: "Do not include" },
             { annotation_level: "failure", message: "Agreement expired\nExtra output" },
-          ];
-        } else
-          result = {
-            name: "Fork Nightly",
-            html_url: "https://example.test/run/1",
-            head_sha: "abc123",
-            conclusion: "failure",
-          };
-        return result as T;
+          ] as T;
+        }
+        return state.options.request(method, path, body);
       };
       const output = await syncNightlyHealth({
+        ...state.options,
         request,
-        repo: "example/project",
-        runId: "1",
+        run: { ...run, results: { release: "failure" } },
         dryRun: true,
       });
-      expect(output).toContain("would open");
-      expect(output).toContain("macOS: Notarize");
+      expect(output).toContain("`__proto__`: `Notarize`");
       expect(output.includes("Agreement expired")).toBe(readable);
       expect(output).not.toContain("Extra output");
       expect(output).not.toContain("Do not include");
