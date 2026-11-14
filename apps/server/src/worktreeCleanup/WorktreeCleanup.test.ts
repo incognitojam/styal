@@ -1,3 +1,4 @@
+import { ChildProcessSpawner } from "effect/process";
 import * as Deferred from "effect/Deferred";
 import * as Fiber from "effect/Fiber";
 import * as StorageCleanup from "../storageCleanup.ts";
@@ -141,6 +142,232 @@ const fixture = Effect.gen(function* () {
 });
 
 describe("WorktreeCleanup", () => {
+  it.effect(
+    "reports approved descendant patterns inside a pending selected parent without double counting",
+    () =>
+      Effect.gen(function* () {
+        const f = yield* fixture;
+        yield* f.write("dist/sub/output");
+        yield* f.write("dist/other");
+        const storage = yield* StorageCleanup.StorageCleanup;
+        const select = yield* makeSelect.pipe(
+          Effect.provideService(StorageCleanup.StorageCleanup, {
+            ...storage,
+            measureWorktree: (_root, target) =>
+              Effect.succeed(target?.endsWith("/sub") ? 512 : 1024),
+          }),
+        );
+        const result = yield* select(
+          f.worktree,
+          ["dist", "dist/sub"],
+          ["dist", "dist/sub"],
+          new Set(["dist/sub"]),
+        );
+        assert.deepEqual(
+          result.selected.map(({ path, patterns, patternStatus, freedBytes, insideSelected }) => ({
+            path,
+            patterns,
+            patternStatus,
+            freedBytes,
+            insideSelected,
+          })),
+          [
+            {
+              path: "dist",
+              patterns: ["dist"],
+              patternStatus: "pending",
+              freedBytes: 1024,
+              insideSelected: null,
+            },
+            {
+              path: "dist/sub",
+              patterns: ["dist/sub"],
+              patternStatus: "approved",
+              freedBytes: 512,
+              insideSelected: "dist",
+            },
+          ],
+        );
+        assert.equal(result.freedBytes, 1024);
+        const approvedOnly = yield* select(
+          f.worktree,
+          ["dist/sub"],
+          ["dist", "dist/sub"],
+          new Set(["dist/sub"]),
+        );
+        assert.equal(approvedOnly.freedBytes, 512);
+        assert.equal(approvedOnly.selected[0]?.insideSelected, null);
+      }).pipe(Effect.provide(dependencies), Effect.scoped),
+  );
+
+  it.effect(
+    "uses one preview deadline including git probes and marks later worktrees not checked",
+    () =>
+      Effect.gen(function* () {
+        const f = yield* fixture;
+        yield* f.write("dist/output");
+        yield* f.command(f.root, ["worktree", "add", "--detach", `${f.worktree}-later`]);
+        const completed = yield* Deferred.make<void>();
+        const measuring = yield* Deferred.make<void>();
+        const finishMeasurement = yield* Deferred.make<void>();
+        const storage = yield* StorageCleanup.StorageCleanup;
+        const entered = yield* Deferred.make<void>();
+        const stopped = yield* Deferred.make<void>();
+        const git = yield* GitVcsDriver.GitVcsDriver;
+        let probes = 0;
+        const projectId = ProjectId.make("project-1");
+        const external = Layer.mergeAll(
+          Settings.layerTest(),
+          Layer.mock(Approvals.Approvals)({
+            review: () =>
+              Effect.succeed({
+                status: "approved",
+                declared: [{ pattern: "dist", status: "approved" }],
+                approvedNotDeclared: [],
+              }),
+          }),
+          Layer.mock(ProjectService.ProjectService)({
+            getById: () =>
+              Effect.succeedSome({
+                id: projectId,
+                workspaceRoot: f.root,
+                title: "Fixture",
+                defaultModelSelection: null,
+                scripts: [],
+                createdAt: "2026-01-01T00:00:00.000Z",
+                updatedAt: "2026-01-01T00:00:00.000Z",
+                deletedAt: null,
+              }),
+          }),
+          Layer.mock(ProjectionStore.ProjectionStoreV2)({
+            getShellSnapshot: () =>
+              Effect.succeed({
+                schemaVersion: 1,
+                snapshotSequence: 0,
+                threads: [
+                  shell({ worktreePath: f.worktree, settledOverride: "settled" }),
+                  shell({ id: ThreadId.make("later"), worktreePath: `${f.worktree}-later` }),
+                  shell({
+                    id: ThreadId.make("unreached"),
+                    worktreePath: `${f.worktree}-unreached`,
+                  }),
+                ],
+                archivedThreads: [],
+              }),
+          }),
+        );
+        const program = Effect.gen(function* () {
+          const cleanup = yield* WorktreeCleanup.WorktreeCleanup;
+          const running = yield* cleanup
+            .preview({ projectId, list: "declared" })
+            .pipe(Effect.ensuring(Deferred.succeed(completed, undefined)), Effect.forkChild);
+          yield* Deferred.await(measuring);
+          yield* TestClock.adjust("20 seconds");
+          yield* Deferred.succeed(finishMeasurement, undefined);
+          yield* Deferred.await(entered);
+          yield* TestClock.adjust("10 seconds");
+          assert.isTrue(yield* Deferred.isDone(completed));
+          const result = yield* Fiber.join(running);
+          yield* Deferred.await(stopped);
+          assert.isTrue(result.deadlineReached);
+          assert.equal(probes, 1);
+          assert.equal(result.worktrees.length, 3);
+          assert.isTrue(result.worktrees[0]!.measurementComplete);
+          assert.equal(result.worktrees[0]!.freedBytes, 512);
+          for (const entry of result.worktrees.slice(1)) {
+            assert.equal(entry.reason, "not-checked");
+            assert.equal(entry.status, "kept");
+            assert.isTrue(entry.entriesTruncated);
+            assert.isFalse(entry.measurementComplete);
+          }
+        });
+        yield* program.pipe(
+          Effect.provide(WorktreeCleanup.layer.pipe(Layer.provide(external))),
+          Effect.provideService(StorageCleanup.StorageCleanup, {
+            ...storage,
+            measureWorktree: () =>
+              Deferred.succeed(measuring, undefined).pipe(
+                Effect.andThen(Deferred.await(finishMeasurement)),
+                Effect.as(512),
+              ),
+          }),
+          Effect.provideService(GitVcsDriver.GitVcsDriver, {
+            ...git,
+            execute: (input) => {
+              if (input.cwd !== `${f.worktree}-later`) return git.execute(input);
+              probes++;
+              return Deferred.succeed(entered, undefined).pipe(
+                Effect.andThen(Effect.never),
+                Effect.onInterrupt(() => Deferred.succeed(stopped, undefined)),
+              );
+            },
+          }),
+        );
+      }).pipe(Effect.provide(dependencies), Effect.scoped),
+  );
+
+  it.effect("interrupting inspection kills its git child and stops an in-progress walk", () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+      const spawned = yield* Deferred.make<ChildProcessSpawner.ChildProcessHandle>();
+      const git = yield* GitVcsDriver.make.pipe(
+        Effect.provideService(
+          ChildProcessSpawner.ChildProcessSpawner,
+          ChildProcessSpawner.make((command) =>
+            spawner.spawn(command).pipe(Effect.tap((handle) => Deferred.succeed(spawned, handle))),
+          ),
+        ),
+      );
+      const select = yield* makeSelect.pipe(
+        Effect.provideService(GitVcsDriver.GitVcsDriver, {
+          ...git,
+          execute: (input) => git.execute({ ...input, args: ["hash-object", "--stdin"] }),
+        }),
+      );
+      const running = yield* select(f.worktree, ["dist"]).pipe(Effect.forkChild);
+      const child = yield* Deferred.await(spawned);
+      yield* Fiber.interrupt(running);
+      assert.isFalse(yield* child.isRunning);
+      yield* f.write("dist/output");
+      const entered = yield* Deferred.make<void>();
+      const stopped = yield* Deferred.make<void>();
+      const walking = yield* makeSelect.pipe(
+        Effect.provideService(FileSystem.FileSystem, {
+          ...f.fs,
+          readDirectory: () =>
+            Deferred.succeed(entered, undefined).pipe(
+              Effect.andThen(Effect.never),
+              Effect.onInterrupt(() => Deferred.succeed(stopped, undefined)),
+            ),
+        }),
+      );
+      const walk = yield* walking(f.worktree, ["dist"]).pipe(Effect.forkChild);
+      yield* Deferred.await(entered);
+      yield* Fiber.interrupt(walk);
+      yield* Deferred.await(stopped);
+    }).pipe(Effect.provide(dependencies), Effect.scoped),
+  );
+
+  it.effect("reports an incomplete walk even when it stops before reaching a candidate", () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      yield* f.write("dist/output");
+      const select = yield* makeSelect.pipe(
+        Effect.provideService(SelectionLimits, {
+          verificationEntries: 100,
+          traversalEntries: 1,
+          reportEntries: 100,
+        }),
+      );
+      const result = yield* select(f.worktree, ["dist"]);
+      assert.isTrue(result.entriesTruncated);
+      assert.isFalse(result.measurementComplete);
+      assert.isNull(result.freedBytes);
+      assert.deepEqual(result.selected, []);
+    }).pipe(Effect.provide(dependencies), Effect.scoped),
+  );
+
   it.effect("ignores an inherited index when protecting tracked files inside ignored output", () =>
     Effect.gen(function* () {
       const f = yield* fixture;

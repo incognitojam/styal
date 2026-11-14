@@ -88,6 +88,7 @@ const preview = (worktrees: WorktreeCleanupPreviewEntry[]): WorktreeCleanupPrevi
   patterns: [],
   worktrees,
   worktreesTruncated: false,
+  deadlineReached: false,
 });
 const selected = (
   path: string,
@@ -99,6 +100,7 @@ const selected = (
   path,
   pattern,
   patterns,
+  insideSelected: null,
   patternStatus,
   kind: "directory" as const,
   freedBytes,

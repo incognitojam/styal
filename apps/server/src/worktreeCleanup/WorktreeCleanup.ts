@@ -40,32 +40,52 @@ const make = Effect.gen(function* () {
   const preview = Effect.fn("WorktreeCleanup.preview")(function* (
     input: WorktreeCleanupPreviewInput,
   ) {
-    const review = yield* approvals.review(input);
-    const patterns = review.declared
-      .filter((entry) => input.list === "declared" || entry.status === "approved")
-      .map((entry) => entry.pattern);
-    const approved = new Set(
-      review.declared.filter((entry) => entry.status === "approved").map((entry) => entry.pattern),
-    );
-    const project = yield* projects.getById(input.projectId).pipe(Effect.orDie);
-    if (Option.isNone(project))
+    const deadline = (yield* Clock.currentTimeMillis) + 30_000;
+    const budget = Effect.fn("WorktreeCleanup.budget")(function* <A, E, R>(
+      effect: Effect.Effect<A, E, R>,
+    ) {
+      const remaining = deadline - (yield* Clock.currentTimeMillis);
+      if (remaining <= 0) return Option.none<A>();
+      return yield* effect.pipe(Effect.timeoutOption(remaining));
+    });
+    const prepare = Effect.gen(function* () {
+      const review = yield* approvals.review(input);
+      const patterns = review.declared
+        .filter((entry) => input.list === "declared" || entry.status === "approved")
+        .map((entry) => entry.pattern);
+      const approved = new Set(
+        review.declared
+          .filter((entry) => entry.status === "approved")
+          .map((entry) => entry.pattern),
+      );
+      const project = yield* projects.getById(input.projectId).pipe(Effect.orDie);
+      if (Option.isNone(project))
+        return yield* new WorktreeCleanupError({
+          reason: "project-not-found",
+          message: "Project not found.",
+        });
+      const snapshot = yield* projections.getShellSnapshot().pipe(Effect.orDie);
+      const groups = new Map<string, (typeof snapshot.threads)[number][]>();
+      for (const thread of [...snapshot.threads, ...snapshot.archivedThreads]) {
+        if (
+          thread.projectId !== input.projectId ||
+          thread.deletedAt !== null ||
+          thread.worktreePath === null
+        )
+          continue;
+        const group = groups.get(thread.worktreePath) ?? [];
+        group.push(thread);
+        groups.set(thread.worktreePath, group);
+      }
+      return { review, patterns, approved, project: project.value, groups };
+    });
+    const prepared = yield* budget(prepare);
+    if (Option.isNone(prepared))
       return yield* new WorktreeCleanupError({
-        reason: "project-not-found",
-        message: "Project not found.",
+        reason: "run-failed",
+        message: "Preview deadline reached before project metadata was available.",
       });
-    const snapshot = yield* projections.getShellSnapshot().pipe(Effect.orDie);
-    const groups = new Map<string, (typeof snapshot.threads)[number][]>();
-    for (const thread of [...snapshot.threads, ...snapshot.archivedThreads]) {
-      if (
-        thread.projectId !== input.projectId ||
-        thread.deletedAt !== null ||
-        thread.worktreePath === null
-      )
-        continue;
-      const group = groups.get(thread.worktreePath) ?? [];
-      group.push(thread);
-      groups.set(thread.worktreePath, group);
-    }
+    const { review, patterns, approved, project, groups } = prepared.value;
     const worktrees: WorktreeCleanupPreviewEntry[] = [];
     const now = yield* Clock.currentTimeMillis;
     for (const [worktreePath, threads] of [...groups].slice(0, 200)) {
@@ -79,38 +99,47 @@ const make = Effect.gen(function* () {
         entriesTruncated: false,
         measurementComplete: false,
       };
-      if (
-        path.resolve(worktreePath) === path.resolve(project.value.workspaceRoot) ||
-        !(yield* managed(worktreePath))
-      ) {
-        worktrees.push({ ...entry, status: "kept", reason: "not-managed-worktree" });
-        continue;
-      }
-      const link = yield* fs.readLink(worktreePath).pipe(
-        Effect.as(true),
-        Effect.orElseSucceed(() => false),
+      const metadata = yield* budget(
+        Effect.gen(function* () {
+          if (
+            path.resolve(worktreePath) === path.resolve(project.workspaceRoot) ||
+            !(yield* managed(worktreePath))
+          ) {
+            return { ...entry, status: "kept" as const, reason: "not-managed-worktree" as const };
+          }
+          const link = yield* fs.readLink(worktreePath).pipe(
+            Effect.as(true),
+            Effect.orElseSucceed(() => false),
+          );
+          if (link) {
+            return { ...entry, status: "kept" as const, reason: "symbolic-link" as const };
+          }
+          if (!(yield* fs.exists(worktreePath).pipe(Effect.orElseSucceed(() => false)))) {
+            return { ...entry, status: "kept" as const, reason: "missing" as const };
+          }
+          const probe = yield* inspectGit(worktreePath, [
+            "rev-parse",
+            "--show-toplevel",
+            "--git-common-dir",
+            "--git-dir",
+          ]).pipe(Effect.option);
+          const lines = Option.isSome(probe) ? probe.value.stdout.trim().split("\n") : [];
+          if (
+            lines.length !== 3 ||
+            path.resolve(lines[0]!) !== worktreePath ||
+            path.resolve(worktreePath, lines[1]!) === path.resolve(worktreePath, lines[2]!)
+          ) {
+            return { ...entry, status: "kept" as const, reason: "not-managed-worktree" as const };
+          }
+          return null;
+        }),
       );
-      if (link) {
-        worktrees.push({ ...entry, status: "kept", reason: "symbolic-link" });
+      if (Option.isNone(metadata)) {
+        worktrees.push({ ...entry, status: "kept", reason: "not-checked", entriesTruncated: true });
         continue;
       }
-      if (!(yield* fs.exists(worktreePath).pipe(Effect.orElseSucceed(() => false)))) {
-        worktrees.push({ ...entry, status: "kept", reason: "missing" });
-        continue;
-      }
-      const probe = yield* inspectGit(worktreePath, [
-        "rev-parse",
-        "--show-toplevel",
-        "--git-common-dir",
-        "--git-dir",
-      ]).pipe(Effect.option);
-      const lines = Option.isSome(probe) ? probe.value.stdout.trim().split("\n") : [];
-      if (
-        lines.length !== 3 ||
-        path.resolve(lines[0]!) !== worktreePath ||
-        path.resolve(worktreePath, lines[1]!) === path.resolve(worktreePath, lines[2]!)
-      ) {
-        worktrees.push({ ...entry, status: "kept", reason: "not-managed-worktree" });
+      if (metadata.value !== null) {
+        worktrees.push(metadata.value);
         continue;
       }
       const holding = threads.find((thread) => threadHoldsWorktree(thread, now));
@@ -119,6 +148,7 @@ const make = Effect.gen(function* () {
         patterns,
         review.declared.map((entry) => entry.pattern),
         approved,
+        deadline,
       ).pipe(
         Effect.mapError(
           () =>
@@ -131,7 +161,10 @@ const make = Effect.gen(function* () {
       worktrees.push({
         ...entry,
         ...selection,
-        ...(holding === undefined
+        ...((yield* Clock.currentTimeMillis) >= deadline
+          ? { status: "kept" as const, reason: "not-checked" as const }
+          : {}),
+        ...((yield* Clock.currentTimeMillis) >= deadline || holding === undefined
           ? {}
           : {
               status: "kept",
@@ -145,6 +178,7 @@ const make = Effect.gen(function* () {
       patterns,
       worktrees,
       worktreesTruncated: groups.size > 200,
+      deadlineReached: (yield* Clock.currentTimeMillis) >= deadline,
     };
   });
   return WorktreeCleanup.of({ preview });

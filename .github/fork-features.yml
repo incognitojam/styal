@@ -7819,6 +7819,8 @@ features:
       - Approvals are remembered per project id, trimmed pattern and machine; order and duplicates do not matter, removing declarations preserves approvals, and new patterns stay pending. Deleting a project removes its approvals. Approval covers only patterns both shown by the client and still declared on the server; agents cannot approve through MCP.
       - Preview inspects only managed linked worktrees, includes archived thread references, and marks worktrees held by unsettled threads.
       - Only ignored paths are selected; tracked or unignored contents, links, mount points, nested repositories (including bare repositories) and .git are preserved. Inspection ignores inherited Git state. Preview requires filesystem-read permission and deletes nothing. Candidates that exceed verification limits or time out are kept as too-large-to-verify; entry and worktree caps are reported separately.
+      - Preview has one 30-second deadline across all worktrees and Git probes; unfinished and unreached worktrees are not-checked. RPC interruption cancels inspection and its child processes.
+      - Parent matches retain separately measured descendant matches with insideSelected attribution; aggregate totals count each path once.
       - Freed bytes exclude hardlinks and same-device pnpm virtual stores, and bounded incomplete measurements report null.
       - Settings → Worktrees lists pending patterns first, then approved ones, each in styal.json order; patterns approved earlier and no longer declared sit behind one collapsed line, newest approval first, and nothing shows when there are none. Preview runs only on request and is not stored.
     implementation_paths:
@@ -7833,18 +7835,24 @@ features:
       - packages/shared/src/worktreeCleanupPatterns.ts
     upstream_paths:
       - apps/server/src/auth/RpcAuthorization.ts
+      - apps/server/src/environment/ServerEnvironment.ts
+      - apps/server/src/observability/RpcInstrumentation.ts
+      - apps/server/src/policy/managedSettings.ts
       - apps/server/src/project/ProjectService.ts
       - apps/server/src/server.ts
       - apps/server/src/serverSettings.ts
       - apps/server/src/storageCleanup.ts
       - apps/server/src/ws.ts
+      - apps/web/src/components/settings/WorktreesSettings.tsx
+      - apps/web/src/state/worktreeCleanup.ts
       - packages/contracts/src/clientRpcPermissions.ts
       - packages/contracts/src/environment.ts
+      - packages/contracts/src/index.ts
       - packages/contracts/src/rpc.ts
       - packages/contracts/src/settings.ts
+      - packages/shared/src/serverSettings.ts
     tests:
       - apps/server/src/project/ProjectService.test.ts
-      - apps/server/src/telemetry/ClientFeatureUsage.test.ts
       - apps/server/src/telemetry/SettingsSnapshot.test.ts
       - apps/server/src/worktreeCleanup/WorktreeCleanup.test.ts
       - packages/client-runtime/src/state/commandPermissions.test.ts

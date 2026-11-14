@@ -130,11 +130,6 @@ export type AutoEnvironmentAction = "link" | "project_create" | "project_clone" 
 
 type ObservedUsage =
   | {
-      readonly feature: "worktree-declared-cleanup";
-      readonly action: "preview" | "approve" | "revoke" | "forget";
-      readonly source: "user";
-    }
-  | {
       readonly feature: "fleet-thread-search";
       readonly action: "search";
       readonly source: "agent";
@@ -434,8 +429,7 @@ export const observe = Effect.fnUntraced(function* <A, E, R>(
           !Cause.hasInterruptsOnly(exit.cause)
             ? { failureReason: hardwareFailureReason(exit.cause) }
             : {}),
-          ...((usage.feature === "project-file-approvals" ||
-            usage.feature === "worktree-declared-cleanup") &&
+          ...(usage.feature === "project-file-approvals" &&
           Exit.isFailure(exit) &&
           !Cause.hasInterruptsOnly(exit.cause)
             ? { failureReason: projectFileApprovalFailureReason(exit.cause) }

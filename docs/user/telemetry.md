@@ -10,8 +10,6 @@ counts are reported separately from the main agent's. Model names are sent only 
 a provider's public model list. Approval and review counts never include the command or file
 involved.
 
-Worktree cleanup previews report how many worktrees were inspected, how many eligible worktrees have selected paths, estimated disk space freed, and whether the report is incomplete. Approval requests report the number of patterns approved; revocations report whether one or all approvals were revoked, with a separate action for forgetting an approval no longer declared. These events include outcome and duration, but never project identifiers, pattern text, paths or titles. Requests relayed between machines are not counted again.
-
 Cross-machine agent searches record their outcome and duration, without queries, results or machine names and identifiers.
 
 Agent browser usage includes the operation name, whether it succeeded, failed, or was cancelled,

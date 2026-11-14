@@ -14,6 +14,9 @@ export const makeInspectGit = Effect.gen(function* () {
       cwd: root,
       args: ["-C", root, ...args],
       env,
+      // The enclosing Preview budget owns interruption, including time waiting for Git.
+      timeoutMs: null,
+      forceKillAfterMs: 1000,
       maxOutputBytes: 64 * 1024 * 1024,
     });
   });

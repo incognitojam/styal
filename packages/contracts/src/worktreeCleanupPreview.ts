@@ -54,6 +54,7 @@ export const WorktreeCleanupSelected = Schema.Struct({
   path: Schema.String,
   pattern: Schema.String,
   patterns: Schema.Array(Schema.String),
+  insideSelected: Schema.NullOr(Schema.String),
   patternStatus: Schema.Literals(["approved", "pending"]),
   kind: Schema.Literals(["file", "directory"]),
   freedBytes: Schema.NullOr(Schema.Number),
@@ -78,7 +79,13 @@ export const WorktreeCleanupPreviewEntry = Schema.Struct({
   threadCount: Schema.Number,
   status: Schema.Literals(["eligible", "kept"]),
   reason: Schema.optionalKey(
-    Schema.Literals(["not-managed-worktree", "unsettled-thread", "missing", "symbolic-link"]),
+    Schema.Literals([
+      "not-managed-worktree",
+      "unsettled-thread",
+      "missing",
+      "symbolic-link",
+      "not-checked",
+    ]),
   ),
   holdingThread: Schema.optionalKey(Schema.Struct({ id: ThreadId, title: Schema.String })),
   selected: Schema.Array(WorktreeCleanupSelected),
@@ -93,5 +100,6 @@ export const WorktreeCleanupPreview = Schema.Struct({
   patterns: Schema.Array(Schema.String),
   worktrees: Schema.Array(WorktreeCleanupPreviewEntry),
   worktreesTruncated: Schema.Boolean,
+  deadlineReached: Schema.Boolean,
 });
 export type WorktreeCleanupPreview = typeof WorktreeCleanupPreview.Type;

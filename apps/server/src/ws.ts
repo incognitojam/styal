@@ -1,3 +1,5 @@
+import * as WorktreeCleanup from "./worktreeCleanup/WorktreeCleanup.ts";
+import * as WorktreeCleanupApprovals from "./worktreeCleanup/Approvals.ts";
 import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts";
 import { OrchestrationGetCommandOutputError } from "@t3tools/contracts";
 import { resolveAddProjectDefaultDirectory } from "./project/AddProjectDefaultDirectory.ts";
@@ -1480,8 +1482,8 @@ export const layerWsRpc = (
       const npmRelease = yield* NpmRelease.NpmRelease;
       const config = yield* ServerConfig.ServerConfig;
       const lifecycleEvents = yield* ServerLifecycleEvents.ServerLifecycleEvents;
-      const { cleanup: declaredCleanup, approvals: cleanupApprovals } =
-        yield* ClientFeatureUsage.worktreeCleanup(clientAnalyticsProps);
+      const declaredCleanup = yield* WorktreeCleanup.WorktreeCleanup;
+      const cleanupApprovals = yield* WorktreeCleanupApprovals.Approvals;
       const storageCleanup = yield* StorageCleanup.StorageCleanup;
       const databaseStorage = yield* DatabaseStorage.DatabaseStorage;
       const serverSettings = yield* ServerSettings.ServerSettingsService;
