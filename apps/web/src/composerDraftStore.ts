@@ -1,3 +1,4 @@
+import { EnvironmentRpcUnavailableError } from "@t3tools/client-runtime/rpc";
 import { stripInlineContextReferences } from "./lib/composerContextReferences";
 import { composerFileAttachmentMimeType } from "./components/chat/composerAttachmentFiles";
 import { elementContextToPreviewAnnotation } from "./lib/elementContext";
@@ -4772,7 +4773,66 @@ function composerContentSignature(draft: ComposerThreadDraftState): string {
     draft.issueContexts,
     draft.previewAnnotations,
     draft.reviewComments,
+    draft.threadContexts,
+    draft.environmentContexts,
   ]);
+}
+
+const isEnvironmentRpcUnavailable = Schema.is(EnvironmentRpcUnavailableError);
+
+export function isUncertainComposerSendFailure(failure: unknown): boolean {
+  return isEnvironmentRpcUnavailable(failure) && failure.outcomeUnknown === true;
+}
+
+/** A lost acknowledgement can restore a draft whose message already reached the server. */
+export function subscribeUnconfirmedComposerSend(input: {
+  registry: AtomRegistry.AtomRegistry;
+  target: ScopedThreadRef;
+  failure: unknown;
+  messageId: string;
+  messagesAtom: Atom.Atom<ReadonlyArray<{ readonly id: string }> | null | "deleted">;
+  signal?: AbortSignal;
+}): () => void {
+  if (!isUncertainComposerSendFailure(input.failure) || input.signal?.aborted) return () => {};
+  const store = useComposerDraftStore;
+  const restored = store.getState().getComposerDraft(input.target);
+  if (!restored) return () => {};
+  const signature = composerContentSignature(restored);
+  const unchanged = () => {
+    const draft = store.getState().getComposerDraft(input.target);
+    return draft !== undefined && draft !== null && composerContentSignature(draft) === signature;
+  };
+  const unsubscribeDraft = store.subscribe(() => {
+    if (!unchanged()) unsubscribe();
+  });
+  const confirm = (messages: ReadonlyArray<{ readonly id: string }> | null | "deleted") => {
+    if (messages === null) return;
+    if (messages === "deleted") {
+      unsubscribe();
+      return;
+    }
+    if (!messages.some((message) => message.id === input.messageId)) return;
+    unsubscribe();
+    if (unchanged()) {
+      revokeDraftThreadPreviewUrls(restored);
+      store.getState().clearComposerContent(input.target);
+    }
+  };
+  const unsubscribeMessages = input.registry.subscribe(input.messagesAtom, confirm);
+  let stopped = false;
+  // Confirmation is best effort; an unreachable environment must not retain the draft watcher forever.
+  const timeout = setTimeout(unsubscribe, 5 * 60 * 1000);
+  input.signal?.addEventListener("abort", unsubscribe, { once: true });
+  function unsubscribe() {
+    if (stopped) return;
+    stopped = true;
+    clearTimeout(timeout);
+    input.signal?.removeEventListener("abort", unsubscribe);
+    unsubscribeDraft();
+    unsubscribeMessages();
+  }
+  confirm(input.registry.get(input.messagesAtom));
+  return unsubscribe;
 }
 
 export function rememberUnconfirmedDraftSend(draftId: DraftId): void {
