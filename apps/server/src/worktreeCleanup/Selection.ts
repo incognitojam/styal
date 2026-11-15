@@ -244,7 +244,7 @@ export const makeSelect = Effect.gen(function* () {
               });
           }
           progress.activeCandidate = null;
-          if (reason !== null || stat?.type !== "Directory") continue;
+          if (stat?.type !== "Directory") continue;
           const names = relative.split("/");
           const hasDescendantPattern = declaredPatterns.some((pattern) => {
             const parts = pattern.split("/");

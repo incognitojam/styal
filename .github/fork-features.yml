@@ -7820,7 +7820,7 @@ features:
       - Preview inspects only managed linked worktrees, includes archived thread references, and marks worktrees held by unsettled threads.
       - Only ignored paths are selected; tracked or unignored contents, links, mount points, nested repositories (including bare repositories) and .git are preserved. Inspection ignores inherited Git state. Preview requires filesystem-read permission and deletes nothing. Candidates that exceed verification limits or time out are kept as too-large-to-verify; entry and worktree caps are reported separately.
       - Preview has one 30-second deadline across all worktrees and Git probes; unfinished and unreached worktrees are not-checked. RPC interruption cancels inspection and its child processes.
-      - Parent matches retain separately measured descendant matches with insideSelected attribution; aggregate totals count each path once.
+      - Selected and safely traversable kept parents retain descendant-pattern results, including descendants' own kept reasons. insideSelected names only selected ancestors; aggregate totals count each path once.
       - Freed bytes exclude hardlinks and same-device pnpm virtual stores, and bounded incomplete measurements report null.
       - Settings → Worktrees lists pending patterns first, then approved ones, each in styal.json order; patterns approved earlier and no longer declared sit behind one collapsed line, newest approval first, and nothing shows when there are none. Preview runs only on request and is not stored.
     implementation_paths:

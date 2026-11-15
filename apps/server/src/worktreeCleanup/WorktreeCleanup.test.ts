@@ -200,6 +200,69 @@ describe("WorktreeCleanup", () => {
       }).pipe(Effect.provide(dependencies), Effect.scoped),
   );
 
+  it.effect.each([
+    {
+      name: "literal child with tracked sibling",
+      pattern: "dist/sub",
+      tracked: "dist/tracked",
+      selected: true,
+    },
+    {
+      name: "globstar child with tracked sibling",
+      pattern: "**/sub",
+      tracked: "dist/tracked",
+      selected: true,
+    },
+    {
+      name: "literal child containing tracked file",
+      pattern: "dist/sub",
+      tracked: "dist/sub/tracked",
+      selected: false,
+    },
+    {
+      name: "globstar child containing tracked file",
+      pattern: "**/sub",
+      tracked: "dist/sub/tracked",
+      selected: false,
+    },
+  ])("reports descendants of a kept parent: $name", ({ pattern, tracked, selected }) =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      yield* f.write(tracked, "tracked payload");
+      yield* f.command(f.worktree, ["add", "-f", tracked]);
+      yield* f.command(f.worktree, ["commit", "-m", "track fixture output"]);
+      yield* f.write("dist/sub/output", "ignored payload");
+      const select = yield* makeSelect;
+      const patterns = ["dist", pattern];
+      const approved = new Set([pattern]);
+      const approvedOnly = yield* select(f.worktree, [pattern], patterns, approved);
+      const result = yield* select(f.worktree, patterns, patterns, approved);
+      assert.equal(
+        result.kept.find((entry) => entry.path === "dist")?.reason,
+        "contains-tracked-files",
+      );
+      if (selected) {
+        assert.equal(approvedOnly.selected.length, 1);
+        assert.isAbove(approvedOnly.freedBytes!, 0);
+        assert.deepEqual(result.selected, approvedOnly.selected);
+        assert.equal(result.selected[0]?.path, "dist/sub");
+        assert.equal(result.selected[0]?.insideSelected, null);
+        assert.equal(result.freedBytes, approvedOnly.freedBytes);
+      } else {
+        assert.deepEqual(result.selected, []);
+        assert.deepEqual(
+          result.kept.find((entry) => entry.path === "dist/sub"),
+          {
+            path: "dist/sub",
+            pattern,
+            reason: "contains-tracked-files",
+            detail: tracked,
+          },
+        );
+      }
+    }).pipe(Effect.provide(dependencies), Effect.scoped),
+  );
+
   it.effect(
     "uses one preview deadline including git probes and marks later worktrees not checked",
     () =>
