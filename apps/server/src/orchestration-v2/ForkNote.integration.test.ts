@@ -1,6 +1,7 @@
 import { assert, it } from "@effect/vitest";
 import {
   CommandId,
+  EventId,
   MessageId,
   ProjectId,
   ProviderDriverKind,
@@ -21,19 +22,22 @@ import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 
 import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
+import { ClaudeProviderCapabilitiesV2 } from "./Adapters/ClaudeAdapterV2.ts";
 import * as EffectWorker from "./EffectWorker.ts";
+import * as EventSink from "./EventSink.ts";
 import { FORK_NOTE } from "./ForkNote.ts";
 import * as Orchestrator from "./Orchestrator.ts";
 import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
 import * as ProviderReplayHarness from "./testkit/ProviderReplayHarness.ts";
 
-const driver = ProviderDriverKind.make("codex");
-const instanceId = ProviderInstanceId.make("codex");
-const modelSelection = { instanceId, model: "test-model" };
-
-it.effect("delivers fork and linked PR context on prompted turns", () =>
+const contextDelivery = (driverName: "codex" | "claudeAgent") =>
   Effect.scoped(
     Effect.gen(function* () {
+      const driver = ProviderDriverKind.make(driverName);
+      const instanceId = ProviderInstanceId.make(driverName);
+      const modelSelection = { instanceId, model: "test-model" };
+      const capabilities =
+        driverName === "claudeAgent" ? ClaudeProviderCapabilitiesV2 : CodexProviderCapabilitiesV2;
       const cwd = yield* checkpointWorkspace("fork-note-delivery");
       const events = yield* Queue.unbounded<ProviderAdapter.ProviderAdapterV2Event>();
       const started: ProviderAdapter.ProviderAdapterV2TurnInput[] = [];
@@ -61,7 +65,7 @@ it.effect("delivers fork and linked PR context on prompted turns", () =>
       const adapter: ProviderAdapter.ProviderAdapterV2["Service"] = {
         instanceId,
         driver,
-        getCapabilities: () => Effect.succeed(CodexProviderCapabilitiesV2),
+        getCapabilities: () => Effect.succeed(capabilities),
         planSelectionTransition: () => Effect.succeed({ type: "apply_on_next_turn" }),
         openSession: (input) =>
           Effect.gen(function* () {
@@ -77,7 +81,7 @@ it.effect("delivers fork and linked PR context on prompted turns", () =>
                 status: "ready",
                 cwd,
                 model: modelSelection.model,
-                capabilities: CodexProviderCapabilitiesV2,
+                capabilities,
                 createdAt: now,
                 updatedAt: now,
                 lastError: null,
@@ -153,6 +157,7 @@ it.effect("delivers fork and linked PR context on prompted turns", () =>
           text: string,
           outcome: "completed" | "failed" | "refused" = "completed",
           sender: "user" | "agent" = "user",
+          creationSource: "web" | "mcp" | "provider" = sender === "agent" ? "mcp" : "web",
         ) =>
           Effect.gen(function* () {
             const before = started.length;
@@ -177,7 +182,7 @@ it.effect("delivers fork and linked PR context on prompted turns", () =>
               attachments: [],
               dispatchMode: { type: "start_immediately" },
               createdBy: sender,
-              creationSource: sender === "agent" ? "mcp" : "web",
+              creationSource,
             });
             const drained = yield* Effect.forkScoped(worker.drain());
             yield* Fiber.join(recorded);
@@ -296,6 +301,21 @@ it.effect("delivers fork and linked PR context on prompted turns", () =>
           "Since your last turn:",
         );
         assert.notInclude(noPrompt.text, "Since your last turn:");
+        if (driverName === "claudeAgent") {
+          const wake = yield* send(
+            sourceThreadId,
+            "Background task finished",
+            "completed",
+            "agent",
+            "provider",
+          );
+          assert.notInclude(wake.text, "Since your last turn:");
+          const projection = yield* orchestrator.getThreadProjection(sourceThreadId);
+          assert.isEmpty(
+            projection.providerTurns.find((turn) => turn.runAttemptId === wake.attemptId)
+              ?.inlineContextIds ?? [],
+          );
+        }
         assert.include(
           (yield* send(sourceThreadId, "Any updates?")).text,
           "Since your last turn: #1484 was closed without merging.",
@@ -323,6 +343,39 @@ it.effect("delivers fork and linked PR context on prompted turns", () =>
           (yield* send(sourceThreadId, "While watched?")).text,
           "Since your last turn:",
         );
+        yield* sync("open");
+        const watched = yield* orchestrator.getThreadProjection(sourceThreadId);
+        const eventSink = yield* EventSink.EventSinkV2;
+        // Persist the retained-watch state that the watch reactor handles on settlement.
+        yield* eventSink.write({
+          events: [
+            {
+              id: EventId.make("settle-with-retained-watch"),
+              type: "thread.settled",
+              threadId: sourceThreadId,
+              occurredAt: yield* DateTime.now,
+              payload: {
+                ...watched.thread,
+                settledOverride: "settled",
+                settledAt: yield* DateTime.now,
+              },
+            },
+          ],
+        });
+        const beforeSettledSync = yield* orchestrator.getThreadProjection(sourceThreadId);
+        assert.isDefined(beforeSettledSync.thread.pullRequests?.[0]?.watch);
+        yield* sync("merged");
+        const afterSettledSync = yield* orchestrator.getThreadProjection(sourceThreadId);
+        assert.equal(afterSettledSync.runs.length, beforeSettledSync.runs.length);
+        assert.equal(afterSettledSync.thread.settledOverride, "settled");
+        assert.include(
+          (yield* send(sourceThreadId, "After settling while watched?")).text,
+          "Since your last turn: #1484 was merged on 2026-11-15 at 14:08 UTC.",
+        );
+        assert.notInclude(
+          (yield* send(sourceThreadId, "After settled delivery?")).text,
+          "Since your last turn:",
+        );
         yield* orchestrator.dispatch({
           type: "thread.pull-request.watch",
           commandId: CommandId.make("unwatch-next-turn-pr"),
@@ -334,12 +387,13 @@ it.effect("delivers fork and linked PR context on prompted turns", () =>
         yield* sync("merged");
         assert.include(
           (yield* send(sourceThreadId, "After merging?")).text,
-          "Since your last turn: #1484 was merged at 14:08 UTC.",
+          "Since your last turn: #1484 was merged on 2026-11-15 at 14:08 UTC.",
         );
         assert.notInclude(
           (yield* send(sourceThreadId, "After delivery?")).text,
           "Since your last turn:",
         );
+        if (driverName !== "codex") return;
         yield* orchestrator.dispatch({
           type: "thread.fork",
           commandId: CommandId.make("fork"),
@@ -382,5 +436,9 @@ it.effect("delivers fork and linked PR context on prompted turns", () =>
         ),
       );
     }),
-  ),
+  );
+
+it.effect.each(["codex", "claudeAgent"] as const)(
+  "delivers fork and linked PR context on prompted %s turns",
+  contextDelivery,
 );

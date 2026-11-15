@@ -1752,7 +1752,14 @@ export const layer: Layer.Layer<
               ? ""
               : sideChatHandoff.summaryText;
           const sendsPrompt =
-            !compact && !goalCommand && turnInput.restartContinuationOfRunId === undefined;
+            !compact &&
+            !goalCommand &&
+            turnInput.restartContinuationOfRunId === undefined &&
+            !(
+              session.driver === "claudeAgent" &&
+              turnInput.message.createdBy === "agent" &&
+              turnInput.message.creationSource === "provider"
+            );
           inlineContextIds = sendsPrompt ? nextTurnContext.map((note) => note.id) : [];
           const context = [
             delivery.context,
