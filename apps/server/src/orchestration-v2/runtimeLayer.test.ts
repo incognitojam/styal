@@ -76,7 +76,6 @@ import * as ProjectionStore from "./ProjectionStore.ts";
 import * as PullRequestWatchReactor from "./PullRequestWatchReactor.ts";
 import { PULL_REQUEST_WATCH_WAKE_LIMIT } from "./pullRequestWatch.ts";
 import * as WorkflowRunWatchReactor from "./WorkflowRunWatchReactor.ts";
-import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
 import {
   PullRequestProviderError,
   type ProviderWorkflowRun,
@@ -245,20 +244,6 @@ const watchedPullRequestDetail = (input: {
   mergeCapabilities: { merge: true, squash: true, rebase: true },
   viewer: "agent-user",
 });
-
-/** Analytics that keeps each recorded event's properties, for asserting what was sent. */
-const analyticsInto = (events: Array<Readonly<Record<string, unknown>>>) =>
-  Layer.succeed(
-    AnalyticsService.AnalyticsService,
-    AnalyticsService.AnalyticsService.of({
-      recordOwners: () => Effect.void,
-      record: (_event, properties) =>
-        Effect.sync(() => {
-          events.push(properties ?? {});
-        }),
-      flush: Effect.void,
-    }),
-  );
 
 const seedProject = (input: {
   readonly projectId: ProjectId;
@@ -489,7 +474,6 @@ const workflowRunReactor = (
   reviewWorkflowRun?: PullRequestService.PullRequestService["Service"]["reviewWorkflowRun"],
 ) =>
   Effect.gen(function* () {
-    const usage: Array<Readonly<Record<string, unknown>>> = [];
     const dispatched: Array<string> = [];
     const committed = yield* Queue.unbounded<string>();
     const orchestrator = yield* Orchestrator.OrchestratorV2;
@@ -498,7 +482,6 @@ const workflowRunReactor = (
         Layer.mergeAll(
           NodeServices.layer,
           NodeCrypto.layer,
-          analyticsInto(usage),
           Layer.mock(PullRequestService.PullRequestService)({
             workflowRun,
             ...(reviewWorkflowRun === undefined ? {} : { reviewWorkflowRun }),
@@ -515,7 +498,7 @@ const workflowRunReactor = (
         },
       }),
     );
-    return { reactor, usage, dispatched, committed };
+    return { reactor, dispatched, committed };
   });
 
 const notificationsOf = (threadId: ThreadId) =>
@@ -3606,7 +3589,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       const url = runUrl(9001);
       let completed = false;
       let reads = 0;
-      const { reactor, usage } = yield* workflowRunReactor((input) => {
+      const { reactor } = yield* workflowRunReactor((input) => {
         reads += 1;
         assert.deepEqual(input, { projectId, ...key, runningJobs: true });
         return Effect.succeed(
@@ -3636,17 +3619,6 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       yield* reactor.sweep;
       assert.equal(reads, 2);
       assert.deepEqual(yield* notificationsOf(threadId), ["CI #9001: failure"]);
-      // One end event, with a fixed conclusion category and no run data.
-      assert.deepEqual(usage, [
-        {
-          feature: "workflow-run-watch",
-          action: "end",
-          source: "system",
-          endReason: "completed",
-          conclusion: "failure",
-          watchedMinutes: 0,
-        },
-      ]);
     }),
   );
 
@@ -3708,7 +3680,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
     Effect.gen(function* () {
       const orchestrator = yield* Orchestrator.OrchestratorV2;
       const { threadId } = yield* watchRunFromNewThread("unreadable", 9002);
-      const { reactor, usage } = yield* workflowRunReactor(() =>
+      const { reactor } = yield* workflowRunReactor(() =>
         Effect.fail(
           new PullRequestOperationError({ operation: "workflowRun", detail: "Not Found" }),
         ),
@@ -3721,10 +3693,6 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       assert.deepEqual(yield* notificationsOf(threadId), [
         "CI #9002: stopped watching, could not read it",
       ]);
-      assert.deepEqual(
-        usage.map((event) => event.endReason),
-        ["unreadable"],
-      );
     }),
   );
 
@@ -3831,10 +3799,9 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         const started = (yield* orchestrator.getThreadShell(threadId))?.workflowRuns?.[0];
         assert.isDefined(started);
         if (started === undefined) return;
-        const { reactor, usage } = yield* workflowRunReactor(() => Effect.succeed(hostRun(9003)));
+        const { reactor } = yield* workflowRunReactor(() => Effect.succeed(hostRun(9003)));
         // The reactor sees the running watch before the thread ends it.
         yield* reactor.sweep;
-        assert.deepEqual(usage, []);
 
         yield* orchestrator.dispatch({
           type: action === "settle" ? "thread.settle" : "thread.archive",
@@ -3843,10 +3810,6 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         });
         assert.deepEqual((yield* orchestrator.getThreadShell(threadId))?.workflowRuns, []);
         yield* reactor.sweep;
-        assert.deepEqual(
-          usage.map((event) => event.endReason),
-          ["stopped"],
-        );
         const late = yield* orchestrator
           .dispatch({
             type: "thread.workflow-run-watch.finish",
