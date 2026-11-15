@@ -28,6 +28,7 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 
 import * as ServerConfig from "../config.ts";
 import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
@@ -1007,6 +1008,15 @@ export const layer: Layer.Layer<
             ),
         ),
       });
+      const deliveredContextIds = new Set(
+        projection.providerTurns.flatMap((turn) => turn.inlineContextIds ?? []),
+      );
+      const nextTurnContext = (projection.thread.pullRequests ?? [])
+        .filter((link) => link.source !== "stack-dismissed")
+        .flatMap((link) => (link.turnContext === undefined ? [] : [link.turnContext]))
+        .filter((note) => !deliveredContextIds.has(note.id))
+        .sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
+      let inlineContextIds: ReadonlyArray<string> = [];
       const turnNote = [
         sendForkNote ? FORK_NOTE : "",
         projection.thread.reportTo != null && run.ordinal === 1
@@ -1741,7 +1751,15 @@ export const layer: Layer.Layer<
             sideChatHandoff === undefined || compact || goalCommand
               ? ""
               : sideChatHandoff.summaryText;
-          const context = [delivery.context, sideChatContext, turnNote]
+          const sendsPrompt =
+            !compact && !goalCommand && turnInput.restartContinuationOfRunId === undefined;
+          inlineContextIds = sendsPrompt ? nextTurnContext.map((note) => note.id) : [];
+          const context = [
+            delivery.context,
+            sideChatContext,
+            turnNote,
+            ...(sendsPrompt ? nextTurnContext.map((note) => note.text) : []),
+          ]
             .filter((part) => part !== "")
             .join("\n\n");
           const { restartContinuationOfRunId: _resumedRunId, ...promptedInput } = turnInput;
@@ -1808,15 +1826,38 @@ export const layer: Layer.Layer<
         effectiveHandoffs.length === 0 &&
         retryHandoff.length === 0 &&
         sideChatHandoff === undefined &&
+        nextTurnContext.length === 0 &&
         turnNote === "" &&
         !noteContinuation
           ? session
           : makeDeliverySession(session, startWithHandoffs);
+      const withContextIds = (event: ProviderAdapter.ProviderAdapterV2Event) =>
+        event.type === "provider_turn.updated" &&
+        event.providerTurn.runAttemptId === attempt.id &&
+        inlineContextIds.length > 0
+          ? { ...event, providerTurn: { ...event.providerTurn, inlineContextIds } }
+          : event;
       return runExecution.startRootRun({
         commandId: CommandId.make(`command:effect:provider-turn.start:${run.id}`),
         appThread: projection.thread,
         providerSessionId,
-        session: deliverySession,
+        session:
+          nextTurnContext.length === 0
+            ? deliverySession
+            : {
+                ...deliverySession,
+                events: deliverySession.events.pipe(Stream.map(withContextIds)),
+                ...(deliverySession.subscribeEvents === undefined
+                  ? {}
+                  : {
+                      subscribeEvents: deliverySession.subscribeEvents.pipe(
+                        Effect.map((subscription) => ({
+                          ...subscription,
+                          events: subscription.events.pipe(Stream.map(withContextIds)),
+                        })),
+                      ),
+                    }),
+              },
         run: runningRun,
         rootNode: runningRootNode,
         checkpointScope,

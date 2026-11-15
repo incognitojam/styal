@@ -1259,6 +1259,7 @@ export const OrchestrationV2ContextHandoff = Schema.Struct({
 export type OrchestrationV2ContextHandoff = typeof OrchestrationV2ContextHandoff.Type;
 
 export const OrchestrationV2ProviderTurn = Schema.Struct({
+  inlineContextIds: Schema.optional(Schema.Array(Schema.String)),
   id: ProviderTurnId,
   providerThreadId: ProviderThreadId,
   nodeId: NodeId,
