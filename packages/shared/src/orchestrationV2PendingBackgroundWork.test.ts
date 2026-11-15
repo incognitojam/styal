@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { ProviderInstanceId, ProviderThreadId } from "@t3tools/contracts";
+import { ProviderInstanceId, ProviderThreadId, ThreadId } from "@t3tools/contracts";
 import {
   backgroundWorkHoldsCompletion,
   derivePendingBackgroundWork,
@@ -26,16 +26,38 @@ describe("derivePendingBackgroundWork", () => {
         {
           id: "owned-item",
           owningProviderInstanceId: owner,
+          origin: "provider_native",
+          childThreadId: ThreadId.make("native-child"),
           type: "subagent",
           status: "running",
           title: null,
         },
         { id: "unknown-item", type: "subagent", status: "running", title: null },
+        {
+          id: "delegated-item",
+          type: "subagent",
+          origin: "app_owned",
+          childThreadId: ThreadId.make("delegated-child"),
+          status: "running",
+          title: null,
+        },
       ],
     });
     expect(tasks).toEqual([
-      { taskId: "owned-item", kind: "subagent", providerInstanceId: owner },
+      {
+        taskId: "owned-item",
+        kind: "subagent",
+        providerInstanceId: owner,
+        origin: "provider_native",
+        childThreadId: "native-child",
+      },
       { taskId: "unknown-item", kind: "subagent" },
+      {
+        taskId: "delegated-item",
+        kind: "subagent",
+        origin: "app_owned",
+        childThreadId: "delegated-child",
+      },
     ]);
   });
 

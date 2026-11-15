@@ -115,26 +115,51 @@ describe("host session activity", () => {
         ...thread("delegating"),
         status: "completed",
         pendingBackgroundTasks: [
-          { taskId: "delegated", kind: "subagent", childThreadId: ThreadId.make("child") },
+          {
+            taskId: "delegated",
+            kind: "subagent",
+            origin: "app_owned",
+            childThreadId: ThreadId.make("child"),
+          },
         ],
       },
       {
         ...thread("native"),
         status: "completed",
-        pendingBackgroundTasks: [{ taskId: "native", kind: "subagent" }],
+        pendingBackgroundTasks: [
+          {
+            taskId: "native",
+            kind: "subagent",
+            origin: "provider_native",
+            childThreadId: ThreadId.make("native-child"),
+          },
+        ],
+      },
+      {
+        ...thread("legacy"),
+        status: "completed",
+        pendingBackgroundTasks: [
+          { taskId: "legacy", kind: "subagent", childThreadId: ThreadId.make("legacy-child") },
+        ],
       },
       {
         ...thread("running-parent"),
         status: "running",
         pendingBackgroundTasks: [
-          { taskId: "delegated", kind: "subagent", childThreadId: ThreadId.make("child") },
+          {
+            taskId: "delegated",
+            kind: "subagent",
+            origin: "app_owned",
+            childThreadId: ThreadId.make("child"),
+          },
         ],
       },
     ]);
-    expect(summary).toMatchObject({ activeSessions: 3, waitingSessions: 0 });
+    expect(summary).toMatchObject({ activeSessions: 4, waitingSessions: 0 });
     expect(summary.affected.map(({ thread }) => [thread.threadId, thread.reasons])).toEqual([
       ["both", ["command"]],
       ["native", ["subagent"]],
+      ["legacy", ["subagent"]],
       ["running-parent", ["running"]],
     ]);
   });
