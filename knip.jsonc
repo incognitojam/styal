@@ -163,7 +163,7 @@
     },
     "infra/web": {
       // Alchemy loads the stack, and the stack names its worker by path.
-      "entry": ["alchemy.run.ts!", "src/worker.ts!"],
+      "entry": ["alchemy.run.ts!", "src/worker.ts!", "scripts/sync-old-assets.ts!"],
       // The deploy job installs only this workspace's dependencies, so `vp run`
       // resolves Vite+ from here rather than from the root.
       "ignoreDependencies": ["vite-plus"],

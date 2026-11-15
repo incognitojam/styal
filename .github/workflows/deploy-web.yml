@@ -88,3 +88,11 @@ jobs:
         run: vp run deploy --stage prod --yes
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+      # Tabs opened before this deploy still request the previous builds' files; the Worker
+      # serves those from this bucket.
+      - name: Keep assets for tabs on older builds
+        working-directory: infra/web
+        run: node scripts/sync-old-assets.ts styal-web-old-assets ../../apps/web/dist
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

@@ -20,7 +20,7 @@ serves a single origin and does not need it.
 - The Cloudflare zone for the target hostname must already exist in the
   account. Alchemy infers the zone from `STYAL_WEB_DOMAIN` and does not create
   it.
-- A Cloudflare API token with Workers and DNS edit permissions.
+- A Cloudflare API token with Workers, Workers R2 Storage and DNS edit permissions.
 
 ## Configuration
 
