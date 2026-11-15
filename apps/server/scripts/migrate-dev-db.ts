@@ -214,6 +214,7 @@ const RECOVERY_KINDS: ReadonlyArray<ProjectionStore.ProjectionRecoveryKind> = [
 ];
 
 const CLEARED_TABLES: ReadonlyArray<string> = [
+  "worktree_stripped",
   "scheduled_tasks",
   "orchestration_v2_effect_outbox",
   "orchestration_v2_thread_launch_workflows",

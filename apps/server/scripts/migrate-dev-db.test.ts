@@ -7,6 +7,7 @@ import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import { runForkMigrations } from "../src/persistence/ForkMigrations.ts";
+import worktreeStripped from "../src/persistence/ForkMigrations/015_WorktreeStripped.ts";
 import { migrationManifest, runMigrations } from "../src/persistence/Migrations.ts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import { runMigrateDevDb } from "./migrate-dev-db.ts";
@@ -292,6 +293,12 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
               ('stopped-thread', 1, '{"text":"keep"}', '2026-08-09', 'kept-draft'),
               ('running-thread', 1, '{"text":"discard"}', '2026-08-09', 'discarded-draft')
           `;
+          yield* worktreeStripped;
+          yield* sql`UPDATE orchestration_v2_projection_threads
+            SET payload_json = json_set(payload_json, '$.worktreePath', '/synthetic/kept-worktree')
+            WHERE thread_id = 'stopped-thread'`;
+          yield* sql`INSERT INTO worktree_stripped (worktree_path, project_id, stripped_at)
+            VALUES ('/synthetic/kept-worktree', 'project-kept', '2026-08-09')`;
         }),
       );
 
@@ -328,6 +335,10 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
           const drafts = yield* sql<{ readonly name: string }>`
             SELECT name FROM sqlite_master WHERE name = 'composer_drafts'
           `;
+          const stripped = yield* sql`SELECT * FROM worktree_stripped`;
+          const worktrees = yield* sql<{ path: string }>`SELECT
+            json_extract(payload_json, '$.worktreePath') AS path
+            FROM orchestration_v2_projection_threads WHERE thread_id = 'stopped-thread'`;
           const recordedUsage = yield* encodeJson({
             turns: [{ turnId: "recorded-turn", inputTokens: 123, costUsd: 0.012345 }],
           });
@@ -338,7 +349,16 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
             SELECT payload_json FROM styal_projection_legacy_turn_usage
             WHERE thread_id = 'stopped-thread'
           `;
-          return { projectColumns, upstreamHistory, forkHistory, drafts, usage, recordedUsage };
+          return {
+            projectColumns,
+            upstreamHistory,
+            forkHistory,
+            drafts,
+            stripped,
+            worktrees,
+            usage,
+            recordedUsage,
+          };
         }),
       );
       assert.includeMembers(
@@ -366,8 +386,11 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
         { migration_id: 12, name: "DropComposerDrafts" },
         { migration_id: 13, name: "WorktreeSetupState" },
         { migration_id: 14, name: "DropWorktreeSetupState" },
+        { migration_id: 15, name: "WorktreeStripped" },
       ]);
       assert.deepStrictEqual(migrated.drafts, []);
+      assert.deepStrictEqual(migrated.stripped, []);
+      assert.deepStrictEqual(migrated.worktrees, [{ path: "/synthetic/kept-worktree" }]);
       assert.deepStrictEqual(migrated.usage, [{ payload_json: migrated.recordedUsage }]);
     }),
   );
