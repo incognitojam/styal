@@ -6553,7 +6553,7 @@ features:
     title: Holding Cmd or Ctrl shows shortcuts on buttons
     status: maintained
     tier: yield
-    prs: [1477]
+    prs: [1477, 1485]
     invariants:
       - After Cmd or Ctrl has been held for the thread jump hint delay, each visible, enabled button whose bound shortcut uses every held modifier shows that shortcut, so holding Cmd alone also shows Shift+Cmd shortcuts; holding more modifiers narrows the set at once, and releasing them hides every hint.
       - Every hint is a badge over the button's top edge (centred on icon buttons, at the right of wider controls), drawn above any clipping container, so showing hints never moves or resizes a control.
