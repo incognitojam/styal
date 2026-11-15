@@ -7,7 +7,7 @@ const branding = vi.hoisted(() => ({
   HOSTED_APP_CHANNEL: null as "latest" | "nightly" | null,
 }));
 vi.mock("./branding", () => branding);
-const hostedPairing = vi.hoisted(() => ({ isHostedStaticApp: () => false }));
+const hostedPairing = vi.hoisted(() => ({ isHostedStaticApp: (): boolean => false }));
 vi.mock("./hostedPairing", () => hostedPairing);
 
 import { APP_VERSION } from "./branding";
