@@ -1,3 +1,4 @@
+import { EnvironmentRpcUnavailableError } from "@t3tools/client-runtime/rpc";
 import { PrimaryConnectionTarget } from "@t3tools/client-runtime/connection";
 import { createEnvironmentThreadShellAtoms } from "@t3tools/client-runtime/state/threads";
 import {
@@ -22,6 +23,9 @@ import {
   DEFAULT_MODEL,
   DEFAULT_MODEL_BY_PROVIDER,
   EnvironmentId,
+  CommandId,
+  EnvironmentAuthorizationError,
+  OrchestrationV2DispatchCommandError,
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -1271,6 +1275,120 @@ describe("composerDraftStore project draft thread mapping", () => {
     expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.prompt).toBe("keep me");
   });
 
+  it.each([
+    new OrchestrationV2DispatchCommandError({
+      commandId: CommandId.make("rejected-send"),
+      commandType: "message.dispatch",
+      message: "Rejected",
+    }),
+    new EnvironmentAuthorizationError({
+      message: "Not permitted",
+      requiredScope: "orchestration:operate",
+    }),
+    new EnvironmentRpcUnavailableError({ environmentId: TEST_ENVIRONMENT_ID, message: "Offline" }),
+    new EnvironmentRpcUnavailableError({
+      environmentId: TEST_ENVIRONMENT_ID,
+      message: "Offline",
+      outcomeUnknown: false,
+    }),
+    new Error("Attachment preparation failed"),
+  ])("does not watch a restored draft after a definite failure: %s", (failure) => {
+    const registry = AtomRegistry.make();
+    onTestFinished(() => registry.dispose());
+    const target = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
+    const store = useComposerDraftStore.getState();
+    store.setPrompt(target, "keep the rejected draft");
+    const messagesAtom = Atom.make<ReadonlyArray<{ id: string }>>([]);
+    using subscribe = vi.spyOn(registry, "subscribe");
+    onTestFinished(
+      subscribeUnconfirmedComposerSend({
+        registry,
+        target,
+        failure,
+        messageId: "sent-message",
+        messagesAtom,
+      }),
+    );
+    registry.set(messagesAtom, [{ id: "sent-message" }]);
+    expect(store.getComposerDraft(target)?.prompt).toBe("keep the rejected draft");
+    expect(subscribe).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    "navigation",
+    "lateFailure",
+    "expiry",
+    "threadDeletion",
+    "environmentRemoval",
+    "edit",
+    "discard",
+    "confirmation",
+  ])("disposes recovery subscriptions on %s", (end) => {
+    vi.useFakeTimers();
+    try {
+      const registry = AtomRegistry.make();
+      onTestFinished(() => registry.dispose());
+      const target = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
+      const store = useComposerDraftStore;
+      store.getState().setPrompt(target, "restored draft");
+      const messagesAtom = Atom.make<ReadonlyArray<{ id: string }> | null>([]);
+      const controller = new AbortController();
+      const subscribeDraft = store.subscribe.bind(store);
+      const subscribeMessages = registry.subscribe.bind(registry);
+      const disposedDraft = vi.fn();
+      const disposedMessages = vi.fn();
+      using _draftSpy = vi.spyOn(store, "subscribe").mockImplementation((listener) => {
+        const dispose = subscribeDraft(listener);
+        return () => {
+          disposedDraft();
+          dispose();
+        };
+      });
+      using _messageSpy = vi.spyOn(registry, "subscribe").mockImplementation((...args) => {
+        const dispose = subscribeMessages(...args);
+        return () => {
+          disposedMessages();
+          dispose();
+        };
+      });
+      if (end === "lateFailure") controller.abort();
+      const stop = subscribeUnconfirmedComposerSend({
+        registry,
+        target,
+        failure: new EnvironmentRpcUnavailableError({
+          environmentId: TEST_ENVIRONMENT_ID,
+          message: "Connection lost",
+          outcomeUnknown: true,
+        }),
+        messageId: "sent-message",
+        messagesAtom,
+        signal: controller.signal,
+      });
+      onTestFinished(stop);
+      if (end === "navigation") controller.abort();
+      else if (end === "expiry") vi.advanceTimersByTime(5 * 60 * 1000);
+      else if (end === "threadDeletion") registry.set(messagesAtom, null);
+      else if (end === "environmentRemoval") clearComposerDraftsEnvironment(TEST_ENVIRONMENT_ID);
+      else if (end === "edit") store.getState().setPrompt(target, "newer draft");
+      else if (end === "discard") store.getState().clearComposerContent(target);
+      else if (end !== "lateFailure") registry.set(messagesAtom, [{ id: "sent-message" }]);
+      const disposals = end === "lateFailure" ? 0 : 1;
+      expect(disposedDraft).toHaveBeenCalledTimes(disposals);
+      expect(disposedMessages).toHaveBeenCalledTimes(disposals);
+      const remaining = store.getState().getComposerDraft(target)?.prompt;
+      if (["navigation", "lateFailure", "expiry", "threadDeletion"].includes(end)) {
+        expect(remaining).toBe("restored draft");
+      }
+      registry.set(messagesAtom, [{ id: "sent-message" }]);
+      expect(store.getState().getComposerDraft(target)?.prompt).toBe(remaining);
+      stop();
+      expect(disposedDraft).toHaveBeenCalledTimes(disposals);
+      expect(disposedMessages).toHaveBeenCalledTimes(disposals);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it.each([false, true])(
     "clears an unedited restored send when its exact message arrives (already synced: %s)",
     (alreadySynced) => {
@@ -1289,6 +1407,11 @@ describe("composerDraftStore project draft thread mapping", () => {
       const unsubscribe = subscribeUnconfirmedComposerSend({
         registry,
         target,
+        failure: new EnvironmentRpcUnavailableError({
+          environmentId: TEST_ENVIRONMENT_ID,
+          message: "Connection lost",
+          outcomeUnknown: true,
+        }),
         messageId: "sent-message",
         messagesAtom,
       });
@@ -1334,6 +1457,11 @@ describe("composerDraftStore project draft thread mapping", () => {
       subscribeUnconfirmedComposerSend({
         registry,
         target,
+        failure: new EnvironmentRpcUnavailableError({
+          environmentId: TEST_ENVIRONMENT_ID,
+          message: "Connection lost",
+          outcomeUnknown: true,
+        }),
         messageId: "sent-message",
         messagesAtom,
       }),

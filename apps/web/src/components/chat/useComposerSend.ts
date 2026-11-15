@@ -77,6 +77,7 @@ import {
   composerDraftHasUserContent,
   rememberUnconfirmedDraftSend,
   subscribeUnconfirmedComposerSend,
+  isUncertainComposerSendFailure,
   type ComposerFileAttachment,
   type ComposerImageAttachment,
   type DraftThreadEnvMode,
@@ -408,6 +409,30 @@ export function useComposerSend(input: ComposerSendInput) {
   });
   const { sendInFlight: sendInFlightRef } = draftSendState(routeThreadKey);
   const composerSendGenerationRef = useRef(0);
+  const recoveryOwnerRef = useRef<{
+    routeThreadKey: string;
+    signal: AbortSignal;
+    retain: (disposer: () => void) => void;
+  } | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- owns external recovery subscriptions for the active composer route
+  useLayoutEffect(() => {
+    const controller = new AbortController();
+    let dispose = () => {};
+    const owner = {
+      routeThreadKey,
+      signal: controller.signal,
+      retain(disposer: () => void) {
+        dispose();
+        dispose = disposer;
+      },
+    };
+    recoveryOwnerRef.current = owner;
+    return () => {
+      controller.abort();
+      dispose();
+      recoveryOwnerRef.current = null;
+    };
+  }, [routeThreadKey]);
   const environmentUnavailableSendToastSlotRef = useRef(0);
   // A send awaits uploads before it declines, so it reads the approvals pending by then.
   const pendingApprovalsRef = useRef(pendingApprovals);
@@ -428,6 +453,8 @@ export function useComposerSend(input: ComposerSendInput) {
     },
   ) => {
     e?.preventDefault();
+    const recoveryOwner =
+      recoveryOwnerRef.current?.routeThreadKey === routeThreadKey ? recoveryOwnerRef.current : null;
     // What the user pressed send on; uploads below can take a while, and a redirect must not
     // decline approvals for a draft that changed meanwhile.
     const promptAtSend = promptRef.current;
@@ -1530,26 +1557,31 @@ export function useComposerSend(input: ComposerSendInput) {
         if (
           isLocalDraftThread &&
           draftId &&
-          !isOrchestrationDispatchCommandError(squashAtomCommandFailure(failure))
+          isUncertainComposerSendFailure(squashAtomCommandFailure(failure))
         ) {
           rememberUnconfirmedDraftSend(draftId);
         }
         if (
           isServerThread &&
           turnStartAttempted &&
-          !isOrchestrationDispatchCommandError(squashAtomCommandFailure(failure))
+          recoveryOwner &&
+          isUncertainComposerSendFailure(squashAtomCommandFailure(failure))
         ) {
-          subscribeUnconfirmedComposerSend({
-            registry: appAtomRegistry,
-            target: scopeThreadRef(environmentId, threadIdForSend),
-            messageId: messageIdForSend,
-            messagesAtom: Atom.map(
-              environmentThreadDetails.quietThreadAtom(
-                scopeThreadRef(environmentId, threadIdForSend),
+          recoveryOwner.retain(
+            subscribeUnconfirmedComposerSend({
+              signal: recoveryOwner.signal,
+              failure: squashAtomCommandFailure(failure),
+              registry: appAtomRegistry,
+              target: scopeThreadRef(environmentId, threadIdForSend),
+              messageId: messageIdForSend,
+              messagesAtom: Atom.map(
+                environmentThreadDetails.quietThreadAtom(
+                  scopeThreadRef(environmentId, threadIdForSend),
+                ),
+                (thread) => thread?.projection.messages ?? null,
               ),
-              (thread) => thread?.projection.messages ?? [],
-            ),
-          });
+            }),
+          );
         }
       }
       if (!isAtomCommandInterrupted(failure)) {
