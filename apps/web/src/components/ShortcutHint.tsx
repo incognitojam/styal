@@ -67,7 +67,8 @@ export function ShortcutHintBadge(props: {
 const supportsAnchorPositioning =
   typeof CSS !== "undefined" &&
   CSS.supports("anchor-name", "--shortcut-hint") &&
-  CSS.supports("position-visibility", "anchors-visible");
+  // "always" because the spec is renaming anchors-visible to anchor-visible.
+  CSS.supports("position-visibility", "always");
 
 // A button can carry several badges, such as a model and an effort shortcut, so names are listed.
 function anchorNamesOf(element: HTMLElement): string[] {
