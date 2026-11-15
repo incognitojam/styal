@@ -9,7 +9,6 @@ import { type ShortcutMatchContext, shortcutHintLabelForModifiers } from "../key
 import { type ShortcutModifierState, useShortcutModifierState } from "../shortcutModifierState";
 import { primaryServerKeybindingsAtom } from "../state/server";
 import { useThreadJumpHintsVisible } from "./Sidebar.logic";
-import { Kbd } from "./ui/kbd";
 
 const HeldShortcutModifiersContext = createContext<ShortcutModifierState | null>(null);
 
@@ -44,9 +43,9 @@ function useShortcutHint(
 }
 
 /**
- * A badge over the top-right corner of the enclosing button while the command's
- * modifiers are held. It renders in a portal so header and toolbar clipping
- * cannot cut it off.
+ * A badge over the top edge of the enclosing button while the command's modifiers are held,
+ * centred on icon buttons so neighbours do not collide and at the right of wider ones. It
+ * renders in a portal so header and toolbar clipping cannot cut it off.
  */
 export function ShortcutHintBadge(props: {
   command: KeybindingCommand | null;
@@ -72,9 +71,12 @@ function CornerBadge(props: { label: string }) {
             <kbd
               aria-hidden
               data-shortcut-hint
-              className="pointer-events-none fixed z-[100] inline-flex h-4.5 min-w-4.5 -translate-x-1/2 select-none items-center justify-center rounded border border-border bg-popover px-1 font-medium font-sans text-2xs text-popover-foreground shadow-xs"
+              className="pointer-events-none fixed z-[100] inline-flex h-4.5 min-w-4.5 -translate-x-1/2 select-none items-center justify-center rounded border border-border bg-popover px-0.5 font-medium font-sans text-2xs text-popover-foreground shadow-xs"
               style={{
-                left: Math.min(Math.max(anchor.right - 4, 16), window.innerWidth - 20),
+                left: Math.min(
+                  Math.max((anchor.left + anchor.right) / 2, anchor.right - 16, 16),
+                  window.innerWidth - 20,
+                ),
                 top: Math.max(anchor.top - 6, 2),
               }}
             >
@@ -84,21 +86,5 @@ function CornerBadge(props: { label: string }) {
           )
         : null}
     </>
-  );
-}
-
-/** Shows the command's shortcut in place of a labelled control's icon while its modifiers are held. */
-export function ShortcutHintSlot(props: {
-  command: KeybindingCommand | null;
-  context?: Partial<ShortcutMatchContext>;
-  children: ReactNode;
-}) {
-  const label = useShortcutHint(props.command, props.context);
-  return label === null ? (
-    props.children
-  ) : (
-    <Kbd aria-hidden data-shortcut-hint>
-      {label}
-    </Kbd>
   );
 }

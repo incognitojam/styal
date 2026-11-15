@@ -1,6 +1,6 @@
 import { ComposerSelectControl } from "./chat/ComposerControl";
 import { ComposerContextLabel } from "./ComposerContextLabel";
-import { ShortcutHintSlot } from "./ShortcutHint";
+import { ShortcutHintBadge } from "./ShortcutHint";
 import { Tooltip, TooltipTrigger, TooltipPopup } from "./ui/tooltip";
 import { useAtomValue } from "@effect/atom-react";
 import { shortcutLabelForCommand } from "../keybindings";
@@ -114,16 +114,15 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
             />
           }
         >
-          <ShortcutHintSlot command="composer.host">
-            {autoEnvironmentLabel ? (
-              <ScaleIcon className="size-3 shrink-0" aria-hidden="true" />
-            ) : (
-              <EnvironmentMachineIcon
-                kind={activeEnvironment?.machine ?? "server"}
-                className="size-3 shrink-0"
-              />
-            )}
-          </ShortcutHintSlot>
+          <ShortcutHintBadge command="composer.host" />
+          {autoEnvironmentLabel ? (
+            <ScaleIcon className="size-3 shrink-0" aria-hidden="true" />
+          ) : (
+            <EnvironmentMachineIcon
+              kind={activeEnvironment?.machine ?? "server"}
+              className="size-3 shrink-0"
+            />
+          )}
           <ComposerContextLabel>
             <SelectValue />
           </ComposerContextLabel>
