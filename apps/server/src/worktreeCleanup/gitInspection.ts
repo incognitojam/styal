@@ -3,7 +3,11 @@ import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 
 export const makeInspectGit = Effect.gen(function* () {
   const git = yield* GitVcsDriver.GitVcsDriver;
-  return Effect.fn("WorktreeCleanup.inspectGit")(function* (root: string, args: readonly string[]) {
+  return Effect.fn("WorktreeCleanup.inspectGit")(function* (
+    root: string,
+    args: readonly string[],
+    stdin?: string,
+  ) {
     const env = Object.fromEntries(
       Object.keys(process.env)
         .filter((name) => name.toUpperCase().startsWith("GIT_"))
@@ -17,6 +21,8 @@ export const makeInspectGit = Effect.gen(function* () {
       timeoutMs: 30_000,
       forceKillAfterMs: 1000,
       maxOutputBytes: 64 * 1024 * 1024,
+      allowNonZeroExit: true,
+      ...(stdin === undefined ? {} : { stdin }),
     });
   });
 });

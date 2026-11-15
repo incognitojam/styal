@@ -6,6 +6,7 @@ import * as Schema from "effect/Schema";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Fiber from "effect/Fiber";
+import * as FileSystem from "effect/FileSystem";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -32,7 +33,7 @@ import { makeSweep } from "./Sweep.ts";
 import { DeletionLimits } from "./Deletion.ts";
 import { makeConsume } from "./Stripped.ts";
 import migration from "../persistence/ForkMigrations/015_WorktreeStripped.ts";
-import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
+import { makeWorkspaceLease } from "../workspace/workspaceLease.ts";
 import { TestClock } from "effect/testing";
 import { vi } from "vite-plus/test";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Observe the real unlink boundary in disposable repositories.
@@ -292,7 +293,7 @@ it.effect("rechecks threads under the exact turn-start lease", () =>
     yield* Effect.gen(function* () {
       const entered = yield* Deferred.make<void>();
       const release = yield* Deferred.make<void>();
-      const held = yield* withWorkspaceLease(
+      const held = yield* (yield* makeWorkspaceLease)(
         f.worktree,
         Deferred.succeed(entered, undefined).pipe(Effect.andThen(Deferred.await(release))),
       ).pipe(Effect.forkChild);
@@ -311,17 +312,19 @@ it.effect("rechecks threads under the exact turn-start lease", () =>
   }).pipe(Effect.provide(testLayers), Effect.scoped),
 );
 
-it.effect.each(["/", "/.", "/../quiet"])(
+it.effect.each(["/", "/.", "/../quiet", "symlink"])(
   "holds a worktree with a running thread at alias %s",
   (suffix) =>
     Effect.gen(function* () {
       const f = yield* setup;
       yield* f.write("dist/output");
+      const alias = `${f.base}/worktrees-link`;
+      if (suffix === "symlink") yield* f.fs.symlink(f.config.worktreesDir, alias);
       f.setThreads([
         ...f.threads(),
         shell({
           id: ThreadId.make("running-alias"),
-          worktreePath: `${f.worktree}${suffix}`,
+          worktreePath: suffix === "symlink" ? `${alias}/fixture/quiet` : `${f.worktree}${suffix}`,
           status: "running",
           activeRunId: RunId.make("active"),
         }),
@@ -335,6 +338,71 @@ it.effect.each(["/", "/.", "/../quiet"])(
         expect(yield* f.fs.exists(`${f.worktree}/dist/output`)).toBe(true);
       }).pipe(Effect.provide(f.layers));
     }).pipe(Effect.provide(testLayers), Effect.scoped),
+);
+
+it.effect("serializes leases through a symbolic link to the same checkout", () =>
+  Effect.gen(function* () {
+    const f = yield* setup;
+    const alias = `${f.base}/checkout-link`;
+    yield* f.fs.symlink(f.worktree, alias);
+    const real = yield* f.fs.realPath(alias);
+    const lease = yield* makeWorkspaceLease.pipe(
+      // Resolve the real fixture synchronously so lock ordering does not depend on I/O scheduling.
+      Effect.provideService(FileSystem.FileSystem, {
+        ...f.fs,
+        realPath: (target) => Effect.succeed(target === alias ? real : target),
+      }),
+    );
+    const entered = yield* Deferred.make<void>();
+    const release = yield* Deferred.make<void>();
+    const events: string[] = [];
+    const first = yield* lease(
+      alias,
+      Deferred.succeed(entered, undefined).pipe(
+        Effect.andThen(Deferred.await(release)),
+        Effect.tap(() => Effect.sync(() => events.push("released"))),
+      ),
+    ).pipe(Effect.forkChild({ startImmediately: true }));
+    yield* Deferred.await(entered);
+    const second = yield* lease(
+      f.worktree,
+      Effect.sync(() => events.push("second")),
+    ).pipe(Effect.forkChild({ startImmediately: true }));
+    yield* Deferred.succeed(release, undefined);
+    yield* Fiber.join(first);
+    yield* Fiber.join(second);
+    expect(events).toEqual(["released", "second"]);
+  }).pipe(Effect.provide(testLayers), Effect.scoped),
+);
+
+it.effect("scans thread spellings once while cleaning multiple worktrees", () =>
+  Effect.gen(function* () {
+    const f = yield* setup;
+    const other = `${f.config.worktreesDir}/fixture/other`;
+    yield* f.command(f.root, ["worktree", "add", "--detach", other]);
+    yield* f.write("dist/output");
+    yield* f.fs.makeDirectory(`${other}/dist`);
+    yield* f.fs.writeFileString(`${other}/dist/output`, "synthetic");
+    f.setThreads([
+      ...f.threads(),
+      { ...f.threads()[0]!, id: ThreadId.make("other"), worktreePath: other },
+    ]);
+    yield* f.persist();
+    let scans = 0;
+    const sql = new Proxy(f.sql, {
+      apply(target, receiver, args) {
+        if (Array.isArray(args[0]) && args[0].join("").includes("SELECT DISTINCT")) scans++;
+        return Reflect.apply(target, receiver, args);
+      },
+    });
+    yield* Effect.gen(function* () {
+      const sweep = yield* makeSweep;
+      const report: StorageCleanupReportEntry[] = [];
+      yield* sweep(f.terminal, report);
+      expect(report.map((entry) => entry.path)).toEqual([`${f.worktree}/dist`, `${other}/dist`]);
+      expect(scans).toBe(1);
+    }).pipe(Effect.provide(f.layers), Effect.provideService(SqlClient.SqlClient, sql));
+  }).pipe(Effect.provide(testLayers), Effect.scoped),
 );
 
 it.effect.each(["project-root", "git-directory", "root-link"] as const)(

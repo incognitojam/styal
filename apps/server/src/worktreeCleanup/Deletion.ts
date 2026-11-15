@@ -92,6 +92,35 @@ export const makeDeletion = Effect.gen(function* () {
         message: "Incomplete protected list.",
       });
     const protectedPaths = protectedOutput.stdout.split("\0").filter(Boolean).map(canonical);
+    const ignoredPaths = ignored.stdout.split("\0").filter(Boolean);
+    const ancestors = [
+      ...new Set(
+        ignoredPaths.flatMap((entry) => {
+          const parts = entry.replace(/\/$/, "").split("/");
+          return parts.slice(0, -1).map((_, index) => parts.slice(0, index + 1).join("/"));
+        }),
+      ),
+    ];
+    const blockedAncestors = new Set<string>();
+    if (ancestors.length) {
+      const parents = yield* git(
+        root,
+        ["check-ignore", "--no-index", "-z", "--stdin"],
+        `${ancestors.join("\0")}\0`,
+      );
+      if (
+        (parents.exitCode !== 0 && parents.exitCode !== 1) ||
+        parents.stdoutTruncated ||
+        (parents.stdout && !parents.stdout.endsWith("\0"))
+      )
+        return yield* new WorktreeCleanupError({
+          reason: "run-failed",
+          message: "Incomplete ignored ancestor list.",
+        });
+      for (const parent of parents.stdout.split("\0").filter(Boolean))
+        if (!patterns.some((pattern) => matchesWorktreeCleanupPattern(pattern, parent)))
+          blockedAncestors.add(parent);
+    }
     return yield* Effect.tryPromise(async () => {
       const rootStat = await NodeFSP.lstat(root);
       if (
@@ -163,9 +192,11 @@ export const makeDeletion = Effect.gen(function* () {
           selected.push(target);
         }
       };
-      for (const raw of ignored.stdout.split("\0").filter(Boolean)) {
+      for (const raw of ignoredPaths) {
         const parts = raw.replace(/\/$/, "").split("/");
         if (parts.some((part) => !part || part === "." || part === ".." || part === ".git"))
+          continue;
+        if (parts.some((_, index) => blockedAncestors.has(parts.slice(0, index).join("/"))))
           continue;
         try {
           let target = root;

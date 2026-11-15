@@ -180,32 +180,42 @@ describe("regenerable path deletion", () => {
   );
 });
 
-it.effect.each([".scratch", ".styal"])("does not search unlisted ignored %s folders", (parent) =>
-  run(
-    Effect.gen(function* () {
-      const f = yield* setup;
-      yield* f.fs.writeFileString(
-        `${f.worktree}/.gitignore`,
-        "**/node_modules/\n**/.turbo/\n**/*.tsbuildinfo\n.scratch/\n.styal/\n",
-      );
-      for (const file of [
-        `${parent}/experiment/node_modules/pkg`,
-        `${parent}/experiment/.turbo/cache`,
-        `${parent}/experiment/build.tsbuildinfo`,
-        "apps/web/node_modules/pkg",
-      ])
-        yield* f.write(file);
-      const selected = yield* f.deletion.inspect(f.worktree, [
-        "**/node_modules",
-        "**/.turbo",
-        "**/*.tsbuildinfo",
-      ]);
-      expect(selected).toEqual([`${f.worktree}/apps/web/node_modules`]);
-      for (const target of selected) yield* f.deletion.remove(f.worktree, target);
-      for (const file of ["node_modules/pkg", ".turbo/cache", "build.tsbuildinfo"])
-        expect(yield* f.fs.exists(`${f.worktree}/${parent}/experiment/${file}`)).toBe(true);
-    }),
-  ),
+it.effect.each([".scratch", ".styal", ".scratch-with-tracked-file"])(
+  "does not search unlisted ignored %s folders",
+  (mode) =>
+    run(
+      Effect.gen(function* () {
+        const f = yield* setup;
+        const parent = mode === ".scratch-with-tracked-file" ? ".scratch" : mode;
+        yield* f.fs.writeFileString(
+          `${f.worktree}/.gitignore`,
+          "**/node_modules/\n**/.turbo/\n**/*.tsbuildinfo\n.scratch/\n.styal/\n",
+        );
+        for (const file of [
+          `${parent}/experiment/node_modules/pkg`,
+          `${parent}/experiment/.turbo/cache`,
+          `${parent}/experiment/build.tsbuildinfo`,
+          "apps/web/node_modules/pkg",
+        ])
+          yield* f.write(file);
+        if (mode === ".scratch-with-tracked-file") {
+          yield* f.write(".scratch/keep.txt");
+          yield* f.command(f.worktree, ["add", "-f", ".scratch/keep.txt"]);
+          yield* f.write(".scratch/node_modules/precious");
+        }
+        const selected = yield* f.deletion.inspect(f.worktree, [
+          "**/node_modules",
+          "**/.turbo",
+          "**/*.tsbuildinfo",
+        ]);
+        expect(selected).toEqual([`${f.worktree}/apps/web/node_modules`]);
+        for (const target of selected) yield* f.deletion.remove(f.worktree, target);
+        for (const file of ["node_modules/pkg", ".turbo/cache", "build.tsbuildinfo"])
+          expect(yield* f.fs.exists(`${f.worktree}/${parent}/experiment/${file}`)).toBe(true);
+        if (mode === ".scratch-with-tracked-file")
+          expect(yield* f.fs.exists(`${f.worktree}/.scratch/node_modules/precious`)).toBe(true);
+      }),
+    ),
 );
 
 it.effect.each([

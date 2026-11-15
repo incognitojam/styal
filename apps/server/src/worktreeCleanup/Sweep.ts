@@ -19,7 +19,7 @@ import { threadHoldsWorktree } from "../orchestration-v2/ThreadSettlementService
 import * as Settings from "../serverSettings.ts";
 import { storageCleanupThreadIdle, storageCleanupActivityAt } from "../storageCleanup.ts";
 import { makeIsManagedWorktreePath } from "../worktreesDirectory.ts";
-import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
+import { makeWorkspaceLease } from "../workspace/workspaceLease.ts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import { makeDeletion } from "./Deletion.ts";
 
@@ -33,6 +33,7 @@ const day = 86_400_000;
 
 export const makeSweep = Effect.gen(function* () {
   const path = yield* Path.Path;
+  const withWorkspaceLease = yield* makeWorkspaceLease;
   const fs = yield* FileSystem.FileSystem;
   const sql = yield* SqlClient.SqlClient;
   const settings = yield* Settings.ServerSettingsService;
@@ -60,6 +61,17 @@ export const makeSweep = Effect.gen(function* () {
       return;
     const deadline = (yield* Clock.currentTimeMillis) + 600_000;
     const snapshot = yield* projections.getShellSnapshot().pipe(NodeSqliteClient.readOnly);
+    const spellings = yield* sql<{
+      path: string;
+    }>`SELECT DISTINCT json_extract(payload_json, '$.worktreePath') AS path FROM orchestration_v2_projection_threads WHERE json_extract(payload_json, '$.worktreePath') IS NOT NULL`.pipe(
+      NodeSqliteClient.readOnly,
+    );
+    const aliasedRoots = new Set<string>();
+    for (const entry of spellings) {
+      const resolved = path.resolve(entry.path);
+      const real = yield* fs.realPath(resolved).pipe(Effect.orElseSucceed(() => resolved));
+      if (entry.path !== real) aliasedRoots.add(real);
+    }
     const roots = [
       ...new Set(
         [...snapshot.threads, ...snapshot.archivedThreads].flatMap((thread) =>
@@ -72,13 +84,7 @@ export const makeSweep = Effect.gen(function* () {
       const run = Effect.gen(function* () {
         const eligible = Effect.fn("WorktreeCleanup.eligible")(function* () {
           if (!(yield* managed(root)) || hasTerminal(root)) return null;
-          const spellings = yield* sql<{
-            path: string;
-          }>`SELECT DISTINCT json_extract(payload_json, '$.worktreePath') AS path FROM orchestration_v2_projection_threads WHERE json_extract(payload_json, '$.worktreePath') IS NOT NULL`.pipe(
-            NodeSqliteClient.readOnly,
-          );
-          if (spellings.some((entry) => path.resolve(entry.path) === root && entry.path !== root))
-            return null;
+          if (aliasedRoots.has(root)) return null;
           const allProjects = yield* projects.listShells();
           const unavailableProjects = new Set<string>();
           for (const project of allProjects) {

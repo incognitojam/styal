@@ -20,6 +20,7 @@ import {
   ThreadId,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
+import * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -30,7 +31,7 @@ import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
 
 import * as ServerConfig from "../config.ts";
-import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
+import { makeWorkspaceLease } from "../workspace/workspaceLease.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
@@ -176,6 +177,7 @@ export const layer: Layer.Layer<
     const idAllocator = yield* IdAllocator.IdAllocatorV2;
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
+    const withWorkspaceLease = yield* makeWorkspaceLease;
     const gitWorkflow = yield* GitWorkflowService.GitWorkflowService;
     const git = yield* GitVcsDriver.GitVcsDriver;
     const projects = yield* ProjectService.ProjectService;
@@ -760,11 +762,19 @@ export const layer: Layer.Layer<
                 });
                 if (setup.status !== "started") return setup.status !== "awaiting-approval";
                 if (!setup.completion) return false;
-                // Recovery must restore dependencies before the provider uses this checkout.
-                if (setup.async && !stripped) {
-                  yield* forkParked(setup.completion).pipe(
-                    Effect.provideService(Scope.Scope, serviceScope),
-                  );
+                if (setup.async) {
+                  yield* forkParked(
+                    setup.completion.pipe(
+                      Effect.onExit((exit) =>
+                        exit._tag === "Success" || !Cause.hasInterrupts(exit.cause)
+                          ? setupScripts
+                              .consumeStripped(path.resolve(worktreePath))
+                              .pipe(Effect.asVoid)
+                          : Effect.void,
+                      ),
+                    ),
+                  ).pipe(Effect.provideService(Scope.Scope, serviceScope));
+                  return false;
                 } else {
                   const completion = yield* setup.completion;
                   if (
