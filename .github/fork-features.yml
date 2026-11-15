@@ -6444,7 +6444,7 @@ features:
     tier: yield
     prs: [1477, 1485]
     invariants:
-      - After Cmd or Ctrl has been held for the thread jump hint delay, each visible, enabled button whose bound shortcut uses every held modifier shows that shortcut, so holding Cmd alone also shows Shift+Cmd shortcuts; holding more modifiers narrows the set at once, and releasing them hides every hint.
+      - After Cmd or Ctrl has been held for the thread jump hint delay, each visible, enabled button not covered by a dialog or popover whose bound shortcut uses every held modifier shows that shortcut, so holding Cmd alone also shows Shift+Cmd shortcuts; holding more modifiers narrows the set at once, and releasing them hides every hint.
       - Every hint is a badge over the button's top edge (centred on icon buttons, at the right of wider controls), drawn above any clipping container, so showing hints never moves or resizes a control.
       - A command with several bindings shows the one that needs the fewest modifiers beyond those held, labels follow the user's own keybindings, and no hint shows while a terminal has focus or on a control the shortcut cannot reach.
     rationale: Shortcuts were only discoverable through tooltips one button at a time; the sidebar's thread jump hints showed that holding the modifier is a quick way to learn them.
