@@ -7,16 +7,28 @@ const SCP_LIKE_URL = /^(?:[^@/\s]+@)?([^:/\s]+):(?!\/)(.+)$/;
 const SSH_URL = /^ssh:\/\/(?:[^/\s]*@)?([^@:/\s]+)(:\d+)?\/(.+)$/;
 const HTTPS_URL = /^https?:\/\/(?:[^/\s]*@)?([^@:/\s]+)(:\d+)?\/(.+)$/;
 
-function parseCloneUrl(
-  url: string,
-): { protocol: CloneProtocol; host: string; path: string; customPort: boolean } | null {
+function parseCloneUrl(url: string): {
+  protocol: CloneProtocol;
+  host: string;
+  path: string;
+  customPort: boolean;
+  scp: boolean;
+} | null {
   const trimmed = url.trim();
   const ssh = SSH_URL.exec(trimmed);
-  if (ssh) return { protocol: "ssh", host: ssh[1]!, path: ssh[3]!, customPort: !!ssh[2] };
+  if (ssh)
+    return { protocol: "ssh", host: ssh[1]!, path: ssh[3]!, customPort: !!ssh[2], scp: false };
   const https = HTTPS_URL.exec(trimmed);
-  if (https) return { protocol: "https", host: https[1]!, path: https[3]!, customPort: !!https[2] };
+  if (https)
+    return {
+      protocol: "https",
+      host: https[1]!,
+      path: https[3]!,
+      customPort: !!https[2],
+      scp: false,
+    };
   const scp = SCP_LIKE_URL.exec(trimmed);
-  if (scp) return { protocol: "ssh", host: scp[1]!, path: scp[2]!, customPort: false };
+  if (scp) return { protocol: "ssh", host: scp[1]!, path: scp[2]!, customPort: false, scp: true };
   return null;
 }
 
@@ -61,7 +73,13 @@ export function cloneUrlRepositoryPath(url: string): string | null {
   if (isWindowsDrivePath(url.trim())) return null;
   const parsed = parseCloneUrl(url);
   if (!parsed) return null;
-  const segments = [parsed.host, ...parsed.path.split(/[?#]/)[0]!.split("/").filter(Boolean)];
+  let repositoryPath = parsed.path.split(/[?#]/)[0]!;
+  try {
+    if (!parsed.scp) repositoryPath = decodeURIComponent(repositoryPath);
+  } catch {
+    return null;
+  }
+  const segments = [parsed.host, ...repositoryPath.split("/").filter(Boolean)];
   const last = segments.at(-1)!;
   if (last.endsWith(".git")) segments[segments.length - 1] = last.slice(0, -".git".length);
   if (
