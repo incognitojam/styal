@@ -15,7 +15,6 @@ import { CopyIcon } from "lucide-react";
 
 import { sharesMachineWithEnvironment } from "../../browser/browserTargetResolver";
 import { writeTextToClipboard } from "../../hooks/useCopyToClipboard";
-import { reportForkClientUsage } from "../../forkClientUsage";
 import { ensureLocalApi } from "../../localApi";
 import { applyMaskedEdit, maskCode } from "@t3tools/shared/maskedCode";
 import { cn } from "~/lib/utils";
@@ -41,7 +40,6 @@ export function ProviderAuthenticationSection({
   instanceId,
   provider,
   readOnly,
-  usageEntryPoint = "settings",
   layout = "settings",
   onDone,
 }: {
@@ -50,7 +48,6 @@ export function ProviderAuthenticationSection({
   readonly instanceId: ProviderInstanceId;
   readonly provider: ServerProvider;
   readonly readOnly: boolean;
-  readonly usageEntryPoint?: "settings" | "thread" | "signed_out";
   readonly layout?: "settings" | "dialog";
   readonly onDone?: () => void;
 }) {
@@ -325,13 +322,6 @@ export function ProviderAuthenticationSection({
           variant={dialog ? "default" : "outline"}
           disabled={disabled || !provider.enabled || !provider.installed || !auth}
           onClick={() => {
-            if (usesCliLogin) {
-              reportForkClientUsage(environmentId, {
-                feature: "provider-sign-in",
-                action: "start",
-                entryPoint: usageEntryPoint,
-              });
-            }
             void run(() =>
               start({
                 environmentId,

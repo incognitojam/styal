@@ -86,7 +86,6 @@ The most common defect in this repo is a change that works on the path you teste
 - [How styal differs from T3 Code](docs/user/styal-differences.md) is the curated user-facing overview. Update it in the same PR when a notable difference is added, materially changed, or removed. Check the current upstream implementation before claiming a difference, describe refinements precisely, and record the comparison revision. Remove highlights when the described behavior becomes shared.
 - Add a [fork feature ledger](.github/fork-features.yml) entry for behavior upstream also has when we would keep our deliberate product decision after an upstream rewrite, or when intake has already undone a fix; ordinary fixes and polish need no entry (see the [ledger maintenance guide](docs/internals/fork-feature-ledger.md)).
 - A new setting upstream lacks gets the styal mark: pass its ledger id as `forkFeature` and classify its search item in `apps/web/src/components/settings/forkFeatures.ts`. Fork CI fails a pull request that adds a search item without that classification.
-- Measure use of a new or materially changed fork feature in the same PR; see [Measure a fork feature](docs/operations/feature-usage.md#measure-a-fork-feature).
 - Follow the [ledger maintenance guide](docs/internals/fork-feature-ledger.md) for upstream overlap and retirement decisions. Keep the overview concise rather than copying every ledger entry. Nightly changelogs use PR and commit titles; the overview is maintained through reviewed edits.
 
 ## Dev servers

@@ -6,7 +6,6 @@ import {
 } from "@t3tools/client-runtime/state/device";
 import type { EnvironmentDeviceHostConfig, EnvironmentId, ServerConfig } from "@t3tools/contracts";
 import { useState } from "react";
-import { reportForkClientUsage } from "~/forkClientUsage";
 import { deviceEnvironment, useDeviceState } from "../../state/device";
 import { desktopNetworkAccessStateAtom } from "../../state/desktopNetworkAccess";
 import {
@@ -104,12 +103,6 @@ function OfflineShare(props: {
         disabled={props.disabled || pending}
         aria-label={`Share ${props.host.label} devices with ${props.agent.label}`}
         onCheckedChange={() => {
-          void reportForkClientUsage(props.agent.environmentId, {
-            feature: "integration-settings",
-            action: "change_requested",
-            setting: "device_sharing",
-            settingScope: "environment",
-          });
           props.onError(null);
           setPending(true);
           void disconnect({
@@ -257,12 +250,7 @@ function SharingSwitch(props: {
           ? disconnect({ environmentId: agent.environmentId, input: { hostId: host.id } })
           : null;
     if (!action) return;
-    void reportForkClientUsage(agent.environmentId, {
-      feature: "integration-settings",
-      action: "change_requested",
-      setting: "device_sharing",
-      settingScope: "environment",
-    });
+
     setError(null);
     setPending(true);
     void action

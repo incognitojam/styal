@@ -131,7 +131,6 @@ import {
   usePullRequestReviewStore,
   type PendingReviewComment,
 } from "./pullRequestReviewStore";
-import { reportForkClientUsage } from "~/forkClientUsage";
 
 interface ReviewAnnotationGroup {
   readonly threads: ReadonlyArray<PullRequestReviewThread>;
@@ -1376,11 +1375,6 @@ function PullRequestCodeTab({
                 pressed={diffSortMode === "smart"}
                 onPressedChange={(pressed) => {
                   setDiffSortMode(pressed ? "smart" : "alphabetical");
-                  void reportForkClientUsage(environmentId, {
-                    feature: "diff-file-review-order",
-                    action: pressed ? "relevance_selected" : "alphabetical_selected",
-                    view: "pull_request",
-                  });
                 }}
               />
             }

@@ -1,5 +1,4 @@
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
-import { EnvironmentId } from "@t3tools/contracts";
 import { AsyncResult } from "effect/reactivity";
 import { useMemo } from "react";
 import { sortReviewParsedDiffByPath, type ReviewParsedDiff } from "../review/reviewModel";
@@ -7,17 +6,10 @@ import { useDiffSortMode } from "../review/useDiffSortMode";
 import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
 import { filterPullRequestTestFiles } from "./pullRequestFileFilters";
 
-export function usePullRequestFileFilter(
-  parsed: ReviewParsedDiff,
-  environmentId: string,
-  includePath?: string,
-) {
+export function usePullRequestFileFilter(parsed: ReviewParsedDiff, includePath?: string) {
   const preferences = useAtomValue(mobilePreferencesAtom);
   const savePreferences = useAtomSet(updateMobilePreferencesAtom);
-  const sort = useDiffSortMode({
-    view: "pull_request",
-    environmentId: EnvironmentId.make(environmentId),
-  });
+  const sort = useDiffSortMode();
   const hideTestFiles =
     AsyncResult.isSuccess(preferences) && preferences.value.pullRequestHideTestFiles === true;
   const visible = useMemo(() => {

@@ -59,8 +59,7 @@ One identity can appear in several client groups during a period; adding those
 groups double-counts users.
 
 Explicit settles and archives are counted in upstream's `feature.used` request
-counts (`thread.settle`, `thread.archive`); the server records its automatic
-settles as `server.thread.settled` (see [Feature usage](../operations/feature-usage.md#thread-settle-reasons)).
+counts (`thread.settle`, `thread.archive`).
 
 Provider send and completion counts need not match. `provider.turn.completed`
 is one provider turn, and `segment` says what started it: the run's first

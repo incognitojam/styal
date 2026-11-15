@@ -997,7 +997,6 @@ function PullRequestFileRouteContent({ route }: PullRequestFileRouteProps) {
   const result = usePullRequestDiff(route.params, terminology);
   const filter = usePullRequestFileFilter(
     result.parsed,
-    route.params.environmentId,
     route.params.focus ? route.params.path : undefined,
   );
   const { refresh: refreshDetail } = detail;

@@ -54,7 +54,6 @@ import { useThreadCwd } from "../../state/use-selected-thread-worktree";
 import { environmentThreadShells } from "../../state/threads";
 import { savedConnectionsByIdAtom } from "../../state/use-remote-environment-registry";
 import { workspaceConnections } from "../../state/workspace";
-import { reportForkClientUsage } from "../../state/forkClientUsage";
 import { buildHomeProjectScopes, resolveHomeProjectFilterScope } from "../home/homeThreadList";
 import { mobilePreferencesAtom } from "../../state/preferences";
 import {
@@ -655,12 +654,6 @@ function AdaptiveWorkspaceLayoutContent(
         origin,
       }),
     );
-    if (filteredScope) {
-      void reportForkClientUsage(filteredScope.representative.environmentId, {
-        feature: "sidebar-project-filter",
-        action: "thread_started",
-      });
-    }
   };
 
   const handleStartNewTask = () => startNewTask("list");

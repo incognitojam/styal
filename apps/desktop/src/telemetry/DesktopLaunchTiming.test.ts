@@ -6,13 +6,11 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as PlatformError from "effect/PlatformError";
-import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 
 import * as DesktopConfig from "../app/DesktopConfig.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as DesktopLaunchTiming from "./DesktopLaunchTiming.ts";
-import * as DesktopTelemetryPublisher from "./DesktopTelemetryPublisher.ts";
 
 const environmentLayer = (appVersion: string, platform: NodeJS.Platform = "darwin") =>
   DesktopEnvironment.layer({
@@ -139,29 +137,6 @@ describe("DesktopLaunchTiming", () => {
       assert.isUndefined(report.update);
       // No backend became ready, as when the local environment is off.
       assert.isNull(report.backendReadyMs);
-    }),
-  );
-
-  it.effect("sends the report through the telemetry pipe once the window is shown", () =>
-    Effect.gen(function* () {
-      const published = yield* Deferred.make<DesktopFeatureUsageReport>();
-      const timing = yield* launch(makeFiles(), { appVersion: "1.2.3", processStartedAt: 0 });
-      const telemetry = Layer.mock(DesktopTelemetryPublisher.DesktopTelemetryPublisher)({
-        publishFeatureUsage: (report) => Deferred.succeed(published, report).pipe(Effect.asVoid),
-        updateRequests: Stream.empty,
-      });
-      yield* Layer.build(
-        DesktopLaunchTiming.layerReporter.pipe(
-          Layer.provide(Layer.succeed(DesktopLaunchTiming.DesktopLaunchTiming, timing)),
-          Layer.provide(telemetry),
-        ),
-      );
-      assert.isFalse(yield* Deferred.isDone(published));
-
-      yield* TestClock.setTime(2_000);
-      yield* timing.markWindowShown;
-      const report = yield* Deferred.await(published);
-      assert.equal(report.feature, "desktop-launch");
     }),
   );
 });

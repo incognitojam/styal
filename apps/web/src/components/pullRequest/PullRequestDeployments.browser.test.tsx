@@ -71,7 +71,7 @@ it("explains failure without hover and updates when the current commit deploys",
   setup();
   await using screen = await render(deployments(deployment, { headSha, truncated: true }));
   const { container } = screen;
-  expect(run).not.toHaveBeenCalled();
+
   expect(container.querySelector("p")?.textContent).toBe(deployment.description);
   expect(container.textContent).toContain(deployment.commitSha.slice(0, 7));
   expect(container.textContent).toContain("Environments not deployed recently may be missing.");
@@ -80,10 +80,6 @@ it("explains failure without hover and updates when the current commit deploys",
   openLink.mockRejectedValueOnce(new Error("Browser unavailable"));
   await act(async () => button(container, "View deployment logs for web-preview").click());
   expect(toast).toHaveBeenCalledWith({ type: "error", title: "Unable to open deployment" });
-  expect(run).toHaveBeenLastCalledWith(expect.anything(), {
-    environmentId,
-    input: { feature: "pull-request-deployments", action: "open_logs", outcome: "failure" },
-  });
 
   await screen.rerender(
     deployments(
@@ -112,11 +108,6 @@ it("explains failure without hover and updates when the current commit deploys",
   expect(container.textContent).toContain("Deployed");
   await act(async () => button(container, "Open web-preview").click());
   expect(openLink).toHaveBeenLastCalledWith("https://preview.example.com");
-  expect(run).toHaveBeenLastCalledWith(expect.anything(), {
-    environmentId,
-    input: { feature: "pull-request-deployments", action: "open_environment", outcome: "success" },
-  });
-  expect(run).toHaveBeenCalledTimes(2);
 });
 
 it("keeps inactive previews closed while logs remain available, and does not guess an unknown head", async () => {
@@ -160,36 +151,13 @@ it("lists failures first and keeps the rest behind Show all", async () => {
       .click(),
   );
   expect(names()).toEqual(["f", "a", "b", "c", "d", "e"]);
-  expect(run).toHaveBeenCalledExactlyOnceWith(expect.anything(), {
-    environmentId,
-    input: { feature: "pull-request-deployments", action: "show_all", outcome: "success" },
-  });
+
   await act(async () =>
     [...container.querySelectorAll("button")]
       .find((node) => node.textContent === "Show less")!
       .click(),
   );
   expect(names()).toEqual(["f", "a", "b", "c", "d"]);
-  expect(run).toHaveBeenCalledOnce();
-});
-
-it("keeps links working on older servers and when analytics delivery fails", async () => {
-  setup();
-  await using screen = await render(deployments());
-  const { container } = screen;
-  for (const capabilities of [{}, { forkClientUsageVersion: FORK_CLIENT_USAGE_VERSION - 1 }]) {
-    readConfig.mockReturnValue({ environment: { capabilities } });
-    await act(async () => button(container, "View deployment logs for web-preview").click());
-    expect(run).not.toHaveBeenCalled();
-  }
-  readConfig.mockReturnValue({
-    environment: { capabilities: { forkClientUsageVersion: FORK_CLIENT_USAGE_VERSION } },
-  });
-  run.mockRejectedValueOnce(new Error("Synthetic analytics transport failure"));
-  await act(async () => button(container, "View deployment logs for web-preview").click());
-  expect(run).toHaveBeenCalledOnce();
-  expect(openLink).toHaveBeenCalledTimes(3);
-  expect(toast).not.toHaveBeenCalled();
 });
 
 it("keeps a deployment's age counting without new deployment data", async () => {

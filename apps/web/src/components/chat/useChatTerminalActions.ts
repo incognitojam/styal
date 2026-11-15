@@ -23,7 +23,6 @@ import {
   type ResolvedProjectAction,
 } from "@t3tools/shared/projectScripts";
 import type { ProjectConfig } from "@t3tools/contracts";
-import { reportForkClientUsage } from "../../forkClientUsage";
 import { encodeTerminalScriptPaste } from "../../terminal/scriptPaste";
 import { type SetStateAction } from "react";
 import {
@@ -102,7 +101,6 @@ export function useChatTerminalActions(input: ChatTerminalActionsInput) {
     activeThreadId,
     activeThreadRef,
     activeProject,
-    activeProjectConfig,
     activeRightPanelSurface,
     runningTerminalIds,
     activeServerOrderedTerminalIds,
@@ -345,15 +343,6 @@ export function useChatTerminalActions(input: ChatTerminalActionsInput) {
         );
       }
       return;
-    }
-    // Menu and shortcut runs carry where the action came from.
-    if ("source" in script) {
-      void reportForkClientUsage(environmentId, {
-        feature: "project-actions",
-        action: "run",
-        actionSource: script.source,
-        projectFile: activeProjectConfig?.source ?? "none",
-      });
     }
     if (script.autoOpenPreview && script.previewUrl && isPreviewSupportedInRuntime()) {
       const previewResult = await openUrlInPreview({

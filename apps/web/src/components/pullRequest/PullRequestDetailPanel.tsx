@@ -157,7 +157,6 @@ import {
   resolvePullRequestMergeNow,
   resolvePullRequestPrimaryControl,
 } from "@t3tools/shared/pullRequestMergeControl";
-import { reportForkClientUsage } from "../../forkClientUsage";
 import { resolvePickableEnvironments } from "./pullRequestProjectAssignment.logic";
 import { PullRequestChecksPopover } from "./PullRequestChecksPopover";
 import {
@@ -1236,15 +1235,7 @@ function PullRequestDetailPanelBody({
       : null;
   const mergeNowLabel = mergeNow === "bypass" ? "Bypass rules and merge" : "Merge now";
   const mergeNowPressed = async () => {
-    const bypass = mergeNow === "bypass";
-    const merged = await perform("merge", selectedMergeMethod);
-    if (bypass) {
-      void reportForkClientUsage(environmentId, {
-        feature: "pull-request-bypass-merge",
-        action: "merge",
-        outcome: merged ? "success" : "failure",
-      });
-    }
+    await perform("merge", selectedMergeMethod);
   };
   const mergeNowConfirmLabel =
     mergeNow === "bypass" ? "Confirm bypass and merge?" : "Confirm merge?";

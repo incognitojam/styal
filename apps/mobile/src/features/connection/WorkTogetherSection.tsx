@@ -56,7 +56,6 @@ import { cn } from "../../lib/cn";
 import { serverEnvironment } from "../../state/server";
 import { useDeviceState } from "../../state/device";
 import { useEnvironments } from "../../state/environments";
-import { reportForkClientUsage } from "../../state/forkClientUsage";
 import { peerLinkEnvironment, useLinkableMachines, workTogether } from "../../state/peerLinks";
 import { useEnvironmentQuery } from "../../state/query";
 import { relayEnvironmentDiscovery } from "../../state/relay";
@@ -361,7 +360,7 @@ function MachineAccessChoices({ machine }: { readonly machine: NamedEnvironment 
   const incomingWork = useAtomCommand(peerLinkEnvironment.incomingWork, { reportFailure: false });
   const update = useAtomCommand(serverEnvironment.updateSettings, { reportFailure: false });
   const [busy, setBusy] = useState(false);
-  const save = async (next: IncomingMachineAccess, stoppedThreads: boolean) => {
+  const save = async (next: IncomingMachineAccess, _stoppedThreads: boolean) => {
     const result = await update({
       environmentId,
       input: { patch: { incomingMachineAccess: next } },
@@ -374,12 +373,6 @@ function MachineAccessChoices({ machine }: { readonly machine: NamedEnvironment 
       );
       return;
     }
-    void reportForkClientUsage(environmentId, {
-      feature: "machine-access",
-      action: "set",
-      level: next,
-      stoppedThreads,
-    });
   };
   const choose = async (next: IncomingMachineAccess) => {
     if (next === level) return;
@@ -451,11 +444,7 @@ function OtherMachineLinks(props: {
     setBusyId(environmentId);
     const result = await unlink({ environmentId: machine.environmentId, input: { environmentId } });
     setBusyId(null);
-    void reportForkClientUsage(machine.environmentId, {
-      feature: "work-together",
-      action: "stop",
-      outcome: result._tag === "Failure" ? "failed" : "complete",
-    });
+
     if (result._tag === "Failure")
       Alert.alert("Could not stop", String(squashAtomCommandFailure(result)));
   };
@@ -683,14 +672,6 @@ function MachinePair(props: {
       return;
     }
     setRun({ kind, lines: result.value, finished: true });
-    const target = [a, b].find((machine) => machine.connected);
-    if (target !== undefined) {
-      void reportForkClientUsage(target.environmentId, {
-        feature: "work-together",
-        action: kind,
-        outcome: workTogetherOutcome(result.value),
-      });
-    }
   };
 
   const resume = useEffectEvent(() => {

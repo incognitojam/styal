@@ -13,7 +13,6 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import { DeviceActivity } from "../../../device/DeviceIdle.ts";
 import * as DeviceService from "../../../device/DeviceService.ts";
-import * as DeviceFeatureUsage from "../../../telemetry/DeviceFeatureUsage.ts";
 import { threadWorkspaceRoot } from "../../../project/threadWorkspaceRoot.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
@@ -483,17 +482,8 @@ export function pngDimensions(png: Uint8Array): { width: number; height: number 
 
 const { device_screenshot, ...standardHandlers } = handlers;
 
-export const layerStandard = McpToolAccess.toLayer(
-  DeviceStandardToolkit,
-  McpToolAccess.wrapHandlers(standardHandlers, DeviceFeatureUsage.observeHandlers),
-);
+export const layerStandard = McpToolAccess.toLayer(DeviceStandardToolkit, standardHandlers);
 
-export const layerScreenshot = McpToolAccess.toLayer(
-  DeviceScreenshotToolkit,
-  McpToolAccess.wrapHandlers({ device_screenshot }, (handlers) =>
-    Effect.map(DeviceFeatureUsage.snapshotObserver, (observe) => ({
-      device_screenshot: (input: Parameters<typeof handlers.device_screenshot>[0]) =>
-        observe(handlers.device_screenshot(input)),
-    })),
-  ),
-);
+export const layerScreenshot = McpToolAccess.toLayer(DeviceScreenshotToolkit, {
+  device_screenshot,
+});

@@ -122,14 +122,12 @@ features:
       - "`read_styal_guide` returns a bundled guide for a fixed topic (`project-setup`, `devices`, `hardware`, `data-import`, `troubleshooting`) with no capability gate, so every provider session that has the styal MCP server can read it. It is read-only and Claude pre-approves it."
       - Guides name only tools the server publishes and topics that exist.
       - In a session without the skill, always-on instructions tell agents to read `project-setup` before adding or changing project actions, because `read_styal_guide` is a deferred tool whose description they do not see first.
-      - Each read records `feature.used` with `feature = agent-guides`, `guideRoute` and the topic, and no other argument or result. Opening the skill records `action = open`.
     rationale: Gives agents styal-specific setup knowledge (styal.json, devices, hardware, imports, maintenance) through the MCP server every provider already connects to, so no provider session or desktop packaging changes are needed. Upstream's bundled skills proposal installs files into provider homes instead.
     implementation_paths:
       - apps/server/src/mcp/toolkits/guide/guides.ts
       - apps/server/src/mcp/toolkits/guide/handlers.ts
       - apps/server/src/mcp/toolkits/guide/skill.ts
       - apps/server/src/mcp/toolkits/guide/tools.ts
-      - apps/server/src/telemetry/StyalSkillUsage.ts
       - packages/provider-core/src/server/styalSkill.ts
     upstream_paths:
       - apps/server/src/cli/doctor.ts
@@ -148,7 +146,6 @@ features:
       - apps/server/src/provider/CodexDeveloperInstructions.ts
       - apps/server/src/provider/agentContextBudget.json
       - apps/server/src/telemetry/AnalyticsService.ts
-      - apps/server/src/telemetry/FeatureUsage.ts
       - packages/client-runtime/src/t3ToolSummary.ts
       - packages/contracts/src/t3ProjectFile.ts
       - packages/provider-core/src/server/orchestrationInstructions.ts
@@ -163,7 +160,6 @@ features:
       - apps/server/src/mcp/toolkits/guide/handlers.test.ts
       - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.test.ts
       - apps/server/src/provider/AgentContextBudget.test.ts
-      - apps/server/src/telemetry/StyalSkillUsage.test.ts
     upstream:
       status: tracking
       tracking:
@@ -391,7 +387,6 @@ features:
       - Only Auto/default and Full access callers can use the four opted-in environment operations; lower modes remain refused.
       - Auto project creation refuses scripts and model defaults; scheduled task and bound-thread modes cannot exceed caller limits, including under the dispatch lock.
       - MCP clones atomically claim a new destination and never adopt an existing empty or registered workspace.
-      - Auto exceptions record bounded usage outcomes without operation data.
       - Linked callers retain link-origin fencing and mode ceilings, including forwarded calls.
     implementation_paths:
       - apps/server/src/mcp/McpToolAccess.ts
@@ -401,7 +396,6 @@ features:
       - apps/server/src/scheduledTasks/ScheduledTaskService.ts
       - apps/server/src/sourceControl/SourceControlRepositoryService.ts
       - apps/server/src/telemetry/AnalyticsService.ts
-      - apps/server/src/telemetry/FeatureUsage.ts
     upstream_paths:
       - apps/server/src/mcp/McpToolAccess.ts
       - apps/server/src/mcp/toolkits/orchestrator/handlers.ts
@@ -1150,7 +1144,6 @@ features:
       - Wake=each tasks and earlier deliveries never release a held wake=all result, and tasks delegated in a later parent run form a separate group. Follow-up tasks in a child thread do not join the original's group.
       - A child's question wakes the parent through the existing question notification while its group is held.
       - wakeAfterMs, accepted only with wake=all, is an outbox effect scheduled through availableAt, so it survives a server restart; it runs outside the thread's ordered effect lane, so a pending timer never delays the parent's turns or checkpoints. When it fires while the group is unfinished, the parent gets one notification listing finished and unfinished task IDs; timers that fire while the group is unchanged share that notification, and the hold stays in place.
-      - Each delegate_task call records one feature.used event with the wake it chose (each or all) and, for all, whether wakeAfterMs was set, never the task or its arguments.
       - A task delegated to a linked environment (target.environmentId) records wake and wakeAfterMs on its task here, so it holds and releases with its parent run's wake=all group and its timer runs here like a local task's.
     rationale: An orchestrator that delegates several parallel tracks otherwise takes one turn per finished track, each reloading its whole context to learn little.
     implementation_paths:
@@ -1162,8 +1155,6 @@ features:
       - apps/server/src/orchestration-v2/Orchestrator.ts
       - apps/server/src/peer/RemoteDelegation.ts
       - apps/server/src/telemetry/AnalyticsService.ts
-      - apps/server/src/telemetry/DelegatedWakeUsage.ts
-      - apps/server/src/telemetry/FeatureUsage.ts
       - packages/contracts/src/orchestrationV2.ts
       - packages/contracts/src/orchestratorMcp.ts
     upstream_paths:
@@ -1180,7 +1171,6 @@ features:
       - apps/server/src/orchestration-v2/DelegatedCompletionDelivery.test.ts
       - apps/server/src/orchestration-v2/Orchestrator.control-reads.test.ts
       - apps/server/src/orchestration-v2/RemoteDelegatedTask.test.ts
-      - apps/server/src/telemetry/DelegatedWakeUsage.test.ts
     upstream:
       status: unassessed
       tracking: []
@@ -1202,19 +1192,16 @@ features:
       - Downloaded updates install on normal app quit; the sidebar offers a plain restart arrow without a completion checkmark, using the theme update surface and foreground once an installer is ready, while Settings presents automatic checks and downloads as status and reserves download actions for failure retries.
       - An install on quit creates its runtime directory before recording its target version like an in-app install, so a restart on the old version reports that the update did not apply, and quitting never retries a version whose install did not apply.
       - The sidebar update pass checks affected remote servers and every backend hosted by this app before deciding whether confirmation is needed, while the sidebar update control shows a spinner. A check still running after two seconds opens the dialog with an Update anyway action, which counts as explicit consent, and fills in the result if it arrives while the dialog is open. Safe results proceed directly; otherwise one dialog shows a block per machine with its icon, this app last and marked as restarting last when other machines also update, with thread names by project under each machine, split into threads that resume on their own and threads that stop until messaged, followed by remaining interruption warnings. A resuming thread's tags name only background work. Explicit consent covers the matching downloaded local version; without consent, remote activity is checked again after provider installations and local activity before handoff. Later checks stay silent unless they find work requiring consent. Remote handoffs run in parallel and the local restart follows immediately, without a countdown.
-      - Combined update confirmations record one exposure and at most one explicit decision after inspection requires confirmation through a compatible paired environment, without thread, environment, version or project content. Loading checks and automatic safe updates emit no confirmation events.
       - A downloaded update remains visible in the sidebar during rechecks, with restart temporarily disabled and release notes retained until the check settles.
       - A late native window-close event cannot bypass cleanup and the selected-channel installer handoff after scoped lifecycle listeners are removed.
       - Changing update channels clears installation eligibility; only a ready download from the selected channel may install on quit.
       - On macOS a selected-channel download is staged with Squirrel.Mac once, right after it downloads, when the app can be replaced without administrator rights; checks continue while it waits, and a newer selected-channel release discards it before downloading and staging the newer one, keeping it if its ShipIt job cannot be removed; quit installs a staged update only if it is still the selected-channel download. A failed background staging, or an app that needs administrator rights, stages at quit or restart as before, and a restart whose staging fails or finds no update recovers instead of waiting. Every channel change waits for staging, removes any user ShipIt job, including one left by an earlier process, and clears the download, and fails without changing channels if the job cannot be removed; after that, an update installs only once a new download stages.
       - Remote desktop updates reuse the automatic-download reservation and recover failed installations without bypassing local manual-restart confirmation or install-on-quit behavior. Web and mobile inspect every backend owned by the target desktop app, including sibling WSL environments. Only completely checked idle or resumable pools skip confirmation. Pool reports require maintenance permission and expose anonymous interruption counts. Selected-environment thread details come from its authorized activity request and replace exactly one identified primary pool entry; missing or ambiguous coverage retains readable details and requires confirmation. Unconfirmed desktop and service updates recheck before handoff, refusing new blockers while retaining the download for an explicitly confirmed retry; omitted consent never permits interruptions.
-      - On macOS, while a background-staged selected-channel update waits, the app checks every 30 seconds whether an idle restart could install it - system idle for five minutes or screen locked, no update action or quit under way, and every owned backend checked with no waiting approval or question, running turn that thread continuation will not resume, provider install, or other environment using its devices; resumable turns and terminal commands do not hold it back. It is measure-only - it never installs or shows anything - and reports once per staged version the delay since staging (under 1, 1-8, 8-24 or over 24 hours) at the first such moment, "installed_first" when a quit or the restart button installed it before one, or "never" when a channel change or a newer release discards it or the app quits without installing it; the quit cases are reported on the next launch.
-      - Each desktop launch reports, once its main window first shows, the time from the process start to the local backend being ready and to the window showing. After an update restart, the launch of the installed version adds how long the old process took to stop its backends before the installer handoff, the time from that handoff to the new process starting, and on macOS whether the update was staged in the background; a launch that comes back on the old version reports as a normal launch.
       - Update summaries retain skipped environment reasons, including late skips and across desktop relaunch.
       - Combined update confirmations keep the machine table and affected threads in one scrolling body and retain remote host labels even when only one remote server is checked.
       - A Stable and Nightly track switch compares the database with both migration histories, upstream's and `yngatech_sql_migrations`, through one combined number that `build-npm-launcher.ts` publishes in the `@styal/cli` manifest and servers report, and the service preflight blocks a migration from either history that the target build does not know.
       - The desktop update-track menu shows each track's npm release version using the switch dialog's shared lookup, or a checking, unavailable, or no-release message. Hosted web deployment selection retains track labels because npm versions do not identify hosted deployments.
-      - The switch dialog lists running work from the same activity check as the sidebar, clicking confirm is explicit consent, and it waits for the download the app starts by itself after a check. It records no combined update confirmation events.
+      - The switch dialog lists running work from the same activity check as the sidebar, clicking confirm is explicit consent, and it waits for the download the app starts by itself after a check.
       - Pull request preview versions (`-pr.<number>.<run>`) count as the preview channel, so a switch skips them and a preview install is outside the refusal of cross-track and downgraded builds.
     implementation_paths:
       - apps/desktop/src/app/DesktopLifecycle.ts
@@ -1238,7 +1225,6 @@ features:
       - apps/server/src/environment/HostActivity.ts
       - apps/server/src/persistence/databaseMigrationHead.ts
       - apps/server/src/resourceTelemetry/DesktopTelemetryReceiver.ts
-      - apps/server/src/telemetry/DesktopFeatureUsage.ts
       - apps/web/src/AppRoot.tsx
       - apps/web/src/components/ConfirmDialogHost.tsx
       - apps/web/src/components/HostActivityThreadList.tsx
@@ -1286,7 +1272,6 @@ features:
       - apps/server/src/cloud/servicePreflight.test.ts
       - apps/server/src/environment/HostActivity.test.ts
       - apps/server/src/persistence/Migrations.test.ts
-      - apps/server/src/telemetry/DesktopFeatureUsage.test.ts
       - apps/server/src/terminal/Manager.test.ts
       - apps/web/src/components/ServerUpdateAction.browser.test.tsx
       - apps/web/src/components/ServerUpdateAction.logic.test.ts
@@ -1469,7 +1454,6 @@ features:
       - packages/contracts/src/ipc.ts
     tests:
       - apps/desktop/src/previewApp/DesktopPreviewApp.test.ts
-      - apps/server/src/telemetry/DesktopFeatureUsage.test.ts
       - apps/web/src/components/pullRequest/pullRequestPreviewApp.logic.test.ts
     upstream:
       status: unassessed
@@ -1484,18 +1468,14 @@ features:
       - After the desktop app starts on a newer version than the window last recorded, one toast names that version and links to its styal release notes; it shows once per version, whichever update path installed it.
       - The toast waits until the window is visible and focused, and the version is recorded only when it shows, so a window that stays hidden until quit announces the update on the next launch.
       - A first run with no recorded version, a downgrade, a switch to a lower-version channel, and unparseable versions are recorded without a toast; web and mobile never show it.
-      - Shown notices emit feature.exposed and release-notes clicks emit feature.used through the primary environment from desktop surfaces only, without versions or URLs.
     rationale: Updates install on quit or restart without a visible step, so users had no confirmation that an update landed or what it changed.
     implementation_paths:
-      - apps/server/src/telemetry/ClientFeatureUsage.ts
       - apps/web/src/components/DesktopUpdatedNotice.tsx
       - apps/web/src/desktopUpdatedNotice.ts
       - apps/web/src/routes/__root.tsx
-      - packages/contracts/src/forkClientUsage.ts
     upstream_paths:
       - apps/web/src/routes/__root.tsx
     tests:
-      - apps/server/src/telemetry/ClientFeatureUsage.test.ts
       - apps/web/src/components/settings/DeviceHostsSettings.browser.test.tsx
       - apps/web/src/desktopUpdatedNotice.test.ts
     upstream:
@@ -1711,6 +1691,7 @@ features:
       - When a stream that showed video for at least five seconds closes or restarts, the viewer reports a `device.stream.summary` event with counts and rounded measures only, never device names, identifiers or addresses.
     rationale: Remote viewers saw lag and dropouts with nothing to tell a slow connection from a slow decoder or a stalled stream; the device hub's own health numbers describe its connection to the styal server, not to the viewer.
     implementation_paths:
+      - apps/server/src/telemetry/ClientFeatureUsage.ts
       - apps/web/src/components/device/DeviceStreamStatsOverlay.tsx
       - apps/web/src/components/device/deviceStreamSession.ts
       - packages/client-runtime/src/device/streamStats.ts
@@ -1769,7 +1750,6 @@ features:
       - Web and desktop local commit previews use the same relevance ordering, generated-file attribution, and progressive loading order as branch diffs.
       - Test and generated tiers remain visible, generated files start collapsed, and explicit reader fold choices take precedence over automatic classification.
       - One persisted web preference switches the diff panel and pull request Code tab between relevance and alphabetical order; one persisted mobile preference does the same for the review sheet and pull request file list, Changed files sheet, and file diff, and the Changed files sheet groups by directory only in alphabetical order.
-      - Explicit web, desktop, and mobile sort choices emit bounded client-usage events for the owning environment; default rendering is not counted as a choice and file paths are never reported.
     rationale: Upstream orders files by relevance only in the web pull request Code tab, by name patterns alone, without tier labels, collapsed generated files, or a way back to alphabetical order (upstream #6039). The fork moved that ordering into shared code so turn, working-tree, and branch diffs and mobile review read the same way, and lets repository `linguist-generated` attributes mark generated files.
     implementation_paths:
       - .gitattributes
@@ -1783,7 +1763,6 @@ features:
       - apps/mobile/src/features/review/useDiffSortMode.ts
       - apps/mobile/src/features/review/useReviewDiffData.ts
       - apps/mobile/src/persistence/mobile-preferences.ts
-      - apps/mobile/src/state/forkClientUsage.ts
       - apps/server/src/checkpointing/CheckpointDiffQuery.ts
       - apps/server/src/pullRequest/PullRequestService.ts
       - apps/server/src/vcs/GitVcsDriverCore.ts
@@ -1792,7 +1771,6 @@ features:
       - apps/web/src/components/diffs/useReviewFilePatches.ts
       - apps/web/src/components/pullRequest/pullRequestDiff.logic.ts
       - apps/web/src/diffPanelStore.ts
-      - apps/web/src/forkClientUsage.ts
       - packages/shared/src/diffFileOrder.ts
       - packages/shared/src/generatedFiles.ts
     upstream_paths:
@@ -1820,7 +1798,6 @@ features:
       - apps/mobile/src/features/review/reviewModel.test.ts
       - apps/server/src/checkpointing/CheckpointDiffQuery.test.ts
       - apps/server/src/pullRequest/PullRequestService.test.ts
-      - apps/server/src/telemetry/ClientFeatureUsage.test.ts
       - apps/server/src/vcs/GitVcsDriverCore.test.ts
       - apps/web/src/components/pullRequest/pullRequestDiff.logic.test.ts
       - apps/web/src/diffPanelStore.test.ts
@@ -2516,60 +2493,6 @@ features:
       tracking: []
       retire_when: The fork no longer ships any separately branded desktop, mobile, or web distribution, or adopts reusable downstream distribution machinery that makes these overrides unnecessary.
 
-  - id: fork-feature-usage
-    title: Measure anonymous adoption of maintained features
-    status: retiring
-    tier: yield
-    prs: [840, 859]
-    rationale: Maintainers need observed feature adoption to evaluate the cost of retaining fork behavior.
-    invariants:
-      - Allowlisted client interactions share one reporting method, a negotiated vocabulary version, and an event-local instrumentation version, with socket-scoped attribution and the paired environment's telemetry opt-out; diff-order selections, opened time explanations, and web refresh requests are counted separately from visible update-notice exposure, with no content or identifiers.
-      - Agent browser tools emit one structural feature.used event per public operation, including failures and cancellation, with action, outcome, and duration but no operation arguments or results.
-      - Internal metadata reads do not inflate agent usage, and telemetry failures never change the operation's result.
-      - Device panel operations and public agent device tools record bounded usage and outcomes without names, device identifiers, arguments, or images; discovery is distinct from adoption and environment forwarding is not counted again as a manual action.
-      - Each available provider instance is reported after startup and daily with its driver, default or custom instance, install and health state, plain version, installer kind, automatic update eligibility, newer verified version, skips held back by threads using its CLI, and whether the provider's own updater is still active (true, false, or null when unknown); each started manual or background provider update, and each manual update refused by the install lock, records one result with versions, whether it was a takeover reinstall, outcome, a bounded failure category, and duration. Instance names, paths, commands, installer output, and error messages are never sent.
-      - Events carry separate instrumentation versions and explicit build context; test and CI collection defaults off while the shared telemetry opt-out still disables all feature events.
-      - Upstream's per-request feature counts record `thread.stop` as `run.interrupt`, so Stop stays counted when clients stop a thread without naming its run.
-      - Upstream's per-request feature counts leave out actions the fork already reports under its own events (Device panel opens and workflow approvals), and upstream's per-call `mcp.tool.invoked` events leave out the browser, device, hardware, and workflow run watch tools the fork reports as `feature.used`, so one action is reported once.
-    implementation_paths:
-      - .github/workflows/desktop-macos-preview.yml
-      - .github/workflows/fork-cli-archives.yml
-      - .github/workflows/fork-js-bundle.yml
-      - apps/server/src/mcp/McpHttpServer.ts
-      - apps/server/src/mcp/toolkits/device/handlers.ts
-      - apps/server/src/mcp/toolkits/preview/handlers.ts
-      - apps/server/src/telemetry/AnalyticsService.ts
-      - apps/server/src/telemetry/BrowserFeatureUsage.ts
-      - apps/server/src/telemetry/BuildContext.ts
-      - apps/server/src/telemetry/ClientFeatureUsage.ts
-      - apps/server/src/telemetry/DeviceFeatureUsage.ts
-      - apps/server/src/telemetry/FeatureUsage.ts
-      - apps/server/src/telemetry/ProviderAnalytics.ts
-      - apps/server/src/ws.ts
-      - apps/server/vite.config.ts
-      - apps/web/src/forkClientUsage.ts
-      - packages/contracts/src/forkClientUsage.ts
-    upstream_paths:
-      - apps/server/src/telemetry/AnalyticsService.ts
-    tests:
-      - apps/server/src/device/DeviceService.test.ts
-      - apps/server/src/mcp/BrowserFeatureUsage.test.ts
-      - apps/server/src/mcp/DeviceFeatureUsage.test.ts
-      - apps/server/src/mcp/McpDeviceToolkit.test.ts
-      - apps/server/src/provider/providerMaintenanceRunner.test.ts
-      - apps/server/src/telemetry/AnalyticsService.test.ts
-      - apps/server/src/telemetry/BuildContext.test.ts
-      - apps/server/src/telemetry/ClientFeatureUsage.test.ts
-      - apps/server/src/telemetry/FeatureUsage.test.ts
-      - apps/server/src/telemetry/ProviderAnalytics.test.ts
-      - apps/web/src/components/chat/MentionedTimeChip.browser.test.tsx
-    upstream:
-      status: partial
-      tracking:
-        - https://github.com/pingdotgg/t3code/pull/15913
-        - https://github.com/pingdotgg/t3code/pull/15921
-      retire_when: Upstream provides equivalent anonymous feature-adoption events with outcome, opt-out, and rollout-aware coverage.
-
   - id: fork-first-turn-note
     title: Tell an agent on a forked thread that it is a fork
     status: maintained
@@ -3079,8 +3002,6 @@ features:
       - apps/server/src/mcp/toolkits/hardware/handlers.ts
       - apps/server/src/mcp/toolkits/hardware/tools.ts
       - apps/server/src/persistence/ForkMigrations/010_HardwareLeases.ts
-      - apps/server/src/telemetry/ClientFeatureUsage.ts
-      - apps/server/src/telemetry/HardwareFeatureUsage.ts
       - apps/web/src/components/hardware/HardwareLeaseChip.tsx
       - apps/web/src/components/settings/HardwareSettings.tsx
       - apps/web/src/components/settings/hardwareSettings.logic.ts
@@ -3097,7 +3018,6 @@ features:
       - apps/server/src/orchestration-v2/ProviderSessionManager.ts
       - apps/server/src/server.ts
       - apps/server/src/telemetry/AnalyticsService.ts
-      - apps/server/src/telemetry/FeatureUsage.ts
       - apps/server/src/ws.ts
       - apps/web/src/components/chat/ChatHeader.tsx
       - packages/client-runtime/src/state/threadRequests.ts
@@ -3110,7 +3030,6 @@ features:
       - apps/server/src/hardware/HardwareDefinition.test.ts
       - apps/server/src/hardware/HardwareService.test.ts
       - apps/server/src/mcp/OrchestratorMcpToolkit.integration.test.ts
-      - apps/server/src/telemetry/FeatureUsage.test.ts
       - apps/web/src/components/settings/hardwareSettings.logic.test.ts
       - packages/client-runtime/src/state/commandPermissions.test.ts
       - packages/client-runtime/src/state/hardware.test.ts
@@ -3361,7 +3280,6 @@ features:
       - "`shortcutsOverview.toggle` (`mod+shift+?`, `mod+shift+/` and `mod+/` by default, outside terminals), the command palette's Show keyboard shortcuts and the desktop Help menu's Keyboard Shortcuts open one dialog on web and desktop; the key closes it again. On layouts that type `-` on the `/` key, Mod+- stays with zoom."
       - The list is built from the primary environment's resolved keybindings, with the groups and labels of Settings → Keybindings, and links there to change them.
       - It shows bindings for every focus context, leaves out rules only the other client can use and rules a later rule overrides, and lists no command without a binding. Jump commands collapse to one row while their keys follow the digits, and the alternate send shows the key the send setting makes effective. A key whose glyph implies Shift is labelled without Shift, and its unshifted alias is not listed.
-      - Each open emits a bounded `shortcuts-overview` client-usage event through the primary environment with the entry point, never with keybindings.
     rationale: Shortcuts could only be found one at a time beside palette items, in the Settings editor, or in the user guide.
     implementation_paths:
       - apps/desktop/src/window/DesktopApplicationMenu.ts
@@ -3370,7 +3288,6 @@ features:
       - apps/web/src/components/ShortcutsOverview.tsx
       - apps/web/src/components/settings/KeybindingsSettings.logic.ts
       - apps/web/src/shortcuts/commandPaletteCommands.ts
-      - packages/contracts/src/forkClientUsage.ts
       - packages/contracts/src/keybindings.ts
       - packages/shared/src/keybindings.ts
     upstream_paths:
@@ -3379,7 +3296,6 @@ features:
       - packages/contracts/src/keybindings.ts
       - packages/shared/src/keybindings.ts
     tests:
-      - apps/server/src/telemetry/ClientFeatureUsage.test.ts
       - apps/web/src/components/ShortcutsOverview.logic.test.ts
       - apps/web/src/keybindings.test.ts
       - apps/web/src/shortcuts/commandPaletteCommands.browser.test.tsx
@@ -3481,8 +3397,6 @@ features:
       - Timeline labels ending in a punctuation colon retain their clock and explicit zone; extra colon-separated tokens and file line/column references stay unmarked.
       - "With Check mentioned times with a model on (a server setting, off by default), a finished assistant reply outside subagent threads that has a clock-like span outside code queues one check per message. The check runs in its own outbox lane, so it never delays a turn or a title, makes one attempt, and stores the model's reading on the message, where it survives a re-sent update with the same text. With no model chosen it uses GPT-6.1 Terra, then Claude Haiku, at low effort, then the text generation model."
       - "Clients apply a stored reading only while the setting is on: a span it calls a length or other is not marked, a moment takes its date, and a clock-like span the rules skipped is marked when the reading gives a time of day with no zone or UTC."
-      - Each model check records one structural feature-usage event; the reply and its times are not sent.
-      - Opening a time explanation emits at most one structural client-usage event per mounted chip through the message's environment, without sending the time, timezone, message content, or identifiers.
     implementation_paths:
       - apps/server/src/environment/ServerEnvironment.ts
       - apps/server/src/orchestration-v2/EffectOutbox.ts
@@ -3491,7 +3405,6 @@ features:
       - apps/server/src/orchestration-v2/ProjectionStore.ts
       - apps/server/src/orchestration-v2/ProviderEventIngestor.ts
       - apps/server/src/orchestration-v2/runtimeLayer.ts
-      - apps/server/src/telemetry/FeatureUsage.ts
       - apps/server/src/textGeneration/ClaudeTextGeneration.ts
       - apps/server/src/textGeneration/TextGeneration.ts
       - apps/web/src/components/ChatMarkdown.tsx
@@ -3500,7 +3413,6 @@ features:
       - apps/web/src/components/chat/mentionedTimeDetails.ts
       - apps/web/src/components/settings/MentionedTimeCheckSettings.tsx
       - apps/web/src/components/settings/settingsSearch.ts
-      - apps/web/src/forkClientUsage.ts
       - apps/web/src/markdown-mentioned-times.ts
       - apps/web/src/state/entities.ts
       - apps/web/src/timestampFormat.ts
@@ -3526,7 +3438,6 @@ features:
       - apps/server/src/provider/Drivers/CodexManagedProvider.ts
       - apps/server/src/relay/AgentAwarenessRelay.ts
       - apps/server/src/telemetry/AnalyticsService.ts
-      - apps/server/src/telemetry/FeatureUsage.ts
       - apps/server/src/textGeneration/ClaudeTextGeneration.ts
       - apps/server/src/textGeneration/TextGeneration.ts
       - apps/web/src/components/ChatMarkdown.tsx
@@ -3555,7 +3466,6 @@ features:
       - apps/server/src/orchestration-v2/FoundationPersistence.test.ts
       - apps/server/src/orchestration-v2/MentionedTimesCheckService.test.ts
       - apps/server/src/orchestration-v2/ProviderEventIngestor.test.ts
-      - apps/web/src/components/chat/MentionedTimeChip.browser.test.tsx
       - apps/web/src/components/chat/mentionedTimeDetails.test.ts
       - apps/web/src/markdown-mentioned-times.test.tsx
       - packages/client-runtime/src/mentionedTimes.test.ts
@@ -3987,7 +3897,6 @@ features:
       - With nothing waiting, it opens nothing and shows a "No unread threads" toast.
       - While a pinned, active or Working thread other than the open one is waiting, a button above the composer, beside Scroll to end when that shows, shows how many are waiting, the status icon of the one it would open, and the shortcut, and opening from it does the same. It is hidden on a new draft's empty state and during thread find.
       - On narrow web layouts the thread sidebar stays mounted while its sheet is closed, so the button, the palette entry and the thread shortcuts keep working without opening the sidebar.
-      - Each use emits a bounded `next-unread-thread` client-usage event through the primary environment with the entry point (shortcut, command palette or chip) and, when a thread opened, the attention kind, never with thread names or keys.
     rationale: Working through many threads means finding the next one that needs a decision. The flat inbox puts them in the list, but reaching each one takes the mouse or counting rows for a jump shortcut.
     implementation_paths:
       - apps/web/src/components/AppSidebarLayout.tsx
@@ -4001,7 +3910,6 @@ features:
       - apps/web/src/components/sidebar/attentionStatus.tsx
       - apps/web/src/components/sidebar/nextUnreadThreadBus.ts
       - apps/web/src/components/ui/sidebar.tsx
-      - packages/contracts/src/forkClientUsage.ts
       - packages/contracts/src/keybindings.ts
       - packages/shared/src/keybindings.ts
     upstream_paths:
@@ -4618,7 +4526,6 @@ features:
       - Reopening the sidebar does not discard the user's project filter.
       - With exactly one logical project selected on web and desktop, the filter shows its name above search and exposes project actions by pointer or keyboard context menu. Pinned, active, Working, snoozed, and settled rows omit the project icon and name, and Active and Working omit project headers. Multiple selections and All projects restore normal labels and headers; hover details, drafts, search results, and project folders retain their project context.
       - New-thread actions follow the visible project scope without unexpectedly switching the active thread's project. With several filtered projects, a thread on screen in any of them keeps its project, the first filtered project in list order replaces the fallback default, and the sidebar button opens the project picker instead of creating directly.
-      - On web and desktop, explicit filter changes and new-thread actions taken while filtered emit bounded client-usage events through the primary environment, with the entry point but never project names or keys; clearing a vanished project's filter is not counted.
       - Mobile New thread buttons prefer the filtered project over another open thread; the contextual keyboard shortcut prefers the open thread. The last valid project is the automatic fallback when neither supplies one; there is no reuse setting, and old saved opt-outs are ignored. Connected, unarchived copies win within a filtered group, preserving the current or remembered copy when connected. Saved drafts retain their own project.
     implementation_paths:
       - apps/mobile/src/features/home/homeThreadList.ts
@@ -4630,10 +4537,8 @@ features:
       - apps/web/src/components/sidebar/SidebarThreadRow.tsx
       - apps/web/src/lib/chatThreadActions.ts
       - apps/web/src/shortcuts/chatRouteCommands.ts
-      - apps/web/src/sidebarProjectFilterUsage.ts
       - apps/web/src/sidebarProjectScopeStore.ts
       - apps/web/src/uiStateStore.ts
-      - packages/contracts/src/forkClientUsage.ts
     upstream_paths:
       - apps/mobile/src/features/layout/AdaptiveWorkspaceLayout.tsx
       - apps/mobile/src/features/threads/new-task-project-selection.ts
@@ -4647,9 +4552,7 @@ features:
     tests:
       - apps/mobile/src/features/home/homeThreadList.test.ts
       - apps/mobile/src/features/threads/new-task-project-selection.test.ts
-      - apps/server/src/telemetry/ClientFeatureUsage.test.ts
       - apps/web/src/lib/chatThreadActions.test.ts
-      - apps/web/src/sidebarProjectFilterUsage.test.ts
       - apps/web/src/uiStateStore.test.ts
     upstream:
       status: partial
@@ -4929,7 +4832,6 @@ features:
     invariants:
       - Each successful provider prompt submission or steering delivery records provider.turn.sent after acceptance, including server-originated scheduled messages, restart continuations, and delegated results; rejected and interrupted sends, native compaction, and unsolicited provider turns do not record sends.
       - Send properties contain the provider, known model and modes, managed Codex subscription-sharing flag, attachment count, and presence of input, without prompts, attachment names, or conversation identifiers. Steering attribution stays scoped to its live provider thread and run in shared sessions.
-      - Delivery uses the existing telemetry identity, queue, opt-out, and retry deduplication; analytics failures never fail a successful send, and interruption during telemetry does not clear an accepted turn's busy state or attribution. All events carry providerSendUsageVersion so rollout coverage is measurable without treating old servers as inactive.
     rationale: The V2 migration deleted the legacy send emitter while retaining completion telemetry, leaving existing provider and model send charts empty. Completion counts include autonomous provider turns and cannot replace sends without changing the metric.
     implementation_paths:
       - apps/server/src/orchestration-v2/ProviderSessionManager.ts
@@ -5271,7 +5173,6 @@ features:
       - apps/mobile/src/features/pull-requests/PullRequestMergeControls.tsx
       - apps/web/src/components/pullRequest/PullRequestActionsMenu.tsx
       - apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx
-      - packages/contracts/src/forkClientUsage.ts
       - packages/contracts/src/pullRequest.ts
       - packages/shared/src/pullRequestMergeControl.ts
       - packages/source-control-github/src/server/GitHubPullRequestProvider.ts
@@ -5283,7 +5184,6 @@ features:
       - packages/contracts/src/pullRequest.ts
       - packages/source-control-github/src/server/GitHubPullRequestProvider.ts
     tests:
-      - apps/server/src/telemetry/ClientFeatureUsage.test.ts
       - packages/shared/src/pullRequestMergeControl.test.ts
       - packages/source-control-github/src/server/GitHubPullRequestApi.test.ts
       - packages/source-control-github/src/server/GitHubPullRequestProvider.test.ts
@@ -5365,7 +5265,6 @@ features:
       - The section names failed or running deployments in its heading and shows five rows before Show all.
       - Inactive deployments do not offer an environment link; only HTTP and HTTPS deployment URLs are exposed.
       - Deployment reads are bounded within the existing detail query, report potentially missing environments, and refresh with PR detail. If GitHub refuses the extended query, one retry without deployment fields preserves access to the PR; authentication and quota errors propagate without retry.
-      - Explicit Open, Logs and Show all actions report bounded usage through the owning environment; older reporting servers and telemetry failures never block those actions.
     implementation_paths:
       - apps/mobile/src/features/pull-requests/PullRequestDeployments.tsx
       - apps/mobile/src/features/pull-requests/PullRequestRouteScreen.tsx
@@ -5373,7 +5272,6 @@ features:
       - apps/web/src/components/pullRequest/PullRequestDeployments.tsx
       - apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx
       - packages/client-runtime/src/pullRequestDeployments.ts
-      - packages/contracts/src/forkClientUsage.ts
       - packages/contracts/src/pullRequest.ts
       - packages/source-control-core/src/server/PullRequestProvider.ts
       - packages/source-control-github/src/server/GitHubPullRequestApi.ts
@@ -5385,7 +5283,6 @@ features:
       - packages/contracts/src/pullRequest.ts
     tests:
       - apps/server/src/pullRequest/PullRequestService.test.ts
-      - apps/server/src/telemetry/ClientFeatureUsage.test.ts
       - apps/web/src/components/pullRequest/PullRequestDeployments.browser.test.tsx
       - packages/client-runtime/src/pullRequestDeployments.test.ts
       - packages/source-control-github/src/server/GitHubPullRequestApi.test.ts
@@ -6317,7 +6214,6 @@ features:
       - Project browser and device overrides remain editable and resettable under Projects, with existing values preserved. Following an overriding project from an environment's source indicator opens that project's settings on that environment.
       - Disconnected environments remain visible with a connection-management link; saved connections that are not enabled are labeled Not connected. Saved shares from disconnected or removed device environments remain removable from connected agent environments.
       - Device installation progress, failures, and retry controls remain visible while maintenance preferences are collapsed.
-      - Explicit setting change requests report only an allowlisted control category and environment or project scope through the existing client usage reporter; they contain no values, names, addresses, or identifiers and do not claim that a write succeeded.
     rationale: A page-wide scope mixes client preferences with environment setup and can show one machine's device status beside controls that write to several machines. Explicit ownership keeps the displayed setup and write destination together.
     implementation_paths:
       - apps/web/src/components/settings/AgentAccessSettings.tsx
@@ -6332,7 +6228,6 @@ features:
       - apps/web/src/components/settings/SettingsScopeSentence.tsx
       - apps/web/src/components/settings/settingsSearch.ts
       - apps/web/src/routes/_chat.settings.tsx
-      - packages/contracts/src/forkClientUsage.ts
     upstream_paths:
       - apps/web/src/components/settings/IntegrationsSettings.tsx
       - apps/web/src/components/settings/ProjectDefaultsSettings.tsx
@@ -6342,7 +6237,6 @@ features:
       - apps/web/src/components/settings/settingsSearch.ts
       - apps/web/src/routes/_chat.settings.tsx
     tests:
-      - apps/server/src/telemetry/ClientFeatureUsage.test.ts
       - apps/web/src/components/settings/DeviceToolUpdate.browser.test.tsx
       - apps/web/src/components/settings/IntegrationsSettings.browser.test.tsx
       - apps/web/src/components/settings/scopedSettings.test.ts
@@ -6529,7 +6423,6 @@ features:
       - Web and desktop setup ends with a Workflow step that offers automatic settlement on selected computers whose configuration has loaded; other computers are left out, and when none remain the import steps finish setup as before.
       - The step starts from the first selected computer's current settings, and Finish writes merge and inactivity settlement only to computers whose values differ, keeping each computer's own inactivity threshold when turning it on.
       - A failed save keeps the user on the step; the import steps' actions read as continuing while the step follows them, and setup still lands on the project the import chose.
-      - Finishing records one setup-thread-settlement usage event with only the two chosen booleans.
     rationale: Users who do not work the way automatic settlement assumes found threads disappearing without knowing why. Setup is the one place every new user passes through, so the choice and its explanation live there, with Settings still owning later changes.
     implementation_paths:
       - apps/web/src/components/import/DataImportPanel.tsx
@@ -6537,12 +6430,10 @@ features:
       - apps/web/src/components/onboarding/WelcomeWizard.tsx
       - apps/web/src/components/onboarding/WorkflowStep.tsx
       - apps/web/src/onboarding/settlement.logic.ts
-      - packages/contracts/src/forkClientUsage.ts
     upstream_paths:
       - apps/web/src/components/onboarding/WelcomeWizard.tsx
       - packages/contracts/src/settings.ts
     tests:
-      - apps/server/src/telemetry/ClientFeatureUsage.test.ts
       - apps/web/src/onboarding/settlement.logic.test.ts
     upstream:
       status: unassessed
@@ -6669,7 +6560,6 @@ features:
       - Projects without a saved position follow their newest created or reopened active thread independently of manual thread keys.
       - Pinned projects lead the grouped Active and Working lists in their shared pin order, ahead of the saved project order, and their headers show a pin icon. A zero-height divider follows the pinned projects' groups and shows a "Pinned projects above" label only while a header is dragged. Dropping a header above it pins the project at that slot, dropping it below unpins it, and moving it among pinned projects saves the pin order through the shared project write hook; pinned projects without active threads keep their place relative to the pinned projects around the drop. The new placement shows at once and holds until the projects match it or the write fails.
       - Group headers open project actions on right-click or the keyboard context-menu shortcut to start a thread in that project, toggle its filter, pin or unpin it, archive it, copy a checkout path, or open Project Settings. Pin and archive appear only when every machine with the project supports project organization. New threads preserve the current environment when it belongs to the group; grouped paths are selectable per checkout.
-      - Header reorders, pins, unpins, pin reorders and archives emit bounded `sidebar-project-groups` client-usage events with the entry point (header drag or header menu) through the primary environment, after the write succeeds, never with project names or keys.
     rationale: With several projects active, a flat list makes the user read each card's project label to see which threads belong together. The fork retains thread details under opt-in project headers, omitting the empty branch line when an entire group is branchless, whereas upstream's closed proposal collapsed groups into title-only lists. Upstream's pin and archive has no drag order, so the fork keeps `pinOrderKey` on the project record (fork migration 11's column, the update payload and `useProjectPinOrder`) only for dragging these headers; project pickers follow upstream's order.
     implementation_paths:
       - apps/mobile/src/features/home/HomeScreen.tsx
@@ -6689,10 +6579,8 @@ features:
       - apps/web/src/components/sidebar/SidebarThreadRow.tsx
       - apps/web/src/hooks/useProjectPinOrder.ts
       - apps/web/src/hooks/useSidebarProjectGroups.ts
-      - apps/web/src/sidebarProjectGroupUsage.ts
       - packages/client-runtime/src/state/projectOrganization.ts
       - packages/client-runtime/src/state/threadProjectGroups.ts
-      - packages/contracts/src/forkClientUsage.ts
       - packages/contracts/src/settings.ts
     upstream_paths:
       - apps/web/src/components/Sidebar.drag.ts
@@ -6705,7 +6593,6 @@ features:
     tests:
       - apps/mobile/src/features/threads/threadListV2.test.ts
       - apps/server/src/orchestration-v2/ProjectCommands.test.ts
-      - apps/server/src/telemetry/ClientFeatureUsage.test.ts
       - apps/web/src/components/Sidebar.drag.test.ts
       - apps/web/src/components/Sidebar.logic.test.ts
       - apps/web/src/components/sidebar/SidebarListMarkers.browser.test.tsx
@@ -6751,7 +6638,6 @@ features:
       - apps/server/src/device/EnvironmentDeviceHost.test.ts
       - apps/server/src/device/SimulatorMemory.test.ts
       - apps/server/src/device/SimulatorStartup.test.ts
-      - apps/server/src/telemetry/FeatureUsage.test.ts
       - packages/shared/src/projectSettings.test.ts
     upstream:
       status: tracking
@@ -6998,7 +6884,6 @@ features:
       - apps/web/vite/projectFileSchema.ts
       - packages/client-runtime/src/state/projectFileActions.ts
       - packages/client-runtime/src/state/setupScriptActivity.ts
-      - packages/contracts/src/forkClientUsage.ts
       - packages/contracts/src/projectFileApprovals.ts
       - packages/contracts/src/styalProjectFile.ts
       - packages/shared/src/projectFile.ts
@@ -7013,7 +6898,6 @@ features:
     tests:
       - apps/server/src/project/ProjectConfigLoader.test.ts
       - apps/server/src/project/ProjectSetupScriptRunner.test.ts
-      - apps/server/src/telemetry/ClientFeatureUsage.test.ts
       - apps/server/src/vcs/GitVcsDriverCore.test.ts
       - apps/web/src/components/chat/MessagesTimeline.fileActionReview.test.ts
       - packages/client-runtime/src/state/projectFileActions.test.ts
@@ -7175,15 +7059,13 @@ features:
       - The reason survives projection rebuilds, reaches clients on the thread shell, and appears in the agent thread read; older clients and servers interoperate because the field is optional.
       - Settled rows show why a thread settled automatically without crowding its title. Web and desktop keep the row's pull request badge for pull request settles, falling back to a compact "#123 merged" link when the row has no badge, and show "Idle 3d" for inactivity; mobile shows "PR #123 merged" or "Idle 3 days" on a second line.
       - Web and desktop show one persistent notice for automatic settles that happened after the device first ran this version, combined when several threads settled, and never again on that device after it is dismissed or acted on.
-      - The server records each automatic settle as `server.thread.settled` with its rule, without thread or pull request identifiers.
-    rationale: Upstream settles threads automatically without recording why, so users find threads missing from the active list without an explanation and maintainers cannot tell how often an automatic rule is undone.
+    rationale: Upstream settles threads automatically without recording why, so users find threads missing from the active list without an explanation.
     implementation_paths:
       - apps/mobile/src/features/threads/thread-list-v2-items.tsx
       - apps/server/src/mcp/OrchestratorMcpService.ts
       - apps/server/src/orchestration-v2/Orchestrator.ts
       - apps/server/src/orchestration-v2/ProjectionStore.ts
       - apps/server/src/orchestration-v2/ThreadSettlementService.ts
-      - apps/server/src/telemetry/ThreadSettleUsage.ts
       - apps/server/src/ws.ts
       - apps/web/src/components/AutoSettleNotice.logic.ts
       - apps/web/src/components/AutoSettleNotice.tsx
@@ -7211,7 +7093,6 @@ features:
       - apps/server/src/mcp/OrchestratorMcpToolkit.integration.test.ts
       - apps/server/src/orchestration-v2/ThreadSettlementService.test.ts
       - apps/server/src/orchestration-v2/runtimeLayer.test.ts
-      - apps/server/src/telemetry/ThreadSettleUsage.test.ts
       - apps/web/src/components/AutoSettleNotice.logic.test.ts
       - packages/client-runtime/src/state/threadSettleReason.test.ts
     upstream:
@@ -7454,20 +7335,17 @@ features:
     tier: yield
     prs: [858]
     invariants:
-      - Visible notices emit feature.exposed and explicit refresh clicks emit feature.used through one supported paired environment with the shared opt-out; skipped or failed exposure reports can retry on a later sighting, and a blocked reload allows another refresh after two seconds. Polls, hidden sidebars, deployment identifiers, and composer content are not collected, and telemetry cannot prevent a refresh.
       - Production browser clients compare the loaded build with a fresh manifest from the page's own origin, independently of paired environments; every build, including rebuilds of one commit, has a distinct identifier.
       - A changed build shows a manual refresh action in the sidebar without interrupting work; a rollback to the loaded build clears the notice, while failed or malformed checks preserve the last known state.
       - Checks pause while hidden or offline, resume on visibility, focus, or connectivity changes, and never overlap; Electron keeps its native updater and development builds keep HMR.
     implementation_paths:
-      - apps/server/src/telemetry/ClientFeatureUsage.ts
       - apps/web/public/_headers
       - apps/web/src/AppRoot.tsx
       - apps/web/src/components/WebBuildUpdateProvider.tsx
       - apps/web/src/components/sidebar/SidebarUpdatePill.tsx
       - apps/web/src/components/sidebar/SidebarWebUpdatePill.tsx
-      - apps/web/src/forkClientUsage.ts
+      - apps/web/src/webBuildRefresh.ts
       - apps/web/src/webBuildUpdate.ts
-      - apps/web/src/webBuildUpdateUsage.ts
       - apps/web/vite.config.ts
       - apps/web/vite/buildMetadata.ts
     upstream_paths:
@@ -7475,9 +7353,7 @@ features:
       - apps/web/src/components/sidebar/SidebarUpdatePill.tsx
       - apps/web/vite.config.ts
     tests:
-      - apps/server/src/telemetry/ClientFeatureUsage.test.ts
       - apps/web/src/webBuildUpdate.browser.test.ts
-      - apps/web/src/webBuildUpdateUsage.test.ts
     upstream:
       status: tracking
       tracking:
@@ -7532,13 +7408,10 @@ features:
       - Approving a same-repository run calls GitHub's approve endpoint and, when GitHub refuses it with 403 or 422, re-runs the run, after confirming the head has not moved.
       - A watched pull request wakes its agent once when workflow runs wait for approval, naming them apart from failed checks and telling the agent to leave approval to the user unless told otherwise.
       - Runs waiting for approval are listed before the other checks. The web Checks tab names them in a notice above the jobs, with the same Approve workflows to run button the Summary tab shows, instead of as job rows.
-      - Each approval pressed in a client that reports its surface records one `workflow-approvals` feature.used event with its outcome and no repository, pull request or workflow names.
     rationale: GitHub creates runs for pull requests that a workflow's GITHUB_TOKEN opens or updates, such as Changesets release pull requests, in an approval-required state. Without this the panel reads "waiting" forever and watched agents never wake.
     implementation_paths:
       - apps/mobile/src/features/pull-requests/pullRequestStatus.ts
       - apps/server/src/orchestration-v2/pullRequestWatch.ts
-      - apps/server/src/telemetry/ClientFeatureUsage.ts
-      - apps/server/src/telemetry/FeatureUsage.ts
       - apps/server/src/ws.ts
       - apps/web/src/components/pullRequest/PullRequestChecksTab.tsx
       - apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx
@@ -7556,7 +7429,6 @@ features:
       - packages/source-control-github/src/server/gitHubConditionalChecks.ts
     tests:
       - apps/server/src/orchestration-v2/pullRequestWatch.test.ts
-      - apps/server/src/telemetry/ClientFeatureUsage.test.ts
       - apps/web/src/components/pullRequest/PullRequestChecksTab.test.tsx
       - packages/source-control-github/src/server/GitHubPullRequestApi.test.ts
       - packages/source-control-github/src/server/GitHubPullRequestProvider.test.ts
@@ -7583,7 +7455,6 @@ features:
       - A watched run that waits on deployment environments the viewer may approve records them on the watch, which marks the thread as needing approval on every client and in push notifications until the run stops waiting. The user approves or rejects them from the thread, with an optional comment, and the server reads the run again at once; the agent has no tool to review them.
       - Compact workflow labels shorten full commit hashes to eight characters while retaining the complete name in accessible descriptions or tooltips. A sole watched run with a deployment review shares one panel with its Stop action; unrelated or multiple background tasks keep their own monitor row on web, desktop, and mobile.
       - Mobile can stop a workflow watch after the agent becomes idle; Stop checks thread operation permission, prevents duplicate submissions, and stays disabled while the request is pending.
-      - Each tool call, each deployment review and each watch end the server sees records one feature.used event with fixed categories (call result or failure reason; review state; end reason, conclusion category and watched minutes), never run IDs, repositories, URLs, environments, comments, or workflow and job names.
     rationale: Agents waiting on CI outside a pull request (after a merge, deploys, releases, dispatched workflows) otherwise poll or hold a `gh run watch` process, which only some providers can wait on and which a server restart kills.
     implementation_paths:
       - apps/mobile/src/features/threads/ThreadDetailScreen.tsx
@@ -7595,9 +7466,6 @@ features:
       - apps/server/src/orchestration-v2/ThreadForkService.ts
       - apps/server/src/orchestration-v2/WorkflowRunWatchReactor.ts
       - apps/server/src/orchestration-v2/workflowRunWatch.ts
-      - apps/server/src/telemetry/ClientFeatureUsage.ts
-      - apps/server/src/telemetry/FeatureUsage.ts
-      - apps/server/src/telemetry/WorkflowRunWatchUsage.ts
       - apps/web/src/components/ChatView.logic.ts
       - apps/web/src/components/ChatView.tsx
       - apps/web/src/components/chat/ChatComposer.tsx
@@ -7634,7 +7502,6 @@ features:
       - apps/server/src/orchestration-v2/runtimeLayer.test.ts
       - apps/server/src/orchestration-v2/workflowRunWatch.test.ts
       - apps/server/src/telemetry/AnalyticsService.test.ts
-      - apps/server/src/telemetry/ClientFeatureUsage.test.ts
       - e2e/tests/workflow-run-review.e2e.ts
       - packages/client-runtime/src/state/workflowRunDisplay.test.ts
       - packages/provider-core/src/server/runtimeInstructions.test.ts

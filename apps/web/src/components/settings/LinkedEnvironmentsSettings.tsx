@@ -16,7 +16,6 @@ import * as Result from "effect/Result";
 import { PlusIcon } from "lucide-react";
 import { useId, useRef, useState } from "react";
 
-import { reportForkClientUsage } from "~/forkClientUsage";
 import { requestConfirmDialog } from "~/confirmDialog";
 import { mintPairingCodeOn } from "~/state/peerPairingCode";
 import { peerLinkEnvironment, useLinkableMachines } from "~/state/peerLinks";
@@ -122,12 +121,6 @@ function LinkedEnvironmentRow({
     setBusy(true);
     const result = await unlink({ environmentId, input: { environmentId: link.environmentId } });
     setBusy(false);
-    if (!isAtomCommandInterrupted(result))
-      void reportForkClientUsage(environmentId, {
-        feature: "machine-list",
-        action: "stop",
-        outcome: result._tag === "Success" ? "success" : "failure",
-      });
     if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
       failureToast("Could not stop", String(squashAtomCommandFailure(result)));
     }
@@ -284,19 +277,8 @@ function LinkEnvironmentDialog({
     inFlight.current = false;
     setBusy(false);
     if (result === null) {
-      void reportForkClientUsage(environmentId, {
-        feature: "machine-list",
-        action: "add",
-        outcome: "failure",
-      });
       return;
     }
-    if (!isAtomCommandInterrupted(result))
-      void reportForkClientUsage(environmentId, {
-        feature: "machine-list",
-        action: "add",
-        outcome: result._tag === "Success" ? "success" : "failure",
-      });
     if (result._tag === "Success") {
       toastManager.add({ type: "success", title: `Added ${result.value.label}` });
       onClose();

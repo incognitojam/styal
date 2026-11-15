@@ -149,8 +149,6 @@ import {
   type SidebarProjectSnapshot,
 } from "../sidebarProjectGrouping";
 import { resolveProjectExpanded, useUiStateStore } from "../uiStateStore";
-import { reportSidebarUsage, setSidebarProjectFilterFromUser } from "../sidebarProjectFilterUsage";
-import { reportSidebarProjectGroupUsage } from "../sidebarProjectGroupUsage";
 import { sortPinnedProjectsFirst } from "@t3tools/client-runtime/state/project-organization";
 import {
   getThreadKeysToDeselectAfterDelete,
@@ -291,11 +289,7 @@ import { deriveProviderEntriesByEnvironment } from "../providerInstances";
 
 import { useStableCallback } from "../hooks/useStableCallback";
 
-import {
-  type NextUnreadEntryPoint,
-  publishNextUnreadSummary,
-  subscribeNextUnreadThread,
-} from "./sidebar/nextUnreadThreadBus";
+import { publishNextUnreadSummary, subscribeNextUnreadThread } from "./sidebar/nextUnreadThreadBus";
 import {
   resolveSidebarRouteReveal,
   type SidebarRouteReveal,
@@ -1254,12 +1248,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
 
   // A selection made under one scope can hold threads the next scope hides.
   // The viewport outlives the scope and does not anchor, so a new list starts at the top.
-  const setProjectScopeKeys = (
-    keys: readonly string[],
-    entryPoint: Parameters<typeof setSidebarProjectFilterFromUser>[1],
-  ) => {
+  const setProjectScopeKeys = (keys: readonly string[]) => {
     clearSelection();
-    void setSidebarProjectFilterFromUser(keys, entryPoint);
+    useUiStateStore.getState().setSidebarProjectScopeKeys(keys);
     scrollSidebarToTop(sidebarContentRef.current);
   };
   // A scope whose project is gone reads as all projects once every snapshot has
@@ -1323,7 +1314,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       projectScopeKeys.includes(key)
         ? projectScopeKeys.filter((candidate) => candidate !== key)
         : [...projectScopeKeys, key],
-      "filter_menu",
     );
   // The widened scope outlives the reveal, so it is written back to the persisted
   // scope. Route changes arrive from history, links and the palette, and only this
@@ -1464,17 +1454,11 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       );
       if (clicked._tag === "Failure" || !clicked.value) return;
       if (clicked.value === "filter-project") {
-        setProjectScopeKeys(isFiltered ? [] : [projectGroup.projectKey], "project_menu");
+        setProjectScopeKeys(isFiltered ? [] : [projectGroup.projectKey]);
       } else if (clicked.value === "pin-project") {
-        const result = await setProjectPinned(projectGroup, !isPinned, projectGroupsRef.current);
-        if (result._tag === "Success") {
-          void reportSidebarProjectGroupUsage(isPinned ? "unpinned" : "pinned", "header_menu");
-        }
+        await setProjectPinned(projectGroup, !isPinned, projectGroupsRef.current);
       } else if (clicked.value === "archive-project") {
-        const result = await archiveProject(projectGroup);
-        if (result._tag === "Success") {
-          void reportSidebarProjectGroupUsage("archived", "header_menu");
-        }
+        await archiveProject(projectGroup);
       } else if (clicked.value === "project-settings") {
         openProjectSettings(projectGroup);
       } else if (clicked.value === "new-thread") {
@@ -2486,13 +2470,11 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     const index = renderedPinned.indexOf(group);
     if (index === -1) {
       if (!wasPinned) {
-        void reportSidebarProjectGroupUsage("reordered", "header_drag");
         return;
       }
       setPendingPinnedProjectKeys(pinnedProjectGroupKeys.filter((key) => key !== group));
       void setProjectPinned(projectGroup, false, projectGroups).then((result) => {
         if (result._tag === "Failure") setPendingPinnedProjectKeys(null);
-        else void reportSidebarProjectGroupUsage("unpinned", "header_drag");
       });
       return;
     }
@@ -2516,8 +2498,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     setPendingPinnedProjectKeys(nextPinned);
     void reorderPinnedProjects(orderedGroups, group).then((result) => {
       if (result._tag === "Failure") setPendingPinnedProjectKeys(null);
-      else
-        void reportSidebarProjectGroupUsage(wasPinned ? "pins_reordered" : "pinned", "header_drag");
     });
   };
   const handleThreadDragEnd = (event: DragEndEvent) => {
@@ -3127,7 +3107,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                 projectScopeKeys.includes(threadProjectGroup.projectKey)
                   ? []
                   : [threadProjectGroup.projectKey],
-                "thread_menu",
               );
             }
             return;
@@ -3375,7 +3354,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- clears the shared unread summary registry when the sidebar unmounts
   useEffect(() => () => publishNextUnreadSummary(null), []);
 
-  const openNextUnreadThread = useStableCallback((entryPoint: NextUnreadEntryPoint) => {
+  const openNextUnreadThread = useStableCallback(() => {
     // Not threadByKey: it omits the threads of a closed boring sidebar folder.
     const target =
       nextUnread === null
@@ -3383,26 +3362,13 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
         : unreadSourceThreads.find((thread) => threadShellKey(thread) === nextUnread.key);
     if (nextUnread === null || target === undefined) {
       toastManager.add({ type: "info", title: "No unread threads" });
-      void reportSidebarUsage({
-        feature: "next-unread-thread",
-        action: "nothing_waiting",
-        entryPoint,
-      });
+
       return;
     }
     navigateToThread(scopeThreadRef(target.environmentId, target.id));
-    void reportSidebarUsage({
-      feature: "next-unread-thread",
-      action: "opened",
-      attention: nextUnread.attention,
-      entryPoint,
-    });
   });
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to unread navigation requests from the command palette and other entry points
-  useEffect(
-    () => subscribeNextUnreadThread((entryPoint) => openNextUnreadThread(entryPoint)),
-    [openNextUnreadThread],
-  );
+  useEffect(() => subscribeNextUnreadThread(() => openNextUnreadThread()), [openNextUnreadThread]);
 
   const routeTerminalOpen = useTerminalUiStateStore((state) =>
     routeThreadRef
@@ -3437,7 +3403,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       if (command === "thread.nextUnread") {
         event.preventDefault();
         event.stopPropagation();
-        openNextUnreadThread("shortcut");
+        openNextUnreadThread();
         return;
       }
       const traversalDirection = threadTraversalDirectionFromCommand(command);
@@ -3572,7 +3538,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                     }
                     if (!item) return;
                     if (item.value === "all") {
-                      setProjectScopeKeys([], "filter_menu");
+                      setProjectScopeKeys([]);
                     } else if (
                       eventDetails.event instanceof MouseEvent &&
                       eventDetails.event.shiftKey
@@ -3581,7 +3547,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                       eventDetails.cancel();
                       toggleProjectScopeKey(item.value);
                     } else {
-                      setProjectScopeKeys([item.value], "filter_menu");
+                      setProjectScopeKeys([item.value]);
                     }
                   }}
                 >

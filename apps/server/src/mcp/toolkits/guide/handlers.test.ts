@@ -20,7 +20,7 @@ const client = McpSchema.McpServerClient.of({
   getClient: Effect.die("unused"),
 });
 
-it.effect("returns the guide and records the topic only", () => {
+it.effect("returns the guide without fork usage events", () => {
   const recorded: Array<{ event: string; properties: unknown }> = [];
   const analytics = Layer.succeed(AnalyticsService.AnalyticsService, {
     recordOwners: () => Effect.void,
@@ -34,20 +34,7 @@ it.effect("returns the guide and records the topic only", () => {
       .pipe(Effect.provideService(McpSchema.McpServerClient, client));
     expect(result.isError).toBe(false);
     expect(result.structuredContent).toEqual({ guide: AGENT_GUIDES.orchestration });
-    expect(recorded).toEqual([
-      {
-        event: "feature.used",
-        properties: {
-          feature: "agent-guides",
-          action: "read",
-          source: "agent",
-          guideTopic: "orchestration",
-          guideRoute: "tool",
-          outcome: "success",
-          durationMs: expect.any(Number),
-        },
-      },
-    ]);
+    expect(recorded).toEqual([]);
   }).pipe(
     Effect.provide(
       McpHttpServer.layerGuideToolkit.pipe(

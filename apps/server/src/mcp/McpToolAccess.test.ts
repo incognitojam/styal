@@ -706,7 +706,7 @@ it.effect.each(
       outcome,
     })),
   ),
-)("records Auto $tool $outcome once without operation data", ({ tool, action, args, outcome }) =>
+)("preserves Auto $tool $outcome without fork usage events", ({ tool, args, outcome }) =>
   Effect.gen(function* () {
     const events: Array<unknown> = [];
     const success = <A>(value: A) =>
@@ -817,20 +817,6 @@ it.effect.each(
       ),
     );
     expect(result.isError === true).toBe(outcome !== "success");
-    expect(events).toEqual([
-      {
-        event: "feature.used",
-        properties: {
-          feature: "auto-environment-tools",
-          action,
-          source: "agent",
-          durationMs: 0,
-          outcome: outcome === "refused" ? "failure" : outcome,
-          ...(outcome === "success"
-            ? {}
-            : { failureReason: outcome === "refused" ? "refused" : "operation_failed" }),
-        },
-      },
-    ]);
+    expect(events).toEqual([]);
   }),
 );

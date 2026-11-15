@@ -1,6 +1,3 @@
-import type { Toolkit } from "effect/ai";
-import * as AnalyticsService from "../../../telemetry/AnalyticsService.ts";
-import * as FeatureUsage from "../../../telemetry/FeatureUsage.ts";
 import { reportTargetFor } from "../../threadAccess.ts";
 import {
   CommandId,
@@ -368,7 +365,7 @@ export const declarations = {
     {
       linkedCallers: "allowed",
       auto: "allowed",
-      autoUsage: "project_create",
+
       validate: (input, caller) =>
         caller.limits.runtimeMode !== "full-access" &&
         (input.scripts !== undefined || input.defaultModelSelection !== undefined)
@@ -420,28 +417,8 @@ export const declarations = {
         );
       }),
     // An existing destination is never adopted.
-    { linkedCallers: "allowed", auto: "allowed", autoUsage: "project_clone" },
+    { linkedCallers: "allowed", auto: "allowed" },
   ),
 } satisfies McpToolAccess.Handlers<typeof ProjectToolkit.tools>;
 
-type LaunchHandlers = Toolkit.HandlersFrom<Toolkit.Tools<typeof ProjectToolkit>>;
-
-const observeReportBack = Effect.fnUntraced(function* (inner: LaunchHandlers) {
-  // Optional so a harness without analytics still launches.
-  const analytics = yield* Effect.serviceOption(AnalyticsService.AnalyticsService);
-  return {
-    ...inner,
-    t3_thread_launch: (input, context) =>
-      input.reportBack === true && Option.isSome(analytics)
-        ? FeatureUsage.observe(
-            { feature: "thread-reports", action: "opt_in", source: "agent" },
-            inner.t3_thread_launch(input, context),
-          ).pipe(Effect.provideService(AnalyticsService.AnalyticsService, analytics.value))
-        : inner.t3_thread_launch(input, context),
-  } satisfies LaunchHandlers;
-});
-
-export const layer = McpToolAccess.toLayer(
-  ProjectToolkit,
-  McpToolAccess.wrapHandlers(declarations, observeReportBack),
-);
+export const layer = McpToolAccess.toLayer(ProjectToolkit, declarations);

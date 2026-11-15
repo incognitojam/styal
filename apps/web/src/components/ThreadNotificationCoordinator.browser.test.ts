@@ -268,19 +268,6 @@ describe("thread notifications", () => {
       await app.render();
       await app.complete();
       expect(state.sound).toHaveBeenCalledTimes(count);
-      expect(state.usage.mock.calls).toEqual(
-        count === 0
-          ? [
-              [
-                "env-1",
-                {
-                  feature: "completion-sounds",
-                  action: "viewed_completion_suppressed",
-                },
-              ],
-            ]
-          : [],
-      );
     },
   );
 
@@ -307,7 +294,7 @@ describe("thread notifications", () => {
     state.focused = true;
     expect(shouldPlay()).toBe(false);
     expect(shouldPlay()).toBe(false);
-    expect(state.usage).toHaveBeenCalledTimes(1);
+
     state.focused = false;
     await app.render();
     expect(state.sound).toHaveBeenCalledTimes(1);

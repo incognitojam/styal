@@ -5,9 +5,6 @@ import { create } from "zustand";
 
 import { isElectron } from "../env";
 import { useClientSettings } from "../hooks/useSettings";
-import { reportForkClientUsage } from "../forkClientUsage";
-import { appAtomRegistry } from "../rpc/atomRegistry";
-import { primaryEnvironmentIdAtom } from "../state/primaryEnvironment";
 import { primaryServerKeybindingsAtom } from "../state/server";
 import { buildShortcutsOverview } from "./ShortcutsOverview.logic";
 import {
@@ -24,20 +21,13 @@ export const useShortcutsOverviewStore = create(() => ({ open: false }));
 
 const close = () => useShortcutsOverviewStore.setState({ open: false });
 
-export function openShortcutsOverview(
-  entryPoint: "shortcut" | "command_palette" | "help_menu",
-): void {
+export function openShortcutsOverview(): void {
   useShortcutsOverviewStore.setState({ open: true });
-  void reportForkClientUsage(appAtomRegistry.get(primaryEnvironmentIdAtom), {
-    feature: "shortcuts-overview",
-    action: "opened",
-    entryPoint,
-  });
 }
 
 export function toggleShortcutsOverview(): void {
   if (useShortcutsOverviewStore.getState().open) close();
-  else openShortcutsOverview("shortcut");
+  else openShortcutsOverview();
 }
 
 function ShortcutsOverviewGroups() {

@@ -64,8 +64,6 @@ import * as SynchronizedRef from "effect/SynchronizedRef";
 import * as HttpClient from "effect/http/HttpClient";
 
 import * as ServerSettings from "../serverSettings.ts";
-import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
-import * as FeatureUsage from "../telemetry/FeatureUsage.ts";
 import { isLocalSshDeviceHost, remoteSshDeviceHosts } from "./localSshDeviceHost.ts";
 
 import { readDeviceDetail, runDeviceAction } from "./DeviceActions.ts";
@@ -289,7 +287,6 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
   launchers?: AgentDeviceLaunchers,
 ) {
   const settings = yield* ServerSettings.ServerSettingsService;
-  const analytics = yield* Effect.serviceOption(AnalyticsService.AnalyticsService);
   const digest = yield* Digest.Digest;
   const lifecycleLock = yield* Semaphore.make(1);
   const readDeviceSettings = settings.getSettings.pipe(
@@ -890,14 +887,7 @@ process.exitCode = result.error ? 1 : (result.status ?? 1);`,
                 Effect.ignore,
               ),
             });
-            const result = yield* Option.isSome(analytics)
-              ? FeatureUsage.observe(
-                  { feature: "simulator-memory", action: "prepare", source: "system", memoryMode },
-                  prepare,
-                  {},
-                  (memoryResult) => ({ memoryResult }),
-                ).pipe(Effect.provideService(AnalyticsService.AnalyticsService, analytics.value))
-              : prepare;
+            const result = yield* prepare;
             notice = simulatorMemoryNotice(result);
           }
           // A tool outside styal can start the simulator during helper setup.

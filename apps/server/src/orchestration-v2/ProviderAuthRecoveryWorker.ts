@@ -15,8 +15,6 @@ import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.
 import * as DueHint from "../scheduling/DueHint.ts";
 import * as Scheduler from "../scheduling/Scheduler.ts";
 import { forkParked } from "../serverActivation.ts";
-import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
-import * as ProviderSignInRecoveryUsage from "../telemetry/ProviderSignInRecoveryUsage.ts";
 import * as Orchestrator from "./Orchestrator.ts";
 import type * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProjectionStoreService from "./ProjectionStore.ts";
@@ -109,11 +107,6 @@ const makeSweep = Effect.gen(function* () {
   const orchestrator = yield* Orchestrator.OrchestratorV2;
   const registry = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
   const providerSessions = yield* ProviderSessionManager.ProviderSessionManagerV2;
-  const analytics = yield* AnalyticsService.AnalyticsService;
-  const record = (action: "wait" | "resume") =>
-    ProviderSignInRecoveryUsage.record(action).pipe(
-      Effect.provideService(AnalyticsService.AnalyticsService, analytics),
-    );
   const scope = yield* Effect.scope;
   const due = DueHint.make();
   yield* forkParked(
@@ -197,7 +190,6 @@ const makeSweep = Effect.gen(function* () {
               authRecovery: command.authRecovery,
             });
             armedInstances.add(thread.providerInstanceId);
-            yield* record("wait");
           }
         } else {
           // A status from before this sign-in would read as signed out when the resumed run's
@@ -209,7 +201,6 @@ const makeSweep = Effect.gen(function* () {
           }
           yield* releaseIdleSessions(thread).pipe(Effect.ignoreCause({ log: true }));
           yield* threads.dispatch(command);
-          yield* record("resume");
         }
       }).pipe(
         Effect.catchCause((cause) =>

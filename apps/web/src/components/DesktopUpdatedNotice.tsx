@@ -1,6 +1,5 @@
-import { useAtomValue } from "@effect/atom-react";
 import * as Schema from "effect/Schema";
-import { useEffect, useRef, useState } from "react";
+import { useEffect } from "react";
 
 import {
   DESKTOP_LAST_SEEN_VERSION_STORAGE_KEY,
@@ -8,12 +7,8 @@ import {
   startDesktopUpdatedNotice,
   type LastSeenVersionStore,
 } from "../desktopUpdatedNotice";
-import { reportForkClientUsage, supportsForkClientUsage } from "../forkClientUsage";
 import { getLocalStorageItem, setLocalStorageItem } from "../hooks/useLocalStorage";
-import { appAtomRegistry } from "../rpc/atomRegistry";
 import { useDesktopUpdateState } from "../state/desktopUpdate";
-import { primaryEnvironmentIdAtom } from "../state/primaryEnvironment";
-import { primaryServerConfigAtom } from "../state/server";
 import { getDesktopUpdateReleaseUrl } from "./desktopUpdate.logic";
 import { openDesktopUpdateReleaseNotes } from "./desktopUpdate.toast";
 import { toastManager } from "./ui/toast";
@@ -49,10 +44,7 @@ function showDesktopUpdatedToast(version: string) {
             children: "Release notes",
             onClick: () => {
               toastManager.close(toastId);
-              void reportForkClientUsage(appAtomRegistry.get(primaryEnvironmentIdAtom), {
-                feature: "desktop-update-notice",
-                action: "release_notes_opened",
-              });
+
               void openDesktopUpdateReleaseNotes(window.desktopBridge, releaseUrl);
             },
           },
@@ -65,11 +57,6 @@ function showDesktopUpdatedToast(version: string) {
 /** Desktop only: announces the version the app updated to, once, when the window is looked at. */
 export function DesktopUpdatedNotice() {
   const currentVersion = useDesktopUpdateState()?.currentVersion ?? null;
-  const environmentId = useAtomValue(primaryEnvironmentIdAtom);
-  const supported = supportsForkClientUsage(useAtomValue(primaryServerConfigAtom));
-  const [shown, setShown] = useState(false);
-  const exposureReported = useRef(false);
-
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- starts the desktop update notice using persisted version storage and window attention listeners
   useEffect(() => {
     if (!currentVersion) return;
@@ -79,21 +66,9 @@ export function DesktopUpdatedNotice() {
       attention: documentWindowAttention(),
       show: (version) => {
         showDesktopUpdatedToast(version);
-        setShown(true);
       },
     });
   }, [currentVersion]);
-
-  // The notice can show before the local server connects; report it once support is known.
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- reports the displayed desktop update notice to the environment once usage reporting is supported
-  useEffect(() => {
-    if (!shown || !environmentId || !supported || exposureReported.current) return;
-    exposureReported.current = true;
-    void reportForkClientUsage(environmentId, {
-      feature: "desktop-update-notice",
-      action: "notice_shown",
-    });
-  }, [environmentId, shown, supported]);
 
   return null;
 }

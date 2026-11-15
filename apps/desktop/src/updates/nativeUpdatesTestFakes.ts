@@ -150,10 +150,6 @@ export function makeNativeUpdatesFakes(
     publishUpdateReport: () => Effect.void,
     publishUpdateActivity: () => Effect.void,
     updateActivityRequests: Stream.empty,
-    publishFeatureUsage: (report) =>
-      Effect.sync(() => {
-        idleRestart.reports.push(report);
-      }),
     updateRequests: Stream.empty,
     updateCommits: Stream.empty,
     updateCancellations: Stream.empty,

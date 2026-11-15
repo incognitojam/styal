@@ -10,7 +10,6 @@ import type {
 import { KeyRoundIcon } from "lucide-react";
 import { useState } from "react";
 
-import { reportForkClientUsage } from "../../forkClientUsage";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { Button } from "../ui/button";
@@ -75,7 +74,6 @@ export function useProviderSignInBanner(input: {
             instanceId={dialogProvider.instanceId}
             provider={dialogProvider}
             readOnly={false}
-            usageEntryPoint={signIn.entryPoint}
             layout="dialog"
             onDone={close}
           />
@@ -84,22 +82,16 @@ export function useProviderSignInBanner(input: {
     ) : null;
   if (input.banner?.kind !== "sign-in") return { item: null, dialog };
   const { provider, afterFailedTurn } = input.banner;
-  const entryPoint = afterFailedTurn ? "thread" : "signed_out";
   const name = providerName(provider);
   // A CLI login has one way in and stops nothing, so opening the dialog can start it right away.
   function openSignIn() {
     setSignIn({
       environmentId: input.environmentId,
       instanceId: provider.instanceId,
-      entryPoint,
       open: true,
     });
     if (provider.auth.canLogout !== false || !provider.setup?.canAuthenticate) return;
-    reportForkClientUsage(input.environmentId, {
-      feature: "provider-sign-in",
-      action: "start",
-      entryPoint,
-    });
+
     void start({ environmentId: input.environmentId, input: { instanceId: provider.instanceId } });
   }
   const recovery = afterFailedTurn && input.recovery?.runId === input.runId ? input.recovery : null;
@@ -178,7 +170,6 @@ export function useProviderSignInBanner(input: {
 interface SignInDialogTarget {
   readonly environmentId: EnvironmentId;
   readonly instanceId: ProviderInstanceId;
-  readonly entryPoint: "thread" | "signed_out";
   readonly open: boolean;
 }
 

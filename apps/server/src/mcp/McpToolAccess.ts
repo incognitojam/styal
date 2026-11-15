@@ -1,5 +1,3 @@
-import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
-import * as FeatureUsage from "../telemetry/FeatureUsage.ts";
 import {
   type EnvironmentId,
   type OrchestrationV2LinkOrigin,
@@ -317,22 +315,6 @@ export const either = <P, A, E, R, A2, E2, R2>(
   );
 };
 
-const observeAutoEnvironment = Effect.fn("McpToolAccess.observeAutoEnvironment")(function* <
-  A,
-  E,
-  R,
->(action: FeatureUsage.AutoEnvironmentAction | undefined, effect: Effect.Effect<A, E, R>) {
-  if (action === undefined) return yield* effect;
-  const analytics = yield* Effect.serviceOption(AnalyticsService.AnalyticsService);
-  if (Option.isNone(analytics)) return yield* effect;
-  const caller = yield* loadCaller().pipe(Effect.option);
-  if (Option.isNone(caller) || caller.value.limits.runtimeMode !== "auto") return yield* effect;
-  return yield* FeatureUsage.observe(
-    { feature: "auto-environment-tools", action, source: "agent" },
-    effect,
-  ).pipe(Effect.provideService(AnalyticsService.AnalyticsService, analytics.value));
-});
-
 const fullAccessRequired =
   "This operation needs a live Full access thread in default interaction mode, or a Full access client.";
 
@@ -349,7 +331,6 @@ export const writesEnvironment = <P, A, E, R>(
      */
     readonly linkedCallers?: "allowed";
     readonly auto?: "allowed";
-    readonly autoUsage?: FeatureUsage.AutoEnvironmentAction;
     readonly validate?: (params: P, caller: Caller) => Effect.Effect<void, OrchestratorMcpFailure>;
   },
 ) => {
@@ -377,17 +358,13 @@ export const writesEnvironment = <P, A, E, R>(
       const checked = check.pipe(
         Effect.tap((caller) => options?.validate?.(params, caller) ?? Effect.void),
       );
-      return observeAutoEnvironment(
-        options?.autoUsage,
-        checked.pipe(Effect.flatMap(() => handle(params, checked))),
-      );
+      return checked.pipe(Effect.flatMap(() => handle(params, checked)));
     },
     // Linked work never reaches a link at all; that is checked as the call goes.
     (params) =>
       orchestratingCaller.pipe(
         Effect.tap((caller) => checkMode(caller)),
         Effect.tap((caller) => options?.validate?.(params, caller) ?? Effect.void),
-        Effect.catch((error) => observeAutoEnvironment(options?.autoUsage, Effect.fail(error))),
       ),
   );
 };
@@ -425,31 +402,6 @@ export class HandlersLayer<Tools extends Record<string, Tool.Any>, EX = never, R
 
 const checkedHandlers = <Handlers>(declarations: Declarations<Handlers>): Handlers =>
   Struct.map(declarations, checkedHandler);
-
-/**
- * Wraps a toolkit's declared handlers, for example to record their use, and
- * declares them again with their original linked-environment checks. Each
- * wrapper calls the checked handler, so its declared access still runs first.
- */
-export const wrapHandlers = <Handlers, E, R>(
-  declarations: Declarations<Handlers>,
-  wrap: (handlers: Handlers) => Effect.Effect<Handlers, E, R>,
-): Effect.Effect<Declarations<Handlers>, E, R> =>
-  Effect.map(
-    wrap(checkedHandlers(declarations)),
-    (wrapped) =>
-      Object.fromEntries(
-        Object.entries(wrapped as Record<string, unknown>).map(([name, handler]) => [
-          name,
-          declare(
-            handler as (params: unknown) => Effect.Effect<unknown, unknown, unknown>,
-            remoteCheckOf((declarations as Record<string, Declaration<unknown>>)[name]!) as
-              | RemoteCheck<unknown>
-              | undefined,
-          ),
-        ]),
-      ) as Declarations<Handlers>,
-  );
 
 /**
  * A tool runs in a linked environment when its parameters take this target

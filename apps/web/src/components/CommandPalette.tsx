@@ -1984,7 +1984,7 @@ function OpenCommandPaletteDialog(props: {
     icon: <KeyboardIcon className={ITEM_ICON_CLASS} />,
     shortcutCommand: "shortcutsOverview.toggle",
     run: async () => {
-      openShortcutsOverview("command_palette");
+      openShortcutsOverview();
     },
   });
 

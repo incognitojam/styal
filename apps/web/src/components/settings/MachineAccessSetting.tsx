@@ -11,7 +11,6 @@ import * as Schema from "effect/Schema";
 import { useState } from "react";
 
 import { requestConfirmDialog } from "~/confirmDialog";
-import { reportForkClientUsage } from "~/forkClientUsage";
 import { cn } from "~/lib/utils";
 import { peerLinkEnvironment } from "~/state/peerLinks";
 import { useEnvironmentScope } from "~/state/session";
@@ -79,12 +78,6 @@ export function MachineAccessSetting({
       fail(`Could not save on ${machineLabel}. Check that it's connected, then try again.`);
       return;
     }
-    void reportForkClientUsage(environmentId, {
-      feature: "machine-access",
-      action: "set",
-      level: next,
-      stoppedThreads: threads > 0,
-    });
   };
 
   const disabled = busy || !supported || !connected || !mayChange;

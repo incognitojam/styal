@@ -36,7 +36,6 @@ import { Menu } from "../../components/ui/Menu";
 import { AppText as Text } from "../../components/ui/AppText";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
-import { reportForkClientUsage } from "../../state/forkClientUsage";
 import { environmentPresentations } from "../../state/presentation";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
@@ -353,13 +352,6 @@ function ProviderAccount({
     title: method.name,
   }));
   function startSignIn(methodId?: string) {
-    if (usesCliLogin) {
-      void reportForkClientUsage(environmentId, {
-        feature: "provider-sign-in",
-        action: "start",
-        entryPoint: "settings",
-      });
-    }
     void run(() => start(methodId ? { environmentId, input: { instanceId, methodId } } : target));
   }
   function signOut() {

@@ -1,6 +1,5 @@
 import { DeviceHostUpdates } from "../device/DeviceHostUpdates";
 import { DeviceToolVersions } from "../device/DeviceToolVersions";
-import { reportForkClientUsage } from "~/forkClientUsage";
 import { ScopedSwitch } from "./ScopedSwitch";
 import { DeviceHostsSettings } from "./DeviceHostsSettings";
 import { DeviceSourcesSettings } from "./DeviceSourcesSettings";
@@ -861,12 +860,7 @@ export function DeviceIntegrationControls({
     input: { enabled?: boolean; agentAccessEnabled?: boolean },
   ) => {
     if (!readEnvironmentScope(environmentId, AuthSettingsWriteScope)) return;
-    void reportForkClientUsage(environmentId, {
-      feature: "integration-settings",
-      action: "change_requested",
-      setting: kind === "hub" ? "device_support" : "device_access",
-      settingScope: "environment",
-    });
+
     setPending(kind);
     await configure({
       environmentId,

@@ -862,16 +862,7 @@ describe("workflow run watches", () => {
           run: { url: runningRun.url, name: "Deploy #41" },
         },
       ]);
-      expect(harness.usage).toEqual([
-        {
-          feature: "workflow-run-watch",
-          action: "watch",
-          source: "agent",
-          watchResult: "started",
-          outcome: "success",
-          durationMs: 0,
-        },
-      ]);
+      expect(harness.usage).toEqual([]);
     }),
   );
 
@@ -884,7 +875,7 @@ describe("workflow run watches", () => {
       const result = yield* harness.call("watch_workflow_run", { url: runningRun.url });
       expect(result).toMatchObject({ watching: false, conclusion: "failure", failedJobs });
       expect(yield* Ref.get(harness.commands)).toEqual([]);
-      expect(harness.usage).toMatchObject([{ action: "watch", watchResult: "already_completed" }]);
+      expect(harness.usage).toEqual([]);
     }),
   );
 
@@ -896,13 +887,11 @@ describe("workflow run watches", () => {
         .pipe(Effect.flip);
       expect(error).toMatchObject({ _tag: "WorkflowRunReadFailedError" });
       expect(yield* Ref.get(harness.commands)).toEqual([]);
-      expect(harness.usage).toMatchObject([
-        { action: "watch", outcome: "failure", failureReason: "read_failed" },
-      ]);
+      expect(harness.usage).toEqual([]);
     }),
   );
 
-  it.effect("records a watch the access check refuses", () =>
+  it.effect("preserves a refusal before reading a workflow run", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness({ workflowRun: runningRun, callerIdle: true });
       const error = yield* harness
@@ -910,9 +899,7 @@ describe("workflow run watches", () => {
         .pipe(Effect.flip);
       expect(error).toMatchObject({ _tag: "OrchestratorMcpFailure" });
       expect(yield* Ref.get(harness.workflowRunReads)).toEqual([]);
-      expect(harness.usage).toMatchObject([
-        { action: "watch", outcome: "failure", failureReason: "refused" },
-      ]);
+      expect(harness.usage).toEqual([]);
     }),
   );
 
@@ -936,7 +923,7 @@ describe("workflow run watches", () => {
       expect(yield* Ref.get(harness.commands)).toMatchObject([
         { type: "thread.workflow-run.watch", runId: 9001, watching: false },
       ]);
-      expect(harness.usage).toMatchObject([{ action: "unwatch", watchResult: "stopped" }]);
+      expect(harness.usage).toEqual([]);
     }),
   );
 });

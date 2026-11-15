@@ -35,7 +35,6 @@ import * as DateTime from "effect/DateTime";
 import { CheckIcon, CircleAlertIcon, CircleIcon, ClockIcon, MinusIcon } from "lucide-react";
 import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
 
-import { reportForkClientUsage } from "~/forkClientUsage";
 import { useNowMinute } from "../../hooks/useNowMinute";
 import { cn } from "../../lib/utils";
 import { useDeviceState } from "../../state/device";
@@ -688,14 +687,6 @@ function MachinePair({
     setRun({ kind, lines: result.value, finished: true });
     const failed = result.value.find((line) => line.status.state === "failed")?.status;
     setLastFailure(failed?.state === "failed" ? failed.message : null);
-    const target = [a, b].find((machine) => machine.connected);
-    if (target !== undefined) {
-      void reportForkClientUsage(target.environmentId, {
-        feature: "work-together",
-        action: kind,
-        outcome: workTogetherOutcome(result.value),
-      });
-    }
   };
 
   const resume = useEffectEvent(() => {

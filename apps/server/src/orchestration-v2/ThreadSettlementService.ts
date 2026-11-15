@@ -31,8 +31,6 @@ import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.t
 import * as PullRequestService from "../pullRequest/PullRequestService.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { forkParked } from "../serverActivation.ts";
-import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
-import * as ThreadSettleUsage from "../telemetry/ThreadSettleUsage.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
 import * as ProjectStore from "./ProjectStore.ts";
 import { sourceControlDefinitions } from "../sourceControl/sourceControlDefinitions.ts";
@@ -50,7 +48,7 @@ export interface SettlementPullRequest {
 
 export interface AutoSettlement {
   readonly settledAt: DateTime.Utc;
-  readonly rule: ThreadSettleUsage.AutoSettleRule;
+  readonly rule: "merged" | "closed" | "inactivity";
   /** Absent only when the deciding pull request carried no identity. */
   readonly reason: OrchestrationV2ThreadAutoSettleReason | undefined;
 }
@@ -368,7 +366,6 @@ export const make = Effect.gen(function* () {
   const shellClosedThreads = new Set<ThreadId>();
   const terminals = yield* TerminalManager.TerminalManager;
   const projectScripts = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
-  const analytics = yield* AnalyticsService.AnalyticsService;
   // Repeated thread.settled retains settledAt; run the action only once per settlement.
   const settleActionRunAt = new Map<ThreadId, number>();
 
@@ -415,10 +412,6 @@ export const make = Effect.gen(function* () {
           settledAt: settlement.settledAt,
           ...(settlement.reason === undefined ? {} : { reason: settlement.reason }),
         });
-        yield* ThreadSettleUsage.recordAutoSettle(
-          settlement.rule,
-          settlement.reason?.kind === "inactivity" ? settlement.reason.days : null,
-        ).pipe(Effect.provideService(AnalyticsService.AnalyticsService, analytics));
         return null;
       },
       (effect, thread) =>

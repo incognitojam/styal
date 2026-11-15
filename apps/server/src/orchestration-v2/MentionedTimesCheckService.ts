@@ -23,8 +23,6 @@ import * as Option from "effect/Option";
 import { hostTimeZone } from "../environment/ServerEnvironment.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ServerSettings from "../serverSettings.ts";
-import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
-import * as FeatureUsage from "../telemetry/FeatureUsage.ts";
 import * as TextGeneration from "../textGeneration/TextGeneration.ts";
 import * as EventSink from "./EventSink.ts";
 import * as ProjectStore from "./ProjectStore.ts";
@@ -86,7 +84,6 @@ const make = Effect.gen(function* () {
   const textGeneration = yield* TextGeneration.TextGeneration;
   const eventSink = yield* EventSink.EventSinkV2;
   const ids = yield* IdAllocator.IdAllocatorV2;
-  const analytics = yield* Effect.serviceOption(AnalyticsService.AnalyticsService);
   const providerRegistry = yield* Effect.serviceOption(ProviderRegistry.ProviderRegistry);
 
   const check = Effect.fn("MentionedTimesCheckService.check")(function* (input: {
@@ -126,14 +123,7 @@ const make = Effect.gen(function* () {
         projection.thread.projectId,
       ),
     });
-    const result = yield* Option.match(analytics, {
-      onNone: () => request,
-      onSome: (service) =>
-        FeatureUsage.observe(
-          { feature: "mentioned-time-check", action: "check", source: "system" },
-          request,
-        ).pipe(Effect.provideService(AnalyticsService.AnalyticsService, service)),
-    });
+    const result = yield* request;
 
     const checkedAt = yield* DateTime.now;
     const commandId = CommandId.make(`command:effect:message.mentioned-times.check:${message.id}`);

@@ -456,7 +456,9 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   ([#17585](https://github.com/pingdotgg/t3code/pull/17585)) without a tested-version gate.
   [Automatically install styal-tested provider updates](./updating.md#automatically-install-styal-tested-provider-updates).
 
-## Error reports
+## Product data and error reports
+
+- **Product data goes to styal.** Usage events use upstream's feature and tool counts, with provider send, update and stall reports and device stream quality summaries, sent to styal's PostHog project. Compared with [T3 Code revision ee2cddf](https://github.com/pingdotgg/t3code/tree/ee2cddf357a), checked November 14, 2026. [Product usage data](./telemetry.md).
 
 - **Report a bug from inside the app.** Ask an agent or use **Send feedback**. It posts a public
   issue on styal's repository under your GitHub sign-in, and an agent's report needs your approval
