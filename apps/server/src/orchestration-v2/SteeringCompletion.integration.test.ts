@@ -486,6 +486,7 @@ const nextTurnSelectionHarness = Effect.fn("nextTurnSelectionHarness")(function*
   canSteer = true,
   interruptTurn: Effect.Effect<void> = Effect.void,
   steeringAcceptsAttachments = true,
+  providerDriver = driver,
 ) {
   const cwd = yield* checkpointWorkspace(name);
   const events = yield* Queue.unbounded<ProviderAdapter.ProviderAdapterV2Event>();
@@ -503,7 +504,7 @@ const nextTurnSelectionHarness = Effect.fn("nextTurnSelectionHarness")(function*
   };
   const adapter: ProviderAdapter.ProviderAdapterV2["Service"] = {
     instanceId,
-    driver,
+    driver: providerDriver,
     getCapabilities: () => Effect.succeed(capabilities),
     planSelectionTransition: () => Effect.succeed({ type: "apply_on_next_turn" }),
     openSession: (input) =>
@@ -515,14 +516,14 @@ const nextTurnSelectionHarness = Effect.fn("nextTurnSelectionHarness")(function*
         ) =>
           Queue.offer(events, {
             type: "provider_turn.updated",
-            driver,
+            driver: providerDriver,
             providerTurn: {
               id: ProviderTurnId.make(`provider-turn:${turn.attemptId}`),
               providerThreadId: turn.providerThread.id,
               nodeId: turn.rootNodeId,
               runAttemptId: turn.attemptId,
               nativeTurnRef: {
-                driver,
+                driver: providerDriver,
                 nativeId: `native:${turn.attemptId}`,
                 strength: "strong",
               },
@@ -539,11 +540,11 @@ const nextTurnSelectionHarness = Effect.fn("nextTurnSelectionHarness")(function*
           });
         return {
           instanceId,
-          driver,
+          driver: providerDriver,
           providerSessionId: input.providerSessionId,
           providerSession: {
             id: input.providerSessionId,
-            driver,
+            driver: providerDriver,
             providerInstanceId: instanceId,
             status: "ready",
             cwd,
@@ -557,12 +558,16 @@ const nextTurnSelectionHarness = Effect.fn("nextTurnSelectionHarness")(function*
           ensureThread: ({ threadId }) =>
             Effect.succeed({
               id: ProviderThreadId.make(`provider-thread:${threadId}`),
-              driver,
+              driver: providerDriver,
               providerInstanceId: instanceId,
               providerSessionId: input.providerSessionId,
               appThreadId: threadId,
               ownerNodeId: null,
-              nativeThreadRef: { driver, nativeId: "native-thread", strength: "strong" },
+              nativeThreadRef: {
+                driver: providerDriver,
+                nativeId: "native-thread",
+                strength: "strong",
+              },
               nativeConversationHeadRef: null,
               status: "idle",
               firstRunOrdinal: null,
@@ -1633,7 +1638,7 @@ it.effect("promotes a queued goal by stopping the running turn", () =>
   ),
 );
 
-it.effect.each(["next", "/goal ship it"])(
+it.effect.each(["next", "/goal ship it", "held next"])(
   "promoting %s into a compaction stops it and sends it next",
   (promoted) =>
     Effect.scoped(
@@ -1647,7 +1652,19 @@ it.effect.each(["next", "/goal ship it"])(
           const threadId = yield* startFirstTurn;
           yield* send("compact", "/compact", "queue");
           yield* send("queued", "queued", "queue");
-          yield* send("next", promoted, "queue");
+          if (promoted === "held next")
+            yield* orchestrator.dispatch({
+              type: "message.dispatch",
+              commandId: CommandId.make("next"),
+              threadId,
+              messageId: MessageId.make("message:next"),
+              text: promoted,
+              attachments: [],
+              dispatchMode: { type: "with_next_turn" },
+              createdBy: "user",
+              creationSource: "web",
+            });
+          else yield* send("next", promoted, "queue");
           const settled = yield* orchestrator.streamDomainEvents.pipe(
             Stream.filter(
               (event) =>
@@ -2081,6 +2098,123 @@ it.effect.each([
           yield* worker.drain();
           assert.equal(started.at(-1)!.message.text, "after failure");
         }
+      }).pipe(Effect.provide(layer));
+    }),
+  ),
+);
+
+it.effect("buffered Claude wakes leave held messages waiting for a prompt", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const { layer, createThread, started } = yield* nextTurnSelectionHarness(
+        "held-buffered-wake",
+        false,
+        true,
+        Effect.void,
+        true,
+        ProviderDriverKind.make("claudeAgent"),
+      );
+      yield* Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+        const threadId = yield* createThread;
+        yield* orchestrator.dispatch({
+          type: "message.dispatch",
+          commandId: CommandId.make("hold"),
+          threadId,
+          messageId: MessageId.make("message:hold"),
+          text: "held context",
+          attachments: [],
+          dispatchMode: { type: "with_next_turn" },
+          createdBy: "user",
+          creationSource: "web",
+        });
+        yield* orchestrator.dispatch({
+          type: "message.dispatch",
+          commandId: CommandId.make("wake"),
+          threadId,
+          messageId: MessageId.make("message:wake"),
+          text: "Buffered background result",
+          attachments: [],
+          dispatchMode: { type: "queue_after_active" },
+          createdBy: "agent",
+          creationSource: "provider",
+          notification: {
+            source: { kind: "background_task" },
+            outcome: "updated",
+            summary: "Buffered background result",
+          },
+        });
+        yield* worker.drain();
+        const after = yield* orchestrator.getThreadProjection(threadId);
+        assert.equal(
+          after.runs.find((run) => run.userMessageId === MessageId.make("message:hold"))?.status,
+          "queued",
+        );
+        assert.notInclude(started.at(-1)!.message.text, "held context");
+        assert.isFalse(
+          after.turnItems.some(
+            (item) =>
+              item.type === "user_message" && item.messageId === MessageId.make("message:hold"),
+          ),
+        );
+      }).pipe(Effect.provide(layer));
+    }),
+  ),
+);
+
+it.effect.each([false, true])("restarting consumes only messages still waiting: %s", (holdAgain) =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const { layer, createThread, started } = yield* nextTurnSelectionHarness(
+        `held-restart-${holdAgain}`,
+        true,
+      );
+      yield* Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+        const threadId = yield* createThread;
+        const send = (
+          text: string,
+          dispatchMode: Extract<
+            import("@t3tools/contracts").OrchestrationV2Command,
+            { type: "message.dispatch" }
+          >["dispatchMode"],
+        ) =>
+          orchestrator.dispatch({
+            type: "message.dispatch",
+            commandId: CommandId.make(text),
+            threadId,
+            messageId: MessageId.make(`message:${text}`),
+            text,
+            attachments: [],
+            dispatchMode,
+            createdBy: "user",
+            creationSource: "web",
+          });
+        yield* send("H", { type: "with_next_turn" });
+        const running = yield* orchestrator.streamDomainEvents.pipe(
+          Stream.filter(
+            (event) => event.type === "provider-turn.updated" && event.payload.status === "running",
+          ),
+          Stream.take(1),
+          Stream.runDrain,
+          Effect.forkScoped,
+        );
+        yield* send("A", { type: "start_immediately" });
+        yield* worker.drain();
+        yield* Fiber.join(running);
+        assert.equal(started[0]!.message.text, "H\n\nA");
+        if (holdAgain) yield* send("later H", { type: "with_next_turn" });
+        yield* send("B", { type: "restart_active", targetRunId: started[0]!.runId });
+        yield* worker.drain();
+        assert.equal(started.at(-1)!.message.text, holdAgain ? "later H\n\nB" : "B");
+        assert.equal(
+          (yield* orchestrator.getThreadProjection(threadId)).runs.filter(
+            (run) => run.status === "queued",
+          ).length,
+          0,
+        );
       }).pipe(Effect.provide(layer));
     }),
   ),

@@ -5786,6 +5786,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       );
     const restartedRun: OrchestrationV2Run = {
       ...targetRun,
+      nextTurnMessageIds: undefined,
       providerInstanceId: input.modelSelection.instanceId,
       modelSelection: input.modelSelection,
       providerThreadId: restartProviderThread.id,
@@ -10526,7 +10527,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         nodeId: queuedRootNode.id,
         providerInstanceId: queuedRun.providerInstanceId,
         occurredAt: now,
-        payload: { ...queuedRun, queuePosition: 1 },
+        payload: { ...queuedRun, queuePosition: 1, withNextTurn: false },
       });
       const stops =
         isLiveRun(target) && !(yield* stopReachedRun(command, command.threadId, target.id));

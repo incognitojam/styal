@@ -1,6 +1,7 @@
 import { isCompactionCommandMessage, parseGoalCommand } from "@t3tools/contracts";
 import type {
   OrchestrationV2ContextHandoff,
+  OrchestrationV2ConversationMessage,
   OrchestrationV2ProviderThread,
 } from "@t3tools/contracts";
 import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
@@ -155,8 +156,12 @@ export class ContextHandoffDeliveryUncertainError extends Schema.TaggedError<Con
 }
 
 export const defersInlineContext = (
-  message: Parameters<typeof isCompactionCommandMessage>[0],
+  message: Parameters<typeof isCompactionCommandMessage>[0] &
+    Pick<OrchestrationV2ConversationMessage, "createdBy" | "creationSource">,
   driver: string,
 ) =>
+  (driver === "claudeAgent" &&
+    message.createdBy === "agent" &&
+    message.creationSource === "provider") ||
   isCompactionCommandMessage(message) ||
   ((driver === "codex" || driver === "claudeAgent") && parseGoalCommand(message) !== null);
