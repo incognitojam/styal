@@ -1,3 +1,4 @@
+import { isCompactionCommandMessage, parseGoalCommand } from "@t3tools/contracts";
 import type {
   OrchestrationV2ContextHandoff,
   OrchestrationV2ProviderThread,
@@ -152,3 +153,10 @@ export class ContextHandoffDeliveryUncertainError extends Schema.TaggedError<Con
     return "Historical context delivery is uncertain; replace the native thread before retrying.";
   }
 }
+
+export const defersInlineContext = (
+  message: Parameters<typeof isCompactionCommandMessage>[0],
+  driver: string,
+) =>
+  isCompactionCommandMessage(message) ||
+  ((driver === "codex" || driver === "claudeAgent") && parseGoalCommand(message) !== null);

@@ -378,3 +378,7 @@ including filenames or folders containing `#` or `?`.
 
 On mobile, select a PDF attachment or link to open it. iOS uses the native viewer;
 Android opens a compatible installed file viewer.
+
+## Send with next turn
+
+On web and desktop, right-click Send and choose **Send with next turn** to leave a message for the thread’s next turn. It waits without waking the agent, even when the thread is idle or settled. Waiting messages go first, in queue order, when an ordinary prompt starts a turn; native maintenance commands leave them waiting. If that turn fails, the messages fail with it and are not resent. Use **Send now** to send a waiting message normally, or remove it from the queue.

@@ -132,6 +132,7 @@ export function QueuedRunsControl({
       runId: run.id,
       messageId: run.userMessageId,
       serverIndex,
+      withNextTurn: run.withNextTurn === true,
       text,
       // A guest's message keeps the guest's words; the owner can cancel it, not rewrite it.
       editable: context?.guest === undefined,
@@ -152,6 +153,7 @@ export function QueuedRunsControl({
       runId: null,
       messageId: null,
       serverIndex: null,
+      withNextTurn: false,
       text: message.text,
       editable: true,
       attachments: [] as ReadonlyArray<ContractChatAttachment>,
@@ -275,6 +277,9 @@ export function QueuedRunsControl({
                 timestampFormat={props.timestampFormat}
                 onOpenThread={props.onOpenThread}
               >
+                {item.withNextTurn ? (
+                  <span className="text-muted-foreground">With next turn</span>
+                ) : null}
                 {canSend && !isEditing ? (
                   <>
                     <Tooltip>

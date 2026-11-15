@@ -1467,7 +1467,9 @@ export function planComposerTurn(input: {
   // A stale Claude session compacts before this message so the turn does not re-read the
   // old history. The message queues behind the /compact run, since steering into it is
   // rejected.
+  // A message for the next turn starts nothing, so it must not start a compaction either.
   const compactBeforeSend =
+    input.dispatchMode !== "next_turn" &&
     input.resumeCompactionTokens !== null &&
     !input.keepFullHistory &&
     !COMPACT_COMMAND_PATTERN.test(input.messageText);
@@ -1478,8 +1480,11 @@ export function planComposerTurn(input: {
     baseBranchForWorktree: shouldCreateWorktree ? input.activeThreadBranch : null,
     compactBeforeSend,
     turnDispatchMode:
-      compactBeforeSend || input.sendQueuesBehindSetup ? ("queue" as const) : input.dispatchMode,
+      input.dispatchMode !== "next_turn" && (compactBeforeSend || input.sendQueuesBehindSetup)
+        ? ("queue" as const)
+        : input.dispatchMode,
     shouldQueueBehindActiveRun:
+      input.dispatchMode === "next_turn" ||
       compactBeforeSend ||
       input.sendQueuesBehindSetup ||
       (input.phase === "running" && input.dispatchMode === "queue"),

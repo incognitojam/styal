@@ -403,7 +403,7 @@ export const make = Effect.gen(function* () {
           runs.push(run);
           continue;
         }
-        if (run.queueHeld === true) continue;
+        if (run.queueHeld === true || run.withNextTurn === true) continue;
         events.push({
           id: yield* allocateEventId(),
           type: "run.updated",

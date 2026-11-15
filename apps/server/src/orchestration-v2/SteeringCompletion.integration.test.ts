@@ -6,6 +6,7 @@ import {
   EventId,
   NodeId,
   ProjectId,
+  ScheduledTaskId,
   ProviderDriverKind,
   ProviderInstanceId,
   ProviderThreadId,
@@ -606,9 +607,8 @@ const nextTurnSelectionHarness = Effect.fn("nextTurnSelectionHarness")(function*
     ProviderAdapterRegistry.layerSingle(adapter),
     { runEffectWorker: false },
   );
-  const startFirstTurn = Effect.gen(function* () {
+  const createThread = Effect.gen(function* () {
     const orchestrator = yield* Orchestrator.OrchestratorV2;
-    const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
     const threadId = ThreadId.make(`thread:${name}`);
     yield* orchestrator.dispatch({
       type: "thread.create",
@@ -624,6 +624,12 @@ const nextTurnSelectionHarness = Effect.fn("nextTurnSelectionHarness")(function*
       createdBy: "user",
       creationSource: "web",
     });
+    return threadId;
+  });
+  const startFirstTurn = Effect.gen(function* () {
+    const orchestrator = yield* Orchestrator.OrchestratorV2;
+    const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+    const threadId = yield* createThread;
     const running = yield* orchestrator.streamDomainEvents.pipe(
       Stream.filter(
         (event) => event.type === "provider-turn.updated" && event.payload.status === "running",
@@ -648,7 +654,7 @@ const nextTurnSelectionHarness = Effect.fn("nextTurnSelectionHarness")(function*
     yield* Fiber.join(running);
     return threadId;
   });
-  return { cwd, events, started, steered, interrupted, layer, startFirstTurn };
+  return { cwd, events, started, steered, interrupted, layer, startFirstTurn, createThread };
 });
 
 it.effect("steers a delegated task question notice into the running parent turn", () =>
@@ -1888,6 +1894,193 @@ it.effect("a side chat that opens with /goal gets its context on the next questi
         assert.include(question, "You are in a side chat beside the main thread.");
         assert.include(question, "- User: first");
         assert.isTrue(question?.endsWith("What is the main thread doing?"));
+      }).pipe(Effect.provide(layer));
+    }),
+  ),
+);
+
+it.effect.each([
+  "idle",
+  "running",
+  "maintenance",
+  "failure",
+  "notification",
+  "scheduled",
+  "settled",
+] as const)("held messages wait and join the next prompt: %s", (scenario) =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const { started, steered, events, layer, createThread, startFirstTurn } =
+        yield* nextTurnSelectionHarness(`with-next-turn-${scenario}`);
+      yield* Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+        const threadId = yield* scenario === "running" ? startFirstTurn : createThread;
+        const initialCount = started.length;
+        if (scenario === "settled")
+          yield* orchestrator.dispatch({
+            type: "thread.settle",
+            commandId: CommandId.make("settle"),
+            threadId,
+          });
+        const send = (text: string, type: "with_next_turn" | "start_immediately") =>
+          orchestrator.dispatch({
+            type: "message.dispatch",
+            commandId: CommandId.make(text),
+            threadId,
+            messageId: MessageId.make(`message:${text}`),
+            text,
+            ...(text !== "trigger"
+              ? {}
+              : scenario === "notification"
+                ? {
+                    notification: {
+                      source: { kind: "system" as const },
+                      outcome: "updated" as const,
+                      summary: text,
+                    },
+                  }
+                : scenario === "scheduled"
+                  ? { scheduledTaskId: ScheduledTaskId.make("schedule:queue-demo") }
+                  : {}),
+            attachments: [],
+            dispatchMode: {
+              type: scenario === "notification" && text === "trigger" ? "queue_after_active" : type,
+            },
+            createdBy: scenario === "notification" && text === "trigger" ? "agent" : "user",
+            creationSource: scenario === "notification" && text === "trigger" ? "server" : "web",
+          });
+        yield* send("first held", "with_next_turn");
+        yield* send("second held", "with_next_turn");
+        yield* worker.drain();
+        yield* orchestrator.resumeQueuedRuns;
+        yield* worker.drain();
+        assert.lengthOf(started, initialCount);
+        assert.deepEqual(steered, []);
+        if (scenario === "settled")
+          assert.equal(
+            (yield* orchestrator.getThreadProjection(threadId)).thread.settledOverride,
+            "settled",
+          );
+        assert.lengthOf(
+          (yield* orchestrator.getThreadProjection(threadId)).runs.filter(
+            (run) => run.status === "queued",
+          ),
+          2,
+        );
+        if (scenario === "running" || scenario === "maintenance") {
+          if (scenario === "maintenance") {
+            yield* send("/compact", "start_immediately");
+            yield* worker.drain();
+            assert.lengthOf(
+              (yield* orchestrator.getThreadProjection(threadId)).runs.filter(
+                (run) => run.status === "queued",
+              ),
+              2,
+            );
+            assert.equal(started.at(-1)!.message.text, "/compact");
+          }
+          yield* orchestrator.dispatch({
+            type: "run.interrupt",
+            commandId: CommandId.make("stop"),
+            threadId,
+            runId: started.at(-1)!.runId,
+          });
+          yield* worker.drain();
+        }
+        const running = yield* orchestrator.streamDomainEvents.pipe(
+          Stream.filter(
+            (event) => event.type === "provider-turn.updated" && event.payload.status === "running",
+          ),
+          Stream.take(1),
+          Stream.runDrain,
+          Effect.forkScoped,
+        );
+        yield* send("trigger", "start_immediately");
+        yield* worker.drain();
+        yield* Fiber.join(running);
+        assert.lengthOf(started, scenario === "running" || scenario === "maintenance" ? 2 : 1);
+        const after = yield* orchestrator.getThreadProjection(threadId);
+        const triggerText = after.messages.find(
+          (message) => message.id === MessageId.make("message:trigger"),
+        )!.text;
+        assert.equal(started.at(-1)!.message.text, `first held\n\nsecond held\n\n${triggerText}`);
+        assert.lengthOf(
+          after.runs.filter((run) => run.status === "queued"),
+          0,
+        );
+        assert.sameMembers(
+          after.messages
+            .filter((message) => message.runId === started.at(-1)!.runId)
+            .map((message) => message.text),
+          ["first held", "second held", triggerText],
+        );
+        const timeline = after.turnItems
+          .filter((item) => item.runId === started.at(-1)!.runId && item.type === "user_message")
+          .toSorted((a, b) => a.ordinal - b.ordinal);
+        assert.deepEqual(
+          timeline.map((item) => (item.type === "user_message" ? item.text : null)),
+          scenario === "notification"
+            ? ["first held", "second held"]
+            : ["first held", "second held", triggerText],
+        );
+        for (const item of timeline.slice(0, 2)) {
+          assert.deepEqual(
+            item.startedAt,
+            after.messages.find(
+              (message) => item.type === "user_message" && message.id === item.messageId,
+            )!.createdAt,
+          );
+        }
+        if (scenario === "failure") {
+          const failed = yield* orchestrator.streamDomainEvents.pipe(
+            Stream.filter(
+              (event) =>
+                event.type === "run.updated" &&
+                event.payload.id === started.at(-1)!.runId &&
+                (event.payload.status === "waiting" || event.payload.status === "failed"),
+            ),
+            Stream.take(1),
+            Stream.runDrain,
+            Effect.forkScoped,
+          );
+          yield* Queue.offer(events, {
+            type: "provider_turn.updated",
+            driver,
+            providerTurn: {
+              ...after.providerTurns.at(-1)!,
+              status: "failed",
+              completedAt: yield* DateTime.now,
+            },
+          });
+          yield* Queue.offer(events, {
+            type: "turn.terminal",
+            driver,
+            providerThreadId: after.providerTurns.at(-1)!.providerThreadId,
+            providerTurnId: after.providerTurns.at(-1)!.id,
+            runOrdinal: started.at(-1)!.runOrdinal,
+            failureItemOrdinal: 1,
+            status: "failed",
+            failure: {
+              class: "provider_error",
+              message: "Synthetic turn failure",
+              code: null,
+              retryable: false,
+            },
+            threadDisposition: "reusable",
+          });
+          yield* Fiber.join(failed);
+          yield* worker.drain();
+          assert.equal(
+            (yield* orchestrator.getThreadProjection(threadId)).runs.find(
+              (run) => run.id === started.at(-1)!.runId,
+            )?.status,
+            "failed",
+          );
+          yield* send("after failure", "start_immediately");
+          yield* worker.drain();
+          assert.equal(started.at(-1)!.message.text, "after failure");
+        }
       }).pipe(Effect.provide(layer));
     }),
   ),

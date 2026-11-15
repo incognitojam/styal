@@ -4390,7 +4390,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             case "queued-runs":
               return sql`
                 SELECT thread_id FROM orchestration_v2_projection_runs
-                WHERE status = 'queued'
+                WHERE status = 'queued' AND json_extract(payload_json, '$.withNextTurn') IS NOT 1
                   AND NOT EXISTS (
                     SELECT 1 FROM orchestration_v2_projection_runs AS active
                     WHERE active.thread_id = orchestration_v2_projection_runs.thread_id
@@ -4424,7 +4424,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                     -- The original task still waits for the latest unheld work.
                     (SELECT status FROM orchestration_v2_projection_runs
                      WHERE thread_id = child.thread_id
-                       AND NOT (status = 'queued' AND json_extract(payload_json, '$.queueHeld') IS 1)
+                       AND NOT (status = 'queued' AND (json_extract(payload_json, '$.queueHeld') IS 1 OR json_extract(payload_json, '$.withNextTurn') IS 1))
                      ORDER BY ordinal DESC LIMIT 1
                     ) IN ('completed', 'interrupted', 'failed', 'cancelled', 'rolled_back')
                     AND NOT EXISTS (
@@ -4451,7 +4451,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                 -- A held queue already went through recovery; rereading it on
                 -- every boot costs a projection read per held thread.
                 SELECT thread_id FROM orchestration_v2_projection_runs
-                WHERE status = 'queued'
+                WHERE status = 'queued' AND json_extract(payload_json, '$.withNextTurn') IS NOT 1
                   AND CASE WHEN json_valid(payload_json)
                     THEN json_extract(payload_json, '$.queueHeld') IS NOT 1
                     ELSE 1 END
@@ -4752,6 +4752,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
               WHERE thread_id = ${threadId} AND (
                 message_id IN (SELECT json_extract(payload_json, '$.userMessageId') FROM orchestration_v2_projection_runs
                   WHERE thread_id = ${threadId} AND run_id = ${runId})
+                OR (run_id = ${runId} AND role = 'user')
                 OR (role = 'user' AND lower(trim(json_extract(payload_json, '$.text'), ${javascriptTrimWhitespace})) = '/compact')
                 -- Earlier /goal turns defer context too; parseGoalCommand narrows this prefix match.
                 OR (role = 'user' AND trim(json_extract(payload_json, '$.text'), ${javascriptTrimWhitespace}) GLOB '/goal*')
@@ -5711,7 +5712,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
           WHERE thread.thread_id = ${threadId} AND thread.archived_at IS NULL AND thread.deleted_at IS NULL
             AND EXISTS (SELECT 1 FROM orchestration_v2_projection_runs
               WHERE thread_id = ${threadId} AND status = 'queued'
-                AND json_extract(payload_json, '$.queueHeld') IS NOT 1)
+                AND json_extract(payload_json, '$.queueHeld') IS NOT 1 AND json_extract(payload_json, '$.withNextTurn') IS NOT 1)
             AND NOT EXISTS (SELECT 1 FROM orchestration_v2_projection_runs
               WHERE thread_id = ${threadId}
                 AND status IN ('preparing', 'starting', 'running', 'waiting'))`;
@@ -6564,7 +6565,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
               WHERE candidate.thread_id = t.thread_id
                 AND NOT (
                   candidate.status = 'queued'
-                  AND json_extract(candidate.payload_json, '$.queueHeld') IS 1
+                  AND (json_extract(candidate.payload_json, '$.queueHeld') IS 1 OR json_extract(candidate.payload_json, '$.withNextTurn') IS 1)
                 )
                 AND NOT ${isSilentShellRun("candidate")}
               ORDER BY candidate.ordinal DESC, candidate.run_id DESC

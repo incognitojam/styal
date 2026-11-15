@@ -248,7 +248,10 @@ export function delegatedTaskProgress(projection: {
       .map((message) => message.runId),
   );
   const workRuns = projection.runs.filter(
-    (run) => !monitorRuns.has(run.id) && run.status !== "rolled_back",
+    (run) =>
+      !monitorRuns.has(run.id) &&
+      run.status !== "rolled_back" &&
+      !(run.status === "queued" && run.withNextTurn === true),
   );
   const active = workRuns.some(
     (run) => !terminal(run.status) && !(run.status === "queued" && run.queueHeld === true),

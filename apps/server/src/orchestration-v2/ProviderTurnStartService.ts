@@ -52,7 +52,11 @@ import {
   historicalMessage,
   latestNativeContextUsage,
 } from "@t3tools/provider-core/server/handoffBudget";
-import { deliverContextHandoffs, withInlineContext } from "./ContextHandoffDelivery.ts";
+import {
+  defersInlineContext,
+  deliverContextHandoffs,
+  withInlineContext,
+} from "./ContextHandoffDelivery.ts";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ProjectionStore from "./ProjectionStore.ts";
@@ -956,10 +960,18 @@ export const layer: Layer.Layer<
       });
       let effectiveHandoffs = handoffs;
       let resumeFellBack = false;
-      const userText = projectComposerContextForProvider({
-        text: message.text,
-        records: message.context?.records ?? [],
-      });
+      const carried = (run.nextTurnMessageIds ?? []).flatMap((id) =>
+        projection.messages.filter((entry) => entry.id === id),
+      );
+      const userText = [...carried, message]
+        .map((entry) =>
+          projectComposerContextForProvider({
+            text: entry.text,
+            records: entry.context?.records ?? [],
+          }),
+        )
+        .join("\n\n");
+      const turnAttachments = [...carried, message].flatMap((entry) => entry.attachments);
       // Codex and Claude parse /goal from the prompt, so it goes verbatim and history waits a turn.
       const goalDriver = session.driver === "codex" || session.driver === "claudeAgent";
       const goalCommand = goalDriver && parseGoalCommand(message) !== null;
@@ -1165,7 +1177,7 @@ export const layer: Layer.Layer<
               tokenCap,
               modelContextWindow,
               userText: turnNote === "" ? userText : `${turnNote}\n\n${userText}`,
-              attachments: message.attachments,
+              attachments: turnAttachments,
               providerThread: budgetProviderThread,
               nativeContextEstimate:
                 budgetProviderThread.contextUsage?.usedTokens === undefined
@@ -1432,7 +1444,7 @@ export const layer: Layer.Layer<
             handoffs: [...handoffs, ...resumedRetryHandoff],
             providerThread: { ...resumed.success, id: providerThread.id },
             budget: context.budget,
-            deferInline: isCompactionCommandMessage(message) || goalCommand,
+            deferInline: defersInlineContext(message, session.driver),
             alreadyDeliveredItemIds: context.deliveredItemIds,
             persist: () => Effect.void,
           }).pipe(
@@ -1719,7 +1731,7 @@ export const layer: Layer.Layer<
         function* (turnInput: Parameters<typeof session.startTurn>[0], compact = false) {
           const delivery = yield* deliverContextHandoffs({
             handoffs: [...effectiveHandoffs, ...retryHandoff],
-            deferInline: compact || goalCommand,
+            deferInline: defersInlineContext(message, session.driver),
             providerThread: runningProviderThread,
             budget,
             alreadyDeliveredItemIds: deliveredItemIds,
@@ -1849,7 +1861,7 @@ export const layer: Layer.Layer<
         message: {
           messageId: message.id,
           text: userText,
-          attachments: message.attachments,
+          attachments: turnAttachments,
           createdBy: message.createdBy,
           creationSource: message.creationSource,
           ...(message.scheduledTaskId === undefined

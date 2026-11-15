@@ -84,6 +84,8 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 
 ## Workspaces and agent sessions
 
+- **Leave a message for the next turn.** On web and desktop, right-click Send and choose **Send with next turn**. It waits without waking the agent, then joins the next ordinary prompt. T3 Code has no equivalent as of [revision fe59fa4](https://github.com/pingdotgg/t3code/tree/fe59fa44d0f12ba1e58b1cccc2c888ac99e743da), checked November 15, 2026. [Messages and context](./composer.md#send-with-next-turn).
+
 - **Follow-ups steer by default.** Messages sent while an agent is working join
   the active turn. Choose Queue in Follow-up behavior to wait for the turn to finish;
   saved Queue preferences are preserved. T3 Code defaults to Queue as of

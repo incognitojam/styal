@@ -144,7 +144,13 @@ it.effect.each(["startup", "shutdown"] as const)(
       const now = yield* DateTime.now;
       const bufferedThreads = [] as ThreadId[];
       const durableThreads = [] as ThreadId[];
-      for (const kind of ["buffered", "user", "notification", "delegated"] as const) {
+      for (const kind of [
+        "buffered",
+        "user",
+        "notification",
+        "delegated",
+        "with-next-turn",
+      ] as const) {
         const threadId = yield* createThread(`wake:${trigger}:${kind}`);
         const buffered = kind === "buffered";
         (buffered ? bufferedThreads : durableThreads).push(threadId);
@@ -153,6 +159,7 @@ it.effect.each(["startup", "shutdown"] as const)(
           userMessageId: messageId,
           startedAt: null,
           queuePosition: 1,
+          ...(kind === "with-next-turn" ? { withNextTurn: true } : {}),
         });
         yield* createRun(threadId, "completed", { ordinal: 2 });
         yield* projections.apply({
@@ -191,7 +198,10 @@ it.effect.each(["startup", "shutdown"] as const)(
       }
       assert.deepEqual(
         new Set(yield* projections.getRecoveryThreadIds("runtime")),
-        new Set([...bufferedThreads, ...durableThreads]),
+        new Set([
+          ...bufferedThreads,
+          ...durableThreads.filter((id) => !id.endsWith("with-next-turn")),
+        ]),
       );
       const summary = yield* recovery.reconcile(trigger);
       assert.equal(summary.terminalizedRuns, 1);
@@ -205,7 +215,9 @@ it.effect.each(["startup", "shutdown"] as const)(
       for (const threadId of durableThreads) {
         const projection = yield* projections.getThreadProjection(threadId);
         assert.equal(projection.runs[0]?.status, "queued");
-        assert.isTrue(projection.runs[0]?.queueHeld);
+        if (projection.runs[0]?.withNextTurn === true)
+          assert.isUndefined(projection.runs[0]?.queueHeld);
+        else assert.isTrue(projection.runs[0]?.queueHeld);
       }
       assert.deepEqual(yield* projections.getRecoveryThreadIds("runtime"), []);
     }).pipe(Effect.provide(layerRecoveryTest)),

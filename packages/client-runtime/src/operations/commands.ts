@@ -185,7 +185,7 @@ export interface StartThreadTurnInput extends ThreadCommandInput {
   readonly interactionMode: ProviderInteractionMode;
   readonly bootstrap?: StartThreadBootstrap;
   readonly sourceProposedPlan?: { readonly threadId: ThreadId; readonly planId: PlanId };
-  readonly dispatchMode?: "auto" | "queue" | "steer" | "restart" | "start";
+  readonly dispatchMode?: "auto" | "queue" | "steer" | "restart" | "start" | "next_turn";
 }
 
 export interface InterruptThreadTurnInput extends ThreadCommandInput {
@@ -778,7 +778,9 @@ export const startThreadTurn = Effect.fn("EnvironmentCommands.startThreadTurn")(
   const dispatchMode =
     requestedMode === "queue"
       ? ({ type: "queue_after_active" } as const)
-      : ({ type: "start_immediately" } as const);
+      : requestedMode === "next_turn"
+        ? ({ type: "with_next_turn" } as const)
+        : ({ type: "start_immediately" } as const);
   return yield* dispatch({
     type: "message.dispatch",
     commandId,
@@ -795,7 +797,9 @@ export const startThreadTurn = Effect.fn("EnvironmentCommands.startThreadTurn")(
     ...(input.titleSeed === undefined ? {} : { titleSeed: input.titleSeed }),
     ...(input.modelSelection === undefined ? {} : { modelSelection: input.modelSelection }),
     ...(input.sourceProposedPlan === undefined ? {} : { sourcePlanRef: input.sourceProposedPlan }),
-    ...(requestedMode !== "queue" ? { deliveryIntent: requestedMode } : {}),
+    ...(requestedMode !== "queue" && requestedMode !== "next_turn"
+      ? { deliveryIntent: requestedMode }
+      : {}),
     dispatchMode,
   });
 });

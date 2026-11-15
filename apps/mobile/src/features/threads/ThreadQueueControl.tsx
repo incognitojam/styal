@@ -303,6 +303,9 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
                       attachments={attachments}
                     />
                     <View className="min-w-0 flex-1 gap-0.5">
+                      {run.withNextTurn === true ? (
+                        <Text className="text-2xs text-foreground-muted">With next turn</Text>
+                      ) : null}
                       {message ? (
                         <QueuedRunSender environmentId={target.environmentId} message={message} />
                       ) : null}

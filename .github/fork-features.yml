@@ -3567,6 +3567,31 @@ features:
       tracking: []
       retire_when: Upstream marks times in agent messages and explains them in the reader's time zone, including zone-less times read in the environment's zone.
 
+  - id: messages-with-next-turn
+    title: Send messages with the next turn without waking the agent
+    prs: [1486]
+    status: maintained
+    tier: yield
+    invariants:
+      - Waiting messages never start or steer a turn and do not block settling or snoozing.
+      - The next ordinary prompt carries waiting messages first in queue order and consumes them even if the turn fails.
+      - Native commands follow the pending inline context deferral rule.
+      - Web and desktop offer sending only when the server advertises support; mobile displays waiting messages.
+    implementation_paths:
+      - apps/server/src/orchestration-v2/Orchestrator.ts
+      - apps/server/src/orchestration-v2/ProviderTurnStartService.ts
+      - apps/web/src/components/chat/ComposerPrimaryActions.tsx
+    upstream_paths:
+      - apps/server/src/orchestration-v2/Orchestrator.ts
+      - apps/server/src/orchestration-v2/ProviderTurnStartService.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/commit/fe59fa44d0f12ba1e58b1cccc2c888ac99e743da
+      retire_when: Upstream supports messages that wait without waking the agent and join the next ordinary prompt.
+    tests:
+      - apps/server/src/orchestration-v2/SteeringCompletion.integration.test.ts
+
   - id: missing-workspace-provider-guard
     title: Fail provider startup clearly for missing workspaces
     status: review-needed
