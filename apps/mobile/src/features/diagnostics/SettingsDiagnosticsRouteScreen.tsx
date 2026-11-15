@@ -21,7 +21,6 @@ import {
   parseStartupCrashRecords,
   type StartupCrashRecord,
 } from "./crash-log-model";
-import { NetworkReportsSection } from "./NetworkReportsSection";
 
 // expo-updates retains only seven days of logs.
 const LOG_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
@@ -127,8 +126,6 @@ export function SettingsDiagnosticsRouteScreen() {
             it over before sharing.
           </Text>
         </View>
-
-        <NetworkReportsSection />
       </ScrollView>
     </SettingsScreen>
   );

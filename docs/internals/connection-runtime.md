@@ -31,7 +31,7 @@ tailnet over DERP or a VPN can be slower than that on a live socket. On a slow
 link the answer can wait behind other data, so a 6-second probe that times out
 while frames still arrive waits another window, up to 15 seconds. A long
 suspension's probe that times out also replaces the socket regardless of the
-network report. The web and desktop foreground probe skips the fresh request,
+OS network status. The web and desktop foreground probe skips the fresh request,
 because a busy host can answer it before a queued probe. A mobile return
 without a background visit, such as from Control Center, never suspended the
 socket, so it neither probes nor resubscribes. Foregrounding also wakes a

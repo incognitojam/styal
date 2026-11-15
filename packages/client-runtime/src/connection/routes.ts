@@ -12,7 +12,7 @@ import {
   type ConnectionCatalogEntry,
   type ConnectionRoute,
 } from "./catalog.ts";
-import { BearerConnectionTarget, type ConnectionTarget, type PreparedConnection } from "./model.ts";
+import { BearerConnectionTarget, type ConnectionTarget } from "./model.ts";
 
 export type ConnectionRouteKind =
   | "relay"
@@ -71,7 +71,8 @@ export function routeHttpBaseUrl(route: ConnectionRoute): string | null {
   return profile?._tag === "BearerConnectionProfile" ? profile.httpBaseUrl : null;
 }
 
-function hostnameOf(httpBaseUrl: string | null): string | null {
+function routeHostname(route: ConnectionRoute): string | null {
+  const httpBaseUrl = routeHttpBaseUrl(route);
   if (httpBaseUrl === null) return null;
   try {
     return new URL(httpBaseUrl).hostname;
@@ -80,10 +81,7 @@ function hostnameOf(httpBaseUrl: string | null): string | null {
   }
 }
 
-/** `tailscale` is true when the route's saved profile says it goes through Tailscale. */
-function directRouteKind(httpBaseUrl: string | null, tailscale = false): ConnectionRouteKind {
-  const hostname = hostnameOf(httpBaseUrl);
-  if (hostname === null) return "public";
+function directAddressKind(hostname: string, tailscale = false) {
   if (isLocalLoopbackHost(hostname)) return "loopback";
   if (tailscale || isTailnetHost(hostname)) return "tailnet";
   if (isSharedAddressSpaceHost(hostname)) return "vpn";
@@ -98,25 +96,14 @@ export function connectionRouteKind(route: ConnectionRoute): ConnectionRouteKind
       return "ssh";
     case "PrimaryConnectionTarget":
     case "BearerConnectionTarget": {
+      const hostname = routeHostname(route);
+      if (hostname === null) return "public";
       const profile = Option.getOrNull(route.profile);
-      return directRouteKind(
-        routeHttpBaseUrl(route),
+      return directAddressKind(
+        hostname,
         profile?._tag === "BearerConnectionProfile" && profile.network === "tailscale",
       );
     }
-  }
-}
-
-/** The kind of route a prepared connection uses. */
-export function preparedConnectionRouteKind(connection: PreparedConnection): ConnectionRouteKind {
-  switch (connection.target._tag) {
-    case "RelayConnectionTarget":
-      return "relay";
-    case "SshConnectionTarget":
-      return "ssh";
-    case "PrimaryConnectionTarget":
-    case "BearerConnectionTarget":
-      return directRouteKind(connection.httpBaseUrl);
   }
 }
 
@@ -198,7 +185,7 @@ export function connectionRouteLabel(route: ConnectionRoute): string {
         : "SSH";
     }
     case "public":
-      return hostnameOf(routeHttpBaseUrl(route)) ?? "Remote link";
+      return routeHostname(route) ?? "Remote link";
   }
 }
 

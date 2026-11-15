@@ -91,15 +91,9 @@ const TelemetryEnvConfig = Config.all({
 export class AnalyticsService extends Context.Service<
   AnalyticsService,
   {
-    /**
-     * Record an anonymous event for best-effort buffered delivery. `capturedAt`
-     * backdates an event that describes an earlier period, such as a report a
-     * client could only send after reconnecting.
-     */
     readonly record: (
       event: string,
       properties?: Readonly<Record<string, unknown>>,
-      options?: { readonly capturedAt?: DateTime.Utc },
     ) => Effect.Effect<void>;
 
     readonly flush: Effect.Effect<void>;
@@ -202,9 +196,8 @@ export const make = Effect.gen(function* () {
     uuid: string,
     event: string,
     properties?: Readonly<Record<string, unknown>>,
-    capturedAt?: DateTime.Utc,
   ) =>
-    Effect.flatMap(capturedAt === undefined ? DateTime.now : Effect.succeed(capturedAt), (now) =>
+    Effect.flatMap(DateTime.now, (now) =>
       Ref.modify(bufferRef, (current) => {
         const appended = [
           ...current,
@@ -369,19 +362,14 @@ export const make = Effect.gen(function* () {
   });
 
   const record: AnalyticsService["Service"]["record"] = Effect.fn("AnalyticsService.record")(
-    function* (event, properties, options) {
+    function* (event, properties) {
       if (!(yield* telemetryEnabled) || !distinctId) return;
 
       // Catch Node UUID defects too; best-effort telemetry drops events without UUIDs.
       const uuid = yield* Effect.exit(crypto.uuidV7());
       if (Exit.isFailure(uuid)) return;
 
-      const enqueueResult = yield* enqueueBufferedEvent(
-        uuid.value,
-        event,
-        properties,
-        options?.capturedAt,
-      );
+      const enqueueResult = yield* enqueueBufferedEvent(uuid.value, event, properties);
       if (enqueueResult.dropped) {
         yield* Effect.logDebug("analytics buffer full; dropping oldest event", {
           size: enqueueResult.size,

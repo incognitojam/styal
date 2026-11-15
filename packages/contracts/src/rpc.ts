@@ -95,7 +95,6 @@ import {
   EnvironmentAuthorizationError,
 } from "./auth.ts";
 import { ClientActivityReportInput } from "./background.ts";
-import { ReportNetworkConditionsInput } from "./networkReports.ts";
 import {
   FilesystemGetMetadataInput,
   FilesystemGetMetadataResult,
@@ -605,7 +604,6 @@ export const WS_METHODS = {
   serverSignalProcess: "server.signalProcess",
   serverReportClientActivity: "server.reportClientActivity",
   serverReportForkClientUsage: "server.reportForkClientUsage",
-  serverReportNetworkConditions: "server.reportNetworkConditions",
   serverGetUsageSummary: "server.getUsageSummary",
   serverPreviewLegacyImport: "server.previewLegacyImport",
   serverImportLegacyData: "server.importLegacyData",
@@ -1106,11 +1104,6 @@ const WsCloudInstallRelayClientRpc = Rpc.make(WS_METHODS.cloudInstallRelayClient
 
 const WsServerReportClientActivityRpc = Rpc.make(WS_METHODS.serverReportClientActivity, {
   payload: ClientActivityReportInput,
-  error: EnvironmentAuthorizationError,
-});
-
-const WsServerReportNetworkConditionsRpc = Rpc.make(WS_METHODS.serverReportNetworkConditions, {
-  payload: ReportNetworkConditionsInput,
   error: EnvironmentAuthorizationError,
 });
 
@@ -2313,7 +2306,6 @@ export const WsRpcGroup = RpcGroup.make(
   WsScheduledTasksGetWebhookDeliveryRpc,
   WsServerReportClientActivityRpc,
   WsServerReportForkClientUsageRpc,
-  WsServerReportNetworkConditionsRpc,
   WsCloudGetRelayClientStatusRpc,
   WsCloudInstallRelayClientRpc,
   WsPullRequestsListRpc,

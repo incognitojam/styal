@@ -66,7 +66,6 @@ import {
   readDesktopSecondaryBootstrapsResult,
   type DesktopSecondaryBootstrapsRead,
 } from "./desktopLocal";
-import { networkReportsPlatformLayer } from "./networkReports";
 import * as ConnectionStorage from "./storage";
 import { clientPresentationMetadata } from "./clientMetadata";
 
@@ -832,8 +831,7 @@ type ConnectionPlatformLayerSource =
   | typeof layerCapabilities
   | typeof layerPlatformConnectionSource
   | typeof layerEnvironmentOwnedDataCleanup
-  | typeof layerRpcRequestObserver
-  | typeof networkReportsPlatformLayer;
+  | typeof layerRpcRequestObserver;
 
 export const layer: Layer.Layer<
   Layer.Success<ConnectionPlatformLayerSource>,
@@ -847,5 +845,4 @@ export const layer: Layer.Layer<
   layerPlatformConnectionSource,
   layerEnvironmentOwnedDataCleanup,
   layerRpcRequestObserver,
-  networkReportsPlatformLayer,
 );

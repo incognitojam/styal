@@ -5,7 +5,6 @@ import { OrchestrationDispatchCommandError } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as ClientFeatureUsage from "./telemetry/ClientFeatureUsage.ts";
-import { recordClientNetworkReports } from "./telemetry/ClientNetworkReports.ts";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
 import * as PeerLinkRequests from "./peer/PeerLinkRequests.ts";
 import * as IncomingMachineAccess from "./peer/IncomingMachineAccess.ts";
@@ -2740,8 +2739,6 @@ export const layerWsRpc = (
               ),
             ),
           ),
-        [WS_METHODS.serverReportNetworkConditions]: (input) =>
-          recordClientNetworkReports(input, analytics, originProps),
         [WS_METHODS.serverReportForkClientUsage]: (input) => reportForkClientUsage(input),
         [WS_METHODS.cloudGetRelayClientStatus]: (_input) => relayClient.resolve,
         [WS_METHODS.cloudInstallRelayClient]: (_input) =>

@@ -42,7 +42,6 @@ import {
   withoutEnvironmentThemes,
 } from "../state/serverConfigProjection.ts";
 import { environmentMismatchError } from "../connection/errors.ts";
-import { NetworkMeters } from "../networkReports/meter.ts";
 
 const SOCKET_OPEN_TIMEOUT = "15 seconds";
 
@@ -168,7 +167,6 @@ export const make = Effect.fn("RpcSessionFactory.make")(function* (
   options: RpcSessionOptions = {},
 ) {
   const webSocketConstructor = yield* Socket.WebSocketConstructor;
-  const networkMeters = yield* NetworkMeters;
   const serverConfigInput: ServerConfigSubscriptionInput = {
     ...(options.environmentThemes === true ? { environmentThemes: true } : {}),
     ...(options.usageLimitSources === true ? { usageLimitSources: true } : {}),
@@ -192,12 +190,8 @@ export const make = Effect.fn("RpcSessionFactory.make")(function* (
     const connected = yield* Deferred.make<void>();
     const disconnected = yield* Deferred.make<never, ConnectionTransientError>();
     const pingTimedOut = yield* Ref.make(false);
-    const meter = networkMeters.forConnection(connection);
     const hooks = RpcClient.ConnectionHooks.of({
-      onConnect: Deferred.succeed(connected, undefined).pipe(
-        Effect.andThen(Effect.sync(() => meter?.opened())),
-        Effect.asVoid,
-      ),
+      onConnect: Deferred.succeed(connected, undefined).pipe(Effect.asVoid),
       onDisconnect: Effect.all([Deferred.isDone(connected), Ref.get(pingTimedOut)]).pipe(
         Effect.flatMap(([wasConnected, timedOut]) =>
           Deferred.fail(
@@ -234,7 +228,6 @@ export const make = Effect.fn("RpcSessionFactory.make")(function* (
         Layer.succeed(Socket.WebSocketConstructor, (url, options) => {
           const socket = webSocketConstructor(url, options);
           socket.addEventListener("message", countFrame);
-          meter?.attach(socket);
           return socket;
         }),
       ),
@@ -245,9 +238,7 @@ export const make = Effect.fn("RpcSessionFactory.make")(function* (
         pingTimeout: PING_TIMEOUT,
         retryTransientErrors: false,
         retryPolicy: Schedule.recurs(0),
-        onPingTimeout: Ref.set(pingTimedOut, true).pipe(
-          Effect.andThen(Effect.sync(() => meter?.heartbeatTimedOut())),
-        ),
+        onPingTimeout: Ref.set(pingTimedOut, true),
       }),
     ).pipe(
       Layer.provide(
