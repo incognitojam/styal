@@ -55,33 +55,70 @@ export function ShortcutHintBadge(props: {
   return label === null ? null : <CornerBadge label={label} />;
 }
 
+/** The button edges a badge is placed from. */
+type BadgeAnchor = { left: number; right: number; top: number };
+
+const remeasureListeners = new Set<() => void>();
+let remeasureObserver: MutationObserver | null = null;
+let remeasureFrame = 0;
+
+/**
+ * Calls the listener once a frame after the page's elements change, through one observer
+ * shared by every badge and connected only while a badge is shown.
+ */
+function subscribeToPageChanges(listener: () => void): () => void {
+  remeasureListeners.add(listener);
+  if (remeasureObserver === null) {
+    remeasureObserver = new MutationObserver(() => {
+      if (remeasureFrame !== 0) return;
+      remeasureFrame = requestAnimationFrame(() => {
+        remeasureFrame = 0;
+        for (const remeasure of remeasureListeners) remeasure();
+      });
+    });
+    remeasureObserver.observe(document.body, { childList: true, subtree: true });
+  }
+  return () => {
+    remeasureListeners.delete(listener);
+    if (remeasureListeners.size > 0) return;
+    remeasureObserver?.disconnect();
+    remeasureObserver = null;
+    cancelAnimationFrame(remeasureFrame);
+    remeasureFrame = 0;
+  };
+}
+
+function sameAnchor(a: BadgeAnchor | null, b: BadgeAnchor | null): boolean {
+  return (
+    a === b ||
+    (a !== null && b !== null && a.left === b.left && a.right === b.right && a.top === b.top)
+  );
+}
+
 function CornerBadge(props: { label: string }) {
   const anchorRef = useRef<HTMLSpanElement>(null);
-  const [anchor, setAnchor] = useState<DOMRect | null>(null);
+  const [anchor, setAnchor] = useState<BadgeAnchor | null>(null);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- measures the button in the DOM before paint and again when the page changes, such as a dialog opening over it
   useLayoutEffect(() => {
     const measure = () => {
       const button = anchorRef.current?.parentElement;
       const rect = button?.getBoundingClientRect();
-      if (!button || !rect || rect.width === 0) return setAnchor(null);
-      // A dialog, its backdrop or a popover covering the button means it can't be clicked.
-      const hit = document.elementFromPoint(
-        (rect.left + rect.right) / 2,
-        (rect.top + rect.bottom) / 2,
-      );
-      setAnchor(hit && button.contains(hit) ? rect : null);
+      let next: BadgeAnchor | null = null;
+      if (button && rect && rect.width > 0) {
+        // A dialog, its backdrop or a popover covering the button means it can't be clicked.
+        const hit = document.elementFromPoint(
+          (rect.left + rect.right) / 2,
+          (rect.top + rect.bottom) / 2,
+        );
+        if (hit && button.contains(hit)) {
+          next = { left: rect.left, right: rect.right, top: rect.top };
+        }
+      }
+      // Streaming output changes the page every frame; an unchanged badge should not re-render.
+      setAnchor((previous) => (sameAnchor(previous, next) ? previous : next));
     };
     measure();
-    let frame = 0;
-    const observer = new MutationObserver(() => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(measure);
-    });
-    observer.observe(document.body, { childList: true, subtree: true });
-    return () => {
-      observer.disconnect();
-      cancelAnimationFrame(frame);
-    };
+    return subscribeToPageChanges(measure);
   }, []);
   return (
     <>
