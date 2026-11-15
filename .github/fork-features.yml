@@ -1212,7 +1212,6 @@ features:
       - apps/desktop/src/ipc/methods/serverExposure.ts
       - apps/desktop/src/ipc/methods/shutdownConfirmation.ts
       - apps/desktop/src/ipc/methods/wsl.ts
-      - apps/desktop/src/telemetry/DesktopLaunchTiming.ts
       - apps/desktop/src/telemetry/DesktopTelemetryPublisher.ts
       - apps/desktop/src/updates/DesktopIdleRestart.ts
       - apps/desktop/src/updates/DesktopNativeUpdateStaging.ts
@@ -1258,7 +1257,6 @@ features:
       - apps/desktop/src/backend/DesktopServerExposure.test.ts
       - apps/desktop/src/electron/ElectronUpdater.test.ts
       - apps/desktop/src/ipc/methods/wsl.test.ts
-      - apps/desktop/src/telemetry/DesktopLaunchTiming.test.ts
       - apps/desktop/src/telemetry/DesktopTelemetryPublisher.test.ts
       - apps/desktop/src/updates/DesktopIdleRestart.test.ts
       - apps/desktop/src/updates/DesktopNativeUpdateStaging.test.ts

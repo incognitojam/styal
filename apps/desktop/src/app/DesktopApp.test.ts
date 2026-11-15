@@ -23,7 +23,6 @@ vi.mock("../updates/DesktopRemoteUpdates.ts", () => ({ listen: Effect.void }));
 vi.mock("./DesktopStartupRecovery.ts", () => ({ listen: Effect.void }));
 
 import * as DesktopDiscordPresence from "../discord/DesktopDiscordPresence.ts";
-import * as DesktopLaunchTiming from "../telemetry/DesktopLaunchTiming.ts";
 import * as DesktopPreviewApp from "../previewApp/DesktopPreviewApp.ts";
 import * as DesktopShutdownConfirmation from "./DesktopShutdownConfirmation.ts";
 import * as DesktopShutdownGuard from "./DesktopShutdownGuard.ts";
@@ -198,9 +197,6 @@ it.effect(
         Effect.provide(
           Layer.mergeAll(
             Layer.mock(DesktopDiscordPresence.DesktopDiscordPresence, {}),
-            Layer.mock(DesktopLaunchTiming.DesktopLaunchTiming, {
-              markBackendStarting: Effect.void,
-            }),
             Layer.mock(DesktopPreviewApp.DesktopPreviewApp, { managesInstalledApp: false }),
             Layer.mock(DesktopShutdownConfirmation.DesktopShutdownConfirmation, {}),
             Layer.mock(DesktopShutdownGuard.DesktopShutdownGuard, {}),

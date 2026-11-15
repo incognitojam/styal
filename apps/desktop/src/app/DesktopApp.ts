@@ -1,4 +1,3 @@
-import * as DesktopLaunchTiming from "../telemetry/DesktopLaunchTiming.ts";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Duration from "effect/Duration";
@@ -262,7 +261,6 @@ const bootstrap = Effect.gen(function* () {
     if (settings.wslOnly === true && settings.wslBackendEnabled === true) {
       yield* desktopWindow.showConnectingSplash;
     }
-    yield* (yield* DesktopLaunchTiming.DesktopLaunchTiming).markBackendStarting;
     yield* primaryBackend.start;
     yield* logBootstrapInfo("bootstrap backend start requested");
     // WSL-only fallback can change the primary endpoint before readiness.

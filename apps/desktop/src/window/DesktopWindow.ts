@@ -45,7 +45,6 @@ import * as DesktopClientSettings from "../settings/DesktopClientSettings.ts";
 import * as DesktopDiscordPresence from "../discord/DesktopDiscordPresence.ts";
 import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as DesktopRendererHistory from "../telemetry/DesktopRendererHistory.ts";
-import * as DesktopLaunchTiming from "../telemetry/DesktopLaunchTiming.ts";
 import { makeQuitShortcutHandler } from "./QuitHold.ts";
 import { copyContextMenuImage } from "./ContextMenuImage.ts";
 
@@ -328,7 +327,6 @@ export const make = Effect.gen(function* () {
   const discordPresence = yield* DesktopDiscordPresence.DesktopDiscordPresence;
   const electronApp = yield* ElectronApp.ElectronApp;
   const rendererHistory = yield* DesktopRendererHistory.DesktopRendererHistory;
-  const launchTiming = yield* DesktopLaunchTiming.DesktopLaunchTiming;
   const backendReadyRef = yield* Ref.make(false);
   let backendHasStarted = false;
   let mainClosedDuringStartup = false;
@@ -959,7 +957,6 @@ export const make = Effect.gen(function* () {
       if (!restoreFullscreen && persistedSettings.mainWindowMaximized) window.maximize();
       yield* electronWindow.reveal(window);
       yield* dismissConnectingSplash;
-      yield* launchTiming.markWindowShown;
     });
     pendingMainReveals.set(window, revealWhenReady);
     bindFirstRevealTrigger(revealSubscribers, () => {
@@ -1154,7 +1151,6 @@ export const make = Effect.gen(function* () {
     handleBackendReady: Effect.fn("desktop.window.handleBackendReady")(function* (httpBaseUrl) {
       backendHasStarted = true;
       yield* Ref.set(backendReadyRef, true);
-      yield* launchTiming.markBackendReady;
       yield* logWindowInfo("backend ready", { source: "http", url: httpBaseUrl.href });
       if (!mainClosedDuringStartup) yield* createMainIfBackendReady;
     }),
