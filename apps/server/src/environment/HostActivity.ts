@@ -36,7 +36,9 @@ type AffectedThread = {
 };
 
 function stoppableBackgroundTasks(thread: HostThread) {
-  return (thread.pendingBackgroundTasks ?? []).filter((task) => !isWatchTask(task));
+  return (thread.pendingBackgroundTasks ?? []).filter(
+    (task) => !isWatchTask(task) && !(task.kind === "subagent" && task.childThreadId !== undefined),
+  );
 }
 
 function isActiveHostThread(thread: HostThread): boolean {

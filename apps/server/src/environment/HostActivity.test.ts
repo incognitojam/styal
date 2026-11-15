@@ -75,7 +75,7 @@ describe("host session activity", () => {
       ]),
     ).toMatchObject({ activeSessions: 1, continuableSessions: 0, waitingSessions: 2 });
   });
-  it("does not count pull request and workflow watches, which outlive a restart", () => {
+  it("does not count watches or delegated child threads, which outlive a restart", () => {
     const watches = derivePendingBackgroundWork({
       latestRun: null,
       providerThreads: [],
@@ -111,10 +111,31 @@ describe("host session activity", () => {
         status: "completed",
         pendingBackgroundTasks: [...watches, { taskId: "shell", kind: "command" }],
       },
+      {
+        ...thread("delegating"),
+        status: "completed",
+        pendingBackgroundTasks: [
+          { taskId: "delegated", kind: "subagent", childThreadId: ThreadId.make("child") },
+        ],
+      },
+      {
+        ...thread("native"),
+        status: "completed",
+        pendingBackgroundTasks: [{ taskId: "native", kind: "subagent" }],
+      },
+      {
+        ...thread("running-parent"),
+        status: "running",
+        pendingBackgroundTasks: [
+          { taskId: "delegated", kind: "subagent", childThreadId: ThreadId.make("child") },
+        ],
+      },
     ]);
-    expect(summary).toMatchObject({ activeSessions: 1, waitingSessions: 0 });
+    expect(summary).toMatchObject({ activeSessions: 3, waitingSessions: 0 });
     expect(summary.affected.map(({ thread }) => [thread.threadId, thread.reasons])).toEqual([
       ["both", ["command"]],
+      ["native", ["subagent"]],
+      ["running-parent", ["running"]],
     ]);
   });
   it("protects dispatched turns while preparing or starting", () => {
