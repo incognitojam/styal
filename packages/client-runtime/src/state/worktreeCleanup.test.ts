@@ -10,6 +10,7 @@ import {
   worktreeCleanupPatternList,
   worktreeCleanupPatternShape,
   worktreeCleanupPreviewComplete,
+  worktreeCleanupPreviewCoverage,
   worktreeCleanupResults,
   worktreeCleanupWorkFolders,
 } from "./worktreeCleanup.ts";
@@ -269,6 +270,26 @@ describe("unknown results stay unknown", () => {
       ]),
     );
     expect(matches.get("dist")?.incomplete).toBe(true);
+  });
+});
+
+describe("worktreeCleanupPreviewCoverage", () => {
+  it("never counts unreached worktrees as checked", () => {
+    const cut = preview([
+      entry({ worktreePath: "/w/done" }),
+      entry({ worktreePath: "/w/partly", entriesTruncated: true, measurementComplete: false }),
+      entry({ worktreePath: "/w/late", status: "kept", reason: "not-checked" }),
+    ]);
+    expect(worktreeCleanupPreviewCoverage({ ...cut, deadlineReached: true })).toBe(
+      "Not fully checked: 1 worktree checked in full, 1 partly, 1 not reached. The check stops after 30 seconds. Sizes are lower bounds.",
+    );
+    expect(
+      worktreeCleanupResults(cut, new Set(["dist"])).notCleaned.map((row) => row.reason),
+    ).toContain("not-reached");
+  });
+
+  it("says nothing when everything was checked", () => {
+    expect(worktreeCleanupPreviewCoverage(preview([entry({})]))).toBeNull();
   });
 });
 

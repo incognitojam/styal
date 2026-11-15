@@ -183,7 +183,7 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 
 - **Threads continue after sign-in.** A thread stopped because its provider is signed out waits, including a delegated thread and whatever is waiting on it. Sign in from styal or that provider's own CLI and it continues once. **Stop waiting** ends the wait, and it never counts as working.
 
-- **Regenerable worktree files.** `styal.json` can list the ignored files a project recreates, under `worktreeCleanup`. Each machine approves the patterns one at a time in Settings → Worktrees, and a Preview shows what they would delete from each worktree and the disk space that would free, without deleting anything. See [Project settings](./project-settings.md#regenerable-worktree-files). Compared with upstream revision `313f601fb2366fad7dd26b7b55844c7c5d750cf0`.
+- **Regenerable worktree files.** `styal.json` can list the ignored files a project recreates, under `worktreeCleanup`. Each machine approves the patterns one at a time in Settings → Worktrees, and **Check worktrees** shows what they would delete from each worktree and the disk space that would free, without deleting anything. See [Project settings](./project-settings.md#regenerable-worktree-files). Compared with upstream revision `313f601fb2366fad7dd26b7b55844c7c5d750cf0`.
 
 ## GitHub and code review
 

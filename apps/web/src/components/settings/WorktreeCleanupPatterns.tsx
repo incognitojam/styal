@@ -8,6 +8,7 @@ import {
   worktreeCleanupPathsByPattern,
   worktreeCleanupPatternShape,
   worktreeCleanupPreviewComplete,
+  worktreeCleanupPreviewCoverage,
   worktreeCleanupWorkFolders,
   worktreeCleanupResults,
   type WorktreeCleanupNotCleanedReason,
@@ -16,7 +17,6 @@ import {
 } from "@t3tools/client-runtime/state/worktreeCleanup";
 import type { EnvironmentId, WorktreeCleanupPreview } from "@t3tools/contracts";
 import {
-  ChevronDownIcon,
   ChevronRightIcon,
   FileIcon,
   FolderIcon,
@@ -50,9 +50,7 @@ import {
 import { toastManager } from "../ui/toast";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../ui/table";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { FoldedSettingsSection } from "./FoldedSettingsSection";
-import { SettingsGroup } from "./SettingsGroup";
-import { SettingsRow, SettingsSection } from "./settingsLayout";
+import { ForkFeatureBadge, SettingsSection } from "./settingsLayout";
 import { useSettingsScope } from "./SettingsScopeContext";
 
 interface CleanupCheckout {
@@ -142,143 +140,138 @@ function CheckoutCleanup({
       }
     : null;
   const approved = new Set(list.approved);
-
+  const sectionId = `worktree-cleanup-patterns-${member.id}`;
+  const sectionTitle = showMachine
+    ? `Regenerable files on ${environment.label}`
+    : "Regenerable files";
+  const dialog = (
+    <ApprovalDialog
+      open={reviewing}
+      list={list}
+      matches={matches}
+      pathsByPattern={state ? worktreeCleanupPathsByPattern(state.preview) : null}
+      checking={checking}
+      environmentId={environmentId}
+      projectId={member.id}
+      projectName={member.title}
+      onClose={() => setReviewing(false)}
+    />
+  );
+  const approveButton =
+    list.pending.length > 0 ? (
+      <Button size="xs" variant="outline" onClick={openReview}>
+        Approve patterns…
+      </Button>
+    ) : null;
+  const checkButton = (
+    <Button
+      size="xs"
+      variant="outline"
+      disabled={checking || !canPreview}
+      onClick={() => void preview()}
+    >
+      {checking ? "Checking…" : "Check worktrees"}
+    </Button>
+  );
   return (
     <SettingsSection
-      id={`worktree-cleanup-patterns-${member.id}`}
-      title={showMachine ? `Regenerable files on ${environment.label}` : "Regenerable files"}
-      variant="plain"
+      id={sectionId}
+      title={sectionTitle}
+      titleAction={<StatusLine list={list} />}
+      headerAction={
+        <span className="flex items-center gap-1.5">
+          {approveButton}
+          {checkButton}
+        </span>
+      }
     >
-      <SettingsGroup>
-        <PatternListRow
+      <div className="flex flex-col px-3 py-2 sm:px-4">
+        <p className="pt-1 pb-2 text-xs text-muted-foreground">
+          styal may delete ignored files that match approved patterns from settled worktrees. Check
+          worktrees shows what that would delete now.
+        </p>
+        <PatternList
           list={list}
           matches={matches}
           environmentId={environmentId}
           projectId={member.id}
-          onReview={openReview}
         />
-        <PreviewRow
-          state={state}
-          approved={approved}
-          checking={checking}
-          canPreview={canPreview}
-          onPreview={() => void preview()}
-        />
-      </SettingsGroup>
-      {state ? <PreviewResults preview={state.preview} approved={approved} /> : null}
-      <ApprovalDialog
-        open={reviewing}
-        list={list}
-        matches={matches}
-        pathsByPattern={state ? worktreeCleanupPathsByPattern(state.preview) : null}
-        checking={checking}
-        environmentId={environmentId}
-        projectId={member.id}
-        projectName={member.title}
-        onClose={() => setReviewing(false)}
-      />
+      </div>
+      {state ? (
+        <ResultsBody preview={state.preview} approved={approved} />
+      ) : checking ? (
+        <p className="px-3 py-2.5 text-xs text-muted-foreground sm:px-4">Checking worktrees…</p>
+      ) : !canPreview ? (
+        <p className="px-3 py-2.5 text-xs text-muted-foreground sm:px-4">
+          Checking worktrees lists file names on this machine, so it needs permission to read files
+          here.
+        </p>
+      ) : null}
+      {dialog}
     </SettingsSection>
   );
 }
 
-function DetailsToggle({ open }: { open: boolean }) {
+function StatusLine({ list }: { list: WorktreeCleanupPatternList }) {
+  const pending = list.pending.length;
+  const approved = list.approved.length;
   return (
-    <>
-      {open ? "Hide details" : "Show details"}
-      <ChevronDownIcon aria-hidden className={cn("transition-transform", open && "rotate-180")} />
-    </>
+    <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+      {pending > 0 ? (
+        <TriangleAlertIcon aria-hidden className="size-3.5 shrink-0 text-warning" />
+      ) : null}
+      {pending > 0
+        ? `${pending} ${pending === 1 ? "pattern needs" : "patterns need"} approval${approved > 0 ? ` · ${approved} approved` : ""}`
+        : approved === 0
+          ? "No patterns in styal.json"
+          : `${approved} ${approved === 1 ? "pattern" : "patterns"} approved`}
+      <ForkFeatureBadge />
+    </span>
   );
 }
 
-function PatternListRow({
+function PatternList({
   list,
   matches,
   environmentId,
   projectId,
-  onReview,
 }: {
   list: WorktreeCleanupPatternList;
   matches: PreviewMatches | null;
   environmentId: EnvironmentId;
   projectId: SidebarProjectGroupMember["id"];
-  onReview: () => void;
 }) {
-  const [open, setOpen] = useState(false);
   const canRevoke = useAtomValue(worktreeCleanup.revoke.permissionAtom(environmentId));
   const revoke = useAtomCommand(worktreeCleanup.revoke, { reportFailure: false });
-  const pending = list.pending.length;
-  const declared = pending + list.approved.length;
   const revokePattern = async (pattern: string | null) => {
     const result = await revoke({ environmentId, input: { projectId, pattern } });
     reportHardwareResult(result, "Could not revoke the approval");
   };
-  const description =
-    declared === 0
-      ? "styal.json no longer lists cleanup patterns. Patterns approved earlier apply again if it lists them."
-      : pending === 0
-        ? `Every pattern in styal.json is approved on this machine. styal may delete matching ignored files from settled worktrees.`
-        : list.approved.length === 0
-          ? "styal.json lists ignored files styal may delete from settled worktrees. Nothing is deleted until you approve them on this machine."
-          : `${list.approved.length} of ${declared} patterns are approved on this machine. ${pending === 1 ? "The other one deletes" : "The others delete"} nothing until you approve ${pending === 1 ? "it" : "them"}.`;
   return (
-    <Collapsible open={open} onOpenChange={setOpen}>
-      <SettingsRow
-        forkFeature="worktree-declared-cleanup"
-        title={
-          <span className="flex items-center gap-1.5">
-            {pending > 0 ? (
-              <TriangleAlertIcon aria-hidden className="size-3.5 shrink-0 text-warning" />
-            ) : null}
-            {pending > 0
-              ? `${pending} cleanup ${pending === 1 ? "pattern needs" : "patterns need"} approval`
-              : "Cleanup patterns"}
-          </span>
-        }
-        description={description}
-        control={
-          <span className="flex items-center gap-1.5">
-            <CollapsibleTrigger render={<Button variant="ghost-muted" size="xs" />}>
-              <DetailsToggle open={open} />
-            </CollapsibleTrigger>
-            {pending > 0 ? (
-              <Button size="xs" variant="outline" onClick={onReview}>
-                Review
-              </Button>
-            ) : null}
-          </span>
-        }
-      />
-      <CollapsiblePanel>
-        <div className="flex flex-col px-3 pb-3 sm:px-4">
-          {[...list.pending, ...list.approved].map((pattern) => (
-            <PatternRow
-              key={pattern}
-              pattern={pattern}
-              pending={list.pending.includes(pattern)}
-              matches={matches}
-              {...(canRevoke ? { onRevoke: () => void revokePattern(pattern) } : {})}
-            />
-          ))}
-          {list.earlier.length > 0 ? (
-            <EarlierPatterns
-              earlier={list.earlier}
-              {...(canRevoke ? { onForget: (pattern: string) => void revokePattern(pattern) } : {})}
-            />
-          ) : null}
-          {canRevoke && list.approved.length + list.earlier.length > 0 ? (
-            <div className="flex justify-end pt-2">
-              <Button
-                size="xs"
-                variant="destructive-outline"
-                onClick={() => void revokePattern(null)}
-              >
-                Revoke all
-              </Button>
-            </div>
-          ) : null}
+    <>
+      {[...list.pending, ...list.approved].map((pattern) => (
+        <PatternRow
+          key={pattern}
+          pattern={pattern}
+          pending={list.pending.includes(pattern)}
+          matches={matches}
+          {...(canRevoke ? { onRevoke: () => void revokePattern(pattern) } : {})}
+        />
+      ))}
+      {list.earlier.length > 0 ? (
+        <EarlierPatterns
+          earlier={list.earlier}
+          {...(canRevoke ? { onForget: (pattern: string) => void revokePattern(pattern) } : {})}
+        />
+      ) : null}
+      {canRevoke && list.approved.length + list.earlier.length > 0 ? (
+        <div className="flex justify-end pt-2">
+          <Button size="xs" variant="destructive-outline" onClick={() => void revokePattern(null)}>
+            Revoke all
+          </Button>
         </div>
-      </CollapsiblePanel>
-    </Collapsible>
+      ) : null}
+    </>
   );
 }
 
@@ -436,40 +429,6 @@ function EarlierPatterns({
   );
 }
 
-function PreviewRow({
-  state,
-  approved,
-  checking,
-  canPreview,
-  onPreview,
-}: {
-  state: PreviewState;
-  approved: ReadonlySet<string>;
-  checking: boolean;
-  canPreview: boolean;
-  onPreview: () => void;
-}) {
-  const results = state ? worktreeCleanupResults(state.preview, approved) : null;
-  const checked = state?.preview.worktrees.length ?? 0;
-  return (
-    <SettingsRow
-      title="Preview"
-      description={
-        results
-          ? `Checked ${checked} ${checked === 1 ? "worktree" : "worktrees"}. ${results.cleaned.length === 0 ? "None would be cleaned." : `${results.cleaned.length} would be cleaned, freeing ${results.incomplete ? "at least " : ""}${formatBytes(results.totalBytes)}.`}`
-          : canPreview
-            ? "See what the approved patterns would delete from this project's worktrees right now. Nothing is deleted."
-            : "Preview lists file names in this machine's worktrees, so it needs permission to read files here."
-      }
-      control={
-        <Button size="sm" variant="outline" disabled={checking || !canPreview} onClick={onPreview}>
-          {checking ? "Checking…" : state ? "Check again" : "Preview"}
-        </Button>
-      }
-    />
-  );
-}
-
 const NOT_CLEANED_LABEL: Record<WorktreeCleanupNotCleanedReason, string> = {
   "frees-nothing": "Frees nothing",
   "nothing-matched": "Nothing matched",
@@ -479,6 +438,7 @@ const NOT_CLEANED_LABEL: Record<WorktreeCleanupNotCleanedReason, string> = {
   "not-managed": "Not a styal worktree",
   "too-large": "Too many files to check",
   "not-fully-checked": "Not fully checked",
+  "not-reached": "Not reached",
 };
 
 function notCleanedTitle(row: WorktreeCleanupResultRow) {
@@ -487,6 +447,8 @@ function notCleanedTitle(row: WorktreeCleanupResultRow) {
       return "Its files share disk space with other files, such as a pnpm store, so deleting them frees nothing.";
     case "not-fully-checked":
       return "The check stopped before it reached everything in this worktree.";
+    case "not-reached":
+      return "The check ran out of time before it reached this worktree.";
     case "not-settled":
       return row.entry.holdingThread
         ? `“${row.entry.holdingThread.title}” has not settled.`
@@ -519,7 +481,7 @@ function folderName(path: string) {
   return path.split(/[\\/]/).findLast(Boolean) ?? path;
 }
 
-function PreviewResults({
+function ResultsBody({
   preview,
   approved,
 }: {
@@ -527,49 +489,20 @@ function PreviewResults({
   approved: ReadonlySet<string>;
 }) {
   const results = worktreeCleanupResults(preview, approved);
-  const [showOthers, setShowOthers] = useState(false);
-  const counts = new Map<string, number>();
-  for (const row of results.notCleaned) {
-    const label = NOT_CLEANED_LABEL[row.reason!].toLowerCase();
-    counts.set(label, (counts.get(label) ?? 0) + 1);
-  }
-  const rows = showOthers ? [...results.cleaned, ...results.notCleaned] : results.cleaned;
+  const coverage = worktreeCleanupPreviewCoverage(preview);
   return (
-    <FoldedSettingsSection
-      id="worktree-cleanup-preview-results"
-      title="Preview results"
-      headerPlacement="inside"
-      summary={`${results.cleaned.length} of ${preview.worktrees.length} worktrees · ${results.incomplete ? "at least " : ""}${formatBytes(results.totalBytes)}`}
-    >
-      {rows.length > 0 ? (
-        <div className="max-h-[26rem] overflow-y-auto px-1 sm:px-2">
-          <ResultTable rows={rows} approved={approved} />
-        </div>
+    <div>
+      <div className="max-h-[26rem] overflow-y-auto px-1 sm:px-2">
+        <ResultTable
+          rows={[...results.cleaned, ...results.notCleaned]}
+          approved={approved}
+          total={`${results.incomplete ? "at least " : ""}${formatBytes(results.totalBytes)}`}
+        />
+      </div>
+      {coverage ? (
+        <p className="border-t px-3 py-2 text-xs text-muted-foreground sm:px-4">{coverage}</p>
       ) : null}
-      {results.notCleaned.length > 0 ? (
-        <div className="flex items-center justify-between gap-3 border-t px-3 py-2 text-xs text-muted-foreground sm:px-4">
-          <span>
-            {results.notCleaned.length} not cleaned:{" "}
-            {[...counts].map(([label, count]) => `${count} ${label}`).join(", ")}.
-          </span>
-          <Button variant="ghost-muted" size="xs" onClick={() => setShowOthers(!showOthers)}>
-            {showOthers ? "Hide them" : "Show them"}
-          </Button>
-        </div>
-      ) : null}
-      {preview.deadlineReached ? (
-        <p className="border-t px-3 py-2 text-xs text-muted-foreground sm:px-4">
-          The preview stopped after 30 seconds, so some worktrees were not fully checked and sizes
-          are lower bounds.
-        </p>
-      ) : null}
-      {preview.worktreesTruncated ? (
-        <p className="border-t px-3 py-2 text-xs text-muted-foreground sm:px-4">
-          Only the first {preview.worktrees.length} worktrees were checked. The rest of this
-          project's worktrees are not included.
-        </p>
-      ) : null}
-    </FoldedSettingsSection>
+    </div>
   );
 }
 
@@ -585,17 +518,19 @@ const KEPT_LABEL = {
 function ResultTable({
   rows,
   approved,
+  total,
 }: {
   rows: readonly WorktreeCleanupResultRow[];
   approved: ReadonlySet<string>;
+  total: string;
 }) {
   const [open, setOpen] = useState<string | null>(null);
   return (
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>Worktree</TableHead>
-          <TableHead className="text-right">Would free</TableHead>
+          <TableHead>Worktree ({rows.length})</TableHead>
+          <TableHead className="text-right">Would free ({total})</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -612,7 +547,10 @@ function ResultTable({
                     <button
                       type="button"
                       aria-expanded={expanded}
-                      className="flex items-center gap-1 rounded-sm font-mono outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+                      className={cn(
+                        "flex items-center gap-1 rounded-sm font-mono outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
+                        row.reason !== null && "text-muted-foreground",
+                      )}
                       onClick={() => setOpen(expanded ? null : entry.worktreePath)}
                     >
                       <ChevronRightIcon
@@ -625,7 +563,12 @@ function ResultTable({
                       {folderName(entry.worktreePath)}
                     </button>
                   ) : (
-                    <span className="flex items-center gap-1 pl-4.5 font-mono">
+                    <span
+                      className={cn(
+                        "flex items-center gap-1 pl-4.5 font-mono",
+                        row.reason !== null && "text-muted-foreground",
+                      )}
+                    >
                       {folderName(entry.worktreePath)}
                     </span>
                   )}
@@ -719,7 +662,6 @@ function ApprovalDialog({
     }
     onClose();
   };
-  const onlyNew = list.approved.length > 0 || list.earlier.length > 0;
   const workFolders = [
     ...new Set(
       pending.flatMap((pattern) =>
@@ -732,11 +674,7 @@ function ApprovalDialog({
       <DialogPopup>
         <DialogHeader>
           <DialogTitle>
-            {onlyNew
-              ? pending.length === 1
-                ? "Approve a new cleanup pattern?"
-                : "Approve new cleanup patterns?"
-              : "Approve cleanup patterns?"}
+            {pending.length === 1 ? "Approve pattern?" : "Approve patterns?"}
           </DialogTitle>
           <DialogDescription>
             Once approved on this machine, styal may delete ignored files matching{" "}

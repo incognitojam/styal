@@ -141,6 +141,32 @@ export function worktreeCleanupPatternShape(pattern: string): "file" | "director
   return last.startsWith("*.") ? "file" : "directory";
 }
 
+/**
+ * What a preview that stopped early did cover, as one line, or null when it
+ * covered everything. It never counts unreached worktrees as checked.
+ */
+export function worktreeCleanupPreviewCoverage(preview: WorktreeCleanupPreview): string | null {
+  if (worktreeCleanupPreviewComplete(preview)) return null;
+  const total = preview.worktrees.length;
+  const notReached = preview.worktrees.filter((entry) => entry.reason === "not-checked").length;
+  const partly = preview.worktrees.filter(
+    (entry) =>
+      entry.status === "eligible" &&
+      (entry.entriesTruncated ||
+        !entry.measurementComplete ||
+        entry.kept.some((kept) => kept.reason === "too-large-to-verify")),
+  ).length;
+  const full = total - notReached - partly;
+  const parts = [
+    `${full} ${full === 1 ? "worktree" : "worktrees"} checked in full`,
+    ...(partly > 0 ? [`${partly} partly`] : []),
+    ...(notReached > 0 ? [`${notReached} not reached`] : []),
+  ];
+  const why = preview.deadlineReached ? " The check stops after 30 seconds." : "";
+  const capped = preview.worktreesTruncated ? " Only the first worktrees were included." : "";
+  return `Not fully checked: ${parts.join(", ")}.${why}${capped} Sizes are lower bounds.`;
+}
+
 export interface WorktreeCleanupPatternMatches {
   readonly kind: "file" | "directory" | "mixed";
   readonly count: number;
@@ -254,6 +280,7 @@ export type WorktreeCleanupNotCleanedReason =
   | "frees-nothing"
   | "nothing-matched"
   | "not-fully-checked"
+  | "not-reached"
   | "too-large"
   | "not-settled"
   | "missing"
@@ -304,7 +331,7 @@ export function worktreeCleanupResults(
             : entry.reason === "symbolic-link"
               ? "symbolic-link"
               : entry.reason === "not-checked"
-                ? "not-fully-checked"
+                ? "not-reached"
                 : "not-managed";
       return { entry, freedBytes: 0, incomplete: false, reason };
     }
