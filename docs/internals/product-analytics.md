@@ -58,10 +58,9 @@ A command whose id was already accepted is a retry, so it records nothing again.
 One identity can appear in several client groups during a period; adding those
 groups double-counts users.
 
-Thread lifecycle events (`client.thread.settled`, `unsettled`, `archived`,
-`unarchived`, and `deleted`) record accepted commands. `client.thread.settled`
-counts only explicit settles; the server records its automatic settles as
-`server.thread.settled` (see [Feature usage](../operations/feature-usage.md#thread-settle-reasons)).
+Explicit settles and archives are counted in upstream's `feature.used` request
+counts (`thread.settle`, `thread.archive`); the server records its automatic
+settles as `server.thread.settled` (see [Feature usage](../operations/feature-usage.md#thread-settle-reasons)).
 
 `client.network.report` summarizes up to 15 minutes of foreground use of one
 environment on one network type and route. Its event time is when the window

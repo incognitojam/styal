@@ -100,20 +100,15 @@ const METHOD_FEATURES: Readonly<Record<string, (payload: Payload) => FeatureUsag
 
 /**
  * Requests the fork already reports under its own events: Device panel opens and
- * workflow approvals as `devices` and `workflow-approvals` feature usage with outcomes,
- * and thread settles and archives as `client.thread.settled` and `client.thread.archived`.
+ * workflow approvals as `devices` and `workflow-approvals` feature usage with outcomes.
  * Counting them here as well would report one action twice.
  */
 const methodReportedByForkEvents = (method: string, input: Payload) =>
   method === WS_METHODS.deviceOpen ||
   (method === WS_METHODS.pullRequestsRunAction && input.action === "approve-workflows");
 
-const commandReportedByForkEvents = (command: OrchestrationV2Command) =>
-  command.type === "thread.settle" || command.type === "thread.archive";
-
 /** The feature a dispatched command uses, or undefined when it is not a tracked feature. */
 export function commandFeatureUsage(command: OrchestrationV2Command): FeatureUsage | undefined {
-  if (commandReportedByForkEvents(command)) return undefined;
   // TypeScript cannot pair a union's tag with its own entry, so widen once here.
   const mapping = COMMAND_FEATURES[command.type] as
     | ((command: OrchestrationV2Command) => FeatureUsage | undefined)

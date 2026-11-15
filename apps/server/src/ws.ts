@@ -152,10 +152,7 @@ import {
   toShellApplicationEvent,
   type ShellApplicationEvent,
 } from "./orchestration-v2/ShellStream.ts";
-import {
-  ORCHESTRATION_V2_PROJECTION_SCHEMA_VERSION,
-  ProjectionStoreV2,
-} from "./orchestration-v2/ProjectionStore.ts";
+import { ORCHESTRATION_V2_PROJECTION_SCHEMA_VERSION } from "./orchestration-v2/ProjectionStore.ts";
 import {
   coalesceLiveUpdatedEvents,
   coalesceThreadLiveStream,
@@ -252,7 +249,6 @@ import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
 import * as HostResources from "./resourceTelemetry/HostResources.ts";
 import { inspectHostActivity } from "./environment/HostActivity.ts";
 import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
-import * as ThreadSettleUsage from "./telemetry/ThreadSettleUsage.ts";
 import { commandFeatureUsage, featureUsage } from "./telemetry/FeatureUsage.ts";
 import type { TelemetryOwner } from "./telemetry/Identify.ts";
 import * as UsageService from "./usage/UsageService.ts";
@@ -1360,25 +1356,6 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
   },
 );
 
-export const recordAcceptedClientCommandAnalytics = (
-  command: Pick<OrchestrationV2Command, "type">,
-  analytics: Pick<AnalyticsService.AnalyticsService["Service"], "record">,
-  properties: Readonly<Record<string, unknown>>,
-) => {
-  const events: Partial<Record<OrchestrationV2Command["type"], string>> = {
-    "message.dispatch": "client.turn.requested",
-    "thread.settle": "client.thread.settled",
-    "thread.unsettle": "client.thread.unsettled",
-    "thread.archive": "client.thread.archived",
-    "thread.unarchive": "client.thread.unarchived",
-    "thread.delete": "client.thread.deleted",
-  };
-  const event = events[command.type];
-  return event === undefined
-    ? Effect.void
-    : analytics.record(event, properties).pipe(Effect.ignore);
-};
-
 export const layerWsRpc = (
   currentSession: EnvironmentAuth.AuthenticatedSession,
   clientAnalyticsProps: Readonly<Record<string, unknown>>,
@@ -1411,38 +1388,23 @@ export const layerWsRpc = (
       const analytics = yield* AnalyticsService.AnalyticsService;
       const reportForkClientUsage = yield* ClientFeatureUsage.reporter(clientAnalyticsProps);
       const originProps = clientAnalyticsProps;
-      const projections = yield* ProjectionStoreV2;
-      const recordClientCommandAnalytics = (
-        command: OrchestrationV2Command,
-        commandProps: Readonly<Record<string, unknown>> = {},
-      ) => {
+      const recordClientCommandAnalytics = (command: OrchestrationV2Command) => {
         const usage = commandFeatureUsage(command);
-        return recordAcceptedClientCommandAnalytics(command, analytics, {
-          ...originProps,
-          ...commandProps,
-        }).pipe(
-          Effect.andThen(
+        return Effect.all(
+          [
+            command.type === "message.dispatch"
+              ? analytics.record("client.turn.requested", originProps)
+              : Effect.void,
             usage === undefined
               ? Effect.void
-              : analytics
-                  .record("feature.used", {
-                    ...usage,
-                    ...(originProps.surface === undefined ? {} : { surface: originProps.surface }),
-                  })
-                  .pipe(Effect.ignore),
-          ),
-        );
+              : analytics.record("feature.used", {
+                  ...usage,
+                  ...(originProps.surface === undefined ? {} : { surface: originProps.surface }),
+                }),
+          ],
+          { discard: true },
+        ).pipe(Effect.ignore);
       };
-      // Read before dispatch: the un-settle clears the reason it reports.
-      const clientCommandAnalyticsProps = (command: OrchestrationV2Command) =>
-        command.type === "thread.unsettle"
-          ? projections.getThread(command.threadId).pipe(
-              Effect.map((thread) => ({
-                previousSettleReason: ThreadSettleUsage.previousSettleReason(thread),
-              })),
-              Effect.orElseSucceed(() => ({ previousSettleReason: "unknown" })),
-            )
-          : Effect.succeed({});
       const threadLaunch = yield* ThreadLaunchService.ThreadLaunchService;
       const commandOutputHub = yield* CommandOutputHub.CommandOutputHub;
       const providerSessionManager = yield* ProviderSessionManager.ProviderSessionManagerV2;
@@ -2097,8 +2059,7 @@ export const layerWsRpc = (
               ? { "orchestration_v2.source_thread_id": command.sourceThreadId }
               : {}),
           }).pipe(
-            Effect.andThen(clientCommandAnalyticsProps(command)),
-            Effect.flatMap((commandAnalyticsProps) =>
+            Effect.andThen(
               startup
                 .enqueueCommand(
                   (command.type === "prepared-run.retry"
@@ -2114,9 +2075,7 @@ export const layerWsRpc = (
                 )
                 .pipe(
                   Effect.tap((result) =>
-                    result.replayed
-                      ? Effect.void
-                      : recordClientCommandAnalytics(command, commandAnalyticsProps),
+                    result.replayed ? Effect.void : recordClientCommandAnalytics(command),
                   ),
                   Effect.map((result) => ({ sequence: result.sequence })),
                   Effect.mapError((cause) => {
