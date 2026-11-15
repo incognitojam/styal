@@ -58,10 +58,30 @@ export function ShortcutHintBadge(props: {
 function CornerBadge(props: { label: string }) {
   const anchorRef = useRef<HTMLSpanElement>(null);
   const [anchor, setAnchor] = useState<DOMRect | null>(null);
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- measures the button in the DOM before paint to place the portalled badge
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- measures the button in the DOM before paint and again when the page changes, such as a dialog opening over it
   useLayoutEffect(() => {
-    const rect = anchorRef.current?.parentElement?.getBoundingClientRect();
-    setAnchor(rect && rect.width > 0 ? rect : null);
+    const measure = () => {
+      const button = anchorRef.current?.parentElement;
+      const rect = button?.getBoundingClientRect();
+      if (!button || !rect || rect.width === 0) return setAnchor(null);
+      // A dialog, its backdrop or a popover covering the button means it can't be clicked.
+      const hit = document.elementFromPoint(
+        (rect.left + rect.right) / 2,
+        (rect.top + rect.bottom) / 2,
+      );
+      setAnchor(hit && button.contains(hit) ? rect : null);
+    };
+    measure();
+    let frame = 0;
+    const observer = new MutationObserver(() => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(measure);
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => {
+      observer.disconnect();
+      cancelAnimationFrame(frame);
+    };
   }, []);
   return (
     <>
