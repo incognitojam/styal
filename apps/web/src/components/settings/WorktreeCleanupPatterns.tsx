@@ -50,7 +50,7 @@ import {
 import { toastManager } from "../ui/toast";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../ui/table";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { ForkFeatureBadge, SettingsSection } from "./settingsLayout";
+import { SettingsSection } from "./settingsLayout";
 import { useSettingsScope } from "./SettingsScopeContext";
 
 interface CleanupCheckout {
@@ -177,6 +177,7 @@ function CheckoutCleanup({
     <SettingsSection
       id={sectionId}
       title={sectionTitle}
+      forkFeature="worktree-declared-cleanup"
       titleAction={<StatusLine list={list} />}
       headerAction={
         <span className="flex items-center gap-1.5">
@@ -225,7 +226,6 @@ function StatusLine({ list }: { list: WorktreeCleanupPatternList }) {
         : approved === 0
           ? "No patterns in styal.json"
           : `${approved} ${approved === 1 ? "pattern" : "patterns"} approved`}
-      <ForkFeatureBadge />
     </span>
   );
 }
@@ -308,7 +308,7 @@ interface PreviewMatches {
 
 function matchText(matches: PreviewMatches, pattern: string) {
   const found = matches.byPattern.get(pattern);
-  if (!found) return matches.complete ? "Matches nothing right now" : "Not fully checked";
+  if (!found) return matches.complete ? "Nothing to clean right now" : "Not fully checked";
   const noun =
     found.kind === "file"
       ? found.count === 1
@@ -431,7 +431,7 @@ function EarlierPatterns({
 
 const NOT_CLEANED_LABEL: Record<WorktreeCleanupNotCleanedReason, string> = {
   "frees-nothing": "Frees nothing",
-  "nothing-matched": "Nothing matched",
+  "nothing-matched": "Nothing to clean",
   "not-settled": "Not settled",
   missing: "Folder missing",
   "symbolic-link": "Symbolic link",
