@@ -219,6 +219,8 @@ function makeHarness(options: HarnessOptions = {}) {
       ...options.git,
     }),
     Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({
+      consumeStripped: () => Effect.succeed(false),
+      isStripped: () => Effect.succeed(false),
       runForThread: runSetup,
     }),
     Layer.mock(TextGeneration.TextGeneration)({

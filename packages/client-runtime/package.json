@@ -574,6 +574,10 @@
     "./provider-clients": {
       "types": "./src/providerClients.ts",
       "default": "./src/providerClients.ts"
+    },
+    "./state/worktreeCleanup": {
+      "types": "./src/state/worktreeCleanup.ts",
+      "default": "./src/state/worktreeCleanup.ts"
     }
   },
   "scripts": {

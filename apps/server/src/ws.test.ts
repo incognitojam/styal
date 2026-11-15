@@ -1,3 +1,4 @@
+import * as WorktreeCleanupApprovals from "./worktreeCleanup/Approvals.ts";
 import * as SecretResolver from "@t3tools/secret-provider-core/server/SecretResolver";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as ProjectionStore from "./orchestration-v2/ProjectionStore.ts";
@@ -706,7 +707,10 @@ const layerUnusedConfigRpcServices = Layer.mergeAll(
   Layer.mock(ProcessResourceMonitor.ProcessResourceMonitor)({}),
   Layer.mock(ProjectCloneTracker.ProjectCloneTracker)({}),
   Layer.mock(ProjectService.ProjectService)({}),
-  Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({}),
+  Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({
+    consumeStripped: () => Effect.succeed(false),
+    isStripped: () => Effect.succeed(false),
+  }),
   Layer.mock(ProjectStore.ProjectStoreV2)({}),
   Layer.mock(ProviderAuthService.ProviderAuthService)({}),
   Layer.mock(ProviderInstanceRegistry.ProviderInstanceRegistry)({}),
@@ -733,6 +737,7 @@ const layerUnusedConfigRpcServices = Layer.mergeAll(
   Layer.mock(SourceControlDiscovery.SourceControlDiscovery)({}),
   Layer.mock(SourceControlRepositoryService.SourceControlRepositoryService)({}),
   Layer.mock(SourceControlSignIn.SourceControlSignIn)({}),
+  Layer.mock(WorktreeCleanupApprovals.Approvals)({}),
   Layer.mock(StorageCleanup.StorageCleanup)({}),
   Layer.mock(DatabaseStorage.DatabaseStorage)({}),
   Layer.mock(DesktopAppUpdate.DesktopAppUpdate)({ available: false }),

@@ -20,6 +20,7 @@ import {
   ThreadId,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
+import * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -31,7 +32,7 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
 import * as ServerConfig from "../config.ts";
-import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
+import { makeWorkspaceLease } from "../workspace/workspaceLease.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
@@ -177,6 +178,7 @@ export const layer: Layer.Layer<
     const idAllocator = yield* IdAllocator.IdAllocatorV2;
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
+    const withWorkspaceLease = yield* makeWorkspaceLease;
     const gitWorkflow = yield* GitWorkflowService.GitWorkflowService;
     const git = yield* GitVcsDriver.GitVcsDriver;
     const projects = yield* ProjectService.ProjectService;
@@ -700,15 +702,15 @@ export const layer: Layer.Layer<
         }
       }
       const { worktreePath, branch } = projection.thread;
-      if (
-        worktreePath !== null &&
-        branch !== null &&
-        (yield* isManagedWorktreePath(worktreePath))
-      ) {
+      if (worktreePath !== null && (yield* isManagedWorktreePath(worktreePath))) {
         const exists = yield* fileSystem
           .exists(worktreePath)
           .pipe(Effect.orElseSucceed(() => true));
-        if (!exists) {
+        const stripped =
+          exists || branch !== null
+            ? yield* setupScripts.isStripped(path.resolve(worktreePath))
+            : false;
+        if ((!exists && branch !== null) || stripped) {
           const project = yield* projects.getById(projection.thread.projectId).pipe(
             Effect.map(Option.getOrUndefined),
             Effect.orElseSucceed(() => undefined),
@@ -717,24 +719,27 @@ export const layer: Layer.Layer<
             project !== undefined &&
             path.resolve(project.workspaceRoot) !== path.resolve(worktreePath)
           ) {
-            yield* Effect.logWarning("provider turn start recreating missing worktree", {
+            yield* Effect.logWarning("provider turn start preparing worktree", {
               threadId: projection.thread.id,
               worktreePath,
               branch,
             });
-            const recreated = yield* Effect.result(
-              recreateMissingWorktree({
-                cwd: project.workspaceRoot,
-                worktreePath,
-                branch,
-              }).pipe(
-                Effect.mapError((cause) =>
-                  cause._tag === "WorktreeRecreateNoBaseError"
-                    ? cause
-                    : new WorktreeRecreateError({ worktreePath, branch, cause }),
-                ),
-              ),
-            );
+            const recreated =
+              exists || branch === null
+                ? { _tag: "Success" as const }
+                : yield* Effect.result(
+                    recreateMissingWorktree({
+                      cwd: project.workspaceRoot,
+                      worktreePath,
+                      branch,
+                    }).pipe(
+                      Effect.mapError((cause) =>
+                        cause._tag === "WorktreeRecreateNoBaseError"
+                          ? cause
+                          : new WorktreeRecreateError({ worktreePath, branch, cause }),
+                      ),
+                    ),
+                  );
             if (recreated._tag === "Failure") {
               if (input.willRetry === true) return yield* recreated.failure;
               yield* settleStartFailure({
@@ -756,11 +761,21 @@ export const layer: Layer.Layer<
                   observeCompletion: {},
                   workspaceLeaseHeld: true,
                 });
-                if (setup.status !== "started" || !setup.completion) return;
+                if (setup.status !== "started") return setup.status !== "awaiting-approval";
+                if (!setup.completion) return false;
                 if (setup.async) {
-                  yield* forkParked(setup.completion).pipe(
-                    Effect.provideService(Scope.Scope, serviceScope),
-                  );
+                  yield* forkParked(
+                    setup.completion.pipe(
+                      Effect.onExit((exit) =>
+                        exit._tag === "Success" || !Cause.hasInterrupts(exit.cause)
+                          ? setupScripts
+                              .consumeStripped(path.resolve(worktreePath))
+                              .pipe(Effect.asVoid)
+                          : Effect.void,
+                      ),
+                    ),
+                  ).pipe(Effect.provideService(Scope.Scope, serviceScope));
+                  return false;
                 } else {
                   const completion = yield* setup.completion;
                   if (
@@ -769,6 +784,7 @@ export const layer: Layer.Layer<
                   )
                     return yield* new WorktreeSetupError({ worktreePath, cause: completion });
                 }
+                return true;
               }).pipe(
                 Effect.mapError((cause) =>
                   cause._tag === "WorktreeSetupError"
@@ -777,6 +793,8 @@ export const layer: Layer.Layer<
                 ),
               ),
             );
+            if (setupResult._tag === "Failure" || setupResult.success)
+              yield* setupScripts.consumeStripped(path.resolve(worktreePath));
             if (setupResult._tag === "Failure") {
               yield* settleStartFailure({
                 signal: "worktree-setup-failure",

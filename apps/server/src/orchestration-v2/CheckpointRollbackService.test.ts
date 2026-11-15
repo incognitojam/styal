@@ -32,7 +32,7 @@ import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ServerConfig from "../config.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as GitWorkflow from "../git/GitWorkflowService.ts";
-import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
+import { makeWorkspaceLease } from "../workspace/workspaceLease.ts";
 import { ProviderWorkspaceMissingError } from "../provider/Errors.ts";
 import { resolveCodexRollbackTurnCount } from "./Adapters/CodexAdapterV2.ts";
 import * as CheckpointService from "./CheckpointService.ts";
@@ -120,12 +120,15 @@ it.effect.each(["initial", "waiting"])(
 
     return Effect.gen(function* () {
       const service = yield* CheckpointRollbackService.CheckpointRollbackServiceV2;
+      const held = yield* Deferred.make<void>();
       const holder =
         state === "waiting"
-          ? yield* withWorkspaceLease(process.cwd(), Deferred.await(release)).pipe(
-              Effect.forkChild({ startImmediately: true }),
-            )
+          ? yield* (yield* makeWorkspaceLease.pipe(Effect.provide(NodeServices.layer)))(
+              process.cwd(),
+              Deferred.succeed(held, undefined).pipe(Effect.andThen(Deferred.await(release))),
+            ).pipe(Effect.forkChild({ startImmediately: true }))
           : undefined;
+      if (state === "waiting") yield* Deferred.await(held);
       const rollback = yield* service
         .execute({
           threadId,
@@ -198,6 +201,7 @@ it.effect.each([
     const openEntered = Deferred.makeUnsafe<void>();
     const calls: string[] = [];
     let cleanupEntered = false;
+    const cleanupStarted = yield* Deferred.make<void>();
     const providerThread = { id: providerThreadId, providerSessionId, providerInstanceId };
     const projection = {
       thread: {
@@ -300,10 +304,11 @@ it.effect.each([
     );
     yield* Effect.gen(function* () {
       const service = yield* CheckpointRollbackService.CheckpointRollbackServiceV2;
-      const cleanupEffect = withWorkspaceLease(
+      const cleanupEffect = (yield* makeWorkspaceLease.pipe(Effect.provide(NodeServices.layer)))(
         worktreePath,
         Effect.gen(function* () {
           cleanupEntered = true;
+          yield* Deferred.succeed(cleanupStarted, undefined);
           if (order === "cleanup-first") yield* Deferred.await(release);
           yield* fileSystem.remove(worktreePath, { recursive: true, force: true });
           calls.push("cleanup");
@@ -313,6 +318,7 @@ it.effect.each([
         order === "cleanup-first"
           ? yield* cleanupEffect.pipe(Effect.forkChild({ startImmediately: true }))
           : undefined;
+      if (order === "cleanup-first") yield* Deferred.await(cleanupStarted);
       const rollback = yield* service
         .execute({ threadId, providerThreadId, checkpointId, scopeId, restoreFiles })
         .pipe(Effect.forkChild({ startImmediately: true }));

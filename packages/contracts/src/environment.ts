@@ -100,6 +100,7 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   databaseStorage: Schema.optionalKey(Schema.Boolean),
   otlpEndpointCheck: Schema.optionalKey(Schema.Boolean),
   projectWorktreeCleanup: Schema.optionalKey(Schema.Boolean),
+  worktreeCleanupPatterns: Schema.optionalKey(Schema.Boolean),
   settledWorktreeCleanup: Schema.optionalKey(Schema.Boolean),
   worktreesDirectory: Schema.optionalKey(Schema.Boolean),
   threadAutoSettlementScope: Schema.optionalKey(Schema.Boolean),

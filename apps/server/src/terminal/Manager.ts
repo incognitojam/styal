@@ -3,7 +3,7 @@ import { mergePathValues } from "@t3tools/shared/shell";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Effect's Crypto digest is effectful; a sync hash keeps historyPath a plain function.
 import * as NodeCrypto from "node:crypto";
 
-import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
+import { makeWorkspaceLease } from "../workspace/workspaceLease.ts";
 import {
   DEFAULT_TERMINAL_ID,
   DEFAULT_MAX_TERMINAL_BUFFER_BYTES,
@@ -1626,6 +1626,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
 ) {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
+  const withWorkspaceLease = yield* makeWorkspaceLease;
   const context = yield* Effect.context<never>();
   const runFork = Effect.runForkWith(context);
 

@@ -133,6 +133,8 @@ describe("command permissions", () => {
 
   it.effect.each([
     WS_METHODS.serverRunStorageCleanup,
+    WS_METHODS.projectsWorktreeCleanupApprove,
+    WS_METHODS.projectsWorktreeCleanupRevoke,
     WS_METHODS.sourceControlSignInStart,
     WS_METHODS.sourceControlSignInWait,
     WS_METHODS.sourceControlSignInCancel,

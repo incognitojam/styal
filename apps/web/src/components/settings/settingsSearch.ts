@@ -228,6 +228,16 @@ const SOURCE_CONTROL_HOST_TERMS = sourceControlClients.definitions
 
 export const SETTINGS_SEARCH_ITEMS = [
   {
+    id: "worktree-regenerable-files",
+    targetId: "worktree-cleanup-patterns",
+    title: "Regenerable files",
+    to: "/settings/worktrees",
+    scope: "project-defaults",
+    searchTerms: [
+      "worktreeCleanup ignored patterns approve revoke cleanup dependencies node_modules",
+    ],
+  },
+  {
     id: "storage-worktree-keep-when",
     targetId: "storage-worktrees",
     title: "Keep worktrees with local changes",

@@ -20,7 +20,7 @@ import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import type * as ServerConfig from "../config.ts";
 import type * as ServerSettings from "../serverSettings.ts";
 import { makeIsManagedWorktreePath } from "../worktreesDirectory.ts";
-import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
+import { makeWorkspaceLease } from "../workspace/workspaceLease.ts";
 import {
   isCheckpointRestoreIsolated,
   SHARED_WORKSPACE_RESTORE_MESSAGE,
@@ -133,6 +133,7 @@ export const layer: Layer.Layer<
     const fileSystem = yield* FileSystem.FileSystem;
     const projects = yield* ProjectStore.ProjectStoreV2;
     const path = yield* Path.Path;
+    const withWorkspaceLease = yield* makeWorkspaceLease;
     const threadCommands = yield* ThreadCommandExecutor.ThreadCommandExecutor;
     const isManagedWorktreePath = yield* makeIsManagedWorktreePath;
 

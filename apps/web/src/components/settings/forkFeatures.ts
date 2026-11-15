@@ -21,6 +21,7 @@ export const SETTINGS_FORK_FEATURES = [
   "sidebar-project-thread-groups",
   "source-control-fork-remotes",
   "turn-token-usage",
+  "worktree-declared-cleanup",
 ] as const;
 
 export type SettingsForkFeature = (typeof SETTINGS_FORK_FEATURES)[number];
@@ -32,6 +33,7 @@ export type SettingsForkFeature = (typeof SETTINGS_FORK_FEATURES)[number];
  * row refines an upstream setting or sits under a badged one.
  */
 export const SETTINGS_BADGED: Readonly<Record<string, SettingsForkFeature>> = {
+  "worktree-regenerable-files": "worktree-declared-cleanup",
   "agent-hardware-access": "hardware-leases",
   "discord-rich-presence": "desktop-discord-rich-presence",
   "environment-device-hosts": "device-environment-hosts",

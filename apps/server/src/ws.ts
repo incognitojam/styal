@@ -1,3 +1,4 @@
+import * as WorktreeCleanupApprovals from "./worktreeCleanup/Approvals.ts";
 import * as FeedbackService from "./feedback/FeedbackService.ts";
 import * as HardwareService from "./hardware/HardwareService.ts";
 import * as ProjectFileActionApprovals from "./project/ProjectFileActionApprovals.ts";
@@ -1483,6 +1484,7 @@ export const layerWsRpc = (
       const npmRelease = yield* NpmRelease.NpmRelease;
       const config = yield* ServerConfig.ServerConfig;
       const lifecycleEvents = yield* ServerLifecycleEvents.ServerLifecycleEvents;
+      const cleanupApprovals = yield* WorktreeCleanupApprovals.Approvals;
       const storageCleanup = yield* StorageCleanup.StorageCleanup;
       const databaseStorage = yield* DatabaseStorage.DatabaseStorage;
       const serverSettings = yield* ServerSettings.ServerSettingsService;
@@ -2926,6 +2928,9 @@ export const layerWsRpc = (
                 }),
             ),
           ),
+        [WS_METHODS.projectsWorktreeCleanupReview]: (input) => cleanupApprovals.review(input),
+        [WS_METHODS.projectsWorktreeCleanupApprove]: (input) => cleanupApprovals.approve(input),
+        [WS_METHODS.projectsWorktreeCleanupRevoke]: (input) => cleanupApprovals.revoke(input),
         [WS_METHODS.projectsFileActionRun]: (input) => projectScriptRunner.runPending(input),
         [WS_METHODS.projectsFileActionReview]: (input) => fileActionApprovals.review(input),
         [WS_METHODS.projectsFileActionApprovalSet]: (input) =>

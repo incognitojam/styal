@@ -37,6 +37,7 @@ const INVALID_FILE_FIELDS: Record<keyof typeof StyalProjectFile.fields, unknown>
   iconPath: "",
   defaultThreadEnvMode: "elsewhere",
   worktreeSubmodules: "some",
+  worktreeCleanup: "not a list",
   actions: "not a list",
 };
 const INVALID_ACTION_FIELDS: Record<keyof typeof StyalProjectFileAction.fields, unknown> = {

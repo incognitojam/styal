@@ -34,7 +34,7 @@ import * as GitManager from "./GitManager.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import * as WorkspacePortAllocator from "../workspace/WorkspacePortAllocator.ts";
-import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
+import { makeWorkspaceLease } from "../workspace/workspaceLease.ts";
 
 export class GitWorkflowService extends Context.Service<
   GitWorkflowService,
@@ -180,6 +180,7 @@ export const make = Effect.gen(function* () {
   const gitManager = yield* GitManager.GitManager;
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
+  const withWorkspaceLease = yield* makeWorkspaceLease;
   const portAllocator = yield* WorkspacePortAllocator.WorkspacePortAllocator;
 
   // Nested projects and path aliases must share the checkout's branch-mutation lease.

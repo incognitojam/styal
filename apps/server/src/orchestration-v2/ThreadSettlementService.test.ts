@@ -733,6 +733,7 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
     getSettings: Ref.update(settingsReadCount, (count) => count + 1).pipe(
       Effect.andThen(Ref.get(settings)),
     ),
+    modifySettings: () => Effect.die("Unexpected atomic settings update"),
     updateSettings,
     updateProviderInstance: () => Effect.die("Unexpected provider mutation"),
     withSettingsSnapshot: (use) => Ref.get(settings).pipe(Effect.flatMap(use)),
@@ -797,6 +798,8 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
         Queue.offer(closedIdle, input).pipe(Effect.andThen(options.onCloseIdle?.() ?? Effect.void)),
     }),
     Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({
+      consumeStripped: () => Effect.succeed(false),
+      isStripped: () => Effect.succeed(false),
       runForThread: (input) =>
         Queue.offer(scriptRuns, input).pipe(
           Effect.andThen(options.onScriptRun?.(input) ?? Effect.void),

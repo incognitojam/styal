@@ -1,4 +1,4 @@
-import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
+import { makeWorkspaceLease } from "../workspace/workspaceLease.ts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
@@ -780,7 +780,7 @@ it.layer(
         label: "Setup Worktree",
       };
       const path = yield* Path.Path;
-      yield* withWorkspaceLease(
+      yield* (yield* makeWorkspaceLease)(
         path.resolve(commandInput.worktreePath ?? commandInput.cwd),
         manager.openCommand(commandInput, { workspaceLeaseHeld: true }),
       );
@@ -808,7 +808,7 @@ it.layer(
       });
       const input = openInput();
       const path = yield* Path.Path;
-      const terminal = yield* withWorkspaceLease(
+      const terminal = yield* (yield* makeWorkspaceLease)(
         path.resolve(input.cwd),
         Effect.gen(function* () {
           const concurrent = yield* manager
@@ -2514,7 +2514,11 @@ it.layer(
     Effect.gen(function* () {
       const ptyAdapter = new GatedPtyAdapter();
       const historyByteLimit = 64 * 1024;
-      const { manager } = yield* createManager(5, { ptyAdapter, historyByteLimit });
+      const fs = yield* FileSystem.FileSystem;
+      const { manager } = yield* createManager(5, { ptyAdapter, historyByteLimit }).pipe(
+        // Keep path resolution synchronous to control the thread-lock queue independently of filesystem timing.
+        Effect.provideService(FileSystem.FileSystem, { ...fs, realPath: Effect.succeed }),
+      );
       const input = openInput();
       const pull = yield* Stream.toPull(
         terminalOutputStream(
