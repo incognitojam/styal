@@ -60,7 +60,6 @@ import * as ModelManifest from "./provider/ModelManifest.ts";
 import * as ProviderUpdateJournal from "./provider/ProviderUpdateJournal.ts";
 import * as ProviderAutoUpdater from "./provider/ProviderAutoUpdater.ts";
 import * as ProviderAnalytics from "./telemetry/ProviderAnalytics.ts";
-import * as SettingsSnapshot from "./telemetry/SettingsSnapshot.ts";
 import * as ProviderMaintenanceRunner from "./provider/providerMaintenanceRunner.ts";
 import * as ProviderInstallGate from "./provider/ProviderInstallGate.ts";
 import * as ResetCreditCoordinator from "./provider/resetCreditCoordinator.ts";
@@ -758,7 +757,6 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   ),
   layerProviderInstallationRefresh,
   ProviderAutoUpdaterLive,
-  SettingsSnapshot.layer,
   ReplayMarkers.layer,
   Layer.effectDiscard(ProjectSettingsOverrideSweep.sweep),
 ).pipe(

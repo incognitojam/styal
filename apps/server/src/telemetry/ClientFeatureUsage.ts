@@ -1,7 +1,7 @@
 import {
   FORK_CLIENT_USAGE_VERSION,
   LOCAL_DEVICE_HOST_ID,
-  type ForkClientUsageInput,
+  type ReportForkClientUsageInput,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 
@@ -15,17 +15,18 @@ import * as FeatureUsage from "./FeatureUsage.ts";
 /** Buffer allowlisted client observations using this socket's attribution and opt-out. */
 export const reporter = Effect.fnUntraced(function* (client: FeatureUsage.ClientDimensions) {
   const analytics = yield* AnalyticsService.AnalyticsService;
-  return (input: ForkClientUsageInput) => {
+  return (input: ReportForkClientUsageInput) => {
+    if (input.feature === "client-settings" || input.feature === "mobile-settings")
+      return Effect.void;
     // Each surface reports only the vocabulary its own controls emit.
     const mobileFeature =
       input.feature === "diff-file-review-order" ||
       input.feature === "incoming-share-thread" ||
-      input.feature === "mobile-settings" ||
       input.feature === "device-stream-health" ||
       input.feature === "provider-sign-in";
     const reported =
-      ((client.surface === "web" || client.surface === "desktop") &&
-        input.feature !== "mobile-settings") ||
+      client.surface === "web" ||
+      client.surface === "desktop" ||
       (client.surface === "mobile" && mobileFeature);
     if (!reported) return Effect.void;
     if (input.feature === "web-build-update-notice" && client.surface !== "web") {
@@ -45,13 +46,6 @@ export const reporter = Effect.fnUntraced(function* (client: FeatureUsage.Client
       const { feature: _feature, action: _action, ...summary } = input;
       return analytics
         .record("device.stream.summary", { ...summary, ...attribution })
-        .pipe(Effect.ignoreCause);
-    }
-    // A preference snapshot is not usage; keep it off feature.used dashboards.
-    if (input.feature === "client-settings" || input.feature === "mobile-settings") {
-      const { feature: _feature, action: _action, ...settings } = input;
-      return analytics
-        .record("client.settings.snapshot", { ...settings, ...attribution })
         .pipe(Effect.ignoreCause);
     }
     const exposed =

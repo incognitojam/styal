@@ -43,7 +43,6 @@ interface RecordedBatchRequest {
         readonly deviceUsageVersion?: number;
         readonly workflowRunWatchUsageVersion?: number;
         readonly providerAnalyticsUsageVersion?: number;
-        readonly settingsSnapshotUsageVersion?: number;
         readonly buildKind?: string;
         readonly releaseChannel?: string;
       };
@@ -68,7 +67,6 @@ interface RecordedBatchBody {
       readonly deviceUsageVersion?: number;
       readonly workflowRunWatchUsageVersion?: number;
       readonly providerAnalyticsUsageVersion?: number;
-      readonly settingsSnapshotUsageVersion?: number;
       readonly buildKind?: string;
       readonly releaseChannel?: string;
     };
@@ -394,7 +392,6 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("AnalyticsService
               event.properties.deviceUsageVersion === 2 &&
               event.properties.workflowRunWatchUsageVersion === 2 &&
               event.properties.providerAnalyticsUsageVersion === 1 &&
-              event.properties.settingsSnapshotUsageVersion === 1 &&
               event.properties.buildKind === "test" &&
               event.properties.releaseChannel === "unknown",
           ),

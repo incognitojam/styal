@@ -60,20 +60,9 @@ records remain in the activity log even when telemetry is disabled.
 
 Viewed-thread completion sound suppression reports a count without thread identifiers, titles, or sound choices.
 
-Once after startup and then daily, the server also reports the current values of its settings, so
-we can see which defaults people change: on/off settings, chosen options such as the default permission mode, and day or minute
-counts. Paths, branch prefixes, instructions, model choices, and per-project settings are not
-collected; for those it reports only whether they were changed or how many projects have their own
-settings.
-
-Simulator memory reporting includes the environment's chosen mode, how many projects explicitly choose Low memory, and whether each simulator start applied the mode or fell back to a normal start. Project names, identifiers, and app capabilities are not collected.
+Simulator memory reporting records whether each simulator start applied the mode or fell back to a normal start. Project names, identifiers, and app capabilities are not collected.
 
 When the mentioned time check is on, each check a model runs records whether it succeeded and how long it took. The reply and the times in it are not collected.
-
-Web and desktop apps also report their own settings once a day, such as the send shortcut, follow-up
-behavior, sidebar grouping and sorting, sounds, font sizes and browser defaults. Font names, browser
-profile names, and your projects are not collected; the app reports only whether you changed a font,
-how many browser profiles you added, and whether you have dragged projects into your own order.
 
 The mobile app records when you turn diff relevance sorting on or off, and whether adding shared
 content to an existing thread succeeded. The thread and the shared content are not collected.

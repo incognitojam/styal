@@ -3492,7 +3492,6 @@ features:
       - apps/server/src/orchestration-v2/ProviderEventIngestor.ts
       - apps/server/src/orchestration-v2/runtimeLayer.ts
       - apps/server/src/telemetry/FeatureUsage.ts
-      - apps/server/src/telemetry/SettingsSnapshot.ts
       - apps/server/src/textGeneration/ClaudeTextGeneration.ts
       - apps/server/src/textGeneration/TextGeneration.ts
       - apps/web/src/components/ChatMarkdown.tsx
@@ -6384,50 +6383,6 @@ features:
         - https://github.com/pingdotgg/t3code/pull/13139
       retire_when: Upstream keeps settings scope pickers visible and usable while scrolling without losing responsive wrapping or scope recovery.
 
-  - id: settings-snapshot-telemetry
-    title: Report server and device preference values to see which defaults people change
-    status: retiring
-    tier: yield
-    prs: [938, 1156]
-    rationale: Maintainers decide which opinionated defaults to keep, change, or move into setup from how many installations change them.
-    invariants:
-      - Each server records one settings.snapshot event two minutes after startup and then daily, through the shared analytics identity, queue and telemetry opt-out, with settingsSnapshotUsageVersion marking reporting servers.
-      - Every allowlisted key is sent on every report, at its default or not, as a boolean, enum literal, small integer or null. Paths, names, prefixes, instructions, model and instance ids, cost figures and record contents are never sent; record and free-text settings appear only as a count or a customized flag.
-      - Every server setting is either reported or listed with a reason as deliberately left out, so new settings cannot be skipped silently.
-      - Web and desktop clients report their device settings at most once a day through the primary environment, or the first paired environment on hosted web, as client.settings.snapshot with forkClientUsageVersion 7 or later. The day restarts only when a server accepts the report, and windows on one device share it. A window retries a report the server did not accept after a minute, doubling the wait after each failure up to an hour.
-      - Clients send every reported setting, but a server accepts a snapshot from an older client that predates some settings and records it with those settings absent, never filled with a default.
-      - The device report sends whether a manual project order is saved, never project keys, and every client setting is either reported or listed with a reason as deliberately left out.
-      - Mobile reports its app preferences at most once a day through the first connected environment with forkClientUsageVersion 17 or later, as client.settings.snapshot with surface mobile, using the same accept-then-wait-a-day and retry schedule. Unset preferences are sent as the default the app applies; account ids, project keys, filters and microphone names are never sent, and every mobile preference is either reported or listed with a reason as deliberately left out. Servers record the mobile snapshot only from mobile clients and the web snapshot only from web and desktop.
-    implementation_paths:
-      - apps/mobile/src/App.tsx
-      - apps/mobile/src/features/settings/MobileSettingsSnapshotReporter.tsx
-      - apps/mobile/src/features/settings/mobileSettingsSnapshot.ts
-      - apps/server/src/server.ts
-      - apps/server/src/telemetry/AnalyticsService.ts
-      - apps/server/src/telemetry/ClientFeatureUsage.ts
-      - apps/server/src/telemetry/SettingsSnapshot.ts
-      - apps/web/src/AppRoot.tsx
-      - apps/web/src/clientSettingsSnapshot.ts
-      - apps/web/src/components/ClientSettingsSnapshotReporter.tsx
-      - packages/client-runtime/src/settingsSnapshot.ts
-      - packages/contracts/src/forkClientUsage.ts
-    upstream_paths:
-      - apps/mobile/src/App.tsx
-      - apps/server/src/server.ts
-      - apps/server/src/telemetry/AnalyticsService.ts
-      - apps/web/src/AppRoot.tsx
-    tests:
-      - apps/mobile/src/features/settings/mobileSettingsSnapshot.test.ts
-      - apps/server/src/telemetry/AnalyticsService.test.ts
-      - apps/server/src/telemetry/ClientFeatureUsage.test.ts
-      - apps/server/src/telemetry/SettingsSnapshot.test.ts
-      - apps/web/src/clientSettingsSnapshot.test.ts
-      - packages/client-runtime/src/settingsSnapshot.test.ts
-    upstream:
-      status: unassessed
-      tracking: []
-      retire_when: Upstream reports which server and client settings differ from their defaults with structural values only.
-
   - id: settle-action-last-open-thread
     title: Run a worktree's settle action when its last open thread settles
     status: maintained
@@ -6775,7 +6730,7 @@ features:
       - Setup installs only checksum-pinned SimSlim on an Apple Silicon Mac. Standard never installs a helper on a stock host and restores managed services on hosts where styal installed it.
       - A Mac, runtime, helper download, or older connected environment that cannot use Low memory starts the simulator unchanged and returns a notice to the client or agent; failures before SimSlim changes anything never block opening. Connected environments prepare the device on its owning host.
       - A failed mutation does not publish a usable session and attempts to return the simulator to shutdown. Persistent overrides survive simulator reboots; changing the project preference takes effect on its next unused start through styal.
-      - Settings snapshots report the environment mode and the count of projects explicitly choosing Low memory, without project identifiers or app data. The owning environment reports each cold start's memory result and preparation time; device failures report timeouts separately.
+      - The owning environment reports each cold start's memory result and preparation time; device failures report timeouts separately.
     rationale: A saved project default reduces memory use for parallel simulators without live reconfiguration or per-use agent decisions.
     implementation_paths:
       - apps/mobile/src/features/settings/SimulatorMemorySettings.tsx
@@ -6797,7 +6752,6 @@ features:
       - apps/server/src/device/SimulatorMemory.test.ts
       - apps/server/src/device/SimulatorStartup.test.ts
       - apps/server/src/telemetry/FeatureUsage.test.ts
-      - apps/server/src/telemetry/SettingsSnapshot.test.ts
       - packages/shared/src/projectSettings.test.ts
     upstream:
       status: tracking
