@@ -1,6 +1,14 @@
 import type { KeybindingCommand } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
-import { createContext, use, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import {
+  createContext,
+  use,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { createPortal } from "react-dom";
 
 import { isElectron } from "../env";
@@ -43,8 +51,7 @@ function useShortcutHint(
 }
 
 /**
- * A badge over the top edge of the enclosing button while the command's modifiers are held,
- * centred on icon buttons so neighbours do not collide and at the right of wider ones. It
+ * A badge over the top edge of the enclosing button while the command's modifiers are held. It
  * renders in a portal so header and toolbar clipping cannot cut it off.
  */
 export function ShortcutHintBadge(props: {
@@ -52,59 +59,81 @@ export function ShortcutHintBadge(props: {
   context?: Partial<ShortcutMatchContext>;
 }) {
   const label = useShortcutHint(props.command, props.context);
-  return label === null ? null : <CornerBadge label={label} />;
+  return label === null || !supportsAnchorPositioning ? null : <CornerBadge label={label} />;
+}
+
+// Browsers without CSS anchor positioning, or without hiding a badge whose button is scrolled
+// away (Safari before 26.2), show no badges rather than misplaced ones.
+const supportsAnchorPositioning =
+  typeof CSS !== "undefined" &&
+  CSS.supports("anchor-name", "--shortcut-hint") &&
+  // "always" because the spec is renaming anchors-visible to anchor-visible.
+  CSS.supports("position-visibility", "always");
+
+// A button can carry several badges, such as a model and an effort shortcut, so names are listed.
+function anchorNamesOf(element: HTMLElement): string[] {
+  return element.style
+    .getPropertyValue("anchor-name")
+    .split(",")
+    .map((name) => name.trim())
+    .filter((name) => name !== "" && name !== "none");
+}
+
+function setAnchorNames(element: HTMLElement, names: string[]) {
+  if (names.length === 0) element.style.removeProperty("anchor-name");
+  else element.style.setProperty("anchor-name", names.join(", "));
 }
 
 function CornerBadge(props: { label: string }) {
   const anchorRef = useRef<HTMLSpanElement>(null);
-  const [anchor, setAnchor] = useState<DOMRect | null>(null);
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- measures the button in the DOM before paint and again when the page changes, such as a dialog opening over it
+  const anchorName = `--shortcut-hint-${useId().replace(/[^\w-]/g, "")}`;
+  const [blocked, setBlocked] = useState(false);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- names the button as the badge's CSS anchor and follows the page attributes that mark it unreachable
   useLayoutEffect(() => {
-    const measure = () => {
-      const button = anchorRef.current?.parentElement;
-      const rect = button?.getBoundingClientRect();
-      if (!button || !rect || rect.width === 0) return setAnchor(null);
-      // A dialog, its backdrop or a popover covering the button means it can't be clicked.
-      const hit = document.elementFromPoint(
-        (rect.left + rect.right) / 2,
-        (rect.top + rect.bottom) / 2,
-      );
-      setAnchor(hit && button.contains(hit) ? rect : null);
-    };
-    measure();
-    let frame = 0;
-    const observer = new MutationObserver(() => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(measure);
+    const button = anchorRef.current?.parentElement;
+    if (!button) return;
+    setAnchorNames(button, [...anchorNamesOf(button), anchorName]);
+    // A modal dialog hides the rest of the page with aria-hidden, and the app makes views behind
+    // Settings and the command palette inert. Streaming adds elements without changing either.
+    const check = () => setBlocked(button.closest('[inert], [aria-hidden="true"]') !== null);
+    check();
+    const attributes = new MutationObserver(check);
+    attributes.observe(document.body, {
+      attributes: true,
+      attributeFilter: ["inert", "aria-hidden"],
+      subtree: true,
     });
-    observer.observe(document.body, { childList: true, subtree: true });
     return () => {
-      observer.disconnect();
-      cancelAnimationFrame(frame);
+      attributes.disconnect();
+      setAnchorNames(
+        button,
+        anchorNamesOf(button).filter((name) => name !== anchorName),
+      );
     };
-  }, []);
+  }, [anchorName]);
   return (
     <>
       <span ref={anchorRef} aria-hidden className="hidden" />
-      {anchor
-        ? createPortal(
+      {blocked
+        ? null
+        : createPortal(
             <kbd
               aria-hidden
               data-shortcut-hint
               className="pointer-events-none fixed z-[100] inline-flex h-4.5 min-w-4.5 -translate-x-1/2 select-none items-center justify-center rounded border border-border bg-popover px-0.5 font-medium font-sans text-2xs text-popover-foreground shadow-xs"
+              // The browser keeps the badge on its button as layout changes and hides it while the
+              // button is scrolled out of view. Centred on icon buttons, at the right of wide ones,
+              // at least 2px from the window top, and far off screen with no laid-out button.
               style={{
-                left: Math.min(
-                  Math.max((anchor.left + anchor.right) / 2, anchor.right - 16, 16),
-                  window.innerWidth - 20,
-                ),
-                top: Math.max(anchor.top - 6, 2),
+                positionAnchor: anchorName,
+                left: "min(max(anchor(center), calc(anchor(right) - 16px), 16px), calc(100vw - 20px))",
+                top: "max(calc(anchor(top, -9999px) - 6px), min(2px, calc(anchor(top, -9999px) + 5000px)))",
               }}
             >
               {props.label}
             </kbd>,
             document.body,
-          )
-        : null}
+          )}
     </>
   );
 }
