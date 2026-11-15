@@ -21,7 +21,11 @@ name: Web Preview
 
 on:
   pull_request:
-    types: [labeled, unlabeled, synchronize, reopened, closed]
+    types: [labeled, synchronize, reopened]
+  # GitHub sends no pull_request events while a PR has merge conflicts. Cleanup
+  # runs no PR code, so it uses pull_request_target, which still fires.
+  pull_request_target:
+    types: [unlabeled, closed]
 
 permissions:
   contents: read
@@ -245,6 +249,7 @@ jobs:
   cleanup:
     name: Remove web preview
     if: >-
+      github.event_name == 'pull_request_target' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       ((github.event.action == 'closed' && contains(github.event.pull_request.labels.*.name, 'preview:web')) ||
       (github.event.action == 'unlabeled' && github.event.label.name == 'preview:web'))
