@@ -321,13 +321,7 @@ export const DesktopIdleRestartDelayBucket = Schema.Literals([
 ]);
 export type DesktopIdleRestartDelayBucket = typeof DesktopIdleRestartDelayBucket.Type;
 
-/**
- * How long one desktop launch took to become usable, in milliseconds from the
- * process start. After an update restart, `update` adds the time the old
- * process took to stop its backends and the time from handing off to the
- * installer until the new process started.
- */
-export const DesktopLaunchTimingReport = Schema.Struct({
+const DesktopLaunchTimingReport = Schema.Struct({
   version: Schema.Literal(1),
   type: Schema.Literal("desktopFeatureUsage"),
   feature: Schema.Literal("desktop-launch"),
@@ -345,7 +339,6 @@ export const DesktopLaunchTimingReport = Schema.Struct({
     }),
   ),
 });
-export type DesktopLaunchTimingReport = typeof DesktopLaunchTimingReport.Type;
 
 /** Legacy desktop usage messages are accepted and silently discarded by the server. */
 export const DesktopFeatureUsageReport = Schema.Union([
