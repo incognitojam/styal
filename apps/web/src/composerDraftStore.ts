@@ -4790,7 +4790,7 @@ export function subscribeUnconfirmedComposerSend(input: {
   target: ScopedThreadRef;
   failure: unknown;
   messageId: string;
-  messagesAtom: Atom.Atom<ReadonlyArray<{ readonly id: string }> | null>;
+  messagesAtom: Atom.Atom<ReadonlyArray<{ readonly id: string }> | null | "deleted">;
   signal?: AbortSignal;
 }): () => void {
   if (!isUncertainComposerSendFailure(input.failure) || input.signal?.aborted) return () => {};
@@ -4805,8 +4805,9 @@ export function subscribeUnconfirmedComposerSend(input: {
   const unsubscribeDraft = store.subscribe(() => {
     if (!unchanged()) unsubscribe();
   });
-  const confirm = (messages: ReadonlyArray<{ readonly id: string }> | null) => {
-    if (messages === null) {
+  const confirm = (messages: ReadonlyArray<{ readonly id: string }> | null | "deleted") => {
+    if (messages === null) return;
+    if (messages === "deleted") {
       unsubscribe();
       return;
     }

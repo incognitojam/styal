@@ -1574,12 +1574,14 @@ export function useComposerSend(input: ComposerSendInput) {
               registry: appAtomRegistry,
               target: scopeThreadRef(environmentId, threadIdForSend),
               messageId: messageIdForSend,
-              messagesAtom: Atom.map(
-                environmentThreadDetails.quietThreadAtom(
-                  scopeThreadRef(environmentId, threadIdForSend),
-                ),
-                (thread) => thread?.projection.messages ?? null,
-              ),
+              messagesAtom: Atom.make((get) => {
+                const target = scopeThreadRef(environmentId, threadIdForSend);
+                if (get(environmentThreadDetails.statusAtom(target)) === "deleted")
+                  return "deleted";
+                return (
+                  get(environmentThreadDetails.quietThreadAtom(target))?.projection.messages ?? null
+                );
+              }),
             }),
           );
         }

@@ -1331,7 +1331,7 @@ describe("composerDraftStore project draft thread mapping", () => {
       const target = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
       const store = useComposerDraftStore;
       store.getState().setPrompt(target, "restored draft");
-      const messagesAtom = Atom.make<ReadonlyArray<{ id: string }> | null>([]);
+      const messagesAtom = Atom.make<ReadonlyArray<{ id: string }> | null | "deleted">([]);
       const controller = new AbortController();
       const subscribeDraft = store.subscribe.bind(store);
       const subscribeMessages = registry.subscribe.bind(registry);
@@ -1367,7 +1367,7 @@ describe("composerDraftStore project draft thread mapping", () => {
       onTestFinished(stop);
       if (end === "navigation") controller.abort();
       else if (end === "expiry") vi.advanceTimersByTime(5 * 60 * 1000);
-      else if (end === "threadDeletion") registry.set(messagesAtom, null);
+      else if (end === "threadDeletion") registry.set(messagesAtom, "deleted");
       else if (end === "environmentRemoval") clearComposerDraftsEnvironment(TEST_ENVIRONMENT_ID);
       else if (end === "edit") store.getState().setPrompt(target, "newer draft");
       else if (end === "discard") store.getState().clearComposerContent(target);
@@ -1401,7 +1401,7 @@ describe("composerDraftStore project draft thread mapping", () => {
       store.addImages(target, [makeImage({ id: "sent-image", previewUrl: "blob:sent-image" })]);
       store.addFiles(target, [makeFile("sent-file")]);
       store.setThreadContexts(target, [threadContextRecord(target, "Referenced thread")]);
-      const messagesAtom = Atom.make<ReadonlyArray<{ id: string }>>(
+      const messagesAtom = Atom.make<ReadonlyArray<{ id: string }> | null>(
         alreadySynced ? [{ id: "sent-message" }] : [{ id: "previous-message" }],
       );
       const unsubscribe = subscribeUnconfirmedComposerSend({
@@ -1417,6 +1417,10 @@ describe("composerDraftStore project draft thread mapping", () => {
       });
       onTestFinished(unsubscribe);
       if (!alreadySynced) {
+        expect(useComposerDraftStore.getState().getComposerDraft(target)?.prompt).toContain(
+          "sent before disconnecting",
+        );
+        registry.set(messagesAtom, null);
         expect(useComposerDraftStore.getState().getComposerDraft(target)?.prompt).toContain(
           "sent before disconnecting",
         );
