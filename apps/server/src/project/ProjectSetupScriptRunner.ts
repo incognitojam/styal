@@ -271,6 +271,7 @@ export class ProjectSetupScriptRunner extends Context.Service<
       readonly turnItemId: TurnItemId;
     }) => Effect.Effect<void, ProjectFileActionApprovalError>;
     readonly consumeStripped: (worktreePath: string) => Effect.Effect<boolean>;
+    readonly isStripped: (worktreePath: string) => Effect.Effect<boolean>;
     readonly runForThread: (
       input: ProjectSetupScriptRunnerInput,
     ) => Effect.Effect<ProjectSetupScriptRunnerResult, ProjectSetupScriptRunnerError>;
@@ -1117,6 +1118,10 @@ export const make = Effect.gen(function* () {
   return ProjectSetupScriptRunner.of({
     runForThread,
     runPending,
+    isStripped: Effect.fn("ProjectSetupScriptRunner.isStripped")(function* (root) {
+      const rows = yield* sql`SELECT 1 FROM worktree_stripped WHERE worktree_path = ${root}`;
+      return rows.length > 0;
+    }, Effect.orDie),
     consumeStripped: Effect.fn("ProjectSetupScriptRunner.consumeStripped")((root) =>
       consume(root).pipe(Effect.orDie),
     ),

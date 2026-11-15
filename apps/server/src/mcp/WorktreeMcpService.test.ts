@@ -317,6 +317,7 @@ const makeHarness = (options: HarnessOptions = {}) => {
         } satisfies Partial<GitWorkflowService.GitWorkflowService["Service"]>),
         Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({
           consumeStripped: () => Effect.succeed(false),
+          isStripped: () => Effect.succeed(false),
           runForThread,
         } satisfies Partial<ProjectSetupScriptRunner.ProjectSetupScriptRunner["Service"]>),
         Layer.mock(VcsStatusBroadcaster.VcsStatusBroadcaster)({

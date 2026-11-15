@@ -72,6 +72,13 @@ export const makeSweep = Effect.gen(function* () {
       const run = Effect.gen(function* () {
         const eligible = Effect.fn("WorktreeCleanup.eligible")(function* () {
           if (!(yield* managed(root)) || hasTerminal(root)) return null;
+          const spellings = yield* sql<{
+            path: string;
+          }>`SELECT DISTINCT json_extract(payload_json, '$.worktreePath') AS path FROM orchestration_v2_projection_threads WHERE json_extract(payload_json, '$.worktreePath') IS NOT NULL`.pipe(
+            NodeSqliteClient.readOnly,
+          );
+          if (spellings.some((entry) => path.resolve(entry.path) === root && entry.path !== root))
+            return null;
           const allProjects = yield* projects.listShells();
           const unavailableProjects = new Set<string>();
           for (const project of allProjects) {

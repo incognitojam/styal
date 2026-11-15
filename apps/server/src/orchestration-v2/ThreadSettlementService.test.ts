@@ -799,6 +799,7 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
     }),
     Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({
       consumeStripped: () => Effect.succeed(false),
+      isStripped: () => Effect.succeed(false),
       runForThread: (input) =>
         Queue.offer(scriptRuns, input).pipe(
           Effect.andThen(options.onScriptRun?.(input) ?? Effect.void),

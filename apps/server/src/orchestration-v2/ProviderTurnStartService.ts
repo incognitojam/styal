@@ -705,7 +705,7 @@ export const layer: Layer.Layer<
           .pipe(Effect.orElseSucceed(() => true));
         const stripped =
           exists || branch !== null
-            ? yield* setupScripts.consumeStripped(path.resolve(worktreePath))
+            ? yield* setupScripts.isStripped(path.resolve(worktreePath))
             : false;
         if ((!exists && branch !== null) || stripped) {
           const project = yield* projects.getById(projection.thread.projectId).pipe(
@@ -758,8 +758,10 @@ export const layer: Layer.Layer<
                   observeCompletion: {},
                   workspaceLeaseHeld: true,
                 });
-                if (setup.status !== "started" || !setup.completion) return;
-                if (setup.async) {
+                if (setup.status !== "started") return setup.status !== "awaiting-approval";
+                if (!setup.completion) return false;
+                // Recovery must restore dependencies before the provider uses this checkout.
+                if (setup.async && !stripped) {
                   yield* forkParked(setup.completion).pipe(
                     Effect.provideService(Scope.Scope, serviceScope),
                   );
@@ -771,6 +773,7 @@ export const layer: Layer.Layer<
                   )
                     return yield* new WorktreeSetupError({ worktreePath, cause: completion });
                 }
+                return true;
               }).pipe(
                 Effect.mapError((cause) =>
                   cause._tag === "WorktreeSetupError"
@@ -779,6 +782,8 @@ export const layer: Layer.Layer<
                 ),
               ),
             );
+            if (setupResult._tag === "Failure" || setupResult.success)
+              yield* setupScripts.consumeStripped(path.resolve(worktreePath));
             if (setupResult._tag === "Failure") {
               yield* settleStartFailure({
                 signal: "worktree-setup-failure",

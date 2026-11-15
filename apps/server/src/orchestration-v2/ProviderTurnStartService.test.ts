@@ -94,6 +94,8 @@ function startWithMissingWorktree(
   setupResult: ProjectSetupScriptRunner.ProjectSetupScriptRunnerResult = { status: "no-script" },
   consumeStripped: (root: string) => Effect.Effect<boolean> = () => Effect.succeed(false),
   worktreesDir = managedWorktreesDir,
+  isStripped: (root: string) => Effect.Effect<boolean> = () => Effect.succeed(false),
+  onSetup: Effect.Effect<void> = Effect.void,
 ) {
   const threadId = ThreadId.make("thread_provider_turn_start_projection_failure");
   const runId = RunId.make("run_provider_turn_start_projection_failure");
@@ -148,7 +150,7 @@ function startWithMissingWorktree(
   );
   const startRootRun = vi.fn(() => Effect.void);
   const pruneWorktrees = vi.fn(() => Effect.void);
-  const runSetup = vi.fn(() => Effect.succeed(setupResult));
+  const runSetup = vi.fn(() => onSetup.pipe(Effect.as(setupResult)));
   let folderExists = exists;
   const createWorktree = vi.fn(() =>
     Effect.sync(() => {
@@ -186,6 +188,7 @@ function startWithMissingWorktree(
         Layer.mock(GitVcsDriver.GitVcsDriver)({}),
         Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({
           consumeStripped,
+          isStripped,
           runForThread: runSetup,
         }),
         Layer.mock(ProjectService.ProjectService)({
@@ -1051,6 +1054,7 @@ function makeLocalCommandHarness(input: {
         Layer.mock(GitVcsDriver.GitVcsDriver)({}),
         Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({
           consumeStripped: () => Effect.succeed(false),
+          isStripped: () => Effect.succeed(false),
           runForThread: () => Effect.succeed({ status: "no-script" }),
         }),
         Layer.mock(ProjectService.ProjectService)({
@@ -1929,6 +1933,7 @@ effectIt.effect("holds a starting run back until an install of its provider CLI 
           Layer.mock(GitVcsDriver.GitVcsDriver)({}),
           Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({
             consumeStripped: () => Effect.succeed(false),
+            isStripped: () => Effect.succeed(false),
           }),
           Layer.mock(ProjectService.ProjectService)({}),
           Layer.mock(ProjectionStore.ProjectionStoreV2)({
@@ -1973,7 +1978,7 @@ effectIt.effect("holds a starting run back until an install of its provider CLI 
   }),
 );
 
-effectIt.effect.each(["retained", "failed-setup", "missing", "detached"] as const)(
+effectIt.effect.each(["retained", "failed-setup", "failed-async", "missing", "detached"] as const)(
   "consumes a stripped row and runs setup once for %s",
   (mode) =>
     Effect.gen(function* () {
@@ -1994,20 +1999,81 @@ effectIt.effect.each(["retained", "failed-setup", "missing", "detached"] as cons
           scriptCommand: "synthetic",
           terminalId: "setup",
           cwd: f.worktree,
-          async: false,
+          async: mode === "failed-async",
           completion: Effect.succeed({
-            exitCode: mode === "failed-setup" ? 1 : 0,
+            exitCode: mode === "failed-setup" || mode === "failed-async" ? 1 : 0,
             exitSignal: null,
             durationMs: 0,
           }),
         },
         (root) => consume(root).pipe(Effect.orDie),
         f.config.worktreesDir,
+        (root) =>
+          sql`SELECT 1 FROM worktree_stripped WHERE worktree_path = ${root}`.pipe(
+            Effect.map((rows) => rows.length > 0),
+            Effect.orDie,
+          ),
       );
       if (mode === "detached") harness.setBranch(null);
       yield* harness.start;
       yield* harness.retry;
       expect(harness.runSetup).toHaveBeenCalledTimes(1);
+      expect(yield* sql`SELECT * FROM worktree_stripped`).toEqual([]);
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(cleanupNodeLayer, NodeSqliteClient.layer({ filename: ":memory:" })),
+      ),
+      Effect.scoped,
+    ),
+);
+
+effectIt.effect.each([false, true])(
+  "retries stripped setup interrupted before completion (async=%s)",
+  (async) =>
+    Effect.gen(function* () {
+      const f = yield* cleanupFixture;
+      const sql = yield* SqlClient.SqlClient;
+      yield* cleanupMigration;
+      yield* sql`INSERT INTO worktree_stripped VALUES (${f.worktree}, 'fixture', '2026-01-01T00:00:00Z')`;
+      const consume = yield* CleanupStripped.makeConsume;
+      const entered = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      const harness = startWithMissingWorktree(
+        f.worktree,
+        { [f.worktree]: f.worktree, [f.config.worktreesDir]: f.config.worktreesDir },
+        true,
+        {
+          status: "started",
+          runId: "setup",
+          scriptId: "setup",
+          scriptName: "Setup",
+          scriptCommand: "synthetic",
+          terminalId: "setup",
+          cwd: f.worktree,
+          async,
+          completion: Deferred.succeed(entered, undefined).pipe(
+            Effect.andThen(Deferred.await(release)),
+            Effect.as({ exitCode: 0, exitSignal: null, durationMs: 0 }),
+          ),
+        },
+        (root) => consume(root).pipe(Effect.orDie),
+        f.config.worktreesDir,
+        (root) =>
+          sql`SELECT 1 FROM worktree_stripped WHERE worktree_path = ${root}`.pipe(
+            Effect.map((rows) => rows.length > 0),
+            Effect.orDie,
+          ),
+        Deferred.succeed(entered, undefined).pipe(Effect.asVoid),
+      );
+      expect((yield* sql`SELECT * FROM worktree_stripped`).length).toBe(1);
+      const pending = yield* harness.start.pipe(Effect.forkChild);
+      yield* Deferred.await(entered);
+      yield* Fiber.interrupt(pending);
+      expect((yield* sql`SELECT * FROM worktree_stripped`).length).toBe(1);
+      yield* Deferred.succeed(release, undefined);
+      yield* harness.retry;
+      yield* harness.retry;
+      expect(harness.runSetup).toHaveBeenCalledTimes(2);
       expect(yield* sql`SELECT * FROM worktree_stripped`).toEqual([]);
     }).pipe(
       Effect.provide(

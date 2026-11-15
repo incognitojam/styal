@@ -709,6 +709,7 @@ const layerUnusedConfigRpcServices = Layer.mergeAll(
   Layer.mock(ProjectService.ProjectService)({}),
   Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({
     consumeStripped: () => Effect.succeed(false),
+    isStripped: () => Effect.succeed(false),
   }),
   Layer.mock(ProjectStore.ProjectStoreV2)({}),
   Layer.mock(ProviderAuthService.ProviderAuthService)({}),

@@ -33,6 +33,25 @@ export const makeDeletion = Effect.gen(function* () {
     budgetMs = 600_000,
   ) {
     const deadline = now() + budgetMs;
+    if (now() >= deadline)
+      return yield* new WorktreeCleanupError({
+        reason: "run-failed",
+        message: "Cleanup inspection exceeded its budget.",
+      });
+    const top = yield* git(root, ["rev-parse", "--show-toplevel"]);
+    const correctRoot =
+      top.exitCode === 0 &&
+      !top.stdoutTruncated &&
+      (yield* Effect.tryPromise(
+        async () =>
+          (await NodeFSP.realpath(top.stdout.replace(/\r?\n$/, ""))) ===
+          (await NodeFSP.realpath(root)),
+      ));
+    if (!correctRoot || now() >= deadline)
+      return yield* new WorktreeCleanupError({
+        reason: "run-failed",
+        message: "Cleanup inspection is incomplete or Git targets another worktree.",
+      });
     const ignored = yield* git(root, [
       "ls-files",
       "--others",
@@ -49,6 +68,11 @@ export const makeDeletion = Effect.gen(function* () {
       return yield* new WorktreeCleanupError({
         reason: "run-failed",
         message: "Incomplete ignored list.",
+      });
+    if (now() >= deadline)
+      return yield* new WorktreeCleanupError({
+        reason: "run-failed",
+        message: "Cleanup inspection exceeded its budget.",
       });
     if (!ignored.stdout) return [];
     const protectedOutput = yield* git(root, [
@@ -107,18 +131,19 @@ export const makeDeletion = Effect.gen(function* () {
       const repository = (names: readonly string[]) =>
         names.includes(".git") || ["HEAD", "objects", "refs"].every((name) => names.includes(name));
       let entries = 0;
+      const incomplete = new Error("Cleanup inspection exceeded its budget.");
       const namesAt = async (target: string) => {
-        if (now() >= deadline || ++entries > limits.entries) throw new Error("Entry cap reached");
+        if (now() >= deadline || ++entries > limits.entries) throw incomplete;
         const stat = target === root ? rootStat : await safe(target);
         if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error("Not a directory");
         if ((await NodeFSP.realpath(target)) !== target) throw new Error("Parent changed");
         const names = await NodeFSP.readdir(target);
-        if (names.length + entries > limits.entries) throw new Error("Entry cap reached");
+        if (names.length + entries > limits.entries) throw incomplete;
         if (target !== root && repository(names)) throw new Error("Nested repository");
         return names;
       };
       const verify = async (target: string): Promise<void> => {
-        if (now() >= deadline || ++entries > limits.entries) throw new Error("Entry cap reached");
+        if (now() >= deadline || ++entries > limits.entries) throw incomplete;
         const stat = await safe(target);
         if (stat.isSymbolicLink()) return;
         if (stat.isDirectory())
@@ -127,7 +152,7 @@ export const makeDeletion = Effect.gen(function* () {
       };
       const selected: string[] = [];
       const visit = async (target: string): Promise<void> => {
-        if (now() >= deadline || ++entries > limits.entries) throw new Error("Entry cap reached");
+        if (now() >= deadline || ++entries > limits.entries) throw incomplete;
         const stat = await safe(target);
         if (stat.isSymbolicLink()) return;
         const relative = path.relative(root, target).split(path.sep).join("/");
@@ -136,8 +161,6 @@ export const makeDeletion = Effect.gen(function* () {
           if (protectedPaths.some((entry) => entry === key || entry.startsWith(`${key}/`))) return;
           await verify(target);
           selected.push(target);
-        } else if (stat.isDirectory()) {
-          for (const name of await namesAt(target)) await visit(path.join(target, name));
         }
       };
       for (const raw of ignored.stdout.split("\0").filter(Boolean)) {
@@ -153,7 +176,7 @@ export const makeDeletion = Effect.gen(function* () {
           if (!selected.some((parent) => target === parent || inside(parent, target)))
             await visit(target);
         } catch (error) {
-          if (now() >= deadline) throw error;
+          if (error === incomplete || now() >= deadline) throw error;
           /* An unverifiable ignored subtree is kept whole. */
         }
       }

@@ -34,6 +34,15 @@ import { makeConsume } from "./Stripped.ts";
 import migration from "../persistence/ForkMigrations/015_WorktreeStripped.ts";
 import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
 import { TestClock } from "effect/testing";
+import { vi } from "vite-plus/test";
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- Observe the real unlink boundary in disposable repositories.
+import * as NodeFSP from "node:fs/promises";
+import { ThreadId } from "@t3tools/contracts";
+
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof NodeFSP>();
+  return { ...actual, unlink: vi.fn(actual.unlink) };
+});
 
 const encodeSession = Schema.encodeEffect(
   Schema.fromJsonString(OrchestrationV2ProviderSessionJson),
@@ -299,6 +308,135 @@ it.effect("rechecks threads under the exact turn-start lease", () =>
       yield* Fiber.join(pending);
       expect(yield* f.fs.exists(`${f.worktree}/dist/output`)).toBe(true);
     }).pipe(Effect.provide(f.layers));
+  }).pipe(Effect.provide(testLayers), Effect.scoped),
+);
+
+it.effect.each(["/", "/.", "/../quiet"])(
+  "holds a worktree with a running thread at alias %s",
+  (suffix) =>
+    Effect.gen(function* () {
+      const f = yield* setup;
+      yield* f.write("dist/output");
+      f.setThreads([
+        ...f.threads(),
+        shell({
+          id: ThreadId.make("running-alias"),
+          worktreePath: `${f.worktree}${suffix}`,
+          status: "running",
+          activeRunId: RunId.make("active"),
+        }),
+      ]);
+      yield* f.persist();
+      yield* Effect.gen(function* () {
+        const sweep = yield* makeSweep;
+        const report: StorageCleanupReportEntry[] = [];
+        yield* sweep(f.terminal, report);
+        expect(report).toEqual([]);
+        expect(yield* f.fs.exists(`${f.worktree}/dist/output`)).toBe(true);
+      }).pipe(Effect.provide(f.layers));
+    }).pipe(Effect.provide(testLayers), Effect.scoped),
+);
+
+it.effect.each(["project-root", "git-directory", "root-link"] as const)(
+  "never inspects a protected %s",
+  (mode) =>
+    Effect.gen(function* () {
+      const f = yield* setup;
+      yield* f.write("dist/output");
+      if (mode === "project-root")
+        f.setProjects([
+          f.project,
+          { ...f.project, id: ProjectId.make("nested-project"), workspaceRoot: f.worktree },
+        ]);
+      if (mode === "git-directory") {
+        yield* f.fs.remove(`${f.worktree}/.git`);
+        yield* f.command(f.worktree, ["init"]);
+      }
+      if (mode === "root-link") {
+        yield* f.fs.rename(f.worktree, `${f.worktree}-target`);
+        yield* f.fs.symlink(`${f.worktree}-target`, f.worktree);
+      }
+      const inspected: string[] = [];
+      yield* Effect.gen(function* () {
+        const sweep = yield* makeSweep;
+        yield* sweep(f.terminal, []);
+        expect(yield* f.fs.exists(`${f.worktree}/dist/output`)).toBe(true);
+        expect(inspected).toEqual([]);
+      }).pipe(
+        Effect.provideService(GitVcsDriver.GitVcsDriver, {
+          ...f.git,
+          execute: (input) => {
+            inspected.push(input.cwd);
+            return f.git.execute(input);
+          },
+        }),
+        Effect.provide(f.layers),
+      );
+    }).pipe(Effect.provide(testLayers), Effect.scoped),
+);
+
+it.effect("persists the stripped record before the first unlink", () =>
+  Effect.gen(function* () {
+    const f = yield* setup;
+    yield* f.write("dist/output");
+    const entered = yield* Deferred.make<void>();
+    const release = Promise.withResolvers<void>();
+    const unlink = vi.mocked(NodeFSP.unlink);
+    const original = unlink.getMockImplementation()!;
+    using _restore = {
+      [Symbol.dispose]: () => {
+        unlink.mockImplementation(original);
+      },
+    };
+    unlink.mockImplementation((target) => {
+      if (target === `${f.worktree}/dist/output`) {
+        Deferred.doneUnsafe(entered, Effect.void);
+        return release.promise.then(() => original(target));
+      }
+      return original(target);
+    });
+    yield* Effect.gen(function* () {
+      const sweep = yield* makeSweep;
+      const pending = yield* sweep(f.terminal, []).pipe(Effect.forkChild);
+      yield* Deferred.await(entered);
+      const beforeDelete =
+        yield* f.sql`SELECT 1 FROM worktree_stripped WHERE worktree_path = ${f.worktree}`.pipe(
+          Effect.ensuring(Effect.sync(() => release.resolve())),
+        );
+      yield* Fiber.join(pending);
+      expect(beforeDelete.length).toBe(1);
+    }).pipe(Effect.provide(f.layers));
+    expect(yield* f.fs.exists(`${f.worktree}/dist`)).toBe(false);
+  }).pipe(Effect.provide(testLayers), Effect.scoped),
+);
+
+it.effect("keeps a partial selection for a later complete inspection", () =>
+  Effect.gen(function* () {
+    const f = yield* setup;
+    yield* f.write("dist/output");
+    for (let i = 0; i < 20; i++) yield* f.write(`node_modules/pkg-${i}`);
+    let limited = true;
+    yield* Effect.gen(function* () {
+      const sweep = yield* makeSweep;
+      const report: StorageCleanupReportEntry[] = [];
+      yield* sweep(f.terminal, report);
+      expect(report).toEqual([]);
+      expect(yield* f.sql`SELECT * FROM worktree_stripped`).toEqual([]);
+      expect(yield* f.fs.exists(`${f.worktree}/dist/output`)).toBe(true);
+      limited = false;
+      yield* sweep(f.terminal, report);
+      expect(report.map((entry) => entry.path)).toEqual([
+        `${f.worktree}/dist`,
+        `${f.worktree}/node_modules`,
+      ]);
+    }).pipe(
+      Effect.provide(f.layers),
+      Effect.provideService(DeletionLimits, {
+        get entries() {
+          return limited ? 20 : 1_000_000;
+        },
+      }),
+    );
   }).pipe(Effect.provide(testLayers), Effect.scoped),
 );
 

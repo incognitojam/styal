@@ -100,29 +100,35 @@ describe("regenerable path deletion", () => {
     ),
   );
 
-  it.effect.each(["mount", "device", "cap"] as const)("keeps an unverifiable %s", (mode) =>
-    run(
-      Effect.gen(function* () {
-        const f = yield* fixture;
-        yield* f.write("dist/output");
-        const deletion = yield* makeDeletion.pipe(
-          Effect.provideService(GitVcsDriver.GitVcsDriver, f.git),
-          Effect.provideService(DeletionLimits, {
-            entries: mode === "cap" ? 1 : 100,
-            mounts: mode === "mount" ? [`${f.worktree}/dist`] : [],
-            ...(mode === "device"
-              ? {
-                  device: (target: string, actual: number) =>
-                    target.endsWith("dist") ? actual + 1 : actual,
-                }
-              : {}),
-          }),
-        );
-        for (const target of yield* deletion.inspect(f.worktree, ["dist"]))
-          yield* deletion.remove(f.worktree, target);
-        expect(yield* f.fs.exists(`${f.worktree}/dist/output`)).toBe(true);
-      }),
-    ),
+  it.effect.each(["mount", "device", "cap", "budget"] as const)(
+    "keeps an unverifiable %s",
+    (mode) =>
+      run(
+        Effect.gen(function* () {
+          const f = yield* fixture;
+          if (mode !== "budget") yield* f.write("dist/output");
+          const deletion = yield* makeDeletion.pipe(
+            Effect.provideService(GitVcsDriver.GitVcsDriver, f.git),
+            Effect.provideService(DeletionLimits, {
+              entries: mode === "cap" ? 1 : 100,
+              mounts: mode === "mount" ? [`${f.worktree}/dist`] : [],
+              ...(mode === "device"
+                ? {
+                    device: (target: string, actual: number) =>
+                      target.endsWith("dist") ? actual + 1 : actual,
+                  }
+                : {}),
+            }),
+          );
+          const result = yield* deletion
+            .inspect(f.worktree, ["dist"], mode === "budget" ? 0 : 600_000)
+            .pipe(Effect.result);
+          expect(result._tag).toBe(mode === "cap" || mode === "budget" ? "Failure" : "Success");
+          if (result._tag === "Success")
+            for (const target of result.success) yield* deletion.remove(f.worktree, target);
+          expect(yield* f.fs.exists(`${f.worktree}/dist/output`)).toBe(mode !== "budget");
+        }),
+      ),
   );
 
   it.effect(
@@ -157,10 +163,50 @@ describe("regenerable path deletion", () => {
           yield* f.write("private/output");
           yield* f.fs.writeFileString(`${f.root}/.git/info/exclude`, "private/\n");
           expect(yield* f.clean(["private"])).toEqual(["private"]);
+          const redirected = `${f.base}/redirected`;
+          yield* f.fs.makeDirectory(`${redirected}/dist`, { recursive: true });
+          yield* f.fs.writeFileString(`${redirected}/.gitignore`, "dist/\n");
+          yield* f.fs.writeFileString(`${f.worktree}/.gitignore`, "");
+          yield* f.write("dist/precious");
+          yield* f.command(f.worktree, ["config", "extensions.worktreeConfig", "true"]);
+          yield* f.command(f.worktree, ["config", "--worktree", "core.worktree", redirected]);
+          expect(
+            (yield* f.command(f.worktree, ["rev-parse", "--show-toplevel"])).stdout.trim(),
+          ).toBe(redirected);
+          expect((yield* f.clean(["dist"]).pipe(Effect.result))._tag).toBe("Failure");
+          expect(yield* f.fs.exists(`${f.worktree}/dist/precious`)).toBe(true);
         }),
       ),
   );
 });
+
+it.effect.each([".scratch", ".styal"])("does not search unlisted ignored %s folders", (parent) =>
+  run(
+    Effect.gen(function* () {
+      const f = yield* setup;
+      yield* f.fs.writeFileString(
+        `${f.worktree}/.gitignore`,
+        "**/node_modules/\n**/.turbo/\n**/*.tsbuildinfo\n.scratch/\n.styal/\n",
+      );
+      for (const file of [
+        `${parent}/experiment/node_modules/pkg`,
+        `${parent}/experiment/.turbo/cache`,
+        `${parent}/experiment/build.tsbuildinfo`,
+        "apps/web/node_modules/pkg",
+      ])
+        yield* f.write(file);
+      const selected = yield* f.deletion.inspect(f.worktree, [
+        "**/node_modules",
+        "**/.turbo",
+        "**/*.tsbuildinfo",
+      ]);
+      expect(selected).toEqual([`${f.worktree}/apps/web/node_modules`]);
+      for (const target of selected) yield* f.deletion.remove(f.worktree, target);
+      for (const file of ["node_modules/pkg", ".turbo/cache", "build.tsbuildinfo"])
+        expect(yield* f.fs.exists(`${f.worktree}/${parent}/experiment/${file}`)).toBe(true);
+    }),
+  ),
+);
 
 it.effect.each([
   ["Build", "build"],

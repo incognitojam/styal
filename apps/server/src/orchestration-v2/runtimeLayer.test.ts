@@ -111,6 +111,7 @@ const layerRuntimeTest = RuntimeLayer.layer.pipe(
   Layer.provide(
     Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({
       consumeStripped: () => Effect.succeed(false),
+      isStripped: () => Effect.succeed(false),
       runForThread: () => Effect.succeed({ status: "no-script" }),
     }),
   ),

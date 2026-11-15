@@ -25,6 +25,7 @@ import * as WorkspacePortAllocator from "../workspace/WorkspacePortAllocator.ts"
 export const layer = Layer.mergeAll(
   Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({
     consumeStripped: () => Effect.succeed(false),
+    isStripped: () => Effect.succeed(false),
     runForThread: () => Effect.succeed({ status: "no-script" }),
   }),
   Layer.mock(GitWorkflow.GitWorkflowService)({
@@ -58,6 +59,7 @@ export const layerRealGit = GitWorkflow.layer.pipe(
       Layer.mock(ProviderRegistry.ProviderRegistry)({}),
       Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({
         consumeStripped: () => Effect.succeed(false),
+        isStripped: () => Effect.succeed(false),
       }),
       Layer.mock(ProjectionStore.ProjectionStoreV2)({}),
       Layer.mock(ProjectStore.ProjectStoreV2)({}),
