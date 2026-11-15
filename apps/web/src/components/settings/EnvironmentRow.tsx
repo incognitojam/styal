@@ -79,9 +79,11 @@ export function EnvironmentRow({
   dimmed = false,
   className,
   children,
-}: {
-  readonly kind: EnvironmentMachineKind;
-  readonly label: string;
+}: (
+  | { readonly kind: EnvironmentMachineKind; readonly label: string }
+  // Inside a machine's own tab, which already shows its icon and name.
+  | { readonly kind?: undefined; readonly label?: undefined }
+) & {
   readonly subtitle: ReactNode;
   readonly below?: ReactNode;
   readonly detail?: ReactNode;
@@ -92,23 +94,36 @@ export function EnvironmentRow({
   return (
     <div
       className={cn(
-        "grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 px-3 py-2.5 sm:px-4",
+        "grid items-center gap-x-3 px-3 py-2.5 sm:px-4",
+        kind === undefined
+          ? "grid-cols-[minmax(0,1fr)_auto]"
+          : "grid-cols-[auto_minmax(0,1fr)_auto]",
         className,
       )}
     >
       {/* Dim only identity so switched-off controls remain readable and distinct from disabled controls. */}
-      <EnvironmentMachineIcon
-        aria-hidden
-        kind={kind}
-        className={cn("size-4 text-muted-foreground", dimmed && "opacity-60")}
-      />
+      {kind === undefined ? null : (
+        <EnvironmentMachineIcon
+          aria-hidden
+          kind={kind}
+          className={cn("size-4 text-muted-foreground", dimmed && "opacity-60")}
+        />
+      )}
       <div className={cn("min-w-0", dimmed && "opacity-60")}>
-        <p className="truncate text-sm font-medium text-foreground">{label}</p>
+        {label === undefined ? null : (
+          <p className="truncate text-sm font-medium text-foreground">{label}</p>
+        )}
         <div className="truncate text-xs text-muted-foreground">{subtitle}</div>
         {below}
       </div>
       <div className="flex shrink-0 items-center gap-1">{children}</div>
-      {detail ? <div className="col-span-2 col-start-2 min-w-0">{detail}</div> : null}
+      {detail ? (
+        <div
+          className={cn("col-span-2 min-w-0", kind === undefined ? "col-start-1" : "col-start-2")}
+        >
+          {detail}
+        </div>
+      ) : null}
     </div>
   );
 }

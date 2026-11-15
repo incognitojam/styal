@@ -8,7 +8,6 @@ import {
   connectReachabilityHelpUrl,
   formatConnectReachable,
   managedCapabilityDenial,
-  resolveEnvironmentMachineKind,
 } from "@t3tools/contracts";
 import {
   connectionRoutes,
@@ -30,7 +29,7 @@ import {
   useConnectionDiagnosis,
 } from "./ConnectionDiagnosisDetails";
 import { usePreparedConnection } from "~/state/session";
-import { EnvironmentRow, environmentTransportLabel } from "./EnvironmentRow";
+import { EnvironmentRow } from "./EnvironmentRow";
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "../ui/menu";
 import { Switch } from "../ui/switch";
 import { stackedThreadToast, toastManager } from "../ui/toast";
@@ -207,13 +206,8 @@ export function SavedBackendListRow({
     relayHttpBaseUrl: discoveredRelayHttpBaseUrl ?? lastRelayHttpBaseUrl,
     connectedTarget,
   });
-  const machineKind = resolveEnvironmentMachineKind(
-    environment.serverConfig ??
-      (lastDescriptor === undefined ? null : { environment: lastDescriptor }),
-  );
   const routeCount = connectionRoutes(environment.entry).length;
   const subtitleText = [
-    environmentTransportLabel(environment, connectedTarget),
     // The headline below names the failure in full.
     diagnosis ? null : resumingServerUpdate ? "Restarting" : status.text,
     enabled && versionMismatch ? serverVersion : null,
@@ -241,8 +235,6 @@ export function SavedBackendListRow({
 
   return (
     <EnvironmentRow
-      kind={machineKind}
-      label={environment.label}
       dimmed={!enabled}
       subtitle={
         <span className="flex min-w-0 items-center gap-1">
