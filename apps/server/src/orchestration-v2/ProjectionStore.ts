@@ -779,6 +779,9 @@ export function upsertProviderTurn(
   const current = turns.find((turn) => turn.id === next.id);
   return upsertById(turns, {
     ...next,
+    ...((next.inlineContextIds ?? current?.inlineContextIds) === undefined
+      ? {}
+      : { inlineContextIds: next.inlineContextIds ?? current?.inlineContextIds }),
     ...((next.tokenUsage ?? current?.tokenUsage) === undefined
       ? {}
       : { tokenUsage: next.tokenUsage ?? current?.tokenUsage }),

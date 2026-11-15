@@ -4088,9 +4088,37 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
               : links.filter((link) => link !== existing);
           } else {
             if (!existing) return thread;
+            const { turnContext: previousContext, ...linkWithoutContext } = existing;
+            const terminal =
+              command.snapshot?.state === "merged" || command.snapshot?.state === "closed";
+            const changedState = existing.snapshot?.state !== command.snapshot?.state;
+            const watchWillWake =
+              existing.watch !== undefined &&
+              thread.settledOverride !== "settled" &&
+              thread.settledAt === null;
+            const time = Option.getOrUndefined(DateTime.make(command.snapshot?.mergedAt ?? ""));
+            const turnContext = !terminal
+              ? undefined
+              : !changedState
+                ? previousContext
+                : watchWillWake || existing.source === "stack-dismissed"
+                  ? undefined
+                  : {
+                      id: command.commandId,
+                      occurredAt: DateTime.formatIso(now),
+                      text:
+                        command.snapshot?.state === "merged"
+                          ? `Since your last turn: #${key.number} was merged${time == null ? "." : ` on ${DateTime.formatIso(time).slice(0, 10)} at ${DateTime.formatIso(time).slice(11, 16)} UTC.`}`
+                          : `Since your last turn: #${key.number} was closed without merging.`,
+                    };
             pullRequests = links.map((link) =>
               link === existing
-                ? { ...link, snapshot: command.snapshot, stack: command.stack }
+                ? {
+                    ...linkWithoutContext,
+                    ...(turnContext === undefined ? {} : { turnContext }),
+                    snapshot: command.snapshot,
+                    stack: command.stack,
+                  }
                 : link,
             );
           }
