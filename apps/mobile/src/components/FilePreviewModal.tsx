@@ -64,6 +64,7 @@ function ResolvedFilePreview(props: {
   readonly source: FilePreviewSource;
   readonly onRequestClose: () => void;
   readonly onOpenError?: (error: unknown) => void;
+  readonly onPresent: (isFinished: () => boolean) => void;
 }) {
   // Freeze the group at opening; streaming messages and URL refreshes must not reopen the viewer.
   const [items] = useState(() => filePreviewGallery(props.source, []));
@@ -127,6 +128,7 @@ function ResolvedFilePreview(props: {
       <FilePreview
         source={{ kind: "image", images, selectedIndex }}
         onRequestClose={props.onRequestClose}
+        onPresent={props.onPresent}
         {...(props.onOpenError ? { onOpenError: props.onOpenError } : {})}
       />
     );
@@ -164,6 +166,7 @@ function ResolvedFilePreview(props: {
       source={{ ...selected, kind: selected.kind, uri }}
       onRequestClose={props.onRequestClose}
       onOpenError={onOpenError}
+      onPresent={props.onPresent}
     />
   );
 }
@@ -181,11 +184,40 @@ export function FilePreviewModal(props: {
       : { ...props.source, gallery: filePreviewGallery(props.source, group) };
   usePreviewPresentation(source && filePreviewKey(source), props.onRequestClose);
 
+  // A tap can land after the native viewer closed but before its close reached the caller, which
+  // still holds the same item; that tap only opens a new viewer under a new key.
+  // Only a viewer that presented and has since closed reopens; one still resolving never does.
+  const [opening, setOpening] = useState<{
+    readonly source: FilePreviewSource | null;
+    readonly count: number;
+    readonly presented: { readonly isFinished: () => boolean } | null;
+  }>({ source: props.source, count: 0, presented: null });
+  if (opening.source !== props.source) {
+    const sameItem =
+      opening.source !== null &&
+      props.source !== null &&
+      filePreviewKey(opening.source) === filePreviewKey(props.source);
+    const reopened = sameItem && opening.presented?.isFinished() === true;
+    setOpening({
+      source: props.source,
+      count: opening.count + (reopened ? 1 : 0),
+      presented: sameItem && !reopened ? opening.presented : null,
+    });
+  }
+  const { count } = opening;
+  const onPresent = (isFinished: () => boolean) =>
+    setOpening((current) =>
+      current.count === count && current.presented === null
+        ? { ...current, presented: { isFinished } }
+        : current,
+    );
+
   if (!source) return null;
   return (
     <ResolvedFilePreview
-      key={filePreviewKey(source)}
+      key={`${opening.count}:${filePreviewKey(source)}`}
       source={source}
+      onPresent={onPresent}
       onRequestClose={props.onRequestClose}
       {...(props.onOpenError ? { onOpenError: props.onOpenError } : {})}
     />

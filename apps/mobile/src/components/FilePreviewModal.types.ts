@@ -42,3 +42,11 @@ export interface FilePreviewImages {
 }
 
 export type ResolvedFilePreviewSource = ResolvedFilePreviewDocument | FilePreviewImages;
+
+export interface FilePreviewViewerProps {
+  readonly source: ResolvedFilePreviewSource;
+  readonly onRequestClose: () => void;
+  readonly onOpenError?: (error: unknown) => void;
+  /** Called once the viewer hands its file to a native presentation, with a check for its close. */
+  readonly onPresent?: (isFinished: () => boolean) => void;
+}

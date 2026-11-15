@@ -6,10 +6,7 @@ import ImageViewing from "react-native-image-viewing";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { openAttachmentInViewer } from "../lib/attachmentDownload";
-import type {
-  ResolvedFilePreviewDocument,
-  ResolvedFilePreviewSource,
-} from "./FilePreviewModal.types";
+import type { ResolvedFilePreviewDocument, FilePreviewViewerProps } from "./FilePreviewModal.types";
 import { imageViewingProps, MediaImagePreview } from "./MediaImagePreview";
 import { PdfPreview } from "./PdfPreview";
 import { ControlPill } from "./ui/ControlPill";
@@ -98,11 +95,7 @@ function DocumentPreview(props: {
   );
 }
 
-export function FilePreview(props: {
-  readonly source: ResolvedFilePreviewSource;
-  readonly onRequestClose: () => void;
-  readonly onOpenError?: (error: unknown) => void;
-}) {
+export function FilePreview(props: FilePreviewViewerProps) {
   const { source } = props;
   if (source.kind === "pdf") return <PdfDocumentPreview {...props} source={source} />;
   if (source.kind !== "image") return <DocumentPreview {...props} source={source} />;
