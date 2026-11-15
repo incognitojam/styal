@@ -255,6 +255,14 @@
         "base": "d290c1f1b6c93416dfda6c9f7cd15d928a9aeb4c",
         "head": "fd1a5f72d42972d20a6e828b0901e56f370dce28"
       }
+    },
+    {
+      "pr": 32582,
+      "reason": "Imported provisionally as one snapshot to fix fork #1483: a watched merge wakes its thread once, including stored merged snapshots and terminal detail reads with failed activity reads; a refused wake still ends the watch. Adaptations use styal in wake text and retain the fork's direct closed-notice dispatch instead of upstream's later held-wake batching. Merge notices carry a supersedesUpdates stamp so the earlier stale-wake import (#21239) cancels older queued updates even when the host read discovers the merge before the stored snapshot updates; the final notice still delivers. Fork regression coverage verifies that host-read race, queued merge delivery and checks becoming successful in the sweep that discovers the merge. When it merges, compare the frozen base-to-head diff with the final upstream change, reconcile amendments and the fork dispatch integration, rerun runtimeLayer.test.ts including stale queued updates and terminal wakes, then clear this snapshot marker with that intake. If it closes without merging, review whether to remove the change or retain it as maintained fork behavior, record the decision and update the ledger where appropriate before clearing the marker.",
+      "snapshot": {
+        "base": "fc2b5de20cb572d2333e03284466e3c804d25c84",
+        "head": "a6acfd331f5fba158c30f0f15a80fce4bf73db83"
+      }
     }
   ]
 }
