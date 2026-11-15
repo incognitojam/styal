@@ -7853,7 +7853,6 @@ features:
       - packages/shared/src/serverSettings.ts
     tests:
       - apps/server/src/project/ProjectService.test.ts
-      - apps/server/src/telemetry/SettingsSnapshot.test.ts
       - apps/server/src/worktreeCleanup/WorktreeCleanup.test.ts
       - packages/client-runtime/src/state/commandPermissions.test.ts
       - packages/client-runtime/src/state/worktreeCleanup.test.ts
