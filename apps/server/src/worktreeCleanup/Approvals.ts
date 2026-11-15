@@ -35,7 +35,10 @@ const make = Effect.gen(function* () {
   const projects = yield* ProjectService.ProjectService;
   const loader = yield* ProjectConfigLoader.ProjectConfigLoader;
   const settings = yield* ServerSettings.ServerSettingsService;
-  const resolve = Effect.fn("WorktreeCleanup.resolveApproval")(function* (projectId: ProjectId) {
+  const resolve = Effect.fn("WorktreeCleanup.resolveApproval")(function* (
+    projectId: ProjectId,
+    forApproval = false,
+  ) {
     const project = yield* projects.getById(projectId).pipe(
       Effect.mapError(
         () =>
@@ -52,9 +55,10 @@ const make = Effect.gen(function* () {
       });
     const state = yield* loader.load(project.value.workspaceRoot);
     if (
-      state.status === "invalid" ||
-      (state.status === "partial" &&
-        state.issues.some((issue) => issue.path[0] === "worktreeCleanup"))
+      forApproval &&
+      (state.status === "invalid" ||
+        (state.status === "partial" &&
+          state.issues.some((issue) => issue.path[0] === "worktreeCleanup")))
     ) {
       return yield* new WorktreeCleanupError({
         reason: "nothing-to-approve",
@@ -102,7 +106,7 @@ const make = Effect.gen(function* () {
   const approve = Effect.fn("WorktreeCleanup.approve")(function* (
     input: WorktreeCleanupApproveInput,
   ) {
-    const resolved = yield* resolve(input.projectId);
+    const resolved = yield* resolve(input.projectId, true);
     const shown = new Set(input.patterns.map((pattern) => pattern.trim()));
     const approvedAt = DateTime.formatIso(DateTime.makeUnsafe(yield* Clock.currentTimeMillis));
     yield* settings

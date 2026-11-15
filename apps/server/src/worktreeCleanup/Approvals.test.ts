@@ -67,6 +67,17 @@ it.effect(
         expect(
           (yield* approvals.approve({ ...input, patterns: ["**/*"] }).pipe(Effect.result))._tag,
         ).toBe("Failure");
+        for (const { contents, pattern } of [
+          { contents: '{"worktreeCleanup":["**/*"]}', pattern: "dist" },
+          { contents: "{", pattern: null },
+        ]) {
+          yield* write('{"worktreeCleanup":["dist"]}');
+          yield* approvals.approve({ ...input, patterns: ["dist"] });
+          yield* write(contents);
+          yield* approvals.revoke({ ...input, pattern });
+          yield* write('{"worktreeCleanup":["dist"]}');
+          expect((yield* approvals.review(input)).status).toBe("pending");
+        }
         yield* write('{"worktreeCleanup":["dist","node_modules"]}');
         yield* approvals.approve({ ...input, patterns: ["dist"] });
         const settings = yield* Settings.ServerSettingsService;

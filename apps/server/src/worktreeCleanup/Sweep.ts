@@ -73,8 +73,17 @@ export const makeSweep = Effect.gen(function* () {
         const eligible = Effect.fn("WorktreeCleanup.eligible")(function* () {
           if (!(yield* managed(root)) || hasTerminal(root)) return null;
           const allProjects = yield* projects.listShells();
+          const unavailableProjects = new Set<string>();
           for (const project of allProjects) {
-            const projectRoot = yield* fs.realPath(project.workspaceRoot);
+            const declaredRoot = path.resolve(project.workspaceRoot);
+            if (declaredRoot === root || declaredRoot.startsWith(`${root}${path.sep}`)) return null;
+            const projectRoot = yield* fs
+              .realPath(declaredRoot)
+              .pipe(Effect.orElseSucceed(() => null));
+            if (projectRoot === null) {
+              unavailableProjects.add(project.id);
+              continue;
+            }
             if (projectRoot === root || projectRoot.startsWith(`${root}${path.sep}`)) return null;
           }
           const rows = yield* sql<{
@@ -104,7 +113,12 @@ export const makeSweep = Effect.gen(function* () {
           )
             return null;
           const project = allProjects.find((project) => project.id === threads[0]!.projectId);
-          if (!project || threads.some((thread) => thread.projectId !== project.id)) return null;
+          if (
+            !project ||
+            unavailableProjects.has(project.id) ||
+            threads.some((thread) => thread.projectId !== project.id)
+          )
+            return null;
           const styal = yield* fs
             .readFileString(path.join(project.workspaceRoot, "styal.json"))
             .pipe(Effect.orElseSucceed(() => null));

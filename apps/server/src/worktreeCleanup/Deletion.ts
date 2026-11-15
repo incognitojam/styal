@@ -152,7 +152,8 @@ export const makeDeletion = Effect.gen(function* () {
           }
           if (!selected.some((parent) => target === parent || inside(parent, target)))
             await visit(target);
-        } catch {
+        } catch (error) {
+          if (now() >= deadline) throw error;
           /* An unverifiable ignored subtree is kept whole. */
         }
       }

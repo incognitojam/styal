@@ -29,6 +29,7 @@ import * as ProviderSessions from "../orchestration-v2/ProviderSessionManager.ts
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as ServerConfig from "../config.ts";
 import { makeSweep } from "./Sweep.ts";
+import { DeletionLimits } from "./Deletion.ts";
 import { makeConsume } from "./Stripped.ts";
 import migration from "../persistence/ForkMigrations/015_WorktreeStripped.ts";
 import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
@@ -75,6 +76,7 @@ const setup = Effect.gen(function* () {
     }),
   ];
   let afterRead = Effect.void;
+  let projectList = [project];
   let terminal = false;
   let live = false;
   const persist = Effect.fn("fixture.persist")(function* () {
@@ -95,7 +97,7 @@ const setup = Effect.gen(function* () {
         },
       },
     }),
-    Layer.mock(ProjectStore.ProjectStoreV2)({ listShells: () => Effect.succeed([project]) }),
+    Layer.mock(ProjectStore.ProjectStoreV2)({ listShells: () => Effect.sync(() => projectList) }),
     Layer.mock(ProjectionStore.ProjectionStoreV2)({
       getShellSnapshot: () =>
         Effect.succeed({
@@ -120,6 +122,9 @@ const setup = Effect.gen(function* () {
     persist,
     layers,
     sql,
+    setProjects: (next: OrchestrationProjectShell[]) => {
+      projectList = next;
+    },
     setAfterRead: (effect: Effect.Effect<void>) => {
       afterRead = effect;
     },
@@ -140,10 +145,14 @@ const setup = Effect.gen(function* () {
 const testLayers = Layer.mergeAll(nodeLayer, NodeSqliteClient.layer({ filename: ":memory:" }));
 
 it.effect(
-  "strips once after a day, writes the row before a failed delete, and consumes it once",
+  "strips once after a day despite an unavailable unrelated project, then consumes the stripped record once",
   () =>
     Effect.gen(function* () {
       const f = yield* setup;
+      f.setProjects([
+        f.project,
+        { ...f.project, id: ProjectId.make("unavailable"), workspaceRoot: `${f.base}/missing` },
+      ]);
       yield* f.write("dist/output");
       const report: StorageCleanupReportEntry[] = [];
       yield* Effect.gen(function* () {
@@ -176,6 +185,7 @@ it.effect.each([
   "root",
   "unreferenced",
   "windows",
+  "missing-project",
 ] as const)("keeps files for %s", (mode) =>
   Effect.gen(function* () {
     const f = yield* setup;
@@ -219,6 +229,7 @@ it.effect.each([
       yield* f.fs.writeFileString(`${f.root}/styal.json`, '{"worktreeCleanup":[]}');
     if (mode === "invalid")
       yield* f.fs.writeFileString(`${f.root}/styal.json`, '{"worktreeCleanup":["**/*"]}');
+    if (mode === "missing-project") yield* f.fs.remove(f.root, { recursive: true });
     yield* Effect.gen(function* () {
       if (mode === "other-project") {
         const settings = yield* Settings.ServerSettingsService;
@@ -235,6 +246,32 @@ it.effect.each([
     }).pipe(
       Effect.provide(f.layers),
       Effect.provideService(HostProcess.Platform, mode === "windows" ? "win32" : "linux"),
+    );
+  }).pipe(Effect.provide(testLayers), Effect.scoped),
+);
+
+it.effect("retries an inspection that exhausted its budget without thread or pattern changes", () =>
+  Effect.gen(function* () {
+    const f = yield* setup;
+    yield* f.write("dist/output");
+    let exhausted = true;
+    let probes = 0;
+    yield* Effect.gen(function* () {
+      const sweep = yield* makeSweep;
+      const report: StorageCleanupReportEntry[] = [];
+      yield* sweep(f.terminal, report);
+      expect(yield* f.fs.exists(`${f.worktree}/dist/output`)).toBe(true);
+      expect(report).toEqual([]);
+      exhausted = false;
+      yield* sweep(f.terminal, report);
+      expect(yield* f.fs.exists(`${f.worktree}/dist`)).toBe(false);
+      expect(report.map((entry) => entry.path)).toEqual([`${f.worktree}/dist`]);
+    }).pipe(
+      Effect.provide(f.layers),
+      Effect.provideService(DeletionLimits, {
+        entries: 1_000_000,
+        now: () => (exhausted && ++probes > 1 ? 600_000 : 0),
+      }),
     );
   }).pipe(Effect.provide(testLayers), Effect.scoped),
 );
