@@ -1,3 +1,4 @@
+import { WorktreeCleanupPatternsSection } from "./WorktreeCleanupPatterns";
 import { DEFAULT_UNIFIED_SETTINGS } from "@t3tools/contracts/settings";
 
 import { AdvancedSettings } from "./AdvancedSettings";
@@ -57,6 +58,7 @@ export function WorktreesSettingsPanel() {
 
   return (
     <SettingsPageContainer>
+      <WorktreeCleanupPatternsSection />
       <SettingsSection id="worktree-creation" title="Creation">
         {!isProjectScope && <WorktreesDirectoryRow />}
         <StartFromRemoteRow />

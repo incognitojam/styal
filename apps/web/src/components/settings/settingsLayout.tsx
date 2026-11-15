@@ -208,6 +208,7 @@ export function SettingsSection({
   title,
   hideTitle = false,
   icon,
+  forkFeature,
   titleAction,
   headerAction,
   variant = "grouped",
@@ -218,6 +219,8 @@ export function SettingsSection({
   title: string;
   hideTitle?: boolean;
   icon?: ReactNode;
+  /** Marks a section only styal has; see `SETTINGS_FORK_FEATURES`. */
+  forkFeature?: SettingsForkFeature;
   titleAction?: ReactNode;
   headerAction?: ReactNode;
   variant?: "grouped" | "plain";
@@ -244,6 +247,7 @@ export function SettingsSection({
               {icon}
               {title}
             </h2>
+            {forkFeature ? <ForkFeatureBadge /> : null}
             {titleAction}
           </div>
           <div className="flex min-h-7 min-w-7 items-center justify-end">{headerAction}</div>

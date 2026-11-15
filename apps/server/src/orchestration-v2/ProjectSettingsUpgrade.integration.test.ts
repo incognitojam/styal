@@ -139,6 +139,7 @@ const layerRuntime = (dbPath: string) => {
     RuntimeLayer.layer.pipe(
       Layer.provide(
         Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({
+          consumeStripped: () => Effect.succeed(false),
           runForThread: () => Effect.succeed({ status: "no-script" }),
         }),
       ),

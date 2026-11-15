@@ -63,6 +63,7 @@ const settingsFixture = () => {
     start: Effect.void,
     ready: Effect.void,
     getSettings: Effect.sync(() => value),
+    modifySettings: () => Effect.die("Unexpected atomic settings update"),
     updateSettings: (patch) =>
       Effect.suspend(() => {
         if (failWrites)

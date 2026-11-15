@@ -65,6 +65,7 @@ upstreamLayer("ForkMigrations canonical upstream upgrade", (it) => {
         { migration_id: 12, name: "DropComposerDrafts" },
         { migration_id: 13, name: "WorktreeSetupState" },
         { migration_id: 14, name: "DropWorktreeSetupState" },
+        { migration_id: 15, name: "WorktreeStripped" },
       ]);
     }),
   );
@@ -170,6 +171,7 @@ it("keeps fork migrations out of the upstream manifest", () => {
     [12, "DropComposerDrafts"],
     [13, "WorktreeSetupState"],
     [14, "DropWorktreeSetupState"],
+    [15, "WorktreeStripped"],
   ]);
 });
 
@@ -324,9 +326,11 @@ for (const hasTable of [true, false]) {
             SELECT type, name, tbl_name, sql FROM sqlite_master
             WHERE tbl_name <> 'worktree_setup_state' ORDER BY type, name
           `;
-          assert.deepStrictEqual(yield* runForkMigrations(), [[14, "DropWorktreeSetupState"]]);
+          assert.deepStrictEqual(yield* runForkMigrations({ toMigrationInclusive: 14 }), [
+            [14, "DropWorktreeSetupState"],
+          ]);
           yield* dropWorktreeSetupState;
-          assert.deepStrictEqual(yield* runForkMigrations(), []);
+          assert.deepStrictEqual(yield* runForkMigrations({ toMigrationInclusive: 14 }), []);
           assert.deepStrictEqual(
             yield* sql`
             SELECT name FROM sqlite_master WHERE name = 'worktree_setup_state'

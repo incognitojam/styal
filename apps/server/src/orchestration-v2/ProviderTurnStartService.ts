@@ -699,15 +699,15 @@ export const layer: Layer.Layer<
         }
       }
       const { worktreePath, branch } = projection.thread;
-      if (
-        worktreePath !== null &&
-        branch !== null &&
-        (yield* isManagedWorktreePath(worktreePath))
-      ) {
+      if (worktreePath !== null && (yield* isManagedWorktreePath(worktreePath))) {
         const exists = yield* fileSystem
           .exists(worktreePath)
           .pipe(Effect.orElseSucceed(() => true));
-        if (!exists) {
+        const stripped =
+          exists || branch !== null
+            ? yield* setupScripts.consumeStripped(path.resolve(worktreePath))
+            : false;
+        if ((!exists && branch !== null) || stripped) {
           const project = yield* projects.getById(projection.thread.projectId).pipe(
             Effect.map(Option.getOrUndefined),
             Effect.orElseSucceed(() => undefined),
@@ -716,24 +716,27 @@ export const layer: Layer.Layer<
             project !== undefined &&
             path.resolve(project.workspaceRoot) !== path.resolve(worktreePath)
           ) {
-            yield* Effect.logWarning("provider turn start recreating missing worktree", {
+            yield* Effect.logWarning("provider turn start preparing worktree", {
               threadId: projection.thread.id,
               worktreePath,
               branch,
             });
-            const recreated = yield* Effect.result(
-              recreateMissingWorktree({
-                cwd: project.workspaceRoot,
-                worktreePath,
-                branch,
-              }).pipe(
-                Effect.mapError((cause) =>
-                  cause._tag === "WorktreeRecreateNoBaseError"
-                    ? cause
-                    : new WorktreeRecreateError({ worktreePath, branch, cause }),
-                ),
-              ),
-            );
+            const recreated =
+              exists || branch === null
+                ? { _tag: "Success" as const }
+                : yield* Effect.result(
+                    recreateMissingWorktree({
+                      cwd: project.workspaceRoot,
+                      worktreePath,
+                      branch,
+                    }).pipe(
+                      Effect.mapError((cause) =>
+                        cause._tag === "WorktreeRecreateNoBaseError"
+                          ? cause
+                          : new WorktreeRecreateError({ worktreePath, branch, cause }),
+                      ),
+                    ),
+                  );
             if (recreated._tag === "Failure") {
               if (input.willRetry === true) return yield* recreated.failure;
               yield* settleStartFailure({

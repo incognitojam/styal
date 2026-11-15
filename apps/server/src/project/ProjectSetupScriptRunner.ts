@@ -1,3 +1,4 @@
+import { makeConsume } from "../worktreeCleanup/Stripped.ts";
 import {
   EventId,
   ProjectFileActionApprovalError,
@@ -269,6 +270,7 @@ export class ProjectSetupScriptRunner extends Context.Service<
       readonly threadId: ThreadId;
       readonly turnItemId: TurnItemId;
     }) => Effect.Effect<void, ProjectFileActionApprovalError>;
+    readonly consumeStripped: (worktreePath: string) => Effect.Effect<boolean>;
     readonly runForThread: (
       input: ProjectSetupScriptRunnerInput,
     ) => Effect.Effect<ProjectSetupScriptRunnerResult, ProjectSetupScriptRunnerError>;
@@ -295,6 +297,7 @@ export const make = Effect.gen(function* () {
   const eventSink = yield* EventSink.EventSinkV2;
   const positions = yield* TurnItemPositions.TurnItemPositionStoreV2;
   const sql = yield* SqlClient.SqlClient;
+  const consume = yield* makeConsume;
   const portAllocator = yield* WorkspacePortAllocator.WorkspacePortAllocator;
   const activeRunsRef = yield* SynchronizedRef.make(new Map<string, ActiveSetupRun>());
   // Runs this process started. Startup recovery runs alongside new runs and
@@ -1111,7 +1114,13 @@ export const make = Effect.gen(function* () {
     ),
   );
 
-  return ProjectSetupScriptRunner.of({ runForThread, runPending });
+  return ProjectSetupScriptRunner.of({
+    runForThread,
+    runPending,
+    consumeStripped: Effect.fn("ProjectSetupScriptRunner.consumeStripped")((root) =>
+      consume(root).pipe(Effect.orDie),
+    ),
+  });
 });
 
 export const layer = Layer.effect(ProjectSetupScriptRunner, make);

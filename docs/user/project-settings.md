@@ -304,3 +304,13 @@ overlapping ranges, but unrelated programs on the machine can still listen on th
 
 See [Project scripts](./project-scripts.md) for the script format and other project environment
 variables.
+
+## Regenerable files in worktrees
+
+Declare paths your setup action or build recreates in `styal.json`, for example `"worktreeCleanup": ["**/node_modules", "apps/*/dist"]`. Patterns are relative to the worktree root; `*` matches within one path segment and `**` matches whole segments. Only git-ignored paths qualify. Never list notes, local state, secrets, or other files you cannot recreate.
+
+In the project’s **Settings → Worktrees → Regenerable files**, approve each pattern on each machine. New patterns need approval. Removing a pattern from the file stops using it; its earlier approval stays until you choose **Forget**, so restoring it does not ask again. Agents can edit the file to propose patterns, but cannot approve them.
+
+On macOS and Linux, the hourly storage sweep deletes qualifying paths after every thread using a managed worktree has been quiet for a day, with no open terminal or live provider session. Tracked files, unignored files, nested repositories, mount points, and selected paths that are symbolic links keep their enclosing match intact. Links inside a selected folder are removed without following them. Oversized or unverifiable folders are kept. **Settings → Storage** reports deleted paths and failures.
+
+The next turn reruns the setup action once, using its normal approval rules. Opening a terminal does not rerun setup yet; use the setup action yourself if you need it before sending a message. Windows does not delete regenerable files.

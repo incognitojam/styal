@@ -1,0 +1,38 @@
+{
+  "$schema": "https://styal.build/schema/styal.json",
+  "iconPath": "assets/dev/blueprint-web-apple-touch-180.png",
+  "actions": [
+    {
+      "id": "dev",
+      "name": "Dev",
+      "command": "vp run dev",
+      "icon": "play"
+    },
+    {
+      "id": "dev-desktop",
+      "name": "Dev Desktop",
+      "command": "vp run dev:desktop",
+      "icon": "desktop"
+    },
+    {
+      "id": "setup-worktree",
+      "name": "Setup Worktree",
+      "command": "node scripts/setup-worktree.ts",
+      "icon": "configure",
+      "runOnWorktreeCreate": true
+    }
+  ],
+  "worktreeCleanup": [
+    "**/node_modules",
+    "apps/*/dist",
+    "infra/*/dist",
+    "packages/*/dist",
+    "**/.turbo",
+    "**/.astro",
+    "**/.tanstack",
+    "**/*.tsbuildinfo",
+    "build",
+    "dist-electron",
+    "apps/server/dist-exe"
+  ]
+}

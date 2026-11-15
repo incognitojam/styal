@@ -1,3 +1,4 @@
+import { makeSweep } from "./worktreeCleanup/Sweep.ts";
 import {
   GitCommandError,
   OrchestrationV2AppThreadJson,
@@ -258,6 +259,7 @@ const make = Effect.gen(function* () {
   const terminals = yield* TerminalManager.TerminalManager;
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
+  const stripWorktrees = yield* makeSweep;
   const liveTerminals = new Map<string, Map<string, TerminalSummary>>();
   const orphanSizes = new Map<string, number | null>();
   const noteTerminal = (terminal: TerminalSummary) => {
@@ -1215,6 +1217,9 @@ const make = Effect.gen(function* () {
         }),
       ),
     );
+    yield* stripWorktrees(hasTerminal, entries).pipe(
+      Effect.catch(() => Effect.logWarning("Regenerable file sweep failed")),
+    );
     deletedWorktreeWaits = deletedWorktrees.waiting;
     keptDeletedWorktrees = deletedWorktrees.kept;
     sweptDeletions = deletionsAtStart;
@@ -1350,6 +1355,7 @@ const make = Effect.gen(function* () {
         if (
           Equal.equals(settings.storageCleanup, lastSettings.storageCleanup) &&
           Equal.equals(settings.worktreeCleanup, lastSettings.worktreeCleanup) &&
+          Equal.equals(settings.worktreeCleanupApprovals, lastSettings.worktreeCleanupApprovals) &&
           sameProjectWorktreePolicies(settings, lastSettings)
         )
           return Effect.void;
