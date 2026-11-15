@@ -55,17 +55,13 @@ export function ShortcutHintBadge(props: {
   return label === null ? null : <CornerBadge label={label} />;
 }
 
-/** The button edges a badge is placed from. */
-type BadgeAnchor = { left: number; right: number; top: number };
+// The window width is part of it because the badge is clamped to the window's right edge.
+type BadgeAnchor = { left: number; right: number; top: number; viewportWidth: number };
 
 const remeasureListeners = new Set<() => void>();
 let remeasureObserver: MutationObserver | null = null;
 let remeasureFrame = 0;
 
-/**
- * Calls the listener once a frame after the page's elements change, through one observer
- * shared by every badge and connected only while a badge is shown.
- */
 function subscribeToPageChanges(listener: () => void): () => void {
   remeasureListeners.add(listener);
   if (remeasureObserver === null) {
@@ -91,7 +87,12 @@ function subscribeToPageChanges(listener: () => void): () => void {
 function sameAnchor(a: BadgeAnchor | null, b: BadgeAnchor | null): boolean {
   return (
     a === b ||
-    (a !== null && b !== null && a.left === b.left && a.right === b.right && a.top === b.top)
+    (a !== null &&
+      b !== null &&
+      a.left === b.left &&
+      a.right === b.right &&
+      a.top === b.top &&
+      a.viewportWidth === b.viewportWidth)
   );
 }
 
@@ -111,7 +112,12 @@ function CornerBadge(props: { label: string }) {
           (rect.top + rect.bottom) / 2,
         );
         if (hit && button.contains(hit)) {
-          next = { left: rect.left, right: rect.right, top: rect.top };
+          next = {
+            left: rect.left,
+            right: rect.right,
+            top: rect.top,
+            viewportWidth: window.innerWidth,
+          };
         }
       }
       // Streaming output changes the page every frame; an unchanged badge should not re-render.
