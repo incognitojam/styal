@@ -46,6 +46,29 @@ if (!bucket || !distDir || !accountId || !token) {
 const api = `https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets/${bucket}/objects`;
 const authorization = { Authorization: `Bearer ${token}` };
 
+// The API rate-limits bursts with HTTP 429 or by resetting HTTP/2 streams.
+async function request(description: string, url: string | URL, init?: RequestInit) {
+  for (let attempt = 1; ; attempt++) {
+    const outcome = await fetch(url, init).then(
+      async (response) =>
+        response.ok
+          ? { response }
+          : {
+              retry: response.status === 429 || response.status >= 500,
+              retryAfter: Number(response.headers.get("Retry-After")),
+              detail: `HTTP ${response.status} ${await response.text()}`,
+            },
+      (error: unknown) => ({ retry: true, retryAfter: Number.NaN, detail: String(error) }),
+    );
+    if ("response" in outcome) return outcome.response;
+    if (!outcome.retry || attempt === MAX_ATTEMPTS) {
+      throw new Error(`${description} failed: ${outcome.detail}`);
+    }
+    const delaySeconds = outcome.retryAfter > 0 ? outcome.retryAfter : 2 ** attempt;
+    await new Promise((resolve) => setTimeout(resolve, delaySeconds * 1000));
+  }
+}
+
 async function listUploaded(): Promise<Map<string, number>> {
   const uploaded = new Map<string, number>();
   let cursor: string | undefined;
@@ -54,18 +77,11 @@ async function listUploaded(): Promise<Map<string, number>> {
     url.searchParams.set("prefix", "assets/");
     url.searchParams.set("per_page", "1000");
     if (cursor) url.searchParams.set("cursor", cursor);
-    const response = await fetch(url, { headers: authorization });
+    const response = await request(`Listing ${bucket}`, url, { headers: authorization });
     const body = (await response.json()) as {
-      success: boolean;
-      errors: unknown[];
       result: { key: string; last_modified: string }[];
       result_info?: { cursor?: string; is_truncated?: boolean | string };
     };
-    if (!response.ok || !body.success) {
-      throw new Error(
-        `Listing ${bucket} failed: HTTP ${response.status} ${JSON.stringify(body.errors)}`,
-      );
-    }
     for (const object of body.result) uploaded.set(object.key, Date.parse(object.last_modified));
     const truncated = String(body.result_info?.is_truncated) === "true";
     cursor = truncated ? body.result_info?.cursor : undefined;
@@ -76,29 +92,11 @@ async function listUploaded(): Promise<Map<string, number>> {
 async function upload(key: string, file: string) {
   const contentType =
     CONTENT_TYPES[NodePath.extname(file).toLowerCase()] ?? "application/octet-stream";
-  const body = await NodeFSP.readFile(file);
-  for (let attempt = 1; ; attempt++) {
-    // The API rate-limits bursts with HTTP 429 or by resetting HTTP/2 streams.
-    const result = await fetch(`${api}/${key.split("/").map(encodeURIComponent).join("/")}`, {
-      method: "PUT",
-      headers: { ...authorization, "Content-Type": contentType },
-      body,
-    }).then(
-      async (response) =>
-        response.ok
-          ? null
-          : {
-              retry: response.status === 429 || response.status >= 500,
-              detail: `HTTP ${response.status} ${await response.text()}`,
-            },
-      (error: unknown) => ({ retry: true, detail: String(error) }),
-    );
-    if (!result) return;
-    if (!result.retry || attempt === MAX_ATTEMPTS) {
-      throw new Error(`Uploading ${key} failed: ${result.detail}`);
-    }
-    await new Promise((resolve) => setTimeout(resolve, 2 ** attempt * 1000));
-  }
+  await request(`Uploading ${key}`, `${api}/${key.split("/").map(encodeURIComponent).join("/")}`, {
+    method: "PUT",
+    headers: { ...authorization, "Content-Type": contentType },
+    body: await NodeFSP.readFile(file),
+  });
 }
 
 const assetsDir = NodePath.join(distDir, "assets");
