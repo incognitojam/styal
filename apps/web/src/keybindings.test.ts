@@ -489,9 +489,10 @@ describe("shortcutHintLabelForModifiers", () => {
   const mac = { platform: "MacIntel" };
   it.each([
     ["the exact held modifiers", { metaKey: true }, "terminal.toggle", mac, "⌘J"],
+    ["Shift shortcuts while only Cmd is held", { metaKey: true }, "modelPicker.toggle", mac, "⇧⌘M"],
     ["Shift held as well", { metaKey: true, shiftKey: true }, "terminal.toggle", mac, null],
     [
-      "Shift shortcuts once Shift joins",
+      "Shift shortcuts once Shift is held",
       { metaKey: true, shiftKey: true },
       "modelPicker.toggle",
       mac,

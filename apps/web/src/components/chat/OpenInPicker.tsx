@@ -26,7 +26,7 @@ import {
   SquareArrowOutUpRightIcon,
 } from "lucide-react";
 
-import { ShortcutHintBadge, ShortcutHintSlot } from "../ShortcutHint";
+import { ShortcutHintBadge } from "../ShortcutHint";
 import { Group, GroupSeparator } from "../ui/group";
 import {
   Menu,
@@ -433,14 +433,8 @@ export const OpenInPicker = memo(function OpenInPicker({
           });
         }}
       >
-        {primaryIcon !== null && openFavoriteShortcutHinted && isPanel ? (
-          <ShortcutHintSlot command="editor.openFavorite">{primaryIcon}</ShortcutHintSlot>
-        ) : (
-          primaryIcon
-        )}
-        {openFavoriteShortcutHinted && !isPanel ? (
-          <ShortcutHintBadge command="editor.openFavorite" />
-        ) : null}
+        {primaryIcon}
+        {openFavoriteShortcutHinted ? <ShortcutHintBadge command="editor.openFavorite" /> : null}
         <span
           className={cn(
             compact

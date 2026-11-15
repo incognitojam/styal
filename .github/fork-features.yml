@@ -6553,11 +6553,11 @@ features:
     title: Holding Cmd or Ctrl shows shortcuts on buttons
     status: maintained
     tier: yield
-    prs: [1477]
+    prs: [1477, 1485]
     invariants:
-      - After Cmd or Ctrl has been held for the thread jump hint delay, each visible, enabled button whose bound shortcut needs exactly the held modifiers shows that shortcut; changing the held modifiers swaps the set at once, and releasing them hides every hint.
-      - Icon-only buttons show the shortcut as a badge over their top-right corner, drawn above any clipping container; labelled controls show it in place of their icon.
-      - A command with several bindings shows the one that matches the held modifiers, labels follow the user's own keybindings, and no hint shows while a terminal has focus or on a control the shortcut cannot reach.
+      - After Cmd or Ctrl has been held for the thread jump hint delay, each visible, enabled button whose bound shortcut uses every held modifier shows that shortcut, so holding Cmd alone also shows Shift+Cmd shortcuts; holding more modifiers narrows the set at once, and releasing them hides every hint.
+      - Every hint is a badge over the button's top edge (centred on icon buttons, at the right of wider controls), drawn above any clipping container, so showing hints never moves or resizes a control.
+      - A command with several bindings shows the one that needs the fewest modifiers beyond those held, labels follow the user's own keybindings, and no hint shows while a terminal has focus or on a control the shortcut cannot reach.
     rationale: Shortcuts were only discoverable through tooltips one button at a time; the sidebar's thread jump hints showed that holding the modifier is a quick way to learn them.
     implementation_paths:
       - apps/web/src/components/ShortcutHint.tsx

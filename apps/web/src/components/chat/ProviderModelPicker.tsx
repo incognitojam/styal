@@ -6,7 +6,7 @@ import {
   type ResolvedKeybindingsConfig,
 } from "@t3tools/contracts";
 import { createContext, memo, type ReactNode, useRef, useState } from "react";
-import { ShortcutHintSlot } from "../ShortcutHint";
+import { ShortcutHintBadge } from "../ShortcutHint";
 import { Badge } from "../ui/badge";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -337,6 +337,9 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
           />
         }
       >
+        <ShortcutHintBadge
+          command={shortcutLabel && !props.disabled ? "modelPicker.toggle" : null}
+        />
         <span
           className={cn("flex min-w-0 flex-1 items-center", size === "xs" ? "gap-1" : "gap-1.5")}
         >
@@ -371,25 +374,21 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
           ) : activeEntry && props.triggerLabel === undefined ? (
             // Narrow compacted composers hide the provider icon before truncating the name.
             <span data-chat-provider-model-picker-icon className="contents">
-              <ShortcutHintSlot
-                command={shortcutLabel && !props.disabled ? "modelPicker.toggle" : null}
-              >
-                <ProviderInstanceIcon
-                  driverKind={activeEntry.driverKind}
-                  displayName={activeEntry.displayName}
-                  accentColor={activeEntry.accentColor}
-                  acpRegistryAgentId={activeEntry.acpRegistryAgentId}
-                  acpRegistryIconUrl={activeEntry.acpRegistryIconUrl}
-                  showBadge={showInstanceBadge}
-                  className="size-4"
-                  iconClassName={cn("size-4", props.activeProviderIconClassName)}
-                  indicatorBackground={props.instanceIndicatorBackground ?? "var(--contrast-input)"}
-                  badgeClassName={cn(
-                    "right-[-0.125rem] bottom-[-0.125rem] h-3 min-w-3 px-0.5 text-5xs",
-                    size === "xs" && "shadow-none",
-                  )}
-                />
-              </ShortcutHintSlot>
+              <ProviderInstanceIcon
+                driverKind={activeEntry.driverKind}
+                displayName={activeEntry.displayName}
+                accentColor={activeEntry.accentColor}
+                acpRegistryAgentId={activeEntry.acpRegistryAgentId}
+                acpRegistryIconUrl={activeEntry.acpRegistryIconUrl}
+                showBadge={showInstanceBadge}
+                className="size-4"
+                iconClassName={cn("size-4", props.activeProviderIconClassName)}
+                indicatorBackground={props.instanceIndicatorBackground ?? "var(--contrast-input)"}
+                badgeClassName={cn(
+                  "right-[-0.125rem] bottom-[-0.125rem] h-3 min-w-3 px-0.5 text-5xs",
+                  size === "xs" && "shadow-none",
+                )}
+              />
             </span>
           ) : null}
           {props.isComposerOwned ? (

@@ -310,7 +310,12 @@ export function shouldShowThreadJumpHintsForModifiers(
   return false;
 }
 
-/** The label of the command's shortcut that needs exactly the held modifiers, if it has one. */
+const HINT_MODIFIER_KEYS = ["metaKey", "ctrlKey", "shiftKey", "altKey"] as const;
+
+/**
+ * The label of the command's shortcut that uses every held modifier, preferring the one
+ * that needs the fewest more, so holding Cmd also shows Shift+Cmd shortcuts.
+ */
 export function shortcutHintLabelForModifiers(
   modifiers: ShortcutModifierStateLike,
   keybindings: ResolvedKeybindingsConfig,
@@ -318,10 +323,24 @@ export function shortcutHintLabelForModifiers(
   options?: ShortcutMatchOptions,
 ): string | null {
   const platform = resolvePlatform(options);
-  const shortcut = effectiveShortcutsForCommand(keybindings, command, options).find((candidate) =>
-    matchesKeybindingShortcutModifiers(modifiers, candidate, platform),
-  );
-  return shortcut ? formatShortcutLabel(shortcut, platform) : null;
+  const useMetaForMod = isMacPlatform(platform);
+  let best: KeybindingShortcut | null = null;
+  let bestExtra = Infinity;
+  for (const shortcut of effectiveShortcutsForCommand(keybindings, command, options)) {
+    const needed = {
+      metaKey: shortcut.metaKey || (shortcut.modKey && useMetaForMod),
+      ctrlKey: shortcut.ctrlKey || (shortcut.modKey && !useMetaForMod),
+      shiftKey: shortcut.shiftKey,
+      altKey: shortcut.altKey,
+    };
+    if (HINT_MODIFIER_KEYS.some((key) => modifiers[key] && !needed[key])) continue;
+    const extra = HINT_MODIFIER_KEYS.filter((key) => needed[key] && !modifiers[key]).length;
+    if (extra < bestExtra) {
+      best = shortcut;
+      bestExtra = extra;
+    }
+  }
+  return best ? formatShortcutLabel(best, platform) : null;
 }
 
 export function modelPickerJumpCommandForIndex(
