@@ -3,6 +3,7 @@ import {
   EnvironmentId as EnvironmentIdSchema,
   ModelSelection as ModelSelectionSchema,
   ComposerContextId,
+  CoordinatorReportReference,
   ComposerContextRecord,
   COMPOSER_CONTEXT_MAX_RECORDS,
   ForwardCompatibleArray,
@@ -387,6 +388,7 @@ const isComposerDraftPersistenceError = Schema.is(ComposerDraftPersistenceError)
 export interface ComposerDraft {
   readonly text: string;
   readonly context?: OrchestrationMessageContext;
+  readonly reportAnswer?: typeof CoordinatorReportReference.Type;
   readonly attachments: ReadonlyArray<DraftComposerAttachment>;
   readonly importedShareIds?: ReadonlyArray<string>;
   readonly modelSelection?: ModelSelection;
@@ -405,6 +407,7 @@ export interface ComposerDraftProject {
 export interface ComposerDraftContent {
   readonly text: string;
   readonly context?: OrchestrationMessageContext;
+  readonly reportAnswer?: typeof CoordinatorReportReference.Type;
   readonly attachments: ReadonlyArray<DraftComposerAttachment>;
   readonly sourceShareId?: string;
 }
@@ -452,6 +455,7 @@ const PersistedComposerContextSchema = Schema.Struct({
 const ComposerDraftSchema = Schema.Struct({
   text: Schema.String,
   context: Schema.optional(PersistedComposerContextSchema),
+  reportAnswer: Schema.optional(CoordinatorReportReference),
   attachments: Schema.Array(DraftComposerAttachmentSchema),
   importedShareIds: Schema.optional(Schema.Array(Schema.String)),
   modelSelection: Schema.optional(ModelSelectionSchema),
@@ -632,6 +636,7 @@ export function isComposerDraftEmpty(draft: ComposerDraft): boolean {
 
 function isEmptyDraft(draft: ComposerDraft): boolean {
   return (
+    draft.reportAnswer === undefined &&
     draft.text.length === 0 &&
     draft.attachments.length === 0 &&
     draft.modelSelection === undefined &&
@@ -1580,6 +1585,7 @@ export function clearComposerDraftContentState(
   const {
     importedShareIds: _importedShareIds,
     context: _context,
+    reportAnswer: _reportAnswer,
     modelSelection,
     workspaceSelection,
     project: _project,
@@ -1673,6 +1679,7 @@ export function mergeComposerDraftContentState(
   );
   const text = mergeComposerDraftText(existing.text, content.text);
   const context = mergeReferencedComposerContext(text, existing.context, content.context);
+  const reportAnswer = content.reportAnswer ?? existing.reportAnswer;
   const importedShareIds = content.sourceShareId
     ? [...(existing.importedShareIds ?? []), content.sourceShareId]
     : existing.importedShareIds;
@@ -1680,6 +1687,7 @@ export function mergeComposerDraftContentState(
     text === existing.text &&
     attachments.length === existing.attachments.length &&
     content.context === undefined &&
+    reportAnswer === existing.reportAnswer &&
     importedShareIds === existing.importedShareIds
   ) {
     return current;
@@ -1696,6 +1704,7 @@ export function mergeComposerDraftContentState(
         text,
         attachments,
         context,
+        ...(reportAnswer ? { reportAnswer } : {}),
         ...(importedShareIds ? { importedShareIds } : {}),
       },
       content.sourceShareId ? attachments.slice(existing.attachments.length) : [],
@@ -1741,6 +1750,7 @@ export function sameComposerDraftState(a: ComposerDraft, b: ComposerDraft): bool
     a.text === b.text &&
     a.attachments === b.attachments &&
     a.context === b.context &&
+    a.reportAnswer === b.reportAnswer &&
     a.importedShareIds === b.importedShareIds &&
     a.modelSelection === b.modelSelection &&
     a.runtimeMode === b.runtimeMode &&
@@ -1770,7 +1780,12 @@ export function undoComposerDraftMergeState(
       .map((attachment) => attachment.id),
   );
   const undoSetting = <
-    K extends "modelSelection" | "runtimeMode" | "interactionMode" | "workspaceSelection",
+    K extends
+      | "modelSelection"
+      | "runtimeMode"
+      | "interactionMode"
+      | "workspaceSelection"
+      | "reportAnswer",
   >(
     key: K,
   ): ComposerDraft[K] => (existing[key] === merged[key] ? snapshot[key] : existing[key]);
@@ -1787,6 +1802,7 @@ export function undoComposerDraftMergeState(
     attachments: existing.attachments.filter(
       (attachment) => !insertedAttachmentIds.has(attachment.id),
     ),
+    reportAnswer: undoSetting("reportAnswer"),
     modelSelection: undoSetting("modelSelection"),
     runtimeMode: undoSetting("runtimeMode"),
     interactionMode: undoSetting("interactionMode"),

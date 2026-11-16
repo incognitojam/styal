@@ -1,3 +1,10 @@
+import { AppText as Text } from "../../components/ui/AppText";
+import { Button } from "../../components/ui/Button";
+import { CoordinatorReportsContext, WaitingReports, type ReportState } from "./CoordinatorReports";
+import { dismissCoordinatorReport } from "../../state/coordinatorReports";
+import type { ReportReply } from "@t3tools/client-runtime/coordinator-reports";
+import { CommandId } from "@t3tools/contracts";
+import { uuidv4 } from "../../lib/uuid";
 import { ChildThreadApprovals } from "./ChildThreadApprovals";
 import { useOpenThreadInspector } from "./thread-inspector-navigation";
 import { useSidebarWorkspaceTabs } from "../workspace/useSystemWorkspaceTabBar";
@@ -156,6 +163,7 @@ import { useThreadServerBrowserTabs } from "../../state/preview";
 import type { QueuedThreadMessage } from "../../state/thread-outbox-model";
 import { scopedThreadKey } from "../../lib/scopedEntities";
 import {
+  requestThreadMessageJump,
   finishThreadMessageJump,
   pendingThreadMessageJump,
   subscribeThreadMessageJump,
@@ -247,6 +255,9 @@ export interface ThreadDetailScreenProps {
   readonly environmentLabel: string | null;
   readonly feedbackSubmissions: ReadonlyArray<CodexFeedbackSubmission>;
   readonly onDismissFeedback: (id: MessageId) => void;
+  readonly reports?: readonly ReportState[];
+  readonly reportReply?: ReportReply | null;
+  readonly onReportReply?: (reply: ReportReply | null) => void;
   readonly selectedThreadFeed: ReadonlyArray<ThreadFeedEntry>;
   readonly pendingHandoff?: HandoffEndpoints | null;
   readonly activityRun: ThreadFeedLatestRun | null;
@@ -313,6 +324,7 @@ export interface ThreadDetailScreenProps {
       hasAttachmentsOrContext: boolean,
     ) => Promise<boolean | "responded">,
     onWillEnqueue?: () => void,
+    reportResponse?: { text: string; reply: ReportReply },
   ) => Promise<MessageId | null>;
   readonly onReconnectEnvironment: () => void;
   readonly canSwitchThreadProvider: boolean;
@@ -539,6 +551,10 @@ function ThreadDetailBody(
   const [sendingWithKeyboard, setSendingWithKeyboard] = useState(false);
   if (sendingWithKeyboard && !isKeyboardVisible) setSendingWithKeyboard(false);
   const feedRef = useRef<ThreadFeedHandle>(null);
+  const dismissReport = useAtomCommand(dismissCoordinatorReport);
+  const canDismissReport = useAtomValue(
+    dismissCoordinatorReport.permissionAtom(props.environmentId),
+  );
   const [endFollowEnabled, setEndFollowEnabled] = useState(true);
   // Keep the bottom padding fixed while the keyboard animates. Changing it at
   // keyboardDidHide makes the composer land low, then jump back above the safe area.
@@ -1431,6 +1447,32 @@ function ThreadDetailBody(
     feedTouchStartRef.current = null;
   };
 
+  const replyToReport = useEffectEvent((reply: ReportReply) => {
+    props.onReportReply?.(reply);
+    composerEditorRef.current?.focus();
+  });
+  const sendReportAnswer = useEffectEvent(async (text: string, reply: ReportReply) => {
+    const id = await props.onSendMessage(undefined, undefined, undefined, { text, reply });
+    if (!id) throw new Error("Could not send answer");
+    feedRef.current?.resetEndFollow();
+  });
+  const reportContext = {
+    reports: props.reports ?? [],
+    canOperate: props.canOperateThread && canDismissReport && props.queuedRunEdit === null,
+    reply: replyToReport,
+    send: sendReportAnswer,
+    dismiss: async ({ ref }: ReportReply) => {
+      const result = await dismissReport({
+        environmentId: props.environmentId,
+        input: {
+          commandId: CommandId.make(uuidv4()),
+          threadId: props.selectedThread.id,
+          ...ref,
+        },
+      });
+      if (AsyncResult.isFailure(result)) throw new Error("Could not dismiss report");
+    },
+  };
   return (
     <View className="flex-1" onLayout={handleScreenLayout}>
       {!usesNativeWorkspaceColumns ? <NativeLayoutObserver onChange={setScreenMetrics} /> : null}
@@ -1472,55 +1514,59 @@ function ThreadDetailBody(
             )}
           >
             <WorkspaceMutationIdProvider threadRef={props.selectedThreadDetailRef}>
-              <ThreadFeed
-                environmentId={props.environmentId}
-                threadId={props.selectedThread.id}
-                detailRef={props.selectedThreadDetailRef}
-                workspaceRoot={props.threadCwd}
-                feed={props.selectedThreadFeed}
-                turnUsageByTurnId={props.turnUsageByTurnId}
-                pendingHandoff={props.pendingHandoff}
-                worktreeSetup={props.worktreeSetup}
-                setupWorkingStartedAt={props.setupWorkingStartedAt}
-                queuedMessages={props.queuedMessages}
-                dispatchingMessageId={props.dispatchingMessageId}
-                // A native subagent has no composer to edit a pending message in;
-                // Cancel on the edit banner would discard it.
-                onEditPendingMessage={
-                  isProviderSubagent || pendingMessageEditBlocked ? null : handleEditPendingMessage
-                }
-                contentPresentation={props.contentPresentation}
-                threadTitle={props.selectedThread.title}
-                latestRun={props.activityRun}
-                activeWorkStartedAt={props.activeWorkStartedAt}
-                runlessWorkActive={props.runlessWorkActive ?? false}
-                listRef={listRef}
-                freeze={freeze}
-                anchorMessageId={anchorMessageId}
-                jumpToMessageId={jumpMessageLoaded ? jumpMessageId : null}
-                onJumpedToMessage={() => finishThreadMessageJump(selectedThreadKey)}
-                ref={feedRef}
-                contentInsetEndAdjustment={combinedContentInsetEndAdjustment}
-                keyboardOffset={composerKeyboardOffset}
-                sendingWithKeyboard={sendingWithKeyboard}
-                fitShortFeedToViewport={questionInFlow && !isKeyboardVisible}
-                contentTopInset={0}
-                contentBottomInset={
-                  questionInFlow
-                    ? 0
-                    : estimatedOverlayHeight +
-                      (showFloatingStatus ? FLOATING_WORKING_CONTROL_COVERAGE : 0)
-                }
-                contentMaxWidth={contentMaxWidth}
-                historyControls={props.historyControls}
-                contentSideInsets={nativeMetrics?.safeArea}
-                layoutVariant={layoutVariant}
-                usesAutomaticContentInsets={props.usesAutomaticContentInsets}
-                onHeaderMaterialVisibilityChange={props.onHeaderMaterialVisibilityChange}
-                onEndFollowEnabledChange={handleEndFollowEnabledChange}
-                skills={selectedProviderSkills}
-                onUseArtifactTemplate={handleUseArtifactTemplate}
-              />
+              <CoordinatorReportsContext value={reportContext}>
+                <ThreadFeed
+                  environmentId={props.environmentId}
+                  threadId={props.selectedThread.id}
+                  detailRef={props.selectedThreadDetailRef}
+                  workspaceRoot={props.threadCwd}
+                  feed={props.selectedThreadFeed}
+                  turnUsageByTurnId={props.turnUsageByTurnId}
+                  pendingHandoff={props.pendingHandoff}
+                  worktreeSetup={props.worktreeSetup}
+                  setupWorkingStartedAt={props.setupWorkingStartedAt}
+                  queuedMessages={props.queuedMessages}
+                  dispatchingMessageId={props.dispatchingMessageId}
+                  // A native subagent has no composer to edit a pending message in;
+                  // Cancel on the edit banner would discard it.
+                  onEditPendingMessage={
+                    isProviderSubagent || pendingMessageEditBlocked
+                      ? null
+                      : handleEditPendingMessage
+                  }
+                  contentPresentation={props.contentPresentation}
+                  threadTitle={props.selectedThread.title}
+                  latestRun={props.activityRun}
+                  activeWorkStartedAt={props.activeWorkStartedAt}
+                  runlessWorkActive={props.runlessWorkActive ?? false}
+                  listRef={listRef}
+                  freeze={freeze}
+                  anchorMessageId={anchorMessageId}
+                  jumpToMessageId={jumpMessageLoaded ? jumpMessageId : null}
+                  onJumpedToMessage={() => finishThreadMessageJump(selectedThreadKey)}
+                  ref={feedRef}
+                  contentInsetEndAdjustment={combinedContentInsetEndAdjustment}
+                  keyboardOffset={composerKeyboardOffset}
+                  sendingWithKeyboard={sendingWithKeyboard}
+                  fitShortFeedToViewport={questionInFlow && !isKeyboardVisible}
+                  contentTopInset={0}
+                  contentBottomInset={
+                    questionInFlow
+                      ? 0
+                      : estimatedOverlayHeight +
+                        (showFloatingStatus ? FLOATING_WORKING_CONTROL_COVERAGE : 0)
+                  }
+                  contentMaxWidth={contentMaxWidth}
+                  historyControls={props.historyControls}
+                  contentSideInsets={nativeMetrics?.safeArea}
+                  layoutVariant={layoutVariant}
+                  usesAutomaticContentInsets={props.usesAutomaticContentInsets}
+                  onHeaderMaterialVisibilityChange={props.onHeaderMaterialVisibilityChange}
+                  onEndFollowEnabledChange={handleEndFollowEnabledChange}
+                  skills={selectedProviderSkills}
+                  onUseArtifactTemplate={handleUseArtifactTemplate}
+                />
+              </CoordinatorReportsContext>
             </WorkspaceMutationIdProvider>
           </RenderErrorBoundary>
         </View>
@@ -1646,6 +1692,24 @@ function ThreadDetailBody(
                           }}
                         />
                       </Animated.View>
+                    ) : null}
+                    <WaitingReports
+                      reports={props.reports ?? []}
+                      scroll={(id) => requestThreadMessageJump(selectedThreadKey, id)}
+                    />
+                    {props.reportReply ? (
+                      <View className="mx-3 mb-2 flex-row items-center gap-2 rounded-xl bg-secondary py-1 pl-3">
+                        <Text className="flex-1 text-foreground-secondary" numberOfLines={1}>
+                          Replying to {props.reportReply.title} · version{" "}
+                          {props.reportReply.ref.version}
+                        </Text>
+                        <Button
+                          label="Cancel reply"
+                          size="compact"
+                          tone="text"
+                          onPress={() => props.onReportReply?.(null)}
+                        />
+                      </View>
                     ) : null}
                     <ProviderSignInCard
                       thread={props.selectedThread}

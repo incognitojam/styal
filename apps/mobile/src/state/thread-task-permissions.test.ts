@@ -97,6 +97,10 @@ vi.mock("@effect/atom-react", async () => {
   const { appAtomRegistry } = await import("./atom-registry");
   return { useAtomValue: <A>(atom: Atom.Atom<A>) => appAtomRegistry.get(atom) };
 });
+vi.mock("./server", async () => {
+  const { Atom } = await import("effect/reactivity");
+  return { serverEnvironment: { settingsValueAtom: () => Atom.make(DEFAULT_SERVER_SETTINGS) } };
+});
 vi.mock("./entities", () => ({ useServerConfigs: () => new Map() }));
 vi.mock("./session", () => ({
   readEnvironmentScope: (environmentId: string, scope: string) =>
@@ -220,6 +224,25 @@ beforeEach(() => {
 });
 
 describe("mobile task permissions", () => {
+  it("queues a report answer with its reference and preserves the composer draft", async () => {
+    state.grantedEnvironments.add("secondary");
+    const composer = useThreadComposerState();
+    const ref = { messageId: MessageId.make("report"), key: "build", version: 2 };
+    expect(
+      await composer.onSendMessage(undefined, undefined, undefined, {
+        text: "Ship",
+        reply: { ref, title: "Build" },
+      }),
+    ).toBe("message");
+    expect(state.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: "[Build, version 2] Ship",
+        reportAnswer: ref,
+      }),
+    );
+    expect(state.clearDraft).not.toHaveBeenCalled();
+  });
+
   it("consumes an approval reply without queueing a parent message", async () => {
     state.grantedEnvironments.add("secondary");
     const composer = useThreadComposerState();

@@ -253,6 +253,24 @@ describe("queued PR checkout", () => {
     isOnPullRequestHead: true,
   };
 
+  it("delivers a queued report answer with its exact version reference", async () => {
+    setOperateGrant("secondary", true);
+    const ref = { messageId: MessageId.make("report"), key: "build", version: 2 };
+    await state.manager.enqueue(message({ text: "[Build, version 2] Ship", reportAnswer: ref }));
+    await runDrain();
+    expect(state.start).toHaveBeenCalledWith(
+      expect.objectContaining({
+        input: expect.objectContaining({
+          message: expect.objectContaining({
+            text: "[Build, version 2] Ship",
+            reportAnswer: ref,
+          }),
+        }),
+      }),
+    );
+    expect(remaining()).toEqual([]);
+  });
+
   it("waits for the provider's PR checkout and launches in that worktree", async () => {
     setOperateGrant("secondary", true);
     await state.manager.enqueue(queuedPullRequest());

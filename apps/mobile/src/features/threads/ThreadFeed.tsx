@@ -1,3 +1,4 @@
+import { CoordinatorReportMessage } from "./CoordinatorReports";
 import { useAtomValue } from "@effect/atom-react";
 import { Atom } from "effect/reactivity";
 import { Button } from "../../components/ui/Button";
@@ -2456,7 +2457,8 @@ function renderFeedEntry(
     const enterAnimated = isFreshTimestamp(message.createdAt);
     const assistantImages = attachments.filter(isImageAttachment);
     return (
-      <Animated.View
+      <CoordinatorReportMessage
+        id={message.id}
         className={cn(
           showAssistantMeta && !(message.runId && props.failedRunIds.has(message.runId))
             ? "mb-5 px-1"
@@ -2560,7 +2562,7 @@ function renderFeedEntry(
             ) : null}
           </View>
         ) : null}
-      </Animated.View>
+      </CoordinatorReportMessage>
     );
   }
 

@@ -116,6 +116,7 @@ describe("thread outbox", () => {
     const message: QueuedThreadMessage = {
       ...queuedMessage({ messageId: "context-message", createdAt: "2026-09-06T12:00:00.000Z" }),
       text: "[Build](t3-context://v1/terminal/build-output)",
+      reportAnswer: { messageId: MessageId.make("report"), key: "build", version: 2 },
       context: {
         version: 1,
         records: [

@@ -1,3 +1,10 @@
+import * as DateTime from "effect/DateTime";
+import {
+  coordinatorReports,
+  formatReportAnswer,
+  type ReportReply,
+} from "@t3tools/client-runtime/coordinator-reports";
+import { serverEnvironment } from "./server";
 import { continuedResponseWorkStartedAt } from "@t3tools/client-runtime/work-log/presentation";
 import { useComposerAttachmentActions } from "./use-composer-attachment-actions";
 import * as Dialog from "../components/ui/Dialog";
@@ -200,6 +207,8 @@ export function updateThreadDraftModelSelection(
   });
 }
 
+const NO_SETTINGS = Atom.make(null);
+
 export function useThreadComposerState() {
   const {
     selectedThread: selectedThreadShell,
@@ -244,6 +253,28 @@ export function useThreadComposerState() {
     }));
   };
   const selectedThreadMessages = selectedThreadProjection?.projection.messages;
+  const reportSettings = useAtomValue(
+    selectedThreadShell
+      ? serverEnvironment.settingsValueAtom(selectedThreadShell.environmentId)
+      : NO_SETTINGS,
+  );
+  const [reportReply, setReportReply] = useState<(ReportReply & { threadKey: string }) | null>(
+    null,
+  );
+  const activeReportReply =
+    reportSettings?.coordinatorReportsEnabled && reportReply?.threadKey === selectedThreadKey
+      ? reportReply
+      : null;
+  const reports = reportSettings?.coordinatorReportsEnabled
+    ? coordinatorReports(
+        (selectedThreadMessages ?? []).map((message) => ({
+          ...message,
+          createdAt: DateTime.formatIso(message.createdAt),
+        })),
+        selectedThreadProjection?.projection.thread.reportDismissals ?? [],
+      )
+    : [];
+
   const selectedTurnUsage = useTurnUsage(selectedThreadProjection?.projection);
   const selectedThreadAttempts = selectedThreadProjection?.projection.attempts;
   const selectedThreadNodes = selectedThreadProjection?.projection.nodes;
@@ -547,6 +578,7 @@ export function useThreadComposerState() {
       hasAttachmentsOrContext: boolean,
     ) => Promise<boolean | "responded">,
     onWillEnqueue?: () => void,
+    reportResponse?: { text: string; reply: ReportReply },
   ) => {
     if (
       selectedThreadShell &&
@@ -564,12 +596,24 @@ export function useThreadComposerState() {
 
     const editKey = scopedThreadKey(selectedThreadShell.environmentId, selectedThreadShell.id);
     if (getQueuedRunEdit(editKey) !== null) {
+      if (reportResponse) return null;
       await saveQueuedRunEdit();
       return null;
     }
 
     const threadKey = scopedThreadKey(selectedThreadShell.environmentId, selectedThreadShell.id);
-    const draft = getComposerDraftSnapshot(threadKey);
+    const draft = reportResponse
+      ? {
+          text: reportResponse.text,
+          reportAnswer: undefined,
+          attachments: [],
+          context: undefined,
+          modelSelection: undefined,
+          runtimeMode: undefined,
+          interactionMode: undefined,
+        }
+      : getComposerDraftSnapshot(threadKey);
+    const reply = reportResponse?.reply ?? activeReportReply;
     if (appAtomRegistry.get(composerContextImportsAtom)[threadKey]) return null;
     const thread = selectedThreadShell;
     const text = draft.text.trim();
@@ -620,7 +664,7 @@ export function useThreadComposerState() {
       (entry) => entry.instanceId === modelSelection.instanceId,
     );
     const feedbackCommand =
-      attachments.length === 0 && provider?.driver === "codex"
+      !reply && attachments.length === 0 && provider?.driver === "codex"
         ? parseCodexFeedbackCommand(text)
         : null;
     if (feedbackCommand) {
@@ -717,12 +761,17 @@ export function useThreadComposerState() {
     const messageId = MessageId.make(metadata.messageId);
     onWillEnqueue?.();
     clearThreadComposerError(threadKey);
+    const queuedText = reply
+      ? formatReportAnswer({ title: reply.title, version: reply.ref.version }, text)
+      : text;
+    const reportAnswer = reply?.ref ?? draft.reportAnswer;
     const enqueuePromise = enqueueThreadOutboxMessage({
       environmentId: selectedThreadShell.environmentId,
       threadId: selectedThreadShell.id,
       messageId,
       commandId: CommandId.make(metadata.commandId),
-      text,
+      text: queuedText,
+      ...(reportAnswer ? { reportAnswer } : {}),
       attachments,
       context: draft.context,
       modelSelection,
@@ -738,7 +787,12 @@ export function useThreadComposerState() {
           : { dispatchMode: followUpDispatchMode }),
       createdAt: metadata.createdAt,
     });
+    if (reportResponse) {
+      await enqueuePromise;
+      return messageId;
+    }
     clearComposerDraftContent(threadKey, { deferAttachmentCleanup: true });
+    setReportReply(null);
     enqueuePromise.then(
       () => {
         setKeepFullHistory(threadKey, false);
@@ -747,7 +801,8 @@ export function useThreadComposerState() {
       (error: unknown) => {
         // Restore with uncapped append; capped merge could drop attachments added during the failed write.
         void mergeComposerDraftContent(threadKey, {
-          text,
+          text: queuedText,
+          reportAnswer,
           context: draft.context,
           attachments: [],
         });
@@ -803,6 +858,12 @@ export function useThreadComposerState() {
     feedbackSubmissions,
     selectedTurnUsage,
     dismissFeedback,
+    reports,
+    reportReply: activeReportReply,
+    onReportReply: (reply: ReportReply | null) =>
+      setReportReply(
+        reply && selectedThreadKey ? { ...reply, threadKey: selectedThreadKey } : null,
+      ),
     selectedThreadFeed,
     selectedThreadActivityRun,
     selectedThreadQueueCount,

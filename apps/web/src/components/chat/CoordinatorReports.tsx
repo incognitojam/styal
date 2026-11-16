@@ -5,6 +5,7 @@ import type { MessageId } from "@t3tools/contracts";
 import {
   coordinatorReports,
   formatReportAnswer,
+  waitingCoordinatorReports,
 } from "@t3tools/client-runtime/coordinator-reports";
 import { Button } from "../ui/button";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
@@ -106,9 +107,7 @@ export function WaitingReports({
   reports: readonly ReportState[];
   scroll: (id: MessageId) => void;
 }) {
-  const open = reports
-    .filter((report) => report.state === "open")
-    .toSorted((a, b) => a.message.createdAt.localeCompare(b.message.createdAt));
+  const open = waitingCoordinatorReports(reports);
   if (!open.length) return null;
   return (
     <div className="mx-auto mb-2 w-full max-w-(--chat-content-max-width)">

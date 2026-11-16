@@ -1144,6 +1144,24 @@ describe("buildThreadFeed", () => {
       "run-fold:run-1",
       "message-assistant",
     ]);
+
+    const reportFeed = buildThreadFeed([
+      projected(userMessage(), 0),
+      projected(
+        {
+          ...assistantMessage("2026-06-20T00:00:02.000Z"),
+          id: TurnItemId.make("item-opening"),
+          messageId: MessageId.make("message-opening"),
+          text: "Release notes.",
+          report: { key: "pr:214", title: "Release", version: 1, question: "Merge?" },
+        },
+        1,
+      ),
+      projected(assistantMessage(), 2),
+    ]);
+    expect(
+      deriveThreadFeedPresentation(reportFeed, null, new Set()).map((entry) => entry.id),
+    ).toEqual(["message-user", "message-opening", "message-assistant"]);
   });
 
   it("folds subagents while keeping created-thread and fork cards visible", () => {

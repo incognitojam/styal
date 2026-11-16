@@ -774,7 +774,11 @@ describe("thread outbox recovery rollback", () => {
   });
 
   it("rolls a failed recovery merge back so the retry cannot duplicate the text", async () => {
-    const message = queuedMessage({ messageId: "message-restore", text: "queued text" });
+    const reportAnswer = { messageId: MessageId.make("report-1"), key: "build", version: 2 };
+    const message = {
+      ...queuedMessage({ messageId: "message-restore", text: "queued text" }),
+      reportAnswer,
+    };
     const draftKey = `${message.environmentId}:${message.threadId}`;
     appAtomRegistry.set(composerDrafts.composerDraftsAtom, {
       [draftKey]: { text: "typed offline", attachments: [] },
@@ -785,6 +789,7 @@ describe("thread outbox recovery rollback", () => {
     await expect(restoreRejectedQueuedMessage(message, "too large")).resolves.toBe("retry");
 
     expect(composerDrafts.getComposerDraftSnapshot(draftKey).text).toBe("typed offline");
+    expect(composerDrafts.getComposerDraftSnapshot(draftKey).reportAnswer).toBeUndefined();
     expect(remainingMessages()).toEqual([message]);
 
     harness.draftFile.setWriteError(null);
@@ -793,6 +798,7 @@ describe("thread outbox recovery rollback", () => {
     expect(composerDrafts.getComposerDraftSnapshot(draftKey).text).toBe(
       "typed offline\n\nqueued text",
     );
+    expect(composerDrafts.getComposerDraftSnapshot(draftKey).reportAnswer).toEqual(reportAnswer);
     expect(remainingMessages()).toEqual([]);
     expect(appAtomRegistry.get(threadComposerErrorsAtom)[draftKey]?.message).toBe("too large");
   });
