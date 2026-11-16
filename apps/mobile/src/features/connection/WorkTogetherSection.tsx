@@ -303,7 +303,7 @@ function MachineTab(props: {
   );
   const connected = machine.connection.phase === "connected";
   const status = !machine.enabled
-    ? "Switched off"
+    ? "Hidden"
     : !machine.added
       ? "Not in this app"
       : !connected

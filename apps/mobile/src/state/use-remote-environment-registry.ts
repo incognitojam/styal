@@ -209,7 +209,7 @@ export function useRemoteConnections() {
     }
     Dialog.alert(
       "Remove from this device?",
-      `Forget ${environment.environmentLabel} and its cached threads on this device. Switch it off instead to keep it saved.`,
+      `Forget ${environment.environmentLabel} and its cached threads on this device. Hide it instead to keep it saved.`,
       [{ text: "Cancel", style: "cancel" }, remove],
     );
   };

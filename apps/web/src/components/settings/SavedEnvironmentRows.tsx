@@ -76,7 +76,7 @@ function savedBackendStatus(environment: EnvironmentPresentation): {
   readonly tone: "muted" | "error";
 } {
   if (!environment.entry.enabled && environment.connection.phase !== "unsupported")
-    return { text: "Off", tone: "muted" };
+    return { text: "Hidden", tone: "muted" };
   const { connection } = environment;
   switch (connection.phase) {
     case "connected":
@@ -210,7 +210,7 @@ export function SavedBackendListRow({
   const subtitleText = [
     // The headline below names the failure in full.
     diagnosis ? null : resumingServerUpdate ? "Restarting" : status.text,
-    enabled && versionMismatch ? serverVersion : null,
+    enabled && isConnected ? serverVersion : null,
   ]
     .filter((value): value is string => value !== null)
     .join(" · ");
@@ -226,7 +226,7 @@ export function SavedBackendListRow({
       ? (environment.connection.error ?? connectionStatusText(environment.connection))
       : enabled
         ? connectionStatusText(environment.connection)
-        : "Switched off"
+        : "Hidden from this app"
   }${
     versionMismatch
       ? `\nUpdate available: ${versionMismatch.serverVersion} → ${versionMismatch.clientVersion}`
@@ -235,7 +235,7 @@ export function SavedBackendListRow({
 
   return (
     <EnvironmentRow
-      dimmed={!enabled}
+      label="Show in this app"
       subtitle={
         <span className="flex min-w-0 items-center gap-1">
           <Tooltip>
@@ -380,13 +380,17 @@ export function SavedBackendListRow({
               size="sm"
               checked={enabled}
               disabled={isRemoving || blocked}
-              aria-label={`${enabled ? "Switch off" : "Switch on"} ${environment.label}`}
+              aria-label={`Show ${environment.label} in this app`}
               onCheckedChange={(checked) => onSetEnabled(environmentId, checked)}
             />
           }
         />
         <TooltipPopup side="top">
-          {blocked ? "Client not supported" : enabled ? "Switch off" : "Switch on"}
+          {blocked
+            ? "Client not supported"
+            : enabled
+              ? "Hide its threads from this app"
+              : "Show its threads in this app"}
         </TooltipPopup>
       </Tooltip>
       <Menu>

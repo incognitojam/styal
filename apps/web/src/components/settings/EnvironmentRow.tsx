@@ -79,11 +79,10 @@ export function EnvironmentRow({
   dimmed = false,
   className,
   children,
-}: (
-  | { readonly kind: EnvironmentMachineKind; readonly label: string }
-  // Inside a machine's own tab, which already shows its icon and name.
-  | { readonly kind?: undefined; readonly label?: undefined }
-) & {
+}: {
+  // Omitted inside a machine's own tab, which already shows its icon.
+  readonly kind?: EnvironmentMachineKind;
+  readonly label?: string;
   readonly subtitle: ReactNode;
   readonly below?: ReactNode;
   readonly detail?: ReactNode;

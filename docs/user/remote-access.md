@@ -149,7 +149,7 @@ different permissions.
 Auto balance is off by default. On web and desktop, enable it in
 **Settings → Machines → Load balancing** to automatically choose a machine for
 new threads in projects grouped across connected environments. The section
-appears once two or more machines are switched on.
+appears once two or more machines are shown in this app.
 Each machine starts at **Normal**. Choose **Prefer** to favor it when it has CPU and
 memory available, **Less often** to reduce its share, or **Manual only** to exclude
 it from automatic selection. These are preferences, not fixed traffic percentages.
@@ -319,7 +319,7 @@ questions, and manage its queues, projects and scheduled tasks.
 
 Agents can search previous work across these machines in one request, including settled threads. Results identify the machine, and unavailable or refused machines are reported so missing results are not mistaken for missing history. Archived threads and subagent threads are excluded.
 
-**Settings → Machines** shows each machine once under **Your machines**: this computer (on desktop), machines added to this app, and computers on your styal Link account. Choose a tab to see its connection, access setting, devices, and the list **Agents on &lt;name&gt; can work on**. Offline and switched-off machines keep their tabs. Use **Add machine** at the top to connect this app to another computer. On mobile, use the **+** at the top.
+**Settings → Machines** shows each machine once under **Your machines**: this computer (on desktop), machines added to this app, and computers on your styal Link account. Choose a tab to see its connection, access setting, devices, and the list **Agents on &lt;name&gt; can work on**. Offline and hidden machines keep their tabs. **Show in this app** on a machine's tab hides its threads from this app and stops this app connecting to it, without forgetting it; other machines can still work with it. Use **Add machine** at the top to connect this app to another computer. On mobile, use the **+** at the top.
 
 ### Let two machines work together
 
