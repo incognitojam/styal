@@ -3845,6 +3845,35 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       }
       markUnreadVisitedAt = DateTime.subtract(latestRunCompletedAt, { milliseconds: 1 });
     }
+    let branchTurnContext = thread.branchTurnContext;
+    if (
+      command.type === "thread.metadata.update" &&
+      command.branch !== undefined &&
+      command.branch !== thread.branch
+    ) {
+      const projection = yield* loadProjectionForCommand(command, ["runs", "providerTurns"]);
+      const previousContext = branchTurnContext;
+      const pending =
+        previousContext != null &&
+        !projection.providerTurns.some((turn) =>
+          turn.inlineContextIds?.includes(previousContext.id),
+        )
+          ? previousContext
+          : undefined;
+      const from = pending === undefined ? thread.branch : pending.from;
+      // Metadata commands carry no actor; only changes between active turns are reported.
+      branchTurnContext =
+        projection.runs.some(isActiveRun) ||
+        projection.providerTurns.length === 0 ||
+        from === command.branch
+          ? null
+          : {
+              id: command.commandId,
+              from,
+              occurredAt: DateTime.formatIso(now),
+              text: `Since your last turn: this thread's branch changed from ${from === null ? "no branch" : `\`${from}\``} to ${command.branch === null ? "no branch" : `\`${command.branch}\``}.`,
+            };
+    }
     const updatedThread: OrchestrationV2AppThread = (() => {
       switch (command.type) {
         case "thread.archive":
@@ -4048,7 +4077,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                     Date.parse(thread.limitRecovery.resetAt)
                 ? { snoozedUntil: null, snoozedAt: null, lastSnoozeWakeAt: now }
                 : {}),
-            ...(command.branch === undefined ? {} : { branch: command.branch }),
+            ...(command.branch === undefined ? {} : { branch: command.branch, branchTurnContext }),
             ...(command.worktreePath === undefined ? {} : { worktreePath: command.worktreePath }),
             ...(command.linkedPullRequest === undefined
               ? {}
