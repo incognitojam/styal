@@ -1,3 +1,4 @@
+import { formatReportAnswer } from "@t3tools/client-runtime/coordinator-reports";
 import {
   type OrchestrationV2ProviderTurn,
   pendingRuntimeRequestKind,
@@ -1307,10 +1308,14 @@ export function formatOutgoingPrompt(params: {
   models: ReadonlyArray<ServerProvider["models"][number]>;
   effort: string | null;
   text: string;
+  reportReply?: Parameters<typeof formatReportAnswer>[0] | undefined;
 }): string {
   const caps = getProviderModelCapabilities(params.models, params.model, params.provider);
   const promptEffort = resolvePromptInjectedEffort(caps, params.effort);
-  return applyClaudePromptEffortPrefix(params.text, promptEffort);
+  const text = params.reportReply
+    ? formatReportAnswer(params.reportReply, params.text)
+    : params.text;
+  return applyClaudePromptEffortPrefix(text, promptEffort);
 }
 
 export function isCompactCommandMessage(message: ChatMessage): boolean {

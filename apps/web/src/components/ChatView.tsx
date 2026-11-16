@@ -1027,8 +1027,9 @@ export default function ChatView(props: ChatViewProps) {
   const [reportReply, setReportReply] = useState<{
     threadKey: string | null;
     ref: ReportReference;
+    title: string;
   } | null>(null);
-  const activeReportReply = reportReply?.threadKey === activeThreadKey ? reportReply.ref : null;
+  const activeReportReply = reportReply?.threadKey === activeThreadKey ? reportReply : null;
   const reportStates = settings.coordinatorReportsEnabled
     ? coordinatorReports(
         (serverProjection?.messages ?? []).map((message) => ({
@@ -3077,7 +3078,7 @@ export default function ChatView(props: ChatViewProps) {
     defaultRuntimeMode,
   });
   const { onSend } = useComposerSend({
-    reportAnswer: settings.coordinatorReportsEnabled ? activeReportReply : null,
+    reportReply: settings.coordinatorReportsEnabled ? activeReportReply : null,
     onReportAnswered: () => setReportReply(null),
     environmentId,
     routeThreadKey,
@@ -3591,8 +3592,8 @@ export default function ChatView(props: ChatViewProps) {
                       ? {
                           reports: reportStates,
                           send: sendAppMessageStable,
-                          reply: (ref) => {
-                            setReportReply({ threadKey: activeThreadKey, ref });
+                          reply: (ref, title) => {
+                            setReportReply({ threadKey: activeThreadKey, ref, title });
                             scheduleComposerFocus();
                           },
                           dismiss: (ref) => {
@@ -3792,13 +3793,8 @@ export default function ChatView(props: ChatViewProps) {
                     ) : null}
                     {settings.coordinatorReportsEnabled && activeReportReply ? (
                       <div className="mb-2 flex items-center gap-2 text-xs">
-                        Replying to{" "}
-                        {
-                          reportStates.find(
-                            (report) => report.message.id === activeReportReply.messageId,
-                          )?.message.report?.title
-                        }{" "}
-                        · version {activeReportReply.version}
+                        Replying to {activeReportReply.title} · version{" "}
+                        {activeReportReply.ref.version}
                         <Button
                           size="sm"
                           variant="ghost"

@@ -47,3 +47,10 @@ export function coordinatorReports<M extends Message>(
     return [{ message, latest: current, state, answer }];
   });
 }
+
+export function formatReportAnswer(
+  report: Pick<CoordinatorReport, "title" | "version">,
+  text: string,
+) {
+  return `[${report.title}, version ${report.version}] ${text}`;
+}

@@ -2,7 +2,10 @@ import type { ChatMessage } from "../../types";
 import { ClockIcon, MessageSquareIcon, ReplyIcon, XIcon } from "lucide-react";
 import { createContext, use, useState } from "react";
 import type { MessageId } from "@t3tools/contracts";
-import { coordinatorReports } from "@t3tools/client-runtime/coordinator-reports";
+import {
+  coordinatorReports,
+  formatReportAnswer,
+} from "@t3tools/client-runtime/coordinator-reports";
 import { Button } from "../ui/button";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
 
@@ -13,7 +16,7 @@ export type ReportState = ReturnType<
 export const CoordinatorReportsContext = createContext<{
   reports: readonly ReportState[];
   send: (text: string, ref: ReportReference) => Promise<void>;
-  reply: (ref: ReportReference) => void;
+  reply: (ref: ReportReference, title: string) => void;
   dismiss: (ref: ReportReference) => void;
   scroll: (id: MessageId) => void;
   canOperate: boolean;
@@ -64,7 +67,7 @@ export function ReportAnswerBar({ report }: { report: ReportState }) {
             setSending(true);
             setSendError(null);
             void ctx
-              .send(`[${tag.title}, version ${ref.version}] ${answer}`, ref)
+              .send(formatReportAnswer(tag, answer), ref)
               .catch(() => setSendError("Could not send your answer. Try again."))
               .finally(() => setSending(false));
           }}
@@ -76,7 +79,7 @@ export function ReportAnswerBar({ report }: { report: ReportState }) {
         size="xs"
         variant="ghost-muted"
         disabled={!ctx.canOperate || sending}
-        onClick={() => ctx.reply(ref)}
+        onClick={() => ctx.reply(ref, tag.title)}
       >
         <ReplyIcon />
         Reply…

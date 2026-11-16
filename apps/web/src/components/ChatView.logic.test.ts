@@ -1,5 +1,6 @@
 import {
   boundAttachmentIds,
+  formatOutgoingPrompt,
   buildExpiredTerminalContextToastCopy,
   mergeDirectPreviewAnnotation,
   planComposerTurn,
@@ -1358,4 +1359,21 @@ describe("deriveAvailableRevertTurnCounts", () => {
     expect(deriveAvailableRevertTurnCounts(projection({ providerSessionId: null })).size).toBe(0);
     expect(deriveAvailableRevertTurnCounts(null).size).toBe(0);
   });
+});
+
+it("keeps a free-text report reply's identity in the text sent to the agent", () => {
+  const input = {
+    provider: ProviderDriverKind.make("codex"),
+    model: null,
+    models: [],
+    effort: null,
+    text: "Wait",
+  };
+  expect(
+    formatOutgoingPrompt({
+      ...input,
+      reportReply: { title: "#214 Search results keep their scroll position", version: 3 },
+    }),
+  ).toBe("[#214 Search results keep their scroll position, version 3] Wait");
+  expect(formatOutgoingPrompt(input)).toBe("Wait");
 });
