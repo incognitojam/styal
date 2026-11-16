@@ -51,6 +51,8 @@ interface ProjectQueryState<A> {
 }
 
 interface ProjectFileQueryState extends ProjectQueryState<ProjectReadFileResult> {
+  /** Re-reads a settled file; a read in flight or not yet started is left alone. */
+  readonly revalidate: () => void;
   readonly readError: ProjectReadFileError | null;
   readonly isNotFile: boolean;
   readonly isFile: boolean;
@@ -266,6 +268,9 @@ export function useProjectFileQuery(
   const result = useAtomValue(atom);
   const refreshAtom = useAtomRefresh(atom);
   const refresh = () => refreshAtom();
+  const revalidate = () => {
+    if (result._tag !== "Initial" && !result.waiting) refreshAtom();
+  };
   const readData = AsyncResult.getOrElse(result, () => null);
   const isMissing = readData?.exists === false;
   const optimisticResult = useAtomValue(
@@ -293,5 +298,6 @@ export function useProjectFileQuery(
     // A folder error overrides cached contents retained across failed refreshes.
     isFile: !isNotFile && (data !== null || readError?.failure === "binary_file"),
     refresh,
+    revalidate,
   };
 }

@@ -6,6 +6,7 @@ import {
   type T3ProjectFileScript,
 } from "@t3tools/contracts";
 import { resolveProjectConfig, type ProjectFileIssue } from "@t3tools/shared/projectFile";
+import { useEffect, useEffectEvent } from "react";
 
 import { useProjectFileQuery } from "~/components/files/projectFilesQueryState";
 
@@ -52,6 +53,17 @@ export function useProjectConfigState(
     cwd !== null,
   );
   const t3Query = useProjectFileQuery(environmentId, cwd ?? "", T3_PROJECT_FILE_NAME, cwd !== null);
+  const revalidate = useEffectEvent(() => {
+    styalQuery.revalidate();
+    t3Query.revalidate();
+  });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- edits outside styal, such as a git pull, send no event, so re-read when a view opens or the window regains focus
+  useEffect(() => {
+    if (cwd === null) return;
+    revalidate();
+    window.addEventListener("focus", revalidate);
+    return () => window.removeEventListener("focus", revalidate);
+  }, [cwd]);
   const styal = contentsOf(styalQuery);
   const t3 = contentsOf(t3Query);
   // Cached contents count while a refresh is pending. Without styal.json

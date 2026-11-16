@@ -63,6 +63,10 @@ const reactHooks = vi.hoisted(() => {
       nextIndex();
       effect();
     },
+    useEffectEvent<A>(callback: A): A {
+      nextIndex();
+      return callback;
+    },
     useRef<A>(initialValue: A): { current: A } {
       const index = nextIndex();
       refs[index] ??= { current: initialValue };
@@ -84,6 +88,7 @@ vi.mock("react", async (importOriginal) => {
     ...actual,
     useCallback: reactHooks.useCallback,
     useEffect: reactHooks.useEffect,
+    useEffectEvent: reactHooks.useEffectEvent,
     useMemo: <A,>(factory: () => A) => factory(),
     useRef: reactHooks.useRef,
   };
@@ -165,6 +170,8 @@ describe("project query refresh", () => {
     projectMocks.optimisticFile.mockReset();
     projectMocks.readFile.mockReset();
     reactHooks.reset();
+    // Effects run eagerly here, and the project config listens for window focus.
+    vi.stubGlobal("window", new EventTarget());
   });
 
   it("does not query or expose optimistic file contents without read permission", () => {
