@@ -55,11 +55,20 @@ async function submitIos(ipa, options = {}) {
       Math.min(120_000, Math.ceil(deadline - now())),
     );
     if (now() >= deadline) break;
+    let submission;
     if (result.error || result.status !== 0) {
       console.error(result.stderr || result.error?.message || "EAS status request failed.");
       console.error(`Unable to read submission ${id}; retrying status only.`);
     } else {
-      const submission = JSON.parse(result.stdout);
+      try {
+        const jsonStart = result.stdout.search(/^\{/m);
+        if (jsonStart < 0) throw new Error("Missing JSON document");
+        submission = JSON.parse(result.stdout.slice(jsonStart));
+      } catch {
+        console.error(`Unable to parse status for submission ${id}; retrying status only.`);
+      }
+    }
+    if (submission) {
       if (submission.id !== id) throw new Error("EAS returned a different submission ID.");
       console.log(`Submission ${id}: ${submission.status}`);
       switch (submission.status) {

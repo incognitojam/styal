@@ -123,3 +123,39 @@ test("a stalled status request is bounded by the remaining overall deadline", as
   assert.deepEqual(timeouts, [100_000]);
   assertSubmittedOnce(stub.calls);
 });
+
+test("an environment notice before the status JSON does not interrupt the wait", async () => {
+  const stub = stubEas([
+    {
+      stdout: `Environment variables loaded from production.\n${JSON.stringify({ id, status: "FINISHED" }, null, 2)}\n`,
+    },
+  ]);
+  await submitIos("synthetic.ipa", stub.options);
+  assert.equal(stub.calls.length, 2);
+  assertSubmittedOnce(stub.calls);
+});
+
+test("unparseable status output retries only status reads and later recovers", async () => {
+  const stub = stubEas([
+    { stdout: "Unexpected response without JSON" },
+    { stdout: 'Environment variables loaded.\n{"id":' },
+    { stdout: JSON.stringify({ id, status: "FINISHED" }) },
+  ]);
+  const messages = [];
+  const originalError = console.error;
+  console.error = (message) => messages.push(message);
+  try {
+    await submitIos("synthetic.ipa", stub.options);
+  } finally {
+    console.error = originalError;
+  }
+  assert.equal(stub.calls.length, 4);
+  assert.equal(messages.length, 2);
+  assert.ok(messages.every((message) => message.includes("retrying status only")));
+  assert.ok(
+    messages.every(
+      (message) => !message.includes("Unexpected response") && !message.includes('"id":'),
+    ),
+  );
+  assertSubmittedOnce(stub.calls);
+});
