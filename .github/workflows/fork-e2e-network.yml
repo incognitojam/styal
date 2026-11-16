@@ -1,9 +1,26 @@
 name: Fork E2E (network)
 
 # End-to-end tests that need npm and GitHub releases, such as a published @styal/cli server
-# updating itself. They run against real registries, so they stay out of Fork CI: a failure
-# here shows on the commit without blocking merges, intake promotion, or the nightly.
+# updating itself. They run on relevant pull requests, intake pushes, and nightly against
+# real registries. This separate check does not gate intake promotion or nightly releases.
 on:
+  pull_request:
+    paths:
+      - "apps/web/**"
+      - "apps/server/**"
+      - "packages/**"
+      - "e2e/**"
+      - "scripts/**"
+      - "infra/task-cache/**"
+      - "patches/**"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "package.json"
+      - "tsconfig.base.json"
+      - "vite.config.ts"
+      - ".github/actions/setup-deps/**"
+      - ".github/workflows/fork-e2e-network.yml"
+      - "!**.md"
   schedule:
     - cron: "17 6 * * *"
   push:
