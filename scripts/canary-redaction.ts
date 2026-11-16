@@ -10,11 +10,22 @@ export function redactCanary<T>(
   const gaps = String.raw`(?:\s|\\[nrt]|\\u000[aAdD9])*`;
   if (secrets.some((secret) => secret.length > 0 && secret.length < 8))
     warn("Ignoring API_KEY shorter than 8 characters for exact redaction.");
+  // Each form also appears JSON-escaped up to three levels deep, as in a JSON string
+  // logged inside another JSON string.
   const variants = secrets
     .filter((secret) => secret.length >= 8)
     .flatMap((secret) => {
-      const encoded = Buffer.from(secret);
       const url = encodeURIComponent(secret);
+      const base64 = [0, 1, 2].flatMap((shift) => {
+        // Shifted encodings drop the first group, which also encodes the bytes before the key.
+        const form = Buffer.concat([Buffer.alloc(shift), Buffer.from(secret)])
+          .toString("base64")
+          .slice(shift === 0 ? 0 : 4);
+        return [form, form.replace(/=+$/, "")].flatMap((padded) => [
+          padded,
+          padded.replaceAll("+", "-").replaceAll("/", "_"),
+        ]);
+      });
       return [
         secret,
         url,
@@ -23,12 +34,16 @@ export function redactCanary<T>(
         // Some form encoders use '+' for spaces while leaving literal plus signs intact.
         url.replaceAll("%20", "+"),
         url.replaceAll("%2B", "+"),
-        encoded.toString("base64"),
-        encoded.toString("base64").replace(/=+$/, ""),
-        encoded.toString("base64url"),
-        encoded.toString("base64").replaceAll("+", "-").replaceAll("/", "_"),
-        JSON.stringify(secret).slice(1, -1),
-      ];
+        ...base64,
+        Array.from(secret, (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, "0")}`).join(
+          "",
+        ),
+      ].flatMap((form) => {
+        const nested = [form];
+        for (let depth = 1; depth <= 3; depth++)
+          nested.push(JSON.stringify(nested.at(-1)).slice(1, -1));
+        return nested;
+      });
     });
   const exact = [...new Set(variants)]
     .sort((a, b) => b.length - a.length)
@@ -44,34 +59,8 @@ export function redactCanary<T>(
           "g",
         ),
     );
-  // Any 12 characters of a key's form are redacted, so a key truncated or split anywhere
-  // leaves at most 11 characters of it. Base64 at all three byte alignments catches a key
-  // encoded inside a larger value.
-  const fragment = 12;
-  const grams = new Set(
-    secrets
-      .filter((secret) => secret.length >= 8)
-      .flatMap((secret) =>
-        [1, 2].map((shift) =>
-          Buffer.concat([Buffer.alloc(shift), Buffer.from(secret)])
-            .toString("base64")
-            .slice(4),
-        ),
-      )
-      .flatMap((form) => [form, form.replaceAll("+", "-").replaceAll("/", "_")])
-      .concat(variants)
-      .map((form) => form.replace(/\s|=+$/g, ""))
-      .flatMap((form) =>
-        Array.from({ length: Math.max(0, form.length - fragment + 1) }, (_, start) =>
-          form.slice(start, start + fragment),
-        ),
-      ),
-  );
-  const partial = (input: string) => {
-    if (grams.size === 0) return input;
-    const spans: Array<[number, number]> = [];
-    const starts: number[] = [];
-    let window = "";
+  /** Visits each character with `\uXXXX` escapes decoded, skipping the gaps exact matching allows. */
+  const scan = (input: string, visit: (char: string, start: number, end: number) => void) => {
     for (let index = 0; index < input.length;) {
       const start = index;
       let char = input[index++]!;
@@ -85,16 +74,39 @@ export function redactCanary<T>(
         char = String.fromCharCode(Number.parseInt(escaped[1]!, 16));
         index += 5;
       }
-      if (char.trim() === "") continue;
+      if (char.trim() !== "") visit(char, start, index);
+    }
+  };
+  // Any 12 characters of a form are redacted, so a key truncated or split anywhere leaves
+  // at most 11 characters of it. Forms are read the same way as the text they are matched in.
+  const fragment = 12;
+  const grams = new Set(
+    variants.flatMap((form) => {
+      let read = "";
+      scan(form, (char) => {
+        read += char;
+      });
+      read = read.replace(/=+$/, "");
+      return Array.from({ length: Math.max(0, read.length - fragment + 1) }, (_, start) =>
+        read.slice(start, start + fragment),
+      );
+    }),
+  );
+  const partial = (input: string) => {
+    if (grams.size === 0) return input;
+    const spans: Array<[number, number]> = [];
+    const starts: number[] = [];
+    let window = "";
+    scan(input, (char, start, end) => {
       starts.push(start);
       if (starts.length > fragment) starts.shift();
       window = (window + char).slice(-fragment);
-      if (window.length < fragment || !grams.has(window)) continue;
-      while (input[index] === "=") index += 1;
+      if (window.length < fragment || !grams.has(window)) return;
+      while (input[end] === "=") end += 1;
       const last = spans.at(-1);
-      if (last && last[1] >= starts[0]!) last[1] = index;
-      else spans.push([starts[0]!, index]);
-    }
+      if (last && last[1] >= starts[0]!) last[1] = end;
+      else spans.push([starts[0]!, end]);
+    });
     let output = "";
     let cursor = 0;
     for (const [from, to] of spans) {

@@ -7,8 +7,12 @@ import * as NodeChildProcess from "node:child_process";
 import { parse } from "yaml";
 import { collectRun, reconcileStatusIssue } from "./provider-canary.ts";
 
+const unicodeEscaped = (value: string) =>
+  Array.from(value, (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, "0")}`).join("");
+
 it("redacts every outcome string, including split and JSON-escaped secrets", () => {
   const secret = "synthetic-canary-secret-123456";
+  const nested = JSON.stringify({ response: unicodeEscaped(secret) });
   const outcome = {
     provider: secret,
     detail: `rewind: ${secret} again ${secret}`,
@@ -22,6 +26,9 @@ it("redacts every outcome string, including split and JSON-escaped secrets", () 
       Buffer.from(`user:${secret}`).toString("base64"),
       JSON.stringify({ text: secret.slice(0, 16) }),
       Buffer.from(secret).toString("base64").slice(0, 11),
+      nested,
+      // Each escaped character is 7 characters long; cut after the 8th.
+      nested.slice(0, '{"response":"'.length + 7 * 8),
     ],
   };
   const clean = redactCanary(outcome, [secret]);
@@ -39,6 +46,8 @@ it("redacts every outcome string, including split and JSON-escaped secrets", () 
       '{"text":"[redacted]"}',
       // Fragments shorter than 12 characters are the accepted limit.
       Buffer.from(secret).toString("base64").slice(0, 11),
+      '{"response":"[redacted]"}',
+      '{"response":"[redacted]',
     ],
   });
 });
@@ -257,7 +266,11 @@ const withheldKey = `sk-synthetic-${secret}`;
 const encodedKey = Buffer.from(withheldKey).toString("base64");
 const wrappedKey = encodedKey.match(/.{1,16}/g)!.join("\n");
 const leakedKeyFragments = (output: string) => {
-  const joined = output.replace(/\s+/g, "");
+  const joined = output
+    .replace(/\\+u([0-9a-fA-F]{4})/g, (_, hex: string) =>
+      String.fromCharCode(Number.parseInt(hex, 16)),
+    )
+    .replace(/\s+/g, "");
   const windows: Array<[string, number]> = [
     [encodedKey, 8],
     [withheldKey, 12],
@@ -312,6 +325,12 @@ it.each([
             status: "failed",
             seconds: 1,
             detail: `server log: WARN ${"x".repeat(260 + offset * 5)}${form}`.slice(0, 300),
+          })),
+          ...[Infinity, 13 + 7 * 14].map((length) => ({
+            name: "turn",
+            status: "failed",
+            seconds: 2,
+            detail: JSON.stringify({ response: unicodeEscaped(key) }).slice(0, length),
           })),
         ],
       }),
