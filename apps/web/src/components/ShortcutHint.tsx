@@ -57,9 +57,13 @@ function useShortcutHint(
 export function ShortcutHintBadge(props: {
   command: KeybindingCommand | null;
   context?: Partial<ShortcutMatchContext>;
+  /** Pins the badge to the left of a wide control, for a second shortcut on the same control. */
+  side?: "start";
 }) {
   const label = useShortcutHint(props.command, props.context);
-  return label === null || !supportsAnchorPositioning ? null : <CornerBadge label={label} />;
+  return label === null || !supportsAnchorPositioning ? null : (
+    <CornerBadge label={label} side={props.side} />
+  );
 }
 
 // Browsers without CSS anchor positioning, or without hiding a badge whose button is scrolled
@@ -84,7 +88,7 @@ function setAnchorNames(element: HTMLElement, names: string[]) {
   else element.style.setProperty("anchor-name", names.join(", "));
 }
 
-function CornerBadge(props: { label: string }) {
+function CornerBadge(props: { label: string; side: "start" | undefined }) {
   const anchorRef = useRef<HTMLSpanElement>(null);
   const anchorName = `--shortcut-hint-${useId().replace(/[^\w-]/g, "")}`;
   const [blocked, setBlocked] = useState(false);
@@ -122,11 +126,14 @@ function CornerBadge(props: { label: string }) {
               data-shortcut-hint
               className="pointer-events-none fixed z-[100] inline-flex h-4.5 min-w-4.5 -translate-x-1/2 select-none items-center justify-center rounded border border-border bg-popover px-0.5 font-medium font-sans text-2xs text-popover-foreground shadow-xs"
               // The browser keeps the badge on its button as layout changes and hides it while the
-              // button is scrolled out of view. Centred on icon buttons, at the right of wide ones,
+              // button is scrolled out of view. Centred on icon buttons, at one end of wide ones,
               // at least 2px from the window top, and far off screen with no laid-out button.
               style={{
                 positionAnchor: anchorName,
-                left: "min(max(anchor(center), calc(anchor(right) - 16px), 16px), calc(100vw - 20px))",
+                left:
+                  props.side === "start"
+                    ? "min(max(min(anchor(center), calc(anchor(left) + 16px)), 16px), calc(100vw - 20px))"
+                    : "min(max(anchor(center), calc(anchor(right) - 16px), 16px), calc(100vw - 20px))",
                 top: "max(calc(anchor(top, -9999px) - 6px), min(2px, calc(anchor(top, -9999px) + 5000px)))",
               }}
             >

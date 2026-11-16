@@ -339,6 +339,16 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
       >
         <ShortcutHintBadge
           command={shortcutLabel && !props.disabled ? "modelPicker.toggle" : null}
+          side="start"
+        />
+        <ShortcutHintBadge
+          command={
+            props.triggerSuffix &&
+            !props.disabled &&
+            props.triggerShortcuts?.includes("composer.effort")
+              ? "composer.effort"
+              : null
+          }
         />
         <span
           className={cn("flex min-w-0 flex-1 items-center", size === "xs" ? "gap-1" : "gap-1.5")}

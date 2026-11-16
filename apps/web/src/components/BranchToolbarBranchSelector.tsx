@@ -66,6 +66,7 @@ import {
 import { ComboboxItem, ComboboxTrigger } from "./ui/combobox";
 import { ComposerControl } from "./chat/ComposerControl";
 import { MiddleTruncate } from "./ui/middle-truncate";
+import { ShortcutHintBadge } from "./ShortcutHint";
 import { BranchPicker, BranchPickerRefItem } from "./BranchPicker";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 
@@ -728,6 +729,14 @@ export function BranchToolbarBranchSelector({
             className="min-w-0 max-w-full active:scale-100"
             disabled={isInitialBranchesLoadPending || isBranchActionPending}
           >
+            <ShortcutHintBadge
+              // The shortcut opens the composer's branch picker, never the panel's.
+              command={
+                displayMode === "panel" || isInitialBranchesLoadPending || isBranchActionPending
+                  ? null
+                  : "composer.branch"
+              }
+            />
             <GitBranchIcon
               className={cn(
                 "size-3 shrink-0",
