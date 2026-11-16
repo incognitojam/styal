@@ -15,9 +15,10 @@ const projectSetup = `# Project setup: styal.json, actions and worktrees
 ## styal.json
 
 \`styal.json\` at the project root is the project file. styal reads actions,
-\`defaultThreadEnvMode\` and \`iconPath\` from the file in the project's registered checkout, on
-whichever branch is checked out there, not from a thread's worktree. An edit in a worktree affects
-these only once it reaches that checkout (usually by merging to the default branch and pulling).
+\`defaultThreadEnvMode\`, \`iconPath\` and \`worktreeCleanup\` from the file in the project's
+registered checkout, on whichever branch is checked out there, not from a thread's worktree. An
+edit in a worktree affects these only once it reaches that checkout (usually by merging to the
+default branch and pulling).
 \`worktreeSubmodules\` is different: it is read from the new worktree's own copy of the file when
 the worktree is created.
 
@@ -35,7 +36,8 @@ the worktree is created.
 
 - Top-level fields: \`actions\`, \`defaultThreadEnvMode\` (\`worktree\` or \`local\`),
   \`worktreeSubmodules\` (\`recursive\`, \`top-level\` or \`none\`), \`iconPath\` (project-relative
-  image). Comments and trailing commas are allowed.
+  image), \`worktreeCleanup\` (path patterns; see Regenerable files below). Comments and trailing
+  commas are allowed.
 - Action fields: \`name\` and \`command\` (required); \`id\` (at most 24 characters: lowercase letters,
   digits and dashes, starting with a letter or digit; always set it so shortcuts survive a rename); \`icon\` (\`play\`, \`test\`, \`lint\`, \`configure\`,
   \`build\`, \`debug\`, \`desktop\`, \`database\`, \`deploy\`); \`runOnWorktreeCreate\`; \`runOnSettle\`;
@@ -63,12 +65,23 @@ run often (dev server, tests, lint, build). Prefer existing scripts over inlined
   first saved action with the role, otherwise the first \`styal.json\` action with the role whose
   command is approved.
 - **Settle** (\`runOnSettle\`): runs in the worktree each time the last open thread in it settles, for
-  example to stop dev servers on the workspace ports or delete large build output. A thread settles
-  when someone settles it, or by default after 3 idle days or when its pull request merges or
+  example to stop dev servers on the workspace ports or delete files setup cannot recreate. A thread
+  settles when someone settles it, or by default after 3 idle days or when its pull request merges or
   closes, never just because a turn ended. Another thread holds the action back if it is unsettled
   and not a subagent, or if it is working, waiting on a request, or has queued work. An idle subagent
   does not hold it back, and one that settles after its parent runs the action again, so make the
   action safe to run twice. One action per checkout runs, chosen the same way as setup.
+- **Regenerable files** (\`worktreeCleanup\`): for dependencies and build output, list patterns
+  instead of writing a settle script, for example \`"worktreeCleanup": ["**/node_modules", "dist"]\`.
+  Patterns are relative to the worktree root (\`*\` within one segment, \`**\` across segments) and
+  only git-ignored paths qualify; never list \`.env\`, notes, local state or anything setup cannot
+  recreate. styal uses a pattern only after a person approves it on each machine in Settings →
+  Worktrees → Regenerable files; you can propose patterns in the file but cannot approve them. A
+  pattern removed from the file keeps its approval until someone chooses **Forget**. On macOS and
+  Linux an hourly sweep deletes matching paths once every thread in the worktree has settled and
+  been quiet for a day, with no open terminal. It is separate from the settle action, which does
+  not trigger it. The next turn in that worktree reruns the setup action under its normal approval
+  rules; opening a terminal does not.
 - Actions run by hand run in the thread's worktree, or the project root for a local thread, using
   the environment's shell. Setup and settle actions run only in a separate worktree, never in a
   local thread or the project's own checkout. Shared actions should work on every OS the team uses.
