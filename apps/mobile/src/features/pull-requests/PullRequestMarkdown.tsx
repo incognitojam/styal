@@ -21,6 +21,7 @@ import { linkReferenceAutolinks } from "./pullRequestAutolinks";
 import { useOpenPullRequest } from "../../native/useOpenPullRequest";
 import { SelectableMarkdownText } from "../../native/SelectableMarkdownText";
 import { useMarkdownPreviewStyles } from "../files/FileMarkdownPreview";
+import { markdownImageDimensions } from "../../lib/markdownDocument";
 import { markdownImageSources } from "../../lib/markdownImageSources";
 import { FilePreviewGallery, useFilePreviewGallery } from "../../components/FilePreviewGallery";
 import { pullRequestImageSource } from "./pullRequestMediaSource";
@@ -71,13 +72,14 @@ function MarkdownImage(props: {
   readonly alt: string | null;
   readonly onPreview: (source: FilePreviewSource) => void;
   readonly enabled: boolean;
+  readonly knownSize: { width: number; height: number } | undefined;
 }) {
   const media = usePullRequestMediaUrl(props.href, props.enabled);
   const context = useContext(PullRequestMediaContext);
   const withGallery = useFilePreviewGallery();
   return (
     <ThreadMarkdownImageView
-      fixedAspectRatio={16 / 9}
+      knownSize={props.knownSize}
       uri={media.uri}
       sourceKey={props.href}
       cacheKey={media.cacheKey}
@@ -125,6 +127,7 @@ function PullRequestMarkdownContent(props: {
   readonly imageGroupMarkdown?: string;
   readonly lineBreaks: boolean | undefined;
 }) {
+  const dimensions = useMemo(() => markdownImageDimensions(props.markdown), [props.markdown]);
   const hostLineBreaks = useContext(LineBreaksContext);
   const autolinks = useContext(AutolinksContext);
   const mediaContext = useContext(PullRequestMediaContext);
@@ -146,7 +149,13 @@ function PullRequestMarkdownContent(props: {
   const renderImage: MarkdownImageRenderer = (image) => (
     <PullRequestLazyImage key={image.href}>
       {(enabled) => (
-        <MarkdownImage href={image.href} alt={image.alt} onPreview={setPreview} enabled={enabled} />
+        <MarkdownImage
+          href={image.href}
+          alt={image.alt}
+          onPreview={setPreview}
+          enabled={enabled}
+          knownSize={dimensions.get(image.href)}
+        />
       )}
     </PullRequestLazyImage>
   );

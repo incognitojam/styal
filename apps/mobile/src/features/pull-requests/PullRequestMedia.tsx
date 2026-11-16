@@ -78,7 +78,6 @@ function PullRequestMediaContent(props: PullRequestMediaProps & { enabled: boole
     return (
       <>
         <ThreadMarkdownImageView
-          fixedAspectRatio={16 / 9}
           uri={media.uri}
           sourceKey={props.url}
           cacheKey={media.cacheKey}

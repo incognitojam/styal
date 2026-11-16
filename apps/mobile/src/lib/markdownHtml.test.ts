@@ -6,6 +6,7 @@ import {
   markdownForLiteralNativeRendering,
   markdownForNativeRendering,
   markdownHtmlContent,
+  markdownImageDimensions,
   markdownWithHtml,
   markdownWithFileEmbeds,
   markdownWithLiteralHtml,
@@ -52,6 +53,22 @@ describe("literal HTML in user messages", () => {
 });
 
 describe("HTML in native Markdown", () => {
+  it("reads positive declared screenshot dimensions without treating code as images", () => {
+    const markdown = [
+      '<img src="portrait.png?a=1&amp;b=2" width="240" height="480">',
+      "<img src='landscape.png' width='640px' height='360'>",
+      '<img src="missing.png" width="240">',
+      '<img src="percent.png" width="100%" height="200">',
+      '<img src="invalid.png" width="0" height="200">',
+      '`<img src="code.png" width="100" height="200">`',
+      '```html\n<img src="fenced.png" width="100" height="200">\n```',
+    ].join("\n\n");
+    expect([...markdownImageDimensions(markdown)]).toEqual([
+      ["portrait.png?a=1&b=2", { width: 240, height: 480 }],
+      ["landscape.png", { width: 640, height: 360 }],
+    ]);
+  });
+
   it("preserves screenshot URLs and captions from GitHub HTML image embeds", () => {
     expect(
       markdownHtmlContent(
