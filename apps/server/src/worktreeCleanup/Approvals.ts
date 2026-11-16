@@ -58,7 +58,8 @@ const make = Effect.gen(function* () {
       forApproval &&
       (state.status === "invalid" ||
         (state.status === "partial" &&
-          state.issues.some((issue) => issue.path[0] === "worktreeCleanup")))
+          state.issues.some((issue) => issue.path[0] === "worktreeCleanup") &&
+          !state.config?.worktreeCleanup?.length))
     ) {
       return yield* new WorktreeCleanupError({
         reason: "nothing-to-approve",

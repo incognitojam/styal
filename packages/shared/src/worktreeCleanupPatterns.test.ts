@@ -31,6 +31,13 @@ describe("worktree cleanup patterns", () => {
     "a".repeat(513),
   ])("refuses invalid pattern %j with its rule", (pattern) => {
     expect(worktreeCleanupPatternProblem(pattern)).toContain(JSON.stringify(pattern));
+    const schema = buildStyalProjectFileJsonSchema();
+    const { items } = (
+      schema.properties as { worktreeCleanup: { items: { pattern: string; maxLength: number } } }
+    ).worktreeCleanup;
+    expect(pattern.length > items.maxLength || !new RegExp(items.pattern, "u").test(pattern)).toBe(
+      true,
+    );
     const result = parseStyalProjectFileResult(JSON.stringify({ worktreeCleanup: [pattern] }));
     expect(result.status).toBe("partial");
     if (result.status === "partial")
@@ -68,9 +75,15 @@ describe("worktree cleanup patterns", () => {
     expect(parseStyalProjectFileResult(JSON.stringify({ worktreeCleanup: ["   "] })).status).toBe(
       "partial",
     );
-    expect(
-      parseStyalProjectFileResult(JSON.stringify({ worktreeCleanup: ["  **/*  "] })).status,
-    ).toBe("partial");
+    for (const pattern of ["  **/*  ", "**/ ", "a/*/ "]) {
+      expect(
+        parseStyalProjectFileResult(JSON.stringify({ worktreeCleanup: [pattern] })).status,
+      ).toBe("partial");
+      const schema = buildStyalProjectFileJsonSchema();
+      const items = (schema.properties as { worktreeCleanup: { items: { pattern: string } } })
+        .worktreeCleanup.items;
+      expect(new RegExp(items.pattern, "u").test(pattern)).toBe(false);
+    }
   });
   it("publishes the field and preserves the entire list exactly", () => {
     const patterns = ["node_modules", "**/dist", "node_modules"];

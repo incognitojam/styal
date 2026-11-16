@@ -48,6 +48,17 @@ it.effect(
         expect((yield* approvals.review(input)).declared).toEqual([
           { pattern: "dist", status: "approved" },
         ]);
+        yield* write('{"worktreeCleanup":["dist","a/../dist","node_modules"]}');
+        const partial = yield* approvals.approve({
+          ...input,
+          patterns: ["node_modules", "a/../dist"],
+        });
+        expect(partial.notDeclared).toEqual(["a/../dist"]);
+        expect(partial.declared).toEqual([
+          { pattern: "dist", status: "approved" },
+          { pattern: "node_modules", status: "approved" },
+        ]);
+        yield* approvals.revoke({ ...input, pattern: "node_modules" });
         yield* write('{"worktreeCleanup":["dist","node_modules"]}');
         expect((yield* approvals.review(input)).declared).toEqual([
           { pattern: "dist", status: "approved" },
