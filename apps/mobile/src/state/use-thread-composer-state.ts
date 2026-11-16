@@ -563,6 +563,7 @@ export function useThreadComposerState() {
     const draft = reportResponse
       ? {
           text: reportResponse.text,
+          reportAnswer: undefined,
           attachments: [],
           context: undefined,
           modelSelection: undefined,
@@ -710,15 +711,17 @@ export function useThreadComposerState() {
     const messageId = MessageId.make(metadata.messageId);
     onWillEnqueue?.();
     clearThreadComposerError(threadKey);
+    const queuedText = reply
+      ? formatReportAnswer({ title: reply.title, version: reply.ref.version }, text)
+      : text;
+    const reportAnswer = reply?.ref ?? draft.reportAnswer;
     const enqueuePromise = enqueueThreadOutboxMessage({
       environmentId: selectedThreadShell.environmentId,
       threadId: selectedThreadShell.id,
       messageId,
       commandId: CommandId.make(metadata.commandId),
-      text: reply
-        ? formatReportAnswer({ title: reply.title, version: reply.ref.version }, text)
-        : text,
-      ...(reply ? { reportAnswer: reply.ref } : {}),
+      text: queuedText,
+      ...(reportAnswer ? { reportAnswer } : {}),
       attachments,
       context: draft.context,
       modelSelection,
@@ -739,10 +742,10 @@ export function useThreadComposerState() {
     enqueuePromise.then(
       () => scheduleUnusedComposerAttachmentCleanup(attachments),
       (error: unknown) => {
-        if (reply) setReportReply({ ...reply, threadKey });
         // Restore with uncapped append; capped merge could drop attachments added during the failed write.
         void mergeComposerDraftContent(threadKey, {
-          text,
+          text: queuedText,
+          reportAnswer,
           context: draft.context,
           attachments: [],
         });

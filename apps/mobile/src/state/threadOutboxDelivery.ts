@@ -344,6 +344,7 @@ export async function recoverEditedCreationAfterDelivery(
     await mergeComposerDraftContent(draftKey, {
       text: kept.text,
       context: kept.context,
+      reportAnswer: kept.reportAnswer,
       attachments: [],
     });
     if (appAtomRegistry.get(editingQueuedMessageIdsAtom)[kept.messageId]) {
@@ -433,6 +434,7 @@ export async function restoreRejectedQueuedMessage(
       await mergeComposerDraftContent(draftKey, {
         text: queuedMessage.text,
         context: queuedMessage.context,
+        reportAnswer: queuedMessage.reportAnswer,
         attachments: queuedMessage.attachments,
       });
     } finally {

@@ -2321,6 +2321,46 @@ describe("mobile composer drafts", () => {
     expect(mergeComposerDraftContentState(once, draftKey, recovered)).toBe(once);
   });
 
+  it("keeps a queued report answer through draft merge, persistence and clearing", async () => {
+    const draftKey = "environment-1:thread-1";
+    const reportAnswer = { messageId: MessageId.make("report-1"), key: "build", version: 2 };
+    const content = { text: "[Build, version 2] Ship", attachments: [], reportAnswer };
+    const merged = mergeComposerDraftContentState({}, draftKey, content);
+    expect(merged[draftKey]).toEqual(content);
+    expect(mergeComposerDraftContentState(merged, draftKey, content)).toBe(merged);
+    const textOnly = { [draftKey]: { text: content.text, attachments: [] } };
+    expect(mergeComposerDraftContentState(textOnly, draftKey, content)[draftKey]).toEqual(content);
+
+    composerDraftFileMocks.setDocument({ schemaVersion: 1, drafts: merged });
+    await waitForComposerDraftsLoaded();
+    expect(getComposerDraftSnapshot(draftKey)).toEqual(content);
+    await flushComposerDrafts();
+    expect(
+      decodePersistedComposerState(JSON.parse(composerDraftFileMocks.getDocument())).drafts[
+        draftKey
+      ],
+    ).toEqual(content);
+
+    const cleared = clearComposerDraftContentState(
+      { [draftKey]: { ...merged[draftKey]!, runtimeMode: "full-access" } },
+      draftKey,
+    );
+    expect(cleared[draftKey]).toEqual({ text: "", attachments: [], runtimeMode: "full-access" });
+    const snapshot = { text: "before", attachments: [] };
+    const recovered = mergeComposerDraftContentState({ [draftKey]: snapshot }, draftKey, content)[
+      draftKey
+    ]!;
+    const edited = { ...recovered, text: recovered.text + " later" };
+    const rolledBack = undoComposerDraftMergeState(
+      { [draftKey]: edited },
+      draftKey,
+      snapshot,
+      recovered,
+    );
+    expect(rolledBack[draftKey]?.reportAnswer).toBeUndefined();
+    expect(rolledBack[draftKey]?.text).toBe("before later");
+  });
+
   it("preserves existing images when shared content exceeds the draft attachment limit", () => {
     const draftKey = "new-task:environment-1:project-1";
     const image = (id: string) => ({
