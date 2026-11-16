@@ -155,64 +155,167 @@ it.each([secret, secret + "A", secret + " with space"])(
   },
 );
 
-it("publishes only a fixed safe problem and no evidence when result sanitization fails", () => {
-  using folder = scratch();
-  const tools = NodePath.join(folder.root, ".canary-tools/scripts");
+type WorkflowStep = {
+  id?: string;
+  name: string;
+  run?: string;
+  if?: string;
+  with?: { path?: string };
+};
+const workflowSteps = () =>
+  (
+    parse(
+      NodeFS.readFileSync(
+        new URL("../.github/workflows/provider-canary.yml", import.meta.url),
+        "utf8",
+      ),
+    ) as { jobs: { verify: { steps: WorkflowStep[] } } }
+  ).jobs.verify.steps;
+
+/** A runner workspace with main's sanitizer and a stub verifier that copies `fixture` as its evidence. */
+function canaryWorkspace(root: string, fixture: Record<string, string>) {
+  const tools = NodePath.join(root, ".canary-tools/scripts");
   NodeFS.mkdirSync(tools, { recursive: true });
   NodeFS.copyFileSync(
     new URL("./canary-redaction.ts", import.meta.url),
     NodePath.join(tools, "canary-redaction.ts"),
   );
-  NodeFS.mkdirSync(NodePath.join(folder.root, "canary-outcome"));
-  const evidence = NodePath.join(folder.root, "styal-provider-live-synthetic");
+  NodeFS.mkdirSync(NodePath.join(root, "canary-outcome"));
+  const evidence = NodePath.join(root, "fixture");
   NodeFS.mkdirSync(evidence);
-  const encodedSecret = Buffer.from("synthetic-key-123456").toString("base64");
-  NodeFS.writeFileSync(
-    NodePath.join(evidence, "result.json"),
-    JSON.stringify({ detail: encodedSecret }).slice(0, -1),
-  );
-  const workflow = parse(
-    NodeFS.readFileSync(
-      new URL("../.github/workflows/provider-canary.yml", import.meta.url),
-      "utf8",
-    ),
-  ) as { jobs: { verify: { steps: { id?: string; name: string; run?: string; if?: string }[] } } };
-  const script = workflow.jobs.verify.steps.find((step) => step.id === "verify")!.run!;
-  const child = NodeChildProcess.spawnSync(
-    "bash",
-    [
-      "-c",
-      `node() {
+  for (const [name, content] of Object.entries(fixture))
+    NodeFS.writeFileSync(NodePath.join(evidence, name), content);
+  return (script: string, env: Record<string, string> = {}) =>
+    NodeChildProcess.spawnSync(
+      "bash",
+      [
+        "-e",
+        "-c",
+        `node() {
     if [[ "$1" == apps/server/scripts/verify-provider-live.ts ]]; then
       printf 'attempt\n' >> "$ATTEMPTS"
-      printf 'Evidence: %s\n' "$EVIDENCE_FIXTURE"
+      local evidence
+      evidence="$(mktemp -d "$RUNNER_TEMP/styal-provider-live-XXXXXX")"
+      cp "$EVIDENCE_FIXTURE"/* "$evidence"
+      printf 'Evidence: %s\n' "$evidence"
+      [[ -z "$VERIFIER_STDOUT" ]] || printf '%s\n' "$VERIFIER_STDOUT"
+      [[ -z "$VERIFIER_STDERR" ]] || printf '%s\n' "$VERIFIER_STDERR" >&2
       return 1
     fi
     "$REAL_NODE" "$@"
   }
 ` + script,
-    ],
-    {
-      encoding: "utf8",
-      env: {
-        ...process.env,
-        GITHUB_WORKSPACE: folder.root,
-        RUNNER_TEMP: folder.root,
-        REAL_NODE: process.execPath,
-        EVIDENCE_FIXTURE: evidence,
-        ATTEMPTS: NodePath.join(folder.root, "attempts"),
-        GITHUB_OUTPUT: NodePath.join(folder.root, "output"),
-        GITHUB_STEP_SUMMARY: NodePath.join(folder.root, "summary"),
-        PROVIDER: "opencode",
-        STYAL: "1.0.0",
-        VERSION: "1.0.0",
-        PACKAGE: "@opencode/cli",
-        MODEL: "synthetic",
-        API_KEY: "synthetic-key-123456",
-        SECRET_NAME: "API_KEY",
+      ],
+      {
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          GITHUB_WORKSPACE: root,
+          RUNNER_TEMP: root,
+          REAL_NODE: process.execPath,
+          EVIDENCE_FIXTURE: evidence,
+          ATTEMPTS: NodePath.join(root, "attempts"),
+          GITHUB_OUTPUT: NodePath.join(root, "output"),
+          GITHUB_STEP_SUMMARY: NodePath.join(root, "summary"),
+          PROVIDER: "opencode",
+          STYAL: "1.0.0",
+          VERSION: "1.0.0",
+          PACKAGE: "@opencode/cli",
+          MODEL: "synthetic",
+          API_KEY: "synthetic-key-123456",
+          SECRET_NAME: "API_KEY",
+          ...env,
+        },
       },
-    },
+    );
+}
+
+it("redacts the job log and every uploaded evidence file of a failed verification", () => {
+  using folder = scratch();
+  const forms = [secret, ...encodings(secret)];
+  const patterned = "sk-syntheticPatternKey1234567890";
+  const runStep = canaryWorkspace(folder.root, {
+    "result.json": JSON.stringify({
+      provider: "opencode",
+      version: "1.0.0",
+      model: "synthetic",
+      scenarios: [{ name: "turn", status: "failed", seconds: 3, detail: `rejected ${secret}` }],
+    }),
+    "projection-thread-1.json": JSON.stringify({ threadId: "thread-1", error: forms.join(" ") }),
+    "events-thread-1.ndjson": forms
+      .map((form) => JSON.stringify({ type: "thread.activity", payload: { text: `key ${form}` } }))
+      .concat(JSON.stringify({ type: "thread.turn-completed", payload: { apiKey: patterned } }))
+      .join("\n"),
+    "server.log": [
+      "INFO server listening",
+      ...forms.map((form) => `WARN provider request failed key=${form}`),
+      `ERROR ${JSON.stringify({ headers: { authorization: `Bearer ${patterned}` } })}`,
+    ].join("\n"),
+  });
+  const env = {
+    API_KEY: secret,
+    VERIFIER_STDOUT: `turn: provider rejected ${forms.join(" ")}`,
+    VERIFIER_STDERR: `Error: request failed with ${patterned}`,
+  };
+  const steps = workflowSteps();
+  const verify = runStep(steps.find((step) => step.id === "verify")!.run!, env);
+  expect(verify.status).toBe(1);
+  expect(NodeFS.readFileSync(NodePath.join(folder.root, "output"), "utf8")).toContain(
+    "publish_evidence=true",
   );
+  const upload = steps.find((step) => step.name === "Upload evidence")!;
+  expect(upload.if).toContain("steps.redact_evidence.outcome == 'success'");
+  const redact = runStep(steps.find((step) => step.id === "redact_evidence")!.run!, env);
+  expect(redact.status, redact.stderr).toBe(0);
+
+  const jobLog = verify.stdout + verify.stderr + redact.stdout + redact.stderr;
+  expect(jobLog).toContain("turn: provider rejected [redacted]");
+  expect(jobLog).toContain("Error: request failed with [redacted]");
+  const uploaded = upload
+    .with!.path!.trim()
+    .split("\n")
+    .flatMap((pattern) =>
+      NodeFS.globSync(pattern.trim().replace("${{ runner.temp }}", folder.root)),
+    );
+  expect(uploaded.map((file) => NodePath.basename(file)).toSorted()).toEqual(
+    ["events-thread-1.ndjson", "projection-thread-1.json", "result.json", "server.log"]
+      .flatMap((name) => [name, name])
+      .toSorted(),
+  );
+  const published = [
+    jobLog,
+    NodeFS.readFileSync(NodePath.join(folder.root, "summary"), "utf8"),
+    NodeFS.readFileSync(NodePath.join(folder.root, "canary-outcome/opencode-1.0.0.json"), "utf8"),
+    ...uploaded.map((file) => NodeFS.readFileSync(file, "utf8")),
+  ];
+  for (const output of published) {
+    for (const form of forms) expect(output).not.toContain(form);
+    expect(output).not.toContain(patterned);
+  }
+  const [log, events] = ["server.log", "events-thread-1.ndjson"].map((name) =>
+    NodeFS.readFileSync(
+      uploaded.find((file) => file.endsWith(name))!,
+      "utf8",
+    ),
+  );
+  expect(log).toContain("WARN provider request failed key=[redacted]");
+  expect(log).toContain("Bearer [redacted]");
+  expect(
+    events!
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line).type),
+  ).toEqual([...forms.map(() => "thread.activity"), "thread.turn-completed"]);
+});
+
+it("publishes only a fixed safe problem and no evidence when result sanitization fails", () => {
+  using folder = scratch();
+  const encodedSecret = Buffer.from("synthetic-key-123456").toString("base64");
+  const runStep = canaryWorkspace(folder.root, {
+    "result.json": JSON.stringify({ detail: encodedSecret }).slice(0, -1),
+  });
+  const steps = workflowSteps();
+  const child = runStep(steps.find((step) => step.id === "verify")!.run!);
   expect(child.status).toBe(1);
   expect(child.stdout + child.stderr).not.toContain(encodedSecret);
   expect(NodeFS.readFileSync(NodePath.join(folder.root, "attempts"), "utf8")).toBe("attempt\n");
@@ -226,10 +329,10 @@ it("publishes only a fixed safe problem and no evidence when result sanitization
     outcome: "failed",
     detail: "Verification result could not be published safely because sanitization failed.",
   });
-  expect(workflow.jobs.verify.steps.find((step) => step.name === "Upload evidence")!.if).toContain(
+  expect(steps.find((step) => step.name === "Upload evidence")!.if).toContain(
     "steps.verify.outputs.publish_evidence == 'true'",
   );
-  expect(workflow.jobs.verify.steps.find((step) => step.name === "Upload evidence")!.if).toContain(
+  expect(steps.find((step) => step.name === "Upload evidence")!.if).toContain(
     "steps.redact.outcome == 'success'",
   );
   const run = collectRun({

@@ -216,8 +216,14 @@ jobs:
             local log="$RUNNER_TEMP/verify-$1.log"
             node apps/server/scripts/verify-provider-live.ts \
               --provider "$PROVIDER" --model "$MODEL" --expect-version "$VERSION" \
-              2>&1 | tee "$log"
-            local status=${PIPESTATUS[0]}
+              2>&1 | node "$GITHUB_WORKSPACE/.canary-tools/scripts/canary-redaction.ts" --stream | tee "$log"
+            local statuses=("${PIPESTATUS[@]}")
+            local status=${statuses[0]}
+            if [[ ${statuses[1]} != 0 ]]; then
+              publish_evidence=false
+              detail="Verification output could not be shown safely because sanitization failed."
+              return 1
+            fi
             evidence="$(sed -n 's/^Evidence: //p' "$log" | head -n 1)"
             if [[ -n "$evidence" && -f "$evidence/result.json" ]]; then
               if ! node "$GITHUB_WORKSPACE/.canary-tools/scripts/canary-redaction.ts" "$evidence/result.json"; then
@@ -297,8 +303,18 @@ jobs:
       # Evidence holds the server log, thread projections and events, not the
       # provider's own home directory or credentials. Both attempts are kept,
       # so a pass on the retry still shows why the first attempt failed.
-      - name: Upload evidence
+      - id: redact_evidence
+        name: Redact evidence before upload
         if: always() && steps.redact.outcome == 'success' && steps.verify.outputs.publish_evidence == 'true' && steps.verify.outputs.outcome != 'passed'
+        run: |
+          shopt -s nullglob
+          for evidence in "$RUNNER_TEMP"/styal-provider-live-*/; do
+            node "$GITHUB_WORKSPACE/.canary-tools/scripts/canary-redaction.ts" "$evidence"
+          done
+
+      # Only the file types the redaction step rewrites.
+      - name: Upload evidence
+        if: always() && steps.redact_evidence.outcome == 'success' && steps.redact.outcome == 'success' && steps.verify.outputs.publish_evidence == 'true' && steps.verify.outputs.outcome != 'passed'
         uses: actions/upload-artifact@v7
         with:
           name: canary-evidence-${{ matrix.provider }}-${{ matrix.version }}-${{ matrix.styal }}

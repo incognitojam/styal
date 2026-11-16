@@ -1,6 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off preferSchemaOverJson:off globalConsole:off -- Dependency-free sanitizer also runs against release-tag verifier files.
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
+import * as NodeReadline from "node:readline";
 
 export function redactCanary<T>(
   value: T,
@@ -72,20 +73,40 @@ export function redactCanary<T>(
 }
 
 if (import.meta.main) {
+  let warned = false;
+  const redact = <T>(value: T) =>
+    redactCanary(value, [process.env.API_KEY ?? ""], (message) => {
+      if (!warned) console.warn(message);
+      warned = true;
+    });
+  const redactFile = (file: string) => {
+    const input = NodeFS.readFileSync(file, "utf8");
+    const output = file.endsWith(".json")
+      ? `${JSON.stringify(redact(JSON.parse(input)), null, 2)}\n`
+      : file.endsWith(".ndjson")
+        ? redact(
+            input
+              .split("\n")
+              .filter((line) => line.trim() !== "")
+              .map((line): unknown => JSON.parse(line)),
+          )
+            .map((event) => `${JSON.stringify(event)}\n`)
+            .join("")
+        : redact(input);
+    NodeFS.writeFileSync(file, output);
+  };
   try {
     const target = process.argv[2];
-    if (!target) throw new Error("Usage: canary-redaction.ts FILE_OR_DIRECTORY");
-    const files = NodeFS.statSync(target).isDirectory()
-      ? NodeFS.readdirSync(target)
-          .filter((name) => name.endsWith(".json"))
-          .map((name) => NodePath.join(target, name))
-      : [target];
-    for (const file of files) {
-      const clean = redactCanary(JSON.parse(NodeFS.readFileSync(file, "utf8")), [
-        process.env.API_KEY ?? "",
-      ]);
-      NodeFS.writeFileSync(file, `${JSON.stringify(clean)}\n`);
-    }
+    if (!target) throw new Error("Usage: canary-redaction.ts --stream | FILE_OR_DIRECTORY");
+    if (target === "--stream") {
+      // Line by line, so a long verifier run still streams to the job log.
+      for await (const line of NodeReadline.createInterface({ input: process.stdin }))
+        process.stdout.write(`${redact(line)}\n`);
+    } else if (NodeFS.statSync(target).isDirectory()) {
+      for (const entry of NodeFS.readdirSync(target, { withFileTypes: true }))
+        if (entry.isFile() && /\.(?:json|ndjson|log)$/.test(entry.name))
+          redactFile(NodePath.join(target, entry.name));
+    } else redactFile(target);
   } catch {
     console.error("Canary data sanitization failed; result withheld.");
     process.exitCode = 1;
