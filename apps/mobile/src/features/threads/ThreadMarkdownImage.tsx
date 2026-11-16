@@ -90,6 +90,7 @@ export function ThreadMarkdownImageView(props: {
   readonly unavailable: boolean;
   readonly unavailableDetail?: string | undefined;
   readonly alt: string | null;
+  readonly fixedAspectRatio?: number;
   readonly knownSize?: { readonly width: number; readonly height: number } | undefined;
   readonly format?: "svg";
   readonly actionsSource?: MediaActionsSource;
@@ -131,7 +132,9 @@ export function ThreadMarkdownImageView(props: {
     AsyncResult.isFailure(svg);
   const placeholderWidth: ViewStyle["width"] =
     availableWidth > 0 ? Math.min(availableWidth, MARKDOWN_IMAGE_MAX_WIDTH) : "100%";
-  const frameStyle: ViewStyle = displaySize ?? { width: placeholderWidth, aspectRatio: 16 / 9 };
+  const frameStyle: ViewStyle = props.fixedAspectRatio
+    ? { width: placeholderWidth, aspectRatio: props.fixedAspectRatio }
+    : (displaySize ?? { width: placeholderWidth, aspectRatio: 16 / 9 });
 
   return (
     <View

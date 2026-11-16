@@ -1,3 +1,4 @@
+import { checkPullRequestImages } from "./PullRequestImageVisibility";
 import { Toolbar } from "../../components/ui/Toolbar";
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { Chip } from "../../components/ui/Chip";
@@ -742,11 +743,13 @@ export function PullRequestRouteScreen({ route }: StaticScreenProps<PullRequestP
                   // initialScrollOffset it gets, and the first render has the window's top
                   // inset (0 on the folded iPhone Duo), not the header's.
                   onScroll={(event) => {
+                    checkPullRequestImages();
                     const offset = event.nativeEvent.contentOffset.y;
                     scrollOffsets.current[tab] = offset;
                     if (shown(requestedSection.current) === tab)
                       currentScrollOffset.current = { tab, offset };
                   }}
+                  scrollEventThrottle={100}
                   className="flex-1"
                   renderScrollComponent={
                     Platform.OS === "ios" ? PullRequestTabScrollView : undefined

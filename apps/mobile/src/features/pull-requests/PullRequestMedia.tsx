@@ -1,3 +1,4 @@
+import { PullRequestLazyImage, PullRequestMediaVisibleContext } from "./PullRequestImageVisibility";
 import { createContext, useContext, useState } from "react";
 import { pullRequestMediaSource, pullRequestImageSource } from "./pullRequestMediaSource";
 import { useFilePreviewGallery } from "../../components/FilePreviewGallery";
@@ -23,24 +24,24 @@ import {
   type FilePreviewItem,
 } from "../../components/FilePreviewModal";
 
-export const PullRequestMediaVisibleContext = createContext(true);
+export { PullRequestMediaVisibleContext } from "./PullRequestImageVisibility";
 
 export const PullRequestMediaContext = createContext<{
   readonly environmentId: EnvironmentId;
   readonly cwd: string;
 } | null>(null);
 
-export function usePullRequestMediaUrl(url: string) {
+export function usePullRequestMediaUrl(url: string, enabled = true) {
   const context = useContext(PullRequestMediaContext);
   const fetchUrl = sourceControlClients.mediaUrl(url)?.fetchUrl;
   const resource: AssetResource | null =
     context && fetchUrl
       ? { _tag: SOURCE_CONTROL_MEDIA_ASSET, cwd: context.cwd, url: fetchUrl }
       : null;
-  const asset = useAssetUrlState(context?.environmentId ?? null, resource);
+  const asset = useAssetUrlState(context?.environmentId ?? null, enabled ? resource : null);
   const refresh = useRefreshAssetUrl(context?.environmentId ?? null, resource);
   return {
-    uri: asset._tag === "Success" ? asset.url : resource ? null : url,
+    uri: !enabled ? null : asset._tag === "Success" ? asset.url : resource ? null : url,
     cacheKey: context && resource ? assetImageCacheKey(context.environmentId, resource) : undefined,
     unavailable: resource !== null && asset._tag === "Failure",
     source: pullRequestMediaSource(url, context),
@@ -48,13 +49,25 @@ export function usePullRequestMediaUrl(url: string) {
   };
 }
 
-export function PullRequestMedia(props: {
+type PullRequestMediaProps = {
   readonly url: string;
   readonly kind: "image" | "video" | "unknown";
   readonly caption?: string;
   readonly compact?: boolean;
-}) {
-  const media = usePullRequestMediaUrl(props.url);
+};
+
+export function PullRequestMedia(props: PullRequestMediaProps) {
+  return props.kind === "image" ? (
+    <PullRequestLazyImage key={props.url}>
+      {(enabled) => <PullRequestMediaContent {...props} enabled={enabled} />}
+    </PullRequestLazyImage>
+  ) : (
+    <PullRequestMediaContent {...props} enabled />
+  );
+}
+
+function PullRequestMediaContent(props: PullRequestMediaProps & { enabled: boolean }) {
+  const media = usePullRequestMediaUrl(props.url, props.enabled);
   const visible = useContext(PullRequestMediaVisibleContext);
   const context = useContext(PullRequestMediaContext);
   const withGallery = useFilePreviewGallery();
@@ -65,6 +78,7 @@ export function PullRequestMedia(props: {
     return (
       <>
         <ThreadMarkdownImageView
+          fixedAspectRatio={16 / 9}
           uri={media.uri}
           sourceKey={props.url}
           cacheKey={media.cacheKey}
@@ -118,13 +132,25 @@ export function PullRequestMedia(props: {
   );
 }
 
-export function PullRequestImageAttachment(props: {
+type PullRequestImageAttachmentProps = {
   readonly url: string;
   readonly caption: string;
   readonly source: FilePreviewItem;
   readonly gallery: readonly FilePreviewItem[];
-}) {
-  const media = usePullRequestMediaUrl(props.url);
+};
+
+export function PullRequestImageAttachment(props: PullRequestImageAttachmentProps) {
+  return (
+    <PullRequestLazyImage key={props.url}>
+      {(enabled) => <PullRequestImageAttachmentContent {...props} enabled={enabled} />}
+    </PullRequestLazyImage>
+  );
+}
+
+function PullRequestImageAttachmentContent(
+  props: PullRequestImageAttachmentProps & { enabled: boolean },
+) {
+  const media = usePullRequestMediaUrl(props.url, props.enabled);
   const [preview, setPreview] = useState<FilePreviewSource | null>(null);
   return (
     <>

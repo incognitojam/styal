@@ -1,3 +1,4 @@
+import { PullRequestLazyImage } from "./PullRequestImageVisibility";
 import { splitPullRequestBody } from "@t3tools/client-runtime/pull-request-markdown";
 import type { ReactNode } from "react";
 import { View } from "react-native";
@@ -69,12 +70,14 @@ function MarkdownImage(props: {
   readonly href: string;
   readonly alt: string | null;
   readonly onPreview: (source: FilePreviewSource) => void;
+  readonly enabled: boolean;
 }) {
-  const media = usePullRequestMediaUrl(props.href);
+  const media = usePullRequestMediaUrl(props.href, props.enabled);
   const context = useContext(PullRequestMediaContext);
   const withGallery = useFilePreviewGallery();
   return (
     <ThreadMarkdownImageView
+      fixedAspectRatio={16 / 9}
       uri={media.uri}
       sourceKey={props.href}
       cacheKey={media.cacheKey}
@@ -141,7 +144,11 @@ function PullRequestMarkdownContent(props: {
     .map((uri) => pullRequestImageSource(uri, mediaContext));
   const [preview, setPreview] = useState<FilePreviewSource | null>(null);
   const renderImage: MarkdownImageRenderer = (image) => (
-    <MarkdownImage href={image.href} alt={image.alt} onPreview={setPreview} />
+    <PullRequestLazyImage key={image.href}>
+      {(enabled) => (
+        <MarkdownImage href={image.href} alt={image.alt} onPreview={setPreview} enabled={enabled} />
+      )}
+    </PullRequestLazyImage>
   );
   const styles = useMarkdownPreviewStyles();
   return (
@@ -152,6 +159,8 @@ function PullRequestMarkdownContent(props: {
         textStyle={styles.nativeTextStyle}
         onLinkPress={openLink}
         renderImage={renderImage}
+        // React image slots own loading; suppress the native markdown image requests.
+        resolveImageSource={() => ({ uri: "" })}
         onImagePress={(href) => setPreview(pullRequestImageSource(href, mediaContext))}
       />
       <FilePreviewModal source={preview} onRequestClose={() => setPreview(null)} />

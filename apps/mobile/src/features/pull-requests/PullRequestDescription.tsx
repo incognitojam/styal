@@ -1,3 +1,4 @@
+import { PullRequestImageClip, checkPullRequestImages } from "./PullRequestImageVisibility";
 import { splitPullRequestBody } from "@t3tools/client-runtime/pull-request-markdown";
 import {
   PullRequestImageAttachment,
@@ -56,7 +57,7 @@ export function PullRequestDescription(props: {
         <PullRequestSectionHeading>Description</PullRequestSectionHeading>
         {props.markdown.trim() ? (
           <View className="overflow-hidden">
-            <View
+            <PullRequestImageClip
               style={{
                 height: expanded ? bodyHeight : Math.min(bodyHeight, COLLAPSED_HEIGHT),
                 overflow: "hidden",
@@ -68,7 +69,7 @@ export function PullRequestDescription(props: {
               >
                 <PullRequestMarkdown markdown={props.markdown} />
               </View>
-            </View>
+            </PullRequestImageClip>
             {collapsed ? (
               <View
                 pointerEvents="none"
@@ -140,6 +141,8 @@ export function PullRequestDescription(props: {
         <View className="gap-3">
           <PullRequestSectionHeading>Attachments</PullRequestSectionHeading>
           <ScrollView
+            onScroll={checkPullRequestImages}
+            scrollEventThrottle={100}
             horizontal
             keyboardShouldPersistTaps="always"
             scrollsToTop={false}
