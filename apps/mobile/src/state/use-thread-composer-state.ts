@@ -194,6 +194,8 @@ export function updateThreadDraftModelSelection(
   });
 }
 
+const NO_SETTINGS = Atom.make(null);
+
 export function useThreadComposerState() {
   const {
     selectedThread: selectedThreadShell,
@@ -241,7 +243,7 @@ export function useThreadComposerState() {
   const reportSettings = useAtomValue(
     selectedThreadShell
       ? serverEnvironment.settingsValueAtom(selectedThreadShell.environmentId)
-      : Atom.make(null),
+      : NO_SETTINGS,
   );
   const [reportReply, setReportReply] = useState<(ReportReply & { threadKey: string }) | null>(
     null,

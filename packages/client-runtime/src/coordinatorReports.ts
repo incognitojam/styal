@@ -1,8 +1,11 @@
-import { ORCHESTRATION_V2_WS_METHODS, type CoordinatorReportReference } from "@t3tools/contracts";
 import type { Atom } from "effect/reactivity";
 import type * as EnvironmentRegistry from "./connection/registry.ts";
 import { createEnvironmentRpcCommand } from "./state/runtime.ts";
-import type { CoordinatorReport } from "@t3tools/contracts";
+import {
+  ORCHESTRATION_V2_WS_METHODS,
+  type CoordinatorReport,
+  type CoordinatorReportReference,
+} from "@t3tools/contracts";
 
 type Reference = { readonly messageId: string; readonly key: string; readonly version: number };
 type Message = {
