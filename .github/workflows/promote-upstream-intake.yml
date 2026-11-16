@@ -181,7 +181,7 @@ jobs:
           import { appendFileSync } from 'node:fs';
           import { touchesNativeFingerprint } from './scripts/upstream/intake-run.ts';
           const paths = execFileSync('git', ['diff', '--name-only', '--no-renames', '-z',
-            process.env.BASE_SHA, process.env.CANDIDATE_SHA], { encoding: 'utf8' }).split('\0').filter(Boolean);
+            process.env.BASE_SHA, process.env.CANDIDATE_SHA], { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 }).split('\0').filter(Boolean);
           const verdict = touchesNativeFingerprint(paths) ? 'unknown' : 'unchanged';
           appendFileSync(process.env.GITHUB_OUTPUT, `verdict=${verdict}\n`);
           appendFileSync(process.env.GITHUB_STEP_SUMMARY,
