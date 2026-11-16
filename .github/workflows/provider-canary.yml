@@ -209,19 +209,51 @@ jobs:
           TMPDIR: ${{ runner.temp }}
         run: |
           export "$SECRET_NAME=$API_KEY"
+          finish() {
+            [[ "$outcome" == passed ]] && detail=""
+            echo "publish_evidence=$publish_evidence" >> "$GITHUB_OUTPUT"
+            echo "outcome=$outcome" >> "$GITHUB_OUTPUT"
+            outcome_file="$RUNNER_TEMP/canary-outcome/$PROVIDER-$STYAL.json"
+            jq -n --arg provider "$PROVIDER" --arg package "$PACKAGE" --arg version "$VERSION" --arg styal "$STYAL" \
+              --arg outcome "$outcome" --arg detail "$detail" \
+              '{provider: $provider, packageName: $package, version: $version, styal: $styal, outcome: $outcome, detail: $detail}' \
+              > "$outcome_file"
+            if [[ "$outcome" == failed ]]; then
+              echo "::error title=$PROVIDER $VERSION failed verification::$detail"
+              exit 1
+            fi
+          }
+          # Output cut off mid-key no longer matches it, so a stopped step shows none.
+          stopped() {
+            trap - INT TERM
+            [[ -z "$verifier" ]] || kill "$verifier" 2>/dev/null
+            echo "Verifier output withheld: the step was stopped."
+            publish_evidence=false
+            outcome=failed
+            detail="Verification was stopped before it finished, so its output was withheld."
+            finish
+          }
+          verifier=""
+          trap stopped INT TERM
           if [[ "$PROVIDER" == "codex" ]]; then
             printenv OPENAI_API_KEY | codex login --with-api-key
           fi
           run_verifier() {
-            local log="$RUNNER_TEMP/verify-$1.log"
+            local raw="$RUNNER_TEMP/verify-$1.raw" log="$RUNNER_TEMP/verify-$1.log"
+            # In the background, so a stop signal runs the trap without waiting for the verifier.
             node apps/server/scripts/verify-provider-live.ts \
-              --provider "$PROVIDER" --model "$MODEL" --expect-version "$VERSION" \
-              2>&1 | node "$GITHUB_WORKSPACE/.canary-tools/scripts/canary-redaction.ts" --stdin | tee "$log"
-            local statuses=("${PIPESTATUS[@]}")
-            local status=${statuses[0]}
-            if [[ ${statuses[1]} != 0 ]]; then
+              --provider "$PROVIDER" --model "$MODEL" --expect-version "$VERSION" > "$raw" 2>&1 &
+            verifier=$!
+            wait "$verifier"
+            local status=$?
+            verifier=""
+            node "$GITHUB_WORKSPACE/.canary-tools/scripts/canary-redaction.ts" --print "$raw" > "$log"
+            local printed=$?
+            rm -f "$raw"
+            cat "$log"
+            if [[ $printed != 0 ]]; then
               publish_evidence=false
-              detail="Verification output could not be shown safely because sanitization failed."
+              detail="Verifier output was withheld because it could not be sanitized or was too large."
               return 1
             fi
             evidence="$(sed -n 's/^Evidence: //p' "$log" | head -n 1)"
@@ -256,19 +288,8 @@ jobs:
             fi
           fi
           [[ "$publish_evidence" == false ]] && outcome=failed
-          echo "publish_evidence=$publish_evidence" >> "$GITHUB_OUTPUT"
           set -e
-          [[ "$outcome" == passed ]] && detail=""
-          echo "outcome=$outcome" >> "$GITHUB_OUTPUT"
-          outcome_file="$RUNNER_TEMP/canary-outcome/$PROVIDER-$STYAL.json"
-          jq -n --arg provider "$PROVIDER" --arg package "$PACKAGE" --arg version "$VERSION" --arg styal "$STYAL" \
-            --arg outcome "$outcome" --arg detail "$detail" \
-            '{provider: $provider, packageName: $package, version: $version, styal: $styal, outcome: $outcome, detail: $detail}' \
-            > "$outcome_file"
-          if [[ "$outcome" == failed ]]; then
-            echo "::error title=$PROVIDER $VERSION failed verification::$detail"
-            exit 1
-          fi
+          finish
 
       - name: Record an unfinished verification
         if: always() && steps.secret.outputs.present == 'true' && steps.verify.outputs.outcome == ''

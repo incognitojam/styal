@@ -96,16 +96,13 @@ if (import.meta.main) {
   };
   try {
     const target = process.argv[2];
-    if (!target) throw new Error("Usage: canary-redaction.ts --stdin | FILE_OR_DIRECTORY");
-    if (target === "--stdin") {
-      // Whole, so a key wrapped across lines still matches. SIGINT waits for the verifier's
-      // own shutdown output; SIGTERM publishes what has arrived.
-      let input = "";
-      process.once("SIGTERM", () => process.stdout.write(redact(input), () => process.exit(1)));
-      process.on("SIGINT", () => {});
-      process.stdin.setEncoding("utf8");
-      for await (const chunk of process.stdin) input += chunk;
-      process.stdout.write(redact(input));
+    if (!target) throw new Error("Usage: canary-redaction.ts [--print] FILE_OR_DIRECTORY");
+    if (target === "--print") {
+      const file = process.argv[3]!;
+      if (NodeFS.statSync(file).size > 16 * 1024 * 1024) {
+        console.log("Verifier output withheld: it is larger than 16 MiB.");
+        process.exitCode = 1;
+      } else process.stdout.write(redact(NodeFS.readFileSync(file, "utf8")));
     } else if (NodeFS.statSync(target).isDirectory()) {
       for (const entry of NodeFS.readdirSync(target, { withFileTypes: true }))
         if (entry.isFile() && /\.(?:json|ndjson|log)$/.test(entry.name))

@@ -200,6 +200,11 @@ function canaryWorkspace(root: string, fixture: Record<string, string>) {
       printf 'Evidence: %s\n' "$evidence"
       [[ -z "$VERIFIER_STDOUT" ]] || printf '%s\n' "$VERIFIER_STDOUT"
       [[ -z "$VERIFIER_STDERR" ]] || printf '%s\n' "$VERIFIER_STDERR" >&2
+      [[ -z "$VERIFIER_PADDING" ]] || head -c "$VERIFIER_PADDING" /dev/zero | tr '\\0' x
+      if [[ -n "$VERIFIER_STOP" ]]; then
+        kill -INT $$
+        exec tail -f /dev/null
+      fi
       return 1
     fi
     "$REAL_NODE" "$@"
@@ -312,16 +317,45 @@ it("redacts the job log and every uploaded evidence file of a failed verificatio
   ).toEqual([...forms.map(() => "thread.activity"), "thread.turn-completed"]);
 });
 
-it("publishes only a fixed safe problem and no evidence when result sanitization fails", () => {
+const withheldKey = `sk-synthetic-${secret}`;
+const encodedKey = Buffer.from(withheldKey).toString("base64");
+const wrappedKey = encodedKey.match(/.{1,16}/g)!.join("\n");
+it.each([
+  {
+    name: "result sanitization fails",
+    fixture: { "result.json": JSON.stringify({ detail: encodedKey }).slice(0, -1) },
+    env: {},
+    line: "Canary data sanitization failed; result withheld.",
+    detail: "Verification result could not be published safely because sanitization failed.",
+  },
+  {
+    name: "the step is stopped mid-key",
+    fixture: { "result.json": "{}" },
+    env: { VERIFIER_STDOUT: `turn: rejected\n${wrappedKey.slice(0, -1)}`, VERIFIER_STOP: "1" },
+    line: "Verifier output withheld: the step was stopped.",
+    detail: "Verification was stopped before it finished, so its output was withheld.",
+  },
+  {
+    name: "the output is too large",
+    fixture: { "result.json": "{}" },
+    env: { VERIFIER_STDOUT: wrappedKey, VERIFIER_PADDING: String(17 * 1024 * 1024) },
+    line: "Verifier output withheld: it is larger than 16 MiB.",
+    detail: "Verifier output was withheld because it could not be sanitized or was too large.",
+  },
+])("publishes only a fixed safe problem and no evidence when $name", (row) => {
   using folder = scratch();
-  const encodedSecret = Buffer.from("synthetic-key-123456").toString("base64");
-  const runStep = canaryWorkspace(folder.root, {
-    "result.json": JSON.stringify({ detail: encodedSecret }).slice(0, -1),
-  });
+  const runStep = canaryWorkspace(folder.root, row.fixture);
   const steps = workflowSteps();
-  const child = runStep(steps.find((step) => step.id === "verify")!.run!);
+  const child = runStep(steps.find((step) => step.id === "verify")!.run!, {
+    API_KEY: withheldKey,
+    ...row.env,
+  });
   expect(child.status).toBe(1);
-  expect(child.stdout + child.stderr).not.toContain(encodedSecret);
+  const jobLog = child.stdout + child.stderr;
+  expect(jobLog).toContain(row.line);
+  const joined = jobLog.replace(/\s+/g, "");
+  for (let start = 0; start + 8 <= encodedKey.length; start++)
+    expect(joined).not.toContain(encodedKey.slice(start, start + 8));
   expect(NodeFS.readFileSync(NodePath.join(folder.root, "attempts"), "utf8")).toBe("attempt\n");
   expect(NodeFS.readFileSync(NodePath.join(folder.root, "output"), "utf8")).toContain(
     "publish_evidence=false",
@@ -329,10 +363,7 @@ it("publishes only a fixed safe problem and no evidence when result sanitization
   const outcome = JSON.parse(
     NodeFS.readFileSync(NodePath.join(folder.root, "canary-outcome/opencode-1.0.0.json"), "utf8"),
   );
-  expect(outcome).toMatchObject({
-    outcome: "failed",
-    detail: "Verification result could not be published safely because sanitization failed.",
-  });
+  expect(outcome).toMatchObject({ outcome: "failed", detail: row.detail });
   expect(steps.find((step) => step.name === "Upload evidence")!.if).toContain(
     "steps.verify.outputs.publish_evidence == 'true'",
   );
