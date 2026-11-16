@@ -233,11 +233,11 @@ export function WorkTogetherSettings({
                   <SettingsRow
                     id="machine-access"
                     forkFeature="machine-access"
-                    title={`What your other machines can do on ${selected.label}`}
+                    title={`What your other machines can do on ${selected.name}`}
                   >
                     <MachineAccessSetting
                       environmentId={selected.environmentId}
-                      machineLabel={selected.label}
+                      machineLabel={selected.name}
                       level={selected.serverConfig.settings.incomingMachineAccess}
                       supported
                       connected={connected}
@@ -247,20 +247,20 @@ export function WorkTogetherSettings({
                 {!connected ? (
                   selected.entry.enabled ? (
                     <SettingsRow
-                      title={`This app can't reach ${selected.label} right now`}
+                      title={`This app can't reach ${selected.name} right now`}
                       description="Its setting still applies."
                     />
                   ) : (
                     <SettingsRow
-                      title={`${selected.label} is hidden from this app`}
+                      title={`${selected.name} is hidden from this app`}
                       description="Its settings still apply. Show it in this app to change them here."
                     />
                   )
                 ) : null}
                 {connected && !supportsLinks ? (
                   <SettingsRow
-                    title={`${selected.label} can't work with your other machines`}
-                    description={`Update styal on ${selected.label} to let its agents work on your other machines.`}
+                    title={`${selected.name} can't work with your other machines`}
+                    description={`Update styal on ${selected.name} to let its agents work on your other machines.`}
                   />
                 ) : null}
               </>
@@ -291,7 +291,7 @@ export function WorkTogetherSettings({
             ) : null}
             <SettingsGroup className="m-3 empty:hidden sm:mx-4">
               {selected && connected && supportsLinks ? (
-                <SettingsRow title={`Agents on ${selected.label} can work on`} />
+                <SettingsRow title={`Agents on ${selected.name} can work on`} />
               ) : null}
               {pairs.map(({ a, b, key }) => (
                 <MachinePair
@@ -537,16 +537,18 @@ function MachineTab({
         />
       </span>
       <span className="min-w-0">
-        <span className="block truncate text-sm font-medium text-foreground">{machine.label}</span>
+        <span className="block truncate text-sm font-medium text-foreground">{machine.name}</span>
         <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <ConnectionStatusDot dotClassName={dot} pingClassName={null} />
-          <span className="min-w-0 truncate">{status}</span>
+          <span className="min-w-0 truncate">
+            {machine.hint === null ? status : `${machine.hint} · ${status}`}
+          </span>
         </span>
       </span>
     </Tabs.Tab>
   );
   // A tab's name truncates past about this length, so the full name needs a way to be read.
-  if (machine.identityDetail === null && machine.label.length <= 16) return tab;
+  if (machine.identityDetail === null && machine.name.length <= 16) return tab;
   return (
     <Tooltip>
       <TooltipTrigger render={tab} />
@@ -574,6 +576,8 @@ function useWorkTogetherMachine(
   return {
     environmentId,
     label: environment.label,
+    name: environment.name,
+    hint: environment.hint,
     identityDetail: environment.identityDetail,
     identityIcon: environment.identityIcon,
     ownLabel: serverConfig?.environment.label ?? null,
@@ -947,7 +951,10 @@ function MachineName({
   machine,
   kind,
 }: {
-  readonly machine: Pick<WorkTogetherMachine, "label" | "identityDetail" | "identityIcon">;
+  readonly machine: Pick<
+    WorkTogetherMachine,
+    "label" | "name" | "hint" | "identityDetail" | "identityIcon"
+  >;
   /** Null hides the icon. Left out, it shows only when two machines share a name. */
   readonly kind?: EnvironmentMachineKind | null;
 }) {
@@ -961,10 +968,15 @@ function MachineName({
           aria-hidden
         />
       ) : null}
-      <span className="min-w-0 break-words">{machine.label}</span>
+      <span className="min-w-0 break-words">
+        {machine.name ?? machine.label}
+        {machine.hint ? (
+          <span className="ms-1.5 text-xs font-normal text-muted-foreground">{machine.hint}</span>
+        ) : null}
+      </span>
     </span>
   );
-  if (!machine.identityDetail || !machine.label.includes("…")) return name;
+  if (!machine.identityDetail || !machine.hint?.includes("…")) return name;
   return (
     <Tooltip>
       <TooltipTrigger render={name} tabIndex={0} />

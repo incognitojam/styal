@@ -53,6 +53,8 @@ export interface WorkTogetherMachine {
   readonly label: string;
   /** What the machine calls itself, which names its sessions on other machines. */
   readonly ownLabel: string | null;
+  readonly name?: string;
+  readonly hint?: string | null;
   readonly identityDetail?: string | null;
   readonly identityIcon?: EnvironmentMachineKind | null;
   readonly connected: boolean;
@@ -80,6 +82,10 @@ export interface WorkTogetherMachine {
 }
 
 export interface WorkTogetherIdentity {
+  /** The machine's own name, for places that already say which machine they're about. */
+  readonly name: string;
+  /** How to tell it apart from a machine with the same name, or null when its name is unique. */
+  readonly hint: string | null;
   readonly identityDetail: string | null;
   readonly identityIcon: EnvironmentMachineKind | null;
 }
@@ -136,7 +142,14 @@ export function workTogetherLabels<
   });
   return identities.map(({ machine, kind, descriptor }) => {
     const sameName = identities.filter((other) => other.machine.label === machine.label);
-    if (sameName.length === 1) return { ...machine, identityDetail: null, identityIcon: null };
+    if (sameName.length === 1)
+      return {
+        ...machine,
+        name: machine.label,
+        hint: null,
+        identityDetail: null,
+        identityIcon: null,
+      };
     const differentIcons = sameName.some((other) => other.kind !== kind);
     let detail = descriptor;
     let fullId: string | null = null;
@@ -175,6 +188,8 @@ export function workTogetherLabels<
     return {
       ...machine,
       label: `${machine.label} (${concise})`,
+      name: machine.label,
+      hint: concise,
       identityDetail: `${machine.label}: ${detail}${fullId === null ? "" : ` · Environment ID: ${fullId}`}`,
       identityIcon: differentIcons ? kind : null,
     };

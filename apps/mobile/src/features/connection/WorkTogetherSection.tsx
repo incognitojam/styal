@@ -126,6 +126,8 @@ export function WorkTogetherSection({
       label: entry.label,
       serverConfig: null,
       connection: { phase: "available" },
+      name: entry.label,
+      hint: null,
       identityDetail: null,
       identityIcon: null,
       enabled: true,
@@ -225,11 +227,11 @@ export function WorkTogetherSection({
             <MachineAccessChoices machine={selected} />
             {connected ? (
               <Text className="border-t border-border px-4 pt-4 font-t3-bold text-sm text-foreground">
-                Agents on {selected.label} can work on
+                Agents on {selected.name} can work on
               </Text>
             ) : (
               <MachineNotice
-                title={`This app can't reach ${selected.label} right now`}
+                title={`This app can't reach ${selected.name} right now`}
                 description="Its setting still applies."
               />
             )}
@@ -338,13 +340,13 @@ function MachineTab(props: {
       />
       <View className="min-w-0 flex-1">
         <Text numberOfLines={1} className="font-t3-bold text-sm text-foreground">
-          {machine.label}
+          {machine.name}
         </Text>
         <View className="flex-row items-center gap-1.5">
           {/* rounded-full draws a square at this size on Android. */}
           <View className={cn("size-2", dot)} style={{ borderRadius: 4 }} />
           <Text numberOfLines={1} className="flex-1 text-xs text-foreground-muted">
-            {status}
+            {machine.hint === null ? status : `${machine.hint} · ${status}`}
           </Text>
         </View>
       </View>
@@ -353,7 +355,7 @@ function MachineTab(props: {
 }
 
 function MachineAccessChoices({ machine }: { readonly machine: NamedEnvironment }) {
-  const { environmentId, label, serverConfig } = machine;
+  const { environmentId, name: label, serverConfig } = machine;
   const level = serverConfig?.settings.incomingMachineAccess ?? "everything";
   const supported = serverConfig?.environment.capabilities.incomingMachineAccess === true;
   const mayChange = useEnvironmentScope(environmentId, AuthAccessWriteScope);
@@ -573,6 +575,8 @@ function useWorkTogetherMachine(
   return {
     environmentId,
     label: environment.label,
+    name: environment.name,
+    hint: environment.hint,
     identityDetail: environment.identityDetail,
     identityIcon: environment.identityIcon,
     ownLabel: serverConfig?.environment.label ?? null,
@@ -778,7 +782,7 @@ function WorkTogetherSheet(props: {
         <View className="gap-1">
           <MachinePairName a={a} b={b} large />
           {[a, b]
-            .filter((machine) => machine.identityDetail && machine.label.includes("…"))
+            .filter((machine) => machine.identityDetail && machine.hint?.includes("…"))
             .map((machine) => (
               <Text
                 key={machine.environmentId}
@@ -933,7 +937,12 @@ function MachinePairName({
               tintColorClassName="accent-foreground-muted"
             />
           ) : null}
-          <Text className={textClass}>{machine.label}</Text>
+          <Text className={textClass}>
+            {machine.name ?? machine.label}
+            {machine.hint ? (
+              <Text className="font-sans text-xs text-foreground-muted">{` ${machine.hint}`}</Text>
+            ) : null}
+          </Text>
         </View>
       ))}
     </View>
