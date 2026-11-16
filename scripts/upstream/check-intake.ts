@@ -61,6 +61,7 @@ function git(args: ReadonlyArray<string>): string {
   const result = NodeChildProcess.spawnSync("git", args, {
     cwd: repoRoot,
     encoding: "utf8",
+    maxBuffer: 256 * 1024 * 1024,
   });
   if (result.status !== 0) {
     throw new Error(result.stderr.trim() || `git ${args[0] ?? "command"} failed.`);
