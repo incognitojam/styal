@@ -1,3 +1,4 @@
+import * as NodeModule from "node:module";
 import type { SourceControlImagePreviewError } from "@t3tools/source-control-core/server/driver";
 import type { AssetImagePreview } from "@t3tools/contracts";
 import * as Context from "effect/Context";
@@ -35,6 +36,8 @@ export class PullRequestImagePreview extends Context.Service<
     readonly read: (input: Input) => Effect.Effect<Source, ImagePreviewError>;
   }
 >()("@styal/cli/assets/PullRequestImagePreview") {}
+
+const requireSharp = NodeModule.createRequire(import.meta.url);
 
 const make = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
@@ -149,7 +152,9 @@ const make = Effect.gen(function* () {
           offset += chunked === "webp" ? 8 + size + (size % 2) : 12 + size;
         }
       }
-      const sharp = (yield* Effect.tryPromise(() => import("sharp"))).default;
+      const sharp = yield* Effect.try(
+        () => requireSharp("sharp") as typeof import("sharp").default,
+      );
       const image = sharp(source.bytes, { limitInputPixels: 32_000_000, animated: false });
       const metadata = yield* Effect.tryPromise(() => image.metadata());
       if ((metadata.pages ?? 1) > 1) return source;

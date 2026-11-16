@@ -1,5 +1,5 @@
 import type { PreparedConnection } from "@t3tools/client-runtime/connection";
-import { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, ThreadId, type AssetImagePreview } from "@t3tools/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import { render } from "../../../test/render";
@@ -12,7 +12,9 @@ vi.mock(import("~/state/assets"), async (original) => {
   const createUrl = Atom.family((_key: string) =>
     Atom.make(() => {
       assetQuery.mints += 1;
+      const input = JSON.parse(_key) as { resource: { imagePreview?: AssetImagePreview } };
       return AsyncResult.success({
+        ...(input.resource.imagePreview ? { imagePreview: input.resource.imagePreview } : {}),
         relativeUrl:
           "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7",
         expiresAt: Number.MAX_SAFE_INTEGER,
@@ -81,6 +83,30 @@ describe("ChatMarkdownAssetImage", () => {
 
     await using screen = await render(<ChatMarkdownAssetImage {...image.props} />);
     await expect.element(screen.getByRole("img", { name: "diagram" })).toBeInTheDocument();
+    expect(assetQuery.mints).toBe(2);
+  });
+  it("opens a visible PR image with its display variant and retains an explicit original", async () => {
+    assetQuery.mints = 0;
+    const onImageExpand = vi.fn();
+    await using screen = await render(
+      <ChatMarkdownAssetImage
+        environmentId={EnvironmentId.make("environment-1")}
+        resource={{
+          _tag: "github-media",
+          cwd: "/synthetic",
+          url: "https://github.com/user-attachments/assets/screenshot",
+        }}
+        alt="screenshot"
+        onImageExpand={onImageExpand}
+      />,
+    );
+    const image = screen.getByRole("button", { name: "Preview screenshot" });
+    await expect.element(image).toBeInTheDocument();
+    await image.click();
+    expect(onImageExpand).toHaveBeenCalledOnce();
+    const item = onImageExpand.mock.calls[0]![0].images[0];
+    expect(item.actionsSource.asset.resource.imagePreview.width).toBeGreaterThanOrEqual(320);
+    expect(item.actionsSource.originalAsset.resource).not.toHaveProperty("imagePreview");
     expect(assetQuery.mints).toBe(2);
   });
 });

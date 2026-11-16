@@ -2,7 +2,7 @@ import { pullRequestImageWidth } from "@t3tools/client-runtime/pull-request-imag
 import { PixelRatio, useWindowDimensions } from "react-native";
 import { MarkdownImageAvailableWidthContext } from "../threads/ThreadMarkdownImage";
 import { PullRequestLazyImage, PullRequestMediaVisibleContext } from "./PullRequestImageVisibility";
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext, useState, useEffect } from "react";
 import {
   pullRequestMediaSource,
   pullRequestImageSource,
@@ -38,10 +38,36 @@ export function usePullRequestMediaUrl(url: string, enabled = true, imageWidth?:
   const tinyResource = resource && "imagePreview" in resource ? { ...resource, imagePreview: { width: 64 as const } } : null;
   const tiny = useAssetUrlState(context?.environmentId ?? null, enabled ? tinyResource : null);
   const asset = useAssetUrlState(context?.environmentId ?? null, enabled ? resource : null);
+  const tinyUrl = tiny._tag === "Success" && tiny.imagePreview ? tiny.url : null;
+  const [readyTiny, setReadyTiny] = useState<string | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Warm the visible tiny image before starting the display variant's network request.
+  useEffect(() => {
+    if (!tinyUrl) return;
+    let cancelled = false;
+    void Image.prefetch(tinyUrl, { cachePolicy: "memory-disk" })
+      .catch(() => false)
+      .finally(() => {
+        if (!cancelled) setReadyTiny(tinyUrl);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tinyUrl]);
+  const waitingForTiny =
+    tinyResource !== null &&
+    (tiny._tag === "Loading" || (tinyUrl !== null && readyTiny !== tinyUrl));
+
   const refresh = useRefreshAssetUrl(context?.environmentId ?? null, resource);
   return {
     placeholderUri: tiny._tag === "Success" && tiny.imagePreview ? tiny.url : undefined,
-    uri: !enabled ? null : asset._tag === "Success" ? asset.url : resource ? null : url,
+    uri:
+      !enabled || waitingForTiny
+        ? null
+        : asset._tag === "Success"
+          ? asset.url
+          : resource
+            ? null
+            : url,
     cacheKey: context && resource ? assetImageCacheKey(context.environmentId, resource) : undefined,
     unavailable: resource !== null && asset._tag === "Failure",
     source,

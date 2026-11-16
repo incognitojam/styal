@@ -166,6 +166,7 @@ const CHAT_MARKDOWN_IMAGE_FRAME_CLASS_NAME = cn(
 export function ChatMarkdownImage(props: {
   readonly src: string | null;
   readonly placeholderSrc?: string | undefined;
+  readonly waitForPlaceholder?: boolean | undefined;
   readonly sourceFailed?: boolean | undefined;
   readonly unavailableDetail?: string | undefined;
   readonly alt: string;
@@ -182,7 +183,9 @@ export function ChatMarkdownImage(props: {
 }) {
   const [loadedSrc, setLoadedSrc] = useState<string | null>(null);
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
-  const src = props.src ?? loadedSrc;
+  const [placeholderSettled, setPlaceholderSettled] = useState(false);
+  const src =
+    props.waitForPlaceholder && !placeholderSettled ? loadedSrc : (props.src ?? loadedSrc);
   const failed = props.sourceFailed === true || (src !== null && failedSrc === src);
   const settled = src !== null && !failed && (!props.standalone || loadedSrc !== null);
   // Cached images are complete before `onLoad` can fire.
@@ -207,7 +210,7 @@ export function ChatMarkdownImage(props: {
     },
   });
 
-  if (settled) {
+  if (settled && !props.standalone) {
     return (
       <MediaActions source={props.actionsSource}>
         <img
@@ -256,17 +259,19 @@ export function ChatMarkdownImage(props: {
         data-markdown-copy={props.copyMarkdown}
         className={cn(
           CHAT_MARKDOWN_MEDIA_LAYOUT_CLASS_NAME,
-          CHAT_MARKDOWN_IMAGE_FRAME_CLASS_NAME,
-          "relative",
+          settled ? undefined : CHAT_MARKDOWN_IMAGE_FRAME_CLASS_NAME,
+          settled ? undefined : "relative",
         )}
-        style={props.style}
+        style={settled ? undefined : props.style}
         {...(failed
           ? { role: "alert" as const }
           : { role: "status" as const, "aria-label": "Loading image" })}
       >
-        {props.placeholderSrc && !failed ? (
+        {props.placeholderSrc && !failed && !settled ? (
           <img
             src={props.placeholderSrc}
+            onLoad={() => setPlaceholderSettled(true)}
+            onError={() => setPlaceholderSettled(true)}
             alt=""
             aria-hidden
             className="absolute inset-0 size-full object-contain blur-sm"
@@ -284,7 +289,19 @@ export function ChatMarkdownImage(props: {
             decoding="async"
             loading="lazy"
             draggable={false}
-            className="invisible absolute inset-0 size-full"
+            {...props.imageProps}
+            data-markdown-copy={props.copyMarkdown}
+            className={
+              settled
+                ? cn(
+                    CHAT_MARKDOWN_IMAGE_SIZE_CLASS_NAME,
+                    props.className,
+                    props.onImageExpand && "cursor-zoom-in",
+                  )
+                : "invisible absolute inset-0 size-full"
+            }
+            style={settled ? props.style : undefined}
+            {...expandableMarkdownImageProps(props.onImageExpand, props.alt)}
             {...imageEvents(src)}
           />
         ) : null}
@@ -492,6 +509,11 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
   const image = (
     <ChatMarkdownImage
       key={JSON.stringify([props.environmentId, props.resource, props.srcFragment])}
+      waitForPlaceholder={
+        previewEnabled &&
+        (placeholder._tag === "Loading" ||
+          (placeholder._tag === "Success" && placeholder.imagePreview !== undefined))
+      }
       placeholderSrc={
         placeholder._tag === "Success" && placeholder.imagePreview ? placeholder.url : undefined
       }
@@ -506,7 +528,7 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
       }
       alt={props.alt}
       copyMarkdown={props.copyMarkdown}
-      standalone={props.standalone ?? true}
+      standalone={previewEnabled || (props.standalone ?? true)}
       className={cn(
         props.framed === false ? undefined : CHAT_MARKDOWN_WORKSPACE_IMAGE_CLASS_NAME,
         props.className,
