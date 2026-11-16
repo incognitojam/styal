@@ -357,6 +357,11 @@ it("identifies duplicate names with connection details and preserves unique name
     "Atlas (Local · localhost:4312)",
     "Orion",
   ]);
+  expect(named.map(({ name, hint }) => [name, hint])).toEqual([
+    ["Atlas", "Local · localhost:4311"],
+    ["Atlas", "Local · localhost:4312"],
+    ["Orion", null],
+  ]);
   expect(named[2]?.identityDetail).toBeNull();
   expect(machines[0]?.label).toBe("Atlas");
   const icons = workTogetherLabels([
