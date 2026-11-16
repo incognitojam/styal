@@ -194,17 +194,19 @@ function canaryWorkspace(root: string, fixture: Record<string, string>) {
         `node() {
     if [[ "$1" == apps/server/scripts/verify-provider-live.ts ]]; then
       printf 'attempt\n' >> "$ATTEMPTS"
+      printf '%s\n' "$BASHPID" > "$RUNNER_TEMP/verifier.pid"
+      [[ -z "$VERIFIER_IGNORE_TERM" ]] || trap '' TERM
       local evidence
       evidence="$(mktemp -d "$RUNNER_TEMP/styal-provider-live-XXXXXX")"
       cp "$EVIDENCE_FIXTURE"/* "$evidence"
       printf 'Evidence: %s\n' "$evidence"
       [[ -z "$VERIFIER_STDOUT" ]] || printf '%s\n' "$VERIFIER_STDOUT"
       [[ -z "$VERIFIER_STDERR" ]] || printf '%s\n' "$VERIFIER_STDERR" >&2
-      [[ -z "$VERIFIER_PADDING" ]] || head -c "$VERIFIER_PADDING" /dev/zero | tr '\\0' x
       if [[ -n "$VERIFIER_STOP" ]]; then
         kill -INT $$
         exec tail -f /dev/null
       fi
+      [[ -z "$VERIFIER_KILLED" ]] || kill -KILL $BASHPID
       return 1
     fi
     "$REAL_NODE" "$@"
@@ -235,112 +237,162 @@ function canaryWorkspace(root: string, fixture: Record<string, string>) {
     );
 }
 
-it("redacts the job log and every uploaded evidence file of a failed verification", () => {
-  using folder = scratch();
-  const key = `sk-synthetic-${secret}`;
-  const forms = [key, ...encodings(key)];
-  const patterned = "sk-syntheticPatternKey1234567890";
-  const wrapped = [key, Buffer.from(key).toString("base64")].map((form) => form.match(/.{1,16}/g)!);
-  const runStep = canaryWorkspace(folder.root, {
-    "result.json": JSON.stringify({
-      provider: "opencode",
-      version: "1.0.0",
-      model: "synthetic",
-      scenarios: [{ name: "turn", status: "failed", seconds: 3, detail: `rejected ${key}` }],
-    }),
-    "projection-thread-1.json": JSON.stringify({ threadId: "thread-1", error: forms.join(" ") }),
-    "events-thread-1.ndjson": forms
-      .map((form) => JSON.stringify({ type: "thread.activity", payload: { text: `key ${form}` } }))
-      .concat(JSON.stringify({ type: "thread.turn-completed", payload: { apiKey: patterned } }))
-      .join("\n"),
-    "server.log": [
-      "INFO server listening",
-      ...forms.map((form) => `WARN provider request failed key=${form}`),
-      ...wrapped.map((lines) => `WARN provider response:\n${lines.join("\n")}`),
-      `ERROR ${JSON.stringify({ headers: { authorization: `Bearer ${patterned}` } })}`,
-    ].join("\n"),
-  });
-  const env = {
-    API_KEY: key,
-    VERIFIER_STDOUT: `turn: provider rejected ${forms.join(" ")}\n${wrapped[1]!.join("\n")}`,
-    VERIFIER_STDERR: `Error: request failed with ${patterned}\n${wrapped[0]!.join("\n")}`,
-  };
-  const steps = workflowSteps();
-  const verify = runStep(steps.find((step) => step.id === "verify")!.run!, env);
-  expect(verify.status).toBe(1);
-  expect(NodeFS.readFileSync(NodePath.join(folder.root, "output"), "utf8")).toContain(
-    "publish_evidence=true",
-  );
-  const upload = steps.find((step) => step.name === "Upload evidence")!;
-  expect(upload.if).toContain("steps.redact_evidence.outcome == 'success'");
-  const redact = runStep(steps.find((step) => step.id === "redact_evidence")!.run!, env);
-  expect(redact.status, redact.stderr).toBe(0);
-
-  const jobLog = verify.stdout + verify.stderr + redact.stdout + redact.stderr;
-  expect(jobLog).toContain("turn: provider rejected [redacted]");
-  expect(jobLog).toContain("Error: request failed with [redacted]");
-  const uploaded = upload
-    .with!.path!.trim()
-    .split("\n")
-    .flatMap((pattern) =>
-      NodeFS.globSync(pattern.trim().replace("${{ runner.temp }}", folder.root)),
-    );
-  expect(uploaded.map((file) => NodePath.basename(file)).toSorted()).toEqual(
-    ["events-thread-1.ndjson", "projection-thread-1.json", "result.json", "server.log"]
-      .flatMap((name) => [name, name])
-      .toSorted(),
-  );
-  const published = [
-    jobLog,
-    NodeFS.readFileSync(NodePath.join(folder.root, "summary"), "utf8"),
-    NodeFS.readFileSync(NodePath.join(folder.root, "canary-outcome/opencode-1.0.0.json"), "utf8"),
-    ...uploaded.map((file) => NodeFS.readFileSync(file, "utf8")),
-  ];
-  for (const output of published) {
-    for (const form of forms) expect(output.replace(/\s+/g, "")).not.toContain(form);
-    for (const fragment of wrapped.flat()) expect(output).not.toContain(fragment);
-    expect(output).not.toContain(patterned);
-  }
-  const [log, events] = ["server.log", "events-thread-1.ndjson"].map((name) =>
-    NodeFS.readFileSync(
-      uploaded.find((file) => file.endsWith(name))!,
-      "utf8",
-    ),
-  );
-  expect(log).toContain("WARN provider request failed key=[redacted]");
-  expect(log).toContain("Bearer [redacted]");
-  expect(
-    events!
-      .trim()
-      .split("\n")
-      .map((line) => JSON.parse(line).type),
-  ).toEqual([...forms.map(() => "thread.activity"), "thread.turn-completed"]);
-});
-
 const withheldKey = `sk-synthetic-${secret}`;
 const encodedKey = Buffer.from(withheldKey).toString("base64");
 const wrappedKey = encodedKey.match(/.{1,16}/g)!.join("\n");
+const leaksEncodedKey = (output: string) => {
+  const joined = output.replace(/\s+/g, "");
+  return Array.from({ length: encodedKey.length - 7 }, (_, start) =>
+    encodedKey.slice(start, start + 8),
+  ).filter((fragment) => joined.includes(fragment));
+};
+const verifierProcessGone = (root: string) => {
+  try {
+    process.kill(Number(NodeFS.readFileSync(NodePath.join(root, "verifier.pid"), "utf8")), 0);
+    return false;
+  } catch {
+    return true;
+  }
+};
+
 it.each([
   {
-    name: "result sanitization fails",
-    fixture: { "result.json": JSON.stringify({ detail: encodedKey }).slice(0, -1) },
+    name: "exits with a failure",
     env: {},
+    serverLogTail: wrappedKey,
+    logs: ["server.log", "verifier-output.log"],
+  },
+  {
+    name: "is killed by a signal mid-key",
+    env: { VERIFIER_KILLED: "1", VERIFIER_STDOUT: `stdout: rejected\n${wrappedKey.slice(0, -1)}` },
+    serverLogTail: wrappedKey.slice(0, -1),
+    logs: [],
+  },
+])(
+  "keeps verifier output off the job log and redacts uploaded evidence when the verifier $name",
+  (row) => {
+    using folder = scratch();
+    const key = withheldKey;
+    const forms = [key, ...encodings(key)];
+    const patterned = "sk-syntheticPatternKey1234567890";
+    const wrapped = [key, Buffer.from(key).toString("base64")].map((form) =>
+      form.match(/.{1,16}/g)!,
+    );
+    const runStep = canaryWorkspace(folder.root, {
+      "result.json": JSON.stringify({
+        provider: "opencode",
+        version: "1.0.0",
+        model: "synthetic",
+        scenarios: [{ name: "turn", status: "failed", seconds: 3, detail: `rejected ${key}` }],
+      }),
+      "projection-thread-1.json": JSON.stringify({ threadId: "thread-1", error: forms.join(" ") }),
+      "events-thread-1.ndjson": forms
+        .map((form) =>
+          JSON.stringify({ type: "thread.activity", payload: { text: `key ${form}` } }),
+        )
+        .concat(JSON.stringify({ type: "thread.turn-completed", payload: { apiKey: patterned } }))
+        .join("\n"),
+      "server.log": [
+        "INFO server listening",
+        ...forms.map((form) => `WARN provider request failed key=${form}`),
+        ...wrapped.map((lines) => `WARN provider response:\n${lines.join("\n")}`),
+        `ERROR ${JSON.stringify({ headers: { authorization: `Bearer ${patterned}` } })}`,
+        `WARN provider response:\n${row.serverLogTail}`,
+      ].join("\n"),
+    });
+    const env = {
+      API_KEY: key,
+      VERIFIER_STDOUT: `turn: provider rejected ${forms.join(" ")}\n${wrapped[1]!.join("\n")}`,
+      VERIFIER_STDERR: `Error: request failed with ${patterned}\n${wrapped[0]!.join("\n")}`,
+      ...row.env,
+    };
+    const steps = workflowSteps();
+    const verify = runStep(steps.find((step) => step.id === "verify")!.run!, env);
+    expect(verify.status).toBe(1);
+    expect(NodeFS.readFileSync(NodePath.join(folder.root, "output"), "utf8")).toContain(
+      "publish_evidence=true",
+    );
+    const upload = steps.find((step) => step.name === "Upload evidence")!;
+    expect(upload.if).toContain("steps.redact_evidence.outcome == 'success'");
+    const redact = runStep(steps.find((step) => step.id === "redact_evidence")!.run!, env);
+    expect(redact.status, redact.stderr).toBe(0);
+
+    const jobLog = verify.stdout + verify.stderr + redact.stdout + redact.stderr;
+    expect(jobLog).toContain("Attempt 2: the verifier exited with status");
+    for (const printed of ["provider rejected", "stdout: rejected", "request failed with"])
+      expect(jobLog).not.toContain(printed);
+    const uploaded = upload
+      .with!.path!.trim()
+      .split("\n")
+      .flatMap((pattern) =>
+        NodeFS.globSync(pattern.trim().replace("${{ runner.temp }}", folder.root)),
+      );
+    expect(uploaded.map((file) => NodePath.basename(file)).toSorted()).toEqual(
+      ["events-thread-1.ndjson", "projection-thread-1.json", "result.json", ...row.logs]
+        .flatMap((name) => [name, name])
+        .toSorted(),
+    );
+    expect(
+      NodeFS.readdirSync(folder.root).filter((name) => name.startsWith("verifier-output")),
+    ).toEqual([]);
+    const published = [
+      jobLog,
+      NodeFS.readFileSync(NodePath.join(folder.root, "summary"), "utf8"),
+      NodeFS.readFileSync(NodePath.join(folder.root, "canary-outcome/opencode-1.0.0.json"), "utf8"),
+      ...uploaded.map((file) => NodeFS.readFileSync(file, "utf8")),
+    ];
+    for (const output of published) {
+      for (const form of forms) expect(output.replace(/\s+/g, "")).not.toContain(form);
+      for (const fragment of wrapped.flat()) expect(output).not.toContain(fragment);
+      expect(output).not.toContain(patterned);
+      expect(leaksEncodedKey(output)).toEqual([]);
+    }
+    const read = (name: string) =>
+      NodeFS.readFileSync(
+        uploaded.find((file) => file.endsWith(name))!,
+        "utf8",
+      );
+    if (row.logs.length > 0) {
+      expect(read("server.log")).toContain("WARN provider request failed key=[redacted]");
+      expect(read("server.log")).toContain("Bearer [redacted]");
+      expect(read("verifier-output.log")).toContain("turn: provider rejected [redacted]");
+      expect(read("verifier-output.log")).toContain("Error: request failed with [redacted]");
+    }
+    const events = read("events-thread-1.ndjson");
+    expect(
+      events!
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line).type),
+    ).toEqual([...forms.map(() => "thread.activity"), "thread.turn-completed"]);
+  },
+);
+
+it.each([
+  {
+    name: "result sanitization fails with a key prefix in the output",
+    fixture: { "result.json": JSON.stringify({ detail: encodedKey }).slice(0, -1) },
+    env: { VERIFIER_STDOUT: `stdout: rejected\n${wrappedKey.slice(0, -1)}` },
     line: "Canary data sanitization failed; result withheld.",
     detail: "Verification result could not be published safely because sanitization failed.",
   },
   {
     name: "the step is stopped mid-key",
     fixture: { "result.json": "{}" },
-    env: { VERIFIER_STDOUT: `turn: rejected\n${wrappedKey.slice(0, -1)}`, VERIFIER_STOP: "1" },
-    line: "Verifier output withheld: the step was stopped.",
-    detail: "Verification was stopped before it finished, so its output was withheld.",
+    env: { VERIFIER_STDOUT: `stdout: rejected\n${wrappedKey.slice(0, -1)}`, VERIFIER_STOP: "1" },
+    line: "failed verification::Verification was stopped before it finished.",
+    detail: "Verification was stopped before it finished.",
   },
   {
-    name: "the output is too large",
+    name: "the step is stopped and the verifier ignores SIGTERM",
     fixture: { "result.json": "{}" },
-    env: { VERIFIER_STDOUT: wrappedKey, VERIFIER_PADDING: String(17 * 1024 * 1024) },
-    line: "Verifier output withheld: it is larger than 16 MiB.",
-    detail: "Verifier output was withheld because it could not be sanitized or was too large.",
+    env: {
+      VERIFIER_STDOUT: `stdout: rejected\n${wrappedKey.slice(0, -1)}`,
+      VERIFIER_STOP: "1",
+      VERIFIER_IGNORE_TERM: "1",
+    },
+    line: "failed verification::Verification was stopped before it finished.",
+    detail: "Verification was stopped before it finished.",
   },
 ])("publishes only a fixed safe problem and no evidence when $name", (row) => {
   using folder = scratch();
@@ -353,9 +405,12 @@ it.each([
   expect(child.status).toBe(1);
   const jobLog = child.stdout + child.stderr;
   expect(jobLog).toContain(row.line);
-  const joined = jobLog.replace(/\s+/g, "");
-  for (let start = 0; start + 8 <= encodedKey.length; start++)
-    expect(joined).not.toContain(encodedKey.slice(start, start + 8));
+  expect(jobLog).not.toContain("stdout: rejected");
+  expect(leaksEncodedKey(jobLog)).toEqual([]);
+  expect(verifierProcessGone(folder.root)).toBe(true);
+  expect(
+    NodeFS.readdirSync(folder.root).filter((name) => name.startsWith("verifier-output")),
+  ).toEqual([]);
   expect(NodeFS.readFileSync(NodePath.join(folder.root, "attempts"), "utf8")).toBe("attempt\n");
   expect(NodeFS.readFileSync(NodePath.join(folder.root, "output"), "utf8")).toContain(
     "publish_evidence=false",

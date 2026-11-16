@@ -209,7 +209,7 @@ jobs:
           TMPDIR: ${{ runner.temp }}
         run: |
           export "$SECRET_NAME=$API_KEY"
-          finish() {
+          record() {
             [[ "$outcome" == passed ]] && detail=""
             echo "publish_evidence=$publish_evidence" >> "$GITHUB_OUTPUT"
             echo "outcome=$outcome" >> "$GITHUB_OUTPUT"
@@ -218,28 +218,37 @@ jobs:
               --arg outcome "$outcome" --arg detail "$detail" \
               '{provider: $provider, packageName: $package, version: $version, styal: $styal, outcome: $outcome, detail: $detail}' \
               > "$outcome_file"
-            if [[ "$outcome" == failed ]]; then
-              echo "::error title=$PROVIDER $VERSION failed verification::$detail"
-              exit 1
-            fi
+            [[ "$outcome" != failed ]] || echo "::error title=$PROVIDER $VERSION failed verification::$detail"
           }
-          # Output cut off mid-key no longer matches it, so a stopped step shows none.
+          # The runner escalates to SIGKILL about 10 s after its first signal, so the outcome
+          # is recorded first and the verifier gets 5 s to stop.
           stopped() {
-            trap - INT TERM
-            [[ -z "$verifier" ]] || kill "$verifier" 2>/dev/null
-            echo "Verifier output withheld: the step was stopped."
+            trap '' INT TERM
             publish_evidence=false
             outcome=failed
-            detail="Verification was stopped before it finished, so its output was withheld."
-            finish
+            detail="Verification was stopped before it finished."
+            record
+            if [[ -n "$verifier" ]]; then
+              kill -TERM "$verifier" 2>/dev/null
+              for _ in {1..50}; do
+                kill -0 "$verifier" 2>/dev/null || break
+                sleep 0.1
+              done
+              kill -KILL "$verifier" 2>/dev/null
+              wait "$verifier" 2>/dev/null
+            fi
+            rm -f "$raw"
+            exit 1
           }
           verifier=""
+          raw=""
           trap stopped INT TERM
           if [[ "$PROVIDER" == "codex" ]]; then
             printenv OPENAI_API_KEY | codex login --with-api-key
           fi
+          # The verifier's output stays off the job log, since output cut off mid-key no longer matches the key.
           run_verifier() {
-            local raw="$RUNNER_TEMP/verify-$1.raw" log="$RUNNER_TEMP/verify-$1.log"
+            raw="$RUNNER_TEMP/verifier-output-$1.log"
             # In the background, so a stop signal runs the trap without waiting for the verifier.
             node apps/server/scripts/verify-provider-live.ts \
               --provider "$PROVIDER" --model "$MODEL" --expect-version "$VERSION" > "$raw" 2>&1 &
@@ -247,28 +256,30 @@ jobs:
             wait "$verifier"
             local status=$?
             verifier=""
-            node "$GITHUB_WORKSPACE/.canary-tools/scripts/canary-redaction.ts" --print "$raw" > "$log"
-            local printed=$?
-            rm -f "$raw"
-            cat "$log"
-            if [[ $printed != 0 ]]; then
-              publish_evidence=false
-              detail="Verifier output was withheld because it could not be sanitized or was too large."
-              return 1
-            fi
-            evidence="$(sed -n 's/^Evidence: //p' "$log" | head -n 1)"
+            echo "Attempt $1: the verifier exited with status $status. Failed scenarios are in the step summary; its output is in the evidence artifact when published."
+            local finished=false
+            evidence="$(sed -n 's/^Evidence: //p' "$raw" | head -n 1)"
             if [[ -n "$evidence" && -f "$evidence/result.json" ]]; then
               if ! node "$GITHUB_WORKSPACE/.canary-tools/scripts/canary-redaction.ts" "$evidence/result.json"; then
                 publish_evidence=false
                 detail="Verification result could not be published safely because sanitization failed."
+                rm -f "$raw"
                 return 1
               fi
+              (( status < 128 )) && finished=true
               jq -r --arg attempt "$1" '"### \(.provider) \(.version) (\(.model)), attempt \($attempt)\n\n| Scenario | Status | Seconds | Detail |\n| --- | --- | --- | --- |", (.scenarios[] | "| \(.name) | \(.status) | \(.seconds // "") | \(.detail) |")' \
                 "$evidence/result.json" >> "$GITHUB_STEP_SUMMARY"
               detail="$(jq -r '[.scenarios[] | select(.status == "failed") | "\(.name): \(.detail)"] | join("; ") | .[0:500]' "$evidence/result.json")"
             else
               detail="the verifier did not finish; see the evidence artifact"
             fi
+            # A log cut off part-way can end mid-key, where redaction no longer matches it.
+            if [[ "$finished" == true ]]; then
+              (( $(stat -c %s "$raw") > 16 * 1024 * 1024 )) || mv "$raw" "$evidence/verifier-output.log"
+            elif [[ -n "$evidence" ]]; then
+              rm -f "$evidence/server.log"
+            fi
+            rm -f "$raw"
             [[ -n "$detail" ]] || detail="the verifier exited with status $status"
             return "$status"
           }
@@ -289,7 +300,8 @@ jobs:
           fi
           [[ "$publish_evidence" == false ]] && outcome=failed
           set -e
-          finish
+          record
+          [[ "$outcome" != failed ]] || exit 1
 
       - name: Record an unfinished verification
         if: always() && steps.secret.outputs.present == 'true' && steps.verify.outputs.outcome == ''
@@ -342,7 +354,7 @@ jobs:
           path: |
             ${{ runner.temp }}/styal-provider-live-*/*.json
             ${{ runner.temp }}/styal-provider-live-*/*.ndjson
-            ${{ runner.temp }}/styal-provider-live-*/server.log
+            ${{ runner.temp }}/styal-provider-live-*/*.log
           retention-days: 14
 
   # Records every provider that passed, even when another failed verification.
