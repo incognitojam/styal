@@ -44,6 +44,10 @@ it.effect(
         expect((yield* approvals.review({ projectId: ProjectId.make("b") })).status).toBe(
           "pending",
         );
+        yield* write('{"worktreeCleanup":["dist/"]}');
+        expect((yield* approvals.review(input)).declared).toEqual([
+          { pattern: "dist", status: "approved" },
+        ]);
         yield* write('{"worktreeCleanup":["dist","node_modules"]}');
         expect((yield* approvals.review(input)).declared).toEqual([
           { pattern: "dist", status: "approved" },

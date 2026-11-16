@@ -95,14 +95,20 @@ export function worktreeCleanupPatternProblem(pattern: string): string | null {
 }
 
 export const WorktreeCleanupPatterns = Schema.Array(
-  Schema.String.pipe(
+  Schema.String.annotate({
+    description:
+      "Worktree-relative path using forward slashes; a single trailing / is optional and removed, as is surrounding whitespace. Only * (within a segment) and ** (a whole segment) wildcards are supported. No drive prefix, !, ?, [, ], {, }, empty, . or .. segments, or .git segments (case-insensitive). The last segment must contain a literal character. Use 1 to 512 characters after normalization.",
+  }).pipe(
     Schema.decodeTo(
       Schema.String.check(
         Schema.makeFilter((pattern) => worktreeCleanupPatternProblem(pattern) ?? true),
         Schema.isMinLength(1),
         Schema.isMaxLength(512),
       ),
-      SchemaTransformation.trim(),
+      SchemaTransformation.transform({
+        decode: (pattern) => pattern.trim().replace(/([^/])\/$/, "$1"),
+        encode: (pattern) => pattern,
+      }),
     ),
   ),
 ).check(Schema.isMaxLength(100));

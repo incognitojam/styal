@@ -8,7 +8,7 @@ describe("worktree cleanup patterns", () => {
     "",
     "/dist",
     "C:/dist",
-    "dist/",
+    "dist//",
     "a//b",
     "a/../b",
     "./dist",
@@ -62,7 +62,7 @@ describe("worktree cleanup patterns", () => {
   });
   it("normalizes whitespace before validating and exposes independent pattern rules", () => {
     const parsed = parseStyalProjectFileResult(
-      JSON.stringify({ worktreeCleanup: [" dist ", "  **/node_modules  "] }),
+      JSON.stringify({ worktreeCleanup: [" dist/ ", "  **/node_modules/  "] }),
     );
     expect(parsed.file?.worktreeCleanup).toEqual(["dist", "**/node_modules"]);
     expect(parseStyalProjectFileResult(JSON.stringify({ worktreeCleanup: ["   "] })).status).toBe(
@@ -76,7 +76,12 @@ describe("worktree cleanup patterns", () => {
     const patterns = ["node_modules", "**/dist", "node_modules"];
     const parsed = parseStyalProjectFileResult(JSON.stringify({ worktreeCleanup: patterns }));
     expect(parsed.file?.worktreeCleanup).toEqual(patterns);
-    expect(JSON.stringify(buildStyalProjectFileJsonSchema())).toContain("worktreeCleanup");
+    const schema = buildStyalProjectFileJsonSchema();
+    expect(schema.properties).toMatchObject({
+      worktreeCleanup: {
+        items: { description: expect.stringContaining("single trailing /") },
+      },
+    });
     expect(
       parseStyalProjectFileResult(JSON.stringify({ worktreeCleanup: Array(101).fill("dist") }))
         .status,
