@@ -1695,8 +1695,8 @@ function ThreadDetailBody(
                       scroll={(id) => requestThreadMessageJump(selectedThreadKey, id)}
                     />
                     {props.reportReply ? (
-                      <View className="mx-3 flex-row items-center gap-2">
-                        <Text className="flex-1 text-foreground-secondary">
+                      <View className="mx-3 mb-2 flex-row items-center gap-2 rounded-xl bg-secondary py-1 pl-3">
+                        <Text className="flex-1 text-foreground-secondary" numberOfLines={1}>
                           Replying to {props.reportReply.title} · version{" "}
                           {props.reportReply.ref.version}
                         </Text>

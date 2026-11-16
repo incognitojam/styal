@@ -54,9 +54,12 @@ export function CoordinatorReportMessage({
   if (report.state === "replaced" && !expanded)
     return (
       <View className="mb-2 flex-row items-center gap-2">
-        <Text className="flex-1 text-foreground-secondary" numberOfLines={1}>
-          {tag.title} · version {tag.version}
-        </Text>
+        <View className="flex-1 flex-row">
+          <Text className="shrink text-foreground-secondary" numberOfLines={1}>
+            {tag.title}
+          </Text>
+          <Text className="shrink-0 text-foreground-secondary"> · version {tag.version}</Text>
+        </View>
         <Button label="Show" size="compact" tone="text" onPress={() => setExpanded(true)} />
       </View>
     );
