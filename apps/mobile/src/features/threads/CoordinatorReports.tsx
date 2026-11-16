@@ -6,14 +6,10 @@ import {
   coordinatorReports,
   waitingCoordinatorReports,
   type ReportReply,
-  createDismissCoordinatorReportCommand,
 } from "@t3tools/client-runtime/coordinator-reports";
-import { connectionAtomRuntime } from "../../connection/runtime";
 import { AppText as Text } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
 
-export const dismissCoordinatorReport =
-  createDismissCoordinatorReportCommand(connectionAtomRuntime);
 type ReportMessage = {
   id: MessageId;
   role: string;

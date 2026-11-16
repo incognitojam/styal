@@ -1,11 +1,7 @@
 import { AppText as Text } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
-import {
-  CoordinatorReportsContext,
-  WaitingReports,
-  dismissCoordinatorReport,
-  type ReportState,
-} from "./CoordinatorReports";
+import { CoordinatorReportsContext, WaitingReports, type ReportState } from "./CoordinatorReports";
+import { dismissCoordinatorReport } from "../../state/coordinatorReports";
 import type { ReportReply } from "@t3tools/client-runtime/coordinator-reports";
 import { CommandId } from "@t3tools/contracts";
 import { uuidv4 } from "../../lib/uuid";
