@@ -17,13 +17,29 @@ it("redacts every outcome string, including split and JSON-escaped secrets", () 
       JSON.stringify({ error: secret }),
       secret.slice(0, 12) + "\\n" + secret.slice(12),
       "\\u0073" + secret.slice(1),
+      ("WARN " + "x".repeat(275) + secret).slice(0, 300),
+      ("WARN " + "x".repeat(270) + Buffer.from(secret).toString("base64")).slice(0, 300),
+      Buffer.from(`user:${secret}`).toString("base64"),
+      JSON.stringify({ text: secret.slice(0, 16) }),
+      Buffer.from(secret).toString("base64").slice(0, 11),
     ],
   };
   const clean = redactCanary(outcome, [secret]);
   expect(clean).toEqual({
     provider: "[redacted]",
     detail: "rewind: [redacted] again [redacted]",
-    nested: ["[redacted]", '{"error":"[redacted]"}', "[redacted]", "[redacted]"],
+    nested: [
+      "[redacted]",
+      '{"error":"[redacted]"}',
+      "[redacted]",
+      "[redacted]",
+      "WARN " + "x".repeat(275) + "[redacted]",
+      "WARN " + "x".repeat(270) + "[redacted]",
+      Buffer.from(`user:${secret}`).toString("base64").slice(0, 8) + "[redacted]",
+      '{"text":"[redacted]"}',
+      // Fragments shorter than 12 characters are the accepted limit.
+      Buffer.from(secret).toString("base64").slice(0, 11),
+    ],
   });
 });
 it.each([
@@ -207,7 +223,7 @@ function canaryWorkspace(root: string, fixture: Record<string, string>) {
         exec tail -f /dev/null
       fi
       [[ -z "$VERIFIER_KILLED" ]] || kill -KILL $BASHPID
-      return 1
+      return "\${VERIFIER_EXIT:-1}"
     fi
     "$REAL_NODE" "$@"
   }
@@ -240,11 +256,17 @@ function canaryWorkspace(root: string, fixture: Record<string, string>) {
 const withheldKey = `sk-synthetic-${secret}`;
 const encodedKey = Buffer.from(withheldKey).toString("base64");
 const wrappedKey = encodedKey.match(/.{1,16}/g)!.join("\n");
-const leaksEncodedKey = (output: string) => {
+const leakedKeyFragments = (output: string) => {
   const joined = output.replace(/\s+/g, "");
-  return Array.from({ length: encodedKey.length - 7 }, (_, start) =>
-    encodedKey.slice(start, start + 8),
-  ).filter((fragment) => joined.includes(fragment));
+  const windows: Array<[string, number]> = [
+    [encodedKey, 8],
+    [withheldKey, 12],
+  ];
+  return windows.flatMap(([form, size]) =>
+    Array.from({ length: form.length - size + 1 }, (_, start) =>
+      form.slice(start, start + size),
+    ).filter((fragment) => joined.includes(fragment)),
+  );
 };
 const verifierProcessGone = (root: string) => {
   try {
@@ -259,7 +281,7 @@ it.each([
   {
     name: "exits with a failure",
     env: {},
-    serverLogTail: wrappedKey,
+    serverLogTail: wrappedKey.slice(0, 30),
     logs: ["server.log", "verifier-output.log"],
   },
   {
@@ -283,12 +305,25 @@ it.each([
         provider: "opencode",
         version: "1.0.0",
         model: "synthetic",
-        scenarios: [{ name: "turn", status: "failed", seconds: 3, detail: `rejected ${key}` }],
+        scenarios: [
+          { name: "turn", status: "failed", seconds: 3, detail: `rejected ${key}` },
+          ...[encodedKey, key].map((form, offset) => ({
+            name: "clean-projection",
+            status: "failed",
+            seconds: 1,
+            detail: `server log: WARN ${"x".repeat(260 + offset * 5)}${form}`.slice(0, 300),
+          })),
+        ],
       }),
       "projection-thread-1.json": JSON.stringify({ threadId: "thread-1", error: forms.join(" ") }),
       "events-thread-1.ndjson": forms
         .map((form) =>
           JSON.stringify({ type: "thread.activity", payload: { text: `key ${form}` } }),
+        )
+        .concat(
+          [key.slice(0, 20), encodedKey.slice(0, 20)].map((prefix) =>
+            JSON.stringify({ type: "thread.activity", payload: { text: prefix } }),
+          ),
         )
         .concat(JSON.stringify({ type: "thread.turn-completed", payload: { apiKey: patterned } }))
         .join("\n"),
@@ -302,7 +337,7 @@ it.each([
     });
     const env = {
       API_KEY: key,
-      VERIFIER_STDOUT: `turn: provider rejected ${forms.join(" ")}\n${wrapped[1]!.join("\n")}`,
+      VERIFIER_STDOUT: `turn: provider rejected ${forms.join(" ")}\n${wrapped[1]!.join("\n")}\n${wrappedKey.slice(0, 30)}`,
       VERIFIER_STDERR: `Error: request failed with ${patterned}\n${wrapped[0]!.join("\n")}`,
       ...row.env,
     };
@@ -345,7 +380,7 @@ it.each([
       for (const form of forms) expect(output.replace(/\s+/g, "")).not.toContain(form);
       for (const fragment of wrapped.flat()) expect(output).not.toContain(fragment);
       expect(output).not.toContain(patterned);
-      expect(leaksEncodedKey(output)).toEqual([]);
+      expect(leakedKeyFragments(output)).toEqual([]);
     }
     const read = (name: string) =>
       NodeFS.readFileSync(
@@ -364,7 +399,12 @@ it.each([
         .trim()
         .split("\n")
         .map((line) => JSON.parse(line).type),
-    ).toEqual([...forms.map(() => "thread.activity"), "thread.turn-completed"]);
+    ).toEqual([
+      ...forms.map(() => "thread.activity"),
+      "thread.activity",
+      "thread.activity",
+      "thread.turn-completed",
+    ]);
   },
 );
 
@@ -374,7 +414,16 @@ it.each([
     fixture: { "result.json": JSON.stringify({ detail: encodedKey }).slice(0, -1) },
     env: { VERIFIER_STDOUT: `stdout: rejected\n${wrappedKey.slice(0, -1)}` },
     line: "Canary data sanitization failed; result withheld.",
-    detail: "Verification result could not be published safely because sanitization failed.",
+    detail:
+      "Verification result could not be published safely because it failed sanitization or validation.",
+  },
+  {
+    name: "result.json has the wrong shape and the verifier exits 0",
+    fixture: { "result.json": JSON.stringify({ scenarios: "passed" }) },
+    env: { VERIFIER_STDOUT: `stdout: rejected\n${wrappedKey.slice(0, -1)}`, VERIFIER_EXIT: "0" },
+    line: "failed verification::Verification result could not be published safely because it failed sanitization or validation.",
+    detail:
+      "Verification result could not be published safely because it failed sanitization or validation.",
   },
   {
     name: "the step is stopped mid-key",
@@ -406,7 +455,7 @@ it.each([
   const jobLog = child.stdout + child.stderr;
   expect(jobLog).toContain(row.line);
   expect(jobLog).not.toContain("stdout: rejected");
-  expect(leaksEncodedKey(jobLog)).toEqual([]);
+  expect(leakedKeyFragments(jobLog)).toEqual([]);
   expect(verifierProcessGone(folder.root)).toBe(true);
   expect(
     NodeFS.readdirSync(folder.root).filter((name) => name.startsWith("verifier-output")),

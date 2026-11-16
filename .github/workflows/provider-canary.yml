@@ -260,9 +260,13 @@ jobs:
             local finished=false
             evidence="$(sed -n 's/^Evidence: //p' "$raw" | head -n 1)"
             if [[ -n "$evidence" && -f "$evidence/result.json" ]]; then
-              if ! node "$GITHUB_WORKSPACE/.canary-tools/scripts/canary-redaction.ts" "$evidence/result.json"; then
+              if ! node "$GITHUB_WORKSPACE/.canary-tools/scripts/canary-redaction.ts" "$evidence/result.json" ||
+                ! jq -e '.scenarios | type == "array" and length > 0 and all(.[]; type == "object"
+                  and (.name | type == "string") and (.status | IN("passed", "failed", "skipped"))
+                  and (.detail | type == "string") and (.seconds | type == "number"))' \
+                  "$evidence/result.json" > /dev/null 2>&1; then
                 publish_evidence=false
-                detail="Verification result could not be published safely because sanitization failed."
+                detail="Verification result could not be published safely because it failed sanitization or validation."
                 rm -f "$raw"
                 return 1
               fi
@@ -272,6 +276,7 @@ jobs:
               detail="$(jq -r '[.scenarios[] | select(.status == "failed") | "\(.name): \(.detail)"] | join("; ") | .[0:500]' "$evidence/result.json")"
             else
               detail="the verifier did not finish; see the evidence artifact"
+              (( status != 0 )) || status=1
             fi
             # A log cut off part-way can end mid-key, where redaction no longer matches it.
             if [[ "$finished" == true ]]; then
@@ -314,7 +319,7 @@ jobs:
           outcome_file="$RUNNER_TEMP/canary-outcome/$PROVIDER-$STYAL.json"
           mkdir -p "$(dirname "$outcome_file")"
           jq -n --arg provider "$PROVIDER" --arg package "$PACKAGE" --arg version "$VERSION" --arg styal "$STYAL" \
-            '{provider: $provider, packageName: $package, version: $version, styal: $styal, outcome: "failed", detail: "setup or install failed before the verifier ran; see the job log"}' \
+            '{provider: $provider, packageName: $package, version: $version, styal: $styal, outcome: "failed", detail: "setup, install or verification did not finish; see the job log"}' \
             > "$outcome_file"
 
       - id: redact

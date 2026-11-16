@@ -44,15 +44,77 @@ export function redactCanary<T>(
           "g",
         ),
     );
+  // Any 12 characters of a key's form are redacted, so a key truncated or split anywhere
+  // leaves at most 11 characters of it. Base64 at all three byte alignments catches a key
+  // encoded inside a larger value.
+  const fragment = 12;
+  const grams = new Set(
+    secrets
+      .filter((secret) => secret.length >= 8)
+      .flatMap((secret) =>
+        [1, 2].map((shift) =>
+          Buffer.concat([Buffer.alloc(shift), Buffer.from(secret)])
+            .toString("base64")
+            .slice(4),
+        ),
+      )
+      .flatMap((form) => [form, form.replaceAll("+", "-").replaceAll("/", "_")])
+      .concat(variants)
+      .map((form) => form.replace(/\s|=+$/g, ""))
+      .flatMap((form) =>
+        Array.from({ length: Math.max(0, form.length - fragment + 1) }, (_, start) =>
+          form.slice(start, start + fragment),
+        ),
+      ),
+  );
+  const partial = (input: string) => {
+    if (grams.size === 0) return input;
+    const spans: Array<[number, number]> = [];
+    const starts: number[] = [];
+    let window = "";
+    for (let index = 0; index < input.length;) {
+      const start = index;
+      let char = input[index++]!;
+      if (char === "\\" && /^[nrt]$/.test(input[index] ?? "")) {
+        index += 1;
+        continue;
+      }
+      const escaped =
+        char === "\\" ? /^u([0-9a-fA-F]{4})/.exec(input.slice(index, index + 5)) : null;
+      if (escaped) {
+        char = String.fromCharCode(Number.parseInt(escaped[1]!, 16));
+        index += 5;
+      }
+      if (char.trim() === "") continue;
+      starts.push(start);
+      if (starts.length > fragment) starts.shift();
+      window = (window + char).slice(-fragment);
+      if (window.length < fragment || !grams.has(window)) continue;
+      while (input[index] === "=") index += 1;
+      const last = spans.at(-1);
+      if (last && last[1] >= starts[0]!) last[1] = index;
+      else spans.push([starts[0]!, index]);
+    }
+    let output = "";
+    let cursor = 0;
+    for (const [from, to] of spans) {
+      output += `${input.slice(cursor, from)}[redacted]`;
+      cursor = to;
+    }
+    return output + input.slice(cursor);
+  };
   const text = (input: string) => {
     for (const pattern of exact) input = input.replace(pattern, "[redacted]");
-    return input
-      .replace(/\b(?:sk-[a-zA-Z0-9_-]{8,}|ghp_[a-zA-Z0-9]{8,})/g, "[redacted]")
-      .replace(/\bBearer\s+[^\s"'\\,;]+/gi, "Bearer [redacted]")
-      .replace(
-        /((?:api[_-]?key|access[_-]?token|token|secret|authorization)["'\\\s:=]+)[a-zA-Z0-9+/_=-]{24,}/gi,
-        "$1[redacted]",
-      );
+    // Patterns first: a token sharing a prefix with the key must still match whole.
+    return partial(
+      input
+        .replace(/\b(?:sk-[a-zA-Z0-9_-]{8,}|ghp_[a-zA-Z0-9]{8,})/g, "[redacted]")
+        .replace(/\bBearer\s+[^\s"'\\,;]+/gi, "Bearer [redacted]")
+        .replace(
+          /((?:api[_-]?key|access[_-]?token|token|secret|authorization)["'\\\s:=]+)[a-zA-Z0-9+/_=-]{24,}/gi,
+          "$1[redacted]",
+        ),
+    );
   };
   const visit = (item: unknown, key = ""): unknown => {
     if (typeof item === "string") {
