@@ -209,28 +209,82 @@ jobs:
           TMPDIR: ${{ runner.temp }}
         run: |
           export "$SECRET_NAME=$API_KEY"
+          record() {
+            [[ "$outcome" == passed ]] && detail=""
+            echo "publish_evidence=$publish_evidence" >> "$GITHUB_OUTPUT"
+            echo "outcome=$outcome" >> "$GITHUB_OUTPUT"
+            outcome_file="$RUNNER_TEMP/canary-outcome/$PROVIDER-$STYAL.json"
+            jq -n --arg provider "$PROVIDER" --arg package "$PACKAGE" --arg version "$VERSION" --arg styal "$STYAL" \
+              --arg outcome "$outcome" --arg detail "$detail" \
+              '{provider: $provider, packageName: $package, version: $version, styal: $styal, outcome: $outcome, detail: $detail}' \
+              > "$outcome_file"
+            [[ "$outcome" != failed ]] || echo "::error title=$PROVIDER $VERSION failed verification::$detail"
+          }
+          # The runner escalates to SIGKILL about 10 s after its first signal, so the outcome
+          # is recorded first and the verifier gets 5 s to stop.
+          stopped() {
+            trap '' INT TERM
+            publish_evidence=false
+            outcome=failed
+            detail="Verification was stopped before it finished."
+            record
+            if [[ -n "$verifier" ]]; then
+              kill -TERM "$verifier" 2>/dev/null
+              for _ in {1..50}; do
+                kill -0 "$verifier" 2>/dev/null || break
+                sleep 0.1
+              done
+              kill -KILL "$verifier" 2>/dev/null
+              wait "$verifier" 2>/dev/null
+            fi
+            rm -f "$raw"
+            exit 1
+          }
+          verifier=""
+          raw=""
+          trap stopped INT TERM
           if [[ "$PROVIDER" == "codex" ]]; then
             printenv OPENAI_API_KEY | codex login --with-api-key
           fi
+          # The verifier's output stays off the job log, since output cut off mid-key no longer matches the key.
           run_verifier() {
-            local log="$RUNNER_TEMP/verify-$1.log"
+            raw="$RUNNER_TEMP/verifier-output-$1.log"
+            # In the background, so a stop signal runs the trap without waiting for the verifier.
             node apps/server/scripts/verify-provider-live.ts \
-              --provider "$PROVIDER" --model "$MODEL" --expect-version "$VERSION" \
-              2>&1 | tee "$log"
-            local status=${PIPESTATUS[0]}
-            evidence="$(sed -n 's/^Evidence: //p' "$log" | head -n 1)"
+              --provider "$PROVIDER" --model "$MODEL" --expect-version "$VERSION" > "$raw" 2>&1 &
+            verifier=$!
+            wait "$verifier"
+            local status=$?
+            verifier=""
+            echo "Attempt $1: the verifier exited with status $status. Failed scenarios are in the step summary; its output is in the evidence artifact when published."
+            local finished=false
+            evidence="$(sed -n 's/^Evidence: //p' "$raw" | head -n 1)"
             if [[ -n "$evidence" && -f "$evidence/result.json" ]]; then
-              if ! node "$GITHUB_WORKSPACE/.canary-tools/scripts/canary-redaction.ts" "$evidence/result.json"; then
+              if ! node "$GITHUB_WORKSPACE/.canary-tools/scripts/canary-redaction.ts" "$evidence/result.json" ||
+                ! jq -e '.scenarios | type == "array" and length > 0 and all(.[]; type == "object"
+                  and (.name | type == "string") and (.status | IN("passed", "failed", "skipped"))
+                  and (.detail | type == "string") and (.seconds | type == "number"))' \
+                  "$evidence/result.json" > /dev/null 2>&1; then
                 publish_evidence=false
-                detail="Verification result could not be published safely because sanitization failed."
+                detail="Verification result could not be published safely because it failed sanitization or validation."
+                rm -f "$raw"
                 return 1
               fi
+              (( status < 128 )) && finished=true
               jq -r --arg attempt "$1" '"### \(.provider) \(.version) (\(.model)), attempt \($attempt)\n\n| Scenario | Status | Seconds | Detail |\n| --- | --- | --- | --- |", (.scenarios[] | "| \(.name) | \(.status) | \(.seconds // "") | \(.detail) |")' \
                 "$evidence/result.json" >> "$GITHUB_STEP_SUMMARY"
               detail="$(jq -r '[.scenarios[] | select(.status == "failed") | "\(.name): \(.detail)"] | join("; ") | .[0:500]' "$evidence/result.json")"
             else
               detail="the verifier did not finish; see the evidence artifact"
+              (( status != 0 )) || status=1
             fi
+            # A log cut off part-way can end mid-key, where redaction no longer matches it.
+            if [[ "$finished" == true ]]; then
+              (( $(stat -c %s "$raw") > 16 * 1024 * 1024 )) || mv "$raw" "$evidence/verifier-output.log"
+            elif [[ -n "$evidence" ]]; then
+              rm -f "$evidence/server.log"
+            fi
+            rm -f "$raw"
             [[ -n "$detail" ]] || detail="the verifier exited with status $status"
             return "$status"
           }
@@ -250,19 +304,9 @@ jobs:
             fi
           fi
           [[ "$publish_evidence" == false ]] && outcome=failed
-          echo "publish_evidence=$publish_evidence" >> "$GITHUB_OUTPUT"
           set -e
-          [[ "$outcome" == passed ]] && detail=""
-          echo "outcome=$outcome" >> "$GITHUB_OUTPUT"
-          outcome_file="$RUNNER_TEMP/canary-outcome/$PROVIDER-$STYAL.json"
-          jq -n --arg provider "$PROVIDER" --arg package "$PACKAGE" --arg version "$VERSION" --arg styal "$STYAL" \
-            --arg outcome "$outcome" --arg detail "$detail" \
-            '{provider: $provider, packageName: $package, version: $version, styal: $styal, outcome: $outcome, detail: $detail}' \
-            > "$outcome_file"
-          if [[ "$outcome" == failed ]]; then
-            echo "::error title=$PROVIDER $VERSION failed verification::$detail"
-            exit 1
-          fi
+          record
+          [[ "$outcome" != failed ]] || exit 1
 
       - name: Record an unfinished verification
         if: always() && steps.secret.outputs.present == 'true' && steps.verify.outputs.outcome == ''
@@ -275,7 +319,7 @@ jobs:
           outcome_file="$RUNNER_TEMP/canary-outcome/$PROVIDER-$STYAL.json"
           mkdir -p "$(dirname "$outcome_file")"
           jq -n --arg provider "$PROVIDER" --arg package "$PACKAGE" --arg version "$VERSION" --arg styal "$STYAL" \
-            '{provider: $provider, packageName: $package, version: $version, styal: $styal, outcome: "failed", detail: "setup or install failed before the verifier ran; see the job log"}' \
+            '{provider: $provider, packageName: $package, version: $version, styal: $styal, outcome: "failed", detail: "setup, install or verification did not finish; see the job log"}' \
             > "$outcome_file"
 
       - id: redact
@@ -297,15 +341,25 @@ jobs:
       # Evidence holds the server log, thread projections and events, not the
       # provider's own home directory or credentials. Both attempts are kept,
       # so a pass on the retry still shows why the first attempt failed.
-      - name: Upload evidence
+      - id: redact_evidence
+        name: Redact evidence before upload
         if: always() && steps.redact.outcome == 'success' && steps.verify.outputs.publish_evidence == 'true' && steps.verify.outputs.outcome != 'passed'
+        run: |
+          shopt -s nullglob
+          for evidence in "$RUNNER_TEMP"/styal-provider-live-*/; do
+            node "$GITHUB_WORKSPACE/.canary-tools/scripts/canary-redaction.ts" "$evidence"
+          done
+
+      # Only the file types the redaction step rewrites.
+      - name: Upload evidence
+        if: always() && steps.redact_evidence.outcome == 'success' && steps.redact.outcome == 'success' && steps.verify.outputs.publish_evidence == 'true' && steps.verify.outputs.outcome != 'passed'
         uses: actions/upload-artifact@v7
         with:
           name: canary-evidence-${{ matrix.provider }}-${{ matrix.version }}-${{ matrix.styal }}
           path: |
             ${{ runner.temp }}/styal-provider-live-*/*.json
             ${{ runner.temp }}/styal-provider-live-*/*.ndjson
-            ${{ runner.temp }}/styal-provider-live-*/server.log
+            ${{ runner.temp }}/styal-provider-live-*/*.log
           retention-days: 14
 
   # Records every provider that passed, even when another failed verification.
