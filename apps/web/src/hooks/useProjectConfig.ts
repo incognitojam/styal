@@ -45,13 +45,21 @@ export function useProjectConfigState(
   environmentId: EnvironmentId,
   cwd: string | null,
 ): ProjectConfigState {
+  const refresh = { refreshOnOpenAndFocus: true };
   const styalQuery = useProjectFileQuery(
     environmentId,
     cwd ?? "",
     STYAL_PROJECT_FILE_NAME,
     cwd !== null,
+    refresh,
   );
-  const t3Query = useProjectFileQuery(environmentId, cwd ?? "", T3_PROJECT_FILE_NAME, cwd !== null);
+  const t3Query = useProjectFileQuery(
+    environmentId,
+    cwd ?? "",
+    T3_PROJECT_FILE_NAME,
+    cwd !== null,
+    refresh,
+  );
   const styal = contentsOf(styalQuery);
   const t3 = contentsOf(t3Query);
   // Cached contents count while a refresh is pending. Without styal.json

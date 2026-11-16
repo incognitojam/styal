@@ -72,6 +72,7 @@ const reactHooks = vi.hoisted(() => {
 });
 
 vi.mock("@effect/atom-react", () => ({
+  RegistryContext: {},
   useAtomRefresh: (atom: object) => () => {
     atomHooks.registry?.refresh(atom);
   },
@@ -84,6 +85,7 @@ vi.mock("react", async (importOriginal) => {
     ...actual,
     useCallback: reactHooks.useCallback,
     useEffect: reactHooks.useEffect,
+    useContext: () => atomHooks.registry,
     useMemo: <A,>(factory: () => A) => factory(),
     useRef: reactHooks.useRef,
   };
@@ -165,6 +167,8 @@ describe("project query refresh", () => {
     projectMocks.optimisticFile.mockReset();
     projectMocks.readFile.mockReset();
     reactHooks.reset();
+    // Effects run eagerly here, and the project config listens for window focus.
+    vi.stubGlobal("window", new EventTarget());
   });
 
   it("does not query or expose optimistic file contents without read permission", () => {
