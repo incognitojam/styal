@@ -232,14 +232,16 @@ function canaryWorkspace(root: string, fixture: Record<string, string>) {
 
 it("redacts the job log and every uploaded evidence file of a failed verification", () => {
   using folder = scratch();
-  const forms = [secret, ...encodings(secret)];
+  const key = `sk-synthetic-${secret}`;
+  const forms = [key, ...encodings(key)];
   const patterned = "sk-syntheticPatternKey1234567890";
+  const wrapped = [key, Buffer.from(key).toString("base64")].map((form) => form.match(/.{1,16}/g)!);
   const runStep = canaryWorkspace(folder.root, {
     "result.json": JSON.stringify({
       provider: "opencode",
       version: "1.0.0",
       model: "synthetic",
-      scenarios: [{ name: "turn", status: "failed", seconds: 3, detail: `rejected ${secret}` }],
+      scenarios: [{ name: "turn", status: "failed", seconds: 3, detail: `rejected ${key}` }],
     }),
     "projection-thread-1.json": JSON.stringify({ threadId: "thread-1", error: forms.join(" ") }),
     "events-thread-1.ndjson": forms
@@ -249,13 +251,14 @@ it("redacts the job log and every uploaded evidence file of a failed verificatio
     "server.log": [
       "INFO server listening",
       ...forms.map((form) => `WARN provider request failed key=${form}`),
+      ...wrapped.map((lines) => `WARN provider response:\n${lines.join("\n")}`),
       `ERROR ${JSON.stringify({ headers: { authorization: `Bearer ${patterned}` } })}`,
     ].join("\n"),
   });
   const env = {
-    API_KEY: secret,
-    VERIFIER_STDOUT: `turn: provider rejected ${forms.join(" ")}`,
-    VERIFIER_STDERR: `Error: request failed with ${patterned}`,
+    API_KEY: key,
+    VERIFIER_STDOUT: `turn: provider rejected ${forms.join(" ")}\n${wrapped[1]!.join("\n")}`,
+    VERIFIER_STDERR: `Error: request failed with ${patterned}\n${wrapped[0]!.join("\n")}`,
   };
   const steps = workflowSteps();
   const verify = runStep(steps.find((step) => step.id === "verify")!.run!, env);
@@ -289,7 +292,8 @@ it("redacts the job log and every uploaded evidence file of a failed verificatio
     ...uploaded.map((file) => NodeFS.readFileSync(file, "utf8")),
   ];
   for (const output of published) {
-    for (const form of forms) expect(output).not.toContain(form);
+    for (const form of forms) expect(output.replace(/\s+/g, "")).not.toContain(form);
+    for (const fragment of wrapped.flat()) expect(output).not.toContain(fragment);
     expect(output).not.toContain(patterned);
   }
   const [log, events] = ["server.log", "events-thread-1.ndjson"].map((name) =>

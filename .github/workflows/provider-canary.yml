@@ -216,7 +216,7 @@ jobs:
             local log="$RUNNER_TEMP/verify-$1.log"
             node apps/server/scripts/verify-provider-live.ts \
               --provider "$PROVIDER" --model "$MODEL" --expect-version "$VERSION" \
-              2>&1 | node "$GITHUB_WORKSPACE/.canary-tools/scripts/canary-redaction.ts" --stream | tee "$log"
+              2>&1 | node "$GITHUB_WORKSPACE/.canary-tools/scripts/canary-redaction.ts" --stdin | tee "$log"
             local statuses=("${PIPESTATUS[@]}")
             local status=${statuses[0]}
             if [[ ${statuses[1]} != 0 ]]; then

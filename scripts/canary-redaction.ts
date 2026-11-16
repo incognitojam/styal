@@ -1,7 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off preferSchemaOverJson:off globalConsole:off -- Dependency-free sanitizer also runs against release-tag verifier files.
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
-import * as NodeReadline from "node:readline";
 
 export function redactCanary<T>(
   value: T,
@@ -97,11 +96,16 @@ if (import.meta.main) {
   };
   try {
     const target = process.argv[2];
-    if (!target) throw new Error("Usage: canary-redaction.ts --stream | FILE_OR_DIRECTORY");
-    if (target === "--stream") {
-      // Line by line, so a long verifier run still streams to the job log.
-      for await (const line of NodeReadline.createInterface({ input: process.stdin }))
-        process.stdout.write(`${redact(line)}\n`);
+    if (!target) throw new Error("Usage: canary-redaction.ts --stdin | FILE_OR_DIRECTORY");
+    if (target === "--stdin") {
+      // Whole, so a key wrapped across lines still matches. SIGINT waits for the verifier's
+      // own shutdown output; SIGTERM publishes what has arrived.
+      let input = "";
+      process.once("SIGTERM", () => process.stdout.write(redact(input), () => process.exit(1)));
+      process.on("SIGINT", () => {});
+      process.stdin.setEncoding("utf8");
+      for await (const chunk of process.stdin) input += chunk;
+      process.stdout.write(redact(input));
     } else if (NodeFS.statSync(target).isDirectory()) {
       for (const entry of NodeFS.readdirSync(target, { withFileTypes: true }))
         if (entry.isFile() && /\.(?:json|ndjson|log)$/.test(entry.name))
