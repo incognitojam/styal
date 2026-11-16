@@ -166,6 +166,24 @@ for the security model.
 
 ## Checks
 
+### Actions event policy
+
+GitHub blocks `pull_request_target` workflows by default in public repositories from 2026-12-02. On 2026-11-16, the fork enabled repository Actions policy **Allow pull_request_target for reviewed workflows** (id `14851`) so reviewed workflows can keep running. Inspect it in **Settings → Actions → Policies**, or with:
+
+```sh
+gh api repos/incognitojam/styal/actions/policies -H "X-GitHub-Api-Version: 2026-03-10"
+```
+
+The policy allows `pull_request_target`, `pull_request`, `workflow_dispatch`, `schedule`, and `push` for eight files under `.github/workflows/`: `agent-context-comment.yml`, `pr-size.yml`, `upstream-divergence-comment.yml`, `relay-preview-cleanup.yml`, `web-preview.yml`, `desktop-macos-preview.yml`, `desktop-windows-preview.yml`, and `mobile-android-preview.yml`. None runs pull request code under `pull_request_target`. `mobile-eas-preview-fork.yml`, which ran PR code with `EXPO_TOKEN`, and `pr-vouch.yml` are disabled. The intake landing hold runs on Fork CI's `workflow_run`, not `pull_request_target` (fork [#1516](https://github.com/incognitojam/styal/pull/1516)).
+
+A new `pull_request_target` workflow will not run unless its path is added to the policy's file list. It must not check out or run PR code with secrets or a write token; prefer `pull_request` plus `workflow_run`.
+
+For blocked runs, look for `startup_failure` in the output below and inspect **Policy insights** in the repository's Actions policy settings:
+
+```sh
+gh api "repos/incognitojam/styal/actions/runs?event=pull_request_target&per_page=30" --jq '.workflow_runs[] | "\(.name) \(.conclusion // .status)"'
+```
+
 ### Desktop lifecycle measurements
 
 On Linux, with Xvfb installed, measure startup and quit of the built desktop app:
