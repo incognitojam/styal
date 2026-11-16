@@ -1,3 +1,4 @@
+import { ClockIcon, MessageSquareIcon, ReplyIcon, XIcon } from "lucide-react";
 import { createContext, use, useState } from "react";
 import type { CoordinatorReport, MessageId } from "@t3tools/contracts";
 import { coordinatorReports } from "@t3tools/client-runtime/coordinator-reports";
@@ -20,7 +21,7 @@ export const CoordinatorReportsContext = createContext<{
   reply: (ref: ReportReference) => void;
   dismiss: (ref: ReportReference) => void;
   scroll: (id: MessageId) => void;
-  canDismiss: boolean;
+  canOperate: boolean;
   highlighted: MessageId | null;
 } | null>(null);
 const reportReference = (message: Message): ReportReference => ({
@@ -34,61 +35,70 @@ export function ReportAnswerBar({ report }: { report: ReportState }) {
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   if (!ctx) return null;
+  const panelClassName =
+    "flex flex-wrap items-center gap-2 rounded-lg bg-muted/50 px-3 py-2 text-sm";
   if (report.state === "answered")
     return (
-      <p className="mt-3 text-sm text-muted-foreground">
-        You answered: {report.answer?.text.replace(/^\[[^\n]+\] /, "")}
-      </p>
+      <div className={panelClassName}>
+        <span className="inline-flex items-center gap-1.5 text-muted-foreground [&_svg]:size-3.5">
+          <MessageSquareIcon /> You answered:{" "}
+          <span className="text-foreground">{report.answer?.text.replace(/^\[[^\n]+\] /, "")}</span>
+        </span>
+      </div>
     );
   if (report.state === "dismissed")
     return (
-      <p className="mt-3 text-sm text-muted-foreground">
-        Dismissed. The agent hears it on its next turn.
-      </p>
+      <div className={panelClassName}>
+        <span className="inline-flex items-center gap-1.5 text-muted-foreground [&_svg]:size-3.5">
+          <XIcon /> Dismissed. The agent hears it on its next turn.
+        </span>
+      </div>
     );
   if (report.state !== "open") return null;
   const ref = reportReference(report.message);
   return (
-    <div className="mt-3 space-y-2 border-t pt-3">
-      <p className="text-sm font-medium">{report.message.report?.question}</p>
+    <div className={panelClassName}>
+      <span className="font-medium">{report.message.report?.question}</span>
       {sendError ? (
         <p role="alert" className="text-sm text-destructive">
           {sendError}
         </p>
       ) : null}
-      <div className="flex flex-wrap gap-2">
-        {report.message.report?.answers?.map((answer, index) => (
-          <Button
-            key={answer}
-            size="sm"
-            variant={index === 0 ? "default" : "outline"}
-            disabled={!ctx.canDismiss || sending}
-            onClick={() => {
-              setSending(true);
-              setSendError(null);
-              void ctx
-                .send(`[${report.message.report!.title}, version ${ref.version}] ${answer}`, ref)
-                .catch(() => setSendError("Could not send your answer. Try again."))
-                .finally(() => setSending(false));
-            }}
-          >
-            {answer}
-          </Button>
-        ))}
+      {report.message.report?.answers?.map((answer, index) => (
         <Button
-          size="sm"
-          variant="outline"
-          disabled={!ctx.canDismiss || sending}
-          onClick={() => ctx.reply(ref)}
+          key={answer}
+          size="xs"
+          variant={index === 0 ? "default" : "outline"}
+          disabled={!ctx.canOperate || sending}
+          onClick={() => {
+            setSending(true);
+            setSendError(null);
+            void ctx
+              .send(`[${report.message.report!.title}, version ${ref.version}] ${answer}`, ref)
+              .catch(() => setSendError("Could not send your answer. Try again."))
+              .finally(() => setSending(false));
+          }}
         >
-          Reply…
+          {answer}
         </Button>
+      ))}
+      <Button
+        size="xs"
+        variant="ghost-muted"
+        disabled={!ctx.canOperate || sending}
+        onClick={() => ctx.reply(ref)}
+      >
+        <ReplyIcon />
+        Reply…
+      </Button>
+      <div className="ms-auto">
         <Button
-          size="sm"
-          variant="ghost"
-          disabled={!ctx.canDismiss || sending}
+          size="xs"
+          variant="ghost-muted"
+          disabled={!ctx.canOperate || sending}
           onClick={() => ctx.dismiss(ref)}
         >
+          <XIcon />
           Dismiss
         </Button>
       </div>
@@ -108,27 +118,32 @@ export function WaitingReports({
     .toSorted((a, b) => a.message.createdAt.localeCompare(b.message.createdAt));
   if (!open.length) return null;
   return (
-    <div className="mb-2 rounded-lg border bg-background px-3 py-2">
-      <div className="mb-1 text-xs font-medium text-muted-foreground">
-        Waiting on you · {open.length}
+    <div className="mx-auto mb-2 w-full max-w-(--chat-content-max-width)">
+      <div className="overflow-hidden rounded-xl border border-border/70 bg-card shadow-xs">
+        <div className="flex items-center gap-1.5 border-b border-border/60 px-3 py-1.5 text-xs text-muted-foreground [&_svg]:size-3.5">
+          <ClockIcon />
+          Waiting on you · {open.length}
+        </div>
+        <div className="flex flex-col divide-y divide-border/60">
+          {open.map(({ message }) => (
+            <button
+              key={message.id}
+              type="button"
+              className="group/row flex min-w-0 cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-accent/40"
+              onClick={() => scroll(message.id)}
+            >
+              <span className="size-1.5 shrink-0 rounded-full bg-warning" aria-hidden />
+              <span className="min-w-0 truncate font-medium">{message.report!.title}</span>
+              <span className="min-w-0 flex-1 truncate text-muted-foreground">
+                {message.report!.question}
+              </span>
+              <span className="shrink-0 text-2xs text-muted-foreground/80">
+                v{message.report!.version} · {formatRelativeTimeLabel(message.createdAt)}
+              </span>
+            </button>
+          ))}
+        </div>
       </div>
-      {open.map(({ message }) => (
-        <button
-          key={message.id}
-          type="button"
-          className="flex w-full items-center gap-2 py-1 text-left text-sm"
-          onClick={() => scroll(message.id)}
-        >
-          <span aria-hidden>●</span>
-          <span className="font-medium">{message.report!.title}</span>
-          <span className="min-w-0 flex-1 truncate text-muted-foreground">
-            {message.report!.question}
-          </span>
-          <span className="text-xs text-muted-foreground">
-            v{message.report!.version} · {formatRelativeTimeLabel(message.createdAt)}
-          </span>
-        </button>
-      ))}
     </div>
   );
 }

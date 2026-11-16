@@ -10,7 +10,7 @@ import {
   formatReviewFindingsMarkdown,
   reviewFindingsHeading,
 } from "@t3tools/shared/reviewFindings";
-import { FileTextIcon, GitForkIcon, SearchIcon } from "lucide-react";
+import { ChevronRightIcon, FileTextIcon, GitForkIcon, SearchIcon } from "lucide-react";
 import { Button } from "../ui/button";
 import { ProposedPlanCard } from "./ProposedPlanCard";
 import { HtmlRenderFrame } from "./HtmlRenderFrame";
@@ -63,47 +63,61 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
 
   if (report?.state === "replaced" && !expandedReport)
     return (
-      <div className="px-1 py-2 text-sm text-muted-foreground">
-        Report · {report.message.report!.title} · Version {report.message.report!.version} ·
-        replaced by version {report.latest.report!.version}{" "}
-        <Button size="sm" variant="ghost" onClick={() => setExpandedReport(true)}>
-          Show
-        </Button>
-      </div>
+      <button
+        type="button"
+        onClick={() => setExpandedReport(true)}
+        className="flex w-full cursor-pointer items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground [&_svg]:size-3.5"
+      >
+        <FileTextIcon />
+        <span className="min-w-0 truncate">
+          Report · {report.message.report!.title} · Version {report.message.report!.version} ·
+          replaced by version {report.latest.report!.version}
+        </span>
+        <span className="ms-1 inline-flex shrink-0 items-center text-foreground">
+          Show <ChevronRightIcon />
+        </span>
+      </button>
     );
 
   return (
     <>
       <div
         className={cn(
-          "relative min-w-0 px-1 py-0.5",
+          "relative min-w-0",
+          report ? "flex flex-col gap-2 border-l-2 ps-3" : "px-1 py-0.5",
+          report && (report.state === "replaced" ? "border-border" : "border-primary/60"),
           report &&
             reportContext?.highlighted === row.message.id &&
             "rounded-lg ring-2 ring-primary/40",
         )}
       >
-        <div className="flex items-center gap-1">
-          {report ? <FileTextIcon className="size-3" /> : null}
-          <MessageAuthorHeading>
-            {report
-              ? `Report · ${report.message.report!.title} · Version ${report.message.report!.version}`
-              : "styal"}
-          </MessageAuthorHeading>
-          {report ? (
-            <time
-              className="ml-auto text-xs text-muted-foreground"
-              dateTime={row.message.createdAt}
-              aria-label={formatChatTimestampTooltip(row.message.createdAt, ctx.timestampFormat)}
-            >
-              {formatDayAwareTimestamp(row.message.createdAt, ctx.timestampFormat)}
-            </time>
-          ) : null}
-        </div>
-        {report?.state === "replaced" ? (
-          <Button size="sm" variant="ghost" onClick={() => reportContext?.scroll(report.latest.id)}>
-            A newer version is below
-          </Button>
-        ) : null}
+        {report ? (
+          <div className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground [&_svg]:size-3.5 [&_svg]:shrink-0">
+            <FileTextIcon />
+            <span className="font-medium text-foreground">Report</span>
+            <span className="min-w-0 truncate">· {report.message.report!.title}</span>
+            <span className="shrink-0">· Version {report.message.report!.version}</span>
+            {report.state === "replaced" ? (
+              <button
+                type="button"
+                className="ms-auto shrink-0 cursor-pointer text-foreground underline-offset-2 hover:underline"
+                onClick={() => reportContext?.scroll(report.latest.id)}
+              >
+                A newer version is below
+              </button>
+            ) : (
+              <time
+                className="ms-auto shrink-0"
+                dateTime={row.message.createdAt}
+                aria-label={formatChatTimestampTooltip(row.message.createdAt, ctx.timestampFormat)}
+              >
+                {formatDayAwareTimestamp(row.message.createdAt, ctx.timestampFormat)}
+              </time>
+            )}
+          </div>
+        ) : (
+          <MessageAuthorHeading>styal</MessageAuthorHeading>
+        )}
         <div data-thread-find-text="true">
           <AssistantCitationSource
             messageId={row.message.id}

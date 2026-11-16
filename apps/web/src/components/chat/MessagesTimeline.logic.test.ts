@@ -1718,6 +1718,29 @@ describe("deriveMessagesTimelineRows", () => {
       "assistant-final-entry",
     ]);
 
+    const reportRows = deriveMessagesTimelineRows({
+      timelineEntries: timelineEntries.map((entry) =>
+        entry.kind === "message" && entry.message.id === "assistant-first"
+          ? {
+              ...entry,
+              message: {
+                ...entry.message,
+                report: { key: "pr:214", title: "Release", version: 1, question: "Merge?" },
+              },
+            }
+          : entry,
+      ),
+      isWorking: false,
+      activeTurnStartedAt: null,
+      turnDiffSummaries: [],
+      supportsConversationRollback: false,
+    });
+    expect(reportRows.filter((row) => row.kind === "message").map((row) => row.id)).toEqual([
+      "user-entry",
+      "assistant-first-entry",
+      "assistant-final-entry",
+    ]);
+
     const expandedRows = deriveMessagesTimelineRows({
       timelineEntries,
       expandedRunIds: new Set(["turn-1" as never]),

@@ -5,6 +5,7 @@ import * as Schema from "effect/Schema";
 import { NodeId, RunAttemptId, TrimmedNonEmptyString } from "./index.ts";
 import {
   latestProviderTurnForAttempt,
+  OrchestrationV2Command,
   OrchestrationV2ProviderCapabilities,
   OrchestrationV2ProviderThread,
   OrchestrationV2ProviderThreadJson,
@@ -16,6 +17,9 @@ import {
   OrchestrationV2TurnItem,
   OrchestrationV2TurnItemJson,
 } from "./orchestrationV2.ts";
+
+const isDismissReportInput = Schema.is(OrchestrationV2RpcSchemas.dismissReport.input);
+const isPublicOrchestrationCommand = Schema.is(OrchestrationV2Command);
 
 const now = DateTime.makeUnsafe("2026-04-20T00:00:00.000Z");
 
@@ -638,4 +642,16 @@ describe("latestProviderTurnForAttempt", () => {
     expect(latestProviderTurnForAttempt(turns, RunAttemptId.make("goal-attempt"))?.id).toBe("last");
     expect(latestProviderTurnForAttempt(turns, null)).toBeUndefined();
   });
+});
+
+it("accepts report dismissal only through its dedicated RPC", () => {
+  const input = {
+    commandId: "command:dismiss",
+    threadId: "thread:reports",
+    messageId: "message:report",
+    key: "pr:214",
+    version: 1,
+  };
+  expect(isDismissReportInput(input)).toBe(true);
+  expect(isPublicOrchestrationCommand({ ...input, type: "report.dismiss" })).toBe(false);
 });

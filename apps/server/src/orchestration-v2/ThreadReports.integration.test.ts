@@ -509,6 +509,12 @@ it.effect(
           reports.every((message) => message.role === "assistant" && message.runId === turn.runId),
         );
         const items = projection.turnItems.filter((item) => item.type === "assistant_message");
+        const prompt = projection.turnItems.find(
+          (item) => item.type === "user_message" && item.runId === turn.runId,
+        );
+        assert.isDefined(prompt);
+        assert.isAbove(items[0]!.ordinal, prompt!.ordinal);
+
         assert.deepEqual(
           items.map((item) => (item.type === "assistant_message" ? item.messageId : null)),
           reports.map((message) => message.id),

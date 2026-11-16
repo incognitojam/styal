@@ -925,7 +925,8 @@ function completeSupersededReplyEntryIds(
   for (const entry of timelineEntries) {
     if (
       entry.attempt?.status !== "superseded" ||
-      (entry.kind === "message" && entry.message.role === "user") ||
+      (entry.kind === "message" &&
+        (entry.message.role === "user" || entry.message.report !== undefined)) ||
       (entry.kind === "work" &&
         (entry.entry.itemType === "system_notice" || entry.entry.itemType === "notification")) ||
       (entry.kind !== "message" && entry.kind !== "work")
@@ -982,7 +983,8 @@ function deriveSupersededAttemptFolds(
       entry.attempt?.status !== "superseded" ||
       completeAttemptIds.has(entry.attempt.id) ||
       unfoldedRunIds.has(entry.attempt.runId) ||
-      (entry.kind === "message" && entry.message.role === "user") ||
+      (entry.kind === "message" &&
+        (entry.message.role === "user" || entry.message.report !== undefined)) ||
       (entry.kind === "event" && entry.projectedItem.item.type === "handoff") ||
       entry.kind === "html-render" ||
       entry.kind === "mcp-app" ||
@@ -1362,6 +1364,7 @@ function deriveTurnFolds(input: {
       if (
         (timelineEntryIsCompaction(entry) && !timelineEntryIsCompletedCompaction(entry)) ||
         timelineEntryIsPersistentResourceCard(entry) ||
+        (entry.kind === "message" && entry.message.report !== undefined) ||
         input.liveSubagentEntryIds.has(entry.id) ||
         input.completeSupersededReplyEntryIds.has(entry.id) ||
         (entry.kind === "work" && entry.entry.questionAnswer !== undefined) ||

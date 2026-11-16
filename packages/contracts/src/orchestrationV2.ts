@@ -3219,12 +3219,6 @@ export const OrchestrationV2DomainEventJson = Schema.Union([
 export type OrchestrationV2DomainEventJson = typeof OrchestrationV2DomainEventJson.Type;
 
 export const OrchestrationV2Command = Schema.Union([
-  Schema.Struct({
-    type: Schema.Literal("report.dismiss"),
-    commandId: CommandId,
-    threadId: ThreadId,
-    ...CoordinatorReportReference.fields,
-  }),
   /**
    * Stop for one thread, whatever it is doing: interrupts its running turn, holds its queue,
    * ends its pull request and workflow run watches, and drops pending delegated-task wakes.
@@ -3748,6 +3742,13 @@ export type OrchestrationV2Command = typeof OrchestrationV2Command.Type;
 
 // Excluded from dispatchCommand so only the server can send these.
 const OrchestrationV2InternalCommand = Schema.Union([
+  Schema.Struct({
+    type: Schema.Literal("report.dismiss"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    ...CoordinatorReportReference.fields,
+  }),
+
   Schema.Struct({
     type: Schema.Literal("report.post"),
     commandId: CommandId,

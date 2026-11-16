@@ -1039,7 +1039,7 @@ export default function ChatView(props: ChatViewProps) {
       )
     : [];
   const dismissReport = useAtomCommand(dismissCoordinatorReport);
-  const canDismissReport = useAtomValue(dismissCoordinatorReport.permissionAtom(environmentId));
+  const canOperateReport = useAtomValue(dismissCoordinatorReport.permissionAtom(environmentId));
   const [highlightedReport, setHighlightedReport] = useState<
     import("@t3tools/contracts").MessageId | null
   >(null);
@@ -3612,7 +3612,7 @@ export default function ChatView(props: ChatViewProps) {
                               });
                           },
                           scroll: scrollToReport,
-                          canDismiss: canDismissReport,
+                          canOperate: canOperateReport,
                           highlighted: highlightedReport,
                         }
                       : null
