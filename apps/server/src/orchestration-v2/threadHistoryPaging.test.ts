@@ -798,13 +798,27 @@ describe("threadHistoryPaging", () => {
     });
     const full = {
       ...projection,
-      messages: [message(0, true), message(1, false), message(2)],
+      messages: [
+        message(0, true),
+        {
+          ...message(1, false),
+          role: "assistant",
+          report: { key: "pr:1", title: "Release", version: 1, question: "Merge?" },
+        },
+        message(2),
+        {
+          ...message(3),
+          reportAnswer: { messageId: MessageId.make("message-1"), key: "pr:1", version: 1 },
+        },
+      ],
     } as typeof projection;
 
     const bounded = buildBoundedThreadProjection({ projection: full, snapshotSequence: 9 });
 
     expect(bounded.projection.messages.map((retained) => retained.id)).toEqual([
       MessageId.make("message-0"),
+      MessageId.make("message-1"),
+      MessageId.make("message-3"),
     ]);
   });
 

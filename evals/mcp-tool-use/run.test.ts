@@ -4314,3 +4314,43 @@ it("passes a waiting parent only once it answers the child's question, and judge
   );
   assert.isNotEmpty(reported(`It needs approval in ${threadId}. I will approve it now.`));
 });
+
+it("grades coordinator decision reports and routine updates", () => {
+  const decision = {
+    calls: [
+      {
+        tool: "t3_report",
+        args: {
+          key: "pr:214",
+          body: "~Reconnect evidence",
+          question: "~Merge",
+          "answers.0": "Merge",
+        },
+      },
+    ],
+    maxCalls: { t3_report: 1 },
+    textMustNot: ["Reconnect evidence"],
+  };
+  const good: SampleRun = {
+    calls: [
+      {
+        step: 0,
+        tool: "t3_report",
+        input: {
+          key: "pr:214",
+          body: "Reconnect evidence passed",
+          question: "Merge?",
+          answers: ["Merge", "Wait"],
+        },
+      },
+    ],
+    text: "Report posted.",
+    stopReason: "end_turn",
+  };
+  assert.deepEqual(failed(decision, good), []);
+  assert.isNotEmpty(failed(decision, { ...good, calls: [] }));
+  assert.isNotEmpty(failed(decision, { ...good, text: "Reconnect evidence passed" }));
+  assert.isNotEmpty(failed(decision, { ...good, calls: [...good.calls, ...good.calls] }));
+  assert.deepEqual(failed({ notCalls: ["t3_report"] }, { ...good, calls: [] }), []);
+  assert.isNotEmpty(failed({ notCalls: ["t3_report"] }, good));
+});

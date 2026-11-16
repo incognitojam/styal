@@ -592,6 +592,8 @@ function messagesForBoundedProjection(
     (message) =>
       retainedMessageIds.has(String(message.id)) ||
       (message.runId !== null && retainedRunIds.has(String(message.runId))) ||
+      message.report !== undefined ||
+      message.reportAnswer !== undefined ||
       message.delegatedCompletion !== undefined ||
       // Keep the workflow script outside the history window; clients use it to open the coordinator thread.
       message.workflowScript === true,

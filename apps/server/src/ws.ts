@@ -2049,6 +2049,17 @@ export const layerWsRpc = (
       const handlers = ServerWsRpcGroup.of({
         [WS_METHODS.serverPreviewLegacyImport]: (_input) => legacyImportPreview.preview,
         [WS_METHODS.serverImportLegacyData]: (input) => legacyImport.importData(input),
+        [ORCHESTRATION_V2_WS_METHODS.dismissReport]: (input) =>
+          threadManagement.dispatch({ type: "report.dismiss", ...input }).pipe(
+            Effect.map((result) => ({ sequence: result.sequence })),
+            Effect.mapError(
+              (cause) =>
+                new OrchestrationDispatchCommandError({
+                  message: "Could not dismiss the report.",
+                  cause,
+                }),
+            ),
+          ),
         [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: (command) =>
           Effect.annotateCurrentSpan({
             "orchestration_v2.command_id": command.commandId,

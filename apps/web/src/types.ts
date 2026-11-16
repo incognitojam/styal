@@ -72,6 +72,8 @@ export function isVideoAttachment(attachment: ChatFileAttachment): boolean {
 }
 
 export interface ChatMessage {
+  readonly report?: import("@t3tools/contracts").CoordinatorReport;
+  readonly reportAnswer?: typeof import("@t3tools/contracts").CoordinatorReportReference.Type;
   readonly context?: import("@t3tools/contracts").OrchestrationMessageContext | undefined;
   readonly id: MessageId;
   readonly role: "user" | "assistant" | "system";

@@ -1298,6 +1298,21 @@ export function ChatSettingsPanel() {
     <SettingsPageContainer>
       <SettingsSection id="composer" title="Composer">
         <SettingsRow
+          {...searchableSetting("coordinator-reports")}
+          settingKeys={["coordinatorReportsEnabled"]}
+          forkFeature="coordinator-reports"
+          description="Keep agent reports and questions in view until you answer or dismiss them."
+          control={
+            <Switch
+              checked={settings.coordinatorReportsEnabled}
+              onCheckedChange={(checked) =>
+                updateSettings({ coordinatorReportsEnabled: Boolean(checked) })
+              }
+              aria-label="Reports (experimental)"
+            />
+          }
+        />
+        <SettingsRow
           {...searchableSetting("composer-rich-text")}
           description="Show formatted Markdown as you type."
           resetAction={

@@ -174,6 +174,8 @@ type UsageLimitsPanel = ReturnType<typeof useUsageLimitsPanel>;
 type TimelineFollow = ReturnType<typeof useTimelineFollow>;
 
 interface ComposerSendInput {
+  reportAnswer?: import("./CoordinatorReports").ReportReference | null;
+  onReportAnswered?: () => void;
   readonly environmentId: EnvironmentId;
   readonly routeThreadKey: string;
   readonly currentRouteThreadKeyRef: { readonly current: string | null };
@@ -1416,6 +1418,7 @@ export function useComposerSend(input: ComposerSendInput) {
         input: {
           threadId: threadIdForSend,
           message: {
+            ...(input.reportAnswer ? { reportAnswer: input.reportAnswer } : {}),
             messageId: messageIdForSend,
             role: "user",
             attachments: turnAttachmentsResult.value,
@@ -1476,6 +1479,7 @@ export function useComposerSend(input: ComposerSendInput) {
         }
       } else {
         turnStartSucceeded = true;
+        input.onReportAnswered?.();
         setKeepFullHistory(routeThreadKey, false);
         clearUsageLimitsFor(routeThreadKey);
         if (turnUsesAttachmentUploads) {
@@ -1573,6 +1577,7 @@ export function useComposerSend(input: ComposerSendInput) {
               failure: squashAtomCommandFailure(failure),
               registry: appAtomRegistry,
               target: scopeThreadRef(environmentId, threadIdForSend),
+              ...(input.reportAnswer ? { reportAnswer: input.reportAnswer } : {}),
               messageId: messageIdForSend,
               messagesAtom: Atom.make((get) => {
                 const target = scopeThreadRef(environmentId, threadIdForSend);

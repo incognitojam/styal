@@ -977,6 +977,35 @@ features:
         - https://github.com/pingdotgg/t3code/pull/26255
       retire_when: The maintainer accepts upstream's timeline-row approvals, or upstream moves approvals back above the composer.
 
+  - id: coordinator-reports
+    title: Answer or dismiss versioned agent reports in chat
+    status: maintained
+    tier: yield
+    prs: []
+    invariants:
+      - Reports are immutable assistant messages, versioned independently by topic within the calling thread.
+      - Only an answer referencing the exact report, a dismissal of that version, or a newer version closes a question.
+      - Reports are experimental and disabled by default; disabled sessions do not list the report tool.
+      - Dismissals do not wake agents and reach their next prompted turn exactly once.
+    rationale: Coordinators need durable full reports and explicit decisions without repeating waiting messages.
+    implementation_paths:
+      - apps/server/src/mcp/toolkits/thread/tools.ts
+      - apps/server/src/orchestration-v2/Orchestrator.ts
+      - apps/server/src/orchestration-v2/ProviderTurnStartService.ts
+      - apps/web/src/components/chat/CoordinatorReports.tsx
+      - packages/client-runtime/src/coordinatorReports.ts
+      - packages/contracts/src/orchestrationV2.ts
+    tests:
+      - apps/server/src/orchestration-v2/ThreadReports.integration.test.ts
+      - packages/client-runtime/src/coordinatorReports.test.ts
+    upstream_paths:
+      - apps/server/src/mcp/McpHttpServer.ts
+      - apps/web/src/components/ChatView.tsx
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream supports immutable topic reports with explicit answers and dismissals.
+
   - id: data-import-from-t3-code
     title: T3 Code migration in setup and Settings
     status: review-needed

@@ -1,4 +1,7 @@
 import {
+  CoordinatorReportInput,
+  MessageId,
+  PositiveInt,
   OrchestratorMcpEnvironmentTarget,
   ScheduledTaskId,
   ScheduledTask,
@@ -22,7 +25,7 @@ import {
 } from "@t3tools/contracts";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Schema from "effect/Schema";
-import { Tool, Toolkit } from "effect/ai";
+import { McpSchema, Tool, Toolkit } from "effect/ai";
 
 import * as ThreadSearchMcpService from "../../ThreadSearchMcpService.ts";
 import * as ScheduledTaskService from "../../../scheduledTasks/ScheduledTaskService.ts";
@@ -226,7 +229,16 @@ const ScheduledTaskRunTool = Tool.make("run_scheduled_task_now", {
   .annotate(Tool.Destructive, true)
   .annotate(Tool.OpenWorld, true);
 
+const ReportTool = Tool.make("t3_report", {
+  ...commandTool,
+  description:
+    "Post a report the user decides from, as a message in this thread. `key` names its topic (pr:123, issue:9, a slug); a new report on the same key is its next version. `body`: Markdown with context, recommendation, evidence, links. Optional `question` and `answers`, recommended first. Don't repeat the report in your reply.",
+  parameters: CoordinatorReportInput,
+  success: Schema.Struct({ messageId: MessageId, version: PositiveInt }),
+}).annotate(McpSchema.EnabledWhen, McpInvocationContext.reportsEnabled);
+
 export const ThreadToolkit = Toolkit.make(
+  ReportTool,
   ScheduledTaskRunTool,
   ThreadSearchTool,
   ThreadConfigureTool,

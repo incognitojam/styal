@@ -1,3 +1,4 @@
+import { CoordinatorReportsContext, ReportAnswerBar } from "./CoordinatorReports";
 import { shouldPreserveAssistantLineBreaks } from "@t3tools/shared/markdownPipeline";
 import { type MessageId, type RunId, type ScopedThreadRef } from "@t3tools/contracts";
 import { canForkProjectedAssistantItem } from "@t3tools/client-runtime/state/thread-workflows";
@@ -9,7 +10,7 @@ import {
   formatReviewFindingsMarkdown,
   reviewFindingsHeading,
 } from "@t3tools/shared/reviewFindings";
-import { GitForkIcon, SearchIcon } from "lucide-react";
+import { FileTextIcon, GitForkIcon, SearchIcon } from "lucide-react";
 import { Button } from "../ui/button";
 import { ProposedPlanCard } from "./ProposedPlanCard";
 import { HtmlRenderFrame } from "./HtmlRenderFrame";
@@ -48,6 +49,9 @@ function useMentionedTimeCheck(threadRef: ScopedThreadRef | null, messageId: Mes
 
 export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
+  const reportContext = use(CoordinatorReportsContext);
+  const report = reportContext?.reports.find((report) => report.message.id === row.message.id);
+  const [expandedReport, setExpandedReport] = useState(report?.state !== "replaced");
   // The timeline holds a streaming message's row while only its text grows.
   const liveText = useAssistantMessageText(
     row.message.streaming ? ctx.threadRef : null,
@@ -57,10 +61,49 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
   const messageText = text || (row.message.streaming ? "" : "(empty response)");
   const mentionedTimeCheck = useMentionedTimeCheck(ctx.threadRef ?? null, row.message.id);
 
+  if (report?.state === "replaced" && !expandedReport)
+    return (
+      <div className="px-1 py-2 text-sm text-muted-foreground">
+        Report · {report.message.report!.title} · Version {report.message.report!.version} ·
+        replaced by version {report.latest.report!.version}{" "}
+        <Button size="sm" variant="ghost" onClick={() => setExpandedReport(true)}>
+          Show
+        </Button>
+      </div>
+    );
+
   return (
     <>
-      <div className="relative min-w-0 px-1 py-0.5">
-        <MessageAuthorHeading>styal</MessageAuthorHeading>
+      <div
+        className={cn(
+          "relative min-w-0 px-1 py-0.5",
+          report &&
+            reportContext?.highlighted === row.message.id &&
+            "rounded-lg ring-2 ring-primary/40",
+        )}
+      >
+        <div className="flex items-center gap-1">
+          {report ? <FileTextIcon className="size-3" /> : null}
+          <MessageAuthorHeading>
+            {report
+              ? `Report · ${report.message.report!.title} · Version ${report.message.report!.version}`
+              : "styal"}
+          </MessageAuthorHeading>
+          {report ? (
+            <time
+              className="ml-auto text-xs text-muted-foreground"
+              dateTime={row.message.createdAt}
+              aria-label={formatChatTimestampTooltip(row.message.createdAt, ctx.timestampFormat)}
+            >
+              {formatDayAwareTimestamp(row.message.createdAt, ctx.timestampFormat)}
+            </time>
+          ) : null}
+        </div>
+        {report?.state === "replaced" ? (
+          <Button size="sm" variant="ghost" onClick={() => reportContext?.scroll(report.latest.id)}>
+            A newer version is below
+          </Button>
+        ) : null}
         <div data-thread-find-text="true">
           <AssistantCitationSource
             messageId={row.message.id}
@@ -85,6 +128,7 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
             />
           </AssistantCitationSource>
         </div>
+        {report ? <ReportAnswerBar report={report} /> : null}
         {ctx.onOpenTurnDiff ? (
           <AssistantChangedFilesSection
             turnSummary={row.assistantTurnDiffSummary}

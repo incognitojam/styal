@@ -1,3 +1,10 @@
+import { Button } from "./ui/button";
+import { randomUUID } from "../lib/utils";
+import { WaitingReports, type ReportReference } from "./chat/CoordinatorReports";
+import { coordinatorReports } from "@t3tools/client-runtime/coordinator-reports";
+import { dismissCoordinatorReport } from "../state/coordinatorReports";
+import { CommandId } from "@t3tools/contracts";
+import * as DateTime from "effect/DateTime";
 import { projectFileActions } from "~/state/projectFileActions";
 import { continuedResponseWorkStartedAt } from "@t3tools/client-runtime/work-log/presentation";
 import { managedRelayAuthLoadAtom, managedRelaySessionAtom } from "@t3tools/client-runtime/relay";
@@ -1017,6 +1024,30 @@ export default function ChatView(props: ChatViewProps) {
     setTimelineAnchor({ threadKey: activeThreadKey, messageId: null });
   }
   const timelineAnchorMessageId = timelineAnchor.messageId;
+  const [reportReply, setReportReply] = useState<{
+    threadKey: string | null;
+    ref: ReportReference;
+  } | null>(null);
+  const activeReportReply = reportReply?.threadKey === activeThreadKey ? reportReply.ref : null;
+  const reportStates = settings.coordinatorReportsEnabled
+    ? coordinatorReports(
+        (serverProjection?.messages ?? []).map((message) => ({
+          ...message,
+          createdAt: DateTime.formatIso(message.createdAt),
+        })),
+        serverProjection?.thread.reportDismissals ?? [],
+      )
+    : [];
+  const dismissReport = useAtomCommand(dismissCoordinatorReport);
+  const canDismissReport = useAtomValue(dismissCoordinatorReport.permissionAtom(environmentId));
+  const [highlightedReport, setHighlightedReport] = useState<
+    import("@t3tools/contracts").MessageId | null
+  >(null);
+  const scrollToReport = (messageId: import("@t3tools/contracts").MessageId) => {
+    setHighlightedReport(messageId);
+    setTimelineAnchor({ threadKey: activeThreadKey, messageId });
+  };
+
   // LegendList never recomputes anchored end-space geometry, leaving phantom scroll range after content fits.
   const anchorRunSettled = (() => {
     if (timelineAnchorMessageId === null) return false;
@@ -1945,7 +1976,7 @@ export default function ChatView(props: ChatViewProps) {
     scheduleComposerFocus();
   };
   const insertArtifactTemplateStable = useStableCallback(insertArtifactTemplate);
-  const sendAppMessage = async (text: string) => {
+  const sendAppMessage = async (text: string, reportAnswer?: ReportReference) => {
     if (!isServerThread || activeThreadId === null) {
       throw new Error("Messages from apps need a started thread.");
     }
@@ -1953,7 +1984,13 @@ export default function ChatView(props: ChatViewProps) {
       environmentId,
       input: {
         threadId: activeThreadId,
-        message: { messageId: newMessageId(), role: "user", text, attachments: [] },
+        message: {
+          messageId: newMessageId(),
+          role: "user",
+          text,
+          attachments: [],
+          ...(reportAnswer ? { reportAnswer } : {}),
+        },
         runtimeMode,
         interactionMode,
         dispatchMode: "queue",
@@ -3045,6 +3082,8 @@ export default function ChatView(props: ChatViewProps) {
     defaultRuntimeMode,
   });
   const { onSend } = useComposerSend({
+    reportAnswer: settings.coordinatorReportsEnabled ? activeReportReply : null,
+    onReportAnswered: () => setReportReply(null),
     environmentId,
     routeThreadKey,
     currentRouteThreadKeyRef,
@@ -3552,6 +3591,32 @@ export default function ChatView(props: ChatViewProps) {
             >
               <WorkspaceMutationIdContext value={workspaceMutationId}>
                 <ThreadTimeline
+                  coordinatorReports={
+                    settings.coordinatorReportsEnabled
+                      ? {
+                          reports: reportStates,
+                          send: sendAppMessageStable,
+                          reply: (ref) => {
+                            setReportReply({ threadKey: activeThreadKey, ref });
+                            scheduleComposerFocus();
+                          },
+                          dismiss: (ref) => {
+                            if (activeThreadId)
+                              void dismissReport({
+                                environmentId,
+                                input: {
+                                  commandId: CommandId.make(randomUUID()),
+                                  threadId: activeThreadId,
+                                  ...ref,
+                                },
+                              });
+                          },
+                          scroll: scrollToReport,
+                          canDismiss: canDismissReport,
+                          highlighted: highlightedReport,
+                        }
+                      : null
+                  }
                   pendingApprovals={pendingApprovals}
                   heldApprovalRequestIds={heldApprovalRequestIds}
                   respondingRequestIds={respondingRequestIds}
@@ -3618,7 +3683,10 @@ export default function ChatView(props: ChatViewProps) {
                   // Side chat runs keep no checkpoints to diff, and a fork would promote the side chat.
                   {...(embedded
                     ? {}
-                    : { onOpenTurnDiff: onOpenTurnDiffStable, onForkFromRun: onForkFromRunStable })}
+                    : {
+                        onOpenTurnDiff: onOpenTurnDiffStable,
+                        onForkFromRun: onForkFromRunStable,
+                      })}
                   onOpenThread={onOpenRelatedThreadStable}
                   parentThreadLink={parentThreadLink}
                   workflowOpening={workflowOpening}
@@ -3723,6 +3791,28 @@ export default function ChatView(props: ChatViewProps) {
                         : undefined
                     }
                   >
+                    {settings.coordinatorReportsEnabled ? (
+                      <WaitingReports reports={reportStates} scroll={scrollToReport} />
+                    ) : null}
+                    {settings.coordinatorReportsEnabled && activeReportReply ? (
+                      <div className="mb-2 flex items-center gap-2 text-xs">
+                        Replying to{" "}
+                        {
+                          reportStates.find(
+                            (report) => report.message.id === activeReportReply.messageId,
+                          )?.message.report?.title
+                        }{" "}
+                        · version {activeReportReply.version}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          aria-label="Remove report reference"
+                          onClick={() => setReportReply(null)}
+                        >
+                          ×
+                        </Button>
+                      </div>
+                    ) : null}
                     <ChildThreadApprovals threadRef={activeThreadRef} />
                     <ComposerSurface.Shell contextRow={showComposerContextStrip}>
                       <ComposerSurface.Host

@@ -479,3 +479,7 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 [^import-comparison]: Setup compared with [T3 Code revision 1ab2dfb](https://github.com/pingdotgg/t3code/tree/1ab2dfb5a7bd2996f79407b5d02cae6132a7626c), checked September 17, 2026.
 
 [^setup-comparison]: Hosted setup compared with [T3 Code revision e37a7a4](https://github.com/pingdotgg/t3code/tree/e37a7a4f71cb20c483e101e13d57ccf3598ab832), checked October 28, 2026.
+
+## Agent reports
+
+Experimental [agent reports](chat-timeline.md#agent-reports) keep full decision reports in the chat and open questions above the composer until answered, dismissed, or replaced. Compared with upstream `5da89cfcebaa57cd77ae1b2546462f7ac501f42a`, which has no equivalent report tool.

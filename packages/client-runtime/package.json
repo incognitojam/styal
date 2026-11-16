@@ -578,6 +578,10 @@
     "./state/worktreeCleanup": {
       "types": "./src/state/worktreeCleanup.ts",
       "default": "./src/state/worktreeCleanup.ts"
+    },
+    "./coordinator-reports": {
+      "types": "./src/coordinatorReports.ts",
+      "default": "./src/coordinatorReports.ts"
     }
   },
   "scripts": {

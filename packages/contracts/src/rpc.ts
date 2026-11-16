@@ -1975,6 +1975,12 @@ const WsSubscribeHardwareStateRpc = Rpc.make(WS_METHODS.subscribeHardwareState, 
   stream: true,
 });
 
+const WsCoordinatorReportDismissRpc = Rpc.make(ORCHESTRATION_V2_WS_METHODS.dismissReport, {
+  payload: OrchestrationV2RpcSchemas.dismissReport.input,
+  success: OrchestrationV2RpcSchemas.dismissReport.output,
+  error: Schema.Union([OrchestrationDispatchCommandError, EnvironmentAuthorizationError]),
+});
+
 const WsOrchestrationV2DispatchCommandRpc = Rpc.make(ORCHESTRATION_V2_WS_METHODS.dispatchCommand, {
   payload: OrchestrationV2RpcSchemas.dispatchCommand.input,
   success: OrchestrationV2RpcSchemas.dispatchCommand.output,
@@ -2477,6 +2483,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsSubscribeServerLifecycleRpc,
   WsSubscribeAuthAccessRpc,
   WsSubscribeResourceTelemetryRpc,
+  WsCoordinatorReportDismissRpc,
   WsOrchestrationV2DispatchCommandRpc,
   WsOrchestrationV2GetWorkflowScriptRpc,
   WsOrchestrationV2GetCommandOutputRpc,

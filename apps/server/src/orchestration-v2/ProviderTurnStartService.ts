@@ -1029,12 +1029,15 @@ export const layer: Layer.Layer<
       const deliveredContextIds = new Set(
         projection.providerTurns.flatMap((turn) => turn.inlineContextIds ?? []),
       );
-      const nextTurnContext = (projection.thread.pullRequests ?? [])
-        .filter((link) => link.source !== "stack-dismissed")
-        .flatMap((link) => (link.turnContext === undefined ? [] : [link.turnContext]))
-        .concat(
-          projection.thread.branchTurnContext == null ? [] : [projection.thread.branchTurnContext],
-        )
+      const nextTurnContext = [
+        ...(projection.thread.pullRequests ?? [])
+          .filter((link) => link.source !== "stack-dismissed")
+          .flatMap((link) => (link.turnContext === undefined ? [] : [link.turnContext])),
+        ...(projection.thread.branchTurnContext == null
+          ? []
+          : [projection.thread.branchTurnContext]),
+        ...(projection.thread.reportDismissals ?? []),
+      ]
         .filter((note) => !deliveredContextIds.has(note.id))
         .sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
       let inlineContextIds: ReadonlyArray<string> = [];

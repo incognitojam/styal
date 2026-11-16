@@ -1113,6 +1113,12 @@ it.effect("hides tools for links and refuses another environment while the beta 
         issuedAt: 1,
       };
       const LinksToolkit = Toolkit.make(
+        Tool.make("report", {
+          description: "Posts a report.",
+          success: Schema.Void,
+          failure: OrchestratorMcpFailure,
+          failureMode: "return",
+        }).annotate(McpSchema.EnabledWhen, McpInvocationContext.reportsEnabled),
         Tool.make("links", {
           description: "Lists links.",
           success: Schema.Struct({ links: Schema.Number }),
@@ -1133,6 +1139,7 @@ it.effect("hides tools for links and refuses another environment while the beta 
         McpHttpServer.toolkitRegistration(
           LinksToolkit,
           McpToolAccess.toLayer(LinksToolkit, {
+            report: McpToolAccess.reads(() => Effect.void),
             links: McpToolAccess.reads(() => Effect.succeed({ links: 0 })),
             where: McpToolAccess.reads(() => Effect.succeed({ ranIn: "here" })),
           }),
@@ -1208,6 +1215,10 @@ it.effect("hides tools for links and refuses another environment while the beta 
       expect((yield* ranIn(environmentId)).structuredContent).toEqual({ ranIn: "here" });
 
       yield* settings.updateSettings({ linkedEnvironmentsEnabled: true });
+      expect(yield* listed()).toEqual(["links", "where"]);
+      yield* settings.updateSettings({ coordinatorReportsEnabled: true });
+      expect(yield* listed()).toEqual(["report", "links", "where"]);
+      yield* settings.updateSettings({ coordinatorReportsEnabled: false });
       expect(yield* listed()).toEqual(["links", "where"]);
       // On, the call goes on to the forwarding, which this server lacks.
       expect(yield* ranIn(elsewhere)).toMatchObject({
