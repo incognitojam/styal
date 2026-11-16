@@ -104,6 +104,7 @@ import {
   scriptSources,
   SecretExpect,
   secretDiagnostics,
+  shellWrites,
 } from "./secret-grading.ts";
 /** Agent models by id, with the display name a harness gives them. */
 const MODELS = {
@@ -1940,16 +1941,22 @@ export const gradeSample = (expect: McpToolUseCase["expect"], run: SampleRun, pa
       `shellMust /${p}/`,
       shell.some((c) => test(p, c) || test(p, argvForm(c))),
     );
-  const writes = [
-    ...calls.flatMap((call) =>
-      isRecord(call.input) && (call.tool === "Write" || call.tool === "Edit")
-        ? [call.input.content, call.input.new_string, call.input.patch].filter(
-            (value) => typeof value === "string",
-          )
-        : [],
-    ),
-    ...shell,
-  ];
+  // Only written text counts: a patch's added lines, and what a shell command writes.
+  const writes = calls.flatMap((call) => {
+    if (!isRecord(call.input)) return [];
+    const { content, new_string: newString, patch, command } = call.input;
+    if (call.tool === "Write" && typeof content === "string") return [content];
+    if (call.tool === "Edit" && typeof newString === "string") return [newString];
+    if (call.tool === "Edit" && typeof patch === "string")
+      return [
+        patch
+          .split("\n")
+          .filter((line) => line.startsWith("+"))
+          .map((line) => line.slice(1))
+          .join("\n"),
+      ];
+    return typeof command === "string" ? shellWrites(command) : [];
+  });
   for (const p of expect.writesMust ?? [])
     add(
       `writesMust /${p}/`,

@@ -1372,6 +1372,35 @@ const noteHeredoc = (part: string, scripts: Map<string, string>) => {
       write.append ? `${scripts.get(write.path) ?? ""}\n${write.source}` : write.source,
     );
 };
+// An interpreter fed a script, and a script that writes a file. Heuristic, for `writesMust`.
+const INTERPRETER = /\b(?:python3?|node|ruby|perl|bash|sh)\b/;
+const INLINE_SCRIPT = /\b(?:python3?\s+-c|node\s+-e|ruby\s+-e|perl\s+-e)\b/;
+const WRITES_FILE = /\b(?:write|write_text|writeFile|writeFileSync|dump)\b/;
+const IN_PLACE = /\b(?:sed|perl)\b[^|]*\s-[a-zA-Z]*i/;
+/**
+ * The text a shell command writes, roughly: heredoc bodies that go to a file or to an interpreter
+ * script that writes, and parts that redirect into a file, `tee`, edit in place with `sed -i`, or
+ * run an inline script that writes. Reads such as `grep`, `cat` or `jq` without a redirect write
+ * nothing.
+ */
+export const shellWrites = (command: string): Array<string> =>
+  splitTop(command).flatMap(({ text }) => {
+    const heredoc = new RegExp(HEREDOC.source).exec(text);
+    if (heredoc) {
+      const head = text.slice(0, heredoc.index) + heredoc[3]!;
+      const body = heredoc[4]!;
+      return REDIRECTS_TO_FILE.test(shellSyntax(head)) ||
+        (INTERPRETER.test(head) && WRITES_FILE.test(body))
+        ? [body]
+        : [];
+    }
+    const syntax = shellSyntax(text);
+    return REDIRECTS_TO_FILE.test(syntax) ||
+      IN_PLACE.test(syntax) ||
+      (INLINE_SCRIPT.test(syntax) && WRITES_FILE.test(text))
+      ? [text]
+      : [];
+  });
 /** Applies a Codex apply_patch to the scripts: added files, and updated files hunk by hunk. */
 const applyPatch = (patch: string, scripts: Map<string, string>) => {
   for (const [, op, path = "", body = ""] of patch.matchAll(
