@@ -63,10 +63,6 @@ const reactHooks = vi.hoisted(() => {
       nextIndex();
       effect();
     },
-    useEffectEvent<A>(callback: A): A {
-      nextIndex();
-      return callback;
-    },
     useRef<A>(initialValue: A): { current: A } {
       const index = nextIndex();
       refs[index] ??= { current: initialValue };
@@ -76,6 +72,7 @@ const reactHooks = vi.hoisted(() => {
 });
 
 vi.mock("@effect/atom-react", () => ({
+  RegistryContext: {},
   useAtomRefresh: (atom: object) => () => {
     atomHooks.registry?.refresh(atom);
   },
@@ -88,7 +85,7 @@ vi.mock("react", async (importOriginal) => {
     ...actual,
     useCallback: reactHooks.useCallback,
     useEffect: reactHooks.useEffect,
-    useEffectEvent: reactHooks.useEffectEvent,
+    useContext: () => atomHooks.registry,
     useMemo: <A,>(factory: () => A) => factory(),
     useRef: reactHooks.useRef,
   };

@@ -1,4 +1,4 @@
-import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
+import { RegistryContext, useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import {
   type EnvironmentId,
   type ProjectListEntriesResult,
@@ -11,6 +11,7 @@ import * as Cause from "effect/Cause";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { AsyncResult, Atom } from "effect/reactivity";
+import { useContext, useEffect } from "react";
 
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { useFilesystemReadAccess } from "~/state/filesystem";
@@ -51,8 +52,6 @@ interface ProjectQueryState<A> {
 }
 
 interface ProjectFileQueryState extends ProjectQueryState<ProjectReadFileResult> {
-  /** Re-reads a settled file; a read in flight or not yet started is left alone. */
-  readonly revalidate: () => void;
   readonly readError: ProjectReadFileError | null;
   readonly isNotFile: boolean;
   readonly isFile: boolean;
@@ -256,6 +255,7 @@ export function useProjectFileQuery(
   cwd: string,
   relativePath: string | null,
   enabled = true,
+  options?: { readonly refreshOnOpenAndFocus?: boolean },
 ): ProjectFileQueryState {
   // Read media-like paths too; a failed read is how folders with those names are detected.
   const fileAccess = useFilesystemReadAccess(environmentId);
@@ -268,9 +268,20 @@ export function useProjectFileQuery(
   const result = useAtomValue(atom);
   const refreshAtom = useAtomRefresh(atom);
   const refresh = () => refreshAtom();
-  const revalidate = () => {
-    if (result._tag !== "Initial" && !result.waiting) refreshAtom();
-  };
+  const registry = useContext(RegistryContext);
+  const refreshOnOpenAndFocus = options?.refreshOnOpenAndFocus === true;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- edits outside styal, such as a git pull, send no event, so re-read when a view opens or the window regains focus
+  useEffect(() => {
+    if (!refreshOnOpenAndFocus) return;
+    // Reads the registry, not the last render, so views sharing a file start one read.
+    const revalidate = () => {
+      const current = registry.get(atom);
+      if (current._tag !== "Initial" && !current.waiting) registry.refresh(atom);
+    };
+    revalidate();
+    window.addEventListener("focus", revalidate);
+    return () => window.removeEventListener("focus", revalidate);
+  }, [atom, registry, refreshOnOpenAndFocus]);
   const readData = AsyncResult.getOrElse(result, () => null);
   const isMissing = readData?.exists === false;
   const optimisticResult = useAtomValue(
@@ -298,6 +309,5 @@ export function useProjectFileQuery(
     // A folder error overrides cached contents retained across failed refreshes.
     isFile: !isNotFile && (data !== null || readError?.failure === "binary_file"),
     refresh,
-    revalidate,
   };
 }
