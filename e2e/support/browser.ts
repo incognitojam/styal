@@ -210,7 +210,7 @@ export async function runPaletteItem(
 
 /**
  * Pairs another environment through Settings → Machines → Add machine,
- * and waits until its machine tab shows a connected route.
+ * and waits until its machine tab shows a connected status.
  */
 export async function addEnvironment(page: Page, pairingUrl: string): Promise<void> {
   allowOrigin(page, new URL(pairingUrl).origin);
@@ -229,7 +229,7 @@ export async function addEnvironment(page: Page, pairingUrl: string): Promise<vo
     .click();
   await page
     .getByRole("tabpanel")
-    .getByText(/· Connected(?: ·|$)/)
+    .getByText(/\bConnected\b/)
     .waitFor({ timeout: 60_000 });
 }
 
