@@ -1,3 +1,7 @@
+import { ORCHESTRATION_V2_WS_METHODS, type CoordinatorReportReference } from "@t3tools/contracts";
+import type { Atom } from "effect/reactivity";
+import type * as EnvironmentRegistry from "./connection/registry.ts";
+import { createEnvironmentRpcCommand } from "./state/runtime.ts";
 import type { CoordinatorReport } from "@t3tools/contracts";
 
 type Reference = { readonly messageId: string; readonly key: string; readonly version: number };
@@ -53,4 +57,23 @@ export function formatReportAnswer(
   text: string,
 ) {
   return `[${report.title}, version ${report.version}] ${text}`;
+}
+
+export type ReportReply = { ref: typeof CoordinatorReportReference.Type; title: string };
+
+export function waitingCoordinatorReports<M extends Message & { readonly createdAt: string }>(
+  reports: Readonly<ReturnType<typeof coordinatorReports<M>>>,
+) {
+  return reports
+    .filter((report) => report.state === "open")
+    .sort((a, b) => a.message.createdAt.localeCompare(b.message.createdAt));
+}
+
+export function createDismissCoordinatorReportCommand<R, E>(
+  runtime: Atom.AtomRuntime<EnvironmentRegistry.EnvironmentRegistry | R, E>,
+) {
+  return createEnvironmentRpcCommand(runtime, {
+    label: "thread:report:dismiss",
+    tag: ORCHESTRATION_V2_WS_METHODS.dismissReport,
+  });
 }

@@ -1046,6 +1046,9 @@ function ThreadRouteContent(
           environmentLabel={selectedEnvironmentConnection?.environmentLabel ?? null}
           feedbackSubmissions={composer.feedbackSubmissions}
           onDismissFeedback={composer.dismissFeedback}
+          reports={composer.reports}
+          reportReply={composer.reportReply}
+          onReportReply={composer.onReportReply}
           selectedThreadFeed={composer.selectedThreadFeed}
           turnUsageByTurnId={turnSummaries}
           pendingHandoff={composer.pendingHandoff}
