@@ -163,6 +163,7 @@ export interface ThreadFeedMessage {
   readonly scheduledTaskId?: ScheduledTaskId;
   readonly senderThreadId?: ThreadId;
   readonly idleCompaction?: import("@t3tools/contracts").OrchestrationV2IdleCompaction;
+  readonly report?: import("@t3tools/contracts").CoordinatorReport;
   readonly visibility: OrchestrationV2ProjectedTurnItem["visibility"];
   readonly sourceThreadId: ThreadId;
   readonly createdAt: string;
@@ -1308,6 +1309,7 @@ function deriveThreadFeedRunFolds(
             entry.id !== answerBeforeMemoryNote &&
             entry.type !== "html-render" &&
             entry.type !== "mcp-app" &&
+            !(entry.type === "message" && entry.message.report !== undefined) &&
             !(entry.type === "activity-group" && isContextCompactionActivityGroup(entry)) &&
             !(
               entry.type === "activity-group" &&
@@ -2393,7 +2395,9 @@ export function buildThreadFeed(
                 ...(item.senderThreadId ? { senderThreadId: item.senderThreadId } : {}),
                 ...(item.idleCompaction ? { idleCompaction: item.idleCompaction } : {}),
               }
-            : {}),
+            : item.report
+              ? { report: item.report }
+              : {}),
           visibility: row.visibility,
           sourceThreadId: row.sourceThreadId,
           createdAt,
