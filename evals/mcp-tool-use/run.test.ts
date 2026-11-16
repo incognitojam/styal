@@ -88,6 +88,86 @@ it("matches shellMust, not shellMustNot, against a command's argv lists as a com
   assert.deepEqual(failed({ shellMustNot: ["\\bplaywright\\s+test\\b"] }, run), []);
 });
 
+it("grades the regenerable-cleanup case on written text only, by every write route", () => {
+  const line = NodeFS.readFileSync(new URL("./cases/agent-guides.ndjson", import.meta.url), "utf8")
+    .split("\n")
+    .find((candidate) => candidate.includes('"id": "regenerable-cleanup-uses-worktree-cleanup"'));
+  const { textMust: _, ...expect } = decodeCase(JSON.parse(line ?? "{}")).expect;
+  const run = (...calls: ReadonlyArray<readonly [string, unknown]>): SampleRun => ({
+    calls: calls.map(([name, input]) => ({
+      step: 0,
+      tool: normalizeToolName(name),
+      input: normalizeToolInput(name, input),
+    })),
+    text: "",
+    stopReason: "end_turn",
+  });
+  const missing = "writesMust /worktreeCleanup[^\\w=]{0,4}(?::|\\+?=(?!=))\\s*\\[/";
+  const settle = "writesMustNot /runOnSettle[^\\w=]{0,4}(?::|=(?!=))\\s*[Tt]rue/";
+  const python = (body: string) => ({
+    cmd: `python3 - <<'EOF'\nimport json\nd = json.load(open('styal.json'))\n${body}\njson.dump(d, open('styal.json', 'w'), indent=2)\nEOF`,
+  });
+  const cases: ReadonlyArray<readonly [string, SampleRun, ReadonlyArray<string>]> = [
+    ["Write", run(["Write", { content: '{ "worktreeCleanup": ["dist"] }' }]), []],
+    ["Edit", run(["Edit", { new_string: '"worktreeCleanup": ["dist"],' }]), []],
+    [
+      "patch +",
+      run(["apply_patch", '*** Update File: styal.json\n+  "worktreeCleanup": ["dist"],']),
+      [],
+    ],
+    [
+      "patch -",
+      run(["apply_patch", '*** Update File: styal.json\n-  "worktreeCleanup": ["dist"],']),
+      [missing],
+    ],
+    [
+      "heredoc",
+      run([
+        "exec_command",
+        { cmd: `cat > styal.json <<'EOF'\n{ "worktreeCleanup": ["dist"] }\nEOF` },
+      ]),
+      [],
+    ],
+    [
+      "sed -i",
+      run([
+        "Bash",
+        { command: `sed -i 's/"actions"/"worktreeCleanup": ["dist"], "actions"/' styal.json` },
+      ]),
+      [],
+    ],
+    [
+      "grep",
+      run(["Bash", { command: `grep -F '"worktreeCleanup": ["dist"]' styal.json` }]),
+      [missing],
+    ],
+    ["python", run(["exec_command", python("d['worktreeCleanup'] = ['dist']")]), []],
+    [
+      "python settle",
+      run([
+        "exec_command",
+        python("d['worktreeCleanup'] = ['dist']\nd['actions'][-1]['runOnSettle'] = True"),
+      ]),
+      [settle],
+    ],
+    [
+      "grep settle",
+      run(
+        ["Edit", { new_string: '"worktreeCleanup": ["dist"],' }],
+        ["Bash", { command: `grep -n '"runOnSettle": true' styal.json` }],
+      ),
+      [],
+    ],
+    [
+      "Edit settle",
+      run(["Edit", { new_string: '"command": "rm -rf dist", "runOnSettle": true' }]),
+      [missing, settle],
+    ],
+  ];
+  for (const [name, sample, failures] of cases)
+    assert.deepEqual(failed(expect, sample), failures, name);
+});
+
 it("accepts any tool listed as an alternative", () => {
   const expect = { calls: [{ tool: "link_pull_request|watch_pull_request" }] };
   const run = (tool: string): SampleRun => ({
