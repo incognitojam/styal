@@ -4,7 +4,7 @@ name: Agent context comment
 # agent-context-increase label. The gate lives there; this workflow never decides pass or fail.
 on:
   pull_request_target:
-    types: [opened, reopened, synchronize, labeled, unlabeled]
+    types: [opened, reopened, edited, synchronize, labeled, unlabeled]
 
 permissions:
   contents: read
@@ -25,7 +25,7 @@ jobs:
       group: agent-context-comment-${{ github.event.pull_request.number }}
       cancel-in-progress: true
     steps:
-      # This pull_request_target job runs main's report and reads the pull request's two
+      # This pull_request_target job runs the default branch's report and reads the pull request's two
       # measurement files only as git data. Do not install dependencies or run PR code here.
       - name: Checkout trusted report
         uses: actions/checkout@v7
@@ -33,9 +33,10 @@ jobs:
           ref: ${{ github.event.repository.default_branch }}
           sparse-checkout: .github/scripts
 
-      - name: Read measurements from main and the pull request
+      - name: Read measurements from the base branch and the pull request
         id: read
         env:
+          BASE_REF: ${{ github.base_ref }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           directory=apps/server/src/provider
@@ -47,13 +48,13 @@ jobs:
               fi
             done
           }
-          git fetch --quiet --no-tags --depth=1 origin main
-          main_sha=$(git rev-parse FETCH_HEAD)
-          extract main "$main_sha"
+          git fetch --quiet --no-tags --depth=1 origin "refs/heads/$BASE_REF"
+          base_sha=$(git rev-parse FETCH_HEAD)
+          extract base "$base_sha"
           git fetch --quiet --no-tags --depth=1 origin "refs/pull/${PR_NUMBER}/head"
           pr_sha=$(git rev-parse FETCH_HEAD)
           extract pr "$pr_sha"
-          echo "main_sha=$main_sha" >> "$GITHUB_OUTPUT"
+          echo "base_sha=$base_sha" >> "$GITHUB_OUTPUT"
           echo "pr_sha=$pr_sha" >> "$GITHUB_OUTPUT"
 
       - name: Test trusted reporter
@@ -63,7 +64,7 @@ jobs:
         uses: actions/github-script@v9
         env:
           AGENT_CONTEXT_DIR: ${{ runner.temp }}/agent-context
-          MAIN_SHA: ${{ steps.read.outputs.main_sha }}
+          BASE_SHA: ${{ steps.read.outputs.base_sha }}
           PR_SHA: ${{ steps.read.outputs.pr_sha }}
         with:
           script: |

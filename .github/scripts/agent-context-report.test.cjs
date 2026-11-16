@@ -18,19 +18,26 @@ const GROWN_TOOLS = { ...MAIN_TOOLS, read_styal_guide: 378 };
 function writeSide(root, side, budget, tools) {
   const directory = path.join(root, side);
   fs.mkdirSync(directory, { recursive: true });
-  fs.writeFileSync(path.join(directory, "agentContextBudget.json"), JSON.stringify(budget));
+  if (budget !== null) {
+    fs.writeFileSync(path.join(directory, "agentContextBudget.json"), JSON.stringify(budget));
+  }
   if (tools) {
     fs.writeFileSync(path.join(directory, "agentContextTools.json"), JSON.stringify(tools));
   }
 }
 
-async function runPublish(t, { pr, main = {}, comments = [], labels = [] }) {
+async function runPublish(t, { pr, base = {}, baseRef = "main", comments = [], labels = [] }) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "agent-context-report-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  writeSide(root, "main", main.budget ?? MAIN_BUDGET, main.tools ?? MAIN_TOOLS);
+  writeSide(
+    root,
+    "base",
+    base.budget === undefined ? MAIN_BUDGET : base.budget,
+    base.tools ?? MAIN_TOOLS,
+  );
   writeSide(root, "pr", pr.budget, pr.tools);
   process.env.AGENT_CONTEXT_DIR = root;
-  process.env.MAIN_SHA = "a".repeat(40);
+  process.env.BASE_SHA = "a".repeat(40);
   process.env.PR_SHA = "b".repeat(40);
 
   const calls = { create: [], update: [] };
@@ -48,7 +55,13 @@ async function runPublish(t, { pr, main = {}, comments = [], labels = [] }) {
     github,
     context: {
       repo: { owner: "incognitojam", repo: "styal" },
-      payload: { pull_request: { number: 7, labels: labels.map((name) => ({ name })) } },
+      payload: {
+        pull_request: {
+          number: 7,
+          base: { ref: baseRef },
+          labels: labels.map((name) => ({ name })),
+        },
+      },
     },
     core: { summary: { addRaw: () => ({ write: async () => {} }) }, info: () => undefined },
   });
@@ -75,18 +88,23 @@ test("names an added tool and asks for the label", async (t) => {
   assert.match(body, /\| `read_styal_guide` \| added \| — \| 378 \| \+378 \|/);
   assert.doesNotMatch(body, /device_list/);
   assert.doesNotMatch(body, /does not match the budget file/);
+  assert.match(body, /compared to `main`/);
 });
 
 test("sorts added, changed and removed tools by their change", () => {
   const body = renderComment({
-    mainBudget: new Map(Object.entries(MAIN_BUDGET)),
+    baseBudget: new Map(Object.entries(MAIN_BUDGET)),
     prBudget: new Map(Object.entries({ ...MAIN_BUDGET, mcpToolListJsonBytes: 51_068 + 110 })),
-    mainTools: new Map(Object.entries({ removed_tool: 40, resized_tool: 100, same_tool: 5 })),
+    baseTools: new Map(Object.entries({ removed_tool: 40, resized_tool: 100, same_tool: 5 })),
     prTools: new Map(Object.entries({ added_tool: 130, resized_tool: 120, same_tool: 5 })),
     accepted: false,
-    mainSha: "a".repeat(40),
+    baseRef: "reports/base",
+    baseSha: "a".repeat(40),
     prSha: "b".repeat(40),
   });
+  assert.match(body, /compared to `reports\/base`/);
+  assert.match(body, /\| Context \| `reports\/base` \|/);
+  assert.match(body, /\| Tool \| Status \| `reports\/base` \|/);
   const rows = body.split("\n").filter((line) => /^\| `/.test(line));
   assert.deepEqual(rows, [
     "| `added_tool` | added | — | 130 | +130 |",
@@ -114,21 +132,27 @@ test("says when the label accepted the growth", async (t) => {
   assert.doesNotMatch(create[0].body, /fails until/);
 });
 
-test("posts nothing when context did not grow and no comment exists", async (t) => {
-  const { create, update } = await runPublish(t, {
-    pr: { budget: { ...MAIN_BUDGET, mcpToolListJsonBytes: 51_000 }, tools: MAIN_TOOLS },
-  });
-  assert.deepEqual([create.length, update.length], [0, 0]);
+test("posts nothing when context did not grow or the base has no budget", async (t) => {
+  for (const budget of [GROWN_BUDGET, null]) {
+    const { create, update } = await runPublish(t, {
+      base: { budget, tools: GROWN_TOOLS },
+      baseRef: "reports/base",
+      pr: { budget: GROWN_BUDGET, tools: GROWN_TOOLS },
+    });
+    assert.deepEqual([create.length, update.length], [0, 0]);
+  }
 });
 
 test("updates the existing comment when the growth goes away", async (t) => {
   const { create, update } = await runPublish(t, {
-    pr: { budget: MAIN_BUDGET, tools: MAIN_TOOLS },
+    pr: { budget: GROWN_BUDGET, tools: GROWN_TOOLS },
+    base: { budget: GROWN_BUDGET, tools: GROWN_TOOLS },
+    baseRef: "reports/base",
     comments: [bot("<!-- agent-context-budget -->\nold")],
   });
   assert.equal(create.length, 0);
   assert.equal(update[0].comment_id, 99);
-  assert.match(update[0].body, /no longer larger than `main`/);
+  assert.match(update[0].body, /no longer larger than `reports\/base`/);
   assert.doesNotMatch(update[0].body, /<!-- styal-report:quiet -->/);
   const healthy = await runPublish(t, {
     pr: { budget: MAIN_BUDGET, tools: MAIN_TOOLS },
