@@ -116,7 +116,7 @@ export function ThreadMarkdownImageView(props: {
   const [failure, setFailure] = useState({ uri: props.uri, failed: false });
   if (failure.uri !== props.uri) setFailure({ uri: props.uri, failed: false });
 
-  const sourceSize = decodedSize ?? props.knownSize ?? null;
+  const sourceSize = props.knownSize ?? decodedSize ?? null;
   const displaySize: MarkdownImageDisplaySize | null =
     sourceSize === null || availableWidth <= 0
       ? null

@@ -50,41 +50,67 @@ import { parse } from "react-native-svg";
 
 import { MarkdownImageAvailableWidthContext, ThreadMarkdownImageView } from "./ThreadMarkdownImage";
 
-it("keeps the frame size when the same image reports a different decoded width", async () => {
-  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-  const container = document.createElement("div");
-  const root = createRoot(container);
-  const frameSize = () =>
-    [...container.querySelectorAll<HTMLElement>("div[data-style]")]
-      .map((element) => JSON.parse(element.dataset.style ?? "null") as Record<string, unknown>)
-      .find((style) => typeof style?.width === "number");
-  try {
-    await act(async () =>
-      root.render(
-        <MarkdownImageAvailableWidthContext value={345}>
-          <ThreadMarkdownImageView
-            uri="https://example.test/hero.png"
-            sourceKey="workspace:hero.png"
-            unavailable={false}
-            alt={null}
-            knownSize={{ width: 1000, height: 585 }}
-            onPressPreview={() => {}}
-          />
-        </MarkdownImageAvailableWidthContext>,
-      ),
-    );
-    // Android reports the bitmap downsampled for the current frame, so the same file
-    // alternates between widths (969 and 970 of 1000) as the frame changes size.
-    await act(async () => harness.loadImage({ source: { width: 970, height: 567 } }));
-    const first = frameSize();
-    expect(first).toBeDefined();
+it.each([
+  {
+    knownSize: { width: 180, height: 360 },
+    decoded: { width: 480, height: 960 },
+    expected: { width: 180, height: 360 },
+  },
+  {
+    knownSize: { width: 320, height: 180 },
+    decoded: { width: 1280, height: 720 },
+    expected: { width: 320, height: 180 },
+  },
+  {
+    knownSize: undefined,
+    decoded: { width: 480, height: 960 },
+    expected: { width: 240, height: 480 },
+  },
+  {
+    knownSize: undefined,
+    decoded: { width: 1280, height: 720 },
+    expected: { width: 345, height: 194.0625 },
+  },
+])(
+  "uses declared or natural dimensions and ignores later downsampled sizes: $expected",
+  async ({ knownSize, decoded, expected }) => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    const frameSize = () =>
+      [...container.querySelectorAll<HTMLElement>("div[data-style]")]
+        .map((element) => JSON.parse(element.dataset.style ?? "null") as Record<string, unknown>)
+        .find((style) => typeof style?.width === "number");
+    try {
+      await act(async () =>
+        root.render(
+          <MarkdownImageAvailableWidthContext value={345}>
+            <ThreadMarkdownImageView
+              uri="https://example.test/hero.png"
+              sourceKey="workspace:hero.png"
+              unavailable={false}
+              alt={null}
+              knownSize={knownSize}
+              onPressPreview={() => {}}
+            />
+          </MarkdownImageAvailableWidthContext>,
+        ),
+      );
+      if (knownSize) expect(frameSize()).toEqual(expected);
+      else expect(frameSize()).toEqual({ width: 345, aspectRatio: 16 / 9 });
+      await act(async () => harness.loadImage({ source: decoded }));
+      const first = frameSize();
+      expect(first).toEqual(expected);
 
-    await act(async () => harness.loadImage({ source: { width: 969, height: 567 } }));
-    expect(frameSize()).toEqual(first);
-  } finally {
-    await act(async () => root.unmount());
-  }
-});
+      await act(async () =>
+        harness.loadImage({ source: { ...decoded, width: decoded.width - 1 } }),
+      );
+      expect(frameSize()).toEqual(first);
+    } finally {
+      await act(async () => root.unmount());
+    }
+  },
+);
 
 it("retries a failed image once its URI comes back through null", async () => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;

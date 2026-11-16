@@ -471,6 +471,28 @@ export function markdownForNativeParsing(markdown: string): string {
   return markdownWithWindowsPathDestinations(markdownWithHtml(markdown));
 }
 
+export function markdownImageDimensions(markdown: string) {
+  const sizes = new Map<string, { width: number; height: number }>();
+  if (!/<img[\s>]/i.test(markdown)) return sizes;
+  const dimension = (value: string | null) =>
+    value !== null && /^\d+(?:\.\d+)?(?:px)?$/i.test(value.trim()) ? Number.parseFloat(value) : NaN;
+  const visit = (node: MarkdownNode) => {
+    if (node.type === "html") {
+      for (const [tag] of markdownHtmlTags(node.value)) {
+        if (!/^<img\b/i.test(tag)) continue;
+        const src = attribute(tag, "src");
+        const width = dimension(attribute(tag, "width"));
+        const height = dimension(attribute(tag, "height"));
+        if (src && Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0)
+          sizes.set(src, { width, height });
+      }
+    }
+    if ("children" in node) node.children.forEach(visit);
+  };
+  visit(parser.parse(markdown));
+  return sizes;
+}
+
 export function parseMarkdownDocument(markdown: string): Root {
   return parser.parse(markdownForNativeParsing(markdown));
 }
