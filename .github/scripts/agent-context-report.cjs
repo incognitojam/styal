@@ -40,10 +40,10 @@ function readTools(directory) {
   return readSizes(directory, "agentContextTools.json", (key) => /^[A-Za-z0-9_.-]+$/.test(key));
 }
 
-// Matches the gate in agent-context-budget.yml: a value counts only if main also has it.
-function hasGrowth(mainBudget, prBudget) {
+// Matches the gate in agent-context-budget.yml: a value counts only if the base also has it.
+function hasGrowth(baseBudget, prBudget) {
   return [...prBudget].some(
-    ([key, value]) => mainBudget.get(key) !== undefined && value > mainBudget.get(key),
+    ([key, value]) => baseBudget.get(key) !== undefined && value > baseBudget.get(key),
   );
 }
 
@@ -56,18 +56,18 @@ function formatSize(value) {
   return value === undefined ? "—" : value.toLocaleString("en-US");
 }
 
-function budgetRows(mainBudget, prBudget) {
-  return [...new Set([...mainBudget.keys(), ...prBudget.keys()])].map((key) => {
-    const before = mainBudget.get(key);
+function budgetRows(baseBudget, prBudget) {
+  return [...new Set([...baseBudget.keys(), ...prBudget.keys()])].map((key) => {
+    const before = baseBudget.get(key);
     const after = prBudget.get(key);
     return `| ${BUDGET_LABELS[key] ?? `\`${key}\``} | ${formatSize(before)} | ${formatSize(after)} | ${formatChange((after ?? 0) - (before ?? 0))} |`;
   });
 }
 
-function changedTools(mainTools, prTools) {
-  return [...new Set([...mainTools.keys(), ...prTools.keys()])]
+function changedTools(baseTools, prTools) {
+  return [...new Set([...baseTools.keys(), ...prTools.keys()])]
     .map((name) => {
-      const before = mainTools.get(name);
+      const before = baseTools.get(name);
       const after = prTools.get(name);
       const status = before === undefined ? "added" : after === undefined ? "removed" : "changed";
       return { name, status, before, after, delta: (after ?? 0) - (before ?? 0) };
@@ -76,17 +76,17 @@ function changedTools(mainTools, prTools) {
     .toSorted((left, right) => right.delta - left.delta || (left.name < right.name ? -1 : 1));
 }
 
-function toolSection({ mainBudget, prBudget, mainTools, prTools }) {
-  const before = mainBudget.get(TOOL_LIST_KEY);
+function toolSection({ baseBudget, prBudget, baseTools, prTools, baseRef }) {
+  const before = baseBudget.get(TOOL_LIST_KEY);
   const after = prBudget.get(TOOL_LIST_KEY);
   if (before === undefined || after === undefined || before === after) return [];
-  if (!mainTools || !prTools) {
+  if (!baseTools || !prTools) {
     return [
       "",
-      "The tools behind the tool list change are not available because `main` or this PR has no readable `apps/server/src/provider/agentContextTools.json`. Rebasing onto `main` and running `vp test run AgentContextBudget -u` adds it.",
+      `The tools behind the tool list change are not available because \`${baseRef}\` or this PR has no readable \`apps/server/src/provider/agentContextTools.json\`. Rebasing onto \`${baseRef}\` and running \`vp test run AgentContextBudget -u\` adds it.`,
     ];
   }
-  const tools = changedTools(mainTools, prTools);
+  const tools = changedTools(baseTools, prTools);
   const total = after - before;
   const listed = tools.reduce((sum, tool) => sum + tool.delta, 0);
   return [
@@ -96,7 +96,7 @@ function toolSection({ mainBudget, prBudget, mainTools, prTools }) {
     ...(tools.length === 0
       ? ["No tool has a size change in `agentContextTools.json`."]
       : [
-          "| Tool | Status | `main` | This PR | Change |",
+          `| Tool | Status | \`${baseRef}\` | This PR | Change |`,
           "| --- | --- | ---: | ---: | ---: |",
           ...tools.map(
             (tool) =>
@@ -112,33 +112,33 @@ function toolSection({ mainBudget, prBudget, mainTools, prTools }) {
   ];
 }
 
-function statusLine(grown, accepted) {
+function statusLine(grown, accepted, baseRef) {
   if (!grown) {
-    return "Agent context is no longer larger than `main`, so this PR does not need the `agent-context-increase` label.";
+    return `Agent context is no longer larger than \`${baseRef}\`, so this PR does not need the \`agent-context-increase\` label.`;
   }
   if (accepted) {
-    return "Agent context is larger than `main`. A maintainer accepted the growth with the `agent-context-increase` label.";
+    return `Agent context grew compared to \`${baseRef}\`. A maintainer accepted the growth with the \`agent-context-increase\` label.`;
   }
-  return "Agent context is larger than `main`. The Agent context budget check fails until a maintainer adds the `agent-context-increase` label or this PR removes the growth.";
+  return `Agent context grew compared to \`${baseRef}\`. The Agent context budget check fails until a maintainer adds the \`agent-context-increase\` label or this PR removes the growth.`;
 }
 
 function renderComment(input) {
-  const { mainBudget, prBudget, accepted, mainSha, prSha } = input;
+  const { baseBudget, prBudget, accepted, baseSha, prSha, baseRef } = input;
   return [
     COMMENT_MARKER,
-    hasGrowth(mainBudget, prBudget) && !accepted ? ATTENTION : OK,
+    hasGrowth(baseBudget, prBudget) && !accepted ? ATTENTION : OK,
     "## Agent context growth",
     "",
-    statusLine(hasGrowth(mainBudget, prBudget), accepted),
+    statusLine(hasGrowth(baseBudget, prBudget), accepted, baseRef),
     "",
     "Agent context is the instructions and MCP tool list styal sends into every user's agent session. Sizes are UTF-8 bytes.",
     "",
-    "| Context | `main` | This PR | Change |",
+    `| Context | \`${baseRef}\` | This PR | Change |`,
     "| --- | ---: | ---: | ---: |",
-    ...budgetRows(mainBudget, prBudget),
+    ...budgetRows(baseBudget, prBudget),
     ...toolSection(input),
     "",
-    `Compared \`main\` at \`${mainSha.slice(0, 7)}\` with this PR at \`${prSha.slice(0, 7)}\`.`,
+    `Compared \`${baseRef}\` at \`${baseSha.slice(0, 7)}\` with this PR at \`${prSha.slice(0, 7)}\`.`,
     "",
   ].join("\n");
 }
@@ -147,10 +147,12 @@ async function publish({ github, context, core }) {
   const { owner, repo } = context.repo;
   const pull = context.payload.pull_request;
   const directory = process.env.AGENT_CONTEXT_DIR;
-  const mainBudget = readBudget(path.join(directory, "main"));
+  const baseBudget = readBudget(path.join(directory, "base"));
   const prBudget = readBudget(path.join(directory, "pr"));
-  if (!mainBudget || !prBudget) {
-    core.info("main or this PR has no readable agent context budget; nothing to report.");
+  if (!baseBudget || !prBudget) {
+    core.info(
+      `${pull.base.ref} or this PR has no readable agent context budget; nothing to report.`,
+    );
     return;
   }
 
@@ -166,20 +168,21 @@ async function publish({ github, context, core }) {
   );
   const body = prepareReport(
     renderComment({
-      mainBudget,
+      baseBudget,
       prBudget,
-      mainTools: readTools(path.join(directory, "main")),
+      baseTools: readTools(path.join(directory, "base")),
       prTools: readTools(path.join(directory, "pr")),
       accepted: pull.labels.some((label) => label.name === INCREASE_LABEL),
-      mainSha: process.env.MAIN_SHA,
+      baseRef: pull.base.ref,
+      baseSha: process.env.BASE_SHA,
       prSha: process.env.PR_SHA,
     }),
     existing?.body,
   );
   await core.summary.addRaw(body).write();
   // A PR that never grew gets no comment. Once one exists, it stays and reports the current state.
-  if (!existing && !hasGrowth(mainBudget, prBudget)) {
-    core.info("Agent context is not larger than main; no comment needed.");
+  if (!existing && !hasGrowth(baseBudget, prBudget)) {
+    core.info(`Agent context is not larger than ${pull.base.ref}; no comment needed.`);
     return;
   }
 
