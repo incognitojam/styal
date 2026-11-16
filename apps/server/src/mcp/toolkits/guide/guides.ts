@@ -65,7 +65,7 @@ run often (dev server, tests, lint, build). Prefer existing scripts over inlined
   first saved action with the role, otherwise the first \`styal.json\` action with the role whose
   command is approved.
 - **Settle** (\`runOnSettle\`): runs in the worktree each time the last open thread in it settles, for
-  example to stop dev servers on the workspace ports or delete files setup cannot recreate. A thread
+  example to stop dev servers on the workspace ports or delete scratch files such as logs. A thread
   settles when someone settles it, or by default after 3 idle days or when its pull request merges or
   closes, never just because a turn ended. Another thread holds the action back if it is unsettled
   and not a subagent, or if it is working, waiting on a request, or has queued work. An idle subagent
@@ -78,10 +78,10 @@ run often (dev server, tests, lint, build). Prefer existing scripts over inlined
   recreate. styal uses a pattern only after a person approves it on each machine in Settings →
   Worktrees → Regenerable files; you can propose patterns in the file but cannot approve them. A
   pattern removed from the file keeps its approval until someone chooses **Forget**. On macOS and
-  Linux an hourly sweep deletes matching paths once every thread in the worktree has settled and
-  been quiet for a day, with no open terminal. It is separate from the settle action, which does
-  not trigger it. The next turn in that worktree reruns the setup action under its normal approval
-  rules; opening a terminal does not.
+  Linux an hourly sweep deletes matching paths once every thread in the worktree has been quiet for
+  a day and has settled (an idle subagent need not), with no open terminal. It is separate from the
+  settle action, which does not trigger it. The next turn in that worktree reruns the setup action
+  under its normal approval rules; opening a terminal does not.
 - Actions run by hand run in the thread's worktree, or the project root for a local thread, using
   the environment's shell. Setup and settle actions run only in a separate worktree, never in a
   local thread or the project's own checkout. Shared actions should work on every OS the team uses.

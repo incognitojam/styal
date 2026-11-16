@@ -88,6 +88,33 @@ it("matches shellMust, not shellMustNot, against a command's argv lists as a com
   assert.deepEqual(failed({ shellMustNot: ["\\bplaywright\\s+test\\b"] }, run), []);
 });
 
+it("grades writesMust and writesMustNot over Write, Edit, a Codex patch and a shell write", () => {
+  const expect = { writesMust: ['"worktreeCleanup"\\s*:'], writesMustNot: ["runOnSettle"] };
+  const run = (name: string, input: unknown): SampleRun => ({
+    calls: [{ step: 0, tool: normalizeToolName(name), input: normalizeToolInput(name, input) }],
+    text: "",
+    stopReason: "end_turn",
+  });
+  const good = '"worktreeCleanup": ["dist"]';
+  const bad = '"runOnSettle": true';
+  for (const [name, input] of [
+    ["Write", (text: string) => ({ file_path: "styal.json", content: text })],
+    ["Edit", (text: string) => ({ file_path: "styal.json", old_string: "{", new_string: text })],
+    ["apply_patch", (text: string) => `*** Update File: styal.json\n+${text}`],
+    ["exec_command", (text: string) => ({ cmd: `cat > styal.json <<'EOF'\n${text}\nEOF` })],
+  ] as const) {
+    assert.deepEqual(failed(expect, run(name, input(good))), [], name);
+    assert.deepEqual(
+      failed(expect, run(name, input(bad))),
+      ['writesMust /"worktreeCleanup"\\s*:/', "writesMustNot /runOnSettle/"],
+      name,
+    );
+  }
+  assert.deepEqual(failed(expect, run("Read", { file_path: "styal.json" })), [
+    'writesMust /"worktreeCleanup"\\s*:/',
+  ]);
+});
+
 it("accepts any tool listed as an alternative", () => {
   const expect = { calls: [{ tool: "link_pull_request|watch_pull_request" }] };
   const run = (tool: string): SampleRun => ({
