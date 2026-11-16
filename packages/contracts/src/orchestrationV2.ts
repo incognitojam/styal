@@ -512,6 +512,16 @@ export const OrchestrationV2AppThread = Schema.Struct({
   runtimeMode: RuntimeMode,
   interactionMode: ProviderInteractionMode,
   branch: Schema.NullOr(TrimmedNonEmptyString),
+  branchTurnContext: Schema.optional(
+    Schema.NullOr(
+      Schema.Struct({
+        id: Schema.String,
+        from: Schema.NullOr(TrimmedNonEmptyString),
+        text: Schema.String,
+        occurredAt: IsoDateTime,
+      }),
+    ),
+  ),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
   linkedPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
   pullRequests: Schema.optional(Schema.Array(ThreadPullRequestLink)),

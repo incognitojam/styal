@@ -1032,6 +1032,9 @@ export const layer: Layer.Layer<
       const nextTurnContext = (projection.thread.pullRequests ?? [])
         .filter((link) => link.source !== "stack-dismissed")
         .flatMap((link) => (link.turnContext === undefined ? [] : [link.turnContext]))
+        .concat(
+          projection.thread.branchTurnContext == null ? [] : [projection.thread.branchTurnContext],
+        )
         .filter((note) => !deliveredContextIds.has(note.id))
         .sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
       let inlineContextIds: ReadonlyArray<string> = [];

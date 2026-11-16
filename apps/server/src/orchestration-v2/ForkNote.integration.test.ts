@@ -1,3 +1,6 @@
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as ChildProcess from "effect/process/ChildProcess";
+import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import { assert, it } from "@effect/vitest";
 import {
   CommandId,
@@ -152,14 +155,17 @@ const contextDelivery = (driverName: "codex" | "claudeAgent") =>
          * start returned before the provider answered would; "refused" fails
          * the start itself after the provider turn was recorded.
          */
+        let sendOrdinal = 0;
         const send = (
           threadId: ThreadId,
           text: string,
           outcome: "completed" | "failed" | "refused" = "completed",
           sender: "user" | "agent" = "user",
           creationSource: "web" | "mcp" | "provider" = sender === "agent" ? "mcp" : "web",
+          duringTurn: Effect.Effect<void> = Effect.void,
         ) =>
           Effect.gen(function* () {
+            const ordinal = ++sendOrdinal;
             const before = started.length;
             if (outcome === "refused") refuse.add(text);
             const recorded = yield* orchestrator.streamDomainEvents.pipe(
@@ -175,9 +181,9 @@ const contextDelivery = (driverName: "codex" | "claudeAgent") =>
             );
             yield* orchestrator.dispatch({
               type: "message.dispatch",
-              commandId: CommandId.make(`send:${threadId}:${text}`),
+              commandId: CommandId.make(`send:${threadId}:${ordinal}`),
               threadId,
-              messageId: MessageId.make(`message:${threadId}:${text}`),
+              messageId: MessageId.make(`message:${threadId}:${ordinal}`),
               text,
               attachments: [],
               dispatchMode: { type: "start_immediately" },
@@ -190,6 +196,7 @@ const contextDelivery = (driverName: "codex" | "claudeAgent") =>
             yield* Fiber.join(drained);
             assert.equal(started.length, before + 1, `"${text}" starts one provider turn`);
             const turn = started.at(-1)!;
+            yield* duringTurn;
             if (outcome !== "refused") {
               const projection = yield* orchestrator.getThreadProjection(threadId);
               const providerTurn = projection.providerTurns.find(
@@ -261,6 +268,70 @@ const contextDelivery = (driverName: "codex" | "claudeAgent") =>
         });
         const source = yield* send(sourceThreadId, "Start the background check");
         assert.notInclude(source.text, FORK_NOTE);
+        let branchOrdinal = 0;
+        const branch = (name: string) =>
+          Effect.gen(function* () {
+            const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+            assert.equal(
+              Number(
+                yield* spawner.exitCode(
+                  ChildProcess.make("git", ["checkout", "-B", name], { cwd }),
+                ),
+              ),
+              0,
+            );
+            yield* orchestrator
+              .dispatch({
+                type: "thread.metadata.update",
+                commandId: CommandId.make(`branch:${++branchOrdinal}`),
+                threadId: sourceThreadId,
+                branch: name,
+              })
+              .pipe(Effect.asVoid);
+          }).pipe(Effect.provide(NodeServices.layer), Effect.orDie);
+        yield* branch("styal/foo");
+        yield* send(sourceThreadId, "Establish branch");
+        const beforeBranch = yield* orchestrator.getThreadProjection(sourceThreadId);
+        yield* branch("styal/intermediate");
+        yield* branch("styal/bar");
+        const afterBranch = yield* orchestrator.getThreadProjection(sourceThreadId);
+        assert.equal(afterBranch.runs.length, beforeBranch.runs.length);
+        assert.deepEqual(afterBranch.runs, beforeBranch.runs);
+        assert.notInclude((yield* send(sourceThreadId, "/compact")).text, "branch changed");
+        assert.notInclude(
+          (yield* send(sourceThreadId, "/goal branch check")).text,
+          "branch changed",
+        );
+        if (driverName === "claudeAgent") {
+          assert.notInclude(
+            (yield* send(sourceThreadId, "Branch background", "completed", "agent", "provider"))
+              .text,
+            "branch changed",
+          );
+        }
+        assert.include(
+          (yield* send(sourceThreadId, "Check branch")).text,
+          "Since your last turn: this thread's branch changed from `styal/foo` to `styal/bar`.",
+        );
+        assert.notInclude(
+          (yield* send(sourceThreadId, "After branch delivery")).text,
+          "branch changed",
+        );
+        yield* send(
+          sourceThreadId,
+          "Agent changes branch",
+          "completed",
+          "user",
+          "web",
+          branch("styal/agent"),
+        );
+        assert.notInclude(
+          (yield* send(sourceThreadId, "After agent change")).text,
+          "branch changed",
+        );
+        yield* branch("styal/away");
+        yield* branch("styal/agent");
+        assert.notInclude((yield* send(sourceThreadId, "After returning")).text, "branch changed");
         const key = { host: "github.com", repository: "acme/app", number: 1484 };
         yield* orchestrator.dispatch({
           type: "thread.pull-request.link",
@@ -439,6 +510,6 @@ const contextDelivery = (driverName: "codex" | "claudeAgent") =>
   );
 
 it.effect.each(["codex", "claudeAgent"] as const)(
-  "delivers fork and linked PR context on prompted %s turns",
+  "delivers fork, branch and linked PR context on prompted %s turns",
   contextDelivery,
 );
