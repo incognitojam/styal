@@ -1,3 +1,4 @@
+import { CoordinatorReportsContext } from "./CoordinatorReports";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import { type ComponentProps, useLayoutEffect } from "react";
 import { useIncrementalTimelineEntries } from "../../hooks/useIncrementalTimelineEntries";
@@ -18,6 +19,7 @@ import { MessagesTimeline } from "./MessagesTimeline";
  * assistant text reaches only its own row, through useAssistantMessageText.
  */
 export function ThreadTimeline({
+  coordinatorReports = null,
   threadDetailRef,
   entriesInput,
   draftEntries,
@@ -26,6 +28,7 @@ export function ThreadTimeline({
   detailLoading,
   ...timelineProps
 }: Omit<ComponentProps<typeof MessagesTimeline>, "timelineEntries"> & {
+  coordinatorReports?: React.ContextType<typeof CoordinatorReportsContext>;
   /** Null until the thread's detail may load; see resolveThreadDetailRef. */
   threadDetailRef: ScopedThreadRef | null;
   entriesInput: Omit<TimelineEntriesInput, "visibleTurnItems">;
@@ -54,5 +57,9 @@ export function ThreadTimeline({
     }
     rememberReadyThreadTimeline({ threadKey: activeThreadKey, entries });
   }, [activeThreadKey, detailLoading, entries]);
-  return <MessagesTimeline {...timelineProps} timelineEntries={displayedEntries} />;
+  return (
+    <CoordinatorReportsContext value={coordinatorReports}>
+      <MessagesTimeline {...timelineProps} timelineEntries={displayedEntries} />
+    </CoordinatorReportsContext>
+  );
 }

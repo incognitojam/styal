@@ -53,6 +53,7 @@
   "t3_project_read": 226,
   "t3_project_update": 1751,
   "t3_queue": 867,
+  "t3_report": 610,
   "t3_thread_configure": 486,
   "t3_thread_interrupt": 447,
   "t3_thread_launch": 2689,

@@ -1022,3 +1022,30 @@ it.effect(
     });
   },
 );
+
+it.effect("disabled reports refuse dismissal and posting before orchestration", () => {
+  const dispatched: string[] = [];
+  return Effect.gen(function* () {
+    const threads = yield* ThreadManagementService.ThreadManagementService;
+    const common = {
+      commandId: CommandId.make("report:disabled"),
+      threadId: ThreadId.make("thread:reports"),
+      messageId: MessageId.make("report:one"),
+      key: "pr:1",
+    };
+    for (const command of [
+      { ...common, type: "report.dismiss" as const, version: 1 },
+      { ...common, type: "report.post" as const, title: "Release", body: "Ready" },
+    ]) {
+      const error = yield* threads.dispatch(command).pipe(Effect.flip);
+      assert.equal(error._tag, "OrchestratorDispatchError");
+    }
+    assert.deepEqual(dispatched, []);
+  }).pipe(
+    Effect.provide(
+      layerDispatchChokepointTest(ServerSettings.layerTest({ coordinatorReportsEnabled: false }))(
+        dispatched,
+      ),
+    ),
+  );
+});

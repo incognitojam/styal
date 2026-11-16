@@ -252,6 +252,29 @@ const harness = <A, E>(
         openSession: (input) =>
           Effect.gen(function* () {
             const now = yield* DateTime.now;
+            const startTurn = (turn: ProviderAdapter.ProviderAdapterV2TurnInput) =>
+              Effect.gen(function* () {
+                started.push(turn);
+                yield* Queue.offer(events, {
+                  type: "provider_turn.updated",
+                  driver,
+                  providerTurn: {
+                    id: ProviderTurnId.make(`provider-turn:${turn.attemptId}`),
+                    providerThreadId: turn.providerThread.id,
+                    nodeId: turn.rootNodeId,
+                    runAttemptId: turn.attemptId,
+                    nativeTurnRef: {
+                      driver,
+                      nativeId: `native:${turn.attemptId}`,
+                      strength: "strong",
+                    },
+                    ordinal: turn.providerTurnOrdinal,
+                    status: "running",
+                    startedAt: now,
+                    completedAt: null,
+                  },
+                });
+              });
             return {
               instanceId,
               driver,
@@ -276,29 +299,8 @@ const harness = <A, E>(
                 }),
               resumeThread: ({ providerThread }) => Effect.succeed(providerThread),
               forkThread: () => Effect.die("unused"),
-              startTurn: (turn) =>
-                Effect.gen(function* () {
-                  started.push(turn);
-                  yield* Queue.offer(events, {
-                    type: "provider_turn.updated",
-                    driver,
-                    providerTurn: {
-                      id: ProviderTurnId.make(`provider-turn:${turn.attemptId}`),
-                      providerThreadId: turn.providerThread.id,
-                      nodeId: turn.rootNodeId,
-                      runAttemptId: turn.attemptId,
-                      nativeTurnRef: {
-                        driver,
-                        nativeId: `native:${turn.attemptId}`,
-                        strength: "strong",
-                      },
-                      ordinal: turn.providerTurnOrdinal,
-                      status: "running",
-                      startedAt: now,
-                      completedAt: null,
-                    },
-                  });
-                }),
+              startTurn,
+              compactThread: startTurn,
               steerTurn: () => Effect.die("unused"),
               interruptTurn: () => Effect.void,
               respondToRuntimeRequest: () => Effect.void,
@@ -473,4 +475,105 @@ it.effect("a run that already sent its own report does not report its result aga
       assert.equal((yield* reports()).length, 0);
     }),
   ),
+);
+
+it.effect(
+  "coordinator reports persist versions, timeline order, and one prompted dismissal note",
+  () =>
+    harness("coordinator-reports", ({ orchestrator, send, endTurn }) =>
+      Effect.gen(function* () {
+        const turn = yield* send(launcherId, "Review the release");
+        const post = (id: string, key = "pr:214") =>
+          orchestrator.dispatch({
+            type: "report.post",
+            commandId: CommandId.make(id),
+            threadId: launcherId,
+            messageId: MessageId.make(id),
+            key,
+            title: "Release",
+            body: "Tests passed. Merge the release.",
+            question: "Merge?",
+            answers: ["Merge", "Wait"],
+          });
+        yield* post("report:first");
+        yield* post("report:second");
+        yield* post("report:third");
+        yield* post("report:other", "issue:9");
+        const projection = yield* orchestrator.getThreadProjection(launcherId);
+        const reports = projection.messages.filter((message) => message.report);
+        assert.deepEqual(
+          reports.map((message) => message.report!.version),
+          [1, 2, 3, 1],
+        );
+        assert.isTrue(
+          reports.every((message) => message.role === "assistant" && message.runId === turn.runId),
+        );
+        const items = projection.turnItems.filter((item) => item.type === "assistant_message");
+        const prompt = projection.turnItems.find(
+          (item) => item.type === "user_message" && item.runId === turn.runId,
+        );
+        assert.isDefined(prompt);
+        assert.isAbove(items[0]!.ordinal, prompt!.ordinal);
+
+        assert.deepEqual(
+          items.map((item) => (item.type === "assistant_message" ? item.messageId : null)),
+          reports.map((message) => message.id),
+        );
+        assert.isTrue(
+          items.every((item, index) => index === 0 || item.ordinal > items[index - 1]!.ordinal),
+        );
+        yield* orchestrator.dispatch({
+          type: "report.dismiss",
+          commandId: CommandId.make("dismiss:third"),
+          threadId: launcherId,
+          messageId: MessageId.make("report:third"),
+          key: "pr:214",
+          version: 3,
+        });
+        yield* endTurn(turn, "completed");
+        const compact = yield* send(launcherId, "/compact");
+        assert.notInclude(compact.message.text, "You dismissed the report");
+        yield* endTurn(compact, "completed");
+        const next = yield* send(launcherId, "Continue");
+        assert.include(next.message.text, 'You dismissed the report "Release" (version 3).');
+        yield* endTurn(next, "completed");
+        const last = yield* send(launcherId, "Continue again");
+        assert.notInclude(last.message.text, "You dismissed the report");
+        const reportAnswer = {
+          messageId: MessageId.make("report:third"),
+          key: "pr:214",
+          version: 3,
+        };
+        yield* orchestrator.dispatch({
+          type: "message.dispatch",
+          commandId: CommandId.make("report:answer"),
+          threadId: launcherId,
+          messageId: MessageId.make("answer:third"),
+          text: "[Release, version 3] Merge",
+          reportAnswer,
+          attachments: [],
+          dispatchMode: { type: "queue_after_active" },
+          createdBy: "user",
+          creationSource: "web",
+        });
+        const window = yield* orchestrator.getThreadSnapshotWindow(launcherId, {
+          rowLimit: 1,
+          userTurnLimit: 1,
+        });
+        assert.deepEqual(
+          window.projection.messages
+            .filter((message) => message.report)
+            .map((message) => message.id)
+            .toSorted(),
+          reports.map((message) => message.id).toSorted(),
+        );
+        const answered = yield* orchestrator.getThreadProjection(launcherId);
+        assert.deepEqual(
+          answered.messages.find((message) => message.id === "answer:third")?.reportAnswer,
+          reportAnswer,
+        );
+
+        yield* endTurn(last, "completed");
+      }),
+    ),
 );

@@ -1368,6 +1368,7 @@ export const ServerSettings = Schema.Struct({
    * session is prepared, like `enableAgentDeviceAccess`.
    */
   enableAgentHardwareAccess: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  coordinatorReportsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   /** Network devices on this environment; definitions live in project repositories. */
   hardwareDevices: HardwareDeviceConfigs.pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   worktreeCleanupApprovals: WorktreeCleanupApprovals.pipe(
@@ -1800,6 +1801,7 @@ export const ServerSettingsPatch = Schema.Struct({
   simulatorMemoryMode: Schema.optionalKey(SimulatorMemoryMode),
   deviceHosts: Schema.optionalKey(SshDeviceHostConfigs),
   environmentDeviceHosts: Schema.optionalKey(EnvironmentDeviceHostConfigs),
+  coordinatorReportsEnabled: Schema.optionalKey(Schema.Boolean),
   enableAgentHardwareAccess: Schema.optionalKey(Schema.Boolean),
   hardwareDevices: Schema.optionalKey(HardwareDeviceConfigs),
   easDeviceHosts: Schema.optionalKey(EasDeviceHostConfigs),

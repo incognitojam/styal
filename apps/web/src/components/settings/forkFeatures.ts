@@ -5,6 +5,7 @@
  * settings; retiring the ledger entry fails a test until the badge goes.
  */
 export const SETTINGS_FORK_FEATURES = [
+  "coordinator-reports",
   "desktop-discord-rich-presence",
   "device-environment-hosts",
   "device-idle-shutdown",
@@ -33,6 +34,7 @@ export type SettingsForkFeature = (typeof SETTINGS_FORK_FEATURES)[number];
  * row refines an upstream setting or sits under a badged one.
  */
 export const SETTINGS_BADGED: Readonly<Record<string, SettingsForkFeature>> = {
+  "coordinator-reports": "coordinator-reports",
   "worktree-regenerable-files": "worktree-declared-cleanup",
   "agent-hardware-access": "hardware-leases",
   "discord-rich-presence": "desktop-discord-rich-presence",

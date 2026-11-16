@@ -3801,7 +3801,9 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                 SELECT payload_json FROM orchestration_v2_projection_messages AS message
                 WHERE message.thread_id = ${threadId}
                   AND (
-                    message.message_id IN (
+                    json_extract(message.payload_json, '$.report') IS NOT NULL
+                    OR json_extract(message.payload_json, '$.reportAnswer') IS NOT NULL
+                    OR message.message_id IN (
                       SELECT value FROM json_each(${cohortMessageIds})
                     )
                     OR message.run_id IN (

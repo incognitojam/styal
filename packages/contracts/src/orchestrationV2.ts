@@ -94,6 +94,35 @@ import {
 } from "./providerRuntime.ts";
 import { ThreadTokenUsageSnapshot } from "./providerRuntime.ts";
 
+export const CoordinatorReportReference = Schema.Struct({
+  messageId: MessageId,
+  key: TrimmedNonEmptyString.check(Schema.isMaxLength(80)),
+  version: PositiveInt,
+});
+export const CoordinatorReportInput = Schema.Struct({
+  key: CoordinatorReportReference.fields.key,
+  title: TrimmedNonEmptyString.check(Schema.isMaxLength(160)),
+  body: TrimmedNonEmptyString.check(Schema.isMaxLength(100000)),
+  question: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(1000))),
+  answers: Schema.optional(
+    Schema.Array(TrimmedNonEmptyString.check(Schema.isMaxLength(80))).check(Schema.isMaxLength(4)),
+  ),
+});
+export const CoordinatorReport = Schema.Struct({
+  key: CoordinatorReportInput.fields.key,
+  title: CoordinatorReportInput.fields.title,
+  version: PositiveInt,
+  question: CoordinatorReportInput.fields.question,
+  answers: CoordinatorReportInput.fields.answers,
+});
+export type CoordinatorReport = typeof CoordinatorReport.Type;
+export const CoordinatorReportDismissal = Schema.Struct({
+  ...CoordinatorReportReference.fields,
+  id: Schema.String,
+  occurredAt: IsoDateTime,
+  text: Schema.String,
+});
+
 export const OrchestrationV2Actor = Schema.Literals(["user", "agent", "system"]);
 export type OrchestrationV2Actor = typeof OrchestrationV2Actor.Type;
 
@@ -524,6 +553,7 @@ export const OrchestrationV2AppThread = Schema.Struct({
   ),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
   linkedPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
+  reportDismissals: Schema.optional(Schema.Array(CoordinatorReportDismissal)),
   pullRequests: Schema.optional(Schema.Array(ThreadPullRequestLink)),
   /** CI workflow runs the server watches for this thread's agent. */
   workflowRuns: Schema.optional(Schema.Array(ThreadWorkflowRunWatch)),
@@ -1436,6 +1466,8 @@ export const OrchestrationV2MentionedTimes = Schema.Struct({
 export type OrchestrationV2MentionedTimes = typeof OrchestrationV2MentionedTimes.Type;
 
 export const OrchestrationV2ConversationMessage = Schema.Struct({
+  report: Schema.optional(CoordinatorReport),
+  reportAnswer: Schema.optional(CoordinatorReportReference),
   notification: Schema.optional(OrchestrationV2Notification),
   ...OrchestrationV2CreationFields,
   scheduledTaskId: Schema.optional(ScheduledTaskId),
@@ -1698,6 +1730,7 @@ export const OrchestrationV2ModelSwitch = Schema.Struct({
 export type OrchestrationV2ModelSwitch = typeof OrchestrationV2ModelSwitch.Type;
 
 const OrchestrationV2TurnItemBaseFields = {
+  report: Schema.optional(CoordinatorReport),
   legacyTurnId: Schema.optional(Schema.String),
   legacyActivities: Schema.optional(Schema.Array(OrchestrationV2LegacyActivity)),
   /** Wire-only cursor for collapsed work; persisted items keep their complete history. */
@@ -3464,6 +3497,7 @@ export const OrchestrationV2Command = Schema.Union([
   }),
   Schema.Struct({
     type: Schema.Literal("message.dispatch"),
+    reportAnswer: Schema.optional(CoordinatorReportReference),
     notification: Schema.optional(OrchestrationV2Notification),
     /** Sends this pending guest message; the server uses the guest's text, not `text`. */
     guestMessageId: Schema.optional(GuestMessageId),
@@ -3706,6 +3740,20 @@ export type OrchestrationV2Command = typeof OrchestrationV2Command.Type;
 
 // Excluded from dispatchCommand so only the server can send these.
 const OrchestrationV2InternalCommand = Schema.Union([
+  Schema.Struct({
+    type: Schema.Literal("report.dismiss"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    ...CoordinatorReportReference.fields,
+  }),
+
+  Schema.Struct({
+    type: Schema.Literal("report.post"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    messageId: MessageId,
+    ...CoordinatorReportInput.fields,
+  }),
   // Guest share commands the server issues after checking T3 Connect and the guest token.
   Schema.Struct({
     type: Schema.Literal("thread.guest-share.open"),
@@ -3976,6 +4024,7 @@ export type OrchestrationV2InternalCommand = typeof OrchestrationV2InternalComma
 export type OrchestrationV2ServerCommand = OrchestrationV2Command | OrchestrationV2InternalCommand;
 
 export const ORCHESTRATION_V2_WS_METHODS = {
+  dismissReport: "orchestration.dismissReport",
   dispatchCommand: "orchestration.dispatchCommand",
   getTurnDiff: "orchestration.getTurnDiff",
   getFullThreadDiff: "orchestration.getFullThreadDiff",
@@ -4607,6 +4656,14 @@ export class OrchestrationV2SearchThreadError extends Schema.TaggedError<Orchest
 }
 
 export const OrchestrationV2RpcSchemas = {
+  dismissReport: {
+    input: Schema.Struct({
+      commandId: CommandId,
+      threadId: ThreadId,
+      ...CoordinatorReportReference.fields,
+    }),
+    output: OrchestrationV2DispatchCommandResult,
+  },
   searchThread: {
     input: OrchestrationV2SearchThreadInput,
     output: OrchestrationV2SearchThreadResult,

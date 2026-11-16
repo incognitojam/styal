@@ -172,6 +172,7 @@ interface StartThreadBootstrap {
 export interface StartThreadTurnInput extends ThreadCommandInput {
   readonly manualContinuationOfRunId?: RunId;
   readonly message: {
+    readonly reportAnswer?: typeof import("@t3tools/contracts").CoordinatorReportReference.Type;
     readonly messageId: MessageId;
     readonly role: "user";
     readonly text: string;
@@ -743,6 +744,7 @@ export const startThreadTurn = Effect.fn("EnvironmentCommands.startThreadTurn")(
       initialMessage: {
         messageId: input.message.messageId,
         text: input.message.text,
+        ...(input.message.reportAnswer ? { reportAnswer: input.message.reportAnswer } : {}),
         ...(context ? { context } : {}),
         attachments,
       },
@@ -762,6 +764,7 @@ export const startThreadTurn = Effect.fn("EnvironmentCommands.startThreadTurn")(
         ? {}
         : { manualContinuationOfRunId: input.manualContinuationOfRunId }),
       text: input.message.text,
+      ...(input.message.reportAnswer ? { reportAnswer: input.message.reportAnswer } : {}),
       ...(context ? { context } : {}),
       ...(input.message.idleCompaction === undefined
         ? {}
@@ -787,6 +790,7 @@ export const startThreadTurn = Effect.fn("EnvironmentCommands.startThreadTurn")(
     threadId: input.threadId,
     messageId: input.message.messageId,
     text: input.message.text,
+    ...(input.message.reportAnswer ? { reportAnswer: input.message.reportAnswer } : {}),
     ...(context ? { context } : {}),
     ...(input.message.idleCompaction === undefined
       ? {}

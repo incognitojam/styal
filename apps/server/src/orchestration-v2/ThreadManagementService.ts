@@ -721,6 +721,22 @@ const make = Effect.gen(function* () {
 
   const assertDispatchTargetEnabled = (command: OrchestrationV2ServerCommand) => {
     switch (command.type) {
+      case "report.post":
+      case "report.dismiss":
+        return serverSettings.getSettings.pipe(
+          Effect.orDie,
+          Effect.flatMap((settings) =>
+            settings.coordinatorReportsEnabled
+              ? Effect.void
+              : Effect.fail(
+                  new Orchestrator.OrchestratorDispatchError({
+                    commandId: command.commandId,
+                    commandType: command.type,
+                    cause: "Reports are disabled.",
+                  }),
+                ),
+          ),
+        );
       case "message.dispatch":
         return orchestrator.getThreadRecords(command.threadId, []).pipe(
           Effect.flatMap((projection) =>

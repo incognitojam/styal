@@ -174,6 +174,8 @@ type UsageLimitsPanel = ReturnType<typeof useUsageLimitsPanel>;
 type TimelineFollow = ReturnType<typeof useTimelineFollow>;
 
 interface ComposerSendInput {
+  reportReply?: { ref: import("./CoordinatorReports").ReportReference; title: string } | null;
+  onReportAnswered?: () => void;
   readonly environmentId: EnvironmentId;
   readonly routeThreadKey: string;
   readonly currentRouteThreadKeyRef: { readonly current: string | null };
@@ -773,6 +775,7 @@ export function useComposerSend(input: ComposerSendInput) {
     }
     if (
       !directAnnotation &&
+      !input.reportReply &&
       sendInteractionModeEnabled &&
       showPlanFollowUpPrompt &&
       activeProposedPlan &&
@@ -976,6 +979,9 @@ export function useComposerSend(input: ComposerSendInput) {
       models: ctxSelectedProviderModels,
       effort: ctxSelectedPromptEffort,
       text: messageTextForSend || ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
+      reportReply: input.reportReply
+        ? { title: input.reportReply.title, version: input.reportReply.ref.version }
+        : undefined,
     });
     if (composerRef.current?.validateProviderInput(outgoingMessageText) === false) {
       return;
@@ -1416,6 +1422,7 @@ export function useComposerSend(input: ComposerSendInput) {
         input: {
           threadId: threadIdForSend,
           message: {
+            ...(input.reportReply ? { reportAnswer: input.reportReply.ref } : {}),
             messageId: messageIdForSend,
             role: "user",
             attachments: turnAttachmentsResult.value,
@@ -1476,6 +1483,7 @@ export function useComposerSend(input: ComposerSendInput) {
         }
       } else {
         turnStartSucceeded = true;
+        input.onReportAnswered?.();
         setKeepFullHistory(routeThreadKey, false);
         clearUsageLimitsFor(routeThreadKey);
         if (turnUsesAttachmentUploads) {
@@ -1573,6 +1581,7 @@ export function useComposerSend(input: ComposerSendInput) {
               failure: squashAtomCommandFailure(failure),
               registry: appAtomRegistry,
               target: scopeThreadRef(environmentId, threadIdForSend),
+              ...(input.reportReply ? { reportAnswer: input.reportReply.ref } : {}),
               messageId: messageIdForSend,
               messagesAtom: Atom.make((get) => {
                 const target = scopeThreadRef(environmentId, threadIdForSend);

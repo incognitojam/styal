@@ -1,3 +1,5 @@
+import { CoordinatorReportsContext, WaitingReports } from "./CoordinatorReports";
+import { coordinatorReports } from "@t3tools/client-runtime/coordinator-reports";
 import { flushSync } from "react-dom";
 import { AudioPreview } from "../files/AudioPreview";
 import { cdp, page, userEvent } from "vite-plus/test/browser";
@@ -338,6 +340,70 @@ describe("MessagesTimeline work rows", () => {
 });
 
 describe("MessagesTimeline messages", () => {
+  it("reveals an offscreen report when its waiting line is clicked", async () => {
+    setup();
+    const props = baseProps();
+    const report = { key: "pr:214", title: "Release decision", version: 1, question: "Merge?" };
+    const entries = Array.from({ length: 40 }, (_, index) =>
+      message(
+        `Reply ${index}\n\n${"line\n\n".repeat(8)}`,
+        { role: "assistant", ...(index === 2 ? { report } : {}) },
+        `r-${index}`,
+      ),
+    );
+    const reports = coordinatorReports(
+      entries.flatMap((entry) => (entry.kind === "message" ? [entry.message] : [])),
+      [],
+    );
+    rememberTimelinePosition(
+      props.routeThreadKey,
+      { rowId: "entry-r-30", offsetWithinRow: 0, scrollOffset: 0, atEnd: false },
+      false,
+    );
+    function Test({ items }: { items: readonly Entry[] }) {
+      const [target, setTarget] = useState<{ messageId: MessageId } | null>(null);
+      return (
+        <CoordinatorReportsContext
+          value={{
+            reports,
+            target,
+            clear: () => setTarget(null),
+            scroll: (messageId) => setTarget({ messageId }),
+            send: async () => {},
+            reply: () => {},
+            dismiss: () => {},
+            canOperate: true,
+          }}
+        >
+          <MessagesTimeline {...props} timelineEntries={items} liveFollowEnabled={false} />
+          <WaitingReports reports={reports} scroll={(messageId) => setTarget({ messageId })} />
+        </CoordinatorReportsContext>
+      );
+    }
+    await using screen = await renderElement(<Test items={entries} />);
+    const viewport = props.listRef.current!.getScrollableNode()!;
+    await vi.waitFor(() => expect(viewport.scrollTop).toBeGreaterThan(1000));
+    await userEvent.click(screen.getByRole("button", { name: /Release decision.*Merge/ }));
+    const reportIsVisible = () => {
+      const row = screen.container.querySelector('[data-timeline-row-id="entry-r-2"]');
+      expect(row).not.toBeNull();
+      const bounds = row!.getBoundingClientRect();
+      const view = viewport.getBoundingClientRect();
+      expect(bounds.top).toBeGreaterThanOrEqual(view.top);
+      expect(bounds.top).toBeLessThan(view.bottom);
+    };
+    await vi.waitFor(reportIsVisible);
+    await screen.rerender(
+      <Test
+        items={[
+          ...entries.slice(10, 30).map((entry) => ({ ...entry, id: `inserted-${entry.id}` })),
+          ...entries,
+        ]}
+      />,
+    );
+    await vi.waitFor(reportIsVisible);
+  });
+
   it("settles when equally long messages have very different rendered heights", async () => {
     const props = baseProps();
     const tall = message("a\n\n".repeat(6000), { role: "assistant" }, "tall");

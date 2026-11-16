@@ -576,6 +576,8 @@ export function threadHasUnfinishedWork(records: {
 
 function commandThreadId(command: OrchestrationV2ServerCommand): ThreadId {
   switch (command.type) {
+    case "report.post":
+    case "report.dismiss":
     case "thread.create":
     case "thread.archive":
     case "thread.unarchive":
@@ -3385,6 +3387,113 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     return decided.success;
   });
 
+  const dispatchCoordinatorReport = Effect.fn("Orchestrator.dispatchCoordinatorReport")(function* (
+    command: Extract<OrchestrationV2ServerCommand, { type: "report.post" | "report.dismiss" }>,
+    events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
+  ) {
+    const projection = yield* loadProjectionForCommand(command, ["messages", "runs", "nodes"]);
+    const now = yield* DateTime.now;
+    const thread = projection.thread;
+    const emitEvent = emit(events, command);
+    const eventFields = {
+      threadId: thread.id,
+      providerInstanceId: thread.providerInstanceId,
+      occurredAt: now,
+    };
+    if (command.type === "report.dismiss") {
+      const message = projection.messages.find((message) => message.id === command.messageId);
+      const report = message?.report;
+      if (!report || report.key !== command.key || report.version !== command.version) {
+        return yield* new OrchestratorDispatchError({
+          commandId: command.commandId,
+          commandType: command.type,
+          cause: "Report does not exist.",
+        });
+      }
+      if (thread.reportDismissals?.some((note) => note.messageId === message.id)) return;
+      yield* emitEvent({
+        type: "thread.metadata-updated",
+        ...eventFields,
+        payload: {
+          ...thread,
+          updatedAt: now,
+          reportDismissals: [
+            ...(thread.reportDismissals ?? []),
+            {
+              messageId: message.id,
+              key: report.key,
+              version: report.version,
+              id: `report-dismissed:${message.id}`,
+              occurredAt: DateTime.formatIso(now),
+              text: `You dismissed the report "${report.title}" (version ${report.version}).`,
+            },
+          ],
+        },
+      });
+      return;
+    }
+    const run = projection.runs.find((run) => run.status === "running");
+    const node = projection.nodes.find((node) => node.id === run?.rootNodeId);
+    const version =
+      1 +
+      projection.messages.reduce(
+        (highest, { report }) =>
+          report?.key === command.key ? Math.max(highest, report.version) : highest,
+        0,
+      );
+    const message: OrchestrationV2ConversationMessage = {
+      id: command.messageId,
+      threadId: thread.id,
+      runId: run?.id ?? null,
+      nodeId: node?.id ?? null,
+      role: "assistant",
+      text: command.body,
+      attachments: [],
+      streaming: false,
+      createdBy: "agent",
+      creationSource: "mcp",
+      createdAt: now,
+      updatedAt: now,
+      report: {
+        key: command.key,
+        title: command.title,
+        version,
+        question: command.question,
+        answers: command.answers,
+      },
+    };
+    yield* emitEvent({
+      type: "message.updated",
+      ...eventFields,
+      payload: message,
+    });
+    yield* emitEvent({
+      type: "turn-item.updated",
+      ...eventFields,
+      payload: {
+        id: TurnItemId.make(`report:${command.messageId}`),
+        threadId: thread.id,
+        runId: message.runId,
+        nodeId: message.nodeId,
+        providerThreadId: node?.providerThreadId ?? null,
+        providerTurnId: node?.providerTurnId ?? null,
+        nativeItemRef: null,
+        parentItemId: null,
+        ordinal: 0,
+        status: "completed",
+        title: null,
+        startedAt: now,
+        completedAt: now,
+        updatedAt: now,
+        type: "assistant_message",
+        messageId: message.id,
+        text: message.text,
+        streaming: false,
+        report: message.report,
+      },
+    });
+  });
+
   const dispatchThreadMutation = Effect.fn("orchestrationV2.dispatch.threadMutation")(function* (
     command: Extract<
       OrchestrationV2ServerCommand,
@@ -5367,6 +5476,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           runId: messageInput.runId,
           nodeId: messageInput.nodeId,
           role: "user",
+          ...(input.command.type === "message.dispatch" && input.command.reportAnswer
+            ? { reportAnswer: input.command.reportAnswer }
+            : {}),
           text: input.text,
           attachments: input.attachments,
           ...(input.context ? { context: input.context } : {}),
@@ -6647,6 +6759,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         runId,
         nodeId: rootNodeId,
         role: "user",
+        ...(command.reportAnswer ? { reportAnswer: command.reportAnswer } : {}),
         text: dispatchText,
         ...(command.context ? { context: command.context } : {}),
         attachments: command.attachments,
@@ -7013,6 +7126,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         runId,
         nodeId: rootNodeId,
         role: "user",
+        ...(command.reportAnswer ? { reportAnswer: command.reportAnswer } : {}),
         text: dispatchText,
         ...(command.context ? { context: command.context } : {}),
         attachments: command.attachments,
@@ -7801,6 +7915,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       runId,
       nodeId: rootNodeId,
       role: "user",
+      ...(command.reportAnswer === undefined ? {} : { reportAnswer: command.reportAnswer }),
       text: dispatchText,
       ...(command.context ? { context: command.context } : {}),
       attachments: command.attachments,
@@ -10828,7 +10943,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       .pipe(Effect.mapError((cause) => new OrchestratorProjectionError({ threadId, cause })));
 
   const loadProjectionForCommand = <K extends ProjectionRecordField>(
-    command: OrchestrationV2Command,
+    command: OrchestrationV2ServerCommand,
     fields: ReadonlyArray<K>,
     filter?: ProjectionRecordFilter,
   ) =>
@@ -14157,6 +14272,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         break;
       case "thread.project.adopt-folder":
         yield* dispatchThreadProjectAdoptFolder(command, events);
+        break;
+      case "report.post":
+      case "report.dismiss":
+        yield* dispatchCoordinatorReport(command, events);
         break;
       case "message.dispatch": {
         // Providers own native subagent conversations; messages cannot target them, and adapters ask questions on the parent.

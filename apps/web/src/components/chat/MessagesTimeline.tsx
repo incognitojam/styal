@@ -1,3 +1,4 @@
+import { CoordinatorReportsContext } from "./CoordinatorReports";
 import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
 import type { ToolCallDiffTarget } from "../../diffPanelStore";
@@ -1226,6 +1227,40 @@ const ConversationTimeline = memo(function ConversationTimeline({
     rows,
     contentInsetEndAdjustment,
   });
+
+  const reports = use(CoordinatorReportsContext);
+  const reportTarget = reports?.target;
+  const reportReady = findListReady && !restoringThreadPosition;
+  const requestedReport = useRef<typeof reportTarget>(undefined);
+  const clearReport = useEffectEvent(() => reports?.clear());
+  const releaseReportFollow = useEffectEvent(navigateTimeline);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- retargets virtual-list navigation when report rows move or history arrives
+  useEffect(() => {
+    if (!reportTarget || !reportReady) return;
+    const index = rows.findIndex(
+      (row) => row.kind === "message" && row.message.id === reportTarget.messageId,
+    );
+    releaseReportFollow();
+    if (index >= 0) void listRef.current?.scrollToIndex({ index, animated: false, viewOffset: 48 });
+    else if (
+      historyControls?.hasMoreHistory &&
+      !historyControls.loading &&
+      !historyControls.error &&
+      requestedReport.current !== reportTarget
+    ) {
+      requestedReport.current = reportTarget;
+      historyControls.onLoadEarlier(reportTarget.messageId);
+    }
+  }, [reportTarget, reportReady, rows, historyControls, listRef]);
+  const reportVisible =
+    reportReady &&
+    rows.some((row) => row.kind === "message" && row.message.id === reportTarget?.messageId);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- expires the report navigation highlight without repainting animation
+  useEffect(() => {
+    if (!reportTarget || !reportVisible) return;
+    const timeout = window.setTimeout(() => clearReport(), 2000);
+    return () => window.clearTimeout(timeout);
+  }, [reportTarget, reportVisible]);
 
   useThreadFindNavigation({
     // Find reveals its match only after the opening restore settles; both

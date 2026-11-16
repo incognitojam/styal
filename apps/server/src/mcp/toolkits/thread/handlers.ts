@@ -1,5 +1,6 @@
 import { describePendingRequests, isApprovalRequestKind } from "../../pendingRequests.ts";
 import {
+  MessageId,
   type CommandId,
   type RuntimeRequestId,
   ThreadId,
@@ -103,6 +104,27 @@ const writesThread = <P extends { readonly threadId?: ThreadId | undefined }, A,
 ) => McpToolAccess.writesThreads((params: P) => [params.threadId], handle);
 
 export const declarations = {
+  t3_report: McpToolAccess.actsAsCaller((input) =>
+    Effect.gen(function* () {
+      const scope = yield* McpInvocationContext.McpInvocationContext;
+      const { thread } = yield* McpInvocationContext.requireThreadScope(scope, "t3_report");
+      const { threads } = yield* readThread(thread.threadId);
+      const commandId = yield* newCommandId();
+      const { storedEvents } = yield* threads
+        .dispatch({
+          type: "report.post",
+          commandId,
+          threadId: thread.threadId,
+          messageId: MessageId.make(`report:${commandId}`),
+          ...input,
+        })
+        .pipe(Effect.mapError(dispatchFailure));
+      const message = storedEvents
+        .map(({ event }) => event)
+        .find((event) => event.type === "message.updated")!.payload;
+      return { messageId: message.id, version: message.report!.version };
+    }),
+  ),
   run_scheduled_task_now: McpToolAccess.writesEnvironment(
     (input, check) =>
       Effect.gen(function* () {

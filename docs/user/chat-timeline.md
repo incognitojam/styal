@@ -51,3 +51,7 @@ for** to read earlier responses and tool activity from that turn.
 Codex file citations appear as file chips on web, desktop, and mobile. A reusable template created
 by Codex appears as a card with its name and type. Select **Use template** to add an editable prompt
 to the composer. Review or change the prompt, then send it when you are ready.
+
+## Agent reports
+
+Enable **Reports (experimental)** in **Settings → Chat** to let agents post full reports with questions. Answer with a suggested response or choose **Reply…** to write your own; the reply references that report. **Waiting on you** keeps open questions above the composer. Dismiss a report to remove it from the list without starting a turn; the agent hears about the dismissal on its next prompted turn. New reports on the same topic replace earlier versions. Mobile displays the report body as a normal message.

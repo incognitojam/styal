@@ -131,6 +131,7 @@ export interface McpInvocationScope {
   readonly thread: McpThreadCaller | undefined;
   readonly client: McpClientCaller | undefined;
   /** False while the Linked environments beta is off here; `/mcp` reads it per request. */
+  readonly coordinatorReportsEnabled?: boolean;
   readonly linkedEnvironments?: boolean;
 }
 
@@ -167,6 +168,13 @@ export const hiddenWhileLinksOff = (): boolean => {
   const fiber = Fiber.getCurrent();
   const scope = fiber && Context.getOrUndefined(fiber.context, McpInvocationContext);
   return scope?.linkedEnvironments !== false;
+};
+
+export const reportsEnabled = (): boolean => {
+  const fiber = Fiber.getCurrent();
+  return Boolean(
+    fiber && Context.getOrUndefined(fiber.context, McpInvocationContext)?.coordinatorReportsEnabled,
+  );
 };
 
 export type McpCapabilityError<C extends McpCapability> = C extends "preview"

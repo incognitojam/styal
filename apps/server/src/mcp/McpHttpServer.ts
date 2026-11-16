@@ -230,10 +230,12 @@ const makeMcpAuthMiddleware = Effect.gen(function* () {
   const incomingSettings = serverSettings.getSettings.pipe(
     Effect.map((settings) => ({
       linkedEnvironments: settings.linkedEnvironmentsEnabled,
+      coordinatorReportsEnabled: settings.coordinatorReportsEnabled,
       incoming: settings.incomingMachineAccess,
     })),
     Effect.orElseSucceed(() => ({
       linkedEnvironments: false,
+      coordinatorReportsEnabled: false,
       incoming: "nothing" as IncomingMachineAccess,
     })),
   );
@@ -269,13 +271,14 @@ const makeMcpAuthMiddleware = Effect.gen(function* () {
     const asked = withModeLimit(invocation, request);
     if (asked === undefined) return invalidModeLimit;
     const limited = McpInvocationContext.withRuntimeModeCeiling(asked, runtimeModeCeiling);
-    const { linkedEnvironments, incoming } = yield* incomingSettings;
+    const { linkedEnvironments, incoming, coordinatorReportsEnabled } = yield* incomingSettings;
     if (limited.client?.linked === true && !linkedEnvironments) return linkedEnvironmentsOff;
     if (limited.client?.linked === true && incoming === "nothing") return machineAcceptsNothing;
     return yield* httpEffect.pipe(
       Effect.provideService(McpInvocationContext.McpInvocationContext, {
         ...capLinkedClient(limited, incoming),
         linkedEnvironments,
+        coordinatorReportsEnabled,
       }),
       Effect.map(normalizeMcpHttpResponse),
     );
