@@ -159,15 +159,12 @@ jobs:
           sparse-checkout-cone-mode: false
 
       # Reporting safety fixes must apply even when the verified tag predates them.
-      - name: Checkout outcome sanitizer from main
+      - name: Fetch outcome sanitizer from workflow commit
         if: always()
-        uses: actions/checkout@v7
-        with:
-          ref: main
-          path: .canary-tools
-          persist-credentials: false
-          sparse-checkout: scripts/canary-redaction.ts
-          sparse-checkout-cone-mode: false
+        run: |
+          mkdir -p .canary-tools/scripts
+          curl -fsSL "https://raw.githubusercontent.com/$GITHUB_REPOSITORY/$GITHUB_SHA/scripts/canary-redaction.ts" \
+            --output .canary-tools/scripts/canary-redaction.ts
 
       - name: Setup dependencies
         if: steps.secret.outputs.present == 'true'
