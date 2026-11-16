@@ -183,7 +183,7 @@ jobs:
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           IPA: ${{ steps.ipa.outputs.path }}
-        run: eas submit --platform ios --profile production --path "$IPA" --non-interactive --wait
+        run: node ../../.github/scripts/submit-ios.cjs
 
       - name: Record the build
         if: inputs.publish
