@@ -1,4 +1,7 @@
 import * as Schema from "effect/Schema";
+import { pullRequestImageWidth } from "@t3tools/client-runtime/pull-request-image-preview";
+import { Dimensions, PixelRatio } from "react-native";
+import { Image } from "expo-image";
 import * as Dialog from "./Dialog";
 import { useContext, useEffect, useEffectEvent, useState, type ComponentType } from "react";
 
@@ -56,7 +59,16 @@ async function resolvePreviewUri(
     });
   }
   // Refresh expired URLs before handing them to Quick Look or ACTION_VIEW, which retain them.
-  const url = await refreshAssetUrl(item.environmentId, item.resource, signal)
+  const resource =
+    item.previewImage && item.resource._tag === "github-media"
+      ? {
+          ...item.resource,
+          imagePreview: {
+            width: pullRequestImageWidth(Dimensions.get("window").width, PixelRatio.get()),
+          },
+        }
+      : item.resource;
+  const url = await refreshAssetUrl(item.environmentId, resource, signal, !item.previewImage)
     .then((value) => {
       if (!value) throw new Error("Reconnect to this environment and try again.");
       return value;
@@ -68,7 +80,8 @@ async function resolvePreviewUri(
           "Reconnect to this environment and try again. The file may have been moved or deleted.",
       });
     });
-  return { uri: url + (item.srcFragment ?? "") };
+  const cached = item.previewImage ? await Image.getCachePathAsync(url).catch(() => null) : null;
+  return { uri: cached ? `file://${cached}` : url + (item.srcFragment ?? "") };
 }
 
 // Shares from the unresolved item so remote URLs refresh and draft files take their own lease.
@@ -96,6 +109,7 @@ function ResolvedFilePreview(
   const [items] = useState(() => filePreviewGallery(props.source, []));
   const selectedKey = filePreviewKey(props.source);
   const selectedIndex = items.findIndex((item) => filePreviewKey(item) === selectedKey);
+  const [originals, setOriginals] = useState<ReadonlySet<number>>(() => new Set());
   // Undefined while resolving, null once it cannot be.
   const [uris, setUris] = useState<readonly (string | null | undefined)[]>(() =>
     items.map((item) => ("uri" in item ? item.uri : undefined)),
@@ -114,7 +128,10 @@ function ResolvedFilePreview(
       setUris((current) => current.map((value, at) => (at === index ? uri : value)));
     items.forEach((item, index) => {
       if ("uri" in item) return;
-      void resolvePreviewUri(item, controller.signal).then(
+      void resolvePreviewUri(
+        originals.has(index) ? { ...item, previewImage: false } : item,
+        controller.signal,
+      ).then(
         (resolved) => {
           if (controller.signal.aborted) return resolved?.dispose?.();
           if (resolved?.dispose) leases.push(resolved.dispose);
@@ -136,7 +153,7 @@ function ResolvedFilePreview(
       controller.abort();
       for (const dispose of leases) dispose();
     };
-  }, [items, selectedIndex, progressiveGallery]);
+  }, [items, selectedIndex, progressiveGallery, originals]);
   const selected = { ...items[selectedIndex]!, name: filePreviewName(items[selectedIndex]!) };
   if (selected.kind === "image") {
     // A viewer that resets image gestures when its sources change waits for every image.
@@ -146,6 +163,9 @@ function ResolvedFilePreview(
       return {
         ...item,
         name: filePreviewName(item),
+        ...(item.previewImage && !originals.has(index)
+          ? { onViewOriginal: () => setOriginals((current) => new Set([...current, index])) }
+          : {}),
         ...(uri ? { uri } : uri === null ? { failed: true } : {}),
       };
     });

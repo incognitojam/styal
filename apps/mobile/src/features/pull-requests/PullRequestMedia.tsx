@@ -1,3 +1,6 @@
+import { pullRequestImageWidth } from "@t3tools/client-runtime/pull-request-image-preview";
+import { PixelRatio, useWindowDimensions } from "react-native";
+import { MarkdownImageAvailableWidthContext } from "../threads/ThreadMarkdownImage";
 import { PullRequestLazyImage, PullRequestMediaVisibleContext } from "./PullRequestImageVisibility";
 import { createContext, useContext, useState } from "react";
 import {
@@ -26,13 +29,18 @@ export { PullRequestMediaVisibleContext } from "./PullRequestImageVisibility";
 
 export const PullRequestMediaContext = createContext<PullRequestMediaLocation | null>(null);
 
-export function usePullRequestMediaUrl(url: string, enabled = true) {
+export function usePullRequestMediaUrl(url: string, enabled = true, imageWidth?: number) {
   const context = useContext(PullRequestMediaContext);
   const source = pullRequestMediaSource(url, context);
-  const resource = "resource" in source ? (source.resource ?? null) : null;
+  const screen = useWindowDimensions();
+  const original = "resource" in source ? (source.resource ?? null) : null;
+  const resource = original && imageWidth && !/\.(?:gif|svg)(?:[?#]|$)/i.test(url) ? { ...original, imagePreview: { width: pullRequestImageWidth(screen.width, PixelRatio.get()) } } : original;
+  const tinyResource = resource && "imagePreview" in resource ? { ...resource, imagePreview: { width: 64 as const } } : null;
+  const tiny = useAssetUrlState(context?.environmentId ?? null, enabled ? tinyResource : null);
   const asset = useAssetUrlState(context?.environmentId ?? null, enabled ? resource : null);
   const refresh = useRefreshAssetUrl(context?.environmentId ?? null, resource);
   return {
+    placeholderUri: tiny._tag === "Success" && tiny.imagePreview ? tiny.url : undefined,
     uri: !enabled ? null : asset._tag === "Success" ? asset.url : resource ? null : url,
     cacheKey: context && resource ? assetImageCacheKey(context.environmentId, resource) : undefined,
     unavailable: resource !== null && asset._tag === "Failure",
@@ -59,7 +67,12 @@ export function PullRequestMedia(props: PullRequestMediaProps) {
 }
 
 function PullRequestMediaContent(props: PullRequestMediaProps & { enabled: boolean }) {
-  const media = usePullRequestMediaUrl(props.url, props.enabled);
+  const availableWidth = useContext(MarkdownImageAvailableWidthContext);
+  const media = usePullRequestMediaUrl(
+    props.url,
+    props.enabled,
+    props.kind === "image" ? availableWidth || 360 : undefined,
+  );
   const visible = useContext(PullRequestMediaVisibleContext);
   const context = useContext(PullRequestMediaContext);
   const withGallery = useFilePreviewGallery();
@@ -70,6 +83,7 @@ function PullRequestMediaContent(props: PullRequestMediaProps & { enabled: boole
     return (
       <>
         <ThreadMarkdownImageView
+          placeholderUri={media.placeholderUri}
           uri={media.uri}
           sourceKey={props.url}
           cacheKey={media.cacheKey}
@@ -141,7 +155,7 @@ export function PullRequestImageAttachment(props: PullRequestImageAttachmentProp
 function PullRequestImageAttachmentContent(
   props: PullRequestImageAttachmentProps & { enabled: boolean },
 ) {
-  const media = usePullRequestMediaUrl(props.url, props.enabled);
+  const media = usePullRequestMediaUrl(props.url, props.enabled, 174);
   const [preview, setPreview] = useState<FilePreviewSource | null>(null);
   return (
     <>
@@ -154,6 +168,7 @@ function PullRequestImageAttachmentContent(
       >
         <View className="overflow-hidden rounded-2xl border border-border-subtle bg-grouped-card">
           <Image
+            placeholder={media.placeholderUri ? { uri: media.placeholderUri } : undefined}
             source={media.uri ? { uri: media.uri, cacheKey: media.cacheKey } : null}
             style={{ width: 174, height: 112 }}
             contentFit="contain"

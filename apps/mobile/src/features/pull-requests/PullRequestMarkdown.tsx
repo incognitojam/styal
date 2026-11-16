@@ -1,3 +1,4 @@
+import { MarkdownImageAvailableWidthContext } from "../threads/ThreadMarkdownImage";
 import { PullRequestLazyImage } from "./PullRequestImageVisibility";
 import {
   splitPullRequestBody,
@@ -87,12 +88,18 @@ function MarkdownImage(props: {
   readonly enabled: boolean;
   readonly knownSize: { width: number; height: number } | undefined;
 }) {
-  const media = usePullRequestMediaUrl(props.href, props.enabled);
+  const availableWidth = useContext(MarkdownImageAvailableWidthContext);
+  const media = usePullRequestMediaUrl(
+    props.href,
+    props.enabled,
+    Math.min(availableWidth || 360, props.knownSize?.width ?? Infinity),
+  );
   const context = useContext(PullRequestMediaContext);
   const withGallery = useFilePreviewGallery();
   return (
     <ThreadMarkdownImageView
       knownSize={props.knownSize}
+      placeholderUri={media.placeholderUri}
       uri={media.uri}
       sourceKey={props.href}
       cacheKey={media.cacheKey}

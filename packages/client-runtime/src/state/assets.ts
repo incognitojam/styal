@@ -2,6 +2,7 @@ import {
   type AssetCreateUrlInput,
   type AssetCreateUrlResult,
   type AssetImageDimensions,
+  type AssetImagePreview,
   AssetResource,
   EnvironmentId,
   type ProjectCloneSnapshot,
@@ -80,6 +81,7 @@ export type AssetUrlState =
       readonly _tag: "Success";
       readonly url: string;
       readonly expiresAt: number;
+      readonly imagePreview?: AssetImagePreview;
       readonly sourcePath?: string;
       readonly imageDimensions?: AssetImageDimensions;
       readonly fileRevision?: string;
@@ -123,6 +125,7 @@ export function assetUrlStateFromResult(
     _tag: "Success",
     url,
     expiresAt: result.value.expiresAt,
+    ...(result.value.imagePreview ? { imagePreview: result.value.imagePreview } : {}),
     ...(result.value.sourcePath !== undefined ? { sourcePath: result.value.sourcePath } : {}),
     ...(result.value.imageDimensions !== undefined
       ? { imageDimensions: result.value.imageDimensions }

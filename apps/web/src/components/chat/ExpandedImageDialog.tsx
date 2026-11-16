@@ -1,3 +1,4 @@
+import { pullRequestImageWidth } from "@t3tools/client-runtime/pull-request-image-preview";
 import { memo, useRef, useState, type ReactNode, type KeyboardEvent } from "react";
 import { flushSync } from "react-dom";
 import { ChevronLeftIcon, ChevronRightIcon, XIcon } from "lucide-react";
@@ -107,6 +108,29 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
     name: item?.name ?? "Media",
     src: item?.src ?? null,
   };
+  const [originals, setOriginals] = useState<ReadonlySet<number>>(() => new Set());
+  const [requestedWidth, setRequestedWidth] = useState({ index: -1, width: 0 });
+  const originalAsset = source.originalAsset;
+  const baseResource = source.asset?.resource;
+  const screenWidth = pullRequestImageWidth(
+    Math.max(window.innerWidth, requestedWidth.index === index ? requestedWidth.width : 0),
+    window.devicePixelRatio,
+  );
+  const displayResource =
+    baseResource?._tag === "github-media" && baseResource.imagePreview
+      ? {
+          ...baseResource,
+          imagePreview: {
+            width: Math.max(baseResource.imagePreview.width, screenWidth) as typeof screenWidth,
+          },
+        }
+      : baseResource;
+  const viewerAsset = originals.has(index) ? originalAsset : source.asset;
+  const viewerUrl = useAssetUrlState(
+    viewerAsset?.environmentId ?? null,
+    originals.has(index) ? (originalAsset?.resource ?? null) : (displayResource ?? null),
+  );
+  const imageSrc = viewerUrl._tag === "Success" ? viewerUrl.url : (item?.src ?? null);
   const openFile = source.onOpenFile;
   const actionsSource: MediaActionSource = openFile
     ? {
@@ -208,7 +232,22 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
             <ChevronLeftIcon className="size-5" />
           </Button>
         )}
-        <MediaActions source={actionsSource} showTooltip={false}>
+        {originalAsset && !originals.has(index) ? (
+          <Button
+            variant="outline"
+            onClick={() => setOriginals((current) => new Set([...current, index]))}
+          >
+            View original
+          </Button>
+        ) : null}
+        <MediaActions
+          source={
+            originals.has(index) && originalAsset
+              ? { ...actionsSource, asset: originalAsset, src: imageSrc }
+              : actionsSource
+          }
+          showTooltip={false}
+        >
           <div className="relative isolate z-10 flex max-h-full max-w-[var(--media-width)] flex-col items-center">
             {item.type === "video" ? (
               <ExpandedVideo key={index} item={item} />
@@ -219,7 +258,7 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
                   className="h-[min(var(--media-height),40rem)] w-[min(var(--media-width),42rem)] transition-opacity duration-140 ease-out starting:opacity-0 rounded-lg border border-border/70 bg-background p-4 text-xs leading-5 shadow-2xl motion-reduce:transition-none"
                 />
               ) : null
-            ) : item.src === null || failedImageSrc === item.src ? (
+            ) : imageSrc === null || failedImageSrc === imageSrc ? (
               <ExpandedMediaFailure>
                 <p>
                   {openOriginalLink
@@ -231,11 +270,12 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
             ) : (
               <ZoomableImage
                 ref={zoomableImageRef}
-                key={`${index}:${item.src}`}
-                src={item.src}
+                key={index}
+                src={imageSrc}
                 name={item.name}
                 mimeType={itemMimeType(item)}
-                onError={() => setFailedImageSrc(item.src)}
+                onError={() => setFailedImageSrc(imageSrc)}
+                onZoom={(zoom) => setRequestedWidth({ index, width: window.innerWidth * zoom })}
               />
             )}
             <div className="mt-2 flex max-w-[var(--media-width)] items-center justify-center gap-1.5 text-xs text-white/80 max-sm:px-10">

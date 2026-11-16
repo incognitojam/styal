@@ -43,12 +43,14 @@ export function ZoomableImage({
   name,
   mimeType,
   onError,
+  onZoom,
   ref,
 }: {
   src: string;
   name: string;
   mimeType?: string | undefined;
   onError: () => void;
+  onZoom?: ((zoom: number) => void) | undefined;
   ref?: Ref<ZoomableImageHandle>;
 }) {
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -127,6 +129,7 @@ export function ZoomableImage({
     const clientY = bounds.top + y;
     // The new size must be laid out before the scroll position can keep the anchor in place.
     flushSync(() => setZoom(clamped));
+    onZoom?.(clamped);
     const resized = viewport.getBoundingClientRect();
     viewport.scrollLeft = anchorX * clamped - (clientX - resized.left);
     viewport.scrollTop = anchorY * clamped - (clientY - resized.top);

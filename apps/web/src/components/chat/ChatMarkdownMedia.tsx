@@ -1,12 +1,21 @@
+import { observeResize } from "../../lib/observeResize";
+import { pullRequestImageWidth } from "@t3tools/client-runtime/pull-request-image-preview";
 import { MISSING_FILE_ACCESS_MESSAGE } from "@t3tools/client-runtime/state/assets";
 import { mediaFileReference, mediaUrlReference } from "@t3tools/client-runtime/media-reference";
-import type { AssetResource, EnvironmentId, SOURCE_CONTROL_MEDIA_ASSET } from "@t3tools/contracts";
+import type {
+  AssetImagePreview,
+  AssetResource,
+  EnvironmentId,
+  SOURCE_CONTROL_MEDIA_ASSET,
+} from "@t3tools/contracts";
 import { TriangleAlertIcon } from "lucide-react";
 import {
   createContext,
   memo,
   use,
   useState,
+  useEffect,
+  useRef,
   type ComponentProps,
   type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -156,6 +165,7 @@ const CHAT_MARKDOWN_IMAGE_FRAME_CLASS_NAME = cn(
  */
 export function ChatMarkdownImage(props: {
   readonly src: string | null;
+  readonly placeholderSrc?: string | undefined;
   readonly sourceFailed?: boolean | undefined;
   readonly unavailableDetail?: string | undefined;
   readonly alt: string;
@@ -254,6 +264,14 @@ export function ChatMarkdownImage(props: {
           ? { role: "alert" as const }
           : { role: "status" as const, "aria-label": "Loading image" })}
       >
+        {props.placeholderSrc && !failed ? (
+          <img
+            src={props.placeholderSrc}
+            alt=""
+            aria-hidden
+            className="absolute inset-0 size-full object-contain blur-sm"
+          />
+        ) : null}
         {failed ? (
           <span className="flex size-full items-center justify-center p-2 text-center text-xs text-muted-foreground">
             <ChatMarkdownMediaUnavailableLabel alt={props.alt} detail={props.unavailableDetail} />
@@ -343,11 +361,56 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
   readonly onImageExpand?: ((preview: ExpandedImagePreview) => void) | undefined;
 }) {
   const resource = props.resource;
+  const previewEnabled =
+    resource._tag === "github-media" &&
+    props.kind !== "video" &&
+    !/\.(?:gif|svg)(?:[?#]|$)/i.test(resource.url);
+  const frame = useRef<HTMLSpanElement>(null);
+  const [width, setWidth] = useState<AssetImagePreview["width"] | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Observe the visible frame to mint only the required preview size.
+  useEffect(() => {
+    const element = frame.current;
+    if (!previewEnabled || !element) return;
+    let visible = false;
+    const measure = () => {
+      if (!visible) return;
+      const available = element.getBoundingClientRect().width;
+      const chosen = pullRequestImageWidth(
+        Math.max(available || 480, window.innerWidth),
+        window.devicePixelRatio,
+      );
+      setWidth((previous) =>
+        previous === null ? chosen : (Math.max(previous, chosen) as typeof chosen),
+      );
+    };
+    const stopResize = observeResize(element, measure);
+    const intersection = new IntersectionObserver(([entry]) => {
+      visible = entry?.isIntersecting ?? false;
+      measure();
+    });
+    intersection.observe(element);
+    return () => {
+      stopResize();
+      intersection.disconnect();
+    };
+  }, [previewEnabled]);
+  const inlineResource =
+    previewEnabled && resource._tag === "github-media"
+      ? width === null
+        ? null
+        : { ...resource, imagePreview: { width } }
+      : resource;
   const threadWorkspaceMutationId = use(WorkspaceMutationIdContext);
   const workspaceMutationId = props.workspaceMutationId ?? threadWorkspaceMutationId;
+  const placeholder = useAssetUrlState(
+    props.environmentId,
+    previewEnabled && width !== null && resource._tag === "github-media"
+      ? { ...resource, imagePreview: { width: 64 } }
+      : null,
+  );
   const assetUrl = useAssetUrlState(
     props.environmentId,
-    resource,
+    inlineResource,
     workspaceMutationId !== undefined &&
       props.kind !== "video" &&
       (resource._tag === "media-file" || resource._tag === "workspace-file")
@@ -367,7 +430,8 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
       ? mediaUrlReference(props.originalUrl)
       : undefined;
   const relativePath = reference?.kind === "file" ? reference.relativePath : undefined;
-  const fallbackSrc = assetUrl._tag === "Failure" ? props.fallbackSrc : undefined;
+  const fallbackSrc =
+    !previewEnabled && assetUrl._tag === "Failure" ? props.fallbackSrc : undefined;
   const src =
     assetUrl._tag === "Success"
       ? assetUrl.url + (props.srcFragment ?? "")
@@ -388,7 +452,12 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
     name: props.alt || (props.kind ?? "image"),
     src,
     ...(fallbackSrc === undefined
-      ? { asset: { environmentId: props.environmentId, resource } }
+      ? {
+          asset: { environmentId: props.environmentId, resource: inlineResource ?? resource },
+          ...(previewEnabled
+            ? { originalAsset: { environmentId: props.environmentId, resource } }
+            : {}),
+        }
       : {}),
     ...(reference ? { reference } : {}),
     ...(relativePath && (resource._tag === "media-file" || resource._tag === "workspace-file")
@@ -420,9 +489,12 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
     );
   }
 
-  return (
+  const image = (
     <ChatMarkdownImage
       key={JSON.stringify([props.environmentId, props.resource, props.srcFragment])}
+      placeholderSrc={
+        placeholder._tag === "Success" && placeholder.imagePreview ? placeholder.url : undefined
+      }
       src={src}
       sourceFailed={assetUrl._tag === "Failure" && fallbackSrc === undefined}
       unavailableDetail={
@@ -445,5 +517,12 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
       originalUrl={props.originalUrl}
       onImageExpand={props.onImageExpand}
     />
+  );
+  return previewEnabled ? (
+    <span ref={frame} className="block max-w-full">
+      {image}
+    </span>
+  ) : (
+    image
   );
 });

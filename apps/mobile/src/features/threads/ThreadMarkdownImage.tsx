@@ -89,6 +89,7 @@ const noSvgDocumentAtom = Atom.make(AsyncResult.initial<SvgDocument, SvgLoadErro
 
 export function ThreadMarkdownImageView(props: {
   readonly uri: string | null;
+  readonly placeholderUri?: string | undefined;
   readonly sourceKey: string;
   readonly cacheKey?: string | undefined;
   readonly unavailable: boolean;
@@ -153,6 +154,14 @@ export function ThreadMarkdownImageView(props: {
             className="items-center justify-center rounded-[10px] bg-md-code-bg"
             style={frameStyle}
           >
+            {props.placeholderUri && !failed ? (
+              <Image
+                source={{ uri: props.placeholderUri }}
+                blurRadius={8}
+                style={StyleSheet.absoluteFill}
+                contentFit="contain"
+              />
+            ) : null}
             {failed ? (
               <Text className="px-3 text-center text-xs text-foreground-muted">
                 {props.unavailableDetail
@@ -207,6 +216,7 @@ export function ThreadMarkdownImageView(props: {
                           : { sourceKey: props.sourceKey, size },
                       )
                     }
+                    placeholderUri={props.placeholderUri}
                     onError={() => setFailure({ uri: props.uri, failed: true })}
                   />
                 )}
@@ -225,6 +235,7 @@ export function ThreadMarkdownImageView(props: {
 }
 
 function ThreadMarkdownImageRequest(props: {
+  readonly placeholderUri?: string | undefined;
   readonly uri: string;
   readonly cacheKey: string | undefined;
   readonly onLoad: (sourceSize: ImageSize) => void;
@@ -235,6 +246,8 @@ function ThreadMarkdownImageRequest(props: {
   return (
     <>
       <Image
+        placeholder={props.placeholderUri ? { uri: props.placeholderUri } : undefined}
+        placeholderContentFit="contain"
         source={{ uri: props.uri, cacheKey: props.cacheKey }}
         contentFit="contain"
         cachePolicy="memory-disk"
@@ -244,7 +257,7 @@ function ThreadMarkdownImageRequest(props: {
           props.onLoad(event.source);
         }}
         onError={props.onError}
-        style={{ width: "100%", height: "100%", opacity: loaded ? 1 : 0 }}
+        style={{ width: "100%", height: "100%", opacity: loaded || props.placeholderUri ? 1 : 0 }}
       />
       {loaded ? null : <ThreadMarkdownImageLoading />}
     </>

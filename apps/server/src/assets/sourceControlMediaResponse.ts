@@ -1,3 +1,7 @@
+import type { AssetImagePreview } from "@t3tools/contracts";
+import * as Preview from "./PullRequestImagePreview.ts";
+import * as Digest from "effect/crypto/Digest";
+import * as Hex from "effect/encoding/Hex";
 import * as Mime from "effect/http/Mime";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
@@ -31,6 +35,7 @@ export const sourceControlMediaResponse = Effect.fn(
     readonly cwd: string;
     readonly repository?: string;
     readonly expiresAt: number;
+    readonly imagePreview?: AssetImagePreview;
   },
   requestHeaders: Record<string, string | undefined>,
 ) {
@@ -46,6 +51,31 @@ export const sourceControlMediaResponse = Effect.fn(
     .fetchMedia;
   if (media === null || fetchMedia === undefined) {
     return HttpServerResponse.empty({ status: 404, headers });
+  }
+  if (asset.imagePreview) {
+    const sourceFactory = drivers.find(({ driver }) => driver.kind === media.definition.kind)
+      ?.instance.imagePreviewSource;
+    if (!sourceFactory) return HttpServerResponse.empty({ status: 415, headers });
+    const source = yield* sourceFactory(asset.url);
+    const previews = yield* Preview.PullRequestImagePreview;
+    const result = yield* previews
+      .read({
+        identity: `${source.partition.length}:${source.partition}${asset.cwd.length}:${asset.cwd}${asset.url}`,
+        preview: asset.imagePreview,
+        fetch: source.fetch,
+      })
+      .pipe(Effect.option);
+    if (result._tag === "None") return HttpServerResponse.empty({ status: 415, headers });
+    const digester = yield* Digest.Digest;
+    const etag = Hex.encode(yield* digester.digest(Digest.sha256, result.value.bytes));
+    return HttpServerResponse.uint8Array(result.value.bytes, {
+      contentType: result.value.contentType,
+      headers: {
+        ...headers,
+        "cache-control": `private, max-age=${Math.max(0, Math.min(300, remainingSeconds))}`,
+        etag: `"${etag}"`,
+      },
+    });
   }
   const forwarded: Record<string, string> = {};
   for (const name of FORWARDED_REQUEST_HEADERS) {

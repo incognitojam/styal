@@ -1,4 +1,5 @@
 import * as Dialog from "./Dialog";
+import { MediaImagePreview } from "../MediaImagePreview";
 import { requireNativeModule } from "expo";
 import { useEffect, useEffectEvent, useId, useRef, useState } from "react";
 
@@ -101,7 +102,13 @@ function NativeFilePreview(props: FilePreviewViewerProps) {
   return null;
 }
 
+function ImageFilePreview(props: FilePreviewViewerProps) {
+  if (props.source.kind === "image" && props.source.images.some((image) => image.previewImage))
+    return <MediaImagePreview source={props.source} onRequestClose={props.onRequestClose} />;
+  return <NativeFilePreview {...props} />;
+}
+
 /** Shows images, PDFs and documents full screen in the native viewer (Android: FilePreviewModal.android.tsx). */
 export function FilePreviewModal(props: FilePreviewModalProps) {
-  return <FilePreviewSession {...props} progressiveGallery Viewer={NativeFilePreview} />;
+  return <FilePreviewSession {...props} progressiveGallery Viewer={ImageFilePreview} />;
 }

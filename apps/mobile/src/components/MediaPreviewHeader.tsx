@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Pressable, View } from "react-native";
 
 import type { useMediaActions } from "../state/mediaActions";
@@ -9,6 +10,7 @@ import { MediaSourceCaption } from "./MediaSourceCaption";
 /** The bar over a full-screen image or video: always dark, whatever the app theme. */
 export function MediaPreviewHeader(props: {
   readonly title: string;
+  readonly children?: ReactNode;
   readonly media: ReturnType<typeof useMediaActions>;
   readonly closeAccessibilityLabel: string;
   readonly onClose: () => void;
@@ -19,6 +21,7 @@ export function MediaPreviewHeader(props: {
         <AppText className="flex-1 font-t3-medium text-base text-white" numberOfLines={2}>
           {props.title}
         </AppText>
+        {props.children}
         <MediaActionsMenu media={props.media} inModal />
         <Pressable
           accessibilityRole="button"

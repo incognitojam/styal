@@ -114,13 +114,14 @@ export async function refreshAssetUrl(
   environmentId: EnvironmentId,
   resource: AssetResource,
   signal?: AbortSignal,
+  refresh = true,
 ): Promise<string | null> {
   const connectionAtom = environmentSession.preparedConnectionValueAtom(environmentId);
   if (appAtomRegistry.get(connectionAtom)._tag === "None") return null;
   const atom = assetEnvironment.createUrl({ environmentId, input: { resource } });
   const result = await executeAtomQuery(appAtomRegistry, atom, {
     label: atom.label?.[0] ?? "asset url",
-    refresh: true,
+    refresh,
     reportFailure: false,
     ...(signal ? { signal } : {}),
   });

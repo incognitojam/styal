@@ -1,5 +1,6 @@
 import type { AssetResource, ProjectId as ProjectIdType } from "@t3tools/contracts";
 import {
+  AssetImagePreview,
   AssetAttachmentNotFoundError,
   AssetSourceControlMediaUrlValidationError,
   AssetPreviewTypeValidationError,
@@ -177,6 +178,7 @@ const AssetClaimsSchema = Schema.Union([
   Schema.Struct({
     version: Schema.Literal(1),
     kind: Schema.Literal(SOURCE_CONTROL_MEDIA_ASSET),
+    imagePreview: Schema.optionalKey(AssetImagePreview),
     /** A host's `fetchUrl`, narrowed at mint time; the signature is what keeps it there. */
     url: Schema.String,
     cwd: Schema.String,
@@ -214,6 +216,7 @@ export type ResolvedAsset =
     }
   | {
       readonly kind: "source-control-media";
+      readonly imagePreview?: AssetImagePreview;
       readonly url: string;
       readonly cwd: string;
       readonly repository?: string;
@@ -873,7 +876,7 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
         url: media.fetchUrl,
         expiresAt,
       };
-      fileName = media.fileName;
+      fileName = input.resource.imagePreview ? "preview.webp" : media.fileName;
       break;
     }
   }
@@ -902,6 +905,9 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
   return {
     relativeUrl: `${ASSET_ROUTE_PREFIX}/${token}/${encodeURIComponent(fileName)}`,
     expiresAt,
+    ...(claims.kind === SOURCE_CONTROL_MEDIA_ASSET && claims.imagePreview
+      ? { imagePreview: claims.imagePreview }
+      : {}),
     ...(sourcePath !== undefined ? { sourcePath } : {}),
     ...(imageDimensions !== null ? { imageDimensions } : {}),
     ...(fileRevision !== undefined ? { fileRevision } : {}),

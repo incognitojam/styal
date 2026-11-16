@@ -1,3 +1,4 @@
+import { SourceControlImagePreviewError } from "@t3tools/source-control-core/server/driver";
 import type { SourceControlMediaRequest } from "@t3tools/source-control-core/server/driver";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
@@ -185,5 +186,26 @@ export const make = Effect.gen(function* () {
       }
     }
     return media;
+  });
+});
+
+export const makeImagePreviewSource = Effect.gen(function* () {
+  const credentials = yield* GitHubCredentials.GitHubCredentials;
+  return Effect.fn("GitHubMediaFetch.imagePreviewSource")(function* (url: string) {
+    const credential = yield* credentials.get("github.com").pipe(Effect.orElseSucceed(() => null));
+    return {
+      partition: credential?.fingerprint ?? "anonymous",
+      fetch: Effect.tryPromise({
+        try: async (signal) => {
+          const { gitHubPreviewFetch } = await import("./gitHubPreviewFetch.ts");
+          return gitHubPreviewFetch(
+            url,
+            credential ? Redacted.value(credential.token) : null,
+            AbortSignal.any([signal, AbortSignal.timeout(15_000)]),
+          );
+        },
+        catch: () => new SourceControlImagePreviewError({}),
+      }),
+    };
   });
 });

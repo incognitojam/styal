@@ -636,6 +636,10 @@
     "./physicalFileSystemNode": {
       "types": "./src/physicalFileSystemNode.ts",
       "import": "./src/physicalFileSystemNode.ts"
+    },
+    "./publicAddresses": {
+      "types": "./src/publicAddresses.ts",
+      "import": "./src/publicAddresses.ts"
     }
   },
   "scripts": {

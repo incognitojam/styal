@@ -1,3 +1,4 @@
+import * as Preview from "./PullRequestImagePreview.ts";
 // @effect-diagnostics nodeBuiltinImport:off - tests inject swaps at the native open boundary.
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -48,6 +49,8 @@ vi.mock("node:fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof NodeFSP>();
   return { ...actual, open: vi.fn(actual.open), realpath: vi.fn(actual.realpath) };
 });
+
+const decodeAssetInputOption = Schema.decodeUnknownOption(AssetCreateUrlInput);
 
 const layerConfig = ServerConfig.ServerConfig.layerTest(process.cwd(), {
   prefix: "t3-asset-access-test-",
@@ -1575,6 +1578,21 @@ describe("AssetAccess", () => {
         cwd: "/repo",
         expiresAt: issued.expiresAt,
       });
+      if (resource._tag !== "github-media") return;
+      const preview = yield* issueAssetUrl({
+        resource: { ...resource, imagePreview: { width: 640 } },
+      });
+      expect(preview.imagePreview).toEqual({ width: 640 });
+      const previewParts = preview.relativeUrl.slice(`${ASSET_ROUTE_PREFIX}/`.length).split("/");
+      expect(yield* resolveAsset(previewParts[0]!, previewParts[1]!)).toMatchObject({
+        imagePreview: { width: 640 },
+      });
+      expect(yield* resolveAsset(`${previewParts[0]}tampered`, previewParts[1]!)).toBeNull();
+      expect(
+        decodeAssetInputOption({
+          resource: { ...resource, imagePreview: { width: 800 } },
+        })._tag,
+      ).toBe("None");
       if (asset?.kind !== "source-control-media") return;
 
       const response = yield* sourceControlMediaResponse(asset, {
@@ -1594,6 +1612,9 @@ describe("AssetAccess", () => {
       expect(fetched.at(-1)?.repository).toBe("enterprise/private");
     }).pipe(
       Effect.provide(Layer.mergeAll(layerTest, layerDrivers, layerIdentities)),
+      Effect.provideService(Preview.PullRequestImagePreview, {
+        read: () => Effect.die("Original must not use previews"),
+      }),
       Effect.scoped,
     );
   });

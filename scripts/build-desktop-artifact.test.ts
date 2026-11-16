@@ -1008,6 +1008,8 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
           "node_modules/node-pty/third_party/conpty/1.0.0/win10-arm64/OpenConsole.exe",
           "node_modules/node-pty/prebuilds/win32-x64/pty.node",
           "node_modules/node-pty/prebuilds/linux-x64/pty.node",
+          "node_modules/@img/sharp-win32-x64/lib/sharp-win32-x64.node",
+          "node_modules/@img/sharp-win32-x64/lib/libvips-42.dll",
         ];
 
         for (const nativeFile of nativeFiles) {
@@ -1019,6 +1021,13 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         const asarPath = path.join(tempDir, "server.asar");
         yield* packWindowsServerAsar({ sourceDir, asarPath, arch: "x64" });
         const unpackedRoot = `${asarPath}.unpacked`;
+        for (const native of ["sharp-win32-x64.node", "libvips-42.dll"]) {
+          assert.isTrue(
+            yield* fs.exists(
+              path.join(unpackedRoot, "node_modules/@img/sharp-win32-x64/lib", native),
+            ),
+          );
+        }
 
         assert.isTrue(
           yield* fs.exists(

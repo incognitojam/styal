@@ -28,5 +28,12 @@ export function pullRequestImageSource(
   url: string,
   location: PullRequestMediaLocation | null,
 ): FilePreviewItem {
-  return { kind: "image", ...pullRequestMediaSource(url, location) };
+  const source = pullRequestMediaSource(url, location);
+  return {
+    kind: "image",
+    ...source,
+    ...("resource" in source && !/\.(?:gif|svg)(?:[?#]|$)/i.test(url)
+      ? { previewImage: true }
+      : {}),
+  };
 }

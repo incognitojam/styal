@@ -187,6 +187,8 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 
 ## GitHub and code review
 
+- **Smaller PR image downloads.** GitHub images served through styal load as resized previews on web, desktop, and mobile. Opening an image reuses the screen-sized preview; choose **View original** for the exact original bytes. Animated images keep playing in their original format. Public GitHub CDN links and repository-relative images retain their existing behavior. Compared with [T3 Code revision 375343a](https://github.com/pingdotgg/t3code/tree/375343aaf35133f659435554cd01634bab333a7d), checked November 16, 2026, which streams the original bytes.
+
 - **PR deployments at a glance.** The pull request Summary, and the pull request screen on mobile,
   show each environment's latest deployment status, with links to open the environment and inspect
   deployment logs. Compared with

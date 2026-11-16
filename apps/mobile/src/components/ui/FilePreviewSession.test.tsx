@@ -11,6 +11,13 @@ const harness = vi.hoisted(() => ({
   presentationFinished: false,
 }));
 
+vi.mock("react-native", () => ({
+  Dimensions: { get: () => ({ width: 390, height: 844 }) },
+  PixelRatio: { get: () => 3 },
+}));
+vi.mock("expo-image", () => ({
+  Image: { getCachePathAsync: vi.fn(async () => "/synthetic/preview.webp") },
+}));
 vi.mock("../../state/assets", () => ({ refreshAssetUrl: harness.refreshAssetUrl }));
 vi.mock("../../lib/localAttachmentPreview", () => ({ loadLocalAttachmentPreview: vi.fn() }));
 vi.mock("../../lib/attachmentDownload", () => ({
@@ -214,4 +221,23 @@ it("does not carry a presented viewer over to a different item that is still res
   expect(
     harness.refreshAssetUrl.mock.calls.filter(([, r]) => r.url.endsWith("b.pdf")),
   ).toHaveLength(1);
+});
+
+it("reuses the screen variant from the image cache and requests the original only on demand", async () => {
+  harness.refreshAssetUrl.mockResolvedValue("https://signed.test/screen.webp");
+  harness.refreshAssetUrl.mockClear();
+  const selected = {
+    ...image("https://github.com/user-attachments/assets/synthetic"),
+    previewImage: true,
+  };
+  await using _preview = await openGallery(selected, [selected], "android");
+  const shown = harness.previews.at(-1) as {
+    images: { uri: string; onViewOriginal: () => void }[];
+  };
+  expect(shown.images[0]?.uri).toBe("file:///synthetic/preview.webp");
+  expect(harness.refreshAssetUrl.mock.calls[0]?.[1]).toMatchObject({
+    imagePreview: { width: 1440 },
+  });
+  await act(async () => shown.images[0]!.onViewOriginal());
+  expect(harness.refreshAssetUrl.mock.calls.at(-1)?.[1]).not.toHaveProperty("imagePreview");
 });

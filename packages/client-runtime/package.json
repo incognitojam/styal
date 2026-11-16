@@ -614,6 +614,10 @@
     "./provider-instance-ids": {
       "types": "./src/providerInstanceIds.ts",
       "default": "./src/providerInstanceIds.ts"
+    },
+    "./pull-request-image-preview": {
+      "types": "./src/pullRequestImagePreview.ts",
+      "default": "./src/pullRequestImagePreview.ts"
     }
   },
   "scripts": {

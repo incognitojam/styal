@@ -36,6 +36,10 @@ export interface MediaActionSource {
   readonly src: string | null;
   readonly reference?: MediaReference;
   readonly asset?: { readonly environmentId: EnvironmentId; readonly resource: AssetResource };
+  readonly originalAsset?: {
+    readonly environmentId: EnvironmentId;
+    readonly resource: AssetResource;
+  };
   readonly onOpenFile?: () => void;
 }
 
