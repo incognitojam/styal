@@ -1040,13 +1040,8 @@ export default function ChatView(props: ChatViewProps) {
     : [];
   const dismissReport = useAtomCommand(dismissCoordinatorReport);
   const canOperateReport = useAtomValue(dismissCoordinatorReport.permissionAtom(environmentId));
-  const [highlightedReport, setHighlightedReport] = useState<
-    import("@t3tools/contracts").MessageId | null
-  >(null);
-  const scrollToReport = (messageId: import("@t3tools/contracts").MessageId) => {
-    setHighlightedReport(messageId);
-    setTimelineAnchor({ threadKey: activeThreadKey, messageId });
-  };
+  const [reportTarget, setReportTarget] = useState<{ messageId: MessageId } | null>(null);
+  const scrollToReport = (messageId: MessageId) => setReportTarget({ messageId });
 
   // LegendList never recomputes anchored end-space geometry, leaving phantom scroll range after content fits.
   const anchorRunSettled = (() => {
@@ -3613,7 +3608,8 @@ export default function ChatView(props: ChatViewProps) {
                           },
                           scroll: scrollToReport,
                           canOperate: canOperateReport,
-                          highlighted: highlightedReport,
+                          target: reportTarget,
+                          clear: () => setReportTarget(null),
                         }
                       : null
                   }

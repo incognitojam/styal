@@ -372,13 +372,6 @@ export type ThreadManagementError = typeof ThreadManagementError.Type;
 type ThreadManagementFailure = ThreadManagementError | Orchestrator.OrchestratorV2Error;
 
 export interface ThreadManagementServiceShape {
-  readonly postReport: (
-    input: Extract<OrchestrationV2ServerCommand, { type: "report.post" }>,
-  ) => Effect.Effect<
-    { messageId: MessageId; version: number },
-    Orchestrator.OrchestratorV2Error | ThreadManagementProviderInstanceDisabledError
-  >;
-
   readonly searchThreadStream: (
     input: OrchestrationV2SearchThreadInput,
   ) => Stream.Stream<OrchestrationV2SearchThreadResult, Orchestrator.OrchestratorV2Error>;
@@ -790,18 +783,6 @@ const make = Effect.gen(function* () {
       Effect.andThen(assertDispatchTargetEnabled(command)),
       Effect.andThen(orchestrator.dispatch(command)),
     );
-
-  const postReport = Effect.fn("ThreadManagementService.postReport")(function* (
-    command: Extract<OrchestrationV2ServerCommand, { type: "report.post" }>,
-  ) {
-    yield* dispatch(command);
-    const projection = yield* orchestrator.getThreadRecords(command.threadId, ["messages"]);
-    return {
-      messageId: command.messageId,
-      version: projection.messages.find((message) => message.id === command.messageId)!.report!
-        .version,
-    };
-  });
 
   const getProjectThreadRecords: ThreadManagementServiceShape["getProjectThreadRecords"] = (
     input,
@@ -1553,7 +1534,6 @@ const make = Effect.gen(function* () {
       );
     }),
     dispatch,
-    postReport,
     getThreadHistoryPage: Effect.fn("ThreadManagementService.getThreadHistoryPage")(
       function (threadId, cursor, throughEntryId, conversationOnly, workMode) {
         return ensureProjectionTranscript(threadId).pipe(

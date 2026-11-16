@@ -1,20 +1,15 @@
+import type { ChatMessage } from "../../types";
 import { ClockIcon, MessageSquareIcon, ReplyIcon, XIcon } from "lucide-react";
 import { createContext, use, useState } from "react";
-import type { CoordinatorReport, MessageId } from "@t3tools/contracts";
+import type { MessageId } from "@t3tools/contracts";
 import { coordinatorReports } from "@t3tools/client-runtime/coordinator-reports";
 import { Button } from "../ui/button";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
 
 export type ReportReference = { messageId: MessageId; key: string; version: number };
-type Message = {
-  id: MessageId;
-  role: string;
-  text: string;
-  report?: CoordinatorReport | undefined;
-  reportAnswer?: ReportReference | undefined;
-  createdAt: string;
-};
-export type ReportState = ReturnType<typeof coordinatorReports<Message>>[number];
+export type ReportState = ReturnType<
+  typeof coordinatorReports<Pick<ChatMessage, "id" | "role" | "text" | "report" | "createdAt">>
+>[number];
 export const CoordinatorReportsContext = createContext<{
   reports: readonly ReportState[];
   send: (text: string, ref: ReportReference) => Promise<void>;
@@ -22,14 +17,9 @@ export const CoordinatorReportsContext = createContext<{
   dismiss: (ref: ReportReference) => void;
   scroll: (id: MessageId) => void;
   canOperate: boolean;
-  highlighted: MessageId | null;
+  target: { messageId: MessageId } | null;
+  clear: () => void;
 } | null>(null);
-const reportReference = (message: Message): ReportReference => ({
-  messageId: message.id,
-  key: message.report!.key,
-  version: message.report!.version,
-});
-
 export function ReportAnswerBar({ report }: { report: ReportState }) {
   const ctx = use(CoordinatorReportsContext);
   const [sending, setSending] = useState(false);
@@ -37,34 +27,34 @@ export function ReportAnswerBar({ report }: { report: ReportState }) {
   if (!ctx) return null;
   const panelClassName =
     "flex flex-wrap items-center gap-2 rounded-lg bg-muted/50 px-3 py-2 text-sm";
-  if (report.state === "answered")
+  if (report.state === "answered" || report.state === "dismissed") {
+    const answered = report.state === "answered";
     return (
       <div className={panelClassName}>
         <span className="inline-flex items-center gap-1.5 text-muted-foreground [&_svg]:size-3.5">
-          <MessageSquareIcon /> You answered:{" "}
-          <span className="text-foreground">{report.answer?.text.replace(/^\[[^\n]+\] /, "")}</span>
+          {answered ? <MessageSquareIcon /> : <XIcon />}
+          {answered ? "You answered: " : "Dismissed. The agent hears it on its next turn."}
+          {answered ? (
+            <span className="text-foreground">
+              {report.answer?.text.replace(/^\[[^\n]+\] /, "")}
+            </span>
+          ) : null}
         </span>
       </div>
     );
-  if (report.state === "dismissed")
-    return (
-      <div className={panelClassName}>
-        <span className="inline-flex items-center gap-1.5 text-muted-foreground [&_svg]:size-3.5">
-          <XIcon /> Dismissed. The agent hears it on its next turn.
-        </span>
-      </div>
-    );
+  }
   if (report.state !== "open") return null;
-  const ref = reportReference(report.message);
+  const tag = report.message.report!;
+  const ref = { messageId: report.message.id, key: tag.key, version: tag.version };
   return (
     <div className={panelClassName}>
-      <span className="font-medium">{report.message.report?.question}</span>
+      <span className="font-medium">{tag.question}</span>
       {sendError ? (
         <p role="alert" className="text-sm text-destructive">
           {sendError}
         </p>
       ) : null}
-      {report.message.report?.answers?.map((answer, index) => (
+      {tag.answers?.map((answer, index) => (
         <Button
           key={answer}
           size="xs"
@@ -74,7 +64,7 @@ export function ReportAnswerBar({ report }: { report: ReportState }) {
             setSending(true);
             setSendError(null);
             void ctx
-              .send(`[${report.message.report!.title}, version ${ref.version}] ${answer}`, ref)
+              .send(`[${tag.title}, version ${ref.version}] ${answer}`, ref)
               .catch(() => setSendError("Could not send your answer. Try again."))
               .finally(() => setSending(false));
           }}

@@ -87,7 +87,7 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
           report ? "flex flex-col gap-2 border-l-2 ps-3" : "px-1 py-0.5",
           report && (report.state === "replaced" ? "border-border" : "border-primary/60"),
           report &&
-            reportContext?.highlighted === row.message.id &&
+            reportContext?.target?.messageId === row.message.id &&
             "rounded-lg ring-2 ring-primary/40",
         )}
       >

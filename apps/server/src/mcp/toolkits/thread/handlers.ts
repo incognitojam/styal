@@ -110,8 +110,8 @@ export const declarations = {
       const { thread } = yield* McpInvocationContext.requireThreadScope(scope, "t3_report");
       const { threads } = yield* readThread(thread.threadId);
       const commandId = yield* newCommandId();
-      return yield* threads
-        .postReport({
+      const { storedEvents } = yield* threads
+        .dispatch({
           type: "report.post",
           commandId,
           threadId: thread.threadId,
@@ -119,6 +119,10 @@ export const declarations = {
           ...input,
         })
         .pipe(Effect.mapError(dispatchFailure));
+      const message = storedEvents
+        .map(({ event }) => event)
+        .find((event) => event.type === "message.updated")!.payload;
+      return { messageId: message.id, version: message.report!.version };
     }),
   ),
   run_scheduled_task_now: McpToolAccess.writesEnvironment(

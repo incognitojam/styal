@@ -118,7 +118,6 @@ export const CoordinatorReport = Schema.Struct({
 export type CoordinatorReport = typeof CoordinatorReport.Type;
 export const CoordinatorReportDismissal = Schema.Struct({
   ...CoordinatorReportReference.fields,
-  title: Schema.String,
   id: Schema.String,
   occurredAt: IsoDateTime,
   text: Schema.String,
@@ -1732,7 +1731,6 @@ export type OrchestrationV2ModelSwitch = typeof OrchestrationV2ModelSwitch.Type;
 
 const OrchestrationV2TurnItemBaseFields = {
   report: Schema.optional(CoordinatorReport),
-  reportAnswer: Schema.optional(CoordinatorReportReference),
   legacyTurnId: Schema.optional(Schema.String),
   legacyActivities: Schema.optional(Schema.Array(OrchestrationV2LegacyActivity)),
   /** Wire-only cursor for collapsed work; persisted items keep their complete history. */

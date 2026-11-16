@@ -3395,6 +3395,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     const now = yield* DateTime.now;
     const thread = projection.thread;
     const emitEvent = emit(events, command);
+    const eventFields = {
+      threadId: thread.id,
+      providerInstanceId: thread.providerInstanceId,
+      occurredAt: now,
+    };
     if (command.type === "report.dismiss") {
       const message = projection.messages.find((message) => message.id === command.messageId);
       const report = message?.report;
@@ -3408,9 +3413,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       if (thread.reportDismissals?.some((note) => note.messageId === message.id)) return;
       yield* emitEvent({
         type: "thread.metadata-updated",
-        threadId: thread.id,
-        providerInstanceId: thread.providerInstanceId,
-        occurredAt: now,
+        ...eventFields,
         payload: {
           ...thread,
           updatedAt: now,
@@ -3420,7 +3423,6 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
               messageId: message.id,
               key: report.key,
               version: report.version,
-              title: report.title,
               id: `report-dismissed:${message.id}`,
               occurredAt: DateTime.formatIso(now),
               text: `You dismissed the report "${report.title}" (version ${report.version}).`,
@@ -3433,12 +3435,12 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     const run = projection.runs.find((run) => run.status === "running");
     const node = projection.nodes.find((node) => node.id === run?.rootNodeId);
     const version =
-      Math.max(
+      1 +
+      projection.messages.reduce(
+        (highest, { report }) =>
+          report?.key === command.key ? Math.max(highest, report.version) : highest,
         0,
-        ...projection.messages
-          .filter((message) => message.report?.key === command.key)
-          .map((message) => message.report!.version),
-      ) + 1;
+      );
     const message: OrchestrationV2ConversationMessage = {
       id: command.messageId,
       threadId: thread.id,
@@ -3456,22 +3458,18 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         key: command.key,
         title: command.title,
         version,
-        ...(command.question === undefined ? {} : { question: command.question }),
-        ...(command.answers === undefined ? {} : { answers: command.answers }),
+        question: command.question,
+        answers: command.answers,
       },
     };
     yield* emitEvent({
       type: "message.updated",
-      threadId: thread.id,
-      providerInstanceId: thread.providerInstanceId,
-      occurredAt: now,
+      ...eventFields,
       payload: message,
     });
     yield* emitEvent({
       type: "turn-item.updated",
-      threadId: thread.id,
-      providerInstanceId: thread.providerInstanceId,
-      occurredAt: now,
+      ...eventFields,
       payload: {
         id: TurnItemId.make(`report:${command.messageId}`),
         threadId: thread.id,
@@ -5511,7 +5509,6 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           completedAt: now,
           updatedAt: now,
           type: "user_message",
-          ...(message.reportAnswer ? { reportAnswer: message.reportAnswer } : {}),
           messageId: input.messageId,
           inputIntent:
             input.command.type === "queued-message.promote-to-steer"
@@ -7162,7 +7159,6 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         completedAt: now,
         updatedAt: now,
         type: "user_message",
-        ...(message.reportAnswer ? { reportAnswer: message.reportAnswer } : {}),
         messageId: command.messageId,
         inputIntent: "turn_start",
         text: dispatchText,
@@ -7952,7 +7948,6 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       completedAt: now,
       updatedAt: now,
       type: "user_message",
-      ...(command.reportAnswer === undefined ? {} : { reportAnswer: command.reportAnswer }),
       messageId: command.messageId,
       inputIntent: "turn_start",
       text: dispatchText,
