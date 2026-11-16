@@ -209,18 +209,28 @@ export async function runPaletteItem(
 }
 
 /**
- * Pairs another environment with the app through Settings → Connections → Add environment,
- * and waits until Connections lists it as connected.
+ * Pairs another environment through Settings → Machines → Add machine,
+ * and waits until its machine tab shows a connected route.
  */
 export async function addEnvironment(page: Page, pairingUrl: string): Promise<void> {
   allowOrigin(page, new URL(pairingUrl).origin);
   await page.goto(new URL("/settings/connections", page.url()).href);
-  await page.getByRole("button", { name: "Add environment" }).click();
+  await page.locator("#work-together").getByRole("button", { name: "Add machine" }).first().click();
   const dialog = page.getByRole("dialog", { name: "Add Environment" });
   // A full pairing URL fills both the host and the pairing code.
   await dialog.getByRole("textbox", { name: "Host" }).fill(pairingUrl);
   await dialog.getByRole("button", { name: "Add environment" }).click();
-  await page.getByText(`${new URL(pairingUrl).origin}/ · Connected`).waitFor({ timeout: 60_000 });
+  await dialog.waitFor({ state: "detached" });
+  // Both servers share a hostname; the primary is the one serving this app.
+  await page
+    .getByRole("tablist", { name: "Your machines" })
+    .getByRole("tab")
+    .filter({ hasNotText: "Serving this app" })
+    .click();
+  await page
+    .getByRole("tabpanel")
+    .getByText(/· Connected(?: ·|$)/)
+    .waitFor({ timeout: 60_000 });
 }
 
 /**
