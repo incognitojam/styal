@@ -263,6 +263,14 @@
         "base": "fc2b5de20cb572d2333e03284466e3c804d25c84",
         "head": "a6acfd331f5fba158c30f0f15a80fce4bf73db83"
       }
+    },
+    {
+      "pr": 28475,
+      "reason": "Imported provisionally as one snapshot: horizontal content scrollers, including shadow-root diffs and the right-panel tab strip, own swipes at both edges; history swipes outside horizontal scrollers still work. The fork preserves its cross-platform swipe policy and ports the tab-strip regression to its inline/open panel API and rightPanelFocus context, retaining existing panel tests. Native macOS trackpad behavior requires maintainer confirmation with a nightly or preview:mac build. When it merges, compare the frozen base-to-head diff with the final upstream change, reconcile amendments and fork adaptations, rerun swipe and tab-strip regressions, then clear the snapshot marker with that intake. If it closes without merging, review whether to remove the change or retain it as maintained fork behavior and record that decision before clearing the marker.",
+      "snapshot": {
+        "base": "7fab4ef97838e3e0f1b7e0e2af58d778fda059d8",
+        "head": "f95e4271f3431eaf3e38a2911cf6d7232c9482ac"
+      }
     }
   ]
 }
