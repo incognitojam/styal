@@ -245,10 +245,17 @@ export function WorkTogetherSettings({
                   </SettingsRow>
                 ) : null}
                 {!connected ? (
-                  <SettingsRow
-                    title={`This app can't reach ${selected.label} right now`}
-                    description="Its setting still applies."
-                  />
+                  selected.entry.enabled ? (
+                    <SettingsRow
+                      title={`This app can't reach ${selected.label} right now`}
+                      description="Its setting still applies."
+                    />
+                  ) : (
+                    <SettingsRow
+                      title={`${selected.label} is hidden from this app`}
+                      description="Its settings still apply. Show it in this app to change them here."
+                    />
+                  )
                 ) : null}
                 {connected && !supportsLinks ? (
                   <SettingsRow
@@ -500,7 +507,7 @@ function MachineTab({
   const [status, dot] = primary
     ? ([window.desktopBridge ? "This computer" : "Serving this app", "bg-success"] as const)
     : !machine.entry.enabled
-      ? (["Switched off", "bg-muted-foreground/30"] as const)
+      ? (["Hidden", "bg-muted-foreground/30"] as const)
       : !connected
         ? (["Offline", "bg-muted-foreground/30"] as const)
         : !supported

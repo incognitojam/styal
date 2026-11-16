@@ -27,7 +27,7 @@ import { environmentStatusText } from "./environmentStatusText";
 
 function connectionStatusLabel(environment: ConnectedEnvironmentSummary): string | null {
   if (!environment.isEnabled && environment.connectionState !== "unsupported") {
-    return "Off";
+    return "Hidden";
   }
   return environmentStatusText({
     phase: environment.connectionState,
@@ -166,7 +166,7 @@ export function ConnectionEnvironmentRow(props: {
         </Pressable>
 
         <ThemedSwitch
-          accessibilityLabel={`Enable ${props.environment.environmentLabel}`}
+          accessibilityLabel={`Show ${props.environment.environmentLabel} in this app`}
           style={{ alignSelf: "center" }}
           disabled={unsupported && !canRetry}
           onValueChange={(next) => props.onSetEnabled(props.environment.environmentId, next)}
