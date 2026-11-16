@@ -10,7 +10,8 @@ import * as Schema from "effect/Schema";
 
 import { CLI_PACKAGE_NAME } from "@t3tools/shared/cliPackage";
 
-import { APP_VERSION } from "./branding";
+import { APP_VERSION, HOSTED_APP_CHANNEL } from "./branding";
+import { isHostedStaticApp } from "./hostedPairing";
 import { getLocalStorageItem, setLocalStorageItem } from "./hooks/useLocalStorage";
 
 export interface VersionMismatch {
@@ -84,9 +85,11 @@ export function resolveVersionMismatch(
   };
 }
 
+/** The hosted app without a channel deploys from main, so its version is no release to update servers to. */
 export function resolveServerConfigVersionMismatch(
   serverConfig: Pick<ServerConfig, "environment"> | null | undefined,
 ): VersionMismatch | null {
+  if (HOSTED_APP_CHANNEL === null && isHostedStaticApp()) return null;
   return resolveVersionMismatch(serverConfig?.environment.serverVersion);
 }
 

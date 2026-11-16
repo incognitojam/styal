@@ -2,8 +2,13 @@ import { EnvironmentId } from "@t3tools/contracts";
 import type { ServerUpdateState } from "@t3tools/client-runtime/state/server";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-const branding = vi.hoisted(() => ({ APP_VERSION: "0.0.34" }));
+const branding = vi.hoisted(() => ({
+  APP_VERSION: "0.0.34",
+  HOSTED_APP_CHANNEL: null as "latest" | "nightly" | null,
+}));
 vi.mock("./branding", () => branding);
+const hostedPairing = vi.hoisted(() => ({ isHostedStaticApp: (): boolean => false }));
+vi.mock("./hostedPairing", () => hostedPairing);
 
 import { APP_VERSION } from "./branding";
 import {
@@ -13,6 +18,7 @@ import {
   dismissVersionMismatch,
   isServerUpdateFailureDismissed,
   isVersionMismatchDismissed,
+  resolveServerConfigVersionMismatch,
   resolveServerSelfUpdateCapability,
   resolveVersionMismatch,
 } from "./versionSkew";
@@ -60,6 +66,8 @@ describe("versionSkew", () => {
 
   beforeEach(() => {
     branding.APP_VERSION = "0.0.34";
+    branding.HOSTED_APP_CHANNEL = null;
+    hostedPairing.isHostedStaticApp = () => false;
   });
 
   it("dismisses only the current failed attempt without clearing its retry state", () => {
@@ -88,6 +96,19 @@ describe("versionSkew", () => {
       serverVersion: "0.0.33",
       hint: MISMATCH_HINT,
     });
+  });
+
+  it("compares servers only with a released client", () => {
+    const serverConfig = { environment: { serverVersion: "0.0.33" } } as Parameters<
+      typeof resolveServerConfigVersionMismatch
+    >[0];
+    expect(resolveServerConfigVersionMismatch(serverConfig)).not.toBeNull();
+
+    hostedPairing.isHostedStaticApp = () => true;
+    expect(resolveServerConfigVersionMismatch(serverConfig)).toBeNull();
+
+    branding.HOSTED_APP_CHANNEL = "nightly";
+    expect(resolveServerConfigVersionMismatch(serverConfig)).not.toBeNull();
   });
 
   it("does not warn when the server is ahead of the client", () => {
