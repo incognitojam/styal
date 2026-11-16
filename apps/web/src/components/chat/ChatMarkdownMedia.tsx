@@ -133,6 +133,7 @@ export function ChatMarkdownImageFallback(props: {
   readonly kind?: "image" | "video" | "audio";
   readonly actionsSource?: MediaActionSource | undefined;
   readonly detail?: string | undefined;
+  readonly onViewOriginal?: (() => void) | undefined;
 }) {
   const content = (
     <span
@@ -143,6 +144,11 @@ export function ChatMarkdownImageFallback(props: {
       )}
     >
       <ChatMarkdownMediaUnavailableLabel alt={props.alt} kind={props.kind} detail={props.detail} />
+      {props.onViewOriginal ? (
+        <button type="button" onClick={props.onViewOriginal}>
+          View original
+        </button>
+      ) : null}
     </span>
   );
   return props.actionsSource ? (
@@ -168,6 +174,7 @@ export function ChatMarkdownImage(props: {
   readonly placeholderSrc?: string | undefined;
   readonly waitForPlaceholder?: boolean | undefined;
   readonly sourceFailed?: boolean | undefined;
+  readonly onViewOriginal?: (() => void) | undefined;
   readonly unavailableDetail?: string | undefined;
   readonly alt: string;
   readonly copyMarkdown: string | undefined;
@@ -241,6 +248,7 @@ export function ChatMarkdownImage(props: {
         copyMarkdown={props.copyMarkdown}
         actionsSource={props.actionsSource}
         detail={props.unavailableDetail}
+        onViewOriginal={props.onViewOriginal}
       />
     ) : (
       <span
@@ -280,6 +288,11 @@ export function ChatMarkdownImage(props: {
         {failed ? (
           <span className="flex size-full items-center justify-center p-2 text-center text-xs text-muted-foreground">
             <ChatMarkdownMediaUnavailableLabel alt={props.alt} detail={props.unavailableDetail} />
+            {props.onViewOriginal ? (
+              <button type="button" onClick={props.onViewOriginal}>
+                View original
+              </button>
+            ) : null}
           </span>
         ) : src !== null ? (
           <img
@@ -378,7 +391,9 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
   readonly onImageExpand?: ((preview: ExpandedImagePreview) => void) | undefined;
 }) {
   const resource = props.resource;
+  const [viewOriginal, setViewOriginal] = useState(false);
   const previewEnabled =
+    !viewOriginal &&
     resource._tag === "github-media" &&
     props.kind !== "video" &&
     !/\.(?:gif|svg)(?:[?#]|$)/i.test(resource.url);
@@ -509,6 +524,7 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
   const image = (
     <ChatMarkdownImage
       key={JSON.stringify([props.environmentId, props.resource, props.srcFragment])}
+      onViewOriginal={previewEnabled ? () => setViewOriginal(true) : undefined}
       waitForPlaceholder={
         previewEnabled &&
         (placeholder._tag === "Loading" ||

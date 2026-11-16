@@ -6,7 +6,7 @@ import { render } from "../../../test/render";
 import { ChatMarkdownAssetImage } from "./ChatMarkdownMedia";
 
 // Every evaluation of the URL query is one mint: the first read, then one per refresh.
-const assetQuery = vi.hoisted(() => ({ mints: 0 }));
+const assetQuery = vi.hoisted(() => ({ mints: 0, failPreview: false }));
 vi.mock(import("~/state/assets"), async (original) => {
   const { AsyncResult, Atom } = await import("effect/reactivity");
   const createUrl = Atom.family((_key: string) =>
@@ -16,7 +16,11 @@ vi.mock(import("~/state/assets"), async (original) => {
       return AsyncResult.success({
         ...(input.resource.imagePreview ? { imagePreview: input.resource.imagePreview } : {}),
         relativeUrl:
-          "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7",
+          assetQuery.failPreview &&
+          input.resource.imagePreview &&
+          input.resource.imagePreview.width !== 64
+            ? "data:image/png;base64,AAAA"
+            : "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7",
         expiresAt: Number.MAX_SAFE_INTEGER,
       });
     }).pipe(Atom.keepAlive),
@@ -109,4 +113,30 @@ describe("ChatMarkdownAssetImage", () => {
     expect(item.actionsSource.originalAsset.resource).not.toHaveProperty("imagePreview");
     expect(assetQuery.mints).toBe(2);
   });
+});
+
+it("loads an original only after selecting recovery from a failed preview", async () => {
+  assetQuery.mints = 0;
+  assetQuery.failPreview = true;
+  try {
+    await using screen = await render(
+      <ChatMarkdownAssetImage
+        environmentId={EnvironmentId.make("environment-1")}
+        resource={{
+          _tag: "github-media",
+          cwd: "/synthetic",
+          url: "https://github.com/user-attachments/assets/rejected-image",
+        }}
+        alt="rejected"
+        standalone
+      />,
+    );
+    await expect.element(screen.getByRole("alert")).toBeInTheDocument();
+    expect(assetQuery.mints).toBe(2);
+    await screen.getByRole("button", { name: "View original" }).click();
+    await expect.element(screen.getByRole("img", { name: "rejected" })).toBeVisible();
+    expect(assetQuery.mints).toBe(3);
+  } finally {
+    assetQuery.failPreview = false;
+  }
 });

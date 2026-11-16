@@ -66,13 +66,18 @@ export const sourceControlMediaResponse = Effect.fn(
       })
       .pipe(Effect.option);
     if (result._tag === "None") return HttpServerResponse.empty({ status: 415, headers });
+    const expiresAt = Math.min(asset.expiresAt, result.value.expiresAt);
+    const freshness = Math.max(
+      0,
+      Math.floor((expiresAt - (yield* Clock.currentTimeMillis)) / 1000),
+    );
     const digester = yield* Digest.Digest;
     const etag = Hex.encode(yield* digester.digest(Digest.sha256, result.value.bytes));
     return HttpServerResponse.uint8Array(result.value.bytes, {
       contentType: result.value.contentType,
       headers: {
         ...headers,
-        "cache-control": `private, max-age=${Math.max(0, Math.min(300, remainingSeconds))}`,
+        "cache-control": `private, max-age=${freshness}`,
         etag: `"${etag}"`,
       },
     });

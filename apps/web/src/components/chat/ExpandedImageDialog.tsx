@@ -1,5 +1,5 @@
 import { pullRequestImageWidth } from "@t3tools/client-runtime/pull-request-image-preview";
-import { memo, useRef, useState, type ReactNode, type KeyboardEvent } from "react";
+import { memo, useRef, useState, type ReactNode, type KeyboardEvent, type RefObject } from "react";
 import { flushSync } from "react-dom";
 import { ChevronLeftIcon, ChevronRightIcon, XIcon } from "lucide-react";
 import { Image as ImageGlyph, Text as TextGlyph } from "lucide";
@@ -80,6 +80,63 @@ function ExpandedVideo({ item }: { readonly item: ExpandedImageItem }) {
   );
 }
 
+function PullRequestPreviewImage({
+  item,
+  source,
+  original,
+  onViewOriginal,
+  ref,
+}: {
+  readonly item: ExpandedImageItem;
+  readonly source: MediaActionSource;
+  readonly original: boolean;
+  readonly onViewOriginal: () => void;
+  readonly ref: RefObject<ZoomableImageHandle | null>;
+}) {
+  const [requestedWidth, setRequestedWidth] = useState(0);
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  const asset = original ? source.originalAsset! : source.asset!;
+  const baseResource = asset.resource;
+  const screenWidth = pullRequestImageWidth(
+    Math.max(window.innerWidth, requestedWidth),
+    window.devicePixelRatio,
+  );
+  const resource =
+    !original && baseResource._tag === "github-media" && baseResource.imagePreview
+      ? {
+          ...baseResource,
+          imagePreview: {
+            width: Math.max(baseResource.imagePreview.width, screenWidth) as typeof screenWidth,
+          },
+        }
+      : baseResource;
+  const url = useAssetUrlState(asset.environmentId, resource);
+  const src = url._tag === "Success" ? url.url : item.src;
+  return (
+    <>
+      {!original ? (
+        <Button variant="outline" onClick={onViewOriginal}>
+          View original
+        </Button>
+      ) : null}
+      {src === null || failedSrc === src ? (
+        <ExpandedMediaFailure>
+          <p>This image could not be loaded.</p>
+        </ExpandedMediaFailure>
+      ) : (
+        <ZoomableImage
+          ref={ref}
+          src={src}
+          name={item.name}
+          mimeType={itemMimeType(item)}
+          onError={() => setFailedSrc(src)}
+          onZoom={(zoom) => setRequestedWidth(window.innerWidth * zoom)}
+        />
+      )}
+    </>
+  );
+}
+
 export const ExpandedImageDialog = memo(function ExpandedImageDialog({
   preview,
   onClose,
@@ -109,28 +166,8 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
     src: item?.src ?? null,
   };
   const [originals, setOriginals] = useState<ReadonlySet<number>>(() => new Set());
-  const [requestedWidth, setRequestedWidth] = useState({ index: -1, width: 0 });
   const originalAsset = source.originalAsset;
-  const baseResource = source.asset?.resource;
-  const screenWidth = pullRequestImageWidth(
-    Math.max(window.innerWidth, requestedWidth.index === index ? requestedWidth.width : 0),
-    window.devicePixelRatio,
-  );
-  const displayResource =
-    baseResource?._tag === "github-media" && baseResource.imagePreview
-      ? {
-          ...baseResource,
-          imagePreview: {
-            width: Math.max(baseResource.imagePreview.width, screenWidth) as typeof screenWidth,
-          },
-        }
-      : baseResource;
-  const viewerAsset = originals.has(index) ? originalAsset : source.asset;
-  const viewerUrl = useAssetUrlState(
-    viewerAsset?.environmentId ?? null,
-    originals.has(index) ? (originalAsset?.resource ?? null) : (displayResource ?? null),
-  );
-  const imageSrc = viewerUrl._tag === "Success" ? viewerUrl.url : (item?.src ?? null);
+  const imageSrc = item?.src ?? null;
   const openFile = source.onOpenFile;
   const actionsSource: MediaActionSource = openFile
     ? {
@@ -232,14 +269,6 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
             <ChevronLeftIcon className="size-5" />
           </Button>
         )}
-        {originalAsset && !originals.has(index) ? (
-          <Button
-            variant="outline"
-            onClick={() => setOriginals((current) => new Set([...current, index]))}
-          >
-            View original
-          </Button>
-        ) : null}
         <MediaActions
           source={
             originals.has(index) && originalAsset
@@ -251,6 +280,17 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
           <div className="relative isolate z-10 flex max-h-full max-w-[var(--media-width)] flex-col items-center">
             {item.type === "video" ? (
               <ExpandedVideo key={index} item={item} />
+            ) : source.asset?.resource._tag === "github-media" &&
+              source.asset.resource.imagePreview &&
+              source.originalAsset ? (
+              <PullRequestPreviewImage
+                key={index}
+                item={item}
+                source={source}
+                original={originals.has(index)}
+                onViewOriginal={() => setOriginals((current) => new Set([...current, index]))}
+                ref={zoomableImageRef}
+              />
             ) : showingAccessibilityDetails ? (
               accessibilityDetails ? (
                 <SnapShotAccessibilityData
@@ -275,7 +315,6 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
                 name={item.name}
                 mimeType={itemMimeType(item)}
                 onError={() => setFailedImageSrc(imageSrc)}
-                onZoom={(zoom) => setRequestedWidth({ index, width: window.innerWidth * zoom })}
               />
             )}
             <div className="mt-2 flex max-w-[var(--media-width)] items-center justify-center gap-1.5 text-xs text-white/80 max-sm:px-10">

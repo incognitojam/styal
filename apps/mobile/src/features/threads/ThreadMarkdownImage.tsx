@@ -99,6 +99,7 @@ export function ThreadMarkdownImageView(props: {
   readonly format?: "svg";
   readonly actionsSource?: MediaActionsSource;
   readonly onPressPreview: (source: FilePreviewSource) => void;
+  readonly onViewOriginal?: (() => void) | undefined;
 }) {
   const withGallery = useFilePreviewGallery();
   const sourceIdentifier = useId();
@@ -147,7 +148,10 @@ export function ThreadMarkdownImageView(props: {
         <MediaActionsMenu media={mediaActions}>
           <Pressable
             accessibilityRole="imagebutton"
-            accessibilityLabel={props.alt ?? "Markdown image"}
+            onPress={failed ? props.onViewOriginal : undefined}
+            accessibilityLabel={
+              failed && props.onViewOriginal ? "View original" : (props.alt ?? "Markdown image")
+            }
             accessibilityHint={
               mediaActions.actions.length > 0 ? "Touch and hold for media actions" : undefined
             }
@@ -166,7 +170,9 @@ export function ThreadMarkdownImageView(props: {
               <Text className="px-3 text-center text-xs text-foreground-muted">
                 {props.unavailableDetail
                   ? `Image unavailable. ${props.unavailableDetail}`
-                  : "Image unavailable"}
+                  : props.onViewOriginal
+                    ? "Image unavailable. View original"
+                    : "Image unavailable"}
               </Text>
             ) : (
               <AppActivityIndicator />

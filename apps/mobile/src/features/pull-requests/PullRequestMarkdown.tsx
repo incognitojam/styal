@@ -1,4 +1,3 @@
-import { MarkdownImageAvailableWidthContext } from "../threads/ThreadMarkdownImage";
 import { PullRequestLazyImage } from "./PullRequestImageVisibility";
 import {
   splitPullRequestBody,
@@ -12,7 +11,7 @@ import { pullRequestTarget, type PullRequestParams } from "./usePullRequestDiff"
 import {
   PullRequestMedia,
   PullRequestMediaContext,
-  usePullRequestMediaUrl,
+  usePullRequestImageUrl,
 } from "./PullRequestMedia";
 import { videoMimeType } from "@t3tools/shared/video";
 import { createContext, useContext, useMemo, useState } from "react";
@@ -88,12 +87,7 @@ function MarkdownImage(props: {
   readonly enabled: boolean;
   readonly knownSize: { width: number; height: number } | undefined;
 }) {
-  const availableWidth = useContext(MarkdownImageAvailableWidthContext);
-  const media = usePullRequestMediaUrl(
-    props.href,
-    props.enabled,
-    Math.min(availableWidth || 360, props.knownSize?.width ?? Infinity),
-  );
+  const media = usePullRequestImageUrl(props.href, props.enabled);
   const context = useContext(PullRequestMediaContext);
   const withGallery = useFilePreviewGallery();
   return (
@@ -105,6 +99,13 @@ function MarkdownImage(props: {
       cacheKey={media.cacheKey}
       unavailable={media.unavailable || !/^https?:\/\//i.test(props.href)}
       alt={props.alt}
+      onViewOriginal={() =>
+        props.onPreview({
+          ...pullRequestImageSource(props.href, context),
+          previewImage: false,
+          name: props.alt ?? "Image",
+        })
+      }
       onPressPreview={(source) =>
         props.onPreview(
           withGallery({

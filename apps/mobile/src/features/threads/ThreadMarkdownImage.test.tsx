@@ -10,7 +10,19 @@ const harness = vi.hoisted(() => ({
 }));
 
 vi.mock("react-native", () => ({
-  Pressable: harness.Passthrough,
+  Pressable: ({
+    children,
+    onPress,
+    accessibilityLabel,
+  }: {
+    children?: ReactNode;
+    onPress?: () => void;
+    accessibilityLabel?: string;
+  }) => (
+    <button aria-label={accessibilityLabel} onClick={onPress}>
+      {children}
+    </button>
+  ),
   StyleSheet: { absoluteFill: {} },
   View: ({ children, style }: { children?: ReactNode; style?: unknown }) => (
     <div data-style={JSON.stringify(style)}>{children}</div>
@@ -116,9 +128,11 @@ it("retries a failed image once its URI comes back through null", async () => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   const container = document.createElement("div");
   const root = createRoot(container);
+  const viewOriginal = vi.fn();
   const view = (uri: string | null) => (
     <ThreadMarkdownImageView
       uri={uri}
+      onViewOriginal={viewOriginal}
       sourceKey="attachment:a"
       unavailable={false}
       alt={null}
@@ -129,6 +143,11 @@ it("retries a failed image once its URI comes back through null", async () => {
     await act(async () => root.render(view("https://example.test/a.png")));
     await act(async () => harness.failImage());
     expect(container.textContent).toContain("Image unavailable");
+    expect(viewOriginal).not.toHaveBeenCalled();
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('button[aria-label="View original"]')!.click(),
+    );
+    expect(viewOriginal).toHaveBeenCalledOnce();
 
     await act(async () => root.render(view(null)));
     await act(async () => root.render(view("https://example.test/a.png")));

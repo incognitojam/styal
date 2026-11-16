@@ -1,3 +1,4 @@
+import * as Clock from "effect/Clock";
 import * as Preview from "./PullRequestImagePreview.ts";
 // @effect-diagnostics nodeBuiltinImport:off - tests inject swaps at the native open boundary.
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
@@ -1537,17 +1538,24 @@ describe("AssetAccess", () => {
     const layerDrivers = Layer.succeed(BuiltInDrivers.SourceControlDrivers, [
       {
         driver: { kind: media.definition.kind, definition: media.definition },
-        instance: fakeSourceControlDriverInstance(media.definition.kind, {
-          pullRequests: null,
-          fetchMedia: (request) =>
-            Effect.sync(() => {
-              fetched.push(request);
-              return HttpClientResponse.fromWeb(
-                HttpClientRequest.get(request.url),
-                new Response("bytes", { status: 206, headers: { "content-length": "5" } }),
-              );
+        instance: {
+          ...fakeSourceControlDriverInstance(media.definition.kind, {
+            pullRequests: null,
+            fetchMedia: (request) =>
+              Effect.sync(() => {
+                fetched.push(request);
+                return HttpClientResponse.fromWeb(
+                  HttpClientRequest.get(request.url),
+                  new Response("bytes", { status: 206, headers: { "content-length": "5" } }),
+                );
+              }),
+          }),
+          imagePreviewSource: () =>
+            Effect.succeed({
+              partition: "synthetic",
+              fetch: Effect.succeed({ bytes: new Uint8Array([1]), contentType: "image/png" }),
             }),
-        }),
+        },
       },
     ]);
     // Clients that predate `repository` get the checkout's.
@@ -1594,6 +1602,35 @@ describe("AssetAccess", () => {
         })._tag,
       ).toBe("None");
       if (asset?.kind !== "source-control-media") return;
+      const now = yield* Clock.currentTimeMillis;
+      const derivative = {
+        bytes: new Uint8Array([1, 2, 3]),
+        contentType: "image/webp",
+        expiresAt: now + 300_000,
+      };
+      yield* TestClock.adjust("4 minutes");
+      const cachedResponse = yield* sourceControlMediaResponse(
+        { ...asset, imagePreview: { width: 640 } },
+        {},
+      ).pipe(
+        Effect.provideService(Preview.PullRequestImagePreview, {
+          read: () => Effect.succeed(derivative),
+        }),
+      );
+      expect(cachedResponse.headers["cache-control"]).toBe("private, max-age=60");
+      const expiringResponse = yield* sourceControlMediaResponse(
+        { ...asset, expiresAt: now + 241_000, imagePreview: { width: 640 } },
+        {},
+      ).pipe(
+        Effect.provideService(Preview.PullRequestImagePreview, {
+          read: () =>
+            Effect.gen(function* () {
+              yield* TestClock.adjust("2 seconds");
+              return derivative;
+            }),
+        }),
+      );
+      expect(expiringResponse.headers["cache-control"]).toBe("private, max-age=0");
 
       const response = yield* sourceControlMediaResponse(asset, {
         range: "bytes=0-4",
