@@ -134,6 +134,8 @@ vp run --filter @t3tools/scripts intake:check -- --base origin/main --head intak
 
 The successful local audit inspects the remote branch and reports the next action: push the candidate, watch Fork CI, address a failed run, or approve the promotion that Fork CI started. Rerun the audit after completing the reported step. Review the combined batch once, including source completeness, relevant exceptions, fork compatibility, and observed behavior. The audit's Commits section lists each candidate commit under its upstream PR with its `Fork adaptation` note, and shows how its change differs from the upstream commits it imports; a commit reported as matching upstream has the same ordered patch (including context, modes and binary content), or leaves each differing file identical to upstream’s version including its mode. Do not repeat upstream's entire manual test plan for unchanged code.
 
+Push a prepared track to `preflight/<name>` to run Fork CI’s full suites before publishing an intake candidate, then delete the branch when finished. Preflight branches do not run Fork macOS or network E2E, acquire the intake landing hold, promote, or deploy.
+
 ## 4. Promote without a PR
 
 **Promote upstream intake** is the landing path. It starts by itself when Fork CI passes on an `intake/**` push, and always runs from `main`, so a candidate cannot change the checks that promote it.
