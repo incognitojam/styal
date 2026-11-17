@@ -1,5 +1,5 @@
-// @effect-diagnostics-next-line nodeBuiltinImport:off -- Effect FileSystem has neither lstat nor non-recursive rmdir.
-import * as NodeFSP from "node:fs/promises";
+import * as PhysicalFileSystem from "@t3tools/shared/PhysicalFileSystem";
+
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Schema from "effect/Schema";
 import * as Path from "effect/Path";
@@ -25,6 +25,7 @@ class WorktreeCleanupIoError extends Schema.TaggedError<WorktreeCleanupIoError>(
 const inside = (root: string, target: string) => target.startsWith(`${root}/`);
 
 export const makeDeletion = Effect.gen(function* () {
+  const NodeFSP = yield* PhysicalFileSystem.PhysicalFileSystem;
   const clock = yield* Clock.Clock;
   const now = () => limits.now?.() ?? clock.currentTimeMillisUnsafe();
   const platform = yield* HostProcess.Platform;

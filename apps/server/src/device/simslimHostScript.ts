@@ -2,7 +2,8 @@ const SIMSLIM_VERSION = "0.12.2";
 
 /** Runs on the simulator host, including over SSH; inspecting never installs the helper. */
 export const simslimHostScript = String.raw`
-import * as fs from "node:fs/promises";
+import { createRequire } from "node:module";
+const fs = createRequire(import.meta.url)(process.versions.electron ? "original-fs" : "node:fs").promises;
 import * as os from "node:os";
 import * as path from "node:path";
 import { createHash } from "node:crypto";

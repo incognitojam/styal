@@ -53,6 +53,7 @@ const makeBrowser = () => {
 };
 
 const options = () => ({
+  removeDirectory: (directory: string) => launches.rm(directory, { recursive: true, force: true }),
   profilesDir: "/test/profiles",
   executable: vi.fn(async () => "/test/chromium"),
   env: {},

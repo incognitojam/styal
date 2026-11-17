@@ -1,5 +1,6 @@
+import * as PhysicalFileSystem from "@t3tools/shared/PhysicalFileSystem";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
-import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as NodeServices from "./nodeServices.ts";
 import * as Effect from "effect/Effect";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
@@ -594,6 +595,7 @@ const runCleanupTest = <A, E>(
     A,
     E,
     | FileSystem.FileSystem
+    | PhysicalFileSystem.PhysicalFileSystem
     | ServerConfig.ServerConfig
     | GitVcsDriver.GitVcsDriver
     | Path.Path
@@ -2107,20 +2109,20 @@ describe("storage cleanup reports and local file policies", () => {
         Effect.gen(function* () {
           const fs = yield* FileSystem.FileSystem;
           const storeDir = yield* fs.makeTempDirectoryScoped({ prefix: "pnpm-store-" });
+          const measuredFs = {
+            ...fs,
+            stat: (target: string) =>
+              fs.stat(target).pipe(
+                Effect.map((info) => ({
+                  ...info,
+                  // ZFS can change physical allocation between the expectation and the cleanup scan.
+                  blocks: Option.some(8n),
+                  dev: store === "other-device" && target === storeDir ? info.dev + 1n : info.dev,
+                })),
+              ),
+          };
           const { service, worktree, setPolicy } = yield* cleanupFixture().pipe(
-            Effect.provideService(FileSystem.FileSystem, {
-              ...fs,
-              stat: (target) =>
-                fs
-                  .stat(target)
-                  .pipe(
-                    Effect.map((info) =>
-                      store === "other-device" && target === storeDir
-                        ? { ...info, dev: info.dev + 1n }
-                        : info,
-                    ),
-                  ),
-            }),
+            Effect.provideService(FileSystem.FileSystem, measuredFs),
           );
           setPolicy("tracked-changes");
           const nodeModules = `${worktree}/node_modules`;
@@ -2144,10 +2146,9 @@ describe("storage cleanup reports and local file policies", () => {
             ...(store === "no-manifest" ? [] : [`${nodeModules}/.modules.yaml`]),
             ...(store === "same-device" ? [] : [`${nodeModules}/.pnpm/pkg@1.0.0/index.js`]),
           ];
-          const bytes = (yield* Effect.forEach(counted, (file) => allocatedBytes(fs, file))).reduce(
-            (sum, size) => sum + size,
-            0,
-          );
+          const bytes = (yield* Effect.forEach(counted, (file) =>
+            allocatedBytes(measuredFs, file),
+          )).reduce((sum, size) => sum + size, 0);
           const report = yield* service.runNow;
           expect(report.entries[0]).toMatchObject({ outcome: "removed", bytes });
         }),

@@ -628,6 +628,14 @@
     "./speech": {
       "types": "./src/speech.ts",
       "import": "./src/speech.ts"
+    },
+    "./PhysicalFileSystem": {
+      "types": "./src/PhysicalFileSystem.ts",
+      "import": "./src/PhysicalFileSystem.ts"
+    },
+    "./physicalFileSystemNode": {
+      "types": "./src/physicalFileSystemNode.ts",
+      "import": "./src/physicalFileSystemNode.ts"
     }
   },
   "scripts": {

@@ -47,6 +47,18 @@ const RESTRICTED_IMPORT_PATHS = [
   },
 ];
 
+const RESTRICTED_SERVER_IMPORT_PATTERNS = [
+  {
+    group: [
+      "@t3tools/source-control-*/client/*",
+      "../client/*",
+      "../../client/*",
+      "../../../client/*",
+    ],
+    message: "A forge's client entry is UI-only; the server reads its `shared/definition`.",
+  },
+];
+
 const RESTRICTED_UI_VARIANT_PATTERNS = [
   {
     group: ["**/components/ui/*", "**/ui/*", "./ui/*"],
@@ -474,18 +486,32 @@ export default defineConfig({
             "error",
             {
               paths: [...RESTRICTED_IMPORT_PATHS, RESTRICTED_PULL_REQUEST_GLYPH_IMPORTS],
-              patterns: [
+              patterns: RESTRICTED_SERVER_IMPORT_PATTERNS,
+            },
+          ],
+        },
+      },
+      {
+        files: ["apps/server/src/**"],
+        excludeFiles: [
+          "apps/server/src/nodeServices.ts",
+          "**/*.{test,spec,testkit}.{ts,tsx}",
+          "**/{test,tests,testkit,testing,testUtils,fixtures,integration}/**",
+        ],
+        rules: {
+          "eslint/no-restricted-imports": [
+            "error",
+            {
+              paths: [
+                ...RESTRICTED_IMPORT_PATHS,
+                RESTRICTED_PULL_REQUEST_GLYPH_IMPORTS,
                 {
-                  group: [
-                    "@t3tools/source-control-*/client/*",
-                    "../client/*",
-                    "../../client/*",
-                    "../../../client/*",
-                  ],
+                  name: "@effect/platform-node/NodeServices",
                   message:
-                    "A forge's client entry is UI-only; the server reads its `shared/definition`.",
+                    "Use the server's nodeServices.ts layer so desktop deletion remains physical and injectable.",
                 },
               ],
+              patterns: RESTRICTED_SERVER_IMPORT_PATTERNS,
             },
           ],
         },

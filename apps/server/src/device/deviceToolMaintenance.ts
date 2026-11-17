@@ -6,7 +6,7 @@ import * as ProcessRunner from "../processRunner.ts";
 import { AGENT_DEVICE_VERSION, DEVICE_HUB_VERSION } from "./DeviceToolchain.ts";
 
 export const deviceToolMaintenanceScript = String.raw`
-const maintenanceFs = require('node:fs');
+const maintenanceFs = require(process.versions.electron ? 'original-fs' : 'node:fs');
 const maintenancePath = require('node:path');
 const maintenanceAlive = pid => {
   try { process.kill(pid, 0); return true; }

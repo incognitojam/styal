@@ -1,4 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off
+import * as PhysicalFileSystem from "@t3tools/shared/PhysicalFileSystem";
 import * as NodeCrypto from "node:crypto";
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
@@ -737,7 +738,12 @@ const copyThreadAttachments = Effect.fn("LegacyImport.copyThreadAttachments")(fu
   readonly sourceAttachmentsDir: string;
   readonly v2Projection?: OrchestrationV2ThreadProjection;
   readonly targetAttachmentsDir: string;
-}): Effect.fn.Return<ReadonlySet<string>, LegacyImportError> {
+}): Effect.fn.Return<
+  ReadonlySet<string>,
+  LegacyImportError,
+  PhysicalFileSystem.PhysicalFileSystem
+> {
+  const physicalFileSystem = yield* PhysicalFileSystem.PhysicalFileSystem;
   const relativePaths = new Set<string>();
   for (const event of input.events) {
     if (event.type !== "thread.message-sent" || event.payload.threadId !== input.threadId) {
@@ -846,7 +852,7 @@ const copyThreadAttachments = Effect.fn("LegacyImport.copyThreadAttachments")(fu
   }).pipe(
     Effect.ensuring(
       Effect.promise(() =>
-        NodeFS.promises.rm(stagingDirectory, { recursive: true, force: true }),
+        physicalFileSystem.rm(stagingDirectory, { recursive: true, force: true }),
       ).pipe(Effect.ignore),
     ),
   );
@@ -898,6 +904,7 @@ export const makeLegacyImportService = Effect.fn("LegacyImport.makeLegacyImportS
       threadId: ThreadId,
     ) => Effect.Effect<void, ProviderSessionManagerV2Error>;
   }) {
+    const physical = yield* PhysicalFileSystem.PhysicalFileSystem;
     const config = yield* ServerConfig;
     const projects = yield* ProjectService;
     const serverSettings = yield* ServerSettingsService;
@@ -1027,7 +1034,7 @@ export const makeLegacyImportService = Effect.fn("LegacyImport.makeLegacyImportS
               threadId,
               sourceAttachmentsDir,
               targetAttachmentsDir: config.attachmentsDir,
-            }),
+            }).pipe(Effect.provideService(PhysicalFileSystem.PhysicalFileSystem, physical)),
           );
           if (attachmentsOutcome._tag === "Failure") {
             failedThreadCount += 1;

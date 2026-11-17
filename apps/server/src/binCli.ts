@@ -2,7 +2,7 @@ import { doctorCommand } from "./cli/doctor.ts";
 import { policyCommand } from "./cli/policy.ts";
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
-import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as NodeServices from "./nodeServices.ts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { Argument, Command } from "effect/cli";

@@ -36,14 +36,8 @@ import migration from "../persistence/ForkMigrations/015_WorktreeStripped.ts";
 import { makeWorkspaceLease } from "../workspace/workspaceLease.ts";
 import { TestClock } from "effect/testing";
 import { vi } from "vite-plus/test";
-// @effect-diagnostics-next-line nodeBuiltinImport:off -- Observe the real unlink boundary in disposable repositories.
-import * as NodeFSP from "node:fs/promises";
+import * as PhysicalFileSystem from "@t3tools/shared/PhysicalFileSystem";
 import { ThreadId } from "@t3tools/contracts";
-
-vi.mock("node:fs/promises", async (importOriginal) => {
-  const actual = await importOriginal<typeof NodeFSP>();
-  return { ...actual, unlink: vi.fn(actual.unlink) };
-});
 
 const encodeSession = Schema.encodeEffect(
   Schema.fromJsonString(OrchestrationV2ProviderSessionJson),
@@ -525,13 +519,9 @@ it.effect("persists the stripped record before the first unlink", () =>
     yield* f.write("dist/output");
     const entered = yield* Deferred.make<void>();
     const release = Promise.withResolvers<void>();
-    const unlink = vi.mocked(NodeFSP.unlink);
-    const original = unlink.getMockImplementation()!;
-    using _restore = {
-      [Symbol.dispose]: () => {
-        unlink.mockImplementation(original);
-      },
-    };
+    const physical = yield* PhysicalFileSystem.PhysicalFileSystem;
+    const original = physical.unlink;
+    using unlink = vi.spyOn(physical, "unlink");
     unlink.mockImplementation((target) => {
       if (target === `${f.worktree}/dist/output`) {
         Deferred.doneUnsafe(entered, Effect.void);
@@ -543,12 +533,13 @@ it.effect("persists the stripped record before the first unlink", () =>
       const sweep = yield* makeSweep;
       const pending = yield* sweep(f.terminal, []).pipe(Effect.forkChild);
       yield* Deferred.await(entered);
-      const beforeDelete =
-        yield* f.sql`SELECT 1 FROM worktree_stripped WHERE worktree_path = ${f.worktree}`.pipe(
-          Effect.ensuring(Effect.sync(() => release.resolve())),
-        );
+      const [beforeDelete, stillPresent] = yield* Effect.all([
+        f.sql`SELECT 1 FROM worktree_stripped WHERE worktree_path = ${f.worktree}`,
+        f.fs.exists(`${f.worktree}/dist/output`),
+      ]).pipe(Effect.ensuring(Effect.sync(() => release.resolve())));
       yield* Fiber.join(pending);
       expect(beforeDelete.length).toBe(1);
+      expect(stillPresent).toBe(true);
     }).pipe(Effect.provide(f.layers));
     expect(yield* f.fs.exists(`${f.worktree}/dist`)).toBe(false);
   }).pipe(Effect.provide(testLayers), Effect.scoped),

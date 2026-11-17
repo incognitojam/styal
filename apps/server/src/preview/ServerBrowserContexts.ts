@@ -15,6 +15,7 @@ const loadPlaywright = () =>
   requirePlaywright("playwright-core") as typeof import("playwright-core");
 
 interface Options {
+  readonly removeDirectory: (directory: string) => Promise<void>;
   readonly profilesDir: string;
   readonly executable: () => Promise<string>;
   /**
@@ -255,7 +256,7 @@ export class ServerBrowserContexts {
         const context = await pending.catch(() => undefined);
         await context?.close();
       }
-      await NodeFSP.rm(this.profileDirectory(profileId), { recursive: true, force: true });
+      await this.options.removeDirectory(this.profileDirectory(profileId));
     })();
     this.clearing.set(key, clearing);
     try {
