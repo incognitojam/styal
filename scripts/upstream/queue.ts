@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 // @effect-diagnostics nodeBuiltinImport:off globalConsole:off globalDate:off - Local, synchronous maintainer CLI.
-import * as Schema from "effect/Schema";
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
@@ -114,22 +113,19 @@ export function decodeState(input: string): IntakeState {
 }
 
 /** A selected source whose patch does not apply at the reconciled upstream boundary. */
-class BoundaryConflictError extends Schema.TaggedError<BoundaryConflictError>()(
-  "BoundaryConflictError",
-  {
-    entry: Schema.declare(
-      (value): value is QueueEntry =>
-        typeof value === "object" && value !== null && "sha" in value && "pr" in value,
-    ),
-    paths: Schema.Array(Schema.String),
-  },
-) {
-  override get message(): string {
-    const entry = this.entry;
-    return `Selected ${entry.pr === null ? entry.sha : `#${entry.pr}`} cannot be applied at the upstream boundary.`;
+// @effect-diagnostics-next-line extendsNativeError:off - Report workflows import this CLI without installing dependencies.
+class BoundaryConflictError extends Error {
+  readonly entry: QueueEntry;
+  readonly paths: string[];
+
+  constructor({ entry, paths }: { entry: QueueEntry; paths: string[] }) {
+    super(
+      `Selected ${entry.pr === null ? entry.sha : `#${entry.pr}`} cannot be applied at the upstream boundary.`,
+    );
+    this.entry = entry;
+    this.paths = paths;
   }
 }
-const isBoundaryConflictError = Schema.is(BoundaryConflictError);
 
 const BOUNDARY_REPORT_LIMIT = 20;
 
@@ -788,7 +784,7 @@ async function main() {
             },
           );
         } catch (error) {
-          if (!isBoundaryConflictError(error)) throw error;
+          if (!(error instanceof BoundaryConflictError)) throw error;
           reportBoundaryConflict({
             fork,
             through,
