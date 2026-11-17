@@ -1,10 +1,8 @@
 name: Fork macOS
 
-# Jobs that need a GitHub-hosted macOS runner. The free tier allows only a few at
-# once and GitHub cancels a job no runner picks up, so these stay out of Fork CI,
-# whose result gates intake promotion and the nightly. Both jobs run only when
-# their inputs changed. Merging requires `Fork Mobile Native Lint`; browser
-# calibration shows on the pull request or commit without blocking anything.
+# Native lint runs on Linux so required checks do not wait for a macOS runner.
+# Browser calibration remains on macOS and does not gate merges. Both jobs run
+# only when their inputs changed; `Fork Mobile Native Lint` always reports.
 #
 # The workflow runs on every change rather than filtering paths in the trigger:
 # a required check must report even on a docs-only pull request.
@@ -160,7 +158,7 @@ jobs:
     # output empty, and that must run the lint rather than silently skip it. A
     # skipped gate (outside this repository) skips the lint too.
     if: ${{ !cancelled() && needs.changes.result != 'skipped' && needs.changes.outputs.mobile_native != 'false' }}
-    runs-on: macos-26
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Checkout
@@ -181,7 +179,10 @@ jobs:
               - --filter=@t3tools/scripts...
 
       - name: Install mobile native static analysis tools
-        run: brew bundle install --file apps/mobile/Brewfile
+        run: |
+          eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+          echo /home/linuxbrew/.linuxbrew/bin >> "$GITHUB_PATH"
+          brew bundle install --file apps/mobile/Brewfile
 
       - name: Lint mobile native sources
         run: vp run lint:mobile
