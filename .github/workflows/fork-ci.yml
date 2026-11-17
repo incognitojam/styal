@@ -657,6 +657,32 @@ jobs:
       - name: Ensure Electron runtime is installed
         run: vp run --filter @t3tools/desktop ensure:electron
 
+      - name: Diagnose former Windows reporter
+        shell: pwsh
+        env:
+          ELECTRON_RUN_AS_NODE: "1"
+        run: |
+          git fetch --depth=1 --filter=blob:none origin cb688e239f8868cb6df3e0b38ecae53daee24344
+          @'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const child = require('node:child_process');
+          const root = path.resolve('.scratch/asar-deletion-legacy');
+          fs.mkdirSync(root, { recursive: true });
+          fs.symlinkSync(path.resolve('apps/server/node_modules'), path.join(root, 'node_modules'), 'junction');
+          const old = child.execFileSync('git', ['show', 'cb688e239f8868cb6df3e0b38ecae53daee24344:apps/server/scripts/verify-asar-deletion.ts'], { encoding: 'utf8' });
+          const script = path.join(root, 'legacy.ts');
+          fs.writeFileSync(script, old.replaceAll('"../src/', '"../../apps/server/src/') + '\nconsole.log("LEGACY_END_REACHED");\n');
+          const result = child.spawnSync(require('./apps/desktop/node_modules/electron'), [script], { encoding: 'utf8' });
+          process.stdout.write(result.stdout + result.stderr);
+          console.log('LEGACY_RESULT', JSON.stringify({ status: result.status, signal: result.signal, reachedEnd: result.stdout.includes('LEGACY_END_REACHED') }));
+          for (const name of fs.readdirSync('.scratch').filter(name => name.startsWith('cleanup-safety-'))) {
+            const base = path.resolve('.scratch', name);
+            const readonly = fs.readdirSync(base, { recursive: true }).filter(file => { const stat = fs.statSync(path.join(base, file)); return stat.isFile() && (stat.mode & 0o200) === 0; });
+            console.log('LEGACY_READONLY', readonly.length, readonly.slice(0, 3));
+          }
+          '@ | node
+
       - name: Verify physical deletion under Electron
         shell: pwsh
         env:

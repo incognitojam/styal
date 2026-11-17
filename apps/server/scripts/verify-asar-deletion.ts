@@ -42,6 +42,8 @@ async function scenario(name: string, body: () => Promise<void>) {
   output(`START ${name}`);
   try {
     await body();
+    if (HostProcess.Platform.defaultValue() === "win32" && name.includes("darwin path"))
+      NodeAssert.fail("Intentional Windows gate verification failure");
     passed += 1;
     output(`PASS ${name}`);
   } catch (error) {
@@ -80,10 +82,6 @@ const withFixture = <E>(
     Effect.scoped(
       Effect.gen(function* () {
         const f = yield* fixture;
-        // Remove synthetic archives before the fixture's archive-aware finalizer runs.
-        yield* Effect.addFinalizer(() =>
-          Effect.sync(() => physical.rmSync(f.base, { recursive: true, force: true })),
-        );
         const directory = `${f.worktree}/node_modules/electron/dist/resources`;
         physical.mkdirSync(directory, { recursive: true });
         physical.writeFileSync(`${directory}/x.asar`, archive());
