@@ -1,5 +1,8 @@
 import { CoordinatorReportsContext, NeedsYou } from "./CoordinatorReports";
-import { coordinatorReports } from "@t3tools/client-runtime/coordinator-reports";
+import {
+  coordinatorReports,
+  formatReportAnswer,
+} from "@t3tools/client-runtime/coordinator-reports";
 import { flushSync } from "react-dom";
 import { AudioPreview } from "../files/AudioPreview";
 import { cdp, page, userEvent } from "vite-plus/test/browser";
@@ -53,7 +56,10 @@ import {
   COMPOSER_CONTEXT_CLIPBOARD_MIME,
   decodeComposerContextFragment,
 } from "@t3tools/shared/composerContextClipboard";
-import { collectComposerContextReferences } from "@t3tools/shared/composerContextReferences";
+import {
+  collectComposerContextReferences,
+  formatComposerContextReference,
+} from "@t3tools/shared/composerContextReferences";
 
 const environmentQuery = vi.hoisted(() => ({
   error: "Pull request not found",
@@ -967,6 +973,86 @@ describe("MessagesTimeline agent messages", () => {
 });
 
 describe("MessagesTimeline attachments", () => {
+  it("shows a typed report answer's context and attachments as chips", async () => {
+    const shot = {
+      type: "image" as const,
+      id: "shot",
+      name: "shot.png",
+      mimeType: "image/png",
+      sizeBytes: 100,
+      downloadable: false,
+    };
+    const record = {
+      version: 1 as const,
+      kind: "image" as const,
+      contextId: ComposerContextId.make("shot-context"),
+      label: shot.name,
+      attachmentId: shot.id,
+      name: shot.name,
+      mimeType: shot.mimeType,
+      sizeBytes: shot.sizeBytes,
+    };
+    const tag = (key: string) => ({
+      key,
+      title: key,
+      version: 1,
+      question: "Ship it?",
+      answers: ["Start it", "Wait"],
+    });
+    const answerTo = (key: string) => ({
+      reportAnswer: { messageId: MessageId.make(`report-${key}`), key, version: 1 },
+    });
+    const entries = [
+      message("Report", { role: "assistant", report: tag("inline") }, "report-inline"),
+      message(
+        formatReportAnswer(
+          tag("inline"),
+          `Layout changed?\n${formatComposerContextReference(record)} Sizes differ`,
+        ),
+        { ...answerTo("inline"), attachments: [shot], context: { version: 1, records: [record] } },
+        "answer-inline",
+      ),
+      message("Report", { role: "assistant", report: tag("preset") }, "report-preset"),
+      message(
+        formatReportAnswer(tag("preset"), "Start it"),
+        { ...answerTo("preset"), attachments: [{ ...shot, id: "other", name: "other.png" }] },
+        "answer-preset",
+      ),
+    ];
+    const reports = coordinatorReports(
+      entries.flatMap((entry) => (entry.kind === "message" ? [entry.message] : [])),
+      [],
+    );
+    await using screen = await renderElement(
+      <CoordinatorReportsContext
+        value={{
+          reports,
+          answers: new Map(),
+          target: null,
+          clear: () => {},
+          scroll: () => {},
+          send: async () => {},
+          reply: () => {},
+          dismiss: () => {},
+          canOperate: true,
+        }}
+      >
+        <MessagesTimeline {...baseProps()} timelineEntries={entries} />
+      </CoordinatorReportsContext>,
+    );
+    const row = (id: string) =>
+      screen.container.querySelector(`[data-timeline-row-id="entry-report-${id}"]`)!;
+    await vi.waitFor(() => expect(row("preset")).not.toBeNull());
+    expect(row("inline").textContent).not.toContain("t3-context://");
+    expect(
+      row("inline").querySelector('[aria-label^="Image attachment, shot.png"]'),
+    ).not.toBeNull();
+    expect(row("preset").textContent).not.toContain("You answered:");
+    expect(
+      row("preset").querySelector('[aria-label^="Image attachment, other.png"]'),
+    ).not.toBeNull();
+  });
+
   it.each(["image", "file"] as const)(
     "copies only matching context records for a wordless %s attachment",
     async (kind) => {

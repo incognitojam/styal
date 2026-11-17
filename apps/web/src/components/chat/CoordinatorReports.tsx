@@ -1,12 +1,12 @@
 import { WorkflowRunReviewRow } from "./WorkflowRunReviewPanel";
 import type { ChatMessage } from "../../types";
 import { FileTextIcon, MessageSquareIcon, ReplyIcon, XIcon } from "lucide-react";
-import { createContext, use, useState, type ComponentProps } from "react";
+import { createContext, use, useState, type ComponentProps, type ReactNode } from "react";
 import type { MessageId, ThreadWorkflowRunWatch } from "@t3tools/contracts";
 import {
   coordinatorReports,
   formatReportAnswer,
-  splitReportAnswer,
+  reportAnswerDisplay,
   waitingCoordinatorReports,
 } from "@t3tools/client-runtime/coordinator-reports";
 import { Button } from "../ui/button";
@@ -17,7 +17,10 @@ import { formatRelativeTimeLabel } from "../../timestampFormat";
 export type ReportReference = { messageId: MessageId; key: string; version: number };
 export type ReportState = ReturnType<
   typeof coordinatorReports<
-    Pick<ChatMessage, "id" | "role" | "text" | "report" | "reportAnswer" | "createdAt">
+    Pick<
+      ChatMessage,
+      "id" | "role" | "text" | "report" | "reportAnswer" | "context" | "attachments" | "createdAt"
+    >
   >
 >[number];
 export const CoordinatorReportsContext = createContext<{
@@ -34,24 +37,48 @@ export const CoordinatorReportsContext = createContext<{
   target: { messageId: MessageId } | null;
   clear: () => void;
 } | null>(null);
-export function ReportAnswerBar({ report }: { report: ReportState }) {
+export function ReportAnswerBar({
+  report,
+  renderAnswer,
+}: {
+  report: ReportState;
+  /** Renders a typed reply the way its user bubble does, with context chips and line breaks. */
+  renderAnswer: (answer: NonNullable<ReportState["answer"]>, text: string) => ReactNode;
+}) {
   const ctx = use(CoordinatorReportsContext);
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   if (!ctx) return null;
   const panelClassName = "flex flex-col gap-1.5 rounded-lg bg-muted/50 px-3 py-2 text-sm";
-  if (report.state === "answered" || report.state === "dismissed") {
-    const answered = report.state === "answered";
-    const answer = report.answer && splitReportAnswer(report.answer.text, report.message.report!);
+  if (report.state === "dismissed") {
     return (
       <div className={panelClassName}>
         <span className="inline-flex items-center gap-1.5 text-muted-foreground [&_svg]:size-3.5">
-          {answered ? <MessageSquareIcon /> : <XIcon />}
-          {answered ? "You answered: " : "Dismissed. The agent hears it on its next turn."}
-          {answered ? (
-            <span className="text-foreground">{answer ?? report.answer?.text}</span>
-          ) : null}
+          <XIcon />
+          Dismissed. The agent hears it on its next turn.
         </span>
+      </div>
+    );
+  }
+  if (report.state === "answered" && report.answer) {
+    const { text, compact } = reportAnswerDisplay(report.answer, report.message.report!);
+    if (compact) {
+      return (
+        <div className={panelClassName}>
+          <span className="inline-flex items-center gap-1.5 text-muted-foreground [&_svg]:size-3.5">
+            <MessageSquareIcon />
+            You answered: <span className="text-foreground">{text}</span>
+          </span>
+        </div>
+      );
+    }
+    return (
+      <div className={panelClassName}>
+        <span className="inline-flex items-center gap-1.5 text-muted-foreground [&_svg]:size-3.5">
+          <MessageSquareIcon />
+          You answered
+        </span>
+        {renderAnswer(report.answer, text)}
       </div>
     );
   }

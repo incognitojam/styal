@@ -1,4 +1,5 @@
 import { CoordinatorReportsContext, ReportAnswerBar } from "./CoordinatorReports";
+import { ReportAnswerMessageBody } from "./TimelineUserMessageRow";
 import { shouldPreserveAssistantLineBreaks } from "@t3tools/shared/markdownPipeline";
 import { type MessageId, type RunId, type ScopedThreadRef } from "@t3tools/contracts";
 import { canForkProjectedAssistantItem } from "@t3tools/client-runtime/state/thread-workflows";
@@ -146,7 +147,14 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
             />
           </AssistantCitationSource>
         </div>
-        {report ? <ReportAnswerBar report={report} /> : null}
+        {report ? (
+          <ReportAnswerBar
+            report={report}
+            renderAnswer={(answer, text) => (
+              <ReportAnswerMessageBody message={answer} text={text} />
+            )}
+          />
+        ) : null}
         {ctx.onOpenTurnDiff ? (
           <AssistantChangedFilesSection
             turnSummary={row.assistantTurnDiffSummary}

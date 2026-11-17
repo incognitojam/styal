@@ -6,6 +6,7 @@ import {
   type CoordinatorReport,
   type CoordinatorReportReference,
 } from "@t3tools/contracts";
+import { collectComposerContextReferences } from "@t3tools/shared/composerContextReferences";
 
 type Reference = { readonly messageId: string; readonly key: string; readonly version: number };
 type Message = {
@@ -69,6 +70,22 @@ export function splitReportAnswer(
 ) {
   const prefix = formatReportAnswer(report, "");
   return text.startsWith(prefix) ? text.slice(prefix.length) : null;
+}
+
+/**
+ * The answer's typed text, and whether it can show as one line: only a tapped answer is,
+ * meaning text equal to one of the report's answers with no attachments or context.
+ */
+export function reportAnswerDisplay(
+  answer: { readonly text: string; readonly attachments?: readonly unknown[] | undefined },
+  report: Pick<CoordinatorReport, "title" | "version" | "answers">,
+) {
+  const text = splitReportAnswer(answer.text, report) ?? answer.text;
+  const compact =
+    (report.answers?.includes(text) ?? false) &&
+    (answer.attachments?.length ?? 0) === 0 &&
+    collectComposerContextReferences(text).length === 0;
+  return { text, compact };
 }
 
 /** Each message that answers a report, with that report's title and version and the typed text. */

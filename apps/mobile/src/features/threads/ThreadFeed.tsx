@@ -2510,6 +2510,66 @@ function renderFeedEntry(
           hasWideBlock && "w-full",
         )}
         {...(enterAnimated ? { entering: FadeIn.duration(220) } : {})}
+        renderAnswer={(answer, text) => {
+          // Like web, a record naming another message's attachment shows as unavailable.
+          const ownAttachmentIds = new Set((answer.attachments ?? []).map(({ id }) => id));
+          const context = answer.context && {
+            ...answer.context,
+            records: answer.context.records.filter(
+              (record) => !("attachmentId" in record) || ownAttachmentIds.has(record.attachmentId),
+            ),
+          };
+          const { inlineAttachmentIds } = userMessageAttachmentLayout({
+            text: answer.text,
+            context,
+            attachments: answer.attachments ?? [],
+          });
+          const otherAttachments = (answer.attachments ?? []).filter(
+            (attachment) => !inlineAttachmentIds.has(attachment.id),
+          );
+          return (
+            <>
+              <UserMessageContent
+                text={renderAssistantCitationsAsText(text)}
+                environmentId={props.environmentId}
+                context={context}
+                markdownStyles={markdownStyles.assistant}
+                reviewCommentColors={props.reviewCommentColors}
+                skills={props.skills}
+                linkHandlers={props.markdownLinkHandlers}
+                renderImage={props.renderMarkdownImage}
+              />
+              {otherAttachments.length > 0 ? (
+                <View className="mt-1 flex-row flex-wrap gap-2">
+                  {otherAttachments.map((attachment) =>
+                    isImageAttachment(attachment) ? (
+                      <MessageAttachmentImage
+                        key={attachment.id}
+                        environmentId={props.environmentId}
+                        attachmentId={attachment.id}
+                        name={attachment.name}
+                        mimeType={attachment.mimeType}
+                        className="rounded-[10px]"
+                        size={72}
+                        onPressPreview={props.onPressPreview}
+                      />
+                    ) : isFileAttachment(attachment) ? (
+                      <MessageAttachmentFile
+                        key={attachment.id}
+                        environmentId={props.environmentId}
+                        attachment={attachment}
+                        onPressPreview={props.onPressPreview}
+                        onPlaybackStart={props.onPlaybackStart}
+                      />
+                    ) : (
+                      <MessageAttachmentUnknown key={attachment.id} name={attachment.name} />
+                    ),
+                  )}
+                </View>
+              ) : null}
+            </>
+          );
+        }}
       >
         {renderedText.trim().length > 0 ? (
           <MarkdownImageAvailableWidthContext value={props.markdownContentWidth}>

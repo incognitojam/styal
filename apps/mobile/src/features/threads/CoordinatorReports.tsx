@@ -1,10 +1,16 @@
 import Animated from "react-native-reanimated";
-import { createContext, use, useState, type ComponentProps } from "react";
+import { createContext, use, useState, type ComponentProps, type ReactNode } from "react";
 import { Pressable, View } from "react-native";
-import type { CoordinatorReport, CoordinatorReportReference, MessageId } from "@t3tools/contracts";
+import type {
+  ChatAttachment,
+  CoordinatorReport,
+  CoordinatorReportReference,
+  MessageId,
+  OrchestrationMessageContext,
+} from "@t3tools/contracts";
 import {
   coordinatorReports,
-  splitReportAnswer,
+  reportAnswerDisplay,
   type ReportReply,
 } from "@t3tools/client-runtime/coordinator-reports";
 import { AppText as Text } from "../../components/ui/AppText";
@@ -17,6 +23,8 @@ type ReportMessage = {
   createdAt: string;
   report?: CoordinatorReport;
   reportAnswer?: typeof CoordinatorReportReference.Type;
+  context?: OrchestrationMessageContext;
+  attachments?: readonly ChatAttachment[];
 };
 export type ReportState = ReturnType<typeof coordinatorReports<ReportMessage>>[number];
 export type ReportAnswers = ReadonlyMap<
@@ -43,8 +51,13 @@ export const CoordinatorReportsContext = createContext<{
 export function CoordinatorReportMessage({
   id,
   children,
+  renderAnswer,
   ...props
-}: ComponentProps<typeof Animated.View> & { id: MessageId }) {
+}: ComponentProps<typeof Animated.View> & {
+  id: MessageId;
+  /** Renders a typed reply the way its user bubble does, with context chips and line breaks. */
+  renderAnswer: (answer: ReportMessage, text: string) => ReactNode;
+}) {
   const ctx = use(CoordinatorReportsContext);
   const report = ctx?.reports.find((report) => report.message.id === id);
   const [expanded, setExpanded] = useState(false);
@@ -124,20 +137,34 @@ export function CoordinatorReportMessage({
             </Text>
           ) : null}
         </View>
-      ) : report.state === "answered" || report.state === "dismissed" ? (
+      ) : report.state === "answered" && report.answer ? (
+        <AnsweredReport
+          answer={report.answer}
+          display={reportAnswerDisplay(report.answer, tag)}
+          renderAnswer={renderAnswer}
+        />
+      ) : report.state === "dismissed" ? (
         <Text className="text-foreground-secondary">
-          {report.state === "answered"
-            ? `You answered: ${answerText(report.answer, tag)}`
-            : "Dismissed. The agent hears it on its next turn."}
+          Dismissed. The agent hears it on its next turn.
         </Text>
       ) : null}
     </View>
   );
 }
 
-function answerText(answer: ReportMessage | undefined, report: CoordinatorReport) {
-  if (!answer) return "";
-  return splitReportAnswer(answer.text, report) ?? answer.text;
+function AnsweredReport(props: {
+  answer: ReportMessage;
+  display: { text: string; compact: boolean };
+  renderAnswer: (answer: ReportMessage, text: string) => ReactNode;
+}) {
+  if (props.display.compact)
+    return <Text className="text-foreground-secondary">You answered: {props.display.text}</Text>;
+  return (
+    <View className="gap-1 rounded-xl bg-secondary p-3">
+      <Text className="text-foreground-secondary">You answered</Text>
+      {props.renderAnswer(props.answer, props.display.text)}
+    </View>
+  );
 }
 
 /** Names the report a user message answers and opens that report version. */

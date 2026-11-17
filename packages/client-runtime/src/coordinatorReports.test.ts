@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
-import { coordinatorReports, formatReportAnswer, splitReportAnswer } from "./coordinatorReports.ts";
+import {
+  coordinatorReports,
+  formatReportAnswer,
+  reportAnswerDisplay,
+  splitReportAnswer,
+} from "./coordinatorReports.ts";
 const report = (id: string, key: string, version: number) => ({
   id,
   role: "assistant",
@@ -57,5 +62,23 @@ describe("coordinator reports", () => {
       null,
     );
     expect(splitReportAnswer("Wait for 88", report)).toBeNull();
+  });
+
+  it("shows an answer as one line only when it is a tapped answer with nothing attached", () => {
+    const report = { title: "#44 Retry", version: 1, answers: ["Start it", "Not yet"] };
+    const answer = (text: string, attachments: readonly unknown[] = []) => ({
+      text: formatReportAnswer(report, text),
+      attachments,
+    });
+    expect(reportAnswerDisplay(answer("Start it"), report)).toEqual({
+      text: "Start it",
+      compact: true,
+    });
+    expect(reportAnswerDisplay(answer("Start it", [{ id: "a" }]), report).compact).toBe(false);
+    expect(
+      reportAnswerDisplay(answer("Start it ![shot.png](t3-context://v1/image/image_1)"), report)
+        .compact,
+    ).toBe(false);
+    expect(reportAnswerDisplay(answer("Start it\nafter lunch"), report).compact).toBe(false);
   });
 });
