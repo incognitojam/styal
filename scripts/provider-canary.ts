@@ -289,7 +289,12 @@ export type ProviderPlan =
       readonly entry: VerifyEntry;
       readonly failure: CanaryFailure;
     }
-  | { readonly kind: "deferred"; readonly provider: string; readonly reason: string }
+  | {
+      readonly kind: "deferred";
+      readonly provider: string;
+      readonly reason: string;
+      readonly failure?: CanaryFailure;
+    }
   | { readonly kind: "current"; readonly provider: string; readonly reason: string }
   | { readonly kind: "blocked"; readonly provider: string; readonly reason: string };
 
@@ -388,26 +393,33 @@ async function fetchPackageRelease(
 export async function deferUnpublishedPlatforms(
   plan: ProviderPlan,
   read = fetchPackageRelease,
+  {
+    publishedAt,
+    now = new Date(),
+  }: { readonly publishedAt?: string | undefined; readonly now?: Date } = {},
 ): Promise<ProviderPlan> {
-  if (
-    (plan.kind !== "verify" && plan.kind !== "held") ||
-    plan.entry.packageName !== "@openai/codex"
-  )
-    return plan;
+  if (plan.kind !== "verify" && plan.kind !== "held") return plan;
+  const age = now.getTime() - Date.parse(publishedAt ?? "");
+  // After six hours, missing binaries should surface through normal verification failures.
+  if (!Number.isFinite(age) || age < 0 || age >= 6 * 3_600_000) return plan;
   const { packageName, version } = plan.entry;
   const release = await read(packageName, version);
   if (release) {
     // The canary runs on Ubuntu x64; other platforms can publish hours later.
-    const dependency = release.optionalDependencies?.["@openai/codex-linux-x64"];
-    if (!dependency) return plan;
+    const platform = Object.entries(release.optionalDependencies ?? {}).find(([name]) =>
+      name.endsWith("-linux-x64"),
+    );
+    if (!platform) return plan;
+    const [name, dependency] = platform;
     const alias = /^npm:(.+)@([^@]+)$/.exec(dependency);
-    const target = alias ? alias[1]! : "@openai/codex-linux-x64";
+    const target = alias ? alias[1]! : name;
     const targetVersion = alias ? alias[2]! : dependency;
     if (await read(target, targetVersion)) return plan;
   }
   return {
     kind: "deferred",
     provider: plan.provider,
+    ...(plan.kind === "held" ? { failure: plan.failure } : {}),
     reason: `${packageName}@${version} is waiting for its Linux x64 platform package to publish.`,
   };
 }
@@ -667,6 +679,17 @@ export function collectRun(input: {
     if (result === "failure") add(`job:${job}`, `job:${job}`, `The **${job}** job failed.`);
   }
   for (const plan of input.plan?.plans ?? []) {
+    const failure = plan.kind === "held" || plan.kind === "deferred" ? plan.failure : undefined;
+    if (failure) {
+      evaluated.add(plan.provider);
+      failures.push(failure);
+      add(
+        `failed:${failure.provider}:${failure.version}:${failure.styal}`,
+        failure.provider,
+        failure.detail,
+      );
+      continue;
+    }
     if (plan.kind === "deferred") continue;
     evaluated.add(plan.provider);
     if (plan.kind === "blocked") {
@@ -674,16 +697,6 @@ export function collectRun(input: {
         `blocked:${plan.provider}:${plan.styal}`,
         plan.provider,
         `**${plan.provider}** on styal ${plan.styal}: ${plan.reason}`,
-      );
-      continue;
-    }
-    if (plan.kind === "held") {
-      const { entry, failure } = plan;
-      failures.push(failure);
-      add(
-        `failed:${entry.provider}:${entry.version}:${entry.styal}`,
-        entry.provider,
-        failure.detail,
       );
       continue;
     }
@@ -1030,19 +1043,18 @@ export async function syncCanaryReport(options: {
   return actions.join("\n") || "No canary problems and no open issue.";
 }
 
-async function fetchDistTags(packageName: string): Promise<Record<string, string>> {
-  const response = await fetch(
-    `https://registry.npmjs.org/-/package/${packageName.replace("/", "%2f")}/dist-tags`,
-    { signal: AbortSignal.timeout(30_000) },
-  );
+type PackageMetadata = {
+  readonly "dist-tags"?: Readonly<Record<string, string>>;
+  readonly time?: Readonly<Record<string, string>>;
+};
+
+async function fetchPackageMetadata(packageName: string): Promise<PackageMetadata> {
+  const response = await fetch(`https://registry.npmjs.org/${encodeURIComponent(packageName)}`, {
+    signal: AbortSignal.timeout(30_000),
+  });
   if (response.status === 404) return {};
-  if (!response.ok)
-    throw new Error(`Cannot read ${packageName} dist-tags: HTTP ${response.status}`);
-  const tags: unknown = await response.json();
-  if (!tags || typeof tags !== "object") return {};
-  return Object.fromEntries(
-    Object.entries(tags).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
-  );
+  if (!response.ok) throw new Error(`Cannot read ${packageName} metadata: HTTP ${response.status}`);
+  return response.json() as Promise<PackageMetadata>;
 }
 
 export function selectNightlyBuilds(
@@ -1159,14 +1171,23 @@ async function plan(args: ReadonlyArray<string>) {
   const include: Array<VerifyEntry & { ref: string }> = [];
   for (const canary of selected) {
     const latest: Record<string, string> = {};
+    const publications: Record<string, Readonly<Record<string, string>>> = {};
     for (const packageName of canary.packageNames) {
-      const found = (await fetchDistTags(packageName)).latest;
+      const metadata = await fetchPackageMetadata(packageName);
+      const found = metadata["dist-tags"]?.latest;
       if (found) latest[packageName] = found;
+      publications[packageName] = metadata.time ?? {};
     }
     for (const { styal, ref } of builds) {
-      const planned = await deferUnpublishedPlatforms(
-        planProvider(canary, manifest, styal, latest, values.force, failures, now),
-      );
+      const candidate = planProvider(canary, manifest, styal, latest, values.force, failures, now);
+      const publishedAt =
+        candidate.kind === "verify" || candidate.kind === "held"
+          ? publications[candidate.entry.packageName]?.[candidate.entry.version]
+          : undefined;
+      const planned = await deferUnpublishedPlatforms(candidate, fetchPackageRelease, {
+        publishedAt,
+        now,
+      });
       plans.push({ ...planned, styal });
       if (planned.kind === "verify") include.push({ ...planned.entry, ref });
       if (planned.kind === "blocked")

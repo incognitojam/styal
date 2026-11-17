@@ -129,36 +129,194 @@ describe("provider canary plan", () => {
     });
   });
 
-  it("defers an unpublished Linux platform without recording a failure", async () => {
+  it.each([
+    [
+      "codex",
+      "@openai/codex",
+      "0.158.0",
+      "@openai/codex-linux-x64",
+      "npm:@openai/codex@0.158.0-linux-x64",
+      "@openai/codex",
+      "0.158.0-linux-x64",
+    ],
+    [
+      "claudeAgent",
+      "@anthropic-ai/claude-code",
+      "2.1.326",
+      "@anthropic-ai/claude-code-linux-x64",
+      "2.1.326",
+      "@anthropic-ai/claude-code-linux-x64",
+      "2.1.326",
+    ],
+    [
+      "opencode",
+      "opencode-ai",
+      "1.19.6",
+      "opencode-linux-x64",
+      "1.19.6",
+      "opencode-linux-x64",
+      "1.19.6",
+    ],
+  ])(
+    "defers unpublished glibc binaries for %s without recording a failure",
+    async (provider, packageName, version, dependencyName, dependency, target, targetVersion) => {
+      const initial = {
+        kind: "verify" as const,
+        provider,
+        entry: {
+          provider,
+          packageName,
+          version,
+          styal: NIGHTLY,
+          binary: "agent",
+          model: "m",
+          secret: "S",
+        },
+      };
+      const reads: string[] = [];
+      let published = false;
+      const read = async (name: string, requested: string) => {
+        reads.push(`${name}@${requested}`);
+        if (name === packageName && requested === version)
+          return {
+            optionalDependencies: {
+              [`${dependencyName}-musl`]: dependency,
+              [`${dependencyName}-baseline`]: dependency,
+              [dependencyName]: dependency,
+              "other-win32-x64": version,
+            },
+          };
+        return published ? {} : undefined;
+      };
+      const options = { publishedAt: "2026-10-14T11:59:48Z", now: NOW };
+      const deferred = await deferUnpublishedPlatforms(initial, read, options);
+      expect(deferred.kind).toBe("deferred");
+      expect(reads).toEqual([`${packageName}@${version}`, `${target}@${targetVersion}`]);
+      const run = collectRun({
+        plan: { plans: [{ ...deferred, styal: NIGHTLY }] },
+        outcomes: [],
+        planResult: "success",
+        recordResult: "skipped",
+      });
+      expect(run.failures).toEqual([]);
+      expect(run.problems).toEqual([]);
+      published = true;
+      expect((await deferUnpublishedPlatforms(initial, read, options)).kind).toBe("verify");
+      expect(
+        await deferUnpublishedPlatforms(
+          initial,
+          async () => ({
+            optionalDependencies: {
+              [`${dependencyName}-musl`]: dependency,
+              [`${dependencyName}-baseline`]: dependency,
+            },
+          }),
+          options,
+        ),
+      ).toEqual(initial);
+    },
+  );
+
+  it("stops deferring at six hours and when publication time is unavailable", async () => {
+    const plan = planProvider(canary("codex"), manifest, NIGHTLY, { "@openai/codex": "0.158.0" });
+    const read = async (_name: string, version: string) =>
+      version === "0.158.0"
+        ? {
+            optionalDependencies: {
+              "@openai/codex-linux-x64": "npm:@openai/codex@0.158.0-linux-x64",
+            },
+          }
+        : undefined;
+    for (const [publishedAt, expected] of [
+      ["2026-10-14T06:00:01Z", "deferred"],
+      ["2026-10-14T06:00:00Z", "verify"],
+      ["2026-10-14T05:00:00Z", "verify"],
+      ["invalid", "verify"],
+      [undefined, "verify"],
+      ["2026-10-14T12:00:01Z", "verify"],
+    ] as const) {
+      expect((await deferUnpublishedPlatforms(plan, read, { publishedAt, now: NOW })).kind).toBe(
+        expected,
+      );
+    }
+  });
+
+  it("preserves a deferred held failure until the publish cap allows verification", async () => {
     const initial = planProvider(canary("codex"), manifest, NIGHTLY, {
       "@openai/codex": "0.158.0",
     });
-    const reads: string[] = [];
-    let published = false;
-    const read = async (name: string, version: string) => {
-      reads.push(`${name}@${version}`);
-      if (version === "0.158.0")
-        return {
-          optionalDependencies: {
-            "@openai/codex-linux-x64": "npm:@openai/codex@0.158.0-linux-x64",
-            "@openai/codex-win32-x64": "npm:@openai/codex@0.158.0-win32-x64",
-          },
-        };
-      return published ? {} : undefined;
-    };
-    const deferred = await deferUnpublishedPlatforms(initial, read);
+    if (initial.kind !== "verify") throw new Error("Expected verification");
+    const failure = { ...initial.entry, at: NOW.toISOString(), detail: "original install failure" };
+    const held = { kind: "held" as const, provider: "codex", entry: initial.entry, failure };
+    const read = async (_name: string, version: string) =>
+      version === "0.158.0"
+        ? {
+            optionalDependencies: {
+              "@openai/codex-linux-x64": "npm:@openai/codex@0.158.0-linux-x64",
+            },
+          }
+        : undefined;
+    const publishedAt = "2026-10-14T11:00:00Z";
+    const deferred = await deferUnpublishedPlatforms(held, read, { publishedAt, now: NOW });
     expect(deferred.kind).toBe("deferred");
-    const run = collectRun({
-      plan: { plans: [{ ...deferred, styal: NIGHTLY }] },
-      outcomes: [],
+    const collect = (plan: typeof deferred) =>
+      collectRun({
+        plan: {
+          plans: [
+            { ...plan, styal: NIGHTLY },
+            { kind: "current", provider: "codex", styal: LATER_NIGHTLY, reason: "verified" },
+          ],
+        },
+        outcomes: [],
+        planResult: "success",
+        recordResult: "skipped",
+      });
+    const original = reconcileStatusIssue(null, collect(held), [], "https://example.test/runs/1")!;
+    const updated = reconcileStatusIssue(
+      { number: 1, open: true, body: original.body },
+      collect(deferred),
+      [],
+      "https://example.test/runs/2",
+    )!;
+    expect(updated.state).toBe("open");
+    expect(updated.comment).toBeUndefined();
+    expect(updated.body).toContain("original install failure");
+    expect(statusFailures({ number: 1, open: true, body: updated.body }, NOW)).toEqual([
+      expect.objectContaining({ at: failure.at, detail: failure.detail }),
+    ]);
+    const afterCap = new Date("2026-10-14T18:00:00Z");
+    const next = planProvider(
+      canary("codex"),
+      manifest,
+      NIGHTLY,
+      { "@openai/codex": "0.158.0" },
+      false,
+      statusFailures({ number: 1, open: true, body: updated.body }, afterCap),
+      afterCap,
+    );
+    expect((await deferUnpublishedPlatforms(next, read, { publishedAt, now: afterCap })).kind).toBe(
+      "verify",
+    );
+    const recovered = collectRun({
+      plan: { plans: [{ ...next, styal: NIGHTLY }] },
+      outcomes: [{ ...initial.entry, outcome: "passed", detail: "" }],
       planResult: "success",
-      recordResult: "skipped",
+      recordResult: "success",
     });
-    expect(run.failures).toEqual([]);
-    expect(run.problems).toEqual([]);
-    published = true;
-    expect((await deferUnpublishedPlatforms(initial, read)).kind).toBe("verify");
-    expect(reads).not.toContain("@openai/codex@0.158.0-win32-x64");
+    expect(recovered.failures).toEqual([]);
+    expect(
+      reconcileStatusIssue(
+        { number: 1, open: true, body: updated.body },
+        recovered,
+        [],
+        "https://example.test/runs/3",
+      )?.state,
+    ).toBe("closed");
+    for (const at of ["2026-10-14T06:00:00Z", "invalid", undefined]) {
+      expect(
+        (await deferUnpublishedPlatforms(initial, read, { publishedAt: at, now: NOW })).kind,
+      ).toBe("verify");
+    }
   });
 
   it("skips a release already verified for builds the tested one contains, unless forced", () => {
