@@ -501,7 +501,7 @@ describe("upstream intake audit", () => {
         };
         readonly promote: {
           readonly name: string;
-          readonly needs: string;
+          readonly needs: ReadonlyArray<string>;
           readonly environment: string;
           readonly permissions: Record<string, string>;
           readonly steps: ReadonlyArray<{
@@ -587,7 +587,7 @@ describe("upstream intake audit", () => {
       'upstream/tracked-prs-report.ts --fork-ref "$CANDIDATE_SHA"',
     );
 
-    assert.equal(workflow.jobs.promote.needs, "validate");
+    assert.deepEqual(workflow.jobs.promote.needs, ["validate", "required_checks"]);
     assert.equal(
       workflow.jobs.promote.environment,
       "${{ needs.validate.outputs.lane == 'automatic' && 'upstream-intake-automatic' || 'upstream-intake-manual' }}",

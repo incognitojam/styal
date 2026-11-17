@@ -24,6 +24,8 @@ interface CheckSuite {
 interface WorkflowRun {
   readonly id: number;
   readonly workflow_id: number;
+  readonly run_attempt: number;
+  readonly conclusion: string | null;
   readonly check_suite_id: number;
   readonly status: string;
 }
@@ -70,6 +72,10 @@ export function requiredCheckStates(
             suite.id > run.check_suite.id &&
             !workflows.some((workflow) => workflow.check_suite_id === suite.id),
         ));
+    const failedAttempt =
+      latest?.status === "completed" && latest.run_attempt > 1 && latest.conclusion !== "success"
+        ? (latest.conclusion ?? "failure")
+        : undefined;
     const status = !integration_id
       ? statuses.filter((status) => status.context === context).sort((a, b) => b.id - a.id)[0]
       : undefined;
@@ -77,11 +83,12 @@ export function requiredCheckStates(
     const states = [
       ...(run
         ? [
-            run.status === "completed" && !replacing
-              ? ["success", "neutral", "skipped"].includes(run.conclusion ?? "")
-                ? "success"
-                : (run.conclusion ?? "pending")
-              : "pending",
+            failedAttempt ??
+              (run.status === "completed" && !replacing
+                ? ["success", "neutral", "skipped"].includes(run.conclusion ?? "")
+                  ? "success"
+                  : (run.conclusion ?? "pending")
+                : "pending"),
           ]
         : []),
       ...(status ? [status.state] : []),

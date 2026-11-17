@@ -106,12 +106,18 @@ it("waits for replacement suites and attempts before accepting old successful jo
   const owner = {
     id: 1,
     workflow_id: 2,
+    run_attempt: 1,
+    conclusion: "success",
     check_suite_id: 10,
     status: "completed",
   };
   const check = (workflows = [owner], suites = [{ id: 10, app: run.app, status: "completed" }]) =>
     requiredCheckStates(rules, [run], [], suites, workflows)[0]!.state;
   NodeAssert.equal(check(), "success");
+  for (const conclusion of ["cancelled", "failure", "timed_out"]) {
+    NodeAssert.equal(check([{ ...owner, run_attempt: 2, conclusion }]), conclusion);
+  }
+  NodeAssert.equal(check([{ ...owner, run_attempt: 2 }]), "success");
   NodeAssert.equal(check([owner], [{ id: 10, app: run.app, status: "queued" }]), "pending");
   NodeAssert.equal(check([{ ...owner, status: "queued" }]), "pending");
   NodeAssert.equal(check([owner, { ...owner, id: 3, check_suite_id: 11 }]), "pending");
