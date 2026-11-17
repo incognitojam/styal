@@ -238,10 +238,11 @@ jobs:
       statuses: read
       contents: read
     steps:
+      # Removing credentials inside the checkout step runs `git submodule foreach`, which fails on
+      # the .repos/ gitlinks that have no .gitmodules entry. The token is read-only here.
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.sha }}
-          persist-credentials: false
       # Candidates receive a successful landing hold status; PRs receive pending.
       - name: Wait for main's required checks on the candidate
         env:
