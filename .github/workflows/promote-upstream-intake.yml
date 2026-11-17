@@ -5,7 +5,7 @@ run-name: ${{ github.event_name == 'workflow_dispatch' && format('Dry run promot
 # Starts when Fork CI passes on an intake branch. A workflow_run always runs
 # main's copy of this file, so a candidate cannot change the checks that
 # promote it. A candidate the audit marks eligible, whose native fingerprint inputs are
-# unchanged, promotes through upstream-intake-automatic; every other candidate
+# unchanged or backed by successful native CI, promotes automatically; every other candidate
 # waits for approval on upstream-intake-manual. To retry, re-run Fork CI.
 on:
   workflow_run:
@@ -46,10 +46,10 @@ jobs:
       candidate_branch: ${{ steps.candidate.outputs.candidate_branch }}
       candidate_sha: ${{ steps.candidate.outputs.candidate_sha }}
       ci_run_url: ${{ steps.evidence.outputs.ci_run_url }}
+      automatic_eligible: ${{ steps.audit.outputs.automatic_eligible }}
       source_prs: ${{ steps.audit.outputs.source_prs }}
       source_commits: ${{ steps.audit.outputs.source_commits }}
       native_fingerprint: ${{ steps.fingerprint.outputs.verdict }}
-      lane: ${{ steps.lane.outputs.lane }}
     steps:
       - name: Checkout trusted promotion code
         uses: actions/checkout@v7
@@ -237,34 +237,8 @@ jobs:
           const verdict = touchesNativeFingerprint(paths) ? 'unknown' : 'unchanged';
           appendFileSync(process.env.GITHUB_OUTPUT, `verdict=${verdict}\n`);
           appendFileSync(process.env.GITHUB_STEP_SUMMARY,
-            `\n## Native fingerprint\n\nTrusted input comparison: ${verdict}. This is a conservative path screen, including JS and tests, not a computed native fingerprint. Candidate artifacts are informational only; potential input changes require manual comparison.\n`);
+            `\n## Native fingerprint\n\nTrusted input comparison: ${verdict}. This is a conservative path screen, including JS and tests, not a computed native fingerprint. Candidate artifacts are informational only; potential input changes require successful Fork macOS and native lint evidence for automatic promotion.\n`);
           JS
-
-      - id: lane
-        name: Choose the promotion lane
-        shell: bash
-        env:
-          AUTOMATIC_ELIGIBLE: ${{ steps.audit.outputs.automatic_eligible }}
-          NATIVE_FINGERPRINT: ${{ steps.fingerprint.outputs.verdict }}
-        run: |
-          set -euo pipefail
-          if [[ "$AUTOMATIC_ELIGIBLE" == "true" && "$NATIVE_FINGERPRINT" == "unchanged" ]]; then
-            lane=automatic
-            reason="The audit found nothing that needs a person and the native fingerprint is unchanged."
-          elif [[ "$AUTOMATIC_ELIGIBLE" != "true" ]]; then
-            lane=manual
-            reason="The audit requires manual approval; see its reasons above."
-          else
-            lane=manual
-            reason="The native fingerprint is $NATIVE_FINGERPRINT."
-          fi
-          echo "lane=$lane" >> "$GITHUB_OUTPUT"
-          {
-            echo
-            echo "## Promotion lane"
-            echo
-            echo "**${lane}**: $reason"
-          } >> "$GITHUB_STEP_SUMMARY"
 
       # Informational only: its own timeout keeps a slow report from cancelling the job.
       - name: Report projected upstream lag
@@ -281,6 +255,8 @@ jobs:
 
   required_checks:
     name: Wait for main's required checks
+    outputs:
+      lane: ${{ steps.lane.outputs.lane }}
     needs: validate
     runs-on: ubuntu-24.04
     timeout-minutes: 40
@@ -302,13 +278,49 @@ jobs:
           CANDIDATE_SHA: ${{ needs.validate.outputs.candidate_sha }}
         run: node scripts/upstream/wait-required-checks.ts
 
+      - id: lane
+        name: Choose the promotion lane
+        env:
+          GH_TOKEN: ${{ github.token }}
+          AUTOMATIC_ELIGIBLE: ${{ needs.validate.outputs.automatic_eligible }}
+          NATIVE_FINGERPRINT: ${{ needs.validate.outputs.native_fingerprint }}
+          CANDIDATE_SHA: ${{ needs.validate.outputs.candidate_sha }}
+        run: |
+          node --input-type=module <<'JS'
+          import { execFileSync } from 'node:child_process';
+          import { appendFileSync } from 'node:fs';
+          import { nativeChecksPassed, promotionLane } from './scripts/upstream/lib/promotion-evidence.ts';
+          const api = (path) => JSON.parse(execFileSync('gh', ['api', path], { encoding: 'utf8' }));
+          const root = `repos/${process.env.GITHUB_REPOSITORY}/actions`;
+          const sha = process.env.CANDIDATE_SHA;
+          let nativePassed = false;
+          let run;
+          if (process.env.AUTOMATIC_ELIGIBLE === 'true' && process.env.NATIVE_FINGERPRINT !== 'unchanged') {
+            try {
+              const runs = api(`${root}/workflows/fork-macos.yml/runs?head_sha=${sha}&event=push&per_page=100`).workflow_runs;
+              run = runs.sort((a, b) => b.id - a.id)[0];
+              const jobs = run?.status === 'completed' && run.conclusion === 'success'
+                ? JSON.parse(execFileSync('gh', ['api', '--paginate', '--slurp',
+                    `${root}/runs/${run.id}/attempts/${run.run_attempt}/jobs?per_page=100`], { encoding: 'utf8' })).flatMap((page) => page.jobs)
+                : [];
+              nativePassed = nativeChecksPassed(sha, run, jobs);
+            } catch (error) {
+              console.warn(`Native CI evidence unavailable; require manual approval: ${error.message}`);
+            }
+          }
+          const { lane, reason } = promotionLane(process.env.AUTOMATIC_ELIGIBLE === 'true', process.env.NATIVE_FINGERPRINT, nativePassed);
+          appendFileSync(process.env.GITHUB_OUTPUT, `lane=${lane}\n`);
+          appendFileSync(process.env.GITHUB_STEP_SUMMARY,
+            `\n## Promotion lane\n\n**${lane}**: ${reason}\n\nNative fingerprint: ${process.env.NATIVE_FINGERPRINT}. Fork macOS and native lint evidence: ${nativePassed ? run.html_url : 'not established'}.\n`);
+          JS
+
   promote:
-    name: ${{ needs.validate.outputs.lane == 'automatic' && 'Promote eligible candidate' || 'Approve and promote candidate' }}${{ needs.validate.outputs.native_fingerprint != 'unchanged' && format(' (native fingerprint {0})', needs.validate.outputs.native_fingerprint) || '' }}
+    name: ${{ needs.required_checks.outputs.lane == 'automatic' && 'Promote eligible candidate' || 'Approve and promote candidate' }}${{ needs.validate.outputs.native_fingerprint != 'unchanged' && format(' (native fingerprint {0})', needs.validate.outputs.native_fingerprint) || '' }}
     needs: [validate, required_checks]
     if: github.event_name == 'workflow_run' && needs.validate.result == 'success' && needs.required_checks.result == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    environment: ${{ needs.validate.outputs.lane == 'automatic' && 'upstream-intake-automatic' || 'upstream-intake-manual' }}
+    environment: ${{ needs.required_checks.outputs.lane == 'automatic' && 'upstream-intake-automatic' || 'upstream-intake-manual' }}
     permissions:
       actions: read
       checks: read

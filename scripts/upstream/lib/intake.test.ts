@@ -499,6 +499,9 @@ describe("upstream intake audit", () => {
             readonly "continue-on-error"?: boolean;
           }>;
         };
+        readonly required_checks: {
+          readonly steps: ReadonlyArray<{ readonly name?: string; readonly run?: string }>;
+        };
         readonly promote: {
           readonly if: string;
           readonly name: string;
@@ -566,12 +569,12 @@ describe("upstream intake audit", () => {
     assert.include(fingerprint?.run ?? "", "process.env.CANDIDATE_SHA");
     assert.include(fingerprint?.run ?? "", "touchesNativeFingerprint(paths)");
 
-    const lane = workflow.jobs.validate.steps.find(
+    const lane = workflow.jobs.required_checks.steps.find(
       (step) => step.name === "Choose the promotion lane",
     );
-    assert.include(lane?.run ?? "", '"$AUTOMATIC_ELIGIBLE" == "true"');
-    assert.include(lane?.run ?? "", '"$NATIVE_FINGERPRINT" == "unchanged"');
-    assert.include(lane?.run ?? "", "lane=manual");
+    assert.include(lane?.run ?? "", "nativeChecksPassed(sha, run, jobs)");
+    assert.include(lane?.run ?? "", "promotionLane(");
+    assert.include(lane?.run ?? "", "process.env.AUTOMATIC_ELIGIBLE === 'true'");
 
     const projectedReport = workflow.jobs.validate.steps.find(
       (step) => step.name === "Report projected upstream lag",
@@ -593,7 +596,7 @@ describe("upstream intake audit", () => {
     assert.deepEqual(workflow.jobs.promote.needs, ["validate", "required_checks"]);
     assert.equal(
       workflow.jobs.promote.environment,
-      "${{ needs.validate.outputs.lane == 'automatic' && 'upstream-intake-automatic' || 'upstream-intake-manual' }}",
+      "${{ needs.required_checks.outputs.lane == 'automatic' && 'upstream-intake-automatic' || 'upstream-intake-manual' }}",
     );
     assert.include(workflow.jobs.promote.name, "native fingerprint");
     assert.equal(workflow.jobs.promote.permissions.actions, "read");

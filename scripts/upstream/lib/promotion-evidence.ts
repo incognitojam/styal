@@ -71,3 +71,59 @@ export function requireIntakeJobs(
     }
   }
 }
+
+export function nativeChecksPassed(
+  sha: string,
+  run:
+    | {
+        readonly head_sha: string;
+        readonly event: string;
+        readonly path: string;
+        readonly status: string;
+        readonly conclusion: string | null;
+      }
+    | undefined,
+  jobs: ReadonlyArray<{
+    readonly name: string;
+    readonly status: string;
+    readonly conclusion: string | null;
+  }>,
+): boolean {
+  const lint = jobs.filter((job) => job.name === "Fork Mobile Native Lint");
+  return (
+    run?.head_sha === sha &&
+    run.event === "push" &&
+    run.path === ".github/workflows/fork-macos.yml" &&
+    run.status === "completed" &&
+    run.conclusion === "success" &&
+    lint.length === 1 &&
+    lint[0]!.status === "completed" &&
+    lint[0]!.conclusion === "success"
+  );
+}
+
+export function promotionLane(
+  eligible: boolean,
+  fingerprint: string | undefined,
+  nativePassed: boolean,
+) {
+  if (!eligible)
+    return { lane: "manual", reason: "The audit requires manual approval; see its reasons above." };
+  if (fingerprint === "unchanged")
+    return {
+      lane: "automatic",
+      reason: "The audit is clean and native fingerprint inputs are unchanged.",
+    };
+  if (["unknown", "moved"].includes(fingerprint ?? "") && nativePassed) {
+    return {
+      lane: "automatic",
+      reason:
+        "The audit is clean and Fork macOS, including its native lint gate, passed on the candidate. Native runtime changes may require new production builds.",
+    };
+  }
+  return {
+    lane: "manual",
+    reason:
+      "Native fingerprint inputs may have changed without successful Fork macOS and native lint evidence.",
+  };
+}
