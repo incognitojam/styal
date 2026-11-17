@@ -1,5 +1,5 @@
-import * as PhysicalFileSystem from "@t3tools/shared/PhysicalFileSystem";
 // @effect-diagnostics nodeBuiltinImport:off
+import * as PhysicalFileSystem from "@t3tools/shared/PhysicalFileSystem";
 import * as NodeCrypto from "node:crypto";
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";

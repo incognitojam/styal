@@ -1,9 +1,9 @@
-import { getPhysicalFileSystem } from "@t3tools/shared/physicalFileSystemNode";
-import { copyDatabaseFile, databaseCopyHeadroom, runCp } from "./persistence/databaseFileCopy.ts";
 // @effect-diagnostics nodeBuiltinImport:off
 // @effect-diagnostics globalTimers:off
 // This file is shipped as a standalone bundle and copied to a stable path by
 // `styal service update`. Keep runtime imports limited to Node built-ins.
+import { getPhysicalFileSystem } from "@t3tools/shared/physicalFileSystemNode";
+import { copyDatabaseFile, databaseCopyHeadroom, runCp } from "./persistence/databaseFileCopy.ts";
 import * as NodeChildProcess from "node:child_process";
 import * as NodeCrypto from "node:crypto";
 import * as NodeFS from "node:fs";

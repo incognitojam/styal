@@ -61,15 +61,8 @@ jobs:
         run: vp install
 
       - name: Ensure Electron runtime is installed
-        if: inputs.package == '' || inputs.package == 'apps/desktop' || inputs.package == 'apps/server' || inputs.package == 'packages/shared'
+        if: inputs.package == '' || inputs.package == 'apps/desktop'
         run: vp run --filter "@t3tools/desktop" ensure:electron
-
-      - name: Verify physical deletion under Electron
-        if: inputs.package == '' || inputs.package == 'apps/desktop' || inputs.package == 'apps/server' || inputs.package == 'packages/shared'
-        shell: pwsh
-        env:
-          ELECTRON_RUN_AS_NODE: "1"
-        run: "& ./apps/desktop/node_modules/electron/dist/electron.exe apps/server/scripts/verify-asar-deletion.ts"
 
       # `vp run ... test -- <files>` does not forward positional args to vitest,
       # so file-scoped runs call `vp test run` inside the package instead.

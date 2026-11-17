@@ -25,13 +25,16 @@ function recursiveNodeDeletes(text: string) {
     const bindings = clause?.namedBindings;
     if (bindings && ts.isNamespaceImport(bindings)) namespaces.add(bindings.name.text);
     if (bindings && ts.isNamedImports(bindings))
-      for (const binding of bindings.elements)
+      for (const binding of bindings.elements) {
+        if ((binding.propertyName ?? binding.name).text === "promises")
+          namespaces.add(binding.name.text);
         if (
           ["rm", "rmSync", "rmdir", "rmdirSync"].includes(
             (binding.propertyName ?? binding.name).text,
           )
         )
           functions.add(binding.name.text);
+      }
   }
   const fromFs = (node: ts.Expression): boolean =>
     (ts.isIdentifier(node) && namespaces.has(node.text)) ||
@@ -64,13 +67,13 @@ function recursiveNodeDeletes(text: string) {
       if (
         deletion &&
         options &&
-        ts.isObjectLiteralExpression(options) &&
-        options.properties.some(
-          (property) =>
-            ts.isPropertyAssignment(property) &&
-            property.name.getText(source).replaceAll(/["']/g, "") === "recursive" &&
-            property.initializer.kind !== ts.SyntaxKind.FalseKeyword,
-        )
+        (!ts.isObjectLiteralExpression(options) ||
+          options.properties.some(
+            (property) =>
+              ts.isPropertyAssignment(property) &&
+              property.name.getText(source).replaceAll(/["']/g, "") === "recursive" &&
+              property.initializer.kind !== ts.SyntaxKind.FalseKeyword,
+          ))
       )
         calls.push(source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1);
     }
@@ -102,8 +105,13 @@ it("recognizes recursive Node deletion through namespaces, promises, named impor
     fs.rmSync(file, { recursive: false });
     const legacy = require('node:fs');
     legacy.rmSync(root, { recursive: true });
+    import * as NodeFSP from 'node:fs/promises';
+    const removeOptions = { recursive: true };
+    NodeFSP.rm(root, removeOptions);
+    import { promises as promiseFs } from 'node:fs';
+    promiseFs.rm(root, { recursive: true });
   `),
-  ).toEqual([4, 5, 6, 7, 11]);
+  ).toEqual([4, 5, 6, 7, 11, 14, 16]);
 });
 
 it("routes runtime recursive deletion through the injectable filesystem instead of node:fs", () => {
