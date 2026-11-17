@@ -79,8 +79,9 @@ run often (dev server, tests, lint, build). Prefer existing scripts over inlined
   recreate. Patterns take effect from the default branch in the project's registered checkout,
   without per-pattern approval. Settings → Worktrees → **Clean up regenerable files** is on by
   default; turn it off to skip this project on this machine. On macOS and
-  Linux an hourly sweep deletes matching paths once every thread in the worktree has been quiet for
-  a day and has settled (an idle subagent need not), with no open terminal. It is separate from the
+  Linux an hourly sweep deletes matching paths once no thread holds the worktree (an idle subagent
+  need not settle), at least 24 hours after the last thread activity, settlement or archival in the
+  worktree, with no open terminal. It is separate from the
   settle action, which does not trigger it. The next turn in that worktree reruns the setup action
   under its normal approval rules; opening a terminal does not.
 - Actions run by hand run in the thread's worktree, or the project root for a local thread, using

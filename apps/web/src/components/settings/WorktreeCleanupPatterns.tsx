@@ -76,7 +76,7 @@ function CheckoutCleanup({
       <SettingsRow
         {...searchableSetting("worktree-clean-regenerable-files")}
         forkFeature="worktree-declared-cleanup"
-        description="After a day of quiet, delete matching git-ignored paths in settled worktrees on this machine. The next turn reruns setup."
+        description="Delete matching git-ignored paths in settled worktrees on this machine, at least 24 hours after the last thread activity, settlement or archival. The next turn reruns setup."
         control={
           <Switch
             aria-label="Clean up regenerable files"
