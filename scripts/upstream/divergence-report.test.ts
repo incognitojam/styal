@@ -13,7 +13,11 @@ import {
 import { ensureScratchDirectory } from "./queue.ts";
 
 function withRepository(
-  test: (git: (...args: string[]) => string, write: (path: string, text: string) => void) => void,
+  test: (
+    git: (...args: string[]) => string,
+    write: (path: string, text: string) => void,
+    directory: string,
+  ) => void,
 ) {
   const root = NodePath.resolve(import.meta.dirname, "../..");
   const directory = NodeFS.mkdtempSync(
@@ -41,7 +45,7 @@ function withRepository(
   };
   try {
     git("init", "--initial-branch=main");
-    test(git, write);
+    test(git, write, directory);
   } finally {
     NodeFS.rmSync(directory, { recursive: true, force: true });
   }
@@ -51,6 +55,63 @@ const lines = (count: number, prefix = "line") =>
   Array.from({ length: count }, (_, index) => `${prefix} ${index}\n`).join("");
 
 describe("upstream divergence", () => {
+  it("reports a pull request from a checkout without installed dependencies", () => {
+    withRepository((git, write, directory) => {
+      write("shared.ts", "upstream\n");
+      git("add", ".");
+      git("commit", "-m", "upstream");
+      const upstream = git("rev-parse", "HEAD").trim();
+      git("update-ref", "refs/remotes/upstream/main", upstream);
+      write(
+        ".github/upstream-intake.json",
+        JSON.stringify({
+          upstreamRepository: "example/upstream",
+          baseline: upstream,
+          target: upstream,
+          exceptions: {},
+        }),
+      );
+      git("add", ".");
+      git("commit", "-m", "fork base");
+      const base = git("rev-parse", "HEAD").trim();
+      write("shared.ts", "fork\n");
+      git("commit", "-am", "pull request");
+
+      NodeFS.cpSync(import.meta.dirname, NodePath.join(directory, "scripts/upstream"), {
+        recursive: true,
+        filter: (path) => !path.endsWith(".test.ts"),
+      });
+      write("package.json", JSON.stringify({ type: "module" }));
+      // Reject ancestor workspace packages too, so local installs cannot hide CI regressions.
+      write(
+        "no-packages.mjs",
+        `import { registerHooks } from "node:module";
+registerHooks({ resolve(specifier, context, nextResolve) {
+  if (!specifier.startsWith("node:") && !specifier.startsWith(".") && !specifier.startsWith("file:"))
+    throw new Error("Unexpected package import: " + specifier);
+  return nextResolve(specifier, context);
+} });`,
+      );
+      const report = NodeChildProcess.execFileSync(
+        process.execPath,
+        [
+          "--import",
+          "./no-packages.mjs",
+          "scripts/upstream/divergence-report.ts",
+          "--base",
+          base,
+          "--head",
+          "HEAD",
+          "--pr-comment",
+        ],
+        { cwd: directory, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+      );
+      assert.include(report, "<!-- upstream-divergence -->");
+      assert.include(report, "<!-- styal-report:attention -->");
+      assert.include(report, "`shared.ts`: +1 −1 from upstream");
+    });
+  });
+
   it("runs trusted current publisher code while comparing the pull request base", () => {
     const workflow = parse(
       NodeFS.readFileSync(
