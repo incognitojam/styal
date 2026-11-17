@@ -754,8 +754,17 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
 
       assert.notProperty(mac, "asar");
       assert.notProperty(linux, "asar");
+      assert.isTrue(
+        (linux.asarUnpack as string[]).some((glob) =>
+          NodePath.matchesGlob(
+            "node_modules/@img/sharp-libvips-linux-x64/lib/libvips-cpp.so.8.18.7",
+            glob,
+          ),
+        ),
+      );
       assert.deepStrictEqual(mac.asarUnpack, [
         "**/node_modules/@transcribe-cpp/**/*.{dylib,so,so.*}",
+        "**/node_modules/@img/**/*.{node,dll,dylib,so,so.*}",
       ]);
       assert.deepStrictEqual(linux.asarUnpack, mac.asarUnpack);
       assert.deepStrictEqual(win.asar, { smartUnpack: false });
