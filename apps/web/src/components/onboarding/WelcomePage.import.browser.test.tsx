@@ -4,6 +4,7 @@ import {
   AuthOrchestrationReadScope,
   AuthRelayReadScope,
   AuthRelayWriteScope,
+  DEFAULT_UNIFIED_SETTINGS,
   EnvironmentId,
   ProjectId,
   ProviderDriverKind,
@@ -14,6 +15,7 @@ import {
   type EnvironmentCloudLinkStateResult,
   type ServerProvider,
 } from "@t3tools/contracts";
+import * as Cause from "effect/Cause";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { expect, it, vi } from "vite-plus/test";
 
@@ -25,6 +27,7 @@ type Project = { id: ProjectId; environmentId: EnvironmentId; workspaceRoot: str
 type Computer = {
   environmentId: EnvironmentId;
   label: string;
+  serverConfig?: { settings: typeof DEFAULT_UNIFIED_SETTINGS };
   displayUrl: string | null;
   connection: { phase: string; error: string | null };
   entry: { enabled: boolean; target: { _tag: string }; alternateRoutes: [] };
@@ -44,6 +47,7 @@ const state = vi.hoisted(() => ({
   createProject: vi.fn(),
   importThreads: vi.fn(),
   refreshProviders: vi.fn(),
+  updateSettings: vi.fn(),
   completeOnboarding: vi.fn(),
   onDone: vi.fn(),
   scan: vi.fn(),
@@ -110,6 +114,7 @@ vi.mock(import("../../state/server"), async (original) => {
       providersValueAtom: (() => state.providers) as never,
       configValueAtom: (() => state.config) as never,
       refreshProviders: "refreshProviders" as never,
+      updateSettings: "updateSettings" as never,
     },
   };
 });
@@ -153,8 +158,9 @@ vi.mock(import("../../onboarding/useProjectScans"), async (original) => {
 });
 vi.mock(import("../../state/use-atom-command"), async (original) => ({
   ...(await original()),
-  useAtomCommand: ((command: "createProject" | "importThreads" | "refreshProviders") =>
-    state[command]) as never,
+  useAtomCommand: ((
+    command: "createProject" | "importThreads" | "refreshProviders" | "updateSettings",
+  ) => state[command]) as never,
 }));
 
 import { welcomeImportSelectionKey } from "../../onboarding/welcomeState";
@@ -201,6 +207,22 @@ function projectsAtom() {
 
 function candidatesAtom() {
   return state.candidates as Atom.Writable<ReadonlyArray<AgentSessionProjectCandidate>>;
+}
+
+// Every listed computer gets a session that can import.
+function addSessions() {
+  for (const { environmentId } of state.computers) {
+    state.sessions.set(
+      environmentId,
+      Atom.make<SessionResult>(AsyncResult.success(session([AuthOrchestrationOperateScope]))).pipe(
+        Atom.keepAlive,
+      ),
+    );
+  }
+}
+
+function computerCheckbox(screen: Awaited<ReturnType<typeof mountWelcome>>, name: string) {
+  return screen.getByRole("checkbox", { name: new RegExp(`^${name} `) }).element() as HTMLElement;
 }
 
 function setGrant(environmentId: EnvironmentId, allowed: boolean) {
@@ -330,6 +352,7 @@ function setup() {
     .mockReset()
     .mockResolvedValue(AsyncResult.success({ importedCount: 1, skippedCount: 0 }));
   state.refreshProviders.mockReset().mockResolvedValue(AsyncResult.success(undefined));
+  state.updateSettings.mockReset().mockResolvedValue(AsyncResult.success(undefined));
   state.completeOnboarding.mockReset().mockResolvedValue(undefined);
   state.onDone.mockReset();
   state.scan.mockReset();
@@ -826,18 +849,10 @@ it("sets up only the computers that are selected and connected", async () => {
     },
     computer("desktop", "offline"),
   ];
-  for (const { environmentId } of state.computers) {
-    state.sessions.set(
-      environmentId,
-      Atom.make<SessionResult>(AsyncResult.success(session([AuthOrchestrationOperateScope]))).pipe(
-        Atom.keepAlive,
-      ),
-    );
-  }
+  addSessions();
   const scanned = () => new Set(state.scan.mock.calls.map(([call]) => call.environmentId));
   await using screen = await mountWelcome();
-  const checkbox = (name: string) =>
-    screen.getByRole("checkbox", { name: new RegExp(`^${name} `) }).element() as HTMLElement;
+  const checkbox = (name: string) => computerCheckbox(screen, name);
 
   // Only the computer the page opened on is set up until another is chosen.
   expect(pageText()).toContain("Setting up primary.");
@@ -858,4 +873,57 @@ it("sets up only the computers that are selected and connected", async () => {
 
   await act(async () => checkbox("primary").click());
   await vi.waitFor(() => expect(pageText()).toContain("Setting up laptop."));
+});
+
+it("saves the settling choice only where it differs, and stays when a save fails", async () => {
+  using _now = setup();
+  const settings = (onMerge: boolean, afterDays: number | null) => ({
+    ...DEFAULT_UNIFIED_SETTINGS,
+    sidebarAutoSettleOnMerge: onMerge,
+    sidebarAutoSettleAfterDays: afterDays,
+  });
+  state.computers = [
+    { ...computer("primary"), serverConfig: { settings: settings(true, 7) } },
+    { ...computer("laptop"), serverConfig: { settings: settings(false, 3) } },
+    { ...computer("desktop"), serverConfig: { settings: settings(false, null) } },
+  ];
+  addSessions();
+  appAtomRegistry.set(candidatesAtom(), []);
+  await using screen = await mountWelcome();
+  for (const name of ["laptop", "desktop"]) {
+    await act(async () => computerCheckbox(screen, name).click());
+  }
+  await vi.waitFor(() => expect(pageText()).toContain("Setting up 3 computers."));
+  // The choice starts from the first computer: both rules on, after its own 7 days.
+  const merge = screen.getByRole("checkbox", { name: /when its pull request merges/ });
+  const inactive = screen.getByRole("checkbox", { name: /after 7 days without activity/ });
+  await expect.element(merge).toBeChecked();
+  await expect.element(inactive).toBeChecked();
+  await act(async () => (merge.element() as HTMLElement).click());
+
+  state.updateSettings.mockImplementation(async ({ environmentId }: { environmentId: string }) =>
+    environmentId === "desktop"
+      ? AsyncResult.failure(Cause.fail(new Error("offline")))
+      : AsyncResult.success(undefined),
+  );
+  await click("Start");
+  // laptop already settles only after inactivity, on its own 3 days, so it is left alone;
+  // desktop turns inactivity settling on at the default.
+  expect(state.updateSettings.mock.calls.map(([call]) => call)).toEqual([
+    {
+      environmentId: "primary",
+      input: { patch: { sidebarAutoSettleOnMerge: false, sidebarAutoSettleAfterDays: 7 } },
+    },
+    {
+      environmentId: "desktop",
+      input: { patch: { sidebarAutoSettleOnMerge: false, sidebarAutoSettleAfterDays: 7 } },
+    },
+  ]);
+  // The failed save keeps the page, so Start can try again.
+  await vi.waitFor(() => expect(button("Start").disabled).toBe(false));
+  expect(state.completeOnboarding).not.toHaveBeenCalled();
+
+  state.updateSettings.mockReset().mockResolvedValue(AsyncResult.success(undefined));
+  await click("Start");
+  await vi.waitFor(() => expect(state.onDone).toHaveBeenCalledOnce());
 });

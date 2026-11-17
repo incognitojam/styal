@@ -115,6 +115,7 @@ import { toastManager } from "../ui/toast";
 import { StyalWordmark } from "../StyalWordmark";
 import { WorkspacePageHeader } from "../WorkspacePageHeader";
 import { WelcomeComputersSection, useWelcomeComputers } from "./WelcomeComputers";
+import { WelcomeSettlementSection, useWelcomeSettlement } from "./WelcomeSettlement";
 import { RowIcon, WelcomeSection } from "./welcomeLayout";
 import { cn } from "../../lib/utils";
 import { useRelativeTimeState } from "../../hooks/useRelativeTimeState";
@@ -267,7 +268,18 @@ export function WelcomePage({
   // Without import permission, starting simply skips the projects.
   const selected = projectImport.canWrite ? projectImport.selected : [];
   const newCount = selected.filter(projectImport.isNew).length;
-  const start = () => {
+  const settlement = useWelcomeSettlement(setupIds);
+  // The fork's setup choices save before any import; a failed save keeps the page.
+  const [preparing, setPreparing] = useState(false);
+  const busy = isImporting || preparing;
+  const start = async () => {
+    if (busy) return;
+    setPreparing(true);
+    holdPageRef.current = true;
+    const saved = await settlement.save();
+    holdPageRef.current = false;
+    setPreparing(false);
+    if (!saved) return;
     keepChoicesRef.current = scans.some((scan) => scan.data === null);
     if (selected.length === 0) {
       projectImport.finishAfterImport();
@@ -330,11 +342,10 @@ export function WelcomePage({
                   }
                 />
               ))}
-              <ProjectsSection
-                scans={scans}
-                projectImport={projectImport}
-                isImporting={isImporting}
-              />
+              <ProjectsSection scans={scans} projectImport={projectImport} isImporting={busy} />
+              {settlement.available ? (
+                <WelcomeSettlementSection settlement={settlement} disabled={busy} />
+              ) : null}
               {showPhone && phoneEnvironmentId !== null ? (
                 <PhoneSection environmentId={phoneEnvironmentId} />
               ) : null}
@@ -343,7 +354,7 @@ export function WelcomePage({
               {canStart ? (
                 <span />
               ) : (
-                <Button variant="ghost-muted" disabled={isImporting} onClick={start}>
+                <Button variant="ghost-muted" disabled={busy} onClick={() => void start()}>
                   Start without an agent
                 </Button>
               )}
@@ -351,9 +362,9 @@ export function WelcomePage({
                 {canStart ? null : (
                   <span className="text-xs text-muted-foreground">Set up one agent to start.</span>
                 )}
-                <Button disabled={!canStart || isImporting} onClick={start}>
-                  {isImporting
-                    ? selected.length > 0
+                <Button disabled={!canStart || busy} onClick={() => void start()}>
+                  {busy
+                    ? selected.length > 0 && !preparing
                       ? "Importing…"
                       : "Starting…"
                     : newCount > 0
