@@ -24,7 +24,7 @@ export function MediaViewerAction(props: {
         onPressOut={() => setHint(false)}
       />
       {hint ? (
-        <View className="absolute right-0 top-full min-w-28 rounded-md bg-zinc-900 px-2 py-1">
+        <View className="absolute right-0 top-full min-w-36 rounded-md bg-zinc-900 px-2 py-1">
           <AppText className="text-xs text-white" numberOfLines={1}>
             {props.label}
           </AppText>

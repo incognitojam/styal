@@ -46,7 +46,13 @@ export function IconButton(props: IconButtonProps) {
             onLongPress: props.onLongPress,
             onPressOut: props.onPressOut,
             disabled: props.disabled,
-            android_ripple: { borderless: true, color: colors["--color-subtle-strong"] },
+            android_ripple: {
+              borderless: true,
+              foreground: true,
+              radius: buttonSize / 2,
+              color:
+                props.tintColorClassName === "accent-white" ? "rgba(255,255,255,0.08)" : undefined,
+            },
           }
         : {})}
       accessible
@@ -81,7 +87,7 @@ export function IconButton(props: IconButtonProps) {
           </Component>
         </NativeThemeHost>
       </View>
-      {/* Keep RN SVG measurement outside Compose; the native button owns touch and ripple. */}
+      {/* Keep RN SVG measurement outside Compose. */}
       <View pointerEvents="none" className="absolute inset-0 items-center justify-center">
         <SymbolView
           name={props.icon === "ellipsis" ? { ios: "ellipsis", android: "more_vert" } : props.icon}
