@@ -518,8 +518,15 @@ export const make = Effect.fn("DesktopPreviewApp.make")(function* (options?: {
       if ((yield* readCompletePreview(previousAppPath)) !== null) {
         yield* fs.rename(previousAppPath, installedAppPath);
       } else {
-        // Only the exact deletion shell can be discarded when no installed copy remains.
-        if (!(yield* isAsarShell(previousAppPath))) return false;
+        if (!(yield* isAsarShell(previousAppPath))) {
+          yield* logWarning(
+            "leaving preview backup: not a complete preview or an exact ASAR shell",
+            {
+              path: previousAppPath,
+            },
+          );
+          return false;
+        }
       }
     }
     if ((yield* exists(mountPoint)) && !(yield* ensureDetached)) {
@@ -645,7 +652,7 @@ export const make = Effect.fn("DesktopPreviewApp.make")(function* (options?: {
     );
   });
 
-  // Legacy recovery requires a missing plist, a real bundle directory, and this variant's marker.
+  // Recovery accepts only Contents/Resources/app.asar and optional regular .DS_Store files.
   const ensureSlotIsOurs = Effect.fn("DesktopPreviewApp.ensureSlotIsOurs")(function* (
     allowRecovery = true,
   ) {

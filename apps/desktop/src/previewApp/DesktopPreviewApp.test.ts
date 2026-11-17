@@ -274,9 +274,11 @@ const setup = (scenario: Scenario) =>
           if (mounted !== null)
             stdout = `/dev/disk9s1 on ${yield* fs.realPath(mounted)} (hfs, local, read-only)\n`;
         } else if (name === "/bin/rm") {
-          if (scenario.fault === "remove-exit" && (yield* fs.exists(args[args.length - 1]!)))
-            exitCode = 1;
-          else yield* removePhysical(args[args.length - 1]!, { recursive: true, force: true });
+          const target = args[2]!;
+          assert.deepStrictEqual(args, ["-rf", "--", target]);
+          assert.isTrue(path.resolve(target).startsWith(`${home}${path.sep}`));
+          if (scenario.fault === "remove-exit" && (yield* fs.exists(target))) exitCode = 1;
+          else yield* removePhysical(target, { recursive: true, force: true });
         } else if (name === "/usr/bin/ditto") {
           if (scenario.fault === "copy") {
             yield* fs.makeDirectory(path.join(args[1]!, "Contents", "Resources"), {
