@@ -103,7 +103,8 @@ interface Scenario {
   readonly xattrOutput?: string;
   /** Another install replaces the app while the closed pull request lookup is in flight. */
   readonly installedDuringLookup?: string;
-  readonly slotDuringDownload?: "foreign" | "folder";
+  readonly slotDuringDownload?: "foreign" | "folder" | "contents-folder";
+  readonly slotDuringQuit?: "foreign" | "contents-folder";
   readonly releaseStatus?: number;
   /** Completed once GitHub starts answering the lookup; the answer then never finishes. */
   readonly releaseStalled?: Deferred.Deferred<void>;
@@ -266,6 +267,18 @@ const setup = (scenario: Scenario) =>
           killChecks.push(args[1]!);
           exitCode = args[1] === "4242" ? 0 : 1;
         } else if (name === "/bin/kill") {
+          if (scenario.slotDuringQuit !== undefined) {
+            yield* fs.remove(slot, { recursive: true, force: true });
+            if (scenario.slotDuringQuit === "foreign") {
+              yield* writeBundle(slot, { identifier: "com.example.other", version: "9.9.9" });
+            } else {
+              yield* fs.makeDirectory(path.join(slot, "Contents"), { recursive: true });
+              yield* fs.writeFileString(
+                path.join(slot, "Contents", "keep.txt"),
+                "unrelated folder",
+              );
+            }
+          }
           signalled = true;
         } else if (name === "/bin/ps" && scenario.psFails === true) {
           exitCode = 1;
@@ -341,8 +354,12 @@ const setup = (scenario: Scenario) =>
               Effect.provideService(Path.Path, path),
             );
           } else {
-            yield* fs.makeDirectory(slot, { recursive: true });
-            yield* fs.writeFileString(path.join(slot, "keep.txt"), "unrelated folder");
+            const directory =
+              scenario.slotDuringDownload === "contents-folder"
+                ? path.join(slot, "Contents")
+                : slot;
+            yield* fs.makeDirectory(directory, { recursive: true });
+            yield* fs.writeFileString(path.join(directory, "keep.txt"), "unrelated folder");
           }
         }
         return respond((scenario.downloadBytes ?? DMG_BYTES) as BodyInit);
@@ -449,6 +466,28 @@ const scoped = <A, E>(
 ) => effect.pipe(Effect.scoped, Effect.provide(NodeServices.layer));
 
 describe("DesktopPreviewApp", () => {
+  it.effect.each(["foreign", "contents-folder"] as const)(
+    "refuses a %s swapped into the slot while quitting before removal",
+    (slotDuringQuit) =>
+      scoped(
+        Effect.gen(function* () {
+          const app = yield* setup({ runningPreview: "quits", slotDuringQuit });
+          yield* app.installPrevious("1.2.3-pr.12.6");
+          const result = yield* app.service.remove;
+          assert.strictEqual(result.outcome, "failed");
+          assert.include(result.message, "left in place");
+          if (slotDuringQuit === "foreign")
+            assert.strictEqual(yield* installedVersion(app.slot), "9.9.9");
+          else
+            assert.strictEqual(
+              yield* app.fs.readFileString(app.path.join(app.slot, "Contents", "keep.txt")),
+              "unrelated folder",
+            );
+          assert.deepStrictEqual(app.ran("/bin/kill"), [["/bin/kill", "-TERM", "100"]]);
+        }),
+      ),
+  );
+
   it.effect.each(["user", "closed"] as const)("refuses symlinked staging on %s removal", (source) =>
     scoped(
       Effect.gen(function* () {
@@ -463,8 +502,11 @@ describe("DesktopPreviewApp", () => {
           );
         }
         yield* app.fs.symlink(documents, app.staging);
-        if (source === "user") assert.strictEqual((yield* app.service.remove).outcome, "failed");
-        else yield* app.service.removeIfPullRequestClosed;
+        if (source === "user") {
+          const result = yield* app.service.remove;
+          assert.strictEqual(result.outcome, "failed");
+          assert.notInclude(result.message ?? "", "DesktopPreviewAppError");
+        } else yield* app.service.removeIfPullRequestClosed;
         assert.strictEqual(yield* installedVersion(app.slot), "1.2.3-pr.12.6");
         for (const name of ["previous.app", "removed.app"]) {
           assert.strictEqual(
@@ -476,7 +518,7 @@ describe("DesktopPreviewApp", () => {
     ),
   );
 
-  it.effect.each(["foreign", "folder"] as const)(
+  it.effect.each(["foreign", "folder", "contents-folder"] as const)(
     "leaves a %s appearing during download untouched",
     (slotDuringDownload) =>
       scoped(
@@ -490,7 +532,14 @@ describe("DesktopPreviewApp", () => {
             assert.strictEqual(yield* installedVersion(app.slot), "9.9.9");
           else
             assert.strictEqual(
-              yield* app.fs.readFileString(app.path.join(app.slot, "keep.txt")),
+              yield* app.fs.readFileString(
+                app.path.join(
+                  slotDuringDownload === "contents-folder"
+                    ? app.path.join(app.slot, "Contents")
+                    : app.slot,
+                  "keep.txt",
+                ),
+              ),
               "unrelated folder",
             );
           assert.lengthOf(app.ran("/usr/bin/open"), 0);
