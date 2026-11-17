@@ -1,8 +1,9 @@
 import type { ReactNode } from "react";
-import { Pressable, View } from "react-native";
+import { View } from "react-native";
 
 import type { useMediaActions } from "../state/mediaActions";
-import { SymbolView } from "./ui/AppSymbol";
+import { IconButton } from "./ui/IconButton";
+import { MediaViewerAction } from "./MediaViewerAction";
 import { AppText } from "./ui/AppText";
 import { MediaActionsMenu } from "./MediaActionsMenu";
 import { MediaSourceCaption } from "./MediaSourceCaption";
@@ -21,16 +22,30 @@ export function MediaPreviewHeader(props: {
         <AppText className="flex-1 font-t3-medium text-base text-white" numberOfLines={2}>
           {props.title}
         </AppText>
-        <MediaActionsMenu media={props.media} inModal />
-        {props.children}
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={props.closeAccessibilityLabel}
-          onPress={props.onClose}
-          className="size-12 items-center justify-center"
+        <View
+          accessibilityRole="toolbar"
+          accessibilityLabel="Media actions"
+          className="flex-row items-center rounded-full bg-zinc-900 px-1"
         >
-          <SymbolView name="xmark" size={20} tintColor="#ffffff" type="monochrome" />
-        </Pressable>
+          {props.media.actions.length > 0 ? (
+            <MediaViewerAction
+              label={props.children ? "Download original" : "Save or share"}
+              icon="arrow.down"
+              onPress={() => void props.media.share()}
+              disabled={props.media.sharing}
+            />
+          ) : null}
+          {props.children}
+          <MediaActionsMenu media={props.media} inModal compact />
+        </View>
+        <View className="rounded-full bg-zinc-900">
+          <IconButton
+            accessibilityLabel={props.closeAccessibilityLabel}
+            icon="xmark"
+            tintColorClassName="accent-white"
+            onPress={props.onClose}
+          />
+        </View>
       </View>
       <MediaSourceCaption source={props.media.title} />
     </>

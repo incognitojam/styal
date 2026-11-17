@@ -5,7 +5,9 @@ import { Image } from "expo-image";
 import * as Dialog from "./Dialog";
 import { useContext, useEffect, useEffectEvent, useState, type ComponentType } from "react";
 
+import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
 import { loadLocalAttachmentPreview } from "../../lib/localAttachmentPreview";
+
 import {
   downloadAndShareAttachment,
   nativeViewerErrorMessage,
@@ -84,11 +86,29 @@ async function resolvePreviewUri(
   return { uri: cached ? `file://${cached}` : url + (item.srcFragment ?? "") };
 }
 
+async function openOriginalPreview(item: FilePreviewItem): Promise<void> {
+  try {
+    const original = await resolvePreviewUri(
+      { ...item, previewImage: false },
+      new AbortController().signal,
+    );
+    if (!original) throw new Error("The original is unavailable.");
+    try {
+      if (!(await tryOpenExternalUrl(original.uri, "file-preview")))
+        throw new Error("No app could open the original.");
+    } finally {
+      original.dispose?.();
+    }
+  } catch (error) {
+    Dialog.alert("Could not open original", error instanceof Error ? error.message : "Try again.");
+  }
+}
+
 // Shares from the unresolved item so remote URLs refresh and draft files take their own lease.
-function pdfActionsSource(item: FilePreviewItem): MediaActionsSource {
+function previewActionsSource(item: FilePreviewItem): MediaActionsSource {
   const metadata = {
     name: filePreviewName(item),
-    mimeType: item.mimeType ?? "application/pdf",
+    mimeType: item.mimeType ?? (item.kind === "image" ? "image/png" : "application/pdf"),
     ...(item.sourceIdentifier ? { sourceIdentifier: item.sourceIdentifier } : {}),
   };
   if ("uri" in item) return { ...metadata, uri: item.uri };
@@ -109,7 +129,7 @@ function ResolvedFilePreview(
   const [items] = useState(() => filePreviewGallery(props.source, []));
   const selectedKey = filePreviewKey(props.source);
   const selectedIndex = items.findIndex((item) => filePreviewKey(item) === selectedKey);
-  const [originals, setOriginals] = useState<ReadonlySet<number>>(() => new Set());
+
   // Undefined while resolving, null once it cannot be.
   const [uris, setUris] = useState<readonly (string | null | undefined)[]>(() =>
     items.map((item) => ("uri" in item ? item.uri : undefined)),
@@ -128,10 +148,7 @@ function ResolvedFilePreview(
       setUris((current) => current.map((value, at) => (at === index ? uri : value)));
     items.forEach((item, index) => {
       if ("uri" in item) return;
-      void resolvePreviewUri(
-        originals.has(index) ? { ...item, previewImage: false } : item,
-        controller.signal,
-      ).then(
+      void resolvePreviewUri(item, controller.signal).then(
         (resolved) => {
           if (controller.signal.aborted) return resolved?.dispose?.();
           if (resolved?.dispose) leases.push(resolved.dispose);
@@ -153,7 +170,7 @@ function ResolvedFilePreview(
       controller.abort();
       for (const dispose of leases) dispose();
     };
-  }, [items, selectedIndex, progressiveGallery, originals]);
+  }, [items, selectedIndex, progressiveGallery]);
   const selected = { ...items[selectedIndex]!, name: filePreviewName(items[selectedIndex]!) };
   if (selected.kind === "image") {
     // A viewer that resets image gestures when its sources change waits for every image.
@@ -163,8 +180,11 @@ function ResolvedFilePreview(
       return {
         ...item,
         name: filePreviewName(item),
-        ...(item.previewImage && !originals.has(index)
-          ? { onViewOriginal: () => setOriginals((current) => new Set([...current, index])) }
+        actionsSource: item.actionsSource ?? previewActionsSource(item),
+        ...(item.previewImage
+          ? {
+              onOpenOriginal: () => openOriginalPreview(item),
+            }
           : {}),
         ...(uri ? { uri } : uri === null ? { failed: true } : {}),
       };
@@ -207,7 +227,9 @@ function ResolvedFilePreview(
     ]);
   };
   const actionsSource =
-    selected.kind === "pdf" ? (selected.actionsSource ?? pdfActionsSource(selected)) : undefined;
+    selected.kind === "pdf"
+      ? (selected.actionsSource ?? previewActionsSource(selected))
+      : undefined;
   return (
     <Viewer
       source={{

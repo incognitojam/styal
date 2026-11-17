@@ -1,7 +1,7 @@
 import { pullRequestImageWidth } from "@t3tools/client-runtime/pull-request-image-preview";
 import { memo, useRef, useState, type ReactNode, type KeyboardEvent, type RefObject } from "react";
 import { flushSync } from "react-dom";
-import { ChevronLeftIcon, ChevronRightIcon, ScanEyeIcon, XIcon } from "lucide-react";
+import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 import { Image as ImageGlyph, Text as TextGlyph } from "lucide";
 import { Button } from "../ui/button";
 import { MorphIcon } from "~/components/MorphIcon";
@@ -10,6 +10,7 @@ import type { ExpandedImageItem, ExpandedImagePreview } from "./ExpandedImagePre
 import { resolveExternalWebLinkHost } from "./externalLinkContextMenu";
 import { useAssetUrlRefresh, useAssetUrlState } from "../../assets/assetUrls";
 import { OpenMediaLink } from "../media/OpenMediaLink";
+import { MediaViewerToolbar } from "../media/MediaViewerToolbar";
 import { MediaActions, type MediaActionSource } from "../media/MediaActions";
 import { MediaVideoPlayer } from "../media/MediaVideoPlayer";
 import { isContextMenuOpen } from "../../contextMenuFallback";
@@ -83,24 +84,22 @@ function ExpandedVideo({ item }: { readonly item: ExpandedImageItem }) {
 function PullRequestPreviewImage({
   item,
   source,
-  original,
   ref,
 }: {
   readonly item: ExpandedImageItem;
   readonly source: MediaActionSource;
-  readonly original: boolean;
   readonly ref: RefObject<ZoomableImageHandle | null>;
 }) {
   const [requestedWidth, setRequestedWidth] = useState(0);
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
-  const asset = original ? source.originalAsset! : source.asset!;
+  const asset = source.asset!;
   const baseResource = asset.resource;
   const screenWidth = pullRequestImageWidth(
     Math.max(window.innerWidth, requestedWidth),
     window.devicePixelRatio,
   );
   const resource =
-    !original && baseResource._tag === "github-media" && baseResource.imagePreview
+    baseResource._tag === "github-media" && baseResource.imagePreview
       ? {
           ...baseResource,
           imagePreview: {
@@ -154,8 +153,6 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
     name: item?.name ?? "Media",
     src: item?.src ?? null,
   };
-  const [originals, setOriginals] = useState<ReadonlySet<number>>(() => new Set());
-  const originalAsset = source.originalAsset;
   const imageSrc = item?.src ?? null;
   const openFile = source.onOpenFile;
   const actionsSource: MediaActionSource = openFile
@@ -235,36 +232,12 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
         }}
       >
         <DialogTitle className="sr-only">Expanded {mediaLabel} preview</DialogTitle>
-        <div className="absolute right-0 top-0 z-20 flex items-center gap-2">
-          {source.asset?.resource._tag === "github-media" &&
-          source.asset.resource.imagePreview &&
-          originalAsset ? (
-            <div className="size-8 sm:size-7">
-              {!originals.has(index) ? (
-                <Tooltip>
-                  <TooltipTrigger
-                    render={<Button size="icon-sm" variant="media-close" />}
-                    aria-label="View original"
-                    onClick={() => setOriginals((current) => new Set([...current, index]))}
-                  >
-                    <ScanEyeIcon />
-                  </TooltipTrigger>
-                  <TooltipPopup>View original</TooltipPopup>
-                </Tooltip>
-              ) : null}
-            </div>
-          ) : null}
-          <Button
-            type="button"
-            ref={closeButtonRef}
-            size="icon-sm"
-            variant="media-close"
-            onClick={close}
-            aria-label={`Close ${mediaLabel} preview`}
-          >
-            <XIcon />
-          </Button>
-        </div>
+        <MediaViewerToolbar
+          source={actionsSource}
+          closeLabel={`Close ${mediaLabel} preview`}
+          closeRef={closeButtonRef}
+          onClose={close}
+        />
         {preview.images.length > 1 && (
           <Button
             type="button"
@@ -277,14 +250,7 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
             <ChevronLeftIcon className="size-5" />
           </Button>
         )}
-        <MediaActions
-          source={
-            originals.has(index) && originalAsset
-              ? { ...actionsSource, asset: originalAsset, src: imageSrc }
-              : actionsSource
-          }
-          showTooltip={false}
-        >
+        <MediaActions source={actionsSource} showTooltip={false}>
           <div className="relative isolate z-10 flex max-h-full max-w-[var(--media-width)] flex-col items-center">
             {item.type === "video" ? (
               <ExpandedVideo key={index} item={item} />
@@ -295,7 +261,6 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
                 key={index}
                 item={item}
                 source={source}
-                original={originals.has(index)}
                 ref={zoomableImageRef}
               />
             ) : showingAccessibilityDetails ? (

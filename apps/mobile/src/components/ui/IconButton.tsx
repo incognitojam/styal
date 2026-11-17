@@ -17,6 +17,8 @@ export function IconButton(props: IconButtonProps) {
   return (
     <Pressable
       onPress={props.onPress}
+      onLongPress={props.onLongPress}
+      onPressOut={props.onPressOut}
       disabled={props.disabled}
       accessibilityLabel={props.accessibilityLabel}
       accessibilityRole="button"

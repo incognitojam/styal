@@ -111,7 +111,7 @@ export function useMediaActions(source: MediaActionSource) {
       new ClipboardItem({ "image/png": actionUrl().then(readMediaPng) }),
     ]);
   };
-  return { save, copyImage, canReadMedia, assertCanReadMedia };
+  return { save, copyImage, actionUrl, canReadMedia, assertCanReadMedia };
 }
 
 export function MediaActions({

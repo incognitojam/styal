@@ -9,6 +9,7 @@ import { Menu } from "./ui/Menu";
 export function MediaActionsMenu(props: {
   readonly media: ReturnType<typeof useMediaActions>;
   readonly inModal?: boolean;
+  readonly compact?: boolean;
   readonly children?: ReactElement<PressableProps>;
   readonly style?: StyleProp<ViewStyle>;
 }) {
@@ -35,7 +36,11 @@ export function MediaActionsMenu(props: {
           accessible
           accessibilityRole="button"
           accessibilityLabel="Media actions"
-          className="min-h-11 min-w-11 items-center justify-center rounded-md bg-black/60"
+          className={
+            props.compact
+              ? "size-12 items-center justify-center"
+              : "min-h-11 min-w-11 items-center justify-center rounded-md bg-black/60"
+          }
         >
           <SymbolView name="ellipsis" size={20} tintColor="#ffffff" type="monochrome" />
         </View>

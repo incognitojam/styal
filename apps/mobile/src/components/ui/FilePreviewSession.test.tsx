@@ -6,6 +6,7 @@ import { EnvironmentId, SOURCE_CONTROL_MEDIA_ASSET } from "@t3tools/contracts";
 const harness = vi.hoisted(() => ({
   refreshAssetUrl: vi.fn<(environmentId: string, resource: { url: string }) => Promise<string>>(),
   alert: vi.fn(),
+  openExternal: vi.fn(async () => true),
   previews: [] as unknown[],
   mounts: 0,
   presentationFinished: false,
@@ -25,8 +26,10 @@ vi.mock("../../lib/attachmentDownload", () => ({
   nativeViewerErrorMessage: () => "",
   shareLocalAttachment: vi.fn(),
 }));
+vi.mock("../../lib/openExternalUrl", () => ({ tryOpenExternalUrl: harness.openExternal }));
 vi.mock("../../lib/previewPresentation", () => ({ usePreviewPresentation: () => {} }));
 vi.mock("./Dialog", () => ({ alert: harness.alert }));
+
 
 import type { FilePreviewItem, FilePreviewViewerProps } from "./FilePreviewModal.types";
 import { FilePreviewSession } from "./FilePreviewSession";
@@ -232,12 +235,22 @@ it("reuses the screen variant from the image cache and requests the original onl
   };
   await using _preview = await openGallery(selected, [selected], "android");
   const shown = harness.previews.at(-1) as {
-    images: { uri: string; onViewOriginal: () => void }[];
+    images: { uri: string; onOpenOriginal: () => Promise<void> }[];
   };
   expect(shown.images[0]?.uri).toBe("file:///synthetic/preview.webp");
   expect(harness.refreshAssetUrl.mock.calls[0]?.[1]).toMatchObject({
     imagePreview: { width: 1440 },
   });
-  await act(async () => shown.images[0]!.onViewOriginal());
+  expect(harness.refreshAssetUrl).toHaveBeenCalledTimes(1);
+  harness.openExternal.mockClear();
+  harness.refreshAssetUrl.mockResolvedValue("https://signed.test/original.png");
+  await act(async () => shown.images[0]!.onOpenOriginal());
+  expect(harness.openExternal).toHaveBeenCalledWith(
+    "https://signed.test/original.png",
+    "file-preview",
+  );
+  expect((harness.previews.at(-1) as typeof shown).images[0]?.uri).toBe(
+    "file:///synthetic/preview.webp",
+  );
   expect(harness.refreshAssetUrl.mock.calls.at(-1)?.[1]).not.toHaveProperty("imagePreview");
 });

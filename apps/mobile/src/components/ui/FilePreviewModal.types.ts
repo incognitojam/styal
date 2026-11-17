@@ -31,7 +31,7 @@ export interface ResolvedFilePreviewDocument extends FilePreviewMetadata {
 
 /** `uri` is absent while it resolves; `failed` marks one that never will. */
 export interface FilePreviewImage extends FilePreviewMetadata {
-  readonly onViewOriginal?: () => void;
+  readonly onOpenOriginal?: () => Promise<void>;
   readonly uri?: string;
   readonly failed?: boolean;
 }
