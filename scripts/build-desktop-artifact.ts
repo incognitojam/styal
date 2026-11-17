@@ -1138,8 +1138,8 @@ export function resolveWindowsServerAsarIgnoreGlobs(arch: typeof BuildArch.Type)
   ];
 }
 
-// Budget includes prepared bytecode, Windows/WSL speech libraries and four Sharp native files.
-export const WINDOWS_PACKAGED_PAYLOAD_FILE_LIMIT = 130;
+// Main's 126-file payload plus Sharp's four files, plus six files of intake headroom.
+export const WINDOWS_PACKAGED_PAYLOAD_FILE_LIMIT = 136;
 export const WINDOWS_SERVER_RESOURCE_SOURCE_DIR = "apps/desktop/prod-resources/windows-server";
 export const WINDOWS_SERVER_EXTRA_RESOURCES = [
   {

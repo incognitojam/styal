@@ -1597,22 +1597,22 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
             targetArch: "x64" as const,
           };
           const initial = yield* validateWindowsPackagedPayload(input);
-          for (let count = initial.fileCount; count < 119; count++) {
+          for (let count = initial.fileCount; count < 126; count++) {
             yield* fs.writeFileString(
               path.join(fixture.packagedAppDir, `cache-${count}`),
               "bytecode",
             );
           }
           const prepared = yield* validateWindowsPackagedPayload(input);
-          assert.equal(prepared.fileCount, 119);
-          for (let count = 0; count < 5; count++) {
+          assert.equal(prepared.fileCount, 126);
+          for (let count = 0; count < 4; count++) {
             yield* fs.writeFileString(
               path.join(fixture.packagedAppDir, `sharp-native-${count}`),
               "native library",
             );
           }
           const withSharp = yield* validateWindowsPackagedPayload(input);
-          assert.equal(withSharp.fileCount, 124);
+          assert.equal(withSharp.fileCount, 130);
           for (
             let count = withSharp.fileCount;
             count < WINDOWS_PACKAGED_PAYLOAD_FILE_LIMIT;
