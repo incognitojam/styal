@@ -280,6 +280,13 @@ export function useThreadComposerState() {
         selectedThreadProjection?.projection.thread.reportDismissals ?? [],
       )
     : [];
+  const reportAnswers = new Map(
+    reportSettings?.coordinatorReportsEnabled
+      ? (selectedThreadMessages ?? []).flatMap((message) =>
+          message.reportAnswer ? [[message.id, message.reportAnswer] as const] : [],
+        )
+      : [],
+  );
 
   const selectedTurnUsage = useTurnUsage(selectedThreadProjection?.projection);
   const selectedThreadAttempts = selectedThreadProjection?.projection.attempts;
@@ -892,6 +899,7 @@ export function useThreadComposerState() {
     selectedTurnUsage,
     dismissFeedback,
     reports,
+    reportAnswers,
     reportReply: activeReportReply,
     onReportReply: (reply: ReportReply | null) =>
       setReportReply(

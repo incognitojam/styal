@@ -1,9 +1,10 @@
 import Animated from "react-native-reanimated";
 import { createContext, use, useState, type ComponentProps } from "react";
 import { Pressable, View } from "react-native";
-import type { CoordinatorReport, MessageId } from "@t3tools/contracts";
+import type { CoordinatorReport, CoordinatorReportReference, MessageId } from "@t3tools/contracts";
 import {
   coordinatorReports,
+  splitReportAnswer,
   waitingCoordinatorReports,
   type ReportReply,
 } from "@t3tools/client-runtime/coordinator-reports";
@@ -16,10 +17,13 @@ type ReportMessage = {
   text: string;
   createdAt: string;
   report?: CoordinatorReport;
+  reportAnswer?: typeof CoordinatorReportReference.Type;
 };
 export type ReportState = ReturnType<typeof coordinatorReports<ReportMessage>>[number];
 export const CoordinatorReportsContext = createContext<{
   reports: readonly ReportState[];
+  answers: ReadonlyMap<MessageId, typeof CoordinatorReportReference.Type>;
+  scroll: (id: MessageId) => void;
   canOperate: boolean;
   send: (text: string, reply: ReportReply) => Promise<void>;
   reply: (reply: ReportReply) => void;
@@ -49,7 +53,7 @@ export function CoordinatorReportMessage({
   };
   if (report.state === "replaced" && !expanded)
     return (
-      <View className="mb-2 flex-row items-center gap-2">
+      <View className="mb-2 mt-3 flex-row items-center gap-2 border-l-2 border-border pl-3">
         <View className="flex-1 flex-row">
           <Text className="shrink text-foreground-secondary" numberOfLines={1}>
             {tag.title}
@@ -60,28 +64,33 @@ export function CoordinatorReportMessage({
       </View>
     );
   return (
-    <View className="mb-3 gap-2 border-l-2 border-primary pl-3">
+    <View
+      className={`mb-3 mt-3 gap-2 border-l-2 pl-3 ${report.state === "replaced" ? "border-border" : "border-primary"}`}
+    >
       <Text className="font-t3-medium text-foreground-secondary">
         Report · {tag.title} · version {tag.version}
       </Text>
       {report.state === "replaced" ? (
-        <Text className="text-foreground-secondary">A newer version is below</Text>
+        <Text className="text-warning-foreground">A newer version is below</Text>
       ) : null}
       {content}
       {report.state === "open" ? (
         <View className="gap-2 rounded-xl bg-secondary p-3">
           <Text className="font-t3-medium text-foreground">{tag.question}</Text>
-          <View className="flex-row flex-wrap gap-2">
-            {tag.answers?.map((answer, index) => (
-              <Button
-                key={answer}
-                label={answer}
-                size="compact"
-                tone={index === 0 ? "primary" : "secondary"}
-                disabled={!ctx.canOperate || sending}
-                onPress={() => run(() => ctx.send(answer, reply))}
-              />
-            ))}
+          {tag.answers?.map((answer, index) => (
+            <Pressable
+              key={answer}
+              accessibilityRole="button"
+              accessibilityLabel={index === 0 ? `${answer}, recommended` : answer}
+              disabled={!ctx.canOperate || sending}
+              onPress={() => run(() => ctx.send(answer, reply))}
+              className={`flex-row items-start gap-2 rounded-lg border px-3 py-2 active:opacity-70 disabled:opacity-50 ${index === 0 ? "border-primary bg-primary/10" : "border-border"}`}
+            >
+              <Text className="flex-1 text-foreground">{answer}</Text>
+              {index === 0 ? <Text className="text-xs text-primary-text">Recommended</Text> : null}
+            </Pressable>
+          ))}
+          <View className="flex-row justify-between">
             <Button
               label="Reply…"
               size="compact"
@@ -106,10 +115,70 @@ export function CoordinatorReportMessage({
       ) : report.state === "answered" || report.state === "dismissed" ? (
         <Text className="text-foreground-secondary">
           {report.state === "answered"
-            ? `You answered: ${report.answer?.text.replace(/^\[[^\n]+\] /, "") ?? ""}`
+            ? `You answered: ${answerText(report.answer)}`
             : "Dismissed. The agent hears it on its next turn."}
         </Text>
       ) : null}
+    </View>
+  );
+}
+
+function answerText(answer: ReportMessage | undefined) {
+  if (!answer) return "";
+  const split = answer.reportAnswer && splitReportAnswer(answer.text, answer.reportAnswer);
+  return split ? split.text : answer.text;
+}
+
+/** Names the report a user message answers and opens that report version. */
+export function ReportAnswerChip({
+  title,
+  version,
+  onPress,
+}: {
+  title: string;
+  version: number;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`Open report ${title}, version ${version}`}
+      onPress={onPress}
+      className="mb-1 flex-row self-start rounded-md bg-primary/15 px-1.5 py-0.5 active:opacity-70"
+    >
+      <Text className="shrink text-sm text-primary-text" numberOfLines={1}>
+        {title} · v{version}
+      </Text>
+    </Pressable>
+  );
+}
+
+/** Sits at the top of the composer while the next message replies to a report. */
+export function ReportReplyStrip({
+  title,
+  version,
+  question,
+  onCancel,
+}: {
+  title: string;
+  version: number;
+  question: string | undefined;
+  onCancel: () => void;
+}) {
+  return (
+    <View className="mx-3 mb-1 flex-row items-start gap-2 border-b border-border pb-2">
+      <View className="w-0.5 self-stretch rounded-full bg-primary" />
+      <View className="min-w-0 flex-1">
+        <Text className="text-xs text-foreground-secondary" numberOfLines={1}>
+          Replying to <Text className="text-xs text-foreground">{title}</Text> · v{version}
+        </Text>
+        {question ? (
+          <Text className="text-sm text-foreground" numberOfLines={1}>
+            {question}
+          </Text>
+        ) : null}
+      </View>
+      <Button label="Cancel" size="compact" tone="text" onPress={onCancel} />
     </View>
   );
 }

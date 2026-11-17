@@ -62,6 +62,13 @@ export function formatReportAnswer(
   return `[${report.title}, version ${report.version}] ${text}`;
 }
 
+/** Splits the prefix `formatReportAnswer` adds, when it names the answered version. */
+export function splitReportAnswer(text: string, answered: Pick<Reference, "version">) {
+  const match = /^\[([^\n]+), version (\d+)\] /.exec(text);
+  if (!match || Number(match[2]) !== answered.version) return null;
+  return { title: match[1]!, version: answered.version, text: text.slice(match[0].length) };
+}
+
 export type ReportReply = { ref: typeof CoordinatorReportReference.Type; title: string };
 
 export function waitingCoordinatorReports<M extends Message & { readonly createdAt: string }>(

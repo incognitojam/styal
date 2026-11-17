@@ -19,6 +19,8 @@ import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";
 import { memo, use, useState, type ReactNode } from "react";
+import { splitReportAnswer } from "@t3tools/client-runtime/coordinator-reports";
+import { CoordinatorReportsContext, ReportAnswerChip } from "./CoordinatorReports";
 import {
   createMessageAttachmentPreviewProjector,
   selectMessageImageResources,
@@ -455,7 +457,12 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
   const unknownAttachments = (row.message.attachments ?? []).filter(
     (attachment) => !isImageAttachment(attachment) && !isFileAttachment(attachment),
   );
-  const userMessage = resolveUserMessagePresentation(row.message);
+  const presentation = resolveUserMessagePresentation(row.message);
+  const reportAnswer = use(CoordinatorReportsContext)?.answers.get(row.message.id);
+  const answeredReport = reportAnswer ? splitReportAnswer(presentation.text, reportAnswer) : null;
+  const userMessage = answeredReport
+    ? { ...presentation, text: answeredReport.text }
+    : presentation;
   // Messages from other agents fold to one line so the user's own messages stay easy to find.
   const folded = userMessage.attribution === "agent";
   const [expanded, setExpanded] = useState(false);
@@ -907,6 +914,15 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
             )}
           >
             {!mediaAboveText && mediaBlock}
+            {answeredReport && reportAnswer ? (
+              <div className="mb-1 flex min-w-0 text-sm text-muted-foreground">
+                <ReportAnswerChip
+                  title={answeredReport.title}
+                  version={answeredReport.version}
+                  messageId={reportAnswer.messageId}
+                />
+              </div>
+            ) : null}
             {issueContexts.length > 0 ? (
               <div className="mb-2 flex flex-wrap gap-1.5">
                 {issueContexts.map((context) => (
