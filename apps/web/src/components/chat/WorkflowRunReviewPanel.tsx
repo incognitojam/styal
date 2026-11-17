@@ -59,10 +59,10 @@ function WorkflowRunReviewForm(props: {
   const [expanded, setExpanded] = useState(false);
   const inFlight = useRef(false);
 
-  async function submit(choice: ReviewState, quick = false) {
+  async function submit(choice: ReviewState) {
     const [first, ...rest] = environments
       .map((environment) => environment.id)
-      .filter((id) => quick || selectedEnvironments.has(id));
+      .filter((id) => selectedEnvironments.has(id));
     if (first === undefined || inFlight.current || !canReview) return;
     inFlight.current = true;
     setSubmitting(true);
@@ -75,7 +75,7 @@ function WorkflowRunReviewForm(props: {
         runId: run.runId,
         environmentIds: [first, ...rest],
         state: choice,
-        comment: quick ? "" : comment.trim(),
+        comment: comment.trim(),
       },
     });
     inFlight.current = false;
@@ -94,6 +94,11 @@ function WorkflowRunReviewForm(props: {
   }
 
   const locked = !canReview || submitting;
+  // Quick Approve sends the form's state, so an edited selection or comment shows in its label.
+  const edited = selectedEnvironments.size !== environments.length || comment.trim() !== "";
+  const quickApproveLabel = edited
+    ? `Approve ${selectedEnvironments.size} ${selectedEnvironments.size === 1 ? "environment" : "environments"}`
+    : "Approve";
   return (
     <div>
       <div className="flex items-start gap-2 px-3 py-2">
@@ -113,8 +118,12 @@ function WorkflowRunReviewForm(props: {
         </div>
         <div className="flex shrink-0 gap-1">
           {expanded ? null : (
-            <Button size="xs" disabled={locked} onClick={() => void submit("approved", true)}>
-              Approve
+            <Button
+              size="xs"
+              disabled={locked || selectedEnvironments.size === 0}
+              onClick={() => void submit("approved")}
+            >
+              {quickApproveLabel}
             </Button>
           )}
           <Button

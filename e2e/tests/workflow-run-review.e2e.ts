@@ -53,6 +53,16 @@ describe("review a watched workflow deployment", () => {
     ],
   };
 
+  const collapsed: FakeGitHubWorkflowRun = {
+    id: 7106,
+    name: "Deploy collapsed",
+    status: "waiting",
+    environments: [
+      { id: 71, name: "staging" },
+      { id: 72, name: "production" },
+    ],
+  };
+
   const reviews = (run: FakeGitHubWorkflowRun) =>
     environment
       .gitHubApiRequests()
@@ -75,7 +85,7 @@ describe("review a watched workflow deployment", () => {
   }
 
   beforeAll(async () => {
-    const runs = [single, multiple, retry, stopped, quick];
+    const runs = [single, multiple, retry, stopped, quick, collapsed];
     environment = await startEnvironment({
       workflowRuns: runs,
       scenario: {
@@ -203,6 +213,34 @@ describe("review a watched workflow deployment", () => {
       { environment_ids: [61, 62], state: "approved", comment: "" },
     ]);
     await sidebar().getByText("Approval", { exact: true }).waitFor({ state: "hidden" });
+  });
+
+  it("quick Approve sends the form's selection and comment after the form is collapsed", async () => {
+    const { page } = app;
+    await watch(collapsed);
+    const review = page.getByRole("button", { name: "Review", exact: true });
+    await review.click();
+    const staging = page.getByRole("checkbox", { name: "staging", exact: true });
+    const production = page.getByRole("checkbox", { name: "production", exact: true });
+    await staging.uncheck();
+    await production.uncheck();
+    await page.getByRole("textbox", { name: "Review comment" }).fill("Staging first");
+    await review.click();
+    const none = page.getByRole("button", { name: "Approve 0 environments", exact: true });
+    expect(await none.isDisabled()).toBe(true);
+    expect(reviews(collapsed)).toHaveLength(0);
+
+    await review.click();
+    await staging.check();
+    await review.click();
+    await page.getByRole("button", { name: "Approve 1 environment", exact: true }).click();
+    // Production still waits, so the row stays with only it left.
+    await page
+      .getByText("Waiting for your review to deploy to production.", { exact: true })
+      .waitFor();
+    expect(reviews(collapsed).map((request) => request.body)).toEqual([
+      { environment_ids: [71], state: "approved", comment: "Staging first" },
+    ]);
   });
 
   it("requires a selection for multiple deployments and rejects only the selected environment", async () => {

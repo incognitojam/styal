@@ -44,10 +44,10 @@ export function WorkflowRunReviewCard(props: {
   const environments = run.review?.environments;
   if (environments === undefined) return null;
 
-  const submit = async (choice: ReviewState, quick = false) => {
+  const submit = async (choice: ReviewState) => {
     const [first, ...rest] = environments
       .map((environment) => environment.id)
-      .filter((id) => quick || selected.has(id));
+      .filter((id) => selected.has(id));
     if (first === undefined || inFlight.current || !canReview) return;
     inFlight.current = true;
     setSubmitting(true);
@@ -61,7 +61,7 @@ export function WorkflowRunReviewCard(props: {
         runId: run.runId,
         environmentIds: [first, ...rest],
         state: choice,
-        comment: quick ? "" : comment.trim(),
+        comment: comment.trim(),
       },
     }).finally(() => {
       inFlight.current = false;
@@ -98,11 +98,15 @@ export function WorkflowRunReviewCard(props: {
         <View className="gap-1">
           {expanded ? null : (
             <Button
-              label="Approve"
+              label={
+                selected.size !== environments.length || comment.trim() !== ""
+                  ? `Approve ${selected.size} ${selected.size === 1 ? "environment" : "environments"}`
+                  : "Approve"
+              }
               size="compact"
               tone="primary"
-              disabled={locked}
-              onPress={() => void submit("approved", true)}
+              disabled={locked || selected.size === 0}
+              onPress={() => void submit("approved")}
             />
           )}
           <Button
