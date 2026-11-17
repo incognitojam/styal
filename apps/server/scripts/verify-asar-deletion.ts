@@ -157,7 +157,17 @@ await scenario(
         const serverArchive = `${f.base}/server.asar`;
         physical.writeFileSync(serverArchive, archive());
         NodeAssert.equal(
-          NodeModule.createRequire(import.meta.url)(`${serverArchive}/late.cjs`),
+          NodeChildProcess.execFileSync(
+            process.execPath,
+            [
+              "--input-type=module",
+              "--eval",
+              `import * as NodeFS from 'node:fs';
+             import * as NodeModule from 'node:module';
+             NodeFS.writeSync(1, NodeModule.createRequire(import.meta.url)(${JSON.stringify(`${serverArchive}/late.cjs`)}));`,
+            ],
+            { encoding: "utf8" },
+          ),
           "synthetic",
         );
         NodeAssert.notEqual((process as NodeJS.Process & { noAsar?: boolean }).noAsar, true);
