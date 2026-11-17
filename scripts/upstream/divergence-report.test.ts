@@ -162,18 +162,70 @@ registerHooks({ resolve(specifier, context, nextResolve) {
       git("update-ref", "refs/pull/123/head", "HEAD");
       git("switch", "main");
       const fetch = steps.find(
-        (step: { name?: string }) => step.name === "Fetch full file contents",
+        (step: { name?: string }) => step.name === "Fetch comparison snapshots",
       );
       NodeChildProcess.execFileSync("bash", ["-c", fetch.run], {
         cwd: checkout,
         env: { ...process.env, BASE_SHA: base, HEAD_SHA: head, PR_NUMBER: "123" },
         stdio: ["ignore", "pipe", "pipe"],
       });
+      assert.equal(publisher("config", "--get", "remote.origin.promisor").trim(), "true");
+      assert.equal(
+        publisher("config", "--get", "remote.origin.partialclonefilter").trim(),
+        "blob:none",
+      );
       assert.equal(publisher("rev-parse", "refs/remotes/pr/head").trim(), head);
       assert.equal(publisher("cat-file", "-t", base).trim(), "commit");
       assert.equal(publisher("show", `${base}:${path}`), "stack base\n");
       assert.equal(publisher("show", `refs/remotes/pr/head:${path}`), "stack head\n");
       assert.include(publisher("diff", "-M", "--name-status", base, "refs/remotes/pr/head"), path);
+      write("unrelated-history.txt", "historical upstream content\n");
+      git("add", "unrelated-history.txt");
+      git("commit", "-m", "upstream history");
+      const historicalBlob = git("rev-parse", "HEAD:unrelated-history.txt").trim();
+      git("rm", "unrelated-history.txt");
+      git("commit", "-m", "remove historical upstream content");
+      const upstreamFetch = steps.find(
+        (step: { name?: string }) => step.name === "Fetch upstream main",
+      );
+      NodeChildProcess.execFileSync(
+        "bash",
+        [
+          "-c",
+          upstreamFetch.run.replace(
+            "https://github.com/pingdotgg/t3code.git",
+            `file://${directory}`,
+          ),
+        ],
+        {
+          cwd: checkout,
+          env: process.env,
+          stdio: ["ignore", "pipe", "pipe"],
+        },
+      );
+      assert.equal(
+        publisher("rev-parse", "refs/remotes/upstream/main").trim(),
+        git("rev-parse", "main").trim(),
+      );
+      assert.equal(publisher("config", "--get", "remote.upstream.promisor").trim(), "true");
+      assert.equal(
+        publisher("config", "--get", "remote.upstream.partialclonefilter").trim(),
+        "blob:none",
+      );
+      const objects = NodePath.join(checkout, ".git/objects");
+      assert.isFalse(
+        NodeFS.existsSync(
+          NodePath.join(objects, historicalBlob.slice(0, 2), historicalBlob.slice(2)),
+        ),
+      );
+      for (const index of NodeFS.readdirSync(NodePath.join(objects, "pack")).filter((file) =>
+        file.endsWith(".idx"),
+      )) {
+        assert.notInclude(
+          publisher("verify-pack", "-v", NodePath.join(objects, "pack", index)),
+          historicalBlob,
+        );
+      }
     });
   });
 
