@@ -525,7 +525,7 @@ export function workEntryMemoryFileKind(entry: WorkLogPresentationEntry) {
   );
 }
 
-const MEMORY_DIRECTORY_PATTERN = /\.claude\/projects\/[^/\s'"]+\/memory\//u;
+const MEMORY_DIRECTORY_PATTERN = /\.claude\/projects\/[^/\s'"]+\/memory(?:\/|[\s'"]|$)/u;
 
 /** Whether the entry only wrote or read Claude memory, including a shell command on its directory. */
 function workEntryIsMemoryBookkeeping(entry: WorkLogPresentationEntry): boolean {

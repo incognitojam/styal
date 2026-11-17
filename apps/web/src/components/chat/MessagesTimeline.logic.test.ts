@@ -1834,6 +1834,21 @@ describe("deriveMessagesTimelineRows", () => {
       ).toEqual(["user-entry", `turn-fold:${runId}`, "answer-entry", "note-entry"]);
     });
 
+    it("keeps the answer visible above a shorter note after a command run in the memory directory", () => {
+      expect(
+        collapsedRowIds([
+          message("user", "user", "Open the PR", 0),
+          message("answer", "assistant", answer, 1),
+          work("memory-edit", 2, {
+            itemType: "command_execution",
+            command:
+              "cd /home/user/.claude/projects/-home-user-app/memory && python3 - <<'EOF'\nopen('notes.md', 'a').write('rule')\nEOF",
+          }),
+          message("note", "assistant", "I've added that rule to my notes.", 3),
+        ]),
+      ).toEqual(["user-entry", `turn-fold:${runId}`, "answer-entry", "note-entry"]);
+    });
+
     it("folds a short note announcing the memory before the answer", () => {
       expect(
         collapsedRowIds([
