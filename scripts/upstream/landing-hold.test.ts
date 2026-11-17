@@ -74,8 +74,8 @@ describe("holdingCandidates", () => {
     assert.strictEqual(holding[0]?.until, Date.parse("2026-10-20T12:10:00Z"));
   });
 
-  it("releases once the promotion finishes, however it ends", () => {
-    for (const conclusion of ["success", "failure", "cancelled"]) {
+  it("releases once promotion succeeds or is cancelled", () => {
+    for (const conclusion of ["success", "cancelled"]) {
       const holding = holdingCandidates(
         [forkCi({ updated_at: "2026-10-20T11:55:00Z" })],
         [promotion(SHA_A, { conclusion, updated_at: "2026-10-20T11:58:00Z" })],
@@ -83,6 +83,29 @@ describe("holdingCandidates", () => {
       );
       assert.deepStrictEqual(holding, [], conclusion);
     }
+  });
+
+  it("keeps a failed promotion held for ten minutes, unless a newer run supersedes it", () => {
+    const failed = promotion(SHA_A, {
+      conclusion: "failure",
+      updated_at: "2026-10-20T11:58:00Z",
+    });
+    const ci = forkCi({});
+    const until = Date.parse("2026-10-20T12:08:00Z");
+    assert.deepStrictEqual(holdingCandidates([ci], [failed], NOW), [
+      { branch: "intake/batch", sha: SHA_A, url: failed.html_url, until },
+    ]);
+    assert.deepStrictEqual(holdingCandidates([ci], [failed], until), []);
+    for (const conclusion of ["success", "cancelled"]) {
+      assert.deepStrictEqual(
+        holdingCandidates([ci], [promotion(SHA_A, { conclusion }), failed], NOW),
+        [],
+      );
+    }
+    assert.deepStrictEqual(
+      holdingCandidates([forkCi({ head_sha: SHA_B }), ci], [promotion(SHA_B, {}), failed], NOW),
+      [],
+    );
   });
 
   it("keeps holding for a fixed push after the branch's newest Fork CI run fails", () => {
