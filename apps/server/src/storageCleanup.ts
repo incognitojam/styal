@@ -118,11 +118,14 @@ function sameProjectWorktreePolicies(left: ServerSettings, right: ServerSettings
       ...Object.keys(left.projectSettingsOverrides),
       ...Object.keys(right.projectSettingsOverrides),
     ]),
-  ].every((projectId) =>
-    Equal.equals(
-      left.projectSettingsOverrides[projectId as ProjectId]?.worktreeCleanup,
-      right.projectSettingsOverrides[projectId as ProjectId]?.worktreeCleanup,
-    ),
+  ].every(
+    (projectId) =>
+      Equal.equals(
+        left.projectSettingsOverrides[projectId as ProjectId]?.worktreeCleanup,
+        right.projectSettingsOverrides[projectId as ProjectId]?.worktreeCleanup,
+      ) &&
+      left.projectSettingsOverrides[projectId as ProjectId]?.cleanRegenerableFiles ===
+        right.projectSettingsOverrides[projectId as ProjectId]?.cleanRegenerableFiles,
   );
 }
 
@@ -1434,7 +1437,6 @@ const make = Effect.gen(function* () {
         if (
           Equal.equals(settings.storageCleanup, lastSettings.storageCleanup) &&
           Equal.equals(settings.worktreeCleanup, lastSettings.worktreeCleanup) &&
-          Equal.equals(settings.worktreeCleanupApprovals, lastSettings.worktreeCleanupApprovals) &&
           sameProjectWorktreePolicies(settings, lastSettings)
         )
           return Effect.void;

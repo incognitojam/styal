@@ -59,6 +59,8 @@ const setup = Effect.gen(function* () {
     `${f.root}/styal.json`,
     '{"worktreeCleanup":["dist","node_modules"]}',
   );
+  yield* f.command(f.root, ["add", "styal.json"]);
+  yield* f.command(f.root, ["commit", "-m", "fixture: declare cleanup"]);
   const project: OrchestrationProjectShell = {
     id: ProjectId.make("project-1"),
     title: "Synthetic",
@@ -99,14 +101,7 @@ const setup = Effect.gen(function* () {
   const layers = Layer.mergeAll(
     Layer.succeed(ServerConfig.ServerConfig, f.config),
     Layer.succeed(GitVcsDriver.GitVcsDriver, f.git),
-    Settings.layerTest({
-      worktreeCleanupApprovals: {
-        "project-1": {
-          dist: { approvedAt: "2026-01-01T00:00:00Z" },
-          node_modules: { approvedAt: "2026-01-01T00:00:00Z" },
-        },
-      },
-    }),
+    Settings.layerTest(),
     Layer.mock(ProjectStore.ProjectStoreV2)({ listShells: () => Effect.sync(() => projectList) }),
     Layer.mock(ProjectionStore.ProjectionStoreV2)({
       getShellSnapshot: () =>
@@ -163,6 +158,19 @@ it.effect(
         f.project,
         { ...f.project, id: ProjectId.make("unavailable"), workspaceRoot: `${f.base}/missing` },
       ]);
+      yield* f.command(f.root, ["branch", "-m", "trunk"]);
+      yield* f.command(f.root, ["update-ref", "refs/remotes/origin/trunk", "HEAD"]);
+      yield* f.command(f.root, [
+        "symbolic-ref",
+        "refs/remotes/origin/HEAD",
+        "refs/remotes/origin/trunk",
+      ]);
+      yield* f.command(f.root, ["checkout", "-b", "feature"]);
+      yield* f.fs.writeFileString(`${f.root}/styal.json`, '{"worktreeCleanup":["cache"]}');
+      yield* f.command(f.root, ["add", "styal.json"]);
+      yield* f.command(f.root, ["commit", "-m", "fixture: ignored feature patterns"]);
+      yield* f.write("styal.json", '{"worktreeCleanup":["cache"]}');
+      yield* f.write("cache/keep");
       yield* f.write("dist/output");
       const report: StorageCleanupReportEntry[] = [];
       yield* Effect.gen(function* () {
@@ -170,6 +178,7 @@ it.effect(
         yield* sweep(f.terminal, report);
         expect(report.map((entry) => entry.path)).toEqual([`${f.worktree}/dist`]);
         expect(yield* f.fs.exists(`${f.worktree}/dist`)).toBe(false);
+        expect(yield* f.fs.exists(`${f.worktree}/cache/keep`)).toBe(true);
         expect((yield* f.sql`SELECT * FROM worktree_stripped`).length).toBe(1);
         yield* f.write("dist/recreated");
         yield* sweep(f.terminal, report);
@@ -189,7 +198,10 @@ it.effect.each([
   "terminal",
   "live-session",
   "recent",
-  "other-project",
+  "disabled",
+  "feature-only",
+  "uncommitted",
+  "worktree-only",
   "withdrawn",
   "invalid",
   "root",
@@ -239,14 +251,27 @@ it.effect.each([
       yield* f.fs.writeFileString(`${f.root}/styal.json`, '{"worktreeCleanup":[]}');
     if (mode === "invalid")
       yield* f.fs.writeFileString(`${f.root}/styal.json`, '{"worktreeCleanup":["**/*"]}');
+    if (mode === "withdrawn" || mode === "invalid") {
+      yield* f.command(f.root, ["add", "styal.json"]);
+      yield* f.command(f.root, ["commit", "-m", "fixture: change cleanup"]);
+    }
+    if (mode === "feature-only" || mode === "worktree-only" || mode === "uncommitted") {
+      yield* f.command(f.root, ["rm", "styal.json"]);
+      yield* f.command(f.root, ["commit", "-m", "fixture: no cleanup on default"]);
+      const cwd = mode === "feature-only" ? f.root : f.worktree;
+      if (mode !== "uncommitted") yield* f.command(cwd, ["checkout", "-b", "feature"]);
+      yield* f.fs.writeFileString(`${cwd}/styal.json`, '{"worktreeCleanup":["dist"]}');
+      if (mode !== "uncommitted") {
+        yield* f.command(cwd, ["add", "styal.json"]);
+        yield* f.command(cwd, ["commit", "-m", "fixture: feature cleanup"]);
+      }
+    }
     if (mode === "missing-project") yield* f.fs.remove(f.root, { recursive: true });
     yield* Effect.gen(function* () {
-      if (mode === "other-project") {
+      if (mode === "disabled") {
         const settings = yield* Settings.ServerSettingsService;
         yield* settings.updateSettings({
-          worktreeCleanupApprovals: {
-            "project-other": { dist: { approvedAt: "2026-01-01T00:00:00Z" } },
-          },
+          projectSettingsOverrides: { [f.project.id]: { cleanRegenerableFiles: false } },
         });
       }
       const sweep = yield* makeSweep;

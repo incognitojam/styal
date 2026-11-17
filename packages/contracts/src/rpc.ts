@@ -1,8 +1,5 @@
 import {
   WorktreeCleanupError,
-  WorktreeCleanupApproveInput,
-  WorktreeCleanupApproveResult,
-  WorktreeCleanupRevokeInput,
   WorktreeCleanupReviewInput,
   WorktreeCleanupReview,
 } from "./worktreeCleanup.ts";
@@ -473,8 +470,6 @@ export const WS_METHODS = {
   projectsSearchEntries: "projects.searchEntries",
   projectsWriteFile: "projects.writeFile",
   projectsWorktreeCleanupReview: "projects.worktreeCleanupReview",
-  projectsWorktreeCleanupApprove: "projects.worktreeCleanupApprove",
-  projectsWorktreeCleanupRevoke: "projects.worktreeCleanupRevoke",
   projectsFileActionRun: "projects.fileActionRun",
   projectsFileActionReview: "projects.fileActionReview",
   projectsFileActionApprovalSet: "projects.fileActionApprovalSet",
@@ -1494,16 +1489,6 @@ const WsWorktreeCleanupReviewRpc = Rpc.make(WS_METHODS.projectsWorktreeCleanupRe
   success: WorktreeCleanupReview,
   error: Schema.Union([WorktreeCleanupError, EnvironmentAuthorizationError]),
 });
-const WsWorktreeCleanupApproveRpc = Rpc.make(WS_METHODS.projectsWorktreeCleanupApprove, {
-  payload: WorktreeCleanupApproveInput,
-  success: WorktreeCleanupApproveResult,
-  error: Schema.Union([WorktreeCleanupError, EnvironmentAuthorizationError]),
-});
-const WsWorktreeCleanupRevokeRpc = Rpc.make(WS_METHODS.projectsWorktreeCleanupRevoke, {
-  payload: WorktreeCleanupRevokeInput,
-  success: WorktreeCleanupReview,
-  error: Schema.Union([WorktreeCleanupError, EnvironmentAuthorizationError]),
-});
 /** What approving a styal.json action would cover, read from the project root. */
 const WsProjectsFileActionReviewRpc = Rpc.make(WS_METHODS.projectsFileActionReview, {
   payload: ProjectFileActionApprovalInput,
@@ -2479,8 +2464,6 @@ export const WsRpcGroup = RpcGroup.make(
   WsHardwareConfigureRpc,
   WsHardwareAuditListRpc,
   WsWorktreeCleanupReviewRpc,
-  WsWorktreeCleanupApproveRpc,
-  WsWorktreeCleanupRevokeRpc,
   WsProjectsFileActionReviewRpc,
   WsProjectsFileActionApprovalSetRpc,
   WsProjectsFileActionRunRpc,

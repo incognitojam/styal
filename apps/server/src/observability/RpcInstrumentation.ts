@@ -173,8 +173,6 @@ const RPC_AGGREGATES = {
   [WS_METHODS.projectsWriteFile]: "workspace",
   [WS_METHODS.projectsFileActionReview]: "workspace",
   [WS_METHODS.projectsWorktreeCleanupReview]: "workspace",
-  [WS_METHODS.projectsWorktreeCleanupRevoke]: "workspace",
-  [WS_METHODS.projectsWorktreeCleanupApprove]: "workspace",
   [WS_METHODS.projectsFileActionApprovalSet]: "workspace",
   [WS_METHODS.projectsFileActionRun]: "workspace",
   [WS_METHODS.projectsEnsureScratch]: "orchestration",

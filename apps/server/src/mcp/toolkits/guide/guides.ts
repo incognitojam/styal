@@ -15,7 +15,7 @@ const projectSetup = `# Project setup: styal.json, actions and worktrees
 ## styal.json
 
 \`styal.json\` at the project root is the project file. styal reads actions,
-\`defaultThreadEnvMode\`, \`iconPath\` and \`worktreeCleanup\` from the file in the project's
+\`defaultThreadEnvMode\` and \`iconPath\` from the file in the project's
 registered checkout, on whichever branch is checked out there, not from a thread's worktree. An
 edit in a worktree affects these only once it reaches that checkout (usually by merging to the
 default branch and pulling).
@@ -76,9 +76,9 @@ run often (dev server, tests, lint, build). Prefer existing scripts over inlined
   Patterns are relative to the worktree root (\`*\` within one segment, \`**\` across segments) and
   use forward slashes, no !, .git, empty, . or .. segments, and a literal in the final segment;
   A trailing slash matches folders only. Only git-ignored paths qualify; never list \`.env\`, notes, local state or anything setup cannot
-  recreate. styal uses a pattern only after a person approves it on each machine in Settings →
-  Worktrees → Regenerable files; you can propose patterns in the file but cannot approve them. A
-  pattern removed from the file keeps its approval until someone chooses **Forget**. On macOS and
+  recreate. Patterns take effect from the default branch in the project's registered checkout,
+  without per-pattern approval. Settings → Worktrees → **Clean up regenerable files** is on by
+  default; turn it off to skip this project on this machine. On macOS and
   Linux an hourly sweep deletes matching paths once every thread in the worktree has been quiet for
   a day and has settled (an idle subagent need not), with no open terminal. It is separate from the
   settle action, which does not trigger it. The next turn in that worktree reruns the setup action

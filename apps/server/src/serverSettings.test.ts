@@ -218,6 +218,40 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
       }),
     ).pipe(Effect.provide(layerServerSettings())),
   );
+  it.effect("discards old cleanup approvals and persists the project cleanup switch", () =>
+    Effect.gen(function* () {
+      const config = yield* ServerConfig.ServerConfig;
+      const fs = yield* FileSystem.FileSystem;
+      const service = yield* ServerSettingsModule.ServerSettingsService;
+      yield* fs.writeFileString(
+        config.settingsPath,
+        JSON.stringify({
+          enableAgentBrowserAccess: false,
+          worktreeCleanupApprovals: {
+            fixture: {
+              dist: { approvedAt: "2026-01-01T00:00:00Z" },
+              "dist/": { approvedAt: "2026-01-01T00:00:00Z" },
+            },
+          },
+        }),
+      );
+      const settings = yield* service.getSettings;
+      assert.isFalse(settings.enableAgentBrowserAccess);
+      assert.notProperty(settings, "worktreeCleanupApprovals");
+      yield* service.updateSettings({
+        projectSettingsOverrides: {
+          [ProjectId.make("fixture")]: { cleanRegenerableFiles: false },
+        },
+      });
+      const raw = yield* fs.readFileString(config.settingsPath);
+      assert.notInclude(raw, "worktreeCleanupApprovals");
+      const saved = yield* decodeServerSettingsJson(raw);
+      assert.isFalse(
+        saved.projectSettingsOverrides[ProjectId.make("fixture")]?.cleanRegenerableFiles,
+      );
+      assert.isFalse(saved.enableAgentBrowserAccess);
+    }).pipe(Effect.provide(layerServerSettings())),
+  );
   it.effect("migrates saved token delivery to paragraph buffering without resetting settings", () =>
     Effect.gen(function* () {
       const config = yield* ServerConfig.ServerConfig;

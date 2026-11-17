@@ -71,8 +71,6 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
 
   [WS_METHODS.hardwareControl]: AuthOrchestrationOperateScope,
   [WS_METHODS.hardwareConfigure]: AuthSettingsWriteScope,
-  [WS_METHODS.projectsWorktreeCleanupRevoke]: AuthSettingsWriteScope,
-  [WS_METHODS.projectsWorktreeCleanupApprove]: AuthSettingsWriteScope,
   [WS_METHODS.projectsFileActionApprovalSet]: AuthSettingsWriteScope,
   [WS_METHODS.projectsFileActionRun]: AuthTerminalOperateScope,
   [ORCHESTRATION_V2_WS_METHODS.stopWorkflow]: AuthOrchestrationOperateScope,

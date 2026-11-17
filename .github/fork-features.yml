@@ -7704,12 +7704,12 @@ features:
       retire_when: Upstream tells the agent when the worktree branch it started on is renamed.
 
   - id: worktree-declared-cleanup
-    title: Delete approved regenerable files from quiet managed worktrees
+    title: Delete declared regenerable files from quiet managed worktrees
     status: maintained
     tier: keep
-    prs: [1494]
+    prs: [1470, 1494, 1522]
     invariants:
-      - Only declared and per-project per-machine approved patterns may delete git-ignored paths; withdrawal stops use while earlier approvals remain revocable. Agents cannot approve.
+      - Only patterns committed on the default branch in the registered checkout may delete git-ignored paths. Clean up regenerable files is on by default and can be switched off per project per machine. Old per-pattern approvals are ignored and no longer written.
       - A day of quiet, no holding thread, terminal or live session, and the shared workspace lease protect cleanup. Project roots and unmanaged paths are never stripped.
       - Tracked or unignored descendants, nested repositories, mounts, links at the selected position and unverifiable or oversized paths keep a match whole. Internal links are unlinked without following them.
       - Fork migration 15 records worktree_stripped before deletion. The next turn reruns setup, including after partial deletion, and clears the row only after completion. Async setup does not block the turn. Interruption retains the row for retry; a completed failure clears it.
@@ -7718,8 +7718,8 @@ features:
     rationale: Retaining an idle worktree's files makes dependency copies accumulate; keeping the checkout and recreating only disposable output saves space without losing history.
     implementation_paths:
       - apps/server/src/persistence/ForkMigrations/015_WorktreeStripped.ts
-      - apps/server/src/worktreeCleanup/Approvals.ts
       - apps/server/src/worktreeCleanup/Deletion.ts
+      - apps/server/src/worktreeCleanup/Patterns.ts
       - apps/server/src/worktreeCleanup/Sweep.ts
       - apps/web/src/components/settings/WorktreeCleanupPatterns.tsx
       - packages/contracts/src/styalProjectFile.ts
@@ -7727,7 +7727,6 @@ features:
       - apps/server/src/orchestration-v2/ProviderTurnStartService.ts
       - apps/server/src/storageCleanup.ts
     tests:
-      - apps/server/src/worktreeCleanup/Approvals.test.ts
       - apps/server/src/worktreeCleanup/Deletion.test.ts
       - apps/server/src/worktreeCleanup/Sweep.test.ts
       - packages/shared/src/worktreeCleanupPatterns.test.ts
@@ -7735,7 +7734,7 @@ features:
       status: tracking
       tracking:
         - https://github.com/pingdotgg/t3code/pull/27001
-      retire_when: Upstream provides declared, individually approved in-place cleanup with equivalent deletion and reopen safety.
+      retire_when: Upstream provides declared, per-project switchable in-place cleanup with equivalent deletion and reopen safety.
 
   - id: your-machines-wording
     title: Name pairs of machines "your machines", and link only styal Link

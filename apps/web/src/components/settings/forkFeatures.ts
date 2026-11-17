@@ -35,7 +35,7 @@ export type SettingsForkFeature = (typeof SETTINGS_FORK_FEATURES)[number];
  */
 export const SETTINGS_BADGED: Readonly<Record<string, SettingsForkFeature>> = {
   "coordinator-reports": "coordinator-reports",
-  "worktree-regenerable-files": "worktree-declared-cleanup",
+  "worktree-clean-regenerable-files": "worktree-declared-cleanup",
   "agent-hardware-access": "hardware-leases",
   "discord-rich-presence": "desktop-discord-rich-presence",
   "environment-device-hosts": "device-environment-hosts",
