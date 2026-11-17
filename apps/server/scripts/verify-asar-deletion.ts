@@ -42,8 +42,6 @@ async function scenario(name: string, body: () => Promise<void>) {
   output(`START ${name}`);
   try {
     await body();
-    if (HostProcess.Platform.defaultValue() === "win32" && name.includes("darwin path"))
-      NodeAssert.fail("Intentional Windows gate verification failure");
     passed += 1;
     output(`PASS ${name}`);
   } catch (error) {
@@ -120,13 +118,6 @@ if (HostProcess.Platform.defaultValue() !== "win32")
         NodeAssert.deepEqual(selected, [`${f.worktree}/node_modules`]);
         yield* deletion.remove(f.worktree, selected[0]!);
         NodeAssert.equal(physical.existsSync(`${f.worktree}/node_modules`), false);
-        const serverArchive = `${f.base}/server.asar`;
-        physical.writeFileSync(serverArchive, archive());
-        NodeAssert.equal(
-          NodeModule.createRequire(import.meta.url)(`${serverArchive}/late.cjs`),
-          "synthetic",
-        );
-        NodeAssert.notEqual((process as NodeJS.Process & { noAsar?: boolean }).noAsar, true);
       }),
     ),
   );
@@ -163,6 +154,13 @@ await scenario(
           }),
         );
         NodeAssert.equal(physical.existsSync(NodePath.dirname(temporaryFile)), false);
+        const serverArchive = `${f.base}/server.asar`;
+        physical.writeFileSync(serverArchive, archive());
+        NodeAssert.equal(
+          NodeModule.createRequire(import.meta.url)(`${serverArchive}/late.cjs`),
+          "synthetic",
+        );
+        NodeAssert.notEqual((process as NodeJS.Process & { noAsar?: boolean }).noAsar, true);
       }),
     ),
 );
