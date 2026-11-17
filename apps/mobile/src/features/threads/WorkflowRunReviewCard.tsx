@@ -116,9 +116,6 @@ export function WorkflowRunReviewCard(props: {
       </View>
       {expanded ? (
         <View className="gap-2.5">
-          {props.stopWatching ? (
-            <Button label="Stop" tone="secondary" {...props.stopWatching} />
-          ) : null}
           {environments.length > 1 ? (
             <View className="gap-2">
               {environments.map((environment) => {
@@ -192,19 +189,24 @@ export function WorkflowRunReviewCard(props: {
               />
             </View>
           </View>
-          <Pressable
-            accessibilityRole="link"
-            className="flex-row items-center justify-center gap-1.5 rounded-2xl px-4 py-2.5 active:opacity-70"
-            onPress={() => void tryOpenExternalUrl(run.url, "workflow-run")}
-          >
-            <Text className="font-t3-bold text-sm text-foreground-muted">Open on GitHub</Text>
-            <SymbolView
-              name="arrow.up.right"
-              size={13}
-              tintColorClassName="accent-foreground-muted"
-              type="monochrome"
-            />
-          </Pressable>
+          <View className="flex-row items-center justify-between">
+            <Pressable
+              accessibilityRole="link"
+              className="flex-row items-center gap-1.5 rounded-2xl py-2.5 active:opacity-70"
+              onPress={() => void tryOpenExternalUrl(run.url, "workflow-run")}
+            >
+              <Text className="font-t3-bold text-sm text-foreground-muted">Open on GitHub</Text>
+              <SymbolView
+                name="arrow.up.right"
+                size={13}
+                tintColorClassName="accent-foreground-muted"
+                type="monochrome"
+              />
+            </Pressable>
+            {props.stopWatching ? (
+              <Button label="Stop watching" tone="text" {...props.stopWatching} />
+            ) : null}
+          </View>
           {!canReview ? (
             <Text className="font-sans text-xs text-foreground-tertiary">
               This connection cannot review deployments.

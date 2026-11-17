@@ -133,19 +133,8 @@ function WorkflowRunReviewForm(props: {
       </div>
       {expanded ? (
         <div className="px-3 pb-3 text-sm">
-          <div className="flex items-center justify-end gap-1">
-            {props.watchActions}
-            <Button
-              size="icon-xs"
-              variant="ghost"
-              aria-label="Open on GitHub"
-              render={<a href={run.url} target="_blank" rel="noreferrer" />}
-            >
-              <ExternalLinkIcon />
-            </Button>
-          </div>
           {environments.length > 1 ? (
-            <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
+            <div className="flex flex-wrap gap-x-3 gap-y-1">
               {environments.map((environment) => (
                 <label key={environment.id} className="flex items-center gap-1.5">
                   <Checkbox
@@ -175,7 +164,17 @@ function WorkflowRunReviewForm(props: {
               onChange={(event) => setComment(event.currentTarget.value)}
             />
           </div>
-          <div className="mt-2 flex justify-end gap-1.5">
+          <div className="mt-2 flex items-center gap-1.5">
+            <Button
+              size="icon-xs"
+              variant="ghost"
+              aria-label="Open on GitHub"
+              render={<a href={run.url} target="_blank" rel="noreferrer" />}
+            >
+              <ExternalLinkIcon />
+            </Button>
+            {props.watchActions}
+            <span className="flex-1" />
             <Button
               size="sm"
               variant="destructive-outline"
