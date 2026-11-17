@@ -110,11 +110,25 @@ it.effect(
         ).toEqual(animation);
         expect(fetches).toBe(2);
         const tiny = yield* previews.read({ ...input, preview: { width: 64 } });
+        expect(tiny.sourceDimensions).toEqual({ width: 800, height: 400 });
         expect(tiny.bytes.length).toBeLessThan(1024);
         expect(yield* Effect.promise(() => sharp(tiny.bytes).metadata())).toMatchObject({
           width: 64,
           height: 32,
         });
+        const svg = Buffer.from(
+          '<svg xmlns="http://www.w3.org/2000/svg" width="120" height="40"><rect width="120" height="40" fill="blue"/></svg>',
+        );
+        const vector = {
+          ...input,
+          identity: "extensionless-svg",
+          fetch: Effect.succeed({ bytes: svg, contentType: "image/svg+xml" }),
+        };
+        expect((yield* previews.read(vector)).bytes).toEqual(svg);
+        expect((yield* previews.read(vector)).contentType).toBe("image/svg+xml");
+        expect(
+          (yield* previews.read({ ...vector, preview: { width: 64 } }).pipe(Effect.exit))._tag,
+        ).toBe("Failure");
         yield* Effect.all(
           [
             previews.read({ ...input, identity: "parallel", preview: { width: 64 } }),

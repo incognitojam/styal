@@ -26,7 +26,10 @@ export class ImagePreviewError extends Schema.TaggedError<ImagePreviewError>()(
 }
 
 type Source = { readonly bytes: Uint8Array; readonly contentType: string };
-type Derivative = Source & { readonly expiresAt: number };
+type Derivative = Source & {
+  readonly expiresAt: number;
+  readonly sourceDimensions?: { readonly width: number; readonly height: number };
+};
 type Input = {
   readonly identity: string;
   readonly preview: AssetImagePreview;
@@ -39,6 +42,15 @@ export class PullRequestImagePreview extends Context.Service<
     readonly read: (input: Input) => Effect.Effect<Derivative, ImagePreviewError>;
   }
 >()("@styal/cli/assets/PullRequestImagePreview") {}
+
+const cacheMetadata = Schema.fromJsonString(
+  Schema.Struct({
+    contentType: Schema.String,
+    sourceDimensions: Schema.optionalKey(
+      Schema.Struct({ width: Schema.Number, height: Schema.Number }),
+    ),
+  }),
+);
 
 const requireSharp = NodeModule.createRequire(import.meta.url);
 
@@ -114,7 +126,7 @@ const make = Effect.gen(function* () {
       yield* digest.digest(
         Digest.sha256,
         new TextEncoder().encode(
-          `${input.identity.length}:${input.identity}:${input.preview.width}:webp-lossless-v5`,
+          `${input.identity.length}:${input.identity}:${input.preview.width}:webp-lossless-v6`,
         ),
       ),
     );
@@ -131,11 +143,15 @@ const make = Effect.gen(function* () {
         const bodyOffset = 10 + stored.readUInt16BE(8);
         if (bodyOffset > 10 && bodyOffset < stored.length) {
           entry.used = now;
-          return {
-            bytes: stored.subarray(bodyOffset),
-            contentType: stored.toString("utf8", 10, bodyOffset),
-            expiresAt: entry.expires,
-          };
+          const metadata = yield* Schema.decodeEffect(cacheMetadata)(
+            stored.toString("utf8", 10, bodyOffset),
+          ).pipe(Effect.option);
+          if (metadata._tag === "Some")
+            return {
+              bytes: stored.subarray(bodyOffset),
+              ...metadata.value,
+              expiresAt: entry.expires,
+            };
         }
       }
     }
@@ -154,9 +170,17 @@ const make = Effect.gen(function* () {
       return yield* Effect.gen(function* () {
         if (source.bytes.length > 20 * 1024 * 1024) return yield* new ImagePreviewError({});
         const data = Buffer.from(source.bytes);
-        if (data.subarray(0, 3).toString() === "GIF") {
+        if (
+          source.contentType === "image/svg+xml" ||
+          source.contentType === "image/gif" ||
+          data.subarray(0, 3).toString() === "GIF"
+        ) {
           if (input.preview.width === 64) return yield* new ImagePreviewError({});
-          return { bytes: source.bytes, contentType: "image/gif", expiresAt: now + 300_000 };
+          return {
+            bytes: source.bytes,
+            contentType: source.contentType === "image/svg+xml" ? "image/svg+xml" : "image/gif",
+            expiresAt: now + 300_000,
+          };
         }
         const chunked =
           data.subarray(0, 4).toString() === "RIFF"
@@ -186,12 +210,23 @@ const make = Effect.gen(function* () {
         if (sharp._tag === "None") return yield* new ImagePreviewError({});
         const image = sharp.value(source.bytes, { limitInputPixels: 32_000_000, animated: false });
         // Sharp cannot cancel native work: retain the permit until its promises settle.
+        let passthroughContentType = source.contentType;
+        let sourceDimensions: { width: number; height: number } | undefined;
         const bytes = yield* Effect.gen(function* () {
           const metadata = yield* Effect.tryPromise({
             try: () => image.metadata(),
             catch: () => new ImagePreviewError({}),
           });
+          sourceDimensions = metadata.autoOrient ?? {
+            width: metadata.width,
+            height: metadata.height,
+          };
           if ((metadata.pages ?? 1) > 1) return null;
+          if (metadata.format === "svg") {
+            passthroughContentType = "image/svg+xml";
+            if (input.preview.width === 64) return yield* new ImagePreviewError({});
+            return null;
+          }
           if (!["png", "jpeg", "webp", "avif", "heif", "tiff"].includes(metadata.format ?? "")) {
             return yield* new ImagePreviewError({});
           }
@@ -216,15 +251,22 @@ const make = Effect.gen(function* () {
           });
           return bytes;
         }).pipe(Effect.uninterruptible);
-        if (bytes === null) return { ...source, expiresAt: now + 300_000 };
+        if (bytes === null)
+          return { ...source, contentType: passthroughContentType, expiresAt: now + 300_000 };
         const original = bytes.length >= source.bytes.length;
         if (!original && bytes.length > 4 * 1024 * 1024) return yield* new ImagePreviewError({});
         const written = yield* Clock.currentTimeMillis;
         const result = {
           ...(original ? source : { bytes, contentType: "image/webp" }),
           expiresAt: written + 300_000,
+          ...(input.preview.width === 64 && sourceDimensions ? { sourceDimensions } : {}),
         };
-        const contentType = Buffer.from(result.contentType);
+        const contentType = Buffer.from(
+          yield* Schema.encodeEffect(cacheMetadata)({
+            contentType: result.contentType,
+            ...(result.sourceDimensions ? { sourceDimensions: result.sourceDimensions } : {}),
+          }).pipe(Effect.mapError(() => new ImagePreviewError({}))),
+        );
         if (contentType.length > 65_535) return result;
         const header = Buffer.alloc(10 + contentType.length);
         header.writeDoubleBE(result.expiresAt);

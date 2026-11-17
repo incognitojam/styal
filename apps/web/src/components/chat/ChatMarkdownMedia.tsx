@@ -1,5 +1,8 @@
 import { observeResize } from "../../lib/observeResize";
-import { pullRequestImageWidth } from "@t3tools/client-runtime/pull-request-image-preview";
+import {
+  fetchPullRequestPlaceholder,
+  pullRequestImageWidth,
+} from "@t3tools/client-runtime/pull-request-image-preview";
 import { MISSING_FILE_ACCESS_MESSAGE } from "@t3tools/client-runtime/state/assets";
 import { mediaFileReference, mediaUrlReference } from "@t3tools/client-runtime/media-reference";
 import type {
@@ -71,7 +74,7 @@ export function authoredImageSizeStyle(
       maxWidth: `min(100%, 30rem, ${(maxHeightRem * parsedWidth) / parsedHeight}rem)`,
     };
   }
-  if (hasWidth) return { width: parsedWidth, maxWidth: `min(100%, 30rem, ${parsedWidth}px)` };
+  if (hasWidth) return { maxWidth: `min(100%, 30rem, ${parsedWidth}px)` };
   if (hasHeight) return { maxHeight: `min(30rem, ${parsedHeight}px)` };
   return undefined;
 }
@@ -179,6 +182,7 @@ export function ChatMarkdownImage(props: {
   readonly copyMarkdown: string | undefined;
   readonly standalone: boolean;
   readonly reserveFrame?: boolean | undefined;
+  readonly sourceDimensions?: { readonly width: number; readonly height: number } | undefined;
   readonly className?: string | undefined;
   readonly style?: CSSProperties | undefined;
   readonly imageProps?:
@@ -193,15 +197,47 @@ export function ChatMarkdownImage(props: {
   const src = props.src ?? loadedSrc;
   const failed = props.sourceFailed === true || (src !== null && failedSrc === src);
   const settled = src !== null && !failed && (!props.standalone || loadedSrc !== null);
+  const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
+  const [tinySize, setTinySize] = useState<{ width: number; height: number } | null>(null);
   const framed = props.reserveFrame || !settled;
-  // GitHub media without authored dimensions has no intrinsic ratio before its first decode.
+  const size = props.sourceDimensions ?? tinySize ?? naturalSize;
+  const authoredRatio =
+    typeof props.style?.aspectRatio === "string"
+      ? props.style.aspectRatio.split("/").map(Number)
+      : null;
+  const ratio =
+    authoredRatio?.[0] && authoredRatio[1]
+      ? authoredRatio[0] / authoredRatio[1]
+      : size
+        ? size.width / size.height
+        : 16 / 10;
+  const naturalWidth = props.sourceDimensions?.width ?? naturalSize?.width;
+  const bounds = [
+    "100%",
+    "30rem",
+    `${30 * ratio}rem`,
+    ...(naturalWidth ? [`${Math.max(3, naturalWidth)}px`] : []),
+    ...(typeof props.style?.width === "number" ? [`${props.style.width}px`] : []),
+    ...(props.style?.maxWidth ? [props.style.maxWidth] : []),
+  ];
   const frameStyle = props.reserveFrame
-    ? { width: 480, aspectRatio: "1 / 1", ...props.style }
+    ? {
+        ...props.style,
+        width: "100%",
+        height: "auto",
+        aspectRatio: String(ratio),
+        maxWidth: `min(${bounds.join(", ")})`,
+      }
     : props.style;
   // Cached images are complete before `onLoad` can fire.
   const markLoadedIfComplete = (image: HTMLImageElement | null) => {
     if (!image) return;
-    if (image.complete && image.naturalWidth > 0) setLoadedSrc(image.currentSrc || image.src);
+    if (image.complete && image.naturalWidth > 0) {
+      setLoadedSrc(image.currentSrc || image.src);
+      setNaturalSize(
+        (current) => current ?? { width: image.naturalWidth, height: image.naturalHeight },
+      );
+    }
     markdownImageItems.set(image, {
       src,
       name: props.alt.trim() || "image",
@@ -210,7 +246,11 @@ export function ChatMarkdownImage(props: {
     });
   };
   const imageEvents = (loadingSrc: string) => ({
-    onLoad: () => {
+    onLoad: (event: React.SyntheticEvent<HTMLImageElement>) => {
+      const image = event.currentTarget;
+      setNaturalSize(
+        (current) => current ?? { width: image.naturalWidth, height: image.naturalHeight },
+      );
       setLoadedSrc(loadingSrc);
       setFailedSrc(null);
     },
@@ -293,6 +333,14 @@ export function ChatMarkdownImage(props: {
             src={props.placeholderSrc}
             alt=""
             aria-hidden
+            onLoad={(event) => {
+              const image = event.currentTarget;
+              if (!naturalSize)
+                setTinySize(
+                  (current) =>
+                    current ?? { width: image.naturalWidth, height: image.naturalHeight },
+                );
+            }}
             className="absolute inset-0 size-full object-contain blur-sm"
           />
         ) : null}
@@ -457,6 +505,23 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
       ? { ...resource, imagePreview: { width: 64 } }
       : null,
   );
+  const tinyUrl =
+    placeholder._tag === "Success" && placeholder.imagePreview ? placeholder.url : null;
+  const [tiny, setTiny] = useState<
+    ({ url: string } & Awaited<ReturnType<typeof fetchPullRequestPlaceholder>>) | null
+  >(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Fetch the tiny bitmap and its response metadata together, without downloading it twice.
+  useEffect(() => {
+    if (!tinyUrl) return;
+    const controller = new AbortController();
+    void fetchPullRequestPlaceholder(tinyUrl, controller.signal)
+      .then((value) => {
+        if (!controller.signal.aborted) setTiny({ url: tinyUrl, ...value });
+      })
+      .catch(() => {});
+    return () => controller.abort();
+  }, [tinyUrl]);
+  const readyTiny = tiny?.url === tinyUrl ? tiny : null;
   const assetUrl = useAssetUrlState(
     props.environmentId,
     inlineResource,
@@ -542,9 +607,7 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
     <ChatMarkdownImage
       key={JSON.stringify([props.environmentId, props.resource, props.srcFragment])}
       onViewOriginal={previewEnabled ? () => setViewOriginal(true) : undefined}
-      placeholderSrc={
-        placeholder._tag === "Success" && placeholder.imagePreview ? placeholder.url : undefined
-      }
+      placeholderSrc={readyTiny?.uri}
       src={src}
       sourceFailed={assetUrl._tag === "Failure" && fallbackSrc === undefined}
       unavailableDetail={
@@ -558,6 +621,7 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
       copyMarkdown={props.copyMarkdown}
       standalone={previewEnabled || (props.standalone ?? true)}
       reserveFrame={previewEnabled}
+      sourceDimensions={readyTiny?.sourceDimensions}
       className={cn(
         props.framed === false ? undefined : CHAT_MARKDOWN_WORKSPACE_IMAGE_CLASS_NAME,
         props.className,

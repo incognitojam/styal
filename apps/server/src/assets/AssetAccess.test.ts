@@ -1612,6 +1612,7 @@ describe("AssetAccess", () => {
         bytes: new Uint8Array([1, 2, 3]),
         contentType: "image/webp",
         expiresAt: now + 300_000,
+        sourceDimensions: { width: 120, height: 40 },
       };
       yield* TestClock.adjust("4 minutes");
       const cachedResponse = yield* sourceControlMediaResponse(
@@ -1623,6 +1624,8 @@ describe("AssetAccess", () => {
         }),
       );
       expect(cachedResponse.headers["cache-control"]).toBe("private, max-age=60");
+      expect(cachedResponse.headers["x-styal-image-source-width"]).toBe("120");
+      expect(cachedResponse.headers["x-styal-image-source-height"]).toBe("40");
       const expiringResponse = yield* sourceControlMediaResponse(
         {
           ...asset,

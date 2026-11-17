@@ -1,4 +1,8 @@
-import { pullRequestImageWidth } from "@t3tools/client-runtime/pull-request-image-preview";
+import { fetch } from "expo/fetch";
+import {
+  fetchPullRequestPlaceholder,
+  pullRequestImageWidth,
+} from "@t3tools/client-runtime/pull-request-image-preview";
 import { PixelRatio, useWindowDimensions } from "react-native";
 import { PullRequestLazyImage, PullRequestMediaVisibleContext } from "./PullRequestImageVisibility";
 import { createContext, useContext, useState, useEffect } from "react";
@@ -84,24 +88,26 @@ export function usePullRequestImageUrl(url: string, enabled = true) {
   const tiny = useAssetUrlState(context?.environmentId ?? null, enabled ? resource : null);
   const media = usePullRequestMediaUrl(url, enabled, preview);
   const tinyUrl = tiny._tag === "Success" && tiny.imagePreview ? tiny.url : null;
-  const [readyTiny, setReadyTiny] = useState<string | null>(null);
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Warm the tiny image cache before handing it to the native placeholder renderer.
+  const [bitmap, setTiny] = useState<
+    ({ url: string } & Awaited<ReturnType<typeof fetchPullRequestPlaceholder>>) | null
+  >(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Fetch the tiny bitmap and source dimensions once for the native placeholder renderer.
   useEffect(() => {
     if (!tinyUrl) return;
-    let cancelled = false;
-    void Image.prefetch(tinyUrl, { cachePolicy: "memory-disk" })
-      .catch(() => false)
-      .finally(() => {
-        if (!cancelled) setReadyTiny(tinyUrl);
-      });
-    return () => {
-      cancelled = true;
-    };
+    const controller = new AbortController();
+    void fetchPullRequestPlaceholder(tinyUrl, controller.signal, fetch)
+      .then((value) => {
+        if (!controller.signal.aborted) setTiny({ url: tinyUrl, ...value });
+      })
+      .catch(() => {});
+    return () => controller.abort();
   }, [tinyUrl]);
+  const readyTiny = bitmap?.url === tinyUrl ? bitmap : null;
   return {
     ...media,
     reserveFrame: preview !== undefined,
-    placeholderUri: tinyUrl !== null && readyTiny === tinyUrl ? tinyUrl : undefined,
+    placeholderUri: readyTiny?.uri,
+    sourceDimensions: readyTiny?.sourceDimensions,
   };
 }
 
@@ -137,6 +143,7 @@ function PullRequestMediaContent(
     media: ReturnType<typeof usePullRequestMediaUrl> & {
       placeholderUri?: string | undefined;
       reserveFrame?: boolean | undefined;
+      sourceDimensions?: { readonly width: number; readonly height: number } | undefined;
     };
   },
 ) {
@@ -152,6 +159,7 @@ function PullRequestMediaContent(
       <>
         <ThreadMarkdownImageView
           reserveFrame={media.reserveFrame}
+          sourceDimensions={media.sourceDimensions}
           placeholderUri={media.placeholderUri}
           uri={media.uri}
           sourceKey={props.url}

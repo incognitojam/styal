@@ -94,6 +94,7 @@ function MarkdownImage(props: {
     <ThreadMarkdownImageView
       knownSize={props.knownSize}
       reserveFrame={media.reserveFrame}
+      sourceDimensions={media.sourceDimensions}
       placeholderUri={media.placeholderUri}
       uri={media.uri}
       sourceKey={props.href}

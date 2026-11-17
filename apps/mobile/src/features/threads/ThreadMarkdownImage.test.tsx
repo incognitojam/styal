@@ -5,6 +5,7 @@ import { expect, it, vi } from "vite-plus/test";
 
 const harness = vi.hoisted(() => ({
   failImage: () => {},
+  loadTiny: (_event: { source: { width: number; height: number } }) => {},
   loadImage: (_event: { source: { width: number; height: number } }) => {},
   Passthrough: ({ children }: { children?: unknown }) => children,
 }));
@@ -30,11 +31,13 @@ vi.mock("react-native", () => ({
 }));
 vi.mock("expo-image", () => ({
   Image: (props: {
+    source?: { uri: string };
     onError: () => void;
     onLoad: (event: { source: { width: number; height: number } }) => void;
   }) => {
     harness.failImage = props.onError;
-    harness.loadImage = props.onLoad;
+    if (props.source?.uri === "https://example.test/tiny") harness.loadTiny = props.onLoad;
+    else harness.loadImage = props.onLoad;
     return <img alt="" />;
   },
 }));
@@ -87,25 +90,41 @@ it.each([
     knownSize: undefined,
     decoded: { width: 480, height: 960 },
     reserveFrame: true,
-    expected: { width: 345, aspectRatio: 1 },
+    sourceDimensions: { width: 120, height: 40 },
+    expected: { width: 120, maxWidth: 120, aspectRatio: 3 },
+  },
+  {
+    knownSize: undefined,
+    decoded: { width: 390, height: 844 },
+    reserveFrame: true,
+    placeholderSize: { width: 30, height: 64 },
+    expected: { width: 225, maxWidth: 225, aspectRatio: 30 / 64 },
   },
   {
     knownSize: { width: 180, height: 360 },
     decoded: { width: 480, height: 960 },
     reserveFrame: true,
     availableWidth: 0,
-    expected: { width: 180, maxWidth: "100%", aspectRatio: 0.5 },
+    expected: { width: "100%", maxWidth: 180, aspectRatio: 0.5 },
   },
 ])(
   "uses declared or natural dimensions and ignores later downsampled sizes: $expected",
-  async ({ knownSize, decoded, expected, reserveFrame, availableWidth }) => {
+  async ({
+    knownSize,
+    decoded,
+    expected,
+    reserveFrame,
+    availableWidth,
+    sourceDimensions,
+    placeholderSize,
+  }) => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     const container = document.createElement("div");
     const root = createRoot(container);
     const frameSize = () =>
       [...container.querySelectorAll<HTMLElement>("div[data-style]")]
         .map((element) => JSON.parse(element.dataset.style ?? "null") as Record<string, unknown>)
-        .find((style) => typeof style?.width === "number");
+        .find((style) => typeof style?.width === "number" || style?.width === "100%");
     try {
       await act(async () =>
         root.render(
@@ -117,11 +136,14 @@ it.each([
               alt={null}
               knownSize={knownSize}
               reserveFrame={reserveFrame}
+              sourceDimensions={sourceDimensions}
+              placeholderUri={placeholderSize ? "https://example.test/tiny" : undefined}
               onPressPreview={() => {}}
             />
           </MarkdownImageAvailableWidthContext>,
         ),
       );
+      if (placeholderSize) await act(async () => harness.loadTiny({ source: placeholderSize }));
       if (knownSize || reserveFrame) expect(frameSize()).toEqual(expected);
       else expect(frameSize()).toEqual({ width: 345, aspectRatio: 16 / 9 });
       await act(async () => harness.loadImage({ source: decoded }));

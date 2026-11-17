@@ -100,6 +100,9 @@ export const AssetImageDimensions = Schema.Struct({
 });
 export type AssetImageDimensions = typeof AssetImageDimensions.Type;
 
+export const ASSET_IMAGE_SOURCE_WIDTH_HEADER = "x-styal-image-source-width";
+export const ASSET_IMAGE_SOURCE_HEIGHT_HEADER = "x-styal-image-source-height";
+
 export const AssetCreateUrlResult = Schema.Struct({
   imagePreview: Schema.optionalKey(AssetImagePreview),
   relativeUrl: TrimmedNonEmptyString.check(Schema.isMaxLength(4096)),

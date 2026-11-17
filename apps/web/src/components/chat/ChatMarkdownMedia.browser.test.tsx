@@ -147,9 +147,13 @@ it.each([
     );
     await using screen = await render(pending);
     const frame = screen.getByRole("status", { name: "Loading image" }).element();
+    await screen.rerender(
+      <ChatMarkdownImage {...pending.props} sourceDimensions={{ width: 120, height: 40 }} />,
+    );
     const before = frame.getBoundingClientRect();
     expect(before.width).toBeGreaterThan(0);
     expect(before.height).toBeGreaterThan(0);
+    expect(before.width).toBeLessThanOrEqual(120);
     const loaded = new Promise<EventTarget | null>((resolve) => {
       frame.addEventListener("load", (event) => resolve(event.target), {
         capture: true,
@@ -159,6 +163,7 @@ it.each([
     await screen.rerender(
       <ChatMarkdownImage
         {...pending.props}
+        sourceDimensions={{ width: 120, height: 40 }}
         src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
       />,
     );
@@ -197,4 +202,41 @@ it("loads an original only after selecting recovery from a failed preview", asyn
   } finally {
     assetQuery.failPreview = false;
   }
+});
+
+it("fits preview frames inside narrow comparison table cells", async () => {
+  const view = (src: string | null) => (
+    <div className="chat-markdown" style={{ width: 420 }}>
+      <table>
+        <tbody>
+          <tr>
+            {["Before", "After"].map((alt) => (
+              <td key={alt}>
+                <ChatMarkdownImage
+                  src={src}
+                  alt={alt}
+                  standalone
+                  reserveFrame
+                  sourceDimensions={{ width: 1280, height: 800 }}
+                  copyMarkdown={undefined}
+                  actionsSource={{ kind: "image", name: alt, src }}
+                />
+              </td>
+            ))}
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  );
+  await using screen = await render(view(null));
+  const table = screen.container.querySelector("table")!;
+  expect(table.getBoundingClientRect().width).toBeLessThanOrEqual(420);
+  const frames = [...table.querySelectorAll<HTMLElement>('[role="status"]')];
+  const sizes = frames.map((frame) => frame.getBoundingClientRect().height);
+  expect(frames.every((frame) => frame.getBoundingClientRect().width <= 210)).toBe(true);
+  await screen.rerender(
+    view("data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"),
+  );
+  await expect.element(screen.getByRole("img", { name: "Before" })).toBeVisible();
+  expect(frames.map((frame) => frame.getBoundingClientRect().height)).toEqual(sizes);
 });

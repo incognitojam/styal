@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   replace: vi.fn<() => Promise<void>>(),
   thumbnail: vi.fn<(key: string, source: unknown, signal: AbortSignal) => Promise<null>>(),
 }));
+vi.mock("expo/fetch", () => ({ fetch: vi.fn() }));
 vi.mock("@react-navigation/native", () => ({ useIsFocused: () => mocks.focused }));
 vi.mock("react-native", () => ({
   Platform: { OS: "ios" },

@@ -1,4 +1,8 @@
-import type { AssetImagePreview } from "@t3tools/contracts";
+import {
+  ASSET_IMAGE_SOURCE_WIDTH_HEADER,
+  ASSET_IMAGE_SOURCE_HEIGHT_HEADER,
+  type AssetImagePreview,
+} from "@t3tools/contracts";
 import * as Preview from "./PullRequestImagePreview.ts";
 import * as Digest from "effect/crypto/Digest";
 import * as Hex from "effect/encoding/Hex";
@@ -88,6 +92,16 @@ export const sourceControlMediaResponse = Effect.fn(
         ...headers,
         "cache-control": `private, max-age=${freshness}`,
         etag: `"${etag}"`,
+        ...(result.value.contentType === SVG_CONTENT_TYPE
+          ? { "content-security-policy": SVG_CONTENT_SECURITY_POLICY }
+          : {}),
+        ...(result.value.sourceDimensions
+          ? {
+              [ASSET_IMAGE_SOURCE_WIDTH_HEADER]: String(result.value.sourceDimensions.width),
+              [ASSET_IMAGE_SOURCE_HEIGHT_HEADER]: String(result.value.sourceDimensions.height),
+              "access-control-expose-headers": `${ASSET_IMAGE_SOURCE_WIDTH_HEADER}, ${ASSET_IMAGE_SOURCE_HEIGHT_HEADER}`,
+            }
+          : {}),
       },
     });
   }

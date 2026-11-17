@@ -97,6 +97,7 @@ export function ThreadMarkdownImageView(props: {
   readonly alt: string | null;
   readonly knownSize?: { readonly width: number; readonly height: number } | undefined;
   readonly reserveFrame?: boolean | undefined;
+  readonly sourceDimensions?: ImageSize | undefined;
   readonly format?: "svg";
   readonly actionsSource?: MediaActionsSource;
   readonly onPressPreview: (source: FilePreviewSource) => void;
@@ -123,7 +124,13 @@ export function ThreadMarkdownImageView(props: {
   const [failure, setFailure] = useState({ uri: props.uri, failed: false });
   if (failure.uri !== props.uri) setFailure({ uri: props.uri, failed: false });
 
-  const sourceSize = props.knownSize ?? (props.reserveFrame ? null : decodedSize) ?? null;
+  const [tinySize, setTinySize] = useState<ImageSize | null>(null);
+  const sourceSize =
+    props.knownSize ??
+    props.sourceDimensions ??
+    (props.reserveFrame ? tinySize : null) ??
+    decodedSize ??
+    null;
   const displaySize: MarkdownImageDisplaySize | null =
     sourceSize === null || availableWidth <= 0
       ? null
@@ -138,24 +145,20 @@ export function ThreadMarkdownImageView(props: {
     AsyncResult.isFailure(svg);
   const placeholderWidth: ViewStyle["width"] =
     availableWidth > 0 ? Math.min(availableWidth, MARKDOWN_IMAGE_MAX_WIDTH) : "100%";
-  const reservedSize =
-    props.reserveFrame && props.knownSize
-      ? resolveMarkdownImageDisplaySize({
-          sourceWidth: props.knownSize.width,
-          sourceHeight: props.knownSize.height,
-          availableWidth: MARKDOWN_IMAGE_MAX_WIDTH,
-        })
-      : null;
-  const frameStyle: ViewStyle = reservedSize
+  const ratio = sourceSize ? sourceSize.width / sourceSize.height : 16 / 10;
+  const cap = Math.min(
+    MARKDOWN_IMAGE_MAX_WIDTH,
+    480 * ratio,
+    props.knownSize?.width ?? Infinity,
+    props.sourceDimensions?.width ?? decodedSize?.width ?? Infinity,
+  );
+  const frameStyle: ViewStyle = props.reserveFrame
     ? {
-        width: reservedSize.width,
-        maxWidth: "100%",
-        aspectRatio: reservedSize.width / reservedSize.height,
+        width: availableWidth > 0 ? Math.min(availableWidth, cap) : "100%",
+        maxWidth: cap,
+        aspectRatio: ratio,
       }
-    : (displaySize ?? {
-        width: placeholderWidth,
-        aspectRatio: props.reserveFrame ? 1 : 16 / 9,
-      });
+    : (displaySize ?? { width: placeholderWidth, aspectRatio: 16 / 9 });
 
   return (
     <View
@@ -179,6 +182,9 @@ export function ThreadMarkdownImageView(props: {
             {props.placeholderUri && !failed ? (
               <Image
                 source={{ uri: props.placeholderUri }}
+                onLoad={(event) => {
+                  if (!decodedSize) setTinySize((current) => current ?? event.source);
+                }}
                 blurRadius={8}
                 style={StyleSheet.absoluteFill}
                 contentFit="contain"
@@ -241,6 +247,9 @@ export function ThreadMarkdownImageView(props: {
                       )
                     }
                     placeholderUri={props.placeholderUri}
+                    onPlaceholderLoad={(size) => {
+                      if (!decodedSize) setTinySize((current) => current ?? size);
+                    }}
                     onError={() => setFailure({ uri: props.uri, failed: true })}
                   />
                 )}
@@ -259,6 +268,7 @@ export function ThreadMarkdownImageView(props: {
 }
 
 function ThreadMarkdownImageRequest(props: {
+  readonly onPlaceholderLoad: (size: ImageSize) => void;
   readonly placeholderUri?: string | undefined;
   readonly uri: string;
   readonly cacheKey: string | undefined;
@@ -269,8 +279,16 @@ function ThreadMarkdownImageRequest(props: {
 
   return (
     <>
+      {props.placeholderUri && !loaded ? (
+        <Image
+          source={{ uri: props.placeholderUri }}
+          contentFit="contain"
+          blurRadius={8}
+          style={StyleSheet.absoluteFill}
+          onLoad={(event) => props.onPlaceholderLoad(event.source)}
+        />
+      ) : null}
       <Image
-        placeholder={props.placeholderUri ? { uri: props.placeholderUri } : undefined}
         placeholderContentFit="contain"
         source={{ uri: props.uri, cacheKey: props.cacheKey }}
         contentFit="contain"
@@ -281,7 +299,7 @@ function ThreadMarkdownImageRequest(props: {
           props.onLoad(event.source);
         }}
         onError={props.onError}
-        style={{ width: "100%", height: "100%", opacity: loaded || props.placeholderUri ? 1 : 0 }}
+        style={{ width: "100%", height: "100%", opacity: loaded ? 1 : 0 }}
       />
       {loaded ? null : <ThreadMarkdownImageLoading />}
     </>
