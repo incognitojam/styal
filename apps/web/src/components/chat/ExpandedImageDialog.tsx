@@ -1,7 +1,7 @@
 import { pullRequestImageWidth } from "@t3tools/client-runtime/pull-request-image-preview";
 import { memo, useRef, useState, type ReactNode, type KeyboardEvent, type RefObject } from "react";
 import { flushSync } from "react-dom";
-import { ChevronLeftIcon, ChevronRightIcon, XIcon } from "lucide-react";
+import { ChevronLeftIcon, ChevronRightIcon, ScanEyeIcon, XIcon } from "lucide-react";
 import { Image as ImageGlyph, Text as TextGlyph } from "lucide";
 import { Button } from "../ui/button";
 import { MorphIcon } from "~/components/MorphIcon";
@@ -84,13 +84,11 @@ function PullRequestPreviewImage({
   item,
   source,
   original,
-  onViewOriginal,
   ref,
 }: {
   readonly item: ExpandedImageItem;
   readonly source: MediaActionSource;
   readonly original: boolean;
-  readonly onViewOriginal: () => void;
   readonly ref: RefObject<ZoomableImageHandle | null>;
 }) {
   const [requestedWidth, setRequestedWidth] = useState(0);
@@ -112,28 +110,19 @@ function PullRequestPreviewImage({
       : baseResource;
   const url = useAssetUrlState(asset.environmentId, resource);
   const src = url._tag === "Success" ? url.url : item.src;
-  return (
-    <>
-      {!original ? (
-        <Button variant="outline" onClick={onViewOriginal}>
-          View original
-        </Button>
-      ) : null}
-      {src === null || failedSrc === src ? (
-        <ExpandedMediaFailure>
-          <p>This image could not be loaded.</p>
-        </ExpandedMediaFailure>
-      ) : (
-        <ZoomableImage
-          ref={ref}
-          src={src}
-          name={item.name}
-          mimeType={itemMimeType(item)}
-          onError={() => setFailedSrc(src)}
-          onZoom={(zoom) => setRequestedWidth(window.innerWidth * zoom)}
-        />
-      )}
-    </>
+  return src === null || failedSrc === src ? (
+    <ExpandedMediaFailure>
+      <p>This image could not be loaded.</p>
+    </ExpandedMediaFailure>
+  ) : (
+    <ZoomableImage
+      ref={ref}
+      src={src}
+      name={item.name}
+      mimeType={itemMimeType(item)}
+      onError={() => setFailedSrc(src)}
+      onZoom={(zoom) => setRequestedWidth(window.innerWidth * zoom)}
+    />
   );
 }
 
@@ -246,17 +235,36 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
         }}
       >
         <DialogTitle className="sr-only">Expanded {mediaLabel} preview</DialogTitle>
-        <Button
-          type="button"
-          ref={closeButtonRef}
-          size="icon-sm"
-          variant="media-close"
-          className="absolute right-0 top-0 z-20"
-          onClick={close}
-          aria-label={`Close ${mediaLabel} preview`}
-        >
-          <XIcon />
-        </Button>
+        <div className="absolute right-0 top-0 z-20 flex items-center gap-2">
+          {source.asset?.resource._tag === "github-media" &&
+          source.asset.resource.imagePreview &&
+          originalAsset ? (
+            <div className="size-8 sm:size-7">
+              {!originals.has(index) ? (
+                <Tooltip>
+                  <TooltipTrigger
+                    render={<Button size="icon-sm" variant="media-close" />}
+                    aria-label="View original"
+                    onClick={() => setOriginals((current) => new Set([...current, index]))}
+                  >
+                    <ScanEyeIcon />
+                  </TooltipTrigger>
+                  <TooltipPopup>View original</TooltipPopup>
+                </Tooltip>
+              ) : null}
+            </div>
+          ) : null}
+          <Button
+            type="button"
+            ref={closeButtonRef}
+            size="icon-sm"
+            variant="media-close"
+            onClick={close}
+            aria-label={`Close ${mediaLabel} preview`}
+          >
+            <XIcon />
+          </Button>
+        </div>
         {preview.images.length > 1 && (
           <Button
             type="button"
@@ -288,7 +296,6 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
                 item={item}
                 source={source}
                 original={originals.has(index)}
-                onViewOriginal={() => setOriginals((current) => new Set([...current, index]))}
                 ref={zoomableImageRef}
               />
             ) : showingAccessibilityDetails ? (

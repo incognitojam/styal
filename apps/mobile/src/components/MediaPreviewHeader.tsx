@@ -21,8 +21,8 @@ export function MediaPreviewHeader(props: {
         <AppText className="flex-1 font-t3-medium text-base text-white" numberOfLines={2}>
           {props.title}
         </AppText>
-        {props.children}
         <MediaActionsMenu media={props.media} inModal />
+        {props.children}
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={props.closeAccessibilityLabel}
