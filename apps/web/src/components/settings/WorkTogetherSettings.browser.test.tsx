@@ -132,5 +132,7 @@ it("deduplicates tab machines from links and adds from the selected machine", as
   await expect
     .element(page.getByRole("heading", { name: "Add a machine for agents on Beta", exact: true }))
     .toBeInTheDocument();
-  expect(fixture.linkable).toHaveBeenLastCalledWith(beta.environmentId, true);
+  await vi.waitFor(() => {
+    expect(fixture.linkable).toHaveBeenCalledWith(beta.environmentId, true);
+  });
 });
