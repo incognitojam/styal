@@ -46,6 +46,7 @@ fragment CheckContext on StatusCheckRollupContext {
         runNumber
         event
         workflow {
+          databaseId
           name
         }
       }

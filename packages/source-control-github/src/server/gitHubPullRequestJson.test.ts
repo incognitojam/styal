@@ -404,7 +404,7 @@ describe("pull request detail decoding", () => {
           databaseId: null,
           runNumber: 1,
           event: "pull_request",
-          workflow: { name: workflowName },
+          workflow: { databaseId: null, name: workflowName },
         },
       },
     });
@@ -931,7 +931,7 @@ describe("pull request detail decoding", () => {
             databaseId: runNumber,
             runNumber,
             event: "pull_request",
-            workflow: { name: "CI" },
+            workflow: { databaseId: 1, name: "CI" },
           },
         },
       });
@@ -985,7 +985,14 @@ describe("pull request detail decoding", () => {
       check({
         name,
         conclusion: "SUCCESS",
-        checkSuite: { workflowRun: { databaseId, runNumber, event, workflow: { name: workflow } } },
+        checkSuite: {
+          workflowRun: {
+            databaseId,
+            runNumber,
+            event,
+            workflow: { databaseId: workflow === "CI" ? 1 : 2, name: workflow },
+          },
+        },
       });
     const detail = detailOf([
       job(10, 1, "push", "CI", "push job"),
@@ -1004,6 +1011,37 @@ describe("pull request detail decoding", () => {
       "legacy status",
     ]);
     expect(detail.checksState).toBe("passing");
+  });
+
+  it.each([true, false])("keeps same-name workflows independent (workflow ids: %s)", (withIds) => {
+    const job = (
+      runId: number,
+      runNumber: number,
+      workflowId: number,
+      name: string,
+      conclusion: string,
+    ) =>
+      check({
+        name,
+        conclusion,
+        checkSuite: {
+          workflowRun: {
+            databaseId: runId,
+            runNumber,
+            event: "pull_request",
+            workflow: { databaseId: withIds ? workflowId : null, name: "CI" },
+          },
+        },
+      });
+    const detail = detailOf([
+      job(10, 3, 1, "security scan", "FAILURE"),
+      job(20, 100, 2, "unit tests", "SUCCESS"),
+    ]);
+    expect(detail.checks.map((check) => [check.name, check.status])).toEqual([
+      ["security scan", "failure"],
+      ["unit tests", "success"],
+    ]);
+    expect(detail.checksState).toBe("failing");
   });
 
   it("merges reviews with comments in time order and keeps a bodyless approval", () => {
