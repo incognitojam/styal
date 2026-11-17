@@ -232,10 +232,12 @@ jobs:
     needs: validate
     if: needs.validate.result == 'success'
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 40
     environment: ${{ needs.validate.outputs.lane == 'automatic' && 'upstream-intake-automatic' || 'upstream-intake-manual' }}
     permissions:
       actions: read
+      checks: read
+      statuses: read
       contents: read
     steps:
       - id: porter_token
@@ -259,6 +261,13 @@ jobs:
             /*
             !/.repos/
           sparse-checkout-cone-mode: false
+
+      # Candidates receive a successful landing hold status; PRs receive pending.
+      - name: Wait for main's required checks on the candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_SHA: ${{ needs.validate.outputs.candidate_sha }}
+        run: node scripts/upstream/wait-required-checks.ts
 
       - name: Fast-forward main to the candidate
         shell: bash
