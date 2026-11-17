@@ -1116,6 +1116,9 @@ export const WINDOWS_SERVER_ASAR_IGNORE_GLOBS = [
   "**/node_modules/@cursor/sdk-*/**",
   "**/node_modules/@anthropic-ai/claude-agent-sdk-*",
   "**/node_modules/@anthropic-ai/claude-agent-sdk-*/**",
+  // The WSL fallback supports glibc; Sharp's musl packages are unused.
+  "**/node_modules/@img/sharp*-linuxmusl-*",
+  "**/node_modules/@img/sharp*-linuxmusl-*/**",
   "**/node_modules/.bin",
   "**/node_modules/.bin/**",
   "**/*.map",
@@ -1135,8 +1138,8 @@ export function resolveWindowsServerAsarIgnoreGlobs(arch: typeof BuildArch.Type)
   ];
 }
 
-// Budget includes prepared bytecode and Windows/WSL speech and Sharp native libraries.
-export const WINDOWS_PACKAGED_PAYLOAD_FILE_LIMIT = 128;
+// Budget includes prepared bytecode, Windows/WSL speech libraries and four Sharp native files.
+export const WINDOWS_PACKAGED_PAYLOAD_FILE_LIMIT = 130;
 export const WINDOWS_SERVER_RESOURCE_SOURCE_DIR = "apps/desktop/prod-resources/windows-server";
 export const WINDOWS_SERVER_EXTRA_RESOURCES = [
   {
