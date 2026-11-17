@@ -30,7 +30,6 @@ vi.mock("../../lib/openExternalUrl", () => ({ tryOpenExternalUrl: harness.openEx
 vi.mock("../../lib/previewPresentation", () => ({ usePreviewPresentation: () => {} }));
 vi.mock("./Dialog", () => ({ alert: harness.alert }));
 
-
 import type { FilePreviewItem, FilePreviewViewerProps } from "./FilePreviewModal.types";
 import { FilePreviewSession } from "./FilePreviewSession";
 
@@ -233,7 +232,7 @@ it("reuses the screen variant from the image cache and requests the original onl
     ...image("https://github.com/user-attachments/assets/synthetic"),
     previewImage: true,
   };
-  await using _preview = await openGallery(selected, [selected], "android");
+  await using _preview = await openGallery(selected, [selected], false);
   const shown = harness.previews.at(-1) as {
     images: { uri: string; onOpenOriginal: () => Promise<void> }[];
   };

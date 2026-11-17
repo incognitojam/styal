@@ -118,7 +118,6 @@ const makeInstance = Effect.gen(function* () {
     }),
     services,
   );
-
 });
 
 export const driver = defineSourceControlDriver({
