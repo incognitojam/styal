@@ -45,6 +45,7 @@ import { TYPOGRAPHY_ADVANCED_STORAGE_KEY } from "../../appearanceFonts";
 import { MOBILE_APP_URL } from "../../branding";
 import { isElectron } from "../../env";
 import { useLocalStorage } from "../../hooks/useLocalStorage";
+import { useTerminalCloseConfirmation } from "../../hooks/useTerminalCloseConfirmation";
 import { usePersistEnvironmentProviderInstanceMutation } from "../../hooks/useSettings";
 import { useCloudLinkState } from "../../cloud/cloudLinkState";
 import { hasCloudPublicConfig } from "../../cloud/publicConfig";
@@ -151,13 +152,30 @@ export function WelcomePage({
   );
   const selectedComputerIds =
     computerSelection ?? new Set(environmentId === null ? [] : [environmentId]);
-  const toggleComputer = (id: EnvironmentId, selected: boolean) =>
+  const terminalSessionsRef = useRef(new Map<EnvironmentId, AgentTerminalSession>());
+  const confirmTerminalClose = useTerminalCloseConfirmation();
+  // Leaving the page or a computer closes its setup terminal, so ask while a command still runs.
+  const confirmClosingTerminals = async (sessions: Iterable<AgentTerminalSession>) => {
+    for (const session of sessions) {
+      const close = await confirmTerminalClose({
+        environmentId: session.environmentId,
+        threadId: AGENT_ONBOARDING_THREAD_ID,
+        targets: [{ terminalId: session.terminalId, label: `Install ${session.driver}` }],
+      });
+      if (!close) return false;
+    }
+    return true;
+  };
+  const toggleComputer = async (id: EnvironmentId, selected: boolean) => {
+    const session = terminalSessionsRef.current.get(id);
+    if (!selected && session !== undefined && !(await confirmClosingTerminals([session]))) return;
     setComputerSelection((current) => {
       const next = new Set(current ?? selectedComputerIds);
       if (selected) next.add(id);
       else next.delete(id);
       return next;
     });
+  };
   const { setupIds, skippedIds, checkingComputers, computersAlreadySetUp, hold } =
     useWelcomeComputers(selectedComputerIds, automaticHostedFirstRun);
   const labelOf = (id: EnvironmentId) =>
@@ -195,15 +213,19 @@ export function WelcomePage({
   // True from Start until the landing; leaving earlier would drop the import or the landing.
   const holdPageRef = useRef(false);
   useBlocker({
-    shouldBlockFn: () => {
-      if (!holdPageRef.current) return false;
-      toastManager.add({
-        id: "welcome-finishing",
-        type: "info",
-        title: "Finishing setup",
-        description: "One moment.",
-      });
-      return true;
+    shouldBlockFn: async () => {
+      if (holdPageRef.current) {
+        toastManager.add({
+          id: "welcome-finishing",
+          type: "info",
+          title: "Finishing setup",
+          description: "One moment.",
+        });
+        return true;
+      }
+      // Start already asked about the setup terminals before setup began finishing.
+      if (finishingPromiseRef.current !== null) return false;
+      return !(await confirmClosingTerminals(terminalSessionsRef.current.values()));
     },
     // Electron cancels a quit silently when unload is blocked. A later visit resumes the import.
     enableBeforeUnload: false,
@@ -280,6 +302,7 @@ export function WelcomePage({
   const busy = isImporting || preparing || t3.pending;
   const start = async () => {
     if (busy) return;
+    if (!(await confirmClosingTerminals(terminalSessionsRef.current.values()))) return;
     setPreparing(true);
     // The computers being set up stay so through the import and its retries.
     hold();
@@ -338,8 +361,8 @@ export function WelcomePage({
                   skippedLabels={skippedIds.map(labelOf)}
                   pairingFirst={primaryEnvironmentId === null && !hasCloudPublicConfig()}
                   disabled={busy}
-                  onToggle={toggleComputer}
-                  onPaired={(id) => toggleComputer(id, true)}
+                  onToggle={(id, selected) => void toggleComputer(id, selected)}
+                  onPaired={(id) => void toggleComputer(id, true)}
                 />
               ) : null}
               {setupIds.map((id) => (
@@ -349,6 +372,7 @@ export function WelcomePage({
                   label={labelOf(id)}
                   showLabel={setupIds.length > 1}
                   isPrimary={id === primaryEnvironmentId}
+                  terminalSessionsRef={terminalSessionsRef}
                   onImportSourceEnabled={() =>
                     scans.find((scan) => scan.environmentId === id)?.refresh()
                   }
@@ -427,6 +451,7 @@ const isInstallableDriver = (driver: string): driver is OnboardingAgentDriver =>
   (INSTALLABLE_DRIVERS as ReadonlyArray<string>).includes(driver);
 
 interface AgentTerminalSession {
+  readonly terminalId: string;
   readonly environmentId: EnvironmentId;
   readonly driver: OnboardingAgentDriver;
   readonly providerInstanceId: ServerProvider["instanceId"];
@@ -481,6 +506,7 @@ function AgentsSection({
   label,
   showLabel = false,
   isPrimary,
+  terminalSessionsRef,
   onImportSourceEnabled,
 }: {
   readonly environmentId: EnvironmentId;
@@ -488,6 +514,8 @@ function AgentsSection({
   // Several computers each get a band, so each names its computer.
   readonly showLabel?: boolean;
   readonly isPrimary: boolean;
+  // Open setup terminals by computer, so Start can ask before leaving one running.
+  readonly terminalSessionsRef: { readonly current: Map<EnvironmentId, AgentTerminalSession> };
   // The project scan only reads agents that are on, so turning one on can find more history.
   readonly onImportSourceEnabled: () => void;
 }) {
@@ -541,30 +569,63 @@ function AgentsSection({
   // Once the card closes, a later status change does not reopen it and move the page.
   if (listedCodex !== undefined && codexSetupProvider === null) setCodexSetupId(null);
 
-  const openTerminal = (provider: ServerProvider) => {
+  // Closing or replacing a setup terminal asks first while its command is still running.
+  const confirmTerminalClose = useTerminalCloseConfirmation();
+  const confirmClosingTerminal = async () =>
+    terminalSession === null ||
+    confirmTerminalClose({
+      environmentId,
+      threadId: AGENT_ONBOARDING_THREAD_ID,
+      targets: [
+        { terminalId: terminalSession.terminalId, label: `Install ${terminalSession.driver}` },
+      ],
+    });
+  const changeTerminalSession = async (
+    next: AgentTerminalSession | null,
+    { exited = false, ask = true } = {},
+  ) => {
+    if (!exited && ask && !(await confirmClosingTerminal())) return false;
+    setTerminalSession(next);
+    return true;
+  };
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- shares this computer's open setup terminal with the page, so Start can ask before leaving it running
+  useEffect(() => {
+    const sessions = terminalSessionsRef.current;
+    if (terminalSession === null) return;
+    sessions.set(environmentId, terminalSession);
+    return () => {
+      sessions.delete(environmentId);
+    };
+  }, [environmentId, terminalSession, terminalSessionsRef]);
+  // Opened while rendering, after Codex checks its CLI; choosing the CLI already asked to replace.
+  const openTerminal = (provider: ServerProvider, { ask = true } = {}) => {
     if (
       !isInstallableDriver(provider.driver) ||
       serverConfig === null ||
       !readEnvironmentScope(environmentId, AuthTerminalOperateScope)
     )
       return;
-    setTerminalSession({
-      environmentId,
-      driver: provider.driver,
-      providerInstanceId: provider.instanceId,
-      cwd: serverConfig.cwd,
-      command: provider.installed
-        ? resolveOnboardingProviderLoginCommand(
-            provider,
-            serverConfig.settings,
-            serverConfig.environment.platform.os,
-          )
-        : resolveOnboardingProviderInstallCommand(
-            provider.driver,
-            serverConfig.environment.platform.os,
-          ),
-      keybindings: serverConfig.keybindings,
-    });
+    void changeTerminalSession(
+      {
+        terminalId: `onboarding-${provider.driver}-${randomUUID()}`,
+        environmentId,
+        driver: provider.driver,
+        providerInstanceId: provider.instanceId,
+        cwd: serverConfig.cwd,
+        command: provider.installed
+          ? resolveOnboardingProviderLoginCommand(
+              provider,
+              serverConfig.settings,
+              serverConfig.environment.platform.os,
+            )
+          : resolveOnboardingProviderInstallCommand(
+              provider.driver,
+              serverConfig.environment.platform.os,
+            ),
+        keybindings: serverConfig.keybindings,
+      },
+      { ask },
+    );
   };
 
   // "Use existing CLI" opens the CLI's terminal once Codex has checked the CLI.
@@ -576,7 +637,7 @@ function AgentsSection({
     cliProvider === undefined ? "done" : cliTerminalStep(cliProvider, serverConfig?.settings);
   if (cliProvider !== undefined && cliStep !== "wait") {
     setCliTerminalFor(null);
-    if (cliStep === "open") openTerminal(cliProvider);
+    if (cliStep === "open") openTerminal(cliProvider, { ask: false });
   }
 
   const turnOn = async (provider: ServerProvider) => {
@@ -769,9 +830,14 @@ function AgentsSection({
             environmentId={environmentId}
             provider={codexSetupProvider}
             serverConfig={serverConfig}
-            onUseCliChange={(useCli) =>
-              setCliTerminalFor(useCli ? codexSetupProvider.instanceId : null)
-            }
+            onUseCliChange={(useCli) => {
+              const instanceId = codexSetupProvider.instanceId;
+              if (!useCli) setCliTerminalFor(null);
+              else
+                void confirmClosingTerminal().then((replace) => {
+                  if (replace) setCliTerminalFor(instanceId);
+                });
+            }}
           />
         </div>
       ) : null}
@@ -780,9 +846,10 @@ function AgentsSection({
         <AgentInstallTerminal
           key={`${terminalSession.environmentId}:${terminalSession.providerInstanceId}:${terminalSession.driver}`}
           session={terminalSession}
-          onClose={() => {
-            setTerminalSession(null);
-            void refreshProviders({ environmentId, input: {} });
+          onClose={(exited) => {
+            void changeTerminalSession(null, { exited }).then((closed) => {
+              if (closed) void refreshProviders({ environmentId, input: {} });
+            });
           }}
         />
       ) : null}
@@ -1340,9 +1407,10 @@ function AgentInstallTerminal({
   onClose,
 }: {
   readonly session: AgentTerminalSession;
-  readonly onClose: () => void;
+  readonly onClose: (exited: boolean) => void;
 }) {
-  const { command, cwd, driver, environmentId, keybindings, providerInstanceId } = session;
+  const { command, cwd, driver, environmentId, keybindings, providerInstanceId, terminalId } =
+    session;
   const canOperateTerminal = useEnvironmentScope(environmentId, AuthTerminalOperateScope);
   const [advancedTypography] = useLocalStorage(
     TYPOGRAPHY_ADVANCED_STORAGE_KEY,
@@ -1355,7 +1423,6 @@ function AgentInstallTerminal({
   const setupQueueRef = useRef(Promise.resolve());
   const setupGenerationRef = useRef(0);
   const activeSetupGenerationRef = useRef<number | null>(null);
-  const [terminalId] = useState(() => `onboarding-${driver}-${randomUUID()}`);
   const threadRef = scopeThreadRef(environmentId, AGENT_ONBOARDING_THREAD_ID);
   const [setupAttempt, setSetupAttempt] = useState(0);
   const [setupState, setSetupState] = useState<
@@ -1470,7 +1537,7 @@ function AgentInstallTerminal({
               Retry
             </Button>
           ) : null}
-          <Button size="xs" variant="ghost-muted" onClick={onClose}>
+          <Button size="xs" variant="ghost-muted" onClick={() => onClose(false)}>
             Close
           </Button>
         </div>
@@ -1485,7 +1552,7 @@ function AgentInstallTerminal({
             cwd={cwd}
             providerInstanceId={providerInstanceId}
             advancedTypography={advancedTypography}
-            onSessionExited={onClose}
+            onSessionExited={() => onClose(true)}
             autoFocus
             visible
             keybindings={keybindings}
