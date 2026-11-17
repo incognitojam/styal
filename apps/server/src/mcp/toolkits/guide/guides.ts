@@ -36,7 +36,7 @@ the worktree is created.
 
 - Top-level fields: \`actions\`, \`defaultThreadEnvMode\` (\`worktree\` or \`local\`),
   \`worktreeSubmodules\` (\`recursive\`, \`top-level\` or \`none\`), \`iconPath\` (project-relative
-  image), \`worktreeCleanup\` (path patterns; see Regenerable files below). Comments and trailing
+  image), \`regenerableFiles\` (path patterns; see Regenerable files below). Comments and trailing
   commas are allowed.
 - Action fields: \`name\` and \`command\` (required); \`id\` (at most 24 characters: lowercase letters,
   digits and dashes, starting with a letter or digit; always set it so shortcuts survive a rename); \`icon\` (\`play\`, \`test\`, \`lint\`, \`configure\`,
@@ -71,8 +71,8 @@ run often (dev server, tests, lint, build). Prefer existing scripts over inlined
   and not a subagent, or if it is working, waiting on a request, or has queued work. An idle subagent
   does not hold it back, and one that settles after its parent runs the action again, so make the
   action safe to run twice. One action per checkout runs, chosen the same way as setup.
-- **Regenerable files** (\`worktreeCleanup\`): for dependencies and build output, list patterns
-  instead of writing a settle script, for example \`"worktreeCleanup": ["**/node_modules", "dist"]\`.
+- **Regenerable files** (\`regenerableFiles\`): for dependencies and build output, list patterns
+  instead of writing a settle script, for example \`"regenerableFiles": ["**/node_modules", "dist"]\`.
   Patterns are relative to the worktree root (\`*\` within one segment, \`**\` across segments) and
   use forward slashes, no !, .git, empty, . or .. segments, and a literal in the final segment;
   A trailing slash matches folders only. Only git-ignored paths qualify; never list \`.env\`, notes, local state or anything setup cannot

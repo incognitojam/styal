@@ -261,14 +261,17 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
         const sql = yield* SqlClient.SqlClient;
         const config = yield* ServerConfig.ServerConfig;
         const service = yield* ServerSettingsModule.ServerSettingsService;
-        yield* f.fs.writeFileString(`${f.root}/styal.json`, '{"worktreeCleanup":["dist","cache"]}');
+        yield* f.fs.writeFileString(
+          `${f.root}/styal.json`,
+          '{"regenerableFiles":["dist","cache"]}',
+        );
         yield* f.fs.makeDirectory(`${f.root}/empty`);
         yield* f.command(f.root, ["add", "styal.json"]);
         yield* f.command(f.root, ["commit", "-m", "fixture: cleanup patterns"]);
         const unknown = yield* cleanupFixture;
         yield* unknown.fs.writeFileString(
           `${unknown.root}/styal.json`,
-          '{"worktreeCleanup":["dist"]}',
+          '{"regenerableFiles":["dist"]}',
         );
         yield* unknown.command(unknown.root, ["add", "styal.json"]);
         yield* unknown.command(unknown.root, ["commit", "-m", "fixture: unknown default"]);
@@ -339,7 +342,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
             [ProjectId.make("unapproved")]: { cleanRegenerableFiles: true },
           },
         });
-        yield* f.fs.writeFileString(`${f.root}/empty/styal.json`, '{"worktreeCleanup":["dist"]}');
+        yield* f.fs.writeFileString(`${f.root}/empty/styal.json`, '{"regenerableFiles":["dist"]}');
         yield* f.command(f.root, ["add", "empty/styal.json"]);
         yield* f.command(f.root, ["commit", "-m", "fixture: declare patterns after migration"]);
         yield* service.updateSettings({ defaultAutoPull: true });

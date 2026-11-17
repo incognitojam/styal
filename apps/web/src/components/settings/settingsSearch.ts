@@ -237,7 +237,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/worktrees",
     scope: "project-defaults",
     searchTerms: [
-      "worktreeCleanup ignored patterns regenerable files cleanup dependencies node_modules",
+      "regenerableFiles worktreeCleanup ignored patterns regenerable files cleanup dependencies node_modules",
     ],
   },
   {

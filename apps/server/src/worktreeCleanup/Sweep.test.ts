@@ -57,7 +57,7 @@ const setup = Effect.gen(function* () {
   yield* sql`CREATE TABLE orchestration_v2_projection_provider_sessions (payload_json TEXT, status TEXT)`;
   yield* f.fs.writeFileString(
     `${f.root}/styal.json`,
-    '{"worktreeCleanup":["dist","node_modules"]}',
+    '{"regenerableFiles":["dist","node_modules"]}',
   );
   yield* f.command(f.root, ["add", "styal.json"]);
   yield* f.command(f.root, ["commit", "-m", "fixture: declare cleanup"]);
@@ -166,10 +166,10 @@ it.effect(
         "refs/remotes/origin/trunk",
       ]);
       yield* f.command(f.root, ["checkout", "-b", "feature"]);
-      yield* f.fs.writeFileString(`${f.root}/styal.json`, '{"worktreeCleanup":["cache"]}');
+      yield* f.fs.writeFileString(`${f.root}/styal.json`, '{"regenerableFiles":["cache"]}');
       yield* f.command(f.root, ["add", "styal.json"]);
       yield* f.command(f.root, ["commit", "-m", "fixture: ignored feature patterns"]);
-      yield* f.write("styal.json", '{"worktreeCleanup":["cache"]}');
+      yield* f.write("styal.json", '{"regenerableFiles":["cache"]}');
       yield* f.write("cache/keep");
       yield* f.write("dist/output");
       const report: StorageCleanupReportEntry[] = [];
@@ -254,9 +254,9 @@ it.effect.each([
       yield* f.sql`INSERT INTO orchestration_v2_projection_provider_sessions VALUES (${payload}, 'ready')`;
     }
     if (mode === "withdrawn")
-      yield* f.fs.writeFileString(`${f.root}/styal.json`, '{"worktreeCleanup":[]}');
+      yield* f.fs.writeFileString(`${f.root}/styal.json`, '{"regenerableFiles":[]}');
     if (mode === "invalid")
-      yield* f.fs.writeFileString(`${f.root}/styal.json`, '{"worktreeCleanup":["**/*"]}');
+      yield* f.fs.writeFileString(`${f.root}/styal.json`, '{"regenerableFiles":["**/*"]}');
     if (mode === "withdrawn" || mode === "invalid") {
       yield* f.command(f.root, ["add", "styal.json"]);
       yield* f.command(f.root, ["commit", "-m", "fixture: change cleanup"]);
@@ -266,7 +266,7 @@ it.effect.each([
       yield* f.command(f.root, ["commit", "-m", "fixture: no cleanup on default"]);
       const cwd = mode === "worktree-only" ? f.worktree : f.root;
       if (mode !== "uncommitted") yield* f.command(cwd, ["checkout", "-b", "feature"]);
-      yield* f.fs.writeFileString(`${cwd}/styal.json`, '{"worktreeCleanup":["dist"]}');
+      yield* f.fs.writeFileString(`${cwd}/styal.json`, '{"regenerableFiles":["dist"]}');
       if (mode !== "uncommitted") {
         yield* f.command(cwd, ["add", "styal.json"]);
         yield* f.command(cwd, ["commit", "-m", "fixture: feature cleanup"]);
@@ -284,7 +284,7 @@ it.effect.each([
     }
     if (mode === "no-default-branch") yield* f.command(f.root, ["branch", "-m", "feature"]);
     if (mode === "unpushed-checkout" || mode === "unpushed-worktree") {
-      yield* f.fs.writeFileString(`${f.root}/styal.json`, '{"worktreeCleanup":[]}');
+      yield* f.fs.writeFileString(`${f.root}/styal.json`, '{"regenerableFiles":[]}');
       yield* f.command(f.root, ["add", "styal.json"]);
       yield* f.command(f.root, ["commit", "-m", "fixture: remote has no patterns"]);
       const origin = `${f.base}/origin.git`;
@@ -297,7 +297,7 @@ it.effect.each([
         yield* f.command(f.root, ["checkout", "-b", "feature"]);
         yield* f.command(f.worktree, ["checkout", "main"]);
       }
-      yield* f.fs.writeFileString(`${cwd}/styal.json`, '{"worktreeCleanup":["dist"]}');
+      yield* f.fs.writeFileString(`${cwd}/styal.json`, '{"regenerableFiles":["dist"]}');
       yield* f.command(cwd, ["add", "styal.json"]);
       yield* f.command(cwd, ["commit", "-m", "fixture: unpushed cleanup"]);
     }

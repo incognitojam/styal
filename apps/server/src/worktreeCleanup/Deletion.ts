@@ -7,7 +7,7 @@ import { WorktreeCleanupError } from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
-import { matchesWorktreeCleanupPattern } from "@t3tools/shared/worktreeCleanupPatterns";
+import { matchesRegenerableFilePattern } from "@t3tools/shared/regenerableFilePatterns";
 import { makeInspectGit } from "./gitInspection.ts";
 
 export class DeletionLimits extends Context.Reference<{
@@ -125,7 +125,7 @@ export const makeDeletion = Effect.gen(function* () {
           message: "Incomplete ignored ancestor list.",
         });
       for (const parent of parents.stdout.split("\0").filter(Boolean))
-        if (!patterns.some((pattern) => matchesWorktreeCleanupPattern(pattern, `${parent}/`)))
+        if (!patterns.some((pattern) => matchesRegenerableFilePattern(pattern, `${parent}/`)))
           blockedAncestors.add(parent);
     }
     return yield* Effect.tryPromise({
@@ -197,7 +197,7 @@ export const makeDeletion = Effect.gen(function* () {
           const relative = path.relative(root, target).split(path.sep).join("/");
           if (
             patterns.some((pattern) =>
-              matchesWorktreeCleanupPattern(
+              matchesRegenerableFilePattern(
                 pattern,
                 stat.isDirectory() ? `${relative}/` : relative,
               ),

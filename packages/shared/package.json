@@ -3,9 +3,9 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./worktreeCleanupPatterns": {
-      "types": "./src/worktreeCleanupPatterns.ts",
-      "import": "./src/worktreeCleanupPatterns.ts"
+    "./regenerableFilePatterns": {
+      "types": "./src/regenerableFilePatterns.ts",
+      "import": "./src/regenerableFilePatterns.ts"
     },
     "./feedbackFooter": {
       "types": "./src/feedbackFooter.ts",

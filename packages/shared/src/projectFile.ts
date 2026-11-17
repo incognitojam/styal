@@ -7,8 +7,8 @@ import {
   STYAL_PROJECT_FILE_SCHEMA_URL,
   StyalProjectFile,
   StyalProjectFileAction,
-  WorktreeCleanupPattern,
-  WORKTREE_CLEANUP_MAX_PATTERNS,
+  RegenerableFilePattern,
+  REGENERABLE_FILES_MAX_PATTERNS,
   type ProjectConfig,
   type ProjectConfigAction,
   type T3ProjectFileScript,
@@ -43,7 +43,7 @@ const decodeStyalProjectFile = Schema.decodeUnknownExit(StyalProjectFile);
 const decodeJsonObject = Schema.decodeUnknownExit(Schema.Record(Schema.String, Schema.Unknown));
 const decodeLenientJson = Schema.decodeExit(fromLenientJson(Schema.Unknown));
 
-const cleanupPatternValidator = makeFieldValidators({ pattern: WorktreeCleanupPattern }).get(
+const cleanupPatternValidator = makeFieldValidators({ pattern: RegenerableFilePattern }).get(
   "pattern",
 )!;
 
@@ -72,16 +72,23 @@ export function parseStyalProjectFileResult(contents: string): StyalProjectFileP
 
   const record = { ...decodedRecord.value };
   const cleanupIssues: Array<ProjectFileIssue> = [];
-  if (
-    Array.isArray(record.worktreeCleanup) &&
-    record.worktreeCleanup.length <= WORKTREE_CLEANUP_MAX_PATTERNS
-  ) {
-    record.worktreeCleanup = record.worktreeCleanup.filter((pattern, index) => {
-      const problem = cleanupPatternValidator.problem(pattern);
-      if (problem === null) return true;
-      cleanupIssues.push({ path: ["worktreeCleanup", index], message: problem });
-      return false;
+  if (Object.hasOwn(record, "regenerableFiles") && Object.hasOwn(record, "worktreeCleanup")) {
+    delete record.worktreeCleanup;
+    cleanupIssues.push({
+      path: ["worktreeCleanup"],
+      message: '"worktreeCleanup" is deprecated and ignored because "regenerableFiles" is present',
     });
+  }
+  for (const field of ["regenerableFiles", "worktreeCleanup"] as const) {
+    const patterns = record[field];
+    if (Array.isArray(patterns) && patterns.length <= REGENERABLE_FILES_MAX_PATTERNS) {
+      record[field] = patterns.filter((pattern, index) => {
+        const problem = cleanupPatternValidator.problem(pattern);
+        if (problem === null) return true;
+        cleanupIssues.push({ path: [field, index], message: problem });
+        return false;
+      });
+    }
   }
   const recovered = recoverProjectFile(record, FILE_SHAPE);
   const { candidate } = recovered;
@@ -138,11 +145,17 @@ export function resolveProjectConfig(files: {
         legacyScripts: [],
       };
     }
-    const { $schema: _schema, actions, ...settings } = parsed.file;
+    const { $schema: _schema, actions, worktreeCleanup, ...settings } = parsed.file;
+    const regenerableFiles = settings.regenerableFiles ?? worktreeCleanup;
     return {
       status: parsed.status,
       source: STYAL_PROJECT_FILE_NAME,
-      config: { ...settings, source: STYAL_PROJECT_FILE_NAME, actions: withActionIds(actions) },
+      config: {
+        ...settings,
+        ...(regenerableFiles === undefined ? {} : { regenerableFiles }),
+        source: STYAL_PROJECT_FILE_NAME,
+        actions: withActionIds(actions),
+      },
       legacyScripts: [],
       issues: parsed.issues,
     };
@@ -197,6 +210,9 @@ export function buildStyalProjectFileJsonSchema(): Record<string, unknown> {
   if (document.definitions && Object.keys(document.definitions).length > 0) {
     jsonSchema.$defs = document.definitions;
   }
+  // Effect does not export a deprecated annotation yet.
+  const properties = jsonSchema.properties as Record<string, object>;
+  properties.worktreeCleanup = { ...properties.worktreeCleanup, deprecated: true };
   return jsonSchema;
 }
 

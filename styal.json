@@ -22,7 +22,7 @@
       "runOnWorktreeCreate": true
     }
   ],
-  "worktreeCleanup": [
+  "regenerableFiles": [
     "**/node_modules",
     "apps/*/dist",
     "infra/*/dist",

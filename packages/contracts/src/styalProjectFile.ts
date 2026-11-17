@@ -74,13 +74,12 @@ export const StyalProjectFileAction = Schema.Struct({
 });
 export type StyalProjectFileAction = typeof StyalProjectFileAction.Type;
 
-export function worktreeCleanupPatternProblem(pattern: string): string | null {
+export function regenerableFilePatternProblem(pattern: string): string | null {
   const segments = (pattern.endsWith("/") ? pattern.slice(0, -1) : pattern).split("/");
   let rule: string | null = null;
   if (pattern.length === 0 || pattern.length > 512) rule = "use 1 to 512 characters";
   else if (/^[a-zA-Z]:/.test(pattern)) rule = "use a relative path without a drive prefix";
   else if (pattern.includes("\\")) rule = "use forward slashes";
-  // Per-pattern approval needs independent patterns: removing a negation or ordered rule could delete more.
   else if (pattern.includes("!")) rule = "negation is not supported";
   else if (["?", "[", "]", "{", "}"].some((character) => pattern.includes(character)))
     rule = "only * and ** wildcards are supported; ?, [, ], { and } are not allowed";
@@ -94,7 +93,7 @@ export function worktreeCleanupPatternProblem(pattern: string): string | null {
   return rule === null ? null : `Invalid cleanup pattern ${JSON.stringify(pattern)}: ${rule}.`;
 }
 
-export const WORKTREE_CLEANUP_MAX_PATTERNS = 100;
+export const REGENERABLE_FILES_MAX_PATTERNS = 100;
 
 // JSON Schema cannot export the procedural validator; keep this syntax in sync with it.
 const cleanupPatternSyntax =
@@ -102,14 +101,14 @@ const cleanupPatternSyntax =
 
 const normalizeCleanupPattern = (pattern: string) => pattern.trim();
 
-export const WorktreeCleanupPattern = Schema.String.annotate({
+export const RegenerableFilePattern = Schema.String.annotate({
   description:
     "Worktree-relative path using forward slashes; a single trailing / is optional and matches folders only; without it, files and folders match. Surrounding whitespace is removed. Only * (within a segment) and ** (a whole segment) wildcards are supported. No drive prefix, !, ?, [, ], {, }, empty, . or .. segments, or .git segments (case-insensitive). The last segment must contain a literal character. Use 1 to 512 characters.",
 })
   .check(
     Schema.makeFilter(
       (pattern) =>
-        worktreeCleanupPatternProblem(
+        regenerableFilePatternProblem(
           pattern.length > 512 ? pattern : normalizeCleanupPattern(pattern),
         ) ?? true,
       {
@@ -124,7 +123,7 @@ export const WorktreeCleanupPattern = Schema.String.annotate({
   .pipe(
     Schema.decodeTo(
       Schema.String.check(
-        Schema.makeFilter((pattern) => worktreeCleanupPatternProblem(pattern) ?? true),
+        Schema.makeFilter((pattern) => regenerableFilePatternProblem(pattern) ?? true),
         Schema.isMinLength(1),
         Schema.isMaxLength(512),
       ),
@@ -135,8 +134,8 @@ export const WorktreeCleanupPattern = Schema.String.annotate({
     ),
   );
 
-export const WorktreeCleanupPatterns = Schema.Array(WorktreeCleanupPattern).check(
-  Schema.isMaxLength(WORKTREE_CLEANUP_MAX_PATTERNS),
+export const RegenerableFilePatterns = Schema.Array(RegenerableFilePattern).check(
+  Schema.isMaxLength(REGENERABLE_FILES_MAX_PATTERNS),
 );
 
 export const StyalProjectFile = Schema.Struct({
@@ -160,10 +159,16 @@ export const StyalProjectFile = Schema.Struct({
         'Where new threads start for this repository: "worktree" for a fresh git worktree, "local" for the current checkout. A project or environment setting in styal overrides this.',
     }),
   ),
-  worktreeCleanup: Schema.optionalKey(
-    WorktreeCleanupPatterns.annotate({
+  regenerableFiles: Schema.optionalKey(
+    RegenerableFilePatterns.annotate({
       description:
         "Git-ignored files and folders your setup action or build recreates. Patterns pushed to the remote default branch (or committed to the local default branch without a remote) apply to settled worktrees where this project’s cleanup switch is on.",
+    }),
+  ),
+  worktreeCleanup: Schema.optionalKey(
+    RegenerableFilePatterns.annotate({
+      description:
+        "Deprecated alias for regenerableFiles, with the same pattern rules. Ignored when regenerableFiles is present.",
     }),
   ),
   worktreeSubmodules: Schema.optionalKey(
@@ -195,7 +200,10 @@ export type ProjectConfigFileName = typeof STYAL_PROJECT_FILE_NAME | "t3.json";
  * `styal.json`, and then contributes its settings and icon but never its
  * scripts, which are offered for migration instead.
  */
-export interface ProjectConfig extends Omit<StyalProjectFile, "$schema" | "actions"> {
+export interface ProjectConfig extends Omit<
+  StyalProjectFile,
+  "$schema" | "actions" | "worktreeCleanup"
+> {
   readonly source: ProjectConfigFileName;
   readonly actions: ReadonlyArray<ProjectConfigAction>;
 }

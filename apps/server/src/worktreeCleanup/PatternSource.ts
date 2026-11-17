@@ -53,10 +53,12 @@ export const makeReadPatterns = Effect.gen(function* () {
     const resolved = resolveProjectConfig({ styal: file.stdout, t3: null });
     if (resolved.config === null)
       return unavailable("The project's styal.json could not be parsed.");
-    const patterns = resolved.config.worktreeCleanup;
+    const patterns = resolved.config.regenerableFiles;
     if (
       patterns === undefined &&
-      resolved.issues.some((issue) => issue.path[0] === "worktreeCleanup")
+      resolved.issues.some(
+        (issue) => issue.path[0] === "regenerableFiles" || issue.path[0] === "worktreeCleanup",
+      )
     )
       return unavailable("The cleanup patterns in styal.json could not be parsed.");
     return read(patterns ?? []);

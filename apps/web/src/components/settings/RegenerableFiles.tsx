@@ -7,14 +7,14 @@ import { useEnvironments } from "../../state/environments";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { worktreeCleanup } from "../../state/worktreeCleanup";
+import { regenerableFiles } from "../../state/regenerableFiles";
 import { reportHardwareResult } from "../hardware/reportHardwareResult";
 import { Switch } from "../ui/switch";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 import { useSettingsScope } from "./SettingsScopeContext";
 
-export function WorktreeCleanupPatternsSection() {
+export function RegenerableFilesSection() {
   const { scope, targets } = useSettingsScope();
   const { environments } = useEnvironments();
   if (scope.kind !== "project" && scope.kind !== "checkout") return null;
@@ -54,7 +54,7 @@ function CheckoutCleanup({
   migrationComplete: boolean;
 }) {
   const patterns = useEnvironmentQuery(
-    worktreeCleanup.review({ environmentId, input: { projectId: member.id } }),
+    regenerableFiles.review({ environmentId, input: { projectId: member.id } }),
   );
   const save = useAtomCommand(serverEnvironment.updateSettings, { reportFailure: false });
   const canSave = useAtomValue(serverEnvironment.updateSettings.permissionAtom(environmentId));
@@ -96,8 +96,8 @@ function CheckoutCleanup({
           </p>
         )}
         <p className="text-xs text-muted-foreground">
-          Patterns from the last fetched origin default branch (the configured default or registered
-          checkout’s branch without a remote):
+          <code>regenerableFiles</code> in styal.json from the last fetched origin default branch
+          (the configured default or registered checkout’s branch without a remote):
         </p>
         {patterns.error ? (
           <p role="alert" className="text-xs text-muted-foreground">
@@ -110,7 +110,9 @@ function CheckoutCleanup({
             {patterns.data.unavailableReason}
           </p>
         ) : patterns.data.patterns.length === 0 ? (
-          <p className="text-xs text-muted-foreground">No cleanup patterns declared.</p>
+          <p className="text-xs text-muted-foreground">
+            No regenerableFiles patterns declared in styal.json.
+          </p>
         ) : (
           [...new Set(patterns.data.patterns)].map((pattern) => (
             <div key={pattern} className="flex items-center gap-2">
