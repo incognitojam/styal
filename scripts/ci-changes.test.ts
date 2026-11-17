@@ -119,7 +119,9 @@ describe("required CI aggregate checks", () => {
     "%s rejects cancellation, failure and unexplained skips",
     (job: string) => {
       const definition = workflow.jobs[job];
-      const script = definition.steps[0].run;
+      const script = definition.steps.find((step: { name: string }) =>
+        step.name.startsWith("Require"),
+      ).run;
       const output = gates([]);
       const results = Object.fromEntries(
         definition.needs.map((name: string) => [
