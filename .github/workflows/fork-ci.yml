@@ -450,8 +450,24 @@ jobs:
     needs: [changes, lint, typecheck, build, preview_calibration]
     if: ${{ always() && needs.changes.result != 'skipped' }}
     runs-on: ubuntu-24.04
+    permissions:
+      actions: read
     steps:
+      # A newer run for the same commit reports these checks, so a run cancelled
+      # in its favour passes instead of leaving a failure that blocks merging.
+      - name: Defer to a newer run of this commit
+        id: newer_run
+        if: ${{ always() && contains(needs.*.result, 'cancelled') }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          workflow_id=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq .workflow_id)
+          newer=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/$workflow_id/runs?head_sha=$HEAD_SHA&per_page=100" \
+            --jq "[.workflow_runs[] | select(.id > $GITHUB_RUN_ID)] | length")
+          echo "found=$([ "$newer" -gt 0 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
       - name: Require every needed job to pass
+        if: ${{ always() && steps.newer_run.outputs.found != 'true' }}
         env:
           RESULTS: ${{ toJSON(needs) }}
         run: |
@@ -653,8 +669,24 @@ jobs:
     needs: [changes, test_server, test_device_windows]
     if: ${{ always() && needs.changes.result != 'skipped' }}
     runs-on: ubuntu-24.04
+    permissions:
+      actions: read
     steps:
+      # A newer run for the same commit reports these checks, so a run cancelled
+      # in its favour passes instead of leaving a failure that blocks merging.
+      - name: Defer to a newer run of this commit
+        id: newer_run
+        if: ${{ always() && contains(needs.*.result, 'cancelled') }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          workflow_id=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq .workflow_id)
+          newer=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/$workflow_id/runs?head_sha=$HEAD_SHA&per_page=100" \
+            --jq "[.workflow_runs[] | select(.id > $GITHUB_RUN_ID)] | length")
+          echo "found=$([ "$newer" -gt 0 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
       - name: Require every needed job to pass
+        if: ${{ always() && steps.newer_run.outputs.found != 'true' }}
         env:
           RESULTS: ${{ toJSON(needs) }}
         run: |
@@ -837,8 +869,24 @@ jobs:
     needs: [changes, test_workspace]
     if: ${{ always() && needs.changes.result != 'skipped' }}
     runs-on: ubuntu-24.04
+    permissions:
+      actions: read
     steps:
+      # A newer run for the same commit reports these checks, so a run cancelled
+      # in its favour passes instead of leaving a failure that blocks merging.
+      - name: Defer to a newer run of this commit
+        id: newer_run
+        if: ${{ always() && contains(needs.*.result, 'cancelled') }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          workflow_id=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq .workflow_id)
+          newer=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/$workflow_id/runs?head_sha=$HEAD_SHA&per_page=100" \
+            --jq "[.workflow_runs[] | select(.id > $GITHUB_RUN_ID)] | length")
+          echo "found=$([ "$newer" -gt 0 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
       - name: Require every needed job to pass
+        if: ${{ always() && steps.newer_run.outputs.found != 'true' }}
         env:
           RESULTS: ${{ toJSON(needs) }}
         run: |
@@ -884,8 +932,24 @@ jobs:
     needs: [changes, release_smoke_run]
     if: ${{ always() && needs.changes.result != 'skipped' }}
     runs-on: ubuntu-24.04
+    permissions:
+      actions: read
     steps:
+      # A newer run for the same commit reports these checks, so a run cancelled
+      # in its favour passes instead of leaving a failure that blocks merging.
+      - name: Defer to a newer run of this commit
+        id: newer_run
+        if: ${{ always() && contains(needs.*.result, 'cancelled') }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          workflow_id=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq .workflow_id)
+          newer=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/$workflow_id/runs?head_sha=$HEAD_SHA&per_page=100" \
+            --jq "[.workflow_runs[] | select(.id > $GITHUB_RUN_ID)] | length")
+          echo "found=$([ "$newer" -gt 0 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
       - name: Require release smoke when needed
+        if: ${{ always() && steps.newer_run.outputs.found != 'true' }}
         env:
           RESULTS: ${{ toJSON(needs) }}
         run: |
