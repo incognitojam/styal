@@ -299,8 +299,8 @@ interface CheckFields {
   readonly workflowName?: string | null | undefined;
   readonly workflowRun?:
     | {
-        readonly databaseId: number | null;
-        readonly workflow: { readonly databaseId: number | null };
+        readonly id: string;
+        readonly workflow: { readonly id: string };
         readonly runNumber: number;
         readonly event: string;
       }
@@ -788,10 +788,10 @@ function isNamelessCheck(raw: CheckFields): boolean {
 function latestWorkflowChecks(raw: ReadonlyArray<CheckFields>): ReadonlyArray<CheckFields> {
   const newest = new Map<string, NonNullable<CheckFields["workflowRun"]>>();
   const keyOf = (check: CheckFields) =>
-    JSON.stringify([check.workflowRun?.workflow.databaseId, check.workflowRun?.event]);
+    JSON.stringify([check.workflowRun?.workflow.id, check.workflowRun?.event]);
   for (const check of raw) {
     const run = check.workflowRun;
-    if (run == null || run.databaseId === null || run.workflow.databaseId === null) continue;
+    if (run == null) continue;
     const key = keyOf(check);
     const kept = newest.get(key);
     if (kept === undefined || run.runNumber > kept.runNumber) newest.set(key, run);
@@ -799,13 +799,7 @@ function latestWorkflowChecks(raw: ReadonlyArray<CheckFields>): ReadonlyArray<Ch
   return raw.filter((check) => {
     const run = check.workflowRun;
     const kept = newest.get(keyOf(check));
-    return (
-      run == null ||
-      run.databaseId === null ||
-      run.workflow.databaseId === null ||
-      kept === undefined ||
-      run.databaseId === kept.databaseId
-    );
+    return run == null || kept === undefined || run.id === kept.id;
   });
 }
 

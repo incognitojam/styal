@@ -415,10 +415,10 @@ describe("pull request detail decoding", () => {
       ...fields,
       checkSuite: {
         workflowRun: {
-          databaseId: null,
+          id: "WR_default",
           runNumber: 1,
           event: "pull_request",
-          workflow: { databaseId: null, name: workflowName },
+          workflow: { id: `W_${workflowName}`, name: workflowName },
         },
       },
     });
@@ -630,7 +630,7 @@ describe("pull request detail decoding", () => {
                   checkSuites: {
                     pageInfo: { hasNextPage: true, endCursor: "next" },
                     nodes: [
-                      suite(10),
+                      suite(44151130789),
                       // A fork's suite can carry no branch; the head commit still scopes it.
                       suite(11, { branch: null }),
                       suite(12, { conclusion: "SUCCESS" }),
@@ -648,7 +648,7 @@ describe("pull request detail decoding", () => {
       ),
     ).toEqual({
       runs: [
-        { id: 10, name: "run 10", url: "https://example.com/10" },
+        { id: 44151130789, name: "run 44151130789", url: "https://example.com/44151130789" },
         { id: 11, name: "run 11", url: "https://example.com/11" },
       ],
       nextCursor: "next",
@@ -942,10 +942,11 @@ describe("pull request detail decoding", () => {
         ...fields,
         checkSuite: {
           workflowRun: {
-            databaseId: runNumber,
+            databaseId: 44151130789 + runNumber,
+            id: `WR_${44151130789 + runNumber}`,
             runNumber,
             event: "pull_request",
-            workflow: { databaseId: 1, name: "CI" },
+            workflow: { id: "W_44151130789", name: "CI" },
           },
         },
       });
@@ -1001,10 +1002,10 @@ describe("pull request detail decoding", () => {
         conclusion: "SUCCESS",
         checkSuite: {
           workflowRun: {
-            databaseId,
+            id: `WR_${databaseId}`,
             runNumber,
             event,
-            workflow: { databaseId: workflow === "CI" ? 1 : 2, name: workflow },
+            workflow: { id: `W_${workflow}`, name: workflow },
           },
         },
       });
@@ -1027,7 +1028,7 @@ describe("pull request detail decoding", () => {
     expect(detail.checksState).toBe("passing");
   });
 
-  it.each([true, false])("keeps same-name workflows independent (workflow ids: %s)", (withIds) => {
+  it("keeps same-name workflows independent by node id", () => {
     const job = (
       runId: number,
       runNumber: number,
@@ -1041,9 +1042,10 @@ describe("pull request detail decoding", () => {
         checkSuite: {
           workflowRun: {
             databaseId: runId,
+            id: `WR_${runId}`,
             runNumber,
             event: "pull_request",
-            workflow: { databaseId: withIds ? workflowId : null, name: "CI" },
+            workflow: { id: `W_${workflowId}`, name: "CI" },
           },
         },
       });
