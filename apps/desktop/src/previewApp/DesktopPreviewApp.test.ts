@@ -11,6 +11,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as PlatformError from "effect/PlatformError";
 import type * as Scope from "effect/Scope";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
@@ -102,12 +103,18 @@ interface Scenario {
   readonly xattrOutput?: string;
   /** Another install replaces the app while the closed pull request lookup is in flight. */
   readonly installedDuringLookup?: string;
+  readonly slotDuringDownload?: "foreign" | "folder" | "contents-folder";
+  readonly slotDuringQuit?: "foreign" | "contents-folder";
   readonly releaseStatus?: number;
   /** Completed once GitHub starts answering the lookup; the answer then never finishes. */
   readonly releaseStalled?: Deferred.Deferred<void>;
   /** The rejected build cannot be moved out of the install location. */
   readonly rejectedRenameFails?: boolean;
   readonly noWindow?: boolean;
+  readonly plutilFails?: boolean;
+  readonly plistStatFails?: boolean;
+  readonly symlinkApplications?: boolean;
+  readonly fault?: "backup" | "promote" | "cleanup" | "remove" | "copy" | "retire";
 }
 
 const writeBundle = (appPath: string, bundle: { identifier: string; version: string }) =>
@@ -115,25 +122,79 @@ const writeBundle = (appPath: string, bundle: { identifier: string; version: str
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     yield* fs.makeDirectory(path.join(appPath, "Contents"), { recursive: true });
-    yield* fs.writeFileString(path.join(appPath, "Contents", "Info.plist"), JSON.stringify(bundle));
+    yield* fs.writeFileString(
+      path.join(appPath, "Contents", "Info.plist"),
+      JSON.stringify({ ...bundle, executable: "styal" }),
+    );
+    yield* fs.makeDirectory(path.join(appPath, "Contents", "MacOS"), { recursive: true });
+    yield* fs.writeFileString(path.join(appPath, "Contents", "MacOS", "styal"), "executable");
+    yield* fs.makeDirectory(path.join(appPath, "Contents", "Resources"), { recursive: true });
+    yield* fs.writeFileString(path.join(appPath, "Contents", "Resources", "app.asar"), "resources");
   });
 
 const output = (text: string) => Stream.make(new TextEncoder().encode(text));
 
-// The real filesystem stands in for macOS: only the macOS tools and GitHub are faked.
+// Fault-injected filesystem operations use isolated bundles; macOS tools and GitHub are faked.
 const setup = (scenario: Scenario) =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
-    const home = yield* fs.makeTempDirectoryScoped({ prefix: "styal-preview-app-" });
+    const home = yield* fs.makeTempDirectoryScoped({ prefix: "preview-install-test-" });
     const baseDir = path.join(home, ".styal");
     const appData = path.join(home, "Library", "Application Support");
+    if (scenario.symlinkApplications) {
+      const target = path.join(home, "real-applications");
+      yield* fs.makeDirectory(target);
+      yield* fs.symlink(target, path.join(home, "Applications"));
+    }
     const slot = path.join(home, "Applications", APP);
     const staging = path.join(
       home,
       "Applications",
       `.styal-preview-install-${scenario.variant ?? "production"}`,
     );
+    const injectedError = PlatformError.systemError({
+      module: "FileSystem",
+      method: "previewInstall",
+      _tag: "PermissionDenied",
+      description: "injected failure",
+    });
+    const faultFs = FileSystem.make({
+      ...fs,
+      lstat: (target) =>
+        scenario.plistStatFails && target === path.join(slot, "Contents", "Info.plist")
+          ? Effect.fail(injectedError)
+          : fs.lstat(target),
+      rename: (from, to) =>
+        (scenario.fault === "backup" && from === slot) ||
+        (scenario.fault === "promote" && from === path.join(staging, APP)) ||
+        (scenario.fault === "retire" && from === path.join(staging, "previous.app"))
+          ? Effect.fail(injectedError)
+          : fs.rename(from, to),
+      remove: (target, options) =>
+        Effect.gen(function* () {
+          const deletingBackup =
+            target === path.join(staging, "previous.app") ||
+            target === path.join(staging, "removed.app");
+          const deletingStaging = target === staging;
+          if (
+            (scenario.fault === "remove" && deletingBackup && (yield* fs.exists(target))) ||
+            (scenario.fault === "cleanup" && deletingStaging)
+          ) {
+            const damaged = deletingBackup
+              ? target
+              : path.join(
+                  staging,
+                  (yield* fs.exists(path.join(staging, "retired.app")))
+                    ? "retired.app"
+                    : "previous.app",
+                );
+            yield* fs.remove(path.join(damaged, "Contents", "Info.plist"), { force: true });
+            return yield* injectedError;
+          }
+          yield* fs.remove(target, options);
+        }),
+    });
     const commands: Array<ReadonlyArray<string>> = [];
     const states: Array<unknown> = [];
     const urls: Array<string> = [];
@@ -154,14 +215,22 @@ const setup = (scenario: Scenario) =>
         let stdout = "";
         let exitCode = 0;
         if (name === "/usr/bin/plutil") {
+          if (scenario.plutilFails) return yield* injectedError;
           const [, key, , , , plist] = args;
           const content = yield* fs.readFileString(plist!).pipe(Effect.orElseSucceed(() => null));
-          if (content === null) {
-            exitCode = 1;
-          } else {
-            const bundle = JSON.parse(content) as { identifier: string; version: string };
-            stdout = key === "CFBundleIdentifier" ? bundle.identifier : bundle.version;
-          }
+          const bundle = yield* Effect.try({
+            try: () => JSON.parse(content ?? "{}") as Record<string, unknown>,
+            catch: () => injectedError,
+          }).pipe(Effect.orElseSucceed(() => ({}) as Record<string, unknown>));
+          const field =
+            key === "CFBundleIdentifier"
+              ? "identifier"
+              : key === "CFBundleExecutable"
+                ? "executable"
+                : "version";
+          const value = bundle?.[field];
+          if (typeof value === "string") stdout = value;
+          else exitCode = 1;
         } else if (name === "/usr/bin/hdiutil" && args[0] === "attach") {
           exitCode = scenario.attachExitCode ?? 0;
           if (exitCode === 0) mounted = args[args.length - 1]!;
@@ -179,9 +248,17 @@ const setup = (scenario: Scenario) =>
             mounted = null;
           }
         } else if (name === "/sbin/mount") {
-          if (mounted !== null) stdout = `/dev/disk9s1 on ${mounted} (hfs, local, read-only)\n`;
+          if (mounted !== null)
+            stdout = `/dev/disk9s1 on ${yield* fs.realPath(mounted)} (hfs, local, read-only)\n`;
         } else if (name === "/usr/bin/ditto") {
-          yield* fs.copy(args[0]!, args[1]!);
+          if (scenario.fault === "copy") {
+            yield* fs.makeDirectory(path.join(args[1]!, "Contents", "Resources"), {
+              recursive: true,
+            });
+            exitCode = 1;
+          } else {
+            yield* fs.copy(args[0]!, args[1]!);
+          }
         } else if (name === "/usr/bin/xattr") {
           if (scenario.xattrFails === true) exitCode = 1;
           if (scenario.quarantined === true) stdout = `${args[2]}: com.apple.quarantine\n`;
@@ -190,6 +267,18 @@ const setup = (scenario: Scenario) =>
           killChecks.push(args[1]!);
           exitCode = args[1] === "4242" ? 0 : 1;
         } else if (name === "/bin/kill") {
+          if (scenario.slotDuringQuit !== undefined) {
+            yield* fs.remove(slot, { recursive: true, force: true });
+            if (scenario.slotDuringQuit === "foreign") {
+              yield* writeBundle(slot, { identifier: "com.example.other", version: "9.9.9" });
+            } else {
+              yield* fs.makeDirectory(path.join(slot, "Contents"), { recursive: true });
+              yield* fs.writeFileString(
+                path.join(slot, "Contents", "keep.txt"),
+                "unrelated folder",
+              );
+            }
+          }
           signalled = true;
         } else if (name === "/bin/ps" && scenario.psFails === true) {
           exitCode = 1;
@@ -249,7 +338,6 @@ const setup = (scenario: Scenario) =>
             }).pipe(
               Effect.provideService(FileSystem.FileSystem, fs),
               Effect.provideService(Path.Path, path),
-              Effect.orDie,
             );
           }
           return respond(JSON.stringify({ state: scenario.pullRequestState ?? "open" }));
@@ -258,8 +346,24 @@ const setup = (scenario: Scenario) =>
           Deferred.doneUnsafe(scenario.downloadStarted, Effect.void);
           return respond(new ReadableStream({ start: () => undefined }));
         }
+        if (scenario.slotDuringDownload !== undefined) {
+          yield* fs.remove(slot, { recursive: true, force: true });
+          if (scenario.slotDuringDownload === "foreign") {
+            yield* writeBundle(slot, { identifier: "com.example.other", version: "9.9.9" }).pipe(
+              Effect.provideService(FileSystem.FileSystem, fs),
+              Effect.provideService(Path.Path, path),
+            );
+          } else {
+            const directory =
+              scenario.slotDuringDownload === "contents-folder"
+                ? path.join(slot, "Contents")
+                : slot;
+            yield* fs.makeDirectory(directory, { recursive: true });
+            yield* fs.writeFileString(path.join(directory, "keep.txt"), "unrelated folder");
+          }
+        }
         return respond((scenario.downloadBytes ?? DMG_BYTES) as BodyInit);
-      }),
+      }).pipe(Effect.orDie),
     );
 
     const environment = DesktopEnvironment.DesktopEnvironment.of({
@@ -280,6 +384,7 @@ const setup = (scenario: Scenario) =>
       Effect.provide(
         Layer.mergeAll(
           Layer.succeed(DesktopEnvironment.DesktopEnvironment, environment),
+          Layer.succeed(FileSystem.FileSystem, faultFs),
           DesktopManagedPolicy.layerTest(scenario.policy),
           Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner),
           Layer.succeed(HttpClient.HttpClient, http),
@@ -347,6 +452,11 @@ const buildAsset = asset("styal-1.2.3-pr.12.7-arm64.dmg");
 const installedVersion = (slot: string) =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
+    assert.strictEqual(yield* fs.readFileString(`${slot}/Contents/MacOS/styal`), "executable");
+    assert.strictEqual(
+      yield* fs.readFileString(`${slot}/Contents/Resources/app.asar`),
+      "resources",
+    );
     const content = yield* fs.readFileString(`${slot}/Contents/Info.plist`);
     return (JSON.parse(content) as { version: string }).version;
   });
@@ -356,6 +466,301 @@ const scoped = <A, E>(
 ) => effect.pipe(Effect.scoped, Effect.provide(NodeServices.layer));
 
 describe("DesktopPreviewApp", () => {
+  it.effect.each(["foreign", "contents-folder"] as const)(
+    "refuses a %s swapped into the slot while quitting before removal",
+    (slotDuringQuit) =>
+      scoped(
+        Effect.gen(function* () {
+          const app = yield* setup({ runningPreview: "quits", slotDuringQuit });
+          yield* app.installPrevious("1.2.3-pr.12.6");
+          const result = yield* app.service.remove;
+          assert.strictEqual(result.outcome, "failed");
+          assert.include(result.message, "left in place");
+          if (slotDuringQuit === "foreign")
+            assert.strictEqual(yield* installedVersion(app.slot), "9.9.9");
+          else
+            assert.strictEqual(
+              yield* app.fs.readFileString(app.path.join(app.slot, "Contents", "keep.txt")),
+              "unrelated folder",
+            );
+          assert.deepStrictEqual(app.ran("/bin/kill"), [["/bin/kill", "-TERM", "100"]]);
+        }),
+      ),
+  );
+
+  it.effect.each(["user", "closed"] as const)("refuses symlinked staging on %s removal", (source) =>
+    scoped(
+      Effect.gen(function* () {
+        const app = yield* setup({ pullRequestState: "closed" });
+        yield* app.installPrevious("1.2.3-pr.12.6");
+        const documents = app.path.join(app.home, "Documents");
+        for (const name of ["previous.app", "removed.app"]) {
+          yield* app.fs.makeDirectory(app.path.join(documents, name), { recursive: true });
+          yield* app.fs.writeFileString(
+            app.path.join(documents, name, "keep.txt"),
+            "unrelated files",
+          );
+        }
+        yield* app.fs.symlink(documents, app.staging);
+        if (source === "user") {
+          const result = yield* app.service.remove;
+          assert.strictEqual(result.outcome, "failed");
+          assert.notInclude(result.message ?? "", "DesktopPreviewAppError");
+        } else yield* app.service.removeIfPullRequestClosed;
+        assert.strictEqual(yield* installedVersion(app.slot), "1.2.3-pr.12.6");
+        for (const name of ["previous.app", "removed.app"]) {
+          assert.strictEqual(
+            yield* app.fs.readFileString(app.path.join(documents, name, "keep.txt")),
+            "unrelated files",
+          );
+        }
+      }),
+    ),
+  );
+
+  it.effect.each(["foreign", "folder", "contents-folder"] as const)(
+    "leaves a %s appearing during download untouched",
+    (slotDuringDownload) =>
+      scoped(
+        Effect.gen(function* () {
+          const app = yield* setup({ assets: [buildAsset], slotDuringDownload });
+          yield* app.installPrevious("1.2.3-pr.12.6");
+          const result = yield* app.service.install(12);
+          assert.strictEqual(result.outcome, "failed");
+          assert.include(result.message, "left in place");
+          if (slotDuringDownload === "foreign")
+            assert.strictEqual(yield* installedVersion(app.slot), "9.9.9");
+          else
+            assert.strictEqual(
+              yield* app.fs.readFileString(
+                app.path.join(
+                  slotDuringDownload === "contents-folder"
+                    ? app.path.join(app.slot, "Contents")
+                    : app.slot,
+                  "keep.txt",
+                ),
+              ),
+              "unrelated folder",
+            );
+          assert.lengthOf(app.ran("/usr/bin/open"), 0);
+        }),
+      ),
+  );
+
+  it.effect.each(["user", "closed"] as const)(
+    "does not restore stale deletion leftovers on %s removal",
+    (source) =>
+      scoped(
+        Effect.gen(function* () {
+          const app = yield* setup({
+            assets: [buildAsset],
+            fault: "cleanup",
+            pullRequestState: "closed",
+          });
+          yield* app.installPrevious("1.2.3-pr.12.6");
+          assert.strictEqual((yield* app.service.install(12)).outcome, "completed");
+          const retired = app.path.join(app.staging, "retired.app");
+          if (yield* app.fs.exists(retired))
+            yield* app.fs.rename(retired, app.path.join(app.staging, "previous.app"));
+          if (source === "user") yield* app.service.remove;
+          else yield* app.service.removeIfPullRequestClosed;
+          assert.isFalse(yield* app.fs.exists(app.slot));
+          yield* app.service.cleanLeftovers;
+          assert.isFalse(yield* app.fs.exists(app.slot));
+        }),
+      ),
+  );
+
+  it.effect("keeps the current app when retiring an older backup fails", () =>
+    scoped(
+      Effect.gen(function* () {
+        const app = yield* setup({ assets: [buildAsset], fault: "retire" });
+        yield* app.installPrevious("1.2.3-pr.12.6");
+        assert.strictEqual((yield* app.service.install(12)).outcome, "completed");
+        assert.strictEqual((yield* app.service.remove).outcome, "failed");
+        assert.strictEqual(yield* installedVersion(app.slot), "1.2.3-pr.12.7");
+        assert.strictEqual(
+          yield* installedVersion(app.path.join(app.staging, "previous.app")),
+          "1.2.3-pr.12.6",
+        );
+      }),
+    ),
+  );
+
+  it.effect("clears retained rejected apps before repeated failed launches", () =>
+    scoped(
+      Effect.gen(function* () {
+        const app = yield* setup({ assets: [buildAsset], openExitCode: 1 });
+        yield* app.fs.makeDirectory(app.path.join(app.slot, "Contents", "Resources"), {
+          recursive: true,
+        });
+        yield* app.fs.makeDirectory(app.path.join(app.staging, "rejected.app", "old"), {
+          recursive: true,
+        });
+        for (const attempt of [1, 2, 3]) {
+          const result = yield* app.service.install(12);
+          assert.strictEqual(result.outcome, "failed");
+          assert.notInclude(result.message ?? "", "still attached");
+          assert.isNull(result.state.installed);
+          assert.lengthOf(app.ran("/usr/bin/open"), attempt);
+        }
+      }),
+    ),
+  );
+
+  it.effect.each([
+    "spawn",
+    "malformed",
+    "missing-key",
+    "folder",
+    "symlink",
+    "dangling-symlink",
+    "permission",
+    "other-variant",
+  ] as const)("refuses unsafe recovery: %s", (kind) =>
+    scoped(
+      Effect.gen(function* () {
+        const app = yield* setup({
+          assets: [buildAsset],
+          plutilFails: kind === "spawn",
+          plistStatFails: kind === "permission",
+        });
+        yield* app.fs.makeDirectory(app.staging, { recursive: true });
+        if (kind === "folder") yield* app.fs.makeDirectory(app.slot);
+        else if (kind === "symlink" || kind === "dangling-symlink") {
+          const target = app.path.join(app.home, "other.app");
+          if (kind === "symlink")
+            yield* writeBundle(target, { identifier: "com.example.other", version: "9.9.9" });
+          yield* app.fs.symlink(target, app.slot);
+        } else {
+          yield* app.installPrevious("9.9.9", "com.example.other");
+          const plist = app.path.join(app.slot, "Contents", "Info.plist");
+          if (kind === "malformed") yield* app.fs.writeFileString(plist, "bad plist");
+          if (kind === "missing-key")
+            yield* app.fs.writeFileString(plist, JSON.stringify({ version: "9.9.9" }));
+          if (kind === "other-variant") {
+            yield* app.fs.remove(plist);
+            yield* app.fs.remove(app.staging, { recursive: true });
+            yield* app.fs.makeDirectory(
+              app.path.join(app.home, "Applications", ".styal-preview-install-development"),
+            );
+          }
+        }
+        assert.isFalse((yield* app.service.state).canRemove);
+        assert.strictEqual((yield* app.service.install(12)).outcome, "failed");
+        assert.strictEqual((yield* app.service.remove).outcome, "failed");
+        assert.isDefined(yield* app.fs.lstat(app.slot));
+        assert.lengthOf(app.ran("/usr/bin/ditto"), 0);
+      }),
+    ),
+  );
+
+  it.effect.each([false, true])(
+    "preserves an unverified backup without restoring it, plutil unavailable: %s",
+    (plutilFails) =>
+      scoped(
+        Effect.gen(function* () {
+          const app = yield* setup({ plutilFails });
+          const backup = app.path.join(app.staging, "previous.app");
+          yield* writeBundle(backup, { identifier: PREVIEW_ID, version: "1.2.3-pr.12.6" });
+          if (!plutilFails)
+            yield* app.fs.remove(app.path.join(backup, "Contents", "MacOS"), { recursive: true });
+          yield* app.service.cleanLeftovers;
+          assert.isFalse(yield* app.fs.exists(app.slot));
+          assert.isFalse((yield* app.service.state).canOpen);
+          assert.isTrue(yield* app.fs.exists(backup));
+          if (plutilFails) assert.strictEqual(yield* installedVersion(backup), "1.2.3-pr.12.6");
+        }),
+      ),
+  );
+
+  it.effect.each(["backup", "promote", "cleanup", "copy"] as const)(
+    "keeps a complete old or new app when %s fails",
+    (fault) =>
+      scoped(
+        Effect.gen(function* () {
+          const app = yield* setup({ assets: [buildAsset], fault });
+          yield* app.installPrevious("1.2.3-pr.12.6");
+          const result = yield* app.service.install(12);
+          assert.strictEqual(result.outcome, fault === "cleanup" ? "completed" : "failed");
+          assert.strictEqual(
+            yield* installedVersion(app.slot),
+            fault === "cleanup" ? "1.2.3-pr.12.7" : "1.2.3-pr.12.6",
+          );
+        }),
+      ),
+  );
+
+  it.effect("never restores a partly deleted app into the slot", () =>
+    scoped(
+      Effect.gen(function* () {
+        const app = yield* setup({ fault: "remove" });
+        yield* app.installPrevious("1.2.3-pr.12.6");
+        assert.strictEqual((yield* app.service.remove).outcome, "failed");
+        assert.isFalse(yield* app.fs.exists(app.slot));
+        yield* app.service.cleanLeftovers;
+        assert.isFalse(yield* app.fs.exists(app.slot));
+      }),
+    ),
+  );
+
+  it.effect.each(["install", "remove"] as const)(
+    "recovers a broken preview with its own marker via %s",
+    (action) =>
+      scoped(
+        Effect.gen(function* () {
+          const app = yield* setup({ assets: [buildAsset] });
+          yield* app.fs.makeDirectory(app.path.join(app.slot, "Contents", "Resources"), {
+            recursive: true,
+          });
+          const marker = app.staging;
+          yield* app.fs.makeDirectory(marker, { recursive: true });
+          yield* app.service.cleanLeftovers;
+          const state = yield* app.service.state;
+          assert.isNull(state.installed);
+          assert.isFalse(state.canOpen);
+          assert.isTrue(state.canRemove);
+          const result = yield* action === "install" ? app.service.install(12) : app.service.remove;
+          assert.strictEqual(result.outcome, "completed");
+          if (action === "install")
+            assert.strictEqual(yield* installedVersion(app.slot), "1.2.3-pr.12.7");
+          else assert.isFalse(yield* app.fs.exists(app.slot));
+        }),
+      ),
+  );
+
+  it.effect("preserves its recovery marker across startup and failed installation", () =>
+    scoped(
+      Effect.gen(function* () {
+        const app = yield* setup({ assets: [buildAsset], fault: "copy" });
+        yield* app.fs.makeDirectory(app.path.join(app.slot, "Contents", "Resources"), {
+          recursive: true,
+        });
+        yield* app.fs.makeDirectory(app.staging, { recursive: true });
+        yield* app.service.cleanLeftovers;
+        assert.isTrue(yield* app.fs.exists(app.staging));
+        assert.strictEqual((yield* app.service.install(12)).outcome, "failed");
+        assert.isTrue(yield* app.fs.exists(app.staging));
+        assert.isTrue((yield* app.service.state).canRemove);
+      }),
+    ),
+  );
+
+  it.effect("refuses an incomplete app without an install marker", () =>
+    scoped(
+      Effect.gen(function* () {
+        const app = yield* setup({ assets: [buildAsset] });
+        yield* app.fs.makeDirectory(app.path.join(app.slot, "Contents", "Resources"), {
+          recursive: true,
+        });
+        assert.isFalse((yield* app.service.state).canRemove);
+        assert.strictEqual((yield* app.service.install(12)).outcome, "failed");
+        assert.strictEqual((yield* app.service.remove).outcome, "failed");
+        assert.isTrue(yield* app.fs.exists(app.slot));
+      }),
+    ),
+  );
+
   it.effect("installs a build, quitting the running one, and leaves nothing behind", () =>
     scoped(
       Effect.gen(function* () {
@@ -516,7 +921,7 @@ describe("DesktopPreviewApp", () => {
     ),
   );
 
-  it.effect("keeps the backup when the rejected build cannot be moved out", () =>
+  it.effect("restores the old app after clearing a rejected-build collision", () =>
     scoped(
       Effect.gen(function* () {
         const app = yield* setup({
@@ -529,8 +934,12 @@ describe("DesktopPreviewApp", () => {
         const result = yield* app.service.install(12);
 
         assert.strictEqual(result.outcome, "failed");
-        const backup = app.path.join(app.staging, "previous.app");
-        assert.strictEqual(yield* installedVersion(backup), "1.2.3-pr.12.6");
+        assert.strictEqual(yield* installedVersion(app.slot), "1.2.3-pr.12.6");
+        assert.isTrue(yield* app.stagingIsGone);
+        const again = yield* app.service.install(12);
+        assert.strictEqual(again.outcome, "failed");
+        assert.notInclude(again.message ?? "", "still attached");
+        assert.strictEqual(yield* installedVersion(app.slot), "1.2.3-pr.12.6");
       }),
     ),
   );
@@ -579,46 +988,63 @@ describe("DesktopPreviewApp", () => {
     ),
   );
 
-  it.effect("restores a backup a crash left behind instead of deleting the only copy", () =>
-    scoped(
-      Effect.gen(function* () {
-        const app = yield* setup({});
-        yield* writeBundle(app.path.join(app.staging, "previous.app"), {
-          identifier: PREVIEW_ID,
-          version: "1.2.3-pr.12.6",
-        });
+  it.effect.each(["backed-up", "promoted", "cleaning"] as const)(
+    "recovers a crash with the app %s",
+    (step) =>
+      scoped(
+        Effect.gen(function* () {
+          const app = yield* setup({});
+          yield* writeBundle(app.path.join(app.staging, "previous.app"), {
+            identifier: PREVIEW_ID,
+            version: "1.2.3-pr.12.6",
+          });
 
-        yield* app.service.cleanLeftovers;
+          if (step !== "backed-up") yield* app.installPrevious("1.2.3-pr.12.7");
+          if (step === "cleaning") {
+            yield* app.fs.remove(
+              app.path.join(app.staging, "previous.app", "Contents", "Info.plist"),
+            );
+          }
+          yield* app.service.cleanLeftovers;
 
-        assert.strictEqual(yield* installedVersion(app.slot), "1.2.3-pr.12.6");
-        assert.isTrue(yield* app.stagingIsGone);
-      }),
-    ),
+          assert.strictEqual(
+            yield* installedVersion(app.slot),
+            step === "backed-up" ? "1.2.3-pr.12.6" : "1.2.3-pr.12.7",
+          );
+          assert.isTrue(yield* app.stagingIsGone);
+        }),
+      ),
   );
 
-  it.effect("never removes staging while the volume stays attached", () =>
-    scoped(
-      Effect.gen(function* () {
-        const app = yield* setup({ assets: [buildAsset], detachFails: true });
-        yield* app.installPrevious("1.2.3-pr.12.6");
+  it.effect.each([false, true])(
+    "never removes mounted staging with symlinked Applications: %s",
+    (symlinkApplications) =>
+      scoped(
+        Effect.gen(function* () {
+          const app = yield* setup({
+            assets: [buildAsset],
+            detachFails: true,
+            symlinkApplications,
+          });
+          yield* app.installPrevious("1.2.3-pr.12.6");
 
-        const first = yield* app.service.install(12);
+          const first = yield* app.service.install(12);
 
-        // The copy succeeded, so the install finishes even though the volume could not detach.
-        assert.strictEqual(first.outcome, "completed");
-        assert.isTrue(app.isMounted());
-        assert.isTrue(yield* app.fs.exists(app.path.join(app.staging, "mount", APP)));
-        assert.isTrue(
-          app
-            .ran("/usr/bin/hdiutil")
-            .some((command) => command[1] === "detach" && command.includes("-force")),
-        );
+          // The copy succeeded, so the install finishes even though the volume could not detach.
+          assert.strictEqual(first.outcome, "completed");
+          assert.isTrue(app.isMounted());
+          assert.isTrue(yield* app.fs.exists(app.path.join(app.staging, "mount", APP)));
+          assert.isTrue(
+            app
+              .ran("/usr/bin/hdiutil")
+              .some((command) => command[1] === "detach" && command.includes("-force")),
+          );
 
-        const second = yield* app.service.install(12);
-        assert.strictEqual(second.outcome, "failed");
-        assert.include(second.message, "still attached");
-      }),
-    ),
+          const second = yield* app.service.install(12);
+          assert.strictEqual(second.outcome, "failed");
+          assert.include(second.message, "still attached");
+        }),
+      ),
   );
 
   it.effect("names the quarantine in the failure rather than working around it", () =>
@@ -652,6 +1078,7 @@ describe("DesktopPreviewApp", () => {
       Effect.gen(function* () {
         const app = yield* setup({ assets: [buildAsset] });
         yield* app.installPrevious("9.9.9", "com.example.other");
+        yield* app.fs.makeDirectory(app.staging, { recursive: true });
 
         const installed = yield* app.service.install(12);
         const removed = yield* app.service.remove;
