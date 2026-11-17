@@ -23,7 +23,7 @@ it.effect(
         prefix: "pr-images-test-",
       });
       let fetches = 0;
-      const bytes = yield* Effect.tryPromise(() =>
+      const bytes = yield* Effect.promise(() =>
         sharp({ create: { width: 800, height: 400, channels: 4, background: "#34567880" } })
           .png()
           .toBuffer(),
@@ -46,13 +46,13 @@ it.effect(
       const run = Effect.gen(function* () {
         const previews = yield* Preview.PullRequestImagePreview;
         const result = yield* previews.read(input);
-        const metadata = yield* Effect.tryPromise(() => sharp(result.bytes).metadata());
+        const metadata = yield* Effect.promise(() => sharp(result.bytes).metadata());
         expect(result.contentType).toBe("image/webp");
         expect(metadata).toMatchObject({ width: 320, height: 160, hasAlpha: true });
         expect((yield* previews.read(input)).bytes).toEqual(result.bytes);
         expect(fetches).toBe(1);
         const larger = yield* previews.read({ ...input, preview: { width: 960 } });
-        expect(yield* Effect.tryPromise(() => sharp(larger.bytes).metadata())).toMatchObject({
+        expect(yield* Effect.promise(() => sharp(larger.bytes).metadata())).toMatchObject({
           width: 800,
           height: 400,
         });
@@ -70,7 +70,7 @@ it.effect(
         expect(fetches).toBe(2);
         const tiny = yield* previews.read({ ...input, preview: { width: 64 } });
         expect(tiny.bytes.length).toBeLessThan(1024);
-        expect(yield* Effect.tryPromise(() => sharp(tiny.bytes).metadata())).toMatchObject({
+        expect(yield* Effect.promise(() => sharp(tiny.bytes).metadata())).toMatchObject({
           width: 64,
           height: 32,
         });

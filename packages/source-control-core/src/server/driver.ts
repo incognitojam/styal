@@ -88,7 +88,10 @@ export interface SourceControlDriverInstance {
     HttpClientError.HttpClientError,
     Scope.Scope
   >;
-  readonly imagePreviewSource?: (url: string) => Effect.Effect<{
+  readonly imagePreviewSource?: (
+    url: string,
+    repository?: string,
+  ) => Effect.Effect<{
     readonly partition: string;
     readonly fetch: Effect.Effect<
       { readonly bytes: Uint8Array; readonly contentType: string },

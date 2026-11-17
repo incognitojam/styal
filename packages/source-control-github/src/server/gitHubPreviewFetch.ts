@@ -13,7 +13,14 @@ const REDIRECT_HOSTS = new Set([
 
 export async function gitHubPreviewFetch(url: string, bearer: string | null, signal: AbortSignal) {
   let target = new URL(url);
-  if (!gitHubMediaUrl(target)) throw new Error("Unsupported source");
+  if (
+    !gitHubMediaUrl(target) &&
+    !(
+      target.hostname === "private-user-images.githubusercontent.com" &&
+      target.searchParams.get("jwt")
+    )
+  )
+    throw new Error("Unsupported source");
   for (let hop = 0; hop <= 3; hop++) {
     if (
       target.protocol !== "https:" ||

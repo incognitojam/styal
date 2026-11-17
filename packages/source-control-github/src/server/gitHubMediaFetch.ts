@@ -65,9 +65,41 @@ const uploadRepository = (request: SourceControlMediaRequest) => {
   return repository !== undefined && REPOSITORY_PATTERN.test(repository) ? repository : undefined;
 };
 
+const makeRenderSignedUrl = Effect.gen(function* () {
+  const rest = yield* GitHubRest.GitHubRest;
+  // An organization with SAML SSO answers a token-authenticated upload request with its sign-in
+  // page. Rendering the link as markdown in the repository's context hands back a signed URL.
+  return Effect.fnUntraced(function* (url: string, repository: string) {
+    const rendered = yield* rest
+      .rest({
+        host: "github.com",
+        operation: "renderMarkdown",
+        method: "POST",
+        path: "markdown",
+        accept: "text/html",
+        body: { text: `![](${url})`, mode: "gfm", context: repository },
+      })
+      .pipe(Effect.orElseSucceed(() => null));
+    if (rendered === null || rendered.status !== 200 || rendered.truncated) return null;
+    for (const match of rendered.body.matchAll(/<img\b[^>]*\ssrc\s*=\s*(["'])(.*?)\1/giu)) {
+      const signed = URL.parse(match[2]?.replaceAll("&amp;", "&") ?? "");
+      if (
+        signed?.protocol === "https:" &&
+        signed.hostname === "private-user-images.githubusercontent.com" &&
+        signed.port === "" &&
+        signed.username === "" &&
+        signed.password === "" &&
+        signed.searchParams.get("jwt")
+      ) {
+        return signed.toString();
+      }
+    }
+    return null;
+  });
+});
+
 export const make = Effect.gen(function* () {
   const credentials = yield* GitHubCredentials.GitHubCredentials;
-  const rest = yield* GitHubRest.GitHubRest;
   const httpClient = HttpClient.withScope(yield* HttpClient.HttpClient);
   const signedUrls = new Map<string, { readonly at: number; readonly url: string }>();
 
@@ -113,35 +145,7 @@ export const make = Effect.gen(function* () {
     }
   });
 
-  // An organization with SAML SSO answers a token-authenticated upload request with its sign-in
-  // page. Rendering the link as markdown in the repository's context hands back a signed URL.
-  const renderSignedUrl = Effect.fnUntraced(function* (url: string, repository: string) {
-    const rendered = yield* rest
-      .rest({
-        host: "github.com",
-        operation: "renderMarkdown",
-        method: "POST",
-        path: "markdown",
-        accept: "text/html",
-        body: { text: `![](${url})`, mode: "gfm", context: repository },
-      })
-      .pipe(Effect.orElseSucceed(() => null));
-    if (rendered === null || rendered.status !== 200 || rendered.truncated) return null;
-    for (const match of rendered.body.matchAll(/<img\b[^>]*\ssrc\s*=\s*(["'])(.*?)\1/giu)) {
-      const signed = URL.parse(match[2]?.replaceAll("&amp;", "&") ?? "");
-      if (
-        signed?.protocol === "https:" &&
-        signed.hostname === "private-user-images.githubusercontent.com" &&
-        signed.port === "" &&
-        signed.username === "" &&
-        signed.password === "" &&
-        signed.searchParams.get("jwt")
-      ) {
-        return signed.toString();
-      }
-    }
-    return null;
-  });
+  const renderSignedUrl = yield* makeRenderSignedUrl;
 
   return Effect.fn("GitHubMediaFetch.fetchMedia")(function* (request: SourceControlMediaRequest) {
     const signedIn = yield* credential;
@@ -191,20 +195,44 @@ export const make = Effect.gen(function* () {
 
 export const makeImagePreviewSource = Effect.gen(function* () {
   const credentials = yield* GitHubCredentials.GitHubCredentials;
-  return Effect.fn("GitHubMediaFetch.imagePreviewSource")(function* (url: string) {
+  const renderSignedUrl = yield* makeRenderSignedUrl;
+  return Effect.fn("GitHubMediaFetch.imagePreviewSource")(function* (
+    url: string,
+    repository?: string,
+  ) {
     const credential = yield* credentials.get("github.com").pipe(Effect.orElseSucceed(() => null));
     return {
-      partition: credential?.fingerprint ?? "anonymous",
-      fetch: Effect.tryPromise({
-        try: async (signal) => {
-          const { gitHubPreviewFetch } = await import("./gitHubPreviewFetch.ts");
-          return gitHubPreviewFetch(
-            url,
-            credential ? Redacted.value(credential.token) : null,
-            AbortSignal.any([signal, AbortSignal.timeout(15_000)]),
-          );
-        },
-        catch: () => new SourceControlImagePreviewError({}),
+      partition: [credential?.fingerprint ?? "anonymous", repository ?? ""]
+        .map(encodeURIComponent)
+        .join("|"),
+      fetch: Effect.gen(function* () {
+        const fetch = (target: string, bearer: string | null) =>
+          Effect.tryPromise({
+            try: async (signal) => {
+              const { gitHubPreviewFetch } = await import("./gitHubPreviewFetch.ts");
+              return gitHubPreviewFetch(
+                target,
+                bearer,
+                AbortSignal.any([signal, AbortSignal.timeout(15_000)]),
+              );
+            },
+            catch: () => new SourceControlImagePreviewError({}),
+          });
+        const source = yield* fetch(url, credential ? Redacted.value(credential.token) : null);
+        const context =
+          credential === null
+            ? undefined
+            : uploadRepository({
+                url,
+                headers: {},
+                ...(repository === undefined ? {} : { repository }),
+              });
+        if (source.contentType !== "text/html" || context === undefined) return source;
+        const signed = yield* renderSignedUrl(url, context);
+        const current = yield* credentials.get("github.com").pipe(Effect.orElseSucceed(() => null));
+        if (signed === null || current?.fingerprint !== credential?.fingerprint)
+          return yield* new SourceControlImagePreviewError({});
+        return yield* fetch(signed, null);
       }),
     };
   });

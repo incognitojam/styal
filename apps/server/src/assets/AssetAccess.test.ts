@@ -1533,6 +1533,7 @@ describe("AssetAccess", () => {
       headers: Readonly<Record<string, string>>;
       repository?: string;
     }> = [];
+    const previewRepositories: Array<string | undefined> = [];
     const url = "https://github.com/owner/repo/blob/main/docs/shot.png";
     const media = sourceControlDefinitions.mediaUrl(url)!;
     const layerDrivers = Layer.succeed(BuiltInDrivers.SourceControlDrivers, [
@@ -1550,10 +1551,13 @@ describe("AssetAccess", () => {
                 );
               }),
           }),
-          imagePreviewSource: () =>
-            Effect.succeed({
-              partition: "synthetic",
-              fetch: Effect.succeed({ bytes: new Uint8Array([1]), contentType: "image/png" }),
+          imagePreviewSource: (_url: string, repository?: string) =>
+            Effect.sync(() => {
+              previewRepositories.push(repository);
+              return {
+                partition: "synthetic",
+                fetch: Effect.succeed({ bytes: new Uint8Array([1]), contentType: "image/png" }),
+              };
             }),
         },
       },
@@ -1588,12 +1592,13 @@ describe("AssetAccess", () => {
       });
       if (resource._tag !== "github-media") return;
       const preview = yield* issueAssetUrl({
-        resource: { ...resource, imagePreview: { width: 640 } },
+        resource: { ...resource, repository: "enterprise/private", imagePreview: { width: 640 } },
       });
       expect(preview.imagePreview).toEqual({ width: 640 });
       const previewParts = preview.relativeUrl.slice(`${ASSET_ROUTE_PREFIX}/`.length).split("/");
       expect(yield* resolveAsset(previewParts[0]!, previewParts[1]!)).toMatchObject({
         imagePreview: { width: 640 },
+        repository: "enterprise/private",
       });
       expect(yield* resolveAsset(`${previewParts[0]}tampered`, previewParts[1]!)).toBeNull();
       expect(
@@ -1619,7 +1624,12 @@ describe("AssetAccess", () => {
       );
       expect(cachedResponse.headers["cache-control"]).toBe("private, max-age=60");
       const expiringResponse = yield* sourceControlMediaResponse(
-        { ...asset, expiresAt: now + 241_000, imagePreview: { width: 640 } },
+        {
+          ...asset,
+          repository: "enterprise/private",
+          expiresAt: now + 241_000,
+          imagePreview: { width: 640 },
+        },
         {},
       ).pipe(
         Effect.provideService(Preview.PullRequestImagePreview, {
@@ -1631,6 +1641,7 @@ describe("AssetAccess", () => {
         }),
       );
       expect(expiringResponse.headers["cache-control"]).toBe("private, max-age=0");
+      expect(previewRepositories).toEqual(["owner/repo", "enterprise/private"]);
 
       const response = yield* sourceControlMediaResponse(asset, {
         range: "bytes=0-4",

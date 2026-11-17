@@ -169,33 +169,39 @@ const make = Effect.gen(function* () {
           offset += chunked === "webp" ? 8 + size + (size % 2) : 12 + size;
         }
       }
-      const sharp = yield* Effect.try(
-        () => requireSharp("sharp") as typeof import("sharp").default,
-      );
+      const sharp = yield* Effect.try({
+        try: () => requireSharp("sharp") as typeof import("sharp").default,
+        catch: () => new ImagePreviewError({}),
+      });
       const image = sharp(source.bytes, { limitInputPixels: 32_000_000, animated: false });
       // Sharp cannot cancel native work: retain the permit until its promises settle.
       const bytes = yield* Effect.gen(function* () {
-        const metadata = yield* Effect.tryPromise(() => image.metadata());
+        const metadata = yield* Effect.tryPromise({
+          try: () => image.metadata(),
+          catch: () => new ImagePreviewError({}),
+        });
         if ((metadata.pages ?? 1) > 1) return null;
         if (!["png", "jpeg", "webp", "avif", "heif", "tiff"].includes(metadata.format ?? "")) {
           return yield* new ImagePreviewError({});
         }
-        const bytes = yield* Effect.tryPromise(() =>
-          image
-            .autoOrient()
-            .resize({
-              width: input.preview.width,
-              ...(input.preview.width === 64 ? { height: 64, fit: "inside" as const } : {}),
-              withoutEnlargement: true,
-            })
-            .webp(
-              input.preview.width === 64
-                ? { quality: 35, effort: 3 }
-                : { lossless: true, effort: 4 },
-            )
-            .timeout({ seconds: 15 })
-            .toBuffer(),
-        );
+        const bytes = yield* Effect.tryPromise({
+          try: () =>
+            image
+              .autoOrient()
+              .resize({
+                width: input.preview.width,
+                ...(input.preview.width === 64 ? { height: 64, fit: "inside" as const } : {}),
+                withoutEnlargement: true,
+              })
+              .webp(
+                input.preview.width === 64
+                  ? { quality: 35, effort: 3 }
+                  : { lossless: true, effort: 4 },
+              )
+              .timeout({ seconds: 15 })
+              .toBuffer(),
+          catch: () => new ImagePreviewError({}),
+        });
         return bytes;
       }).pipe(Effect.uninterruptible);
       if (bytes === null) return { ...source, expiresAt: now + 300_000 };

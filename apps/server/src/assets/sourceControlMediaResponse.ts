@@ -52,11 +52,20 @@ export const sourceControlMediaResponse = Effect.fn(
   if (media === null || fetchMedia === undefined) {
     return HttpServerResponse.empty({ status: 404, headers });
   }
+  // Clients that predate `repository` fall back to the repository checked out at `cwd`.
+  let repository = asset.repository;
+  if (repository === undefined) {
+    const identities = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
+    const identity = yield* identities.resolve(asset.cwd);
+    if (identity?.provider === media.definition.kind && identity.owner && identity.name) {
+      repository = `${identity.owner}/${identity.name}`;
+    }
+  }
   if (asset.imagePreview) {
     const sourceFactory = drivers.find(({ driver }) => driver.kind === media.definition.kind)
       ?.instance.imagePreviewSource;
     if (!sourceFactory) return HttpServerResponse.empty({ status: 415, headers });
-    const source = yield* sourceFactory(asset.url);
+    const source = yield* sourceFactory(asset.url, repository);
     const previews = yield* Preview.PullRequestImagePreview;
     const result = yield* previews
       .read({
@@ -86,15 +95,6 @@ export const sourceControlMediaResponse = Effect.fn(
   for (const name of FORWARDED_REQUEST_HEADERS) {
     const value = requestHeaders[name];
     if (value !== undefined) forwarded[name] = value;
-  }
-  // Clients that predate `repository` fall back to the repository checked out at `cwd`.
-  let repository = asset.repository;
-  if (repository === undefined) {
-    const identities = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
-    const identity = yield* identities.resolve(asset.cwd);
-    if (identity?.provider === media.definition.kind && identity.owner && identity.name) {
-      repository = `${identity.owner}/${identity.name}`;
-    }
   }
   const response = yield* fetchMedia({
     url: asset.url,

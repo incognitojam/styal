@@ -68,6 +68,19 @@ describe("GitHub preview transport", () => {
     expect(publicAddresses).toHaveBeenCalledTimes(2);
   });
 
+  it("fetches a rendered private upload with pinned DNS and no bearer", async () => {
+    setup([{}]);
+    const url = "https://private-user-images.githubusercontent.com/1/synthetic.png?jwt=synthetic";
+    expect((await gitHubPreviewFetch(url, null, new AbortController().signal)).bytes).toEqual(
+      Buffer.from("image"),
+    );
+    expect(NodeHttps.get).toHaveBeenCalledTimes(1);
+    expect(publicAddresses).toHaveBeenCalledWith("private-user-images.githubusercontent.com");
+    expect(
+      (vi.mocked(NodeHttps.get).mock.calls[0]![1] as NodeHttps.RequestOptions).headers,
+    ).not.toHaveProperty("authorization");
+  });
+
   it.each([
     "http://github.com/a",
     "https://other.s3.amazonaws.com/123/456.png",
