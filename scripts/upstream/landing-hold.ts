@@ -17,7 +17,7 @@ export const HOLD_CONTEXT = "Intake landing hold";
 const PROMOTION_START_GRACE_MS = 15 * 60_000;
 
 /**
- * How long after an intake branch's newest Fork CI run fails the hold waits for a fixed push.
+ * How long after an intake branch's newest CI or promotion failure the hold waits for a retry.
  * Releasing at once would let queued auto-merges move main before the rebased candidate starts.
  */
 const REPUSH_GRACE_MS = 10 * 60_000;
@@ -45,7 +45,7 @@ const PROMOTION_TITLE = /^Promote (\S+) at ([0-9a-f]{40})$/;
 
 /**
  * The intake candidates holding main: those whose Fork CI push run is still going, whose
- * promotion run has not finished, whose Fork CI passed so recently that its promotion run may
+ * promotion run has not finished or failed recently, whose Fork CI passed so recently that its promotion run may
  * not exist yet, or whose branch's newest Fork CI run failed so recently that a fixed push may
  * not have started yet. `forkCiRuns` is newest first, as GitHub lists them.
  */
@@ -59,8 +59,22 @@ export function holdingCandidates(
     const match = PROMOTION_TITLE.exec(run.display_title);
     return match ? [{ run, branch: match[1]!, sha: match[2]! }] : [];
   });
+  const seenPromotions = new Set<string>();
   for (const { run, branch, sha } of promotions) {
-    if (run.status !== "completed") holding.set(sha, { branch, sha, url: run.html_url });
+    const newest = !seenPromotions.has(branch);
+    seenPromotions.add(branch);
+    const latestCi = forkCiRuns.find((ci) => ci.event === "push" && ci.head_branch === branch);
+    const until = Date.parse(run.updated_at) + REPUSH_GRACE_MS;
+    if (run.status !== "completed") {
+      holding.set(sha, { branch, sha, url: run.html_url });
+    } else if (
+      newest &&
+      run.conclusion === "failure" &&
+      (!latestCi || latestCi.head_sha === sha) &&
+      now < until
+    ) {
+      holding.set(sha, { branch, sha, url: run.html_url, until });
+    }
   }
   const seenBranches = new Set<string>();
   for (const run of forkCiRuns) {
