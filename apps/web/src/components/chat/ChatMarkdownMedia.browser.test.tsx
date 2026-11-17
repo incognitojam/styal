@@ -12,7 +12,15 @@ import {
 } from "./ChatMarkdownMedia";
 
 // Every evaluation of the URL query is one mint: the first read, then one per refresh.
-const assetQuery = vi.hoisted(() => ({ mints: 0, failPreview: false, holdTiny: false }));
+const assetQuery = vi.hoisted(() => ({
+  mints: 0,
+  failPreview: false,
+  holdTiny: false,
+  original: "",
+  preview: "",
+  sourceWidth: 0,
+  sourceHeight: 0,
+}));
 vi.mock(import("~/state/assets"), async (original) => {
   const { AsyncResult, Atom } = await import("effect/reactivity");
   const createUrl = Atom.family((_key: string) =>
@@ -28,7 +36,8 @@ vi.mock(import("~/state/assets"), async (original) => {
           input.resource.imagePreview &&
           input.resource.imagePreview.width !== 64
             ? "data:image/png;base64,AAAA"
-            : "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7",
+            : (input.resource.imagePreview ? assetQuery.preview : assetQuery.original) ||
+              "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7",
         expiresAt: Number.MAX_SAFE_INTEGER,
       });
     }).pipe(Atom.keepAlive),
@@ -40,6 +49,21 @@ vi.mock(import("~/state/assets"), async (original) => {
       ...actual.assetEnvironment,
       createUrl: (target: { readonly input: unknown }) => createUrl(JSON.stringify(target.input)),
     },
+  };
+});
+vi.mock(import("@t3tools/client-runtime/pull-request-image-preview"), async (original) => {
+  const actual = await original();
+  return {
+    ...actual,
+    fetchPullRequestPlaceholder: async (
+      ...args: Parameters<typeof actual.fetchPullRequestPlaceholder>
+    ) =>
+      assetQuery.original
+        ? {
+            uri: assetQuery.preview,
+            sourceDimensions: { width: assetQuery.sourceWidth, height: assetQuery.sourceHeight },
+          }
+        : actual.fetchPullRequestPlaceholder(...args),
   };
 });
 vi.mock(import("~/state/session"), async (original) => {
@@ -219,7 +243,7 @@ it.each([
     const image = screen.getByRole("img", { name: "standalone screenshot" });
     await expect.element(image).toBeVisible();
     expect(image.element()).toBe(loadedImage);
-    expect(frame.getAttribute("role")).toBeNull();
+    expect(frame.isConnected ? frame.getAttribute("role") : null).toBeNull();
     expect(frame.getAttribute("aria-label")).toBeNull();
     expect(image.element().getBoundingClientRect().width).toBe(before.width);
     expect(image.element().getBoundingClientRect().height).toBe(before.height);
@@ -357,19 +381,37 @@ it.each([
   async ({ panelWidth, sourceWidth, sourceHeight }) => {
     const original = `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="${sourceWidth}" height="${sourceHeight}"/>`)}`;
     const preview = `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="640" height="${Math.round((640 * sourceHeight) / sourceWidth)}"/>`)}`;
+    assetQuery.original = original;
+    assetQuery.preview = preview;
+    assetQuery.sourceWidth = sourceWidth;
+    assetQuery.sourceHeight = sourceHeight;
+    using _urls = {
+      [Symbol.dispose]: () => {
+        assetQuery.original = "";
+        assetQuery.preview = "";
+      },
+    };
+    const asset = (alt: string, inline = false) => (
+      <ChatMarkdownAssetImage
+        environmentId={EnvironmentId.make("environment-1")}
+        resource={{
+          _tag: "github-media",
+          cwd: "/synthetic",
+          url: `https://github.com/user-attachments/assets/${panelWidth}-${sourceHeight}-${alt}`,
+        }}
+        alt={alt}
+        standalone={!inline}
+        framed={false}
+        {...(inline
+          ? { imageProps: { width: 16, height: 16 }, style: { width: 16, height: 16 } }
+          : {})}
+      />
+    );
     const view = (resized: boolean) => (
       <div className="chat-markdown" style={{ width: panelWidth }}>
         <p>
           {resized ? (
-            <ChatMarkdownImage
-              src={preview}
-              alt="Outside"
-              standalone
-              reserveFrame
-              sourceDimensions={{ width: sourceWidth, height: sourceHeight }}
-              copyMarkdown={undefined}
-              actionsSource={{ kind: "image", name: "Outside", src: preview }}
-            />
+            asset("Outside")
           ) : (
             <img
               alt="Outside"
@@ -377,6 +419,22 @@ it.each([
               className="h-auto w-auto object-contain max-h-[30rem] max-w-[min(100%,30rem)]"
             />
           )}
+        </p>
+        <p data-inline-paragraph>
+          Text before{" "}
+          {resized ? (
+            asset("Inline", true)
+          ) : (
+            <img
+              alt="Inline"
+              src={original}
+              width={16}
+              height={16}
+              style={{ width: 16, height: 16 }}
+              className="h-auto w-auto object-contain max-h-[30rem] max-w-[min(100%,30rem)]"
+            />
+          )}{" "}
+          text after
         </p>
         <table>
           <thead>
@@ -392,15 +450,7 @@ it.each([
               {["Before", "After"].map((alt) => (
                 <td key={alt}>
                   {resized ? (
-                    <ChatMarkdownImage
-                      src={preview}
-                      alt={alt}
-                      standalone
-                      reserveFrame
-                      sourceDimensions={{ width: sourceWidth, height: sourceHeight }}
-                      copyMarkdown={undefined}
-                      actionsSource={{ kind: "image", name: alt, src: preview }}
-                    />
+                    asset(alt)
                   ) : (
                     <img
                       src={original}
@@ -445,12 +495,24 @@ it.each([
       ).toBe(true),
     );
     const baseline = measure();
+    const inlineHeight = screen.container
+      .querySelector("[data-inline-paragraph]")!
+      .getBoundingClientRect().height;
     const columns = [...screen.container.querySelectorAll("tbody td")].map(
       (td) => td.getBoundingClientRect().width,
     );
     await screen.rerender(view(true));
+    for (const frame of screen.container.querySelectorAll('[role="status"]')) {
+      frame.scrollIntoView();
+      await vi.waitFor(() =>
+        expect(frame.isConnected ? frame.getAttribute("role") : null).toBeNull(),
+      );
+    }
     await vi.waitFor(() => expect(screen.container.querySelector('[role="status"]')).toBeNull());
     expect(measure()).toEqual(baseline);
+    expect(
+      screen.container.querySelector("[data-inline-paragraph]")!.getBoundingClientRect().height,
+    ).toBe(inlineHeight);
     expect(
       [...screen.container.querySelectorAll("tbody td")].map(
         (td) => td.getBoundingClientRect().width,

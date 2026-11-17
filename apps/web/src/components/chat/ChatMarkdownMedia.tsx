@@ -651,8 +651,8 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
       }
       alt={props.alt}
       copyMarkdown={props.copyMarkdown}
-      standalone={previewEnabled || (props.standalone ?? true)}
-      reserveFrame={previewEnabled}
+      standalone={props.standalone ?? true}
+      reserveFrame={previewEnabled && (props.standalone ?? true)}
       sourceDimensions={readyTiny?.sourceDimensions}
       className={cn(
         props.framed === false ? undefined : CHAT_MARKDOWN_WORKSPACE_IMAGE_CLASS_NAME,
@@ -666,7 +666,7 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
     />
   );
   return previewEnabled ? (
-    <span ref={frame} className="block max-w-full">
+    <span ref={frame} className={props.standalone === false ? "inline" : "block max-w-full"}>
       {image}
     </span>
   ) : (

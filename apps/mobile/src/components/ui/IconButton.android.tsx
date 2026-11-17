@@ -6,7 +6,7 @@ import {
   IconButton as ComposeIconButton,
 } from "@expo/ui/jetpack-compose";
 import { size } from "@expo/ui/jetpack-compose/modifiers";
-import { View } from "react-native";
+import { Pressable, View } from "react-native";
 
 import { useControlTheme } from "./useControlTheme";
 import { useAndroidControlSizing } from "./useAndroidControlSizing";
@@ -37,8 +37,18 @@ export function IconButton(props: IconButtonProps) {
         : variant === "tonal"
           ? "accent-secondary-foreground"
           : (props.tintColorClassName ?? "accent-foreground");
+  const Container = props.onLongPress ? Pressable : View;
   return (
-    <View
+    <Container
+      {...(props.onLongPress
+        ? {
+            onPress: props.onPress,
+            onLongPress: props.onLongPress,
+            onPressOut: props.onPressOut,
+            disabled: props.disabled,
+            android_ripple: { borderless: true, color: colors["--color-subtle-strong"] },
+          }
+        : {})}
       accessible
       accessibilityLabel={props.accessibilityLabel}
       accessibilityRole="button"
@@ -49,7 +59,10 @@ export function IconButton(props: IconButtonProps) {
       }}
       style={{ width: buttonSize, height: buttonSize }}
     >
-      <View importantForAccessibility="no-hide-descendants">
+      <View
+        importantForAccessibility="no-hide-descendants"
+        pointerEvents={props.onLongPress ? "none" : "auto"}
+      >
         <NativeThemeHost
           ignoreSafeAreaKeyboardInsets
           style={{ width: buttonSize, height: buttonSize }}
@@ -77,6 +90,6 @@ export function IconButton(props: IconButtonProps) {
           type="monochrome"
         />
       </View>
-    </View>
+    </Container>
   );
 }
