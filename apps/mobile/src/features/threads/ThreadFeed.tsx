@@ -137,6 +137,7 @@ import {
 } from "react";
 import {
   Image,
+  I18nManager,
   Platform,
   type LayoutChangeEvent,
   type NativeScrollEvent,
@@ -411,6 +412,32 @@ export interface ThreadFeedProps {
   readonly onUseArtifactTemplate?: (template: CodexArtifactTemplate) => void;
 }
 
+type ReplyActionSize = ReturnType<typeof resolveReplyActionSize>;
+
+// The row's gap-1, between Copy, Fork and the timestamp.
+const REPLY_ROW_GAP = 4;
+
+// Android's boxes leave 22dp between icons, as web does. Hit slop widens them only
+// into free space: the timestamp's Text takes any tap that lands on it, and an
+// overlap would send taps on Copy's own box to Fork. Insets are physical sides.
+function resolveReplyActionSize(androidButtonSize: number, androidIconSize: number) {
+  if (Platform.OS !== "android") {
+    return { width: 28, height: 28, icon: 13, copyHitSlop: undefined, forkHitSlop: undefined };
+  }
+  const width = Math.round((androidIconSize * 34) / 16);
+  const [start, end] = I18nManager.isRTL
+    ? (["right", "left"] as const)
+    : (["left", "right"] as const);
+  const halfGap = REPLY_ROW_GAP / 2;
+  return {
+    width,
+    height: androidButtonSize,
+    icon: androidIconSize,
+    copyHitSlop: { [start]: Math.max(0, androidButtonSize - width - halfGap), [end]: halfGap },
+    forkHitSlop: { [start]: halfGap, [end]: REPLY_ROW_GAP },
+  };
+}
+
 const USER_MESSAGE_COPY_MENU_ACTIONS = [
   { id: "copy-prompt-link", title: "Copy prompt link", image: "link" },
 ];
@@ -448,8 +475,7 @@ function UserMessageCopyButton(props: {
 function AssistantForkButton(props: {
   readonly environmentId: EnvironmentId;
   readonly iconColor: ColorValue;
-  readonly buttonSize: number;
-  readonly iconSize: number;
+  readonly size: ReplyActionSize;
   readonly projectedItem: OrchestrationV2ProjectedTurnItem;
   readonly sourceTitle: string;
 }) {
@@ -507,10 +533,11 @@ function AssistantForkButton(props: {
           })
           .finally(() => setBusy(false));
       }}
+      hitSlop={props.size.forkHitSlop}
       className="h-7 w-7 items-center justify-center disabled:opacity-40"
       style={
         Platform.OS === "android"
-          ? { width: props.buttonSize, height: props.buttonSize }
+          ? { width: props.size.width, height: props.size.height }
           : undefined
       }
     >
@@ -519,7 +546,7 @@ function AssistantForkButton(props: {
       ) : (
         <SymbolView
           name="arrow.triangle.branch"
-          size={props.iconSize}
+          size={props.size.icon}
           tintColor={props.iconColor}
           type="monochrome"
         />
@@ -1834,7 +1861,7 @@ function renderFeedEntry(
     readonly renderViewedImage: MarkdownImageRenderer;
     readonly renderReasoning: (text: string) => ReactNode;
     readonly iconSubtleColor: string | import("react-native").ColorValue;
-    readonly replyActionSize: { readonly button: number; readonly icon: number };
+    readonly replyActionSize: ReplyActionSize;
     readonly screenColor: string;
     readonly userBubbleColor: string | import("react-native").ColorValue;
     readonly markdownStyles: MarkdownStyleSets;
@@ -2536,15 +2563,16 @@ function renderFeedEntry(
               accessibilityLabel="Copy message"
               text={renderedText}
               tintColor={iconSubtleColor}
-              buttonSize={props.replyActionSize.button}
+              buttonWidth={props.replyActionSize.width}
+              buttonSize={props.replyActionSize.height}
               iconSize={props.replyActionSize.icon}
+              hitSlop={props.replyActionSize.copyHitSlop}
             />
             {message.projectedItem ? (
               <AssistantForkButton
                 environmentId={props.environmentId}
                 iconColor={iconSubtleColor}
-                buttonSize={props.replyActionSize.button}
-                iconSize={props.replyActionSize.icon}
+                size={props.replyActionSize}
                 projectedItem={message.projectedItem}
                 sourceTitle={props.threadTitle}
               />
@@ -3150,10 +3178,7 @@ export const ThreadFeed = memo(function ThreadFeed({
   const { buttonSize: androidButtonSize, smallIconSize: androidIconSize } =
     useAndroidControlSizing();
   const replyActionSize = useMemo(
-    () =>
-      Platform.OS === "android"
-        ? { button: androidButtonSize, icon: androidIconSize }
-        : { button: 28, icon: 13 },
+    () => resolveReplyActionSize(androidButtonSize, androidIconSize),
     [androidButtonSize, androidIconSize],
   );
   const screenColor = theme["--color-screen"];

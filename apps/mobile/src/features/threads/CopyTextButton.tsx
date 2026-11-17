@@ -1,7 +1,7 @@
 import * as Dialog from "../../components/ui/Dialog";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { memo, useState } from "react";
-import { Pressable, type ColorValue } from "react-native";
+import { Pressable, type ColorValue, type Insets } from "react-native";
 
 import { useDeadlinePassed } from "../../lib/clock";
 import { tryCopyTextWithHaptic } from "../../lib/copyTextWithHaptic";
@@ -20,6 +20,8 @@ export const CopyTextButton = memo(function CopyTextButton(props: {
   readonly borderColor?: ColorValue;
   readonly iconSize?: number;
   readonly buttonSize?: number;
+  readonly buttonWidth?: number;
+  readonly hitSlop?: Insets;
 }) {
   const [copiedAtMs, setCopiedAtMs] = useState<number | null>(null);
   const feedbackEnded = useDeadlinePassed(
@@ -32,7 +34,7 @@ export const CopyTextButton = memo(function CopyTextButton(props: {
       accessibilityRole="button"
       accessibilityLabel={copied ? "Copied" : props.accessibilityLabel}
       disabled={props.text.length === 0}
-      hitSlop={8}
+      hitSlop={props.hitSlop ?? 8}
       onLongPress={props.onLongPress}
       onPress={async () => {
         try {
@@ -48,7 +50,7 @@ export const CopyTextButton = memo(function CopyTextButton(props: {
         setCopiedAtMs(Date.now());
       }}
       style={({ pressed }) => ({
-        width: props.buttonSize ?? 30,
+        width: props.buttonWidth ?? props.buttonSize ?? 30,
         height: props.buttonSize ?? 30,
         alignItems: "center",
         justifyContent: "center",
