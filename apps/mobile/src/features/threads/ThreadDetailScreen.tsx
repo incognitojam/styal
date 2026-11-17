@@ -2,9 +2,9 @@ import {
   CoordinatorReportsContext,
   ReportReplyStrip,
   type ReportAnswers,
-  NeedsYou,
   type ReportState,
 } from "./CoordinatorReports";
+import { NeedsYou } from "./NeedsYou";
 import { dismissCoordinatorReport } from "../../state/coordinatorReports";
 import type { ReportReply } from "@t3tools/client-runtime/coordinator-reports";
 import { CommandId } from "@t3tools/contracts";
