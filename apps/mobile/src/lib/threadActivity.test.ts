@@ -404,7 +404,7 @@ function assistantMessage(updatedAt = "2026-06-20T00:00:03.000Z") {
 }
 
 describe("buildThreadFeed", () => {
-  describe("an answer followed by saving memory", () => {
+  describe("an answer followed by saving memory or a file", () => {
     const answerText =
       "I've opened the PR and started the follow-up on a branch stacked on top of it. The PR has before and after screenshots at desktop and phone sizes.";
     const note = "I also saved a note to memory about that.";
@@ -462,6 +462,27 @@ describe("buildThreadFeed", () => {
           reply("note", note, 5),
         ]),
       ).toEqual(["user:Run checks", "fold", `assistant:${answerText}`, `assistant:${note}`]);
+    });
+
+    it("keeps the answer visible above a shorter note about the file it saved", () => {
+      expect(
+        settledShape([
+          userMessage("2026-06-20T00:00:00.000Z"),
+          reply("answer", answerText, 1),
+          {
+            ...base("save-reply", "2026-06-20T00:00:02.000Z", 2),
+            type: "file_change" as const,
+            fileName: "/work/reply.txt",
+            diffStr: "",
+          },
+          reply("note", "The saved file now matches the text above.", 3),
+        ]),
+      ).toEqual([
+        "user:Run checks",
+        `assistant:${answerText}`,
+        "fold",
+        "assistant:The saved file now matches the text above.",
+      ]);
     });
 
     it("folds a short note announcing the memory before the answer", () => {

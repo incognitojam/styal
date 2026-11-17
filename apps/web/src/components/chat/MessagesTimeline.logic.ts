@@ -33,7 +33,7 @@ import {
   workEntryReviewFindings,
   memoryRowLabel,
   workEntryReadsMemoryFile,
-  workEntryIsMemoryBookkeeping,
+  workEntryKeepsPriorAnswerVisible,
   workEntryMemoryFileKind,
   workEntryMemoryFilePath,
   workEntryEditDidNotApply,
@@ -764,27 +764,26 @@ function deriveTerminalAssistantMessageIds(
 }
 
 /**
- * Claude often answers, saves a memory, then ends with a shorter note about it.
+ * Agents often answer, save a memory or a file, then end with a shorter note about it.
  * That answer stays visible beside the note instead of folding as work.
  */
-function answerBeforeMemoryNoteEntryId(
+function answerBeforeSaveNoteEntryId(
   entries: ReadonlyArray<TimelineEntry>,
   terminalEntryIndex: number,
 ): string | null {
   const terminalEntry = entries[terminalEntryIndex];
   if (terminalEntry?.kind !== "message") return null;
-  let savedMemory = false;
+  let saved = false;
   for (let index = terminalEntryIndex - 1; index >= 0; index -= 1) {
     const entry = entries[index];
     if (entry?.kind === "work") {
       if (entry.entry.itemType === "reasoning") continue;
-      if (!workEntryIsMemoryBookkeeping(entry.entry)) return null;
-      savedMemory = true;
+      if (!workEntryKeepsPriorAnswerVisible(entry.entry)) return null;
+      saved = true;
       continue;
     }
     if (entry?.kind !== "message" || entry.message.role !== "assistant") return null;
-    return savedMemory &&
-      entry.message.text.trim().length > terminalEntry.message.text.trim().length
+    return saved && entry.message.text.trim().length > terminalEntry.message.text.trim().length
       ? entry.id
       : null;
   }
@@ -1347,9 +1346,9 @@ function deriveTurnFolds(input: {
     const terminalEntryIndex = group.terminalEntry
       ? group.entries.findIndex((entry) => entry.id === group.terminalEntry?.id)
       : group.entries.length;
-    const answerBeforeMemoryNote = answerBeforeMemoryNoteEntryId(group.entries, terminalEntryIndex);
+    const answerBeforeSaveNote = answerBeforeSaveNoteEntryId(group.entries, terminalEntryIndex);
     for (const [index, entry] of group.entries.entries()) {
-      if (entry.id === group.terminalEntry?.id || entry.id === answerBeforeMemoryNote) {
+      if (entry.id === group.terminalEntry?.id || entry.id === answerBeforeSaveNote) {
         continue;
       }
       const isFoldableTrailingActivity =

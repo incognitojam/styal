@@ -1762,7 +1762,7 @@ describe("deriveMessagesTimelineRows", () => {
     ).toBeDefined();
   });
 
-  describe("an answer followed by saving memory", () => {
+  describe("an answer followed by saving memory or a file", () => {
     const runId = RunId.make("turn-memory-postscript");
     const message = (id: string, role: "user" | "assistant", text: string, second: number) => ({
       id: `${id}-entry`,
@@ -1821,6 +1821,32 @@ describe("deriveMessagesTimelineRows", () => {
           message("postscript", "assistant", "I also saved a note to memory about that.", 13),
         ]),
       ).toEqual(["user-entry", `turn-fold:${runId}`, "answer-entry", "postscript-entry"]);
+    });
+
+    it("keeps the answer visible above a shorter note about the file it saved", () => {
+      expect(
+        collapsedRowIds([
+          message("user", "user", "Draft the reply", 0),
+          message("answer", "assistant", answer, 1),
+          work("save-reply", 2, { itemType: "file_change", changedFiles: ["/work/reply.txt"] }),
+          message("note", "assistant", "The saved file now matches the text above.", 3),
+        ]),
+      ).toEqual(["user-entry", `turn-fold:${runId}`, "answer-entry", "note-entry"]);
+    });
+
+    it("keeps the answer visible above a shorter note after a command run in the memory directory", () => {
+      expect(
+        collapsedRowIds([
+          message("user", "user", "Open the PR", 0),
+          message("answer", "assistant", answer, 1),
+          work("memory-edit", 2, {
+            itemType: "command_execution",
+            command:
+              "cd /home/user/.claude/projects/-home-user-app/memory && python3 - <<'EOF'\nopen('notes.md', 'a').write('rule')\nEOF",
+          }),
+          message("note", "assistant", "I've added that rule to my notes.", 3),
+        ]),
+      ).toEqual(["user-entry", `turn-fold:${runId}`, "answer-entry", "note-entry"]);
     });
 
     it("folds a short note announcing the memory before the answer", () => {

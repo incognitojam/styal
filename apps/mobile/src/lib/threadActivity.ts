@@ -1,7 +1,7 @@
 import { ProjectScriptIcon } from "@t3tools/contracts";
 import { type ToolFileChangeLineStat } from "@t3tools/shared/toolActivity";
 import {
-  workEntryIsMemoryBookkeeping,
+  workEntryKeepsPriorAnswerVisible,
   workEntryReviewFindings,
 } from "@t3tools/client-runtime/work-log/presentation";
 import type { ReviewFindingsReport } from "@t3tools/shared/reviewFindings";
@@ -1169,30 +1169,29 @@ export function messageFoldRunId(
 }
 
 /**
- * Claude often answers, saves a memory, then ends with a shorter note about it.
+ * Agents often answer, save a memory or a file, then end with a shorter note about it.
  * That answer stays visible beside the note instead of folding as work.
  */
-function answerBeforeMemoryNoteEntryId(
+function answerBeforeSaveNoteEntryId(
   entries: ReadonlyArray<ThreadFeedEntry>,
   terminalAssistantId: string | undefined,
 ): string | null {
   const terminalIndex = entries.findIndex((entry) => entry.id === terminalAssistantId);
   const terminalEntry = entries[terminalIndex];
   if (terminalEntry?.type !== "message") return null;
-  let savedMemory = false;
+  let saved = false;
   for (let index = terminalIndex - 1; index >= 0; index -= 1) {
     const entry = entries[index];
     if (entry?.type === "activity-group") {
       for (const activity of entry.activities) {
         if (activity.workEntry.itemType === "reasoning") continue;
-        if (!workEntryIsMemoryBookkeeping(activity.workEntry)) return null;
-        savedMemory = true;
+        if (!workEntryKeepsPriorAnswerVisible(activity.workEntry)) return null;
+        saved = true;
       }
       continue;
     }
     if (entry?.type !== "message" || entry.message.role !== "assistant") return null;
-    return savedMemory &&
-      entry.message.text.trim().length > terminalEntry.message.text.trim().length
+    return saved && entry.message.text.trim().length > terminalEntry.message.text.trim().length
       ? entry.id
       : null;
   }
@@ -1297,16 +1296,13 @@ function deriveThreadFeedRunFolds(
       continue;
     }
     const terminalAssistantId = terminalAssistantMessageIdByRun.get(runId);
-    const answerBeforeMemoryNote = answerBeforeMemoryNoteEntryId(
-      group.entries,
-      terminalAssistantId,
-    );
+    const answerBeforeSaveNote = answerBeforeSaveNoteEntryId(group.entries, terminalAssistantId);
     const hiddenEntryIds = new Set(
       group.entries
         .filter(
           (entry) =>
             entry.id !== terminalAssistantId &&
-            entry.id !== answerBeforeMemoryNote &&
+            entry.id !== answerBeforeSaveNote &&
             entry.type !== "html-render" &&
             entry.type !== "mcp-app" &&
             !(entry.type === "message" && entry.message.report !== undefined) &&
