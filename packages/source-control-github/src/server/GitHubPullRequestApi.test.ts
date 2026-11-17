@@ -4458,10 +4458,10 @@ layer("GitHubPullRequestApi.layer", (it) => {
                                 conclusion: "SUCCESS",
                                 checkSuite: {
                                   workflowRun: {
-                                    databaseId: null,
+                                    id: "WR_linux",
                                     runNumber: 1,
                                     event: "pull_request",
-                                    workflow: { databaseId: null, name: "linux" },
+                                    workflow: { id: "W_linux", name: "linux" },
                                   },
                                 },
                               }),
@@ -4471,10 +4471,10 @@ layer("GitHubPullRequestApi.layer", (it) => {
                                 conclusion: "FAILURE",
                                 checkSuite: {
                                   workflowRun: {
-                                    databaseId: null,
+                                    id: "WR_windows",
                                     runNumber: 1,
                                     event: "pull_request",
-                                    workflow: { databaseId: null, name: "windows" },
+                                    workflow: { id: "W_windows", name: "windows" },
                                   },
                                 },
                               }),
@@ -4538,10 +4538,11 @@ layer("GitHubPullRequestApi.layer", (it) => {
                                   conclusion: "CANCELLED",
                                   checkSuite: {
                                     workflowRun: {
-                                      databaseId: 10,
+                                      databaseId: 44151130789,
+                                      id: "WR_older",
                                       runNumber: 1,
                                       event: "pull_request",
-                                      workflow: { databaseId: 1, name: "CI" },
+                                      workflow: { id: "W_44151130789", name: "CI" },
                                     },
                                   },
                                 }),
@@ -4568,10 +4569,11 @@ layer("GitHubPullRequestApi.layer", (it) => {
                     conclusion: "SUCCESS",
                     checkSuite: {
                       workflowRun: {
-                        databaseId: 20,
+                        databaseId: 44151130790,
+                        id: "WR_newer",
                         runNumber: 2,
                         event: "pull_request",
-                        workflow: { databaseId: 1, name: "CI" },
+                        workflow: { id: "W_44151130789", name: "CI" },
                       },
                     },
                   }),

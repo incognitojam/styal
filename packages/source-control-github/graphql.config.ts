@@ -5,6 +5,8 @@ export default defineConfig({
   schema: "./schema/github.graphql",
   documents: ["src/**/*.graphql"],
   scalars: {
+    // GitHub returns database ids beyond GraphQL Int32; retain safe-integer validation.
+    Int: "effect/Schema#Int",
     GitObjectID: "effect/Schema#String",
     GitRefname: "effect/Schema#String",
     // Preserve GitHub's strings for comparison with other reads.
