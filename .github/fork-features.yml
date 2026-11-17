@@ -985,7 +985,7 @@ features:
     invariants:
       - Reports are immutable assistant messages, versioned independently by topic within the calling thread.
       - Only an answer referencing the exact report, a dismissal of that version, or a newer version closes a question.
-      - An open report question shows Input and blocks auto-settle; with coordinator reports disabled, open questions are ignored.
+      - An open report question shows Input and blocks auto-settle, can be snoozed, and a newer question wakes it early; with coordinator reports disabled, open questions are ignored.
       - Reports are experimental and disabled by default; disabled sessions do not list the report tool.
       - Dismissals do not wake agents and reach their next prompted turn exactly once.
     rationale: Coordinators need durable full reports and explicit decisions without repeating waiting messages.

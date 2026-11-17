@@ -253,6 +253,7 @@ export type ProjectionSettlementCandidate = Pick<
   | "pendingBackgroundTasks"
   | "pendingGuestMessageCount"
   | "openReportQuestionCount"
+  | "latestOpenReportQuestionAt"
 > &
   Pick<OrchestrationV2AppThread, "lastSnoozeWakeAt"> & {
     readonly latestUserAuthoredMessageAt: DateTime.Utc | null;
@@ -1111,6 +1112,7 @@ export type AgentAwarenessThread = ProjectThreadAwarenessV2Input["thread"] &
 
 type ShellThreadRow = {
   readonly open_report_question_count: number;
+  readonly latest_open_report_question_at: string | null;
   readonly thread_id: string;
   readonly payload_json: string;
   readonly forked_from_run_source_thread_id: string | null;
@@ -1666,7 +1668,7 @@ const linkCardStillAsks = (
   latestUserAuthoredMessageAt === null ||
   !DateTime.isGreaterThan(latestUserAuthoredMessageAt, item.startedAt ?? item.updatedAt);
 
-function openReportQuestionCount(projection: OrchestrationV2ThreadProjection): number {
+function openReportQuestions(projection: OrchestrationV2ThreadProjection) {
   const latest = new Map<string, OrchestrationV2ThreadProjection["messages"][number]>();
   const referenceKey = (ref: {
     readonly messageId: string;
@@ -1692,12 +1694,16 @@ function openReportQuestionCount(projection: OrchestrationV2ThreadProjection): n
     return (
       message.role === "assistant" && !!report.question && !answered.has(key) && !dismissed.has(key)
     );
-  }).length;
+  });
 }
 
 export function threadShellFromProjection(
   projection: OrchestrationV2ThreadProjection,
 ): OrchestrationV2ThreadShell {
+  const questions = openReportQuestions(projection);
+  const latestQuestion = questions.toSorted(
+    (a, b) => DateTime.toEpochMillis(b.createdAt) - DateTime.toEpochMillis(a.createdAt),
+  )[0];
   const providerSession =
     projection.providerSessions
       .filter((session) => session.providerInstanceId === projection.thread.providerInstanceId)
@@ -1832,7 +1838,8 @@ export function threadShellFromProjection(
     ),
     pendingRuntimeRequest,
     pendingGuestMessageCount: pendingGuestMessageCount(projection.thread.guestShare),
-    openReportQuestionCount: openReportQuestionCount(projection),
+    openReportQuestionCount: questions.length,
+    latestOpenReportQuestionAt: latestQuestion?.createdAt ?? null,
     // Thread detail owns message bodies. Keeping them out of shell rows makes
     // initial hydration and streaming updates independent of transcript size.
     latestVisibleMessage: null,
@@ -1942,6 +1949,7 @@ function isActivityRunForShell(
 
 type ShellThreadState = {
   readonly openReportQuestionCount: number;
+  readonly latestOpenReportQuestionAt: DateTime.Utc | null;
   readonly thread: OrchestrationV2ThreadProjection["thread"];
   readonly tokenUsage: OrchestrationV2ThreadShell["tokenUsage"];
   readonly latestRunId: RunId | null;
@@ -2131,6 +2139,7 @@ function shellFromState(input: {
     pendingRuntimeRequest: input.state.pendingRuntimeRequest,
     pendingGuestMessageCount: pendingGuestMessageCount(input.state.thread.guestShare),
     openReportQuestionCount: input.state.openReportQuestionCount,
+    latestOpenReportQuestionAt: input.state.latestOpenReportQuestionAt,
     latestVisibleMessage: null,
     latestUserMessageAt: input.state.latestUserMessageAt,
     latestMessageAt: input.state.latestMessageAt,
@@ -6508,7 +6517,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
     // Mirrors coordinatorReports' latest-version, answer and dismissal rules without loading history.
     // Keep these partial-index predicates aligned with fork migration 016.
     const openReportQuestions = sql`
-      SELECT report.message_id
+      SELECT report.message_id, report.created_at
       FROM orchestration_v2_projection_messages report
         INDEXED BY orchestration_v2_projection_messages_report_key_idx
       WHERE report.thread_id = t.thread_id AND report.role = 'assistant'
@@ -6599,6 +6608,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
               t.thread_id,
               t.payload_json,
               ${countReportQuestions ? sql`(SELECT count(*) FROM (${openReportQuestions}))` : sql`0`} AS open_report_question_count,
+              ${countReportQuestions ? sql`(SELECT MAX(created_at) FROM (${openReportQuestions}))` : sql`NULL`} AS latest_open_report_question_at,
               CASE
                 WHEN json_extract(t.payload_json, '$.forkedFrom.type') = 'run'
                   AND COALESCE(json_extract(t.payload_json, '$.forkHistoryMaterialized'), 0) = 0
@@ -7146,6 +7156,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                   pendingRuntimeRequest: null,
                   pendingGuestMessageCount: pendingGuestMessageCount(thread.guestShare),
                   openReportQuestionCount: 0,
+                  latestOpenReportQuestionAt: null,
                   pendingBackgroundTasks: derivePendingBackgroundWork({
                     latestRun:
                       latestRunId === null || status === "idle"
@@ -7576,6 +7587,10 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
           ),
           pendingRuntimeRequest,
           openReportQuestionCount: row.open_report_question_count,
+          latestOpenReportQuestionAt:
+            row.latest_open_report_question_at === null
+              ? null
+              : DateTime.makeUnsafe(row.latest_open_report_question_at),
           latestMessageAt:
             row.latest_message_at === null ? null : DateTime.makeUnsafe(row.latest_message_at),
           latestUserMessageAt:

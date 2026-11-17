@@ -350,6 +350,7 @@ it.effect(
       const settings = yield* ServerSettings.ServerSettingsService;
       yield* settings.updateSettings({ coordinatorReportsEnabled: false });
       assert.equal((yield* store.getThreadShell(reportThread))?.openReportQuestionCount, 0);
+      assert.isNull((yield* store.getThreadShell(reportThread))?.latestOpenReportQuestionAt);
       assert.equal(
         (yield* store.getShellSnapshot()).threads.find((thread) => thread.id === reportThread)
           ?.openReportQuestionCount,
@@ -375,6 +376,29 @@ it.effect(
       );
       yield* settings.updateSettings({ coordinatorReportsEnabled: true });
       assert.equal((yield* store.getThreadShell(reportThread))?.openReportQuestionCount, 1);
+      for (const reportShell of [
+        (yield* store.getThreadShell(reportThread))!,
+        (yield* store.getShellSnapshot()).threads.find((thread) => thread.id === reportThread)!,
+      ]) {
+        assert.equal(
+          DateTime.formatIso(reportShell.latestOpenReportQuestionAt!),
+          DateTime.formatIso(now),
+        );
+        assert.isFalse(isAutoSettlementCandidate(reportShell, DateTime.toEpochMillis(now)));
+        for (const [snoozedAt, expected] of [
+          [DateTime.add(now, { minutes: 1 }), true],
+          [now, true],
+          [DateTime.subtract(now, { minutes: 1 }), false],
+        ] as const) {
+          assert.equal(
+            isSnoozed(
+              { ...reportShell, snoozedAt, snoozedUntil: DateTime.add(now, { days: 1 }) },
+              DateTime.toEpochMillis(now),
+            ),
+            expected,
+          );
+        }
+      }
       const candidates = yield* store.getSettlementCandidates();
       assert.isFalse(candidates.some((thread) => thread.id === reportThread));
       const shell = yield* store.getShellSnapshot({ location: "active" });
@@ -413,6 +437,75 @@ it.effect(
           }),
         );
       }
+      const originalReport = (yield* store.getThreadProjection(reportThread)).messages.find(
+        (message) => message.report,
+      )!;
+      const snoozedAt = DateTime.add(now, { minutes: 1 });
+      const later = DateTime.add(now, { minutes: 2 });
+      const checkQuestion = Effect.fn(function* (
+        expectedAt: DateTime.Utc | null,
+        snoozed: boolean,
+      ) {
+        const projection = yield* store.getThreadProjection(reportThread);
+        for (const reportShell of [
+          ProjectionStore.threadShellFromProjection(projection),
+          (yield* store.getThreadShell(reportThread))!,
+          (yield* store.getShellSnapshot()).threads.find((thread) => thread.id === reportThread)!,
+        ]) {
+          assert.equal(reportShell.openReportQuestionCount, expectedAt === null ? 0 : 1);
+          assert.equal(
+            reportShell.latestOpenReportQuestionAt == null
+              ? null
+              : DateTime.formatIso(reportShell.latestOpenReportQuestionAt),
+            expectedAt === null ? null : DateTime.formatIso(expectedAt),
+          );
+          assert.equal(
+            isSnoozed(
+              { ...reportShell, snoozedAt, snoozedUntil: DateTime.add(now, { days: 1 }) },
+              DateTime.toEpochMillis(later),
+            ),
+            snoozed,
+          );
+        }
+      });
+      yield* checkQuestion(now, true);
+      yield* store.apply({
+        id: EventId.make("event:report:unchanged"),
+        type: "message.updated",
+        threadId: reportThread,
+        occurredAt: later,
+        payload: { ...originalReport, updatedAt: later },
+      });
+      yield* checkQuestion(now, true);
+      yield* store.apply({
+        id: EventId.make("event:report:new-question"),
+        type: "message.updated",
+        threadId: reportThread,
+        occurredAt: later,
+        payload: {
+          ...originalReport,
+          id: MessageId.make("report:new-question"),
+          report: { ...originalReport.report!, version: 2 },
+          createdAt: later,
+          updatedAt: later,
+        },
+      });
+      yield* checkQuestion(later, false);
+      const { question: _question, answers: _answers, ...withoutQuestion } = originalReport.report!;
+      yield* store.apply({
+        id: EventId.make("event:report:closed"),
+        type: "message.updated",
+        threadId: reportThread,
+        occurredAt: later,
+        payload: {
+          ...originalReport,
+          id: MessageId.make("report:closed"),
+          report: { ...withoutQuestion, version: 3 },
+          createdAt: later,
+          updatedAt: later,
+        },
+      });
+      yield* checkQuestion(null, true);
       assert.equal(
         DateTime.formatIso((yield* store.getThread(completed)).createdAt),
         DateTime.formatIso(old),

@@ -198,15 +198,20 @@ export function isSnoozed(
     | "pendingRuntimeRequest"
     | "pendingGuestMessageCount"
     | "openReportQuestionCount"
+    | "latestOpenReportQuestionAt"
   >,
   nowMs: number,
 ): boolean {
   const snoozedUntilMs = toMillis(thread.snoozedUntil);
   if (snoozedUntilMs === null || snoozedUntilMs <= nowMs) return false;
-  // Same as the client: guest requests and report questions wake it; the snooze stays stored.
-  if ((thread.pendingGuestMessageCount ?? 0) > 0 || (thread.openReportQuestionCount ?? 0) > 0)
-    return false;
+  if ((thread.pendingGuestMessageCount ?? 0) > 0) return false;
   const snoozedAtMs = toMillis(thread.snoozedAt);
+  const reportQuestionAtMs = toMillis(thread.latestOpenReportQuestionAt);
+  if (
+    (thread.openReportQuestionCount ?? 0) > 0 &&
+    (snoozedAtMs === null || reportQuestionAtMs === null || reportQuestionAtMs > snoozedAtMs)
+  )
+    return false;
   if (
     thread.pendingRuntimeRequest !== null &&
     (thread.pendingRuntimeRequest.kind !== "user_input" ||

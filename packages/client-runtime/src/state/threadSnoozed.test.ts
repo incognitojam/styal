@@ -84,7 +84,20 @@ describe("effectiveSnoozed", () => {
   it("wakes early when the agent is blocked on the user", () => {
     const report = { ...makeShell({ snoozedUntil: FUTURE_WAKE }), openReportQuestionCount: 1 };
     expect(effectiveSnoozed(report, { now: NOW })).toBe(false);
-    expect(canSnooze(report, { now: NOW })).toBe(false);
+    expect(canSnooze(report, { now: NOW })).toBe(true);
+    const existing = { ...report, latestOpenReportQuestionAt: SNOOZED_AT };
+    expect(effectiveSnoozed(existing, { now: NOW })).toBe(true);
+    expect(threadWokeAt(existing, { now: NOW })).toBeNull();
+    expect(effectiveSnoozed(existing, { now: FUTURE_WAKE })).toBe(false);
+    const newer = { ...existing, latestOpenReportQuestionAt: NOW };
+    expect(effectiveSnoozed(newer, { now: NOW })).toBe(false);
+    expect(threadWokeAt(newer, { now: NOW })).toBe(NOW);
+    expect(
+      effectiveSnoozed(
+        { ...existing, latestOpenReportQuestionAt: "2026-04-10T08:00:00.000Z" },
+        { now: NOW },
+      ),
+    ).toBe(true);
     expect(
       effectiveSnoozed(makeShell({ snoozedUntil: FUTURE_WAKE, pending: "approval" }), {
         now: NOW,
