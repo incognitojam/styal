@@ -1,4 +1,5 @@
 import { assert, it, vi } from "@effect/vitest";
+import * as ServerSettings from "../serverSettings.ts";
 import {
   EnvironmentId,
   EventId,
@@ -61,7 +62,10 @@ import { limitRecoveryCommand } from "./UsageLimitRecoveryWorker.ts";
 import { layerReaderDatabase, traceSqlRouting } from "../persistence/testkit/SqliteRouting.ts";
 
 const layerTest = Layer.mergeAll(
-  ProjectionStore.layer.pipe(Layer.provideMerge(SqlitePersistence.layerMemory)),
+  ProjectionStore.layer.pipe(
+    Layer.provideMerge(SqlitePersistence.layerMemory),
+    Layer.provide(ServerSettings.layerTest({ coordinatorReportsEnabled: true })),
+  ),
   SqlitePersistence.layerMemory,
 );
 const modelSelection = {

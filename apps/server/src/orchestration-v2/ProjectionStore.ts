@@ -2169,12 +2169,12 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
     const serverSettings = yield* Effect.serviceOption(ServerSettings.ServerSettingsService);
-    // Standalone persistence readers have no server settings; servers use the cached live setting.
+    // Reports are off by default, so a store without server settings counts no open questions.
     const reportsEnabled = Option.isSome(serverSettings)
       ? serverSettings.value.getSettings.pipe(
           Effect.map((settings) => settings.coordinatorReportsEnabled),
         )
-      : Effect.succeed(true);
+      : Effect.succeed(false);
 
     // Claude memory writes stay inline: clients keep an answer visible beside its memory note.
     const inlineWorkOutput = sql`(item.type = 'dynamic_tool' AND (

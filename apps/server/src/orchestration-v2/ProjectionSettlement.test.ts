@@ -430,6 +430,37 @@ it.effect(
     ),
 );
 
+it.effect("sql: a store without server settings counts no open report questions", () =>
+  Effect.gen(function* () {
+    const store = yield* ProjectionStore.ProjectionStoreV2;
+    const now = DateTime.makeUnsafe("2026-11-17T00:00:00.000Z");
+    const threadId = yield* createThread("report-question-no-settings");
+    yield* createRun(threadId);
+    yield* store.apply({
+      id: EventId.make("event:no-settings:report"),
+      type: "message.updated",
+      threadId,
+      occurredAt: now,
+      payload: {
+        createdBy: "agent",
+        creationSource: "mcp",
+        id: MessageId.make("message:no-settings:report"),
+        threadId,
+        runId: null,
+        nodeId: null,
+        role: "assistant",
+        text: "Choose a release",
+        report: { key: "release", version: 1, title: "Release", question: "Ship?" },
+        attachments: [],
+        streaming: false,
+        createdAt: now,
+        updatedAt: now,
+      },
+    });
+    assert.equal((yield* store.getThreadShell(threadId))?.openReportQuestionCount, 0);
+  }).pipe(Effect.provide(layerSql)),
+);
+
 it.effect("sql: the user-authored message time ignores agent notifications", () =>
   Effect.gen(function* () {
     const store = yield* ProjectionStore.ProjectionStoreV2;

@@ -316,7 +316,7 @@ const harness = <A, E>(
           ProviderReplayHarness.layerWithRegistry(
             { name },
             ProviderAdapterRegistry.layerSingle(adapter),
-            { runEffectWorker: false },
+            { runEffectWorker: false, coordinatorReportsEnabled: true },
           ),
         ),
       );
