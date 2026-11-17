@@ -19,6 +19,7 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
+import * as ServerSettings from "../serverSettings.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import {
@@ -346,6 +347,34 @@ it.effect(
           updatedAt: now,
         },
       });
+      const settings = yield* ServerSettings.ServerSettingsService;
+      yield* settings.updateSettings({ coordinatorReportsEnabled: false });
+      assert.equal((yield* store.getThreadShell(reportThread))?.openReportQuestionCount, 0);
+      assert.equal(
+        (yield* store.getShellSnapshot()).threads.find((thread) => thread.id === reportThread)
+          ?.openReportQuestionCount,
+        0,
+      );
+      const disabledCandidates = yield* store.getSettlementCandidates(reportThread);
+      assert.isTrue(
+        disabledCandidates.some(
+          (thread) =>
+            thread.id === reportThread &&
+            isAutoSettlementCandidate(thread, DateTime.toEpochMillis(now)),
+        ),
+      );
+      assert.isTrue(
+        isSnoozed(
+          {
+            ...(yield* store.getThreadShell(reportThread))!,
+            snoozedAt: now,
+            snoozedUntil: DateTime.add(now, { days: 1 }),
+          },
+          DateTime.toEpochMillis(now),
+        ),
+      );
+      yield* settings.updateSettings({ coordinatorReportsEnabled: true });
+      assert.equal((yield* store.getThreadShell(reportThread))?.openReportQuestionCount, 1);
       const candidates = yield* store.getSettlementCandidates();
       assert.isFalse(candidates.some((thread) => thread.id === reportThread));
       const shell = yield* store.getShellSnapshot({ location: "active" });
@@ -392,7 +421,13 @@ it.effect(
         (yield* store.getThread(ThreadId.make("missing")).pipe(Effect.flip))._tag,
         "ProjectionStoreThreadNotFoundError",
       );
-    }).pipe(Effect.provide(layerSql)),
+    }).pipe(
+      Effect.provide(
+        layerSql.pipe(
+          Layer.provideMerge(ServerSettings.layerTest({ coordinatorReportsEnabled: true })),
+        ),
+      ),
+    ),
 );
 
 it.effect("sql: the user-authored message time ignores agent notifications", () =>

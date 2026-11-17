@@ -985,17 +985,22 @@ features:
     invariants:
       - Reports are immutable assistant messages, versioned independently by topic within the calling thread.
       - Only an answer referencing the exact report, a dismissal of that version, or a newer version closes a question.
+      - An open report question shows Input and blocks auto-settle; with coordinator reports disabled, open questions are ignored.
       - Reports are experimental and disabled by default; disabled sessions do not list the report tool.
       - Dismissals do not wake agents and reach their next prompted turn exactly once.
     rationale: Coordinators need durable full reports and explicit decisions without repeating waiting messages.
     implementation_paths:
       - apps/server/src/mcp/toolkits/thread/tools.ts
       - apps/server/src/orchestration-v2/Orchestrator.ts
+      - apps/server/src/orchestration-v2/ProjectionStore.ts
       - apps/server/src/orchestration-v2/ProviderTurnStartService.ts
+      - apps/server/src/persistence/ForkMigrations/016_ReportQuestionIndexes.ts
       - apps/web/src/components/chat/CoordinatorReports.tsx
       - packages/client-runtime/src/coordinatorReports.ts
       - packages/contracts/src/orchestrationV2.ts
     tests:
+      - apps/server/src/orchestration-v2/ProjectionSettlement.test.ts
+      - apps/server/src/orchestration-v2/ProjectionStore.test.ts
       - apps/server/src/orchestration-v2/ThreadReports.integration.test.ts
       - packages/client-runtime/src/coordinatorReports.test.ts
     upstream_paths:

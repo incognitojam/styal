@@ -100,10 +100,12 @@ import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 import type * as Statement from "effect/sql/Statement";
 
+import * as ServerSettings from "../serverSettings.ts";
 import { MCP_APP_OUTPUT_KEY } from "@t3tools/shared/mcpApp";
 import { threadHtmlRenderAttachmentIds } from "../attachmentStore.ts";
 import {
@@ -2166,6 +2168,13 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
   ProjectionStoreV2,
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
+    const serverSettings = yield* Effect.serviceOption(ServerSettings.ServerSettingsService);
+    // Standalone persistence readers have no server settings; servers use the cached live setting.
+    const reportsEnabled = Option.isSome(serverSettings)
+      ? serverSettings.value.getSettings.pipe(
+          Effect.map((settings) => settings.coordinatorReportsEnabled),
+        )
+      : Effect.succeed(true);
 
     // Claude memory writes stay inline: clients keep an answer visible beside its memory note.
     const inlineWorkOutput = sql`(item.type = 'dynamic_tool' AND (
@@ -6567,7 +6576,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       )`;
     };
 
-    const selectShellThreadRows = (
+    const selectShellThreadRows = Effect.fn("ProjectionStore.selectShellThreadRows")(function* (
       threadId?: ThreadId,
       {
         location,
@@ -6583,12 +6592,13 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
         readonly listedOnly?: boolean;
         readonly includeReportQuestions?: boolean;
       } = {},
-    ) =>
-      sql<ShellThreadRow>`
+    ) {
+      const countReportQuestions = includeReportQuestions && (yield* reportsEnabled);
+      return yield* sql<ShellThreadRow>`
             SELECT
               t.thread_id,
               t.payload_json,
-              ${includeReportQuestions ? sql`(SELECT count(*) FROM (${openReportQuestions}))` : sql`0`} AS open_report_question_count,
+              ${countReportQuestions ? sql`(SELECT count(*) FROM (${openReportQuestions}))` : sql`0`} AS open_report_question_count,
               CASE
                 WHEN json_extract(t.payload_json, '$.forkedFrom.type') = 'run'
                   AND COALESCE(json_extract(t.payload_json, '$.forkHistoryMaterialized'), 0) = 0
@@ -6842,6 +6852,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             }${threadIds === undefined ? sql`` : sql` AND t.thread_id IN (SELECT value FROM json_each(${encodeIdList(threadIds)}))`}
             ORDER BY t.updated_at ASC, t.thread_id ASC
           `;
+    });
 
     const selectShellRunRows = (threadIds?: ReadonlyArray<ThreadId>) =>
       threadIds === undefined
@@ -7022,6 +7033,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       sql
         .withTransaction(
           Effect.gen(function* () {
+            const includeReportQuestions = yield* reportsEnabled;
             const rows = yield* sql<SettlementThreadRow>`
             SELECT t.thread_id, t.payload_json,
               r.run_id AS latest_run_id,
@@ -7059,7 +7071,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
               AND json_extract(t.payload_json, '$.settledOverride') IS NULL
               AND json_extract(t.payload_json, '$.pinnedAt') IS NULL
               AND json_extract(t.payload_json, '$.autoSettleDisabledAt') IS NULL
-              AND NOT EXISTS (${openReportQuestions})
+              ${includeReportQuestions ? sql`AND NOT EXISTS (${openReportQuestions})` : sql``}
               AND NOT EXISTS (
                 SELECT 1 FROM orchestration_v2_projection_runs active
                 WHERE active.thread_id = t.thread_id

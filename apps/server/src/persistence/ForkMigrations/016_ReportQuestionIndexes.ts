@@ -7,7 +7,11 @@ export default Effect.gen(function* () {
   // Keep these predicates aligned with ProjectionStore's open report question queries.
   yield* sql`
     CREATE INDEX IF NOT EXISTS orchestration_v2_projection_messages_report_key_idx
-    ON orchestration_v2_projection_messages(thread_id, json_extract(payload_json, '$.report.key'))
+    ON orchestration_v2_projection_messages(
+      thread_id,
+      json_extract(payload_json, '$.report.key'),
+      json_extract(payload_json, '$.report.version')
+    )
     WHERE json_extract(payload_json, '$.report.key') IS NOT NULL
   `;
   yield* sql`

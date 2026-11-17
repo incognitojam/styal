@@ -4655,6 +4655,10 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
         assert.isDefined(lookup);
         assert.include(lookup, `orchestration_v2_projection_messages_${index}_idx`);
       }
+      assert.include(
+        plan.find((detail) => detail.startsWith("SEARCH newer ")),
+        "(thread_id=? AND <expr>=? AND <expr>>?)",
+      );
       const stopRequestLookups = plan.filter((detail) => detail.startsWith("SEARCH stop_request "));
       assert.lengthOf(stopRequestLookups, 2);
       for (const lookup of stopRequestLookups) {
