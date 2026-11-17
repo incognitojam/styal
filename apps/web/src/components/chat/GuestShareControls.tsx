@@ -38,6 +38,7 @@ import { useAssetUrls } from "~/assets/assetUrls";
 import { type ChatFileAttachment, isImageAttachment } from "../../types";
 import { buildExpandedImagePreview, type ExpandedImagePreview } from "./ExpandedImagePreview";
 import { GuestMessageAttachments } from "./GuestMessageAttachments";
+import { GuestMessageText } from "./GuestMessageText";
 import { GuestMessageName, guestBubbleClassName } from "./guestMessageStyle";
 import { guestShareDialogThreadAtom } from "./guestShareDialogState";
 
@@ -293,7 +294,7 @@ export function GuestPendingMessages({
               />
               {message.text ? (
                 <p className="text-sm leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere]">
-                  {message.text}
+                  <GuestMessageText text={message.text} />
                 </p>
               ) : null}
             </div>

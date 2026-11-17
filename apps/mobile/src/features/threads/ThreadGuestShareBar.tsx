@@ -11,6 +11,7 @@ import {
   type ThreadGuestMessage,
   type ThreadGuestShare,
 } from "@t3tools/contracts";
+import { collectAssistantCitations } from "@t3tools/shared/assistantCitations";
 import { Atom } from "effect/reactivity";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { View } from "react-native";
@@ -116,6 +117,42 @@ export function ThreadGuestShareBar(props: {
   );
 }
 
+/** A guest's text with each quote of the agent as a quoted block before the owner sends it. */
+function GuestPendingText({ text }: { readonly text: string }) {
+  const blocks: ReactNode[] = [];
+  let cursor = 0;
+  const addText = (value: string, key: number) => {
+    if (value.trim() === "") return;
+    blocks.push(
+      <Text key={`text-${key}`} selectable className="text-base text-foreground">
+        {value.trim()}
+      </Text>,
+    );
+  };
+  for (const { citation, start, end } of collectAssistantCitations(text)) {
+    addText(text.slice(cursor, start), cursor);
+    blocks.push(
+      <View
+        key={`quote-${start}`}
+        accessibilityLabel="Quoted agent text"
+        className="border-l-2 border-border pl-3"
+      >
+        <Text selectable className="text-base text-foreground-muted">
+          {citation.text}
+        </Text>
+        {citation.comment ? (
+          <Text selectable className="text-base text-foreground">
+            {citation.comment}
+          </Text>
+        ) : null}
+      </View>,
+    );
+    cursor = end;
+  }
+  addText(text.slice(cursor), cursor);
+  return <View className="gap-2">{blocks}</View>;
+}
+
 /**
  * One guest message waiting at the end of the feed until the owner sends or dismisses it. Sent
  * ones then show in the feed as user messages with the guest's name.
@@ -160,11 +197,7 @@ export function ThreadGuestPendingMessage(props: {
     <View className="items-end pb-5">
       <GuestMessageName name={guestName} />
       <View className={GUEST_PENDING_BUBBLE_CLASS_NAME} style={{ maxWidth: props.bubbleMaxWidth }}>
-        {message.text ? (
-          <Text selectable className="text-base text-foreground">
-            {message.text}
-          </Text>
-        ) : null}
+        {message.text ? <GuestPendingText text={message.text} /> : null}
         {props.renderAttachments(message.attachments ?? [])}
       </View>
       {canOperate ? (

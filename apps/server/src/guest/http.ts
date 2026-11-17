@@ -66,7 +66,9 @@ const errorResponse = (error: GuestShareAccessError) =>
           : error.reason === "empty" ||
               error.reason === "too_many_files" ||
               error.reason === "too_large" ||
-              error.reason === "unsupported_file"
+              error.reason === "unsupported_file" ||
+              error.reason === "quote_unavailable" ||
+              error.reason === "too_long"
             ? 400
             : 409,
       headers: NO_STORE,

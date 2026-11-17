@@ -2,6 +2,7 @@ import {
   type ChatAttachment,
   ChatAttachmentId,
   CommandId,
+  GUEST_MESSAGE_MAX_LENGTH,
   GUEST_SHARE_TTL_MS,
   GuestMessageId,
   GuestShareCreateError,
@@ -44,6 +45,7 @@ import {
   threadHtmlRenderAttachmentIds,
 } from "../attachmentStore.ts";
 import * as ServerConfig from "../config.ts";
+import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import { CloudManagedEndpointRuntime } from "../cloud/ManagedEndpointRuntime.ts";
 import * as CommandOutputHub from "../orchestration-v2/CommandOutputHub.ts";
 import { GUEST_FAILURE } from "../orchestration-v2/GuestShareDecider.ts";
@@ -59,6 +61,7 @@ import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
 import { guestShareView, guestThreadModel } from "./guestView.ts";
+import { guestQuotedMessageIds, resolveGuestQuotes } from "./guestQuotes.ts";
 import {
   classifyGuestUploads,
   GUEST_UPLOAD_HEADER_BYTES,
@@ -90,6 +93,8 @@ const GUEST_ACCESS_MESSAGES = {
   too_large: "Attached files can total up to 10 MB per message.",
   unsupported_file: "This file cannot be attached. Images must be PNG, JPEG, GIF, or WebP.",
   files_busy: GUEST_FAILURE.filesBusy,
+  quote_unavailable: "A quote in this message is not from this thread. Remove it and quote again.",
+  too_long: "This message is too long. Shorten it or quote less.",
 } as const;
 
 /** What a guest is told. The message comes from `reason`, never from a cause. */
@@ -109,6 +114,8 @@ export class GuestShareAccessError extends Schema.TaggedError<GuestShareAccessEr
       "too_large",
       "unsupported_file",
       "files_busy",
+      "quote_unavailable",
+      "too_long",
     ]),
   },
 ) {
@@ -227,6 +234,7 @@ const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const random = yield* SecureRandom.SecureRandom;
   const analytics = yield* AnalyticsService.AnalyticsService;
+  const environment = yield* ServerEnvironment.ServerEnvironmentIdentity;
   const signer = yield* PayloadSigner.make(SIGNING_SECRET_NAME);
   /** A truncated HMAC keeps invite links short. 128 bits is still far beyond guessing range. */
   const inviteSignature = (shareId: string) =>
@@ -445,6 +453,29 @@ const make = Effect.gen(function* () {
     return stored;
   });
 
+  /** The guest's text with each quote checked against the shared thread. */
+  const resolveQuotes = Effect.fn("GuestShareService.resolveQuotes")(function* (
+    threadId: ThreadId,
+    text: string,
+  ) {
+    const messageIds = guestQuotedMessageIds(text);
+    if (messageIds.length === 0) return text;
+    const { messages } = yield* orchestrator
+      .getThreadRecords(threadId, ["messages"], { messageIds, messageRoles: ["assistant"] })
+      .pipe(Effect.mapError(() => new GuestShareAccessError({ reason: "rejected" })));
+    const resolved = resolveGuestQuotes(text, {
+      environmentId: yield* environment.getEnvironmentId,
+      threadId,
+      assistantMessages: new Map(messages.map((message) => [message.id, message.text])),
+    });
+    if (resolved === null) return yield* new GuestShareAccessError({ reason: "quote_unavailable" });
+    // The owner's environment id can be longer than the placeholder the page counted.
+    if (resolved.length > GUEST_MESSAGE_MAX_LENGTH) {
+      return yield* new GuestShareAccessError({ reason: "too_long" });
+    }
+    return resolved;
+  });
+
   const submit = Effect.fn("GuestShareService.submit")(function* (
     session: string,
     request: GuestSubmitRequest,
@@ -457,6 +488,7 @@ const make = Effect.gen(function* () {
     if (request.text === "" && uploads.length === 0) {
       return yield* new GuestShareAccessError({ reason: "empty" });
     }
+    const text = yield* resolveQuotes(thread.id, request.text);
     const attachments = yield* storeUploads(thread.id, uploads);
     yield* dispatchGuestCommand({
       type: "thread.guest-message.submit",
@@ -464,7 +496,7 @@ const make = Effect.gen(function* () {
       threadId: thread.id,
       shareId: share.id,
       guestMessageId: GuestMessageId.make(yield* random.uuidV4()),
-      text: request.text,
+      text,
       ...(attachments.length === 0 ? {} : { attachments }),
     }).pipe(Effect.onError(() => removeStored(attachments)));
     yield* analytics.record("feature.used", {

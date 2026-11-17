@@ -1,4 +1,5 @@
 import {
+  type AssistantCitation,
   EnvironmentId,
   GUEST_MESSAGE_MAX_LENGTH,
   GUEST_HISTORY_ROUTE,
@@ -11,6 +12,7 @@ import {
   type GuestThreadModel,
   OrchestrationV2ThreadHistoryPage,
   type OrchestrationV2ThreadProjection,
+  type ScopedThreadRef,
   type ThreadGuestMessage,
   type ThreadGuestMessageStatus,
 } from "@t3tools/contracts";
@@ -18,6 +20,7 @@ import type { LegendListRef } from "@legendapp/list/react";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments";
+import { serializeAssistantCitation } from "@t3tools/shared/assistantCitations";
 import {
   deriveRunlessWorkStartedAt,
   deriveThreadActivityRun,
@@ -42,9 +45,12 @@ import { useTheme } from "~/hooks/useTheme";
 import { observeResize } from "~/lib/observeResize";
 import { cn } from "~/lib/utils";
 import { deriveActiveWorkStartedAt, derivePhase } from "~/session-logic";
+import { AssistantCitationChip } from "../chat/AssistantCitationChip";
+import { AssistantSelectionToolbar } from "../chat/AssistantSelectionToolbar";
 import { ComposerControl, ComposerControlIcon } from "../chat/ComposerControl";
 import type { ExpandedImagePreview } from "../chat/ExpandedImagePreview";
 import { GuestMessageAttachments } from "../chat/GuestMessageAttachments";
+import { GuestMessageText } from "../chat/GuestMessageText";
 import { HostImageUrlContext } from "../chat/hostImageUrl";
 import { PierreEntryIcon } from "../chat/PierreEntryIcon";
 import { GuestMessageName, guestBubbleClassName } from "../chat/guestMessageStyle";
@@ -488,6 +494,7 @@ function GuestThread({
     if (unplacedKey.split(",").some((id) => id !== "" && !previous.has(id))) scrollToEnd(true);
   }, [follow.timelineLiveFollowEnabled, unplacedKey, scrollToEnd, following, previousUnplacedKey]);
   const footerRef = useRef<HTMLOListElement>(null);
+  const [timelineElement, setTimelineElement] = useState<HTMLDivElement | null>(null);
   const hasFooter = unplaced.length > 0;
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- ResizeObserver on the footer keeps it scrolled into view while following
   useEffect(() => {
@@ -503,7 +510,7 @@ function GuestThread({
         <h1 className="min-w-0 flex-1 truncate text-sm font-medium">{title}</h1>
         <ExpiryLabel expiresAt={expiresAt} />
       </header>
-      <div className="relative min-h-0 flex-1">
+      <div ref={setTimelineElement} className="relative min-h-0 flex-1">
         <HostImageUrlContext value={hostImageUrl}>
           <MessagesTimeline
             listRef={listRef}
@@ -560,7 +567,13 @@ function GuestThread({
         ) : null}
       </div>
       <div className={cn(LANE, "shrink-0 pb-4")}>
-        <GuestComposer shareId={shareId} model={model} />
+        <GuestComposer
+          shareId={shareId}
+          model={model}
+          // The owner's server fills in its environment when the message arrives.
+          threadRef={{ environmentId: GUEST_ENVIRONMENT_ID, threadId: projection.thread.id }}
+          timelineElement={timelineElement}
+        />
       </div>
     </>
   );
@@ -612,7 +625,11 @@ function UnplacedGuestMessage({
           onOpenImage={(attachment) => openInNewTab(url(attachment))}
           {...(served ? { fileHref: url } : {})}
         />
-        {message.text ? <span>{message.text}</span> : null}
+        {message.text ? (
+          <span>
+            <GuestMessageText text={message.text} />
+          </span>
+        ) : null}
       </div>
       <p className="me-1 text-2xs text-muted-foreground">{STATUS_LABEL[message.status]}</p>
     </div>
@@ -665,38 +682,73 @@ function StagedImage({ file }: { readonly file: File }) {
   );
 }
 
+/** What the guest sends: their quotes as citation links, as the owner's composer writes them. */
+function guestMessageText(quotes: ReadonlyArray<AssistantCitation>, text: string): string {
+  return [...quotes.map(serializeAssistantCitation), text.trim()]
+    .filter((part) => part !== "")
+    .join(" ");
+}
+
 function GuestComposer({
   shareId,
   model,
+  threadRef,
+  timelineElement,
 }: {
   readonly shareId: GuestShareView["shareId"];
   readonly model: GuestThreadModel;
+  readonly threadRef: ScopedThreadRef;
+  readonly timelineElement: HTMLElement | null;
 }) {
   const [text, setText] = useState("");
+  const [quotes, setQuotes] = useState<
+    ReadonlyArray<{ readonly key: string; readonly citation: AssistantCitation }>
+  >([]);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [files, setFiles] = useState<ReadonlyArray<StagedFile>>([]);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const nextFileKey = useRef(0);
+  const nextStagedKey = useRef(0);
   const { resolvedTheme } = useTheme();
   const addFiles = (added: ReadonlyArray<File>) => {
     if (added.length === 0) return;
     const next = [
       ...files,
-      ...added.map((file) => ({ key: `staged-${nextFileKey.current++}`, file })),
+      ...added.map((file) => ({ key: `staged-${nextStagedKey.current++}`, file })),
     ];
     const problem = guestFilesProblem(next.map((staged) => staged.file));
     setError(problem);
     if (problem === null) setFiles(next);
   };
+  // Quotes count toward the message's length as the links they are sent as, with a space after.
+  const citations = quotes.map((quoted) => quoted.citation);
+  const quotesLength = quotes.length === 0 ? 0 : guestMessageText(citations, "").length + 1;
+  const quote = (citation: AssistantCitation) => {
+    if (guestMessageText([...citations, citation], text).length > GUEST_MESSAGE_MAX_LENGTH) {
+      setError("This quote does not fit in the message. Quote less.");
+      return false;
+    }
+    setError(null);
+    setQuotes([...quotes, { key: `quote-${nextStagedKey.current++}`, citation }]);
+    textareaRef.current?.focus();
+    return true;
+  };
   const send = async () => {
     const trimmed = text.trim();
-    if ((trimmed === "" && files.length === 0) || sending) return;
+    if ((trimmed === "" && files.length === 0 && quotes.length === 0) || sending) return;
     setSending(true);
     const sentFiles = files;
+    const sentQuotes = quotes;
     const form = new FormData();
     form.append("shareId", shareId);
-    form.append("text", trimmed);
+    form.append(
+      "text",
+      guestMessageText(
+        sentQuotes.map((quoted) => quoted.citation),
+        trimmed,
+      ),
+    );
     for (const staged of sentFiles) form.append("file", staged.file, staged.file.name);
     const failure = await postGuest(
       `messages?${GUEST_SHARE_PARAM}=${encodeURIComponent(shareId)}`,
@@ -708,6 +760,7 @@ function GuestComposer({
     if (failure === null) {
       setText((current) => (current.trim() === trimmed ? "" : current));
       setFiles((current) => current.filter((staged) => !sentFiles.includes(staged)));
+      setQuotes((current) => current.filter((quoted) => !sentQuotes.includes(quoted)));
     }
   };
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -743,6 +796,27 @@ function GuestComposer({
         addFiles(Array.from(event.dataTransfer.files));
       }}
     >
+      <AssistantSelectionToolbar viewport={timelineElement} threadRef={threadRef} onCite={quote} />
+      {quotes.length > 0 ? (
+        <ul className="flex flex-wrap gap-x-3 gap-y-1 text-sm" aria-label="Quotes">
+          {quotes.map((quoted) => (
+            <li key={quoted.key} className="flex min-w-0 items-center gap-1">
+              <AssistantCitationChip citation={quoted.citation} />
+              <Button
+                size="icon-xs"
+                variant="ghost-muted"
+                aria-label="Remove quote"
+                onClick={() => {
+                  setError(null);
+                  setQuotes((current) => current.filter((candidate) => candidate !== quoted));
+                }}
+              >
+                <XIcon />
+              </Button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
       {files.length > 0 ? (
         <ul className="flex flex-wrap gap-2" aria-label="Attached files">
           {files.map((staged) => (
@@ -779,10 +853,11 @@ function GuestComposer({
         </ul>
       ) : null}
       <textarea
+        ref={textareaRef}
         aria-label="Message"
         placeholder="Message"
         rows={2}
-        maxLength={GUEST_MESSAGE_MAX_LENGTH}
+        maxLength={Math.max(0, GUEST_MESSAGE_MAX_LENGTH - quotesLength)}
         value={text}
         onChange={(event) => setText(event.target.value)}
         onKeyDown={onKeyDown}
@@ -818,7 +893,7 @@ function GuestComposer({
         <button
           type="submit"
           aria-label="Send"
-          disabled={sending || (text.trim() === "" && files.length === 0)}
+          disabled={sending || (text.trim() === "" && files.length === 0 && quotes.length === 0)}
           className="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full bg-message-action text-message-action-foreground shadow-xs hover:bg-message-action-hover focus-visible:outline-2 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-64"
         >
           <ArrowUpIcon aria-hidden className="size-4" />
