@@ -65,7 +65,7 @@
   "t3_thread_send_attachments": 879,
   "t3_thread_transfer": 804,
   "t3_thread_update": 604,
-  "t3_thread_wait": 561,
+  "t3_thread_wait": 592,
   "t3_workflow_stop": 367,
   "t3_worktree_handoff": 812,
   "t3_worktree_list": 523,
