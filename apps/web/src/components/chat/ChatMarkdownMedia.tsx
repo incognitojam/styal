@@ -8,7 +8,7 @@ import type {
   EnvironmentId,
   SOURCE_CONTROL_MEDIA_ASSET,
 } from "@t3tools/contracts";
-import { TriangleAlertIcon } from "lucide-react";
+import { ImageIcon, TriangleAlertIcon } from "lucide-react";
 import {
   createContext,
   memo,
@@ -71,7 +71,7 @@ export function authoredImageSizeStyle(
       maxWidth: `min(100%, 30rem, ${(maxHeightRem * parsedWidth) / parsedHeight}rem)`,
     };
   }
-  if (hasWidth) return { maxWidth: `min(100%, 30rem, ${parsedWidth}px)` };
+  if (hasWidth) return { width: parsedWidth, maxWidth: `min(100%, 30rem, ${parsedWidth}px)` };
   if (hasHeight) return { maxHeight: `min(30rem, ${parsedHeight}px)` };
   return undefined;
 }
@@ -178,6 +178,7 @@ export function ChatMarkdownImage(props: {
   readonly alt: string;
   readonly copyMarkdown: string | undefined;
   readonly standalone: boolean;
+  readonly reserveFrame?: boolean | undefined;
   readonly className?: string | undefined;
   readonly style?: CSSProperties | undefined;
   readonly imageProps?:
@@ -192,6 +193,11 @@ export function ChatMarkdownImage(props: {
   const src = props.src ?? loadedSrc;
   const failed = props.sourceFailed === true || (src !== null && failedSrc === src);
   const settled = src !== null && !failed && (!props.standalone || loadedSrc !== null);
+  const framed = props.reserveFrame || !settled;
+  // GitHub media without authored dimensions has no intrinsic ratio before its first decode.
+  const frameStyle = props.reserveFrame
+    ? { width: 480, aspectRatio: "1 / 1", ...props.style }
+    : props.style;
   // Cached images are complete before `onLoad` can fire.
   const markLoadedIfComplete = (image: HTMLImageElement | null) => {
     if (!image) return;
@@ -264,16 +270,24 @@ export function ChatMarkdownImage(props: {
         data-markdown-copy={props.copyMarkdown}
         className={cn(
           CHAT_MARKDOWN_MEDIA_LAYOUT_CLASS_NAME,
-          settled ? undefined : CHAT_MARKDOWN_IMAGE_FRAME_CLASS_NAME,
-          settled ? undefined : "relative",
+          framed ? CHAT_MARKDOWN_IMAGE_FRAME_CLASS_NAME : undefined,
+          framed ? "relative" : undefined,
         )}
-        style={settled ? undefined : props.style}
+        style={framed ? frameStyle : undefined}
         {...(failed
           ? { role: "alert" as const }
           : settled
             ? {}
             : { role: "status" as const, "aria-label": "Loading image" })}
       >
+        {!failed && !settled && props.reserveFrame ? (
+          <span
+            aria-hidden
+            className="absolute inset-0 flex items-center justify-center text-muted-foreground"
+          >
+            <ImageIcon className="size-6" />
+          </span>
+        ) : null}
         {props.placeholderSrc && !failed && !settled ? (
           <img
             src={props.placeholderSrc}
@@ -302,15 +316,21 @@ export function ChatMarkdownImage(props: {
             {...props.imageProps}
             data-markdown-copy={props.copyMarkdown}
             className={
-              settled
+              props.reserveFrame
                 ? cn(
-                    CHAT_MARKDOWN_IMAGE_SIZE_CLASS_NAME,
-                    props.className,
+                    "absolute inset-0 size-full object-contain",
+                    !settled && "invisible",
                     props.onImageExpand && "cursor-zoom-in",
                   )
-                : "invisible absolute inset-0 size-full"
+                : settled
+                  ? cn(
+                      CHAT_MARKDOWN_IMAGE_SIZE_CLASS_NAME,
+                      props.className,
+                      props.onImageExpand && "cursor-zoom-in",
+                    )
+                  : "invisible absolute inset-0 size-full"
             }
-            style={settled ? props.style : undefined}
+            style={settled && !props.reserveFrame ? props.style : undefined}
             {...expandableMarkdownImageProps(props.onImageExpand, props.alt)}
             {...imageEvents(src)}
           />
@@ -537,6 +557,7 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
       alt={props.alt}
       copyMarkdown={props.copyMarkdown}
       standalone={previewEnabled || (props.standalone ?? true)}
+      reserveFrame={previewEnabled}
       className={cn(
         props.framed === false ? undefined : CHAT_MARKDOWN_WORKSPACE_IMAGE_CLASS_NAME,
         props.className,

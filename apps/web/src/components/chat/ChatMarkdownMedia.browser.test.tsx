@@ -1,9 +1,14 @@
 import type { PreparedConnection } from "@t3tools/client-runtime/connection";
 import { EnvironmentId, ThreadId, type AssetImagePreview } from "@t3tools/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
+import "~/index.css";
 
 import { render } from "../../../test/render";
-import { ChatMarkdownAssetImage, ChatMarkdownImage } from "./ChatMarkdownMedia";
+import {
+  authoredImageSizeStyle,
+  ChatMarkdownAssetImage,
+  ChatMarkdownImage,
+} from "./ChatMarkdownMedia";
 
 // Every evaluation of the URL query is one mint: the first read, then one per refresh.
 const assetQuery = vi.hoisted(() => ({ mints: 0, failPreview: false, holdTiny: false }));
@@ -123,37 +128,50 @@ describe("ChatMarkdownAssetImage", () => {
   });
 });
 
-it("clears standalone loading semantics after decode while retaining the image node", async () => {
-  const pending = (
-    <ChatMarkdownImage
-      src={null}
-      alt="standalone screenshot"
-      copyMarkdown={undefined}
-      standalone
-      actionsSource={{ kind: "image", name: "screenshot", src: null }}
-    />
-  );
-  await using screen = await render(pending);
-  const frame = screen.getByRole("status", { name: "Loading image" }).element();
-  const loaded = new Promise<EventTarget | null>((resolve) => {
-    frame.addEventListener("load", (event) => resolve(event.target), {
-      capture: true,
-      once: true,
+it.each([
+  { width: 300, height: undefined },
+  { width: 180, height: 360 },
+])(
+  "reserves the frame through decode and clears loading semantics: $width × $height",
+  async ({ width, height }) => {
+    const pending = (
+      <ChatMarkdownImage
+        src={null}
+        alt="standalone screenshot"
+        copyMarkdown={undefined}
+        standalone
+        reserveFrame
+        style={authoredImageSizeStyle(width, height)}
+        actionsSource={{ kind: "image", name: "screenshot", src: null }}
+      />
+    );
+    await using screen = await render(pending);
+    const frame = screen.getByRole("status", { name: "Loading image" }).element();
+    const before = frame.getBoundingClientRect();
+    expect(before.width).toBeGreaterThan(0);
+    expect(before.height).toBeGreaterThan(0);
+    const loaded = new Promise<EventTarget | null>((resolve) => {
+      frame.addEventListener("load", (event) => resolve(event.target), {
+        capture: true,
+        once: true,
+      });
     });
-  });
-  await screen.rerender(
-    <ChatMarkdownImage
-      {...pending.props}
-      src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
-    />,
-  );
-  const loadedImage = await loaded;
-  const image = screen.getByRole("img", { name: "standalone screenshot" });
-  await expect.element(image).toBeVisible();
-  expect(image.element()).toBe(loadedImage);
-  expect(frame.getAttribute("role")).toBeNull();
-  expect(frame.getAttribute("aria-label")).toBeNull();
-});
+    await screen.rerender(
+      <ChatMarkdownImage
+        {...pending.props}
+        src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+      />,
+    );
+    const loadedImage = await loaded;
+    const image = screen.getByRole("img", { name: "standalone screenshot" });
+    await expect.element(image).toBeVisible();
+    expect(image.element()).toBe(loadedImage);
+    expect(frame.getAttribute("role")).toBeNull();
+    expect(frame.getAttribute("aria-label")).toBeNull();
+    expect(frame.getBoundingClientRect().width).toBe(before.width);
+    expect(frame.getBoundingClientRect().height).toBe(before.height);
+  },
+);
 
 it("loads an original only after selecting recovery from a failed preview", async () => {
   assetQuery.mints = 0;

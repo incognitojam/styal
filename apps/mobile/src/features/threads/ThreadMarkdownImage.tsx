@@ -96,6 +96,7 @@ export function ThreadMarkdownImageView(props: {
   readonly unavailableDetail?: string | undefined;
   readonly alt: string | null;
   readonly knownSize?: { readonly width: number; readonly height: number } | undefined;
+  readonly reserveFrame?: boolean | undefined;
   readonly format?: "svg";
   readonly actionsSource?: MediaActionsSource;
   readonly onPressPreview: (source: FilePreviewSource) => void;
@@ -122,7 +123,7 @@ export function ThreadMarkdownImageView(props: {
   const [failure, setFailure] = useState({ uri: props.uri, failed: false });
   if (failure.uri !== props.uri) setFailure({ uri: props.uri, failed: false });
 
-  const sourceSize = props.knownSize ?? decodedSize ?? null;
+  const sourceSize = props.knownSize ?? (props.reserveFrame ? null : decodedSize) ?? null;
   const displaySize: MarkdownImageDisplaySize | null =
     sourceSize === null || availableWidth <= 0
       ? null
@@ -137,7 +138,24 @@ export function ThreadMarkdownImageView(props: {
     AsyncResult.isFailure(svg);
   const placeholderWidth: ViewStyle["width"] =
     availableWidth > 0 ? Math.min(availableWidth, MARKDOWN_IMAGE_MAX_WIDTH) : "100%";
-  const frameStyle: ViewStyle = displaySize ?? { width: placeholderWidth, aspectRatio: 16 / 9 };
+  const reservedSize =
+    props.reserveFrame && props.knownSize
+      ? resolveMarkdownImageDisplaySize({
+          sourceWidth: props.knownSize.width,
+          sourceHeight: props.knownSize.height,
+          availableWidth: MARKDOWN_IMAGE_MAX_WIDTH,
+        })
+      : null;
+  const frameStyle: ViewStyle = reservedSize
+    ? {
+        width: reservedSize.width,
+        maxWidth: "100%",
+        aspectRatio: reservedSize.width / reservedSize.height,
+      }
+    : (displaySize ?? {
+        width: placeholderWidth,
+        aspectRatio: props.reserveFrame ? 1 : 16 / 9,
+      });
 
   return (
     <View

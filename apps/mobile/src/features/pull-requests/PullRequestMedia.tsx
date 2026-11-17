@@ -100,6 +100,7 @@ export function usePullRequestImageUrl(url: string, enabled = true) {
   }, [tinyUrl]);
   return {
     ...media,
+    reserveFrame: preview !== undefined,
     placeholderUri: tinyUrl !== null && readyTiny === tinyUrl ? tinyUrl : undefined,
   };
 }
@@ -133,7 +134,10 @@ function PullRequestVideoContent(props: PullRequestMediaProps) {
 
 function PullRequestMediaContent(
   props: PullRequestMediaProps & {
-    media: ReturnType<typeof usePullRequestMediaUrl> & { placeholderUri?: string | undefined };
+    media: ReturnType<typeof usePullRequestMediaUrl> & {
+      placeholderUri?: string | undefined;
+      reserveFrame?: boolean | undefined;
+    };
   },
 ) {
   const media = props.media;
@@ -147,6 +151,7 @@ function PullRequestMediaContent(
     return (
       <>
         <ThreadMarkdownImageView
+          reserveFrame={media.reserveFrame}
           placeholderUri={media.placeholderUri}
           uri={media.uri}
           sourceKey={props.url}

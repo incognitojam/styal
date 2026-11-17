@@ -83,9 +83,22 @@ it.each([
     decoded: { width: 1280, height: 720 },
     expected: { width: 345, height: 194.0625 },
   },
+  {
+    knownSize: undefined,
+    decoded: { width: 480, height: 960 },
+    reserveFrame: true,
+    expected: { width: 345, aspectRatio: 1 },
+  },
+  {
+    knownSize: { width: 180, height: 360 },
+    decoded: { width: 480, height: 960 },
+    reserveFrame: true,
+    availableWidth: 0,
+    expected: { width: 180, maxWidth: "100%", aspectRatio: 0.5 },
+  },
 ])(
   "uses declared or natural dimensions and ignores later downsampled sizes: $expected",
-  async ({ knownSize, decoded, expected }) => {
+  async ({ knownSize, decoded, expected, reserveFrame, availableWidth }) => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     const container = document.createElement("div");
     const root = createRoot(container);
@@ -96,19 +109,20 @@ it.each([
     try {
       await act(async () =>
         root.render(
-          <MarkdownImageAvailableWidthContext value={345}>
+          <MarkdownImageAvailableWidthContext value={availableWidth ?? 345}>
             <ThreadMarkdownImageView
               uri="https://example.test/hero.png"
               sourceKey="workspace:hero.png"
               unavailable={false}
               alt={null}
               knownSize={knownSize}
+              reserveFrame={reserveFrame}
               onPressPreview={() => {}}
             />
           </MarkdownImageAvailableWidthContext>,
         ),
       );
-      if (knownSize) expect(frameSize()).toEqual(expected);
+      if (knownSize || reserveFrame) expect(frameSize()).toEqual(expected);
       else expect(frameSize()).toEqual({ width: 345, aspectRatio: 16 / 9 });
       await act(async () => harness.loadImage({ source: decoded }));
       const first = frameSize();
