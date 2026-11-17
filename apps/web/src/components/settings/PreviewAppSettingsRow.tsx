@@ -18,7 +18,9 @@ export function PreviewAppSettingsRow() {
       description={
         state.installed
           ? `styal (Preview) from pull request #${state.installed.pullRequestNumber}, build ${state.installed.runNumber}, is installed. It keeps its data when removed.`
-          : "No preview is installed. Earlier previews left data behind."
+          : state.canRemove
+            ? "An incomplete preview remains. Remove it or install a new preview."
+            : "No preview is installed. Earlier previews left data behind."
       }
       control={
         <div className="flex items-center gap-2">

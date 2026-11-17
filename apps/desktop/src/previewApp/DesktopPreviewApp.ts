@@ -212,6 +212,8 @@ export const make = Effect.fn("DesktopPreviewApp.make")(function* (options?: {
   );
   const mountPoint = path.join(stagingDirectory, "mount");
   const previousAppPath = path.join(stagingDirectory, "previous.app");
+  const retiredAppPath = path.join(stagingDirectory, "retired.app");
+  const rejectedAppPath = path.join(stagingDirectory, "rejected.app");
   const runningFromInstalledApp = environment.appPath.startsWith(`${installedAppPath}/`);
   const previewDataDirectories = [
     path.join(environment.baseDir, PREVIEW_IDENTITY.homeDirName ?? "preview"),
@@ -256,33 +258,70 @@ export const make = Effect.fn("DesktopPreviewApp.make")(function* (options?: {
         Effect.map((result) => (result.exitCode === 0 ? result.stdout.trim() : null)),
         Effect.orElseSucceed(() => null),
       );
-    const [identifier, version] = yield* Effect.all([
+    const [identifier, version, executable] = yield* Effect.all([
       read("CFBundleIdentifier"),
       read("CFBundleShortVersionString"),
+      read("CFBundleExecutable"),
     ]);
-    return { identifier, version };
+    return { identifier, version, executable };
   });
 
-  const readInstalled = Effect.gen(function* () {
-    if (!supported || !(yield* exists(installedAppPath))) return null;
-    const { identifier, version } = yield* readBundle(installedAppPath);
+  const isDirectory = (target: string) =>
+    fs.lstat(target).pipe(
+      Effect.map((info) => info.type === "Directory"),
+      Effect.orElseSucceed(() => false),
+    );
+
+  const readCompletePreview = Effect.fn("DesktopPreviewApp.readCompletePreview")(function* (
+    appPath: string,
+  ) {
+    if (!(yield* isDirectory(appPath))) return null;
+    const { identifier, version, executable } = yield* readBundle(appPath);
     const parsed = version === null ? null : parsePreviewVersion(version);
-    return identifier !== PREVIEW_IDENTITY.appUserModelId || version === null || parsed === null
-      ? null
-      : { version, ...parsed };
+    if (
+      identifier !== PREVIEW_IDENTITY.appUserModelId ||
+      version === null ||
+      parsed === null ||
+      executable === null ||
+      executable === "." ||
+      executable === ".." ||
+      executable.includes("/")
+    )
+      return null;
+    const hasExecutable = yield* fs.stat(path.join(appPath, "Contents", "MacOS", executable)).pipe(
+      Effect.map((info) => info.type === "File"),
+      Effect.orElseSucceed(() => false),
+    );
+    return hasExecutable ? { version, ...parsed } : null;
   });
+
+  const readInstalled = supported ? readCompletePreview(installedAppPath) : Effect.succeed(null);
 
   const isRecoverableSlot = Effect.gen(function* () {
-    if (!supported || !(yield* exists(installedAppPath))) return false;
-    const { identifier, version } = yield* readBundle(installedAppPath);
-    if (identifier !== null || version !== null) return false;
-    const markers = yield* Effect.forEach(Object.keys(DESKTOP_INSTALL_IDENTITIES), (variant) =>
-      fs.stat(path.join(applicationsDirectory, `${STAGING_DIRECTORY_PREFIX}-${variant}`)).pipe(
-        Effect.map((info) => info.type === "Directory"),
-        Effect.orElseSucceed(() => false),
-      ),
+    if (
+      !supported ||
+      !(yield* isDirectory(installedAppPath)) ||
+      !(yield* isDirectory(path.join(installedAppPath, "Contents"))) ||
+      !(yield* isDirectory(stagingDirectory))
+    )
+      return false;
+    return yield* fs.lstat(path.join(installedAppPath, "Contents", "Info.plist")).pipe(
+      Effect.match({
+        onSuccess: () => false,
+        onFailure: (error) => error.reason._tag === "NotFound",
+      }),
     );
-    return markers.some(Boolean);
+  });
+
+  const slotIsOurs = Effect.gen(function* () {
+    if (!supported || !(yield* isDirectory(installedAppPath))) return false;
+    const { identifier, version } = yield* readBundle(installedAppPath);
+    return (
+      (identifier === PREVIEW_IDENTITY.appUserModelId &&
+        version !== null &&
+        parsePreviewVersion(version) !== null) ||
+      (yield* isRecoverableSlot)
+    );
   });
 
   const state: DesktopPreviewApp["Service"]["state"] = Effect.gen(function* () {
@@ -298,7 +337,7 @@ export const make = Effect.fn("DesktopPreviewApp.make")(function* (options?: {
       opensAfterInstall: !runningAsPreview,
       canInstall: supported && !runningFromInstalledApp,
       canOpen: installed !== null && !runningAsPreview,
-      canRemove: !runningFromInstalledApp && (installed !== null || (yield* isRecoverableSlot)),
+      canRemove: !runningFromInstalledApp && (yield* slotIsOurs),
       canReset: hasData,
       activity,
     };
@@ -427,10 +466,11 @@ export const make = Effect.fn("DesktopPreviewApp.make")(function* (options?: {
     );
 
   // Anything other than a clear answer counts as mounted, so removal never walks into a volume.
-  const isMounted = run("/sbin/mount", []).pipe(
-    Effect.map((result) => result.exitCode !== 0 || result.stdout.includes(` on ${mountPoint} (`)),
-    Effect.orElseSucceed(() => true),
-  );
+  const isMounted = Effect.gen(function* () {
+    const resolvedMountPoint = yield* fs.realPath(mountPoint);
+    const result = yield* run("/sbin/mount", []);
+    return result.exitCode !== 0 || result.stdout.includes(` on ${resolvedMountPoint} (`);
+  }).pipe(Effect.catch((error) => Effect.succeed(error.reason._tag !== "NotFound")));
 
   const ensureDetached = Effect.gen(function* () {
     if (!(yield* isMounted)) return true;
@@ -440,38 +480,61 @@ export const make = Effect.fn("DesktopPreviewApp.make")(function* (options?: {
     return !(yield* isMounted);
   });
 
-  // Returns whether staging is safe to reuse. An empty install location means an install stopped
-  // between its renames, so the backup goes back first, whatever else is stuck. It is kept while
-  // a failed rollback leaves it as the only good copy.
+  // Nothing named previous.app is ever deleted recursively: a crash must not turn deletion into rollback.
+  const retirePrevious = Effect.gen(function* () {
+    if (!(yield* exists(previousAppPath))) return;
+    yield* fs.remove(retiredAppPath, { recursive: true, force: true });
+    yield* fs.rename(previousAppPath, retiredAppPath);
+  });
+
   const cleanStaging = Effect.gen(function* () {
     if (!(yield* exists(stagingDirectory))) return true;
-    if ((yield* exists(previousAppPath)) && !(yield* exists(installedAppPath))) {
-      const restored = yield* fs.rename(previousAppPath, installedAppPath).pipe(
-        Effect.as(true),
-        Effect.catch((error) =>
-          logWarning("could not restore the previous preview", { error: String(error) }).pipe(
-            Effect.as(false),
-          ),
-        ),
-      );
-      if (!restored) return false;
+    if (!(yield* isDirectory(stagingDirectory))) return false;
+    if (yield* Ref.get(keepBackupRef)) {
+      yield* fs.remove(rejectedAppPath, { recursive: true, force: true });
+      if (yield* exists(installedAppPath)) yield* fs.rename(installedAppPath, rejectedAppPath);
+      yield* Ref.set(keepBackupRef, false);
     }
-    if (yield* Ref.get(keepBackupRef)) return false;
+    if ((yield* exists(previousAppPath)) && !(yield* exists(installedAppPath))) {
+      if ((yield* readCompletePreview(previousAppPath)) !== null) {
+        yield* fs.rename(previousAppPath, installedAppPath);
+      } else {
+        const missingPlist = yield* fs
+          .lstat(path.join(previousAppPath, "Contents", "Info.plist"))
+          .pipe(
+            Effect.match({
+              onSuccess: () => false,
+              onFailure: (error) => error.reason._tag === "NotFound",
+            }),
+          );
+        // A tool or access failure must not discard the only potentially complete copy.
+        if (!missingPlist) return false;
+      }
+    }
     if ((yield* exists(mountPoint)) && !(yield* ensureDetached)) {
       yield* logWarning("preview build is still mounted; leaving staging in place");
       return false;
     }
-    // Keep the ownership evidence until a damaged slot is replaced or removed, even across restarts.
-    if (yield* isRecoverableSlot) return true;
-    return yield* fs.remove(stagingDirectory, { recursive: true, force: true }).pipe(
-      Effect.as(true),
-      Effect.catch((error) =>
-        logWarning("could not clean preview staging", { error: String(error) }).pipe(
-          Effect.as(false),
-        ),
+    yield* retirePrevious;
+    if (yield* isRecoverableSlot) {
+      // An empty directory retains legacy ownership evidence without retaining stale install contents.
+      const entries = yield* fs.readDirectory(stagingDirectory);
+      yield* Effect.forEach(entries, (entry) =>
+        fs.remove(path.join(stagingDirectory, entry), { recursive: true, force: true }),
+      );
+    } else {
+      yield* fs.remove(stagingDirectory, { recursive: true, force: true });
+    }
+    yield* Ref.set(keepBackupRef, false);
+    return true;
+  }).pipe(
+    Effect.catch((error) =>
+      logWarning("could not clean preview staging", { error: String(error) }).pipe(
+        Effect.as(false),
       ),
-    );
-  }).pipe(Effect.uninterruptible);
+    ),
+    Effect.uninterruptible,
+  );
 
   const copyAppOutOfDmg = Effect.fn("DesktopPreviewApp.copyAppOutOfDmg")(function* (
     dmg: string,
@@ -579,10 +642,16 @@ export const make = Effect.fn("DesktopPreviewApp.make")(function* (options?: {
     );
   });
 
-  // Only an unreadable bundle with an installer marker can bypass the preview identity check.
+  // Legacy recovery requires a missing plist, a real bundle directory, and this variant's marker.
   const ensureSlotIsOurs = Effect.gen(function* () {
-    if (!(yield* exists(installedAppPath))) return;
-    if ((yield* readInstalled) === null && !(yield* isRecoverableSlot)) {
+    const absent = yield* fs.lstat(installedAppPath).pipe(
+      Effect.match({
+        onSuccess: () => false,
+        onFailure: (error) => error.reason._tag === "NotFound",
+      }),
+    );
+    if (absent) return;
+    if (!(yield* slotIsOurs)) {
       return yield* fail(
         "slot_occupied",
         `${installedAppPath} is not a styal preview, so it was left in place. Move it and try again.`,
@@ -612,7 +681,7 @@ export const make = Effect.fn("DesktopPreviewApp.make")(function* (options?: {
       yield* openInstalledApp.pipe(
         Effect.tapError(() =>
           fs
-            .rename(installedAppPath, path.join(stagingDirectory, "rejected.app"))
+            .rename(installedAppPath, rejectedAppPath)
             .pipe(
               Effect.catch((cause) =>
                 Ref.set(keepBackupRef, true).pipe(
@@ -740,9 +809,12 @@ export const make = Effect.fn("DesktopPreviewApp.make")(function* (options?: {
           );
         }
         if (!(yield* cleanStaging)) {
+          const mounted = (yield* exists(mountPoint)) && (yield* isMounted);
           return yield* fail(
-            "mount",
-            `An earlier preview install is still attached at ${mountPoint}. Eject it and try again.`,
+            mounted ? "mount" : "replace",
+            mounted
+              ? `An earlier preview install is still attached at ${mountPoint}. Eject it and try again.`
+              : `Could not recover or clear an earlier preview install at ${stagingDirectory}. Check the desktop log and try again.`,
           );
         }
         yield* Effect.gen(function* () {
@@ -765,12 +837,6 @@ export const make = Effect.fn("DesktopPreviewApp.make")(function* (options?: {
               progress: null,
             });
           yield* phase("copying");
-          // Recovery may retain staging as ownership evidence; ditto must start with an empty target.
-          yield* fs
-            .remove(stagedApp, { recursive: true, force: true })
-            .pipe(
-              Effect.mapError((cause) => fail("copy", `Could not clear the staged app: ${cause}`)),
-            );
           yield* copyAppOutOfDmg(dmg, stagedApp);
           yield* fs.remove(dmg, { force: true }).pipe(Effect.ignore);
           yield* verifyStagedApp(stagedApp, asset);
@@ -811,7 +877,9 @@ export const make = Effect.fn("DesktopPreviewApp.make")(function* (options?: {
   // Deletion can fail part-way; its leftovers must never become a rollback backup.
   const moveInstalledAppOut = Effect.gen(function* () {
     yield* fs.makeDirectory(stagingDirectory, { recursive: true });
+    yield* retirePrevious;
     const removedApp = path.join(stagingDirectory, "removed.app");
+    yield* fs.remove(removedApp, { recursive: true, force: true });
     yield* fs.rename(installedAppPath, removedApp);
     yield* fs.remove(removedApp, { recursive: true, force: true });
   }).pipe(
