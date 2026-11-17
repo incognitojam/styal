@@ -253,12 +253,13 @@ it("loads an original only after selecting recovery from a failed preview", asyn
 });
 
 it.each([
+  { panelWidth: 320, imageWidth: 1280, imageHeight: 1138 },
   { panelWidth: 420, imageWidth: 1280, imageHeight: 1138 },
   { panelWidth: 719, imageWidth: 1080, imageHeight: 2400 },
 ])(
-  "matches main's intrinsic sizing for #1528 tables at $panelWidth px",
+  "matches main's #1528 table sizing with at most one neighbour rebalance at $panelWidth px",
   async ({ panelWidth, imageWidth, imageHeight }) => {
-    const view = (src: string | null, preview = true, known = 2) => (
+    const view = (src: string | null, preview = true, known = 2, loaded = 2) => (
       <div className="chat-markdown" style={{ width: panelWidth }}>
         <table>
           <thead>
@@ -275,7 +276,7 @@ it.each([
                 <td key={alt}>
                   <ChatMarkdownImage
                     key={String(preview)}
-                    src={src}
+                    src={index < loaded ? src : null}
                     alt={alt}
                     standalone
                     reserveFrame={preview}
@@ -298,20 +299,22 @@ it.each([
     const originalWidths = ["Before", "After"].map(
       (name) => screen.getByRole("img", { name }).element().getBoundingClientRect().width,
     );
-    if (panelWidth === 719) {
-      await screen.rerender(view(null, true, 0));
-      await screen.rerender(view(null, true, 1));
-      const first = screen.container.querySelector<HTMLElement>('[role="status"]')!;
-      const beforeNeighbour = first.getBoundingClientRect();
-      await screen.rerender(view(null));
-      expect(first.getBoundingClientRect().width).toBe(beforeNeighbour.width);
-      expect(first.getBoundingClientRect().height).toBe(beforeNeighbour.height);
-    } else {
-      await screen.rerender(view(null));
-    }
+    await screen.rerender(view(null, true, 0));
     const table = screen.container.querySelector("table")!;
-    expect(table.getBoundingClientRect().width).toBeLessThanOrEqual(panelWidth);
     const frames = [...table.querySelectorAll<HTMLElement>('[role="status"]')];
+    const frameSizes = () =>
+      frames.map((frame) => {
+        const { width, height } = frame.getBoundingClientRect();
+        return { width, height };
+      });
+    const initial = frameSizes();
+    expect(initial.every(({ width, height }) => width > 0 && height > 0)).toBe(true);
+    const stages = [initial];
+    await screen.rerender(view(null, true, 1));
+    stages.push(frameSizes());
+    await screen.rerender(view(null));
+    stages.push(frameSizes());
+    expect(table.getBoundingClientRect().width).toBeLessThanOrEqual(panelWidth);
     const sizes = frames.map((frame) => frame.getBoundingClientRect().height);
     expect(frames.every((frame) => frame.getBoundingClientRect().width <= panelWidth / 2)).toBe(
       true,
@@ -320,10 +323,22 @@ it.each([
       expect(Math.abs(frame.getBoundingClientRect().width - originalWidths[index]!)).toBeLessThan(
         2,
       );
-    await screen.rerender(
-      view("data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"),
-    );
+    await screen.rerender(view(source, true, 2, 1));
     await expect.element(screen.getByRole("img", { name: "Before" })).toBeVisible();
+    stages.push(frameSizes());
+    await screen.rerender(view(source));
+    await expect.element(screen.getByRole("img", { name: "After" })).toBeVisible();
+    stages.push(frameSizes());
+    for (const [index] of frames.entries()) {
+      const changes = stages.slice(1).filter((stage, step) => {
+        const before = stages[step]![index]!;
+        const after = stage[index]!;
+        return before.width !== after.width || before.height !== after.height;
+      });
+      expect(changes.length).toBeLessThanOrEqual(2);
+    }
+    expect(stages[3]).toEqual(stages[2]);
+    expect(stages[4]).toEqual(stages[2]);
     expect(frames.map((frame) => frame.getBoundingClientRect().height)).toEqual(sizes);
   },
 );
