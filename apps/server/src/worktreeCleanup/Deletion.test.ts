@@ -23,6 +23,30 @@ const setup = Effect.gen(function* () {
 });
 
 describe("regenerable path deletion", () => {
+  it.effect("keeps an ignored file while removing same-named folders with a trailing slash", () =>
+    run(
+      Effect.gen(function* () {
+        const f = yield* setup;
+        yield* f.fs.writeFileString(`${f.worktree}/.gitignore`, "**/dist\ncache/\n");
+        yield* f.write("dist");
+        yield* f.write("web/dist/output.js");
+        yield* f.write("apps/web/dist/output.js");
+        yield* f.write("cache/keep.ts");
+        yield* f.command(f.worktree, ["add", "-f", "cache/keep.ts"]);
+        yield* f.write("cache/dist/output.js");
+        expect(yield* f.clean(["cache/", "**/dist/"])).toEqual([
+          "apps/web/dist",
+          "cache/dist",
+          "web/dist",
+        ]);
+        expect(yield* f.fs.exists(`${f.worktree}/cache/keep.ts`)).toBe(true);
+        expect(yield* f.fs.readFileString(`${f.worktree}/dist`)).toBe("synthetic");
+        expect(yield* f.clean(["dist/"])).toEqual([]);
+        expect(yield* f.clean(["dist"])).toEqual(["dist"]);
+      }),
+    ),
+  );
+
   it.effect(
     "deletes ignored matches, unlinks pnpm and outside links, and keeps tracked, unignored and unlisted files",
     () =>

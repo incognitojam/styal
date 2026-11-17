@@ -7,6 +7,8 @@ import {
   STYAL_PROJECT_FILE_SCHEMA_URL,
   StyalProjectFile,
   StyalProjectFileAction,
+  WorktreeCleanupPattern,
+  WORKTREE_CLEANUP_MAX_PATTERNS,
   type ProjectConfig,
   type ProjectConfigAction,
   type T3ProjectFileScript,
@@ -41,6 +43,10 @@ const decodeStyalProjectFile = Schema.decodeUnknownExit(StyalProjectFile);
 const decodeJsonObject = Schema.decodeUnknownExit(Schema.Record(Schema.String, Schema.Unknown));
 const decodeLenientJson = Schema.decodeExit(fromLenientJson(Schema.Unknown));
 
+const cleanupPatternValidator = makeFieldValidators({ pattern: WorktreeCleanupPattern }).get(
+  "pattern",
+)!;
+
 const FILE_SHAPE = {
   fields: makeFieldValidators(StyalProjectFile.fields),
   list: {
@@ -64,7 +70,22 @@ export function parseStyalProjectFileResult(contents: string): StyalProjectFileP
   const decodedRecord = decodeJsonObject(decodedJson.value);
   if (Exit.isFailure(decodedRecord)) return { status: "invalid", file: null };
 
-  const { candidate, issues } = recoverProjectFile(decodedRecord.value, FILE_SHAPE);
+  const record = { ...decodedRecord.value };
+  const cleanupIssues: Array<ProjectFileIssue> = [];
+  if (
+    Array.isArray(record.worktreeCleanup) &&
+    record.worktreeCleanup.length <= WORKTREE_CLEANUP_MAX_PATTERNS
+  ) {
+    record.worktreeCleanup = record.worktreeCleanup.filter((pattern, index) => {
+      const problem = cleanupPatternValidator.problem(pattern);
+      if (problem === null) return true;
+      cleanupIssues.push({ path: ["worktreeCleanup", index], message: problem });
+      return false;
+    });
+  }
+  const recovered = recoverProjectFile(record, FILE_SHAPE);
+  const { candidate } = recovered;
+  const issues = [...recovered.issues, ...cleanupIssues];
   // Every value in the candidate validated alone, and the struct has no
   // cross-field rules, so this decode only applies the field transformations.
   const decoded = decodeStyalProjectFile(candidate);

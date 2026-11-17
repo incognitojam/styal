@@ -75,7 +75,7 @@ export const StyalProjectFileAction = Schema.Struct({
 export type StyalProjectFileAction = typeof StyalProjectFileAction.Type;
 
 export function worktreeCleanupPatternProblem(pattern: string): string | null {
-  const segments = pattern.split("/");
+  const segments = (pattern.endsWith("/") ? pattern.slice(0, -1) : pattern).split("/");
   let rule: string | null = null;
   if (pattern.length === 0 || pattern.length > 512) rule = "use 1 to 512 characters";
   else if (/^[a-zA-Z]:/.test(pattern)) rule = "use a relative path without a drive prefix";
@@ -86,7 +86,7 @@ export function worktreeCleanupPatternProblem(pattern: string): string | null {
     rule = "only * and ** wildcards are supported; ?, [, ], { and } are not allowed";
   else if (segments.some((segment) => segment.toLowerCase() === ".git")) rule = ".git is protected";
   else if (segments.some((segment) => segment === "" || segment === "." || segment === ".."))
-    rule = "use relative nonempty segments without . or ..";
+    rule = 'use relative nonempty segments without "." or ".." segments';
   else if (segments.some((segment) => segment.includes("**") && segment !== "**"))
     rule = "** must occupy a whole segment";
   else if (!segments.at(-1)!.replaceAll("*", "").length)
@@ -94,18 +94,50 @@ export function worktreeCleanupPatternProblem(pattern: string): string | null {
   return rule === null ? null : `Invalid cleanup pattern ${JSON.stringify(pattern)}: ${rule}.`;
 }
 
-export const WorktreeCleanupPatterns = Schema.Array(
-  Schema.String.pipe(
+export const WORKTREE_CLEANUP_MAX_PATTERNS = 100;
+
+// JSON Schema cannot export the procedural validator; keep this syntax in sync with it.
+const cleanupPatternSyntax =
+  /^(?!\s*[a-zA-Z]:)(?![\s\S]*[\\!?[\]{}])(?!\s*(?:\.{1,2}|[.][gG][iI][tT])(?:\/|\s*$))(?![\s\S]*\/(?:\.{1,2}|[.][gG][iI][tT])(?:\/|\s*$))\s*(?=\S)(?:(?:\*\*|(?:[^/*]|\*(?!\*))+)\/)*(?=[^/]*(?:[^\s/]|\/\s*$))(?!\*+\/?\s*$)(?:[^/*]|\*(?!\*))+\/?\s*$/u;
+
+const normalizeCleanupPattern = (pattern: string) => pattern.trim();
+
+export const WorktreeCleanupPattern = Schema.String.annotate({
+  description:
+    "Worktree-relative path using forward slashes; a single trailing / is optional and matches folders only; without it, files and folders match. Surrounding whitespace is removed. Only * (within a segment) and ** (a whole segment) wildcards are supported. No drive prefix, !, ?, [, ], {, }, empty, . or .. segments, or .git segments (case-insensitive). The last segment must contain a literal character. Use 1 to 512 characters.",
+})
+  .check(
+    Schema.makeFilter(
+      (pattern) =>
+        worktreeCleanupPatternProblem(
+          pattern.length > 512 ? pattern : normalizeCleanupPattern(pattern),
+        ) ?? true,
+      {
+        toJsonSchema: () => ({
+          pattern: cleanupPatternSyntax.source,
+          minLength: 1,
+          maxLength: 512,
+        }),
+      },
+    ),
+  )
+  .pipe(
     Schema.decodeTo(
       Schema.String.check(
         Schema.makeFilter((pattern) => worktreeCleanupPatternProblem(pattern) ?? true),
         Schema.isMinLength(1),
         Schema.isMaxLength(512),
       ),
-      SchemaTransformation.trim(),
+      SchemaTransformation.transform({
+        decode: normalizeCleanupPattern,
+        encode: (pattern) => pattern,
+      }),
     ),
-  ),
-).check(Schema.isMaxLength(100));
+  );
+
+export const WorktreeCleanupPatterns = Schema.Array(WorktreeCleanupPattern).check(
+  Schema.isMaxLength(WORKTREE_CLEANUP_MAX_PATTERNS),
+);
 
 export const StyalProjectFile = Schema.Struct({
   $schema: Schema.optionalKey(

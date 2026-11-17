@@ -154,6 +154,19 @@ describe("parseStyalProjectFileResult", () => {
     },
   );
 
+  it("drops only the invalid worktreeCleanup pattern (#1521)", () => {
+    const result = parseStyalProjectFileResult(
+      json({ worktreeCleanup: ["node_modules//", "web/dist", "node_modules/"] }),
+    );
+    expect(result.file?.worktreeCleanup).toEqual(["web/dist", "node_modules/"]);
+    expect(result.status === "partial" && result.issues).toEqual([
+      {
+        path: ["worktreeCleanup", 0],
+        message: expect.stringContaining('Invalid cleanup pattern "node_modules//"'),
+      },
+    ]);
+  });
+
   it("keeps the first actions of an over-long list", () => {
     const actions = Array.from({ length: STYAL_PROJECT_FILE_MAX_ACTIONS + 5 }, (_, index) => ({
       name: `Action ${index}`,
@@ -277,6 +290,15 @@ describe("buildStyalProjectFileJsonSchema", () => {
     expect(schema.$id).toBe("https://styal.build/schema/styal.json");
     expect(schema.additionalProperties).toBe(false);
     expect(Object.keys(schema.properties as object)).toEqual(Object.keys(StyalProjectFile.fields));
+  });
+  it("rejects worktreeCleanup patterns that styal rejects (#1521)", () => {
+    const schema = buildStyalProjectFileJsonSchema();
+    const items = (schema.properties as Record<string, { items: { pattern?: string } }>)
+      .worktreeCleanup!.items;
+    expect(items.pattern).toBeDefined();
+    expect(items).toMatchObject({ minLength: 1, maxLength: 512 });
+    expect(new RegExp(items.pattern!, "u").test("node_modules//")).toBe(false);
+    expect(new RegExp(items.pattern!, "u").test("node_modules/")).toBe(true);
   });
 });
 

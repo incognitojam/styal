@@ -74,7 +74,8 @@ run often (dev server, tests, lint, build). Prefer existing scripts over inlined
 - **Regenerable files** (\`worktreeCleanup\`): for dependencies and build output, list patterns
   instead of writing a settle script, for example \`"worktreeCleanup": ["**/node_modules", "dist"]\`.
   Patterns are relative to the worktree root (\`*\` within one segment, \`**\` across segments) and
-  only git-ignored paths qualify; never list \`.env\`, notes, local state or anything setup cannot
+  use forward slashes, no !, .git, empty, . or .. segments, and a literal in the final segment;
+  A trailing slash matches folders only. Only git-ignored paths qualify; never list \`.env\`, notes, local state or anything setup cannot
   recreate. styal uses a pattern only after a person approves it on each machine in Settings →
   Worktrees → Regenerable files; you can propose patterns in the file but cannot approve them. A
   pattern removed from the file keeps its approval until someone chooses **Forget**. On macOS and
