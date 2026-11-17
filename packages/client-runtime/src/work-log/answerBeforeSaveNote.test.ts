@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { answerBeforeSaveNoteEntryId, type SaveNoteStep } from "./answerBeforeSaveNote.js";
-import type { WorkLogPresentationEntry } from "./presentation.js";
+import { answerBeforeSaveNoteEntryId, type SaveNoteStep } from "./answerBeforeSaveNote.ts";
+import type { WorkLogPresentationEntry } from "./presentation.ts";
 
 const answer =
   "I've opened the PR and started the follow-up on a branch stacked on top of it. The PR has before and after screenshots at desktop and phone sizes.";
