@@ -32,25 +32,27 @@ jobs:
             /.github/
           sparse-checkout-cone-mode: false
 
-      # Sparse checkout implies --filter=blob:none, and the upstream scripts read file
-      # contents across history. One refetch replaces hundreds of on-demand blob fetches.
-      - name: Fetch full file contents
+      # Preserve lazy blob fetching for snapshots outside main's history; refetching
+      # all historical blobs also makes the separate upstream fetch needlessly expensive.
+      - name: Fetch comparison snapshots
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          git config --unset remote.origin.promisor || true
-          git config --unset remote.origin.partialclonefilter || true
-          git fetch --refetch --no-tags origin
+          git fetch --filter=blob:none --no-tags origin "$BASE_SHA" \
+            "+${HEAD_SHA}:refs/remotes/pr/head"
 
       - name: Setup Node
         uses: actions/setup-node@v7
         with:
           node-version: "24"
 
-      - name: Fetch pull request and upstream main
-        env:
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+      - name: Fetch upstream main
         run: |
-          git fetch --no-tags origin "+refs/pull/${PR_NUMBER}/head:refs/remotes/pr/head"
-          git fetch --no-tags https://github.com/pingdotgg/t3code.git '+refs/heads/main:refs/remotes/upstream/main'
+          git remote add upstream https://github.com/pingdotgg/t3code.git
+          git config remote.upstream.promisor true
+          git config remote.upstream.partialclonefilter blob:none
+          git fetch --filter=blob:none --no-tags upstream '+refs/heads/main:refs/remotes/upstream/main'
 
       - name: Test trusted quiet publisher
         run: node --test .github/scripts/quiet-report.test.cjs
