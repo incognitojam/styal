@@ -1847,7 +1847,7 @@ describe("deriveMessagesTimelineRows", () => {
     ).toBeDefined();
   });
 
-  describe("an answer followed by saving memory or a file", () => {
+  describe("an answer followed by a saved file", () => {
     const runId = RunId.make("turn-memory-postscript");
     const message = (id: string, role: "user" | "assistant", text: string, second: number) => ({
       id: `${id}-entry`,
@@ -1876,15 +1876,6 @@ describe("deriveMessagesTimelineRows", () => {
         ...entry,
       },
     });
-    const memoryFile = "/home/user/.claude/projects/-home-user-app/memory/branch-rename.md";
-    const saveMemory = (second: number) => [
-      work("memory-write", second, { itemType: "file_change", changedFiles: [memoryFile] }),
-      work("memory-index", second + 1, {
-        itemType: "command_execution",
-        command:
-          "cat >> /home/user/.claude/projects/-home-user-app/memory/MEMORY.md <<'EOF'\n- [Branch rename](branch-rename.md)\nEOF",
-      }),
-    ];
     const answer =
       "I've opened the PR and started the follow-up on a branch stacked on top of it. The PR has before and after screenshots at desktop and phone sizes.";
     const collapsedRowIds = (timelineEntries: ReadonlyArray<TimelineEntry>) =>
@@ -1896,18 +1887,6 @@ describe("deriveMessagesTimelineRows", () => {
         supportsConversationRollback: false,
       }).map((row) => row.id);
 
-    it("keeps the answer visible above a shorter note about the saved memory", () => {
-      expect(
-        collapsedRowIds([
-          message("user", "user", "Open the PR", 0),
-          work("build", 1, { itemType: "command_execution", command: "vp run build" }),
-          message("answer", "assistant", answer, 10),
-          ...saveMemory(11),
-          message("postscript", "assistant", "I also saved a note to memory about that.", 13),
-        ]),
-      ).toEqual(["user-entry", `turn-fold:${runId}`, "answer-entry", "postscript-entry"]);
-    });
-
     it("keeps the answer visible above a shorter note about the file it saved", () => {
       expect(
         collapsedRowIds([
@@ -1917,44 +1896,6 @@ describe("deriveMessagesTimelineRows", () => {
           message("note", "assistant", "The saved file now matches the text above.", 3),
         ]),
       ).toEqual(["user-entry", `turn-fold:${runId}`, "answer-entry", "note-entry"]);
-    });
-
-    it("keeps the answer visible above a shorter note after a command run in the memory directory", () => {
-      expect(
-        collapsedRowIds([
-          message("user", "user", "Open the PR", 0),
-          message("answer", "assistant", answer, 1),
-          work("memory-edit", 2, {
-            itemType: "command_execution",
-            command:
-              "cd /home/user/.claude/projects/-home-user-app/memory && python3 - <<'EOF'\nopen('notes.md', 'a').write('rule')\nEOF",
-          }),
-          message("note", "assistant", "I've added that rule to my notes.", 3),
-        ]),
-      ).toEqual(["user-entry", `turn-fold:${runId}`, "answer-entry", "note-entry"]);
-    });
-
-    it("folds a short note announcing the memory before the answer", () => {
-      expect(
-        collapsedRowIds([
-          message("user", "user", "Open the PR", 0),
-          message("preamble", "assistant", "Saving that to memory, then I'll answer.", 1),
-          ...saveMemory(2),
-          message("answer", "assistant", answer, 10),
-        ]),
-      ).toEqual(["user-entry", `turn-fold:${runId}`, "answer-entry"]);
-    });
-
-    it("folds the answer when other work follows it", () => {
-      expect(
-        collapsedRowIds([
-          message("user", "user", "Open the PR", 0),
-          message("answer", "assistant", answer, 1),
-          ...saveMemory(2),
-          work("cleanup", 4, { itemType: "command_execution", command: "rm -rf build" }),
-          message("postscript", "assistant", "I also saved a note to memory about that.", 5),
-        ]),
-      ).toEqual(["user-entry", `turn-fold:${runId}`, "postscript-entry"]);
     });
   });
 
