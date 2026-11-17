@@ -59,13 +59,13 @@ const nativeRun = { id: 1, run_attempt: 1, html_url: 'https://example.invalid/na
 const response = path.includes('/workflows/fork-macos.yml/runs?')
   ? { workflow_runs: process.env.NATIVE_RUN_STATE === 'failure'
       ? [nativeRun, { ...nativeRun, id: 2, head_branch: 'intake/another', conclusion: 'failure' }] : [nativeRun] }
-  : path.includes('/attempts/1/jobs?') ? { jobs: [{ name: 'Fork Mobile Native Lint', status: 'completed', conclusion: 'success' }] }
+  : path.includes('/attempts/1/jobs?') ? { jobs: [{ name: 'Fork Mobile Native Lint', status: 'completed', conclusion: 'success' }, { name: 'Fork Browser Calibration (macOS)', status: 'completed', conclusion: process.env.NATIVE_RUN_STATE }] }
   : path.endsWith('rules/branches/main')
-  ? [{ type: 'required_status_checks', parameters: { required_status_checks: [{ context: 'Synthetic required check' }] } }]
+  ? [{ type: 'required_status_checks', parameters: { required_status_checks: [{ context: 'Synthetic required check' }, { context: 'Fork Mobile Native Lint' }] } }]
   : path.includes('/check-suites?') ? { check_suites: [] }
   : path.includes('/check-runs?') ? { check_runs: [] }
   : path.includes('/actions/runs?') ? { workflow_runs: [] }
-  : path.includes('/statuses?') ? [{ id: 1, context: 'Synthetic required check', state: process.env.GUARD_STATE }]
+  : path.includes('/statuses?') ? [{ id: 1, context: 'Synthetic required check', state: process.env.GUARD_STATE }, { id: 2, context: 'Fork Mobile Native Lint', state: 'success' }]
   : undefined;
 if (!response) process.exit(2);
 console.log(JSON.stringify(process.argv.includes("--slurp") ? [response] : response));
