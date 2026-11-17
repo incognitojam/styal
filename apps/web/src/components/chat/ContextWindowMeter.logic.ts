@@ -17,10 +17,16 @@ import { getDisplayModelName, type ModelEsque } from "./providerIconUtils";
 const CLAUDE_PROMPT_CACHE_FALLBACK_MS = 60 * 60_000;
 // Warn only for models known to send effort per request. New models may send
 // perTurnEffort in conversation history, where changing effort preserves the cache.
+// Fable 5 and Sonnet 5.5 are unmeasured; omit them to avoid unsupported warnings.
 const CLAUDE_PER_REQUEST_EFFORT_MODELS: ReadonlySet<string> = new Set([
   "claude-opus-5",
   "claude-sonnet-5",
-  "claude-haiku-5",
+  "claude-opus-4-8",
+  "claude-opus-4-7",
+  "claude-opus-4-6",
+  "claude-opus-4-5",
+  "claude-sonnet-4-6",
+  "claude-haiku-4-5",
 ]);
 
 export function resolveCacheLossBaseline(input: {

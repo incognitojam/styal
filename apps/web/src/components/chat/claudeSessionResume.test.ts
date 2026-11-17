@@ -84,18 +84,22 @@ describe("claudeSelectionCacheLoss", () => {
     ).toBe("model");
   });
 
-  it("reports an effort change on a model that sends effort per request", () => {
-    expect(
-      claudeSelectionCacheLoss({
-        ...warmThread,
-        current: selection("claude-sonnet-5", [{ id: "effort", value: "high" }]),
-        next: selection("claude-sonnet-5", [{ id: "effort", value: "medium" }]),
-      }),
-    ).toBe("effort");
-  });
+  it.each(["claude-sonnet-5", "claude-opus-4-8"])(
+    "reports an effort change on a per-request model: %s",
+    (model) => {
+      expect(
+        claudeSelectionCacheLoss({
+          ...warmThread,
+          current: selection(model, [{ id: "effort", value: "high" }]),
+          next: selection(model, [{ id: "effort", value: "medium" }]),
+        }),
+      ).toBe("effort");
+    },
+  );
 
   it.each([
     "claude-opus-5-5",
+    "claude-fable-5",
     "claude-fable-5-1",
     "claude-fable-5-2",
     "claude-haiku-5-5",
