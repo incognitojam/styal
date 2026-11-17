@@ -89,14 +89,14 @@ const make = Effect.gen(function* () {
     if (
       info._tag === "None" ||
       info.value.type !== "File" ||
-      info.value.size > 4 * 1024 * 1024 + 8
+      info.value.size > 20 * 1024 * 1024 + 10 + 65_535
     ) {
       yield* remove(name);
       continue;
     }
     const stored = yield* fs.readFile(path.join(directory, name)).pipe(Effect.option);
     if (stored._tag === "Some" && stored.value.length >= 8) {
-      const expires = Buffer.from(stored.value).readDoubleBE(0);
+      const expires = Buffer.from(stored.value.subarray(0, 8)).readDoubleBE(0);
       if (Number.isFinite(expires))
         entries.set(name, { size: stored.value.length, expires, used: expires - 300_000 });
       else yield* remove(name);
@@ -114,7 +114,7 @@ const make = Effect.gen(function* () {
       yield* digest.digest(
         Digest.sha256,
         new TextEncoder().encode(
-          `${input.identity.length}:${input.identity}:${input.preview.width}:webp-lossless-v4`,
+          `${input.identity.length}:${input.identity}:${input.preview.width}:webp-lossless-v5`,
         ),
       ),
     );
@@ -122,13 +122,21 @@ const make = Effect.gen(function* () {
     const entry = entries.get(key);
     if (entry && entry.expires > now) {
       const bytes = yield* fs.readFile(path.join(directory, key)).pipe(Effect.option);
-      if (bytes._tag === "Some") {
-        entry.used = now;
-        return {
-          bytes: bytes.value.subarray(8),
-          contentType: "image/webp",
-          expiresAt: entry.expires,
-        };
+      if (bytes._tag === "Some" && bytes.value.length >= 10) {
+        const stored = Buffer.from(
+          bytes.value.buffer,
+          bytes.value.byteOffset,
+          bytes.value.byteLength,
+        );
+        const bodyOffset = 10 + stored.readUInt16BE(8);
+        if (bodyOffset > 10 && bodyOffset < stored.length) {
+          entry.used = now;
+          return {
+            bytes: stored.subarray(bodyOffset),
+            contentType: stored.toString("utf8", 10, bodyOffset),
+            expiresAt: entry.expires,
+          };
+        }
       }
     }
     const running = active.get(key);
@@ -209,13 +217,22 @@ const make = Effect.gen(function* () {
           return bytes;
         }).pipe(Effect.uninterruptible);
         if (bytes === null) return { ...source, expiresAt: now + 300_000 };
-        if (bytes.length > 4 * 1024 * 1024) return yield* new ImagePreviewError({});
+        const original = bytes.length >= source.bytes.length;
+        if (!original && bytes.length > 4 * 1024 * 1024) return yield* new ImagePreviewError({});
         const written = yield* Clock.currentTimeMillis;
-        const header = Buffer.alloc(8);
-        header.writeDoubleBE(written + 300_000);
-        const stored = Buffer.concat([header, bytes]);
+        const result = {
+          ...(original ? source : { bytes, contentType: "image/webp" }),
+          expiresAt: written + 300_000,
+        };
+        const contentType = Buffer.from(result.contentType);
+        if (contentType.length > 65_535) return result;
+        const header = Buffer.alloc(10 + contentType.length);
+        header.writeDoubleBE(result.expiresAt);
+        header.writeUInt16BE(contentType.length, 8);
+        contentType.copy(header, 10);
+        const stored = Buffer.concat([header, result.bytes]);
         const room = yield* prune(stored.length);
-        if (!room) return { bytes, contentType: "image/webp", expiresAt: written + 300_000 };
+        if (!room) return result;
         const temporary = path.join(directory, `${key}.tmp`);
         yield* fs.writeFile(temporary, stored, { flag: "wx" }).pipe(
           Effect.andThen(fs.rename(temporary, path.join(directory, key))),
@@ -227,7 +244,7 @@ const make = Effect.gen(function* () {
           Effect.ensuring(fs.remove(temporary).pipe(Effect.ignore)),
           Effect.ignore,
         );
-        return { bytes, contentType: "image/webp", expiresAt: written + 300_000 };
+        return result;
       }).pipe(lock.withPermit);
     }).pipe(
       Effect.mapError(() => new ImagePreviewError({})),

@@ -28,6 +28,35 @@ it.effect(
           .png()
           .toBuffer(),
       );
+      const pixels = Buffer.alloc(400 * 320 * 3);
+      let seed = 7;
+      for (let index = 0; index < pixels.length; index += 3) {
+        seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+        const noise = (seed >>> 24) % 100 < 1 ? (seed >>> 16) & 3 : 0;
+        pixels[index] = 244 - noise;
+        pixels[index + 1] = 246 - noise;
+        pixels[index + 2] = 250 - noise;
+      }
+      const bars = Array.from(
+        { length: 20 },
+        (_, index) =>
+          `<rect x="16" y="${12 + index * 15}" width="${368 - index * 3}" height="5" fill="${index % 3 ? "#283247" : "#0865cf"}"/>`,
+      ).join("");
+      const noisyBytes = yield* Effect.promise(() =>
+        sharp(pixels, { raw: { width: 400, height: 320, channels: 3 } })
+          .composite([{ input: Buffer.from(`<svg width="400" height="320">${bars}</svg>`) }])
+          .png({ compressionLevel: 9 })
+          .toBuffer(),
+      );
+      let noisyFetches = 0;
+      const noisy = {
+        identity: "synthetic-noisy-screenshot",
+        preview: { width: 320 as const },
+        fetch: Effect.sync(() => {
+          noisyFetches++;
+          return { bytes: noisyBytes, contentType: "image/png" };
+        }),
+      };
       const input = {
         identity: "synthetic-account/repository/revision",
         preview: { width: 320 as const },
@@ -45,6 +74,11 @@ it.effect(
       );
       const run = Effect.gen(function* () {
         const previews = yield* Preview.PullRequestImagePreview;
+        const original = yield* previews.read(noisy);
+        expect(original.bytes).toEqual(noisyBytes);
+        expect(original.contentType).toBe("image/png");
+        expect(yield* previews.read(noisy)).toEqual(original);
+        expect(noisyFetches).toBe(1);
         const result = yield* previews.read(input);
         const metadata = yield* Effect.promise(() => sharp(result.bytes).metadata());
         expect(result.contentType).toBe("image/webp");
@@ -133,6 +167,10 @@ it.effect(
       yield* run.pipe(Effect.provide(layer));
       yield* Effect.gen(function* () {
         const previews = yield* Preview.PullRequestImagePreview;
+        const persisted = yield* previews.read(noisy);
+        expect(persisted.bytes).toEqual(noisyBytes);
+        expect(persisted.contentType).toBe("image/png");
+        expect(noisyFetches).toBe(1);
         const cached = yield* previews.read(input);
         expect(fetches).toBe(4);
         yield* TestClock.adjust("4 minutes");
