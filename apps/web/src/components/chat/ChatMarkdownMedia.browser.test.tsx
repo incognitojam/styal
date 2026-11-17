@@ -197,7 +197,7 @@ it.each([
     const before = frame.getBoundingClientRect();
     expect(before.width).toBeGreaterThan(0);
     expect(before.height).toBeGreaterThan(0);
-    expect(before.width).toBe(width);
+    expect(before.width).toBe(height ? width : 120);
     const loaded = new Promise<EventTarget | null>((resolve) => {
       frame.addEventListener(
         "load",
@@ -212,7 +212,7 @@ it.each([
       <ChatMarkdownImage
         {...pending.props}
         sourceDimensions={{ width: 120, height: 40 }}
-        src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+        src={`data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="120" height="40"/>')}`}
       />,
     );
     const loadedImage = await loaded;
@@ -221,8 +221,8 @@ it.each([
     expect(image.element()).toBe(loadedImage);
     expect(frame.getAttribute("role")).toBeNull();
     expect(frame.getAttribute("aria-label")).toBeNull();
-    expect(frame.getBoundingClientRect().width).toBe(before.width);
-    expect(frame.getBoundingClientRect().height).toBe(before.height);
+    expect(image.element().getBoundingClientRect().width).toBe(before.width);
+    expect(image.element().getBoundingClientRect().height).toBe(before.height);
   },
 );
 
@@ -304,7 +304,11 @@ it.each([
     const frames = [...table.querySelectorAll<HTMLElement>('[role="status"]')];
     const frameSizes = () =>
       frames.map((frame) => {
-        const { width, height } = frame.getBoundingClientRect();
+        const image = frame.querySelector<HTMLImageElement>("img:not([aria-hidden])");
+        const sizingImage = frame.querySelector<HTMLImageElement>("img[aria-hidden]");
+        const { width, height } = (
+          frame.getAttribute("role") === "status" ? (sizingImage ?? frame) : image!
+        ).getBoundingClientRect();
         return { width, height };
       });
     const initial = frameSizes();
@@ -339,6 +343,125 @@ it.each([
     }
     expect(stages[3]).toEqual(stages[2]);
     expect(stages[4]).toEqual(stages[2]);
-    expect(frames.map((frame) => frame.getBoundingClientRect().height)).toEqual(sizes);
+    expect(frameSizes().map(({ height }) => height)).toEqual(sizes);
+  },
+);
+
+it.each([
+  { panelWidth: 320, sourceWidth: 1280, sourceHeight: 800 },
+  { panelWidth: 420, sourceWidth: 1280, sourceHeight: 800 },
+  { panelWidth: 719, sourceWidth: 1280, sourceHeight: 800 },
+  { panelWidth: 420, sourceWidth: 1760, sourceHeight: 1233 },
+])(
+  "keeps loaded images identical to main's plain img at $panelWidth px ($sourceWidth × $sourceHeight)",
+  async ({ panelWidth, sourceWidth, sourceHeight }) => {
+    const original = `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="${sourceWidth}" height="${sourceHeight}"/>`)}`;
+    const preview = `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="640" height="${Math.round((640 * sourceHeight) / sourceWidth)}"/>`)}`;
+    const view = (resized: boolean) => (
+      <div className="chat-markdown" style={{ width: panelWidth }}>
+        <p>
+          {resized ? (
+            <ChatMarkdownImage
+              src={preview}
+              alt="Outside"
+              standalone
+              reserveFrame
+              sourceDimensions={{ width: sourceWidth, height: sourceHeight }}
+              copyMarkdown={undefined}
+              actionsSource={{ kind: "image", name: "Outside", src: preview }}
+            />
+          ) : (
+            <img
+              alt="Outside"
+              src={original}
+              className="h-auto w-auto object-contain max-h-[30rem] max-w-[min(100%,30rem)]"
+            />
+          )}
+        </p>
+        <table>
+          <thead>
+            <tr>
+              <th>Case</th>
+              <th>Before</th>
+              <th>After</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Screenshot</td>
+              {["Before", "After"].map((alt) => (
+                <td key={alt}>
+                  {resized ? (
+                    <ChatMarkdownImage
+                      src={preview}
+                      alt={alt}
+                      standalone
+                      reserveFrame
+                      sourceDimensions={{ width: sourceWidth, height: sourceHeight }}
+                      copyMarkdown={undefined}
+                      actionsSource={{ kind: "image", name: alt, src: preview }}
+                    />
+                  ) : (
+                    <img
+                      src={original}
+                      alt={alt}
+                      className="h-auto w-auto object-contain max-h-[30rem] max-w-[min(100%,30rem)]"
+                    />
+                  )}
+                </td>
+              ))}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    );
+    await using screen = await render(view(false));
+    const measure = () => {
+      const root = screen.container.querySelector(".chat-markdown")!.getBoundingClientRect();
+      return [...screen.container.querySelectorAll<HTMLImageElement>('img[alt]:not([alt=""])')].map(
+        (img) => {
+          const box = img.getBoundingClientRect();
+          const css = getComputedStyle(img);
+          return {
+            x: box.x - root.x,
+            y: box.y - root.y,
+            width: box.width,
+            height: box.height,
+            border: css.border,
+            borderRadius: css.borderRadius,
+            padding: css.padding,
+            margin: css.margin,
+            shadow: css.boxShadow,
+            background: css.backgroundColor,
+          };
+        },
+      );
+    };
+    await vi.waitFor(() =>
+      expect(
+        [...screen.container.querySelectorAll("img")].every(
+          (img) => img.complete && img.naturalWidth > 0,
+        ),
+      ).toBe(true),
+    );
+    const baseline = measure();
+    const columns = [...screen.container.querySelectorAll("tbody td")].map(
+      (td) => td.getBoundingClientRect().width,
+    );
+    await screen.rerender(view(true));
+    await vi.waitFor(() => expect(screen.container.querySelector('[role="status"]')).toBeNull());
+    expect(measure()).toEqual(baseline);
+    expect(
+      [...screen.container.querySelectorAll("tbody td")].map(
+        (td) => td.getBoundingClientRect().width,
+      ),
+    ).toEqual(columns);
+    for (const img of screen.container.querySelectorAll('img[alt]:not([alt=""])')) {
+      const css = getComputedStyle(img.parentElement!);
+      expect(css.borderWidth).toBe("0px");
+      expect(css.borderRadius).toBe("0px");
+      expect(css.padding).toBe("0px");
+      expect(css.backgroundColor).toBe("rgba(0, 0, 0, 0)");
+    }
   },
 );

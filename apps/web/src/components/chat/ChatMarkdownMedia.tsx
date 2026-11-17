@@ -74,7 +74,7 @@ export function authoredImageSizeStyle(
       maxWidth: `min(100%, 30rem, ${(maxHeightRem * parsedWidth) / parsedHeight}rem)`,
     };
   }
-  if (hasWidth) return { width: parsedWidth, maxWidth: `min(100%, 30rem, ${parsedWidth}px)` };
+  if (hasWidth) return { maxWidth: `min(100%, 30rem, ${parsedWidth}px)` };
   if (hasHeight) return { maxHeight: `min(30rem, ${parsedHeight}px)` };
   return undefined;
 }
@@ -199,7 +199,7 @@ export function ChatMarkdownImage(props: {
   const settled = src !== null && !failed && (!props.standalone || loadedSrc !== null);
   const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
   const [tinySize, setTinySize] = useState<{ width: number; height: number } | null>(null);
-  const framed = props.reserveFrame || !settled;
+  const framed = !settled;
   const size = props.sourceDimensions ?? tinySize ?? naturalSize;
   const authoredRatio =
     typeof props.style?.aspectRatio === "string"
@@ -225,6 +225,8 @@ export function ChatMarkdownImage(props: {
   // The in-flow sizing image preserves an original's intrinsic contribution to table columns.
   const intrinsicWidth =
     typeof props.style?.width === "number" ? props.style.width : (naturalWidth ?? 480);
+  const intrinsicHeight =
+    size && intrinsicWidth === size.width && !authoredRatio ? size.height : intrinsicWidth / ratio;
   const hasIntrinsicSize = size !== null || typeof props.style?.width === "number";
   const frameStyle = props.reserveFrame
     ? {
@@ -235,6 +237,12 @@ export function ChatMarkdownImage(props: {
         maxWidth: `min(${bounds.join(", ")})`,
       }
     : props.style;
+  const loadedStyle = {
+    ...(props.reserveFrame && props.sourceDimensions
+      ? { aspectRatio: String(props.sourceDimensions.width / props.sourceDimensions.height) }
+      : {}),
+    ...props.style,
+  };
   // Cached images are complete before `onLoad` can fire.
   const markLoadedIfComplete = (image: HTMLImageElement | null) => {
     if (!image) return;
@@ -283,7 +291,7 @@ export function ChatMarkdownImage(props: {
             props.className,
             props.onImageExpand && "cursor-zoom-in",
           )}
-          style={props.style}
+          style={loadedStyle}
           {...expandableMarkdownImageProps(props.onImageExpand, props.alt)}
           {...imageEvents(src)}
         />
@@ -310,65 +318,69 @@ export function ChatMarkdownImage(props: {
     );
   }
   return (
-    <MediaActions source={props.actionsSource}>
-      <span
-        id={props.imageProps?.id}
-        data-markdown-copy={props.copyMarkdown}
-        className={cn(
-          CHAT_MARKDOWN_MEDIA_LAYOUT_CLASS_NAME,
-          framed ? CHAT_MARKDOWN_IMAGE_FRAME_CLASS_NAME : undefined,
-          framed ? "relative" : undefined,
-        )}
-        style={framed ? frameStyle : undefined}
-        {...(failed
-          ? { role: "alert" as const }
-          : settled
-            ? {}
-            : { role: "status" as const, "aria-label": "Loading image" })}
-      >
-        {props.reserveFrame && hasIntrinsicSize ? (
-          <img
-            aria-hidden
-            alt=""
-            src={`data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="${intrinsicWidth}" height="${intrinsicWidth / ratio}"/>`)}`}
-            className={CHAT_MARKDOWN_IMAGE_SIZE_CLASS_NAME}
-            style={{ width: intrinsicWidth, aspectRatio: String(ratio) }}
-          />
-        ) : null}
-        {!failed && !settled && props.reserveFrame ? (
-          <span
-            aria-hidden
-            className="absolute inset-0 flex items-center justify-center text-muted-foreground"
-          >
-            <ImageIcon className="size-6" />
-          </span>
-        ) : null}
-        {props.placeholderSrc && !failed && !settled ? (
-          <img
-            src={props.placeholderSrc}
-            alt=""
-            aria-hidden
-            onLoad={(event) => {
-              const image = event.currentTarget;
-              if (!naturalSize)
-                setTinySize(
-                  (current) =>
-                    current ?? { width: image.naturalWidth, height: image.naturalHeight },
-                );
-            }}
-            className="absolute inset-0 size-full object-contain blur-sm"
-          />
-        ) : null}
-        {failed ? (
-          <span className="flex size-full items-center justify-center p-2 text-center text-xs text-muted-foreground">
-            <ChatMarkdownMediaUnavailableLabel alt={props.alt} detail={props.unavailableDetail} />
-            {props.onViewOriginal ? (
-              <button type="button" onClick={props.onViewOriginal}>
-                View original
-              </button>
-            ) : null}
-          </span>
-        ) : src !== null ? (
+    <span
+      id={props.imageProps?.id}
+      data-markdown-copy={props.copyMarkdown}
+      className={cn(
+        settled ? "contents" : CHAT_MARKDOWN_MEDIA_LAYOUT_CLASS_NAME,
+        framed
+          ? props.reserveFrame
+            ? "w-full bg-muted/60"
+            : CHAT_MARKDOWN_IMAGE_FRAME_CLASS_NAME
+          : undefined,
+        framed ? "relative" : undefined,
+      )}
+      style={framed ? frameStyle : undefined}
+      {...(failed
+        ? { role: "alert" as const }
+        : settled
+          ? {}
+          : { role: "status" as const, "aria-label": "Loading image" })}
+    >
+      {props.reserveFrame && hasIntrinsicSize && !settled ? (
+        <img
+          aria-hidden
+          alt=""
+          src={`data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="${intrinsicWidth}" height="${intrinsicHeight}"/>`)}`}
+          className={cn(CHAT_MARKDOWN_IMAGE_SIZE_CLASS_NAME, "block!")}
+          width={intrinsicWidth}
+          height={intrinsicHeight}
+        />
+      ) : null}
+      {!failed && !settled && props.reserveFrame ? (
+        <span
+          aria-hidden
+          className="absolute inset-0 flex items-center justify-center text-muted-foreground"
+        >
+          <ImageIcon className="size-6" />
+        </span>
+      ) : null}
+      {props.placeholderSrc && !failed && !settled ? (
+        <img
+          src={props.placeholderSrc}
+          alt=""
+          aria-hidden
+          onLoad={(event) => {
+            const image = event.currentTarget;
+            if (!naturalSize)
+              setTinySize(
+                (current) => current ?? { width: image.naturalWidth, height: image.naturalHeight },
+              );
+          }}
+          className="absolute inset-0 size-full object-contain blur-sm"
+        />
+      ) : null}
+      {failed ? (
+        <span className="flex size-full items-center justify-center p-2 text-center text-xs text-muted-foreground">
+          <ChatMarkdownMediaUnavailableLabel alt={props.alt} detail={props.unavailableDetail} />
+          {props.onViewOriginal ? (
+            <button type="button" onClick={props.onViewOriginal}>
+              View original
+            </button>
+          ) : null}
+        </span>
+      ) : src !== null ? (
+        <MediaActions source={props.actionsSource}>
           <img
             ref={markLoadedIfComplete}
             src={src}
@@ -379,27 +391,21 @@ export function ChatMarkdownImage(props: {
             {...props.imageProps}
             data-markdown-copy={props.copyMarkdown}
             className={
-              props.reserveFrame
+              settled
                 ? cn(
-                    "absolute inset-0 size-full object-contain",
-                    !settled && "invisible",
+                    CHAT_MARKDOWN_IMAGE_SIZE_CLASS_NAME,
+                    props.className,
                     props.onImageExpand && "cursor-zoom-in",
                   )
-                : settled
-                  ? cn(
-                      CHAT_MARKDOWN_IMAGE_SIZE_CLASS_NAME,
-                      props.className,
-                      props.onImageExpand && "cursor-zoom-in",
-                    )
-                  : "invisible absolute inset-0 size-full"
+                : "invisible absolute inset-0 size-full"
             }
-            style={settled && !props.reserveFrame ? props.style : undefined}
+            style={settled ? loadedStyle : undefined}
             {...expandableMarkdownImageProps(props.onImageExpand, props.alt)}
             {...imageEvents(src)}
           />
-        ) : null}
-      </span>
-    </MediaActions>
+        </MediaActions>
+      ) : null}
+    </span>
   );
 }
 
