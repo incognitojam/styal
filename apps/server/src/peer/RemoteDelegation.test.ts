@@ -304,6 +304,8 @@ const boxToolkitLayer = (thread: BoxThread) => {
     getThreadShell: shellOf,
     getProjectThreadRecords: (input) => projectionOf(input.threadId),
     getThreadRecords: (threadId) => projectionOf(threadId),
+    getRunCount: (threadId) =>
+      projectionOf(threadId).pipe(Effect.map((projection) => projection.runs.length)),
     waitForThread: (input) =>
       Effect.gen(function* () {
         // The later run starts after the task's own; none starts after it.
