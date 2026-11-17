@@ -66,6 +66,7 @@ upstreamLayer("ForkMigrations canonical upstream upgrade", (it) => {
         { migration_id: 13, name: "WorktreeSetupState" },
         { migration_id: 14, name: "DropWorktreeSetupState" },
         { migration_id: 15, name: "WorktreeStripped" },
+        { migration_id: 16, name: "ReportQuestionIndexes" },
       ]);
     }),
   );
@@ -177,6 +178,7 @@ it("keeps fork migrations out of the upstream manifest", () => {
     [13, "WorktreeSetupState"],
     [14, "DropWorktreeSetupState"],
     [15, "WorktreeStripped"],
+    [16, "ReportQuestionIndexes"],
   ]);
 });
 

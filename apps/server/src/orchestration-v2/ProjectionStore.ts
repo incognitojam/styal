@@ -6497,20 +6497,27 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
         );
 
     // Mirrors coordinatorReports' latest-version, answer and dismissal rules without loading history.
+    // Keep these partial-index predicates aligned with fork migration 016.
     const openReportQuestions = sql`
       SELECT report.message_id
       FROM orchestration_v2_projection_messages report
+        INDEXED BY orchestration_v2_projection_messages_report_key_idx
       WHERE report.thread_id = t.thread_id AND report.role = 'assistant'
+        AND json_extract(report.payload_json, '$.report.key') IS NOT NULL
         AND json_extract(report.payload_json, '$.report.question') IS NOT NULL
         AND NOT EXISTS (
           SELECT 1 FROM orchestration_v2_projection_messages newer
+            INDEXED BY orchestration_v2_projection_messages_report_key_idx
           WHERE newer.thread_id = t.thread_id
+            AND json_extract(newer.payload_json, '$.report.key') IS NOT NULL
             AND json_extract(newer.payload_json, '$.report.key') = json_extract(report.payload_json, '$.report.key')
             AND json_extract(newer.payload_json, '$.report.version') > json_extract(report.payload_json, '$.report.version')
         )
         AND NOT EXISTS (
           SELECT 1 FROM orchestration_v2_projection_messages answer
+            INDEXED BY orchestration_v2_projection_messages_report_answer_idx
           WHERE answer.thread_id = t.thread_id AND answer.role = 'user'
+            AND json_extract(answer.payload_json, '$.reportAnswer.messageId') IS NOT NULL
             AND json_extract(answer.payload_json, '$.reportAnswer.messageId') = report.message_id
             AND json_extract(answer.payload_json, '$.reportAnswer.key') = json_extract(report.payload_json, '$.report.key')
             AND json_extract(answer.payload_json, '$.reportAnswer.version') = json_extract(report.payload_json, '$.report.version')
