@@ -289,6 +289,7 @@ export type ProviderPlan =
       readonly entry: VerifyEntry;
       readonly failure: CanaryFailure;
     }
+  | { readonly kind: "deferred"; readonly provider: string; readonly reason: string }
   | { readonly kind: "current"; readonly provider: string; readonly reason: string }
   | { readonly kind: "blocked"; readonly provider: string; readonly reason: string };
 
@@ -366,6 +367,49 @@ export function planProvider(
       );
   if (failure) return { kind: "held", provider: canary.provider, entry, failure };
   return { kind: "verify", provider: canary.provider, entry };
+}
+
+type PackageRelease = { readonly optionalDependencies?: Readonly<Record<string, string>> };
+
+async function fetchPackageRelease(
+  packageName: string,
+  version: string,
+): Promise<PackageRelease | undefined> {
+  const response = await fetch(
+    `https://registry.npmjs.org/${encodeURIComponent(packageName)}/${encodeURIComponent(version)}`,
+    { signal: AbortSignal.timeout(30_000) },
+  );
+  if (response.status === 404) return undefined;
+  if (!response.ok)
+    throw new Error(`Cannot read ${packageName}@${version}: HTTP ${response.status}`);
+  return response.json() as Promise<PackageRelease>;
+}
+
+export async function deferUnpublishedPlatforms(
+  plan: ProviderPlan,
+  read = fetchPackageRelease,
+): Promise<ProviderPlan> {
+  if (
+    (plan.kind !== "verify" && plan.kind !== "held") ||
+    plan.entry.packageName !== "@openai/codex"
+  )
+    return plan;
+  const { packageName, version } = plan.entry;
+  const release = await read(packageName, version);
+  if (release) {
+    // The canary runs on Ubuntu x64; other platforms can publish hours later.
+    const dependency = release.optionalDependencies?.["@openai/codex-linux-x64"];
+    if (!dependency) return plan;
+    const alias = /^npm:(.+)@([^@]+)$/.exec(dependency);
+    const target = alias ? alias[1]! : "@openai/codex-linux-x64";
+    const targetVersion = alias ? alias[2]! : dependency;
+    if (await read(target, targetVersion)) return plan;
+  }
+  return {
+    kind: "deferred",
+    provider: plan.provider,
+    reason: `${packageName}@${version} is waiting for its Linux x64 platform package to publish.`,
+  };
 }
 
 /** Byte spans of the top-level objects in the manifest's `compatibility` array. */
@@ -623,10 +667,11 @@ export function collectRun(input: {
     if (result === "failure") add(`job:${job}`, `job:${job}`, `The **${job}** job failed.`);
   }
   for (const plan of input.plan?.plans ?? []) {
+    if (plan.kind === "deferred") continue;
     evaluated.add(plan.provider);
     if (plan.kind === "blocked") {
       add(
-        `blocked:${plan.provider}`,
+        `blocked:${plan.provider}:${plan.styal}`,
         plan.provider,
         `**${plan.provider}** on styal ${plan.styal}: ${plan.reason}`,
       );
@@ -635,7 +680,11 @@ export function collectRun(input: {
     if (plan.kind === "held") {
       const { entry, failure } = plan;
       failures.push(failure);
-      add(`failed:${entry.provider}:${entry.version}`, entry.provider, failure.detail);
+      add(
+        `failed:${entry.provider}:${entry.version}:${entry.styal}`,
+        entry.provider,
+        failure.detail,
+      );
       continue;
     }
     if (plan.kind !== "verify") continue;
@@ -646,7 +695,7 @@ export function collectRun(input: {
     const release = `**${entry.packageName}@${entry.version}** on styal ${entry.styal}`;
     if (!outcome)
       add(
-        `failed:${entry.provider}:${entry.version}`,
+        `failed:${entry.provider}:${entry.version}:${entry.styal}`,
         entry.provider,
         `${release}: no verification result was saved.`,
       );
@@ -660,13 +709,13 @@ export function collectRun(input: {
         at: (input.now ?? new Date()).toISOString(),
       });
       add(
-        `failed:${entry.provider}:${entry.version}`,
+        `failed:${entry.provider}:${entry.version}:${entry.styal}`,
         entry.provider,
         `${release} failed verification twice: ${outcome.detail.split(/\r?\n/)[0]}`,
       );
     } else if (outcome.outcome === "skipped")
       add(
-        `skipped:${entry.provider}:${entry.version}`,
+        `skipped:${entry.provider}:${entry.version}:${entry.styal}`,
         entry.provider,
         `${release} was not verified: ${outcome.detail.split(/\r?\n/)[0]}`,
       );
@@ -686,6 +735,21 @@ export interface StatusIssueUpdate {
   /** Posted as a comment, so it notifies; body edits do not. */
   readonly comment?: string;
   readonly title?: string;
+}
+
+function reportText(text: string) {
+  return text
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 500)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replace(/[\\`_{}[\]()<>!|#~*]/g, "\\$&")
+    .replaceAll("\\*\\*", "**")
+    .replaceAll("www.", "www&#46;")
+    .replaceAll("@", "&#64;")
+    .replaceAll(":", "&#58;");
 }
 
 const STATE_MARKER = /<!-- provider-canary-state ([a-f0-9]+) -->/;
@@ -758,7 +822,13 @@ export const statusFailures = (
     .map((failure) => ({
       ...failure,
       detail:
-        state.problems?.find((problem) => problem.scope === failure.provider)?.summary ??
+        state.problems?.find(
+          (problem) =>
+            problem.key === `failed:${failure.provider}:${failure.version}:${failure.styal}`,
+        )?.summary ??
+        state.problems?.find(
+          (problem) => problem.key === `failed:${failure.provider}:${failure.version}`,
+        )?.summary ??
         "Failed verification; see original run.",
     }));
 };
@@ -820,9 +890,9 @@ export function reconcileStatusIssue(
     problems.length > 0
       ? "The provider canary found problems that hold back automatic provider updates. This issue is updated on each run and closes when every check passes."
       : `Every provider canary check passed. Recovered at ${new Date().toISOString()}.`,
-    problems.map((problem) => `- ${inertText(problem.summary)}`).join("\n"),
+    problems.map((problem) => `- ${reportText(problem.summary)}`).join("\n"),
     notes.length > 0
-      ? `Passed on retry:\n\n${notes.map((note) => `- ${inertText(note)}`).join("\n")}`
+      ? `Passed on retry:\n\n${notes.map((note) => `- ${reportText(note)}`).join("\n")}`
       : "",
     `Last run: ${runUrl}`,
     `<!-- provider-canary-state ${Buffer.from(JSON.stringify(stored)).toString("hex")} -->`,
@@ -857,7 +927,7 @@ export function reconcileStatusIssue(
     state: "open",
     ...(issue?.open && changed
       ? {
-          comment: `Problems changed in ${runUrl}:\n\n${problems.map((problem) => `- ${inertText(problem.summary)}`).join("\n")}`,
+          comment: `Problems changed in ${runUrl}:\n\n${problems.map((problem) => `- ${reportText(problem.summary)}`).join("\n")}`,
         }
       : {}),
   };
@@ -1094,12 +1164,15 @@ async function plan(args: ReadonlyArray<string>) {
       if (found) latest[packageName] = found;
     }
     for (const { styal, ref } of builds) {
-      const planned = planProvider(canary, manifest, styal, latest, values.force, failures, now);
+      const planned = await deferUnpublishedPlatforms(
+        planProvider(canary, manifest, styal, latest, values.force, failures, now),
+      );
       plans.push({ ...planned, styal });
       if (planned.kind === "verify") include.push({ ...planned.entry, ref });
       if (planned.kind === "blocked")
         console.log(`::warning title=${canary.provider} canary blocked::${planned.reason}`);
-      else if (planned.kind === "current") console.log(`${canary.provider}: ${planned.reason}`);
+      else if (planned.kind === "current" || planned.kind === "deferred")
+        console.log(`${canary.provider}: ${planned.reason}`);
       else if (planned.kind === "held")
         console.log(
           `${canary.provider}: ${planned.entry.packageName}@${planned.entry.version} failed on styal ${styal} at ${planned.failure.at}; not verifying it again yet.`,

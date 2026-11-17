@@ -9,6 +9,7 @@ import {
   autoMergeBlocker,
   collectRun,
   planProvider,
+  deferUnpublishedPlatforms,
   planRewind,
   reconcileStatusIssue,
   recordVersions,
@@ -126,6 +127,38 @@ describe("provider canary plan", () => {
         styal: NIGHTLY,
       },
     });
+  });
+
+  it("defers an unpublished Linux platform without recording a failure", async () => {
+    const initial = planProvider(canary("codex"), manifest, NIGHTLY, {
+      "@openai/codex": "0.158.0",
+    });
+    const reads: string[] = [];
+    let published = false;
+    const read = async (name: string, version: string) => {
+      reads.push(`${name}@${version}`);
+      if (version === "0.158.0")
+        return {
+          optionalDependencies: {
+            "@openai/codex-linux-x64": "npm:@openai/codex@0.158.0-linux-x64",
+            "@openai/codex-win32-x64": "npm:@openai/codex@0.158.0-win32-x64",
+          },
+        };
+      return published ? {} : undefined;
+    };
+    const deferred = await deferUnpublishedPlatforms(initial, read);
+    expect(deferred.kind).toBe("deferred");
+    const run = collectRun({
+      plan: { plans: [{ ...deferred, styal: NIGHTLY }] },
+      outcomes: [],
+      planResult: "success",
+      recordResult: "skipped",
+    });
+    expect(run.failures).toEqual([]);
+    expect(run.problems).toEqual([]);
+    published = true;
+    expect((await deferUnpublishedPlatforms(initial, read)).kind).toBe("verify");
+    expect(reads).not.toContain("@openai/codex@0.158.0-win32-x64");
   });
 
   it("skips a release already verified for builds the tested one contains, unless forced", () => {
@@ -482,7 +515,7 @@ describe("provider canary report", () => {
     const update = reconcileStatusIssue(null, codexFails("0.163.0"), [], RUN);
     expect(update).toMatchObject({ state: "open" });
     expect(update?.comment).toBeUndefined();
-    expect(update?.body).toContain("@openai/codex@0.163.0** on styal");
+    expect(update?.body).toContain("&#64;openai/codex&#64;0.163.0** on styal");
   });
 
   it("comments when the same provider fails on a new release", () => {
@@ -533,7 +566,7 @@ describe("provider canary report", () => {
     const run = runWith([verifyPlan("codex", "@openai/codex", "0.163.0")], []);
     expect(run.problems).toEqual([
       expect.objectContaining({
-        key: "failed:codex:0.163.0",
+        key: `failed:codex:0.163.0:${NIGHTLY}`,
         summary: expect.stringContaining("no verification result"),
       }),
     ]);
@@ -609,7 +642,9 @@ describe("provider canary report", () => {
         ),
       ],
     );
-    expect(run.problems.map((problem) => problem.key)).toEqual(["skipped:claudeAgent:2.1.301"]);
+    expect(run.problems.map((problem) => problem.key)).toEqual([
+      `skipped:claudeAgent:2.1.301:${NIGHTLY}`,
+    ]);
     const update = reconcileStatusIssue(
       null,
       run,

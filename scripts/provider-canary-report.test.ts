@@ -146,7 +146,7 @@ it("keeps dry runs read-only, ignores 861, and warns only when an opening announ
   expect(warn).toEqual(["Discord issue announcement could not be delivered."]);
   expect(state.calls.some((c) => c.path.includes("/issues/861"))).toBe(false);
 });
-it("bounds hostile output as inline code and keeps state inert", () => {
+it("escapes hostile output and keeps state inert", () => {
   const hostile = "` @example-user Fixes #42 </code><!--\n" + "x".repeat(2000);
   const run = collectRun({
     plan: { plans: [{ kind: "blocked", provider: "codex", styal: "1", reason: hostile }] },
@@ -155,7 +155,9 @@ it("bounds hostile output as inline code and keeps state inert", () => {
     recordResult: "skipped",
   });
   const update = reconcileStatusIssue(null, run, [], runUrl)!;
-  expect(update.body).toContain("`**codex** on styal 1: ' @example-user Fixes #42 </code><!-- ");
+  expect(update.body).toContain("- **codex** on styal 1&#58;");
+  expect(update.body).not.toContain("@example-user");
+  expect(update.body).toContain("&lt;/code&gt;&lt;\\!--");
   expect(update.body).not.toContain("x".repeat(501));
   expect(update.body).toMatch(/<!-- provider-canary-state [a-f0-9]+ -->/);
 });
@@ -382,3 +384,48 @@ it.each(["9999-01-01", "2026-11-14T05:59:59Z", "invalid-date", "2026-11-14T12:00
     expect(warnings.length).toBe(at === "2026-11-14T05:59:59Z" ? 0 : 1);
   },
 );
+
+it("renders separate failed-build bullets without activating untrusted Markdown", () => {
+  const plans = ["0.1.1", "0.1.2"].map((styal) => ({
+    kind: "verify" as const,
+    provider: "codex",
+    styal,
+    entry: {
+      provider: "codex",
+      packageName: "@openai/codex",
+      version: "0.169.1",
+      styal,
+      binary: "codex",
+      model: "m",
+      secret: "S",
+    },
+  }));
+  const run = collectRun({
+    plan: { plans },
+    outcomes: plans.map(({ entry }) => ({
+      ...entry,
+      outcome: "failed" as const,
+      detail: "[click](https://example.test) <img src=x> @everyone `code`\n- injected",
+    })),
+    planResult: "success",
+    recordResult: "skipped",
+  });
+  expect(run.problems).toHaveLength(2);
+  const opened = reconcileStatusIssue(null, run, [], runUrl)!;
+  const bullets = opened.body.split("\n").filter((line) => line.startsWith("- "));
+  expect(bullets).toHaveLength(2);
+  expect(bullets[0]).toContain("**&#64;openai/codex&#64;0.169.1** on styal 0.1.1");
+  expect(bullets[1]).toContain("on styal 0.1.2");
+  expect(opened.body).not.toContain("- `");
+  expect(opened.body).not.toContain("[click](");
+  expect(opened.body).not.toContain("<img");
+  expect(opened.body).not.toContain("@everyone");
+  expect(opened.body).not.toContain("\n- injected");
+  const changed = reconcileStatusIssue(
+    { number: 7, open: true, body: reconcileStatusIssue(null, failed, [], runUrl)!.body },
+    run,
+    [],
+    runUrl,
+  )!;
+  expect(changed.comment?.split("\n").filter((line) => line.startsWith("- "))).toEqual(bullets);
+});
