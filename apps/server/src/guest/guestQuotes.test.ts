@@ -61,4 +61,34 @@ describe("locateGuestQuote", () => {
     expect(locateGuestQuote("rm -rf / tmp/cache", reply)).toBeNull();
     expect(locateGuestQuote("rm-rf /tmp/cache", reply)).toBeNull();
   });
+
+  const hidden = [
+    "See [the docs](https://example.com/private-path) first.",
+    '![chart](/tmp/hidden-chart.png "Hidden title")',
+    "<!-- Run the destructive cleanup. -->",
+    "```bash hidden-info\nls -la\n```",
+    "Use `rm -rf /tmp/cache` with **care** and $x^2 + 1$.",
+  ].join("\n\n");
+
+  // Only what the reply renders can be quoted, not what its Markdown hides.
+  it.each([
+    ["an HTML comment", "Run the destructive cleanup."],
+    ["a link URL", "example.com/private-path"],
+    ["an image source", "/tmp/hidden-chart.png"],
+    ["an image title", "Hidden title"],
+    ["a code fence's info string", "hidden-info"],
+  ])("refuses text from %s", (_, quote) => {
+    expect(locateGuestQuote(quote, hidden)).toBeNull();
+  });
+
+  it("finds rendered link text, inline code, formatting and formulas", () => {
+    for (const quote of [
+      "See the docs first.",
+      "rm -rf /tmp/cache with care",
+      "x^2 + 1",
+      "ls -la",
+    ]) {
+      expect(locateGuestQuote(quote, hidden)).not.toBeNull();
+    }
+  });
 });

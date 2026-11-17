@@ -66,8 +66,8 @@ function selectorAt(text: string, start: number, end: number) {
 
 /**
  * A guest's quote as a citation selector in the reply it names, or null when the reply doesn't
- * show it. Searches the rendered text, then the Markdown for what renders differently, such as a
- * formula. Whitespace runs compare equal, since block breaks render as line breaks.
+ * show it. Only the reply's rendered text counts, so a link target, image source or HTML comment
+ * can't be quoted. Whitespace runs compare equal, since block breaks render as line breaks.
  */
 export function locateGuestQuote(quote: string, markdown: string) {
   const target = collapseWhitespace(quote);
@@ -77,9 +77,6 @@ export function locateGuestQuote(quote: string, markdown: string) {
       " ",
     ),
   );
-  for (const text of [rendered, collapseWhitespace(markdown)]) {
-    const start = text.indexOf(target);
-    if (start !== -1) return selectorAt(text, start, start + target.length);
-  }
-  return null;
+  const start = rendered.indexOf(target);
+  return start === -1 ? null : selectorAt(rendered, start, start + target.length);
 }
