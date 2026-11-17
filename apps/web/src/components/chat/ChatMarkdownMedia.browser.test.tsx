@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import "~/index.css";
 
 import { render } from "../../../test/render";
+import { MarkdownTable } from "./MarkdownTable";
 import {
   authoredImageSizeStyle,
   ChatMarkdownAssetImage,
@@ -133,6 +134,44 @@ describe("ChatMarkdownAssetImage", () => {
   });
 });
 
+it("loads long-table rows against the panel viewport rather than the table scroller", async () => {
+  assetQuery.mints = 0;
+  await using screen = await render(
+    <div data-panel style={{ height: 200, overflowY: "auto" }}>
+      <MarkdownTable>
+        <tbody>
+          {Array.from({ length: 10 }, (_, row) => (
+            <tr key={row}>
+              <td style={{ height: 250 }}>
+                <ChatMarkdownAssetImage
+                  environmentId={EnvironmentId.make("environment-1")}
+                  resource={{
+                    _tag: "github-media",
+                    cwd: "/synthetic",
+                    url: `https://github.com/user-attachments/assets/long-table-${row}`,
+                  }}
+                  alt={`Row ${row}`}
+                />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </MarkdownTable>
+    </div>,
+  );
+  await expect.element(screen.getByRole("img", { name: "Row 0" })).toBeVisible();
+  const row0 = screen.getByRole("img", { name: "Row 0" }).element();
+  await expect.element(screen.getByRole("img", { name: "Row 1" })).toBeInTheDocument();
+  for (let row = 2; row < 10; row++)
+    expect(screen.container.querySelector(`img[alt="Row ${row}"]`)).toBeNull();
+  expect(assetQuery.mints).toBe(4);
+  const before = assetQuery.mints;
+  screen.container.querySelector("[data-panel]")!.scrollTop = 2000;
+  await expect.element(screen.getByRole("img", { name: "Row 8" })).toBeVisible();
+  expect(assetQuery.mints).toBeGreaterThan(before);
+  expect(row0.isConnected).toBe(true);
+});
+
 it.each([
   { width: 300, height: undefined },
   { width: 180, height: 360 },
@@ -213,56 +252,78 @@ it("loads an original only after selecting recovery from a failed preview", asyn
   }
 });
 
-it("matches main's intrinsic sizing for #1528 label-column tables", async () => {
-  const view = (src: string | null, preview = true) => (
-    <div className="chat-markdown" style={{ width: 420 }}>
-      <table>
-        <thead>
-          <tr>
-            <th />
-            <th>Before</th>
-            <th>After</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>Folded and open reports</td>
-            {["Before", "After"].map((alt) => (
-              <td key={alt}>
-                <ChatMarkdownImage
-                  key={String(preview)}
-                  src={src}
-                  alt={alt}
-                  standalone
-                  reserveFrame={preview}
-                  sourceDimensions={{ width: 1280, height: 1138 }}
-                  copyMarkdown={undefined}
-                  actionsSource={{ kind: "image", name: alt, src }}
-                />
-              </td>
-            ))}
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  );
-  const source = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="1138"/>')}`;
-  await using screen = await render(view(source, false));
-  await expect.element(screen.getByRole("img", { name: "Before" })).toBeVisible();
-  const originalWidths = ["Before", "After"].map(
-    (name) => screen.getByRole("img", { name }).element().getBoundingClientRect().width,
-  );
-  await screen.rerender(view(null));
-  const table = screen.container.querySelector("table")!;
-  expect(table.getBoundingClientRect().width).toBeLessThanOrEqual(420);
-  const frames = [...table.querySelectorAll<HTMLElement>('[role="status"]')];
-  const sizes = frames.map((frame) => frame.getBoundingClientRect().height);
-  expect(frames.every((frame) => frame.getBoundingClientRect().width <= 210)).toBe(true);
-  for (const [index, frame] of frames.entries())
-    expect(Math.abs(frame.getBoundingClientRect().width - originalWidths[index]!)).toBeLessThan(2);
-  await screen.rerender(
-    view("data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"),
-  );
-  await expect.element(screen.getByRole("img", { name: "Before" })).toBeVisible();
-  expect(frames.map((frame) => frame.getBoundingClientRect().height)).toEqual(sizes);
-});
+it.each([
+  { panelWidth: 420, imageWidth: 1280, imageHeight: 1138 },
+  { panelWidth: 719, imageWidth: 1080, imageHeight: 2400 },
+])(
+  "matches main's intrinsic sizing for #1528 tables at $panelWidth px",
+  async ({ panelWidth, imageWidth, imageHeight }) => {
+    const view = (src: string | null, preview = true, known = 2) => (
+      <div className="chat-markdown" style={{ width: panelWidth }}>
+        <table>
+          <thead>
+            <tr>
+              <th />
+              <th>Before</th>
+              <th>After</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Folded and open reports</td>
+              {["Before", "After"].map((alt, index) => (
+                <td key={alt}>
+                  <ChatMarkdownImage
+                    key={String(preview)}
+                    src={src}
+                    alt={alt}
+                    standalone
+                    reserveFrame={preview}
+                    sourceDimensions={
+                      index < known ? { width: imageWidth, height: imageHeight } : undefined
+                    }
+                    copyMarkdown={undefined}
+                    actionsSource={{ kind: "image", name: alt, src }}
+                  />
+                </td>
+              ))}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    );
+    const source = `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="${imageWidth}" height="${imageHeight}"/>`)}`;
+    await using screen = await render(view(source, false));
+    await expect.element(screen.getByRole("img", { name: "Before" })).toBeVisible();
+    const originalWidths = ["Before", "After"].map(
+      (name) => screen.getByRole("img", { name }).element().getBoundingClientRect().width,
+    );
+    if (panelWidth === 719) {
+      await screen.rerender(view(null, true, 0));
+      await screen.rerender(view(null, true, 1));
+      const first = screen.container.querySelector<HTMLElement>('[role="status"]')!;
+      const beforeNeighbour = first.getBoundingClientRect();
+      await screen.rerender(view(null));
+      expect(first.getBoundingClientRect().width).toBe(beforeNeighbour.width);
+      expect(first.getBoundingClientRect().height).toBe(beforeNeighbour.height);
+    } else {
+      await screen.rerender(view(null));
+    }
+    const table = screen.container.querySelector("table")!;
+    expect(table.getBoundingClientRect().width).toBeLessThanOrEqual(panelWidth);
+    const frames = [...table.querySelectorAll<HTMLElement>('[role="status"]')];
+    const sizes = frames.map((frame) => frame.getBoundingClientRect().height);
+    expect(frames.every((frame) => frame.getBoundingClientRect().width <= panelWidth / 2)).toBe(
+      true,
+    );
+    for (const [index, frame] of frames.entries())
+      expect(Math.abs(frame.getBoundingClientRect().width - originalWidths[index]!)).toBeLessThan(
+        2,
+      );
+    await screen.rerender(
+      view("data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"),
+    );
+    await expect.element(screen.getByRole("img", { name: "Before" })).toBeVisible();
+    expect(frames.map((frame) => frame.getBoundingClientRect().height)).toEqual(sizes);
+  },
+);

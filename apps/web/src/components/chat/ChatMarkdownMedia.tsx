@@ -225,12 +225,13 @@ export function ChatMarkdownImage(props: {
   // The in-flow sizing image preserves an original's intrinsic contribution to table columns.
   const intrinsicWidth =
     typeof props.style?.width === "number" ? props.style.width : (naturalWidth ?? 480);
+  const hasIntrinsicSize = size !== null || typeof props.style?.width === "number";
   const frameStyle = props.reserveFrame
     ? {
         ...props.style,
-        width: "auto",
+        width: hasIntrinsicSize ? "auto" : "100%",
         height: "auto",
-        aspectRatio: "auto",
+        aspectRatio: hasIntrinsicSize ? "auto" : String(ratio),
         maxWidth: `min(${bounds.join(", ")})`,
       }
     : props.style;
@@ -325,12 +326,13 @@ export function ChatMarkdownImage(props: {
             ? {}
             : { role: "status" as const, "aria-label": "Loading image" })}
       >
-        {props.reserveFrame ? (
+        {props.reserveFrame && hasIntrinsicSize ? (
           <img
             aria-hidden
             alt=""
             src={`data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="${intrinsicWidth}" height="${intrinsicWidth / ratio}"/>`)}`}
             className={CHAT_MARKDOWN_IMAGE_SIZE_CLASS_NAME}
+            style={{ width: intrinsicWidth, aspectRatio: String(ratio) }}
           />
         ) : null}
         {!failed && !settled && props.reserveFrame ? (
@@ -494,8 +496,13 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
       );
     };
     const stopResize = observeResize(element, measure);
-    let root = element.parentElement;
-    while (root && !/(auto|scroll)/.test(getComputedStyle(root).overflowY))
+    let root =
+      element.closest(".chat-markdown-table-container")?.parentElement ?? element.parentElement;
+    while (
+      root &&
+      (!/(auto|scroll)/.test(getComputedStyle(root).overflowY) ||
+        root.scrollHeight <= root.clientHeight)
+    )
       root = root.parentElement;
     const intersection = new IntersectionObserver(
       ([entry]) => {

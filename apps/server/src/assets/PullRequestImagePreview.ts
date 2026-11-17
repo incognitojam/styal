@@ -67,7 +67,12 @@ const make = Effect.gen(function* () {
   const directory = path.join(config.stateDir, "cache", "pr-image-previews", "v1");
   const lock = yield* Semaphore.make(1);
   const fetchSlots = yield* Semaphore.make(2);
-  const active = new Map<string, Effect.Effect<Derivative, ImagePreviewError>>();
+  const active = new Map<
+    string,
+    { token: symbol; read: Effect.Effect<Derivative, ImagePreviewError> }
+  >();
+  // Abandoned native work stays admitted until its Sharp promises settle.
+  const inProgress = new Set<symbol>();
   const sources = new Map<string, { fetch: Input["fetch"]; users: number }>();
   const entries = new Map<string, { size: number; expires: number; used: number }>();
   const remove = Effect.fn("PullRequestImagePreview.remove")(function* (key: string) {
@@ -156,8 +161,8 @@ const make = Effect.gen(function* () {
       }
     }
     const running = active.get(key);
-    if (running) return yield* running;
-    if (active.size >= 9) return yield* new ImagePreviewError({});
+    if (running) return yield* running.read;
+    if (inProgress.size >= 9) return yield* new ImagePreviewError({});
     let shared = sources.get(input.identity);
     if (!shared) {
       shared = { fetch: yield* Effect.cached(input.fetch.pipe(fetchSlots.withPermit)), users: 0 };
@@ -165,6 +170,8 @@ const make = Effect.gen(function* () {
     }
     shared.users++;
     const sourceEntry = shared;
+    const token = Symbol();
+    inProgress.add(token);
     const work = yield* Effect.gen(function* () {
       const source = yield* sourceEntry.fetch;
       return yield* Effect.gen(function* () {
@@ -292,7 +299,8 @@ const make = Effect.gen(function* () {
       Effect.mapError(() => new ImagePreviewError({})),
       Effect.ensuring(
         Effect.sync(() => {
-          active.delete(key);
+          if (active.get(key)?.token === token) active.delete(key);
+          inProgress.delete(token);
           sourceEntry.users--;
           if (sourceEntry.users === 0) sources.delete(input.identity);
         }),
@@ -305,9 +313,14 @@ const make = Effect.gen(function* () {
         waiters++;
       }),
       () => Fiber.join(work),
-      () => Effect.suspend(() => (--waiters === 0 ? Fiber.interrupt(work) : Effect.void)),
+      () =>
+        Effect.suspend(() => {
+          if (--waiters !== 0) return Effect.void;
+          if (active.get(key)?.token === token) active.delete(key);
+          return Fiber.interrupt(work);
+        }),
     );
-    active.set(key, joined);
+    active.set(key, { token, read: joined });
     return yield* joined;
   });
   return PullRequestImagePreview.of({ read });

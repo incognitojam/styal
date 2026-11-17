@@ -244,6 +244,8 @@ it.effect("holds native work and its permit until settlement after cancellation"
     );
     const started = yield* Deferred.make<void>();
     const pending = Promise.withResolvers<Metadata>();
+    const replacementStarted = yield* Deferred.make<void>();
+    const replacementMetadata = Promise.withResolvers<Metadata>();
     const nativeSharp = NodeModule.createRequire(import.meta.url)("sharp") as typeof sharp;
     const fixtureMetadata = yield* Effect.promise(() => nativeSharp(bytes).metadata());
     const metadata = nativeSharp.prototype.metadata;
@@ -255,6 +257,10 @@ it.effect("holds native work and its permit until settlement after cancellation"
       if (calls === 1) {
         Deferred.doneUnsafe(started, Effect.void);
         return pending.promise;
+      }
+      if (calls === 2) {
+        Deferred.doneUnsafe(replacementStarted, Effect.void);
+        return replacementMetadata.promise;
       }
       return metadata.call(this);
     });
@@ -271,11 +277,15 @@ it.effect("holds native work and its permit until settlement after cancellation"
       const cancelling = yield* Effect.forkChild(Fiber.interrupt(first), {
         startImmediately: true,
       });
-      const second = yield* Effect.forkChild(read("second"), { startImmediately: true });
+      const second = yield* Effect.forkChild(read("first"), { startImmediately: true });
       expect(calls).toBe(1);
       pending.resolve(fixtureMetadata);
       yield* Fiber.join(cancelling);
+      yield* Deferred.await(replacementStarted);
+      const third = yield* Effect.forkChild(read("first"), { startImmediately: true });
+      replacementMetadata.resolve(fixtureMetadata);
       yield* Fiber.join(second);
+      yield* Fiber.join(third);
       expect(calls).toBe(2);
     }).pipe(
       Effect.provide(
