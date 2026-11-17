@@ -673,6 +673,7 @@ export const make = Effect.fn("DesktopPreviewApp.make")(function* (options?: {
   const commitInstall = Effect.fn("DesktopPreviewApp.commitInstall")(function* (stagedApp: string) {
     const failure = (cause: unknown) =>
       fail("replace", `Could not install the app in ${applicationsDirectory}: ${String(cause)}`);
+    yield* ensureSlotIsOurs;
     if (yield* exists(installedAppPath)) {
       yield* fs.rename(installedAppPath, previousAppPath).pipe(Effect.mapError(failure));
     }
@@ -877,6 +878,12 @@ export const make = Effect.fn("DesktopPreviewApp.make")(function* (options?: {
   // Deletion can fail part-way; its leftovers must never become a rollback backup.
   const moveInstalledAppOut = Effect.gen(function* () {
     yield* fs.makeDirectory(stagingDirectory, { recursive: true });
+    if (!(yield* isDirectory(stagingDirectory))) {
+      return yield* fail(
+        "remove",
+        `${stagingDirectory} is not a real directory, so it was left in place.`,
+      );
+    }
     yield* retirePrevious;
     const removedApp = path.join(stagingDirectory, "removed.app");
     yield* fs.remove(removedApp, { recursive: true, force: true });

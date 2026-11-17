@@ -103,6 +103,7 @@ interface Scenario {
   readonly xattrOutput?: string;
   /** Another install replaces the app while the closed pull request lookup is in flight. */
   readonly installedDuringLookup?: string;
+  readonly slotDuringDownload?: "foreign" | "folder";
   readonly releaseStatus?: number;
   /** Completed once GitHub starts answering the lookup; the answer then never finishes. */
   readonly releaseStalled?: Deferred.Deferred<void>;
@@ -324,7 +325,6 @@ const setup = (scenario: Scenario) =>
             }).pipe(
               Effect.provideService(FileSystem.FileSystem, fs),
               Effect.provideService(Path.Path, path),
-              Effect.orDie,
             );
           }
           return respond(JSON.stringify({ state: scenario.pullRequestState ?? "open" }));
@@ -333,8 +333,20 @@ const setup = (scenario: Scenario) =>
           Deferred.doneUnsafe(scenario.downloadStarted, Effect.void);
           return respond(new ReadableStream({ start: () => undefined }));
         }
+        if (scenario.slotDuringDownload !== undefined) {
+          yield* fs.remove(slot, { recursive: true, force: true });
+          if (scenario.slotDuringDownload === "foreign") {
+            yield* writeBundle(slot, { identifier: "com.example.other", version: "9.9.9" }).pipe(
+              Effect.provideService(FileSystem.FileSystem, fs),
+              Effect.provideService(Path.Path, path),
+            );
+          } else {
+            yield* fs.makeDirectory(slot, { recursive: true });
+            yield* fs.writeFileString(path.join(slot, "keep.txt"), "unrelated folder");
+          }
+        }
         return respond((scenario.downloadBytes ?? DMG_BYTES) as BodyInit);
-      }),
+      }).pipe(Effect.orDie),
     );
 
     const environment = DesktopEnvironment.DesktopEnvironment.of({
@@ -437,6 +449,55 @@ const scoped = <A, E>(
 ) => effect.pipe(Effect.scoped, Effect.provide(NodeServices.layer));
 
 describe("DesktopPreviewApp", () => {
+  it.effect.each(["user", "closed"] as const)("refuses symlinked staging on %s removal", (source) =>
+    scoped(
+      Effect.gen(function* () {
+        const app = yield* setup({ pullRequestState: "closed" });
+        yield* app.installPrevious("1.2.3-pr.12.6");
+        const documents = app.path.join(app.home, "Documents");
+        for (const name of ["previous.app", "removed.app"]) {
+          yield* app.fs.makeDirectory(app.path.join(documents, name), { recursive: true });
+          yield* app.fs.writeFileString(
+            app.path.join(documents, name, "keep.txt"),
+            "unrelated files",
+          );
+        }
+        yield* app.fs.symlink(documents, app.staging);
+        if (source === "user") assert.strictEqual((yield* app.service.remove).outcome, "failed");
+        else yield* app.service.removeIfPullRequestClosed;
+        assert.strictEqual(yield* installedVersion(app.slot), "1.2.3-pr.12.6");
+        for (const name of ["previous.app", "removed.app"]) {
+          assert.strictEqual(
+            yield* app.fs.readFileString(app.path.join(documents, name, "keep.txt")),
+            "unrelated files",
+          );
+        }
+      }),
+    ),
+  );
+
+  it.effect.each(["foreign", "folder"] as const)(
+    "leaves a %s appearing during download untouched",
+    (slotDuringDownload) =>
+      scoped(
+        Effect.gen(function* () {
+          const app = yield* setup({ assets: [buildAsset], slotDuringDownload });
+          yield* app.installPrevious("1.2.3-pr.12.6");
+          const result = yield* app.service.install(12);
+          assert.strictEqual(result.outcome, "failed");
+          assert.include(result.message, "left in place");
+          if (slotDuringDownload === "foreign")
+            assert.strictEqual(yield* installedVersion(app.slot), "9.9.9");
+          else
+            assert.strictEqual(
+              yield* app.fs.readFileString(app.path.join(app.slot, "keep.txt")),
+              "unrelated folder",
+            );
+          assert.lengthOf(app.ran("/usr/bin/open"), 0);
+        }),
+      ),
+  );
+
   it.effect.each(["user", "closed"] as const)(
     "does not restore stale deletion leftovers on %s removal",
     (source) =>
