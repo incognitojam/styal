@@ -10,7 +10,6 @@ import {
   renderComparison,
   totalDivergence,
 } from "./divergence-report.ts";
-import { ensureScratchDirectory } from "./queue.ts";
 
 function withRepository(
   test: (
@@ -20,9 +19,9 @@ function withRepository(
   ) => void,
 ) {
   const root = NodePath.resolve(import.meta.dirname, "../..");
-  const directory = NodeFS.mkdtempSync(
-    NodePath.resolve(ensureScratchDirectory(root), "upstream-divergence-test-"),
-  );
+  NodeChildProcess.execFileSync("git", ["check-ignore", "-q", ".scratch/"], { cwd: root });
+  NodeFS.mkdirSync(NodePath.join(root, ".scratch"), { recursive: true });
+  const directory = NodeFS.mkdtempSync(NodePath.join(root, ".scratch/upstream-divergence-test-"));
   const git = (...args: string[]) =>
     NodeChildProcess.execFileSync(
       "git",
@@ -127,6 +126,55 @@ registerHooks({ resolve(specifier, context, nextResolve) {
     assert.equal(checkout.with.ref, "${{ github.event.repository.default_branch }}");
     assert.equal(report.env.BASE_SHA, "${{ github.event.pull_request.base.sha }}");
     assert.include(report.run, '--base "$BASE_SHA"');
+    withRepository((git, write, directory) => {
+      const path = ".github/workflows/synthetic.yml";
+      write(path, "main\n");
+      git("add", ".");
+      git("commit", "-m", "main");
+      git("switch", "-c", "stack-base");
+      write(path, "stack base\n");
+      git("commit", "-am", "stack base");
+      const base = git("rev-parse", "HEAD").trim();
+      git("switch", "-c", "stack-head");
+      write(path, "stack head\n");
+      git("commit", "-am", "stack head");
+      const head = git("rev-parse", "HEAD").trim();
+      git("update-ref", "refs/pull/123/head", head);
+      git("switch", "main");
+      git("config", "uploadpack.allowFilter", "true");
+      git("config", "uploadpack.allowAnySHA1InWant", "true");
+      const checkout = NodePath.join(directory, "publisher");
+      git(
+        "clone",
+        "--filter=blob:none",
+        "--no-checkout",
+        "--branch=main",
+        `file://${directory}`,
+        checkout,
+      );
+      const publisher = (...args: string[]) => git("-C", checkout, ...args);
+      publisher("sparse-checkout", "set", "--no-cone", "/scripts/", "/.github/");
+      publisher("checkout", "main");
+      publisher("config", "remote.origin.fetch", "+refs/heads/main:refs/remotes/origin/main");
+      git("switch", "stack-head");
+      write(path, "moved after the event\n");
+      git("commit", "-am", "move PR head");
+      git("update-ref", "refs/pull/123/head", "HEAD");
+      git("switch", "main");
+      const fetch = steps.find(
+        (step: { name?: string }) => step.name === "Fetch full file contents",
+      );
+      NodeChildProcess.execFileSync("bash", ["-c", fetch.run], {
+        cwd: checkout,
+        env: { ...process.env, BASE_SHA: base, HEAD_SHA: head, PR_NUMBER: "123" },
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      assert.equal(publisher("rev-parse", "refs/remotes/pr/head").trim(), head);
+      assert.equal(publisher("cat-file", "-t", base).trim(), "commit");
+      assert.equal(publisher("show", `${base}:${path}`), "stack base\n");
+      assert.equal(publisher("show", `refs/remotes/pr/head:${path}`), "stack head\n");
+      assert.include(publisher("diff", "-M", "--name-status", base, "refs/remotes/pr/head"), path);
+    });
   });
 
   it("marks flat divergence quiet and any increasing measure loud", () => {
