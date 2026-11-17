@@ -106,18 +106,23 @@ describe("ChatMarkdownAssetImage", () => {
     };
     const onImageExpand = vi.fn();
     await using screen = await render(
-      <ChatMarkdownAssetImage
-        environmentId={EnvironmentId.make("environment-1")}
-        resource={{
-          _tag: "github-media",
-          cwd: "/synthetic",
-          url: "https://github.com/user-attachments/assets/pending-tiny",
-        }}
-        alt="screenshot"
-        onImageExpand={onImageExpand}
-      />,
+      <div style={{ height: 200, overflowY: "auto" }}>
+        <div style={{ height: 250 }} />
+        <ChatMarkdownAssetImage
+          environmentId={EnvironmentId.make("environment-1")}
+          resource={{
+            _tag: "github-media",
+            cwd: "/synthetic",
+            url: "https://github.com/user-attachments/assets/pending-tiny",
+          }}
+          alt="screenshot"
+          onImageExpand={onImageExpand}
+        />
+      </div>,
     );
+    await vi.waitFor(() => expect(assetQuery.mints).toBe(2));
     const image = screen.getByRole("button", { name: "Preview screenshot" });
+    image.element().scrollIntoView();
     await expect.element(image).toBeVisible();
     await image.click();
     expect(onImageExpand).toHaveBeenCalledOnce();
@@ -155,10 +160,14 @@ it.each([
     expect(before.height).toBeGreaterThan(0);
     expect(before.width).toBe(width);
     const loaded = new Promise<EventTarget | null>((resolve) => {
-      frame.addEventListener("load", (event) => resolve(event.target), {
-        capture: true,
-        once: true,
-      });
+      frame.addEventListener(
+        "load",
+        (event) => {
+          if ((event.target as HTMLImageElement).alt === "standalone screenshot")
+            resolve(event.target);
+        },
+        { capture: true },
+      );
     });
     await screen.rerender(
       <ChatMarkdownImage
@@ -204,20 +213,29 @@ it("loads an original only after selecting recovery from a failed preview", asyn
   }
 });
 
-it("fits preview frames inside narrow comparison table cells", async () => {
-  const view = (src: string | null) => (
+it("matches main's intrinsic sizing for #1528 label-column tables", async () => {
+  const view = (src: string | null, preview = true) => (
     <div className="chat-markdown" style={{ width: 420 }}>
       <table>
+        <thead>
+          <tr>
+            <th />
+            <th>Before</th>
+            <th>After</th>
+          </tr>
+        </thead>
         <tbody>
           <tr>
+            <td>Folded and open reports</td>
             {["Before", "After"].map((alt) => (
               <td key={alt}>
                 <ChatMarkdownImage
+                  key={String(preview)}
                   src={src}
                   alt={alt}
                   standalone
-                  reserveFrame
-                  sourceDimensions={{ width: 1280, height: 800 }}
+                  reserveFrame={preview}
+                  sourceDimensions={{ width: 1280, height: 1138 }}
                   copyMarkdown={undefined}
                   actionsSource={{ kind: "image", name: alt, src }}
                 />
@@ -228,12 +246,20 @@ it("fits preview frames inside narrow comparison table cells", async () => {
       </table>
     </div>
   );
-  await using screen = await render(view(null));
+  const source = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="1138"/>')}`;
+  await using screen = await render(view(source, false));
+  await expect.element(screen.getByRole("img", { name: "Before" })).toBeVisible();
+  const originalWidths = ["Before", "After"].map(
+    (name) => screen.getByRole("img", { name }).element().getBoundingClientRect().width,
+  );
+  await screen.rerender(view(null));
   const table = screen.container.querySelector("table")!;
   expect(table.getBoundingClientRect().width).toBeLessThanOrEqual(420);
   const frames = [...table.querySelectorAll<HTMLElement>('[role="status"]')];
   const sizes = frames.map((frame) => frame.getBoundingClientRect().height);
   expect(frames.every((frame) => frame.getBoundingClientRect().width <= 210)).toBe(true);
+  for (const [index, frame] of frames.entries())
+    expect(Math.abs(frame.getBoundingClientRect().width - originalWidths[index]!)).toBeLessThan(2);
   await screen.rerender(
     view("data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"),
   );

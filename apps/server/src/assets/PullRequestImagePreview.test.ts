@@ -195,6 +195,42 @@ it.effect(
     }).pipe(Effect.provide(Layer.merge(NodeServices.layer, NodeCrypto.layer)), Effect.scoped),
 );
 
+it.effect("aborts the source fetch only when its last shared preview waiter leaves", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const directory = yield* fs.makeTempDirectoryScoped({ prefix: "pr-images-abort-" });
+    const started = yield* Deferred.make<void>();
+    const aborted = yield* Deferred.make<void>();
+    yield* Effect.gen(function* () {
+      const previews = yield* Preview.PullRequestImagePreview;
+      const read = previews.read({
+        identity: "cancelled-source",
+        preview: { width: 320 },
+        fetch: Effect.andThen(Deferred.succeed(started, undefined), Effect.never).pipe(
+          Effect.onInterrupt(() => Deferred.succeed(aborted, undefined)),
+        ),
+      });
+      const request = yield* Effect.forkChild(read, { startImmediately: true });
+      yield* Deferred.await(started);
+      const shared = yield* Effect.forkChild(read, { startImmediately: true });
+      yield* Fiber.interrupt(request);
+      expect(yield* Deferred.isDone(aborted)).toBe(false);
+      yield* Fiber.interrupt(shared);
+      expect(yield* Deferred.isDone(aborted)).toBe(true);
+    }).pipe(
+      Effect.provide(
+        Preview.layer.pipe(
+          Layer.provide(
+            Layer.succeed(ServerConfig.ServerConfig, {
+              stateDir: directory,
+            } as ServerConfig.ServerConfig["Service"]),
+          ),
+        ),
+      ),
+    );
+  }).pipe(Effect.provide(Layer.merge(NodeServices.layer, NodeCrypto.layer)), Effect.scoped),
+);
+
 it.effect("holds native work and its permit until settlement after cancellation", () =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;

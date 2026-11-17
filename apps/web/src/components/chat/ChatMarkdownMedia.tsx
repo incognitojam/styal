@@ -222,12 +222,15 @@ export function ChatMarkdownImage(props: {
     ...(typeof props.style?.width === "number" ? [`${props.style.width}px`] : []),
     ...(props.style?.maxWidth ? [props.style.maxWidth] : []),
   ];
+  // The in-flow sizing image preserves an original's intrinsic contribution to table columns.
+  const intrinsicWidth =
+    typeof props.style?.width === "number" ? props.style.width : (naturalWidth ?? 480);
   const frameStyle = props.reserveFrame
     ? {
         ...props.style,
-        width: "100%",
+        width: "auto",
         height: "auto",
-        aspectRatio: String(ratio),
+        aspectRatio: "auto",
         maxWidth: `min(${bounds.join(", ")})`,
       }
     : props.style;
@@ -322,6 +325,14 @@ export function ChatMarkdownImage(props: {
             ? {}
             : { role: "status" as const, "aria-label": "Loading image" })}
       >
+        {props.reserveFrame ? (
+          <img
+            aria-hidden
+            alt=""
+            src={`data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="${intrinsicWidth}" height="${intrinsicWidth / ratio}"/>`)}`}
+            className={CHAT_MARKDOWN_IMAGE_SIZE_CLASS_NAME}
+          />
+        ) : null}
         {!failed && !settled && props.reserveFrame ? (
           <span
             aria-hidden
@@ -483,10 +494,16 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
       );
     };
     const stopResize = observeResize(element, measure);
-    const intersection = new IntersectionObserver(([entry]) => {
-      visible = entry?.isIntersecting ?? false;
-      measure();
-    });
+    let root = element.parentElement;
+    while (root && !/(auto|scroll)/.test(getComputedStyle(root).overflowY))
+      root = root.parentElement;
+    const intersection = new IntersectionObserver(
+      ([entry]) => {
+        visible = entry?.isIntersecting ?? false;
+        measure();
+      },
+      { root, rootMargin: `${root?.clientHeight || window.innerHeight}px 0px` },
+    );
     intersection.observe(element);
     return () => {
       stopResize();

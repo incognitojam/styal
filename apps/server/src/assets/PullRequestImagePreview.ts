@@ -299,7 +299,14 @@ const make = Effect.gen(function* () {
       ),
       Effect.forkIn(scope, { startImmediately: false }),
     );
-    const joined = Fiber.join(work);
+    let waiters = 0;
+    const joined = Effect.acquireUseRelease(
+      Effect.sync(() => {
+        waiters++;
+      }),
+      () => Fiber.join(work),
+      () => Effect.suspend(() => (--waiters === 0 ? Fiber.interrupt(work) : Effect.void)),
+    );
     active.set(key, joined);
     return yield* joined;
   });
