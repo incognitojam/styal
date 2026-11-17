@@ -10,7 +10,7 @@ import type {
 } from "@t3tools/contracts";
 import {
   coordinatorReports,
-  splitReportAnswer,
+  reportAnswerDisplay,
   type ReportReply,
 } from "@t3tools/client-runtime/coordinator-reports";
 import { AppText as Text } from "../../components/ui/AppText";
@@ -138,9 +138,11 @@ export function CoordinatorReportMessage({
           ) : null}
         </View>
       ) : report.state === "answered" && report.answer ? (
-        <AnsweredReport answer={report.answer} answers={tag.answers} renderAnswer={renderAnswer}>
-          {splitReportAnswer(report.answer.text, tag) ?? report.answer.text}
-        </AnsweredReport>
+        <AnsweredReport
+          answer={report.answer}
+          display={reportAnswerDisplay(report.answer, tag)}
+          renderAnswer={renderAnswer}
+        />
       ) : report.state === "dismissed" ? (
         <Text className="text-foreground-secondary">
           Dismissed. The agent hears it on its next turn.
@@ -152,17 +154,15 @@ export function CoordinatorReportMessage({
 
 function AnsweredReport(props: {
   answer: ReportMessage;
-  answers: readonly string[] | undefined;
+  display: { text: string; compact: boolean };
   renderAnswer: (answer: ReportMessage, text: string) => ReactNode;
-  children: string;
 }) {
-  // A tapped answer stays on one line; a typed reply can hold context and line breaks.
-  if (props.answers?.includes(props.children))
-    return <Text className="text-foreground-secondary">You answered: {props.children}</Text>;
+  if (props.display.compact)
+    return <Text className="text-foreground-secondary">You answered: {props.display.text}</Text>;
   return (
     <View className="gap-1 rounded-xl bg-secondary p-3">
       <Text className="text-foreground-secondary">You answered</Text>
-      {props.renderAnswer(props.answer, props.children)}
+      {props.renderAnswer(props.answer, props.display.text)}
     </View>
   );
 }

@@ -6,7 +6,7 @@ import type { MessageId, ThreadWorkflowRunWatch } from "@t3tools/contracts";
 import {
   coordinatorReports,
   formatReportAnswer,
-  splitReportAnswer,
+  reportAnswerDisplay,
   waitingCoordinatorReports,
 } from "@t3tools/client-runtime/coordinator-reports";
 import { Button } from "../ui/button";
@@ -61,10 +61,8 @@ export function ReportAnswerBar({
     );
   }
   if (report.state === "answered" && report.answer) {
-    const tag = report.message.report!;
-    const text = splitReportAnswer(report.answer.text, tag) ?? report.answer.text;
-    // A tapped answer stays on one line; a typed reply can hold context and line breaks.
-    if (tag.answers?.includes(text)) {
+    const { text, compact } = reportAnswerDisplay(report.answer, report.message.report!);
+    if (compact) {
       return (
         <div className={panelClassName}>
           <span className="inline-flex items-center gap-1.5 text-muted-foreground [&_svg]:size-3.5">

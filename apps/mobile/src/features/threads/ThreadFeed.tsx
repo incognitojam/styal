@@ -2511,9 +2511,17 @@ function renderFeedEntry(
         )}
         {...(enterAnimated ? { entering: FadeIn.duration(220) } : {})}
         renderAnswer={(answer, text) => {
+          // Like web, a record naming another message's attachment shows as unavailable.
+          const ownAttachmentIds = new Set((answer.attachments ?? []).map(({ id }) => id));
+          const context = answer.context && {
+            ...answer.context,
+            records: answer.context.records.filter(
+              (record) => !("attachmentId" in record) || ownAttachmentIds.has(record.attachmentId),
+            ),
+          };
           const { inlineAttachmentIds } = userMessageAttachmentLayout({
             text: answer.text,
-            context: answer.context,
+            context,
             attachments: answer.attachments ?? [],
           });
           const otherAttachments = (answer.attachments ?? []).filter(
@@ -2524,7 +2532,7 @@ function renderFeedEntry(
               <UserMessageContent
                 text={renderAssistantCitationsAsText(text)}
                 environmentId={props.environmentId}
-                context={answer.context}
+                context={context}
                 markdownStyles={markdownStyles.assistant}
                 reviewCommentColors={props.reviewCommentColors}
                 skills={props.skills}
