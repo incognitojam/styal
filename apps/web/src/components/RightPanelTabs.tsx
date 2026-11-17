@@ -710,7 +710,11 @@ function sideChatTabState(shell: EnvironmentThreadShell | null) {
   if (shell.hasPendingApprovals || shell.pendingSubagentRequest === "approval") {
     return "needs approval";
   }
-  if (shell.hasPendingUserInput || shell.pendingSubagentRequest === "user_input") {
+  if (
+    shell.hasPendingUserInput ||
+    (shell.openReportQuestionCount ?? 0) > 0 ||
+    shell.pendingSubagentRequest === "user_input"
+  ) {
     return "needs input";
   }
   return threadRuntimeIsActive(shell.runtime) ? "running" : null;

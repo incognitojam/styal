@@ -82,6 +82,9 @@ describe("effectiveSnoozed", () => {
   });
 
   it("wakes early when the agent is blocked on the user", () => {
+    const report = { ...makeShell({ snoozedUntil: FUTURE_WAKE }), openReportQuestionCount: 1 };
+    expect(effectiveSnoozed(report, { now: NOW })).toBe(false);
+    expect(canSnooze(report, { now: NOW })).toBe(false);
     expect(
       effectiveSnoozed(makeShell({ snoozedUntil: FUTURE_WAKE, pending: "approval" }), {
         now: NOW,

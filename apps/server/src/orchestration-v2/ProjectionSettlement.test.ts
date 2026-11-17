@@ -317,7 +317,37 @@ it.effect(
           pendingBackgroundTasks: [{ taskId: "running-task", kind: "subagent" }],
         },
       });
+      const reportThread = yield* createThread("report-question");
+      yield* createRun(reportThread);
+      yield* store.apply({
+        id: EventId.make("event:settlement:report"),
+        type: "message.updated",
+        threadId: reportThread,
+        occurredAt: now,
+        payload: {
+          createdBy: "agent",
+          creationSource: "mcp",
+          id: MessageId.make("message:settlement:report"),
+          threadId: reportThread,
+          runId: null,
+          nodeId: null,
+          role: "assistant",
+          text: "Choose a release",
+          report: {
+            key: "release",
+            version: 1,
+            title: "Release",
+            question: "Ship?",
+            answers: ["Ship", "Wait"],
+          },
+          attachments: [],
+          streaming: false,
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
       const candidates = yield* store.getSettlementCandidates();
+      assert.isFalse(candidates.some((thread) => thread.id === reportThread));
       const shell = yield* store.getShellSnapshot({ location: "active" });
       const eligible = candidates.filter((thread) =>
         isAutoSettlementCandidate(thread, DateTime.toEpochMillis(now)),

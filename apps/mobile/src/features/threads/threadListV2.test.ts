@@ -165,6 +165,9 @@ describe("resolveThreadListV2Status", () => {
     });
     const present = (shell: unknown) => presentThreadShell(environmentId, decodeThreadShell(shell));
 
+    expect(resolveThreadListV2Status(present({ ...raw, openReportQuestionCount: 1 }))).toBe(
+      "input",
+    );
     expect(resolveThreadListV2Status(present(raw))).toBe("working");
     const blocked = present({ ...raw, blockedOnThreadWait: true });
     expect(

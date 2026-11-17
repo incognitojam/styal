@@ -109,6 +109,7 @@ export interface ThreadSnoozeShell extends QueuedThreadShell {
   readonly pendingUserInputAt?: string | null;
   readonly pendingSubagentRequest?: PendingSubagentRequest | null;
   readonly pendingGuestMessageCount?: number;
+  readonly openReportQuestionCount?: number;
 }
 
 function pendingQuestionAt(shell: ThreadSnoozeShell): string | null {
@@ -139,7 +140,8 @@ export function threadRaisedHandWhileSnoozed(shell: ThreadSnoozeShell): boolean 
     return true;
   }
   if (shell.pendingSubagentRequest != null) return true;
-  if ((shell.pendingGuestMessageCount ?? 0) > 0) return true;
+  if ((shell.pendingGuestMessageCount ?? 0) > 0 || (shell.openReportQuestionCount ?? 0) > 0)
+    return true;
   const failedAt = failureEdgeAt(shell);
   return (
     failedAt !== undefined &&
@@ -167,6 +169,7 @@ export function canSnooze(
     | "hasPendingUserInput"
     | "pendingSubagentRequest"
     | "pendingGuestMessageCount"
+    | "openReportQuestionCount"
     | "latestUserMessageAt"
     | "latestTurn"
     | "latestRun"
@@ -180,8 +183,9 @@ export function canSnooze(
   const request = shell.source?.pendingRuntimeRequest;
   if (request != null && request.kind !== "user_input") return false;
   if (shell.pendingSubagentRequest != null) return false;
-  // A waiting guest message would wake it at once.
-  if ((shell.pendingGuestMessageCount ?? 0) > 0) return false;
+  // Guest requests and report questions would wake it at once.
+  if ((shell.pendingGuestMessageCount ?? 0) > 0 || (shell.openReportQuestionCount ?? 0) > 0)
+    return false;
   if (hasQueuedTurnStart(shell, options)) return false;
   return true;
 }

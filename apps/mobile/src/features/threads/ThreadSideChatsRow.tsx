@@ -32,7 +32,9 @@ export function ThreadSideChatsRow(props: {
             const needs =
               sideChat.hasPendingApprovals || sideChat.pendingSubagentRequest === "approval"
                 ? "approval"
-                : sideChat.hasPendingUserInput || sideChat.pendingSubagentRequest
+                : sideChat.hasPendingUserInput ||
+                    (sideChat.openReportQuestionCount ?? 0) > 0 ||
+                    sideChat.pendingSubagentRequest
                   ? "input"
                   : null;
             return (

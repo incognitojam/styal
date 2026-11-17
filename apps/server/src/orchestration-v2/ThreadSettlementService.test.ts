@@ -147,20 +147,18 @@ describe("isAutoSettlementCandidate", () => {
     ).toBe(true);
   });
 
-  it("never settles, or keeps snoozed, a thread whose guest is waiting on the owner", () => {
-    expect(
-      ThreadSettlementService.isAutoSettlementCandidate(
-        shell({ pendingGuestMessageCount: 1 }),
-        NOW_MS,
-      ),
-    ).toBe(false);
-    const snoozed = shell({
-      snoozedUntil: at(60 * 60 * 1_000),
-      snoozedAt: at(-60 * 60 * 1_000),
-      pendingGuestMessageCount: 1,
-    });
-    expect(ThreadSettlementService.isSnoozed(snoozed, NOW_MS)).toBe(false);
-  });
+  it.each([{ pendingGuestMessageCount: 1 }, { openReportQuestionCount: 1 }])(
+    "never settles or keeps snoozed a thread waiting on the owner: %j",
+    (pending) => {
+      expect(ThreadSettlementService.isAutoSettlementCandidate(shell(pending), NOW_MS)).toBe(false);
+      const snoozed = shell({
+        snoozedUntil: at(60 * 60 * 1_000),
+        snoozedAt: at(-60 * 60 * 1_000),
+        ...pending,
+      });
+      expect(ThreadSettlementService.isSnoozed(snoozed, NOW_MS)).toBe(false);
+    },
+  );
 
   it("keeps snoozed threads parked until a fresh failure or timer wake", () => {
     const snoozed = shell({

@@ -765,6 +765,7 @@ type ThreadStatusInput = Pick<
   | "hasActionableProposedPlan"
   | "hasPendingApprovals"
   | "hasPendingUserInput"
+  | "openReportQuestionCount"
   | "pendingSubagentRequest"
   | "pendingGuestMessageCount"
   | "interactionMode"
@@ -982,6 +983,7 @@ type SidebarThreadStatusInput = Pick<
   SidebarThreadSummary,
   | "hasPendingApprovals"
   | "hasPendingUserInput"
+  | "openReportQuestionCount"
   | "pendingSubagentRequest"
   | "pendingGuestMessageCount"
   | "runtime"
@@ -992,7 +994,11 @@ export function resolveSidebarThreadStatus(thread: SidebarThreadStatusInput): Si
   if (thread.hasPendingApprovals || thread.pendingSubagentRequest === "approval") {
     return "approval";
   }
-  if (thread.hasPendingUserInput || thread.pendingSubagentRequest === "user_input") {
+  if (
+    thread.hasPendingUserInput ||
+    (thread.openReportQuestionCount ?? 0) > 0 ||
+    thread.pendingSubagentRequest === "user_input"
+  ) {
     return "input";
   }
   // A guest is waiting on the owner; the agent's own requests come first.
@@ -1324,7 +1330,11 @@ export function resolveThreadStatusPill(input: {
     };
   }
 
-  if (thread.hasPendingUserInput || thread.pendingSubagentRequest === "user_input") {
+  if (
+    thread.hasPendingUserInput ||
+    (thread.openReportQuestionCount ?? 0) > 0 ||
+    thread.pendingSubagentRequest === "user_input"
+  ) {
     return {
       label: "Awaiting Input",
       colorClass: "text-indigo-600 dark:text-indigo-300/90",

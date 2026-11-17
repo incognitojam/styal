@@ -26,6 +26,7 @@ import * as TestClock from "effect/testing/TestClock";
 import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
 import * as EffectWorker from "./EffectWorker.ts";
 import * as Orchestrator from "./Orchestrator.ts";
+import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
 import * as ProviderReplayHarness from "./testkit/ProviderReplayHarness.ts";
 
@@ -482,6 +483,24 @@ it.effect(
   () =>
     harness("coordinator-reports", ({ orchestrator, send, endTurn }) =>
       Effect.gen(function* () {
+        const count = (expected: number) =>
+          Effect.gen(function* () {
+            assert.equal(
+              ProjectionStore.threadShellFromProjection(
+                yield* orchestrator.getThreadProjection(launcherId),
+              ).openReportQuestionCount,
+              expected,
+            );
+            assert.equal(
+              (yield* orchestrator.getThreadShell(launcherId))?.openReportQuestionCount,
+              expected,
+            );
+            const snapshot = yield* orchestrator.getShellSnapshot();
+            assert.equal(
+              snapshot.threads.find((thread) => thread.id === launcherId)?.openReportQuestionCount,
+              expected,
+            );
+          });
         const turn = yield* send(launcherId, "Review the release");
         const post = (id: string, key = "pr:214") =>
           orchestrator.dispatch({
@@ -496,9 +515,12 @@ it.effect(
             answers: ["Merge", "Wait"],
           });
         yield* post("report:first");
+        yield* count(1);
         yield* post("report:second");
+        yield* count(1);
         yield* post("report:third");
         yield* post("report:other", "issue:9");
+        yield* count(2);
         const projection = yield* orchestrator.getThreadProjection(launcherId);
         const reports = projection.messages.filter((message) => message.report);
         assert.deepEqual(
@@ -530,6 +552,7 @@ it.effect(
           key: "pr:214",
           version: 3,
         });
+        yield* count(1);
         yield* endTurn(turn, "completed");
         const compact = yield* send(launcherId, "/compact");
         assert.notInclude(compact.message.text, "You dismissed the report");
@@ -540,22 +563,23 @@ it.effect(
         const last = yield* send(launcherId, "Continue again");
         assert.notInclude(last.message.text, "You dismissed the report");
         const reportAnswer = {
-          messageId: MessageId.make("report:third"),
-          key: "pr:214",
-          version: 3,
+          messageId: MessageId.make("report:other"),
+          key: "issue:9",
+          version: 1,
         };
         yield* orchestrator.dispatch({
           type: "message.dispatch",
           commandId: CommandId.make("report:answer"),
           threadId: launcherId,
-          messageId: MessageId.make("answer:third"),
-          text: "[Release, version 3] Merge",
+          messageId: MessageId.make("answer:other"),
+          text: "[Release, version 1] Merge",
           reportAnswer,
           attachments: [],
           dispatchMode: { type: "queue_after_active" },
           createdBy: "user",
           creationSource: "web",
         });
+        yield* count(0);
         const window = yield* orchestrator.getThreadSnapshotWindow(launcherId, {
           rowLimit: 1,
           userTurnLimit: 1,
@@ -569,7 +593,7 @@ it.effect(
         );
         const answered = yield* orchestrator.getThreadProjection(launcherId);
         assert.deepEqual(
-          answered.messages.find((message) => message.id === "answer:third")?.reportAnswer,
+          answered.messages.find((message) => message.id === "answer:other")?.reportAnswer,
           reportAnswer,
         );
 
