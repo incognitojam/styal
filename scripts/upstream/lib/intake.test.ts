@@ -1,16 +1,16 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFS from "node:fs";
-import * as NodeChildProcess from "node:child_process";
-import ts from "typescript-legacy";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
+import * as NodeChildProcess from "node:child_process";
 import { assert, describe, it } from "@effect/vitest";
 import { parse } from "yaml";
 
 import type { ForkFeatureLedger } from "../../fork-feature-ledger.ts";
 import type { CommitReview } from "./commit-review.ts";
 import { auditUpstreamIntakeCandidate } from "./intake.ts";
-import { buildImportedClientPaths, nonRegularTextChanges } from "./native-paths.ts";
+import { importedBuildInputs } from "./build-imports.testkit.ts";
+import { buildImportedSourcePaths, nonRegularTextChanges } from "./native-paths.ts";
 
 const repoRoot = NodePath.resolve(
   NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),
@@ -74,100 +74,6 @@ function audit(overrides: Partial<Parameters<typeof auditUpstreamIntakeCandidate
     ],
     ...overrides,
   });
-}
-
-function importedBuildInputs() {
-  const files = NodeChildProcess.execFileSync(
-    "git",
-    ["ls-files", "-z", "--", ".", ":(exclude).repos"],
-    { cwd: repoRoot, encoding: "utf8", maxBuffer: 16 * 1024 * 1024 },
-  )
-    .split("\0")
-    .filter(Boolean);
-  const roots = files.filter(
-    (file) =>
-      /\.[cm]?[jt]sx?$/u.test(file) &&
-      (file.startsWith("scripts/") ||
-        file.includes("/scripts/") ||
-        /\.config\.[cm]?[jt]s$/u.test(file) ||
-        file.startsWith("apps/mobile/plugins/")),
-  );
-  const configurations = new Map<string, ts.CompilerOptions>();
-  const optionsFor = (file: string) => {
-    const config = ts.findConfigFile(NodePath.dirname(file), ts.sys.fileExists);
-    if (config && !configurations.has(config)) {
-      const json = ts.readConfigFile(config, ts.sys.readFile);
-      configurations.set(
-        config,
-        ts.parseJsonConfigFileContent(
-          json.config,
-          {
-            ...ts.sys,
-            readDirectory: () => [],
-          },
-          NodePath.dirname(config),
-        ).options,
-      );
-    }
-    return {
-      ...(config ? configurations.get(config) : {}),
-      moduleResolution: ts.ModuleResolutionKind.Bundler,
-    };
-  };
-  const pending = roots.map((file) => NodePath.join(repoRoot, file));
-  const seen = new Set<string>();
-  const protectedPaths = new Set<string>();
-  while (pending.length > 0) {
-    const file = pending.pop()!;
-    if (seen.has(file) || !NodeFS.existsSync(file)) continue;
-    seen.add(file);
-    const relative = NodePath.relative(repoRoot, file).split(NodePath.sep).join("/");
-    if (
-      relative.startsWith("../") ||
-      relative.includes("node_modules/") ||
-      relative.startsWith(".repos/")
-    )
-      continue;
-    if (/^packages\/(?:shared|client-runtime|contracts)\/src\//u.test(relative))
-      protectedPaths.add(relative);
-    const source = ts.createSourceFile(
-      file,
-      NodeFS.readFileSync(file, "utf8"),
-      ts.ScriptTarget.Latest,
-      true,
-    );
-    const visit = (node: ts.Node): void => {
-      const specifier =
-        ts.isImportDeclaration(node) || ts.isExportDeclaration(node)
-          ? node.moduleSpecifier
-          : ts.isCallExpression(node) &&
-              (node.expression.kind === ts.SyntaxKind.ImportKeyword ||
-                (ts.isIdentifier(node.expression) && node.expression.text === "require"))
-            ? node.arguments[0]
-            : undefined;
-      if (specifier && ts.isStringLiteralLike(specifier)) {
-        const resolved = ts.resolveModuleName(
-          specifier.text,
-          file,
-          optionsFor(file),
-          ts.sys,
-        ).resolvedModule;
-        if (resolved) {
-          const target = NodeFS.realpathSync(resolved.resolvedFileName);
-          if (
-            target.startsWith(`${repoRoot}${NodePath.sep}`) &&
-            !target.includes(`${NodePath.sep}node_modules${NodePath.sep}`)
-          )
-            pending.push(target);
-        } else if (specifier.text.startsWith("@t3tools/") || specifier.text.startsWith("~/")) {
-          assert.fail(`Unresolved build import ${specifier.text} from ${relative}`);
-        }
-      }
-      ts.forEachChild(node, visit);
-    };
-    visit(source);
-  }
-  return protectedPaths;
 }
 
 describe("upstream intake audit", () => {
@@ -254,10 +160,72 @@ describe("upstream intake audit", () => {
     );
   });
 
+  it("fails closed while following every source import form into allowed roots", () => {
+    NodeChildProcess.execFileSync("git", ["check-ignore", "-q", ".scratch"], { cwd: repoRoot });
+    NodeFS.mkdirSync(NodePath.join(repoRoot, ".scratch"), { recursive: true });
+    const root = NodeFS.mkdtempSync(NodePath.join(repoRoot, ".scratch/native-import-graph-"));
+    const write = (path: string, source: string) => {
+      const file = NodePath.join(root, path);
+      NodeFS.mkdirSync(NodePath.dirname(file), { recursive: true });
+      NodeFS.writeFileSync(file, source);
+    };
+    try {
+      write(
+        "tsconfig.json",
+        '{"compilerOptions":{"module":"preserve","moduleResolution":"bundler"},"include":["**/*.ts"]}',
+      );
+      write(
+        "apps/mobile/src/buildHelper.ts",
+        'export { helper } from "../../../packages/shared/src/helper.ts";',
+      );
+      write("packages/shared/src/helper.ts", "export const helper = 1;");
+      for (const source of [
+        'import { helper } from "../apps/mobile/src/buildHelper.ts";',
+        'export { helper } from "../apps/mobile/src/buildHelper.ts";',
+        'import helper = require("../apps/mobile/src/buildHelper.ts");',
+        'const helper = require("../apps/mobile/src/buildHelper.ts");',
+        'const helper = import("../apps/mobile/src/buildHelper.ts");',
+      ]) {
+        write("scripts/entry.ts", source);
+        assert.deepEqual(
+          [...importedBuildInputs(root, ["scripts/entry.ts"])].sort(),
+          ["apps/mobile/src/buildHelper.ts", "packages/shared/src/helper.ts"],
+          source,
+        );
+      }
+      for (const source of [
+        "const broken = ;",
+        'import "./missing.ts";',
+        'export * from "./missing.ts";',
+        'import "@synthetic/missing";',
+        'import helper = require("./missing.ts");',
+        'const helper = require("./missing.ts");',
+        'const helper = import("./missing.ts");',
+      ]) {
+        write("scripts/entry.ts", source);
+        assert.throws(
+          () => importedBuildInputs(root, ["scripts/entry.ts"]),
+          /parse|resolve/iu,
+          source,
+        );
+      }
+      write("scripts/entry.ts", 'import "../apps/mobile/src/buildHelper.ts";');
+      write("apps/mobile/src/buildHelper.ts", "const broken = ;");
+      assert.throws(() => importedBuildInputs(root, ["scripts/entry.ts"]), /Cannot parse/iu);
+      write("apps/mobile/src/buildHelper.ts", "export const helper = 1;");
+      write("tsconfig.json", '{"compilerOptions":');
+      assert.throws(() => importedBuildInputs(root, ["scripts/entry.ts"]), /Cannot parse/iu);
+      write("tsconfig.json", '{"extends":"./missing-config.json"}');
+      assert.throws(() => importedBuildInputs(root, ["scripts/entry.ts"]), /Cannot resolve/iu);
+    } finally {
+      NodeFS.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("keeps the transitive build and audit import closure out of automatic promotion", () => {
-    const imported = importedBuildInputs();
+    const imported = importedBuildInputs(repoRoot);
     assert.deepEqual(
-      [...buildImportedClientPaths],
+      [...buildImportedSourcePaths],
       [...imported].filter((path) => !path.startsWith("packages/contracts/")).sort(),
     );
     for (const path of imported)
