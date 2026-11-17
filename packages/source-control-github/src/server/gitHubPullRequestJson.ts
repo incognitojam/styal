@@ -295,6 +295,15 @@ interface CheckFields {
   readonly targetUrl?: string | null | undefined;
   /** Empty for app-owned runs; absent for commit statuses. */
   readonly workflowName?: string | null | undefined;
+  readonly workflowRun?:
+    | {
+        readonly databaseId: number | null;
+        readonly workflow: { readonly databaseId: number | null };
+        readonly runNumber: number;
+        readonly event: string;
+      }
+    | null
+    | undefined;
   readonly startedAt?: string | null | undefined;
   readonly completedAt?: string | null | undefined;
   /** Branch protection requires this check; asked for on github.com only. */
@@ -773,13 +782,38 @@ function isNamelessCheck(raw: CheckFields): boolean {
   return trimmed(raw.name) === null && trimmed(raw.context) === null;
 }
 
+// GitHub hides superseded runs, including jobs whose names never appear in their replacement.
+function latestWorkflowChecks(raw: ReadonlyArray<CheckFields>): ReadonlyArray<CheckFields> {
+  const newest = new Map<string, NonNullable<CheckFields["workflowRun"]>>();
+  const keyOf = (check: CheckFields) =>
+    JSON.stringify([check.workflowRun?.workflow.databaseId, check.workflowRun?.event]);
+  for (const check of raw) {
+    const run = check.workflowRun;
+    if (run == null || run.databaseId === null || run.workflow.databaseId === null) continue;
+    const key = keyOf(check);
+    const kept = newest.get(key);
+    if (kept === undefined || run.runNumber > kept.runNumber) newest.set(key, run);
+  }
+  return raw.filter((check) => {
+    const run = check.workflowRun;
+    const kept = newest.get(keyOf(check));
+    return (
+      run == null ||
+      run.databaseId === null ||
+      run.workflow.databaseId === null ||
+      kept === undefined ||
+      run.databaseId === kept.databaseId
+    );
+  });
+}
+
 /** Unfinished runs outrank finished runs of the same check across push/PR workflows. */
 function toCheckEntries(raw: ReadonlyArray<CheckFields> | null | undefined): ReadonlyArray<{
   readonly check: PullRequestCheck;
   readonly workflowName: string | null;
   readonly at: string | null;
 }> {
-  return (raw ?? []).flatMap((check) => {
+  return latestWorkflowChecks(raw ?? []).flatMap((check) => {
     const name = trimmed(check.name) ?? trimmed(check.context);
     if (name === null) return [];
     const status = toCheckStatus(check);
@@ -807,7 +841,9 @@ function rollupChecksState(
 ): PullRequestChecksState | null {
   const statuses = [
     ...toChecks(raw).map((check) => check.status),
-    ...(raw ?? []).filter(isNamelessCheck).map((check) => toCheckStatus(check)),
+    ...latestWorkflowChecks(raw ?? [])
+      .filter(isNamelessCheck)
+      .map((check) => toCheckStatus(check)),
   ];
   if (statuses.length === 0) return null;
   if (statuses.includes("failure") || statuses.includes("cancelled")) return "failing";
@@ -1520,7 +1556,11 @@ export type GitHubCheckContext = CheckFields;
 function toCheckContexts(nodes: ReadonlyArray<CheckContext>): ReadonlyArray<GitHubCheckContext> {
   return nodes.map((check) =>
     check.__typename === "CheckRun"
-      ? { ...check, workflowName: check.checkSuite.workflowRun?.workflow.name ?? null }
+      ? {
+          ...check,
+          workflowName: check.checkSuite.workflowRun?.workflow.name ?? null,
+          workflowRun: check.checkSuite.workflowRun,
+        }
       : check,
   );
 }
