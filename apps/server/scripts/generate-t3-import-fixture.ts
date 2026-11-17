@@ -521,12 +521,23 @@ function dumpDatabase(databasePath: string, outputPath: string): void {
       tableName: String(row.tableName),
       sql: String(row.sql),
     }));
+  const shadowTables = new Set(
+    database
+      .prepare("PRAGMA table_list")
+      .all()
+      .filter((row) => row.type === "shadow")
+      .map((row) => String(row.name)),
+  );
   const included = objects.filter(
-    (object) => !EXCLUDED_TABLE_PREFIXES.some((prefix) => object.tableName.startsWith(prefix)),
+    (object) =>
+      !shadowTables.has(object.tableName) &&
+      !EXCLUDED_TABLE_PREFIXES.some((prefix) => object.tableName.startsWith(prefix)),
   );
   const lines = ["PRAGMA foreign_keys=OFF;", "BEGIN;"];
   for (const table of included.filter((object) => object.type === "table")) {
     lines.push(`${table.sql};`);
+    // Contentless search indexes are derived; SQLite creates their shadow tables itself.
+    if (table.sql.startsWith("CREATE VIRTUAL TABLE")) continue;
     const statement = database.prepare(`SELECT * FROM "${table.name}"`);
     statement.setReadBigInts(true);
     for (const row of statement.all() as ReadonlyArray<Record<string, unknown>>) {
