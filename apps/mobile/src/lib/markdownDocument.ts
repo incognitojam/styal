@@ -469,8 +469,15 @@ export function markdownForNativeParsing(markdown: string): string {
   return markdownWithWindowsPathDestinations(markdownWithHtml(markdown));
 }
 
-export function markdownImageDimensions(markdown: string) {
-  const sizes = new Map<string, { width: number; height: number }>();
+export function markdownImageDimensions(
+  markdown: string,
+): Map<string, { width: number; height: number }>;
+export function markdownImageDimensions(
+  markdown: string,
+  widthOnly: true,
+): Map<string, { width: number; height?: number }>;
+export function markdownImageDimensions(markdown: string, widthOnly = false) {
+  const sizes = new Map<string, { width: number; height?: number }>();
   if (!/<img[\s>]/i.test(markdown)) return sizes;
   const dimension = (value: string | null) =>
     value !== null && /^\d+(?:\.\d+)?(?:px)?$/i.test(value.trim()) ? Number.parseFloat(value) : NaN;
@@ -481,8 +488,13 @@ export function markdownImageDimensions(markdown: string) {
         const src = attribute(tag, "src");
         const width = dimension(attribute(tag, "width"));
         const height = dimension(attribute(tag, "height"));
-        if (src && Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0)
-          sizes.set(src, { width, height });
+        if (
+          src &&
+          Number.isFinite(width) &&
+          width > 0 &&
+          (widthOnly || (Number.isFinite(height) && height > 0))
+        )
+          sizes.set(src, { width, ...(Number.isFinite(height) && height > 0 ? { height } : {}) });
       }
     }
     if ("children" in node) node.children.forEach(visit);

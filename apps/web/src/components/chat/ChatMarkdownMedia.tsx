@@ -74,7 +74,7 @@ export function authoredImageSizeStyle(
       maxWidth: `min(100%, 30rem, ${(maxHeightRem * parsedWidth) / parsedHeight}rem)`,
     };
   }
-  if (hasWidth) return { maxWidth: `min(100%, 30rem, ${parsedWidth}px)` };
+  if (hasWidth) return { width: parsedWidth, maxWidth: `min(100%, 30rem, ${parsedWidth}px)` };
   if (hasHeight) return { maxHeight: `min(30rem, ${parsedHeight}px)` };
   return undefined;
 }
@@ -216,7 +216,9 @@ export function ChatMarkdownImage(props: {
     "100%",
     "30rem",
     `${30 * ratio}rem`,
-    ...(naturalWidth ? [`${Math.max(3, naturalWidth)}px`] : []),
+    ...(naturalWidth && typeof props.style?.width !== "number"
+      ? [`${Math.max(3, naturalWidth)}px`]
+      : []),
     ...(typeof props.style?.width === "number" ? [`${props.style.width}px`] : []),
     ...(props.style?.maxWidth ? [props.style.maxWidth] : []),
   ];

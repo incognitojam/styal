@@ -91,7 +91,8 @@ it.each([
     decoded: { width: 480, height: 960 },
     reserveFrame: true,
     sourceDimensions: { width: 120, height: 40 },
-    expected: { width: 120, maxWidth: 120, aspectRatio: 3 },
+    authoredWidth: 300,
+    expected: { width: 300, maxWidth: 300, aspectRatio: 3 },
   },
   {
     knownSize: undefined,
@@ -117,6 +118,7 @@ it.each([
     availableWidth,
     sourceDimensions,
     placeholderSize,
+    authoredWidth,
   }) => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     const container = document.createElement("div");
@@ -137,6 +139,7 @@ it.each([
               knownSize={knownSize}
               reserveFrame={reserveFrame}
               sourceDimensions={sourceDimensions}
+              authoredWidth={authoredWidth}
               placeholderUri={placeholderSize ? "https://example.test/tiny" : undefined}
               onPressPreview={() => {}}
             />

@@ -19,7 +19,6 @@ it.effect(
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const directory = yield* fs.makeTempDirectoryScoped({
-        directory: ".scratch",
         prefix: "pr-images-test-",
       });
       let fetches = 0;
@@ -200,7 +199,6 @@ it.effect("holds native work and its permit until settlement after cancellation"
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const directory = yield* fs.makeTempDirectoryScoped({
-      directory: ".scratch",
       prefix: "pr-images-cancel-",
     });
     const bytes = yield* Effect.promise(() =>
@@ -261,7 +259,6 @@ it.effect("retains failed evictions and retries before admitting another cache e
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const directory = yield* fs.makeTempDirectoryScoped({
-      directory: ".scratch",
       prefix: "pr-images-evict-",
     });
     const cache = `${directory}/cache/pr-image-previews/v1`;

@@ -97,6 +97,7 @@ export function ThreadMarkdownImageView(props: {
   readonly alt: string | null;
   readonly knownSize?: { readonly width: number; readonly height: number } | undefined;
   readonly reserveFrame?: boolean | undefined;
+  readonly authoredWidth?: number | undefined;
   readonly sourceDimensions?: ImageSize | undefined;
   readonly format?: "svg";
   readonly actionsSource?: MediaActionsSource;
@@ -149,8 +150,11 @@ export function ThreadMarkdownImageView(props: {
   const cap = Math.min(
     MARKDOWN_IMAGE_MAX_WIDTH,
     480 * ratio,
-    props.knownSize?.width ?? Infinity,
-    props.sourceDimensions?.width ?? decodedSize?.width ?? Infinity,
+    props.authoredWidth ??
+      props.knownSize?.width ??
+      props.sourceDimensions?.width ??
+      decodedSize?.width ??
+      Infinity,
   );
   const frameStyle: ViewStyle = props.reserveFrame
     ? {

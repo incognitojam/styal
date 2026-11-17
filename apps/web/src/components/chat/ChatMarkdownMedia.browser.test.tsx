@@ -153,7 +153,7 @@ it.each([
     const before = frame.getBoundingClientRect();
     expect(before.width).toBeGreaterThan(0);
     expect(before.height).toBeGreaterThan(0);
-    expect(before.width).toBeLessThanOrEqual(120);
+    expect(before.width).toBe(width);
     const loaded = new Promise<EventTarget | null>((resolve) => {
       frame.addEventListener("load", (event) => resolve(event.target), {
         capture: true,

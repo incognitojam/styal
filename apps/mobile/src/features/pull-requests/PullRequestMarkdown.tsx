@@ -85,14 +85,19 @@ function MarkdownImage(props: {
   readonly alt: string | null;
   readonly onPreview: (source: FilePreviewSource) => void;
   readonly enabled: boolean;
-  readonly knownSize: { width: number; height: number } | undefined;
+  readonly knownSize: { width: number; height?: number } | undefined;
 }) {
   const media = usePullRequestImageUrl(props.href, props.enabled);
   const context = useContext(PullRequestMediaContext);
   const withGallery = useFilePreviewGallery();
   return (
     <ThreadMarkdownImageView
-      knownSize={props.knownSize}
+      knownSize={
+        props.knownSize?.height
+          ? { width: props.knownSize.width, height: props.knownSize.height }
+          : undefined
+      }
+      authoredWidth={props.knownSize?.width}
       reserveFrame={media.reserveFrame}
       sourceDimensions={media.sourceDimensions}
       placeholderUri={media.placeholderUri}
@@ -232,7 +237,7 @@ function PullRequestMarkdownContent(props: {
   readonly lineBreaks: boolean | undefined;
   readonly onTaskListItemPress?: SelectableMarkdownTextProps["onTaskListItemPress"];
 }) {
-  const dimensions = useMemo(() => markdownImageDimensions(props.markdown), [props.markdown]);
+  const dimensions = useMemo(() => markdownImageDimensions(props.markdown, true), [props.markdown]);
   const hostLineBreaks = useContext(LineBreaksContext);
   const autolinks = useContext(AutolinksContext);
   const mediaContext = useContext(PullRequestMediaContext);
