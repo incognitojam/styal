@@ -32,6 +32,15 @@ type Computer = {
   connection: { phase: string; error: string | null };
   entry: { enabled: boolean; target: { _tag: string }; alternateRoutes: [] };
 };
+type T3Summary = {
+  projects: number;
+  threads: number;
+  preferences: number;
+  preferenceChanges: number;
+  previewPending: boolean;
+  projectsAvailable: number;
+  preferencesSelected: boolean;
+};
 type CreateProjectInput = {
   environmentId: EnvironmentId;
   input: { projectId: ProjectId; workspaceRoot: string };
@@ -48,6 +57,10 @@ const state = vi.hoisted(() => ({
   importThreads: vi.fn(),
   refreshProviders: vi.fn(),
   updateSettings: vi.fn(),
+  t3Summary: null as unknown,
+  t3Run: vi.fn(),
+  t3SelectProjects: vi.fn(),
+  t3SelectPreferences: vi.fn(),
   completeOnboarding: vi.fn(),
   onDone: vi.fn(),
   scan: vi.fn(),
@@ -122,15 +135,35 @@ vi.mock(import("../../state/entities"), async (original) => {
   const { useAtomValue } = await import("@effect/atom-react");
   return {
     ...(await original()),
+    useEnvironmentShellStatuses: (() =>
+      new Map(state.computers.map(({ environmentId }) => [environmentId, "live"]))) as never,
     useProjects: (() => useAtomValue(state.projects as Atom.Atom<Project[]>)) as never,
     readProjects: (() => appAtomRegistry.get(state.projects as Atom.Atom<Project[]>)) as never,
     waitForProject: ((ref: unknown) => state.waitForProject(ref)) as never,
   };
 });
-vi.mock(import("../../state/projects"), async (original) => ({
-  ...(await original()),
-  projectEnvironment: { create: "createProject" } as never,
-}));
+vi.mock(import("../../state/projects"), async (original) => {
+  const actual = await original();
+  return {
+    ...actual,
+    projectEnvironment: { create: "createProject" } as never,
+    // Hosted setup leaves out computers whose workspace already has projects.
+    environmentProjects: {
+      ...actual.environmentProjects,
+      projectsAtom: Atom.make((get) => get(state.projects as Atom.Atom<Project[]>)) as never,
+    },
+  };
+});
+vi.mock(import("../../state/threads"), async (original) => {
+  const actual = await original();
+  return {
+    ...actual,
+    environmentThreadShells: {
+      ...actual.environmentThreadShells,
+      threadShellsAtom: Atom.make([]) as never,
+    },
+  };
+});
 vi.mock(import("../../state/agentSessions"), async (original) => ({
   ...(await original()),
   agentSessionImport: "importThreads" as never,
@@ -162,6 +195,42 @@ vi.mock(import("../../state/use-atom-command"), async (original) => ({
     command: "createProject" | "importThreads" | "refreshProviders" | "updateSettings",
   ) => state[command]) as never,
 }));
+
+// The T3 Code importer is tested on its own; here it reports the summary the test sets, keeps a
+// preference choice the way the real importer does, and records calls.
+vi.mock(import("../import/ImportComputer"), async () => {
+  const { useEffect, useImperativeHandle, useState } = await import("react");
+  const { useAtomValue } = await import("@effect/atom-react");
+  function LegacyImportComputer({
+    environmentId,
+    onSummary,
+    ref,
+  }: {
+    environmentId: EnvironmentId;
+    onSummary: (id: EnvironmentId, summary: unknown) => void;
+    ref: (importer: unknown) => void;
+  }) {
+    const summary = useAtomValue(state.t3Summary as Atom.Atom<T3Summary | null>);
+    const [preferencesSelected, setPreferencesSelected] = useState<boolean | null>(null);
+    useEffect(() => {
+      if (summary === null) return;
+      onSummary(
+        environmentId,
+        preferencesSelected === null ? summary : { ...summary, preferencesSelected },
+      );
+    }, [environmentId, onSummary, summary, preferencesSelected]);
+    useImperativeHandle(ref, () => ({
+      run: (options: unknown) => state.t3Run(environmentId, options),
+      selectAllProjects: (selected: boolean) => state.t3SelectProjects(environmentId, selected),
+      selectPreferences: (selected: boolean) => {
+        state.t3SelectPreferences(environmentId, selected);
+        setPreferencesSelected(selected);
+      },
+    }));
+    return null;
+  }
+  return { LegacyImportComputer, HistoryImportComputer: () => null } as never;
+});
 
 import { welcomeImportSelectionKey } from "../../onboarding/welcomeState";
 import { appAtomRegistry } from "../../rpc/atomRegistry";
@@ -305,12 +374,30 @@ async function click(label: string) {
   await act(async () => target.click());
 }
 
-async function mountWelcome() {
+async function mountWelcome({ automaticHostedFirstRun = false } = {}) {
   return render(
     <RegistryContext.Provider value={appAtomRegistry}>
-      <WelcomePage environmentId={primaryId} onDone={state.onDone} />
+      <WelcomePage
+        environmentId={primaryId}
+        automaticHostedFirstRun={automaticHostedFirstRun}
+        onDone={state.onDone}
+      />
     </RegistryContext.Provider>,
   );
+}
+
+const T3_FOUND: T3Summary = {
+  projects: 1,
+  threads: 1,
+  preferences: 1,
+  preferenceChanges: 2,
+  previewPending: false,
+  projectsAvailable: 1,
+  preferencesSelected: true,
+};
+
+function setT3Summary(summary: T3Summary | null) {
+  appAtomRegistry.set(state.t3Summary as Atom.Writable<T3Summary | null>, summary);
 }
 
 function computer(id: string, phase = "connected"): Computer {
@@ -353,6 +440,10 @@ function setup() {
     .mockResolvedValue(AsyncResult.success({ importedCount: 1, skippedCount: 0 }));
   state.refreshProviders.mockReset().mockResolvedValue(AsyncResult.success(undefined));
   state.updateSettings.mockReset().mockResolvedValue(AsyncResult.success(undefined));
+  state.t3Summary = Atom.make<T3Summary | null>(null).pipe(Atom.keepAlive);
+  state.t3Run.mockReset().mockResolvedValue({ success: true });
+  state.t3SelectProjects.mockReset();
+  state.t3SelectPreferences.mockReset();
   state.completeOnboarding.mockReset().mockResolvedValue(undefined);
   state.onDone.mockReset();
   state.scan.mockReset();
@@ -379,6 +470,9 @@ it("rechecks after project creation and can retry its history without recreating
   await using _screen = await mountWelcome();
   await click("Import 2 projects and start");
   expect(state.createProject).toHaveBeenCalledOnce();
+  // Each project shows where its import is.
+  expect(pageText()).toContain("firstImporting…");
+  expect(pageText()).toContain("secondQueued");
   await act(async () => {
     setGrant(primaryId, false);
     creation.resolve();
@@ -581,6 +675,7 @@ it("keeps projects whose history did not all import selected, so Start retries t
     ),
   );
   expect(state.completeOnboarding).not.toHaveBeenCalled();
+  expect(pageText()).toContain("secondCould not import all history");
   // Only the unfinished project stays checked; it exists now, so Start imports its threads again.
   expect(pageText()).toContain("Import 1 project and their threads");
 
@@ -926,4 +1021,183 @@ it("saves the settling choice only where it differs, and stays when a save fails
   state.updateSettings.mockReset().mockResolvedValue(AsyncResult.success(undefined));
   await click("Start");
   await vi.waitFor(() => expect(state.onDone).toHaveBeenCalledOnce());
+});
+
+function checkboxNamed(screen: Awaited<ReturnType<typeof mountWelcome>>, name: RegExp) {
+  return screen.getByRole("checkbox", { name }).element() as HTMLElement;
+}
+
+it("offers T3 Code migration on its own, apart from the history import", async () => {
+  using _now = setup();
+  // Without a T3 Code install the page shows no T3 Code band.
+  {
+    await using first = await mountWelcome();
+    await expect.element(first.getByText("Import 2 projects and their threads")).toBeVisible();
+    await expect.element(first.getByRole("heading", { name: "T3 Code" })).not.toBeInTheDocument();
+  }
+  setT3Summary({
+    projects: 2,
+    threads: 5,
+    preferences: 1,
+    preferenceChanges: 3,
+    previewPending: false,
+    projectsAvailable: 2,
+    preferencesSelected: true,
+  });
+  const t3Project = { environmentId: primaryId, projectId: ProjectId.make("from-t3") };
+  const order: string[] = [];
+  state.t3Run.mockImplementation(async () => {
+    order.push("t3");
+    return { success: false };
+  });
+  state.createProject.mockImplementation(async (input: CreateProjectInput) => {
+    order.push("history");
+    return recordProject(input);
+  });
+  await using screen = await mountWelcome();
+  await vi.waitFor(() => expect(pageText()).toContain("Import 2 projects from T3 Code"));
+  expect(pageText()).toContain("Bring over T3 Code preferences");
+  expect(pageText()).toContain("3 settings differ from styal");
+
+  // Leaving out the history import leaves the T3 Code choices alone, and the two T3 Code rows
+  // are separate choices.
+  await act(async () => checkboxNamed(screen, /Import 2 projects and their threads/).click());
+  await act(async () => checkboxNamed(screen, /Bring over T3 Code preferences/).click());
+  expect(state.t3SelectPreferences).toHaveBeenCalledWith(primaryId, false);
+  expect(state.t3SelectProjects).not.toHaveBeenCalled();
+
+  // Start counts the T3 Code projects it imports.
+  await click("Import 2 projects and start");
+  // T3 Code imports projects and preferences together; a failure keeps the page for a retry.
+  expect(state.t3Run).toHaveBeenCalledWith(primaryId, { includePreferences: true });
+  await vi.waitFor(() => expect(pageText()).toContain("Some T3 Code data could not be imported"));
+  expect(state.completeOnboarding).not.toHaveBeenCalled();
+  expect(order).toEqual(["t3"]);
+
+  state.t3Run.mockImplementation(async () => {
+    order.push("t3");
+    return { success: true, projectRef: t3Project };
+  });
+  await act(async () => checkboxNamed(screen, /Import projects and their threads/).click());
+  await click("Import 4 projects and start");
+  await vi.waitFor(() => expect(state.onDone).toHaveBeenCalledOnce());
+  // T3 Code lands first, then the history import, which chooses where to land.
+  expect(order).toEqual(["t3", "t3", "history", "history"]);
+  expect(state.onDone.mock.calls[0]?.[0]).not.toEqual(t3Project);
+});
+
+it("waits for T3 Code discovery before starting, but not after a scan that finds nothing", async () => {
+  using _now = setup();
+  appAtomRegistry.set(candidatesAtom(), []);
+  setT3Summary({
+    ...T3_FOUND,
+    projects: 0,
+    projectsAvailable: 0,
+    preferences: 0,
+    preferenceChanges: 0,
+    previewPending: true,
+  });
+  await using screen = await mountWelcome();
+  expect(button("Start").disabled).toBe(true);
+  expect(pageText()).toContain("Checking for T3 Code…");
+
+  await act(async () => setT3Summary(T3_FOUND));
+  await vi.waitFor(() => expect(pageText()).toContain("Import 1 project from T3 Code"));
+  expect(button("Import 1 project and start").disabled).toBe(false);
+
+  await act(async () =>
+    setT3Summary({
+      ...T3_FOUND,
+      projects: 0,
+      projectsAvailable: 0,
+      preferences: 0,
+      preferenceChanges: 0,
+    }),
+  );
+  await vi.waitFor(() => expect(button("Start").disabled).toBe(false));
+  expect(screen.getByRole("heading", { name: "T3 Code" }).query()).toBeNull();
+  expect(pageText()).not.toContain("Checking for T3 Code…");
+});
+
+it("keeps a computer's T3 Code choices when it is unchecked and checked again", async () => {
+  using _now = setup();
+  state.computers = [computer("primary"), computer("laptop")];
+  addSessions();
+  appAtomRegistry.set(candidatesAtom(), []);
+  setT3Summary(T3_FOUND);
+  await using screen = await mountWelcome();
+  const preferences = () => checkboxNamed(screen, /Bring over T3 Code preferences/);
+  await act(async () => computerCheckbox(screen, "laptop").click());
+  await vi.waitFor(() => expect(pageText()).toContain("Different on 2 computers"));
+  await act(async () => preferences().click());
+  await vi.waitFor(() => expect(preferences().getAttribute("aria-checked")).toBe("false"));
+
+  await act(async () => computerCheckbox(screen, "laptop").click());
+  await vi.waitFor(() => expect(pageText()).toContain("Setting up primary."));
+  await act(async () => computerCheckbox(screen, "laptop").click());
+  await vi.waitFor(() => expect(pageText()).toContain("Different on 2 computers"));
+  expect(preferences().getAttribute("aria-checked")).toBe("false");
+});
+
+it("lands in the T3 Code project from the first try when the retry only brings preferences", async () => {
+  using _now = setup();
+  appAtomRegistry.set(candidatesAtom(), []);
+  setT3Summary(T3_FOUND);
+  const t3Project = { environmentId: primaryId, projectId: ProjectId.make("from-t3") };
+  // The project request succeeds and the preference request fails; the retry sends preferences.
+  state.t3Run
+    .mockResolvedValueOnce({ success: false, projectRef: t3Project })
+    .mockResolvedValueOnce({ success: true });
+  state.waitForProject.mockResolvedValue({});
+  await using _screen = await mountWelcome();
+  await vi.waitFor(() => expect(pageText()).toContain("Import 1 project from T3 Code"));
+
+  await click("Import 1 project and start");
+  await vi.waitFor(() => expect(pageText()).toContain("Some T3 Code data could not be imported"));
+  await click("Import 1 project and start");
+  await vi.waitFor(() => expect(state.onDone).toHaveBeenCalledWith(t3Project));
+});
+
+it("keeps setting up an empty hosted computer once its T3 Code import adds projects", async () => {
+  using _now = setup();
+  appAtomRegistry.set(candidatesAtom(), []);
+  setT3Summary(T3_FOUND);
+  // The first imported project reaches the client before the import reports a failure.
+  state.t3Run.mockImplementationOnce(async (environmentId: EnvironmentId) => {
+    appAtomRegistry.set(projectsAtom(), [
+      { id: ProjectId.make("from-t3"), environmentId, workspaceRoot: "/t3/first" },
+    ]);
+    return { success: false };
+  });
+  await using _screen = await mountWelcome({ automaticHostedFirstRun: true });
+  await vi.waitFor(() => expect(pageText()).toContain("Import 1 project from T3 Code"));
+
+  await click("Import 1 project and start");
+  await vi.waitFor(() => expect(pageText()).toContain("Some T3 Code data could not be imported"));
+  expect(pageText()).toContain("Setting up primary.");
+
+  await click("Import 1 project and start");
+  await vi.waitFor(() => expect(state.onDone).toHaveBeenCalledOnce());
+  expect(state.t3Run).toHaveBeenCalledTimes(2);
+});
+
+it("lands in the first T3 Code project when no history is imported", async () => {
+  using _now = setup();
+  appAtomRegistry.set(candidatesAtom(), []);
+  setT3Summary({
+    projects: 1,
+    threads: 1,
+    preferences: 0,
+    preferenceChanges: 0,
+    previewPending: false,
+    projectsAvailable: 1,
+    preferencesSelected: false,
+  });
+  const t3Project = { environmentId: primaryId, projectId: ProjectId.make("from-t3") };
+  state.t3Run.mockResolvedValue({ success: true, projectRef: t3Project });
+  state.waitForProject.mockResolvedValue({});
+  await using _screen = await mountWelcome();
+  await vi.waitFor(() => expect(pageText()).toContain("Import 1 project from T3 Code"));
+  await click("Import 1 project and start");
+  await vi.waitFor(() => expect(state.onDone).toHaveBeenCalledWith(t3Project));
 });

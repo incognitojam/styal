@@ -320,10 +320,11 @@ export function DataImportPanel({
 }
 
 /** Runs each importer in turn; `null` when the panel unmounted before the batch finished. */
-async function runImportBatch(
+export async function runImportBatch(
   batch: ReadonlyArray<{
     readonly environment: { readonly label: string };
     readonly importer: ComputerImporter | undefined;
+    readonly options?: Parameters<ComputerImporter["run"]>[0];
   }>,
   mounted: { readonly current: boolean },
   setProgress: (progress: string) => void,
@@ -335,7 +336,7 @@ async function runImportBatch(
   let success = true;
   let firstProject: ScopedProjectRef | undefined;
   const failures: string[] = [];
-  for (const { environment, importer } of batch) {
+  for (const { environment, importer, options } of batch) {
     if (!mounted.current) return null;
     if (!importer) {
       success = false;
@@ -343,7 +344,7 @@ async function runImportBatch(
     }
     try {
       setProgress(`Importing from ${environment.label}…`);
-      const result = await importer.run();
+      const result = await importer.run(options);
       if (!result.success) {
         success = false;
         failures.push(environment.label);

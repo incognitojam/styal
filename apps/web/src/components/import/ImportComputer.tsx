@@ -58,6 +58,8 @@ export function LegacyImportComputer({
   const preferenceChanges = legacy.changes.length;
   // A disconnected computer cannot answer; waiting on it would lock every way out of setup.
   const previewPending = connected && legacy.preview === null && legacy.query.error === null;
+  const projectsAvailable = legacy.projects.length;
+  const preferencesSelected = legacy.selectedPreferences;
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- reports import selection and discovery readiness to the parent setup summary
   useEffect(
     () =>
@@ -67,15 +69,33 @@ export function LegacyImportComputer({
         preferences,
         preferenceChanges,
         previewPending,
+        projectsAvailable,
+        preferencesSelected,
       }),
-    [environmentId, onSummary, projects, threads, preferences, preferenceChanges, previewPending],
+    [
+      environmentId,
+      onSummary,
+      projects,
+      threads,
+      preferences,
+      preferenceChanges,
+      previewPending,
+      projectsAvailable,
+      preferencesSelected,
+    ],
   );
   useImperativeHandle(ref, () => ({
-    run: async () => {
-      if (!connected && (projects > 0 || preferences > 0))
+    run: async (options) => {
+      const withPreferences = options?.includePreferences ?? includePreferences;
+      if (!connected && (projects > 0 || (withPreferences && legacy.selectedPreferences)))
         throw new Error(`${label} is not connected.`);
-      return legacy.run({ includeProjects, includePreferences });
+      return legacy.run({ includeProjects, includePreferences: withPreferences });
     },
+    selectAllProjects: (selected) =>
+      legacy.setSelection(
+        new Set(selected ? legacy.projects.map((project) => project.projectId) : []),
+      ),
+    selectPreferences: legacy.setIncludeSettings,
   }));
   if (!active && !importing) return null;
   const available = legacy.preview?.status === "available" ? legacy.preview : null;

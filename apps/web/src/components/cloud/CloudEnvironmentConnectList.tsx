@@ -93,6 +93,7 @@ export function CloudEnvironmentConnectRows({
   readonly selection?: {
     readonly selectedIds: ReadonlySet<EnvironmentId>;
     readonly onChange: (environmentId: EnvironmentId, selected: boolean) => void;
+    readonly disabled?: boolean;
   };
   /** Selection rows without a card, lined up with the Welcome page's icon column. */
   readonly plainRows?: boolean;
@@ -377,7 +378,11 @@ export function CloudEnvironmentConnectRows({
           <span className={cn("flex shrink-0 items-center justify-center", plainRows && "size-5")}>
             <Checkbox
               checked={!unsupported && selection.selectedIds.has(environment.environmentId)}
-              disabled={unsupported || connectingEnvironmentIds.has(environment.environmentId)}
+              disabled={
+                unsupported ||
+                selection.disabled === true ||
+                connectingEnvironmentIds.has(environment.environmentId)
+              }
               onCheckedChange={async (checked) => {
                 if (unsupported) return;
                 selection.onChange(environment.environmentId, checked);

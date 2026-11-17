@@ -116,6 +116,12 @@ import { StyalWordmark } from "../StyalWordmark";
 import { WorkspacePageHeader } from "../WorkspacePageHeader";
 import { WelcomeComputersSection, useWelcomeComputers } from "./WelcomeComputers";
 import { WelcomeSettlementSection, useWelcomeSettlement } from "./WelcomeSettlement";
+import {
+  T3_DISCOVERING_MESSAGE,
+  WelcomeT3ImportSection,
+  useWelcomeT3Import,
+} from "./WelcomeT3Import";
+import { ImportProgressView } from "../import/ImportProgressView";
 import { RowIcon, WelcomeSection } from "./welcomeLayout";
 import { cn } from "../../lib/utils";
 import { useRelativeTimeState } from "../../hooks/useRelativeTimeState";
@@ -152,10 +158,8 @@ export function WelcomePage({
       else next.delete(id);
       return next;
     });
-  const { setupIds, skippedIds, checkingComputers, computersAlreadySetUp } = useWelcomeComputers(
-    selectedComputerIds,
-    automaticHostedFirstRun,
-  );
+  const { setupIds, skippedIds, checkingComputers, computersAlreadySetUp, hold } =
+    useWelcomeComputers(selectedComputerIds, automaticHostedFirstRun);
   const labelOf = (id: EnvironmentId) =>
     environments.find((environment) => environment.environmentId === id)?.label ?? "this computer";
   const showComputers = environments.length > 1 || primaryEnvironmentId === null;
@@ -269,25 +273,32 @@ export function WelcomePage({
   const selected = projectImport.canWrite ? projectImport.selected : [];
   const newCount = selected.filter(projectImport.isNew).length;
   const settlement = useWelcomeSettlement(setupIds);
+  const t3 = useWelcomeT3Import(setupIds);
+  const importCount = newCount + t3.projectsSelected;
   // The fork's setup choices save before any import; a failed save keeps the page.
   const [preparing, setPreparing] = useState(false);
-  const busy = isImporting || preparing;
+  const busy = isImporting || preparing || t3.pending;
   const start = async () => {
     if (busy) return;
     setPreparing(true);
+    // The computers being set up stay so through the import and its retries.
+    hold();
     holdPageRef.current = true;
     const saved = await settlement.save();
+    // T3 Code projects, then preferences, land before the history import; a failure stays here.
+    const t3Result = saved ? await t3.run(labelOf) : { success: false };
     holdPageRef.current = false;
     setPreparing(false);
-    if (!saved) return;
+    if (!t3Result.success) return;
+    const landing = t3Result.projectRef;
     keepChoicesRef.current = scans.some((scan) => scan.data === null);
     if (selected.length === 0) {
-      projectImport.finishAfterImport();
+      projectImport.finishAfterImport(landing);
       return;
     }
     // Stored now, so after a restart mid-import these stay checked even once they exist.
     projectImport.setSelectedKeys(new Set(selected.map((candidate) => candidate.key)));
-    void projectImport.runImport(selected);
+    void projectImport.runImport(selected, landing);
   };
 
   return (
@@ -326,6 +337,7 @@ export function WelcomePage({
                   selectedIds={selectedComputerIds}
                   skippedLabels={skippedIds.map(labelOf)}
                   pairingFirst={primaryEnvironmentId === null && !hasCloudPublicConfig()}
+                  disabled={busy}
                   onToggle={toggleComputer}
                   onPaired={(id) => toggleComputer(id, true)}
                 />
@@ -343,6 +355,7 @@ export function WelcomePage({
                 />
               ))}
               <ProjectsSection scans={scans} projectImport={projectImport} isImporting={busy} />
+              <WelcomeT3ImportSection t3={t3} environmentIds={setupIds} busy={busy} />
               {settlement.available ? (
                 <WelcomeSettlementSection settlement={settlement} disabled={busy} />
               ) : null}
@@ -354,21 +367,27 @@ export function WelcomePage({
               {canStart ? (
                 <span />
               ) : (
-                <Button variant="ghost-muted" disabled={busy} onClick={() => void start()}>
+                <Button
+                  variant="ghost-muted"
+                  disabled={busy || t3.discovering}
+                  onClick={() => void start()}
+                >
                   Start without an agent
                 </Button>
               )}
               <div className="flex items-center gap-3">
-                {canStart ? null : (
-                  <span className="text-xs text-muted-foreground">Set up one agent to start.</span>
+                {canStart && !t3.discovering ? null : (
+                  <span className="text-xs text-muted-foreground">
+                    {canStart ? T3_DISCOVERING_MESSAGE : "Set up one agent to start."}
+                  </span>
                 )}
-                <Button disabled={!canStart || busy} onClick={() => void start()}>
+                <Button disabled={!canStart || busy || t3.discovering} onClick={() => void start()}>
                   {busy
-                    ? selected.length > 0 && !preparing
+                    ? (selected.length > 0 && !preparing) || t3.running
                       ? "Importing…"
                       : "Starting…"
-                    : newCount > 0
-                      ? `Import ${newCount} ${newCount === 1 ? "project" : "projects"} and start`
+                    : importCount > 0
+                      ? `Import ${importCount} ${importCount === 1 ? "project" : "projects"} and start`
                       : selected.length > 0
                         ? "Import threads and start"
                         : "Start"}
@@ -990,6 +1009,30 @@ function ProjectsSection({
       {visibleImportError ? (
         <p className="pt-1 pl-8 text-sm text-destructive">{visibleImportError}</p>
       ) : null}
+      {(isImporting || projectImport.importFailed) && projectImport.progress !== null ? (
+        <div className="pt-2 pl-8">
+          <ImportProgressView
+            label="Claude Code, Codex and Pi history"
+            rows={candidates.flatMap((candidate) => {
+              const status = projectImport.progress?.get(candidate.key);
+              return status === undefined
+                ? []
+                : [
+                    {
+                      id: candidate.key,
+                      title:
+                        computerOf === undefined
+                          ? candidate.title
+                          : `${candidate.title} on ${computerOf(candidate)}`,
+                      complete: status === "complete",
+                      failed: status === "failed",
+                      status: PROJECT_IMPORT_STATUS_LABELS[status],
+                    },
+                  ];
+            })}
+          />
+        </div>
+      ) : null}
     </WelcomeSection>
   );
 }
@@ -1539,12 +1582,19 @@ function useProjectImport({
       0,
     );
 
-  const finishAfterImport = () => {
-    const projectRef = resolveOnboardingLandingProject(
-      lastImportSelectionRef.current,
-      projectsWithImportedHistoryRef.current,
-      importedProjectsRef.current,
-    );
+  // Each selected project's import status, shown while the import runs.
+  const [progress, setProgress] = useState<ReadonlyMap<string, ProjectImportStatus> | null>(null);
+  const mark = (key: string, status: ProjectImportStatus) =>
+    setProgress((current) => new Map(current ?? []).set(key, status));
+
+  // `fallback` is where to land when no history import chose a project, such as a T3 Code import.
+  const finishAfterImport = (fallback?: ScopedProjectRef) => {
+    const projectRef =
+      resolveOnboardingLandingProject(
+        lastImportSelectionRef.current,
+        projectsWithImportedHistoryRef.current,
+        importedProjectsRef.current,
+      ) ?? fallback;
     // Busy until setup is saved, so Start cannot run the import again meanwhile.
     setIsImporting(true);
     if (projectRef === undefined) {
@@ -1572,7 +1622,7 @@ function useProjectImport({
       });
   };
 
-  const runImport = async (selection: typeof candidates) => {
+  const runImport = async (selection: typeof candidates, fallback?: ScopedProjectRef) => {
     if (isImporting) return;
     const hasAccess = () =>
       selection.every((candidate) =>
@@ -1603,6 +1653,14 @@ function useProjectImport({
         : 0;
     let skippedThreadCount = 0;
     const refreshEnvironments = new Set<EnvironmentId>();
+    setProgress(
+      new Map(
+        selection.map((candidate) => [
+          candidate.key,
+          importedProjects.has(candidate.key) ? "complete" : "queued",
+        ]),
+      ),
+    );
     // Resolves false when the run stopped early: a newer run, an unmount, or lost access.
     const importEach = async () => {
       for (const candidate of selection) {
@@ -1613,6 +1671,7 @@ function useProjectImport({
           return false;
         }
         if (importedProjects.has(candidate.key)) continue;
+        mark(candidate.key, "importing");
         let projectId = resolveOnboardingProjectId(readProjects(), environmentId, candidate);
         if (projectId === null) {
           let attempt = projectAttempts.get(candidate.key);
@@ -1638,6 +1697,7 @@ function useProjectImport({
           });
           if (importGeneration !== importGenerationRef.current) return false;
           if (result._tag !== "Success") {
+            mark(candidate.key, "failed");
             if (!isAtomCommandInterrupted(result)) {
               projectAttempts.delete(candidate.key);
               refreshEnvironments.add(environmentId);
@@ -1671,9 +1731,13 @@ function useProjectImport({
             importedProjectsCount += 1;
             importedProjects.set(candidate.key, scopeProjectRef(environmentId, projectId));
           }
-        } else if (!isAtomCommandInterrupted(threadImportResult)) {
-          projectAttempts.delete(candidate.key);
-          refreshEnvironments.add(environmentId);
+          mark(candidate.key, threadImportResult.value.skippedCount === 0 ? "complete" : "failed");
+        } else {
+          mark(candidate.key, "failed");
+          if (!isAtomCommandInterrupted(threadImportResult)) {
+            projectAttempts.delete(candidate.key);
+            refreshEnvironments.add(environmentId);
+          }
         }
       }
       return true;
@@ -1710,7 +1774,7 @@ function useProjectImport({
       setImportFailure(`${imported}${skipped} Start again to retry what is still selected.`);
       return;
     }
-    finishAfterImport();
+    finishAfterImport(fallback);
   };
 
   return {
@@ -1724,10 +1788,19 @@ function useProjectImport({
     readOnlyEnvironmentIds,
     importFailed: importFailure !== null,
     visibleImportError,
+    progress,
     runImport,
     finishAfterImport,
   };
 }
+
+type ProjectImportStatus = "queued" | "importing" | "complete" | "failed";
+const PROJECT_IMPORT_STATUS_LABELS: Record<ProjectImportStatus, string> = {
+  queued: "Queued",
+  importing: "Importing…",
+  complete: "Complete",
+  failed: "Could not import all history",
+};
 
 type ImportCandidate = AgentSessionProjectCandidate & {
   readonly environmentId: EnvironmentId;

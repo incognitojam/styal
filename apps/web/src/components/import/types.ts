@@ -61,13 +61,19 @@ export interface ImportPreferencesModel {
 export interface ComputerImportSummary {
   readonly preferenceChanges?: number;
   readonly previewPending?: boolean;
+  /** T3 Code projects found, selected or not. */
+  readonly projectsAvailable?: number;
+  readonly preferencesSelected?: boolean;
   readonly projects: number;
   readonly threads: number;
   readonly preferences: number;
 }
 
 export interface ComputerImporter {
-  readonly run: () => Promise<ImportOutcome>;
+  /** `includePreferences` overrides the step's own choice, for a page that imports both at once. */
+  readonly run: (options?: { readonly includePreferences?: boolean }) => Promise<ImportOutcome>;
+  readonly selectAllProjects?: (selected: boolean) => void;
+  readonly selectPreferences?: (selected: boolean) => void;
 }
 
 export interface ImportComputerOption {

@@ -46,7 +46,8 @@ const environmentsWithWorkAtom = Atom.make((get) =>
 
 /**
  * The selected computers the page sets up: connected ones, and on the hosted app's automatic first
- * run only those without projects or threads once their workspace is live.
+ * run only those without projects or threads once their workspace is live. `hold` keeps the
+ * computers being set up when Start begins, so the projects an import adds cannot drop them.
  */
 export function useWelcomeComputers(
   selectedIds: ReadonlySet<EnvironmentId>,
@@ -55,11 +56,13 @@ export function useWelcomeComputers(
   const { environments } = useEnvironments();
   const connection = resolveOnboardingSetup(environments, selectedIds);
   const shellStatuses = useEnvironmentShellStatuses();
+  const [heldIds, setHeldIds] = useState<ReadonlySet<EnvironmentId>>(new Set());
   const withWork = new Set(
     useAtomValue(environmentsWithWorkAtom)
       .split(",")
       .filter((id) => id.length > 0)
-      .map((id) => EnvironmentId.make(id)),
+      .map((id) => EnvironmentId.make(id))
+      .filter((id) => !heldIds.has(id)),
   );
   const connecting = selectedIds.size > 0 && !connection.ready;
   if (!automaticHostedFirstRun) {
@@ -68,6 +71,7 @@ export function useWelcomeComputers(
       skippedIds: connection.skippedIds,
       checkingComputers: connecting && connection.environmentIds.length === 0,
       computersAlreadySetUp: false,
+      hold: () => {},
     };
   }
   const hosted = resolveHostedConnectionSetup({
@@ -81,12 +85,14 @@ export function useWelcomeComputers(
     threadEnvironmentIds: withWork,
   });
   const decided = connection.ready && hosted._tag !== "Pending";
+  const setupIds = decided && hosted._tag === "Setup" ? hosted.environmentIds : [];
   return {
-    setupIds: decided && hosted._tag === "Setup" ? hosted.environmentIds : [],
+    setupIds,
     skippedIds: connection.skippedIds,
     checkingComputers:
       selectedIds.size > 0 && !decided && (connecting || hosted._tag === "Pending"),
     computersAlreadySetUp: decided && hosted._tag === "Complete",
+    hold: () => setHeldIds((current) => new Set([...current, ...setupIds])),
   };
 }
 
@@ -98,10 +104,13 @@ export function WelcomeComputersSection({
   selectedIds,
   skippedLabels,
   pairingFirst,
+  disabled,
   onToggle,
   onPaired,
 }: {
   readonly selectedIds: ReadonlySet<EnvironmentId>;
+  // Setup is running, so the computers it works on stay as they are.
+  readonly disabled: boolean;
   // Selected computers that are not connected, which the bands below leave out.
   readonly skippedLabels: ReadonlyArray<string>;
   // Without this computer or styal Link, pairing is the only way to add one.
@@ -129,7 +138,7 @@ export function WelcomeComputersSection({
             <RowIcon>
               <Checkbox
                 checked={!unsupported && selectedIds.has(environment.environmentId)}
-                disabled={unsupported || isPairing}
+                disabled={unsupported || isPairing || disabled}
                 onCheckedChange={(checked) => onToggle(environment.environmentId, checked)}
               />
             </RowIcon>
@@ -156,11 +165,15 @@ export function WelcomeComputersSection({
         );
       })}
       {cloudEnabled ? (
-        <LinkedComputers disabled={isPairing} selectedIds={selectedIds} onToggle={onToggle} />
+        <LinkedComputers
+          disabled={isPairing || disabled}
+          selectedIds={selectedIds}
+          onToggle={onToggle}
+        />
       ) : null}
       <Collapsible open={pairingOpen} onOpenChange={setPairingOpen}>
         <CollapsibleTrigger
-          disabled={isPairing}
+          disabled={isPairing || disabled}
           className="group flex min-h-10 w-full items-center gap-3 rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
         >
           <RowIcon>
@@ -174,6 +187,7 @@ export function WelcomeComputersSection({
         <CollapsiblePanel>
           <div className="pb-2 pl-8">
             <PairingForm
+              disabled={disabled}
               isPairing={isPairing}
               setIsPairing={setIsPairing}
               onPaired={(environmentId) => {
@@ -234,7 +248,7 @@ function LinkedComputers({
           savedEnvironments={environments}
           showSavedEnvironments
           onDiscoveryReady={onDiscoveryReady}
-          selection={{ selectedIds, onChange: onToggle }}
+          selection={{ selectedIds, onChange: onToggle, disabled }}
           plainRows
           refreshWhileEmpty
           empty={<p className="pl-8 text-xs text-muted-foreground">No computers linked yet.</p>}
@@ -259,10 +273,12 @@ function LinkedComputers({
 }
 
 function PairingForm({
+  disabled,
   isPairing,
   setIsPairing,
   onPaired,
 }: {
+  readonly disabled: boolean;
   readonly isPairing: boolean;
   readonly setIsPairing: (value: boolean) => void;
   readonly onPaired: (environmentId: EnvironmentId) => void;
@@ -281,7 +297,7 @@ function PairingForm({
   }, []);
 
   const submit = async () => {
-    if (isPairing || pairingUrl.trim().length === 0) return;
+    if (disabled || isPairing || pairingUrl.trim().length === 0) return;
     setIsPairing(true);
     setErrorMessage("");
     const result = await connectPairingEnvironment({ pairingUrl: pairingUrl.trim() });
@@ -330,7 +346,7 @@ function PairingForm({
           type="submit"
           size="sm"
           variant="outline"
-          disabled={isPairing || pairingUrl.trim().length === 0}
+          disabled={disabled || isPairing || pairingUrl.trim().length === 0}
         >
           {isPairing ? "Pairing…" : "Pair"}
         </Button>

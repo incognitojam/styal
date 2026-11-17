@@ -59,6 +59,10 @@ const UPSTREAM_NAMING_EXCEPTIONS: ReadonlyArray<{
     reason: "Import screens name the upstream T3 Code install being imported.",
   },
   {
+    path: "apps/web/src/components/onboarding/WelcomeT3Import.tsx",
+    reason: "The Welcome page's T3 Code band names the upstream install being imported.",
+  },
+  {
     path: "apps/web/src/components/settings/settingsSearch.ts",
     reason: "The Import from T3 Code settings entry names the upstream install.",
   },
