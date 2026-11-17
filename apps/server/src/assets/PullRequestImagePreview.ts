@@ -1,0 +1,329 @@
+import * as NodeModule from "node:module";
+import type { SourceControlImagePreviewError } from "@t3tools/source-control-core/server/driver";
+import type { AssetImagePreview } from "@t3tools/contracts";
+import * as Fiber from "effect/Fiber";
+import * as Scope from "effect/Scope";
+import * as Context from "effect/Context";
+import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
+import * as Layer from "effect/Layer";
+import * as Clock from "effect/Clock";
+import * as Schema from "effect/Schema";
+import * as Semaphore from "effect/Semaphore";
+import * as Schedule from "effect/Schedule";
+import * as Digest from "effect/crypto/Digest";
+import * as Hex from "effect/encoding/Hex";
+import * as ServerConfig from "../config.ts";
+
+export class ImagePreviewError extends Schema.TaggedError<ImagePreviewError>()(
+  "ImagePreviewError",
+  {},
+) {
+  override get message() {
+    return "Image preview unavailable. Open the original image.";
+  }
+}
+
+type Source = { readonly bytes: Uint8Array; readonly contentType: string };
+type Derivative = Source & {
+  readonly expiresAt: number;
+  readonly sourceDimensions?: { readonly width: number; readonly height: number };
+};
+type Input = {
+  readonly identity: string;
+  readonly preview: AssetImagePreview;
+  readonly fetch: Effect.Effect<Source, SourceControlImagePreviewError>;
+};
+
+export class PullRequestImagePreview extends Context.Service<
+  PullRequestImagePreview,
+  {
+    readonly read: (input: Input) => Effect.Effect<Derivative, ImagePreviewError>;
+  }
+>()("@styal/cli/assets/PullRequestImagePreview") {}
+
+const cacheMetadata = Schema.fromJsonString(
+  Schema.Struct({
+    contentType: Schema.String,
+    sourceDimensions: Schema.optionalKey(
+      Schema.Struct({ width: Schema.Number, height: Schema.Number }),
+    ),
+  }),
+);
+
+const requireSharp = NodeModule.createRequire(import.meta.url);
+
+const make = Effect.gen(function* () {
+  const sharp = yield* Effect.try({
+    try: () => requireSharp("sharp") as typeof import("sharp").default,
+    catch: () => new ImagePreviewError({}),
+  }).pipe(Effect.option);
+  const scope = yield* Scope.Scope;
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const config = yield* ServerConfig.ServerConfig;
+  const digest = yield* Digest.Digest;
+  const directory = path.join(config.stateDir, "cache", "pr-image-previews", "v1");
+  const lock = yield* Semaphore.make(1);
+  const fetchSlots = yield* Semaphore.make(2);
+  const active = new Map<
+    string,
+    { token: symbol; read: Effect.Effect<Derivative, ImagePreviewError> }
+  >();
+  // Abandoned native work stays admitted until its Sharp promises settle.
+  const inProgress = new Set<symbol>();
+  const sources = new Map<string, { fetch: Input["fetch"]; users: number }>();
+  const entries = new Map<string, { size: number; expires: number; used: number }>();
+  const remove = Effect.fn("PullRequestImagePreview.remove")(function* (key: string) {
+    const removed = yield* fs
+      .remove(path.join(directory, key), { force: true })
+      .pipe(Effect.isSuccess);
+    if (removed) entries.delete(key);
+    return removed;
+  });
+  const prune = Effect.fn("PullRequestImagePreview.prune")(function* (reserve = 0) {
+    const now = yield* Clock.currentTimeMillis;
+    let size = [...entries.values()].reduce((sum, entry) => sum + entry.size, 0);
+    for (const [key, entry] of [...entries].sort((a, b) => a[1].used - b[1].used)) {
+      if (entry.expires <= now || size + reserve > 256 * 1024 * 1024 || entries.size >= 2000) {
+        if (yield* remove(key)) size -= entry.size;
+      }
+    }
+    return size + reserve <= 256 * 1024 * 1024 && entries.size < 2000;
+  });
+  yield* fs.makeDirectory(directory, { recursive: true }).pipe(Effect.ignore);
+  const names = yield* fs.readDirectory(directory).pipe(Effect.orElseSucceed(() => []));
+  for (const name of names) {
+    if (!/^[a-f0-9]{64}$/.test(name)) {
+      if (/^[a-f0-9]{64}\.tmp$/.test(name))
+        yield* fs.remove(path.join(directory, name)).pipe(Effect.ignore);
+      continue;
+    }
+    const info = yield* fs.stat(path.join(directory, name)).pipe(Effect.option);
+    if (info._tag === "Some")
+      entries.set(name, { size: Number(info.value.size), expires: 0, used: 0 });
+    if (
+      info._tag === "None" ||
+      info.value.type !== "File" ||
+      info.value.size > 20 * 1024 * 1024 + 10 + 65_535
+    ) {
+      yield* remove(name);
+      continue;
+    }
+    const stored = yield* fs.readFile(path.join(directory, name)).pipe(Effect.option);
+    if (stored._tag === "Some" && stored.value.length >= 8) {
+      const expires = Buffer.from(stored.value.subarray(0, 8)).readDoubleBE(0);
+      if (Number.isFinite(expires))
+        entries.set(name, { size: stored.value.length, expires, used: expires - 300_000 });
+      else yield* remove(name);
+    } else yield* remove(name);
+  }
+  yield* prune();
+  yield* prune().pipe(
+    lock.withPermit,
+    Effect.repeat(Schedule.spaced("5 minutes")),
+    Effect.forkScoped,
+  );
+
+  const read = Effect.fn("PullRequestImagePreview.read")(function* (input: Input) {
+    const key = Hex.encode(
+      yield* digest.digest(
+        Digest.sha256,
+        new TextEncoder().encode(
+          `${input.identity.length}:${input.identity}:${input.preview.width}:webp-lossless-v6`,
+        ),
+      ),
+    );
+    const now = yield* Clock.currentTimeMillis;
+    const entry = entries.get(key);
+    if (entry && entry.expires > now) {
+      const bytes = yield* fs.readFile(path.join(directory, key)).pipe(Effect.option);
+      if (bytes._tag === "Some" && bytes.value.length >= 10) {
+        const stored = Buffer.from(
+          bytes.value.buffer,
+          bytes.value.byteOffset,
+          bytes.value.byteLength,
+        );
+        const bodyOffset = 10 + stored.readUInt16BE(8);
+        if (bodyOffset > 10 && bodyOffset < stored.length) {
+          entry.used = now;
+          const metadata = yield* Schema.decodeEffect(cacheMetadata)(
+            stored.toString("utf8", 10, bodyOffset),
+          ).pipe(Effect.option);
+          if (metadata._tag === "Some")
+            return {
+              bytes: stored.subarray(bodyOffset),
+              ...metadata.value,
+              expiresAt: entry.expires,
+            };
+        }
+      }
+    }
+    const running = active.get(key);
+    if (running) return yield* running.read;
+    if (inProgress.size >= 9) return yield* new ImagePreviewError({});
+    let shared = sources.get(input.identity);
+    if (!shared) {
+      shared = { fetch: yield* Effect.cached(input.fetch.pipe(fetchSlots.withPermit)), users: 0 };
+      sources.set(input.identity, shared);
+    }
+    shared.users++;
+    const sourceEntry = shared;
+    const token = Symbol();
+    inProgress.add(token);
+    const work = yield* Effect.gen(function* () {
+      const source = yield* sourceEntry.fetch;
+      return yield* Effect.gen(function* () {
+        if (source.bytes.length > 20 * 1024 * 1024) return yield* new ImagePreviewError({});
+        const data = Buffer.from(source.bytes);
+        if (
+          source.contentType === "image/svg+xml" ||
+          source.contentType === "image/gif" ||
+          data.subarray(0, 3).toString() === "GIF"
+        ) {
+          if (input.preview.width === 64) return yield* new ImagePreviewError({});
+          return {
+            bytes: source.bytes,
+            contentType: source.contentType === "image/svg+xml" ? "image/svg+xml" : "image/gif",
+            expiresAt: now + 300_000,
+          };
+        }
+        const chunked =
+          data.subarray(0, 4).toString() === "RIFF"
+            ? "webp"
+            : data.subarray(1, 4).toString() === "PNG"
+              ? "png"
+              : null;
+        if (chunked) {
+          const start = chunked === "webp" ? 12 : 8;
+          for (let offset = start; offset + 8 <= data.length;) {
+            const name = data
+              .subarray(offset + (chunked === "png" ? 4 : 0), offset + (chunked === "png" ? 8 : 4))
+              .toString();
+            if (name === "ANIM" || name === "acTL") {
+              if (input.preview.width === 64) return yield* new ImagePreviewError({});
+              return {
+                bytes: source.bytes,
+                contentType: `image/${chunked}`,
+                expiresAt: now + 300_000,
+              };
+            }
+            const size =
+              chunked === "webp" ? data.readUInt32LE(offset + 4) : data.readUInt32BE(offset);
+            offset += chunked === "webp" ? 8 + size + (size % 2) : 12 + size;
+          }
+        }
+        if (sharp._tag === "None") return yield* new ImagePreviewError({});
+        const image = sharp.value(source.bytes, { limitInputPixels: 32_000_000, animated: false });
+        // Sharp cannot cancel native work: retain the permit until its promises settle.
+        let passthroughContentType = source.contentType;
+        let sourceDimensions: { width: number; height: number } | undefined;
+        const bytes = yield* Effect.gen(function* () {
+          const metadata = yield* Effect.tryPromise({
+            try: () => image.metadata(),
+            catch: () => new ImagePreviewError({}),
+          });
+          sourceDimensions = metadata.autoOrient ?? {
+            width: metadata.width,
+            height: metadata.height,
+          };
+          if ((metadata.pages ?? 1) > 1) return null;
+          if (metadata.format === "svg") {
+            passthroughContentType = "image/svg+xml";
+            if (input.preview.width === 64) return yield* new ImagePreviewError({});
+            return null;
+          }
+          if (!["png", "jpeg", "webp", "avif", "heif", "tiff"].includes(metadata.format ?? "")) {
+            return yield* new ImagePreviewError({});
+          }
+          const bytes = yield* Effect.tryPromise({
+            try: () =>
+              image
+                .autoOrient()
+                .resize({
+                  width: input.preview.width,
+                  ...(input.preview.width === 64 ? { height: 64, fit: "inside" as const } : {}),
+                  withoutEnlargement: true,
+                })
+                // Lossless quality limits compression search without changing decoded pixels.
+                .webp(
+                  input.preview.width === 64
+                    ? { quality: 35, effort: 3 }
+                    : { lossless: true, effort: 1, quality: 10 },
+                )
+                .timeout({ seconds: 15 })
+                .toBuffer(),
+            catch: () => new ImagePreviewError({}),
+          });
+          return bytes;
+        }).pipe(Effect.uninterruptible);
+        if (bytes === null)
+          return { ...source, contentType: passthroughContentType, expiresAt: now + 300_000 };
+        const original = bytes.length >= source.bytes.length;
+        if (!original && bytes.length > 4 * 1024 * 1024) return yield* new ImagePreviewError({});
+        const written = yield* Clock.currentTimeMillis;
+        const result = {
+          ...(original ? source : { bytes, contentType: "image/webp" }),
+          expiresAt: written + 300_000,
+          ...(input.preview.width === 64 && sourceDimensions ? { sourceDimensions } : {}),
+        };
+        const contentType = Buffer.from(
+          yield* Schema.encodeEffect(cacheMetadata)({
+            contentType: result.contentType,
+            ...(result.sourceDimensions ? { sourceDimensions: result.sourceDimensions } : {}),
+          }).pipe(Effect.mapError(() => new ImagePreviewError({}))),
+        );
+        if (contentType.length > 65_535) return result;
+        const header = Buffer.alloc(10 + contentType.length);
+        header.writeDoubleBE(result.expiresAt);
+        header.writeUInt16BE(contentType.length, 8);
+        contentType.copy(header, 10);
+        const stored = Buffer.concat([header, result.bytes]);
+        const room = yield* prune(stored.length);
+        if (!room) return result;
+        const temporary = path.join(directory, `${key}.tmp`);
+        yield* fs.writeFile(temporary, stored, { flag: "wx" }).pipe(
+          Effect.andThen(fs.rename(temporary, path.join(directory, key))),
+          Effect.tap(() =>
+            Effect.sync(() => {
+              entries.set(key, { size: stored.length, expires: written + 300_000, used: written });
+            }),
+          ),
+          Effect.ensuring(fs.remove(temporary).pipe(Effect.ignore)),
+          Effect.ignore,
+        );
+        return result;
+      }).pipe(lock.withPermit);
+    }).pipe(
+      Effect.mapError(() => new ImagePreviewError({})),
+      Effect.ensuring(
+        Effect.sync(() => {
+          if (active.get(key)?.token === token) active.delete(key);
+          inProgress.delete(token);
+          sourceEntry.users--;
+          if (sourceEntry.users === 0) sources.delete(input.identity);
+        }),
+      ),
+      Effect.forkIn(scope, { startImmediately: false }),
+    );
+    let waiters = 0;
+    const joined = Effect.acquireUseRelease(
+      Effect.sync(() => {
+        waiters++;
+      }),
+      () => Fiber.join(work),
+      () =>
+        Effect.suspend(() => {
+          if (--waiters !== 0) return Effect.void;
+          if (active.get(key)?.token === token) active.delete(key);
+          return Fiber.interrupt(work);
+        }),
+    );
+    active.set(key, { token, read: joined });
+    return yield* joined;
+  });
+  return PullRequestImagePreview.of({ read });
+});
+
+export const layer = Layer.effect(PullRequestImagePreview, make);

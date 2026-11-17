@@ -24,6 +24,11 @@ const ASSET_PATH_MAX_LENGTH = 1024;
  */
 export const SOURCE_CONTROL_MEDIA_ASSET = "github-media" as const;
 
+export const AssetImagePreview = Schema.Struct({
+  width: Schema.Literals([64, 320, 640, 960, 1440, 1920, 2880, 3840]),
+});
+export type AssetImagePreview = typeof AssetImagePreview.Type;
+
 export const AssetResource = Schema.Union([
   Schema.TaggedStruct("workspace-file", {
     threadId: ThreadId,
@@ -76,6 +81,7 @@ export const AssetResource = Schema.Union([
   // them with the credential the host's driver holds for the repository at `cwd`. `repository`
   // names the change request's repository, which can differ from the checkout at `cwd`.
   Schema.TaggedStruct(SOURCE_CONTROL_MEDIA_ASSET, {
+    imagePreview: Schema.optionalKey(AssetImagePreview),
     cwd: TrimmedNonEmptyString.check(Schema.isMaxLength(ASSET_PATH_MAX_LENGTH)),
     url: TrimmedNonEmptyString.check(Schema.isMaxLength(2048)),
     repository: Schema.optionalKey(TrimmedNonEmptyString.check(Schema.isMaxLength(512))),
@@ -94,7 +100,11 @@ export const AssetImageDimensions = Schema.Struct({
 });
 export type AssetImageDimensions = typeof AssetImageDimensions.Type;
 
+export const ASSET_IMAGE_SOURCE_WIDTH_HEADER = "x-styal-image-source-width";
+export const ASSET_IMAGE_SOURCE_HEIGHT_HEADER = "x-styal-image-source-height";
+
 export const AssetCreateUrlResult = Schema.Struct({
+  imagePreview: Schema.optionalKey(AssetImagePreview),
   relativeUrl: TrimmedNonEmptyString.check(Schema.isMaxLength(4096)),
   expiresAt: Schema.Number,
   sourcePath: Schema.optional(

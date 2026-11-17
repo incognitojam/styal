@@ -6,11 +6,19 @@ import { EnvironmentId, SOURCE_CONTROL_MEDIA_ASSET } from "@t3tools/contracts";
 const harness = vi.hoisted(() => ({
   refreshAssetUrl: vi.fn<(environmentId: string, resource: { url: string }) => Promise<string>>(),
   alert: vi.fn(),
+  openExternal: vi.fn(async () => true),
   previews: [] as unknown[],
   mounts: 0,
   presentationFinished: false,
 }));
 
+vi.mock("react-native", () => ({
+  Dimensions: { get: () => ({ width: 390, height: 844 }) },
+  PixelRatio: { get: () => 3 },
+}));
+vi.mock("expo-image", () => ({
+  Image: { getCachePathAsync: vi.fn(async () => "/synthetic/preview.webp") },
+}));
 vi.mock("../../state/assets", () => ({ refreshAssetUrl: harness.refreshAssetUrl }));
 vi.mock("../../lib/localAttachmentPreview", () => ({ loadLocalAttachmentPreview: vi.fn() }));
 vi.mock("../../lib/attachmentDownload", () => ({
@@ -18,6 +26,7 @@ vi.mock("../../lib/attachmentDownload", () => ({
   nativeViewerErrorMessage: () => "",
   shareLocalAttachment: vi.fn(),
 }));
+vi.mock("../../lib/openExternalUrl", () => ({ tryOpenExternalUrl: harness.openExternal }));
 vi.mock("../../lib/previewPresentation", () => ({ usePreviewPresentation: () => {} }));
 vi.mock("./Dialog", () => ({ alert: harness.alert }));
 
@@ -214,4 +223,33 @@ it("does not carry a presented viewer over to a different item that is still res
   expect(
     harness.refreshAssetUrl.mock.calls.filter(([, r]) => r.url.endsWith("b.pdf")),
   ).toHaveLength(1);
+});
+
+it("reuses the screen variant from the image cache and requests the original only on demand", async () => {
+  harness.refreshAssetUrl.mockResolvedValue("https://signed.test/screen.webp");
+  harness.refreshAssetUrl.mockClear();
+  const selected = {
+    ...image("https://github.com/user-attachments/assets/synthetic"),
+    previewImage: true,
+  };
+  await using _preview = await openGallery(selected, [selected], false);
+  const shown = harness.previews.at(-1) as {
+    images: { uri: string; onOpenOriginal: () => Promise<void> }[];
+  };
+  expect(shown.images[0]?.uri).toBe("file:///synthetic/preview.webp");
+  expect(harness.refreshAssetUrl.mock.calls[0]?.[1]).toMatchObject({
+    imagePreview: { width: 1440 },
+  });
+  expect(harness.refreshAssetUrl).toHaveBeenCalledTimes(1);
+  harness.openExternal.mockClear();
+  harness.refreshAssetUrl.mockResolvedValue("https://signed.test/original.png");
+  await act(async () => shown.images[0]!.onOpenOriginal());
+  expect(harness.openExternal).toHaveBeenCalledWith(
+    "https://signed.test/original.png",
+    "file-preview",
+  );
+  expect((harness.previews.at(-1) as typeof shown).images[0]?.uri).toBe(
+    "file:///synthetic/preview.webp",
+  );
+  expect(harness.refreshAssetUrl.mock.calls.at(-1)?.[1]).not.toHaveProperty("imagePreview");
 });

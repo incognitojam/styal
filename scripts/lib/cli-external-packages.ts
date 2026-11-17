@@ -1,6 +1,10 @@
 /** Keep bundler externals and staged runtime dependency roots aligned. */
 // Filesystem-loaded externals need dependencies outside the bundle.
 const CLI_RUNTIME_EXTERNAL_PREFIXES = [
+  "sharp",
+  "detect-libc",
+  "semver",
+  "@img/",
   // Cursor ships computed Webpack imports and platform helper packages.
   "@cursor/sdk",
   // Playwright reads package.json and browsers.json beside its runtime modules.

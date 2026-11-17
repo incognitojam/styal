@@ -1,8 +1,13 @@
 import * as Schema from "effect/Schema";
+import { pullRequestImageWidth } from "@t3tools/client-runtime/pull-request-image-preview";
+import { Dimensions, PixelRatio } from "react-native";
+import { Image } from "expo-image";
 import * as Dialog from "./Dialog";
 import { useContext, useEffect, useEffectEvent, useState, type ComponentType } from "react";
 
+import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
 import { loadLocalAttachmentPreview } from "../../lib/localAttachmentPreview";
+
 import {
   downloadAndShareAttachment,
   nativeViewerErrorMessage,
@@ -56,7 +61,16 @@ async function resolvePreviewUri(
     });
   }
   // Refresh expired URLs before handing them to Quick Look or ACTION_VIEW, which retain them.
-  const url = await refreshAssetUrl(item.environmentId, item.resource, signal)
+  const resource =
+    item.previewImage && item.resource._tag === "github-media"
+      ? {
+          ...item.resource,
+          imagePreview: {
+            width: pullRequestImageWidth(Dimensions.get("window").width, PixelRatio.get()),
+          },
+        }
+      : item.resource;
+  const url = await refreshAssetUrl(item.environmentId, resource, signal, !item.previewImage)
     .then((value) => {
       if (!value) throw new Error("Reconnect to this environment and try again.");
       return value;
@@ -68,14 +82,33 @@ async function resolvePreviewUri(
           "Reconnect to this environment and try again. The file may have been moved or deleted.",
       });
     });
-  return { uri: url + (item.srcFragment ?? "") };
+  const cached = item.previewImage ? await Image.getCachePathAsync(url).catch(() => null) : null;
+  return { uri: cached ? `file://${cached}` : url + (item.srcFragment ?? "") };
+}
+
+async function openOriginalPreview(item: FilePreviewItem): Promise<void> {
+  try {
+    const original = await resolvePreviewUri(
+      { ...item, previewImage: false },
+      new AbortController().signal,
+    );
+    if (!original) throw new Error("The original is unavailable.");
+    try {
+      if (!(await tryOpenExternalUrl(original.uri, "file-preview")))
+        throw new Error("No app could open the original.");
+    } finally {
+      original.dispose?.();
+    }
+  } catch (error) {
+    Dialog.alert("Could not open original", error instanceof Error ? error.message : "Try again.");
+  }
 }
 
 // Shares from the unresolved item so remote URLs refresh and draft files take their own lease.
-function pdfActionsSource(item: FilePreviewItem): MediaActionsSource {
+function previewActionsSource(item: FilePreviewItem): MediaActionsSource {
   const metadata = {
     name: filePreviewName(item),
-    mimeType: item.mimeType ?? "application/pdf",
+    mimeType: item.mimeType ?? (item.kind === "image" ? "image/png" : "application/pdf"),
     ...(item.sourceIdentifier ? { sourceIdentifier: item.sourceIdentifier } : {}),
   };
   if ("uri" in item) return { ...metadata, uri: item.uri };
@@ -96,6 +129,7 @@ function ResolvedFilePreview(
   const [items] = useState(() => filePreviewGallery(props.source, []));
   const selectedKey = filePreviewKey(props.source);
   const selectedIndex = items.findIndex((item) => filePreviewKey(item) === selectedKey);
+
   // Undefined while resolving, null once it cannot be.
   const [uris, setUris] = useState<readonly (string | null | undefined)[]>(() =>
     items.map((item) => ("uri" in item ? item.uri : undefined)),
@@ -146,6 +180,12 @@ function ResolvedFilePreview(
       return {
         ...item,
         name: filePreviewName(item),
+        actionsSource: item.actionsSource ?? previewActionsSource(item),
+        ...(item.previewImage
+          ? {
+              onOpenOriginal: () => openOriginalPreview(item),
+            }
+          : {}),
         ...(uri ? { uri } : uri === null ? { failed: true } : {}),
       };
     });
@@ -187,7 +227,9 @@ function ResolvedFilePreview(
     ]);
   };
   const actionsSource =
-    selected.kind === "pdf" ? (selected.actionsSource ?? pdfActionsSource(selected)) : undefined;
+    selected.kind === "pdf"
+      ? (selected.actionsSource ?? previewActionsSource(selected))
+      : undefined;
   return (
     <Viewer
       source={{

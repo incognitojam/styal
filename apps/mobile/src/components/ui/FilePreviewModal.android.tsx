@@ -1,20 +1,19 @@
 import { Button } from "./Button";
 import * as Dialog from "./Dialog";
-import { createContext, useContext, useEffect, useEffectEvent } from "react";
+import { useEffect, useEffectEvent } from "react";
 import { Modal, View } from "react-native";
 import ImageViewing from "react-native-image-viewing";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { openAttachmentInViewer } from "../../lib/attachmentDownload";
+import { MediaImagePreview, imageViewingProps } from "../MediaImagePreview";
 import { useMediaActions } from "../../state/mediaActions";
 import type {
-  FilePreviewImages,
   FilePreviewModalProps,
   FilePreviewViewerProps,
   ResolvedFilePreviewDocument,
 } from "./FilePreviewModal.types";
 import { FilePreviewSession } from "./FilePreviewSession";
-import { MediaPreviewHeader } from "../MediaPreviewHeader";
 
 export type {
   FilePreviewItem,
@@ -122,62 +121,15 @@ function DocumentPreview(props: {
   );
 }
 
-type ImagePreviewProps = {
-  readonly source: FilePreviewImages;
-  readonly onRequestClose: () => void;
-};
-
-const ImagePreviewContext = createContext<ImagePreviewProps | null>(null);
-
-function ImagePreviewHeader(header: { readonly imageIndex: number }) {
-  const props = useContext(ImagePreviewContext)!;
-  const source = props.source.images[header.imageIndex];
-  const insets = useSafeAreaInsets();
-  const mediaActions = useMediaActions(source?.actionsSource, props.onRequestClose);
-  return (
-    <View className="bg-black/70" style={{ paddingTop: insets.top }}>
-      <MediaPreviewHeader
-        title={source?.name ?? "Image"}
-        media={mediaActions}
-        closeAccessibilityLabel="Close image"
-        onClose={props.onRequestClose}
-      />
-    </View>
-  );
-}
-
-// Images still resolving show the viewer's loading page, and remount by key once their URL arrives.
-function imageViewingProps(source: FilePreviewImages) {
-  return {
-    images: source.images.map((image) => (image.uri ? { uri: image.uri } : {})),
-    keyExtractor: (_: unknown, index: number) => source.images[index]?.uri ?? `pending:${index}`,
-    // Stays fixed: react-native-image-viewing remounts the Modal and replays its fade when it changes.
-    imageIndex: source.selectedIndex,
-  };
-}
-
-function ImagePreview(props: ImagePreviewProps) {
-  return (
-    <ImagePreviewContext value={props}>
-      <ImageViewing
-        {...imageViewingProps(props.source)}
-        visible
-        presentationStyle="fullScreen"
-        onRequestClose={props.onRequestClose}
-        swipeToCloseEnabled={false}
-        doubleTapToZoomEnabled
-        HeaderComponent={ImagePreviewHeader}
-      />
-    </ImagePreviewContext>
-  );
-}
-
 function AndroidFilePreview(props: FilePreviewViewerProps) {
   const { source } = props;
   if (source.kind === "pdf") return <PdfDocumentPreview {...props} source={source} />;
   if (source.kind !== "image") return <DocumentPreview {...props} source={source} />;
-  if (source.images[source.selectedIndex]?.actionsSource)
-    return <ImagePreview source={source} onRequestClose={props.onRequestClose} />;
+  if (
+    source.images[source.selectedIndex]?.actionsSource ||
+    source.images.some((image) => image.previewImage)
+  )
+    return <MediaImagePreview source={source} onRequestClose={props.onRequestClose} />;
   return (
     <ImageViewing
       {...imageViewingProps(source)}

@@ -9,6 +9,7 @@ import type * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
 import type * as FileSystem from "effect/FileSystem";
 import type { HttpClient, HttpClientError, HttpClientResponse } from "effect/http";
+import * as Schema from "effect/Schema";
 import * as Layer from "effect/Layer";
 import type * as Scope from "effect/Scope";
 
@@ -19,6 +20,15 @@ import type { PullRequestProviderApi } from "./PullRequestProvider.ts";
 import type * as SourceControlHost from "./SourceControlHost.ts";
 import type * as SourceControlProvider from "./SourceControlProvider.ts";
 import type * as SourceControlRateLimit from "./SourceControlRateLimit.ts";
+
+export class SourceControlImagePreviewError extends Schema.TaggedError<SourceControlImagePreviewError>()(
+  "SourceControlImagePreviewError",
+  {},
+) {
+  override get message() {
+    return "Image source unavailable.";
+  }
+}
 
 export interface SourceControlMediaRequest {
   /** A `fetchUrl` this host's definition returned from `mediaUrl`. */
@@ -78,6 +88,16 @@ export interface SourceControlDriverInstance {
     HttpClientError.HttpClientError,
     Scope.Scope
   >;
+  readonly imagePreviewSource?: (
+    url: string,
+    repository?: string,
+  ) => Effect.Effect<{
+    readonly partition: string;
+    readonly fetch: Effect.Effect<
+      { readonly bytes: Uint8Array; readonly contentType: string },
+      SourceControlImagePreviewError
+    >;
+  }>;
   readonly signIn?: SourceControlSignIn;
   /** Files issues on the user's behalf. Only GitHub, where styal's own issues live. */
   readonly issueFiling?: SourceControlIssueFiling;

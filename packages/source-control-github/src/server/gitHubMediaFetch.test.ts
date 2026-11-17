@@ -1,3 +1,6 @@
+import { vi } from "vite-plus/test";
+import { gitHubPreviewFetch } from "./gitHubPreviewFetch.ts";
+vi.mock("./gitHubPreviewFetch.ts", () => ({ gitHubPreviewFetch: vi.fn() }));
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -240,3 +243,31 @@ describe("GitHubMediaFetch", () => {
     }).pipe(Effect.provide(fixture.layer), Effect.scoped);
   });
 });
+
+it.effect(
+  "resolves SSO preview bytes in the PR repository without forwarding credentials to signed storage",
+  () => {
+    const url = "https://github.com/user-attachments/assets/synthetic";
+    const fixture = makeSsoFixture(url);
+    const bytes = new Uint8Array([1, 2, 3]);
+    const transport = vi.mocked(gitHubPreviewFetch).mockReset();
+    transport
+      .mockResolvedValueOnce({ bytes: new Uint8Array(), contentType: "text/html" })
+      .mockResolvedValueOnce({ bytes, contentType: "image/png" });
+    return Effect.gen(function* () {
+      const source = yield* GitHubMediaFetch.makeImagePreviewSource;
+      const preview = yield* source(url, PR_REPOSITORY);
+      expect((yield* preview.fetch).bytes).toEqual(bytes);
+      expect(fixture.rendered[0]?.body).toMatchObject({ context: PR_REPOSITORY });
+      expect(transport.mock.calls[0]?.slice(0, 2)).toEqual([url, "account-a"]);
+      expect(transport.mock.calls[1]?.slice(0, 2)).toEqual([fixture.signedUrls[0], null]);
+      const otherRepository = yield* source(url, "other/repository");
+      expect(otherRepository.partition).not.toBe(preview.partition);
+      fixture.state.account = "account-b";
+      expect((yield* source(url, PR_REPOSITORY)).partition).not.toBe(preview.partition);
+      transport.mockResolvedValueOnce({ bytes: new Uint8Array(), contentType: "text/html" });
+      expect((yield* preview.fetch.pipe(Effect.result))._tag).toBe("Failure");
+      expect(transport).toHaveBeenCalledTimes(3);
+    }).pipe(Effect.provide(fixture.layer));
+  },
+);

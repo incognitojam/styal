@@ -1,4 +1,4 @@
-import type { SnapShotSource } from "@t3tools/contracts";
+import { EnvironmentId, ThreadId, type SnapShotSource } from "@t3tools/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { userEvent } from "vite-plus/test/browser";
 
@@ -23,8 +23,9 @@ describe("ExpandedImageDialog", () => {
   it.each(["/work/pipeline.svg", "/work/diagram#v2.svg", "/work/diagram?v2.svg"])(
     "fits a markdown SVG without intrinsic size to the viewer: %s",
     async (path) => {
-      const src = URL.createObjectURL(new Blob([D2_SVG], { type: "image/svg+xml" }));
-      using _src = { [Symbol.dispose]: () => URL.revokeObjectURL(src) };
+      const blob = URL.createObjectURL(new Blob([D2_SVG], { type: "image/svg+xml" }));
+      const src = `${blob}#svgView(viewBox(0,0,50,50))`;
+      using _src = { [Symbol.dispose]: () => URL.revokeObjectURL(blob) };
       await using screen = await render(
         <ExpandedImageDialog
           preview={{
@@ -36,6 +37,10 @@ describe("ExpandedImageDialog", () => {
                   kind: "image",
                   name: "Pipeline",
                   src,
+                  asset: {
+                    environmentId: EnvironmentId.make("environment-1"),
+                    resource: { _tag: "workspace-file", threadId: ThreadId.make("thread-1"), path },
+                  },
                   reference: { kind: "file", path },
                 },
               },
@@ -48,6 +53,7 @@ describe("ExpandedImageDialog", () => {
         { router: false },
       );
 
+      expect(screen.getByRole("img", { name: "Pipeline" }).element().getAttribute("src")).toBe(src);
       const viewer = screen.getByRole("region", { name: "Pipeline, zoomable image" });
       const availableWidth = window.innerWidth * 0.92 - (window.innerWidth >= 640 ? 96 : 0);
       await vi.waitFor(() =>

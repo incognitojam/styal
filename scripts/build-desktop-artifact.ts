@@ -1116,6 +1116,9 @@ export const WINDOWS_SERVER_ASAR_IGNORE_GLOBS = [
   "**/node_modules/@cursor/sdk-*/**",
   "**/node_modules/@anthropic-ai/claude-agent-sdk-*",
   "**/node_modules/@anthropic-ai/claude-agent-sdk-*/**",
+  // The WSL fallback supports glibc; Sharp's musl packages are unused.
+  "**/node_modules/@img/sharp*-linuxmusl-*",
+  "**/node_modules/@img/sharp*-linuxmusl-*/**",
   "**/node_modules/.bin",
   "**/node_modules/.bin/**",
   "**/*.map",
@@ -1135,8 +1138,8 @@ export function resolveWindowsServerAsarIgnoreGlobs(arch: typeof BuildArch.Type)
   ];
 }
 
-// Budget includes prepared bytecode and Windows/WSL speech and Sharp native libraries.
-export const WINDOWS_PACKAGED_PAYLOAD_FILE_LIMIT = 128;
+// Main's 126-file payload plus Sharp's four files, plus six files of intake headroom.
+export const WINDOWS_PACKAGED_PAYLOAD_FILE_LIMIT = 136;
 export const WINDOWS_SERVER_RESOURCE_SOURCE_DIR = "apps/desktop/prod-resources/windows-server";
 export const WINDOWS_SERVER_EXTRA_RESOURCES = [
   {
@@ -2940,7 +2943,12 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     // Disable smart unpack so native packages' JS/metadata stay archived and avoid slowing NSIS with loose files.
     ...(platform === "win"
       ? { asar: { smartUnpack: false }, asarUnpack: [WINDOWS_NATIVE_ASAR_UNPACK_GLOB] }
-      : { asarUnpack: ["**/node_modules/@transcribe-cpp/**/*.{dylib,so,so.*}"] }),
+      : {
+          asarUnpack: [
+            "**/node_modules/@transcribe-cpp/**/*.{dylib,so,so.*}",
+            "**/node_modules/@img/**/*.{node,dll,dylib,so,so.*}",
+          ],
+        }),
     extraResources: [
       ...DESKTOP_EXTRA_RESOURCES,
       ...(platform === "linux" ? LINUX_CAPTURE_EXTRA_RESOURCES : []),

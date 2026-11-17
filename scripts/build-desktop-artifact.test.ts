@@ -754,8 +754,17 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
 
       assert.notProperty(mac, "asar");
       assert.notProperty(linux, "asar");
+      assert.isTrue(
+        (linux.asarUnpack as string[]).some((glob) =>
+          NodePath.matchesGlob(
+            "node_modules/@img/sharp-libvips-linux-x64/lib/libvips-cpp.so.8.18.7",
+            glob,
+          ),
+        ),
+      );
       assert.deepStrictEqual(mac.asarUnpack, [
         "**/node_modules/@transcribe-cpp/**/*.{dylib,so,so.*}",
+        "**/node_modules/@img/**/*.{node,dll,dylib,so,so.*}",
       ]);
       assert.deepStrictEqual(linux.asarUnpack, mac.asarUnpack);
       assert.deepStrictEqual(win.asar, { smartUnpack: false });
@@ -795,6 +804,8 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         "**/node_modules/@cursor/sdk-*/**",
         "**/node_modules/@anthropic-ai/claude-agent-sdk-*",
         "**/node_modules/@anthropic-ai/claude-agent-sdk-*/**",
+        "**/node_modules/@img/sharp*-linuxmusl-*",
+        "**/node_modules/@img/sharp*-linuxmusl-*/**",
         "**/node_modules/.bin",
         "**/node_modules/.bin/**",
         "**/*.map",
@@ -1008,6 +1019,14 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
           "node_modules/node-pty/third_party/conpty/1.0.0/win10-arm64/OpenConsole.exe",
           "node_modules/node-pty/prebuilds/win32-x64/pty.node",
           "node_modules/node-pty/prebuilds/linux-x64/pty.node",
+          "node_modules/@img/sharp-win32-x64/lib/sharp-win32-x64.node",
+          "node_modules/@img/sharp-win32-x64/lib/libvips-42.dll",
+          "node_modules/@img/sharp-linux-x64/lib/sharp-linux-x64.node",
+          "node_modules/@img/sharp-libvips-linux-x64/lib/libvips-cpp.so.8.18.6",
+          "node_modules/@img/sharp-linuxmusl-x64/lib/sharp-linuxmusl-x64.node",
+          "node_modules/@img/sharp-libvips-linuxmusl-x64/lib/libvips-cpp.so.8.18.6",
+          "node_modules/@img/sharp-linuxmusl-arm64/package.json",
+          "node_modules/@img/sharp-libvips-linuxmusl-arm64/package.json",
         ];
 
         for (const nativeFile of nativeFiles) {
@@ -1019,6 +1038,24 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         const asarPath = path.join(tempDir, "server.asar");
         yield* packWindowsServerAsar({ sourceDir, asarPath, arch: "x64" });
         const unpackedRoot = `${asarPath}.unpacked`;
+        for (const native of ["sharp-win32-x64.node", "libvips-42.dll"]) {
+          assert.isTrue(
+            yield* fs.exists(
+              path.join(unpackedRoot, "node_modules/@img/sharp-win32-x64/lib", native),
+            ),
+          );
+        }
+
+        for (const native of nativeFiles.filter((file) => file.includes("@img/"))) {
+          if (native.includes("linuxmusl")) {
+            assert.isFalse(yield* fs.exists(path.join(unpackedRoot, native)), native);
+            assert.throws(() => extractFile(asarPath, native), undefined, undefined, native);
+          } else if (native.includes("linux-x64") && native.endsWith(".node")) {
+            assert.equal(extractFile(asarPath, native).toString(), "\x7fELF");
+          } else {
+            assert.isTrue(yield* fs.exists(path.join(unpackedRoot, native)), native);
+          }
+        }
 
         assert.isTrue(
           yield* fs.exists(
@@ -1560,22 +1597,22 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
             targetArch: "x64" as const,
           };
           const initial = yield* validateWindowsPackagedPayload(input);
-          for (let count = initial.fileCount; count < 119; count++) {
+          for (let count = initial.fileCount; count < 126; count++) {
             yield* fs.writeFileString(
               path.join(fixture.packagedAppDir, `cache-${count}`),
               "bytecode",
             );
           }
           const prepared = yield* validateWindowsPackagedPayload(input);
-          assert.equal(prepared.fileCount, 119);
-          for (let count = 0; count < 5; count++) {
+          assert.equal(prepared.fileCount, 126);
+          for (let count = 0; count < 4; count++) {
             yield* fs.writeFileString(
               path.join(fixture.packagedAppDir, `sharp-native-${count}`),
               "native library",
             );
           }
           const withSharp = yield* validateWindowsPackagedPayload(input);
-          assert.equal(withSharp.fileCount, 124);
+          assert.equal(withSharp.fileCount, 130);
           for (
             let count = withSharp.fileCount;
             count < WINDOWS_PACKAGED_PAYLOAD_FILE_LIMIT;

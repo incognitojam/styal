@@ -67,6 +67,11 @@ describe("HTML in native Markdown", () => {
       ["portrait.png?a=1&b=2", { width: 240, height: 480 }],
       ["landscape.png", { width: 640, height: 360 }],
     ]);
+    expect([...markdownImageDimensions(markdown, true)]).toEqual([
+      ["portrait.png?a=1&b=2", { width: 240, height: 480 }],
+      ["landscape.png", { width: 640, height: 360 }],
+      ["missing.png", { width: 240 }],
+    ]);
   });
 
   it("preserves screenshot URLs and captions from GitHub HTML image embeds", () => {

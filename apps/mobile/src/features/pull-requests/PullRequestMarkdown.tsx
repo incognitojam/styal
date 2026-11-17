@@ -11,7 +11,7 @@ import { pullRequestTarget, type PullRequestParams } from "./usePullRequestDiff"
 import {
   PullRequestMedia,
   PullRequestMediaContext,
-  usePullRequestMediaUrl,
+  usePullRequestImageUrl,
 } from "./PullRequestMedia";
 import { videoMimeType } from "@t3tools/shared/video";
 import { createContext, useContext, useMemo, useState } from "react";
@@ -85,19 +85,34 @@ function MarkdownImage(props: {
   readonly alt: string | null;
   readonly onPreview: (source: FilePreviewSource) => void;
   readonly enabled: boolean;
-  readonly knownSize: { width: number; height: number } | undefined;
+  readonly knownSize: { width: number; height?: number } | undefined;
 }) {
-  const media = usePullRequestMediaUrl(props.href, props.enabled);
+  const media = usePullRequestImageUrl(props.href, props.enabled);
   const context = useContext(PullRequestMediaContext);
   const withGallery = useFilePreviewGallery();
   return (
     <ThreadMarkdownImageView
-      knownSize={props.knownSize}
+      knownSize={
+        props.knownSize?.height
+          ? { width: props.knownSize.width, height: props.knownSize.height }
+          : undefined
+      }
+      authoredWidth={props.knownSize?.width}
+      reserveFrame={media.reserveFrame}
+      sourceDimensions={media.sourceDimensions}
+      placeholderUri={media.placeholderUri}
       uri={media.uri}
       sourceKey={props.href}
       cacheKey={media.cacheKey}
       unavailable={media.unavailable || !/^https?:\/\//i.test(props.href)}
       alt={props.alt}
+      onViewOriginal={() =>
+        props.onPreview({
+          ...pullRequestImageSource(props.href, context),
+          previewImage: false,
+          name: props.alt ?? "Image",
+        })
+      }
       onPressPreview={(source) =>
         props.onPreview(
           withGallery({
@@ -222,7 +237,7 @@ function PullRequestMarkdownContent(props: {
   readonly lineBreaks: boolean | undefined;
   readonly onTaskListItemPress?: SelectableMarkdownTextProps["onTaskListItemPress"];
 }) {
-  const dimensions = useMemo(() => markdownImageDimensions(props.markdown), [props.markdown]);
+  const dimensions = useMemo(() => markdownImageDimensions(props.markdown, true), [props.markdown]);
   const hostLineBreaks = useContext(LineBreaksContext);
   const autolinks = useContext(AutolinksContext);
   const mediaContext = useContext(PullRequestMediaContext);

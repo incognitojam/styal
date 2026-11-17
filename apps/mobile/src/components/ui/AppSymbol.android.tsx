@@ -174,6 +174,7 @@ const ANDROID_ICON_BY_SF_SYMBOL = {
   "arrow.up.left.and.arrow.down.right": IconArrowsDiagonal2,
   "arrow.down.right.and.arrow.up.left": IconArrowsMinimize,
   "arrow.up.right": IconArrowUpRight,
+  "arrow.up.right.square": IconExternalLink,
   "arrow.up.right.circle": IconArrowUpRightCircle,
   "arrow.uturn.backward": IconArrowBackUp,
   "arrow.uturn.forward": IconArrowForwardUp,

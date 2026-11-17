@@ -108,6 +108,9 @@ const makeInstance = Effect.gen(function* () {
       fetchMedia: GitHubMediaFetch.make.pipe(
         Effect.provideService(HttpClient.HttpClient, mediaHttpClient),
       ),
+      imagePreviewSource: GitHubMediaFetch.makeImagePreviewSource.pipe(
+        Effect.provideService(HttpClient.HttpClient, mediaHttpClient),
+      ),
       signIn: makeSignIn,
       issueFiling: GitHubIssueFiling.make,
       isRepositoryStarred: makeIsRepositoryStarred,

@@ -36,6 +36,10 @@ export interface MediaActionSource {
   readonly src: string | null;
   readonly reference?: MediaReference;
   readonly asset?: { readonly environmentId: EnvironmentId; readonly resource: AssetResource };
+  readonly originalAsset?: {
+    readonly environmentId: EnvironmentId;
+    readonly resource: AssetResource;
+  };
   readonly onOpenFile?: () => void;
 }
 
@@ -107,7 +111,7 @@ export function useMediaActions(source: MediaActionSource) {
       new ClipboardItem({ "image/png": actionUrl().then(readMediaPng) }),
     ]);
   };
-  return { save, copyImage, canReadMedia, assertCanReadMedia };
+  return { save, copyImage, actionUrl, canReadMedia, assertCanReadMedia };
 }
 
 export function MediaActions({

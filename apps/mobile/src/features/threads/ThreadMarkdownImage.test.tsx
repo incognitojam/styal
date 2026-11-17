@@ -5,12 +5,25 @@ import { expect, it, vi } from "vite-plus/test";
 
 const harness = vi.hoisted(() => ({
   failImage: () => {},
+  loadTiny: (_event: { source: { width: number; height: number } }) => {},
   loadImage: (_event: { source: { width: number; height: number } }) => {},
   Passthrough: ({ children }: { children?: unknown }) => children,
 }));
 
 vi.mock("react-native", () => ({
-  Pressable: harness.Passthrough,
+  Pressable: ({
+    children,
+    onPress,
+    accessibilityLabel,
+  }: {
+    children?: ReactNode;
+    onPress?: () => void;
+    accessibilityLabel?: string;
+  }) => (
+    <button aria-label={accessibilityLabel} onClick={onPress}>
+      {children}
+    </button>
+  ),
   StyleSheet: { absoluteFill: {} },
   View: ({ children, style }: { children?: ReactNode; style?: unknown }) => (
     <div data-style={JSON.stringify(style)}>{children}</div>
@@ -18,11 +31,13 @@ vi.mock("react-native", () => ({
 }));
 vi.mock("expo-image", () => ({
   Image: (props: {
+    source?: { uri: string };
     onError: () => void;
     onLoad: (event: { source: { width: number; height: number } }) => void;
   }) => {
     harness.failImage = props.onError;
-    harness.loadImage = props.onLoad;
+    if (props.source?.uri === "https://example.test/tiny") harness.loadTiny = props.onLoad;
+    else harness.loadImage = props.onLoad;
     return <img alt="" />;
   },
 }));
@@ -71,32 +86,68 @@ it.each([
     decoded: { width: 1280, height: 720 },
     expected: { width: 345, height: 194.0625 },
   },
+  {
+    knownSize: undefined,
+    decoded: { width: 480, height: 960 },
+    reserveFrame: true,
+    sourceDimensions: { width: 120, height: 40 },
+    authoredWidth: 300,
+    expected: { width: 300, maxWidth: 300, aspectRatio: 3 },
+  },
+  {
+    knownSize: undefined,
+    decoded: { width: 390, height: 844 },
+    reserveFrame: true,
+    placeholderSize: { width: 30, height: 64 },
+    expected: { width: 225, maxWidth: 225, aspectRatio: 30 / 64 },
+  },
+  {
+    knownSize: { width: 180, height: 360 },
+    decoded: { width: 480, height: 960 },
+    reserveFrame: true,
+    availableWidth: 0,
+    expected: { width: "100%", maxWidth: 180, aspectRatio: 0.5 },
+  },
 ])(
   "uses declared or natural dimensions and ignores later downsampled sizes: $expected",
-  async ({ knownSize, decoded, expected }) => {
+  async ({
+    knownSize,
+    decoded,
+    expected,
+    reserveFrame,
+    availableWidth,
+    sourceDimensions,
+    placeholderSize,
+    authoredWidth,
+  }) => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     const container = document.createElement("div");
     const root = createRoot(container);
     const frameSize = () =>
       [...container.querySelectorAll<HTMLElement>("div[data-style]")]
         .map((element) => JSON.parse(element.dataset.style ?? "null") as Record<string, unknown>)
-        .find((style) => typeof style?.width === "number");
+        .find((style) => typeof style?.width === "number" || style?.width === "100%");
     try {
       await act(async () =>
         root.render(
-          <MarkdownImageAvailableWidthContext value={345}>
+          <MarkdownImageAvailableWidthContext value={availableWidth ?? 345}>
             <ThreadMarkdownImageView
               uri="https://example.test/hero.png"
               sourceKey="workspace:hero.png"
               unavailable={false}
               alt={null}
               knownSize={knownSize}
+              reserveFrame={reserveFrame}
+              sourceDimensions={sourceDimensions}
+              authoredWidth={authoredWidth}
+              placeholderUri={placeholderSize ? "https://example.test/tiny" : undefined}
               onPressPreview={() => {}}
             />
           </MarkdownImageAvailableWidthContext>,
         ),
       );
-      if (knownSize) expect(frameSize()).toEqual(expected);
+      if (placeholderSize) await act(async () => harness.loadTiny({ source: placeholderSize }));
+      if (knownSize || reserveFrame) expect(frameSize()).toEqual(expected);
       else expect(frameSize()).toEqual({ width: 345, aspectRatio: 16 / 9 });
       await act(async () => harness.loadImage({ source: decoded }));
       const first = frameSize();
@@ -116,9 +167,11 @@ it("retries a failed image once its URI comes back through null", async () => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   const container = document.createElement("div");
   const root = createRoot(container);
+  const viewOriginal = vi.fn();
   const view = (uri: string | null) => (
     <ThreadMarkdownImageView
       uri={uri}
+      onViewOriginal={viewOriginal}
       sourceKey="attachment:a"
       unavailable={false}
       alt={null}
@@ -129,6 +182,11 @@ it("retries a failed image once its URI comes back through null", async () => {
     await act(async () => root.render(view("https://example.test/a.png")));
     await act(async () => harness.failImage());
     expect(container.textContent).toContain("Image unavailable");
+    expect(viewOriginal).not.toHaveBeenCalled();
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('button[aria-label="View original"]')!.click(),
+    );
+    expect(viewOriginal).toHaveBeenCalledOnce();
 
     await act(async () => root.render(view(null)));
     await act(async () => root.render(view("https://example.test/a.png")));

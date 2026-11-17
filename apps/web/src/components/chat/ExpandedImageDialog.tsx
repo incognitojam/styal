@@ -1,6 +1,7 @@
-import { memo, useRef, useState, type ReactNode, type KeyboardEvent } from "react";
+import { pullRequestImageWidth } from "@t3tools/client-runtime/pull-request-image-preview";
+import { memo, useRef, useState, type ReactNode, type KeyboardEvent, type RefObject } from "react";
 import { flushSync } from "react-dom";
-import { ChevronLeftIcon, ChevronRightIcon, XIcon } from "lucide-react";
+import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 import { Image as ImageGlyph, Text as TextGlyph } from "lucide";
 import { Button } from "../ui/button";
 import { MorphIcon } from "~/components/MorphIcon";
@@ -9,6 +10,7 @@ import type { ExpandedImageItem, ExpandedImagePreview } from "./ExpandedImagePre
 import { resolveExternalWebLinkHost } from "./externalLinkContextMenu";
 import { useAssetUrlRefresh, useAssetUrlState } from "../../assets/assetUrls";
 import { OpenMediaLink } from "../media/OpenMediaLink";
+import { MediaViewerToolbar } from "../media/MediaViewerToolbar";
 import { MediaActions, type MediaActionSource } from "../media/MediaActions";
 import { MediaVideoPlayer } from "../media/MediaVideoPlayer";
 import { isContextMenuOpen } from "../../contextMenuFallback";
@@ -79,6 +81,50 @@ function ExpandedVideo({ item }: { readonly item: ExpandedImageItem }) {
   );
 }
 
+function PullRequestPreviewImage({
+  item,
+  source,
+  ref,
+}: {
+  readonly item: ExpandedImageItem;
+  readonly source: MediaActionSource;
+  readonly ref: RefObject<ZoomableImageHandle | null>;
+}) {
+  const [requestedWidth, setRequestedWidth] = useState(0);
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  const asset = source.asset!;
+  const baseResource = asset.resource;
+  const screenWidth = pullRequestImageWidth(
+    Math.max(window.innerWidth, requestedWidth),
+    window.devicePixelRatio,
+  );
+  const resource =
+    baseResource._tag === "github-media" && baseResource.imagePreview
+      ? {
+          ...baseResource,
+          imagePreview: {
+            width: Math.max(baseResource.imagePreview.width, screenWidth) as typeof screenWidth,
+          },
+        }
+      : baseResource;
+  const url = useAssetUrlState(asset.environmentId, resource);
+  const src = url._tag === "Success" ? url.url : item.src;
+  return src === null || failedSrc === src ? (
+    <ExpandedMediaFailure>
+      <p>This image could not be loaded.</p>
+    </ExpandedMediaFailure>
+  ) : (
+    <ZoomableImage
+      ref={ref}
+      src={src}
+      name={item.name}
+      mimeType={itemMimeType(item)}
+      onError={() => setFailedSrc(src)}
+      onZoom={(zoom) => setRequestedWidth(window.innerWidth * zoom)}
+    />
+  );
+}
+
 export const ExpandedImageDialog = memo(function ExpandedImageDialog({
   preview,
   onClose,
@@ -107,6 +153,7 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
     name: item?.name ?? "Media",
     src: item?.src ?? null,
   };
+  const imageSrc = item?.src ?? null;
   const openFile = source.onOpenFile;
   const actionsSource: MediaActionSource = openFile
     ? {
@@ -185,17 +232,12 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
         }}
       >
         <DialogTitle className="sr-only">Expanded {mediaLabel} preview</DialogTitle>
-        <Button
-          type="button"
-          ref={closeButtonRef}
-          size="icon-sm"
-          variant="media-close"
-          className="absolute right-0 top-0 z-20"
-          onClick={close}
-          aria-label={`Close ${mediaLabel} preview`}
-        >
-          <XIcon />
-        </Button>
+        <MediaViewerToolbar
+          source={actionsSource}
+          closeLabel={`Close ${mediaLabel} preview`}
+          closeRef={closeButtonRef}
+          onClose={close}
+        />
         {preview.images.length > 1 && (
           <Button
             type="button"
@@ -212,6 +254,15 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
           <div className="relative isolate z-10 flex max-h-full max-w-[var(--media-width)] flex-col items-center">
             {item.type === "video" ? (
               <ExpandedVideo key={index} item={item} />
+            ) : source.asset?.resource._tag === "github-media" &&
+              source.asset.resource.imagePreview &&
+              source.originalAsset ? (
+              <PullRequestPreviewImage
+                key={index}
+                item={item}
+                source={source}
+                ref={zoomableImageRef}
+              />
             ) : showingAccessibilityDetails ? (
               accessibilityDetails ? (
                 <SnapShotAccessibilityData
@@ -219,7 +270,7 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
                   className="h-[min(var(--media-height),40rem)] w-[min(var(--media-width),42rem)] transition-opacity duration-140 ease-out starting:opacity-0 rounded-lg border border-border/70 bg-background p-4 text-xs leading-5 shadow-2xl motion-reduce:transition-none"
                 />
               ) : null
-            ) : item.src === null || failedImageSrc === item.src ? (
+            ) : imageSrc === null || failedImageSrc === imageSrc ? (
               <ExpandedMediaFailure>
                 <p>
                   {openOriginalLink
@@ -231,11 +282,11 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
             ) : (
               <ZoomableImage
                 ref={zoomableImageRef}
-                key={`${index}:${item.src}`}
-                src={item.src}
+                key={index}
+                src={imageSrc}
                 name={item.name}
                 mimeType={itemMimeType(item)}
-                onError={() => setFailedImageSrc(item.src)}
+                onError={() => setFailedImageSrc(imageSrc)}
               />
             )}
             <div className="mt-2 flex max-w-[var(--media-width)] items-center justify-center gap-1.5 text-xs text-white/80 max-sm:px-10">

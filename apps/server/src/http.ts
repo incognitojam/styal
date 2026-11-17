@@ -1,3 +1,4 @@
+import * as PullRequestImagePreview from "./assets/PullRequestImagePreview.ts";
 import * as Mime from "effect/http/Mime";
 import {
   AuthOrchestrationOperateScope,
@@ -492,6 +493,7 @@ export const layerTerminalBrowserOpenRoute = HttpRouter.add(
 export const layerAssetRoute = Layer.unwrap(
   Effect.gen(function* () {
     const pullRequests = yield* PullRequestService.PullRequestService;
+    const previews = yield* PullRequestImagePreview.PullRequestImagePreview;
     return HttpRouter.add(
       "GET",
       `${ASSET_ROUTE_PREFIX}/*`,
@@ -579,6 +581,7 @@ export const layerAssetRoute = Layer.unwrap(
         }
         if (asset.kind === "source-control-media") {
           return yield* sourceControlMediaResponse(asset, request.headers).pipe(
+            Effect.provideService(PullRequestImagePreview.PullRequestImagePreview, previews),
             Effect.tapError((cause) =>
               // The URL can carry a token in its query string, and the error keeps the request it
               // failed on; the host and the failure kind are enough to diagnose.
@@ -608,10 +611,10 @@ export const layerAssetRoute = Layer.unwrap(
             HttpServerResponse.text("Internal Server Error", { status: 500 }),
           ),
         );
-      }),
+      }).pipe(HttpMiddleware.withLoggerDisabled),
     );
   }),
-);
+).pipe(Layer.provide(PullRequestImagePreview.layer));
 
 export const layerAttachmentUploadRoute = HttpRouter.add(
   "POST",

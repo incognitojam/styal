@@ -89,15 +89,20 @@ const noSvgDocumentAtom = Atom.make(AsyncResult.initial<SvgDocument, SvgLoadErro
 
 export function ThreadMarkdownImageView(props: {
   readonly uri: string | null;
+  readonly placeholderUri?: string | undefined;
   readonly sourceKey: string;
   readonly cacheKey?: string | undefined;
   readonly unavailable: boolean;
   readonly unavailableDetail?: string | undefined;
   readonly alt: string | null;
   readonly knownSize?: { readonly width: number; readonly height: number } | undefined;
+  readonly reserveFrame?: boolean | undefined;
+  readonly authoredWidth?: number | undefined;
+  readonly sourceDimensions?: ImageSize | undefined;
   readonly format?: "svg";
   readonly actionsSource?: MediaActionsSource;
   readonly onPressPreview: (source: FilePreviewSource) => void;
+  readonly onViewOriginal?: (() => void) | undefined;
 }) {
   const withGallery = useFilePreviewGallery();
   const sourceIdentifier = useId();
@@ -120,7 +125,13 @@ export function ThreadMarkdownImageView(props: {
   const [failure, setFailure] = useState({ uri: props.uri, failed: false });
   if (failure.uri !== props.uri) setFailure({ uri: props.uri, failed: false });
 
-  const sourceSize = props.knownSize ?? decodedSize ?? null;
+  const [tinySize, setTinySize] = useState<ImageSize | null>(null);
+  const sourceSize =
+    props.knownSize ??
+    props.sourceDimensions ??
+    (props.reserveFrame ? tinySize : null) ??
+    decodedSize ??
+    null;
   const displaySize: MarkdownImageDisplaySize | null =
     sourceSize === null || availableWidth <= 0
       ? null
@@ -135,7 +146,23 @@ export function ThreadMarkdownImageView(props: {
     AsyncResult.isFailure(svg);
   const placeholderWidth: ViewStyle["width"] =
     availableWidth > 0 ? Math.min(availableWidth, MARKDOWN_IMAGE_MAX_WIDTH) : "100%";
-  const frameStyle: ViewStyle = displaySize ?? { width: placeholderWidth, aspectRatio: 16 / 9 };
+  const ratio = sourceSize ? sourceSize.width / sourceSize.height : 16 / 10;
+  const cap = Math.min(
+    MARKDOWN_IMAGE_MAX_WIDTH,
+    480 * ratio,
+    props.authoredWidth ??
+      props.knownSize?.width ??
+      props.sourceDimensions?.width ??
+      decodedSize?.width ??
+      Infinity,
+  );
+  const frameStyle: ViewStyle = props.reserveFrame
+    ? {
+        width: availableWidth > 0 ? Math.min(availableWidth, cap) : "100%",
+        maxWidth: cap,
+        aspectRatio: ratio,
+      }
+    : (displaySize ?? { width: placeholderWidth, aspectRatio: 16 / 9 });
 
   return (
     <View
@@ -146,18 +173,34 @@ export function ThreadMarkdownImageView(props: {
         <MediaActionsMenu media={mediaActions}>
           <Pressable
             accessibilityRole="imagebutton"
-            accessibilityLabel={props.alt ?? "Markdown image"}
+            onPress={failed ? props.onViewOriginal : undefined}
+            accessibilityLabel={
+              failed && props.onViewOriginal ? "View original" : (props.alt ?? "Markdown image")
+            }
             accessibilityHint={
               mediaActions.actions.length > 0 ? "Touch and hold for media actions" : undefined
             }
             className="items-center justify-center rounded-[10px] bg-md-code-bg"
             style={frameStyle}
           >
+            {props.placeholderUri && !failed ? (
+              <Image
+                source={{ uri: props.placeholderUri }}
+                onLoad={(event) => {
+                  if (!decodedSize) setTinySize((current) => current ?? event.source);
+                }}
+                blurRadius={8}
+                style={StyleSheet.absoluteFill}
+                contentFit="contain"
+              />
+            ) : null}
             {failed ? (
               <Text className="px-3 text-center text-xs text-foreground-muted">
                 {props.unavailableDetail
                   ? `Image unavailable. ${props.unavailableDetail}`
-                  : "Image unavailable"}
+                  : props.onViewOriginal
+                    ? "Image unavailable. View original"
+                    : "Image unavailable"}
               </Text>
             ) : (
               <AppActivityIndicator />
@@ -207,6 +250,10 @@ export function ThreadMarkdownImageView(props: {
                           : { sourceKey: props.sourceKey, size },
                       )
                     }
+                    placeholderUri={props.placeholderUri}
+                    onPlaceholderLoad={(size) => {
+                      if (!decodedSize) setTinySize((current) => current ?? size);
+                    }}
                     onError={() => setFailure({ uri: props.uri, failed: true })}
                   />
                 )}
@@ -225,6 +272,8 @@ export function ThreadMarkdownImageView(props: {
 }
 
 function ThreadMarkdownImageRequest(props: {
+  readonly onPlaceholderLoad: (size: ImageSize) => void;
+  readonly placeholderUri?: string | undefined;
   readonly uri: string;
   readonly cacheKey: string | undefined;
   readonly onLoad: (sourceSize: ImageSize) => void;
@@ -234,7 +283,17 @@ function ThreadMarkdownImageRequest(props: {
 
   return (
     <>
+      {props.placeholderUri && !loaded ? (
+        <Image
+          source={{ uri: props.placeholderUri }}
+          contentFit="contain"
+          blurRadius={8}
+          style={StyleSheet.absoluteFill}
+          onLoad={(event) => props.onPlaceholderLoad(event.source)}
+        />
+      ) : null}
       <Image
+        placeholderContentFit="contain"
         source={{ uri: props.uri, cacheKey: props.cacheKey }}
         contentFit="contain"
         cachePolicy="memory-disk"

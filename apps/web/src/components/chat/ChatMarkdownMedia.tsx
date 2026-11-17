@@ -1,12 +1,24 @@
+import { observeResize } from "../../lib/observeResize";
+import {
+  fetchPullRequestPlaceholder,
+  pullRequestImageWidth,
+} from "@t3tools/client-runtime/pull-request-image-preview";
 import { MISSING_FILE_ACCESS_MESSAGE } from "@t3tools/client-runtime/state/assets";
 import { mediaFileReference, mediaUrlReference } from "@t3tools/client-runtime/media-reference";
-import type { AssetResource, EnvironmentId, SOURCE_CONTROL_MEDIA_ASSET } from "@t3tools/contracts";
-import { TriangleAlertIcon } from "lucide-react";
+import type {
+  AssetImagePreview,
+  AssetResource,
+  EnvironmentId,
+  SOURCE_CONTROL_MEDIA_ASSET,
+} from "@t3tools/contracts";
+import { ImageIcon, TriangleAlertIcon } from "lucide-react";
 import {
   createContext,
   memo,
   use,
   useState,
+  useEffect,
+  useRef,
   type ComponentProps,
   type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -124,6 +136,7 @@ export function ChatMarkdownImageFallback(props: {
   readonly kind?: "image" | "video" | "audio";
   readonly actionsSource?: MediaActionSource | undefined;
   readonly detail?: string | undefined;
+  readonly onViewOriginal?: (() => void) | undefined;
 }) {
   const content = (
     <span
@@ -134,6 +147,11 @@ export function ChatMarkdownImageFallback(props: {
       )}
     >
       <ChatMarkdownMediaUnavailableLabel alt={props.alt} kind={props.kind} detail={props.detail} />
+      {props.onViewOriginal ? (
+        <button type="button" onClick={props.onViewOriginal}>
+          View original
+        </button>
+      ) : null}
     </span>
   );
   return props.actionsSource ? (
@@ -156,11 +174,15 @@ const CHAT_MARKDOWN_IMAGE_FRAME_CLASS_NAME = cn(
  */
 export function ChatMarkdownImage(props: {
   readonly src: string | null;
+  readonly placeholderSrc?: string | undefined;
   readonly sourceFailed?: boolean | undefined;
+  readonly onViewOriginal?: (() => void) | undefined;
   readonly unavailableDetail?: string | undefined;
   readonly alt: string;
   readonly copyMarkdown: string | undefined;
   readonly standalone: boolean;
+  readonly reserveFrame?: boolean | undefined;
+  readonly sourceDimensions?: { readonly width: number; readonly height: number } | undefined;
   readonly className?: string | undefined;
   readonly style?: CSSProperties | undefined;
   readonly imageProps?:
@@ -175,10 +197,61 @@ export function ChatMarkdownImage(props: {
   const src = props.src ?? loadedSrc;
   const failed = props.sourceFailed === true || (src !== null && failedSrc === src);
   const settled = src !== null && !failed && (!props.standalone || loadedSrc !== null);
+  const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
+  const [tinySize, setTinySize] = useState<{ width: number; height: number } | null>(null);
+  const framed = !settled;
+  const size = props.sourceDimensions ?? tinySize ?? naturalSize;
+  const authoredRatio =
+    typeof props.style?.aspectRatio === "string"
+      ? props.style.aspectRatio.split("/").map(Number)
+      : null;
+  const ratio =
+    authoredRatio?.[0] && authoredRatio[1]
+      ? authoredRatio[0] / authoredRatio[1]
+      : size
+        ? size.width / size.height
+        : 16 / 10;
+  const naturalWidth = props.sourceDimensions?.width ?? naturalSize?.width;
+  const bounds = [
+    "100%",
+    "30rem",
+    `${30 * ratio}rem`,
+    ...(naturalWidth && typeof props.style?.width !== "number"
+      ? [`${Math.max(3, naturalWidth)}px`]
+      : []),
+    ...(typeof props.style?.width === "number" ? [`${props.style.width}px`] : []),
+    ...(props.style?.maxWidth ? [props.style.maxWidth] : []),
+  ];
+  // The in-flow sizing image preserves an original's intrinsic contribution to table columns.
+  const intrinsicWidth =
+    typeof props.style?.width === "number" ? props.style.width : (naturalWidth ?? 480);
+  const intrinsicHeight =
+    size && intrinsicWidth === size.width && !authoredRatio ? size.height : intrinsicWidth / ratio;
+  const hasIntrinsicSize = size !== null || typeof props.style?.width === "number";
+  const frameStyle = props.reserveFrame
+    ? {
+        ...props.style,
+        width: hasIntrinsicSize ? "auto" : "100%",
+        height: "auto",
+        aspectRatio: hasIntrinsicSize ? "auto" : String(ratio),
+        maxWidth: `min(${bounds.join(", ")})`,
+      }
+    : props.style;
+  const loadedStyle = {
+    ...(props.reserveFrame && props.sourceDimensions
+      ? { aspectRatio: String(props.sourceDimensions.width / props.sourceDimensions.height) }
+      : {}),
+    ...props.style,
+  };
   // Cached images are complete before `onLoad` can fire.
   const markLoadedIfComplete = (image: HTMLImageElement | null) => {
     if (!image) return;
-    if (image.complete && image.naturalWidth > 0) setLoadedSrc(image.currentSrc || image.src);
+    if (image.complete && image.naturalWidth > 0) {
+      setLoadedSrc(image.currentSrc || image.src);
+      setNaturalSize(
+        (current) => current ?? { width: image.naturalWidth, height: image.naturalHeight },
+      );
+    }
     markdownImageItems.set(image, {
       src,
       name: props.alt.trim() || "image",
@@ -187,7 +260,11 @@ export function ChatMarkdownImage(props: {
     });
   };
   const imageEvents = (loadingSrc: string) => ({
-    onLoad: () => {
+    onLoad: (event: React.SyntheticEvent<HTMLImageElement>) => {
+      const image = event.currentTarget;
+      setNaturalSize(
+        (current) => current ?? { width: image.naturalWidth, height: image.naturalHeight },
+      );
       setLoadedSrc(loadingSrc);
       setFailedSrc(null);
     },
@@ -197,7 +274,7 @@ export function ChatMarkdownImage(props: {
     },
   });
 
-  if (settled) {
+  if (settled && !props.standalone) {
     return (
       <MediaActions source={props.actionsSource}>
         <img
@@ -214,7 +291,7 @@ export function ChatMarkdownImage(props: {
             props.className,
             props.onImageExpand && "cursor-zoom-in",
           )}
-          style={props.style}
+          style={loadedStyle}
           {...expandableMarkdownImageProps(props.onImageExpand, props.alt)}
           {...imageEvents(src)}
         />
@@ -228,6 +305,7 @@ export function ChatMarkdownImage(props: {
         copyMarkdown={props.copyMarkdown}
         actionsSource={props.actionsSource}
         detail={props.unavailableDetail}
+        onViewOriginal={props.onViewOriginal}
       />
     ) : (
       <span
@@ -240,25 +318,69 @@ export function ChatMarkdownImage(props: {
     );
   }
   return (
-    <MediaActions source={props.actionsSource}>
-      <span
-        id={props.imageProps?.id}
-        data-markdown-copy={props.copyMarkdown}
-        className={cn(
-          CHAT_MARKDOWN_MEDIA_LAYOUT_CLASS_NAME,
-          CHAT_MARKDOWN_IMAGE_FRAME_CLASS_NAME,
-          "relative",
-        )}
-        style={props.style}
-        {...(failed
-          ? { role: "alert" as const }
+    <span
+      id={props.imageProps?.id}
+      data-markdown-copy={props.copyMarkdown}
+      className={cn(
+        settled ? "contents" : CHAT_MARKDOWN_MEDIA_LAYOUT_CLASS_NAME,
+        framed
+          ? props.reserveFrame
+            ? "w-full bg-muted/60"
+            : CHAT_MARKDOWN_IMAGE_FRAME_CLASS_NAME
+          : undefined,
+        framed ? "relative" : undefined,
+      )}
+      style={framed ? frameStyle : undefined}
+      {...(failed
+        ? { role: "alert" as const }
+        : settled
+          ? {}
           : { role: "status" as const, "aria-label": "Loading image" })}
-      >
-        {failed ? (
-          <span className="flex size-full items-center justify-center p-2 text-center text-xs text-muted-foreground">
-            <ChatMarkdownMediaUnavailableLabel alt={props.alt} detail={props.unavailableDetail} />
-          </span>
-        ) : src !== null ? (
+    >
+      {props.reserveFrame && hasIntrinsicSize && !settled ? (
+        <img
+          aria-hidden
+          alt=""
+          src={`data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="${intrinsicWidth}" height="${intrinsicHeight}"/>`)}`}
+          className={cn(CHAT_MARKDOWN_IMAGE_SIZE_CLASS_NAME, "block!")}
+          width={intrinsicWidth}
+          height={intrinsicHeight}
+        />
+      ) : null}
+      {!failed && !settled && props.reserveFrame ? (
+        <span
+          aria-hidden
+          className="absolute inset-0 flex items-center justify-center text-muted-foreground"
+        >
+          <ImageIcon className="size-6" />
+        </span>
+      ) : null}
+      {props.placeholderSrc && !failed && !settled ? (
+        <img
+          src={props.placeholderSrc}
+          alt=""
+          aria-hidden
+          onLoad={(event) => {
+            const image = event.currentTarget;
+            if (!naturalSize)
+              setTinySize(
+                (current) => current ?? { width: image.naturalWidth, height: image.naturalHeight },
+              );
+          }}
+          className="absolute inset-0 size-full object-contain blur-sm"
+        />
+      ) : null}
+      {failed ? (
+        <span className="flex size-full items-center justify-center p-2 text-center text-xs text-muted-foreground">
+          <ChatMarkdownMediaUnavailableLabel alt={props.alt} detail={props.unavailableDetail} />
+          {props.onViewOriginal ? (
+            <button type="button" onClick={props.onViewOriginal}>
+              View original
+            </button>
+          ) : null}
+        </span>
+      ) : src !== null ? (
+        <MediaActions source={props.actionsSource}>
           <img
             ref={markLoadedIfComplete}
             src={src}
@@ -266,12 +388,24 @@ export function ChatMarkdownImage(props: {
             decoding="async"
             loading="lazy"
             draggable={false}
-            className="invisible absolute inset-0 size-full"
+            {...props.imageProps}
+            data-markdown-copy={props.copyMarkdown}
+            className={
+              settled
+                ? cn(
+                    CHAT_MARKDOWN_IMAGE_SIZE_CLASS_NAME,
+                    props.className,
+                    props.onImageExpand && "cursor-zoom-in",
+                  )
+                : "invisible absolute inset-0 size-full"
+            }
+            style={settled ? loadedStyle : undefined}
+            {...expandableMarkdownImageProps(props.onImageExpand, props.alt)}
             {...imageEvents(src)}
           />
-        ) : null}
-      </span>
-    </MediaActions>
+        </MediaActions>
+      ) : null}
+    </span>
   );
 }
 
@@ -343,11 +477,86 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
   readonly onImageExpand?: ((preview: ExpandedImagePreview) => void) | undefined;
 }) {
   const resource = props.resource;
+  const [viewOriginal, setViewOriginal] = useState(false);
+  const previewEnabled =
+    !viewOriginal &&
+    resource._tag === "github-media" &&
+    props.kind !== "video" &&
+    !/\.(?:gif|svg)(?:[?#]|$)/i.test(resource.url);
+  const frame = useRef<HTMLSpanElement>(null);
+  const [width, setWidth] = useState<AssetImagePreview["width"] | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Observe the visible frame to mint only the required preview size.
+  useEffect(() => {
+    const element = frame.current;
+    if (!previewEnabled || !element) return;
+    let visible = false;
+    const measure = () => {
+      if (!visible) return;
+      const available = element.getBoundingClientRect().width;
+      const chosen = pullRequestImageWidth(
+        Math.max(available || 480, window.innerWidth),
+        window.devicePixelRatio,
+      );
+      setWidth((previous) =>
+        previous === null ? chosen : (Math.max(previous, chosen) as typeof chosen),
+      );
+    };
+    const stopResize = observeResize(element, measure);
+    let root =
+      element.closest(".chat-markdown-table-container")?.parentElement ?? element.parentElement;
+    while (
+      root &&
+      (!/(auto|scroll)/.test(getComputedStyle(root).overflowY) ||
+        root.scrollHeight <= root.clientHeight)
+    )
+      root = root.parentElement;
+    const intersection = new IntersectionObserver(
+      ([entry]) => {
+        visible = entry?.isIntersecting ?? false;
+        measure();
+      },
+      { root, rootMargin: `${root?.clientHeight || window.innerHeight}px 0px` },
+    );
+    intersection.observe(element);
+    return () => {
+      stopResize();
+      intersection.disconnect();
+    };
+  }, [previewEnabled]);
+  const inlineResource =
+    previewEnabled && resource._tag === "github-media"
+      ? width === null
+        ? null
+        : { ...resource, imagePreview: { width } }
+      : resource;
   const threadWorkspaceMutationId = use(WorkspaceMutationIdContext);
   const workspaceMutationId = props.workspaceMutationId ?? threadWorkspaceMutationId;
+  const placeholder = useAssetUrlState(
+    props.environmentId,
+    previewEnabled && width !== null && resource._tag === "github-media"
+      ? { ...resource, imagePreview: { width: 64 } }
+      : null,
+  );
+  const tinyUrl =
+    placeholder._tag === "Success" && placeholder.imagePreview ? placeholder.url : null;
+  const [tiny, setTiny] = useState<
+    ({ url: string } & Awaited<ReturnType<typeof fetchPullRequestPlaceholder>>) | null
+  >(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Fetch the tiny bitmap and its response metadata together, without downloading it twice.
+  useEffect(() => {
+    if (!tinyUrl) return;
+    const controller = new AbortController();
+    void fetchPullRequestPlaceholder(tinyUrl, controller.signal)
+      .then((value) => {
+        if (!controller.signal.aborted) setTiny({ url: tinyUrl, ...value });
+      })
+      .catch(() => {});
+    return () => controller.abort();
+  }, [tinyUrl]);
+  const readyTiny = tiny?.url === tinyUrl ? tiny : null;
   const assetUrl = useAssetUrlState(
     props.environmentId,
-    resource,
+    inlineResource,
     workspaceMutationId !== undefined &&
       props.kind !== "video" &&
       (resource._tag === "media-file" || resource._tag === "workspace-file")
@@ -367,7 +576,8 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
       ? mediaUrlReference(props.originalUrl)
       : undefined;
   const relativePath = reference?.kind === "file" ? reference.relativePath : undefined;
-  const fallbackSrc = assetUrl._tag === "Failure" ? props.fallbackSrc : undefined;
+  const fallbackSrc =
+    !previewEnabled && assetUrl._tag === "Failure" ? props.fallbackSrc : undefined;
   const src =
     assetUrl._tag === "Success"
       ? assetUrl.url + (props.srcFragment ?? "")
@@ -388,7 +598,12 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
     name: props.alt || (props.kind ?? "image"),
     src,
     ...(fallbackSrc === undefined
-      ? { asset: { environmentId: props.environmentId, resource } }
+      ? {
+          asset: { environmentId: props.environmentId, resource: inlineResource ?? resource },
+          ...(previewEnabled
+            ? { originalAsset: { environmentId: props.environmentId, resource } }
+            : {}),
+        }
       : {}),
     ...(reference ? { reference } : {}),
     ...(relativePath && (resource._tag === "media-file" || resource._tag === "workspace-file")
@@ -420,9 +635,11 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
     );
   }
 
-  return (
+  const image = (
     <ChatMarkdownImage
       key={JSON.stringify([props.environmentId, props.resource, props.srcFragment])}
+      onViewOriginal={previewEnabled ? () => setViewOriginal(true) : undefined}
+      placeholderSrc={readyTiny?.uri}
       src={src}
       sourceFailed={assetUrl._tag === "Failure" && fallbackSrc === undefined}
       unavailableDetail={
@@ -435,6 +652,8 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
       alt={props.alt}
       copyMarkdown={props.copyMarkdown}
       standalone={props.standalone ?? true}
+      reserveFrame={previewEnabled && (props.standalone ?? true)}
+      sourceDimensions={readyTiny?.sourceDimensions}
       className={cn(
         props.framed === false ? undefined : CHAT_MARKDOWN_WORKSPACE_IMAGE_CLASS_NAME,
         props.className,
@@ -445,5 +664,12 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
       originalUrl={props.originalUrl}
       onImageExpand={props.onImageExpand}
     />
+  );
+  return previewEnabled ? (
+    <span ref={frame} className={props.standalone === false ? "inline" : "block max-w-full"}>
+      {image}
+    </span>
+  ) : (
+    image
   );
 });

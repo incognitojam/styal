@@ -1,3 +1,5 @@
+import * as Clock from "effect/Clock";
+import * as Preview from "./PullRequestImagePreview.ts";
 // @effect-diagnostics nodeBuiltinImport:off - tests inject swaps at the native open boundary.
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -48,6 +50,8 @@ vi.mock("node:fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof NodeFSP>();
   return { ...actual, open: vi.fn(actual.open), realpath: vi.fn(actual.realpath) };
 });
+
+const decodeAssetInputOption = Schema.decodeUnknownOption(AssetCreateUrlInput);
 
 const layerConfig = ServerConfig.ServerConfig.layerTest(process.cwd(), {
   prefix: "t3-asset-access-test-",
@@ -1529,22 +1533,33 @@ describe("AssetAccess", () => {
       headers: Readonly<Record<string, string>>;
       repository?: string;
     }> = [];
+    const previewRepositories: Array<string | undefined> = [];
     const url = "https://github.com/owner/repo/blob/main/docs/shot.png";
     const media = sourceControlDefinitions.mediaUrl(url)!;
     const layerDrivers = Layer.succeed(BuiltInDrivers.SourceControlDrivers, [
       {
         driver: { kind: media.definition.kind, definition: media.definition },
-        instance: fakeSourceControlDriverInstance(media.definition.kind, {
-          pullRequests: null,
-          fetchMedia: (request) =>
+        instance: {
+          ...fakeSourceControlDriverInstance(media.definition.kind, {
+            pullRequests: null,
+            fetchMedia: (request) =>
+              Effect.sync(() => {
+                fetched.push(request);
+                return HttpClientResponse.fromWeb(
+                  HttpClientRequest.get(request.url),
+                  new Response("bytes", { status: 206, headers: { "content-length": "5" } }),
+                );
+              }),
+          }),
+          imagePreviewSource: (_url: string, repository?: string) =>
             Effect.sync(() => {
-              fetched.push(request);
-              return HttpClientResponse.fromWeb(
-                HttpClientRequest.get(request.url),
-                new Response("bytes", { status: 206, headers: { "content-length": "5" } }),
-              );
+              previewRepositories.push(repository);
+              return {
+                partition: "synthetic",
+                fetch: Effect.succeed({ bytes: new Uint8Array([1]), contentType: "image/png" }),
+              };
             }),
-        }),
+        },
       },
     ]);
     // Clients that predate `repository` get the checkout's.
@@ -1575,7 +1590,61 @@ describe("AssetAccess", () => {
         cwd: "/repo",
         expiresAt: issued.expiresAt,
       });
+      if (resource._tag !== "github-media") return;
+      const preview = yield* issueAssetUrl({
+        resource: { ...resource, repository: "enterprise/private", imagePreview: { width: 640 } },
+      });
+      expect(preview.imagePreview).toEqual({ width: 640 });
+      const previewParts = preview.relativeUrl.slice(`${ASSET_ROUTE_PREFIX}/`.length).split("/");
+      expect(yield* resolveAsset(previewParts[0]!, previewParts[1]!)).toMatchObject({
+        imagePreview: { width: 640 },
+        repository: "enterprise/private",
+      });
+      expect(yield* resolveAsset(`${previewParts[0]}tampered`, previewParts[1]!)).toBeNull();
+      expect(
+        decodeAssetInputOption({
+          resource: { ...resource, imagePreview: { width: 800 } },
+        })._tag,
+      ).toBe("None");
       if (asset?.kind !== "source-control-media") return;
+      const now = yield* Clock.currentTimeMillis;
+      const derivative = {
+        bytes: new Uint8Array([1, 2, 3]),
+        contentType: "image/webp",
+        expiresAt: now + 300_000,
+        sourceDimensions: { width: 120, height: 40 },
+      };
+      yield* TestClock.adjust("4 minutes");
+      const cachedResponse = yield* sourceControlMediaResponse(
+        { ...asset, imagePreview: { width: 640 } },
+        {},
+      ).pipe(
+        Effect.provideService(Preview.PullRequestImagePreview, {
+          read: () => Effect.succeed(derivative),
+        }),
+      );
+      expect(cachedResponse.headers["cache-control"]).toBe("private, max-age=60");
+      expect(cachedResponse.headers["x-styal-image-source-width"]).toBe("120");
+      expect(cachedResponse.headers["x-styal-image-source-height"]).toBe("40");
+      const expiringResponse = yield* sourceControlMediaResponse(
+        {
+          ...asset,
+          repository: "enterprise/private",
+          expiresAt: now + 241_000,
+          imagePreview: { width: 640 },
+        },
+        {},
+      ).pipe(
+        Effect.provideService(Preview.PullRequestImagePreview, {
+          read: () =>
+            Effect.gen(function* () {
+              yield* TestClock.adjust("2 seconds");
+              return derivative;
+            }),
+        }),
+      );
+      expect(expiringResponse.headers["cache-control"]).toBe("private, max-age=0");
+      expect(previewRepositories).toEqual(["owner/repo", "enterprise/private"]);
 
       const response = yield* sourceControlMediaResponse(asset, {
         range: "bytes=0-4",
@@ -1594,6 +1663,9 @@ describe("AssetAccess", () => {
       expect(fetched.at(-1)?.repository).toBe("enterprise/private");
     }).pipe(
       Effect.provide(Layer.mergeAll(layerTest, layerDrivers, layerIdentities)),
+      Effect.provideService(Preview.PullRequestImagePreview, {
+        read: () => Effect.die("Original must not use previews"),
+      }),
       Effect.scoped,
     );
   });

@@ -4,6 +4,7 @@ import type { FileBackedComposerAttachment } from "../../lib/composerImages";
 import type { MediaActionsSource } from "../../lib/mediaActionsSource";
 
 interface FilePreviewMetadata {
+  readonly previewImage?: boolean;
   readonly kind: "image" | "pdf" | "document";
   readonly mimeType?: string;
   readonly name?: string;
@@ -30,6 +31,7 @@ export interface ResolvedFilePreviewDocument extends FilePreviewMetadata {
 
 /** `uri` is absent while it resolves; `failed` marks one that never will. */
 export interface FilePreviewImage extends FilePreviewMetadata {
+  readonly onOpenOriginal?: () => Promise<void>;
   readonly uri?: string;
   readonly failed?: boolean;
 }

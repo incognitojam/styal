@@ -1,3 +1,11 @@
+import {
+  ASSET_IMAGE_SOURCE_WIDTH_HEADER,
+  ASSET_IMAGE_SOURCE_HEIGHT_HEADER,
+  type AssetImagePreview,
+} from "@t3tools/contracts";
+import * as Preview from "./PullRequestImagePreview.ts";
+import * as Digest from "effect/crypto/Digest";
+import * as Hex from "effect/encoding/Hex";
 import * as Mime from "effect/http/Mime";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
@@ -31,6 +39,7 @@ export const sourceControlMediaResponse = Effect.fn(
     readonly cwd: string;
     readonly repository?: string;
     readonly expiresAt: number;
+    readonly imagePreview?: AssetImagePreview;
   },
   requestHeaders: Record<string, string | undefined>,
 ) {
@@ -47,11 +56,6 @@ export const sourceControlMediaResponse = Effect.fn(
   if (media === null || fetchMedia === undefined) {
     return HttpServerResponse.empty({ status: 404, headers });
   }
-  const forwarded: Record<string, string> = {};
-  for (const name of FORWARDED_REQUEST_HEADERS) {
-    const value = requestHeaders[name];
-    if (value !== undefined) forwarded[name] = value;
-  }
   // Clients that predate `repository` fall back to the repository checked out at `cwd`.
   let repository = asset.repository;
   if (repository === undefined) {
@@ -60,6 +64,51 @@ export const sourceControlMediaResponse = Effect.fn(
     if (identity?.provider === media.definition.kind && identity.owner && identity.name) {
       repository = `${identity.owner}/${identity.name}`;
     }
+  }
+  if (asset.imagePreview) {
+    const sourceFactory = drivers.find(({ driver }) => driver.kind === media.definition.kind)
+      ?.instance.imagePreviewSource;
+    if (!sourceFactory) return HttpServerResponse.empty({ status: 415, headers });
+    const source = yield* sourceFactory(asset.url, repository);
+    const previews = yield* Preview.PullRequestImagePreview;
+    const result = yield* previews
+      .read({
+        identity: `${source.partition.length}:${source.partition}${asset.cwd.length}:${asset.cwd}${asset.url}`,
+        preview: asset.imagePreview,
+        fetch: source.fetch,
+      })
+      .pipe(Effect.option);
+    if (result._tag === "None") return HttpServerResponse.empty({ status: 415, headers });
+    const expiresAt = Math.min(asset.expiresAt, result.value.expiresAt);
+    const freshness = Math.max(
+      0,
+      Math.floor((expiresAt - (yield* Clock.currentTimeMillis)) / 1000),
+    );
+    const digester = yield* Digest.Digest;
+    const etag = Hex.encode(yield* digester.digest(Digest.sha256, result.value.bytes));
+    return HttpServerResponse.uint8Array(result.value.bytes, {
+      contentType: result.value.contentType,
+      headers: {
+        ...headers,
+        "cache-control": `private, max-age=${freshness}`,
+        etag: `"${etag}"`,
+        ...(result.value.contentType === SVG_CONTENT_TYPE
+          ? { "content-security-policy": SVG_CONTENT_SECURITY_POLICY }
+          : {}),
+        ...(result.value.sourceDimensions
+          ? {
+              [ASSET_IMAGE_SOURCE_WIDTH_HEADER]: String(result.value.sourceDimensions.width),
+              [ASSET_IMAGE_SOURCE_HEIGHT_HEADER]: String(result.value.sourceDimensions.height),
+              "access-control-expose-headers": `${ASSET_IMAGE_SOURCE_WIDTH_HEADER}, ${ASSET_IMAGE_SOURCE_HEIGHT_HEADER}`,
+            }
+          : {}),
+      },
+    });
+  }
+  const forwarded: Record<string, string> = {};
+  for (const name of FORWARDED_REQUEST_HEADERS) {
+    const value = requestHeaders[name];
+    if (value !== undefined) forwarded[name] = value;
   }
   const response = yield* fetchMedia({
     url: asset.url,

@@ -1,11 +1,24 @@
+import { fetch } from "expo/fetch";
+import {
+  fetchPullRequestPlaceholder,
+  pullRequestImageWidth,
+} from "@t3tools/client-runtime/pull-request-image-preview";
+import { PixelRatio, useWindowDimensions } from "react-native";
 import { PullRequestLazyImage, PullRequestMediaVisibleContext } from "./PullRequestImageVisibility";
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext, useState, useEffect } from "react";
 import {
   pullRequestMediaSource,
   pullRequestImageSource,
   type PullRequestMediaLocation,
 } from "./pullRequestMediaSource";
 import { useFilePreviewGallery } from "../../components/ui/FilePreviewGallery";
+import {
+  SOURCE_CONTROL_MEDIA_ASSET,
+  type AssetResource,
+  type AssetImagePreview,
+} from "@t3tools/contracts";
+
+import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import { videoMimeType } from "@t3tools/shared/video";
 import { Pressable, View } from "react-native";
 import { Image } from "expo-image";
@@ -26,18 +39,75 @@ export { PullRequestMediaVisibleContext } from "./PullRequestImageVisibility";
 
 export const PullRequestMediaContext = createContext<PullRequestMediaLocation | null>(null);
 
-export function usePullRequestMediaUrl(url: string, enabled = true) {
+export function usePullRequestMediaUrl(
+  url: string,
+  enabled = true,
+  imagePreview?: AssetImagePreview,
+) {
   const context = useContext(PullRequestMediaContext);
-  const source = pullRequestMediaSource(url, context);
-  const resource = "resource" in source ? (source.resource ?? null) : null;
+  const fetchUrl = sourceControlClients.mediaUrl(url)?.fetchUrl;
+  const resource: AssetResource | null =
+    context && fetchUrl
+      ? {
+          _tag: SOURCE_CONTROL_MEDIA_ASSET,
+          cwd: context.cwd,
+          ...(context.repository ? { repository: context.repository } : {}),
+          url: fetchUrl,
+          ...(imagePreview ? { imagePreview } : {}),
+        }
+      : null;
   const asset = useAssetUrlState(context?.environmentId ?? null, enabled ? resource : null);
   const refresh = useRefreshAssetUrl(context?.environmentId ?? null, resource);
   return {
     uri: !enabled ? null : asset._tag === "Success" ? asset.url : resource ? null : url,
     cacheKey: context && resource ? assetImageCacheKey(context.environmentId, resource) : undefined,
     unavailable: resource !== null && asset._tag === "Failure",
-    source,
+    source: pullRequestMediaSource(url, context),
     resolvePlaybackUri: resource ? async () => (await refresh()) ?? null : undefined,
+  };
+}
+
+export function usePullRequestImageUrl(url: string, enabled = true) {
+  const context = useContext(PullRequestMediaContext);
+  const screen = useWindowDimensions();
+  const fetchUrl = sourceControlClients.mediaUrl(url)?.fetchUrl;
+  const preview =
+    fetchUrl && !/\.(?:gif|svg)(?:[?#]|$)/i.test(fetchUrl)
+      ? { width: pullRequestImageWidth(screen.width, PixelRatio.get()) }
+      : undefined;
+  const resource: AssetResource | null =
+    context && fetchUrl && preview
+      ? {
+          _tag: SOURCE_CONTROL_MEDIA_ASSET,
+          cwd: context.cwd,
+          ...(context.repository ? { repository: context.repository } : {}),
+          url: fetchUrl,
+          imagePreview: { width: 64 },
+        }
+      : null;
+  const tiny = useAssetUrlState(context?.environmentId ?? null, enabled ? resource : null);
+  const media = usePullRequestMediaUrl(url, enabled, preview);
+  const tinyUrl = tiny._tag === "Success" && tiny.imagePreview ? tiny.url : null;
+  const [bitmap, setTiny] = useState<
+    ({ url: string } & Awaited<ReturnType<typeof fetchPullRequestPlaceholder>>) | null
+  >(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Fetch the tiny bitmap and source dimensions once for the native placeholder renderer.
+  useEffect(() => {
+    if (!tinyUrl) return;
+    const controller = new AbortController();
+    void fetchPullRequestPlaceholder(tinyUrl, controller.signal, fetch)
+      .then((value) => {
+        if (!controller.signal.aborted) setTiny({ url: tinyUrl, ...value });
+      })
+      .catch(() => {});
+    return () => controller.abort();
+  }, [tinyUrl]);
+  const readyTiny = bitmap?.url === tinyUrl ? bitmap : null;
+  return {
+    ...media,
+    reserveFrame: preview !== undefined,
+    placeholderUri: readyTiny?.uri,
+    sourceDimensions: readyTiny?.sourceDimensions,
   };
 }
 
@@ -51,15 +121,33 @@ type PullRequestMediaProps = {
 export function PullRequestMedia(props: PullRequestMediaProps) {
   return props.kind === "image" ? (
     <PullRequestLazyImage key={props.url}>
-      {(enabled) => <PullRequestMediaContent {...props} enabled={enabled} />}
+      {(enabled) => <PullRequestImageContent {...props} enabled={enabled} />}
     </PullRequestLazyImage>
   ) : (
-    <PullRequestMediaContent {...props} enabled />
+    <PullRequestVideoContent {...props} />
   );
 }
 
-function PullRequestMediaContent(props: PullRequestMediaProps & { enabled: boolean }) {
-  const media = usePullRequestMediaUrl(props.url, props.enabled);
+function PullRequestImageContent(props: PullRequestMediaProps & { enabled: boolean }) {
+  const media = usePullRequestImageUrl(props.url, props.enabled);
+  return <PullRequestMediaContent {...props} media={media} />;
+}
+
+function PullRequestVideoContent(props: PullRequestMediaProps) {
+  const media = usePullRequestMediaUrl(props.url);
+  return <PullRequestMediaContent {...props} media={media} />;
+}
+
+function PullRequestMediaContent(
+  props: PullRequestMediaProps & {
+    media: ReturnType<typeof usePullRequestMediaUrl> & {
+      placeholderUri?: string | undefined;
+      reserveFrame?: boolean | undefined;
+      sourceDimensions?: { readonly width: number; readonly height: number } | undefined;
+    };
+  },
+) {
+  const media = props.media;
   const visible = useContext(PullRequestMediaVisibleContext);
   const context = useContext(PullRequestMediaContext);
   const withGallery = useFilePreviewGallery();
@@ -70,11 +158,17 @@ function PullRequestMediaContent(props: PullRequestMediaProps & { enabled: boole
     return (
       <>
         <ThreadMarkdownImageView
+          reserveFrame={media.reserveFrame}
+          sourceDimensions={media.sourceDimensions}
+          placeholderUri={media.placeholderUri}
           uri={media.uri}
           sourceKey={props.url}
           cacheKey={media.cacheKey}
           unavailable={media.unavailable}
           alt={name}
+          onViewOriginal={() =>
+            setImage({ ...pullRequestImageSource(props.url, context), previewImage: false, name })
+          }
           onPressPreview={(source) =>
             setImage(
               withGallery({
@@ -141,19 +235,29 @@ export function PullRequestImageAttachment(props: PullRequestImageAttachmentProp
 function PullRequestImageAttachmentContent(
   props: PullRequestImageAttachmentProps & { enabled: boolean },
 ) {
-  const media = usePullRequestMediaUrl(props.url, props.enabled);
+  const media = usePullRequestImageUrl(props.url, props.enabled);
   const [preview, setPreview] = useState<FilePreviewSource | null>(null);
+  const [failedUri, setFailedUri] = useState<string | null>(null);
+  const failed = media.unavailable || (media.uri !== null && failedUri === media.uri);
   return (
     <>
       <Pressable
         accessibilityRole="imagebutton"
-        accessibilityLabel={`View attachment: ${props.caption}`}
-        onPress={() => setPreview({ ...props.source, gallery: props.gallery })}
+        accessibilityLabel={failed ? "View original" : `View attachment: ${props.caption}`}
+        onPress={() =>
+          setPreview(
+            failed
+              ? { ...props.source, previewImage: false }
+              : { ...props.source, gallery: props.gallery },
+          )
+        }
         className="gap-2 active:opacity-70"
         style={{ width: 176 }}
       >
         <View className="overflow-hidden rounded-2xl border border-border-subtle bg-grouped-card">
           <Image
+            onError={() => setFailedUri(media.uri)}
+            placeholder={media.placeholderUri ? { uri: media.placeholderUri } : undefined}
             source={media.uri ? { uri: media.uri, cacheKey: media.cacheKey } : null}
             style={{ width: 174, height: 112 }}
             contentFit="contain"
