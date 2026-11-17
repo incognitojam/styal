@@ -42,7 +42,7 @@ export function NeedsYou({
       {visible.map((row, index) =>
         row.kind === "run" ? (
           <WorkflowRunReviewCard
-            key={`${row.run.host}/${row.run.repository}/${row.run.runId}:${row.run.review!.environments.map((environment) => environment.id).join(",")}`}
+            key={`${row.run.host}/${row.run.repository}/${row.run.runId}`}
             environmentId={reviewProps.environmentId}
             threadId={reviewProps.threadId}
             run={row.run}

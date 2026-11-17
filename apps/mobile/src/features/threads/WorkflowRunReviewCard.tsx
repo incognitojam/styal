@@ -32,9 +32,11 @@ export function WorkflowRunReviewCard(props: {
     label: "review workflow run deployments",
     reportFailure: false,
   });
-  const [selected, setSelected] = useState<ReadonlySet<number>>(
-    () => new Set(run.review?.environments.map((environment) => environment.id)),
-  );
+  // Null until the user edits the form: an untouched form follows every waiting environment,
+  // an edited one keeps its picks, so newly waiting environments are never added to it.
+  const [picks, setPicks] = useState<ReadonlySet<number> | null>(null);
+  const environmentIds = (run.review?.environments ?? []).map((environment) => environment.id);
+  const selected = new Set(environmentIds.filter((id) => picks === null || picks.has(id)));
   const [expanded, setExpanded] = useState(false);
   const [comment, setComment] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -67,6 +69,12 @@ export function WorkflowRunReviewCard(props: {
       inFlight.current = false;
       setSubmitting(false);
     });
+    if (result._tag === "Success") {
+      // Environments the review didn't cover start from a fresh form.
+      setPicks(null);
+      setComment("");
+      setExpanded(false);
+    }
     if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
       const failure = squashAtomCommandFailure(result);
       // A host error carries its readable text in `detail`; its message names the operation.
@@ -99,7 +107,7 @@ export function WorkflowRunReviewCard(props: {
           {expanded ? null : (
             <Button
               label={
-                selected.size !== environments.length || comment.trim() !== ""
+                picks !== null
                   ? `Approve ${selected.size} ${selected.size === 1 ? "environment" : "environments"}`
                   : "Approve"
               }
@@ -135,8 +143,8 @@ export function WorkflowRunReviewCard(props: {
                       checked ? "border-primary bg-primary/10" : "border-border bg-input",
                     )}
                     onPress={() =>
-                      setSelected((current) => {
-                        const next = new Set(current);
+                      setPicks((current) => {
+                        const next = new Set(current ?? environmentIds);
                         if (next.has(environment.id)) next.delete(environment.id);
                         else next.add(environment.id);
                         return next;
@@ -168,7 +176,10 @@ export function WorkflowRunReviewCard(props: {
             accessibilityLabel="Review comment"
             placeholder="Leave a comment (optional)"
             value={comment}
-            onChangeText={setComment}
+            onChangeText={(text) => {
+              setPicks((current) => current ?? new Set(environmentIds));
+              setComment(text);
+            }}
             editable={!locked}
             returnKeyType="done"
             className="min-h-[54px] rounded-2xl border border-input-border bg-input px-3.5 py-3 font-sans text-base text-foreground"

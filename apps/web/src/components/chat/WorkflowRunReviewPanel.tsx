@@ -26,8 +26,7 @@ export function WorkflowRunReviewRow(props: {
   if (run.review === undefined) return null;
   return (
     <WorkflowRunReviewForm
-      // A new set of waiting environments starts a fresh form.
-      key={run.review.environments.map((environment) => environment.id).join(",")}
+      key={`${run.host}/${run.repository}/${run.runId}`}
       environmentId={props.environmentId}
       threadId={props.threadId}
       run={run}
@@ -51,8 +50,12 @@ function WorkflowRunReviewForm(props: {
   const review = useAtomCommand(pullRequestEnvironment.reviewWorkflowRun, {
     reportFailure: false,
   });
-  const [selectedEnvironments, setSelectedEnvironments] = useState<ReadonlySet<number>>(
-    () => new Set(environments.map((environment) => environment.id)),
+  // Null until the user edits the form: an untouched form follows every waiting environment,
+  // an edited one keeps its picks, so newly waiting environments are never added to it.
+  const [picks, setPicks] = useState<ReadonlySet<number> | null>(null);
+  const environmentIds = environments.map((environment) => environment.id);
+  const selectedEnvironments = new Set(
+    environmentIds.filter((id) => picks === null || picks.has(id)),
   );
   const [comment, setComment] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -80,6 +83,12 @@ function WorkflowRunReviewForm(props: {
     });
     inFlight.current = false;
     setSubmitting(false);
+    if (result._tag === "Success") {
+      // Environments the review didn't cover start from a fresh form.
+      setPicks(null);
+      setComment("");
+      setExpanded(false);
+    }
     if (result._tag === "Failure") {
       toastManager.add({
         type: "error",
@@ -95,7 +104,7 @@ function WorkflowRunReviewForm(props: {
 
   const locked = !canReview || submitting;
   // Quick Approve sends the form's state, so an edited selection or comment shows in its label.
-  const edited = selectedEnvironments.size !== environments.length || comment.trim() !== "";
+  const edited = picks !== null;
   const quickApproveLabel = edited
     ? `Approve ${selectedEnvironments.size} ${selectedEnvironments.size === 1 ? "environment" : "environments"}`
     : "Approve";
@@ -146,8 +155,8 @@ function WorkflowRunReviewForm(props: {
                     checked={selectedEnvironments.has(environment.id)}
                     disabled={locked}
                     onCheckedChange={(checked) =>
-                      setSelectedEnvironments((current) => {
-                        const next = new Set(current);
+                      setPicks((current) => {
+                        const next = new Set(current ?? environmentIds);
                         if (checked) next.add(environment.id);
                         else next.delete(environment.id);
                         return next;
@@ -166,7 +175,10 @@ function WorkflowRunReviewForm(props: {
               placeholder="Leave a comment (optional)"
               value={comment}
               disabled={locked}
-              onChange={(event) => setComment(event.currentTarget.value)}
+              onChange={(event) => {
+                setPicks((current) => current ?? new Set(environmentIds));
+                setComment(event.currentTarget.value);
+              }}
             />
           </div>
           <div className="mt-2 flex items-center gap-1.5">

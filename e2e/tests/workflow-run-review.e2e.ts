@@ -63,6 +63,16 @@ describe("review a watched workflow deployment", () => {
     ],
   };
 
+  const widened: FakeGitHubWorkflowRun = {
+    id: 7107,
+    name: "Deploy widened",
+    status: "waiting",
+    environments: [
+      { id: 81, name: "staging" },
+      { id: 82, name: "production" },
+    ],
+  };
+
   const reviews = (run: FakeGitHubWorkflowRun) =>
     environment
       .gitHubApiRequests()
@@ -85,7 +95,7 @@ describe("review a watched workflow deployment", () => {
   }
 
   beforeAll(async () => {
-    const runs = [single, multiple, retry, stopped, quick, collapsed];
+    const runs = [single, multiple, retry, stopped, quick, collapsed, widened];
     environment = await startEnvironment({
       workflowRuns: runs,
       scenario: {
@@ -241,6 +251,36 @@ describe("review a watched workflow deployment", () => {
     expect(reviews(collapsed).map((request) => request.body)).toEqual([
       { environment_ids: [71], state: "approved", comment: "Staging first" },
     ]);
+  });
+
+  it("keeps an edited form's selection and comment when another environment starts waiting", async () => {
+    const { page } = app;
+    await watch(widened);
+    const review = page.getByRole("button", { name: "Review", exact: true });
+    await review.click();
+    await page.getByRole("checkbox", { name: "staging", exact: true }).uncheck();
+    await page.getByRole("checkbox", { name: "production", exact: true }).uncheck();
+    await page.getByRole("textbox", { name: "Review comment" }).fill("Do not deploy yet");
+    await review.click();
+
+    widened.environments = [...widened.environments, { id: 83, name: "canary" }];
+    // The watch re-reads waiting runs on its 30-second sweep.
+    await page
+      .getByText("Waiting for your review to deploy to staging, production, canary.", {
+        exact: true,
+      })
+      .waitFor({ timeout: 45_000 });
+    expect(
+      await page.getByRole("button", { name: "Approve 0 environments", exact: true }).isDisabled(),
+    ).toBe(true);
+    await review.click();
+    expect(await page.getByRole("checkbox", { name: "canary", exact: true }).isChecked()).toBe(
+      false,
+    );
+    expect(await page.getByRole("textbox", { name: "Review comment" }).inputValue()).toBe(
+      "Do not deploy yet",
+    );
+    expect(reviews(widened)).toHaveLength(0);
   });
 
   it("requires a selection for multiple deployments and rejects only the selected environment", async () => {
