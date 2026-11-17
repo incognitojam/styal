@@ -85,7 +85,7 @@ export function usePullRequestImageUrl(url: string, enabled = true) {
   const media = usePullRequestMediaUrl(url, enabled, preview);
   const tinyUrl = tiny._tag === "Success" && tiny.imagePreview ? tiny.url : null;
   const [readyTiny, setReadyTiny] = useState<string | null>(null);
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Warm the visible tiny image before starting the display variant's network request.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Warm the tiny image cache before handing it to the native placeholder renderer.
   useEffect(() => {
     if (!tinyUrl) return;
     let cancelled = false;
@@ -98,11 +98,8 @@ export function usePullRequestImageUrl(url: string, enabled = true) {
       cancelled = true;
     };
   }, [tinyUrl]);
-  const waitingForTiny =
-    resource !== null && (tiny._tag === "Loading" || (tinyUrl !== null && readyTiny !== tinyUrl));
   return {
     ...media,
-    uri: waitingForTiny ? null : media.uri,
     placeholderUri: tinyUrl !== null && readyTiny === tinyUrl ? tinyUrl : undefined,
   };
 }

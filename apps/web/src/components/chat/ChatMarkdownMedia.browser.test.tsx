@@ -6,13 +6,15 @@ import { render } from "../../../test/render";
 import { ChatMarkdownAssetImage } from "./ChatMarkdownMedia";
 
 // Every evaluation of the URL query is one mint: the first read, then one per refresh.
-const assetQuery = vi.hoisted(() => ({ mints: 0, failPreview: false }));
+const assetQuery = vi.hoisted(() => ({ mints: 0, failPreview: false, holdTiny: false }));
 vi.mock(import("~/state/assets"), async (original) => {
   const { AsyncResult, Atom } = await import("effect/reactivity");
   const createUrl = Atom.family((_key: string) =>
     Atom.make(() => {
       assetQuery.mints += 1;
       const input = JSON.parse(_key) as { resource: { imagePreview?: AssetImagePreview } };
+      if (assetQuery.holdTiny && input.resource.imagePreview?.width === 64)
+        return AsyncResult.initial();
       return AsyncResult.success({
         ...(input.resource.imagePreview ? { imagePreview: input.resource.imagePreview } : {}),
         relativeUrl:
@@ -91,6 +93,12 @@ describe("ChatMarkdownAssetImage", () => {
   });
   it("opens a visible PR image with its display variant and retains an explicit original", async () => {
     assetQuery.mints = 0;
+    assetQuery.holdTiny = true;
+    using _tiny = {
+      [Symbol.dispose]: () => {
+        assetQuery.holdTiny = false;
+      },
+    };
     const onImageExpand = vi.fn();
     await using screen = await render(
       <ChatMarkdownAssetImage
@@ -98,14 +106,14 @@ describe("ChatMarkdownAssetImage", () => {
         resource={{
           _tag: "github-media",
           cwd: "/synthetic",
-          url: "https://github.com/user-attachments/assets/screenshot",
+          url: "https://github.com/user-attachments/assets/pending-tiny",
         }}
         alt="screenshot"
         onImageExpand={onImageExpand}
       />,
     );
     const image = screen.getByRole("button", { name: "Preview screenshot" });
-    await expect.element(image).toBeInTheDocument();
+    await expect.element(image).toBeVisible();
     await image.click();
     expect(onImageExpand).toHaveBeenCalledOnce();
     const item = onImageExpand.mock.calls[0]![0].images[0];

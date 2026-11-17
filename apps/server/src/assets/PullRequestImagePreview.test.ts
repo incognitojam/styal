@@ -48,6 +48,13 @@ it.effect(
         const result = yield* previews.read(input);
         const metadata = yield* Effect.promise(() => sharp(result.bytes).metadata());
         expect(result.contentType).toBe("image/webp");
+        expect(
+          yield* Effect.promise(() => sharp(result.bytes).ensureAlpha().raw().toBuffer()),
+        ).toEqual(
+          yield* Effect.promise(() =>
+            sharp(bytes).resize({ width: 320 }).ensureAlpha().raw().toBuffer(),
+          ),
+        );
         expect(metadata).toMatchObject({ width: 320, height: 160, hasAlpha: true });
         expect((yield* previews.read(input)).bytes).toEqual(result.bytes);
         expect(fetches).toBe(1);
@@ -76,12 +83,33 @@ it.effect(
         });
         yield* Effect.all(
           [
-            previews.read({ ...input, identity: "parallel", preview: { width: 320 } }),
+            previews.read({ ...input, identity: "parallel", preview: { width: 64 } }),
             previews.read({ ...input, identity: "parallel", preview: { width: 640 } }),
           ],
           { concurrency: "unbounded" },
         );
         expect(fetches).toBe(4);
+        const firstFetch = yield* Deferred.make<void>();
+        const secondFetch = yield* Deferred.make<void>();
+        const first = yield* previews
+          .read({
+            ...input,
+            identity: "independent-first",
+            fetch: Deferred.succeed(firstFetch, undefined).pipe(
+              Effect.andThen(Deferred.await(secondFetch)),
+              Effect.as({ bytes, contentType: "image/png" }),
+            ),
+          })
+          .pipe(Effect.forkChild);
+        yield* Deferred.await(firstFetch);
+        yield* previews.read({
+          ...input,
+          identity: "independent-second",
+          fetch: Deferred.succeed(secondFetch, undefined).pipe(
+            Effect.as({ bytes, contentType: "image/png" }),
+          ),
+        });
+        yield* Fiber.join(first);
         const oversized = yield* previews
           .read({
             ...input,

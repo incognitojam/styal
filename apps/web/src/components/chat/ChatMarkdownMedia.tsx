@@ -172,7 +172,6 @@ const CHAT_MARKDOWN_IMAGE_FRAME_CLASS_NAME = cn(
 export function ChatMarkdownImage(props: {
   readonly src: string | null;
   readonly placeholderSrc?: string | undefined;
-  readonly waitForPlaceholder?: boolean | undefined;
   readonly sourceFailed?: boolean | undefined;
   readonly onViewOriginal?: (() => void) | undefined;
   readonly unavailableDetail?: string | undefined;
@@ -190,9 +189,7 @@ export function ChatMarkdownImage(props: {
 }) {
   const [loadedSrc, setLoadedSrc] = useState<string | null>(null);
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
-  const [placeholderSettled, setPlaceholderSettled] = useState(false);
-  const src =
-    props.waitForPlaceholder && !placeholderSettled ? loadedSrc : (props.src ?? loadedSrc);
+  const src = props.src ?? loadedSrc;
   const failed = props.sourceFailed === true || (src !== null && failedSrc === src);
   const settled = src !== null && !failed && (!props.standalone || loadedSrc !== null);
   // Cached images are complete before `onLoad` can fire.
@@ -278,8 +275,6 @@ export function ChatMarkdownImage(props: {
         {props.placeholderSrc && !failed && !settled ? (
           <img
             src={props.placeholderSrc}
-            onLoad={() => setPlaceholderSettled(true)}
-            onError={() => setPlaceholderSettled(true)}
             alt=""
             aria-hidden
             className="absolute inset-0 size-full object-contain blur-sm"
@@ -525,11 +520,6 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
     <ChatMarkdownImage
       key={JSON.stringify([props.environmentId, props.resource, props.srcFragment])}
       onViewOriginal={previewEnabled ? () => setViewOriginal(true) : undefined}
-      waitForPlaceholder={
-        previewEnabled &&
-        (placeholder._tag === "Loading" ||
-          (placeholder._tag === "Success" && placeholder.imagePreview !== undefined))
-      }
       placeholderSrc={
         placeholder._tag === "Success" && placeholder.imagePreview ? placeholder.url : undefined
       }
