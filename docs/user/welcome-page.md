@@ -3,15 +3,17 @@
 styal shows a Welcome page when you open a new installation. Existing
 workspaces skip it. It shows what styal found on the computer you are using,
 on one page: your agents, projects from your Claude Code, Codex, and Pi history,
-and the phone app. Only an agent is needed to start chatting.
+your T3 Code install, how finished threads settle, and the phone app. Only an
+agent is needed to start chatting.
 
 To see the page again, go to **Settings → About → Welcome page** and select
 **Open**. Direct links, such as Settings, open normally before setup is done.
 
-The hosted app at app.styal.build does not open the page. With no computer connected,
-it asks you to sign in to styal Link, then to install styal and run
-`styal link` on your computer. From home, it adds compatible computers linked to your account and
-opens the app. To add more computers later, use **Settings → Environments**.
+The hosted app at app.styal.build opens the page on first use when no computer
+is connected yet. Choose computers in **Computers** first. Computers that already
+have projects or threads are left out of setup, and when all of them have work,
+**Start** opens the app. Opening the page from Settings sets up every computer you
+select.
 
 If styal cannot confirm the workspace during startup, it shows
 **Still connecting** instead of opening the app. Select **Reload** to try again.
@@ -19,6 +21,26 @@ If styal cannot confirm the workspace during startup, it shows
 If styal cannot read your saved settings, it shows **Could not read settings**.
 Select **Retry** after storage becomes available. Setup does not replace
 unreadable settings with defaults.
+
+## Computers
+
+With more than one computer available, or on the hosted app, the page starts
+with **Computers**. The computer you opened styal on is selected; check others to
+set them up too, and the rest of the page then covers each of them. Unchecking a
+computer leaves it out of setup without disconnecting it.
+
+- Computers you have saved are listed with their connection. One that runs a
+  styal version this app cannot talk to cannot be selected; the line under its
+  name says which side to update.
+- **Computers linked to your styal Link account** lists the computers signed in
+  to your account after you sign in. A listed computer connects only when you
+  check it. To link another computer, run `styal link` on it and keep styal
+  running there.
+- **Add a computer with a pairing link** connects to a server on your network or
+  tailnet. Run `styal pair` (or `styal pair --tailscale`) on that computer and
+  paste the link.
+
+A selected computer that is not connected is left out, and the page names it.
 
 ## Agents
 
@@ -48,19 +70,26 @@ The setup terminal uses the home directory and environment configured for the
 provider instance. Sensitive values remain redacted in Settings and
 terminal metadata while the terminal process can use them.
 
-**Start** waits for one ready agent. Select **Start without an agent** to finish
-without one. Checked projects are still imported.
+With several computers, each has its own **Agents** band. Closing a setup
+terminal, opening another agent's terminal, unchecking its computer, leaving the
+page, or selecting **Start** asks first while the command in it is still running.
+
+**Start** waits for one ready agent on any computer being set up. Select **Start
+without an agent** to finish without one. Checked projects are still imported.
 
 ## Phone
 
-Select **Set up** and scan the code with your phone. It opens the App Store on an
-iPhone and Google Play on Android. Then select **Sign in to styal Link** and allow
+Select **Set up**. On Android, scan the code, or select **Open Android
+releases**, to get the newest **styal for Android** release and install its APK;
+see [Mobile app](./install.md#mobile-app). On iPhone and iPad, styal is on
+TestFlight, which is invite-only. Then select **Sign in to styal Link** and allow
 this computer when styal asks, so the app can reach it. Sign in to the app with
 the same account. If you are signed in but this computer is not shared yet, select
 **Set up styal Link**. If styal Link is on but the app cannot reach this computer,
 select **Check styal Link** to see why. The page leaves the phone out on builds
-without styal Link, or when your organization turns it off. You can still pair the
-app with a code from **Settings → Sharing & access**.
+without styal Link, when the computer you opened styal on is not being set up, or
+when your organization turns it off. You can still pair the app with a code from
+**Settings → Sharing & access**.
 
 ## Projects
 
@@ -107,5 +136,32 @@ continue a large batch, open the Welcome page again and pick the project in
 without the remaining history.
 
 You can start without importing. While an import runs, styal stays on the
-Welcome page. If you quit, open the Welcome page again from **Settings → About**; the
-projects you started stay checked.
+Welcome page and shows each project as queued, importing, complete, or not fully
+imported. A project that is not fully imported stays checked, so **Start** tries it
+again; uncheck it to continue without it. If you quit, open the Welcome page again
+from **Settings → About**; the projects you started stay checked.
+
+## T3 Code
+
+When a computer being set up has a T3 Code install, the page shows **T3 Code**
+with two choices: **Import projects from T3 Code** and, when its preferences
+differ from styal, **Bring over T3 Code preferences**. Either can be left out
+without changing the other. **Review** lists each computer's T3 Code projects and
+the preferences that would change, where you can pick projects and keep the
+current preferences on any computer. **Start** imports each computer's projects,
+then its preferences, before the history import, and waits until each computer
+has been checked for T3 Code. If something fails, the page stays and keeps the
+failed work selected, so **Start** tries again. The same
+import is available later in **Settings → Import data**; see
+[Import T3 Code data](./importing-t3-code-data.md).
+
+## Threads
+
+Settling moves a finished thread to the **Settled** shelf at the bottom of the
+sidebar without deleting it. **Threads** chooses whether threads settle on their
+own when their pull request merges, and after a few days without activity. The
+choice starts from the first computer's current settings, and **Start** saves it on
+every computer being set up whose settings differ, keeping each computer's own
+number of days. If a save fails, the page stays so you can try again. Turn both
+off to settle threads only by hand, or change them later in **Settings → Threads**;
+see [Settle finished work](./thread-sidebar.md#settle-finished-work).

@@ -374,22 +374,30 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 
 ## Bringing your work from T3 Code
 
-- **Setup stays focused on new computers.** The hosted app opens setup on first use, waits for
-  live workspace data, and skips Agents and Import for computers that already contain projects or
-  threads. An explicit visit to `/welcome` still reopens the complete setup flow. The T3 Code
-  hosted app does not open setup; its home page asks you to sign in instead.[^setup-comparison]
-- **Choose how threads settle during setup.** A Workflow step explains settling and lets
-  you keep or turn off settling on merge and after inactivity before you reach the sidebar. T3 Code
-  setup does not mention settling as of
-  [revision 67c0fc0](https://github.com/pingdotgg/t3code/tree/67c0fc0cdaf963b103518862dd7b68a9c758ecf2),
-  checked October 20, 2026. [Welcome page](./welcome-page.md).
+- **Set up several computers from one Welcome page.** styal's Welcome page is T3 Code's, with
+  a Computers band added when more than one computer is available: check saved computers,
+  computers linked to your styal Link account (which connect only once checked), or pair one, and
+  the page sets up agents and history on each. T3 Code's page sets up only the computer it opens
+  on.[^welcome-comparison] [Welcome page](./welcome-page.md#computers).
+- **Setup stays focused on new computers.** The hosted app opens the Welcome page on first use,
+  waits for live workspace data, and leaves out computers that already contain projects or
+  threads. Opening the page from Settings sets up every selected computer. The T3 Code hosted app
+  does not open the page; its home page asks you to sign in instead.[^setup-comparison]
+- **Choose how threads settle during setup.** A Threads band on the Welcome page explains settling
+  and lets you keep or turn off settling on merge and after inactivity before you reach the
+  sidebar. T3 Code's Welcome page does not mention settling.[^welcome-comparison]
+  [Welcome page](./welcome-page.md#threads).
+- **Get the phone app from styal's releases.** The Welcome page's phone section links to the
+  newest styal for Android release and says iPhone and iPad use an invite-only TestFlight. T3
+  Code's sends phones to its App Store and Google Play apps.[^welcome-comparison]
+  [Welcome page](./welcome-page.md#phone).
 - **Import without replacing your existing setup.** Bring projects, threads, attachments, and
   supported preferences into styal while leaving the T3 Code installation intact. Existing styal
   project settings take precedence, and interrupted imports can resume without duplicating completed
   threads. Existing threads retain recorded token use, API cost, tool activity, and checkpoints when
   upgrading to the new history format; T3 Code migrates messages only as of
-  [revision de34391](https://github.com/pingdotgg/t3code/tree/de343914273eceb852a1d1d739cd1d38df7796ee). Migration is available during setup and later in Settings; setup reviews differing
-  preferences in a separate step.[^import-comparison] Credentials and active sessions remain separate.
+  [revision de34391](https://github.com/pingdotgg/t3code/tree/de343914273eceb852a1d1d739cd1d38df7796ee). Migration is its own choice on the Welcome page, with projects and differing
+  preferences checked separately, and is available later in Settings.[^import-comparison] Credentials and active sessions remain separate.
   [Import T3 Code data](./importing-t3-code-data.md).
 
 - **A recovery copy before history pruning.** History pruning stays off unless enabled. When enabled, styal keeps imported and migrated history readable after older internal events are pruned, and requires a verified database copy before the first prune. The first start may take longer while the copy is made; without enough disk space, styal starts without pruning. The copy stays for seven days after the first deletion completes. T3 Code prunes without this safety copy as of [revision 25bf84a](https://github.com/pingdotgg/t3code/tree/25bf84ab07f53f141c20239c63e383823a9d5ea0). [Restore the safety copy](./background-service.md#safety-copy-before-history-pruning).
@@ -480,7 +488,9 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 
 [^import-comparison]: Setup compared with [T3 Code revision 1ab2dfb](https://github.com/pingdotgg/t3code/tree/1ab2dfb5a7bd2996f79407b5d02cae6132a7626c), checked September 17, 2026.
 
-[^setup-comparison]: Hosted setup compared with [T3 Code revision e37a7a4](https://github.com/pingdotgg/t3code/tree/e37a7a4f71cb20c483e101e13d57ccf3598ab832), checked October 28, 2026.
+[^setup-comparison]: Hosted setup compared with [T3 Code revision 4f0b74e](https://github.com/pingdotgg/t3code/tree/4f0b74e190261c8233ae52af17b0fd1734e99e50), checked November 17, 2026.
+
+[^welcome-comparison]: Welcome page compared with [T3 Code revision 4f0b74e](https://github.com/pingdotgg/t3code/tree/4f0b74e190261c8233ae52af17b0fd1734e99e50), checked November 17, 2026.
 
 ## Agent reports
 

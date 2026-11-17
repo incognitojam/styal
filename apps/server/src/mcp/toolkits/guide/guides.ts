@@ -324,7 +324,7 @@ Imports run from the client, not through agent tools. Explain the steps and let 
 
 ## T3 Code projects, threads and preferences
 
-Settings → Import data on web or desktop, or the setup wizard, imports from T3 Code's data in
+Settings → Import data on web or desktop, or the Welcome page, imports from T3 Code's data in
 \`~/.t3/userdata\` on each selected server. T3 Code can stay open. It brings projects, threads with
 history and provider continuation, and optionally preferences. A new project comes with its scripts,
 icon, instructions and defaults. A project styal already has keeps its own setup and gets only its
@@ -337,8 +337,8 @@ After an import, a project that had a \`t3.json\` can move to \`styal.json\`; re
 
 ## Claude Code and Codex history
 
-Offered only in the setup wizard's project import step, not in Settings. The wizard opens by itself
-on a new install. On web, opening \`/welcome\` runs it again.
+Offered only on the Welcome page, not in Settings. The page opens by itself on a new install, and
+Settings → About → Welcome page opens it again.
 
 ## Browser sessions
 

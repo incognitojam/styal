@@ -12,7 +12,7 @@ features:
     prs: [22, 226]
     invariants:
       - Closing a terminal prompts only while a foreground subprocess or finite setup command is still active; idle shells and exited setup terminals close immediately.
-      - Drawer, panel, shortcut, surface, and middle-click close paths share the same server-reported liveness decision instead of inferring activity from client state.
+      - Drawer, panel, shortcut, surface, and middle-click close paths, and closing, replacing, or leaving a Welcome page setup terminal, share the same server-reported liveness decision instead of inferring activity from client state.
     implementation_paths:
       - apps/server/src/terminal/Manager.ts
       - apps/server/src/ws.ts
@@ -1024,9 +1024,9 @@ features:
       - Existing styal project configuration wins while each imported thread and its verified attachments commit atomically, so interrupted or repeated imports resume without duplication.
       - Credentials, connections, provider sign-ins, active sessions, and client-local preferences remain isolated, while affected earlier imports can restore provider context only after their loaded sessions stop.
       - Discovered computers connect only after explicit selection; discovery refreshes preserve deselection, and incompatible computers cannot be selected.
-      - Setup offers T3 Code migration or CLI history as separate choices; Settings exposes only T3 Code migration and never starts CLI history scans. T3 migration shares components and commands between both entry points.
-      - Automatic hosted setup waits for live workspace state and does not offer agent or import steps for selected computers that already contain projects or threads; explicit /welcome visits retain the complete flow.
-      - Projects and optional Preferences are top-level setup steps with stable dimensions; Preferences is discovered on selected computers during Agents and omitted when no values differ, independently of the project source. Settings keeps one import page; switching steps or computers preserves selections, setup stays scoped to selected computers, and differing preferences start selected with an opt-out per computer. Setup imports each step as it is left, so projects land before Preferences opens and either step can be skipped without discarding the other. In-progress imports show remaining work and confirmed completion per computer; CLI history shows queued, importing, completed, and failed projects.
+      - The Welcome page offers T3 Code migration as its own band beside the CLI history checkbox; Settings exposes only T3 Code migration and never starts CLI history scans. T3 migration shares components and commands between both entry points.
+      - Automatic hosted setup waits for live workspace state and shows no agent or import bands for selected computers that already contain projects or threads; Welcome page visits from Settings set up every selected computer.
+      - The T3 Code band appears only when a selected computer has T3 Code projects or preferences that differ, with separate project and preference choices, independently of the CLI history choice. Settings keeps one import page; reviewing or switching computers preserves selections, setup stays scoped to selected computers, and differing preferences start selected with an opt-out per computer. Start imports each computer's projects before its preferences as separate requests, so either can be left out without discarding the other. In-progress imports show remaining work and confirmed completion per computer; CLI history shows queued, importing, completed, and failed projects.
       - Imported user prompts stay linked to their root provider turns through derived thread.turn-prompt-linked events, so live, coalesced, replayed, and windowed thread-detail reads keep showing them; already-imported projects without those events reappear as repairable.
       - Finishing setup after an import lands in the first imported project once it reaches the client, and finishes without landing when it has not arrived within the project wait timeout.
       - Partial imports keep failed work selected for retry and clear completed selections; pending imports remain locked across Settings remounts, and leaving the page prevents subsequent requests in the batch.
@@ -1068,11 +1068,13 @@ features:
       - apps/web/src/components/import/useHistoryImport.ts
       - apps/web/src/components/import/useLegacyImport.ts
       - apps/web/src/components/onboarding/FirstRunGate.tsx
-      - apps/web/src/components/onboarding/OnboardingImportStep.tsx
+      - apps/web/src/components/onboarding/WelcomeComputers.tsx
       - apps/web/src/components/onboarding/WelcomePage.tsx
+      - apps/web/src/components/onboarding/WelcomeT3Import.tsx
       - apps/web/src/components/settings/DataImportSettings.logic.ts
       - apps/web/src/components/settings/DataImportSettings.tsx
       - apps/web/src/onboarding/firstRun.logic.ts
+      - apps/web/src/onboarding/targetEnvironment.logic.ts
       - apps/web/src/routes/welcome.tsx
       - apps/web/src/state/dataImport.ts
       - packages/client-runtime/src/handoff.ts
@@ -1115,10 +1117,12 @@ features:
       - apps/web/src/components/import/ImportDataView.browser.test.tsx
       - apps/web/src/components/import/useHistoryImport.browser.test.tsx
       - apps/web/src/components/import/useLegacyImport.browser.test.tsx
+      - apps/web/src/components/onboarding/WelcomePage.import.browser.test.tsx
       - apps/web/src/components/settings/DataImportSettings.logic.test.ts
       - apps/web/src/components/settings/settingsSearch.test.ts
       - apps/web/src/onboarding/firstRun.logic.test.ts
       - apps/web/src/onboarding/projectImport.logic.test.ts
+      - apps/web/src/onboarding/targetEnvironment.logic.test.ts
       - apps/web/src/state/dataImport.test.ts
       - packages/client-runtime/src/handoff.test.ts
       - packages/contracts/src/dataImport.test.ts
@@ -1127,7 +1131,7 @@ features:
       tracking:
         - https://github.com/pingdotgg/t3code/blob/384de0858d1f59ca2ad7c660544a5290fd9138cb/apps/web/src/components/onboarding/WelcomeWizard.tsx
         - https://github.com/pingdotgg/t3code/pull/2829
-      retire_when: The fork replaces this implementation with equivalent safe T3 Code migration in setup and Settings, with CLI history limited to setup, preserving computer scope, sequential preference review, per-computer opt-out, retry behavior, and pending-import locks, or deliberately retires those capabilities.
+      retire_when: The fork replaces this implementation with equivalent safe T3 Code migration on the Welcome page and in Settings, with CLI history limited to the Welcome page, preserving computer scope, preferences imported after projects, per-computer opt-out, retry behavior, and pending-import locks, or deliberately retires those capabilities.
 
   - id: delegated-wait-pending-requests
     title: Agent waits return when the waited thread needs an answer or approval
@@ -2324,7 +2328,7 @@ features:
       - Stable and nightly notes omit changes outside shipped code and version-only manifest edits, support explicit Release-Note skip/include commit trailers, and retain a full comparison link and omitted count; note visibility never changes release eligibility.
       - Fork release intermediate artifacts expire after three days; manual desktop deliverables remain downloadable for 90 days, and published GitHub release assets keep their own lifetimes.
       - CLI help and triage copy identify styal, and a bare CLI invocation shows command guidance while explicit `start` and `serve` commands own server startup.
-      - The web and desktop setup wizard and sidebar share the outlined Zilla Slab styal wordmark.
+      - The web and desktop Welcome page and sidebar share the outlined Zilla Slab styal wordmark.
       - Web, desktop, and mobile product tool icons and created-thread work-log rows use the canonical monochrome styal mark in their icon color, including historical calls using the `t3-code` namespace.
       - Android agent activity cards and status bar chips use the styal cotton reel, and shared client errors, accessibility labels, clipboard labels, and terminal previews identify styal.
       - Subscription usage widgets on iOS and Android name styal when they ask the user to open the app.
@@ -2334,7 +2338,7 @@ features:
       - The macOS installer backgrounds and the Dev and Nightly sidebar and send-button artwork use styal's channel grounds and sewing motifs (pinked linen, cutting mat, starry horizon) rather than upstream's T3 Code installer and stage artwork.
       - Linux desktop entries, SnapShot D-Bus names, the GNOME Shell extension, and the KDE and Hyprland capture helpers use styal identities (`build.styal.Styal`, `snap-shot@styal.build`, `styal-*-snap-shot`) so they cannot collide with an upstream T3 Code install.
       - Mobile production builds reconcile native fingerprints and committed versions automatically for both platforms, retaining nightly artwork and OTA-blocked reporting; upstream's separate fixed-version TestFlight release train does not replace the fork's version scheme.
-      - Web and desktop mobile settings link to styal Android APK releases using the exact phrase "styal for Android" to exclude other releases that merely mention Android, and describe invite-only iOS TestFlight access, without directing users to upstream store apps.
+      - Web and desktop mobile settings and the Welcome page's phone band link to styal Android APK releases using the exact phrase "styal for Android" to exclude other releases that merely mention Android, and describe invite-only iOS TestFlight access, without directing users to upstream store apps.
       - Mobile production and preview profiles retain styal identity and fork Expo configuration; Android distribution uses installable APKs without store submission, while iOS submits to TestFlight.
       - Production Android APKs are built on GitHub Actions rather than EAS Build, signed with the EAS-managed production keystore, numbered after the newest `android-*` release, and released only when their embedded runtime version equals the fingerprint they were built for; the newest release stands for the latest Android build when deciding between an OTA update and a new build.
       - Production iOS apps are built on GitHub Actions with `eas build --local`, using the EAS-managed signing credentials and build number, submitted to TestFlight only after their runtime version, update channel, extension build numbers and signing team are checked, and recorded as annotated `ios-<version>-<build>` tags carrying the runtime version, which Mobile EAS Production reads alongside EAS's records of earlier builds.
@@ -2575,6 +2579,7 @@ features:
       - apps/web/src/cloud/linkEnvironment.ts
       - apps/web/src/components/cloud/CloudEnvironmentConnectList.tsx
       - apps/web/src/components/cloud/ConnectCliAuthSurface.tsx
+      - apps/web/src/components/onboarding/WelcomeComputers.tsx
       - apps/web/src/components/onboarding/WelcomePage.tsx
       - apps/web/src/components/settings/EnvironmentRow.tsx
       - infra/relay/alchemy.run.ts
@@ -6452,20 +6457,19 @@ features:
     tier: yield
     prs: [935]
     invariants:
-      - Web and desktop setup ends with a Workflow step that offers automatic settlement on selected computers whose configuration has loaded; other computers are left out, and when none remain the import steps finish setup as before.
-      - The step starts from the first selected computer's current settings, and Finish writes merge and inactivity settlement only to computers whose values differ, keeping each computer's own inactivity threshold when turning it on.
-      - A failed save keeps the user on the step; the import steps' actions read as continuing while the step follows them, and setup still lands on the project the import chose.
+      - The web and desktop Welcome page has a Threads band that offers automatic settlement on selected computers whose configuration has loaded; other computers are left out, and the band is hidden when none remain.
+      - The band starts from the first selected computer's current settings, and Start writes merge and inactivity settlement only to computers whose values differ, before any import, keeping each computer's own inactivity threshold when turning it on.
+      - A failed save keeps the user on the page with nothing imported yet, and setup still lands on the project the import chose.
     rationale: Users who do not work the way automatic settlement assumes found threads disappearing without knowing why. Setup is the one place every new user passes through, so the choice and its explanation live there, with Settings still owning later changes.
     implementation_paths:
-      - apps/web/src/components/import/DataImportPanel.tsx
-      - apps/web/src/components/onboarding/OnboardingImportStep.tsx
       - apps/web/src/components/onboarding/WelcomePage.tsx
-      - apps/web/src/components/onboarding/WorkflowStep.tsx
+      - apps/web/src/components/onboarding/WelcomeSettlement.tsx
       - apps/web/src/onboarding/settlement.logic.ts
     upstream_paths:
       - apps/web/src/components/onboarding/WelcomePage.tsx
       - packages/contracts/src/settings.ts
     tests:
+      - apps/web/src/components/onboarding/WelcomePage.import.browser.test.tsx
       - apps/web/src/onboarding/settlement.logic.test.ts
     upstream:
       status: unassessed
