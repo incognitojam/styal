@@ -1,3 +1,4 @@
+import { MOBILE_APP_URL } from "../../branding";
 import { AndroidIcon, AppleIcon } from "../Icons";
 import { Button } from "../ui/button";
 import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../ui/popover";
@@ -15,7 +16,7 @@ const stores = [
   {
     label: "Android",
     store: "Android releases",
-    url: "https://github.com/incognitojam/styal/releases?q=%22styal+for+Android%22",
+    url: MOBILE_APP_URL,
     Icon: AndroidIcon,
   },
 ];

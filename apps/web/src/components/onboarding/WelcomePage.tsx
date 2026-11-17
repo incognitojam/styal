@@ -1058,20 +1058,33 @@ function PhoneSection({ environmentId }: { readonly environmentId: EnvironmentId
           <div className="flex items-center gap-8 pt-2 pb-3 pl-8">
             <ol className="min-w-0 flex-1 space-y-5">
               <PhoneStep step={1}>
-                <p className="text-sm text-foreground">Scan with your phone to get the app.</p>
+                <p className="text-sm text-foreground">
+                  On Android, scan the code for the newest styal for Android release and install its
+                  APK.
+                </p>
+                <Button
+                  variant="outline"
+                  size="xs"
+                  render={<a href={MOBILE_APP_URL} target="_blank" rel="noreferrer noopener" />}
+                >
+                  Open Android releases
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                  On iPhone and iPad, styal is on TestFlight, which is invite-only.
+                </p>
               </PhoneStep>
               <PhoneStep step={2}>
                 <PhoneConnectLink environmentId={environmentId} />
               </PhoneStep>
             </ol>
-            {/* One code for both stores: the link opens the store that matches the phone. */}
+            {/* styal ships to phones as Android releases and an invite-only TestFlight, not stores. */}
             <div className="shrink-0 rounded-lg bg-white p-1.5">
               <QRCodeSvg
                 value={MOBILE_APP_URL}
                 size={124}
                 level="M"
                 marginSize={2}
-                title="styal app for iPhone and Android"
+                title="styal for Android releases"
               />
             </div>
           </div>

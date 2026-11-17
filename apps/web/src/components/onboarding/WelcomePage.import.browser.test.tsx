@@ -290,8 +290,12 @@ function addSessions() {
   }
 }
 
+function checkboxNamed(screen: Awaited<ReturnType<typeof mountWelcome>>, name: RegExp) {
+  return screen.getByRole("checkbox", { name }).element() as HTMLElement;
+}
+
 function computerCheckbox(screen: Awaited<ReturnType<typeof mountWelcome>>, name: string) {
-  return screen.getByRole("checkbox", { name: new RegExp(`^${name} `) }).element() as HTMLElement;
+  return checkboxNamed(screen, new RegExp(`^${name} `));
 }
 
 function setGrant(environmentId: EnvironmentId, allowed: boolean) {
@@ -990,11 +994,11 @@ it("saves the settling choice only where it differs, and stays when a save fails
   }
   await vi.waitFor(() => expect(pageText()).toContain("Setting up 3 computers."));
   // The choice starts from the first computer: both rules on, after its own 7 days.
-  const merge = screen.getByRole("checkbox", { name: /when its pull request merges/ });
-  const inactive = screen.getByRole("checkbox", { name: /after 7 days without activity/ });
-  await expect.element(merge).toBeChecked();
-  await expect.element(inactive).toBeChecked();
-  await act(async () => (merge.element() as HTMLElement).click());
+  const merge = checkboxNamed(screen, /when its pull request merges/);
+  const inactive = checkboxNamed(screen, /after 7 days without activity/);
+  expect(merge.getAttribute("aria-checked")).toBe("true");
+  expect(inactive.getAttribute("aria-checked")).toBe("true");
+  await act(async () => merge.click());
 
   state.updateSettings.mockImplementation(async ({ environmentId }: { environmentId: string }) =>
     environmentId === "desktop"
@@ -1023,17 +1027,14 @@ it("saves the settling choice only where it differs, and stays when a save fails
   await vi.waitFor(() => expect(state.onDone).toHaveBeenCalledOnce());
 });
 
-function checkboxNamed(screen: Awaited<ReturnType<typeof mountWelcome>>, name: RegExp) {
-  return screen.getByRole("checkbox", { name }).element() as HTMLElement;
-}
-
 it("offers T3 Code migration on its own, apart from the history import", async () => {
   using _now = setup();
   // Without a T3 Code install the page shows no T3 Code band.
   {
     await using first = await mountWelcome();
-    await expect.element(first.getByText("Import 2 projects and their threads")).toBeVisible();
-    await expect.element(first.getByRole("heading", { name: "T3 Code" })).not.toBeInTheDocument();
+    expect(first.getByText("Import 2 projects and their threads").query()).not.toBeNull();
+    // Hidden bands leave the accessibility tree, so no T3 Code heading is found.
+    expect(first.getByRole("heading", { name: "T3 Code" }).query()).toBeNull();
   }
   setT3Summary({
     projects: 2,
@@ -1200,4 +1201,27 @@ it("lands in the first T3 Code project when no history is imported", async () =>
   await vi.waitFor(() => expect(pageText()).toContain("Import 1 project from T3 Code"));
   await click("Import 1 project and start");
   await vi.waitFor(() => expect(state.onDone).toHaveBeenCalledWith(t3Project));
+});
+
+it("points the phone at styal for Android releases and TestFlight, not app stores", async () => {
+  using _now = setup();
+  state.cloud = true;
+  appAtomRegistry.set(
+    sessionAtom(primaryId),
+    AsyncResult.success(
+      session([AuthOrchestrationOperateScope, AuthRelayReadScope, AuthRelayWriteScope]),
+    ),
+  );
+  await using _screen = await mountWelcome();
+  await click("Set up");
+  const releases = [...document.querySelectorAll("a")].find(
+    (link) => link.textContent?.trim() === "Open Android releases",
+  );
+  expect(releases?.getAttribute("href")).toBe(
+    "https://github.com/incognitojam/styal/releases?q=%22styal+for+Android%22",
+  );
+  expect(document.querySelector("svg title")?.textContent).toBe("styal for Android releases");
+  expect(pageText()).toContain("TestFlight, which is invite-only");
+  expect(pageText()).toContain("Sign in to styal Link");
+  expect(pageText()).not.toMatch(/App Store|Google Play/);
 });
