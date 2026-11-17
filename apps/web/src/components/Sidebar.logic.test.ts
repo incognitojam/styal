@@ -448,6 +448,9 @@ describe("resolveSidebarThreadStatus", () => {
   const idle = { hasPendingApprovals: false, hasPendingUserInput: false, runtime: null };
 
   it("prioritizes awaiting input over a running runtime, below approval", () => {
+    expect(resolveSidebarThreadStatus({ ...idle, openReportQuestionCount: 1, runtime })).toBe(
+      "input",
+    );
     expect(
       resolveSidebarThreadStatus({
         ...idle,

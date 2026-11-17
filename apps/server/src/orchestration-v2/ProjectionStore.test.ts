@@ -1,4 +1,5 @@
 import { assert, it, vi } from "@effect/vitest";
+import * as ServerSettings from "../serverSettings.ts";
 import {
   EnvironmentId,
   EventId,
@@ -61,7 +62,10 @@ import { limitRecoveryCommand } from "./UsageLimitRecoveryWorker.ts";
 import { layerReaderDatabase, traceSqlRouting } from "../persistence/testkit/SqliteRouting.ts";
 
 const layerTest = Layer.mergeAll(
-  ProjectionStore.layer.pipe(Layer.provideMerge(SqlitePersistence.layerMemory)),
+  ProjectionStore.layer.pipe(
+    Layer.provideMerge(SqlitePersistence.layerMemory),
+    Layer.provide(ServerSettings.layerTest({ coordinatorReportsEnabled: true })),
+  ),
   SqlitePersistence.layerMemory,
 );
 const modelSelection = {
@@ -4629,7 +4633,7 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
     }),
   );
 
-  it.effect("looks up shell stop requests through the interrupt request index", () =>
+  it.effect("looks up shell stop requests and report questions through partial indexes", () =>
     Effect.gen(function* () {
       const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
       const sql = yield* SqlClient.SqlClient;
@@ -4643,11 +4647,23 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
         statement.includes("AS latest_run_stop_requested"),
       );
       assert.isDefined(threadQuery);
-      const stopRequestLookups = (yield* sql.unsafe<{ readonly detail: string }>(
+      const plan = (yield* sql.unsafe<{ readonly detail: string }>(
         `EXPLAIN QUERY PLAN ${threadQuery}`,
-      ))
-        .map((row) => row.detail)
-        .filter((detail) => detail.startsWith("SEARCH stop_request "));
+      )).map((row) => row.detail);
+      for (const [alias, index] of [
+        ["report", "report_key"],
+        ["newer", "report_key"],
+        ["answer", "report_answer"],
+      ]) {
+        const lookup = plan.find((detail) => detail.startsWith(`SEARCH ${alias} `));
+        assert.isDefined(lookup);
+        assert.include(lookup, `orchestration_v2_projection_messages_${index}_idx`);
+      }
+      assert.include(
+        plan.find((detail) => detail.startsWith("SEARCH newer ")),
+        "(thread_id=? AND <expr>=? AND <expr>>?)",
+      );
+      const stopRequestLookups = plan.filter((detail) => detail.startsWith("SEARCH stop_request "));
       assert.lengthOf(stopRequestLookups, 2);
       for (const lookup of stopRequestLookups) {
         assert.include(lookup, "orchestration_v2_projection_turn_items_stop_request_idx");

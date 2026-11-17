@@ -387,6 +387,7 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
         { migration_id: 13, name: "WorktreeSetupState" },
         { migration_id: 14, name: "DropWorktreeSetupState" },
         { migration_id: 15, name: "WorktreeStripped" },
+        { migration_id: 16, name: "ReportQuestionIndexes" },
       ]);
       assert.deepStrictEqual(migrated.drafts, []);
       assert.deepStrictEqual(migrated.stripped, []);

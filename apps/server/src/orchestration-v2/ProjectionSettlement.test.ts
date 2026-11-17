@@ -19,6 +19,7 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
+import * as ServerSettings from "../serverSettings.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import {
@@ -317,7 +318,89 @@ it.effect(
           pendingBackgroundTasks: [{ taskId: "running-task", kind: "subagent" }],
         },
       });
+      const reportThread = yield* createThread("report-question");
+      yield* createRun(reportThread);
+      yield* store.apply({
+        id: EventId.make("event:settlement:report"),
+        type: "message.updated",
+        threadId: reportThread,
+        occurredAt: now,
+        payload: {
+          createdBy: "agent",
+          creationSource: "mcp",
+          id: MessageId.make("message:settlement:report"),
+          threadId: reportThread,
+          runId: null,
+          nodeId: null,
+          role: "assistant",
+          text: "Choose a release",
+          report: {
+            key: "release",
+            version: 1,
+            title: "Release",
+            question: "Ship?",
+            answers: ["Ship", "Wait"],
+          },
+          attachments: [],
+          streaming: false,
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+      const settings = yield* ServerSettings.ServerSettingsService;
+      yield* settings.updateSettings({ coordinatorReportsEnabled: false });
+      assert.equal((yield* store.getThreadShell(reportThread))?.openReportQuestionCount, 0);
+      assert.isNull((yield* store.getThreadShell(reportThread))?.latestOpenReportQuestionAt);
+      assert.equal(
+        (yield* store.getShellSnapshot()).threads.find((thread) => thread.id === reportThread)
+          ?.openReportQuestionCount,
+        0,
+      );
+      const disabledCandidates = yield* store.getSettlementCandidates(reportThread);
+      assert.isTrue(
+        disabledCandidates.some(
+          (thread) =>
+            thread.id === reportThread &&
+            isAutoSettlementCandidate(thread, DateTime.toEpochMillis(now)),
+        ),
+      );
+      assert.isTrue(
+        isSnoozed(
+          {
+            ...(yield* store.getThreadShell(reportThread))!,
+            snoozedAt: now,
+            snoozedUntil: DateTime.add(now, { days: 1 }),
+          },
+          DateTime.toEpochMillis(now),
+        ),
+      );
+      yield* settings.updateSettings({ coordinatorReportsEnabled: true });
+      assert.equal((yield* store.getThreadShell(reportThread))?.openReportQuestionCount, 1);
+      for (const reportShell of [
+        (yield* store.getThreadShell(reportThread))!,
+        (yield* store.getShellSnapshot()).threads.find((thread) => thread.id === reportThread)!,
+      ]) {
+        assert.equal(
+          DateTime.formatIso(reportShell.latestOpenReportQuestionAt!),
+          DateTime.formatIso(now),
+        );
+        assert.isFalse(isAutoSettlementCandidate(reportShell, DateTime.toEpochMillis(now)));
+        for (const [snoozedAt, expected] of [
+          [DateTime.add(now, { minutes: 1 }), true],
+          [now, true],
+          [DateTime.subtract(now, { minutes: 1 }), false],
+        ] as const) {
+          assert.equal(
+            isSnoozed(
+              { ...reportShell, snoozedAt, snoozedUntil: DateTime.add(now, { days: 1 }) },
+              DateTime.toEpochMillis(now),
+            ),
+            expected,
+          );
+        }
+      }
       const candidates = yield* store.getSettlementCandidates();
+      assert.isFalse(candidates.some((thread) => thread.id === reportThread));
       const shell = yield* store.getShellSnapshot({ location: "active" });
       const eligible = candidates.filter((thread) =>
         isAutoSettlementCandidate(thread, DateTime.toEpochMillis(now)),
@@ -354,6 +437,75 @@ it.effect(
           }),
         );
       }
+      const originalReport = (yield* store.getThreadProjection(reportThread)).messages.find(
+        (message) => message.report,
+      )!;
+      const snoozedAt = DateTime.add(now, { minutes: 1 });
+      const later = DateTime.add(now, { minutes: 2 });
+      const checkQuestion = Effect.fn(function* (
+        expectedAt: DateTime.Utc | null,
+        snoozed: boolean,
+      ) {
+        const projection = yield* store.getThreadProjection(reportThread);
+        for (const reportShell of [
+          ProjectionStore.threadShellFromProjection(projection),
+          (yield* store.getThreadShell(reportThread))!,
+          (yield* store.getShellSnapshot()).threads.find((thread) => thread.id === reportThread)!,
+        ]) {
+          assert.equal(reportShell.openReportQuestionCount, expectedAt === null ? 0 : 1);
+          assert.equal(
+            reportShell.latestOpenReportQuestionAt == null
+              ? null
+              : DateTime.formatIso(reportShell.latestOpenReportQuestionAt),
+            expectedAt === null ? null : DateTime.formatIso(expectedAt),
+          );
+          assert.equal(
+            isSnoozed(
+              { ...reportShell, snoozedAt, snoozedUntil: DateTime.add(now, { days: 1 }) },
+              DateTime.toEpochMillis(later),
+            ),
+            snoozed,
+          );
+        }
+      });
+      yield* checkQuestion(now, true);
+      yield* store.apply({
+        id: EventId.make("event:report:unchanged"),
+        type: "message.updated",
+        threadId: reportThread,
+        occurredAt: later,
+        payload: { ...originalReport, updatedAt: later },
+      });
+      yield* checkQuestion(now, true);
+      yield* store.apply({
+        id: EventId.make("event:report:new-question"),
+        type: "message.updated",
+        threadId: reportThread,
+        occurredAt: later,
+        payload: {
+          ...originalReport,
+          id: MessageId.make("report:new-question"),
+          report: { ...originalReport.report!, version: 2 },
+          createdAt: later,
+          updatedAt: later,
+        },
+      });
+      yield* checkQuestion(later, false);
+      const { question: _question, answers: _answers, ...withoutQuestion } = originalReport.report!;
+      yield* store.apply({
+        id: EventId.make("event:report:closed"),
+        type: "message.updated",
+        threadId: reportThread,
+        occurredAt: later,
+        payload: {
+          ...originalReport,
+          id: MessageId.make("report:closed"),
+          report: { ...withoutQuestion, version: 3 },
+          createdAt: later,
+          updatedAt: later,
+        },
+      });
+      yield* checkQuestion(null, true);
       assert.equal(
         DateTime.formatIso((yield* store.getThread(completed)).createdAt),
         DateTime.formatIso(old),
@@ -362,7 +514,44 @@ it.effect(
         (yield* store.getThread(ThreadId.make("missing")).pipe(Effect.flip))._tag,
         "ProjectionStoreThreadNotFoundError",
       );
-    }).pipe(Effect.provide(layerSql)),
+    }).pipe(
+      Effect.provide(
+        layerSql.pipe(
+          Layer.provideMerge(ServerSettings.layerTest({ coordinatorReportsEnabled: true })),
+        ),
+      ),
+    ),
+);
+
+it.effect("sql: a store without server settings counts no open report questions", () =>
+  Effect.gen(function* () {
+    const store = yield* ProjectionStore.ProjectionStoreV2;
+    const now = DateTime.makeUnsafe("2026-11-17T00:00:00.000Z");
+    const threadId = yield* createThread("report-question-no-settings");
+    yield* createRun(threadId);
+    yield* store.apply({
+      id: EventId.make("event:no-settings:report"),
+      type: "message.updated",
+      threadId,
+      occurredAt: now,
+      payload: {
+        createdBy: "agent",
+        creationSource: "mcp",
+        id: MessageId.make("message:no-settings:report"),
+        threadId,
+        runId: null,
+        nodeId: null,
+        role: "assistant",
+        text: "Choose a release",
+        report: { key: "release", version: 1, title: "Release", question: "Ship?" },
+        attachments: [],
+        streaming: false,
+        createdAt: now,
+        updatedAt: now,
+      },
+    });
+    assert.equal((yield* store.getThreadShell(threadId))?.openReportQuestionCount, 0);
+  }).pipe(Effect.provide(layerSql)),
 );
 
 it.effect("sql: the user-authored message time ignores agent notifications", () =>

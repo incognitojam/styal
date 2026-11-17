@@ -109,6 +109,8 @@ export interface ThreadSnoozeShell extends QueuedThreadShell {
   readonly pendingUserInputAt?: string | null;
   readonly pendingSubagentRequest?: PendingSubagentRequest | null;
   readonly pendingGuestMessageCount?: number;
+  readonly openReportQuestionCount?: number;
+  readonly latestOpenReportQuestionAt?: string | null;
 }
 
 function pendingQuestionAt(shell: ThreadSnoozeShell): string | null {
@@ -140,6 +142,13 @@ export function threadRaisedHandWhileSnoozed(shell: ThreadSnoozeShell): boolean 
   }
   if (shell.pendingSubagentRequest != null) return true;
   if ((shell.pendingGuestMessageCount ?? 0) > 0) return true;
+  if (
+    (shell.openReportQuestionCount ?? 0) > 0 &&
+    (shell.snoozedAt == null ||
+      shell.latestOpenReportQuestionAt == null ||
+      !(Date.parse(shell.latestOpenReportQuestionAt) <= Date.parse(shell.snoozedAt)))
+  )
+    return true;
   const failedAt = failureEdgeAt(shell);
   return (
     failedAt !== undefined &&
@@ -167,6 +176,7 @@ export function canSnooze(
     | "hasPendingUserInput"
     | "pendingSubagentRequest"
     | "pendingGuestMessageCount"
+    | "openReportQuestionCount"
     | "latestUserMessageAt"
     | "latestTurn"
     | "latestRun"
@@ -180,7 +190,6 @@ export function canSnooze(
   const request = shell.source?.pendingRuntimeRequest;
   if (request != null && request.kind !== "user_input") return false;
   if (shell.pendingSubagentRequest != null) return false;
-  // A waiting guest message would wake it at once.
   if ((shell.pendingGuestMessageCount ?? 0) > 0) return false;
   if (hasQueuedTurnStart(shell, options)) return false;
   return true;
@@ -210,7 +219,13 @@ export function threadWokeAt(
   // than that visit's lastVisitedAt).
   if (threadRaisedHandWhileSnoozed(shell)) {
     const failedAt = failureEdgeAt(shell);
-    const questionAt = pendingQuestionAt(shell);
+    const questionAt =
+      [
+        pendingQuestionAt(shell),
+        (shell.openReportQuestionCount ?? 0) > 0 ? shell.latestOpenReportQuestionAt : null,
+      ]
+        .filter((at): at is string => at != null && !Number.isNaN(Date.parse(at)))
+        .sort((a, b) => Date.parse(b) - Date.parse(a))[0] ?? null;
     const freshFailure =
       failedAt != null &&
       (shell.snoozedAt == null || Date.parse(failedAt) > Date.parse(shell.snoozedAt));

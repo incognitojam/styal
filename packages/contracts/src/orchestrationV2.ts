@@ -2401,6 +2401,8 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
   pendingRuntimeRequest: Schema.NullOr(OrchestrationV2PendingRuntimeRequestSummary),
   /** Guest messages waiting for the owner to send or dismiss. Absent from older servers. */
   pendingGuestMessageCount: Schema.optional(NonNegativeInt),
+  openReportQuestionCount: Schema.optional(NonNegativeInt),
+  latestOpenReportQuestionAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   latestVisibleMessage: Schema.NullOr(OrchestrationV2LatestVisibleMessageSummary),
   latestUserMessageAt: Schema.NullOr(Schema.DateTimeUtc),
   latestMessageAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),

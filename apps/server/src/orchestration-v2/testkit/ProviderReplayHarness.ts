@@ -207,6 +207,7 @@ export function runOrchestratorV2ProviderReplayScenario<
     readonly runContinuationWorker?: boolean;
     readonly recoverOnStartup?: boolean;
     readonly continueThreadsAfterServerUpdate?: boolean;
+    readonly coordinatorReportsEnabled?: boolean;
     // Capture restart continuations before sessions stop at teardown, as
     // server shutdown does before a restart.
     readonly prepareForShutdownOnClose?: boolean;
@@ -253,6 +254,7 @@ export function layerProviderReplay<Transcript extends ProviderReplayTranscript,
     readonly runContinuationWorker?: boolean;
     readonly recoverOnStartup?: boolean;
     readonly continueThreadsAfterServerUpdate?: boolean;
+    readonly coordinatorReportsEnabled?: boolean;
     // Capture restart continuations before sessions stop at teardown, as
     // server shutdown does before a restart.
     readonly prepareForShutdownOnClose?: boolean;
@@ -290,6 +292,7 @@ export function layerWithRegistry<Error>(
     readonly runContinuationWorker?: boolean;
     readonly recoverOnStartup?: boolean;
     readonly continueThreadsAfterServerUpdate?: boolean;
+    readonly coordinatorReportsEnabled?: boolean;
     // Capture restart continuations before sessions stop at teardown, as
     // server shutdown does before a restart.
     readonly prepareForShutdownOnClose?: boolean;
@@ -328,6 +331,9 @@ export function layerWithRegistry<Error>(
           ...(options.continueThreadsAfterServerUpdate === undefined
             ? {}
             : { continueThreadsAfterServerUpdate: options.continueThreadsAfterServerUpdate }),
+          ...(options.coordinatorReportsEnabled === undefined
+            ? {}
+            : { coordinatorReportsEnabled: options.coordinatorReportsEnabled }),
         },
         policy.summary,
       ),
@@ -340,7 +346,7 @@ export function layerWithRegistry<Error>(
     CommandReceiptStore.layer,
     EffectOutbox.layer,
     TurnItemPositionStore.layer,
-  ).pipe(Layer.provide(layerDatabase));
+  ).pipe(Layer.provide(Layer.merge(layerDatabase, layerServerSettings)));
   const layerEventSinkProvided = EventSink.layerFromStores.pipe(
     Layer.provide(Layer.mergeAll(layerStores, layerDatabase)),
   );

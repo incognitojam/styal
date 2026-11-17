@@ -100,10 +100,12 @@ import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 import type * as Statement from "effect/sql/Statement";
 
+import * as ServerSettings from "../serverSettings.ts";
 import { MCP_APP_OUTPUT_KEY } from "@t3tools/shared/mcpApp";
 import { threadHtmlRenderAttachmentIds } from "../attachmentStore.ts";
 import {
@@ -250,6 +252,8 @@ export type ProjectionSettlementCandidate = Pick<
   | "pendingRuntimeRequest"
   | "pendingBackgroundTasks"
   | "pendingGuestMessageCount"
+  | "openReportQuestionCount"
+  | "latestOpenReportQuestionAt"
 > &
   Pick<OrchestrationV2AppThread, "lastSnoozeWakeAt"> & {
     readonly latestUserAuthoredMessageAt: DateTime.Utc | null;
@@ -1107,6 +1111,8 @@ export type AgentAwarenessThread = ProjectThreadAwarenessV2Input["thread"] &
   >;
 
 type ShellThreadRow = {
+  readonly open_report_question_count: number;
+  readonly latest_open_report_question_at: string | null;
   readonly thread_id: string;
   readonly payload_json: string;
   readonly forked_from_run_source_thread_id: string | null;
@@ -1662,9 +1668,42 @@ const linkCardStillAsks = (
   latestUserAuthoredMessageAt === null ||
   !DateTime.isGreaterThan(latestUserAuthoredMessageAt, item.startedAt ?? item.updatedAt);
 
+function openReportQuestions(projection: OrchestrationV2ThreadProjection) {
+  const latest = new Map<string, OrchestrationV2ThreadProjection["messages"][number]>();
+  const referenceKey = (ref: {
+    readonly messageId: string;
+    readonly key: string;
+    readonly version: number;
+  }) => JSON.stringify([ref.messageId, ref.key, ref.version]);
+  const answered = new Set(
+    projection.messages.flatMap((message) =>
+      message.role === "user" && message.reportAnswer ? [referenceKey(message.reportAnswer)] : [],
+    ),
+  );
+  const dismissed = new Set((projection.thread.reportDismissals ?? []).map(referenceKey));
+  for (const message of projection.messages) {
+    if (
+      message.report &&
+      (latest.get(message.report.key)?.report?.version ?? 0) < message.report.version
+    )
+      latest.set(message.report.key, message);
+  }
+  return [...latest.values()].filter((message) => {
+    const report = message.report!;
+    const key = referenceKey({ messageId: message.id, key: report.key, version: report.version });
+    return (
+      message.role === "assistant" && !!report.question && !answered.has(key) && !dismissed.has(key)
+    );
+  });
+}
+
 export function threadShellFromProjection(
   projection: OrchestrationV2ThreadProjection,
 ): OrchestrationV2ThreadShell {
+  const questions = openReportQuestions(projection);
+  const latestQuestion = questions.toSorted(
+    (a, b) => DateTime.toEpochMillis(b.createdAt) - DateTime.toEpochMillis(a.createdAt),
+  )[0];
   const providerSession =
     projection.providerSessions
       .filter((session) => session.providerInstanceId === projection.thread.providerInstanceId)
@@ -1799,6 +1838,8 @@ export function threadShellFromProjection(
     ),
     pendingRuntimeRequest,
     pendingGuestMessageCount: pendingGuestMessageCount(projection.thread.guestShare),
+    openReportQuestionCount: questions.length,
+    latestOpenReportQuestionAt: latestQuestion?.createdAt ?? null,
     // Thread detail owns message bodies. Keeping them out of shell rows makes
     // initial hydration and streaming updates independent of transcript size.
     latestVisibleMessage: null,
@@ -1907,6 +1948,8 @@ function isActivityRunForShell(
 }
 
 type ShellThreadState = {
+  readonly openReportQuestionCount: number;
+  readonly latestOpenReportQuestionAt: DateTime.Utc | null;
   readonly thread: OrchestrationV2ThreadProjection["thread"];
   readonly tokenUsage: OrchestrationV2ThreadShell["tokenUsage"];
   readonly latestRunId: RunId | null;
@@ -2095,6 +2138,8 @@ function shellFromState(input: {
     usageLimitResetAt: input.state.usageLimitResetAt,
     pendingRuntimeRequest: input.state.pendingRuntimeRequest,
     pendingGuestMessageCount: pendingGuestMessageCount(input.state.thread.guestShare),
+    openReportQuestionCount: input.state.openReportQuestionCount,
+    latestOpenReportQuestionAt: input.state.latestOpenReportQuestionAt,
     latestVisibleMessage: null,
     latestUserMessageAt: input.state.latestUserMessageAt,
     latestMessageAt: input.state.latestMessageAt,
@@ -2132,6 +2177,13 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
   ProjectionStoreV2,
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
+    const serverSettings = yield* Effect.serviceOption(ServerSettings.ServerSettingsService);
+    // Reports are off by default, so a store without server settings counts no open questions.
+    const reportsEnabled = Option.isSome(serverSettings)
+      ? serverSettings.value.getSettings.pipe(
+          Effect.map((settings) => settings.coordinatorReportsEnabled),
+        )
+      : Effect.succeed(false);
 
     // Claude memory writes stay inline: clients keep an answer visible beside its memory note.
     const inlineWorkOutput = sql`(item.type = 'dynamic_tool' AND (
@@ -6462,6 +6514,40 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
           ),
         );
 
+    // Mirrors coordinatorReports' latest-version, answer and dismissal rules without loading history.
+    // Keep these partial-index predicates aligned with fork migration 016.
+    const openReportQuestions = sql`
+      SELECT report.message_id, report.created_at
+      FROM orchestration_v2_projection_messages report
+        INDEXED BY orchestration_v2_projection_messages_report_key_idx
+      WHERE report.thread_id = t.thread_id AND report.role = 'assistant'
+        AND json_extract(report.payload_json, '$.report.key') IS NOT NULL
+        AND json_extract(report.payload_json, '$.report.question') IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM orchestration_v2_projection_messages newer
+            INDEXED BY orchestration_v2_projection_messages_report_key_idx
+          WHERE newer.thread_id = t.thread_id
+            AND json_extract(newer.payload_json, '$.report.key') IS NOT NULL
+            AND json_extract(newer.payload_json, '$.report.key') = json_extract(report.payload_json, '$.report.key')
+            AND json_extract(newer.payload_json, '$.report.version') > json_extract(report.payload_json, '$.report.version')
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM orchestration_v2_projection_messages answer
+            INDEXED BY orchestration_v2_projection_messages_report_answer_idx
+          WHERE answer.thread_id = t.thread_id AND answer.role = 'user'
+            AND json_extract(answer.payload_json, '$.reportAnswer.messageId') IS NOT NULL
+            AND json_extract(answer.payload_json, '$.reportAnswer.messageId') = report.message_id
+            AND json_extract(answer.payload_json, '$.reportAnswer.key') = json_extract(report.payload_json, '$.report.key')
+            AND json_extract(answer.payload_json, '$.reportAnswer.version') = json_extract(report.payload_json, '$.report.version')
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM json_each(t.payload_json, '$.reportDismissals') dismissal
+          WHERE json_extract(dismissal.value, '$.messageId') = report.message_id
+            AND json_extract(dismissal.value, '$.key') = json_extract(report.payload_json, '$.report.key')
+            AND json_extract(dismissal.value, '$.version') = json_extract(report.payload_json, '$.report.version')
+        )
+    `;
+
     // Mirror idleCompactionOf, including JavaScript trim whitespace.
     const isIdleCompactionMessage = (alias: string) => {
       const payload = sql.literal(`${alias}.payload_json`);
@@ -6499,7 +6585,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       )`;
     };
 
-    const selectShellThreadRows = (
+    const selectShellThreadRows = Effect.fn("ProjectionStore.selectShellThreadRows")(function* (
       threadId?: ThreadId,
       {
         location,
@@ -6510,12 +6596,19 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
         worktreePath,
         threadIds,
         listedOnly = false,
-      }: ShellSnapshotOptions & { readonly listedOnly?: boolean } = {},
-    ) =>
-      sql<ShellThreadRow>`
+        includeReportQuestions = true,
+      }: ShellSnapshotOptions & {
+        readonly listedOnly?: boolean;
+        readonly includeReportQuestions?: boolean;
+      } = {},
+    ) {
+      const countReportQuestions = includeReportQuestions && (yield* reportsEnabled);
+      return yield* sql<ShellThreadRow>`
             SELECT
               t.thread_id,
               t.payload_json,
+              ${countReportQuestions ? sql`(SELECT count(*) FROM (${openReportQuestions}))` : sql`0`} AS open_report_question_count,
+              ${countReportQuestions ? sql`(SELECT MAX(created_at) FROM (${openReportQuestions}))` : sql`NULL`} AS latest_open_report_question_at,
               CASE
                 WHEN json_extract(t.payload_json, '$.forkedFrom.type') = 'run'
                   AND COALESCE(json_extract(t.payload_json, '$.forkHistoryMaterialized'), 0) = 0
@@ -6769,6 +6862,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             }${threadIds === undefined ? sql`` : sql` AND t.thread_id IN (SELECT value FROM json_each(${encodeIdList(threadIds)}))`}
             ORDER BY t.updated_at ASC, t.thread_id ASC
           `;
+    });
 
     const selectShellRunRows = (threadIds?: ReadonlyArray<ThreadId>) =>
       threadIds === undefined
@@ -6949,6 +7043,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       sql
         .withTransaction(
           Effect.gen(function* () {
+            const includeReportQuestions = yield* reportsEnabled;
             const rows = yield* sql<SettlementThreadRow>`
             SELECT t.thread_id, t.payload_json,
               r.run_id AS latest_run_id,
@@ -6986,6 +7081,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
               AND json_extract(t.payload_json, '$.settledOverride') IS NULL
               AND json_extract(t.payload_json, '$.pinnedAt') IS NULL
               AND json_extract(t.payload_json, '$.autoSettleDisabledAt') IS NULL
+              ${includeReportQuestions ? sql`AND NOT EXISTS (${openReportQuestions})` : sql``}
               AND NOT EXISTS (
                 SELECT 1 FROM orchestration_v2_projection_runs active
                 WHERE active.thread_id = t.thread_id
@@ -7059,6 +7155,8 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                   activityRunStartedAt: null,
                   pendingRuntimeRequest: null,
                   pendingGuestMessageCount: pendingGuestMessageCount(thread.guestShare),
+                  openReportQuestionCount: 0,
+                  latestOpenReportQuestionAt: null,
                   pendingBackgroundTasks: derivePendingBackgroundWork({
                     latestRun:
                       latestRunId === null || status === "idle"
@@ -7488,6 +7586,11 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             row.last_error,
           ),
           pendingRuntimeRequest,
+          openReportQuestionCount: row.open_report_question_count,
+          latestOpenReportQuestionAt:
+            row.latest_open_report_question_at === null
+              ? null
+              : DateTime.makeUnsafe(row.latest_open_report_question_at),
           latestMessageAt:
             row.latest_message_at === null ? null : DateTime.makeUnsafe(row.latest_message_at),
           latestUserMessageAt:
@@ -7682,10 +7785,12 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
         const { threadRows, providerThreadRows, pendingTurnItemRows, sequenceRows } =
           yield* sql.withTransaction(
             Effect.gen(function* () {
-              const threadRows = yield* selectShellThreadRows(
-                threadId,
-                threadId === undefined ? { location: "active", listedOnly: true } : {},
-              );
+              const threadRows = yield* selectShellThreadRows(threadId, {
+                ...(threadId === undefined
+                  ? { location: "active" as const, listedOnly: true }
+                  : {}),
+                includeReportQuestions: false,
+              });
               const ids = threadRows.map((row) => ThreadId.make(row.thread_id));
               const providerThreadRows =
                 ids.length === 0 ? [] : yield* selectShellProviderThreadRows(ids);

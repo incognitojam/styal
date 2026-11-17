@@ -161,8 +161,9 @@ export function isAutoSettlementCandidate(
   if (thread.archivedAt !== null || thread.settledOverride !== null) return false;
   if (thread.pinnedAt != null || thread.autoSettleDisabledAt != null) return false;
   if (thread.pendingRuntimeRequest !== null) return false;
-  // A guest is waiting on the owner; settling would hide the Request.
-  if ((thread.pendingGuestMessageCount ?? 0) > 0) return false;
+  // Settling must not hide a guest request or unanswered report question.
+  if ((thread.pendingGuestMessageCount ?? 0) > 0 || (thread.openReportQuestionCount ?? 0) > 0)
+    return false;
   if (thread.activityRunStatus != null) return false;
   if (backgroundWorkHoldsCompletion(thread.pendingBackgroundTasks ?? [])) return false;
   if (threadHasQueuedTurnStart(thread, nowMs)) return false;
@@ -196,14 +197,21 @@ export function isSnoozed(
     | "status"
     | "pendingRuntimeRequest"
     | "pendingGuestMessageCount"
+    | "openReportQuestionCount"
+    | "latestOpenReportQuestionAt"
   >,
   nowMs: number,
 ): boolean {
   const snoozedUntilMs = toMillis(thread.snoozedUntil);
   if (snoozedUntilMs === null || snoozedUntilMs <= nowMs) return false;
-  // Same as the client: a waiting guest message wakes the thread, and the snooze stays stored.
   if ((thread.pendingGuestMessageCount ?? 0) > 0) return false;
   const snoozedAtMs = toMillis(thread.snoozedAt);
+  const reportQuestionAtMs = toMillis(thread.latestOpenReportQuestionAt);
+  if (
+    (thread.openReportQuestionCount ?? 0) > 0 &&
+    (snoozedAtMs === null || reportQuestionAtMs === null || reportQuestionAtMs > snoozedAtMs)
+  )
+    return false;
   if (
     thread.pendingRuntimeRequest !== null &&
     (thread.pendingRuntimeRequest.kind !== "user_input" ||
