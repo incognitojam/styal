@@ -52,7 +52,7 @@ function audit(overrides: Partial<Parameters<typeof auditUpstreamIntakeCandidate
     commitMessages: ["fix(server): synthetic change\n\nUpstream-PR: 1234"],
     mergeCommits: [],
     mainIsAncestor: true,
-    changedPaths: ["apps/server/src/usage/usageReports.ts"],
+    changedPaths: ["apps/mobile/src/lib/activity.ts"],
     ledger,
     commitPullRequests: new Map(),
     commitReviews: [
@@ -108,11 +108,9 @@ describe("upstream intake audit", () => {
     assert.include(result.summary, "report-only");
   });
 
-  it("does not require review just because a client changed", () => {
+  it("allows JavaScript-only mobile and shared source batches", () => {
     const result = audit({
       changedPaths: [
-        "apps/web/src/components/Sidebar.tsx",
-        "apps/desktop/src/app/DesktopApp.ts",
         "apps/mobile/src/lib/threadActivity.ts",
         "packages/client-runtime/src/activity.ts",
         "packages/shared/src/activity.ts",
@@ -121,6 +119,23 @@ describe("upstream intake audit", () => {
 
     assert.deepEqual(result.manualReviewReasons, []);
     assert.isTrue(result.automaticEligible);
+    for (const root of ["apps/mobile/src", "packages/client-runtime/src", "packages/shared/src"]) {
+      for (const ext of ["ts", "tsx", "js", "jsx", "json", "css", "md"]) {
+        const path = `${root}/lib/synthetic.${ext}`;
+        assert.isTrue(audit({ changedPaths: [path] }).automaticEligible, path);
+      }
+    }
+    assert.isFalse(
+      audit({ changedPaths: ["packages/contracts/src/synthetic.ts"] }).automaticEligible,
+    );
+    assert.isFalse(
+      audit({
+        changedPaths: [
+          "apps/mobile/src/lib/activity.ts",
+          "apps/mobile/modules/synthetic/android/res/values/bools.xml",
+        ],
+      }).automaticEligible,
+    );
   });
 
   it("requires manual review for a commit with a fork adaptation note", () => {
@@ -169,6 +184,21 @@ describe("upstream intake audit", () => {
 
   it("requires manual review for sensitive paths and fork feature overlap", () => {
     for (const path of [
+      "apps/mobile/modules/t3-subscription-widget/android/src/main/res/values/bools.xml",
+      "apps/mobile/modules/t3-agent-notifications/android/src/main/res/values/agent_activity_colors.xml",
+      "apps/mobile/modules/synthetic/ios/Build.xcconfig",
+      "apps/mobile/modules/synthetic/android/gradle.properties",
+      "apps/mobile/modules/synthetic/ios/Synthetic.xcodeproj/project.pbxproj",
+      "patches/react-native-reanimated.patch",
+      "patches/expo-modules-core.patch",
+      "apps/mobile/patches/synthetic.patch",
+      "apps/mobile/src/lib/synthetic.swift",
+      "apps/mobile/src/lib/synthetic.ts.patch",
+      "apps/server/src/usage/usageReports.ts",
+      "apps/web/src/components/Sidebar.tsx",
+      "apps/desktop/src/app/DesktopApp.ts",
+      "assets/synthetic.png",
+      "packages/shared/native/synthetic.ts",
       "apps/mobile/app.json",
       "apps/mobile/modules/synthetic/react-native.config.js",
       "apps/mobile/eas.json",
@@ -197,7 +227,7 @@ describe("upstream intake audit", () => {
       assert.isFalse(native.automaticEligible, path);
       assert.include(
         native.manualReviewReasons,
-        "mobile native sources, binaries or runtime/build configuration changed",
+        "paths outside the JavaScript-only automatic promotion allowlist changed",
         path,
       );
     }

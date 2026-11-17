@@ -92,30 +92,11 @@ const manualReviewRules: ReadonlyArray<ManualReviewRule> = [
     },
   },
   {
-    description: "mobile native sources, binaries or runtime/build configuration changed",
-    matches: (path) => {
-      if (!path.startsWith("apps/mobile/")) return false;
-      const file = path.split("/").at(-1) ?? path;
-      return (
-        ["eas.json", "app.json", ".fingerprintignore"].includes(file) ||
-        /\.config\.(?:[cm]?js|json)$/u.test(file) ||
-        path.startsWith("apps/mobile/plugins/") ||
-        path.startsWith("apps/mobile/deps/") ||
-        path.startsWith("apps/mobile/ios/") ||
-        path.startsWith("apps/mobile/android/") ||
-        /\.(?:swift|kt|kts|java|c|cc|cpp|cxx|h|hh|hpp|m|mm|rs|zig|s|cmake|gradle|podspec|plist|entitlements|so|a|dylib|aar|jar|tgz)$/iu.test(
-          file,
-        ) ||
-        [
-          "AndroidManifest.xml",
-          "Podfile",
-          "Podfile.lock",
-          "CMakeLists.txt",
-          "expo-module.config.json",
-        ].includes(file) ||
-        /\.(?:xcframework|framework)\//u.test(path)
-      );
-    },
+    description: "paths outside the JavaScript-only automatic promotion allowlist changed",
+    matches: (path) =>
+      !/^(?:apps\/mobile\/src|packages\/(?:client-runtime|shared|contracts)\/src)\/.+\.(?:ts|tsx|js|jsx|json|css|md)$/u.test(
+        path,
+      ),
   },
   migrationReviewRule,
   {
