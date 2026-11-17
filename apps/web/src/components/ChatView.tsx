@@ -1,3 +1,4 @@
+import { resolveCacheLossBaseline } from "./chat/ContextWindowMeter.logic";
 import { randomUUID } from "../lib/utils";
 import { ReportReplyStrip, NeedsYou, type ReportReference } from "./chat/CoordinatorReports";
 import { coordinatorReports, reportAnswers } from "@t3tools/client-runtime/coordinator-reports";
@@ -3986,6 +3987,10 @@ export default function ChatView(props: ChatViewProps) {
                                   activeProjectDefaultModelSelection
                                 }
                                 activeThreadModelSelection={activeThread?.modelSelection}
+                                cacheLossBaseline={resolveCacheLossBaseline({
+                                  runs: serverProjection?.runs ?? [],
+                                  inheritedSelection: activeThread?.modelSelection,
+                                })}
                                 activeProjectId={activeProject?.id ?? null}
                                 projectName={activeProject?.title}
                                 contextWindowEntries={serverVisibleTurnItems}

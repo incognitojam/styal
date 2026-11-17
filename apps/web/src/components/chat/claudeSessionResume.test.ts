@@ -5,7 +5,7 @@ import {
   ProviderInstanceId,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
-import { claudeSelectionCacheLoss } from "./ContextWindowMeter.logic";
+import { claudeSelectionCacheLoss, resolveCacheLossBaseline } from "./ContextWindowMeter.logic";
 import { resumesClaudeSession } from "./claudeSessionResume";
 
 const claudeEntry = (instanceId: string, continuationGroupKey?: string) => ({
@@ -94,12 +94,19 @@ describe("claudeSelectionCacheLoss", () => {
     ).toBe("effort");
   });
 
-  it("allows an effort change on a model that sends effort per turn", () => {
+  it.each([
+    "claude-opus-5-5",
+    "claude-fable-5-1",
+    "claude-fable-5-2",
+    "claude-haiku-5-5",
+    "claude-sonnet-5-5",
+    "claude-future",
+  ])("allows an effort change without per-request evidence: %s", (model) => {
     expect(
       claudeSelectionCacheLoss({
         ...warmThread,
-        current: selection("claude-opus-5-5", [{ id: "effort", value: "high" }]),
-        next: selection("claude-opus-5-5", [{ id: "effort", value: "medium" }]),
+        current: selection(model, [{ id: "effort", value: "high" }]),
+        next: selection(model, [{ id: "effort", value: "medium" }]),
       }),
     ).toBeNull();
   });
@@ -137,5 +144,26 @@ describe("claudeSelectionCacheLoss", () => {
     ).toBeNull();
     expect(claudeSelectionCacheLoss({ ...warmThread, ...change, usedTokens: 199_999 })).toBeNull();
     expect(claudeSelectionCacheLoss({ ...warmThread, ...change, provider: "codex" })).toBeNull();
+  });
+});
+
+describe("resolveCacheLossBaseline", () => {
+  it("uses inherited context before a side chat starts, then the last started selection rather than a queued choice", () => {
+    const inheritedSelection = {
+      instanceId: ProviderInstanceId.make("claudeAgent"),
+      model: "claude-sonnet-5",
+    };
+    const sent = { ...inheritedSelection, options: [{ id: "effort", value: "high" }] };
+    const queued = { ...inheritedSelection, options: [{ id: "effort", value: "medium" }] };
+    expect(resolveCacheLossBaseline({ runs: [], inheritedSelection })).toEqual(inheritedSelection);
+    expect(
+      resolveCacheLossBaseline({
+        runs: [
+          { startedAt: "sent", modelSelection: sent },
+          { startedAt: null, modelSelection: queued },
+        ],
+        inheritedSelection: queued,
+      }),
+    ).toEqual(sent);
   });
 });

@@ -450,6 +450,7 @@ export interface ChatComposerProps {
   providerCatalogKnown: boolean;
   activeProjectDefaultModelSelection: ModelSelection | null | undefined;
   activeThreadModelSelection: ModelSelection | null | undefined;
+  cacheLossBaseline: ModelSelection | null | undefined;
   reportedModelSelection?: ModelSelection | null;
   activeProjectId: ProjectId | null;
   projectName?: string | undefined;
@@ -1050,12 +1051,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     const change = claudeSelectionCacheLoss({
       provider: resumesClaudeSession(
         providerInstanceEntries,
-        activeThreadModelSelection?.instanceId,
+        props.cacheLossBaseline?.instanceId,
         selectedProviderEntry,
       )
         ? selectedProvider
         : null,
-      current: activeThreadModelSelection,
+      current: props.cacheLossBaseline,
       next: selectedModelSelection,
       capabilities: selectedProviderModels.find(
         (model) => model.slug === selectedModelSelection.model,
@@ -1065,7 +1066,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       promptCacheTtlMs,
       now: `${nowMinute}:00.000Z`,
     });
-    if (!change || !activeThreadModelSelection) return null;
+    if (!change || !props.cacheLossBaseline) return null;
     const key = [
       composerTargetKey(composerDraftTarget),
       JSON.stringify(selectedModelSelection),
@@ -1089,7 +1090,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           size="xs"
           variant="ghost"
           onClick={() =>
-            setComposerDraftModelSelection(composerDraftTarget, activeThreadModelSelection, {
+            setComposerDraftModelSelection(composerDraftTarget, props.cacheLossBaseline, {
               explicit: true,
               replaceOptions: true,
             })
