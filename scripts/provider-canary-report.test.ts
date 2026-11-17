@@ -146,7 +146,7 @@ it("keeps dry runs read-only, ignores 861, and warns only when an opening announ
   expect(warn).toEqual(["Discord issue announcement could not be delivered."]);
   expect(state.calls.some((c) => c.path.includes("/issues/861"))).toBe(false);
 });
-it("bounds hostile output as inline code and keeps state inert", () => {
+it("escapes hostile output and keeps state inert", () => {
   const hostile = "` @example-user Fixes #42 </code><!--\n" + "x".repeat(2000);
   const run = collectRun({
     plan: { plans: [{ kind: "blocked", provider: "codex", styal: "1", reason: hostile }] },
@@ -155,7 +155,9 @@ it("bounds hostile output as inline code and keeps state inert", () => {
     recordResult: "skipped",
   });
   const update = reconcileStatusIssue(null, run, [], runUrl)!;
-  expect(update.body).toContain("`**codex** on styal 1: ' @example-user Fixes #42 </code><!-- ");
+  expect(update.body).toContain(
+    "- **`codex`** on styal **`1`**: `' @example-user Fixes #42 </code><!-- ",
+  );
   expect(update.body).not.toContain("x".repeat(501));
   expect(update.body).toMatch(/<!-- provider-canary-state [a-f0-9]+ -->/);
 });
@@ -382,3 +384,99 @@ it.each(["9999-01-01", "2026-11-14T05:59:59Z", "invalid-date", "2026-11-14T12:00
     expect(warnings.length).toBe(at === "2026-11-14T05:59:59Z" ? 0 : 1);
   },
 );
+
+it("renders separate failed-build bullets without activating untrusted Markdown", () => {
+  const plans = ["0.1.1", "0.1.2"].map((styal) => ({
+    kind: "verify" as const,
+    provider: "codex",
+    styal,
+    entry: {
+      provider: "codex",
+      packageName: "@openai/codex",
+      version: "0.169.1",
+      styal,
+      binary: "codex",
+      model: "m",
+      secret: "S",
+    },
+  }));
+  const run = collectRun({
+    plan: { plans },
+    outcomes: plans.map(({ entry }) => ({
+      ...entry,
+      outcome: "failed" as const,
+      detail: "@user #123 owner/repo#1 https://example.test <img> **x** `code`\n- injected",
+    })),
+    planResult: "success",
+    recordResult: "skipped",
+  });
+  expect(run.problems).toHaveLength(2);
+  const opened = reconcileStatusIssue(null, run, [], runUrl)!;
+  const bullets = opened.body.split("\n").filter((line) => line.startsWith("- "));
+  expect(bullets).toHaveLength(2);
+  expect(bullets[0]).toBe(
+    "- **`codex`** **`@openai/codex@0.169.1`** on styal **`0.1.1`**: `failed verification twice: @user #123 owner/repo#1 https://example.test <img> **x** 'code'`",
+  );
+  expect(bullets[1]).toContain("on styal **`0.1.2`**");
+  expect(opened.body).not.toContain("\n- injected");
+  const changed = reconcileStatusIssue(
+    { number: 7, open: true, body: reconcileStatusIssue(null, failed, [], runUrl)!.body },
+    run,
+    [],
+    runUrl,
+  )!;
+  expect(changed.comment?.split("\n").filter((line) => line.startsWith("- "))).toEqual(bullets);
+});
+
+it("normalizes legacy failure keys without commenting, but reports a newly failing build", () => {
+  const at = "2026-11-17T12:00:00Z";
+  const failures = ["0.1.1", "0.1.2"].map((styal) => ({
+    provider: "codex",
+    packageName: "@openai/codex",
+    version: "0.169.1",
+    styal,
+    at,
+    detail: "install failed",
+  }));
+  const legacy = {
+    problems: [{ key: "failed:codex:0.169.1", scope: "codex", summary: "install failed" }],
+    failures: failures.map(({ detail: _detail, ...failure }) => failure),
+  };
+  const issue = {
+    number: 7,
+    open: true,
+    body: `<!-- provider-canary-state ${Buffer.from(JSON.stringify(legacy)).toString("hex")} -->`,
+  };
+  const run = collectRun({
+    plan: {
+      plans: failures.map((failure) => ({
+        kind: "held",
+        provider: "codex",
+        styal: failure.styal,
+        entry: { ...failure, binary: "codex", model: "m", secret: "S" },
+        failure,
+      })),
+    },
+    outcomes: [],
+    planResult: "success",
+    recordResult: "skipped",
+  });
+  const unchanged = reconcileStatusIssue(issue, run, [], runUrl)!;
+  expect(unchanged.comment).toBeUndefined();
+  expect(unchanged.body.split("\n").filter((line) => line.startsWith("- "))).toHaveLength(2);
+  const newFailure = { ...failures[0]!, styal: "0.1.3" };
+  const changed = reconcileStatusIssue(
+    issue,
+    {
+      ...run,
+      problems: [
+        ...run.problems,
+        { key: "failed:codex:0.169.1:0.1.3", scope: "codex", summary: "install failed" },
+      ],
+      failures: [...run.failures, newFailure],
+    },
+    [],
+    runUrl,
+  )!;
+  expect(changed.comment).toContain("Problems changed");
+});
