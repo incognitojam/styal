@@ -43,6 +43,36 @@ describe("review a watched workflow deployment", () => {
     environments: [{ id: 51, name: "production" }],
   };
 
+  const quick: FakeGitHubWorkflowRun = {
+    id: 7105,
+    name: "Deploy quick",
+    status: "waiting",
+    environments: [
+      { id: 61, name: "staging" },
+      { id: 62, name: "production" },
+    ],
+  };
+
+  const collapsed: FakeGitHubWorkflowRun = {
+    id: 7106,
+    name: "Deploy collapsed",
+    status: "waiting",
+    environments: [
+      { id: 71, name: "staging" },
+      { id: 72, name: "production" },
+    ],
+  };
+
+  const widened: FakeGitHubWorkflowRun = {
+    id: 7107,
+    name: "Deploy widened",
+    status: "waiting",
+    environments: [
+      { id: 81, name: "staging" },
+      { id: 82, name: "production" },
+    ],
+  };
+
   const reviews = (run: FakeGitHubWorkflowRun) =>
     environment
       .gitHubApiRequests()
@@ -65,7 +95,7 @@ describe("review a watched workflow deployment", () => {
   }
 
   beforeAll(async () => {
-    const runs = [single, multiple, retry, stopped];
+    const runs = [single, multiple, retry, stopped, quick, collapsed, widened];
     environment = await startEnvironment({
       workflowRuns: runs,
       scenario: {
@@ -104,6 +134,7 @@ describe("review a watched workflow deployment", () => {
   it("stops the sole watch from its compact review panel while the agent is idle", async () => {
     const { page } = app;
     await watch(stopped);
+    await page.getByRole("button", { name: "Review", exact: true }).click();
     await page.getByText("Promote release at 12345678 #7104", { exact: true }).waitFor();
     const label = page.getByLabel(`${stopped.name} #7104`, { exact: true });
     await label.hover();
@@ -133,6 +164,7 @@ describe("review a watched workflow deployment", () => {
     // workflow-run-watch
     const { page } = app;
     await watch(single);
+    await page.getByRole("button", { name: "Review", exact: true }).click();
     await page
       .getByText("Waiting for your review to deploy to production.", { exact: true })
       .waitFor();
@@ -181,9 +213,80 @@ describe("review a watched workflow deployment", () => {
     expect(environment.codexTurns()).toHaveLength(turns.length);
   });
 
+  it("quickly approves every waiting environment without a comment", async () => {
+    const { page } = app;
+    await watch(quick);
+    expect(await page.getByRole("textbox", { name: "Review comment" }).count()).toBe(0);
+    await page.getByRole("button", { name: "Approve", exact: true }).click();
+    await page.getByText("Deployment review", { exact: true }).waitFor({ state: "hidden" });
+    expect(reviews(quick).map((request) => request.body)).toEqual([
+      { environment_ids: [61, 62], state: "approved", comment: "" },
+    ]);
+    await sidebar().getByText("Approval", { exact: true }).waitFor({ state: "hidden" });
+  });
+
+  it("quick Approve sends the form's selection and comment after the form is collapsed", async () => {
+    const { page } = app;
+    await watch(collapsed);
+    const review = page.getByRole("button", { name: "Review", exact: true });
+    await review.click();
+    const staging = page.getByRole("checkbox", { name: "staging", exact: true });
+    const production = page.getByRole("checkbox", { name: "production", exact: true });
+    await staging.uncheck();
+    await production.uncheck();
+    await page.getByRole("textbox", { name: "Review comment" }).fill("Staging first");
+    await review.click();
+    const none = page.getByRole("button", { name: "Approve 0 environments", exact: true });
+    expect(await none.isDisabled()).toBe(true);
+    expect(reviews(collapsed)).toHaveLength(0);
+
+    await review.click();
+    await staging.check();
+    await review.click();
+    await page.getByRole("button", { name: "Approve 1 environment", exact: true }).click();
+    // Production still waits, so the row stays with only it left.
+    await page
+      .getByText("Waiting for your review to deploy to production.", { exact: true })
+      .waitFor();
+    expect(reviews(collapsed).map((request) => request.body)).toEqual([
+      { environment_ids: [71], state: "approved", comment: "Staging first" },
+    ]);
+  });
+
+  it("keeps an edited form's selection and comment when another environment starts waiting", async () => {
+    const { page } = app;
+    await watch(widened);
+    const review = page.getByRole("button", { name: "Review", exact: true });
+    await review.click();
+    await page.getByRole("checkbox", { name: "staging", exact: true }).uncheck();
+    await page.getByRole("checkbox", { name: "production", exact: true }).uncheck();
+    await page.getByRole("textbox", { name: "Review comment" }).fill("Do not deploy yet");
+    await review.click();
+
+    widened.environments = [...widened.environments, { id: 83, name: "canary" }];
+    // The watch re-reads waiting runs on its 30-second sweep.
+    await page
+      .getByText("Waiting for your review to deploy to staging, production, canary.", {
+        exact: true,
+      })
+      .waitFor({ timeout: 45_000 });
+    expect(
+      await page.getByRole("button", { name: "Approve 0 environments", exact: true }).isDisabled(),
+    ).toBe(true);
+    await review.click();
+    expect(await page.getByRole("checkbox", { name: "canary", exact: true }).isChecked()).toBe(
+      false,
+    );
+    expect(await page.getByRole("textbox", { name: "Review comment" }).inputValue()).toBe(
+      "Do not deploy yet",
+    );
+    expect(reviews(widened)).toHaveLength(0);
+  });
+
   it("requires a selection for multiple deployments and rejects only the selected environment", async () => {
     const { page } = app;
     await watch(multiple);
+    await page.getByRole("button", { name: "Review", exact: true }).click();
     const staging = page.getByRole("checkbox", { name: "staging", exact: true });
     const production = page.getByRole("checkbox", { name: "production", exact: true });
     expect(await staging.isChecked()).toBe(true);
@@ -194,6 +297,8 @@ describe("review a watched workflow deployment", () => {
     expect(
       await page.getByRole("button", { name: "Approve and deploy", exact: true }).isDisabled(),
     ).toBe(true);
+    // The open form is the only approve path, so nothing can approve a cleared selection.
+    expect(await page.getByRole("button", { name: "Approve", exact: true }).count()).toBe(0);
     expect(reviews(multiple)).toHaveLength(0);
 
     await staging.check();
@@ -223,11 +328,13 @@ describe("review a watched workflow deployment", () => {
   it("shows a GitHub error, preserves the selection and comment, and lets the user retry", async () => {
     const { page } = app;
     await watch(retry);
+    await page.getByRole("button", { name: "Review", exact: true }).click();
     const turnsBeforeReview = environment.codexTurns().length;
     const production = page.getByRole("checkbox", { name: "production", exact: true });
     await production.uncheck();
     const comment = page.getByRole("textbox", { name: "Review comment" });
     await comment.fill("Deploy the staging fix");
+    expect(await page.getByRole("button", { name: "Approve", exact: true }).count()).toBe(0);
     const approve = page.getByRole("button", { name: "Approve and deploy", exact: true });
     await approve.click();
     await page.getByText("Could not approve deployment", { exact: true }).waitFor();
@@ -242,16 +349,25 @@ describe("review a watched workflow deployment", () => {
 
     delete retry.reviewError;
     await approve.click();
-    // Only production remains waiting, so the fresh form no longer needs checkboxes.
+    // Only production remains waiting. The user excluded it, so it stays excluded, and its
+    // checkbox stays so it can be selected again.
     await page
       .getByText("Waiting for your review to deploy to production.", { exact: true })
       .waitFor();
-    expect(await page.getByRole("checkbox").count()).toBe(0);
+    expect(
+      await page.getByRole("button", { name: "Approve 0 environments", exact: true }).isDisabled(),
+    ).toBe(true);
     expect(reviews(retry).map((request) => request.body)).toEqual([
       { environment_ids: [41], state: "approved", comment: "Deploy the staging fix" },
       { environment_ids: [41], state: "approved", comment: "Deploy the staging fix" },
     ]);
-    await approve.click();
+    await page.getByRole("button", { name: "Review", exact: true }).click();
+    expect(await production.isChecked()).toBe(false);
+    expect(
+      await page.getByRole("button", { name: "Approve and deploy", exact: true }).isDisabled(),
+    ).toBe(true);
+    await production.check();
+    await page.getByRole("button", { name: "Approve and deploy", exact: true }).click();
     await page.getByText("Deployment review", { exact: true }).waitFor({ state: "hidden" });
     expect(reviews(retry).at(-1)!.body).toEqual({
       environment_ids: [42],

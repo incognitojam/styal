@@ -1,5 +1,5 @@
 import { randomUUID } from "../lib/utils";
-import { ReportReplyStrip, WaitingReports, type ReportReference } from "./chat/CoordinatorReports";
+import { ReportReplyStrip, NeedsYou, type ReportReference } from "./chat/CoordinatorReports";
 import { coordinatorReports, reportAnswers } from "@t3tools/client-runtime/coordinator-reports";
 import { dismissCoordinatorReport } from "../state/coordinatorReports";
 import { CommandId } from "@t3tools/contracts";
@@ -3816,8 +3816,18 @@ export default function ChatView(props: ChatViewProps) {
                         : undefined
                     }
                   >
-                    {settings.coordinatorReportsEnabled ? (
-                      <WaitingReports reports={reportStates} scroll={scrollToReport} />
+                    {activeThreadId ? (
+                      <NeedsYou
+                        key={activeThreadId}
+                        reports={settings.coordinatorReportsEnabled ? reportStates : []}
+                        scroll={scrollToReport}
+                        environmentId={environmentId}
+                        threadId={activeThreadId}
+                        runs={activeThreadShell?.workflowRuns ?? []}
+                        watchActions={
+                          workflowRunReviewIncludesBackgroundWork ? workNow?.actions : undefined
+                        }
+                      />
                     ) : null}
                     <ChildThreadApprovals threadRef={activeThreadRef} />
                     <ComposerSurface.Shell contextRow={showComposerContextStrip}>
@@ -3946,12 +3956,6 @@ export default function ChatView(props: ChatViewProps) {
                               pendingApprovals={pendingApprovals}
                               onHeldRequestIdsChange={onHeldRequestIdsChange}
                               pendingUserInputs={pendingUserInputs}
-                              workflowRuns={activeThreadShell?.workflowRuns}
-                              workflowRunReviewActions={
-                                workflowRunReviewIncludesBackgroundWork
-                                  ? workNow?.actions
-                                  : undefined
-                              }
                               activePendingProgress={activePendingProgress}
                               activePendingResolvedAnswers={activePendingResolvedAnswers}
                               activePendingIsResponding={activePendingIsResponding}

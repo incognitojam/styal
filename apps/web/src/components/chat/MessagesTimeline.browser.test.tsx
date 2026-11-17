@@ -1,4 +1,4 @@
-import { CoordinatorReportsContext, WaitingReports } from "./CoordinatorReports";
+import { CoordinatorReportsContext, NeedsYou } from "./CoordinatorReports";
 import { coordinatorReports } from "@t3tools/client-runtime/coordinator-reports";
 import { flushSync } from "react-dom";
 import { AudioPreview } from "../files/AudioPreview";
@@ -381,14 +381,20 @@ describe("MessagesTimeline messages", () => {
           }}
         >
           <MessagesTimeline {...props} timelineEntries={items} liveFollowEnabled={false} />
-          <WaitingReports reports={reports} scroll={(messageId) => setTarget({ messageId })} />
+          <NeedsYou
+            environmentId={ENVIRONMENT_ID}
+            threadId={ThreadId.make("thread-1")}
+            runs={[]}
+            reports={reports}
+            scroll={(messageId) => setTarget({ messageId })}
+          />
         </CoordinatorReportsContext>
       );
     }
     await using screen = await renderElement(<Test items={entries} />);
     const viewport = props.listRef.current!.getScrollableNode()!;
     await vi.waitFor(() => expect(viewport.scrollTop).toBeGreaterThan(1000));
-    await userEvent.click(screen.getByRole("button", { name: /Release decision.*Merge/ }));
+    await userEvent.click(screen.getByRole("button", { name: /Merge.*Release decision/ }));
     const reportIsVisible = () => {
       const row = screen.container.querySelector('[data-timeline-row-id="entry-r-2"]');
       expect(row).not.toBeNull();

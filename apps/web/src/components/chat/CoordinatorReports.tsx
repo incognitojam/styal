@@ -1,7 +1,8 @@
+import { WorkflowRunReviewRow } from "./WorkflowRunReviewPanel";
 import type { ChatMessage } from "../../types";
-import { ClockIcon, FileTextIcon, MessageSquareIcon, ReplyIcon, XIcon } from "lucide-react";
-import { createContext, use, useState } from "react";
-import type { MessageId } from "@t3tools/contracts";
+import { FileTextIcon, MessageSquareIcon, ReplyIcon, XIcon } from "lucide-react";
+import { createContext, use, useState, type ComponentProps } from "react";
+import type { MessageId, ThreadWorkflowRunWatch } from "@t3tools/contracts";
 import {
   coordinatorReports,
   formatReportAnswer,
@@ -171,40 +172,64 @@ export function ReportReplyStrip({
   );
 }
 
-export function WaitingReports({
+export function NeedsYou({
   reports,
   scroll,
+  runs,
+  ...reviewProps
 }: {
   reports: readonly ReportState[];
   scroll: (id: MessageId) => void;
-}) {
-  const open = waitingCoordinatorReports(reports);
-  if (!open.length) return null;
+  runs: ReadonlyArray<ThreadWorkflowRunWatch>;
+} & Omit<ComponentProps<typeof WorkflowRunReviewRow>, "run">) {
+  const [expanded, setExpanded] = useState(false);
+  const rows = [
+    ...runs.filter((run) => run.review !== undefined).map((run) => ({ kind: "run" as const, run })),
+    ...waitingCoordinatorReports(reports).map((report) => ({ kind: "report" as const, report })),
+  ];
+  if (!rows.length) return null;
+  const visible = expanded ? rows : rows.slice(0, 3);
   return (
     <div className="mx-auto mb-2 w-full max-w-(--chat-content-max-width)">
       <div className="overflow-hidden rounded-xl border border-border/70 bg-card shadow-xs">
-        <div className="flex items-center gap-1.5 border-b border-border/60 px-3 py-1.5 text-xs text-muted-foreground [&_svg]:size-3.5">
-          <ClockIcon />
-          Waiting on you · {open.length}
+        <div className="flex items-center justify-between gap-2 border-b border-border/60 px-3 py-1.5 text-xs text-muted-foreground">
+          <span>Needs you · {rows.length}</span>
+          {rows.length > 3 ? (
+            <Button size="xs" variant="ghost" onClick={() => setExpanded(!expanded)}>
+              {expanded ? "Show less" : `Show all ${rows.length}`}
+            </Button>
+          ) : null}
         </div>
         <div className="flex flex-col divide-y divide-border/60">
-          {open.map(({ message }) => (
-            <button
-              key={message.id}
-              type="button"
-              className="group/row flex min-w-0 cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-accent/40"
-              onClick={() => scroll(message.id)}
-            >
-              <span className="size-1.5 shrink-0 rounded-full bg-warning" aria-hidden />
-              <span className="min-w-0 truncate font-medium">{message.report!.title}</span>
-              <span className="min-w-0 flex-1 truncate text-muted-foreground">
-                {message.report!.question}
-              </span>
-              <span className="shrink-0 text-2xs text-muted-foreground/80">
-                v{message.report!.version} · {formatRelativeTimeLabel(message.createdAt)}
-              </span>
-            </button>
-          ))}
+          {visible.map((row, index) =>
+            row.kind === "run" ? (
+              <WorkflowRunReviewRow
+                key={`${row.run.host}/${row.run.repository}/${row.run.runId}`}
+                {...reviewProps}
+                run={row.run}
+                // The thread's background-work actions belong to the first run only.
+                {...(index === 0 ? {} : { watchActions: undefined })}
+              />
+            ) : (
+              <button
+                key={row.report.message.id}
+                type="button"
+                className="flex min-w-0 cursor-pointer items-start gap-2 px-3 py-2 text-left hover:bg-accent/40"
+                onClick={() => scroll(row.report.message.id)}
+              >
+                <span className="mt-2 size-1.5 shrink-0 rounded-full bg-warning" aria-hidden />
+                <span className="min-w-0 flex-1">
+                  <span className="line-clamp-2 text-sm text-foreground">
+                    {row.report.message.report!.question}
+                  </span>
+                  <span className="block truncate text-xs text-muted-foreground">
+                    {row.report.message.report!.title} · v{row.report.message.report!.version} ·{" "}
+                    {formatRelativeTimeLabel(row.report.message.createdAt)}
+                  </span>
+                </span>
+              </button>
+            ),
+          )}
         </div>
       </div>
     </div>

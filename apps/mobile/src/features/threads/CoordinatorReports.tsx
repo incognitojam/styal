@@ -5,7 +5,6 @@ import type { CoordinatorReport, CoordinatorReportReference, MessageId } from "@
 import {
   coordinatorReports,
   splitReportAnswer,
-  waitingCoordinatorReports,
   type ReportReply,
 } from "@t3tools/client-runtime/coordinator-reports";
 import { AppText as Text } from "../../components/ui/AppText";
@@ -192,31 +191,6 @@ export function ReportReplyStrip({
         ) : null}
       </View>
       <Button label="Cancel" size="compact" tone="text" onPress={onCancel} />
-    </View>
-  );
-}
-
-export function WaitingReports({
-  reports,
-  scroll,
-}: {
-  reports: readonly ReportState[];
-  scroll: (id: MessageId) => void;
-}) {
-  const open = waitingCoordinatorReports(reports);
-  if (!open.length) return null;
-  return (
-    <View className="mx-3 mb-2 gap-2 rounded-xl bg-secondary p-3">
-      <Text className="font-t3-medium text-foreground-secondary">
-        Waiting on you · {open.length}
-      </Text>
-      {open.map(({ message }) => (
-        <Pressable key={message.id} accessibilityRole="button" onPress={() => scroll(message.id)}>
-          <Text className="text-foreground" numberOfLines={1}>
-            {message.report!.title} · version {message.report!.version} · {message.report!.question}
-          </Text>
-        </Pressable>
-      ))}
     </View>
   );
 }

@@ -2,9 +2,9 @@ import {
   CoordinatorReportsContext,
   ReportReplyStrip,
   type ReportAnswers,
-  WaitingReports,
   type ReportState,
 } from "./CoordinatorReports";
+import { NeedsYou } from "./NeedsYou";
 import { dismissCoordinatorReport } from "../../state/coordinatorReports";
 import type { ReportReply } from "@t3tools/client-runtime/coordinator-reports";
 import { CommandId } from "@t3tools/contracts";
@@ -194,7 +194,6 @@ import type {
   ThreadFeedLatestRun,
 } from "../../lib/threadActivity";
 import { PendingApprovalCard } from "./PendingApprovalCard";
-import { WorkflowRunReviewCard } from "./WorkflowRunReviewCard";
 import { ComposerErrorNotice } from "./ComposerErrorNotice";
 import { ManagedRuntimeModeNotice } from "./ManagedRuntimeModeNotice";
 import { Notice } from "../../components/ui/Notice";
@@ -992,9 +991,6 @@ function ThreadDetailBody(
     readonly collapsed: boolean;
   } | null>(null);
   const activeUserInputRequestId = props.activePendingUserInput?.requestId ?? null;
-  const reviewedWorkflowRuns = props.selectedThread.workflowRuns.filter(
-    (run) => run.review !== undefined,
-  );
   const questionInFlow = Platform.OS === "android" && activeUserInputRequestId !== null;
   const composerSlotHidden =
     activeUserInputRequestId !== null || props.creationState?.kind === "failed";
@@ -1748,7 +1744,22 @@ function ThreadDetailBody(
                         />
                       </Animated.View>
                     ) : null}
-                    <WaitingReports reports={props.reports ?? []} scroll={reportContext.scroll} />
+                    <NeedsYou
+                      key={selectedThreadKey}
+                      environmentId={props.environmentId}
+                      threadId={props.selectedThread.id}
+                      runs={props.selectedThread.workflowRuns}
+                      stopWatching={
+                        workflowRunReviewIncludesBackgroundWork
+                          ? {
+                              disabled: !props.canOperateThread || statusPending,
+                              onPress: () => void runStatusAction("stop"),
+                            }
+                          : undefined
+                      }
+                      reports={props.reports ?? []}
+                      scroll={reportContext.scroll}
+                    />
                     <ProviderSignInCard
                       thread={props.selectedThread}
                       environmentId={props.environmentId}
@@ -1846,30 +1857,6 @@ function ThreadDetailBody(
                           reason={props.creationState.reason}
                           onEditTask={props.creationState.onEditTask}
                         />
-                      </Animated.View>
-                    ) : null}
-                    {activeUserInputRequestId === null && reviewedWorkflowRuns.length > 0 ? (
-                      <Animated.View
-                        className="shrink-0 gap-3 px-4 pb-3"
-                        entering={FadeInDown.duration(220)}
-                        exiting={FadeOut.duration(140)}
-                      >
-                        {reviewedWorkflowRuns.map((run) => (
-                          <WorkflowRunReviewCard
-                            key={`${run.host}/${run.repository}/${run.runId}`}
-                            environmentId={props.environmentId}
-                            threadId={props.selectedThread.id}
-                            run={run}
-                            stopWatching={
-                              workflowRunReviewIncludesBackgroundWork
-                                ? {
-                                    disabled: !props.canOperateThread || statusPending,
-                                    onPress: () => void runStatusAction("stop"),
-                                  }
-                                : undefined
-                            }
-                          />
-                        ))}
                       </Animated.View>
                     ) : null}
                     {props.activePendingApproval || props.activePendingUserInput ? (

@@ -1,8 +1,8 @@
 import type { EnvironmentId, ThreadId, ThreadWorkflowRunWatch } from "@t3tools/contracts";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { useAtomValue } from "@effect/atom-react";
-import { ExternalLinkIcon, RocketIcon, ShieldQuestionIcon } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { ChevronDownIcon, ChevronUpIcon, ExternalLinkIcon, RocketIcon } from "lucide-react";
+import { useRef, useState, type ReactNode } from "react";
 
 import { pullRequestEnvironment } from "~/state/pullRequests";
 import { useAtomCommand } from "~/state/use-atom-command";
@@ -11,34 +11,26 @@ import { Button } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
 import { Input } from "../ui/input";
 import { toastManager } from "../ui/toast";
-import { ComposerBanner } from "./ComposerBanner";
 import { WorkflowRunLabel } from "./WorkflowRunLabel";
 
 type ReviewState = "approved" | "rejected";
 
-/**
- * The deployment review a watched workflow run waits on, in the slot above the composer that
- * questions use. Like GitHub's dialog, it lists environments to pick only when several wait.
- */
-export function WorkflowRunReviewPanel(props: {
+/** One watched run waiting on a deployment review, as a row of the "Needs you" stack. */
+export function WorkflowRunReviewRow(props: {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
-  readonly runs: ReadonlyArray<ThreadWorkflowRunWatch>;
+  readonly run: ThreadWorkflowRunWatch;
   readonly watchActions?: ReactNode;
 }) {
-  const reviewed = props.runs.filter((run) => run.review !== undefined);
-  const run = reviewed[0];
-  if (run?.review === undefined) return null;
-  const key = `${run.host}/${run.repository}/${run.runId}`;
+  const { run } = props;
+  if (run.review === undefined) return null;
   return (
     <WorkflowRunReviewForm
-      // A new run, or a new set of waiting environments, starts a fresh form.
-      key={`${key}:${run.review.environments.map((environment) => environment.id).join(",")}`}
+      key={`${run.host}/${run.repository}/${run.runId}`}
       environmentId={props.environmentId}
       threadId={props.threadId}
       run={run}
       environments={run.review.environments}
-      waitingCount={reviewed.length}
       watchActions={props.watchActions}
     />
   );
@@ -49,7 +41,6 @@ function WorkflowRunReviewForm(props: {
   readonly threadId: ThreadId;
   readonly run: ThreadWorkflowRunWatch;
   readonly environments: NonNullable<ThreadWorkflowRunWatch["review"]>["environments"];
-  readonly waitingCount: number;
   readonly watchActions?: ReactNode;
 }) {
   const { run, environments } = props;
@@ -59,17 +50,24 @@ function WorkflowRunReviewForm(props: {
   const review = useAtomCommand(pullRequestEnvironment.reviewWorkflowRun, {
     reportFailure: false,
   });
-  const [selectedEnvironments, setSelectedEnvironments] = useState<ReadonlySet<number>>(
-    () => new Set(environments.map((environment) => environment.id)),
+  // Null until the user edits the form: an untouched form follows every waiting environment,
+  // an edited one keeps its picks, so newly waiting environments are never added to it.
+  const [picks, setPicks] = useState<ReadonlySet<number> | null>(null);
+  const environmentIds = environments.map((environment) => environment.id);
+  const selectedEnvironments = new Set(
+    environmentIds.filter((id) => picks === null || picks.has(id)),
   );
   const [comment, setComment] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const inFlight = useRef(false);
 
   async function submit(choice: ReviewState) {
     const [first, ...rest] = environments
       .map((environment) => environment.id)
       .filter((id) => selectedEnvironments.has(id));
-    if (first === undefined || submitting) return;
+    if (first === undefined || inFlight.current || !canReview) return;
+    inFlight.current = true;
     setSubmitting(true);
     const result = await review({
       environmentId: props.environmentId,
@@ -83,7 +81,17 @@ function WorkflowRunReviewForm(props: {
         comment: comment.trim(),
       },
     });
+    inFlight.current = false;
     setSubmitting(false);
+    if (result._tag === "Success") {
+      // Reviewed environments leave the picks; ones the user excluded stay excluded.
+      const reviewed = new Set([first, ...rest]);
+      setPicks((current) =>
+        current === null ? null : new Set([...current].filter((id) => !reviewed.has(id))),
+      );
+      setComment("");
+      setExpanded(false);
+    }
     if (result._tag === "Failure") {
       toastManager.add({
         type: "error",
@@ -98,87 +106,114 @@ function WorkflowRunReviewForm(props: {
   }
 
   const locked = !canReview || submitting;
+  // Quick Approve sends the form's state, so an edited selection or comment shows in its label.
+  const edited = picks !== null;
+  const quickApproveLabel = edited
+    ? `Approve ${selectedEnvironments.size} ${selectedEnvironments.size === 1 ? "environment" : "environments"}`
+    : "Approve";
   return (
-    <>
-      <ComposerBanner.Row>
-        <ComposerBanner.Icon>
-          <ShieldQuestionIcon />
-        </ComposerBanner.Icon>
-        <ComposerBanner.Content>
-          <WorkflowRunLabel name={run.name} />
-        </ComposerBanner.Content>
-        <ComposerBanner.Actions>
-          {props.watchActions}
-          {props.waitingCount > 1 ? (
-            <span className="text-3xs font-medium text-muted-foreground tabular-nums">
-              1/{props.waitingCount}
-            </span>
-          ) : null}
-          <Button
-            size="icon-xs"
-            variant="ghost"
-            aria-label="Open on GitHub"
-            render={<a href={run.url} target="_blank" rel="noreferrer" />}
-          >
-            <ExternalLinkIcon />
-          </Button>
-        </ComposerBanner.Actions>
-      </ComposerBanner.Row>
-      <ComposerBanner.Body className="pe-1 pb-1">
-        <p className="font-medium text-muted-foreground">Deployment review</p>
-        <p className="text-foreground/85">
-          Waiting for your review to deploy to{" "}
-          {environments.map((environment) => environment.name).join(", ")}.
-        </p>
-        {environments.length > 1 ? (
-          <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
-            {environments.map((environment) => (
-              <label key={environment.id} className="flex items-center gap-1.5">
-                <Checkbox
-                  checked={selectedEnvironments.has(environment.id)}
-                  disabled={locked}
-                  onCheckedChange={(checked) =>
-                    setSelectedEnvironments((current) => {
-                      const next = new Set(current);
-                      if (checked) next.add(environment.id);
-                      else next.delete(environment.id);
-                      return next;
-                    })
-                  }
-                />
-                {environment.name}
-              </label>
-            ))}
+    <div>
+      <div className="flex items-start gap-2 px-3 py-2">
+        <span className="mt-2 size-1.5 shrink-0 rounded-full bg-warning" aria-hidden />
+        <div className="min-w-0 flex-1">
+          <p className="line-clamp-2 text-sm text-foreground">
+            Waiting for your review to deploy to{" "}
+            {environments.map((environment) => environment.name).join(", ")}.
+          </p>
+          <div className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
+            <span className="shrink-0">Deployment review</span>
+            <span>·</span>
+            <div className="min-w-0 truncate">
+              <WorkflowRunLabel name={run.name} />
+            </div>
           </div>
-        ) : null}
-        <Input
-          size="compact"
-          className="mt-2"
-          aria-label="Review comment"
-          placeholder="Leave a comment (optional)"
-          value={comment}
-          disabled={locked}
-          onChange={(event) => setComment(event.currentTarget.value)}
-        />
-        <div className="mt-2 flex justify-end gap-1.5">
+        </div>
+        <div className="flex shrink-0 gap-1">
+          {expanded ? null : (
+            <Button
+              size="xs"
+              disabled={locked || selectedEnvironments.size === 0}
+              onClick={() => void submit("approved")}
+            >
+              {quickApproveLabel}
+            </Button>
+          )}
           <Button
-            size="sm"
-            variant="destructive-outline"
-            disabled={locked || selectedEnvironments.size === 0}
-            onClick={() => void submit("rejected")}
+            size="xs"
+            variant="ghost"
+            aria-expanded={expanded}
+            onClick={() => setExpanded(!expanded)}
           >
-            Reject
-          </Button>
-          <Button
-            size="sm"
-            disabled={locked || selectedEnvironments.size === 0}
-            onClick={() => void submit("approved")}
-          >
-            <RocketIcon />
-            Approve and deploy
+            Review {expanded ? <ChevronUpIcon /> : <ChevronDownIcon />}
           </Button>
         </div>
-      </ComposerBanner.Body>
-    </>
+      </div>
+      {expanded ? (
+        <div className="px-3 pb-3 text-sm">
+          {environments.length > 1 || picks !== null ? (
+            <div className="flex flex-wrap gap-x-3 gap-y-1">
+              {environments.map((environment) => (
+                <label key={environment.id} className="flex items-center gap-1.5">
+                  <Checkbox
+                    checked={selectedEnvironments.has(environment.id)}
+                    disabled={locked}
+                    onCheckedChange={(checked) =>
+                      setPicks((current) => {
+                        const next = new Set(current ?? environmentIds);
+                        if (checked) next.add(environment.id);
+                        else next.delete(environment.id);
+                        return next;
+                      })
+                    }
+                  />
+                  {environment.name}
+                </label>
+              ))}
+            </div>
+          ) : null}
+          <div className="mt-2">
+            <Input
+              size="compact"
+              aria-label="Review comment"
+              placeholder="Leave a comment (optional)"
+              value={comment}
+              disabled={locked}
+              onChange={(event) => {
+                setPicks((current) => current ?? new Set(environmentIds));
+                setComment(event.currentTarget.value);
+              }}
+            />
+          </div>
+          <div className="mt-2 flex items-center gap-1.5">
+            <Button
+              size="icon-xs"
+              variant="ghost"
+              aria-label="Open on GitHub"
+              render={<a href={run.url} target="_blank" rel="noreferrer" />}
+            >
+              <ExternalLinkIcon />
+            </Button>
+            {props.watchActions}
+            <span className="flex-1" />
+            <Button
+              size="sm"
+              variant="destructive-outline"
+              disabled={locked || selectedEnvironments.size === 0}
+              onClick={() => void submit("rejected")}
+            >
+              Reject
+            </Button>
+            <Button
+              size="sm"
+              disabled={locked || selectedEnvironments.size === 0}
+              onClick={() => void submit("approved")}
+            >
+              <RocketIcon />
+              Approve and deploy
+            </Button>
+          </div>
+        </div>
+      ) : null}
+    </div>
   );
 }
