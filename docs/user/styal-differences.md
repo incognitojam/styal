@@ -134,10 +134,10 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 - **Claude Code starts with Opus 5.5.** New Claude Code threads select Opus 5.5 when the installed
   CLI supports it; older installations use an available Claude model. T3 Code defaults to Fable 5.1
   as of [revision f5ef0dd](https://github.com/pingdotgg/t3code/tree/f5ef0ddb90a8c36584e181b1913e7b8a5df30ffc0618).
-- **Codex starts with GPT-6.1-Sol at medium effort.** New Codex threads select GPT-6.1-Sol when
-  available, then GPT-6-Sol, GPT-6-Astra or an older model offered by the installed CLI. T3 Code
+- **Codex starts with GPT-6.2-Sol at medium effort.** New Codex threads select GPT-6.2-Sol when
+  available, then GPT-6.1-Sol, GPT-6-Sol, GPT-6-Astra or an older model offered by the installed CLI. T3 Code
   defaults to GPT-6-Astra as of
-  [revision 2cbc24f](https://github.com/pingdotgg/t3code/tree/2cbc24fcae2b5649d7b60b68da72053a37fa82d5).
+  [revision e5d757f](https://github.com/pingdotgg/t3code/tree/e5d757f51b342a5ebc50312790e39a1baca61194).
 - **Text generation switches to a provider you're signed in to.** When the provider chosen for
   thread titles, branch names, and commit and pull request text is signed out or not installed,
   styal uses GPT-6 Luna, then Claude Haiku 5.5, then another signed-in provider, and **Settings**

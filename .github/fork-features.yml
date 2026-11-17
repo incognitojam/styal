@@ -835,12 +835,12 @@ features:
       retire_when: Upstream gives clone authentication and rate-limit failures recovery guidance on web and mobile.
 
   - id: codex-default-model
-    title: Prefer GPT-6.1-Sol for new Codex threads
+    title: Prefer GPT-6.2-Sol for new Codex threads
     status: maintained
     tier: yield
     prs: [406, 544]
     invariants:
-      - New Codex threads select GPT-6.1-Sol when available, then GPT-6-Sol, then GPT-6-Astra, then an older available model; an unavailable preferred model never blocks the live Codex catalog.
+      - New Codex threads select GPT-6.2-Sol when available, then GPT-6.1-Sol, then GPT-6-Sol, then GPT-6-Astra, then an older available model; an unavailable preferred model never blocks the live Codex catalog.
       - A Codex model's default reasoning effort is the one a turn without an explicit effort actually runs at, medium when the model supports it.
     implementation_paths:
       - apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts
@@ -859,7 +859,7 @@ features:
       status: tracking
       tracking:
         - https://github.com/pingdotgg/t3code/pull/11347
-      retire_when: Upstream prefers GPT-6.1-Sol for new Codex threads, retains a fallback when it is unavailable, and shows the effort unselected turns run at.
+      retire_when: Upstream prefers GPT-6.2-Sol for new Codex threads, retains a fallback when it is unavailable, and shows the effort unselected turns run at.
 
   - id: codex-exit-reason
     title: Flag provider updates that leave the provider broken
