@@ -154,7 +154,8 @@ export const makeSweep = Effect.gen(function* () {
           }
           let patterns = patternCache.get(project.id);
           if (patterns === undefined) {
-            patterns = yield* readPatterns(project.workspaceRoot);
+            const source = yield* readPatterns(project.workspaceRoot);
+            patterns = source.status === "read" ? source.patterns : [];
             patternCache.set(project.id, patterns);
           }
           if (patterns.length === 0) return null;

@@ -11,4 +11,5 @@ export class WorktreeCleanupError extends Schema.TaggedError<WorktreeCleanupErro
 export const WorktreeCleanupReviewInput = Schema.Struct({ projectId: ProjectId });
 export const WorktreeCleanupReview = Schema.Struct({
   patterns: Schema.Array(Schema.String),
+  unavailableReason: Schema.optionalKey(Schema.String),
 });

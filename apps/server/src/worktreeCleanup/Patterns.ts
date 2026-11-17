@@ -39,7 +39,7 @@ const make = Effect.gen(function* () {
         reason: "project-not-found",
         message: "Project not found.",
       });
-    const patterns = yield* read(project.value.workspaceRoot).pipe(
+    const source = yield* read(project.value.workspaceRoot).pipe(
       Effect.mapError(
         () =>
           new WorktreeCleanupError({
@@ -48,7 +48,9 @@ const make = Effect.gen(function* () {
           }),
       ),
     );
-    return { patterns };
+    return source.status === "read"
+      ? { patterns: source.patterns }
+      : { patterns: [], unavailableReason: source.reason };
   });
   return Patterns.of({ review });
 });

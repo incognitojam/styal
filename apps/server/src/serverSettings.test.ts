@@ -261,12 +261,33 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
         const sql = yield* SqlClient.SqlClient;
         const config = yield* ServerConfig.ServerConfig;
         const service = yield* ServerSettingsModule.ServerSettingsService;
-        yield* f.fs.writeFileString(`${f.root}/styal.json`, '{"worktreeCleanup":["dist"]}');
+        yield* f.fs.writeFileString(`${f.root}/styal.json`, '{"worktreeCleanup":["dist","cache"]}');
         yield* f.fs.makeDirectory(`${f.root}/empty`);
         yield* f.command(f.root, ["add", "styal.json"]);
         yield* f.command(f.root, ["commit", "-m", "fixture: cleanup patterns"]);
-        for (const id of ["approved", "unapproved", "explicit-on", "explicit-off", "patternless"]) {
-          const root = id === "patternless" ? `${f.root}/empty` : f.root;
+        const unknown = yield* cleanupFixture;
+        yield* unknown.fs.writeFileString(
+          `${unknown.root}/styal.json`,
+          '{"worktreeCleanup":["dist"]}',
+        );
+        yield* unknown.command(unknown.root, ["add", "styal.json"]);
+        yield* unknown.command(unknown.root, ["commit", "-m", "fixture: unknown default"]);
+        const origin = `${unknown.base}/origin.git`;
+        yield* unknown.command(unknown.base, ["init", "--bare", "-b", "main", origin]);
+        yield* unknown.command(unknown.root, ["remote", "add", "origin", origin]);
+        yield* unknown.command(unknown.root, ["push", "origin", "main"]);
+        for (const id of [
+          "approved",
+          "partial",
+          "obsolete",
+          "unknown",
+          "unapproved",
+          "explicit-on",
+          "explicit-off",
+          "patternless",
+        ]) {
+          const root =
+            id === "patternless" ? `${f.root}/empty` : id === "unknown" ? unknown.root : f.root;
           yield* sql`INSERT INTO projection_projects (project_id, title, workspace_root, auto_pull, scripts_json, created_at, updated_at)
           VALUES (${id}, 'Synthetic', ${root}, 0, '[]', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`;
         }
@@ -276,7 +297,13 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
             projectSettingsFolded: true,
             worktreeCleanupApprovals: hasApprovals
               ? {
-                  approved: { dist: { approvedAt: "2026-01-01T00:00:00Z" } },
+                  approved: {
+                    dist: { approvedAt: "2026-01-01T00:00:00Z" },
+                    cache: { approvedAt: "2026-01-01T00:00:00Z" },
+                  },
+                  partial: { dist: { approvedAt: "2026-01-01T00:00:00Z" } },
+                  obsolete: { removed: { approvedAt: "2026-01-01T00:00:00Z" } },
+                  unknown: { dist: { approvedAt: "2026-01-01T00:00:00Z" } },
                   "explicit-off": { dist: { approvedAt: "2026-01-01T00:00:00Z" } },
                 }
               : undefined,
@@ -289,6 +316,9 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
         const settings = yield* service.getSettings;
         for (const [id, expected] of [
           ["approved", hasApprovals],
+          ["partial", false],
+          ["obsolete", false],
+          ["unknown", false],
           ["unapproved", false],
           ["explicit-on", true],
           ["explicit-off", false],
@@ -303,6 +333,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
         const raw = yield* f.fs.readFileString(config.settingsPath);
         assert.notInclude(raw, "worktreeCleanupApprovals");
         assert.isTrue((yield* decodeServerSettingsJson(raw)).regenerableFileCleanupMigrated);
+        yield* unknown.command(unknown.root, ["remote", "set-head", "origin", "main"]);
         yield* service.updateSettings({
           projectSettingsOverrides: {
             [ProjectId.make("unapproved")]: { cleanRegenerableFiles: true },
@@ -312,6 +343,10 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
         yield* f.command(f.root, ["add", "empty/styal.json"]);
         yield* f.command(f.root, ["commit", "-m", "fixture: declare patterns after migration"]);
         yield* service.updateSettings({ defaultAutoPull: true });
+        assert.isFalse(
+          (yield* service.getSettings).projectSettingsOverrides[ProjectId.make("unknown")]
+            ?.cleanRegenerableFiles,
+        );
         assert.isUndefined(
           (yield* service.getSettings).projectSettingsOverrides[ProjectId.make("patternless")]
             ?.cleanRegenerableFiles,

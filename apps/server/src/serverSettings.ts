@@ -967,13 +967,14 @@ const make = Effect.gen(function* () {
       for (const project of projects) {
         const previous = overrides[project.projectId] ?? {};
         if (previous.cleanRegenerableFiles !== undefined) continue;
-        const approved = Object.keys(cleanupApprovals[project.projectId] ?? {}).length > 0;
-        if (!approved) {
-          const patterns = yield* readCleanupPatterns(project.workspaceRoot).pipe(
-            Effect.orElseSucceed(() => null),
-          );
-          if (patterns !== null && patterns.length === 0) continue;
-        }
+        const source = yield* readCleanupPatterns(project.workspaceRoot).pipe(
+          Effect.orElseSucceed(() => null),
+        );
+        if (source?.status === "read" && source.patterns.length === 0) continue;
+        const approvals = cleanupApprovals[project.projectId] ?? {};
+        const approved =
+          source?.status === "read" &&
+          source.patterns.every((pattern) => Object.hasOwn(approvals, pattern));
         overrides[project.projectId] = { ...previous, cleanRegenerableFiles: approved };
       }
       migrated = {

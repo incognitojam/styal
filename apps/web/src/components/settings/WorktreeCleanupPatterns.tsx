@@ -34,6 +34,7 @@ export function WorktreeCleanupPatternsSection() {
         environmentId={target.environmentId}
         label={targets.length > 1 ? environment.label : null}
         overrides={environment.serverConfig.settings.projectSettingsOverrides[member.id] ?? {}}
+        migrationComplete={environment.serverConfig.settings.regenerableFileCleanupMigrated}
       />
     );
   });
@@ -44,11 +45,13 @@ function CheckoutCleanup({
   environmentId,
   label,
   overrides,
+  migrationComplete,
 }: {
   member: SidebarProjectGroupMember;
   environmentId: EnvironmentId;
   label: string | null;
   overrides: ProjectSettingsOverrides;
+  migrationComplete: boolean;
 }) {
   const patterns = useEnvironmentQuery(
     worktreeCleanup.review({ environmentId, input: { projectId: member.id } }),
@@ -80,16 +83,21 @@ function CheckoutCleanup({
         control={
           <Switch
             aria-label="Clean up regenerable files"
-            checked={overrides.cleanRegenerableFiles !== false}
-            disabled={busy || !canSave}
+            checked={migrationComplete && overrides.cleanRegenerableFiles !== false}
+            disabled={busy || !canSave || !migrationComplete}
             onCheckedChange={(checked) => void update(checked)}
           />
         }
       />
       <div className="flex flex-col gap-2 px-3 py-2 sm:px-4">
+        {!migrationComplete && (
+          <p role="status" className="text-xs text-muted-foreground">
+            Cleanup is paused until saved settings finish migrating.
+          </p>
+        )}
         <p className="text-xs text-muted-foreground">
-          Patterns from the last fetched remote default branch (local default branch without a
-          remote):
+          Patterns from the last fetched origin default branch (the configured default or registered
+          checkout’s branch without a remote):
         </p>
         {patterns.error ? (
           <p role="alert" className="text-xs text-muted-foreground">
@@ -97,6 +105,10 @@ function CheckoutCleanup({
           </p>
         ) : patterns.data === null ? (
           <p className="text-xs text-muted-foreground">Loading patterns…</p>
+        ) : patterns.data.unavailableReason ? (
+          <p role="status" className="text-xs text-muted-foreground">
+            {patterns.data.unavailableReason}
+          </p>
         ) : patterns.data.patterns.length === 0 ? (
           <p className="text-xs text-muted-foreground">No cleanup patterns declared.</p>
         ) : (

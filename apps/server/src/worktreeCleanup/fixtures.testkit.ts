@@ -82,6 +82,7 @@ export const fixture = Effect.gen(function* () {
     const command = (cwd: string, args: readonly string[]) =>
       git.execute({ operation: "fixture", cwd, args });
     yield* command(root, ["init", "-b", "main"]);
+    yield* command(root, ["config", "init.defaultBranch", "main"]);
     yield* command(root, ["config", "user.name", "Fixture"]);
     yield* command(root, ["config", "user.email", "fixture@example.invalid"]);
     yield* fs.writeFileString(

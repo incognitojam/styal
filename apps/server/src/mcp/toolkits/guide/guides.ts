@@ -80,11 +80,12 @@ run often (dev server, tests, lint, build). Prefer existing scripts over inlined
   branch. Patterns apply once they reach the default branch of the project's remote (pushed and,
   where the repository requires it, reviewed), on machines where Settings → Worktrees →
   **Clean up regenerable files** is on. styal uses the last fetched origin default-branch version
-  of the registered project's own styal.json, including for subfolder projects. Unpushed local
-  commits and uncommitted edits do not apply. With remotes but no known origin default branch,
-  cleanup is skipped; with no remotes, the local main or master branch is used. New projects start
-  on. On upgrade, existing projects with patterns start off on machines that had approved none,
-  and on if any pattern was approved; explicit switch choices are preserved. On macOS and
+  of the registered project's own styal.json, including for subfolder projects. With a remote,
+  unpushed local commits do not apply; uncommitted edits never apply. With remotes but no known origin default branch,
+  cleanup is skipped; with no remotes, styal uses init.defaultBranch or the registered checkout’s
+  current branch. New projects start on. On upgrade, existing projects with unreadable patterns
+  start off; readable patterns start on only if this machine approved every currently declared
+  pattern. Explicit switch choices are preserved. On macOS and
   Linux an hourly sweep deletes matching paths once no thread holds the worktree (an idle subagent
   need not settle), at least 24 hours after the last thread activity, settlement or archival in the
   worktree, with no open terminal. It is separate from the
