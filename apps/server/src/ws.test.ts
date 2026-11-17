@@ -1,4 +1,4 @@
-import * as WorktreeCleanupApprovals from "./worktreeCleanup/Approvals.ts";
+import * as WorktreeCleanupPatterns from "./worktreeCleanup/Patterns.ts";
 import * as SecretResolver from "@t3tools/secret-provider-core/server/SecretResolver";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as ProjectionStore from "./orchestration-v2/ProjectionStore.ts";
@@ -739,7 +739,7 @@ const layerUnusedConfigRpcServices = Layer.mergeAll(
   Layer.mock(SourceControlDiscovery.SourceControlDiscovery)({}),
   Layer.mock(SourceControlRepositoryService.SourceControlRepositoryService)({}),
   Layer.mock(SourceControlSignIn.SourceControlSignIn)({}),
-  Layer.mock(WorktreeCleanupApprovals.Approvals)({}),
+  Layer.mock(WorktreeCleanupPatterns.Patterns)({}),
   Layer.mock(StorageCleanup.StorageCleanup)({}),
   Layer.mock(DatabaseStorage.DatabaseStorage)({}),
   Layer.mock(DesktopAppUpdate.DesktopAppUpdate)({ available: false }),

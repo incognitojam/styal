@@ -62,10 +62,11 @@ describe("regenerable path deletion", () => {
           yield* f.fs.symlink(`${f.worktree}/packages/pkg`, `${f.worktree}/node_modules/pkg`);
           yield* f.fs.writeFileString(`${f.base}/outside.txt`, "outside");
           yield* f.fs.symlink(f.base, `${f.worktree}/node_modules/outside`);
-          expect(yield* f.clean(["**/node_modules", "dist", "unignored"])).toEqual([
+          expect(yield* f.clean(["**/node_modules", "dist", "unignored", ".git"])).toEqual([
             "node_modules",
           ]);
           expect(yield* f.fs.exists(`${f.worktree}/node_modules`)).toBe(false);
+          expect(yield* f.fs.exists(`${f.worktree}/.git`)).toBe(true);
           for (const file of [
             "packages/pkg/index.ts",
             ".scratch/notes.md",

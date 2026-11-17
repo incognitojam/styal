@@ -7,6 +7,7 @@ import type { RpcSession } from "../rpc/session.ts";
 import { describe, expect, it } from "@effect/vitest";
 import { vi } from "vite-plus/test";
 import {
+  DEFAULT_SERVER_SETTINGS,
   AuthAccessReadScope,
   AuthAccessWriteScope,
   AuthOrchestrationOperateScope,
@@ -19,6 +20,8 @@ import {
   EnvironmentId,
   ORCHESTRATION_V2_WS_METHODS,
   ScheduledTaskId,
+  ProjectId,
+  ProviderInstanceId,
   WS_METHODS,
   type AuthSessionState,
   type PeerLinkSummary,
@@ -132,9 +135,8 @@ describe("command permissions", () => {
   );
 
   it.effect.each([
+    WS_METHODS.serverUpdateSettings,
     WS_METHODS.serverRunStorageCleanup,
-    WS_METHODS.projectsWorktreeCleanupApprove,
-    WS_METHODS.projectsWorktreeCleanupRevoke,
     WS_METHODS.sourceControlSignInStart,
     WS_METHODS.sourceControlSignInWait,
     WS_METHODS.sourceControlSignInCancel,
@@ -143,6 +145,19 @@ describe("command permissions", () => {
       Effect.gen(function* () {
         const registry = yield* setup;
         const cleanup = createCommandPermissions(runtime, method);
+        expect(registry.get(cleanup.permissionAtom(env))).toBe(false);
+        registry.set(
+          sessions(env),
+          AsyncResult.success({
+            ...grant(false),
+            scopes: [AuthOrchestrationReadScope],
+            permissions: [AuthOrchestrationReadScope],
+          }),
+        );
+        expect(registry.get(cleanup.permissionAtom(env))).toBe(false);
+        expect((yield* cleanup.authorize(registry, env).pipe(Effect.flip))._tag).toBe(
+          "EnvironmentAuthorizationError",
+        );
         registry.set(sessions(env), AsyncResult.success(grant(true)));
         expect(registry.get(cleanup.permissionAtom(env))).toBe(false);
         expect((yield* cleanup.authorize(registry, env).pipe(Effect.flip))._tag).toBe(
@@ -160,6 +175,99 @@ describe("command permissions", () => {
         yield* cleanup.authorize(registry, env);
         registry.set(sessions(other), AsyncResult.success(grant(false)));
         expect(registry.get(cleanup.permissionAtom(other))).toBe(false);
+      }),
+    ),
+  );
+
+  it.effect.each([
+    {
+      input: {
+        patch: {
+          projectSettingsOverrides: {
+            [ProjectId.make("project")]: { cleanRegenerableFiles: false },
+          },
+        },
+      },
+      scopes: [AuthSettingsWriteScope],
+    },
+    {
+      input: { patch: { incomingMachineAccess: "view-only" } },
+      scopes: [AuthAccessWriteScope],
+    },
+    {
+      input: { patch: { providerInstances: {} } },
+      scopes: [AuthProvidersManageScope],
+    },
+    {
+      input: {
+        patch: {},
+        providerInstanceMutation: {
+          operation: "remove",
+          instanceId: ProviderInstanceId.make("provider"),
+        },
+      },
+      scopes: [AuthProvidersManageScope],
+    },
+    {
+      input: {
+        patch: { defaultRuntimeMode: "full-access" },
+        providerInstanceMutation: {
+          operation: "remove",
+          instanceId: ProviderInstanceId.make("provider"),
+        },
+      },
+      scopes: [AuthSettingsWriteScope, AuthProvidersManageScope],
+    },
+    {
+      input: {
+        patch: {
+          incomingMachineAccess: "view-only",
+          defaultRuntimeMode: "full-access",
+          providerInstances: {},
+        },
+      },
+      scopes: [AuthSettingsWriteScope, AuthAccessWriteScope, AuthProvidersManageScope],
+    },
+  ])("checks settings-update grants for $input", ({ input, scopes }) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const registry = yield* setup;
+        const update = createCommandPermissions(runtime, WS_METHODS.serverUpdateSettings);
+        expect(registry.get(update.permissionAtom(env, input))).toBe(false);
+        for (const missing of scopes) {
+          const allowed = scopes.filter((scope) => scope !== missing);
+          registry.set(
+            sessions(env),
+            AsyncResult.success({
+              ...grant(false),
+              scopes: allowed,
+              permissions: allowed,
+            }),
+          );
+          expect(registry.get(update.permissionAtom(env, input))).toBe(false);
+          expect(yield* update.authorize(registry, env, input).pipe(Effect.flip)).toMatchObject({
+            requiredPermission: missing,
+          });
+        }
+        registry.set(
+          sessions(env),
+          AsyncResult.success({
+            ...grant(false),
+            scopes,
+            permissions: scopes,
+          }),
+        );
+        expect(registry.get(update.permissionAtom(env, input))).toBe(true);
+        yield* update.authorize(registry, env, input);
+        registry.set(
+          sessions(env),
+          AsyncResult.success({
+            ...grant(false),
+            scopes: [AuthOrchestrationReadScope],
+            permissions: [AuthOrchestrationReadScope],
+          }),
+        );
+        expect(registry.get(update.permissionAtom(env, input))).toBe(false);
       }),
     ),
   );
@@ -439,6 +547,7 @@ it.effect(
         };
         let links: ReadonlyArray<PeerLinkSummary> = [];
         const client = {
+          [WS_METHODS.serverUpdateSettings]: vi.fn(() => Effect.succeed(DEFAULT_SERVER_SETTINGS)),
           [WS_METHODS.peerLinksList]: () => Effect.sync(() => ({ links })),
           [WS_METHODS.peerLinksLink]: vi.fn(() =>
             Effect.sync(() => {
@@ -486,8 +595,14 @@ it.effect(
             sessions(env),
             AsyncResult.success({
               ...grant(false),
-              scopes: [AuthAccessReadScope, ...(writable ? [AuthAccessWriteScope] : [])],
-              permissions: [AuthAccessReadScope, ...(writable ? [AuthAccessWriteScope] : [])],
+              scopes: [
+                AuthAccessReadScope,
+                ...(writable ? [AuthAccessWriteScope, AuthSettingsWriteScope] : []),
+              ],
+              permissions: [
+                AuthAccessReadScope,
+                ...(writable ? [AuthAccessWriteScope, AuthSettingsWriteScope] : []),
+              ],
             }),
           );
         registry.mount(sessions(other));
@@ -501,6 +616,18 @@ it.effect(
         );
         setAccess(false);
         expect(yield* readLinks).toEqual({ links: [] });
+        const allowInput = { patch: { linkedEnvironmentsEnabled: true } };
+        const allow = Effect.promise(() =>
+          peerLinks.allow.run(registry, { environmentId: env, input: allowInput }),
+        );
+        expect(registry.get(peerLinks.allow.permissionAtom(env))).toBe(false);
+        expect((yield* allow)._tag).toBe("Failure");
+        expect(client[WS_METHODS.serverUpdateSettings]).not.toHaveBeenCalled();
+        setAccess(true);
+        expect(registry.get(peerLinks.allow.permissionAtom(env))).toBe(true);
+        expect((yield* allow)._tag).toBe("Success");
+        expect(client[WS_METHODS.serverUpdateSettings]).toHaveBeenCalledExactlyOnceWith(allowInput);
+        setAccess(false);
         const linkInput = { url: peer.urls[0]!, pairingCode: "test-code", access: peer.access };
         const link = Effect.promise(() =>
           peerLinks.link.run(registry, { environmentId: env, input: linkInput }),

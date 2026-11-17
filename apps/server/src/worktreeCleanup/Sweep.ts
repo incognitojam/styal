@@ -4,8 +4,9 @@ import {
   OrchestrationV2AppThreadJson,
   OrchestrationV2ProviderSessionJson,
   type StorageCleanupReportEntry,
+  type ProjectId,
 } from "@t3tools/contracts";
-import { resolveProjectConfig } from "@t3tools/shared/projectFile";
+import { makeReadPatterns } from "./PatternSource.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Clock from "effect/Clock";
 import * as DateTime from "effect/DateTime";
@@ -42,6 +43,7 @@ export const makeSweep = Effect.gen(function* () {
   const sessions = yield* ProviderSessions.ProviderSessionManagerV2;
   const managed = yield* makeIsManagedWorktreePath;
   const deletion = yield* makeDeletion;
+  const readPatterns = yield* makeReadPatterns;
   const platform = yield* HostProcess.Platform;
   const checked = new Map<string, string>();
   return Effect.fn("WorktreeCleanup.sweep")(function* (
@@ -52,13 +54,7 @@ export const makeSweep = Effect.gen(function* () {
       yield* Effect.logDebug("Regenerable file cleanup is not supported on Windows");
       return;
     }
-    const initialSettings = yield* settings.getSettings;
-    if (
-      !Object.values(initialSettings.worktreeCleanupApprovals).some(
-        (approvals) => Object.keys(approvals).length > 0,
-      )
-    )
-      return;
+    const patternCache = new Map<ProjectId, readonly string[]>();
     const deadline = (yield* Clock.currentTimeMillis) + 600_000;
     const snapshot = yield* projections.getShellSnapshot().pipe(NodeSqliteClient.readOnly);
     const spellings = yield* sql<{
@@ -132,14 +128,11 @@ export const makeSweep = Effect.gen(function* () {
             threads.some((thread) => thread.projectId !== project.id)
           )
             return null;
-          const styal = yield* fs
-            .readFileString(path.join(project.workspaceRoot, "styal.json"))
-            .pipe(Effect.orElseSucceed(() => null));
-          const state = resolveProjectConfig({ styal, t3: null });
-          const patterns = (state.config?.worktreeCleanup ?? []).filter((pattern) =>
-            Object.hasOwn(saved.worktreeCleanupApprovals[project.id] ?? {}, pattern),
-          );
-          if (patterns.length === 0) return null;
+          if (
+            !saved.regenerableFileCleanupMigrated ||
+            saved.projectSettingsOverrides[project.id]?.cleanRegenerableFiles === false
+          )
+            return null;
           if ((yield* fs.realPath(root)) !== root) return null;
           const linked =
             (yield* fs.stat(root)).type === "Directory" &&
@@ -159,6 +152,13 @@ export const makeSweep = Effect.gen(function* () {
             )
               return null;
           }
+          let patterns = patternCache.get(project.id);
+          if (patterns === undefined) {
+            const source = yield* readPatterns(project.workspaceRoot);
+            patterns = source.status === "read" ? source.patterns : [];
+            patternCache.set(project.id, patterns);
+          }
+          if (patterns.length === 0) return null;
           // @effect-diagnostics-next-line globalJsonInEffect:off -- An in-memory comparison key, never decoded or persisted.
           return { project, patterns, stamp: JSON.stringify([threads, patterns]) };
         });

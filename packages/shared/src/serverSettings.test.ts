@@ -128,25 +128,6 @@ describe("serverSettings helpers", () => {
       tokens: {},
     });
   });
-  it("replaces cleanup approval sets so individual and project revocations persist", () => {
-    const approval = { approvedAt: "2026-01-01T00:00:00.000Z" };
-    const saved = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
-      worktreeCleanupApprovals: {
-        fixture: { dist: approval, node_modules: approval },
-        other: { target: approval },
-      },
-    });
-    const revoked = applyServerSettingsPatch(saved, {
-      worktreeCleanupApprovals: { fixture: { dist: approval }, other: { target: approval } },
-    });
-    expect(revoked.worktreeCleanupApprovals).toEqual({
-      fixture: { dist: approval },
-      other: { target: approval },
-    });
-    expect(
-      applyServerSettingsPatch(revoked, { worktreeCleanupApprovals: {} }).worktreeCleanupApprovals,
-    ).toEqual({});
-  });
 
   it("replaces styal.json action approvals whole, so a revoked approval is gone", () => {
     const approval = {

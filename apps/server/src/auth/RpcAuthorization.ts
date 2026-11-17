@@ -5,9 +5,6 @@ import {
   authScopeRequiredResponse,
   AssetCreateUrlInput,
   AuthAccessReadScope,
-  ServerSettingsPatch,
-  ProviderInstanceMutation,
-  requiredScopesForServerSettingsPatch,
   requiredScopesForProjectMutation,
   ProjectMutation,
   AuthSettingsWriteScope,
@@ -92,7 +89,6 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.serverGetDatabaseStorage]: AuthOrchestrationReadScope,
   [WS_METHODS.peerLinksList]: AuthAccessReadScope,
   [WS_METHODS.peerLinksIncomingWork]: AuthAccessReadScope,
-  [WS_METHODS.serverUpdateSettings]: AuthSettingsWriteScope,
   [WS_METHODS.serverSearchAcpRegistry]: AuthOrchestrationReadScope,
   [WS_METHODS.serverPrepareAcpRegistryAgent]: AuthProvidersManageScope,
   [WS_METHODS.serverUninstallAcpRegistryManagedBinary]: AuthProvidersManageScope,
@@ -233,8 +229,6 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.hardwareAuditList]: AuthOrchestrationReadScope,
   [WS_METHODS.projectsFileActionReview]: AuthOrchestrationReadScope,
   [WS_METHODS.projectsWorktreeCleanupReview]: AuthOrchestrationReadScope,
-  [WS_METHODS.projectsWorktreeCleanupRevoke]: AuthSettingsWriteScope,
-  [WS_METHODS.projectsWorktreeCleanupApprove]: AuthSettingsWriteScope,
   [WS_METHODS.projectsFileActionApprovalSet]: AuthSettingsWriteScope,
   [WS_METHODS.projectsFileActionRun]: AuthTerminalOperateScope,
   [WS_METHODS.subscribeHardwareState]: AuthOrchestrationReadScope,
@@ -260,22 +254,6 @@ export const rpcAuthorizationError = (requiredScope: AuthEnvironmentScope) =>
     ...authScopeRequiredResponse(requiredScope),
   });
 
-const SettingsUpdate = Schema.Struct({
-  patch: ServerSettingsPatch,
-  providerInstanceMutation: Schema.optionalKey(ProviderInstanceMutation),
-});
-// Middleware receives the payload already decoded, so it is checked against the decoded shape.
-const decodeSettingsUpdate = Schema.decodeUnknownSync(Schema.toType(SettingsUpdate));
-
-const requiredScopesForSettingsUpdate = (payload: unknown) => {
-  const input = decodeSettingsUpdate(payload);
-  const scopes = requiredScopesForServerSettingsPatch(input.patch);
-  if (input.providerInstanceMutation === undefined) return scopes;
-  return Object.values(input.patch).every((value) => value === undefined)
-    ? [AuthProvidersManageScope]
-    : [...new Set([...scopes, AuthProvidersManageScope])];
-};
-
 const decodeProjectMutation = Schema.decodeUnknownSync(ProjectMutation);
 const decodeAssetCreateUrlInput = Schema.decodeUnknownSync(AssetCreateUrlInput);
 
@@ -297,7 +275,6 @@ const requiredScopesForRpcCall = (
         : AuthOrchestrationReadScope,
     ];
   }
-  if (method === WS_METHODS.serverUpdateSettings) return requiredScopesForSettingsUpdate(payload);
   if (method === WS_METHODS.projectsMutate) {
     return requiredScopesForProjectMutation(decodeProjectMutation(payload));
   }

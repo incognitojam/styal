@@ -15,7 +15,7 @@ const projectSetup = `# Project setup: styal.json, actions and worktrees
 ## styal.json
 
 \`styal.json\` at the project root is the project file. styal reads actions,
-\`defaultThreadEnvMode\`, \`iconPath\` and \`worktreeCleanup\` from the file in the project's
+\`defaultThreadEnvMode\` and \`iconPath\` from the file in the project's
 registered checkout, on whichever branch is checked out there, not from a thread's worktree. An
 edit in a worktree affects these only once it reaches that checkout (usually by merging to the
 default branch and pulling).
@@ -76,11 +76,19 @@ run often (dev server, tests, lint, build). Prefer existing scripts over inlined
   Patterns are relative to the worktree root (\`*\` within one segment, \`**\` across segments) and
   use forward slashes, no !, .git, empty, . or .. segments, and a literal in the final segment;
   A trailing slash matches folders only. Only git-ignored paths qualify; never list \`.env\`, notes, local state or anything setup cannot
-  recreate. styal uses a pattern only after a person approves it on each machine in Settings →
-  Worktrees → Regenerable files; you can propose patterns in the file but cannot approve them. A
-  pattern removed from the file keeps its approval until someone chooses **Forget**. On macOS and
-  Linux an hourly sweep deletes matching paths once every thread in the worktree has been quiet for
-  a day and has settled (an idle subagent need not), with no open terminal. It is separate from the
+  recreate. Propose pattern changes in a pull request; do not commit them directly to the default
+  branch. Patterns apply once they reach the default branch of the project's remote (pushed and,
+  where the repository requires it, reviewed), on machines where Settings → Worktrees →
+  **Clean up regenerable files** is on. styal uses the last fetched origin default-branch version
+  of the registered project's own styal.json, including for subfolder projects. With a remote,
+  unpushed local commits do not apply; uncommitted edits never apply. With remotes but no known origin default branch,
+  cleanup is skipped; with no remotes, styal uses init.defaultBranch or the registered checkout’s
+  current branch. New projects start on. On upgrade, existing projects with unreadable patterns
+  start off; readable patterns start on only if this machine approved every currently declared
+  pattern. Explicit switch choices are preserved. On macOS and
+  Linux an hourly sweep deletes matching paths once no thread holds the worktree (an idle subagent
+  need not settle), at least 24 hours after the last thread activity, settlement or archival in the
+  worktree, with no open terminal. It is separate from the
   settle action, which does not trigger it. The next turn in that worktree reruns the setup action
   under its normal approval rules; opening a terminal does not.
 - Actions run by hand run in the thread's worktree, or the project root for a local thread, using

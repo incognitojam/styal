@@ -1,4 +1,3 @@
-import { WorktreeCleanupApprovals } from "./worktreeCleanup.ts";
 import {
   EasDeviceHostConfigs,
   EnvironmentDeviceHostConfigs,
@@ -1193,6 +1192,7 @@ export type ProjectProviderInstanceOverride = typeof ProjectProviderInstanceOver
 /** Absent keys inherit; null is a value for nullable settings.
  * providerInstances overrides fields per instance; other keys replace the whole setting. */
 export const ProjectSettingsOverrides = Schema.Struct({
+  cleanRegenerableFiles: Schema.optionalKey(Schema.Boolean),
   worktreeCleanup: Schema.optionalKey(WorktreeCleanup),
   defaultModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
   defaultRuntimeMode: Schema.optionalKey(RuntimeMode),
@@ -1225,7 +1225,10 @@ export const ProjectSettingsOverrides = Schema.Struct({
   providerInstances: Schema.optionalKey(
     Schema.Record(ProviderInstanceId, ProjectProviderInstanceOverride),
   ),
-} satisfies Record<ProjectScopedServerSettingKey | "providerInstances", unknown>);
+} satisfies Record<
+  ProjectScopedServerSettingKey | "providerInstances" | "cleanRegenerableFiles",
+  unknown
+>);
 export type ProjectSettingsOverrides = typeof ProjectSettingsOverrides.Type;
 
 // Whole-entry writers must round-trip unknown keys; keep the type closed to catch misspellings.
@@ -1393,6 +1396,9 @@ export const ServerSettings = Schema.Struct({
   ).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   /** Fold once so restarts cannot undo later UI resets. */
   projectSettingsFolded: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  regenerableFileCleanupMigrated: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(false)),
+  ),
 
   enableAgentDeviceAccess: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   /** Enabling the Device panel must not grant providers device control. */
@@ -1419,9 +1425,6 @@ export const ServerSettings = Schema.Struct({
   coordinatorReportsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   /** Network devices on this environment; definitions live in project repositories. */
   hardwareDevices: HardwareDeviceConfigs.pipe(Schema.withDecodingDefault(Effect.succeed([]))),
-  worktreeCleanupApprovals: WorktreeCleanupApprovals.pipe(
-    Schema.withDecodingDefault(Effect.succeed({})),
-  ),
   /**
    * Commands the user approved for styal.json actions that run on their own.
    * Written by `projects.fileActionApprovalSet`, which reads the command from
@@ -1846,7 +1849,6 @@ export const ServerSettingsPatch = Schema.Struct({
       ),
     ),
   ),
-  worktreeCleanupApprovals: Schema.optionalKey(WorktreeCleanupApprovals),
   projectFileActionApprovals: Schema.optionalKey(ProjectFileActionApprovals),
   enableAgentDeviceAccess: Schema.optionalKey(Schema.Boolean),
   enableDeviceSupport: Schema.optionalKey(Schema.Boolean),

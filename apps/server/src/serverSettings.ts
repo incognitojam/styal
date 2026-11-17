@@ -2,6 +2,7 @@ import {
   DEFAULT_SERVER_SETTINGS,
   ModelSelection,
   ProjectId,
+  IsoDateTime,
   ProjectScript,
   keepUnknownOverrideKeys,
   ProjectSettingsOverrides,
@@ -46,6 +47,8 @@ import * as SqlClient from "effect/sql/SqlClient";
 import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
 import { resolveSymlinkTarget } from "@t3tools/shared/symlink";
 import * as ServerConfig from "./config.ts";
+import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
+import { makeReadPatterns } from "./worktreeCleanup/PatternSource.ts";
 import { type DeepPartial, deepMerge } from "@t3tools/shared/Struct";
 import { fromJsonStringPretty, fromLenientJson } from "@t3tools/shared/schemaJson";
 import {
@@ -374,6 +377,12 @@ const PersistedResponseStreamingMode = Schema.Union([
 );
 const PersistedServerSettings = Schema.Struct({
   ...ServerSettings.fields,
+  worktreeCleanupApprovals: Schema.optionalKey(
+    Schema.Record(
+      Schema.String,
+      Schema.Record(Schema.String, Schema.Struct({ approvedAt: IsoDateTime })),
+    ),
+  ),
   responseStreamingMode: PersistedResponseStreamingMode.pipe(
     Schema.withDecodingDefault(Effect.succeed("paragraph" as const)),
   ),
@@ -683,6 +692,7 @@ const make = Effect.gen(function* () {
   const pathService = yield* Path.Path;
   const secretStore = yield* ServerSecretStore.ServerSecretStore;
   const sql = yield* SqlClient.SqlClient;
+  const readCleanupPatterns = yield* makeReadPatterns;
   const {
     settings: managed,
     providers: managedProviders,
@@ -786,15 +796,19 @@ const make = Effect.gen(function* () {
           );
         if (stored) moved.add(secret.secretName);
       }
-      if (moved.size === 0) return settings;
-      return mapSettingsSecrets(settings, (secret) =>
-        moved.has(secret.secretName) ? { value: "", redacted: true } : secret,
-      );
+      if (moved.size === 0) return { settings, complete: pending.length === 0 };
+      return {
+        settings: mapSettingsSecrets(settings, (secret) =>
+          moved.has(secret.secretName) ? { value: "", redacted: true } : secret,
+        ),
+        complete: moved.size === pending.length,
+      };
     },
   );
 
   const loadSettingsFromDisk = Effect.gen(function* () {
     let settings = managed.defaults;
+    let cleanupApprovals: Readonly<Record<string, Readonly<Record<string, unknown>>>> = {};
     let legacyProviders: Readonly<Record<string, unknown>> | undefined;
     let legacySourceControl: Parameters<typeof migrateLegacySourceControlSettings>[1] = {};
     let parseFailure = Option.none<unknown>();
@@ -816,7 +830,11 @@ const make = Effect.gen(function* () {
       if (decoded._tag === "Failure" || legacySettings._tag === "Failure") {
         const failure = decoded._tag === "Failure" ? decoded : legacySettings;
         // The file may hold an opt-out we can no longer read; never resume threads on a guess.
-        settings = { ...managed.defaults, continueThreadsAfterServerUpdate: false };
+        settings = {
+          ...managed.defaults,
+          continueThreadsAfterServerUpdate: false,
+          regenerableFileCleanupMigrated: false,
+        };
         if (failure._tag === "Failure") {
           parseFailure = Option.some(Cause.squash(failure.cause));
           yield* Effect.logWarning("failed to parse settings.json, using defaults", {
@@ -826,7 +844,9 @@ const make = Effect.gen(function* () {
           });
         }
       } else {
-        settings = decoded.value;
+        const { worktreeCleanupApprovals, ...current } = decoded.value;
+        cleanupApprovals = worktreeCleanupApprovals ?? {};
+        settings = current;
       }
     }
     // Settings saved by a server that kept the mode in `compactIdleThreads` move
@@ -920,9 +940,50 @@ const make = Effect.gen(function* () {
     const sourceControlMigration = hasLegacySourceControl
       ? migrateLegacySourceControlSettings(folded, legacySourceControl)
       : { settings: folded, secretMoves: [] };
-    const migrated = settingsFileTrusted
+    const inlineSecrets = settingsFileTrusted
       ? yield* moveInlineSettingsSecrets(sourceControlMigration.settings)
-      : folded;
+      : { settings: folded, complete: false };
+    let migrated = inlineSecrets.settings;
+    if (
+      settingsFileTrusted &&
+      legacySecretsCopied &&
+      inlineSecrets.complete &&
+      !migrated.regenerableFileCleanupMigrated
+    ) {
+      const projects = yield* sql<{ projectId: ProjectId; workspaceRoot: string }>`
+        SELECT project_id AS "projectId", workspace_root AS "workspaceRoot"
+        FROM projection_projects WHERE deleted_at IS NULL
+      `.pipe(
+        NodeSqliteClient.readOnly,
+        Effect.mapError(
+          (cause) =>
+            new ServerSettingsError({
+              settingsPath,
+              operation: "read-project-settings",
+              cause,
+            }),
+        ),
+      );
+      const overrides = { ...migrated.projectSettingsOverrides };
+      for (const project of projects) {
+        const previous = overrides[project.projectId] ?? {};
+        if (previous.cleanRegenerableFiles !== undefined) continue;
+        const source = yield* readCleanupPatterns(project.workspaceRoot).pipe(
+          Effect.orElseSucceed(() => null),
+        );
+        if (source?.status === "read" && source.patterns.length === 0) continue;
+        const approvals = cleanupApprovals[project.projectId] ?? {};
+        const approved =
+          source?.status === "read" &&
+          source.patterns.every((pattern) => Object.hasOwn(approvals, pattern));
+        overrides[project.projectId] = { ...previous, cleanRegenerableFiles: approved };
+      }
+      migrated = {
+        ...migrated,
+        projectSettingsOverrides: overrides,
+        regenerableFileCleanupMigrated: true,
+      };
+    }
     if (
       migrated !== loaded ||
       (settingsFileTrusted && legacyProviders !== undefined) ||
@@ -1389,4 +1450,7 @@ const make = Effect.gen(function* () {
   } satisfies ServerSettingsService["Service"];
 });
 
-export const layer = Layer.effect(ServerSettingsService, make);
+// Git imports settings-dependent worktree helpers, so resolve its layer after module initialization.
+export const layer = Layer.suspend(() =>
+  Layer.effect(ServerSettingsService, make).pipe(Layer.provide(GitVcsDriver.layer)),
+);

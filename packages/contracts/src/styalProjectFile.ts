@@ -163,7 +163,7 @@ export const StyalProjectFile = Schema.Struct({
   worktreeCleanup: Schema.optionalKey(
     WorktreeCleanupPatterns.annotate({
       description:
-        "Git-ignored files and folders your setup action or build recreates. styal may delete them from settled worktrees once you approve each pattern on each machine.",
+        "Git-ignored files and folders your setup action or build recreates. Patterns pushed to the remote default branch (or committed to the local default branch without a remote) apply to settled worktrees where this project’s cleanup switch is on.",
     }),
   ),
   worktreeSubmodules: Schema.optionalKey(
