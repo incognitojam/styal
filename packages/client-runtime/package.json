@@ -583,9 +583,9 @@
       "types": "./src/providerClients.ts",
       "default": "./src/providerClients.ts"
     },
-    "./state/worktreeCleanup": {
-      "types": "./src/state/worktreeCleanup.ts",
-      "default": "./src/state/worktreeCleanup.ts"
+    "./state/regenerableFiles": {
+      "types": "./src/state/regenerableFiles.ts",
+      "default": "./src/state/regenerableFiles.ts"
     },
     "./coordinator-reports": {
       "types": "./src/coordinatorReports.ts",

@@ -3,12 +3,12 @@ import { Atom } from "effect/reactivity";
 import type { EnvironmentRegistry } from "../connection/registry.ts";
 import { createEnvironmentRpcQueryAtomFamily } from "./runtime.ts";
 
-export function createWorktreeCleanupAtoms<R, E>(
+export function createRegenerableFilesAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
 ) {
   return {
     review: createEnvironmentRpcQueryAtomFamily(runtime, {
-      label: "worktree-cleanup:patterns",
+      label: "regenerable-files:patterns",
       tag: WS_METHODS.projectsWorktreeCleanupReview,
     }),
   };

@@ -84,7 +84,7 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 
 ## Workspaces and agent sessions
 
-- **Keep worktrees while freeing regenerable files.** Projects declare git-ignored paths in their own `styal.json` on the remote’s default branch (or the configured default or registered checkout’s current branch when there is no remote); cleanup can delete matching paths from settled worktrees at least 24 hours after the last thread activity, settlement or archival unless cleanup is switched off for that project on that machine, and the next turn reruns setup. Upstream has no in-place cleanup as of [revision ba11932](https://github.com/pingdotgg/t3code/tree/ba1193273ad02c4a758b8b1fe9149361b7905170), checked November 17, 2026. [Regenerable files](./project-settings.md#regenerable-files-in-worktrees).
+- **Keep worktrees while freeing regenerable files.** Projects declare git-ignored paths with `regenerableFiles` in their own `styal.json` on the remote’s default branch (or the configured default or registered checkout’s current branch when there is no remote); cleanup can delete matching paths from settled worktrees at least 24 hours after the last thread activity, settlement or archival unless cleanup is switched off for that project on that machine, and the next turn reruns setup. Upstream has no in-place cleanup as of [revision ba11932](https://github.com/pingdotgg/t3code/tree/ba1193273ad02c4a758b8b1fe9149361b7905170), checked November 17, 2026. [Regenerable files](./project-settings.md#regenerable-files-in-worktrees).
 
 - **Follow-ups steer by default.** Messages sent while an agent is working join
   the active turn. Choose Queue in Follow-up behavior to wait for the turn to finish;

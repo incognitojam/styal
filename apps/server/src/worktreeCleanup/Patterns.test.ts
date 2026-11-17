@@ -14,18 +14,18 @@ it.effect.each([
 ] as const)("reads cleanup patterns for %s", (mode) =>
   Effect.gen(function* () {
     const f = yield* fixture;
-    yield* f.fs.writeFileString(`${f.root}/styal.json`, '{"worktreeCleanup":["dist"]}');
+    yield* f.fs.writeFileString(`${f.root}/styal.json`, '{"regenerableFiles":["dist"]}');
     yield* f.fs.makeDirectory(`${f.root}/apps/web`, { recursive: true });
     yield* f.fs.writeFileString(
       `${f.root}/apps/web/styal.json`,
-      '{"worktreeCleanup":["node_modules"]}',
+      '{"regenerableFiles":["node_modules"]}',
     );
     yield* f.command(f.root, ["add", "."]);
     yield* f.command(f.root, ["commit", "-m", "fixture: cleanup declarations"]);
     if (mode === "configured-trunk" || mode === "checkout-trunk") {
       yield* f.command(f.root, ["branch", "master"]);
       yield* f.command(f.root, ["branch", "-m", "trunk"]);
-      yield* f.fs.writeFileString(`${f.root}/styal.json`, '{"worktreeCleanup":[]}');
+      yield* f.fs.writeFileString(`${f.root}/styal.json`, '{"regenerableFiles":[]}');
       yield* f.command(f.root, ["add", "styal.json"]);
       yield* f.command(f.root, ["commit", "-m", "fixture: trunk has no patterns"]);
       if (mode === "configured-trunk") {
@@ -57,7 +57,7 @@ it.effect.each([
       yield* f.command(f.root, ["remote", "set-head", "origin", "main"]);
     if (mode === "withdrawn") {
       yield* f.command(f.root, ["checkout", "-b", "publish"]);
-      yield* f.fs.writeFileString(`${f.root}/styal.json`, '{"worktreeCleanup":[]}');
+      yield* f.fs.writeFileString(`${f.root}/styal.json`, '{"regenerableFiles":[]}');
       yield* f.command(f.root, ["add", "styal.json"]);
       yield* f.command(f.root, ["commit", "-m", "fixture: withdraw remote pattern"]);
       yield* f.command(f.root, ["push", "origin", "HEAD:main"]);

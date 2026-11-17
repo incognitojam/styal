@@ -91,7 +91,7 @@ it("matches shellMust, not shellMustNot, against a command's argv lists as a com
 it("grades the regenerable-cleanup case on written text only, by every write route", () => {
   const line = NodeFS.readFileSync(new URL("./cases/agent-guides.ndjson", import.meta.url), "utf8")
     .split("\n")
-    .find((candidate) => candidate.includes('"id": "regenerable-cleanup-uses-worktree-cleanup"'));
+    .find((candidate) => candidate.includes('"id": "regenerable-cleanup-uses-regenerable-files"'));
   const { textMust: _, ...expect } = decodeCase(JSON.parse(line ?? "{}")).expect;
   const run = (...calls: ReadonlyArray<readonly [string, unknown]>): SampleRun => ({
     calls: calls.map(([name, input]) => ({
@@ -102,29 +102,29 @@ it("grades the regenerable-cleanup case on written text only, by every write rou
     text: "",
     stopReason: "end_turn",
   });
-  const missing = "writesMust /worktreeCleanup[^\\w=]{0,4}(?::|\\+?=(?!=))\\s*\\[/";
+  const missing = "writesMust /regenerableFiles[^\\w=]{0,4}(?::|\\+?=(?!=))\\s*\\[/";
   const settle = "writesMustNot /runOnSettle[^\\w=]{0,4}(?::|=(?!=))\\s*[Tt]rue/";
   const python = (body: string) => ({
     cmd: `python3 - <<'EOF'\nimport json\nd = json.load(open('styal.json'))\n${body}\njson.dump(d, open('styal.json', 'w'), indent=2)\nEOF`,
   });
   const cases: ReadonlyArray<readonly [string, SampleRun, ReadonlyArray<string>]> = [
-    ["Write", run(["Write", { content: '{ "worktreeCleanup": ["dist"] }' }]), []],
-    ["Edit", run(["Edit", { new_string: '"worktreeCleanup": ["dist"],' }]), []],
+    ["Write", run(["Write", { content: '{ "regenerableFiles": ["dist"] }' }]), []],
+    ["Edit", run(["Edit", { new_string: '"regenerableFiles": ["dist"],' }]), []],
     [
       "patch +",
-      run(["apply_patch", '*** Update File: styal.json\n+  "worktreeCleanup": ["dist"],']),
+      run(["apply_patch", '*** Update File: styal.json\n+  "regenerableFiles": ["dist"],']),
       [],
     ],
     [
       "patch -",
-      run(["apply_patch", '*** Update File: styal.json\n-  "worktreeCleanup": ["dist"],']),
+      run(["apply_patch", '*** Update File: styal.json\n-  "regenerableFiles": ["dist"],']),
       [missing],
     ],
     [
       "heredoc",
       run([
         "exec_command",
-        { cmd: `cat > styal.json <<'EOF'\n{ "worktreeCleanup": ["dist"] }\nEOF` },
+        { cmd: `cat > styal.json <<'EOF'\n{ "regenerableFiles": ["dist"] }\nEOF` },
       ]),
       [],
     ],
@@ -132,28 +132,28 @@ it("grades the regenerable-cleanup case on written text only, by every write rou
       "sed -i",
       run([
         "Bash",
-        { command: `sed -i 's/"actions"/"worktreeCleanup": ["dist"], "actions"/' styal.json` },
+        { command: `sed -i 's/"actions"/"regenerableFiles": ["dist"], "actions"/' styal.json` },
       ]),
       [],
     ],
     [
       "grep",
-      run(["Bash", { command: `grep -F '"worktreeCleanup": ["dist"]' styal.json` }]),
+      run(["Bash", { command: `grep -F '"regenerableFiles": ["dist"]' styal.json` }]),
       [missing],
     ],
-    ["python", run(["exec_command", python("d['worktreeCleanup'] = ['dist']")]), []],
+    ["python", run(["exec_command", python("d['regenerableFiles'] = ['dist']")]), []],
     [
       "python settle",
       run([
         "exec_command",
-        python("d['worktreeCleanup'] = ['dist']\nd['actions'][-1]['runOnSettle'] = True"),
+        python("d['regenerableFiles'] = ['dist']\nd['actions'][-1]['runOnSettle'] = True"),
       ]),
       [settle],
     ],
     [
       "grep settle",
       run(
-        ["Edit", { new_string: '"worktreeCleanup": ["dist"],' }],
+        ["Edit", { new_string: '"regenerableFiles": ["dist"],' }],
         ["Bash", { command: `grep -n '"runOnSettle": true' styal.json` }],
       ),
       [],

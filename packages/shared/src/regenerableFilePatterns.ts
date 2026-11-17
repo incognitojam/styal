@@ -1,7 +1,7 @@
-import { worktreeCleanupPatternProblem } from "@t3tools/contracts";
+import { regenerableFilePatternProblem } from "@t3tools/contracts";
 
-export function matchesWorktreeCleanupPattern(pattern: string, relative: string): boolean {
-  if (worktreeCleanupPatternProblem(pattern) !== null) return false;
+export function matchesRegenerableFilePattern(pattern: string, relative: string): boolean {
+  if (regenerableFilePatternProblem(pattern) !== null) return false;
   const directory = relative.endsWith("/");
   if (pattern.endsWith("/") && !directory) return false;
   const names = (directory ? relative.slice(0, -1) : relative).split("/");

@@ -37,6 +37,7 @@ const INVALID_FILE_FIELDS: Record<keyof typeof StyalProjectFile.fields, unknown>
   iconPath: "",
   defaultThreadEnvMode: "elsewhere",
   worktreeSubmodules: "some",
+  regenerableFiles: "not a list",
   worktreeCleanup: "not a list",
   actions: "not a list",
 };
@@ -154,18 +155,21 @@ describe("parseStyalProjectFileResult", () => {
     },
   );
 
-  it("drops only the invalid worktreeCleanup pattern (#1521)", () => {
-    const result = parseStyalProjectFileResult(
-      json({ worktreeCleanup: ["node_modules//", "web/dist", "node_modules/"] }),
-    );
-    expect(result.file?.worktreeCleanup).toEqual(["web/dist", "node_modules/"]);
-    expect(result.status === "partial" && result.issues).toEqual([
-      {
-        path: ["worktreeCleanup", 0],
-        message: expect.stringContaining('Invalid cleanup pattern "node_modules//"'),
-      },
-    ]);
-  });
+  it.each(["regenerableFiles", "worktreeCleanup"] as const)(
+    "drops only the invalid %s pattern (#1521)",
+    (field) => {
+      const result = parseStyalProjectFileResult(
+        json({ [field]: ["node_modules//", "web/dist", "node_modules/"] }),
+      );
+      expect(result.file?.[field]).toEqual(["web/dist", "node_modules/"]);
+      expect(result.status === "partial" && result.issues).toEqual([
+        {
+          path: [field, 0],
+          message: expect.stringContaining('Invalid cleanup pattern "node_modules//"'),
+        },
+      ]);
+    },
+  );
 
   it("keeps the first actions of an over-long list", () => {
     const actions = Array.from({ length: STYAL_PROJECT_FILE_MAX_ACTIONS + 5 }, (_, index) => ({
@@ -201,6 +205,37 @@ describe("resolveProjectConfig", () => {
     defaultThreadEnvMode: "local",
     scripts: [{ name: "Old", command: "make" }],
   });
+
+  it.each(["regenerableFiles", "worktreeCleanup"])(
+    "reads %s into the canonical regenerable files list",
+    (field) => {
+      const state = resolveProjectConfig({ styal: json({ [field]: [" dist/ "] }), t3: null });
+      expect(state).toMatchObject({
+        status: "valid",
+        config: { regenerableFiles: ["dist/"] },
+        issues: [],
+      });
+      expect(state.config).not.toHaveProperty("worktreeCleanup");
+    },
+  );
+
+  it.each([{ value: ["dist/"] }, { value: [] }, { value: null }])(
+    "ignores the alias when regenerableFiles is $value",
+    ({ value }) => {
+      const state = resolveProjectConfig({
+        styal: json({ regenerableFiles: value, worktreeCleanup: ["cache"] }),
+        t3: null,
+      });
+      expect(state.status).toBe("partial");
+      expect(state.config?.regenerableFiles).toEqual(value ?? undefined);
+      expect(state.config).not.toHaveProperty("worktreeCleanup");
+      expect(state.status === "partial" && state.issues).toContainEqual({
+        path: ["worktreeCleanup"],
+        message:
+          '"worktreeCleanup" is deprecated and ignored because "regenerableFiles" is present',
+      });
+    },
+  );
 
   it("is missing when neither file exists", () => {
     expect(resolveProjectConfig({ styal: null, t3: null })).toEqual({
@@ -291,10 +326,18 @@ describe("buildStyalProjectFileJsonSchema", () => {
     expect(schema.additionalProperties).toBe(false);
     expect(Object.keys(schema.properties as object)).toEqual(Object.keys(StyalProjectFile.fields));
   });
-  it("rejects worktreeCleanup patterns that styal rejects (#1521)", () => {
+  it("publishes the same pattern rules for regenerableFiles and its deprecated alias (#1521)", () => {
     const schema = buildStyalProjectFileJsonSchema();
-    const items = (schema.properties as Record<string, { items: { pattern?: string } }>)
-      .worktreeCleanup!.items;
+    const properties = schema.properties as Record<
+      string,
+      { items: { pattern?: string }; maxItems: number; deprecated?: boolean }
+    >;
+    expect(properties.worktreeCleanup?.deprecated).toBe(true);
+    expect(properties.regenerableFiles?.deprecated).not.toBe(true);
+    expect(properties.worktreeCleanup?.items).toEqual(properties.regenerableFiles?.items);
+    expect(properties.regenerableFiles?.maxItems).toBe(100);
+    expect(properties.worktreeCleanup?.maxItems).toBe(100);
+    const items = properties.regenerableFiles!.items;
     expect(items.pattern).toBeDefined();
     expect(items).toMatchObject({ minLength: 1, maxLength: 512 });
     expect(new RegExp(items.pattern!, "u").test("node_modules//")).toBe(false);

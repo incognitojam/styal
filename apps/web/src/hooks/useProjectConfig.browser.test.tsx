@@ -59,7 +59,7 @@ function setup() {
 }
 
 function writeStyalJson(environmentId: EnvironmentId, patterns: readonly string[]) {
-  files.contents.set(`${environmentId}:styal.json`, JSON.stringify({ worktreeCleanup: patterns }));
+  files.contents.set(`${environmentId}:styal.json`, JSON.stringify({ regenerableFiles: patterns }));
 }
 
 const reads = (environmentId: EnvironmentId) => ({
@@ -69,7 +69,7 @@ const reads = (environmentId: EnvironmentId) => ({
 
 function Patterns({ environmentId, label }: { environmentId: EnvironmentId; label: string }) {
   const { config } = useProjectConfigState(environmentId, "/repo");
-  return <p>{`${label}: ${config?.worktreeCleanup?.join(" ") ?? "none"}`}</p>;
+  return <p>{`${label}: ${config?.regenerableFiles?.join(" ") ?? "none"}`}</p>;
 }
 
 it("re-reads styal.json when a view opens it again and when the window regains focus", async () => {

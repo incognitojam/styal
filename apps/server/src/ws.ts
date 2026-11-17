@@ -1,4 +1,4 @@
-import * as WorktreeCleanupPatterns from "./worktreeCleanup/Patterns.ts";
+import * as RegenerableFilePatterns from "./worktreeCleanup/Patterns.ts";
 import * as FeedbackService from "./feedback/FeedbackService.ts";
 import * as HardwareService from "./hardware/HardwareService.ts";
 import * as ProjectFileActionApprovals from "./project/ProjectFileActionApprovals.ts";
@@ -1501,7 +1501,7 @@ export const layerWsRpc = (
       const npmRelease = yield* NpmRelease.NpmRelease;
       const config = yield* ServerConfig.ServerConfig;
       const lifecycleEvents = yield* ServerLifecycleEvents.ServerLifecycleEvents;
-      const cleanupPatterns = yield* WorktreeCleanupPatterns.Patterns;
+      const cleanupPatterns = yield* RegenerableFilePatterns.Patterns;
       const storageCleanup = yield* StorageCleanup.StorageCleanup;
       const databaseStorage = yield* DatabaseStorage.DatabaseStorage;
       const serverSettings = yield* ServerSettings.ServerSettingsService;
