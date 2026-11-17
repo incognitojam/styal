@@ -24,6 +24,8 @@ export const Route = createFileRoute("/welcome")({
 });
 
 function WelcomeRouteView() {
+  const { authGateState } = Route.useRouteContext();
+  const { automatic = false } = Route.useSearch();
   const navigate = useNavigate();
   const hash = useLocation({ select: (location) => location.hash });
   // A ChatGPT sign-in returns here with the computer it set up.
@@ -44,11 +46,13 @@ function WelcomeRouteView() {
   const [dismissed, setDismissed] = useState(false);
   const openNewThread = useNewThreadHandler();
   if (waitingForCatalog) return null;
-  if (environmentId === null || !isWelcomeRoute || dismissed) return <NoProjectsHero />;
+  if (!isWelcomeRoute || dismissed) return <NoProjectsHero />;
+  // The hosted app has no computer of its own; the page then starts by choosing one.
   return (
     <WelcomePage
-      key={environmentId}
+      key={environmentId ?? "hosted"}
       environmentId={environmentId}
+      automaticHostedFirstRun={automatic && authGateState.status === "hosted-static"}
       onDone={async (projectRef) => {
         setDismissed(true);
         if (projectRef !== undefined) {

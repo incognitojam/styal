@@ -16,5 +16,6 @@ export type WelcomeImportSelection = typeof WelcomeImportSelection.Type;
 
 export const StoredWelcomeImportSelection = Schema.NullOr(WelcomeImportSelection);
 
-export const welcomeImportSelectionKey = (environmentId: EnvironmentId) =>
+// The hosted app opens the page with no computer of its own, so its choices share one key.
+export const welcomeImportSelectionKey = (environmentId: EnvironmentId | "hosted") =>
   `styal:welcome-import-selection:${environmentId}`;

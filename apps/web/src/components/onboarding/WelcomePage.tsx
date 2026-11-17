@@ -2,7 +2,6 @@ import { useAuth } from "@clerk/react";
 import { useAtomValue } from "@effect/atom-react";
 import type {
   AgentSessionProjectCandidate,
-  EnvironmentId,
   ProjectId,
   ProviderInstanceId,
   ScopedProjectRef,
@@ -17,6 +16,7 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import {
   AgentSessionSource,
+  EnvironmentId,
   AuthProvidersManageScope,
   AuthRelayReadScope,
   AuthRelayWriteScope,
@@ -29,10 +29,12 @@ import {
 } from "@t3tools/contracts";
 import { Link, useBlocker } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
+import { Atom } from "effect/reactivity";
 import {
   CheckIcon,
   ChevronDownIcon,
   ChevronRightIcon,
+  MonitorIcon,
   PlusIcon,
   SmartphoneIcon,
   TerminalIcon,
@@ -110,7 +112,10 @@ import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
 import { ScrollArea } from "../ui/scroll-area";
 import { SidebarInset } from "../ui/sidebar";
 import { toastManager } from "../ui/toast";
+import { StyalWordmark } from "../StyalWordmark";
 import { WorkspacePageHeader } from "../WorkspacePageHeader";
+import { WelcomeComputersSection, useWelcomeComputers } from "./WelcomeComputers";
+import { RowIcon, WelcomeSection } from "./welcomeLayout";
 import { cn } from "../../lib/utils";
 import { useRelativeTimeState } from "../../hooks/useRelativeTimeState";
 
@@ -123,30 +128,55 @@ const SCAN_LIMIT_MESSAGE = "Scan limit reached. Some projects or conversations m
  */
 export function WelcomePage({
   environmentId,
+  automaticHostedFirstRun = false,
   onDone,
 }: {
-  readonly environmentId: EnvironmentId;
+  // The computer the page opens on; the hosted app may have none yet.
+  readonly environmentId: EnvironmentId | null;
+  // The hosted first-run gate opened the page, so computers that already have work skip setup.
+  readonly automaticHostedFirstRun?: boolean;
   readonly onDone: (projectRef?: ScopedProjectRef) => void | Promise<void>;
 }) {
   const { environments } = useEnvironments();
-  const label =
-    environments.find((environment) => environment.environmentId === environmentId)?.label ??
-    "this computer";
-  const agentReady = useWelcomeAgents(environmentId).readyCount > 0;
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const [computerSelection, setComputerSelection] = useState<ReadonlySet<EnvironmentId> | null>(
+    null,
+  );
+  const selectedComputerIds =
+    computerSelection ?? new Set(environmentId === null ? [] : [environmentId]);
+  const toggleComputer = (id: EnvironmentId, selected: boolean) =>
+    setComputerSelection((current) => {
+      const next = new Set(current ?? selectedComputerIds);
+      if (selected) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  const { setupIds, skippedIds, checkingComputers, computersAlreadySetUp } = useWelcomeComputers(
+    selectedComputerIds,
+    automaticHostedFirstRun,
+  );
+  const labelOf = (id: EnvironmentId) =>
+    environments.find((environment) => environment.environmentId === id)?.label ?? "this computer";
+  const showComputers = environments.length > 1 || primaryEnvironmentId === null;
+  const agentReady = useAtomValue(welcomeAgentReadyAtom(setupIds.join(",")));
+  const canStart = agentReady || computersAlreadySetUp;
   // The phone and `styal` on PATH belong to the primary computer, so only it offers them.
-  const isPrimary = usePrimaryEnvironmentId() === environmentId;
+  const phoneEnvironmentId =
+    primaryEnvironmentId !== null && setupIds.includes(primaryEnvironmentId)
+      ? primaryEnvironmentId
+      : null;
   // The same access Settings → Sharing & access checks.
-  const canReadRelay = useEnvironmentScope(environmentId, AuthRelayReadScope);
-  const canWriteRelay = useEnvironmentScope(environmentId, AuthRelayWriteScope);
+  const canReadRelay = useEnvironmentScope(phoneEnvironmentId, AuthRelayReadScope);
+  const canWriteRelay = useEnvironmentScope(phoneEnvironmentId, AuthRelayWriteScope);
   const showPhone = welcomeOffersPhone({
-    isPrimary,
+    isPrimary: phoneEnvironmentId !== null,
     cloud: hasCloudPublicConfig(),
     canShare: canReadRelay && canWriteRelay,
-    policy: useManagedPolicy(environmentId),
+    policy: useManagedPolicy(phoneEnvironmentId),
   });
-  const scans = useProjectScans([environmentId]);
+  const scans = useProjectScans(setupIds);
   const [storedSelection, storeSelection] = useLocalStorage(
-    welcomeImportSelectionKey(environmentId),
+    welcomeImportSelectionKey(environmentId ?? "hosted"),
     null,
     StoredWelcomeImportSelection,
   );
@@ -259,28 +289,58 @@ export function WelcomePage({
         {isElectron ? <WorkspacePageHeader electron /> : null}
         <div className="min-h-0 flex-1 overflow-y-auto scrollbar-gutter-both">
           <div className="mx-auto flex min-h-full w-full max-w-3xl flex-col px-6 pt-12 pb-8 sm:pt-20">
+            <StyalWordmark className="mb-4 h-7 self-start text-muted-foreground" />
             <h1 className="text-2xl font-semibold tracking-tight text-foreground">
               Welcome to styal
             </h1>
             <p className="mt-1.5 text-sm text-muted-foreground">
-              Setting up <span className="text-foreground">{label}</span>.
+              {setupIds.length === 1 ? (
+                <>
+                  Setting up <span className="text-foreground">{labelOf(setupIds[0]!)}</span>.
+                </>
+              ) : setupIds.length > 1 ? (
+                `Setting up ${setupIds.length} computers.`
+              ) : checkingComputers ? (
+                "Checking your computers…"
+              ) : computersAlreadySetUp ? (
+                "Your computers are already set up."
+              ) : (
+                "Choose a computer to set up."
+              )}
             </p>
             <div className="mt-10 border-t border-border/60">
-              <AgentsSection
-                environmentId={environmentId}
-                label={label}
-                isPrimary={isPrimary}
-                onImportSourceEnabled={() => scans[0]?.refresh()}
-              />
+              {showComputers ? (
+                <WelcomeComputersSection
+                  selectedIds={selectedComputerIds}
+                  skippedLabels={skippedIds.map(labelOf)}
+                  pairingFirst={primaryEnvironmentId === null && !hasCloudPublicConfig()}
+                  onToggle={toggleComputer}
+                  onPaired={(id) => toggleComputer(id, true)}
+                />
+              ) : null}
+              {setupIds.map((id) => (
+                <AgentsSection
+                  key={id}
+                  environmentId={id}
+                  label={labelOf(id)}
+                  showLabel={setupIds.length > 1}
+                  isPrimary={id === primaryEnvironmentId}
+                  onImportSourceEnabled={() =>
+                    scans.find((scan) => scan.environmentId === id)?.refresh()
+                  }
+                />
+              ))}
               <ProjectsSection
-                scan={scans[0]}
+                scans={scans}
                 projectImport={projectImport}
                 isImporting={isImporting}
               />
-              {showPhone ? <PhoneSection environmentId={environmentId} /> : null}
+              {showPhone && phoneEnvironmentId !== null ? (
+                <PhoneSection environmentId={phoneEnvironmentId} />
+              ) : null}
             </div>
             <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
-              {agentReady ? (
+              {canStart ? (
                 <span />
               ) : (
                 <Button variant="ghost-muted" disabled={isImporting} onClick={start}>
@@ -288,10 +348,10 @@ export function WelcomePage({
                 </Button>
               )}
               <div className="flex items-center gap-3">
-                {agentReady ? null : (
+                {canStart ? null : (
                   <span className="text-xs text-muted-foreground">Set up one agent to start.</span>
                 )}
-                <Button disabled={!agentReady || isImporting} onClick={start}>
+                <Button disabled={!canStart || isImporting} onClick={start}>
                   {isImporting
                     ? selected.length > 0
                       ? "Importing…"
@@ -304,7 +364,7 @@ export function WelcomePage({
                 </Button>
               </div>
             </div>
-            <TelemetryNotice environmentId={environmentId} />
+            <TelemetryNotice environmentId={environmentId ?? setupIds[0] ?? null} />
           </div>
         </div>
       </div>
@@ -312,7 +372,7 @@ export function WelcomePage({
   );
 }
 
-function TelemetryNotice({ environmentId }: { readonly environmentId: EnvironmentId }) {
+function TelemetryNotice({ environmentId }: { readonly environmentId: EnvironmentId | null }) {
   const telemetryOff = managedTelemetryOffMessage(useManagedPolicy(environmentId));
   return (
     <p className="mt-auto pt-12 text-2xs leading-relaxed text-muted-foreground/70">
@@ -331,31 +391,6 @@ function TelemetryNotice({ environmentId }: { readonly environmentId: Environmen
   );
 }
 
-// Each part of the page is one band: its label on the left, its rows on the right.
-function WelcomeSection({
-  title,
-  children,
-}: {
-  readonly title: string;
-  readonly children: ReactNode;
-}) {
-  return (
-    <section className="grid gap-x-10 border-b border-border/60 py-4 sm:grid-cols-[6rem_minmax(0,1fr)]">
-      <h2 className="text-sm leading-10 text-muted-foreground">{title}</h2>
-      <div className="min-w-0">{children}</div>
-    </section>
-  );
-}
-
-// Rows share one icon column, so names, checkboxes, and steps line up down the page.
-function RowIcon({ children }: { readonly children: ReactNode }) {
-  return (
-    <span className="flex size-5 shrink-0 items-center justify-center text-muted-foreground">
-      {children}
-    </span>
-  );
-}
-
 const INSTALLABLE_DRIVERS = ["codex", "claudeAgent"] as const;
 type OnboardingAgentDriver = (typeof INSTALLABLE_DRIVERS)[number];
 const isInstallableDriver = (driver: string): driver is OnboardingAgentDriver =>
@@ -371,18 +406,38 @@ interface AgentTerminalSession {
 }
 
 // Shared by the page (to enable Start) and the agents section, so both agree on what is ready.
+function welcomeAgents(
+  providers: ReadonlyArray<ServerProvider> | null | undefined,
+  serverConfig: ServerConfig | null | undefined,
+) {
+  return groupWelcomeAgents(providers, serverConfig?.settings, agentName, (provider) =>
+    isManagedDriverAllowed(serverConfig?.managedPolicy, provider.driver),
+  );
+}
+
 function useWelcomeAgents(environmentId: EnvironmentId) {
   const providers = useAtomValue(serverEnvironment.providersValueAtom(environmentId));
   const serverConfig = useAtomValue(serverEnvironment.configValueAtom(environmentId));
-  const managedPolicy = serverConfig?.managedPolicy;
-  return {
-    providers,
-    serverConfig,
-    ...groupWelcomeAgents(providers, serverConfig?.settings, agentName, (provider) =>
-      isManagedDriverAllowed(managedPolicy, provider.driver),
-    ),
-  };
+  return { providers, serverConfig, ...welcomeAgents(providers, serverConfig) };
 }
+
+// Start needs one ready agent on any computer being set up; keyed by the comma-joined ids.
+const welcomeAgentReadyAtom = Atom.family((environmentIds: string) =>
+  Atom.make((get) =>
+    environmentIds
+      .split(",")
+      .filter((id) => id.length > 0)
+      .some((id) => {
+        const environmentId = EnvironmentId.make(id);
+        return (
+          welcomeAgents(
+            get(serverEnvironment.providersValueAtom(environmentId)),
+            get(serverEnvironment.configValueAtom(environmentId)),
+          ).readyCount > 0
+        );
+      }),
+  ),
+);
 
 const isImportSource = Schema.is(AgentSessionSource);
 
@@ -394,11 +449,14 @@ const ACP_REGISTRY_DRIVER_KIND = ProviderDriverKind.make("acpRegistry");
 function AgentsSection({
   environmentId,
   label,
+  showLabel = false,
   isPrimary,
   onImportSourceEnabled,
 }: {
   readonly environmentId: EnvironmentId;
   readonly label: string;
+  // Several computers each get a band, so each names its computer.
+  readonly showLabel?: boolean;
   readonly isPrimary: boolean;
   // The project scan only reads agents that are on, so turning one on can find more history.
   readonly onImportSourceEnabled: () => void;
@@ -603,6 +661,14 @@ function AgentsSection({
 
   return (
     <WelcomeSection title="Agents">
+      {showLabel ? (
+        <p className="flex min-h-10 items-center gap-3 text-sm text-muted-foreground">
+          <RowIcon>
+            <MonitorIcon className="size-4" />
+          </RowIcon>
+          {label}
+        </p>
+      ) : null}
       {found.map((provider) => (
         <AgentRow
           key={provider.instanceId}
@@ -733,15 +799,16 @@ function AgentLogoStack({
 }
 
 function ProjectsSection({
-  scan,
+  scans,
   projectImport,
   isImporting,
 }: {
-  readonly scan: ReturnType<typeof useProjectScans>[number] | undefined;
+  readonly scans: ReturnType<typeof useProjectScans>;
   readonly projectImport: ReturnType<typeof useProjectImport>;
   readonly isImporting: boolean;
 }) {
   const [reviewing, setReviewing] = useState(false);
+  const { environments } = useEnvironments();
   const {
     canWrite,
     candidates,
@@ -752,7 +819,21 @@ function ProjectsSection({
     setSelectedKeys,
     visibleImportError,
   } = projectImport;
-  if (scan === undefined) return null;
+  if (scans.length === 0) return null;
+  const labelOf = (id: EnvironmentId) =>
+    environments.find((environment) => environment.environmentId === id)?.label ?? id;
+  // With several computers, each row names the one it imports to.
+  const computerOf =
+    scans.length > 1 ? (candidate: ImportCandidate) => labelOf(candidate.environmentId) : undefined;
+  // Several computers read as one scan: pending or failed while any is.
+  const scan = {
+    isPending: scans.some((each) => each.isPending),
+    error: scans.find((each) => each.error !== null)?.error ?? null,
+    truncated: scans.some((each) => each.data?.truncated === true),
+    refresh: () => {
+      for (const each of scans) each.refresh();
+    },
+  };
   if (scan.isPending && candidates.length === 0) {
     return (
       <WelcomeSection title="Projects">
@@ -781,7 +862,7 @@ function ProjectsSection({
     );
   }
   if (candidates.length === 0) {
-    return scan.data?.truncated ? (
+    return scan.truncated ? (
       <WelcomeSection title="Projects">
         <p className="text-xs leading-10 text-muted-foreground" role="status">
           {SCAN_LIMIT_MESSAGE}
@@ -867,6 +948,7 @@ function ProjectsSection({
             <div className="space-y-0.5 pr-3">
               <ImportCandidateList
                 candidates={candidates}
+                computerOf={computerOf}
                 selectedKeys={selectedKeys}
                 onSelectionChange={setSelectedKeys}
               />
@@ -874,7 +956,7 @@ function ProjectsSection({
           </ScrollArea>
         </fieldset>
       ) : null}
-      {scan.data?.truncated ? (
+      {scan.truncated ? (
         <p className="pl-8 text-xs text-muted-foreground" role="status">
           {SCAN_LIMIT_MESSAGE}
         </p>
@@ -887,6 +969,12 @@ function ProjectsSection({
           <span>Could not check projects again. {scan.error}</span>
           {retry}
         </div>
+      ) : null}
+      {canWrite && projectImport.readOnlyEnvironmentIds.length > 0 ? (
+        <p className="pl-8 text-xs text-muted-foreground">
+          This connection cannot import projects or thread history on{" "}
+          {projectImport.readOnlyEnvironmentIds.map(labelOf).join(", ")}.
+        </p>
       ) : null}
       {visibleImportError ? (
         <p className="pt-1 pl-8 text-sm text-destructive">{visibleImportError}</p>
@@ -1389,8 +1477,13 @@ function useProjectImport({
     };
   }, []);
 
+  // Each computer imports with its own access; with none, the band shows why it cannot.
+  const writableScans = scans.filter((scan) => writableEnvironments.has(scan.environmentId));
+  const readOnlyEnvironmentIds = scans
+    .filter((scan) => !writableEnvironments.has(scan.environmentId))
+    .map((scan) => scan.environmentId);
   const { available: candidates, recent: recentActive } = partitionOnboardingProjects(
-    scans.flatMap((scan) =>
+    (writableScans.length > 0 ? writableScans : scans).flatMap((scan) =>
       (scan.data?.candidates ?? []).map((candidate) => ({
         ...candidate,
         environmentId: scan.environmentId,
@@ -1422,7 +1515,7 @@ function useProjectImport({
       optedOut,
     });
 
-  const canWrite = scans.every((scan) => writableEnvironments.has(scan.environmentId));
+  const canWrite = writableScans.length > 0;
   const canImport = selected.every((candidate) =>
     writableEnvironments.has(candidate.environmentId),
   );
@@ -1617,6 +1710,7 @@ function useProjectImport({
     selected,
     selectedKeys,
     setSelectedKeys,
+    readOnlyEnvironmentIds,
     importFailed: importFailure !== null,
     visibleImportError,
     runImport,
@@ -1631,10 +1725,12 @@ type ImportCandidate = AgentSessionProjectCandidate & {
 
 function ImportCandidateList({
   candidates,
+  computerOf,
   selectedKeys,
   onSelectionChange,
 }: {
   readonly candidates: ReadonlyArray<ImportCandidate>;
+  readonly computerOf: ((candidate: ImportCandidate) => string) | undefined;
   readonly selectedKeys: ReadonlySet<string>;
   readonly onSelectionChange: (next: ReadonlySet<string>) => void;
 }) {
@@ -1655,6 +1751,7 @@ function ImportCandidateList({
         <ImportRepositoryGroup
           key={group.key}
           group={group}
+          computerOf={computerOf}
           selectedKeys={selectedKeys}
           onToggle={setKeys}
         />
@@ -1686,6 +1783,7 @@ function ImportCandidateList({
                 key={candidate.key}
                 candidate={candidate}
                 path={candidate.path}
+                computer={computerOf?.(candidate)}
                 nested
                 checked={selectedKeys.has(candidate.key)}
                 onCheckedChange={(checked) => setKeys([candidate.key], checked)}
@@ -1700,10 +1798,12 @@ function ImportCandidateList({
 
 function ImportRepositoryGroup({
   group,
+  computerOf,
   selectedKeys,
   onToggle,
 }: {
   readonly group: OnboardingProjectGroup<ImportCandidate>;
+  readonly computerOf: ((candidate: ImportCandidate) => string) | undefined;
   readonly selectedKeys: ReadonlySet<string>;
   readonly onToggle: (keys: ReadonlyArray<string>, checked: boolean) => void;
 }) {
@@ -1717,6 +1817,7 @@ function ImportRepositoryGroup({
         candidate={only}
         label={group.label}
         path={only.path}
+        computer={computerOf?.(only)}
         checked={selectedKeys.has(only.key)}
         onCheckedChange={(checked) => onToggle([only.key], checked)}
       />
@@ -1746,6 +1847,7 @@ function ImportRepositoryGroup({
             key={candidate.key}
             candidate={candidate}
             path={candidate.path}
+            computer={computerOf?.(candidate)}
             nested
             checked={selectedKeys.has(candidate.key)}
             onCheckedChange={(checked) => onToggle([candidate.key], checked)}
@@ -1776,6 +1878,7 @@ function ImportCandidateRow({
   candidate,
   label,
   path,
+  computer,
   nested = false,
   checked,
   onCheckedChange,
@@ -1783,6 +1886,7 @@ function ImportCandidateRow({
   readonly candidate: ImportCandidate;
   readonly label?: string;
   readonly path?: string;
+  readonly computer?: string | undefined;
   readonly nested?: boolean;
   readonly checked: boolean;
   readonly onCheckedChange: (checked: boolean) => void;
@@ -1807,6 +1911,9 @@ function ImportCandidateRow({
               path={path}
               className={label === undefined ? "text-xs" : "text-2xs text-muted-foreground"}
             />
+          ) : null}
+          {computer !== undefined ? (
+            <span className="shrink-0 text-2xs text-muted-foreground">on {computer}</span>
           ) : null}
         </TooltipTrigger>
         <TooltipPopup variant="code">{candidate.path}</TooltipPopup>

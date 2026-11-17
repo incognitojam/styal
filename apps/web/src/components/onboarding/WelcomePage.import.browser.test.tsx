@@ -22,11 +22,20 @@ import { act, render } from "../../../test/render";
 
 type SessionResult = AsyncResult.AsyncResult<AuthSessionState, Error>;
 type Project = { id: ProjectId; environmentId: EnvironmentId; workspaceRoot: string };
+type Computer = {
+  environmentId: EnvironmentId;
+  label: string;
+  displayUrl: string | null;
+  connection: { phase: string; error: string | null };
+  entry: { enabled: boolean; target: { _tag: string }; alternateRoutes: [] };
+};
 type CreateProjectInput = {
   environmentId: EnvironmentId;
   input: { projectId: ProjectId; workspaceRoot: string };
 };
 const state = vi.hoisted(() => ({
+  computers: [] as Computer[],
+  primaryId: "primary" as string | null,
   sessions: new Map<string, unknown>(),
   projects: null as unknown,
   providers: null as unknown,
@@ -89,10 +98,8 @@ vi.mock(import("../../onboarding/firstRun"), async (original) => ({
 }));
 vi.mock(import("../../state/environments"), async (original) => ({
   ...(await original()),
-  useEnvironments: (() => ({
-    environments: [{ environmentId: "primary", label: "primary" }],
-  })) as never,
-  usePrimaryEnvironmentId: (() => "primary") as never,
+  useEnvironments: (() => ({ environments: state.computers, isReady: true })) as never,
+  usePrimaryEnvironmentId: (() => state.primaryId) as never,
 }));
 vi.mock(import("../../state/server"), async (original) => {
   const actual = await original();
@@ -284,10 +291,22 @@ async function mountWelcome() {
   );
 }
 
+function computer(id: string, phase = "connected"): Computer {
+  return {
+    environmentId: EnvironmentId.make(id),
+    label: id,
+    displayUrl: null,
+    connection: { phase, error: null },
+    entry: { enabled: true, target: { _tag: "DirectConnectionTarget" }, alternateRoutes: [] },
+  };
+}
+
 // The mocked modules read `state`, so every test starts by replacing all of it.
 // Returns the clock spy so each test can `using` it; the spy would otherwise outlive the test.
 function setup() {
   const now = vi.spyOn(Date, "now").mockReturnValue(NOW);
+  state.computers = [computer("primary")];
+  state.primaryId = "primary";
   state.sessions.clear();
   for (const id of [primaryId]) {
     state.sessions.set(
@@ -764,4 +783,79 @@ it("says the phone is set up only once this computer is shared with the signed-i
   await share({ status: "reachable", checkedAt, readyConnections: 4, protocol: "quic" });
   await vi.waitFor(() => expect(pageText()).toContain("Your phone can reach this computer."));
   expect(pageText()).not.toContain("Check styal Link");
+});
+
+it("imports history to the computers this connection can write to", async () => {
+  using _now = setup();
+  state.computers = [computer("primary"), computer("laptop")];
+  for (const { environmentId } of state.computers) {
+    const scopes = environmentId === "laptop" ? [] : [AuthOrchestrationOperateScope];
+    state.sessions.set(
+      environmentId,
+      Atom.make<SessionResult>(AsyncResult.success(session(scopes))).pipe(Atom.keepAlive),
+    );
+  }
+  await using screen = await mountWelcome();
+  const laptop = screen.getByRole("checkbox", { name: /^laptop / }).element() as HTMLElement;
+  await act(async () => laptop.click());
+  await vi.waitFor(() => expect(pageText()).toContain("Setting up 2 computers."));
+
+  // laptop's projects are left out, and primary's can still be imported.
+  await vi.waitFor(() => expect(pageText()).toContain("Import 2 projects and their threads"));
+  expect(pageText()).toContain("cannot import projects or thread history on laptop.");
+  // With several computers, each row names the one it imports to.
+  await click("Review all 2");
+  expect(pageText()).toContain("on primary");
+
+  await click("Import 2 projects and start");
+  await vi.waitFor(() => expect(state.onDone).toHaveBeenCalledOnce());
+  expect(state.createProject.mock.calls.map(([call]) => call.environmentId)).toEqual([
+    primaryId,
+    primaryId,
+  ]);
+});
+
+it("sets up only the computers that are selected and connected", async () => {
+  using _now = setup();
+  state.computers = [
+    computer("primary"),
+    computer("laptop"),
+    {
+      ...computer("old-server", "unsupported"),
+      connection: { phase: "unsupported", error: "Update it." },
+    },
+    computer("desktop", "offline"),
+  ];
+  for (const { environmentId } of state.computers) {
+    state.sessions.set(
+      environmentId,
+      Atom.make<SessionResult>(AsyncResult.success(session([AuthOrchestrationOperateScope]))).pipe(
+        Atom.keepAlive,
+      ),
+    );
+  }
+  const scanned = () => new Set(state.scan.mock.calls.map(([call]) => call.environmentId));
+  await using screen = await mountWelcome();
+  const checkbox = (name: string) =>
+    screen.getByRole("checkbox", { name: new RegExp(`^${name} `) }).element() as HTMLElement;
+
+  // Only the computer the page opened on is set up until another is chosen.
+  expect(pageText()).toContain("Setting up primary.");
+  expect(checkbox("primary").getAttribute("aria-checked")).toBe("true");
+  expect(checkbox("laptop").getAttribute("aria-checked")).toBe("false");
+  expect(scanned()).toEqual(new Set(["primary"]));
+  // A computer that cannot talk to this app cannot be chosen.
+  expect(checkbox("old-server").getAttribute("aria-disabled")).toBe("true");
+
+  await act(async () => checkbox("laptop").click());
+  await vi.waitFor(() => expect(pageText()).toContain("Setting up 2 computers."));
+  expect(scanned()).toEqual(new Set(["primary", "laptop"]));
+
+  // A selected computer that is not connected is left out, and the page says so.
+  await act(async () => checkbox("desktop").click());
+  await vi.waitFor(() => expect(pageText()).toContain("Not connected, so setup skips desktop."));
+  expect(pageText()).toContain("Setting up 2 computers.");
+
+  await act(async () => checkbox("primary").click());
+  await vi.waitFor(() => expect(pageText()).toContain("Setting up laptop."));
 });

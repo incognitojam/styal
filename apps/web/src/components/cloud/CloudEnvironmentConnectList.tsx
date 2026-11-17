@@ -80,6 +80,7 @@ export function CloudEnvironmentConnectRows({
   refreshWhileEmpty = false,
   empty = null,
   selection,
+  plainRows = false,
   onDiscoveryReady,
 }: {
   readonly onlyEnvironmentId?: EnvironmentId;
@@ -93,6 +94,8 @@ export function CloudEnvironmentConnectRows({
     readonly selectedIds: ReadonlySet<EnvironmentId>;
     readonly onChange: (environmentId: EnvironmentId, selected: boolean) => void;
   };
+  /** Selection rows without a card, lined up with the Welcome page's icon column. */
+  readonly plainRows?: boolean;
 }) {
   const environmentsState = useRelayEnvironmentDiscovery();
   const registerEnvironment = useAtomCommand(environmentCatalog.register, {
@@ -364,25 +367,34 @@ export function CloudEnvironmentConnectRows({
       return (
         <label
           key={environment.environmentId}
-          className="flex cursor-pointer items-center gap-3 rounded-lg border border-border bg-background px-3 py-2.5 has-disabled:cursor-default"
+          className={cn(
+            "flex cursor-pointer items-center gap-3 has-disabled:cursor-default",
+            plainRows
+              ? "min-h-10 py-1"
+              : "rounded-lg border border-border bg-background px-3 py-2.5",
+          )}
         >
-          <Checkbox
-            checked={!unsupported && selection.selectedIds.has(environment.environmentId)}
-            disabled={unsupported || connectingEnvironmentIds.has(environment.environmentId)}
-            onCheckedChange={async (checked) => {
-              if (unsupported) return;
-              selection.onChange(environment.environmentId, checked);
-              if (checked && !savedEnvironment) {
-                const connected = await connectEnvironment(environment);
-                if (!connected) selection.onChange(environment.environmentId, false);
-              }
-            }}
-          />
-          <EnvironmentMachineIcon
-            aria-hidden
-            kind={machineKind}
-            className="size-4 shrink-0 text-muted-foreground"
-          />
+          <span className={cn("flex shrink-0 items-center justify-center", plainRows && "size-5")}>
+            <Checkbox
+              checked={!unsupported && selection.selectedIds.has(environment.environmentId)}
+              disabled={unsupported || connectingEnvironmentIds.has(environment.environmentId)}
+              onCheckedChange={async (checked) => {
+                if (unsupported) return;
+                selection.onChange(environment.environmentId, checked);
+                if (checked && !savedEnvironment) {
+                  const connected = await connectEnvironment(environment);
+                  if (!connected) selection.onChange(environment.environmentId, false);
+                }
+              }}
+            />
+          </span>
+          {plainRows ? null : (
+            <EnvironmentMachineIcon
+              aria-hidden
+              kind={machineKind}
+              className="size-4 shrink-0 text-muted-foreground"
+            />
+          )}
           <span className="min-w-0 flex-1">
             <span className="block truncate text-sm font-medium">{environment.label}</span>
             {unsupportedDetail !== null ? (
