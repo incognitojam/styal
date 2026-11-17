@@ -2,7 +2,7 @@ import {
   type WorkLogPresentationEntry,
   workEntryMemoryFileKind,
   workEntryReadsMemoryFile,
-} from "./presentation.js";
+} from "./presentation.ts";
 
 /** One timeline entry as the rule sees it: a message, the work it groups, or anything else. */
 export type SaveNoteStep =

@@ -19,7 +19,7 @@ import {
   workEntryIndicatesToolFailure,
   workEntryDisplayIndicatesToolFailure,
   workEntryToolRefusalSummary,
-} from "./presentation.js";
+} from "./presentation.ts";
 
 function commandItem(
   fields: Partial<Extract<OrchestrationV2TurnItem, { type: "command_execution" }>> = {},

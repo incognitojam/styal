@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { resolveWorkGroupScrollAnchor } from "./scrollAnchor.js";
+import { resolveWorkGroupScrollAnchor } from "./scrollAnchor.ts";
 
 describe("tool-group scroll anchors", () => {
   const data = Array.from({ length: 18 }, (_, index) => ({ id: `call-${index}` }));
