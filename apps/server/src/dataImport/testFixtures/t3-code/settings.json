@@ -1,6 +1,7 @@
 {
   "enableProviderUpdateChecks": false,
   "enableAgentBrowserAccess": false,
+  "idleCompaction": "onReturn",
   "defaultThreadEnvMode": "local",
   "newWorktreesStartFromOrigin": false,
   "addProjectBaseDirectory": "/workspace/fixture/projects",
