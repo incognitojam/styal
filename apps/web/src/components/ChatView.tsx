@@ -1,6 +1,6 @@
 import { randomUUID } from "../lib/utils";
 import { ReportReplyStrip, WaitingReports, type ReportReference } from "./chat/CoordinatorReports";
-import { coordinatorReports } from "@t3tools/client-runtime/coordinator-reports";
+import { coordinatorReports, reportAnswers } from "@t3tools/client-runtime/coordinator-reports";
 import { dismissCoordinatorReport } from "../state/coordinatorReports";
 import { CommandId } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
@@ -1029,11 +1029,7 @@ export default function ChatView(props: ChatViewProps) {
     title: string;
   } | null>(null);
   const activeReportReply = reportReply?.threadKey === activeThreadKey ? reportReply : null;
-  const reportAnswers = new Map(
-    (serverProjection?.messages ?? []).flatMap((message) =>
-      message.reportAnswer ? [[message.id, message.reportAnswer] as const] : [],
-    ),
-  );
+  const reportAnswerMessages = reportAnswers(serverProjection?.messages ?? []);
   const reportStates = settings.coordinatorReportsEnabled
     ? coordinatorReports(
         (serverProjection?.messages ?? []).map((message) => ({
@@ -3611,7 +3607,7 @@ export default function ChatView(props: ChatViewProps) {
                     settings.coordinatorReportsEnabled
                       ? {
                           reports: reportStates,
-                          answers: reportAnswers,
+                          answers: reportAnswerMessages,
                           send: sendAppMessageStable,
                           reply: (ref, title) => {
                             setReportReply({ threadKey: activeThreadKey, ref, title });

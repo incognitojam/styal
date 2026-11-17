@@ -2,8 +2,8 @@ import {
   CoordinatorReportMessage,
   CoordinatorReportsContext,
   ReportAnswerChip,
+  type ReportAnswers,
 } from "./CoordinatorReports";
-import { splitReportAnswer } from "@t3tools/client-runtime/coordinator-reports";
 import { useAtomValue } from "@effect/atom-react";
 import { Atom } from "effect/reactivity";
 import { Button } from "../../components/ui/Button";
@@ -1822,9 +1822,7 @@ function renderFeedEntry(
     | "turnUsageByTurnId"
   > & {
     readonly copiedRowId: string | null;
-    readonly reportAnswers:
-      | ReadonlyMap<MessageId, { readonly messageId: MessageId; readonly version: number }>
-      | undefined;
+    readonly reportAnswers: ReportAnswers | undefined;
     readonly onOpenReport: ((messageId: MessageId) => void) | undefined;
     readonly expandedWorkRows: Record<string, boolean>;
     readonly workRowSizing: ReturnType<typeof deriveThreadWorkLogSizing>;
@@ -2054,10 +2052,7 @@ function renderFeedEntry(
     const { message } = entry;
     const isUser = message.role === "user";
     const basePresentation = resolveUserMessagePresentation(message);
-    const answeredReference = isUser ? props.reportAnswers?.get(message.id) : undefined;
-    const answeredReport = answeredReference
-      ? splitReportAnswer(basePresentation.text, answeredReference)
-      : null;
+    const answeredReport = isUser ? props.reportAnswers?.get(message.id) : undefined;
     const presentation = answeredReport
       ? { ...basePresentation, text: answeredReport.text }
       : basePresentation;
@@ -2271,11 +2266,11 @@ function renderFeedEntry(
               ) : null}
               {bubbleBodyVisible ? (
                 <View className={cn("gap-2 px-3.5 pb-2.5", foldRowId === null && "pt-2.5")}>
-                  {answeredReport && answeredReference ? (
+                  {answeredReport ? (
                     <ReportAnswerChip
                       title={answeredReport.title}
                       version={answeredReport.version}
-                      onPress={() => props.onOpenReport?.(answeredReference.messageId)}
+                      onPress={() => props.onOpenReport?.(answeredReport.messageId)}
                     />
                   ) : null}
                   <MessageImages

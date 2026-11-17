@@ -19,7 +19,6 @@ import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";
 import { memo, use, useState, type ReactNode } from "react";
-import { splitReportAnswer } from "@t3tools/client-runtime/coordinator-reports";
 import { CoordinatorReportsContext, ReportAnswerChip } from "./CoordinatorReports";
 import {
   createMessageAttachmentPreviewProjector,
@@ -458,8 +457,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
     (attachment) => !isImageAttachment(attachment) && !isFileAttachment(attachment),
   );
   const presentation = resolveUserMessagePresentation(row.message);
-  const reportAnswer = use(CoordinatorReportsContext)?.answers.get(row.message.id);
-  const answeredReport = reportAnswer ? splitReportAnswer(presentation.text, reportAnswer) : null;
+  const answeredReport = use(CoordinatorReportsContext)?.answers.get(row.message.id);
   const userMessage = answeredReport
     ? { ...presentation, text: answeredReport.text }
     : presentation;
@@ -914,12 +912,12 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
             )}
           >
             {!mediaAboveText && mediaBlock}
-            {answeredReport && reportAnswer ? (
+            {answeredReport ? (
               <div className="mb-1 flex min-w-0 text-sm text-muted-foreground">
                 <ReportAnswerChip
                   title={answeredReport.title}
                   version={answeredReport.version}
-                  messageId={reportAnswer.messageId}
+                  messageId={answeredReport.messageId}
                 />
               </div>
             ) : null}

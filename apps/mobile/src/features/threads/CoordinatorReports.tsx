@@ -20,9 +20,19 @@ type ReportMessage = {
   reportAnswer?: typeof CoordinatorReportReference.Type;
 };
 export type ReportState = ReturnType<typeof coordinatorReports<ReportMessage>>[number];
+export type ReportAnswers = ReadonlyMap<
+  MessageId,
+  {
+    readonly messageId: MessageId;
+    readonly title: string;
+    readonly version: number;
+    readonly text: string;
+  }
+>;
 export const CoordinatorReportsContext = createContext<{
   reports: readonly ReportState[];
-  answers: ReadonlyMap<MessageId, typeof CoordinatorReportReference.Type>;
+  answers: ReportAnswers;
+  target: string | null;
   scroll: (id: MessageId) => void;
   canOperate: boolean;
   send: (text: string, reply: ReportReply) => Promise<void>;
@@ -38,6 +48,8 @@ export function CoordinatorReportMessage({
   const ctx = use(CoordinatorReportsContext);
   const report = ctx?.reports.find((report) => report.message.id === id);
   const [expanded, setExpanded] = useState(false);
+  // Opening a reply chip or waiting row for an older version shows it, not its folded line.
+  if (!expanded && ctx?.target === id) setExpanded(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const content = <Animated.View {...props}>{children}</Animated.View>;
@@ -115,7 +127,7 @@ export function CoordinatorReportMessage({
       ) : report.state === "answered" || report.state === "dismissed" ? (
         <Text className="text-foreground-secondary">
           {report.state === "answered"
-            ? `You answered: ${answerText(report.answer)}`
+            ? `You answered: ${answerText(report.answer, tag)}`
             : "Dismissed. The agent hears it on its next turn."}
         </Text>
       ) : null}
@@ -123,10 +135,9 @@ export function CoordinatorReportMessage({
   );
 }
 
-function answerText(answer: ReportMessage | undefined) {
+function answerText(answer: ReportMessage | undefined, report: CoordinatorReport) {
   if (!answer) return "";
-  const split = answer.reportAnswer && splitReportAnswer(answer.text, answer.reportAnswer);
-  return split ? split.text : answer.text;
+  return splitReportAnswer(answer.text, report) ?? answer.text;
 }
 
 /** Names the report a user message answers and opens that report version. */
@@ -144,11 +155,12 @@ export function ReportAnswerChip({
       accessibilityRole="button"
       accessibilityLabel={`Open report ${title}, version ${version}`}
       onPress={onPress}
-      className="mb-1 flex-row self-start rounded-md bg-primary/15 px-1.5 py-0.5 active:opacity-70"
+      className="mb-1 max-w-full flex-row self-start rounded-md bg-primary/15 px-1.5 py-0.5 active:opacity-70"
     >
       <Text className="shrink text-sm text-primary-text" numberOfLines={1}>
-        {title} · v{version}
+        {title}
       </Text>
+      <Text className="text-sm text-primary-text"> · v{version}</Text>
     </Pressable>
   );
 }

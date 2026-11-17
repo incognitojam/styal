@@ -1,6 +1,7 @@
 import {
   CoordinatorReportsContext,
   ReportReplyStrip,
+  type ReportAnswers,
   WaitingReports,
   type ReportState,
 } from "./CoordinatorReports";
@@ -259,7 +260,7 @@ export interface ThreadDetailScreenProps {
   readonly feedbackSubmissions: ReadonlyArray<CodexFeedbackSubmission>;
   readonly onDismissFeedback: (id: MessageId) => void;
   readonly reports?: readonly ReportState[];
-  readonly reportAnswers?: ReadonlyMap<MessageId, ReportReply["ref"]>;
+  readonly reportAnswers?: ReportAnswers | undefined;
   readonly reportReply?: ReportReply | null;
   readonly onReportReply?: (reply: ReportReply | null) => void;
   readonly selectedThreadFeed: ReadonlyArray<ThreadFeedEntry>;
@@ -1472,6 +1473,7 @@ function ThreadDetailBody(
   const reportContext = {
     reports: props.reports ?? [],
     answers: props.reportAnswers ?? new Map(),
+    target: jumpMessageId,
     scroll: (id: MessageId) => requestThreadMessageJump(selectedThreadKey, id),
     canOperate: props.canOperateThread && canDismissReport && props.queuedRunEdit === null,
     reply: replyToReport,

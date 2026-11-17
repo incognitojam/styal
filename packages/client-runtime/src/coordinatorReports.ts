@@ -62,11 +62,40 @@ export function formatReportAnswer(
   return `[${report.title}, version ${report.version}] ${text}`;
 }
 
-/** Splits the prefix `formatReportAnswer` adds, when it names the answered version. */
-export function splitReportAnswer(text: string, answered: Pick<Reference, "version">) {
-  const match = /^\[([^\n]+), version (\d+)\] /.exec(text);
-  if (!match || Number(match[2]) !== answered.version) return null;
-  return { title: match[1]!, version: answered.version, text: text.slice(match[0].length) };
+/** The text after the exact prefix `formatReportAnswer` adds for this report, if it has one. */
+export function splitReportAnswer(
+  text: string,
+  report: Pick<CoordinatorReport, "title" | "version">,
+) {
+  const prefix = formatReportAnswer(report, "");
+  return text.startsWith(prefix) ? text.slice(prefix.length) : null;
+}
+
+/** Each message that answers a report, with that report's title and version and the typed text. */
+export function reportAnswers<M extends Message>(messages: readonly M[]) {
+  type Answer = {
+    readonly messageId: NonNullable<M["reportAnswer"]>["messageId"];
+    readonly title: string;
+    readonly version: number;
+    readonly text: string;
+  };
+  const reports = new Map<string, CoordinatorReport>();
+  for (const message of messages) if (message.report) reports.set(message.id, message.report);
+  const answers = new Map<M["id"], Answer>();
+  for (const message of messages) {
+    const ref = message.role === "user" ? message.reportAnswer : undefined;
+    const report = ref ? reports.get(ref.messageId) : undefined;
+    if (!ref || !report || report.version !== ref.version) continue;
+    const text = splitReportAnswer(message.text, report);
+    if (text !== null)
+      answers.set(message.id, {
+        messageId: ref.messageId,
+        title: report.title,
+        version: ref.version,
+        text,
+      });
+  }
+  return answers;
 }
 
 export type ReportReply = { ref: typeof CoordinatorReportReference.Type; title: string };

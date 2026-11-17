@@ -52,6 +52,10 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
   const reportContext = use(CoordinatorReportsContext);
   const report = reportContext?.reports.find((report) => report.message.id === row.message.id);
   const [expandedReport, setExpandedReport] = useState(report?.state !== "replaced");
+  // Opening a reply chip or waiting row for an older version shows it, not its folded line.
+  if (!expandedReport && reportContext?.target?.messageId === row.message.id) {
+    setExpandedReport(true);
+  }
   // The timeline holds a streaming message's row while only its text grows.
   const liveText = useAssistantMessageText(
     row.message.streaming ? ctx.threadRef : null,

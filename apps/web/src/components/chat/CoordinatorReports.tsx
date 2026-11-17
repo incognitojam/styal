@@ -21,7 +21,10 @@ export type ReportState = ReturnType<
 >[number];
 export const CoordinatorReportsContext = createContext<{
   reports: readonly ReportState[];
-  answers: ReadonlyMap<MessageId, ReportReference>;
+  answers: ReadonlyMap<
+    MessageId,
+    { messageId: MessageId; title: string; version: number; text: string }
+  >;
   send: (text: string, ref: ReportReference) => Promise<void>;
   reply: (ref: ReportReference, title: string) => void;
   dismiss: (ref: ReportReference) => void;
@@ -38,16 +41,14 @@ export function ReportAnswerBar({ report }: { report: ReportState }) {
   const panelClassName = "flex flex-col gap-1.5 rounded-lg bg-muted/50 px-3 py-2 text-sm";
   if (report.state === "answered" || report.state === "dismissed") {
     const answered = report.state === "answered";
-    const answer =
-      report.answer?.reportAnswer &&
-      splitReportAnswer(report.answer.text, report.answer.reportAnswer);
+    const answer = report.answer && splitReportAnswer(report.answer.text, report.message.report!);
     return (
       <div className={panelClassName}>
         <span className="inline-flex items-center gap-1.5 text-muted-foreground [&_svg]:size-3.5">
           {answered ? <MessageSquareIcon /> : <XIcon />}
           {answered ? "You answered: " : "Dismissed. The agent hears it on its next turn."}
           {answered ? (
-            <span className="text-foreground">{answer ? answer.text : report.answer?.text}</span>
+            <span className="text-foreground">{answer ?? report.answer?.text}</span>
           ) : null}
         </span>
       </div>
