@@ -26,6 +26,7 @@ import {
 } from "../../session-logic";
 import {
   type ChatFileAttachment,
+  type ChatImageAttachment,
   type ChatMessage,
   isFileAttachment,
   isImageAttachment,
@@ -44,6 +45,8 @@ import {
 } from "lucide-react";
 import { Link as LinkIconNode } from "lucide";
 import { Button, InlineButton } from "../ui/button";
+import { FileChip, ImageChipButton } from "../contextChipParts";
+import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments";
 import { FreshSessionRow, ModelSwitchRow } from "./V2LifecycleRow";
 import { useAssetUrlRefresh, useAssetUrls, useAssetUrlState } from "../../assets/assetUrls";
 import { AttachmentImage } from "../media/AttachmentImage";
@@ -66,6 +69,7 @@ import { shouldCollapseUserMessage } from "./MessagesTimeline.logic";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   asKnownContextRecord,
+  type ResolvedUserMessageContext,
   resolveUserMessageContext,
   selectedMessageContextFragment,
 } from "~/lib/composerContextRecords";
@@ -85,7 +89,12 @@ import { markdownProseDirection } from "~/textDirection";
 import { useMediaQuery } from "~/hooks/useMediaQuery";
 import { formatChatTimestampTooltip, formatDayAwareTimestamp } from "../../timestampFormat";
 import { WorkflowOpeningBlock } from "./WorkflowOpeningBlock";
-import { TimelineRowCtx, TimelineRowActivityCtx, type TimelineRow } from "./timelineRowContext";
+import {
+  TimelineRowCtx,
+  TimelineRowActivityCtx,
+  type TimelineRow,
+  type TimelineRowSharedState,
+} from "./timelineRowContext";
 import {
   MESSAGE_HEADING_LEVEL,
   MessageAuthorHeading,
@@ -427,20 +436,153 @@ function UserMessageProjectedStatus({ row }: { row: Extract<TimelineRow, { kind:
   );
 }
 
-function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
+function renderUserContextReference(
+  reference: ChatMarkdownContextReference,
+  input: {
+    readonly ctx: TimelineRowSharedState;
+    readonly recordsById: ResolvedUserMessageContext["recordsById"];
+    readonly userImages: ReadonlyArray<ChatImageAttachment>;
+    readonly userFiles: ReadonlyArray<ChatFileAttachment>;
+    readonly previewImages: ReadonlyArray<ChatImageAttachment>;
+    readonly annotationRecordIds: ReadonlyArray<string>;
+    readonly hiddenAttachmentIds: ReadonlySet<string>;
+  },
+) {
+  const { ctx, userImages, userFiles } = input;
+  const record = asKnownContextRecord(input.recordsById.get(reference.contextId));
+  if (record?.kind === "file" && input.hiddenAttachmentIds.has(record.attachmentId)) return null;
+  const annotationImage =
+    record?.kind === "preview-annotation"
+      ? resolvePreviewAnnotationImage({
+          record,
+          recordsById: input.recordsById,
+          userImages,
+          previewImages: input.previewImages,
+          annotationRecordIds: input.annotationRecordIds,
+        })
+      : null;
+  const attachment =
+    record?.kind === "image"
+      ? (userImages.find((image) => image.id === record.attachmentId) ?? null)
+      : record?.kind === "file"
+        ? (userFiles.find((file) => file.id === record.attachmentId) ?? null)
+        : null;
+  return (
+    <span data-thread-find-ignore>
+      <UserMessageContextReferenceChip
+        reference={reference}
+        record={record}
+        annotationImage={annotationImage}
+        attachment={attachment}
+        onExpandImage={(image) => {
+          const preview = buildExpandedImagePreview(userImages, image.id);
+          if (preview) ctx.onImageExpand(preview);
+        }}
+        onOpenFile={ctx.onFileOpen}
+        onExpandVideo={(file) => {
+          const preview = buildAttachmentVideoPreview(ctx.activeThreadEnvironmentId, file);
+          if (preview) ctx.onImageExpand(preview);
+        }}
+      />
+    </span>
+  );
+}
+
+function useAttachmentPreviewUrls(attachments: ChatMessage["attachments"]) {
   const ctx = use(TimelineRowCtx);
-  const { onImageExpand, onFileOpen } = ctx;
-  const coarsePointer = useMediaQuery({ pointer: "coarse" });
-  const senderThreadId = row.message.senderThreadId;
-  const resources = selectMessageImageResources(row.message.attachments);
+  const resources = selectMessageImageResources(attachments);
   const previewUrls = useAssetUrls(ctx.activeThreadEnvironmentId, resources);
-  const [projectPreviews] = useState(createMessageAttachmentPreviewProjector);
-  const previewUrlsById = new Map(
+  return new Map(
     resources.flatMap((resource, index) => {
       const url = previewUrls[index];
       return url ? [[resource.attachmentId, url] as const] : [];
     }),
   );
+}
+
+/** A report answer's typed text, rendered like the user bubble: line breaks kept, context as chips. */
+export function ReportAnswerMessageBody(props: {
+  readonly message: Pick<ChatMessage, "context" | "attachments">;
+  readonly text: string;
+}) {
+  const ctx = use(TimelineRowCtx);
+  const previewUrlsById = useAttachmentPreviewUrls(props.message.attachments);
+  const resolvedContext = resolveUserMessageContext({ ...props.message, text: props.text });
+  const userImages = (props.message.attachments ?? []).filter(isImageAttachment).map((image) => {
+    const previewUrl = previewUrlsById.get(image.id);
+    return previewUrl ? { ...image, previewUrl } : image;
+  });
+  const userFiles = (props.message.attachments ?? []).filter(isFileAttachment);
+  const inlineAttachmentIds = new Set(
+    collectComposerContextReferences(resolvedContext.text).flatMap((occurrence) => {
+      const record = asKnownContextRecord(resolvedContext.recordsById.get(occurrence.contextId));
+      return record?.kind === "file" || record?.kind === "image" ? [record.attachmentId] : [];
+    }),
+  );
+  const renderContextReference = (reference: ChatMarkdownContextReference) =>
+    renderUserContextReference(reference, {
+      ctx,
+      recordsById: resolvedContext.recordsById,
+      userImages,
+      userFiles,
+      previewImages: userImages.filter((image) => image.name.startsWith("preview-annotation-")),
+      annotationRecordIds: resolvedContext.records
+        .filter((record) => record.kind === "preview-annotation")
+        .map((record) => record.contextId),
+      hiddenAttachmentIds: new Set(),
+    });
+  const otherImages = userImages.filter((image) => !inlineAttachmentIds.has(image.id));
+  const otherFiles = userFiles.filter((file) => !inlineAttachmentIds.has(file.id));
+  return (
+    <div
+      dir={markdownProseDirection(resolvedContext.text)}
+      className={cn("flex flex-col gap-1.5", BUBBLE_CHIP_CLASS_NAME)}
+    >
+      <CollapsibleUserMessageBody
+        text={resolvedContext.text}
+        renderContextReference={renderContextReference}
+        skills={ctx.skills}
+        markdownCwd={ctx.markdownCwd}
+      />
+      {otherImages.length + otherFiles.length > 0 ? (
+        <div className="flex flex-wrap gap-1.5">
+          {otherImages.map((image) => (
+            <ImageChipButton
+              key={image.id}
+              name={image.name}
+              previewUrl={image.previewUrl}
+              size={formatAttachmentSize(image.sizeBytes)}
+              onClick={() => {
+                const preview = buildExpandedImagePreview(userImages, image.id);
+                if (preview) ctx.onImageExpand(preview);
+              }}
+            />
+          ))}
+          {otherFiles.map((file) => (
+            <FileChip
+              key={file.id}
+              name={userMessageFileLabel(file)}
+              size={formatAttachmentSize(file.sizeBytes)}
+              isVideo={isVideoAttachment(file)}
+              theme={ctx.resolvedTheme}
+              accessibleLabel={`Open ${userMessageFileLabel(file)}`}
+              tooltip={file.name}
+              disabled={file.downloadable === false}
+              onOpen={() => ctx.onFileOpen(file)}
+            />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
+  const ctx = use(TimelineRowCtx);
+  const coarsePointer = useMediaQuery({ pointer: "coarse" });
+  const senderThreadId = row.message.senderThreadId;
+  const previewUrlsById = useAttachmentPreviewUrls(row.message.attachments);
+  const [projectPreviews] = useState(createMessageAttachmentPreviewProjector);
   const messageWithPreviews = projectPreviews(row.message, (attachment) =>
     previewUrlsById.get(attachment.id),
   );
@@ -632,46 +774,16 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
     }
     event.clipboardData.setData(COMPOSER_CONTEXT_CLIPBOARD_MIME, fragment);
   };
-  const renderContextReference = (reference: ChatMarkdownContextReference) => {
-    const record = asKnownContextRecord(resolvedContext.recordsById.get(reference.contextId));
-    if (record?.kind === "file" && userAudio.some((file) => file.id === record.attachmentId))
-      return null;
-    const annotationImage =
-      record?.kind === "preview-annotation"
-        ? resolvePreviewAnnotationImage({
-            record,
-            recordsById: resolvedContext.recordsById,
-            userImages,
-            previewImages,
-            annotationRecordIds,
-          })
-        : null;
-    const attachment =
-      record?.kind === "image"
-        ? (userImages.find((image) => image.id === record.attachmentId) ?? null)
-        : record?.kind === "file"
-          ? (userFiles.find((file) => file.id === record.attachmentId) ?? null)
-          : null;
-    return (
-      <span data-thread-find-ignore>
-        <UserMessageContextReferenceChip
-          reference={reference}
-          record={record}
-          annotationImage={annotationImage}
-          attachment={attachment}
-          onExpandImage={(image) => {
-            const preview = buildExpandedImagePreview(userImages, image.id);
-            if (preview) onImageExpand(preview);
-          }}
-          onOpenFile={onFileOpen}
-          onExpandVideo={(file) => {
-            const preview = buildAttachmentVideoPreview(ctx.activeThreadEnvironmentId, file);
-            if (preview) onImageExpand(preview);
-          }}
-        />
-      </span>
-    );
-  };
+  const renderContextReference = (reference: ChatMarkdownContextReference) =>
+    renderUserContextReference(reference, {
+      ctx,
+      recordsById: resolvedContext.recordsById,
+      userImages,
+      userFiles,
+      previewImages,
+      annotationRecordIds,
+      hiddenAttachmentIds: new Set(userAudio.map((file) => file.id)),
+    });
 
   const mediaBlock =
     regularImages.length > 0 || userVideos.length > 0 ? (
