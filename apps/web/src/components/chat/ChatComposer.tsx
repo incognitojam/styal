@@ -37,7 +37,6 @@ import type {
   ThreadId,
 } from "@t3tools/contracts";
 import {
-  type ThreadWorkflowRunWatch,
   EnvironmentRequestInvalidError,
   AuthOrchestrationOperateScope,
   clampManagedRuntimeMode,
@@ -57,7 +56,6 @@ import { createModelSelection, normalizeModelSlug } from "@t3tools/shared/model"
 import { USAGE_LIMITS_COMMAND } from "@t3tools/shared/usageLimits";
 import {
   memo,
-  type ReactNode,
   use,
   useEffect,
   useEffectEvent,
@@ -212,7 +210,6 @@ import {
 } from "./ComposerAttachmentStrip";
 import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
 import { ComposerFooterPrimaryActions } from "./ComposerFooterControls";
-import { WorkflowRunReviewPanel } from "./WorkflowRunReviewPanel";
 import { ComposerPendingUserInputPanel } from "./ComposerPendingUserInputPanel";
 import { ComposerPendingApprovalBanner } from "./ComposerPendingApprovalBanner";
 import { ComposerPlanFollowUpBanner } from "./ComposerPlanFollowUpBanner";
@@ -412,9 +409,6 @@ export interface ChatComposerProps {
   pendingApprovals: PendingApproval[];
   onHeldRequestIdsChange: (requestIds: ReadonlySet<string>) => void;
   pendingUserInputs: PendingUserInput[];
-  /** Watched workflow runs; one waiting for a deployment review takes the question slot. */
-  workflowRuns?: ReadonlyArray<ThreadWorkflowRunWatch> | undefined;
-  workflowRunReviewActions?: ReactNode;
   activePendingProgress: {
     questionIndex: number;
     isLastQuestion: boolean;
@@ -568,7 +562,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     pendingApprovals,
     onHeldRequestIdsChange,
     pendingUserInputs: incomingPendingUserInputs,
-    workflowRuns,
     activePendingProgress: incomingPendingProgress,
     activePendingResolvedAnswers,
     activePendingIsResponding: incomingPendingIsResponding,
@@ -1321,10 +1314,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const pendingQuestionPlaceholder = activePendingProgress?.activeQuestion?.multiSelect
     ? "Add another answer, or leave this blank to use the selected options"
     : "Type your own answer, or leave this blank to use the selected option";
-  const hasWorkflowRunReview = (workflowRuns ?? []).some((run) => run.review !== undefined);
   const showComposerTopDrawer =
     pendingUserInputs.length > 0 ||
-    hasWorkflowRunReview ||
     (!isComposerCollapsedMobile && showPlanFollowUpPrompt && activeProposedPlan !== null);
   const showCollapsedMobilePromptRow = isComposerCollapsedMobile;
   const showComposerAttachAction =
@@ -2435,7 +2426,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     expandMobileComposer: expandMobileComposerStable,
   });
   const hasBlockingComposerTopDrawer =
-    shownPendingApprovals.length > 0 || pendingUserInputs.length > 0 || hasWorkflowRunReview;
+    shownPendingApprovals.length > 0 || pendingUserInputs.length > 0;
   const composerControlsCollapsed = isComposerCollapsedMobile;
   // The collapsed mobile web composer keeps a second controls row inside the card.
   const showInlineRestingControls = isComposerCollapsedMobile;
@@ -3354,18 +3345,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           <ComposerBannerStack items={shelfItems} />
           {showComposerTopDrawer ? (
             <ComposerBanner.Attachment>
-              <ComposerBanner.Root
-                data-chat-composer-top-drawer="true"
-                variant={hasWorkflowRunReview ? "warning" : "info"}
-              >
-                {hasWorkflowRunReview && activeThreadId && workflowRuns ? (
-                  <WorkflowRunReviewPanel
-                    environmentId={environmentId}
-                    threadId={activeThreadId}
-                    runs={workflowRuns}
-                    watchActions={props.workflowRunReviewActions}
-                  />
-                ) : pendingUserInputs.length > 0 ? (
+              <ComposerBanner.Root data-chat-composer-top-drawer="true" variant="info">
+                {pendingUserInputs.length > 0 ? (
                   <ComposerPendingUserInputPanel
                     cwd={gitCwd ?? undefined}
                     threadRef={routeThreadRef}

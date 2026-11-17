@@ -18,14 +18,11 @@ import { useAtomCommand } from "../../state/use-atom-command";
 
 type ReviewState = "approved" | "rejected";
 
-/**
- * A watched workflow run's deployment review. Like GitHub's dialog, it lists environments to
- * pick only when several wait.
- */
 export function WorkflowRunReviewCard(props: {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
   readonly run: ThreadWorkflowRunWatch;
+  readonly waitingCount: number;
   readonly stopWatching?: { readonly disabled: boolean; readonly onPress: () => void } | undefined;
 }) {
   const { run } = props;
@@ -39,6 +36,7 @@ export function WorkflowRunReviewCard(props: {
   const [selected, setSelected] = useState<ReadonlySet<number>>(
     () => new Set(run.review?.environments.map((environment) => environment.id)),
   );
+  const [expanded, setExpanded] = useState(false);
   const [comment, setComment] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -47,11 +45,11 @@ export function WorkflowRunReviewCard(props: {
   const environments = run.review?.environments;
   if (environments === undefined) return null;
 
-  const submit = async (choice: ReviewState) => {
+  const submit = async (choice: ReviewState, quick = false) => {
     const [first, ...rest] = environments
       .map((environment) => environment.id)
-      .filter((id) => selected.has(id));
-    if (first === undefined || inFlight.current) return;
+      .filter((id) => quick || selected.has(id));
+    if (first === undefined || inFlight.current || !canReview) return;
     inFlight.current = true;
     setSubmitting(true);
     setError(null);
@@ -64,7 +62,7 @@ export function WorkflowRunReviewCard(props: {
         runId: run.runId,
         environmentIds: [first, ...rest],
         state: choice,
-        comment: comment.trim(),
+        comment: quick ? "" : comment.trim(),
       },
     }).finally(() => {
       inFlight.current = false;
@@ -86,120 +84,137 @@ export function WorkflowRunReviewCard(props: {
 
   const locked = !canReview || submitting;
   return (
-    <View className="gap-2.5 rounded-[20px] border border-border bg-card-alt p-4">
-      <View className="flex-row items-start gap-2.5">
-        <View className="flex-1 gap-2.5">
-          <Text className="font-t3-bold text-xs text-foreground-secondary">Deployment review</Text>
-          <Text
-            accessibilityLabel={run.name}
-            className="font-t3-bold text-lg text-foreground"
-            numberOfLines={2}
-          >
-            {formatWorkflowRunDisplayName(run.name)}
+    <View className="gap-2 px-3 py-2">
+      <View className="flex-row items-start gap-2">
+        <View className="mt-2 size-1.5 rounded-full bg-warning-foreground" />
+        <View className="min-w-0 flex-1">
+          <Text className="text-sm text-foreground" numberOfLines={2}>
+            Waiting for your review to deploy to{" "}
+            {environments.map((environment) => environment.name).join(", ")}.
+          </Text>
+          <Text className="text-xs text-foreground-secondary" numberOfLines={1}>
+            Deployment review · {formatWorkflowRunDisplayName(run.name)}
+            {props.waitingCount > 1 ? ` · 1/${props.waitingCount}` : ""}
           </Text>
         </View>
-        {props.stopWatching ? (
-          <Button label="Stop" tone="secondary" {...props.stopWatching} />
-        ) : null}
-      </View>
-      <Text className="font-sans text-sm leading-5 text-foreground-secondary">
-        Waiting for your review to deploy to{" "}
-        {environments.map((environment) => environment.name).join(", ")}.
-      </Text>
-      {environments.length > 1 ? (
-        <View className="gap-2">
-          {environments.map((environment) => {
-            const checked = selected.has(environment.id);
-            return (
-              <Pressable
-                key={environment.id}
-                accessibilityRole="checkbox"
-                accessibilityState={{ checked, disabled: locked }}
-                disabled={locked}
-                className={cn(
-                  "min-h-12 w-full flex-row items-center gap-3 rounded-2xl border px-3.5 py-3",
-                  checked ? "border-primary bg-primary/10" : "border-border bg-input",
-                )}
-                onPress={() =>
-                  setSelected((current) => {
-                    const next = new Set(current);
-                    if (next.has(environment.id)) next.delete(environment.id);
-                    else next.add(environment.id);
-                    return next;
-                  })
-                }
-              >
-                <View
-                  className={cn(
-                    "size-5 items-center justify-center rounded-sm",
-                    checked ? "bg-primary" : "border border-input-border",
-                  )}
-                >
-                  {checked ? (
-                    <SymbolView
-                      name="checkmark"
-                      size={16}
-                      tintColorClassName="accent-primary-foreground"
-                      type="monochrome"
-                    />
-                  ) : null}
-                </View>
-                <Text className="font-t3-bold text-sm text-foreground">{environment.name}</Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      ) : null}
-      <TextInput
-        accessibilityLabel="Review comment"
-        placeholder="Leave a comment (optional)"
-        value={comment}
-        onChangeText={setComment}
-        editable={!locked}
-        returnKeyType="done"
-        className="min-h-[54px] rounded-2xl border border-input-border bg-input px-3.5 py-3 font-sans text-base text-foreground"
-      />
-      {error !== null ? (
-        <Text accessibilityRole="alert" className="font-sans text-sm text-danger-foreground">
-          {error}
-        </Text>
-      ) : null}
-      <View className="flex-row gap-2.5">
-        <View className="flex-1">
+        <View className="gap-1">
           <Button
-            label="Reject"
-            tone="danger"
-            fullWidth
-            disabled={locked || selected.size === 0}
-            onPress={() => void submit("rejected")}
-          />
-        </View>
-        <View className="flex-1">
-          <Button
-            label={submitting ? "Submitting…" : "Approve and deploy"}
+            label="Approve"
+            size="compact"
             tone="primary"
-            fullWidth
-            disabled={locked || selected.size === 0}
-            onPress={() => void submit("approved")}
+            disabled={locked}
+            onPress={() => void submit("approved", true)}
+          />
+          <Button
+            label="Review"
+            icon={expanded ? "chevron.up" : "chevron.down"}
+            size="compact"
+            tone="text"
+            onPress={() => setExpanded(!expanded)}
           />
         </View>
       </View>
-      <Pressable
-        accessibilityRole="link"
-        className="flex-row items-center justify-center gap-1.5 rounded-2xl px-4 py-2.5 active:opacity-70"
-        onPress={() => void tryOpenExternalUrl(run.url, "workflow-run")}
-      >
-        <Text className="font-t3-bold text-sm text-foreground-muted">Open on GitHub</Text>
-        <SymbolView
-          name="arrow.up.right"
-          size={13}
-          tintColorClassName="accent-foreground-muted"
-          type="monochrome"
-        />
-      </Pressable>
-      {!canReview ? (
-        <Text className="font-sans text-xs text-foreground-tertiary">
-          This connection cannot review deployments.
+      {expanded ? (
+        <View className="gap-2.5">
+          {props.stopWatching ? (
+            <Button label="Stop" tone="secondary" {...props.stopWatching} />
+          ) : null}
+          {environments.length > 1 ? (
+            <View className="gap-2">
+              {environments.map((environment) => {
+                const checked = selected.has(environment.id);
+                return (
+                  <Pressable
+                    key={environment.id}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked, disabled: locked }}
+                    disabled={locked}
+                    className={cn(
+                      "min-h-12 w-full flex-row items-center gap-3 rounded-2xl border px-3.5 py-3",
+                      checked ? "border-primary bg-primary/10" : "border-border bg-input",
+                    )}
+                    onPress={() =>
+                      setSelected((current) => {
+                        const next = new Set(current);
+                        if (next.has(environment.id)) next.delete(environment.id);
+                        else next.add(environment.id);
+                        return next;
+                      })
+                    }
+                  >
+                    <View
+                      className={cn(
+                        "size-5 items-center justify-center rounded-sm",
+                        checked ? "bg-primary" : "border border-input-border",
+                      )}
+                    >
+                      {checked ? (
+                        <SymbolView
+                          name="checkmark"
+                          size={16}
+                          tintColorClassName="accent-primary-foreground"
+                          type="monochrome"
+                        />
+                      ) : null}
+                    </View>
+                    <Text className="font-t3-bold text-sm text-foreground">{environment.name}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          ) : null}
+          <TextInput
+            accessibilityLabel="Review comment"
+            placeholder="Leave a comment (optional)"
+            value={comment}
+            onChangeText={setComment}
+            editable={!locked}
+            returnKeyType="done"
+            className="min-h-[54px] rounded-2xl border border-input-border bg-input px-3.5 py-3 font-sans text-base text-foreground"
+          />
+          <View className="flex-row gap-2.5">
+            <View className="flex-1">
+              <Button
+                label="Reject"
+                tone="danger"
+                fullWidth
+                disabled={locked || selected.size === 0}
+                onPress={() => void submit("rejected")}
+              />
+            </View>
+            <View className="flex-1">
+              <Button
+                label={submitting ? "Submitting…" : "Approve and deploy"}
+                tone="primary"
+                fullWidth
+                disabled={locked || selected.size === 0}
+                onPress={() => void submit("approved")}
+              />
+            </View>
+          </View>
+          <Pressable
+            accessibilityRole="link"
+            className="flex-row items-center justify-center gap-1.5 rounded-2xl px-4 py-2.5 active:opacity-70"
+            onPress={() => void tryOpenExternalUrl(run.url, "workflow-run")}
+          >
+            <Text className="font-t3-bold text-sm text-foreground-muted">Open on GitHub</Text>
+            <SymbolView
+              name="arrow.up.right"
+              size={13}
+              tintColorClassName="accent-foreground-muted"
+              type="monochrome"
+            />
+          </Pressable>
+          {!canReview ? (
+            <Text className="font-sans text-xs text-foreground-tertiary">
+              This connection cannot review deployments.
+            </Text>
+          ) : null}
+        </View>
+      ) : null}
+      {error !== null ? (
+        <Text accessibilityRole="alert" className="text-sm text-danger-foreground">
+          {error}
         </Text>
       ) : null}
     </View>

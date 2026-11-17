@@ -43,6 +43,16 @@ describe("review a watched workflow deployment", () => {
     environments: [{ id: 51, name: "production" }],
   };
 
+  const quick: FakeGitHubWorkflowRun = {
+    id: 7105,
+    name: "Deploy quick",
+    status: "waiting",
+    environments: [
+      { id: 61, name: "staging" },
+      { id: 62, name: "production" },
+    ],
+  };
+
   const reviews = (run: FakeGitHubWorkflowRun) =>
     environment
       .gitHubApiRequests()
@@ -65,7 +75,7 @@ describe("review a watched workflow deployment", () => {
   }
 
   beforeAll(async () => {
-    const runs = [single, multiple, retry, stopped];
+    const runs = [single, multiple, retry, stopped, quick];
     environment = await startEnvironment({
       workflowRuns: runs,
       scenario: {
@@ -104,6 +114,7 @@ describe("review a watched workflow deployment", () => {
   it("stops the sole watch from its compact review panel while the agent is idle", async () => {
     const { page } = app;
     await watch(stopped);
+    await page.getByRole("button", { name: "Review", exact: true }).click();
     await page.getByText("Promote release at 12345678 #7104", { exact: true }).waitFor();
     const label = page.getByLabel(`${stopped.name} #7104`, { exact: true });
     await label.hover();
@@ -133,6 +144,7 @@ describe("review a watched workflow deployment", () => {
     // workflow-run-watch
     const { page } = app;
     await watch(single);
+    await page.getByRole("button", { name: "Review", exact: true }).click();
     await page
       .getByText("Waiting for your review to deploy to production.", { exact: true })
       .waitFor();
@@ -181,9 +193,22 @@ describe("review a watched workflow deployment", () => {
     expect(environment.codexTurns()).toHaveLength(turns.length);
   });
 
+  it("quickly approves every waiting environment without a comment", async () => {
+    const { page } = app;
+    await watch(quick);
+    expect(await page.getByRole("textbox", { name: "Review comment" }).count()).toBe(0);
+    await page.getByRole("button", { name: "Approve", exact: true }).click();
+    await page.getByText("Deployment review", { exact: true }).waitFor({ state: "hidden" });
+    expect(reviews(quick).map((request) => request.body)).toEqual([
+      { environment_ids: [61, 62], state: "approved", comment: "" },
+    ]);
+    await sidebar().getByText("Approval", { exact: true }).waitFor({ state: "hidden" });
+  });
+
   it("requires a selection for multiple deployments and rejects only the selected environment", async () => {
     const { page } = app;
     await watch(multiple);
+    await page.getByRole("button", { name: "Review", exact: true }).click();
     const staging = page.getByRole("checkbox", { name: "staging", exact: true });
     const production = page.getByRole("checkbox", { name: "production", exact: true });
     expect(await staging.isChecked()).toBe(true);
@@ -223,6 +248,7 @@ describe("review a watched workflow deployment", () => {
   it("shows a GitHub error, preserves the selection and comment, and lets the user retry", async () => {
     const { page } = app;
     await watch(retry);
+    await page.getByRole("button", { name: "Review", exact: true }).click();
     const turnsBeforeReview = environment.codexTurns().length;
     const production = page.getByRole("checkbox", { name: "production", exact: true });
     await production.uncheck();
@@ -246,12 +272,13 @@ describe("review a watched workflow deployment", () => {
     await page
       .getByText("Waiting for your review to deploy to production.", { exact: true })
       .waitFor();
+    await page.getByRole("button", { name: "Review", exact: true }).click();
     expect(await page.getByRole("checkbox").count()).toBe(0);
     expect(reviews(retry).map((request) => request.body)).toEqual([
       { environment_ids: [41], state: "approved", comment: "Deploy the staging fix" },
       { environment_ids: [41], state: "approved", comment: "Deploy the staging fix" },
     ]);
-    await approve.click();
+    await page.getByRole("button", { name: "Approve", exact: true }).click();
     await page.getByText("Deployment review", { exact: true }).waitFor({ state: "hidden" });
     expect(reviews(retry).at(-1)!.body).toEqual({
       environment_ids: [42],

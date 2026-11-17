@@ -1,6 +1,7 @@
+import { WorkflowRunReviewPanel } from "./WorkflowRunReviewPanel";
 import type { ChatMessage } from "../../types";
-import { ClockIcon, FileTextIcon, MessageSquareIcon, ReplyIcon, XIcon } from "lucide-react";
-import { createContext, use, useState } from "react";
+import { FileTextIcon, MessageSquareIcon, ReplyIcon, XIcon } from "lucide-react";
+import { createContext, use, useState, type ComponentProps } from "react";
 import type { MessageId } from "@t3tools/contracts";
 import {
   coordinatorReports,
@@ -171,37 +172,50 @@ export function ReportReplyStrip({
   );
 }
 
-export function WaitingReports({
+export function NeedsYou({
   reports,
   scroll,
+  ...reviewProps
 }: {
   reports: readonly ReportState[];
   scroll: (id: MessageId) => void;
-}) {
+} & ComponentProps<typeof WorkflowRunReviewPanel>) {
+  const [expanded, setExpanded] = useState(false);
   const open = waitingCoordinatorReports(reports);
-  if (!open.length) return null;
+  const reviewed = reviewProps.runs.filter((run) => run.review !== undefined);
+  const run = reviewed[0];
+  const count = open.length + (run ? 1 : 0);
+  if (!count) return null;
+  const visible = expanded ? open : open.slice(0, run ? 2 : 3);
   return (
     <div className="mx-auto mb-2 w-full max-w-(--chat-content-max-width)">
       <div className="overflow-hidden rounded-xl border border-border/70 bg-card shadow-xs">
-        <div className="flex items-center gap-1.5 border-b border-border/60 px-3 py-1.5 text-xs text-muted-foreground [&_svg]:size-3.5">
-          <ClockIcon />
-          Waiting on you · {open.length}
+        <div className="flex items-center justify-between gap-2 border-b border-border/60 px-3 py-1.5 text-xs text-muted-foreground">
+          <span>Needs you · {count}</span>
+          {count > 3 ? (
+            <Button size="xs" variant="ghost" onClick={() => setExpanded(!expanded)}>
+              {expanded ? "Show less" : `Show all ${count}`}
+            </Button>
+          ) : null}
         </div>
         <div className="flex flex-col divide-y divide-border/60">
-          {open.map(({ message }) => (
+          {run ? <WorkflowRunReviewPanel {...reviewProps} /> : null}
+          {visible.map(({ message }) => (
             <button
               key={message.id}
               type="button"
-              className="group/row flex min-w-0 cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-accent/40"
+              className="flex min-w-0 cursor-pointer items-start gap-2 px-3 py-2 text-left hover:bg-accent/40"
               onClick={() => scroll(message.id)}
             >
-              <span className="size-1.5 shrink-0 rounded-full bg-warning" aria-hidden />
-              <span className="min-w-0 truncate font-medium">{message.report!.title}</span>
-              <span className="min-w-0 flex-1 truncate text-muted-foreground">
-                {message.report!.question}
-              </span>
-              <span className="shrink-0 text-2xs text-muted-foreground/80">
-                v{message.report!.version} · {formatRelativeTimeLabel(message.createdAt)}
+              <span className="mt-2 size-1.5 shrink-0 rounded-full bg-warning" aria-hidden />
+              <span className="min-w-0 flex-1">
+                <span className="line-clamp-2 text-sm text-foreground">
+                  {message.report!.question}
+                </span>
+                <span className="block truncate text-xs text-muted-foreground">
+                  {message.report!.title} · v{message.report!.version} ·{" "}
+                  {formatRelativeTimeLabel(message.createdAt)}
+                </span>
               </span>
             </button>
           ))}
