@@ -114,6 +114,8 @@ describe("upstream intake audit", () => {
         "apps/web/src/components/Sidebar.tsx",
         "apps/desktop/src/app/DesktopApp.ts",
         "apps/mobile/src/lib/threadActivity.ts",
+        "packages/client-runtime/src/activity.ts",
+        "packages/shared/src/activity.ts",
       ],
     });
 
@@ -166,6 +168,39 @@ describe("upstream intake audit", () => {
   });
 
   it("requires manual review for sensitive paths and fork feature overlap", () => {
+    for (const path of [
+      "apps/mobile/app.json",
+      "apps/mobile/modules/synthetic/react-native.config.js",
+      "apps/mobile/eas.json",
+      "apps/mobile/metro.config.js",
+      "apps/mobile/babel.config.js",
+      "apps/mobile/fingerprint.config.js",
+      "apps/mobile/.fingerprintignore",
+      "apps/mobile/plugins/synthetic.cjs",
+      "apps/mobile/modules/synthetic/ios/Module.swift",
+      "apps/mobile/modules/synthetic/android/Module.kt",
+      "apps/mobile/modules/synthetic/cpp/Module.cpp",
+      "apps/mobile/modules/synthetic/include/Module.h",
+      "apps/mobile/modules/synthetic/build.gradle",
+      "apps/mobile/modules/synthetic/build.gradle.kts",
+      "apps/mobile/modules/synthetic/Module.podspec",
+      "apps/mobile/modules/synthetic/AndroidManifest.xml",
+      "apps/mobile/modules/synthetic/Info.plist",
+      "apps/mobile/ios/Synthetic.xcodeproj/project.pbxproj",
+      "apps/mobile/modules/synthetic/android/jniLibs/libghostty-vt.so",
+      "apps/mobile/deps/synthetic.tgz",
+      "apps/mobile/modules/synthetic/Vendor/Kit.xcframework/ios-arm64/Kit",
+      "apps/mobile/modules/synthetic/expo-module.config.json",
+    ]) {
+      const native = audit({ changedPaths: [path] });
+      assert.isTrue(native.valid, path);
+      assert.isFalse(native.automaticEligible, path);
+      assert.include(
+        native.manualReviewReasons,
+        "mobile native sources, binaries or runtime/build configuration changed",
+        path,
+      );
+    }
     const result = audit({
       changedPaths: [
         ".github/workflows/fork-ci.yml",
@@ -572,9 +607,7 @@ describe("upstream intake audit", () => {
     const lane = workflow.jobs.required_checks.steps.find(
       (step) => step.name === "Choose the promotion lane",
     );
-    assert.include(lane?.run ?? "", "nativeChecksPassed(sha, run, jobs)");
-    assert.include(lane?.run ?? "", "promotionLane(");
-    assert.include(lane?.run ?? "", "process.env.AUTOMATIC_ELIGIBLE === 'true'");
+    assert.include(lane?.run ?? "", "node scripts/upstream/promotion-lane.ts");
 
     const projectedReport = workflow.jobs.validate.steps.find(
       (step) => step.name === "Report projected upstream lag",

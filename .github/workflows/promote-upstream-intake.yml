@@ -285,34 +285,8 @@ jobs:
           AUTOMATIC_ELIGIBLE: ${{ needs.validate.outputs.automatic_eligible }}
           NATIVE_FINGERPRINT: ${{ needs.validate.outputs.native_fingerprint }}
           CANDIDATE_SHA: ${{ needs.validate.outputs.candidate_sha }}
-        run: |
-          node --input-type=module <<'JS'
-          import { execFileSync } from 'node:child_process';
-          import { appendFileSync } from 'node:fs';
-          import { nativeChecksPassed, promotionLane } from './scripts/upstream/lib/promotion-evidence.ts';
-          const api = (path) => JSON.parse(execFileSync('gh', ['api', path], { encoding: 'utf8' }));
-          const root = `repos/${process.env.GITHUB_REPOSITORY}/actions`;
-          const sha = process.env.CANDIDATE_SHA;
-          let nativePassed = false;
-          let run;
-          if (process.env.AUTOMATIC_ELIGIBLE === 'true' && process.env.NATIVE_FINGERPRINT !== 'unchanged') {
-            try {
-              const runs = api(`${root}/workflows/fork-macos.yml/runs?head_sha=${sha}&event=push&per_page=100`).workflow_runs;
-              run = runs.sort((a, b) => b.id - a.id)[0];
-              const jobs = run?.status === 'completed' && run.conclusion === 'success'
-                ? JSON.parse(execFileSync('gh', ['api', '--paginate', '--slurp',
-                    `${root}/runs/${run.id}/attempts/${run.run_attempt}/jobs?per_page=100`], { encoding: 'utf8' })).flatMap((page) => page.jobs)
-                : [];
-              nativePassed = nativeChecksPassed(sha, run, jobs);
-            } catch (error) {
-              console.warn(`Native CI evidence unavailable; require manual approval: ${error.message}`);
-            }
-          }
-          const { lane, reason } = promotionLane(process.env.AUTOMATIC_ELIGIBLE === 'true', process.env.NATIVE_FINGERPRINT, nativePassed);
-          appendFileSync(process.env.GITHUB_OUTPUT, `lane=${lane}\n`);
-          appendFileSync(process.env.GITHUB_STEP_SUMMARY,
-            `\n## Promotion lane\n\n**${lane}**: ${reason}\n\nNative fingerprint: ${process.env.NATIVE_FINGERPRINT}. Fork macOS and native lint evidence: ${nativePassed ? run.html_url : 'not established'}.\n`);
-          JS
+          CANDIDATE_BRANCH: ${{ needs.validate.outputs.candidate_branch }}
+        run: node scripts/upstream/promotion-lane.ts
 
   promote:
     name: ${{ needs.required_checks.outputs.lane == 'automatic' && 'Promote eligible candidate' || 'Approve and promote candidate' }}${{ needs.validate.outputs.native_fingerprint != 'unchanged' && format(' (native fingerprint {0})', needs.validate.outputs.native_fingerprint) || '' }}
@@ -353,6 +327,9 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          PROMOTION_LANE: ${{ needs.required_checks.outputs.lane }}
+          AUTOMATIC_ELIGIBLE: ${{ needs.validate.outputs.automatic_eligible }}
+          NATIVE_FINGERPRINT: ${{ needs.validate.outputs.native_fingerprint }}
           EXPECTED_BASE_SHA: ${{ needs.validate.outputs.base_sha }}
           CANDIDATE_BRANCH: ${{ needs.validate.outputs.candidate_branch }}
           CANDIDATE_SHA: ${{ needs.validate.outputs.candidate_sha }}
@@ -390,6 +367,9 @@ jobs:
           fi
 
           node scripts/upstream/wait-required-checks.ts --once
+          if [[ "$PROMOTION_LANE" == "automatic" ]]; then
+            node scripts/upstream/promotion-lane.ts --require-automatic
+          fi
 
           git push origin "${CANDIDATE_SHA}:refs/heads/main"
 

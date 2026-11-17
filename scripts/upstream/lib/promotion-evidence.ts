@@ -74,9 +74,11 @@ export function requireIntakeJobs(
 
 export function nativeChecksPassed(
   sha: string,
+  branch: string,
   run:
     | {
         readonly head_sha: string;
+        readonly head_branch: string;
         readonly event: string;
         readonly path: string;
         readonly status: string;
@@ -92,6 +94,8 @@ export function nativeChecksPassed(
   const lint = jobs.filter((job) => job.name === "Fork Mobile Native Lint");
   return (
     run?.head_sha === sha &&
+    // Main's push run can supersede the intake run when replaying a landed candidate.
+    (run.head_branch === branch || run.head_branch === "main") &&
     run.event === "push" &&
     run.path === ".github/workflows/fork-macos.yml" &&
     run.status === "completed" &&
@@ -114,7 +118,7 @@ export function promotionLane(
       lane: "automatic",
       reason: "The audit is clean and native fingerprint inputs are unchanged.",
     };
-  if (["unknown", "moved"].includes(fingerprint ?? "") && nativePassed) {
+  if (fingerprint === "unknown" && nativePassed) {
     return {
       lane: "automatic",
       reason:
@@ -126,4 +130,27 @@ export function promotionLane(
     reason:
       "Native fingerprint inputs may have changed without successful Fork macOS and native lint evidence.",
   };
+}
+
+export function readNativeChecks(api: (path: string) => string, sha: string, branch: string) {
+  type Run = NonNullable<Parameters<typeof nativeChecksPassed>[2]> & {
+    readonly id: number;
+    readonly run_attempt: number;
+    readonly html_url: string;
+  };
+  const runs = (
+    JSON.parse(
+      api(`workflows/fork-macos.yml/runs?head_sha=${sha}&event=push&per_page=100`),
+    ) as Array<{ workflow_runs: Array<Run> }>
+  ).flatMap((page) => page.workflow_runs);
+  const run = runs.sort((a, b) => b.id - a.id)[0];
+  const jobs =
+    run?.status === "completed" && run.conclusion === "success"
+      ? (
+          JSON.parse(api(`runs/${run.id}/attempts/${run.run_attempt}/jobs?per_page=100`)) as Array<{
+            jobs: Parameters<typeof nativeChecksPassed>[3];
+          }>
+        ).flatMap((page) => page.jobs)
+      : [];
+  return { passed: nativeChecksPassed(sha, branch, run, jobs), url: run?.html_url };
 }

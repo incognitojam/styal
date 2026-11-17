@@ -59,7 +59,7 @@ it("rejects each skipped required test step", () => {
 });
 
 it("widens only audit-clean native candidates with successful native CI evidence", () => {
-  for (const fingerprint of ["unknown", "moved"]) {
+  for (const fingerprint of ["unknown"]) {
     assert.equal(promotionLane(true, fingerprint, true).lane, "automatic");
     assert.equal(promotionLane(true, fingerprint, false).lane, "manual");
     assert.equal(promotionLane(false, fingerprint, true).lane, "manual");
@@ -68,29 +68,33 @@ it("widens only audit-clean native candidates with successful native CI evidence
   assert.equal(promotionLane(false, "unchanged", true).lane, "manual");
   assert.equal(promotionLane(true, undefined, true).lane, "manual");
   assert.equal(promotionLane(true, "invalid", true).lane, "manual");
+  assert.equal(promotionLane(true, "moved", true).lane, "manual");
 });
 
 it("requires the candidate's completed Fork macOS run and successful native lint guard", () => {
   const sha = "a".repeat(40);
   const run = {
     head_sha: sha,
+    head_branch: "intake/fixture",
     event: "push",
     path: ".github/workflows/fork-macos.yml",
     status: "completed",
     conclusion: "success",
   };
   const job = { name: "Fork Mobile Native Lint", status: "completed", conclusion: "success" };
-  assert.isTrue(nativeChecksPassed(sha, run, [job]));
-  assert.isFalse(nativeChecksPassed(sha, undefined, [job]));
+  assert.isTrue(nativeChecksPassed(sha, "intake/fixture", run, [job]));
+  assert.isTrue(nativeChecksPassed(sha, "intake/fixture", { ...run, head_branch: "main" }, [job]));
+  assert.isFalse(nativeChecksPassed(sha, "intake/fixture", undefined, [job]));
   for (const override of [
     { head_sha: "b".repeat(40) },
     { event: "pull_request" },
+    { head_branch: "intake/other" },
     { path: ".github/workflows/other.yml" },
     { status: "in_progress" },
     { conclusion: "failure" },
     { conclusion: "cancelled" },
   ])
-    assert.isFalse(nativeChecksPassed(sha, { ...run, ...override }, [job]));
+    assert.isFalse(nativeChecksPassed(sha, "intake/fixture", { ...run, ...override }, [job]));
   for (const jobs of [
     [],
     [job, job],
@@ -98,6 +102,6 @@ it("requires the candidate's completed Fork macOS run and successful native lint
     [{ ...job, status: "in_progress" }],
     [{ ...job, conclusion: "failure" }],
   ]) {
-    assert.isFalse(nativeChecksPassed(sha, run, jobs));
+    assert.isFalse(nativeChecksPassed(sha, "intake/fixture", run, jobs));
   }
 });

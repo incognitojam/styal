@@ -183,9 +183,8 @@ jobs:
             exit 1
           fi
 
-  # Whether an OTA update from the promoted batch reaches installed apps. The
-  # promotion workflow reads the uploaded verdict and never promotes a batch
-  # that moves the fingerprint without approval.
+  # Informational comparison of which installed builds can receive the batch's OTA.
+  # Promotion uses trusted path accounting and native CI, not this candidate artifact.
   intake_fingerprint:
     name: Fork Intake Native Fingerprint
     needs: changes

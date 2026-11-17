@@ -37,6 +37,17 @@ it("blocks moved base and candidate refs before pushing, and promotes an unchang
       NodePath.join(root, "scripts/upstream/wait-required-checks.ts"),
       NodePath.join(guardDirectory, "wait-required-checks.ts"),
     );
+    NodeFS.mkdirSync(NodePath.join(guardDirectory, "lib"));
+    NodeFS.copyFileSync(
+      NodePath.join(root, "scripts/upstream/lib/promotion-evidence.ts"),
+      NodePath.join(guardDirectory, "lib/promotion-evidence.ts"),
+    );
+    if (NodeFS.existsSync(NodePath.join(root, "scripts/upstream/promotion-lane.ts"))) {
+      NodeFS.copyFileSync(
+        NodePath.join(root, "scripts/upstream/promotion-lane.ts"),
+        NodePath.join(guardDirectory, "promotion-lane.ts"),
+      );
+    }
     const bin = NodePath.join(directory, "bin");
     NodeFS.mkdirSync(bin);
     NodeFS.writeFileSync(
@@ -44,7 +55,12 @@ it("blocks moved base and candidate refs before pushing, and promotes an unchang
       `#!/usr/bin/env node
 const path = process.argv.at(-1);
 if (process.argv[2] !== 'api' || !path.startsWith('repos/incognitojam/styal/')) process.exit(2);
-const response = path.endsWith('rules/branches/main')
+const nativeRun = { id: 1, run_attempt: 1, html_url: 'https://example.invalid/native', head_sha: process.env.CANDIDATE_SHA, head_branch: 'intake/fixture', event: 'push', path: '.github/workflows/fork-macos.yml', status: 'completed', conclusion: 'success' };
+const response = path.includes('/workflows/fork-macos.yml/runs?')
+  ? { workflow_runs: process.env.NATIVE_RUN_STATE === 'failure'
+      ? [nativeRun, { ...nativeRun, id: 2, head_branch: 'intake/another', conclusion: 'failure' }] : [nativeRun] }
+  : path.includes('/attempts/1/jobs?') ? { jobs: [{ name: 'Fork Mobile Native Lint', status: 'completed', conclusion: 'success' }] }
+  : path.endsWith('rules/branches/main')
   ? [{ type: 'required_status_checks', parameters: { required_status_checks: [{ context: 'Synthetic required check' }] } }]
   : path.includes('/check-suites?') ? { check_suites: [] }
   : path.includes('/check-runs?') ? { check_runs: [] }
@@ -52,7 +68,7 @@ const response = path.endsWith('rules/branches/main')
   : path.includes('/statuses?') ? [{ id: 1, context: 'Synthetic required check', state: process.env.GUARD_STATE }]
   : undefined;
 if (!response) process.exit(2);
-console.log(JSON.stringify([response]));
+console.log(JSON.stringify(process.argv.includes("--slurp") ? [response] : response));
 `,
       { mode: 0o755 },
     );
@@ -109,7 +125,7 @@ console.log(JSON.stringify([response]));
     const script = workflow.jobs.promote.steps
       .find((step: { name?: string }) => step.name === "Fast-forward main to the candidate")
       .run.replace(/\$\{\{.*?\}\}/gu, "synthetic");
-    const run = (guardState = "success") =>
+    const run = (guardState = "success", nativeRunState = "success") =>
       NodeChildProcess.spawnSync("bash", ["-c", script], {
         cwd,
         encoding: "utf8",
@@ -118,6 +134,10 @@ console.log(JSON.stringify([response]));
           PATH: `${bin}${NodePath.delimiter}${process.env.PATH ?? ""}`,
           GITHUB_REPOSITORY: "incognitojam/styal",
           GUARD_STATE: guardState,
+          NATIVE_RUN_STATE: nativeRunState,
+          PROMOTION_LANE: "automatic",
+          AUTOMATIC_ELIGIBLE: "true",
+          NATIVE_FINGERPRINT: "unknown",
           EXPECTED_BASE_SHA: base,
           CANDIDATE_SHA: head,
           CANDIDATE_BRANCH: "intake/fixture",
@@ -151,6 +171,32 @@ console.log(JSON.stringify([response]));
       );
       assert.equal(main(), base);
     }
+    const laneScript = workflow.jobs.required_checks.steps.find(
+      (step: { name?: string }) => step.name === "Choose the promotion lane",
+    ).run;
+    const selected = NodeChildProcess.spawnSync("bash", ["-c", laneScript], {
+      cwd,
+      encoding: "utf8",
+      env: {
+        ...env,
+        PATH: `${bin}${NodePath.delimiter}${process.env.PATH ?? ""}`,
+        GITHUB_REPOSITORY: "incognitojam/styal",
+        CANDIDATE_SHA: head,
+        CANDIDATE_BRANCH: "intake/fixture",
+        AUTOMATIC_ELIGIBLE: "true",
+        NATIVE_FINGERPRINT: "unknown",
+        NATIVE_RUN_STATE: "success",
+        GITHUB_OUTPUT: NodePath.join(directory, "lane"),
+        GITHUB_STEP_SUMMARY: NodePath.join(directory, "summary"),
+      },
+    });
+    assert.equal(selected.status, 0, selected.stderr);
+    assert.include(NodeFS.readFileSync(NodePath.join(directory, "lane"), "utf8"), "lane=automatic");
+    const staleNative = run("success", "failure");
+    assert.equal(staleNative.status, 1, staleNative.stderr);
+    assert.include(staleNative.stdout, "All of main's required checks succeeded on the candidate.");
+    assert.include(staleNative.stderr, "Native eligibility changed; manual approval required");
+    assert.equal(main(), base);
     const unchanged = run();
     assert.equal(unchanged.status, 0, unchanged.stderr);
     assert.include(unchanged.stdout, "All of main's required checks succeeded on the candidate.");
