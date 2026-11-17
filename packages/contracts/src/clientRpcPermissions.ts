@@ -14,6 +14,8 @@ import {
 } from "./auth.ts";
 import { ORCHESTRATION_V2_WS_METHODS } from "./orchestrationV2.ts";
 import { WS_METHODS } from "./rpc.ts";
+import { ProviderInstanceMutation } from "./providerInstance.ts";
+import { ServerSettingsPatch, requiredScopesForServerSettingsPatch } from "./settings.ts";
 
 /** Incremental client enforcement; the server still authorizes every request. */
 export const CLIENT_GUARDED_RPC_SCOPES = {
@@ -23,6 +25,7 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
   // Stopping a server signals its processes, as closing a terminal does.
   [WS_METHODS.previewStopLocalServer]: AuthTerminalOperateScope,
   [WS_METHODS.serverRunStorageCleanup]: AuthSettingsWriteScope,
+  [WS_METHODS.serverUpdateSettings]: AuthSettingsWriteScope,
   [WS_METHODS.serverCheckOtlpEndpoint]: AuthSettingsWriteScope,
   [WS_METHODS.feedbackSubmit]: AuthSourceControlWriteScope,
   [WS_METHODS.serverRefreshProviders]: AuthOrchestrationReadScope,
@@ -86,6 +89,14 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
 } as const;
 export type ClientGuardedRpcTag = keyof typeof CLIENT_GUARDED_RPC_SCOPES;
 
+const decodeSettingsUpdate = Schema.decodeUnknownSync(
+  Schema.toType(
+    Schema.Struct({
+      patch: ServerSettingsPatch,
+      providerInstanceMutation: Schema.optionalKey(ProviderInstanceMutation),
+    }),
+  ),
+);
 const decodePrepareThread = Schema.decodeUnknownSync(GitPreparePullRequestThreadInput);
 const decodeStackedAction = Schema.decodeUnknownSync(GitRunStackedActionInput);
 
@@ -93,6 +104,14 @@ export function clientRpcRequiredScopes(
   method: string,
   input: unknown,
 ): readonly AuthEnvironmentScope[] {
+  if (method === WS_METHODS.serverUpdateSettings && input !== undefined) {
+    const payload = decodeSettingsUpdate(input);
+    const scopes = requiredScopesForServerSettingsPatch(payload.patch);
+    if (payload.providerInstanceMutation === undefined) return scopes;
+    return Object.values(payload.patch).every((value) => value === undefined)
+      ? [AuthProvidersManageScope]
+      : [...new Set([...scopes, AuthProvidersManageScope])];
+  }
   if (method === WS_METHODS.gitPreparePullRequestThread && input !== undefined) {
     const payload = decodePrepareThread(input);
     if (payload.mode === "worktree" && payload.threadId !== undefined)

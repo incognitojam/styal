@@ -18,6 +18,10 @@ export function createPeerLinkEnvironmentAtoms<R, E>(
   });
   return {
     list,
+    allow: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:peer-links:allow",
+      tag: WS_METHODS.serverUpdateSettings,
+    }),
     /** Threads other machines started here that are running, asked fresh before lowering access. */
     incomingWork: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:peer-links:incoming-work",

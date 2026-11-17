@@ -564,6 +564,14 @@ const revokeSessions = Effect.fn("clientRuntime.state.workTogether.revokeSession
 
 /** The link commands, which check this client's permissions and refresh what each lists. */
 interface PeerLinkCommands {
+  readonly allow: AtomCommand<
+    {
+      readonly environmentId: EnvironmentId;
+      readonly input: { readonly patch: { readonly linkedEnvironmentsEnabled: boolean } };
+    },
+    unknown,
+    unknown
+  >;
   readonly link: AtomCommand<
     { readonly environmentId: EnvironmentId; readonly input: PeerLinkCreateInput },
     unknown,
@@ -598,10 +606,10 @@ const executeStep = (
     const environments = yield* EnvironmentRegistry;
     switch (step.kind) {
       case "allow":
-        yield* environments.run(
-          step.machine.environmentId,
-          request(WS_METHODS.serverUpdateSettings, {
-            patch: { linkedEnvironmentsEnabled: true },
+        yield* settled(() =>
+          commands.allow.run(registry, {
+            environmentId: step.machine.environmentId,
+            input: { patch: { linkedEnvironmentsEnabled: true } },
           }),
         );
         return;
