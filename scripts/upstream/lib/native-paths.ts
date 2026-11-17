@@ -1,0 +1,169 @@
+const NATIVE_FINGERPRINT_INPUTS = [
+  "apps/mobile/",
+  "packages/client-runtime/",
+  "packages/contracts/",
+  "packages/shared/",
+  "assets/",
+  "scripts/",
+  "patches/",
+  "package.json",
+  "pnpm-lock.yaml",
+  "pnpm-workspace.yaml",
+  ".easignore",
+];
+
+export function touchesNativeFingerprint(paths: ReadonlyArray<string>): boolean {
+  return paths.some((path) =>
+    NATIVE_FINGERPRINT_INPUTS.some((input) =>
+      input.endsWith("/") ? path.startsWith(input) : path === input,
+    ),
+  );
+}
+
+// Kept in sync with build/audit imports by the dependency-closure test.
+export const buildImportedClientPaths = [
+  "packages/client-runtime/src/sourceControlClients.ts",
+  "packages/shared/src/AgentScope.ts",
+  "packages/shared/src/Array.ts",
+  "packages/shared/src/DrainableWorker.ts",
+  "packages/shared/src/HostProcess.ts",
+  "packages/shared/src/KeyedCoalescingWorker.ts",
+  "packages/shared/src/KeyedLock.ts",
+  "packages/shared/src/Net.ts",
+  "packages/shared/src/PhysicalFileSystem.ts",
+  "packages/shared/src/PtyAdapter.ts",
+  "packages/shared/src/Struct.ts",
+  "packages/shared/src/agentAwareness.ts",
+  "packages/shared/src/assistantCitations.ts",
+  "packages/shared/src/atomicWrite.ts",
+  "packages/shared/src/backgroundActivitySettings.ts",
+  "packages/shared/src/brandAssets.ts",
+  "packages/shared/src/changedFileKind.ts",
+  "packages/shared/src/claudeCompaction.ts",
+  "packages/shared/src/cliArgs.ts",
+  "packages/shared/src/cliPackage.ts",
+  "packages/shared/src/cliRelease.ts",
+  "packages/shared/src/cliReleaseVersion.ts",
+  "packages/shared/src/cloneUrl.ts",
+  "packages/shared/src/codexArtifactTemplates.ts",
+  "packages/shared/src/codexAuthHandoff.ts",
+  "packages/shared/src/codexFileCitations.ts",
+  "packages/shared/src/codexMarkdownDirectives.ts",
+  "packages/shared/src/composerContextLegacy.ts",
+  "packages/shared/src/composerContextReferences.ts",
+  "packages/shared/src/composerInlineTokens.ts",
+  "packages/shared/src/connectAuth.ts",
+  "packages/shared/src/devHome.ts",
+  "packages/shared/src/devProxy.ts",
+  "packages/shared/src/feedbackFooter.ts",
+  "packages/shared/src/fileLinks.ts",
+  "packages/shared/src/filePreview.ts",
+  "packages/shared/src/generatedImageMarkdown.ts",
+  "packages/shared/src/git.ts",
+  "packages/shared/src/gitPatchPath.ts",
+  "packages/shared/src/hostActivity.ts",
+  "packages/shared/src/hostClassification.ts",
+  "packages/shared/src/htmlRender.ts",
+  "packages/shared/src/httpReadiness.ts",
+  "packages/shared/src/image.ts",
+  "packages/shared/src/inlineSkills.ts",
+  "packages/shared/src/keybindingMatching.ts",
+  "packages/shared/src/keybindings.ts",
+  "packages/shared/src/logging.ts",
+  "packages/shared/src/managedPolicyFile.ts",
+  "packages/shared/src/markdownGithubAlerts.ts",
+  "packages/shared/src/markdownLinks.ts",
+  "packages/shared/src/markdownListIndentation.ts",
+  "packages/shared/src/markdownMath.ts",
+  "packages/shared/src/markdownPipeline.ts",
+  "packages/shared/src/markdownWindowsPaths.ts",
+  "packages/shared/src/mcpApp.ts",
+  "packages/shared/src/mcpResponsePayloads.ts",
+  "packages/shared/src/mediaPreview.ts",
+  "packages/shared/src/mentionedTimeSpans.ts",
+  "packages/shared/src/model.ts",
+  "packages/shared/src/nodeRuntime.ts",
+  "packages/shared/src/nodeSqliteClient.ts",
+  "packages/shared/src/observability.ts",
+  "packages/shared/src/orchestrationTiming.ts",
+  "packages/shared/src/orchestrationV2DedupedBodies.ts",
+  "packages/shared/src/orchestrationV2PendingBackgroundWork.ts",
+  "packages/shared/src/orchestrationV2ThreadError.ts",
+  "packages/shared/src/orchestrationV2Timeline.ts",
+  "packages/shared/src/otelEnvironment.ts",
+  "packages/shared/src/paletteSearch.ts",
+  "packages/shared/src/path.ts",
+  "packages/shared/src/physicalFileSystemNode.ts",
+  "packages/shared/src/preview.ts",
+  "packages/shared/src/previewErrorDiagnostics.ts",
+  "packages/shared/src/projectFavicon.ts",
+  "packages/shared/src/projectFile.ts",
+  "packages/shared/src/projectFileApprovals.ts",
+  "packages/shared/src/projectFileRecovery.ts",
+  "packages/shared/src/projectScripts.ts",
+  "packages/shared/src/projectSettings.ts",
+  "packages/shared/src/proposedPlanText.ts",
+  "packages/shared/src/providerAuthReturnUrl.ts",
+  "packages/shared/src/regenerableFilePatterns.ts",
+  "packages/shared/src/relayAuth.ts",
+  "packages/shared/src/relaySigning.ts",
+  "packages/shared/src/releaseResource.ts",
+  "packages/shared/src/remote.ts",
+  "packages/shared/src/reviewFindings.ts",
+  "packages/shared/src/schemaJson.ts",
+  "packages/shared/src/schemaYaml.ts",
+  "packages/shared/src/searchRanking.ts",
+  "packages/shared/src/semver.ts",
+  "packages/shared/src/serverOwnedEnvironment.ts",
+  "packages/shared/src/serverSettings.ts",
+  "packages/shared/src/shell.ts",
+  "packages/shared/src/sourceControl.ts",
+  "packages/shared/src/styalToolWording.ts",
+  "packages/shared/src/symlink.ts",
+  "packages/shared/src/t3McpToolPresentation.ts",
+  "packages/shared/src/t3ProjectFile.ts",
+  "packages/shared/src/telemetryId.ts",
+  "packages/shared/src/terminalLabels.ts",
+  "packages/shared/src/terminalOutput.ts",
+  "packages/shared/src/testing/symlinks.ts",
+  "packages/shared/src/themePalettes.ts",
+  "packages/shared/src/themePreview.ts",
+  "packages/shared/src/threadFindText.ts",
+  "packages/shared/src/threadLinks.ts",
+  "packages/shared/src/threadPullRequests.ts",
+  "packages/shared/src/threadSearch.ts",
+  "packages/shared/src/threadTranscript.ts",
+  "packages/shared/src/toolActivity.ts",
+  "packages/shared/src/toolOutput.ts",
+  "packages/shared/src/turnUsage.ts",
+  "packages/shared/src/usageFormat.ts",
+  "packages/shared/src/usageLimits.ts",
+  "packages/shared/src/usageMerge.ts",
+  "packages/shared/src/video.ts",
+] as const;
+const buildImports = new Set<string>(buildImportedClientPaths);
+
+export function automaticFingerprintPath(path: string): boolean {
+  return (
+    /^(?:apps\/mobile\/src|packages\/(?:client-runtime|shared|contracts)\/src)\/.+\.tsx?$/u.test(
+      path,
+    ) &&
+    !path.startsWith("apps/mobile/src/widgets/") &&
+    !buildImports.has(path)
+  );
+}
+
+export function nonRegularTextChanges(raw: string, numstat: string): ReadonlySet<string> {
+  const unsafe = new Set<string>();
+  const records = raw.split("\0");
+  for (let index = 0; index + 1 < records.length; index += 2) {
+    const [before, after] = records[index]!.slice(1).split(" ");
+    const mode = after === "000000" ? before : after;
+    if (mode !== "100644" && mode !== "100755") unsafe.add(records[index + 1]!);
+  }
+  for (const record of numstat.split("\0")) {
+    const [added, removed, ...path] = record.split("\t");
+    if (added === "-" || removed === "-") unsafe.add(path.join("\t"));
+  }
+  return unsafe;
+}

@@ -1,5 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFS from "node:fs";
+import * as NodeChildProcess from "node:child_process";
+import ts from "typescript-legacy";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 import { assert, describe, it } from "@effect/vitest";
@@ -8,6 +10,7 @@ import { parse } from "yaml";
 import type { ForkFeatureLedger } from "../../fork-feature-ledger.ts";
 import type { CommitReview } from "./commit-review.ts";
 import { auditUpstreamIntakeCandidate } from "./intake.ts";
+import { buildImportedClientPaths, nonRegularTextChanges } from "./native-paths.ts";
 
 const repoRoot = NodePath.resolve(
   NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),
@@ -52,7 +55,8 @@ function audit(overrides: Partial<Parameters<typeof auditUpstreamIntakeCandidate
     commitMessages: ["fix(server): synthetic change\n\nUpstream-PR: 1234"],
     mergeCommits: [],
     mainIsAncestor: true,
-    changedPaths: ["apps/mobile/src/lib/activity.ts"],
+    changedPaths: ["apps/server/src/usage/usageReports.ts"],
+    nonRegularTextPaths: new Set(),
     ledger,
     commitPullRequests: new Map(),
     commitReviews: [
@@ -70,6 +74,100 @@ function audit(overrides: Partial<Parameters<typeof auditUpstreamIntakeCandidate
     ],
     ...overrides,
   });
+}
+
+function importedBuildInputs() {
+  const files = NodeChildProcess.execFileSync(
+    "git",
+    ["ls-files", "-z", "--", ".", ":(exclude).repos"],
+    { cwd: repoRoot, encoding: "utf8", maxBuffer: 16 * 1024 * 1024 },
+  )
+    .split("\0")
+    .filter(Boolean);
+  const roots = files.filter(
+    (file) =>
+      /\.[cm]?[jt]sx?$/u.test(file) &&
+      (file.startsWith("scripts/") ||
+        file.includes("/scripts/") ||
+        /\.config\.[cm]?[jt]s$/u.test(file) ||
+        file.startsWith("apps/mobile/plugins/")),
+  );
+  const configurations = new Map<string, ts.CompilerOptions>();
+  const optionsFor = (file: string) => {
+    const config = ts.findConfigFile(NodePath.dirname(file), ts.sys.fileExists);
+    if (config && !configurations.has(config)) {
+      const json = ts.readConfigFile(config, ts.sys.readFile);
+      configurations.set(
+        config,
+        ts.parseJsonConfigFileContent(
+          json.config,
+          {
+            ...ts.sys,
+            readDirectory: () => [],
+          },
+          NodePath.dirname(config),
+        ).options,
+      );
+    }
+    return {
+      ...(config ? configurations.get(config) : {}),
+      moduleResolution: ts.ModuleResolutionKind.Bundler,
+    };
+  };
+  const pending = roots.map((file) => NodePath.join(repoRoot, file));
+  const seen = new Set<string>();
+  const protectedPaths = new Set<string>();
+  while (pending.length > 0) {
+    const file = pending.pop()!;
+    if (seen.has(file) || !NodeFS.existsSync(file)) continue;
+    seen.add(file);
+    const relative = NodePath.relative(repoRoot, file).split(NodePath.sep).join("/");
+    if (
+      relative.startsWith("../") ||
+      relative.includes("node_modules/") ||
+      relative.startsWith(".repos/")
+    )
+      continue;
+    if (/^packages\/(?:shared|client-runtime|contracts)\/src\//u.test(relative))
+      protectedPaths.add(relative);
+    const source = ts.createSourceFile(
+      file,
+      NodeFS.readFileSync(file, "utf8"),
+      ts.ScriptTarget.Latest,
+      true,
+    );
+    const visit = (node: ts.Node): void => {
+      const specifier =
+        ts.isImportDeclaration(node) || ts.isExportDeclaration(node)
+          ? node.moduleSpecifier
+          : ts.isCallExpression(node) &&
+              (node.expression.kind === ts.SyntaxKind.ImportKeyword ||
+                (ts.isIdentifier(node.expression) && node.expression.text === "require"))
+            ? node.arguments[0]
+            : undefined;
+      if (specifier && ts.isStringLiteralLike(specifier)) {
+        const resolved = ts.resolveModuleName(
+          specifier.text,
+          file,
+          optionsFor(file),
+          ts.sys,
+        ).resolvedModule;
+        if (resolved) {
+          const target = NodeFS.realpathSync(resolved.resolvedFileName);
+          if (
+            target.startsWith(`${repoRoot}${NodePath.sep}`) &&
+            !target.includes(`${NodePath.sep}node_modules${NodePath.sep}`)
+          )
+            pending.push(target);
+        } else if (specifier.text.startsWith("@t3tools/") || specifier.text.startsWith("~/")) {
+          assert.fail(`Unresolved build import ${specifier.text} from ${relative}`);
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(source);
+  }
+  return protectedPaths;
 }
 
 describe("upstream intake audit", () => {
@@ -108,9 +206,12 @@ describe("upstream intake audit", () => {
     assert.include(result.summary, "report-only");
   });
 
-  it("allows JavaScript-only mobile and shared source batches", () => {
+  it("keeps non-fingerprint clients and source-only fingerprint changes eligible", () => {
     const result = audit({
       changedPaths: [
+        "apps/server/src/usage/usageReports.ts",
+        "apps/web/src/components/Sidebar.tsx",
+        "apps/desktop/src/app/DesktopApp.ts",
         "apps/mobile/src/lib/threadActivity.ts",
         "packages/client-runtime/src/activity.ts",
         "packages/shared/src/activity.ts",
@@ -119,8 +220,23 @@ describe("upstream intake audit", () => {
 
     assert.deepEqual(result.manualReviewReasons, []);
     assert.isTrue(result.automaticEligible);
+    const invalidKinds = nonRegularTextChanges(
+      ":100644 120000 a b T\0apps/mobile/src/link.ts\0:000000 100644 0 b A\0apps/mobile/src/binary.ts\0:100644 100755 a b M\0apps/mobile/src/executable.ts\0",
+      "1\t1\tapps/mobile/src/link.ts\0-\t-\tapps/mobile/src/binary.ts\0" +
+        "1\t1\tapps/mobile/src/executable.ts\0",
+    );
+    assert.deepEqual([...invalidKinds].sort(), [
+      "apps/mobile/src/binary.ts",
+      "apps/mobile/src/link.ts",
+    ]);
+    for (const path of invalidKinds) {
+      assert.isFalse(
+        audit({ changedPaths: [path], nonRegularTextPaths: invalidKinds }).automaticEligible,
+        path,
+      );
+    }
     for (const root of ["apps/mobile/src", "packages/client-runtime/src", "packages/shared/src"]) {
-      for (const ext of ["ts", "tsx", "js", "jsx", "json", "css", "md"]) {
+      for (const ext of ["ts", "tsx"]) {
         const path = `${root}/lib/synthetic.${ext}`;
         assert.isTrue(audit({ changedPaths: [path] }).automaticEligible, path);
       }
@@ -136,6 +252,16 @@ describe("upstream intake audit", () => {
         ],
       }).automaticEligible,
     );
+  });
+
+  it("keeps the transitive build and audit import closure out of automatic promotion", () => {
+    const imported = importedBuildInputs();
+    assert.deepEqual(
+      [...buildImportedClientPaths],
+      [...imported].filter((path) => !path.startsWith("packages/contracts/")).sort(),
+    );
+    for (const path of imported)
+      assert.isFalse(audit({ changedPaths: [path] }).automaticEligible, path);
   });
 
   it("requires manual review for a commit with a fork adaptation note", () => {
@@ -184,6 +310,18 @@ describe("upstream intake audit", () => {
 
   it("requires manual review for sensitive paths and fork feature overlap", () => {
     for (const path of [
+      "packages/shared/src/schemaYaml.ts",
+      "packages/shared/src/brandAssets.ts",
+      "packages/shared/src/relayAuth.ts",
+      "packages/shared/src/HostProcess.ts",
+      "packages/shared/src/shell.ts",
+      "packages/shared/src/schemaJson.ts",
+      "packages/shared/src/cliPackage.ts",
+      "packages/shared/src/cliReleaseVersion.ts",
+      "packages/shared/src/semver.ts",
+      "apps/mobile/src/widgets/SubscriptionUsage.android.tsx",
+      "apps/mobile/src/lib/synthetic.js",
+      "apps/mobile/src/lib/synthetic.json",
       "apps/mobile/modules/t3-subscription-widget/android/src/main/res/values/bools.xml",
       "apps/mobile/modules/t3-agent-notifications/android/src/main/res/values/agent_activity_colors.xml",
       "apps/mobile/modules/synthetic/ios/Build.xcconfig",
@@ -194,9 +332,6 @@ describe("upstream intake audit", () => {
       "apps/mobile/patches/synthetic.patch",
       "apps/mobile/src/lib/synthetic.swift",
       "apps/mobile/src/lib/synthetic.ts.patch",
-      "apps/server/src/usage/usageReports.ts",
-      "apps/web/src/components/Sidebar.tsx",
-      "apps/desktop/src/app/DesktopApp.ts",
       "assets/synthetic.png",
       "packages/shared/native/synthetic.ts",
       "apps/mobile/app.json",
@@ -227,7 +362,7 @@ describe("upstream intake audit", () => {
       assert.isFalse(native.automaticEligible, path);
       assert.include(
         native.manualReviewReasons,
-        "paths outside the JavaScript-only automatic promotion allowlist changed",
+        "fingerprint inputs outside the JavaScript-only automatic promotion allowlist changed",
         path,
       );
     }

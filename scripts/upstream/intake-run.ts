@@ -46,6 +46,8 @@ import {
 import { applyIdentifierRenames, deriveIdentifierRenames } from "./lib/renames.ts";
 import { decodeTrackedPRs } from "./lib/tracked-prs.ts";
 import { HOLD_CONTEXT, holdForPushedCandidate } from "./landing-hold.ts";
+import { touchesNativeFingerprint } from "./lib/native-paths.ts";
+export { touchesNativeFingerprint } from "./lib/native-paths.ts";
 
 const repoRoot = NodePath.resolve(
   NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),
@@ -2449,24 +2451,6 @@ interface VerifyStep {
   readonly args: ReadonlyArray<string>;
 }
 
-/**
- * What `.github/workflows/mobile-fingerprint-check.yml` treats as fingerprint inputs. Intake
- * batches land without a pull request, so that check never runs on them.
- */
-const NATIVE_FINGERPRINT_INPUTS = [
-  "apps/mobile/",
-  "packages/client-runtime/",
-  "packages/contracts/",
-  "packages/shared/",
-  "assets/",
-  "scripts/",
-  "patches/",
-  "package.json",
-  "pnpm-lock.yaml",
-  "pnpm-workspace.yaml",
-  ".easignore",
-];
-
 const NATIVE_PLATFORMS = ["ios", "android"] as const;
 
 export type NativeFingerprintComparison =
@@ -2477,14 +2461,6 @@ export type NativeFingerprintComparison =
       readonly base: string;
       readonly head: string;
     }>;
-
-export function touchesNativeFingerprint(paths: ReadonlyArray<string>): boolean {
-  return paths.some((path) =>
-    NATIVE_FINGERPRINT_INPUTS.some((input) =>
-      input.endsWith("/") ? path.startsWith(input) : path === input,
-    ),
-  );
-}
 
 function nativeFingerprints(root: string, env: NodeJS.ProcessEnv) {
   return NATIVE_PLATFORMS.map((platform) => {

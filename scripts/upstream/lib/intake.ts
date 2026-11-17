@@ -7,6 +7,7 @@ import {
   renderCommitReviews,
 } from "./commit-review.ts";
 import { parseUpstreamProvenance } from "./provenance.ts";
+import { automaticFingerprintPath, touchesNativeFingerprint } from "./native-paths.ts";
 
 export interface UpstreamIntakeAuditInput {
   readonly baseSha: string;
@@ -18,6 +19,7 @@ export interface UpstreamIntakeAuditInput {
   /** `<short sha> <subject>` of the main commits the candidate lacks, newest first. */
   readonly mainCommitsMissing?: ReadonlyArray<string>;
   readonly changedPaths: ReadonlyArray<string>;
+  readonly nonRegularTextPaths: ReadonlySet<string>;
   readonly ledger: ForkFeatureLedger;
   /** Upstream PRs associated with each Upstream-Commit SHA that shares a commit with Upstream-PR. */
   readonly commitPullRequests: ReadonlyMap<string, ReadonlyArray<number>>;
@@ -92,11 +94,9 @@ const manualReviewRules: ReadonlyArray<ManualReviewRule> = [
     },
   },
   {
-    description: "paths outside the JavaScript-only automatic promotion allowlist changed",
-    matches: (path) =>
-      !/^(?:apps\/mobile\/src|packages\/(?:client-runtime|shared|contracts)\/src)\/.+\.(?:ts|tsx|js|jsx|json|css|md)$/u.test(
-        path,
-      ),
+    description:
+      "fingerprint inputs outside the JavaScript-only automatic promotion allowlist changed",
+    matches: (path) => touchesNativeFingerprint([path]) && !automaticFingerprintPath(path),
   },
   migrationReviewRule,
   {
@@ -188,6 +188,13 @@ export function auditUpstreamIntakeCandidate(input: UpstreamIntakeAuditInput): U
         ? `${rule.description}: ${migrationChanges.join("; ")}`
         : rule.description,
     );
+  if (
+    input.changedPaths.some(
+      (path) => touchesNativeFingerprint([path]) && input.nonRegularTextPaths.has(path),
+    )
+  ) {
+    manualReviewReasons.push("fingerprint input changes must be regular text files");
+  }
   if (provenance.commitShas.length > 0) {
     manualReviewReasons.push("explicit upstream commits require source-diff review");
   }

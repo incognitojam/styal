@@ -22,6 +22,7 @@ import {
   preservedFeatureIds,
 } from "./lib/commit-review.ts";
 import { auditUpstreamIntakeCandidate } from "./lib/intake.ts";
+import { nonRegularTextChanges } from "./lib/native-paths.ts";
 import {
   changedUpstreamMigrations,
   checkUpstreamMigrationsAtRevision,
@@ -603,6 +604,18 @@ try {
     changedPaths: git(["diff", "--name-only", "--no-renames", "-z", `${baseSha}...${headSha}`])
       .split("\0")
       .filter(Boolean),
+    nonRegularTextPaths: nonRegularTextChanges(
+      git(["diff", "--raw", "--no-renames", "-z", `${baseSha}...${headSha}`]),
+      git([
+        "diff",
+        "--numstat",
+        "--no-renames",
+        "--no-textconv",
+        "--no-ext-diff",
+        "-z",
+        `${baseSha}...${headSha}`,
+      ]),
+    ),
     ledger,
     commitPullRequests: upstreamCommitPullRequests(ledger.upstream_repository, commitMessages),
     candidateLedgerErrors: candidateLedger.errors,
