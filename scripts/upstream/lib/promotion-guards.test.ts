@@ -31,6 +31,31 @@ it("blocks moved base and candidate refs before pushing, and promotes an unchang
     }).trim();
   try {
     NodeFS.mkdirSync(cwd);
+    const guardDirectory = NodePath.join(cwd, "scripts/upstream");
+    NodeFS.mkdirSync(guardDirectory, { recursive: true });
+    NodeFS.copyFileSync(
+      NodePath.join(root, "scripts/upstream/wait-required-checks.ts"),
+      NodePath.join(guardDirectory, "wait-required-checks.ts"),
+    );
+    const bin = NodePath.join(directory, "bin");
+    NodeFS.mkdirSync(bin);
+    NodeFS.writeFileSync(
+      NodePath.join(bin, "gh"),
+      `#!/usr/bin/env node
+const path = process.argv.at(-1);
+if (process.argv[2] !== 'api' || !path.startsWith('repos/incognitojam/styal/')) process.exit(2);
+const response = path.endsWith('rules/branches/main')
+  ? [{ type: 'required_status_checks', parameters: { required_status_checks: [{ context: 'Synthetic required check' }] } }]
+  : path.includes('/check-suites?') ? { check_suites: [] }
+  : path.includes('/check-runs?') ? { check_runs: [] }
+  : path.includes('/actions/runs?') ? { workflow_runs: [] }
+  : path.includes('/statuses?') ? [{ id: 1, context: 'Synthetic required check', state: process.env.GUARD_STATE }]
+  : undefined;
+if (!response) process.exit(2);
+console.log(JSON.stringify([response]));
+`,
+      { mode: 0o755 },
+    );
     git("init", "--bare", remote);
     git("init", "-b", "main");
     git("config", "user.name", "Synthetic");
@@ -56,12 +81,15 @@ it("blocks moved base and candidate refs before pushing, and promotes an unchang
     const script = workflow.jobs.promote.steps
       .find((step: { name?: string }) => step.name === "Fast-forward main to the candidate")
       .run.replace(/\$\{\{.*?\}\}/gu, "synthetic");
-    const run = () =>
+    const run = (guardState = "success") =>
       NodeChildProcess.spawnSync("bash", ["-c", script], {
         cwd,
         encoding: "utf8",
         env: {
           ...env,
+          PATH: `${bin}${NodePath.delimiter}${process.env.PATH ?? ""}`,
+          GITHUB_REPOSITORY: "incognitojam/styal",
+          GUARD_STATE: guardState,
           EXPECTED_BASE_SHA: base,
           CANDIDATE_SHA: head,
           CANDIDATE_BRANCH: "intake/fixture",
@@ -84,8 +112,20 @@ it("blocks moved base and candidate refs before pushing, and promotes an unchang
     assert.include(candidateMoved.stdout, "intake branch moved after validation");
     assert.equal(main(), base);
     git("push", "--force", "origin", `${head}:refs/heads/intake/fixture`);
+    for (const state of ["failure", "pending"]) {
+      const rejected = run(state);
+      assert.equal(rejected.status, 1, rejected.stderr);
+      assert.include(
+        rejected.stderr,
+        state === "failure"
+          ? "Required checks failed: Synthetic required check (failure)"
+          : "Timed out waiting for required checks: Synthetic required check",
+      );
+      assert.equal(main(), base);
+    }
     const unchanged = run();
     assert.equal(unchanged.status, 0, unchanged.stderr);
+    assert.include(unchanged.stdout, "All of main's required checks succeeded on the candidate.");
     assert.equal(main(), head);
   } finally {
     NodeFS.rmSync(directory, { recursive: true, force: true });
