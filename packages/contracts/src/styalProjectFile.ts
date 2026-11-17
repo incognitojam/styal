@@ -163,7 +163,7 @@ export const StyalProjectFile = Schema.Struct({
   worktreeCleanup: Schema.optionalKey(
     WorktreeCleanupPatterns.annotate({
       description:
-        "Git-ignored files and folders your setup action or build recreates. Patterns on the default branch apply to settled worktrees unless cleanup is disabled for this project on this machine.",
+        "Git-ignored files and folders your setup action or build recreates. Patterns pushed to the remote default branch (or committed to the local default branch without a remote) apply to settled worktrees where this project’s cleanup switch is on.",
     }),
   ),
   worktreeSubmodules: Schema.optionalKey(

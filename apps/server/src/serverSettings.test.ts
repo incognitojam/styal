@@ -1,3 +1,4 @@
+import { fixture as cleanupFixture } from "./worktreeCleanup/fixtures.testkit.ts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
@@ -251,6 +252,75 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
       );
       assert.isFalse(saved.enableAgentBrowserAccess);
     }).pipe(Effect.provide(layerServerSettings())),
+  );
+  it.effect.each([true, false])(
+    "migrates cleanup choices once with legacy approvals present: %s",
+    (hasApprovals) =>
+      Effect.gen(function* () {
+        const f = yield* cleanupFixture;
+        const sql = yield* SqlClient.SqlClient;
+        const config = yield* ServerConfig.ServerConfig;
+        const service = yield* ServerSettingsModule.ServerSettingsService;
+        yield* f.fs.writeFileString(`${f.root}/styal.json`, '{"worktreeCleanup":["dist"]}');
+        yield* f.fs.makeDirectory(`${f.root}/empty`);
+        yield* f.command(f.root, ["add", "styal.json"]);
+        yield* f.command(f.root, ["commit", "-m", "fixture: cleanup patterns"]);
+        for (const id of ["approved", "unapproved", "explicit-on", "explicit-off", "patternless"]) {
+          const root = id === "patternless" ? `${f.root}/empty` : f.root;
+          yield* sql`INSERT INTO projection_projects (project_id, title, workspace_root, auto_pull, scripts_json, created_at, updated_at)
+          VALUES (${id}, 'Synthetic', ${root}, 0, '[]', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`;
+        }
+        yield* f.fs.writeFileString(
+          config.settingsPath,
+          JSON.stringify({
+            projectSettingsFolded: true,
+            worktreeCleanupApprovals: hasApprovals
+              ? {
+                  approved: { dist: { approvedAt: "2026-01-01T00:00:00Z" } },
+                  "explicit-off": { dist: { approvedAt: "2026-01-01T00:00:00Z" } },
+                }
+              : undefined,
+            projectSettingsOverrides: {
+              "explicit-on": { cleanRegenerableFiles: true },
+              "explicit-off": { cleanRegenerableFiles: false },
+            },
+          }),
+        );
+        const settings = yield* service.getSettings;
+        for (const [id, expected] of [
+          ["approved", hasApprovals],
+          ["unapproved", false],
+          ["explicit-on", true],
+          ["explicit-off", false],
+        ] as const)
+          assert.equal(
+            settings.projectSettingsOverrides[ProjectId.make(id)]?.cleanRegenerableFiles,
+            expected,
+          );
+        assert.isUndefined(
+          settings.projectSettingsOverrides[ProjectId.make("patternless")]?.cleanRegenerableFiles,
+        );
+        const raw = yield* f.fs.readFileString(config.settingsPath);
+        assert.notInclude(raw, "worktreeCleanupApprovals");
+        assert.isTrue((yield* decodeServerSettingsJson(raw)).regenerableFileCleanupMigrated);
+        yield* service.updateSettings({
+          projectSettingsOverrides: {
+            [ProjectId.make("unapproved")]: { cleanRegenerableFiles: true },
+          },
+        });
+        yield* f.fs.writeFileString(`${f.root}/empty/styal.json`, '{"worktreeCleanup":["dist"]}');
+        yield* f.command(f.root, ["add", "empty/styal.json"]);
+        yield* f.command(f.root, ["commit", "-m", "fixture: declare patterns after migration"]);
+        yield* service.updateSettings({ defaultAutoPull: true });
+        assert.isUndefined(
+          (yield* service.getSettings).projectSettingsOverrides[ProjectId.make("patternless")]
+            ?.cleanRegenerableFiles,
+        );
+        assert.isTrue(
+          (yield* service.getSettings).projectSettingsOverrides[ProjectId.make("unapproved")]
+            ?.cleanRegenerableFiles,
+        );
+      }).pipe(Effect.provide(layerServerSettings()), Effect.scoped),
   );
   it.effect("migrates saved token delivery to paragraph buffering without resetting settings", () =>
     Effect.gen(function* () {
@@ -1250,7 +1320,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
       const config = yield* ServerConfig.ServerConfig;
       const fs = yield* FileSystem.FileSystem;
       const original =
-        '{"providerInstances":{"codex_personal":{"driver":"codex","environment":[{"name":"API_TOKEN","value":"inline-test-token","sensitive":true}],"config":{}}}}';
+        '{"regenerableFileCleanupMigrated":true,"providerInstances":{"codex_personal":{"driver":"codex","environment":[{"name":"API_TOKEN","value":"inline-test-token","sensitive":true}],"config":{}}}}';
       yield* fs.writeFileString(config.settingsPath, original);
       const error = yield* Effect.flip(
         service.updateSettings({
@@ -2119,12 +2189,17 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
         settings.projectSettingsOverrides,
         {
           [legacyProject]: {
+            cleanRegenerableFiles: false,
             enableAgentBrowserAccess: false,
             defaultModelSelection: model,
             defaultThreadEnvMode: "worktree",
             defaultAutoPull: true,
           },
-          [scriptedProject]: { defaultAutoPull: true, defaultProjectScripts: [script] },
+          [scriptedProject]: {
+            cleanRegenerableFiles: false,
+            defaultAutoPull: true,
+            defaultProjectScripts: [script],
+          },
         },
       );
 

@@ -97,14 +97,14 @@ it.effect("refuses a preferences update when the caller's turn ends while it wai
   }),
 );
 
-it("does not let agent preference updates carry cleanup approvals", () => {
+it("does not let agent preference updates change the cleanup switch", () => {
   const decode = Schema.decodeUnknownSync(
     EnvironmentToolkit.tools.t3_environment_preferences_update.parametersSchema,
   );
   const decoded = decode({
-    worktreeCleanupApprovals: {
-      "project:fixture": { dist: { approvedAt: "2026-01-01T00:00:00.000Z" } },
-    },
+    newWorktreesStartFromOrigin: false,
+    cleanRegenerableFiles: true,
+    projectSettingsOverrides: { "project:fixture": { cleanRegenerableFiles: true } },
   });
-  expect(decoded).not.toHaveProperty("worktreeCleanupApprovals");
+  expect(decoded).toEqual({ newWorktreesStartFromOrigin: false });
 });

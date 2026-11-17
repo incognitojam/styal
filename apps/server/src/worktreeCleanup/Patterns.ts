@@ -7,29 +7,8 @@ import {
   type ProjectId,
   type WorktreeCleanupReview,
 } from "@t3tools/contracts";
-import { resolveProjectConfig } from "@t3tools/shared/projectFile";
 import * as ProjectService from "../project/ProjectService.ts";
-import { makeInspectGit } from "./gitInspection.ts";
-
-export const makeReadPatterns = Effect.gen(function* () {
-  const inspectGit = yield* makeInspectGit;
-  return Effect.fn("WorktreeCleanup.readPatterns")(function* (root: string) {
-    const head = yield* inspectGit(root, ["symbolic-ref", "refs/remotes/origin/HEAD"]);
-    const defaultBranch =
-      head.exitCode === 0 ? head.stdout.trim().replace(/^refs\/remotes\/origin\//, "") : null;
-    // Without remote HEAD, use Git's conventional local default branches, never the current branch.
-    const candidates = defaultBranch === null ? ["main", "master"] : [defaultBranch];
-    for (const branch of candidates) {
-      const ref = `refs/heads/${branch}`;
-      const exists = yield* inspectGit(root, ["show-ref", "--verify", "--quiet", ref]);
-      if (exists.exitCode !== 0) continue;
-      const file = yield* inspectGit(root, ["show", `${ref}:styal.json`]);
-      if (file.exitCode !== 0 || file.stdoutTruncated) return [];
-      return resolveProjectConfig({ styal: file.stdout, t3: null }).config?.worktreeCleanup ?? [];
-    }
-    return [];
-  });
-});
+import { makeReadPatterns } from "./PatternSource.ts";
 
 export class Patterns extends Context.Service<
   Patterns,

@@ -88,7 +88,8 @@ function CheckoutCleanup({
       />
       <div className="flex flex-col gap-2 px-3 py-2 sm:px-4">
         <p className="text-xs text-muted-foreground">
-          Patterns from styal.json on the project’s default branch:
+          Patterns from the last fetched remote default branch (local default branch without a
+          remote):
         </p>
         {patterns.error ? (
           <p role="alert" className="text-xs text-muted-foreground">

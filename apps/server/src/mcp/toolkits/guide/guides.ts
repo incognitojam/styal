@@ -76,9 +76,15 @@ run often (dev server, tests, lint, build). Prefer existing scripts over inlined
   Patterns are relative to the worktree root (\`*\` within one segment, \`**\` across segments) and
   use forward slashes, no !, .git, empty, . or .. segments, and a literal in the final segment;
   A trailing slash matches folders only. Only git-ignored paths qualify; never list \`.env\`, notes, local state or anything setup cannot
-  recreate. Patterns take effect from the default branch in the project's registered checkout,
-  without per-pattern approval. Settings → Worktrees → **Clean up regenerable files** is on by
-  default; turn it off to skip this project on this machine. On macOS and
+  recreate. Propose pattern changes in a pull request; do not commit them directly to the default
+  branch. Patterns apply once they reach the default branch of the project's remote (pushed and,
+  where the repository requires it, reviewed), on machines where Settings → Worktrees →
+  **Clean up regenerable files** is on. styal uses the last fetched origin default-branch version
+  of the registered project's own styal.json, including for subfolder projects. Unpushed local
+  commits and uncommitted edits do not apply. With remotes but no known origin default branch,
+  cleanup is skipped; with no remotes, the local main or master branch is used. New projects start
+  on. On upgrade, existing projects with patterns start off on machines that had approved none,
+  and on if any pattern was approved; explicit switch choices are preserved. On macOS and
   Linux an hourly sweep deletes matching paths once no thread holds the worktree (an idle subagent
   need not settle), at least 24 hours after the last thread activity, settlement or archival in the
   worktree, with no open terminal. It is separate from the

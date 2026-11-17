@@ -4,8 +4,9 @@ import {
   OrchestrationV2AppThreadJson,
   OrchestrationV2ProviderSessionJson,
   type StorageCleanupReportEntry,
+  type ProjectId,
 } from "@t3tools/contracts";
-import { makeReadPatterns } from "./Patterns.ts";
+import { makeReadPatterns } from "./PatternSource.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Clock from "effect/Clock";
 import * as DateTime from "effect/DateTime";
@@ -53,6 +54,7 @@ export const makeSweep = Effect.gen(function* () {
       yield* Effect.logDebug("Regenerable file cleanup is not supported on Windows");
       return;
     }
+    const patternCache = new Map<ProjectId, readonly string[]>();
     const deadline = (yield* Clock.currentTimeMillis) + 600_000;
     const snapshot = yield* projections.getShellSnapshot().pipe(NodeSqliteClient.readOnly);
     const spellings = yield* sql<{
@@ -126,7 +128,10 @@ export const makeSweep = Effect.gen(function* () {
             threads.some((thread) => thread.projectId !== project.id)
           )
             return null;
-          if (saved.projectSettingsOverrides[project.id]?.cleanRegenerableFiles === false)
+          if (
+            !saved.regenerableFileCleanupMigrated ||
+            saved.projectSettingsOverrides[project.id]?.cleanRegenerableFiles === false
+          )
             return null;
           if ((yield* fs.realPath(root)) !== root) return null;
           const linked =
@@ -147,7 +152,11 @@ export const makeSweep = Effect.gen(function* () {
             )
               return null;
           }
-          const patterns = yield* readPatterns(project.workspaceRoot);
+          let patterns = patternCache.get(project.id);
+          if (patterns === undefined) {
+            patterns = yield* readPatterns(project.workspaceRoot);
+            patternCache.set(project.id, patterns);
+          }
           if (patterns.length === 0) return null;
           // @effect-diagnostics-next-line globalJsonInEffect:off -- An in-memory comparison key, never decoded or persisted.
           return { project, patterns, stamp: JSON.stringify([threads, patterns]) };

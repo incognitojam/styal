@@ -7709,7 +7709,7 @@ features:
     tier: keep
     prs: [1470, 1494, 1522]
     invariants:
-      - Only patterns committed on the default branch in the registered checkout may delete git-ignored paths. Clean up regenerable files is on by default and can be switched off per project per machine. Old per-pattern approvals are ignored and no longer written.
+      - Only patterns from the last fetched origin default-branch ref at the registered project’s own path may delete git-ignored paths. Unpushed commits cannot enable cleanup. With remotes but no origin default, skip; without remotes, use local main or master. New projects default on; upgrade preserves explicit switch choices and maps prior approvals to on, no approvals with declared patterns to off, before any sweep. Old approval entries are discarded after this one-time migration.
       - Cleanup requires at least 24 hours since the last thread activity, settlement or archival, no holding thread, terminal or live session, and the shared workspace lease. Project roots and unmanaged paths are never stripped.
       - Tracked or unignored descendants, nested repositories, mounts, links at the selected position and unverifiable or oversized paths keep a match whole. Internal links are unlinked without following them.
       - Fork migration 15 records worktree_stripped before deletion. The next turn reruns setup, including after partial deletion, and clears the row only after completion. Async setup does not block the turn. Interruption retains the row for retry; a completed failure clears it.
@@ -7718,16 +7718,21 @@ features:
     rationale: Retaining an idle worktree's files makes dependency copies accumulate; keeping the checkout and recreating only disposable output saves space without losing history.
     implementation_paths:
       - apps/server/src/persistence/ForkMigrations/015_WorktreeStripped.ts
+      - apps/server/src/serverSettings.ts
       - apps/server/src/worktreeCleanup/Deletion.ts
+      - apps/server/src/worktreeCleanup/PatternSource.ts
       - apps/server/src/worktreeCleanup/Patterns.ts
       - apps/server/src/worktreeCleanup/Sweep.ts
       - apps/web/src/components/settings/WorktreeCleanupPatterns.tsx
+      - packages/contracts/src/settings.ts
       - packages/contracts/src/styalProjectFile.ts
     upstream_paths:
       - apps/server/src/orchestration-v2/ProviderTurnStartService.ts
       - apps/server/src/storageCleanup.ts
     tests:
+      - apps/server/src/serverSettings.test.ts
       - apps/server/src/worktreeCleanup/Deletion.test.ts
+      - apps/server/src/worktreeCleanup/Patterns.test.ts
       - apps/server/src/worktreeCleanup/Sweep.test.ts
       - packages/shared/src/worktreeCleanupPatterns.test.ts
     upstream:

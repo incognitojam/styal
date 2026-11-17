@@ -101,7 +101,7 @@ const setup = Effect.gen(function* () {
   const layers = Layer.mergeAll(
     Layer.succeed(ServerConfig.ServerConfig, f.config),
     Layer.succeed(GitVcsDriver.GitVcsDriver, f.git),
-    Settings.layerTest(),
+    Settings.layerTest({ regenerableFileCleanupMigrated: true }),
     Layer.mock(ProjectStore.ProjectStoreV2)({ listShells: () => Effect.sync(() => projectList) }),
     Layer.mock(ProjectionStore.ProjectionStoreV2)({
       getShellSnapshot: () =>
@@ -199,6 +199,7 @@ it.effect.each([
   "live-session",
   "recent",
   "disabled",
+  "migration-incomplete",
   "feature-only",
   "uncommitted",
   "worktree-only",
@@ -208,6 +209,11 @@ it.effect.each([
   "unreferenced",
   "windows",
   "missing-project",
+  "missing-project-record",
+  "shared-projects",
+  "no-default-branch",
+  "unpushed-checkout",
+  "unpushed-worktree",
 ] as const)("keeps files for %s", (mode) =>
   Effect.gen(function* () {
     const f = yield* setup;
@@ -258,13 +264,42 @@ it.effect.each([
     if (mode === "feature-only" || mode === "worktree-only" || mode === "uncommitted") {
       yield* f.command(f.root, ["rm", "styal.json"]);
       yield* f.command(f.root, ["commit", "-m", "fixture: no cleanup on default"]);
-      const cwd = mode === "feature-only" ? f.root : f.worktree;
+      const cwd = mode === "worktree-only" ? f.worktree : f.root;
       if (mode !== "uncommitted") yield* f.command(cwd, ["checkout", "-b", "feature"]);
       yield* f.fs.writeFileString(`${cwd}/styal.json`, '{"worktreeCleanup":["dist"]}');
       if (mode !== "uncommitted") {
         yield* f.command(cwd, ["add", "styal.json"]);
         yield* f.command(cwd, ["commit", "-m", "fixture: feature cleanup"]);
       }
+    }
+    if (mode === "missing-project-record") f.setProjects([]);
+    if (mode === "shared-projects") {
+      const otherProject = { ...f.project, id: ProjectId.make("other-project") };
+      f.setProjects([f.project, otherProject]);
+      f.setThreads([
+        ...f.threads(),
+        { ...initial, id: ThreadId.make("other-project-thread"), projectId: otherProject.id },
+      ]);
+      yield* f.persist();
+    }
+    if (mode === "no-default-branch") yield* f.command(f.root, ["branch", "-m", "feature"]);
+    if (mode === "unpushed-checkout" || mode === "unpushed-worktree") {
+      yield* f.fs.writeFileString(`${f.root}/styal.json`, '{"worktreeCleanup":[]}');
+      yield* f.command(f.root, ["add", "styal.json"]);
+      yield* f.command(f.root, ["commit", "-m", "fixture: remote has no patterns"]);
+      const origin = `${f.base}/origin.git`;
+      yield* f.command(f.base, ["init", "--bare", "-b", "main", origin]);
+      yield* f.command(f.root, ["remote", "add", "origin", origin]);
+      yield* f.command(f.root, ["push", "-u", "origin", "main"]);
+      yield* f.command(f.root, ["remote", "set-head", "origin", "main"]);
+      const cwd = mode === "unpushed-checkout" ? f.root : f.worktree;
+      if (mode === "unpushed-worktree") {
+        yield* f.command(f.root, ["checkout", "-b", "feature"]);
+        yield* f.command(f.worktree, ["checkout", "main"]);
+      }
+      yield* f.fs.writeFileString(`${cwd}/styal.json`, '{"worktreeCleanup":["dist"]}');
+      yield* f.command(cwd, ["add", "styal.json"]);
+      yield* f.command(cwd, ["commit", "-m", "fixture: unpushed cleanup"]);
     }
     if (mode === "missing-project") yield* f.fs.remove(f.root, { recursive: true });
     yield* Effect.gen(function* () {
@@ -279,7 +314,11 @@ it.effect.each([
       expect(yield* f.fs.exists(`${f.worktree}/dist/output`)).toBe(true);
       expect(yield* f.sql`SELECT * FROM worktree_stripped`).toEqual([]);
     }).pipe(
-      Effect.provide(f.layers),
+      Effect.provide(
+        mode === "migration-incomplete"
+          ? Layer.merge(f.layers, Settings.layerTest({ regenerableFileCleanupMigrated: false }))
+          : f.layers,
+      ),
       Effect.provideService(HostProcess.Platform, mode === "windows" ? "win32" : "linux"),
     );
   }).pipe(Effect.provide(testLayers), Effect.scoped),
@@ -414,6 +453,7 @@ it.effect("scans thread spellings once while cleaning multiple worktrees", () =>
     ]);
     yield* f.persist();
     let scans = 0;
+    let patternReads = 0;
     const sql = new Proxy(f.sql, {
       apply(target, receiver, args) {
         if (Array.isArray(args[0]) && args[0].join("").includes("SELECT DISTINCT")) scans++;
@@ -426,7 +466,18 @@ it.effect("scans thread spellings once while cleaning multiple worktrees", () =>
       yield* sweep(f.terminal, report);
       expect(report.map((entry) => entry.path)).toEqual([`${f.worktree}/dist`, `${other}/dist`]);
       expect(scans).toBe(1);
-    }).pipe(Effect.provide(f.layers), Effect.provideService(SqlClient.SqlClient, sql));
+      expect(patternReads).toBe(1);
+    }).pipe(
+      Effect.provideService(GitVcsDriver.GitVcsDriver, {
+        ...f.git,
+        execute: (input) => {
+          if (input.args.includes("show")) patternReads++;
+          return f.git.execute(input);
+        },
+      }),
+      Effect.provide(f.layers),
+      Effect.provideService(SqlClient.SqlClient, sql),
+    );
   }).pipe(Effect.provide(testLayers), Effect.scoped),
 );
 
