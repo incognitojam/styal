@@ -7,7 +7,6 @@ import * as NodeUtil from "node:util";
 import { deviceToolMaintenanceScript } from "../src/device/deviceToolMaintenance.ts";
 import { simslimHostScript } from "../src/device/simslimHostScript.ts";
 import * as NodeModule from "node:module";
-import * as NodeTest from "node:test";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -24,6 +23,34 @@ NodeAssert.ok(
   "Run this check with ELECTRON_RUN_AS_NODE=1 and Electron.",
 );
 const physical = NodeModule.createRequire(import.meta.url)("original-fs") as typeof NodeFS;
+const expected = HostProcess.Platform.defaultValue() === "win32" ? 6 : 8;
+let completed = 0;
+let passed = 0;
+let failed = 0;
+let finished = false;
+const output = (message: string) => NodeFS.writeSync(1, `${message}\n`);
+process.exitCode = 1;
+process.once("beforeExit", () => {
+  const complete = finished && completed === expected;
+  process.exitCode = complete && failed === 0 ? 0 : 1;
+  output(
+    `ASAR_DELETION_SUMMARY expected=${expected} completed=${completed} passed=${passed} failed=${failed} status=${complete ? "complete" : "incomplete"}`,
+  );
+});
+
+async function scenario(name: string, body: () => Promise<void>) {
+  output(`START ${name}`);
+  try {
+    await body();
+    passed += 1;
+    output(`PASS ${name}`);
+  } catch (error) {
+    failed += 1;
+    output(`FAIL ${name}\n${NodeUtil.inspect(error, { depth: 12, colors: false })}`);
+  } finally {
+    completed += 1;
+  }
+}
 
 function archive() {
   const contents = Buffer.from("module.exports = 'synthetic';\n");
@@ -66,7 +93,7 @@ const withFixture = <E>(
   );
 
 for (const platform of ["darwin", "win32"] as const) {
-  await NodeTest.test(`worktree removal deletes nested archives (${platform} path)`, () =>
+  await scenario(`worktree removal deletes nested archives (${platform} path)`, () =>
     withFixture((f) =>
       Effect.gen(function* () {
         yield* removeLinkedWorktree({
@@ -85,7 +112,7 @@ for (const platform of ["darwin", "win32"] as const) {
 
 // Regenerable-file cleanup is disabled on Windows.
 if (HostProcess.Platform.defaultValue() !== "win32")
-  await NodeTest.test("regenerable cleanup selects and deletes a tree containing an archive", () =>
+  await scenario("regenerable cleanup selects and deletes a tree containing an archive", () =>
     withFixture((f) =>
       Effect.gen(function* () {
         const deletion = yield* makeDeletion.pipe(
@@ -106,7 +133,7 @@ if (HostProcess.Platform.defaultValue() !== "win32")
     ),
   );
 
-await NodeTest.test(
+await scenario(
   "directory cleanup preserves outside links, force semantics, and scoped cleanup",
   () =>
     withFixture((f) =>
@@ -142,7 +169,7 @@ await NodeTest.test(
     ),
 );
 
-await NodeTest.test("an injected filesystem can refuse recursive deletion", () =>
+await scenario("an injected filesystem can refuse recursive deletion", () =>
   withFixture((f) =>
     Effect.gen(function* () {
       let called = false;
@@ -179,7 +206,7 @@ await NodeTest.test("an injected filesystem can refuse recursive deletion", () =
   ),
 );
 
-await NodeTest.test("the physical deletion backend can be replaced by a refusing service", () =>
+await scenario("the physical deletion backend can be replaced by a refusing service", () =>
   withFixture((f) =>
     Effect.gen(function* () {
       const physical = yield* PhysicalFileSystem.PhysicalFileSystem;
@@ -209,7 +236,7 @@ await NodeTest.test("the physical deletion backend can be replaced by a refusing
 
 const exec = NodeUtil.promisify(NodeChildProcess.execFile);
 
-await NodeTest.test("device tool pruning removes obsolete installs containing ASARs", () =>
+await scenario("device tool pruning removes obsolete installs containing ASARs", () =>
   withFixture((f) =>
     Effect.promise(async () => {
       const root = `${f.base}/tools`;
@@ -236,7 +263,7 @@ await NodeTest.test("device tool pruning removes obsolete installs containing AS
 
 // simslim only runs on macOS; substitute a rejected download to exercise its finally path.
 if (HostProcess.Platform.defaultValue() !== "win32")
-  await NodeTest.test("simslim clears ASAR-containing staging when a download is rejected", () =>
+  await scenario("simslim clears ASAR-containing staging when a download is rejected", () =>
     withFixture((f) =>
       Effect.promise(async () => {
         const prelude = `
@@ -268,3 +295,5 @@ if (HostProcess.Platform.defaultValue() !== "win32")
       }),
     ),
   );
+
+finished = true;

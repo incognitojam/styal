@@ -304,7 +304,11 @@ jobs:
         run: vp run --filter @t3tools/desktop ensure:electron
 
       - name: Verify physical deletion under Electron
-        run: ELECTRON_RUN_AS_NODE=1 apps/desktop/node_modules/electron/dist/electron apps/server/scripts/verify-asar-deletion.ts
+        run: |
+          set -euo pipefail
+          mkdir -p .scratch
+          ELECTRON_RUN_AS_NODE=1 apps/desktop/node_modules/electron/dist/electron apps/server/scripts/verify-asar-deletion.ts | tee .scratch/asar-deletion-linux.log
+          test "$(grep -Fxc 'ASAR_DELETION_SUMMARY expected=8 completed=8 passed=8 failed=0 status=complete' .scratch/asar-deletion-linux.log)" -eq 1
 
       - name: Check physical deletion boundaries
         run: vp test run scripts/physical-deletion.test.ts
@@ -657,7 +661,14 @@ jobs:
         shell: pwsh
         env:
           ELECTRON_RUN_AS_NODE: "1"
-        run: "& ./apps/desktop/node_modules/electron/dist/electron.exe apps/server/scripts/verify-asar-deletion.ts"
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          New-Item -ItemType Directory -Force .scratch | Out-Null
+          & ./apps/desktop/node_modules/electron/dist/electron.exe apps/server/scripts/verify-asar-deletion.ts 2>&1 | Tee-Object -FilePath .scratch/asar-deletion-windows.log
+          if ($LASTEXITCODE -ne 0) { throw "Electron deletion check exited with $LASTEXITCODE" }
+          $expected = 'ASAR_DELETION_SUMMARY expected=6 completed=6 passed=6 failed=0 status=complete'
+          $summaries = @(Get-Content .scratch/asar-deletion-windows.log | Where-Object { $_ -eq $expected })
+          if ($summaries.Count -ne 1) { throw 'Electron deletion check did not report all 6 scenarios passing' }
 
       - name: Test device commands
         shell: pwsh
