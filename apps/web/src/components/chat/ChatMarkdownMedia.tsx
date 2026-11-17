@@ -270,7 +270,9 @@ export function ChatMarkdownImage(props: {
         style={settled ? undefined : props.style}
         {...(failed
           ? { role: "alert" as const }
-          : { role: "status" as const, "aria-label": "Loading image" })}
+          : settled
+            ? {}
+            : { role: "status" as const, "aria-label": "Loading image" })}
       >
         {props.placeholderSrc && !failed && !settled ? (
           <img
