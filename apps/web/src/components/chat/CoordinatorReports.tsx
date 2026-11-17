@@ -1,21 +1,30 @@
 import type { ChatMessage } from "../../types";
-import { ClockIcon, MessageSquareIcon, ReplyIcon, XIcon } from "lucide-react";
+import { ClockIcon, FileTextIcon, MessageSquareIcon, ReplyIcon, XIcon } from "lucide-react";
 import { createContext, use, useState } from "react";
 import type { MessageId } from "@t3tools/contracts";
 import {
   coordinatorReports,
   formatReportAnswer,
+  splitReportAnswer,
   waitingCoordinatorReports,
 } from "@t3tools/client-runtime/coordinator-reports";
 import { Button } from "../ui/button";
+import { ContextChip, ContextChipLabel } from "../ContextChip";
+import { cn } from "~/lib/utils";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
 
 export type ReportReference = { messageId: MessageId; key: string; version: number };
 export type ReportState = ReturnType<
-  typeof coordinatorReports<Pick<ChatMessage, "id" | "role" | "text" | "report" | "createdAt">>
+  typeof coordinatorReports<
+    Pick<ChatMessage, "id" | "role" | "text" | "report" | "reportAnswer" | "createdAt">
+  >
 >[number];
 export const CoordinatorReportsContext = createContext<{
   reports: readonly ReportState[];
+  answers: ReadonlyMap<
+    MessageId,
+    { messageId: MessageId; title: string; version: number; text: string }
+  >;
   send: (text: string, ref: ReportReference) => Promise<void>;
   reply: (ref: ReportReference, title: string) => void;
   dismiss: (ref: ReportReference) => void;
@@ -29,19 +38,17 @@ export function ReportAnswerBar({ report }: { report: ReportState }) {
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   if (!ctx) return null;
-  const panelClassName =
-    "flex flex-wrap items-center gap-2 rounded-lg bg-muted/50 px-3 py-2 text-sm";
+  const panelClassName = "flex flex-col gap-1.5 rounded-lg bg-muted/50 px-3 py-2 text-sm";
   if (report.state === "answered" || report.state === "dismissed") {
     const answered = report.state === "answered";
+    const answer = report.answer && splitReportAnswer(report.answer.text, report.message.report!);
     return (
       <div className={panelClassName}>
         <span className="inline-flex items-center gap-1.5 text-muted-foreground [&_svg]:size-3.5">
           {answered ? <MessageSquareIcon /> : <XIcon />}
           {answered ? "You answered: " : "Dismissed. The agent hears it on its next turn."}
           {answered ? (
-            <span className="text-foreground">
-              {report.answer?.text.replace(/^\[[^\n]+\] /, "")}
-            </span>
+            <span className="text-foreground">{answer ?? report.answer?.text}</span>
           ) : null}
         </span>
       </div>
@@ -50,6 +57,7 @@ export function ReportAnswerBar({ report }: { report: ReportState }) {
   if (report.state !== "open") return null;
   const tag = report.message.report!;
   const ref = { messageId: report.message.id, key: tag.key, version: tag.version };
+  const disabled = !ctx.canOperate || sending;
   return (
     <div className={panelClassName}>
       <span className="font-medium">{tag.question}</span>
@@ -59,11 +67,14 @@ export function ReportAnswerBar({ report }: { report: ReportState }) {
         </p>
       ) : null}
       {tag.answers?.map((answer, index) => (
-        <Button
+        <button
           key={answer}
-          size="xs"
-          variant={index === 0 ? "default" : "outline"}
-          disabled={!ctx.canOperate || sending}
+          type="button"
+          disabled={disabled}
+          className={cn(
+            "flex w-full cursor-pointer items-start gap-2 rounded-md border px-3 py-1.5 text-left hover:bg-accent/60 disabled:cursor-default disabled:opacity-64",
+            index === 0 ? "border-primary/50 bg-primary/8" : "border-input bg-background/40",
+          )}
           onClick={() => {
             setSending(true);
             setSendError(null);
@@ -73,29 +84,89 @@ export function ReportAnswerBar({ report }: { report: ReportState }) {
               .finally(() => setSending(false));
           }}
         >
-          {answer}
-        </Button>
+          <span className="min-w-0 flex-1 whitespace-pre-wrap break-words">{answer}</span>
+          {index === 0 ? (
+            <span className="shrink-0 rounded-full bg-primary/12 px-1.5 text-xs leading-5 text-primary">
+              Recommended
+            </span>
+          ) : null}
+        </button>
       ))}
-      <Button
-        size="xs"
-        variant="ghost-muted"
-        disabled={!ctx.canOperate || sending}
-        onClick={() => ctx.reply(ref, tag.title)}
-      >
-        <ReplyIcon />
-        Reply…
-      </Button>
-      <div className="ms-auto">
+      <div className="flex items-center justify-between">
         <Button
           size="xs"
           variant="ghost-muted"
-          disabled={!ctx.canOperate || sending}
+          disabled={disabled}
+          onClick={() => ctx.reply(ref, tag.title)}
+        >
+          <ReplyIcon />
+          Reply…
+        </Button>
+        <Button
+          size="xs"
+          variant="ghost-muted"
+          disabled={disabled}
           onClick={() => ctx.dismiss(ref)}
         >
           <XIcon />
           Dismiss
         </Button>
       </div>
+    </div>
+  );
+}
+
+/** Names the report a user message answers and opens that report version. */
+export function ReportAnswerChip({
+  title,
+  version,
+  messageId,
+}: {
+  title: string;
+  version: number;
+  messageId: MessageId;
+}) {
+  const ctx = use(CoordinatorReportsContext);
+  return (
+    <ContextChip
+      render={<button type="button" />}
+      aria-label={`Open report ${title}, version ${version}`}
+      onClick={() => ctx?.scroll(messageId)}
+    >
+      <FileTextIcon />
+      <ContextChipLabel>{title}</ContextChipLabel>
+      <span className="shrink-0">· v{version}</span>
+    </ContextChip>
+  );
+}
+
+/** Sits at the top of the composer while the next message replies to a report. */
+export function ReportReplyStrip({
+  title,
+  version,
+  question,
+  onCancel,
+}: {
+  title: string;
+  version: number;
+  question: string | undefined;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="flex items-start gap-2 border-b border-border/60 py-2 ps-4 pe-2 text-sm">
+      <span className="w-0.5 self-stretch rounded-full bg-primary/60" aria-hidden />
+      <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground [&_svg]:size-3.5 [&_svg]:shrink-0">
+          <ReplyIcon />
+          <span className="shrink-0">Replying to</span>
+          <span className="min-w-0 truncate font-medium text-foreground">{title}</span>
+          <span className="shrink-0">· version {version}</span>
+        </div>
+        {question ? <div className="truncate">{question}</div> : null}
+      </div>
+      <Button size="icon-xs" variant="ghost-muted" aria-label="Stop replying" onClick={onCancel}>
+        <XIcon />
+      </Button>
     </div>
   );
 }

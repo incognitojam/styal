@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { coordinatorReports } from "./coordinatorReports.ts";
+import { coordinatorReports, formatReportAnswer, splitReportAnswer } from "./coordinatorReports.ts";
 const report = (id: string, key: string, version: number) => ({
   id,
   role: "assistant",
@@ -42,5 +42,20 @@ describe("coordinator reports", () => {
         [],
       ).map((x) => x.latest.report?.version),
     ).toEqual([3, 3, 3]);
+  });
+
+  it("splits only the answered report's own prefix and keeps the rest as typed", () => {
+    const report = { title: "#1522 cleanup, ready", version: 2 };
+    expect(splitReportAnswer(formatReportAnswer(report, "Wait\nfor 88"), report)).toBe(
+      "Wait\nfor 88",
+    );
+    const build = { title: "Build", version: 2 };
+    expect(
+      splitReportAnswer(formatReportAnswer(build, "Please keep [Other, version 2] visible"), build),
+    ).toBe("Please keep [Other, version 2] visible");
+    expect(splitReportAnswer(formatReportAnswer(report, "Wait"), { ...report, version: 1 })).toBe(
+      null,
+    );
+    expect(splitReportAnswer("Wait for 88", report)).toBeNull();
   });
 });

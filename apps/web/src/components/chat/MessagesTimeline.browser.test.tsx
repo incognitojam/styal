@@ -370,6 +370,7 @@ describe("MessagesTimeline messages", () => {
         <CoordinatorReportsContext
           value={{
             reports,
+            answers: new Map(),
             target,
             clear: () => setTarget(null),
             scroll: (messageId) => setTarget({ messageId }),

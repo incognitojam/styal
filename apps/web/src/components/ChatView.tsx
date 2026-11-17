@@ -1,7 +1,6 @@
-import { Button } from "./ui/button";
 import { randomUUID } from "../lib/utils";
-import { WaitingReports, type ReportReference } from "./chat/CoordinatorReports";
-import { coordinatorReports } from "@t3tools/client-runtime/coordinator-reports";
+import { ReportReplyStrip, WaitingReports, type ReportReference } from "./chat/CoordinatorReports";
+import { coordinatorReports, reportAnswers } from "@t3tools/client-runtime/coordinator-reports";
 import { dismissCoordinatorReport } from "../state/coordinatorReports";
 import { CommandId } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
@@ -1030,6 +1029,7 @@ export default function ChatView(props: ChatViewProps) {
     title: string;
   } | null>(null);
   const activeReportReply = reportReply?.threadKey === activeThreadKey ? reportReply : null;
+  const reportAnswerMessages = reportAnswers(serverProjection?.messages ?? []);
   const reportStates = settings.coordinatorReportsEnabled
     ? coordinatorReports(
         (serverProjection?.messages ?? []).map((message) => ({
@@ -3607,6 +3607,7 @@ export default function ChatView(props: ChatViewProps) {
                     settings.coordinatorReportsEnabled
                       ? {
                           reports: reportStates,
+                          answers: reportAnswerMessages,
                           send: sendAppMessageStable,
                           reply: (ref, title) => {
                             setReportReply({ threadKey: activeThreadKey, ref, title });
@@ -3807,20 +3808,6 @@ export default function ChatView(props: ChatViewProps) {
                     {settings.coordinatorReportsEnabled ? (
                       <WaitingReports reports={reportStates} scroll={scrollToReport} />
                     ) : null}
-                    {settings.coordinatorReportsEnabled && activeReportReply ? (
-                      <div className="mb-2 flex items-center gap-2 text-xs">
-                        Replying to {activeReportReply.title} · version{" "}
-                        {activeReportReply.ref.version}
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          aria-label="Remove report reference"
-                          onClick={() => setReportReply(null)}
-                        >
-                          ×
-                        </Button>
-                      </div>
-                    ) : null}
                     <ChildThreadApprovals threadRef={activeThreadRef} />
                     <ComposerSurface.Shell contextRow={showComposerContextStrip}>
                       <ComposerSurface.Host
@@ -3828,6 +3815,18 @@ export default function ChatView(props: ChatViewProps) {
                         aria-busy={queuedRunEdit.isSaving}
                       >
                         <div className="relative z-10">
+                          {settings.coordinatorReportsEnabled && activeReportReply ? (
+                            <ReportReplyStrip
+                              title={activeReportReply.title}
+                              version={activeReportReply.ref.version}
+                              question={
+                                reportStates.find(
+                                  (report) => report.message.id === activeReportReply.ref.messageId,
+                                )?.message.report?.question
+                              }
+                              onCancel={() => setReportReply(null)}
+                            />
+                          ) : null}
                           {showProviderSubagentBar ? (
                             <ProviderSubagentBar
                               provider={selectedProviderEntry ?? null}

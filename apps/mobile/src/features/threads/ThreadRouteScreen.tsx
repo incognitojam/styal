@@ -1047,6 +1047,7 @@ function ThreadRouteContent(
           feedbackSubmissions={composer.feedbackSubmissions}
           onDismissFeedback={composer.dismissFeedback}
           reports={composer.reports}
+          reportAnswers={composer.reportAnswers}
           reportReply={composer.reportReply}
           onReportReply={composer.onReportReply}
           selectedThreadFeed={composer.selectedThreadFeed}

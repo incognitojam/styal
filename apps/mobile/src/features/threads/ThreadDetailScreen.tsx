@@ -1,6 +1,10 @@
-import { AppText as Text } from "../../components/ui/AppText";
-import { Button } from "../../components/ui/Button";
-import { CoordinatorReportsContext, WaitingReports, type ReportState } from "./CoordinatorReports";
+import {
+  CoordinatorReportsContext,
+  ReportReplyStrip,
+  type ReportAnswers,
+  WaitingReports,
+  type ReportState,
+} from "./CoordinatorReports";
 import { dismissCoordinatorReport } from "../../state/coordinatorReports";
 import type { ReportReply } from "@t3tools/client-runtime/coordinator-reports";
 import { CommandId } from "@t3tools/contracts";
@@ -256,6 +260,7 @@ export interface ThreadDetailScreenProps {
   readonly feedbackSubmissions: ReadonlyArray<CodexFeedbackSubmission>;
   readonly onDismissFeedback: (id: MessageId) => void;
   readonly reports?: readonly ReportState[];
+  readonly reportAnswers?: ReportAnswers | undefined;
   readonly reportReply?: ReportReply | null;
   readonly onReportReply?: (reply: ReportReply | null) => void;
   readonly selectedThreadFeed: ReadonlyArray<ThreadFeedEntry>;
@@ -556,6 +561,11 @@ function ThreadDetailBody(
     dismissCoordinatorReport.permissionAtom(props.environmentId),
   );
   const [endFollowEnabled, setEndFollowEnabled] = useState(true);
+  // Reports the user asked to open stay open even when their row mounts after the jump ends.
+  const [openedReports, setOpenedReports] = useState<{
+    readonly threadKey: string;
+    readonly ids: ReadonlySet<MessageId>;
+  }>({ threadKey: selectedThreadKey, ids: new Set() });
   // Keep the bottom padding fixed while the keyboard animates. Changing it at
   // keyboardDidHide makes the composer land low, then jump back above the safe area.
   const bottomBarInset = useDuoBottomBarInset();
@@ -1467,6 +1477,17 @@ function ThreadDetailBody(
   });
   const reportContext = {
     reports: props.reports ?? [],
+    answers: props.reportAnswers ?? new Map(),
+    opened:
+      openedReports.threadKey === selectedThreadKey ? openedReports.ids : new Set<MessageId>(),
+    target: jumpMessageId,
+    scroll: (id: MessageId) => {
+      setOpenedReports((current) => ({
+        threadKey: selectedThreadKey,
+        ids: new Set([...(current.threadKey === selectedThreadKey ? current.ids : []), id]),
+      }));
+      requestThreadMessageJump(selectedThreadKey, id);
+    },
     canOperate: props.canOperateThread && canDismissReport && props.queuedRunEdit === null,
     reply: replyToReport,
     send: sendReportAnswer,
@@ -1702,24 +1723,7 @@ function ThreadDetailBody(
                         />
                       </Animated.View>
                     ) : null}
-                    <WaitingReports
-                      reports={props.reports ?? []}
-                      scroll={(id) => requestThreadMessageJump(selectedThreadKey, id)}
-                    />
-                    {props.reportReply ? (
-                      <View className="mx-3 mb-2 flex-row items-center gap-2 rounded-xl bg-secondary py-1 pl-3">
-                        <Text className="flex-1 text-foreground-secondary" numberOfLines={1}>
-                          Replying to {props.reportReply.title} · version{" "}
-                          {props.reportReply.ref.version}
-                        </Text>
-                        <Button
-                          label="Cancel reply"
-                          size="compact"
-                          tone="text"
-                          onPress={() => props.onReportReply?.(null)}
-                        />
-                      </View>
-                    ) : null}
+                    <WaitingReports reports={props.reports ?? []} scroll={reportContext.scroll} />
                     <ProviderSignInCard
                       thread={props.selectedThread}
                       environmentId={props.environmentId}
@@ -1940,6 +1944,21 @@ function ThreadDetailBody(
                   ) : (
                     <>
                       <ThreadComposer
+                        header={
+                          props.reportReply ? (
+                            <ReportReplyStrip
+                              title={props.reportReply.title}
+                              version={props.reportReply.ref.version}
+                              question={
+                                props.reports?.find(
+                                  (report) =>
+                                    report.message.id === props.reportReply?.ref.messageId,
+                                )?.message.report?.question
+                              }
+                              onCancel={() => props.onReportReply?.(null)}
+                            />
+                          ) : null
+                        }
                         isDraft={Boolean(props.draftMode)}
                         canOperateThread={props.canOperateThread}
                         reportedModelSelection={reportedModelSelection}

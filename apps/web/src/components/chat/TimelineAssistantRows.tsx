@@ -52,6 +52,10 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
   const reportContext = use(CoordinatorReportsContext);
   const report = reportContext?.reports.find((report) => report.message.id === row.message.id);
   const [expandedReport, setExpandedReport] = useState(report?.state !== "replaced");
+  // Opening a reply chip or waiting row for an older version shows it, not its folded line.
+  if (!expandedReport && reportContext?.target?.messageId === row.message.id) {
+    setExpandedReport(true);
+  }
   // The timeline holds a streaming message's row while only its text grows.
   const liveText = useAssistantMessageText(
     row.message.streaming ? ctx.threadRef : null,
@@ -66,7 +70,7 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
       <button
         type="button"
         onClick={() => setExpandedReport(true)}
-        className="flex w-full cursor-pointer items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground [&_svg]:size-3.5"
+        className="mt-3 flex w-full cursor-pointer items-center gap-1.5 border-l-2 border-border py-0.5 ps-3 text-xs text-muted-foreground hover:text-foreground [&_svg]:size-3.5"
       >
         <FileTextIcon />
         <span className="min-w-0 truncate">
@@ -84,7 +88,7 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
       <div
         className={cn(
           "relative min-w-0",
-          report ? "flex flex-col gap-2 border-l-2 ps-3" : "px-1 py-0.5",
+          report ? "mt-3 flex flex-col gap-2 border-l-2 ps-3" : "px-1 py-0.5",
           report && (report.state === "replaced" ? "border-border" : "border-primary/60"),
           report &&
             reportContext?.target?.messageId === row.message.id &&
@@ -100,7 +104,7 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
             {report.state === "replaced" ? (
               <button
                 type="button"
-                className="ms-auto shrink-0 cursor-pointer text-foreground underline-offset-2 hover:underline"
+                className="ms-auto shrink-0 cursor-pointer text-warning-foreground underline-offset-2 hover:underline"
                 onClick={() => reportContext?.scroll(report.latest.id)}
               >
                 A newer version is below

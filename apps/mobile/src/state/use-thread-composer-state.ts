@@ -2,6 +2,7 @@ import * as DateTime from "effect/DateTime";
 import {
   coordinatorReports,
   formatReportAnswer,
+  reportAnswers,
   type ReportReply,
 } from "@t3tools/client-runtime/coordinator-reports";
 import { serverEnvironment } from "./server";
@@ -280,6 +281,9 @@ export function useThreadComposerState() {
         selectedThreadProjection?.projection.thread.reportDismissals ?? [],
       )
     : [];
+  const reportAnswerMessages = reportSettings?.coordinatorReportsEnabled
+    ? reportAnswers(selectedThreadMessages ?? [])
+    : undefined;
 
   const selectedTurnUsage = useTurnUsage(selectedThreadProjection?.projection);
   const selectedThreadAttempts = selectedThreadProjection?.projection.attempts;
@@ -892,6 +896,7 @@ export function useThreadComposerState() {
     selectedTurnUsage,
     dismissFeedback,
     reports,
+    reportAnswers: reportAnswerMessages,
     reportReply: activeReportReply,
     onReportReply: (reply: ReportReply | null) =>
       setReportReply(

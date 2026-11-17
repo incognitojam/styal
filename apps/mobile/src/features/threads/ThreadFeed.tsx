@@ -1,4 +1,9 @@
-import { CoordinatorReportMessage } from "./CoordinatorReports";
+import {
+  CoordinatorReportMessage,
+  CoordinatorReportsContext,
+  ReportAnswerChip,
+  type ReportAnswers,
+} from "./CoordinatorReports";
 import { useAtomValue } from "@effect/atom-react";
 import { Atom } from "effect/reactivity";
 import { Button } from "../../components/ui/Button";
@@ -1817,6 +1822,8 @@ function renderFeedEntry(
     | "turnUsageByTurnId"
   > & {
     readonly copiedRowId: string | null;
+    readonly reportAnswers: ReportAnswers | undefined;
+    readonly onOpenReport: ((messageId: MessageId) => void) | undefined;
     readonly expandedWorkRows: Record<string, boolean>;
     readonly workRowSizing: ReturnType<typeof deriveThreadWorkLogSizing>;
     readonly workGroupScrollPositions: Map<string, ThreadWorkGroupScrollPosition>;
@@ -2044,7 +2051,11 @@ function renderFeedEntry(
   if (entry.type === "message") {
     const { message } = entry;
     const isUser = message.role === "user";
-    const presentation = resolveUserMessagePresentation(message);
+    const basePresentation = resolveUserMessagePresentation(message);
+    const answeredReport = isUser ? props.reportAnswers?.get(message.id) : undefined;
+    const presentation = answeredReport
+      ? { ...basePresentation, text: answeredReport.text }
+      : basePresentation;
     const renderedText = renderAssistantCitationsAsText(presentation.text);
     const styles = isUser ? markdownStyles.user : markdownStyles.assistant;
     const timestampLabel = formatMessageTime(isUser ? message.createdAt : message.updatedAt);
@@ -2255,6 +2266,13 @@ function renderFeedEntry(
               ) : null}
               {bubbleBodyVisible ? (
                 <View className={cn("gap-2 px-3.5 pb-2.5", foldRowId === null && "pt-2.5")}>
+                  {answeredReport ? (
+                    <ReportAnswerChip
+                      title={answeredReport.title}
+                      version={answeredReport.version}
+                      onPress={() => props.onOpenReport?.(answeredReport.messageId)}
+                    />
+                  ) : null}
                   <MessageImages
                     images={pendingBubbleImages}
                     tileSize={userImageTileSize}
@@ -2967,6 +2985,7 @@ export const ThreadFeed = memo(function ThreadFeed({
   ref,
   ...props
 }: ThreadFeedProps & { readonly ref?: Ref<ThreadFeedHandle> }) {
+  const reportContext = useContext(CoordinatorReportsContext);
   const restartRunsAtom = createRestartRunsAtom(props.detailRef);
   const restartRuns = useAtomValue(restartRunsAtom);
   const continuedRunRoots = (() => deriveFeedContinuedRunRoots(restartRuns))();
@@ -4066,6 +4085,8 @@ export const ThreadFeed = memo(function ThreadFeed({
             />
           ) : null}
           {renderFeedEntry(info, {
+            reportAnswers: reportContext?.answers,
+            onOpenReport: reportContext?.scroll,
             userMessageGrouping: info.item.userMessageGrouping,
             environmentId: props.environmentId,
             dispatchingMessageId: props.dispatchingMessageId,
