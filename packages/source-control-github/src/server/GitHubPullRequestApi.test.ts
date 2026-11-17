@@ -4491,13 +4491,27 @@ layer("GitHubPullRequestApi.layer", (it) => {
                                 name: "build",
                                 status: "COMPLETED",
                                 conclusion: "SUCCESS",
-                                checkSuite: { workflowRun: { workflow: { name: "linux" } } },
+                                checkSuite: {
+                                  workflowRun: {
+                                    databaseId: null,
+                                    runNumber: 1,
+                                    event: "pull_request",
+                                    workflow: { name: "linux" },
+                                  },
+                                },
                               }),
                               checkRun({
                                 name: "build",
                                 status: "COMPLETED",
                                 conclusion: "FAILURE",
-                                checkSuite: { workflowRun: { workflow: { name: "windows" } } },
+                                checkSuite: {
+                                  workflowRun: {
+                                    databaseId: null,
+                                    runNumber: 1,
+                                    event: "pull_request",
+                                    workflow: { name: "windows" },
+                                  },
+                                },
                               }),
                             ],
                             pageInfo: { hasNextPage: false, endCursor: null },
@@ -4552,7 +4566,21 @@ layer("GitHubPullRequestApi.layer", (it) => {
                         commit: {
                           statusCheckRollup: {
                             contexts: {
-                              nodes: [checkRun({ name: "first", conclusion: "SUCCESS" })],
+                              nodes: [
+                                checkRun({ name: "first", conclusion: "SUCCESS" }),
+                                checkRun({
+                                  name: "superseded placeholder",
+                                  conclusion: "CANCELLED",
+                                  checkSuite: {
+                                    workflowRun: {
+                                      databaseId: 10,
+                                      runNumber: 1,
+                                      event: "pull_request",
+                                      workflow: { name: "CI" },
+                                    },
+                                  },
+                                }),
+                              ],
                               pageInfo: { hasNextPage: true, endCursor: "c1" },
                             },
                           },
@@ -4567,7 +4595,25 @@ layer("GitHubPullRequestApi.layer", (it) => {
         );
         mockedExecute.mockReturnValueOnce(
           Effect.succeed(
-            output(checkContextsPage([checkRun({ name: "last", conclusion: "FAILURE" })], null)),
+            output(
+              checkContextsPage(
+                [
+                  checkRun({
+                    name: "last",
+                    conclusion: "SUCCESS",
+                    checkSuite: {
+                      workflowRun: {
+                        databaseId: 20,
+                        runNumber: 2,
+                        event: "pull_request",
+                        workflow: { name: "CI" },
+                      },
+                    },
+                  }),
+                ],
+                null,
+              ),
+            ),
           ),
         );
         const cli = yield* GitHubPullRequestApi.GitHubPullRequestApi;
@@ -4584,7 +4630,7 @@ layer("GitHubPullRequestApi.layer", (it) => {
             100, 0,
           ]);
         expect(detail.checks.map((check) => check.name).sort()).toEqual(["first", "last"]);
-        expect(detail.checksState).toBe("failing");
+        expect(detail.checksState).toBe("passing");
         expect(detail.checksTruncated).toBe(false);
         expect(variablesOf("CheckContexts")).toEqual([
           expect.objectContaining({ number: 7, after: "c1" }),

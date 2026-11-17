@@ -399,7 +399,14 @@ describe("pull request detail decoding", () => {
   const inWorkflow = ({ workflowName, ...fields }: Record<string, unknown>) =>
     check({
       ...fields,
-      checkSuite: { workflowRun: { workflow: { name: workflowName } } },
+      checkSuite: {
+        workflowRun: {
+          databaseId: null,
+          runNumber: 1,
+          event: "pull_request",
+          workflow: { name: workflowName },
+        },
+      },
     });
 
   const coreJson = (
@@ -913,6 +920,90 @@ describe("pull request detail decoding", () => {
     ]) {
       expect(checksOf(rollup)).toEqual([[["check", "pending"]], "pending"]);
     }
+  });
+
+  it("drops checks from a workflow run superseded by a later run on the same commit", () => {
+    const inRun = (runNumber: number, fields: Record<string, unknown>) =>
+      check({
+        ...fields,
+        checkSuite: {
+          workflowRun: {
+            databaseId: runNumber,
+            runNumber,
+            event: "pull_request",
+            workflow: { name: "CI" },
+          },
+        },
+      });
+    const stale = inRun(1, {
+      name: "Fork Test (Server ${{ matrix.shard }}/${{ strategy.job-total }})",
+      status: "COMPLETED",
+      conclusion: "CANCELLED",
+      startedAt: "0001-01-01T00:00:00Z",
+      completedAt: "2026-11-17T14:20:00Z",
+    });
+    const current = inRun(2, {
+      name: "Fork Test (Server 1/2)",
+      status: "COMPLETED",
+      conclusion: "SUCCESS",
+      startedAt: "2026-11-17T14:00:06Z",
+      completedAt: "2026-11-17T14:10:00Z",
+    });
+    for (const rollup of [
+      [stale, current],
+      [current, stale],
+    ]) {
+      const detail = detailOf(rollup);
+      expect(detail.checks.map((check) => [check.name, check.status])).toEqual([
+        ["Fork Test (Server 1/2)", "success"],
+      ]);
+      expect(detail.checksState).toBe("passing");
+    }
+
+    const cancelled = inRun(3, {
+      name: "Fork Test (Server 1/2)",
+      status: "COMPLETED",
+      conclusion: "CANCELLED",
+      startedAt: "0001-01-01T00:00:00Z",
+      completedAt: "0001-01-01T00:00:00Z",
+    });
+    const detail = detailOf([current, cancelled]);
+    expect(detail.checks.map((check) => [check.name, check.status])).toEqual([
+      ["Fork Test (Server 1/2)", "cancelled"],
+    ]);
+    expect(detail.checksState).toBe("failing");
+  });
+
+  it("keeps independent events, workflows, rerun jobs, and non-Actions checks", () => {
+    const job = (
+      databaseId: number,
+      runNumber: number,
+      event: string,
+      workflow: string,
+      name: string,
+    ) =>
+      check({
+        name,
+        conclusion: "SUCCESS",
+        checkSuite: { workflowRun: { databaseId, runNumber, event, workflow: { name: workflow } } },
+      });
+    const detail = detailOf([
+      job(10, 1, "push", "CI", "push job"),
+      job(20, 2, "pull_request", "CI", "PR job"),
+      job(20, 2, "pull_request", "CI", "rerun job"),
+      job(30, 1, "pull_request", "Deploy", "deploy job"),
+      check({ name: "external app", conclusion: "SUCCESS" }),
+      check({ __typename: "StatusContext", context: "legacy status", state: "SUCCESS" }),
+    ]);
+    expect(detail.checks.map((check) => check.name)).toEqual([
+      "push job",
+      "PR job",
+      "rerun job",
+      "deploy job",
+      "external app",
+      "legacy status",
+    ]);
+    expect(detail.checksState).toBe("passing");
   });
 
   it("merges reviews with comments in time order and keeps a bodyless approval", () => {
