@@ -271,6 +271,14 @@
         "base": "7fab4ef97838e3e0f1b7e0e2af58d778fda059d8",
         "head": "f95e4271f3431eaf3e38a2911cf6d7232c9482ac"
       }
+    },
+    {
+      "pr": 31744,
+      "reason": "Imported provisionally as one snapshot: a later run on the thread of a task delegated to a linked machine, such as one a follow-up message there starts, becomes a new remote task here that wakes the parent with that run's reply (t3_thread_wait afterRunId, remoteChild.followsAfterRunId and followUpOf). The fork keeps the delegatedCompletion follow-up condition from its 28462 snapshot and the returnOnPendingRequest wait input (ledger delegated-wait-pending-requests), and also counts a run started by a delegated completion delivery as a wait's own work, as upstream counts a notification's; upstream's version settles such a wait at the earlier run's reply. A live run between two linked servers with real providers was not verified upstream. When it merges, compare the frozen base-to-head diff with the final upstream change, reconcile amendments and the fork adaptations (keep the delivery own-work row unless upstream covers it), rerun RemoteDelegation.test.ts and ThreadManagementService.test.ts, then clear the snapshot marker with that intake. If it closes without merging, review whether to remove the change or retain it as maintained fork behavior and record that decision before clearing the marker.",
+      "snapshot": {
+        "base": "9cd7a04797184c92a8f636ae1e918f42c139d850",
+        "head": "5258d9f655bf8d17e125c2aa5cbbbe8daab3b796"
+      }
     }
   ]
 }
