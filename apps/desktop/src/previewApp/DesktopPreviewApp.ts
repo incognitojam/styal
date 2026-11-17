@@ -272,6 +272,19 @@ export const make = Effect.fn("DesktopPreviewApp.make")(function* (options?: {
       : { version, ...parsed };
   });
 
+  const isRecoverableSlot = Effect.gen(function* () {
+    if (!supported || !(yield* exists(installedAppPath))) return false;
+    const { identifier, version } = yield* readBundle(installedAppPath);
+    if (identifier !== null || version !== null) return false;
+    const markers = yield* Effect.forEach(Object.keys(DESKTOP_INSTALL_IDENTITIES), (variant) =>
+      fs.stat(path.join(applicationsDirectory, `${STAGING_DIRECTORY_PREFIX}-${variant}`)).pipe(
+        Effect.map((info) => info.type === "Directory"),
+        Effect.orElseSucceed(() => false),
+      ),
+    );
+    return markers.some(Boolean);
+  });
+
   const state: DesktopPreviewApp["Service"]["state"] = Effect.gen(function* () {
     const activity = yield* Ref.get(activityRef);
     const installed = yield* readInstalled;
@@ -285,7 +298,7 @@ export const make = Effect.fn("DesktopPreviewApp.make")(function* (options?: {
       opensAfterInstall: !runningAsPreview,
       canInstall: supported && !runningFromInstalledApp,
       canOpen: installed !== null && !runningAsPreview,
-      canRemove: installed !== null && !runningFromInstalledApp,
+      canRemove: !runningFromInstalledApp && (installed !== null || (yield* isRecoverableSlot)),
       canReset: hasData,
       activity,
     };
@@ -427,7 +440,7 @@ export const make = Effect.fn("DesktopPreviewApp.make")(function* (options?: {
     return !(yield* isMounted);
   });
 
-  // Returns whether the directory is gone. An empty install location means an install stopped
+  // Returns whether staging is safe to reuse. An empty install location means an install stopped
   // between its renames, so the backup goes back first, whatever else is stuck. It is kept while
   // a failed rollback leaves it as the only good copy.
   const cleanStaging = Effect.gen(function* () {
@@ -448,6 +461,8 @@ export const make = Effect.fn("DesktopPreviewApp.make")(function* (options?: {
       yield* logWarning("preview build is still mounted; leaving staging in place");
       return false;
     }
+    // Keep the ownership evidence until a damaged slot is replaced or removed, even across restarts.
+    if (yield* isRecoverableSlot) return true;
     return yield* fs.remove(stagingDirectory, { recursive: true, force: true }).pipe(
       Effect.as(true),
       Effect.catch((error) =>
@@ -564,10 +579,10 @@ export const make = Effect.fn("DesktopPreviewApp.make")(function* (options?: {
     );
   });
 
-  // The slot only ever holds the preview identity; anything else there is left alone.
+  // Only an unreadable bundle with an installer marker can bypass the preview identity check.
   const ensureSlotIsOurs = Effect.gen(function* () {
     if (!(yield* exists(installedAppPath))) return;
-    if ((yield* readInstalled) === null) {
+    if ((yield* readInstalled) === null && !(yield* isRecoverableSlot)) {
       return yield* fail(
         "slot_occupied",
         `${installedAppPath} is not a styal preview, so it was left in place. Move it and try again.`,
@@ -584,8 +599,8 @@ export const make = Effect.fn("DesktopPreviewApp.make")(function* (options?: {
     }
   });
 
-  // Runs to its end once started. Any failure leaves the install location empty, and cleanStaging
-  // puts the backup back. A build macOS refuses to open is moved out so the same happens to it.
+  // Same-volume renames keep each bundle whole; cleanup restores the backup if promotion fails.
+  // A build macOS refuses to open is moved out before restoring the backup.
   const commitInstall = Effect.fn("DesktopPreviewApp.commitInstall")(function* (stagedApp: string) {
     const failure = (cause: unknown) =>
       fail("replace", `Could not install the app in ${applicationsDirectory}: ${String(cause)}`);
@@ -750,6 +765,12 @@ export const make = Effect.fn("DesktopPreviewApp.make")(function* (options?: {
               progress: null,
             });
           yield* phase("copying");
+          // Recovery may retain staging as ownership evidence; ditto must start with an empty target.
+          yield* fs
+            .remove(stagedApp, { recursive: true, force: true })
+            .pipe(
+              Effect.mapError((cause) => fail("copy", `Could not clear the staged app: ${cause}`)),
+            );
           yield* copyAppOutOfDmg(dmg, stagedApp);
           yield* fs.remove(dmg, { force: true }).pipe(Effect.ignore);
           yield* verifyStagedApp(stagedApp, asset);
@@ -787,11 +808,12 @@ export const make = Effect.fn("DesktopPreviewApp.make")(function* (options?: {
     }),
   );
 
-  // Rename first, so a failed removal puts the whole app back instead of leaving half of it.
+  // Deletion can fail part-way; its leftovers must never become a rollback backup.
   const moveInstalledAppOut = Effect.gen(function* () {
     yield* fs.makeDirectory(stagingDirectory, { recursive: true });
-    yield* fs.rename(installedAppPath, previousAppPath);
-    yield* fs.remove(previousAppPath, { recursive: true, force: true });
+    const removedApp = path.join(stagingDirectory, "removed.app");
+    yield* fs.rename(installedAppPath, removedApp);
+    yield* fs.remove(removedApp, { recursive: true, force: true });
   }).pipe(
     Effect.mapError((cause) => fail("remove", `Could not remove the preview: ${cause}`)),
     Effect.ensuring(cleanStaging),

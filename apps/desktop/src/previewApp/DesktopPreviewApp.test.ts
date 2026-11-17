@@ -11,6 +11,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as PlatformError from "effect/PlatformError";
 import type * as Scope from "effect/Scope";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
@@ -108,6 +109,7 @@ interface Scenario {
   /** The rejected build cannot be moved out of the install location. */
   readonly rejectedRenameFails?: boolean;
   readonly noWindow?: boolean;
+  readonly fault?: "backup" | "promote" | "cleanup" | "remove" | "copy";
 }
 
 const writeBundle = (appPath: string, bundle: { identifier: string; version: string }) =>
@@ -116,16 +118,25 @@ const writeBundle = (appPath: string, bundle: { identifier: string; version: str
     const path = yield* Path.Path;
     yield* fs.makeDirectory(path.join(appPath, "Contents"), { recursive: true });
     yield* fs.writeFileString(path.join(appPath, "Contents", "Info.plist"), JSON.stringify(bundle));
+    yield* fs.makeDirectory(path.join(appPath, "Contents", "MacOS"), { recursive: true });
+    yield* fs.writeFileString(path.join(appPath, "Contents", "MacOS", "styal"), "executable");
+    yield* fs.makeDirectory(path.join(appPath, "Contents", "Resources"), { recursive: true });
+    yield* fs.writeFileString(path.join(appPath, "Contents", "Resources", "app.asar"), "resources");
   });
 
 const output = (text: string) => Stream.make(new TextEncoder().encode(text));
 
-// The real filesystem stands in for macOS: only the macOS tools and GitHub are faked.
+// Fault-injected filesystem operations use isolated bundles; macOS tools and GitHub are faked.
 const setup = (scenario: Scenario) =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
-    const home = yield* fs.makeTempDirectoryScoped({ prefix: "styal-preview-app-" });
+    const scratch = path.resolve(import.meta.dirname, "../../../../.scratch");
+    yield* fs.makeDirectory(scratch, { recursive: true });
+    const home = yield* fs.makeTempDirectoryScoped({
+      directory: scratch,
+      prefix: "preview-install-test-",
+    });
     const baseDir = path.join(home, ".styal");
     const appData = path.join(home, "Library", "Application Support");
     const slot = path.join(home, "Applications", APP);
@@ -134,6 +145,36 @@ const setup = (scenario: Scenario) =>
       "Applications",
       `.styal-preview-install-${scenario.variant ?? "production"}`,
     );
+    const injectedError = PlatformError.systemError({
+      module: "FileSystem",
+      method: "previewInstall",
+      _tag: "PermissionDenied",
+      description: "injected failure",
+    });
+    const faultFs = FileSystem.make({
+      ...fs,
+      rename: (from, to) =>
+        (scenario.fault === "backup" && from === slot) ||
+        (scenario.fault === "promote" && from === path.join(staging, APP))
+          ? Effect.fail(injectedError)
+          : fs.rename(from, to),
+      remove: (target, options) =>
+        Effect.gen(function* () {
+          const deletingBackup =
+            target === path.join(staging, "previous.app") ||
+            target === path.join(staging, "removed.app");
+          const deletingStaging = target === staging;
+          if (
+            (scenario.fault === "remove" && deletingBackup) ||
+            (scenario.fault === "cleanup" && deletingStaging)
+          ) {
+            const damaged = deletingBackup ? target : path.join(staging, "previous.app");
+            yield* fs.remove(path.join(damaged, "Contents", "Info.plist"), { force: true });
+            return yield* injectedError;
+          }
+          yield* fs.remove(target, options);
+        }),
+    });
     const commands: Array<ReadonlyArray<string>> = [];
     const states: Array<unknown> = [];
     const urls: Array<string> = [];
@@ -181,7 +222,14 @@ const setup = (scenario: Scenario) =>
         } else if (name === "/sbin/mount") {
           if (mounted !== null) stdout = `/dev/disk9s1 on ${mounted} (hfs, local, read-only)\n`;
         } else if (name === "/usr/bin/ditto") {
-          yield* fs.copy(args[0]!, args[1]!);
+          if (scenario.fault === "copy") {
+            yield* fs.makeDirectory(path.join(args[1]!, "Contents", "Resources"), {
+              recursive: true,
+            });
+            exitCode = 1;
+          } else {
+            yield* fs.copy(args[0]!, args[1]!);
+          }
         } else if (name === "/usr/bin/xattr") {
           if (scenario.xattrFails === true) exitCode = 1;
           if (scenario.quarantined === true) stdout = `${args[2]}: com.apple.quarantine\n`;
@@ -280,6 +328,7 @@ const setup = (scenario: Scenario) =>
       Effect.provide(
         Layer.mergeAll(
           Layer.succeed(DesktopEnvironment.DesktopEnvironment, environment),
+          Layer.succeed(FileSystem.FileSystem, faultFs),
           DesktopManagedPolicy.layerTest(scenario.policy),
           Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner),
           Layer.succeed(HttpClient.HttpClient, http),
@@ -347,6 +396,11 @@ const buildAsset = asset("styal-1.2.3-pr.12.7-arm64.dmg");
 const installedVersion = (slot: string) =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
+    assert.strictEqual(yield* fs.readFileString(`${slot}/Contents/MacOS/styal`), "executable");
+    assert.strictEqual(
+      yield* fs.readFileString(`${slot}/Contents/Resources/app.asar`),
+      "resources",
+    );
     const content = yield* fs.readFileString(`${slot}/Contents/Info.plist`);
     return (JSON.parse(content) as { version: string }).version;
   });
@@ -356,6 +410,93 @@ const scoped = <A, E>(
 ) => effect.pipe(Effect.scoped, Effect.provide(NodeServices.layer));
 
 describe("DesktopPreviewApp", () => {
+  it.effect.each(["backup", "promote", "cleanup", "copy"] as const)(
+    "keeps a complete old or new app when %s fails",
+    (fault) =>
+      scoped(
+        Effect.gen(function* () {
+          const app = yield* setup({ assets: [buildAsset], fault });
+          yield* app.installPrevious("1.2.3-pr.12.6");
+          const result = yield* app.service.install(12);
+          assert.strictEqual(result.outcome, fault === "cleanup" ? "completed" : "failed");
+          assert.strictEqual(
+            yield* installedVersion(app.slot),
+            fault === "cleanup" ? "1.2.3-pr.12.7" : "1.2.3-pr.12.6",
+          );
+        }),
+      ),
+  );
+
+  it.effect("never restores a partly deleted app into the slot", () =>
+    scoped(
+      Effect.gen(function* () {
+        const app = yield* setup({ fault: "remove" });
+        yield* app.installPrevious("1.2.3-pr.12.6");
+        assert.strictEqual((yield* app.service.remove).outcome, "failed");
+        assert.isFalse(yield* app.fs.exists(app.slot));
+        yield* app.service.cleanLeftovers;
+        assert.isFalse(yield* app.fs.exists(app.slot));
+      }),
+    ),
+  );
+
+  it.effect.each(["install", "remove"] as const)(
+    "recovers a broken preview with another variant's marker via %s",
+    (action) =>
+      scoped(
+        Effect.gen(function* () {
+          const app = yield* setup({ assets: [buildAsset] });
+          yield* app.fs.makeDirectory(app.path.join(app.slot, "Contents", "Resources"), {
+            recursive: true,
+          });
+          const marker = app.path.join(app.home, "Applications", ".styal-preview-install-preview");
+          yield* app.fs.makeDirectory(marker, { recursive: true });
+          yield* app.service.cleanLeftovers;
+          const state = yield* app.service.state;
+          assert.isNull(state.installed);
+          assert.isFalse(state.canOpen);
+          assert.isTrue(state.canRemove);
+          const result = yield* action === "install" ? app.service.install(12) : app.service.remove;
+          assert.strictEqual(result.outcome, "completed");
+          if (action === "install")
+            assert.strictEqual(yield* installedVersion(app.slot), "1.2.3-pr.12.7");
+          else assert.isFalse(yield* app.fs.exists(app.slot));
+        }),
+      ),
+  );
+
+  it.effect("preserves its recovery marker across startup and failed installation", () =>
+    scoped(
+      Effect.gen(function* () {
+        const app = yield* setup({ assets: [buildAsset], fault: "copy" });
+        yield* app.fs.makeDirectory(app.path.join(app.slot, "Contents", "Resources"), {
+          recursive: true,
+        });
+        yield* app.fs.makeDirectory(app.staging, { recursive: true });
+        yield* app.service.cleanLeftovers;
+        assert.isTrue(yield* app.fs.exists(app.staging));
+        assert.strictEqual((yield* app.service.install(12)).outcome, "failed");
+        assert.isTrue(yield* app.fs.exists(app.staging));
+        assert.isTrue((yield* app.service.state).canRemove);
+      }),
+    ),
+  );
+
+  it.effect("refuses an incomplete app without an install marker", () =>
+    scoped(
+      Effect.gen(function* () {
+        const app = yield* setup({ assets: [buildAsset] });
+        yield* app.fs.makeDirectory(app.path.join(app.slot, "Contents", "Resources"), {
+          recursive: true,
+        });
+        assert.isFalse((yield* app.service.state).canRemove);
+        assert.strictEqual((yield* app.service.install(12)).outcome, "failed");
+        assert.strictEqual((yield* app.service.remove).outcome, "failed");
+        assert.isTrue(yield* app.fs.exists(app.slot));
+      }),
+    ),
+  );
+
   it.effect("installs a build, quitting the running one, and leaves nothing behind", () =>
     scoped(
       Effect.gen(function* () {
@@ -579,21 +720,32 @@ describe("DesktopPreviewApp", () => {
     ),
   );
 
-  it.effect("restores a backup a crash left behind instead of deleting the only copy", () =>
-    scoped(
-      Effect.gen(function* () {
-        const app = yield* setup({});
-        yield* writeBundle(app.path.join(app.staging, "previous.app"), {
-          identifier: PREVIEW_ID,
-          version: "1.2.3-pr.12.6",
-        });
+  it.effect.each(["backed-up", "promoted", "cleaning"] as const)(
+    "recovers a crash with the app %s",
+    (step) =>
+      scoped(
+        Effect.gen(function* () {
+          const app = yield* setup({});
+          yield* writeBundle(app.path.join(app.staging, "previous.app"), {
+            identifier: PREVIEW_ID,
+            version: "1.2.3-pr.12.6",
+          });
 
-        yield* app.service.cleanLeftovers;
+          if (step !== "backed-up") yield* app.installPrevious("1.2.3-pr.12.7");
+          if (step === "cleaning") {
+            yield* app.fs.remove(
+              app.path.join(app.staging, "previous.app", "Contents", "Info.plist"),
+            );
+          }
+          yield* app.service.cleanLeftovers;
 
-        assert.strictEqual(yield* installedVersion(app.slot), "1.2.3-pr.12.6");
-        assert.isTrue(yield* app.stagingIsGone);
-      }),
-    ),
+          assert.strictEqual(
+            yield* installedVersion(app.slot),
+            step === "backed-up" ? "1.2.3-pr.12.6" : "1.2.3-pr.12.7",
+          );
+          assert.isTrue(yield* app.stagingIsGone);
+        }),
+      ),
   );
 
   it.effect("never removes staging while the volume stays attached", () =>
@@ -652,6 +804,7 @@ describe("DesktopPreviewApp", () => {
       Effect.gen(function* () {
         const app = yield* setup({ assets: [buildAsset] });
         yield* app.installPrevious("9.9.9", "com.example.other");
+        yield* app.fs.makeDirectory(app.staging, { recursive: true });
 
         const installed = yield* app.service.install(12);
         const removed = yield* app.service.remove;
