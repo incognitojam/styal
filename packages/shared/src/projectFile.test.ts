@@ -158,7 +158,7 @@ describe("parseStyalProjectFileResult", () => {
     const result = parseStyalProjectFileResult(
       json({ worktreeCleanup: ["node_modules//", "web/dist", "node_modules/"] }),
     );
-    expect(result.file?.worktreeCleanup).toEqual(["web/dist", "node_modules"]);
+    expect(result.file?.worktreeCleanup).toEqual(["web/dist", "node_modules/"]);
     expect(result.status === "partial" && result.issues).toEqual([
       {
         path: ["worktreeCleanup", 0],

@@ -75,7 +75,7 @@ export const StyalProjectFileAction = Schema.Struct({
 export type StyalProjectFileAction = typeof StyalProjectFileAction.Type;
 
 export function worktreeCleanupPatternProblem(pattern: string): string | null {
-  const segments = pattern.split("/");
+  const segments = (pattern.endsWith("/") ? pattern.slice(0, -1) : pattern).split("/");
   let rule: string | null = null;
   if (pattern.length === 0 || pattern.length > 512) rule = "use 1 to 512 characters";
   else if (/^[a-zA-Z]:/.test(pattern)) rule = "use a relative path without a drive prefix";
@@ -100,11 +100,11 @@ export const WORKTREE_CLEANUP_MAX_PATTERNS = 100;
 const cleanupPatternSyntax =
   /^(?!\s*[a-zA-Z]:)(?![\s\S]*[\\!?[\]{}])(?!\s*(?:\.{1,2}|[.][gG][iI][tT])(?:\/|\s*$))(?![\s\S]*\/(?:\.{1,2}|[.][gG][iI][tT])(?:\/|\s*$))\s*(?=\S)(?:(?:\*\*|(?:[^/*]|\*(?!\*))+)\/)*(?=[^/]*(?:[^\s/]|\/\s*$))(?!\*+\/?\s*$)(?:[^/*]|\*(?!\*))+\/?\s*$/u;
 
-const normalizeCleanupPattern = (pattern: string) => pattern.trim().replace(/([^/])\/$/, "$1");
+const normalizeCleanupPattern = (pattern: string) => pattern.trim();
 
 export const WorktreeCleanupPattern = Schema.String.annotate({
   description:
-    "Worktree-relative path using forward slashes; a single trailing / is optional and removed, as is surrounding whitespace. Only * (within a segment) and ** (a whole segment) wildcards are supported. No drive prefix, !, ?, [, ], {, }, empty, . or .. segments, or .git segments (case-insensitive). The last segment must contain a literal character. Use 1 to 512 characters.",
+    "Worktree-relative path using forward slashes; a single trailing / is optional and matches folders only; without it, files and folders match. Surrounding whitespace is removed. Only * (within a segment) and ** (a whole segment) wildcards are supported. No drive prefix, !, ?, [, ], {, }, empty, . or .. segments, or .git segments (case-insensitive). The last segment must contain a literal character. Use 1 to 512 characters.",
 })
   .check(
     Schema.makeFilter(

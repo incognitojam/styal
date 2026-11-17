@@ -45,6 +45,14 @@ describe("worktree cleanup patterns", () => {
   });
   it.each([
     ["dist", "dist", true],
+    ["dist", "dist/", true],
+    ["dist/", "dist/", true],
+    ["dist/", "dist", false],
+    ["**/dist/", "dist/", true],
+    ["**/dist/", "apps/web/dist/", true],
+    ["**/dist/", "apps/web/dist", false],
+    ["apps/**/dist/", "apps/dist/", true],
+    ["apps/**/dist/", "apps/a/b/dist/", true],
     ["dist", "Dist", false],
     ["café", "cafe\u0301", false],
     ["dist", "dist\n", false],
@@ -71,7 +79,7 @@ describe("worktree cleanup patterns", () => {
     const parsed = parseStyalProjectFileResult(
       JSON.stringify({ worktreeCleanup: [" dist/ ", "  **/node_modules/  "] }),
     );
-    expect(parsed.file?.worktreeCleanup).toEqual(["dist", "**/node_modules"]);
+    expect(parsed.file?.worktreeCleanup).toEqual(["dist/", "**/node_modules/"]);
     expect(parseStyalProjectFileResult(JSON.stringify({ worktreeCleanup: ["   "] })).status).toBe(
       "partial",
     );
@@ -86,7 +94,7 @@ describe("worktree cleanup patterns", () => {
     }
   });
   it("publishes the field and preserves the entire list exactly", () => {
-    const patterns = ["node_modules", "**/dist", "node_modules"];
+    const patterns = ["node_modules", "**/dist", "node_modules", "**/dist/", "node_modules/"];
     const parsed = parseStyalProjectFileResult(JSON.stringify({ worktreeCleanup: patterns }));
     expect(parsed.file?.worktreeCleanup).toEqual(patterns);
     const schema = buildStyalProjectFileJsonSchema();
@@ -95,6 +103,11 @@ describe("worktree cleanup patterns", () => {
         items: { description: expect.stringContaining("single trailing /") },
       },
     });
+    const items = (
+      schema.properties as { worktreeCleanup: { items: { pattern: string; description: string } } }
+    ).worktreeCleanup.items;
+    expect(items.description).toContain("matches folders only");
+    for (const pattern of patterns) expect(new RegExp(items.pattern, "u").test(pattern)).toBe(true);
     expect(
       parseStyalProjectFileResult(JSON.stringify({ worktreeCleanup: Array(101).fill("dist") }))
         .status,

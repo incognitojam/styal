@@ -125,7 +125,7 @@ export const makeDeletion = Effect.gen(function* () {
           message: "Incomplete ignored ancestor list.",
         });
       for (const parent of parents.stdout.split("\0").filter(Boolean))
-        if (!patterns.some((pattern) => matchesWorktreeCleanupPattern(pattern, parent)))
+        if (!patterns.some((pattern) => matchesWorktreeCleanupPattern(pattern, `${parent}/`)))
           blockedAncestors.add(parent);
     }
     return yield* Effect.tryPromise({
@@ -195,7 +195,14 @@ export const makeDeletion = Effect.gen(function* () {
           const stat = await safe(target);
           if (stat.isSymbolicLink()) return;
           const relative = path.relative(root, target).split(path.sep).join("/");
-          if (patterns.some((pattern) => matchesWorktreeCleanupPattern(pattern, relative))) {
+          if (
+            patterns.some((pattern) =>
+              matchesWorktreeCleanupPattern(
+                pattern,
+                stat.isDirectory() ? `${relative}/` : relative,
+              ),
+            )
+          ) {
             const key = canonical(relative);
             if (protectedPaths.some((entry) => entry === key || entry.startsWith(`${key}/`)))
               return;

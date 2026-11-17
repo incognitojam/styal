@@ -314,7 +314,7 @@ variables.
 
 ## Regenerable files in worktrees
 
-Declare paths your setup action or build recreates in `styal.json`, for example `"worktreeCleanup": ["**/node_modules", "apps/*/dist"]`. Patterns are relative to the worktree root; `*` matches within one path segment and `**` matches whole segments. Only git-ignored paths qualify. Patterns do not search inside an ignored folder unless a pattern matches that folder itself, so `**/node_modules` leaves `.scratch/experiment/node_modules` and `.styal/experiment/node_modules` alone. Never list notes, local state, secrets, or other files you cannot recreate.
+Declare paths your setup action or build recreates in `styal.json`, for example `"worktreeCleanup": ["**/node_modules", "apps/*/dist"]`. Patterns are relative to the worktree root; `*` matches within one path segment and `**` matches whole segments. A trailing `/` matches folders only; without it, files and folders match. Each spelling needs its own approval. Only git-ignored paths qualify. Patterns do not search inside an ignored folder unless a pattern matches that folder itself, so `**/node_modules` leaves `.scratch/experiment/node_modules` and `.styal/experiment/node_modules` alone. Never list notes, local state, secrets, or other files you cannot recreate.
 
 In the project’s **Settings → Worktrees → Regenerable files**, approve each pattern on each machine. New patterns need approval. Removing a pattern from the file stops using it; its earlier approval stays until you choose **Forget**, so restoring it does not ask again. Agents can edit the file to propose patterns, but cannot approve them.
 

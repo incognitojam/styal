@@ -44,9 +44,20 @@ it.effect(
         expect((yield* approvals.review({ projectId: ProjectId.make("b") })).status).toBe(
           "pending",
         );
-        yield* write('{"worktreeCleanup":["dist/"]}');
+        yield* write('{"worktreeCleanup":["dist","dist/"]}');
         expect((yield* approvals.review(input)).declared).toEqual([
           { pattern: "dist", status: "approved" },
+          { pattern: "dist/", status: "pending" },
+        ]);
+        yield* approvals.approve({ ...input, patterns: ["dist/"] });
+        expect((yield* approvals.review(input)).declared).toEqual([
+          { pattern: "dist", status: "approved" },
+          { pattern: "dist/", status: "approved" },
+        ]);
+        yield* approvals.revoke({ ...input, pattern: "dist/" });
+        expect((yield* approvals.review(input)).declared).toEqual([
+          { pattern: "dist", status: "approved" },
+          { pattern: "dist/", status: "pending" },
         ]);
         yield* write('{"worktreeCleanup":["dist","a/../dist","node_modules"]}');
         const partial = yield* approvals.approve({
