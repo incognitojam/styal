@@ -78,6 +78,34 @@ console.log(JSON.stringify([response]));
         "utf8",
       ),
     );
+    const resolveScript = workflow.jobs.validate.steps.find(
+      (step: { name?: string }) => step.name === "Resolve candidate",
+    ).run;
+    const resolve = (baseSha: string, candidateSha: string) =>
+      NodeChildProcess.spawnSync("bash", ["-c", resolveScript], {
+        cwd,
+        encoding: "utf8",
+        env: {
+          ...env,
+          GITHUB_EVENT_NAME: "workflow_dispatch",
+          DRY_RUN_BASE_SHA: baseSha,
+          EXPECTED_CANDIDATE_SHA: candidateSha,
+          CANDIDATE_BRANCH: "intake/fixture",
+          GITHUB_OUTPUT: NodePath.join(directory, "outputs"),
+          GITHUB_STEP_SUMMARY: NodePath.join(directory, "summary"),
+        },
+      });
+    git("push", "origin", `${moved}:refs/heads/intake/fixture`);
+    const unlandedBase = resolve(head, moved);
+    assert.equal(unlandedBase.status, 1, unlandedBase.stderr);
+    assert.include(unlandedBase.stdout, "not in main's history", unlandedBase.stderr);
+    const currentBase = resolve(base, head);
+    assert.equal(currentBase.status, 0, currentBase.stderr);
+    git("push", "origin", `${head}:refs/heads/main`);
+    const historicalBase = resolve(base, head);
+    assert.equal(historicalBase.status, 0, historicalBase.stderr);
+    git("push", "--force", "origin", `${base}:refs/heads/main`);
+    git("push", "--force", "origin", `${head}:refs/heads/intake/fixture`);
     const script = workflow.jobs.promote.steps
       .find((step: { name?: string }) => step.name === "Fast-forward main to the candidate")
       .run.replace(/\$\{\{.*?\}\}/gu, "synthetic");

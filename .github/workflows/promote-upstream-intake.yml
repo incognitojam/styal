@@ -112,9 +112,15 @@ jobs:
               echo "::error::Dry runs require a full historical main SHA."
               exit 1
             fi
-            git fetch --no-tags origin "$DRY_RUN_BASE_SHA" "$EXPECTED_CANDIDATE_SHA"
+            git fetch --no-tags origin \
+              '+refs/heads/main:refs/remotes/origin/main' \
+              "$DRY_RUN_BASE_SHA" "$EXPECTED_CANDIDATE_SHA"
             base_sha="$(git rev-parse --verify "${DRY_RUN_BASE_SHA}^{commit}")"
             candidate_sha="$(git rev-parse --verify "${EXPECTED_CANDIDATE_SHA}^{commit}")"
+            if ! git merge-base --is-ancestor "$base_sha" refs/remotes/origin/main; then
+              echo "::error::The dry-run base is not in main's history."
+              exit 1
+            fi
             echo "Dry run: historical base $base_sha; no environment, approval or push." >> "$GITHUB_STEP_SUMMARY"
           else
             git fetch --no-tags origin \
