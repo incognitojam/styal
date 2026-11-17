@@ -70,8 +70,11 @@ export function WorkflowRunReviewCard(props: {
       setSubmitting(false);
     });
     if (result._tag === "Success") {
-      // Environments the review didn't cover start from a fresh form.
-      setPicks(null);
+      // Reviewed environments leave the picks; ones the user excluded stay excluded.
+      const reviewed = new Set([first, ...rest]);
+      setPicks((current) =>
+        current === null ? null : new Set([...current].filter((id) => !reviewed.has(id))),
+      );
       setComment("");
       setExpanded(false);
     }
@@ -128,7 +131,7 @@ export function WorkflowRunReviewCard(props: {
       </View>
       {expanded ? (
         <View className="gap-2.5">
-          {environments.length > 1 ? (
+          {environments.length > 1 || picks !== null ? (
             <View className="gap-2">
               {environments.map((environment) => {
                 const checked = selected.has(environment.id);

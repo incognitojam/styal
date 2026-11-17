@@ -349,18 +349,25 @@ describe("review a watched workflow deployment", () => {
 
     delete retry.reviewError;
     await approve.click();
-    // Only production remains waiting, so the fresh form no longer needs checkboxes.
+    // Only production remains waiting. The user excluded it, so it stays excluded, and its
+    // checkbox stays so it can be selected again.
     await page
       .getByText("Waiting for your review to deploy to production.", { exact: true })
       .waitFor();
-    await page.getByRole("button", { name: "Review", exact: true }).click();
-    expect(await page.getByRole("checkbox").count()).toBe(0);
+    expect(
+      await page.getByRole("button", { name: "Approve 0 environments", exact: true }).isDisabled(),
+    ).toBe(true);
     expect(reviews(retry).map((request) => request.body)).toEqual([
       { environment_ids: [41], state: "approved", comment: "Deploy the staging fix" },
       { environment_ids: [41], state: "approved", comment: "Deploy the staging fix" },
     ]);
     await page.getByRole("button", { name: "Review", exact: true }).click();
-    await page.getByRole("button", { name: "Approve", exact: true }).click();
+    expect(await production.isChecked()).toBe(false);
+    expect(
+      await page.getByRole("button", { name: "Approve and deploy", exact: true }).isDisabled(),
+    ).toBe(true);
+    await production.check();
+    await page.getByRole("button", { name: "Approve and deploy", exact: true }).click();
     await page.getByText("Deployment review", { exact: true }).waitFor({ state: "hidden" });
     expect(reviews(retry).at(-1)!.body).toEqual({
       environment_ids: [42],

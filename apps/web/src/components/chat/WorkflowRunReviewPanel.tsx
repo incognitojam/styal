@@ -84,8 +84,11 @@ function WorkflowRunReviewForm(props: {
     inFlight.current = false;
     setSubmitting(false);
     if (result._tag === "Success") {
-      // Environments the review didn't cover start from a fresh form.
-      setPicks(null);
+      // Reviewed environments leave the picks; ones the user excluded stay excluded.
+      const reviewed = new Set([first, ...rest]);
+      setPicks((current) =>
+        current === null ? null : new Set([...current].filter((id) => !reviewed.has(id))),
+      );
       setComment("");
       setExpanded(false);
     }
@@ -147,7 +150,7 @@ function WorkflowRunReviewForm(props: {
       </div>
       {expanded ? (
         <div className="px-3 pb-3 text-sm">
-          {environments.length > 1 ? (
+          {environments.length > 1 || picks !== null ? (
             <div className="flex flex-wrap gap-x-3 gap-y-1">
               {environments.map((environment) => (
                 <label key={environment.id} className="flex items-center gap-1.5">
