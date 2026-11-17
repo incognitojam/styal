@@ -561,6 +561,11 @@ function ThreadDetailBody(
     dismissCoordinatorReport.permissionAtom(props.environmentId),
   );
   const [endFollowEnabled, setEndFollowEnabled] = useState(true);
+  // Reports the user asked to open stay open even when their row mounts after the jump ends.
+  const [openedReports, setOpenedReports] = useState<{
+    readonly threadKey: string;
+    readonly ids: ReadonlySet<MessageId>;
+  }>({ threadKey: selectedThreadKey, ids: new Set() });
   // Keep the bottom padding fixed while the keyboard animates. Changing it at
   // keyboardDidHide makes the composer land low, then jump back above the safe area.
   const bottomBarInset = useDuoBottomBarInset();
@@ -1473,8 +1478,16 @@ function ThreadDetailBody(
   const reportContext = {
     reports: props.reports ?? [],
     answers: props.reportAnswers ?? new Map(),
+    opened:
+      openedReports.threadKey === selectedThreadKey ? openedReports.ids : new Set<MessageId>(),
     target: jumpMessageId,
-    scroll: (id: MessageId) => requestThreadMessageJump(selectedThreadKey, id),
+    scroll: (id: MessageId) => {
+      setOpenedReports((current) => ({
+        threadKey: selectedThreadKey,
+        ids: new Set([...(current.threadKey === selectedThreadKey ? current.ids : []), id]),
+      }));
+      requestThreadMessageJump(selectedThreadKey, id);
+    },
     canOperate: props.canOperateThread && canDismissReport && props.queuedRunEdit === null,
     reply: replyToReport,
     send: sendReportAnswer,

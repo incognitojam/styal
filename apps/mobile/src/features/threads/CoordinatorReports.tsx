@@ -33,6 +33,7 @@ export const CoordinatorReportsContext = createContext<{
   reports: readonly ReportState[];
   answers: ReportAnswers;
   target: string | null;
+  opened: ReadonlySet<MessageId>;
   scroll: (id: MessageId) => void;
   canOperate: boolean;
   send: (text: string, reply: ReportReply) => Promise<void>;
@@ -49,7 +50,7 @@ export function CoordinatorReportMessage({
   const report = ctx?.reports.find((report) => report.message.id === id);
   const [expanded, setExpanded] = useState(false);
   // Opening a reply chip or waiting row for an older version shows it, not its folded line.
-  if (!expanded && ctx?.target === id) setExpanded(true);
+  if (!expanded && (ctx?.target === id || ctx?.opened.has(id))) setExpanded(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const content = <Animated.View {...props}>{children}</Animated.View>;
