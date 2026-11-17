@@ -447,6 +447,10 @@
       "types": "./src/work-log/itemDetail.ts",
       "default": "./src/work-log/itemDetail.ts"
     },
+    "./work-log/answer-before-save-note": {
+      "types": "./src/work-log/answerBeforeSaveNote.ts",
+      "default": "./src/work-log/answerBeforeSaveNote.ts"
+    },
     "./work-log/presentation": {
       "types": "./src/work-log/presentation.ts",
       "default": "./src/work-log/presentation.ts"

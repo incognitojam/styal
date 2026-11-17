@@ -33,13 +33,13 @@ import {
   workEntryReviewFindings,
   memoryRowLabel,
   workEntryReadsMemoryFile,
-  workEntryKeepsPriorAnswerVisible,
   workEntryMemoryFileKind,
   workEntryMemoryFilePath,
   workEntryEditDidNotApply,
   contextCompactionTokenCounts,
   type ToolGroupSummaryKind,
 } from "@t3tools/client-runtime/work-log/presentation";
+import { answerBeforeSaveNoteEntryId } from "@t3tools/client-runtime/work-log/answer-before-save-note";
 import {
   deriveRevertTurnCountByUserMessageId,
   formatDuration,
@@ -763,33 +763,6 @@ function deriveTerminalAssistantMessageIds(
   return new Set(lastAssistantMessageIdByResponseKey.values());
 }
 
-/**
- * Agents often answer, save a memory or a file, then end with a shorter note about it.
- * That answer stays visible beside the note instead of folding as work.
- */
-function answerBeforeSaveNoteEntryId(
-  entries: ReadonlyArray<TimelineEntry>,
-  terminalEntryIndex: number,
-): string | null {
-  const terminalEntry = entries[terminalEntryIndex];
-  if (terminalEntry?.kind !== "message") return null;
-  let saved = false;
-  for (let index = terminalEntryIndex - 1; index >= 0; index -= 1) {
-    const entry = entries[index];
-    if (entry?.kind === "work") {
-      if (entry.entry.itemType === "reasoning") continue;
-      if (!workEntryKeepsPriorAnswerVisible(entry.entry)) return null;
-      saved = true;
-      continue;
-    }
-    if (entry?.kind !== "message" || entry.message.role !== "assistant") return null;
-    return saved && entry.message.text.trim().length > terminalEntry.message.text.trim().length
-      ? entry.id
-      : null;
-  }
-  return null;
-}
-
 interface TurnFold {
   runId: RunId;
   anchorEntryId: string;
@@ -1346,7 +1319,16 @@ function deriveTurnFolds(input: {
     const terminalEntryIndex = group.terminalEntry
       ? group.entries.findIndex((entry) => entry.id === group.terminalEntry?.id)
       : group.entries.length;
-    const answerBeforeSaveNote = answerBeforeSaveNoteEntryId(group.entries, terminalEntryIndex);
+    const answerBeforeSaveNote = answerBeforeSaveNoteEntryId(
+      group.entries,
+      group.terminalEntry?.id,
+      (entry) =>
+        entry.kind === "message"
+          ? { message: entry.message }
+          : entry.kind === "work"
+            ? { work: [entry.entry] }
+            : null,
+    );
     for (const [index, entry] of group.entries.entries()) {
       if (entry.id === group.terminalEntry?.id || entry.id === answerBeforeSaveNote) {
         continue;

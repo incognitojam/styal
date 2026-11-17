@@ -3191,6 +3191,7 @@ features:
       - apps/web/src/components/chat/TimelineWorkEntryRow.logic.ts
       - apps/web/src/components/chat/TimelineWorkEntryRow.tsx
       - apps/web/src/components/chat/TimelineWorkGroupRows.tsx
+      - packages/client-runtime/src/work-log/answerBeforeSaveNote.ts
       - packages/client-runtime/src/work-log/presentation.ts
       - packages/shared/src/toolActivity.ts
       - packages/shared/src/toolRowPresentation.ts
@@ -3207,6 +3208,7 @@ features:
       - apps/server/src/orchestration-v2/threadHistoryPaging.test.ts
       - apps/server/src/persistence/ForkMigrations.v1History.test.ts
       - apps/web/src/components/chat/MessagesTimeline.logic.test.ts
+      - packages/client-runtime/src/work-log/answerBeforeSaveNote.test.ts
       - packages/client-runtime/src/work-log/presentation.test.ts
       - packages/shared/src/toolActivity.test.ts
       - packages/shared/src/toolRowPresentation.test.ts

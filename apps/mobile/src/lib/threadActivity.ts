@@ -1,9 +1,7 @@
 import { ProjectScriptIcon } from "@t3tools/contracts";
 import { type ToolFileChangeLineStat } from "@t3tools/shared/toolActivity";
-import {
-  workEntryKeepsPriorAnswerVisible,
-  workEntryReviewFindings,
-} from "@t3tools/client-runtime/work-log/presentation";
+import { answerBeforeSaveNoteEntryId } from "@t3tools/client-runtime/work-log/answer-before-save-note";
+import { workEntryReviewFindings } from "@t3tools/client-runtime/work-log/presentation";
 import type { ReviewFindingsReport } from "@t3tools/shared/reviewFindings";
 import {
   setupScriptActivityLabel,
@@ -1168,36 +1166,6 @@ export function messageFoldRunId(
   return null;
 }
 
-/**
- * Agents often answer, save a memory or a file, then end with a shorter note about it.
- * That answer stays visible beside the note instead of folding as work.
- */
-function answerBeforeSaveNoteEntryId(
-  entries: ReadonlyArray<ThreadFeedEntry>,
-  terminalAssistantId: string | undefined,
-): string | null {
-  const terminalIndex = entries.findIndex((entry) => entry.id === terminalAssistantId);
-  const terminalEntry = entries[terminalIndex];
-  if (terminalEntry?.type !== "message") return null;
-  let saved = false;
-  for (let index = terminalIndex - 1; index >= 0; index -= 1) {
-    const entry = entries[index];
-    if (entry?.type === "activity-group") {
-      for (const activity of entry.activities) {
-        if (activity.workEntry.itemType === "reasoning") continue;
-        if (!workEntryKeepsPriorAnswerVisible(activity.workEntry)) return null;
-        saved = true;
-      }
-      continue;
-    }
-    if (entry?.type !== "message" || entry.message.role !== "assistant") return null;
-    return saved && entry.message.text.trim().length > terminalEntry.message.text.trim().length
-      ? entry.id
-      : null;
-  }
-  return null;
-}
-
 function deriveThreadFeedRunFolds(
   feed: ReadonlyArray<ThreadFeedEntry>,
   latestRun: ThreadFeedLatestRun | null,
@@ -1296,7 +1264,16 @@ function deriveThreadFeedRunFolds(
       continue;
     }
     const terminalAssistantId = terminalAssistantMessageIdByRun.get(runId);
-    const answerBeforeSaveNote = answerBeforeSaveNoteEntryId(group.entries, terminalAssistantId);
+    const answerBeforeSaveNote = answerBeforeSaveNoteEntryId(
+      group.entries,
+      terminalAssistantId,
+      (entry) =>
+        entry.type === "message"
+          ? { message: entry.message }
+          : entry.type === "activity-group"
+            ? { work: entry.activities.map((activity) => activity.workEntry) }
+            : null,
+    );
     const hiddenEntryIds = new Set(
       group.entries
         .filter(
