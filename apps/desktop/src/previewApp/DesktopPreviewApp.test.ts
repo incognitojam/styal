@@ -111,10 +111,11 @@ interface Scenario {
   /** The rejected build cannot be moved out of the install location. */
   readonly rejectedRenameFails?: boolean;
   readonly noWindow?: boolean;
+  readonly asarPatchedFs?: boolean;
   readonly plutilFails?: boolean;
   readonly plistStatFails?: boolean;
   readonly symlinkApplications?: boolean;
-  readonly fault?: "backup" | "promote" | "cleanup" | "remove" | "copy" | "retire";
+  readonly fault?: "backup" | "promote" | "cleanup" | "remove" | "remove-exit" | "copy" | "retire";
 }
 
 const writeBundle = (appPath: string, bundle: { identifier: string; version: string }) =>
@@ -130,6 +131,13 @@ const writeBundle = (appPath: string, bundle: { identifier: string; version: str
     yield* fs.writeFileString(path.join(appPath, "Contents", "MacOS", "styal"), "executable");
     yield* fs.makeDirectory(path.join(appPath, "Contents", "Resources"), { recursive: true });
     yield* fs.writeFileString(path.join(appPath, "Contents", "Resources", "app.asar"), "resources");
+  });
+
+const writeShell = (appPath: string) =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    yield* fs.makeDirectory(`${appPath}/Contents/Resources`, { recursive: true });
+    yield* fs.writeFileString(`${appPath}/Contents/Resources/app.asar`, "leftover archive");
   });
 
 const output = (text: string) => Stream.make(new TextEncoder().encode(text));
@@ -159,6 +167,40 @@ const setup = (scenario: Scenario) =>
       _tag: "PermissionDenied",
       description: "injected failure",
     });
+    const removePhysical: FileSystem.FileSystem["remove"] = (target, options) =>
+      Effect.gen(function* () {
+        const deletingBackup =
+          target === path.join(staging, "previous.app") ||
+          target === path.join(staging, "removed.app");
+        const deletingStaging = target === staging;
+        if (
+          (scenario.fault === "remove" && deletingBackup && (yield* fs.exists(target))) ||
+          (scenario.fault === "cleanup" && deletingStaging)
+        ) {
+          const damaged = deletingBackup
+            ? target
+            : path.join(
+                staging,
+                (yield* fs.exists(path.join(staging, "retired.app")))
+                  ? "retired.app"
+                  : "previous.app",
+              );
+          yield* fs.remove(path.join(damaged, "Contents", "Info.plist"), { force: true });
+          return yield* injectedError;
+        }
+        yield* fs.remove(target, options);
+      });
+    const removeAsElectron = (target: string): Effect.Effect<void, PlatformError.PlatformError> =>
+      Effect.gen(function* () {
+        if (!(yield* fs.exists(target)) || target.endsWith(".asar")) return;
+        const info = yield* fs.lstat(target);
+        if (info.type === "Directory") {
+          for (const entry of yield* fs.readDirectory(target))
+            yield* removeAsElectron(path.join(target, entry));
+          if ((yield* fs.readDirectory(target)).length > 0) return yield* injectedError;
+        }
+        yield* fs.remove(target, { recursive: true, force: true });
+      });
     const faultFs = FileSystem.make({
       ...fs,
       lstat: (target) =>
@@ -172,28 +214,9 @@ const setup = (scenario: Scenario) =>
           ? Effect.fail(injectedError)
           : fs.rename(from, to),
       remove: (target, options) =>
-        Effect.gen(function* () {
-          const deletingBackup =
-            target === path.join(staging, "previous.app") ||
-            target === path.join(staging, "removed.app");
-          const deletingStaging = target === staging;
-          if (
-            (scenario.fault === "remove" && deletingBackup && (yield* fs.exists(target))) ||
-            (scenario.fault === "cleanup" && deletingStaging)
-          ) {
-            const damaged = deletingBackup
-              ? target
-              : path.join(
-                  staging,
-                  (yield* fs.exists(path.join(staging, "retired.app")))
-                    ? "retired.app"
-                    : "previous.app",
-                );
-            yield* fs.remove(path.join(damaged, "Contents", "Info.plist"), { force: true });
-            return yield* injectedError;
-          }
-          yield* fs.remove(target, options);
-        }),
+        scenario.asarPatchedFs && options?.recursive
+          ? removeAsElectron(target)
+          : removePhysical(target, options),
     });
     const commands: Array<ReadonlyArray<string>> = [];
     const states: Array<unknown> = [];
@@ -250,6 +273,10 @@ const setup = (scenario: Scenario) =>
         } else if (name === "/sbin/mount") {
           if (mounted !== null)
             stdout = `/dev/disk9s1 on ${yield* fs.realPath(mounted)} (hfs, local, read-only)\n`;
+        } else if (name === "/bin/rm") {
+          if (scenario.fault === "remove-exit" && (yield* fs.exists(args[args.length - 1]!)))
+            exitCode = 1;
+          else yield* removePhysical(args[args.length - 1]!, { recursive: true, force: true });
         } else if (name === "/usr/bin/ditto") {
           if (scenario.fault === "copy") {
             yield* fs.makeDirectory(path.join(args[1]!, "Contents", "Resources"), {
@@ -591,9 +618,7 @@ describe("DesktopPreviewApp", () => {
     scoped(
       Effect.gen(function* () {
         const app = yield* setup({ assets: [buildAsset], openExitCode: 1 });
-        yield* app.fs.makeDirectory(app.path.join(app.slot, "Contents", "Resources"), {
-          recursive: true,
-        });
+        yield* writeShell(app.slot);
         yield* app.fs.makeDirectory(app.path.join(app.staging, "rejected.app", "old"), {
           recursive: true,
         });
@@ -691,17 +716,134 @@ describe("DesktopPreviewApp", () => {
       ),
   );
 
-  it.effect("never restores a partly deleted app into the slot", () =>
+  it.effect.each(["remove", "remove-exit"] as const)(
+    "never restores a partly deleted app into the slot, failure: %s",
+    (fault) =>
+      scoped(
+        Effect.gen(function* () {
+          const app = yield* setup({ fault });
+          yield* app.installPrevious("1.2.3-pr.12.6");
+          assert.strictEqual((yield* app.service.remove).outcome, "failed");
+          assert.isFalse(yield* app.fs.exists(app.slot));
+          yield* app.service.cleanLeftovers;
+          assert.isFalse(yield* app.fs.exists(app.slot));
+        }),
+      ),
+  );
+
+  it.effect.each(["install", "remove", "closed", "rejected"] as const)(
+    "fully deletes ASAR bundles via %s with Electron's patched filesystem",
+    (action) =>
+      scoped(
+        Effect.gen(function* () {
+          const app = yield* setup({
+            assets: [buildAsset],
+            asarPatchedFs: true,
+            pullRequestState: "closed",
+            ...(action === "rejected" ? { openExitCode: 1 } : {}),
+          });
+          yield* app.installPrevious("1.2.3-pr.12.6");
+          if (action === "closed") yield* app.service.removeIfPullRequestClosed;
+          else {
+            const result = yield* action === "remove"
+              ? app.service.remove
+              : app.service.install(12);
+            assert.strictEqual(result.outcome, action === "rejected" ? "failed" : "completed");
+          }
+          if (action === "install" || action === "rejected")
+            assert.strictEqual(
+              yield* installedVersion(app.slot),
+              action === "install" ? "1.2.3-pr.12.7" : "1.2.3-pr.12.6",
+            );
+          else assert.isFalse(yield* app.fs.exists(app.slot));
+          assert.isTrue(yield* app.stagingIsGone);
+        }),
+      ),
+  );
+
+  it.effect.each([false, true])(
+    "recovers an ASAR-only slot without its own marker, DS_Store: %s",
+    (dsStore) =>
+      scoped(
+        Effect.gen(function* () {
+          const app = yield* setup({ assets: [buildAsset] });
+          yield* writeShell(app.slot);
+          if (dsStore)
+            for (const directory of [
+              app.slot,
+              `${app.slot}/Contents`,
+              `${app.slot}/Contents/Resources`,
+            ])
+              yield* app.fs.writeFileString(`${directory}/.DS_Store`, "finder metadata");
+          const other = app.path.join(app.home, "Applications", ".styal-preview-install-preview");
+          yield* writeShell(app.path.join(other, "previous.app"));
+          assert.isFalse(yield* app.fs.exists(app.staging));
+          const result = yield* app.service.install(12);
+          assert.strictEqual(result.outcome, "completed");
+          assert.strictEqual(yield* installedVersion(app.slot), "1.2.3-pr.12.7");
+          assert.isTrue(yield* app.stagingIsGone);
+          assert.isTrue(yield* app.fs.exists(other));
+        }),
+      ),
+  );
+
+  it.effect.each([
+    "extra-root",
+    "extra-contents",
+    "extra-resource",
+    "plist",
+    "macos",
+    "asar-directory",
+    "asar-symlink",
+    "resources-symlink",
+  ] as const)("refuses an ASAR shell near miss: %s", (kind) =>
     scoped(
       Effect.gen(function* () {
-        const app = yield* setup({ fault: "remove" });
-        yield* app.installPrevious("1.2.3-pr.12.6");
+        const app = yield* setup({ assets: [buildAsset] });
+        yield* writeShell(app.slot);
+        yield* app.fs.makeDirectory(app.staging, { recursive: true });
+        if (kind.startsWith("extra-")) {
+          const directory =
+            kind === "extra-root"
+              ? app.slot
+              : kind === "extra-contents"
+                ? `${app.slot}/Contents`
+                : `${app.slot}/Contents/Resources`;
+          yield* app.fs.writeFileString(`${directory}/keep.txt`, "user file");
+        } else if (kind === "plist")
+          yield* app.fs.writeFileString(`${app.slot}/Contents/Info.plist`, "unreadable plist");
+        else if (kind === "macos") yield* app.fs.makeDirectory(`${app.slot}/Contents/MacOS`);
+        else {
+          const target =
+            kind === "resources-symlink"
+              ? `${app.slot}/Contents/Resources`
+              : `${app.slot}/Contents/Resources/app.asar`;
+          yield* app.fs.remove(target, { recursive: true });
+          if (kind === "asar-directory") yield* app.fs.makeDirectory(target);
+          else yield* app.fs.symlink(app.home, target);
+        }
+        assert.isFalse((yield* app.service.state).canRemove);
+        assert.strictEqual((yield* app.service.install(12)).outcome, "failed");
         assert.strictEqual((yield* app.service.remove).outcome, "failed");
-        assert.isFalse(yield* app.fs.exists(app.slot));
-        yield* app.service.cleanLeftovers;
-        assert.isFalse(yield* app.fs.exists(app.slot));
+        assert.isTrue(yield* app.fs.exists(app.slot));
+        assert.lengthOf(app.ran("/bin/rm"), 0);
+        assert.lengthOf(app.ran("/usr/bin/ditto"), 0);
       }),
     ),
+  );
+
+  it.effect.each(["previous.app", "retired.app", "rejected.app", "removed.app"])(
+    "cleans a staged ASAR shell in %s without restoring it",
+    (name) =>
+      scoped(
+        Effect.gen(function* () {
+          const app = yield* setup({ asarPatchedFs: true });
+          yield* writeShell(app.path.join(app.staging, name));
+          yield* app.service.cleanLeftovers;
+          assert.isFalse(yield* app.fs.exists(app.slot));
+          assert.isTrue(yield* app.stagingIsGone);
+        }),
+      ),
   );
 
   it.effect.each(["install", "remove"] as const)(
@@ -710,9 +852,7 @@ describe("DesktopPreviewApp", () => {
       scoped(
         Effect.gen(function* () {
           const app = yield* setup({ assets: [buildAsset] });
-          yield* app.fs.makeDirectory(app.path.join(app.slot, "Contents", "Resources"), {
-            recursive: true,
-          });
+          yield* writeShell(app.slot);
           const marker = app.staging;
           yield* app.fs.makeDirectory(marker, { recursive: true });
           yield* app.service.cleanLeftovers;
@@ -729,18 +869,16 @@ describe("DesktopPreviewApp", () => {
       ),
   );
 
-  it.effect("preserves its recovery marker across startup and failed installation", () =>
+  it.effect("keeps an ASAR shell recoverable across startup and failed installation", () =>
     scoped(
       Effect.gen(function* () {
         const app = yield* setup({ assets: [buildAsset], fault: "copy" });
-        yield* app.fs.makeDirectory(app.path.join(app.slot, "Contents", "Resources"), {
-          recursive: true,
-        });
+        yield* writeShell(app.slot);
         yield* app.fs.makeDirectory(app.staging, { recursive: true });
         yield* app.service.cleanLeftovers;
-        assert.isTrue(yield* app.fs.exists(app.staging));
+        assert.isTrue(yield* app.stagingIsGone);
         assert.strictEqual((yield* app.service.install(12)).outcome, "failed");
-        assert.isTrue(yield* app.fs.exists(app.staging));
+        assert.isTrue(yield* app.stagingIsGone);
         assert.isTrue((yield* app.service.state).canRemove);
       }),
     ),
@@ -1150,7 +1288,7 @@ describe("DesktopPreviewApp", () => {
   it.effect("removes the app but keeps preview data, and resets data but keeps the app", () =>
     scoped(
       Effect.gen(function* () {
-        const app = yield* setup({ assets: [buildAsset] });
+        const app = yield* setup({ assets: [buildAsset], asarPatchedFs: true });
         const previewHome = app.path.join(app.baseDir, "preview", "userdata");
         const electronData = app.path.join(app.appData, "styal-preview");
         const productionState = app.path.join(app.baseDir, "userdata");
@@ -1159,6 +1297,7 @@ describe("DesktopPreviewApp", () => {
           [previewHome, electronData, productionState, productionElectron],
           (directory) => app.fs.makeDirectory(directory, { recursive: true }),
         );
+        yield* writeShell(app.path.join(previewHome, "projects", "cached.app"));
         yield* app.installPrevious("1.2.3-pr.12.6");
 
         const reset = yield* app.service.resetData;

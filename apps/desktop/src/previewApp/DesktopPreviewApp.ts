@@ -297,21 +297,32 @@ export const make = Effect.fn("DesktopPreviewApp.make")(function* (options?: {
 
   const readInstalled = supported ? readCompletePreview(installedAppPath) : Effect.succeed(null);
 
-  const isRecoverableSlot = Effect.gen(function* () {
-    if (
-      !supported ||
-      !(yield* isDirectory(installedAppPath)) ||
-      !(yield* isDirectory(path.join(installedAppPath, "Contents"))) ||
-      !(yield* isDirectory(stagingDirectory))
-    )
-      return false;
-    return yield* fs.lstat(path.join(installedAppPath, "Contents", "Info.plist")).pipe(
-      Effect.match({
-        onSuccess: () => false,
-        onFailure: (error) => error.reason._tag === "NotFound",
-      }),
-    );
-  });
+  const isAsarShell = Effect.fn("DesktopPreviewApp.isAsarShell")(
+    function* (appPath: string) {
+      if (!(yield* isDirectory(appPath))) return false;
+      // Directory entries report the physical ASAR file; Electron's lstat reports a virtual directory.
+      for (const [directory, name, type] of [
+        [appPath, "Contents", "Directory"],
+        [path.join(appPath, "Contents"), "Resources", "Directory"],
+        [path.join(appPath, "Contents", "Resources"), "app.asar", "File"],
+      ] as const) {
+        const entries = yield* fs.readDirectoryEntries(directory);
+        if (
+          !entries.some((entry) => entry.name === name && entry.type === type) ||
+          !entries.every(
+            (entry) =>
+              (entry.name === name && entry.type === type) ||
+              (entry.name === ".DS_Store" && entry.type === "File"),
+          )
+        )
+          return false;
+      }
+      return true;
+    },
+    Effect.orElseSucceed(() => false),
+  );
+
+  const isRecoverableSlot = supported ? isAsarShell(installedAppPath) : Effect.succeed(false);
 
   const slotIsOurs = Effect.fn("DesktopPreviewApp.slotIsOurs")(function* (allowRecovery = true) {
     if (!supported || !(yield* isDirectory(installedAppPath))) return false;
@@ -480,10 +491,18 @@ export const make = Effect.fn("DesktopPreviewApp.make")(function* (options?: {
     return !(yield* isMounted);
   });
 
+  // A child process bypasses Electron's ASAR filesystem when deleting bundles and preview data.
+  const removeTree = Effect.fn("DesktopPreviewApp.removeTree")(function* (target: string) {
+    const result = yield* run("/bin/rm", ["-rf", "--", target]);
+    if (result.exitCode !== 0) {
+      return yield* fail("remove", `Could not delete ${target}: ${result.stderr.trim()}`);
+    }
+  });
+
   // Nothing named previous.app is ever deleted recursively: a crash must not turn deletion into rollback.
   const retirePrevious = Effect.gen(function* () {
     if (!(yield* exists(previousAppPath))) return;
-    yield* fs.remove(retiredAppPath, { recursive: true, force: true });
+    yield* removeTree(retiredAppPath);
     yield* fs.rename(previousAppPath, retiredAppPath);
   });
 
@@ -491,7 +510,7 @@ export const make = Effect.fn("DesktopPreviewApp.make")(function* (options?: {
     if (!(yield* exists(stagingDirectory))) return true;
     if (!(yield* isDirectory(stagingDirectory))) return false;
     if (yield* Ref.get(keepBackupRef)) {
-      yield* fs.remove(rejectedAppPath, { recursive: true, force: true });
+      yield* removeTree(rejectedAppPath);
       if (yield* exists(installedAppPath)) yield* fs.rename(installedAppPath, rejectedAppPath);
       yield* Ref.set(keepBackupRef, false);
     }
@@ -499,16 +518,8 @@ export const make = Effect.fn("DesktopPreviewApp.make")(function* (options?: {
       if ((yield* readCompletePreview(previousAppPath)) !== null) {
         yield* fs.rename(previousAppPath, installedAppPath);
       } else {
-        const missingPlist = yield* fs
-          .lstat(path.join(previousAppPath, "Contents", "Info.plist"))
-          .pipe(
-            Effect.match({
-              onSuccess: () => false,
-              onFailure: (error) => error.reason._tag === "NotFound",
-            }),
-          );
-        // A tool or access failure must not discard the only potentially complete copy.
-        if (!missingPlist) return false;
+        // Only the exact deletion shell can be discarded when no installed copy remains.
+        if (!(yield* isAsarShell(previousAppPath))) return false;
       }
     }
     if ((yield* exists(mountPoint)) && !(yield* ensureDetached)) {
@@ -516,15 +527,7 @@ export const make = Effect.fn("DesktopPreviewApp.make")(function* (options?: {
       return false;
     }
     yield* retirePrevious;
-    if (yield* isRecoverableSlot) {
-      // An empty directory retains legacy ownership evidence without retaining stale install contents.
-      const entries = yield* fs.readDirectory(stagingDirectory);
-      yield* Effect.forEach(entries, (entry) =>
-        fs.remove(path.join(stagingDirectory, entry), { recursive: true, force: true }),
-      );
-    } else {
-      yield* fs.remove(stagingDirectory, { recursive: true, force: true });
-    }
+    yield* removeTree(stagingDirectory);
     yield* Ref.set(keepBackupRef, false);
     return true;
   }).pipe(
@@ -893,10 +896,10 @@ export const make = Effect.fn("DesktopPreviewApp.make")(function* (options?: {
       }
       yield* retirePrevious;
       const removedApp = path.join(stagingDirectory, "removed.app");
-      yield* fs.remove(removedApp, { recursive: true, force: true });
+      yield* removeTree(removedApp);
       yield* ensureSlotIsOurs(allowRecovery);
       yield* fs.rename(installedAppPath, removedApp);
-      yield* fs.remove(removedApp, { recursive: true, force: true });
+      yield* removeTree(removedApp);
     },
     Effect.mapError((cause) =>
       cause._tag === "DesktopPreviewAppError"
@@ -968,9 +971,9 @@ export const make = Effect.fn("DesktopPreviewApp.make")(function* (options?: {
       if (!confirmed) return yield* Effect.interrupt;
       yield* quitRunningPreview;
       yield* ensureNoServerUsesPreviewData;
-      yield* Effect.forEach(previewDataDirectories, (directory) =>
-        fs.remove(directory, { recursive: true, force: true }),
-      ).pipe(Effect.mapError((cause) => fail("reset", `Could not reset preview data: ${cause}`)));
+      yield* Effect.forEach(previewDataDirectories, (directory) => removeTree(directory)).pipe(
+        Effect.mapError((cause) => fail("reset", `Could not reset preview data: ${cause}`)),
+      );
     }),
   );
 
