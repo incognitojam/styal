@@ -1,3 +1,4 @@
+import { makeTempDirectoryScoped, removeDirectory } from "@t3tools/shared/removeDirectory";
 import * as NodeSqlite from "node:sqlite";
 
 import * as Effect from "effect/Effect";
@@ -39,7 +40,7 @@ const removeAbandonedCopies = Effect.fn("removeAbandonedCopies")(function* (dire
   for (const entry of entries) {
     const copy = /^\.v2-import-(?:(\d+)-)?[A-Za-z0-9]{6}$/.exec(entry);
     if (copy === null || (copy[1] !== undefined && isProcessAlive(Number(copy[1])))) continue;
-    yield* fs.remove(path.join(directory, entry), { recursive: true });
+    yield* removeDirectory(fs, path.join(directory, entry));
   }
 });
 
@@ -55,7 +56,7 @@ export const initializeV2Database = Effect.fn("initializeV2Database")(function* 
   yield* Effect.gen(function* () {
     if (yield* fs.exists(destinationPath)) return;
     if (!(yield* fs.exists(sourcePath))) return;
-    const temporaryDirectory = yield* fs.makeTempDirectoryScoped({
+    const temporaryDirectory = yield* makeTempDirectoryScoped(fs, {
       directory,
       prefix: `.v2-import-${process.pid}-`,
     });

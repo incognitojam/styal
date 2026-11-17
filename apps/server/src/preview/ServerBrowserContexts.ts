@@ -1,3 +1,4 @@
+import { physicalFileSystem } from "@t3tools/shared/physicalFileSystem";
 // @effect-diagnostics nodeBuiltinImport:off - Owns Playwright resources outside the Effect runtime.
 import { INCOGNITO_BROWSER_PROFILE_ID } from "@t3tools/contracts";
 import { constVoid } from "effect/Function";
@@ -221,7 +222,10 @@ export class ServerBrowserContexts {
         const context = await pending.catch(() => undefined);
         await context?.close();
       }
-      await NodeFSP.rm(this.profileDirectory(profileId), { recursive: true, force: true });
+      await physicalFileSystem.promises.rm(this.profileDirectory(profileId), {
+        recursive: true,
+        force: true,
+      });
     })();
     this.clearing.set(key, clearing);
     try {

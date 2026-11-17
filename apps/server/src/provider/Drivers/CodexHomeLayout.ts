@@ -1,3 +1,4 @@
+import { removeDirectory } from "@t3tools/shared/removeDirectory";
 import { ProviderDriverKind, type CodexSettings } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -283,7 +284,7 @@ const ensureSymlink = Effect.fn("CodexHomeLayout.ensureSymlink")(function* (inpu
       }
     }
 
-    yield* input.fileSystem.remove(link, { recursive: true }).pipe(
+    yield* removeDirectory(input.fileSystem, link).pipe(
       Effect.catchTags({
         PlatformError: (cause) =>
           new CodexShadowHomeFileSystemError({

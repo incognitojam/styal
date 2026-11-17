@@ -1,5 +1,5 @@
-// @effect-diagnostics-next-line nodeBuiltinImport:off -- Effect FileSystem has neither lstat nor non-recursive rmdir.
-import * as NodeFSP from "node:fs/promises";
+import { physicalFileSystem } from "@t3tools/shared/physicalFileSystem";
+
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Schema from "effect/Schema";
 import * as Path from "effect/Path";
@@ -9,6 +9,8 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import { matchesRegenerableFilePattern } from "@t3tools/shared/regenerableFilePatterns";
 import { makeInspectGit } from "./gitInspection.ts";
+
+const NodeFSP = physicalFileSystem.promises;
 
 export class DeletionLimits extends Context.Reference<{
   readonly entries: number;

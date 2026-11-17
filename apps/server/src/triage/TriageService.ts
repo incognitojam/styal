@@ -1,3 +1,4 @@
+import { removeDirectory } from "@t3tools/shared/removeDirectory";
 import {
   type AuthClientPresentationMetadata,
   ServerPrepareTriageError,
@@ -84,7 +85,7 @@ const make = Effect.gen(function* () {
   // seconds, and the user is writing their description meanwhile.
   const serviceScope = yield* Effect.scope;
   // Clones a previous server process left half done.
-  yield* fs.remove(stagingDir, { recursive: true }).pipe(Effect.ignore);
+  yield* removeDirectory(fs, stagingDir).pipe(Effect.ignore);
 
   // Fetches the exact commit `ls-remote` resolved, so the folder the session
   // names is the one that appears even when main moves meanwhile.
@@ -117,7 +118,7 @@ const make = Effect.gen(function* () {
       );
     }).pipe(
       // Gone after a successful rename; otherwise a failed or losing clone.
-      Effect.ensuring(fs.remove(staging, { recursive: true }).pipe(Effect.ignore)),
+      Effect.ensuring(removeDirectory(fs, staging).pipe(Effect.ignore)),
     );
   });
 

@@ -1,3 +1,4 @@
+import { makeTempDirectoryScoped, removeDirectory } from "@t3tools/shared/removeDirectory";
 // @effect-diagnostics nodeBuiltinImport:off - Effect has no incremental digest.
 import * as EffectNodeStream from "@effect/platform-node/NodeStream";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -308,7 +309,7 @@ export const makePreviewBrowser = Effect.fn("PreviewBrowser.make")(function* (
       yield* Effect.gen(function* () {
         yield* fs.makeDirectory(installRoot, { recursive: true });
         // Staging shares the install root's filesystem so publishing is one rename.
-        const staging = yield* fs.makeTempDirectoryScoped({
+        const staging = yield* makeTempDirectoryScoped(fs, {
           directory: installRoot,
           prefix: ".install-",
         });
@@ -318,7 +319,7 @@ export const makePreviewBrowser = Effect.fn("PreviewBrowser.make")(function* (
         progress.unpacking = true;
         yield* extract(release, archivePath, unpacked);
         const destination = path.join(installRoot, release.version);
-        yield* fs.remove(destination, { recursive: true, force: true });
+        yield* removeDirectory(fs, destination, { force: true });
         yield* fs.rename(unpacked, destination);
       }).pipe(Effect.scoped);
       // Shared homes may still use the newest other version or staging directories touched within the last hour.
@@ -340,7 +341,7 @@ export const makePreviewBrowser = Effect.fn("PreviewBrowser.make")(function* (
               });
               if (now - modifiedAt < STAGING_STALE_AFTER_MS) return;
             }
-            yield* fs.remove(target, { recursive: true, force: true });
+            yield* removeDirectory(fs, target, { force: true });
           }).pipe(
             Effect.catch((cause) =>
               Effect.logWarning("Could not remove an old preview browser.", { name, cause }),

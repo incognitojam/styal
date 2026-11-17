@@ -1,3 +1,4 @@
+import { removeDirectory } from "@t3tools/shared/removeDirectory";
 // @effect-diagnostics globalJsonInEffect:off - JSON string literals embed paths safely into generated JavaScript.
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { resolveNodeExecutable } from "@t3tools/shared/nodeRuntime";
@@ -339,7 +340,7 @@ export const pruneAgentDeviceLaunchers = Effect.fn("AgentDeviceShim.prune")(func
   );
   yield* Effect.forEach(
     sessions.filter((session) => !input.live.has(session) && !released.has(session)),
-    (session) => fs.remove(path.join(dir, session), { recursive: true, force: true }),
+    (session) => removeDirectory(fs, path.join(dir, session), { force: true }),
     { discard: true },
   ).pipe(Effect.ignore);
 });

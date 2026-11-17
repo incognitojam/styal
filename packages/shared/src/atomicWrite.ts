@@ -1,3 +1,4 @@
+import { removeDirectory } from "./removeDirectory.ts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
@@ -39,7 +40,7 @@ export const writeFileStringAtomically = (input: {
           directory: targetDirectory,
           prefix: `${path.basename(targetPath)}.`,
         }),
-        (directory) => fs.remove(directory, { recursive: true }).pipe(Effect.ignore({ log: true })),
+        (directory) => removeDirectory(fs, directory).pipe(Effect.ignore({ log: true })),
       );
       const tempPath = path.join(tempDirectory, "contents.tmp");
 

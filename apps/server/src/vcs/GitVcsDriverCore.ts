@@ -1,3 +1,4 @@
+import { makeTempDirectoryScoped } from "@t3tools/shared/removeDirectory";
 import * as Arr from "effect/Array";
 import * as Cache from "effect/Cache";
 import * as Clock from "effect/Clock";
@@ -2583,7 +2584,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
             ["rev-parse", "--git-path", "index"],
           );
           const indexPath = path.resolve(cwd, indexValue.trim());
-          const directory = yield* fileSystem.makeTempDirectoryScoped({
+          const directory = yield* makeTempDirectoryScoped(fileSystem, {
             prefix: "t3code-commit-index-",
           });
           const tempIndexPath = path.join(directory, "index");

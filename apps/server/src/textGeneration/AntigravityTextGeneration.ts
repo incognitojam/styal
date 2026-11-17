@@ -1,3 +1,4 @@
+import { makeTempDirectoryScoped } from "@t3tools/shared/removeDirectory";
 import { ProviderSetupError, TextGenerationError } from "@t3tools/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -146,7 +147,7 @@ export const makeAntigravityTextGeneration = Effect.fn("makeAntigravityTextGener
           });
         }
 
-        const cwd = yield* fs.makeTempDirectoryScoped({ prefix: "t3-antigravity-text-" });
+        const cwd = yield* makeTempDirectoryScoped(fs, { prefix: "t3-antigravity-text-" });
         let sessionId: string | undefined;
         yield* Effect.addFinalizer(() =>
           removeAntigravitySessionFiles({

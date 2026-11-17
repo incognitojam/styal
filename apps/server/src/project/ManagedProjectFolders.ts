@@ -1,3 +1,4 @@
+import { removeDirectory } from "@t3tools/shared/removeDirectory";
 import {
   CommandId,
   type GitManagerServiceError,
@@ -423,7 +424,7 @@ const make = Effect.gen(function* () {
     "ManagedProjectFolders.createNamedProject",
   )(function* (input) {
     const workspaceRoot = yield* claimNamedFolder(input.name);
-    const removeFolder = fileSystem.remove(workspaceRoot, { recursive: true }).pipe(Effect.ignore);
+    const removeFolder = removeDirectory(fileSystem, workspaceRoot).pipe(Effect.ignore);
     const prepared = yield* Effect.all([
       scaffoldRepository(workspaceRoot, input.name).pipe(
         Effect.mapError((cause) => new NamedProjectFolderError({ folder: workspaceRoot, cause })),

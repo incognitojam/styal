@@ -1,3 +1,4 @@
+import { removeDirectory } from "@t3tools/shared/removeDirectory";
 import type { DeviceToolVersions } from "@t3tools/contracts";
 // npm exposes entry files before extraction completes; their presence does not prove a usable tree.
 import * as Duration from "effect/Duration";
@@ -106,9 +107,9 @@ const installTool = Effect.fn("DeviceToolchain.installTool")(function* (
   if (yield* isInstalled(fs, paths, spec.version)) return paths;
 
   const parentDir = path.dirname(paths.installDir);
-  yield* fs
-    .remove(paths.installDir, { recursive: true, force: true })
-    .pipe(Effect.mapError(fail("removing an incomplete install")));
+  yield* removeDirectory(fs, paths.installDir, { force: true }).pipe(
+    Effect.mapError(fail("removing an incomplete install")),
+  );
   yield* fs
     .makeDirectory(parentDir, { recursive: true })
     .pipe(Effect.mapError(fail("preparing the install directory")));
@@ -171,9 +172,7 @@ const installTool = Effect.fn("DeviceToolchain.installTool")(function* (
         ),
       );
     return paths;
-  }).pipe(
-    Effect.ensuring(fs.remove(stagingDir, { recursive: true, force: true }).pipe(Effect.ignore)),
-  );
+  }).pipe(Effect.ensuring(removeDirectory(fs, stagingDir, { force: true }).pipe(Effect.ignore)));
 });
 
 const ensureTool = Effect.fn("DeviceToolchain.ensureTool")(function* (

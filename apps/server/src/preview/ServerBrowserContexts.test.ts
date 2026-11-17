@@ -15,6 +15,9 @@ const launches = vi.hoisted(() => ({
 vi.spyOn(chromium, "launch").mockImplementation(launches.launch);
 vi.spyOn(chromium, "launchPersistentContext").mockImplementation(launches.persistent);
 vi.mock("node:fs/promises", () => ({ mkdir: launches.mkdir, rm: launches.rm }));
+vi.mock("@t3tools/shared/physicalFileSystem", () => ({
+  physicalFileSystem: { promises: { rm: launches.rm } },
+}));
 
 const makeContext = () => {
   const events = new NodeEvents.EventEmitter();

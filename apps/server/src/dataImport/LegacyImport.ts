@@ -1,3 +1,4 @@
+import { physicalFileSystem } from "@t3tools/shared/physicalFileSystem";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeCrypto from "node:crypto";
 import * as NodeFS from "node:fs";
@@ -846,7 +847,7 @@ const copyThreadAttachments = Effect.fn("LegacyImport.copyThreadAttachments")(fu
   }).pipe(
     Effect.ensuring(
       Effect.promise(() =>
-        NodeFS.promises.rm(stagingDirectory, { recursive: true, force: true }),
+        physicalFileSystem.promises.rm(stagingDirectory, { recursive: true, force: true }),
       ).pipe(Effect.ignore),
     ),
   );

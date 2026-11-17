@@ -1,3 +1,4 @@
+import { removeDirectory } from "@t3tools/shared/removeDirectory";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -801,7 +802,7 @@ export const make = Effect.gen(function* () {
       });
     }
     // Preserve the workspace directory after removing partial contents; retry while interrupted git closes files.
-    yield* fileSystem.remove(normalized, { recursive: true, force: true }).pipe(
+    yield* removeDirectory(fileSystem, normalized, { force: true }).pipe(
       Effect.andThen(fileSystem.makeDirectory(normalized, { recursive: true })),
       Effect.retry({ schedule: Schedule.spaced("200 millis"), times: 5 }),
       Effect.mapError(
