@@ -1723,10 +1723,7 @@ function ThreadDetailBody(
                         />
                       </Animated.View>
                     ) : null}
-                    <WaitingReports
-                      reports={props.reports ?? []}
-                      scroll={(id) => requestThreadMessageJump(selectedThreadKey, id)}
-                    />
+                    <WaitingReports reports={props.reports ?? []} scroll={reportContext.scroll} />
                     <ProviderSignInCard
                       thread={props.selectedThread}
                       environmentId={props.environmentId}
