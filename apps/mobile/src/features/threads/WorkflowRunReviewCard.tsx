@@ -22,7 +22,6 @@ export function WorkflowRunReviewCard(props: {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
   readonly run: ThreadWorkflowRunWatch;
-  readonly waitingCount: number;
   readonly stopWatching?: { readonly disabled: boolean; readonly onPress: () => void } | undefined;
 }) {
   const { run } = props;
@@ -94,17 +93,18 @@ export function WorkflowRunReviewCard(props: {
           </Text>
           <Text className="text-xs text-foreground-secondary" numberOfLines={1}>
             Deployment review · {formatWorkflowRunDisplayName(run.name)}
-            {props.waitingCount > 1 ? ` · 1/${props.waitingCount}` : ""}
           </Text>
         </View>
         <View className="gap-1">
-          <Button
-            label="Approve"
-            size="compact"
-            tone="primary"
-            disabled={locked}
-            onPress={() => void submit("approved", true)}
-          />
+          {expanded ? null : (
+            <Button
+              label="Approve"
+              size="compact"
+              tone="primary"
+              disabled={locked}
+              onPress={() => void submit("approved", true)}
+            />
+          )}
           <Button
             label="Review"
             icon={expanded ? "chevron.up" : "chevron.down"}

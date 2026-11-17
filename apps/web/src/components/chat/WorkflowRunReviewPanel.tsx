@@ -15,25 +15,23 @@ import { WorkflowRunLabel } from "./WorkflowRunLabel";
 
 type ReviewState = "approved" | "rejected";
 
-export function WorkflowRunReviewPanel(props: {
+/** One watched run waiting on a deployment review, as a row of the "Needs you" stack. */
+export function WorkflowRunReviewRow(props: {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
-  readonly runs: ReadonlyArray<ThreadWorkflowRunWatch>;
+  readonly run: ThreadWorkflowRunWatch;
   readonly watchActions?: ReactNode;
 }) {
-  const reviewed = props.runs.filter((run) => run.review !== undefined);
-  const run = reviewed[0];
-  if (run?.review === undefined) return null;
-  const key = `${run.host}/${run.repository}/${run.runId}`;
+  const { run } = props;
+  if (run.review === undefined) return null;
   return (
     <WorkflowRunReviewForm
-      // A new run, or a new set of waiting environments, starts a fresh form.
-      key={`${key}:${run.review.environments.map((environment) => environment.id).join(",")}`}
+      // A new set of waiting environments starts a fresh form.
+      key={run.review.environments.map((environment) => environment.id).join(",")}
       environmentId={props.environmentId}
       threadId={props.threadId}
       run={run}
       environments={run.review.environments}
-      waitingCount={reviewed.length}
       watchActions={props.watchActions}
     />
   );
@@ -44,7 +42,6 @@ function WorkflowRunReviewForm(props: {
   readonly threadId: ThreadId;
   readonly run: ThreadWorkflowRunWatch;
   readonly environments: NonNullable<ThreadWorkflowRunWatch["review"]>["environments"];
-  readonly waitingCount: number;
   readonly watchActions?: ReactNode;
 }) {
   const { run, environments } = props;
@@ -112,15 +109,14 @@ function WorkflowRunReviewForm(props: {
             <div className="min-w-0 truncate">
               <WorkflowRunLabel name={run.name} />
             </div>
-            {props.waitingCount > 1 ? (
-              <span className="shrink-0">· 1/{props.waitingCount}</span>
-            ) : null}
           </div>
         </div>
         <div className="flex shrink-0 gap-1">
-          <Button size="xs" disabled={locked} onClick={() => void submit("approved", true)}>
-            Approve
-          </Button>
+          {expanded ? null : (
+            <Button size="xs" disabled={locked} onClick={() => void submit("approved", true)}>
+              Approve
+            </Button>
+          )}
           <Button
             size="xs"
             variant="ghost"

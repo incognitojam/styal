@@ -219,6 +219,8 @@ describe("review a watched workflow deployment", () => {
     expect(
       await page.getByRole("button", { name: "Approve and deploy", exact: true }).isDisabled(),
     ).toBe(true);
+    // The open form is the only approve path, so nothing can approve a cleared selection.
+    expect(await page.getByRole("button", { name: "Approve", exact: true }).count()).toBe(0);
     expect(reviews(multiple)).toHaveLength(0);
 
     await staging.check();
@@ -254,6 +256,7 @@ describe("review a watched workflow deployment", () => {
     await production.uncheck();
     const comment = page.getByRole("textbox", { name: "Review comment" });
     await comment.fill("Deploy the staging fix");
+    expect(await page.getByRole("button", { name: "Approve", exact: true }).count()).toBe(0);
     const approve = page.getByRole("button", { name: "Approve and deploy", exact: true });
     await approve.click();
     await page.getByText("Could not approve deployment", { exact: true }).waitFor();
@@ -278,6 +281,7 @@ describe("review a watched workflow deployment", () => {
       { environment_ids: [41], state: "approved", comment: "Deploy the staging fix" },
       { environment_ids: [41], state: "approved", comment: "Deploy the staging fix" },
     ]);
+    await page.getByRole("button", { name: "Review", exact: true }).click();
     await page.getByRole("button", { name: "Approve", exact: true }).click();
     await page.getByText("Deployment review", { exact: true }).waitFor({ state: "hidden" });
     expect(reviews(retry).at(-1)!.body).toEqual({
