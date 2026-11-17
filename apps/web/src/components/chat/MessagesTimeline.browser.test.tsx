@@ -219,8 +219,13 @@ async function click(element: HTMLElement) {
   await act(async () => element.click());
 }
 
-function setup({ scheduledTasks = [] as ReadonlyArray<{ id: string; title: string }> } = {}) {
-  environmentQuery.data = { tasks: scheduledTasks };
+function setup({
+  scheduledTasks = [] as ReadonlyArray<{ id: string; title: string }>,
+  turnItem = undefined as unknown,
+  assetUrl = "",
+} = {}) {
+  environmentQuery.data = { tasks: scheduledTasks, item: turnItem };
+  audioAsset.url = assetUrl;
 }
 
 const TASK_ID = ScheduledTaskId.make("task-1");
@@ -270,6 +275,62 @@ describe("MessagesTimeline work rows", () => {
         500,
       );
     });
+  });
+
+  it("shows an image read by Claude once", async () => {
+    const threadId = ThreadId.make("thread-1");
+    const at = DateTime.makeUnsafe(CREATED_AT);
+    const read = {
+      id: TurnItemId.make("read-image"),
+      threadId,
+      runId: RunId.make("run-1"),
+      nodeId: null,
+      providerThreadId: null,
+      providerTurnId: null,
+      nativeItemRef: null,
+      parentItemId: null,
+      ordinal: 0,
+      title: null,
+      startedAt: at,
+      completedAt: at,
+      updatedAt: at,
+      type: "dynamic_tool",
+      status: "completed",
+      toolName: "Read",
+      viewedImagePath: "/repo/diagram.png",
+      input: { file_path: "/repo/diagram.png" },
+      outputOmitted: true,
+    } as const;
+    const { outputOmitted: _, ...fetched } = read;
+    setup({
+      turnItem: {
+        ...fetched,
+        output: [{ type: "image", source: { type: "base64", media_type: "image/png", data: "" } }],
+      },
+      assetUrl:
+        "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+    });
+    await using screen = await renderTimeline(
+      deriveTimelineEntriesFromVisibleTurnItems({
+        visibleTurnItems: [
+          {
+            position: 0,
+            visibility: "local",
+            sourceThreadId: threadId,
+            sourceItemId: read.id,
+            item: read,
+          },
+        ],
+        optimisticMessages: [],
+      }),
+      { routeThreadKey: `${ENVIRONMENT_ID}:${threadId}`, workspaceRoot: "/repo" },
+    );
+    await click(screen.button(/^Worked for/));
+    await click(screen.button(/diagram\.png/));
+    await expect.element(screen.getByText("/repo/diagram.png")).toBeVisible();
+    expect([...screen.container.querySelectorAll("img")].map((image) => image.alt)).toEqual([
+      "diagram.png",
+    ]);
   });
 
   it.each(["delegated", "legacy", "missing"] as const)(

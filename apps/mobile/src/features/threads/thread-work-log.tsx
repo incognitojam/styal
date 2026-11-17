@@ -1049,8 +1049,10 @@ const ThreadWorkLogRow = function ThreadWorkLogRow(
         ? formatItemFullDetail(row.projectedItem, fetchedItem)
         : row.getFullDetail()
       : null;
-  const outputImages = expanded && fetchedItem ? turnItemOutputImages(fetchedItem) : [];
   const viewedImagePath = workEntryViewedImagePath(row.workEntry);
+  // A read image's output repeats the file the row already shows.
+  const outputImages =
+    expanded && fetchedItem && !viewedImagePath ? turnItemOutputImages(fetchedItem) : [];
   const fetchedOutput =
     !expanded || streamsOutput
       ? null
