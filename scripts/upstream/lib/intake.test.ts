@@ -500,6 +500,7 @@ describe("upstream intake audit", () => {
           }>;
         };
         readonly promote: {
+          readonly if: string;
           readonly name: string;
           readonly needs: ReadonlyArray<string>;
           readonly environment: string;
@@ -517,7 +518,9 @@ describe("upstream intake audit", () => {
     assert.deepEqual(workflow.on.workflow_run.workflows, ["Fork CI"]);
     assert.deepEqual(workflow.on.workflow_run.types, ["completed"]);
     assert.deepEqual(workflow.on.workflow_run.branches, ["intake/**"]);
-    assert.isUndefined(workflow.on.workflow_dispatch);
+    assert.isDefined(workflow.on.workflow_dispatch);
+    assert.include(workflow.jobs.promote.if, "github.event_name == 'workflow_run'");
+    assert.include(workflow.concurrency.group, "github.run_id");
     assert.equal(workflow.permissions.actions, "read");
     assert.equal(workflow.permissions.contents, "read");
     assert.include(workflow.concurrency.group, "github.event.workflow_run.head_branch");
@@ -536,7 +539,7 @@ describe("upstream intake audit", () => {
     );
     assert.equal(
       resolveCandidate?.env?.EXPECTED_CANDIDATE_SHA,
-      "${{ github.event.workflow_run.head_sha }}",
+      "${{ steps.evidence.outputs.candidate_sha }}",
     );
     assert.include(resolveCandidate?.run ?? "", '"$candidate_sha" != "$EXPECTED_CANDIDATE_SHA"');
     assert.include(resolveCandidate?.run ?? "", '"$trusted_sha" != "$base_sha"');
