@@ -631,6 +631,9 @@ export interface CanaryProblem {
   /** The provider id or `job:<name>` whose evaluation can clear it. */
   readonly scope: string;
   readonly summary: string;
+  readonly packageName?: string;
+  readonly version?: string;
+  readonly styal?: string;
 }
 
 /** What the plan job wrote; absent when planning failed. */
@@ -662,11 +665,19 @@ export function collectRun(input: {
   if (cancelled) return { problems: [], evaluated, failures: [], cancelled };
   const failures: Array<CanaryFailure> = [];
   const found = new Map<string, CanaryProblem>();
-  const add = (key: string, scope: string, summary: string) => {
+  const add = (
+    key: string,
+    scope: string,
+    summary: string,
+    context?: Pick<CanaryProblem, "packageName" | "version" | "styal">,
+  ) => {
     const existing = found.get(key);
     found.set(key, {
       key,
       scope,
+      ...(context?.packageName ? { packageName: context.packageName } : {}),
+      ...(context?.version ? { version: context.version } : {}),
+      ...(context?.styal ? { styal: context.styal } : {}),
       summary: existing ? `${existing.summary} ${summary}` : summary,
     });
   };
@@ -676,7 +687,7 @@ export function collectRun(input: {
   ] as const) {
     if (result !== "success" && result !== "failure") continue;
     evaluated.add(`job:${job}`);
-    if (result === "failure") add(`job:${job}`, `job:${job}`, `The **${job}** job failed.`);
+    if (result === "failure") add(`job:${job}`, `job:${job}`, "job failed.");
   }
   for (const plan of input.plan?.plans ?? []) {
     const failure = plan.kind === "held" || plan.kind === "deferred" ? plan.failure : undefined;
@@ -687,17 +698,16 @@ export function collectRun(input: {
         `failed:${failure.provider}:${failure.version}:${failure.styal}`,
         failure.provider,
         failure.detail,
+        failure,
       );
       continue;
     }
     if (plan.kind === "deferred") continue;
     evaluated.add(plan.provider);
     if (plan.kind === "blocked") {
-      add(
-        `blocked:${plan.provider}:${plan.styal}`,
-        plan.provider,
-        `**${plan.provider}** on styal ${plan.styal}: ${plan.reason}`,
-      );
+      add(`blocked:${plan.provider}:${plan.styal}`, plan.provider, plan.reason, {
+        styal: plan.styal,
+      });
       continue;
     }
     if (plan.kind !== "verify") continue;
@@ -705,12 +715,12 @@ export function collectRun(input: {
     const outcome = input.outcomes.find(
       (candidate) => candidate.provider === entry.provider && candidate.styal === entry.styal,
     );
-    const release = `**${entry.packageName}@${entry.version}** on styal ${entry.styal}`;
     if (!outcome)
       add(
         `failed:${entry.provider}:${entry.version}:${entry.styal}`,
         entry.provider,
-        `${release}: no verification result was saved.`,
+        "no verification result was saved.",
+        entry,
       );
     else if (outcome.outcome === "failed") {
       failures.push({
@@ -724,13 +734,15 @@ export function collectRun(input: {
       add(
         `failed:${entry.provider}:${entry.version}:${entry.styal}`,
         entry.provider,
-        `${release} failed verification twice: ${outcome.detail.split(/\r?\n/)[0]}`,
+        `failed verification twice: ${outcome.detail.split(/\r?\n/)[0]}`,
+        entry,
       );
     } else if (outcome.outcome === "skipped")
       add(
         `skipped:${entry.provider}:${entry.version}:${entry.styal}`,
         entry.provider,
-        `${release} was not verified: ${outcome.detail.split(/\r?\n/)[0]}`,
+        `was not verified: ${outcome.detail.split(/\r?\n/)[0]}`,
+        entry,
       );
   }
   return { problems: [...found.values()], evaluated, failures, cancelled };
@@ -750,19 +762,17 @@ export interface StatusIssueUpdate {
   readonly title?: string;
 }
 
-function reportText(text: string) {
-  return text
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 500)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replace(/[\\`_{}[\]()<>!|#~*]/g, "\\$&")
-    .replaceAll("\\*\\*", "**")
-    .replaceAll("www.", "www&#46;")
-    .replaceAll("@", "&#64;")
-    .replaceAll(":", "&#58;");
+function problemBullet(problem: CanaryProblem) {
+  const label = [
+    `**${inertText(problem.scope, 64)}**`,
+    problem.packageName && problem.version
+      ? `**${inertText(`${problem.packageName}@${problem.version}`, 210)}**`
+      : "",
+    problem.styal ? `on styal **${inertText(problem.styal, 80)}**` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return `- ${label}: ${inertText(problem.summary)}`;
 }
 
 const STATE_MARKER = /<!-- provider-canary-state ([a-f0-9]+) -->/;
@@ -775,6 +785,9 @@ const StatusState = Schema.Struct({
         key: StateString(160),
         scope: StateString(64),
         summary: StateString(200),
+        packageName: Schema.optionalKey(StateString(128)),
+        version: Schema.optionalKey(StateString(80)),
+        styal: Schema.optionalKey(StateString(80)),
       }),
     ).check(Schema.isMaxLength(8)),
   ),
@@ -886,6 +899,9 @@ export function reconcileStatusIssue(
       key: p.key.slice(0, 160),
       scope: p.scope.slice(0, 64),
       summary: p.summary.slice(0, 200),
+      ...(p.packageName ? { packageName: p.packageName.slice(0, 128) } : {}),
+      ...(p.version ? { version: p.version.slice(0, 80) } : {}),
+      ...(p.styal ? { styal: p.styal.slice(0, 80) } : {}),
     })),
     ...(failures.length
       ? {
@@ -903,9 +919,9 @@ export function reconcileStatusIssue(
     problems.length > 0
       ? "The provider canary found problems that hold back automatic provider updates. This issue is updated on each run and closes when every check passes."
       : `Every provider canary check passed. Recovered at ${new Date().toISOString()}.`,
-    problems.map((problem) => `- ${reportText(problem.summary)}`).join("\n"),
+    problems.map(problemBullet).join("\n"),
     notes.length > 0
-      ? `Passed on retry:\n\n${notes.map((note) => `- ${reportText(note)}`).join("\n")}`
+      ? `Passed on retry:\n\n${notes.map((note) => `- ${inertText(note)}`).join("\n")}`
       : "",
     `Last run: ${runUrl}`,
     `<!-- provider-canary-state ${Buffer.from(JSON.stringify(stored)).toString("hex")} -->`,
@@ -924,13 +940,21 @@ export function reconcileStatusIssue(
   ) =>
     JSON.stringify(
       items
-        .map((problem) => [
-          problem.key,
-          ...held
-            .filter((f) => f.provider === problem.scope)
-            .map((f) => `${f.packageName}@${f.version}`)
-            .sort(),
-        ])
+        .flatMap((problem) => {
+          const legacyFailures = held.filter(
+            (f) => problem.key === `failed:${f.provider}:${f.version}`,
+          );
+          const keys = legacyFailures.length
+            ? legacyFailures.map((f) => `${problem.key}:${f.styal}`)
+            : [problem.key];
+          return keys.map((key) => [
+            key,
+            ...held
+              .filter((f) => f.provider === problem.scope)
+              .map((f) => `${f.packageName}@${f.version}`)
+              .sort(),
+          ]);
+        })
         .sort(),
     );
   const changed = identity(previous, state.failures ?? []) !== identity(problems, failures);
@@ -940,7 +964,7 @@ export function reconcileStatusIssue(
     state: "open",
     ...(issue?.open && changed
       ? {
-          comment: `Problems changed in ${runUrl}:\n\n${problems.map((problem) => `- ${reportText(problem.summary)}`).join("\n")}`,
+          comment: `Problems changed in ${runUrl}:\n\n${problems.map(problemBullet).join("\n")}`,
         }
       : {}),
   };

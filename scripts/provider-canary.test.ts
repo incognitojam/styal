@@ -673,7 +673,7 @@ describe("provider canary report", () => {
     const update = reconcileStatusIssue(null, codexFails("0.163.0"), [], RUN);
     expect(update).toMatchObject({ state: "open" });
     expect(update?.comment).toBeUndefined();
-    expect(update?.body).toContain("&#64;openai/codex&#64;0.163.0** on styal");
+    expect(update?.body).toContain("**`@openai/codex@0.163.0`** on styal");
   });
 
   it("comments when the same provider fails on a new release", () => {
@@ -695,7 +695,7 @@ describe("provider canary report", () => {
       [outcome("codex", "@openai/codex", "0.163.0", "failed", "rewind failed")],
     );
     const update = reconcileStatusIssue(issue, run, [], LATER_RUN);
-    expect(update?.comment).toContain("**opencode** on styal");
+    expect(update?.comment).toContain("**`opencode`** on styal");
     expect(update?.comment).toContain("codex");
   });
 
@@ -717,7 +717,7 @@ describe("provider canary report", () => {
     });
     const update = reconcileStatusIssue(issue, planFailed, [], LATER_RUN);
     expect(update?.body).toContain("0.163.0");
-    expect(update?.comment).toContain("The **plan** job failed.");
+    expect(update?.comment).toContain("**`job:plan`**: `job failed.`");
   });
 
   it("reports a missing verification result as a failure", () => {
