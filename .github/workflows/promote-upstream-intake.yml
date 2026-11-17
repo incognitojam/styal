@@ -1,6 +1,6 @@
 name: Promote upstream intake
 
-run-name: Promote ${{ github.event.workflow_run.head_branch }} at ${{ github.event.workflow_run.head_sha }}
+run-name: ${{ github.event_name == 'workflow_dispatch' && format('Dry run promotion from Fork CI {0}', inputs.ci_run_id) || format('Promote {0} at {1}', github.event.workflow_run.head_branch, github.event.workflow_run.head_sha) }}
 
 # Starts when Fork CI passes on an intake branch. A workflow_run always runs
 # main's copy of this file, so a candidate cannot change the checks that
@@ -12,6 +12,17 @@ on:
     workflows: ["Fork CI"]
     types: [completed]
     branches: ["intake/**"]
+  # Dispatch is always read-only; only workflow_run may enter the promotion environment.
+  workflow_dispatch:
+    inputs:
+      ci_run_id:
+        description: Successful Fork CI intake push run to replay (latest attempt)
+        required: true
+        type: string
+      base_sha:
+        description: Full main SHA the candidate was based on (allows landed candidates)
+        required: true
+        type: string
 
 permissions:
   actions: read
@@ -21,20 +32,20 @@ permissions:
 # approval. Promotions of different branches can run together: the push to
 # main is a fast-forward, so only one of them can land.
 concurrency:
-  group: upstream-intake-promotion-${{ github.event.workflow_run.head_branch }}
+  group: upstream-intake-${{ github.event_name == 'workflow_dispatch' && github.run_id || format('promotion-{0}', github.event.workflow_run.head_branch) }}
   cancel-in-progress: true
 
 jobs:
   validate:
     name: Validate promotion candidate
-    if: github.repository == 'incognitojam/styal' && github.event.workflow_run.event == 'push' && github.event.workflow_run.conclusion == 'success'
+    if: github.repository == 'incognitojam/styal' && (github.event_name == 'workflow_dispatch' || (github.event.workflow_run.event == 'push' && github.event.workflow_run.conclusion == 'success'))
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     outputs:
       base_sha: ${{ steps.candidate.outputs.base_sha }}
       candidate_branch: ${{ steps.candidate.outputs.candidate_branch }}
       candidate_sha: ${{ steps.candidate.outputs.candidate_sha }}
-      ci_run_url: ${{ github.event.workflow_run.html_url }}
+      ci_run_url: ${{ steps.evidence.outputs.ci_run_url }}
       source_prs: ${{ steps.audit.outputs.source_prs }}
       source_commits: ${{ steps.audit.outputs.source_commits }}
       native_fingerprint: ${{ steps.fingerprint.outputs.verdict }}
@@ -58,28 +69,64 @@ jobs:
           git config --unset remote.origin.partialclonefilter || true
           git fetch --refetch --no-tags origin
 
-      # The Fork CI run that started this workflow tested the candidate SHA. A
-      # candidate cannot change fork-ci.yml, so that run used main's jobs.
+      - id: evidence
+        name: Resolve Fork CI evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CI_RUN_ID: ${{ github.event.workflow_run.id || inputs.ci_run_id }}
+          CI_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+        run: |
+          node --input-type=module <<'JS'
+          import { execFileSync } from 'node:child_process';
+          import { appendFileSync } from 'node:fs';
+          const id = process.env.CI_RUN_ID;
+          const attempt = process.env.CI_RUN_ATTEMPT;
+          if (!/^[0-9]+$/.test(id) || (attempt && !/^[0-9]+$/.test(attempt))) {
+            throw new Error('Expected a numeric Fork CI run and attempt.');
+          }
+          const path = `repos/${process.env.GITHUB_REPOSITORY}/actions/runs/${id}${attempt ? `/attempts/${attempt}` : ''}`;
+          const run = JSON.parse(execFileSync('gh', ['api', path], { encoding: 'utf8' }));
+          if (run.event !== 'push' || run.path !== '.github/workflows/fork-ci.yml' ||
+              run.conclusion !== 'success' || !run.head_branch?.startsWith('intake/') ||
+              !/^[0-9a-f]{40}$/.test(run.head_sha)) {
+            throw new Error('Expected a successful Fork CI push on an intake branch.');
+          }
+          for (const [key, value] of Object.entries({
+            candidate_branch: run.head_branch, candidate_sha: run.head_sha,
+            ci_run_url: run.html_url, ci_run_id: run.id, ci_run_attempt: run.run_attempt,
+          })) appendFileSync(process.env.GITHUB_OUTPUT, `${key}=${value}\n`);
+          JS
+
       - id: candidate
         name: Resolve candidate
         shell: bash
         env:
-          CANDIDATE_BRANCH: ${{ github.event.workflow_run.head_branch }}
-          EXPECTED_CANDIDATE_SHA: ${{ github.event.workflow_run.head_sha }}
+          CANDIDATE_BRANCH: ${{ steps.evidence.outputs.candidate_branch }}
+          EXPECTED_CANDIDATE_SHA: ${{ steps.evidence.outputs.candidate_sha }}
+          DRY_RUN_BASE_SHA: ${{ inputs.base_sha }}
         run: |
           set -euo pipefail
 
-          git fetch --no-tags origin \
-            '+refs/heads/main:refs/remotes/origin/main' \
-            "+refs/heads/${CANDIDATE_BRANCH}:refs/remotes/origin/intake-candidate"
-
-          trusted_sha="$(git rev-parse --verify 'HEAD^{commit}')"
-          base_sha="$(git rev-parse --verify 'refs/remotes/origin/main^{commit}')"
-          candidate_sha="$(git rev-parse --verify 'refs/remotes/origin/intake-candidate^{commit}')"
-
-          if [[ "$trusted_sha" != "$base_sha" ]]; then
-            echo "::error::main moved after Fork CI finished. Rebase the intake branch and push it."
-            exit 1
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            if [[ ! "$DRY_RUN_BASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "::error::Dry runs require a full historical main SHA."
+              exit 1
+            fi
+            git fetch --no-tags origin "$DRY_RUN_BASE_SHA" "$EXPECTED_CANDIDATE_SHA"
+            base_sha="$(git rev-parse --verify "${DRY_RUN_BASE_SHA}^{commit}")"
+            candidate_sha="$(git rev-parse --verify "${EXPECTED_CANDIDATE_SHA}^{commit}")"
+            echo "Dry run: historical base $base_sha; no environment, approval or push." >> "$GITHUB_STEP_SUMMARY"
+          else
+            git fetch --no-tags origin \
+              '+refs/heads/main:refs/remotes/origin/main' \
+              "+refs/heads/${CANDIDATE_BRANCH}:refs/remotes/origin/intake-candidate"
+            trusted_sha="$(git rev-parse --verify 'HEAD^{commit}')"
+            base_sha="$(git rev-parse --verify 'refs/remotes/origin/main^{commit}')"
+            candidate_sha="$(git rev-parse --verify 'refs/remotes/origin/intake-candidate^{commit}')"
+            if [[ "$trusted_sha" != "$base_sha" ]]; then
+              echo "::error::main moved after Fork CI finished. Rebase the intake branch and push it."
+              exit 1
+            fi
           fi
           if [[ "$candidate_sha" != "$EXPECTED_CANDIDATE_SHA" ]]; then
             echo "::error::The intake branch moved after Fork CI tested it; its new push starts its own promotion."
@@ -89,7 +136,6 @@ jobs:
             echo "::error::Candidates that change Fork CI or its job selector must land through a pull request."
             exit 1
           fi
-
           {
             echo "base_sha=$base_sha"
             echo "candidate_branch=$CANDIDATE_BRANCH"
@@ -125,7 +171,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           CANDIDATE_BRANCH: ${{ steps.candidate.outputs.candidate_branch }}
           CANDIDATE_SHA: ${{ steps.candidate.outputs.candidate_sha }}
-          CI_RUN_URL: ${{ github.event.workflow_run.html_url }}
+          CI_RUN_URL: ${{ steps.evidence.outputs.ci_run_url }}
         run: |
           git fetch --no-tags https://github.com/pingdotgg/t3code.git '+refs/heads/main:refs/remotes/upstream/main'
           vp run --filter @t3tools/scripts intake:check -- \
@@ -144,8 +190,8 @@ jobs:
       - name: Require executed Fork CI jobs from the triggering attempt
         env:
           GH_TOKEN: ${{ github.token }}
-          CI_RUN_ID: ${{ github.event.workflow_run.id }}
-          CI_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          CI_RUN_ID: ${{ steps.evidence.outputs.ci_run_id }}
+          CI_RUN_ATTEMPT: ${{ steps.evidence.outputs.ci_run_attempt }}
           CANDIDATE_SHA: ${{ steps.candidate.outputs.candidate_sha }}
         run: |
           node --input-type=module <<'JS'
@@ -253,7 +299,7 @@ jobs:
   promote:
     name: ${{ needs.validate.outputs.lane == 'automatic' && 'Promote eligible candidate' || 'Approve and promote candidate' }}${{ needs.validate.outputs.native_fingerprint != 'unchanged' && format(' (native fingerprint {0})', needs.validate.outputs.native_fingerprint) || '' }}
     needs: [validate, required_checks]
-    if: needs.validate.result == 'success' && needs.required_checks.result == 'success'
+    if: github.event_name == 'workflow_run' && needs.validate.result == 'success' && needs.required_checks.result == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     environment: ${{ needs.validate.outputs.lane == 'automatic' && 'upstream-intake-automatic' || 'upstream-intake-manual' }}
