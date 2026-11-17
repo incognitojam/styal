@@ -227,12 +227,34 @@ jobs:
           node scripts/upstream/tracked-prs-report.ts --fork-ref "$CANDIDATE_SHA" >> "$GITHUB_STEP_SUMMARY"
           node scripts/upstream/divergence-report.ts --base origin/main --head "$CANDIDATE_SHA" --heading "Projected upstream divergence" >> "$GITHUB_STEP_SUMMARY"
 
-  promote:
-    name: ${{ needs.validate.outputs.lane == 'automatic' && 'Promote eligible candidate' || 'Approve and promote candidate' }}${{ needs.validate.outputs.native_fingerprint != 'unchanged' && format(' (native fingerprint {0})', needs.validate.outputs.native_fingerprint) || '' }}
+  required_checks:
+    name: Wait for main's required checks
     needs: validate
-    if: needs.validate.result == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 40
+    permissions:
+      actions: read
+      checks: read
+      statuses: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      # Candidates receive a successful landing hold status; PRs receive pending.
+      - name: Wait for main's required checks on the candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_SHA: ${{ needs.validate.outputs.candidate_sha }}
+        run: node scripts/upstream/wait-required-checks.ts
+
+  promote:
+    name: ${{ needs.validate.outputs.lane == 'automatic' && 'Promote eligible candidate' || 'Approve and promote candidate' }}${{ needs.validate.outputs.native_fingerprint != 'unchanged' && format(' (native fingerprint {0})', needs.validate.outputs.native_fingerprint) || '' }}
+    needs: [validate, required_checks]
+    if: needs.validate.result == 'success' && needs.required_checks.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     environment: ${{ needs.validate.outputs.lane == 'automatic' && 'upstream-intake-automatic' || 'upstream-intake-manual' }}
     permissions:
       actions: read
@@ -262,16 +284,10 @@ jobs:
             !/.repos/
           sparse-checkout-cone-mode: false
 
-      # Candidates receive a successful landing hold status; PRs receive pending.
-      - name: Wait for main's required checks on the candidate
-        env:
-          GH_TOKEN: ${{ github.token }}
-          CANDIDATE_SHA: ${{ needs.validate.outputs.candidate_sha }}
-        run: node scripts/upstream/wait-required-checks.ts
-
       - name: Fast-forward main to the candidate
         shell: bash
         env:
+          GH_TOKEN: ${{ github.token }}
           EXPECTED_BASE_SHA: ${{ needs.validate.outputs.base_sha }}
           CANDIDATE_BRANCH: ${{ needs.validate.outputs.candidate_branch }}
           CANDIDATE_SHA: ${{ needs.validate.outputs.candidate_sha }}
@@ -307,6 +323,8 @@ jobs:
             echo "::error::The candidate is no longer a fast-forward of main."
             exit 1
           fi
+
+          node scripts/upstream/wait-required-checks.ts --once
 
           git push origin "${CANDIDATE_SHA}:refs/heads/main"
 

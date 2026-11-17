@@ -11,9 +11,21 @@ interface RequiredCheck {
 interface CheckRun {
   readonly id: number;
   readonly name: string;
+  readonly check_suite: { readonly id: number };
   readonly app: { readonly id: number };
   readonly status: string;
   readonly conclusion: string | null;
+}
+interface CheckSuite {
+  readonly id: number;
+  readonly app: { readonly id: number };
+  readonly status: string;
+}
+interface WorkflowRun {
+  readonly id: number;
+  readonly workflow_id: number;
+  readonly check_suite_id: number;
+  readonly status: string;
 }
 interface Status {
   readonly id: number;
@@ -29,6 +41,8 @@ export function requiredCheckStates(
   rules: ReadonlyArray<Rule>,
   runs: ReadonlyArray<CheckRun>,
   statuses: ReadonlyArray<Status>,
+  suites: ReadonlyArray<CheckSuite> = [],
+  workflows: ReadonlyArray<WorkflowRun> = [],
 ): ReadonlyArray<{ context: string; state: string }> {
   const required = rules.flatMap((rule) =>
     rule.type === "required_status_checks" ? (rule.parameters?.required_status_checks ?? []) : [],
@@ -38,12 +52,38 @@ export function requiredCheckStates(
     const run = runs
       .filter((run) => run.name === context && (!integration_id || run.app.id === integration_id))
       .sort((a, b) => b.id - a.id)[0];
+    const owner = workflows.find((workflow) => workflow.check_suite_id === run?.check_suite.id);
+    const latest =
+      owner &&
+      workflows
+        .filter((workflow) => workflow.workflow_id === owner.workflow_id)
+        .sort((a, b) => b.id - a.id)[0];
+    // A rerun can exist before its replacement jobs do; old green jobs are not evidence for it.
+    const replacing =
+      run &&
+      (suites.some((suite) => suite.id === run.check_suite.id && suite.status !== "completed") ||
+        (latest &&
+          (latest.status !== "completed" || latest.check_suite_id !== run.check_suite.id)) ||
+        suites.some(
+          (suite) =>
+            suite.app.id === run.app.id &&
+            suite.id > run.check_suite.id &&
+            !workflows.some((workflow) => workflow.check_suite_id === suite.id),
+        ));
     const status = !integration_id
       ? statuses.filter((status) => status.context === context).sort((a, b) => b.id - a.id)[0]
       : undefined;
     // A required context can be both a check run and a commit status; both must pass.
     const states = [
-      ...(run ? [run.status === "completed" ? (run.conclusion ?? "pending") : "pending"] : []),
+      ...(run
+        ? [
+            run.status === "completed" && !replacing
+              ? ["success", "neutral", "skipped"].includes(run.conclusion ?? "")
+                ? "success"
+                : (run.conclusion ?? "pending")
+              : "pending",
+          ]
+        : []),
       ...(status ? [status.state] : []),
     ];
     const failed = states.find((state) => !["success", "pending"].includes(state));
@@ -81,6 +121,30 @@ export async function waitRequiredChecks(
   }
 }
 
+export function readRequiredChecks(api: (path: string) => Array<unknown>, sha: string) {
+  const rules = api("rules/branches/main").flat() as Array<Rule>;
+  const suites = (
+    api(`commits/${sha}/check-suites?per_page=100`) as Array<{
+      check_suites: Array<CheckSuite>;
+    }>
+  ).flatMap((page) => page.check_suites);
+  const workflows = (
+    api(`actions/runs?head_sha=${sha}&per_page=100`) as Array<{
+      workflow_runs: Array<WorkflowRun>;
+    }>
+  ).flatMap((page) => page.workflow_runs);
+  const runs = (
+    api(`commits/${sha}/check-runs?per_page=100`) as Array<{ check_runs: Array<CheckRun> }>
+  ).flatMap((page) => page.check_runs);
+  return requiredCheckStates(
+    rules,
+    runs,
+    api(`commits/${sha}/statuses?per_page=100`).flat() as Array<Status>,
+    suites,
+    workflows,
+  );
+}
+
 export async function main(): Promise<void> {
   const repository = process.env.GITHUB_REPOSITORY;
   const sha = process.env.CANDIDATE_SHA;
@@ -99,18 +163,10 @@ export async function main(): Promise<void> {
         },
       ),
     );
-  const rules = api("rules/branches/main").flat() as Array<Rule>;
-  await waitRequiredChecks(
-    () =>
-      requiredCheckStates(
-        rules,
-        (
-          api(`commits/${sha}/check-runs?per_page=100`) as Array<{ check_runs: Array<CheckRun> }>
-        ).flatMap((page) => page.check_runs),
-        api(`commits/${sha}/statuses?per_page=100`).flat() as Array<Status>,
-      ),
-    { timeoutMs: 30 * 60_000, intervalMs: 15_000 },
-  );
+  await waitRequiredChecks(() => readRequiredChecks(api, sha), {
+    timeoutMs: process.argv.includes("--once") ? 0 : 30 * 60_000,
+    intervalMs: 15_000,
+  });
 }
 
 if (process.argv[1] && import.meta.url === NodeURL.pathToFileURL(process.argv[1]).href) {
